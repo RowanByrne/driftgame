@@ -22,6 +22,7 @@ The project folder sits in a RoDev folder next to `template\` and `_tools\` (WOR
 
 - **In git:** all text, and approved art that ships in the game, up to 5 MB a file (a commit check, `tools/hooks/pre-commit`, refuses anything bigger).
 - **Outside git:** image candidates, source files (.psd, .blend, .kra), video, `.rbxl` places, backups.
+- **Access:** `.claude/settings.json` lets Claude work in the folders next to this repo, and in the template's checkout, without asking each time.
 
 ## Who does what
 
