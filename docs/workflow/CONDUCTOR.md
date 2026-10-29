@@ -23,7 +23,7 @@ The conductor works in `repo\`, the main checkout, which is always on `main` and
 5. **Push and verify.** `git pull` again, push `main`, then check the merged build in the Main place with the Studio tools: playtest (marked quiet, TESTING.md), exercise what changed, read the console for errors and warnings.
 6. **Refresh lanes.** Move every idle lane to the new `main` ("Refresh" step 4), so every place shows the merged game.
 7. **Clean up.** Remove the round's lines from `docs/CLAIMS.md` and push. Delete the merged `agent/*` branches, locally and on GitHub.
-8. **Report** to the user: what merged, what to try in the Main place, and any follow-ups or problems workers raised.
+8. **Report** to the user, short (CLAUDE.md "Talking to the user"): what merged and what to try in the Main place, then anything flagged: problems workers raised, follow-ups, decisions needed.
 
 ### Which agent
 
@@ -53,7 +53,7 @@ When the user says **"refresh"**, sync with GitHub both ways and leave every pla
 2. **Merge.** `git pull` (merge, not rebase) into `main`, then merge finished `agent/*` branches whose workers have reported, as in round step 4.
 3. **Push** `main`. If it's rejected, pull, re-check, and push again.
 4. **Refresh every idle lane.** For each lane that is clean and on a detached HEAD: `git -C <lane> fetch origin`, then `git -C <lane> switch --detach origin/main`. Lync syncs it into its place; a place in the middle of a playtest picks it up on the next one. A lane with a branch checked out or uncommitted work is in use: leave it and say so.
-5. **Report** what went up, what came down, and where each lane and place stands.
+5. **Report**, short: what went up and what came down, then any lane or place that's in use or needs attention.
 
 ## Main
 

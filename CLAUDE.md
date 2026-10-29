@@ -34,6 +34,18 @@ The project folder sits in a RoDev folder next to `template\` and `_tools\` (WOR
 | Publishes to players, and changes Creator Dashboard settings (or asks Claude to, in the browser) | Runs the pre-publish checks, writes update notes when asked, records dashboard settings in `live/EXPERIENCE.md` |
 | Starts Lync (`tools\serve-all.bat`) | Probes lanes before use; restarts Lync detached only when needed (LANES.md) |
 
+## Talking to the user
+
+Keep replies short. The user wants two things:
+
+- **Done:** what's finished, a line each.
+- **Flagged:** what needs their decision, what's broken or risky, what couldn't be checked.
+
+Then stop.
+- **Lead with results, not process.** Don't narrate steps, or restate the request or the plan.
+- **Leave out details** (file lists, measurements, reasoning) unless they change what the user should do, or the user asks.
+- **Ask one question at a time,** and only when the work needs the answer.
+
 ## Rules
 
 **Git**
