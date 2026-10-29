@@ -15,7 +15,7 @@ How to start a game from the template. `tools\new-project.ps1` will do steps 1 t
    git push -u origin main
    ```
    The game keeps the template's history; template updates arrive with "update from template" (CLAUDE.md).
-4. **Fill in the game's details.** Replace every `{{...}}` in `docs/game/PROJECT.md`, `README.md` and `default.project.json` (`features/_TEMPLATE.md` keeps its own):
+4. **Fill in the game's details.** Replace every `{{...}}` in `docs/game/PROJECT.md`, `README.md` and `default.project.json`:
    - **Name** and **code**: a short prefix of 2 to 4 letters for the place files (`<CODE>-Main.rbxl`).
    - **GitHub:** the repo from step 3.
    - **Lync port base:** one no other game in this RoDev folder uses (34870, 34890, 34910, ...), in `PROJECT.md` and as `port` in `default.project.json`.
