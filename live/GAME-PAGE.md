@@ -1,4 +1,39 @@
 # Game page
 
-> **Stub, not written yet.**
-> **Purpose:** What players see before joining, as published on the Creator Dashboard: the description (current and previous versions), the icon and the thumbnails, with their asset ids and image files in assets/marketing/. Event cards are listed in CALENDAR.md.
+What players see before they join, exactly as published on the Creator Dashboard. Claude drafts the text and makes the images; the user publishes them, or asks Claude to in the browser (docs/workflow/RELEASING.md "Game page"). Events and their cards are in `CALENDAR.md`. Replace each prompt with the answer.
+
+- **Word for word.** Record what's live exactly as published, and read it back after saving: Roblox's text filter can turn text into `####`.
+- **No one else's names.** No other company's game names or trademarks, not even as "inspired by" (docs/workflow/LAUNCH.md "Roblox rules").
+- **Keep the history.** When something changes, move the old version to "Previous" with its dates instead of deleting it.
+
+## Name
+
+> The experience's name as published, and since when.
+
+## Description
+
+**Live since:** > date
+
+> The description, word for word.
+
+## Icon and thumbnails
+
+> Approved files live in `assets/marketing/` (docs/workflow/ART-PIPELINE.md).
+
+| Slot | File | Asset id | Live since |
+|---|---|---|---|
+| Icon | | | |
+| Thumbnail 1 | | | |
+| Video | | | |
+
+## Social links
+
+> Each link and where it's shown. Links go only on the game page and the group, never inside the game; in-game text may only point to "links on our game page".
+
+| Link | Where | Since |
+|---|---|---|
+| | | |
+
+## Previous
+
+> Earlier names, descriptions and images, each with the dates it was live.

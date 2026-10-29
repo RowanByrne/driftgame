@@ -81,7 +81,7 @@ The project folder sits in a RoDev folder next to `template\` and `_tools\` (WOR
 | `docs/workflow/ART-PIPELINE.md` | Generating, approving or uploading art; finding Creator Store assets |
 | `docs/workflow/UI.md`, `docs/game/ART-DIRECTION.md` and `docs/game/UI-INVENTORY.md` | Any UI work |
 | `docs/workflow/RELEASING.md` | The user is about to publish, asks for update notes, or wants game page text or events |
-| `docs/workflow/POST-RELEASE.md` | After a publish: checking the build is live, its events arrive and errors look normal |
+| `docs/workflow/POST-RELEASE.md` | After a publish: checking the build is live and healthy, and tidying up after the release |
 | `docs/workflow/LAUNCH.md` | Preparing for launch |
 | `docs/workflow/WORKSTATION.md` | Where projects live, setting up a PC, ending a session, backups |
 | `docs/workflow/NEW-PROJECT.md` | Starting a new game from the template |

@@ -26,7 +26,7 @@ When the user says it's live:
 - **Record it** in `live/RELEASES.md`: date, the commit it covers, the notes title if it had notes, and anything notable.
 - **Tag it:** `git tag release/<YYYY-MM-DD>` on that commit (a second publish the same day adds `-b`), and push the tag.
 - **Ask the user to try it** in a live server: the headline features, a purchase if purchases changed.
-- **Post-release check** (POST-RELEASE.md, not written yet): the build landed and new servers run it, its analytics events are coming through, and errors look normal, right after the publish and again after the first hour. Anything that loses data, money or access is an incident (`live/INCIDENTS.md`). Rolling back to the previous version on the dashboard is the user's call.
+- **Post-release check** (POST-RELEASE.md, not written yet): the build landed and new servers run it, its analytics events are coming through, errors look normal, and no debug code, stale branches or claims are left behind. Right after the publish, and again after the first hour. Anything that loses data, money or access is an incident (`live/INCIDENTS.md`). Rolling back to the previous version on the dashboard is the user's call.
 
 ## Update notes
 
