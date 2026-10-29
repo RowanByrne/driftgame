@@ -25,7 +25,7 @@ Every number should be splittable by who the player is and where they are in the
 - **Fields 1 and 2** hold the event's own fields (`EVENT-CATALOG.md`).
 - **Field 3** is the game's **standard slice**, the same on every event:
   - **Default: the player's progress band** (level or stage bands such as `L1-5`, `L6-10`). This is defined per game in `EVENT-CATALOG.md`.
-  - **During an experiment**, the events that measure it carry the player's variant there instead (`live/EXPERIMENTS.md`).
+  - **During an experiment**, the events that measure it carry the player's variant there instead (EXPERIMENTS.md).
 - **Input device** (`touch`, `gamepad`, `keyboard`) goes on the onboarding and core-loop funnel steps, in a slot those steps leave free. Platform alone doesn't tell a phone with a controller from a phone with touch.
 
 ## Naming
@@ -52,6 +52,7 @@ Roblox already tracks sessions, retention and revenue. Every game adds these fro
 | Data | Load failures, save failures, kicks for data problems |
 | Performance | A sample every few minutes: frame rate and memory bands per device |
 | Builds | `ServerStarted` as each server starts, with its place version (`game.PlaceVersion`) in field 1, so each build's servers can be seen (POST-RELEASE.md) |
+| Experiments | `ExperimentExposed` when a player is enrolled in an experiment, with the experiment and variant (EXPERIMENTS.md) |
 
 ## Events from the client
 

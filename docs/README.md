@@ -17,6 +17,7 @@ The same in every game; changed only through the template (CLAUDE.md "Template-o
 | `ANALYTICS.md` | Sending events: the helper, slicing, naming, standard events |
 | `DASHBOARDS.md` | Finding numbers in the Creator Hub, Explore, alerts |
 | `CONFIGS.md` | Changing live values through Roblox configs |
+| `EXPERIMENTS.md` | A/B tests with Roblox experiments |
 | `PLATFORM-RISKS.md` | Maturity, audience, gambling rules, copyright, moderation |
 | `DATA-SYSTEM.md` | Our own dashboard for rapid iteration, from the custom events (being designed) |
 | `ART-PIPELINE.md` | Images and 3D assets, approvals, uploads, permissions |
@@ -52,7 +53,7 @@ At the repo root, beside `docs/`.
 |---|---|
 | `RELEASES.md` | Every publish to players |
 | `EXPERIENCE.md` | Everything set on the Creator Dashboard, including configs, dashboards and alerts |
-| `EXPERIMENTS.md` | A/B tests (stub) |
+| `EXPERIMENTS.md` | This game's experiments: hypotheses, results, decisions |
 | `GAME-PAGE.md` | The game page as published |
 | `CALENDAR.md` | Live events, timed releases and game page events |
 | `INCIDENTS.md` | What went wrong, and postmortems |

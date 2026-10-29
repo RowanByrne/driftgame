@@ -1,6 +1,18 @@
 # Experiments
 
-> **Stub, not written yet.**
-> **Purpose:** The game's experiment (A/B test) setup, to build later: how players are assigned to variants, how a player's first exposure is logged, how the variant reaches analytics (the standard slice in ANALYTICS.md), how results are read and when an experiment ends, and the log of every experiment run with its result.
->
-> **Notes for writing it:** Roblox configs support experiments through `ConfigService:GetConfigForPlayerAsync(player)` (docs/workflow/CONFIGS.md). Check what Roblox's own experiments cover (assignment, results) before building anything ourselves.
+This game's experiments, newest first: what was tested, what happened, and what was decided. How to run one is in docs/workflow/EXPERIMENTS.md.
+
+| Experiment | Config key | Goal metric | Ran | Result | Decision |
+|---|---|---|---|---|---|
+| | | | | Significant / not significant / stopped | Control / variant |
+
+> For each experiment, a section:
+
+### <Experiment name>
+
+- **Hypothesis:** what changes, what we expect to happen, and why.
+- **Setup:** the config key, control and variant values, rollout, split, targeting, start and end dates.
+- **Early harm:** anything flagged in the first 24 hours, and what was done.
+- **Results:** the goal metric and any other significant changes, with their confidence intervals.
+- **Decision:** what the user chose and why (also in `docs/game/DECISIONS.md`), and what changed in the configs.
+- **Learned:** what this tells us for the next experiment.
