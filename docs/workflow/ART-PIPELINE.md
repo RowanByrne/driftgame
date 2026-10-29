@@ -46,7 +46,7 @@ The user approves at up to four gates: the reference, the gray model, the textur
 3. **Build** the shape in Blender. Rig it if it will be animated.
 
    **Gate: the user approves the gray model**, untextured, shown from the reference angles.
-4. **Texture, if the art direction calls for it** (`ART-DIRECTION.md`). If the game uses Roblox materials, assign those instead and go to the gate.
+4. **Surfaces.** Decide for this asset: Roblox materials, generated textures, or a mix, following `ART-DIRECTION.md` "Surfaces", and ask the user when it isn't clear. Materials are assigned and go straight to the gate; textured parts go through the steps below.
    - **Unwrap:** decide whether the asset needs a full UV unwrap to match its references. A creature does; a simple prop may not.
    - **Generate the textures** with the image tool.
    - **Atlas:** use texture atlases wherever possible, and put several assets' texture maps on one shared atlas.
