@@ -10,7 +10,7 @@ This game's code as built: what each module does and where things are registered
 
 > Every module in `src/ServerScriptService/Services/`, one line each.
 
-| Service | What it does | Public API |
+| Service | What it does | Main entry points (signatures in `CONTRACTS.md`) |
 |---|---|---|
 | | | |
 
@@ -18,7 +18,7 @@ This game's code as built: what each module does and where things are registered
 
 > Every module in `src/StarterPlayerScripts/Controllers/`, one line each.
 
-| Controller | What it does | Public API |
+| Controller | What it does | Main entry points (signatures in `CONTRACTS.md`) |
 |---|---|---|
 | | | |
 
