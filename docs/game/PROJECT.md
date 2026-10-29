@@ -13,6 +13,7 @@ This game's details. CLAUDE.md imports this file, so every session sees it: keep
 | GitHub | `{{GITHUB_REPO}}` (`origin`); template `RowanByrne/rodev_template` (`template`) |
 | Roblox | Experience (universe) `{{UNIVERSE_ID}}`, start place `{{PLACE_ID}}`, owned by `{{OWNER}}` (the user's account or a group; it decides who must grant asset permissions) |
 | Update log | No. Whether the game has an in-game update log is the user's call; even with one, they decide per update whether it gets notes (docs/workflow/RELEASING.md). |
+| Lanes | None yet. `lane1` to `laneN`: as many as the strongest PC below opens (docs/workflow/LANES.md "How many lanes"). |
 | Lync port base | `34870`: main serves on it, lane N on base + N. Must match `port` in `default.project.json`. Give each game its own base (34870, 34890, 34910, ...) so two can run at once. |
 
 ## Places
@@ -25,6 +26,14 @@ This game's details. CLAUDE.md imports this file, so every session sees it: keep
 Add a row for any other place agents may use, such as an art workshop, with what they may do there.
 
 **Hands-off places:** none yet. List any place agents must never inspect, playtest, attach Lync to or change (for example the user's Team Create map workplace).
+
+## Workstations
+
+Each PC that works on this game opens `lane1` up to its number. A PC gets a row the first time it works on the game (docs/workflow/LANES.md "How many lanes").
+
+| PC (`$env:COMPUTERNAME`) | What it is | Lanes it opens |
+|---|---|---|
+| None yet | | |
 
 ## Game-only rules
 

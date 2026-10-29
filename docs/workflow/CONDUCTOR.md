@@ -6,7 +6,7 @@ The conductor works in `repo\`, the main checkout, which is always on `main` and
 
 ## Workers or do it yourself
 
-- **Workers:** several independent tasks, or one big task. One task per lane per round.
+- **Workers:** several independent tasks, or one big task. One task per lane per round, using only the lanes this PC opens (`PROJECT.md` "Workstations"; LANES.md "How many lanes").
 - **Conductor, directly in `repo\`:** a small change (one file, a few lines, nothing claimed), docs, claims, update notes. Commit to `main` and push.
 
 ## A round

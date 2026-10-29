@@ -28,12 +28,13 @@ The RoDev folder can live anywhere: in your user folder (`C:\Users\<you>\RoDev`)
    - **The tools in `MODELS.md`** that the game uses: the Codex desktop app, signed in, for the image tool; Blender with the Blender MCP for 3D assets.
 2. **Register the Roblox Studio MCP in Claude Code as `Roblox_Studio`** (its key under `mcpServers` in `%USERPROFILE%\.claude.json`), then quit and reopen the Claude app. The agent files allow Studio tools by that exact name; under any other name, workers get none.
 3. **Lync:** put `lync.exe` in `RoDev\_tools\lync\`, once per RoDev folder. Every game in it uses that copy (`tools\serve.bat` looks there first, then on PATH). Its Studio plugin installs itself on the first serve; restart Studio after.
+4. **Lanes for this PC:** the first time this PC works on a game, it gets a row in that game's `PROJECT.md` "Workstations": how many lanes it opens, measured or picked by the user (LANES.md "How many lanes").
 
 ## Starting a session
 
 1. **Open Claude** in `<Game>\repo`.
 2. **Say "refresh"** to sync with GitHub (CONDUCTOR.md).
-3. **Start Lync** (`tools\serve-all.bat`) and open the places from `<Game>\places\`.
+3. **Start Lync** (`tools\serve-all.bat`) and open the Main place and this PC's lane places (`PROJECT.md` "Workstations") from `<Game>\places\`.
 
 ## Before you stop
 
