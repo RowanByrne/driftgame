@@ -25,9 +25,9 @@ Write-Host 'Updating the template ...'
 git -C $templateRepo pull --ff-only
 if ($LASTEXITCODE -ne 0) { throw 'Could not update the template. Check git status in template\repo, then try again.' }
 
-# 2. Duplicate it. Lanes are never copied: each belongs to one game.
+# 2. Duplicate it. Lanes and Rocco's data are never copied: each belongs to one game.
 Write-Host "Copying the template to $game ..."
-robocopy $template $game /E /XD (Join-Path $template 'lanes') /NFL /NDL /NJH /NJS /NP | Out-Null
+robocopy $template $game /E /XD (Join-Path $template 'lanes') (Join-Path $template 'rocco') /NFL /NDL /NJH /NJS /NP | Out-Null
 if ($LASTEXITCODE -ge 8) { throw "Copying failed (robocopy exit $LASTEXITCODE)." }
 New-Item -ItemType Directory -Force -Path (Join-Path $game 'lanes') | Out-Null
 
