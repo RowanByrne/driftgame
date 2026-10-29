@@ -40,7 +40,7 @@ A lane is created once per game, but opened per PC. A lane that exists costs onl
 
 ## Add a lane
 
-1. From `repo\`: `powershell -File tools\add-lane.ps1 N`. It creates `..\lanes\laneN` from `origin/main` with relative paths and writes its `.lane-port`.
+1. From `repo\`: `powershell -ExecutionPolicy Bypass -File tools\add-lane.ps1 N`. It creates `..\lanes\laneN` from `origin/main` with relative paths, writes its `.lane-port`, and prints the next steps with this lane's port and place name.
 2. Make the place: copy `places\<CODE>-Main.rbxl` to `places\<CODE>-LaneN.rbxl` and open it in Studio.
 3. In its command bar, set `workspace:SetAttribute("__lync_port", <base + N>)` and the worker test profile (TESTING.md). Check the place settings in `CONTRACTS.md` "Place settings" are right. Save.
 4. Add the lane to `PROJECT.md`, start its Lync server, and probe it.
