@@ -1,6 +1,6 @@
 # Roadmap
 
-What we're building, in what order. The current phase is in `PROJECT.md`; the phases are in docs/workflow/WORKFLOW.md. Started in the Pitch phase. After launch, the weekly numbers (`live/METRICS.md`) steer it. Replace each prompt with the answer.
+What we're building, in what order. The current phase is in `PROJECT.md`; the phases are in docs/workflow/WORKFLOW.md. Started in the Pitch phase. After launch, the weekly review of the numbers steers it (docs/workflow/DASHBOARDS.md shows where to find them). Replace each prompt with the answer.
 
 ## Milestones
 

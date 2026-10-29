@@ -72,6 +72,7 @@ Built and tested in the Monetization phase (WORKFLOW.md); check them again here 
 - **Arriving before launch:** the standard events show up in Roblox's dashboards from a published test, with the standard slice filled in (ANALYTICS.md).
 - **Events fire:** the onboarding funnel, every economy source and sink, purchases and progression.
 - **Privacy:** strings from the client are allow-listed, so no personal information gets through.
+- **Alerts:** once the game has 100+ daily players, alerts for crashes and other critical health metrics are set up with a webhook (DASHBOARDS.md "Alerts"; record them in `live/EXPERIENCE.md`).
 
 ### Game page
 

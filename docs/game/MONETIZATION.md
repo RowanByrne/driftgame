@@ -54,7 +54,7 @@ The user sets these before any offer is designed.
 ## Measuring it
 
 - **Only real receipts count.** A cancelled prompt, a refund or a repeated receipt is not a conversion. The Creator Hub's revenue numbers are the authority.
-- **Track** payer conversion, revenue per daily player and per payer, repeat payers, and each offer's share (`live/METRICS.md`).
+- **Track** payer conversion, revenue per daily player and per payer, repeat payers, and each offer's share (docs/workflow/DASHBOARDS.md).
 - **Change one thing at a time**, and when experiments exist, test it (`live/EXPERIMENTS.md`). Never inflate conversion with token-price offers.
 
 ## Retired offers

@@ -42,7 +42,7 @@ What we're making and why it can win on Roblox: the Pitch phase's output (docs/w
 
 ## Numbers that show it works
 
-> 3 to 5 numbers and their targets, such as day-1 retention, session length or purchase rate. After launch they're tracked in `live/METRICS.md`.
+> 3 to 5 numbers and their targets, such as day-1 retention, session length or purchase rate. After launch they're read in the Creator Hub (docs/workflow/DASHBOARDS.md shows where).
 
 | Number | Target |
 |---|---|

@@ -58,6 +58,22 @@ Everything that exists only on the Creator Dashboard, written down so nobody has
 |---|---|---|---|
 | | | | |
 
+## Custom dashboards
+
+> The analytics dashboards made for this game (docs/workflow/DASHBOARDS.md "Custom dashboards").
+
+| Dashboard | What it shows | Pinned |
+|---|---|---|
+| | | |
+
+## Alerts
+
+> The alerts set up for this game (docs/workflow/DASHBOARDS.md "Alerts").
+
+| Alert | Trigger | Sends to |
+|---|---|---|
+| | | |
+
 ## Asset permissions
 
 > The last permissions check of every asset the game uses (docs/workflow/ART-PIPELINE.md "Ownership and permissions"): when, how many passed, and any grants that were needed.

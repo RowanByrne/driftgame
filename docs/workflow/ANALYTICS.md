@@ -9,7 +9,7 @@ One server module, the **analytics helper** (part of the foundation kit, CODING.
 - **Never in the way:** every call is wrapped in `pcall` and sent from its own thread, so analytics can never break or slow gameplay.
 - **Server only, published only:** Roblox accepts these events only from a server in a published game.
 - **Within Roblox's limits:** a server may send about 120 + 20 × players events a minute. The helper counts its sends and drops the least important events first when it gets close.
-- **Not real time:** the dashboards fill in after a delay, and an event that stops sending drops off them 90 days later. Take snapshots of the numbers that matter (`live/METRICS.md`).
+- **What's real time:** custom-event dashboards fill in after a delay, and an event that stops sending drops off them 90 days later. The Error Report and Performance dashboard are up to the minute, and Roblox's alerts can notify a webhook in real time. Where to find each is in DASHBOARDS.md.
 - **In Studio:** nothing is sent. The helper keeps the most recent events in memory, readable through the debug bridge, so tests can check them.
 
 ## Slicing the data

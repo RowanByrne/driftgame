@@ -101,7 +101,7 @@ Keep players coming back and ship updates safely.
 - **Every publish:** the pre-publish checklist (`RELEASING.md`), update notes when the user wants them, then a line in `live/RELEASES.md`. Publish often: when the live build falls behind `main`, store text and docs start describing features players don't have yet.
 - **After each publish:** watch the Creator Hub error report and server stats; anything that loses data, money or access is an incident.
 - **Live changes without a publish:** tuning, flags and timed content go through Roblox configs (`live/CONFIGS.md`).
-- **Weekly:** review the numbers in `live/METRICS.md` and let them steer `ROADMAP.md`.
+- **Weekly:** review the key numbers in the Creator Hub (docs/workflow/DASHBOARDS.md shows where each one is) and let them steer `ROADMAP.md`.
 - **Live events:** plan them in `live/CALENDAR.md`.
 - **Incidents:** anything that loses data, money or access gets a postmortem in `live/INCIDENTS.md`.
 - **Data changes:** a data schema change ships with a migration that was tested on saved data from the previous version.
