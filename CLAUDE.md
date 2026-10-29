@@ -39,7 +39,7 @@ The project folder sits on a portable SSD and may show up under any drive letter
 - Never `reset --hard`, `checkout --` / `restore`, `clean`, `stash` or force-push to get a clean tree. Commit changes you understand; show the user anything unexplained or half-done and ask before committing it.
 - Merge, don't rebase, into `main`, and `git pull` right before pushing it. Never rewrite `main`.
 - Workers commit to `agent/<task-slug>` branches in their lane. Only the conductor merges into `main` (CONDUCTOR.md).
-- Commit messages end with your Co-Authored-By line, e.g. `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
+- Commit messages end with your Co-Authored-By line, naming the model you run as: `Co-Authored-By: Claude <model> <noreply@anthropic.com>`.
 
 **Code**
 - Code changes go in files under `src/`; Lync syncs them into Studio. Never push code into a place with `execute_luau`, and never rely on edits made directly in Studio: they aren't saved to git.
@@ -52,7 +52,7 @@ The project folder sits on a portable SSD and may show up under any drive letter
 - Prove behaviour with numbers: positions, sizes, counts, debug state, logs. Screenshot only to answer "does this look right?", at most 3 per task, and leave the final look to the user.
 
 **Art**
-- Claude has no image model: generate with `tools\imagegen.ps1` (ART-PIPELINE.md). On a PC where it can't run, say so; don't substitute.
+- Images come from the image tool in MODELS.md (`tools\imagegen.ps1` today; ART-PIPELINE.md). On a PC where it can't run, say so; don't substitute.
 - Show candidates to the user. Never upload art they haven't picked.
 
 **Publishing**
@@ -72,6 +72,7 @@ The project folder sits on a portable SSD and may show up under any drive letter
 |---|---|
 | `docs/workflow/WORKFLOW.md` | Starting a phase, or unsure what the current phase allows |
 | `docs/workflow/CONDUCTOR.md` | Planning work, spawning workers, merging, "refresh" |
+| `docs/workflow/MODELS.md` | Which model and effort each job and worker tier uses; changing them |
 | `docs/workflow/LANES.md` | Adding a lane, Lync problems |
 | `docs/workflow/CODING.md` | Writing any Luau |
 | `docs/workflow/TESTING.md` | Before using Studio tools or starting a playtest |

@@ -27,13 +27,15 @@ The conductor works in `repo\`, the main checkout, which is always on `main` and
 
 ### Which agent
 
-| Agent | Use for |
-|---|---|
-| `roblox-dev` | Core systems, tricky gameplay, anything touching player data or money |
-| `roblox-dev-medium` | Well-specified features, content, UI |
-| `roblox-dev-low` | Small, mechanical, clearly specified fixes |
+Pick a worker tier by how hard the task is. `MODELS.md` says which model and effort each tier runs.
 
-The three share one body and differ only in effort; keep their bodies identical.
+| Tier | Agent | Use for |
+|---|---|---|
+| Heavy | `roblox-dev-heavy` | Core systems, tricky gameplay, anything touching player data or money |
+| Standard | `roblox-dev-standard` | Well-specified features, content, UI |
+| Light | `roblox-dev-light` | Small, mechanical, clearly specified fixes |
+
+The three share one body and differ only in their frontmatter; keep their bodies identical.
 
 ## Claims
 
