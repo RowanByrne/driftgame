@@ -1,6 +1,14 @@
 # New project
 
-How to start a game from the template. `tools\new-project.ps1` will do steps 1 to 4; until then, do them by hand. The pitch needs only steps 1 to 4: places, lanes and the Roblox experience can wait until Foundation (WORKFLOW.md).
+How to start a game from the template. The pitch needs only steps 1 to 4: places, lanes and the Roblox experience can wait until Foundation (WORKFLOW.md).
+
+**`tools\new-project.ps1` does steps 1 to 4.** Create the game's empty private GitHub repo first (no README, .gitignore or license), then from `template\repo` run:
+
+```
+powershell -ExecutionPolicy Bypass -File tools\new-project.ps1 -Name <Game> -Code <CODE> -GitHubRepo <the new repo's URL>
+```
+
+It pulls the template, copies it as `<Game>\` (never its lanes), sets the remotes, picks the first Lync port block no other game in the RoDev folder uses (or `-PortBase`), fills in the details, commits and pushes. Without `-GitHubRepo` it does everything except the push. The steps below are what it does, and how to do them by hand.
 
 ## Starting a game
 
