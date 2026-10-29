@@ -14,7 +14,8 @@ Which AI model and settings each job uses. Every other doc names a **job** or a 
 | Worker, light tier | `roblox-dev-light` | Claude Opus 5.5, low effort | Claude Opus 5.5, low effort | `.claude/agents/roblox-dev-light.md` |
 | Merging branches | `git-integrator` | Same as the conductor | Same as the conductor | `.claude/agents/git-integrator.md` |
 | Creator Store lookups | `asset-scout` | Claude Sonnet 5.5, low effort | Claude Sonnet 5.5, low effort | `.claude/agents/asset-scout.md` |
-| Images | `tools\imagegen.ps1` | Codex's built-in image generation | Codex's built-in image generation, through the Codex desktop app signed in on the PC | `tools\imagegen.ps1`, the Codex app |
+| 3D assets: building, rigging, texturing, animating (ART-PIPELINE.md) | A worker agent with the Blender MCP | Claude Opus 5.5, heavy tier | Claude Opus 5.5, heavy tier | The worker agent file; the Blender MCP set up on the PC (WORKSTATION.md) |
+| Images: reference sheets, textures, storyboards, UI art | `tools\imagegen.ps1` | Codex's built-in image generation | Codex's built-in image generation, through the Codex desktop app signed in on the PC | `tools\imagegen.ps1`, the Codex app |
 
 ## Worker tiers
 
