@@ -44,7 +44,7 @@ The project folder sits on a portable SSD and may show up under any drive letter
 **Code**
 - Code changes go in files under `src/`; Lync syncs them into Studio. Never push code into a place with `execute_luau`, and never rely on edits made directly in Studio: they aren't saved to git.
 - `.luau` files are ModuleScripts unless the first line is `--@script:server`, `--@script:client` or `--@localscript`. `default.project.json` maps `src/` folders to Studio services.
-- Code against `docs/game/CONTRACTS.md` (data, remotes, tags, attributes, service APIs). A contract change updates that doc in the same commit; a change other tasks build on goes in first as its own small commit.
+- Code against `docs/game/CONTRACTS.md` (data, remotes, tags, attributes, service APIs) and `docs/game/EVENT-CATALOG.md` (analytics events). A contract change updates its doc in the same commit; a change other tasks build on goes in first as its own small commit.
 
 **Studio**
 - Use only the place you were given (match its name in `list_roblox_studios`), and never touch the hands-off places listed in PROJECT.md.
@@ -75,14 +75,15 @@ The project folder sits on a portable SSD and may show up under any drive letter
 | `docs/workflow/LANES.md` | Adding a lane, Lync problems |
 | `docs/workflow/CODING.md` | Writing any Luau |
 | `docs/workflow/TESTING.md` | Before using Studio tools or starting a playtest |
+| `docs/workflow/ANALYTICS.md` | Adding or changing analytics events; anything touching the pipeline |
 | `docs/workflow/ART-PIPELINE.md` | Generating, approving or uploading art; finding Creator Store assets |
 | `docs/workflow/UI.md` and `docs/game/ART-DIRECTION.md` | Any UI work |
 | `docs/workflow/RELEASING.md` | The user is about to publish or asks for update notes |
 | `docs/workflow/LAUNCH.md` | Preparing for launch |
 | `docs/workflow/WORKSTATION.md` | On a new PC, before unplugging the SSD, backups |
 | `docs/workflow/NEW-PROJECT.md` | Starting a new game from the template |
-| `docs/game/` | What this game is: PITCH, GDD, ARCHITECTURE, CONTRACTS, ART-DIRECTION, MONETIZATION, ROADMAP, DECISIONS, `features/` |
-| `live/` | After launch: releases, dashboard settings, metrics, events, incidents |
+| `docs/game/` | What this game is: PITCH, GDD, ARCHITECTURE, CONTRACTS, EVENT-CATALOG, ART-DIRECTION, MONETIZATION, ROADMAP, DECISIONS, `features/` |
+| `live/` | After launch: releases, dashboard settings, metrics, the live-events calendar, incidents |
 
 Keep them current:
 - **New feature:** its own spec in `docs/game/features/<name>.md`, copied from `_TEMPLATE.md`. Don't grow one giant design doc.
