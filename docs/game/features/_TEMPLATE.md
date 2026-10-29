@@ -14,7 +14,7 @@
 
 ## Rules and numbers
 
-> How it works, with the starting tuning values. The live values sit in config modules (CODING.md), or in Roblox configs if they'll change without a publish (`live/CONFIGS.md`).
+> How it works, with the starting tuning values. The live values sit in config modules (CODING.md), or in Roblox configs if they'll change without a publish (docs/workflow/CONFIGS.md).
 
 ## UI
 

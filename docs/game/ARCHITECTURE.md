@@ -41,7 +41,7 @@ Where each kind of thing is listed in code, so nothing gets scattered.
 | Sounds | |
 | Asset ids | |
 | Analytics events | |
-| Live config keys | (`live/CONFIGS.md`) |
+| Live config keys | (the config wrapper; keys and live values in `live/EXPERIENCE.md` "Configs") |
 | Timed releases | |
 | Update log | (only if the game has one, `PROJECT.md`) |
 

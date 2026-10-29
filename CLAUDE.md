@@ -80,6 +80,7 @@ The project folder sits in a RoDev folder next to `template\` and `_tools\` (WOR
 | `docs/workflow/TESTING.md` | Before using Studio tools or starting a playtest |
 | `docs/workflow/ANALYTICS.md` | Adding or changing analytics events |
 | `docs/workflow/DASHBOARDS.md` | Finding a number in the Creator Hub, building a chart, setting up alerts |
+| `docs/workflow/CONFIGS.md` | Changing a value in the live game without publishing; kill switches |
 | `docs/workflow/DATA-SYSTEM.md` | Our own metrics system, planned and not designed yet |
 | `docs/workflow/ART-PIPELINE.md` | Generating, approving or uploading art; finding Creator Store assets |
 | `docs/workflow/UI.md`, `docs/game/ART-DIRECTION.md` and `docs/game/UI-INVENTORY.md` | Any UI work |
@@ -89,7 +90,7 @@ The project folder sits in a RoDev folder next to `template\` and `_tools\` (WOR
 | `docs/workflow/WORKSTATION.md` | Where projects live, setting up a PC, ending a session, backups |
 | `docs/workflow/NEW-PROJECT.md` | Starting a new game from the template |
 | `docs/game/` | What this game is: PITCH, GDD, ARCHITECTURE, CONTRACTS, EVENT-CATALOG, ART-DIRECTION, UI-INVENTORY, MONETIZATION, ROADMAP, DECISIONS, `features/` |
-| `live/` | After launch: releases, dashboard settings (including custom dashboards and alerts), configs, experiments, the game page, the calendar (live events, timed releases, game page events), incidents |
+| `live/` | After launch: releases, dashboard settings (including configs, custom dashboards and alerts), experiments, the game page, the calendar (live events, timed releases, game page events), incidents |
 
 Keep them current:
 - **New feature:** its own spec in `docs/game/features/<name>.md`, copied from `_TEMPLATE.md`. Don't grow one giant design doc.

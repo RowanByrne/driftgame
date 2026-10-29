@@ -18,7 +18,7 @@ One server module, the **analytics helper** (part of the foundation kit, CODING.
 
 Every number should be splittable by who the player is and where they are in the game.
 
-**Roblox slices by the player, for free.** Its dashboards filter and break down by player attributes such as country, platform, age group, new vs returning, when they first played, and payer status. These match the attributes Roblox configs target by (`live/CONFIGS.md`). The game never sends these.
+**Roblox slices by the player, for free.** Its dashboards filter and break down by player attributes such as country, platform, age group, new vs returning, when they first played, and payer status. These match the attributes Roblox configs target by (CONFIGS.md). The game never sends these.
 
 **The game slices by the game, in custom fields.** Each event has three custom field slots, sent as `"<field>:<value>"`:
 

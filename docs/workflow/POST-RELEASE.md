@@ -34,7 +34,7 @@ Anything that loses players' data, money or access is an incident: follow `live/
 ## 4. Nothing left behind in the build
 
 - **No debug code outside Studio:** a search of `src/` for debug prints, temporary flags and test hooks finds nothing that runs on live servers. Debug bridges and test kits stay behind their Studio-only checks.
-- **No test values:** no Roblox config left on a test value or with a staged change nobody meant to publish (`live/CONFIGS.md`), and no testing shortcut still switched on in code.
+- **No test values:** no Roblox config left on a test value or with a staged change nobody meant to publish (CONFIGS.md), and no testing shortcut still switched on in code.
 
 Anything found is fixed in the next release, not by editing the live game.
 

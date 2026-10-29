@@ -58,6 +58,14 @@ Everything that exists only on the Creator Dashboard, written down so nobody has
 |---|---|---|---|
 | | | | |
 
+## Configs
+
+> Every Roblox config key the game reads (docs/workflow/CONFIGS.md): its default in code, its live value, and when it last changed. The full history of changes is on the Configs page's History.
+
+| Key | Type | Default in code | Live value | Controls | Applies | Changed |
+|---|---|---|---|---|---|---|
+| | | | | | At once / next round / next join | |
+
 ## Custom dashboards
 
 > The analytics dashboards made for this game (docs/workflow/DASHBOARDS.md "Custom dashboards").

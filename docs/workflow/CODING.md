@@ -41,6 +41,7 @@ Built in the Foundation phase (WORKFLOW.md), before any gameplay. Record each pi
 | UI kit | `UI/Theme` (colours, fonts, panels, labels, buttons) and `UI/Create`; programmer-art UI is built on these (WORKFLOW.md) |
 | Notifications | One toast and banner API, callable from client and server |
 | Analytics | The analytics module and standard events (ANALYTICS.md) |
+| Live config | The config wrapper: reads Roblox configs, with a default in code for every key (CONFIGS.md) |
 | Debug bridges | Studio-only `DebugBridge` on the server (`ServerStorage`) and client (`PlayerScripts`), so tests reach live services and controllers (TESTING.md) |
 | Studio test kit | Quiet agent playtests, the test profile, photo mode (TESTING.md) |
 | Admin console | Cmdr, vendored. Everyone in Studio; on live servers only the owner and the admins in `Config`. Rate-limited |

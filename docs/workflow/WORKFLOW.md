@@ -83,7 +83,7 @@ Build what `MONETIZATION.md` designed: every launch offer, the shop, checkout an
   2. **Create the offers** on the Creator Dashboard: the user does it, or asks Claude to in the browser. Record ids and prices in `live/EXPERIENCE.md`, and the ids in code.
   3. **Build** the shop and purchase flows from the UI phase's components (new art through `ART-PIPELINE.md`), the receipts and grants (CODING.md "Server rules"), currencies, the starter offer, recurring offers, and paid random items with their odds and policy gate.
   4. **Instrument** the purchase funnel and every currency source and sink (`EVENT-CATALOG.md`).
-  5. **Test:** the purchase tests pass (TESTING.md "Automated tests"), checkout can be switched off by a Roblox config (`live/CONFIGS.md`), and the user runs a live smoke test in a private published test: buy the smallest offer, rejoin, and check it stuck with no double grant.
+  5. **Test:** the purchase tests pass (TESTING.md "Automated tests"), checkout can be switched off by a Roblox config (CONFIGS.md), and the user runs a live smoke test in a private published test: buy the smallest offer, rejoin, and check it stuck with no double grant.
 - **Rules:** Claude never spends Robux. No purchase prompt appears on its own at the moments `MONETIZATION.md` rules out.
 - **Gate:** every launch offer works end to end in a published test, and the user approves the shop.
 
@@ -100,7 +100,7 @@ Keep players coming back and ship updates safely.
 
 - **Every publish:** the pre-publish checklist (`RELEASING.md`), update notes when the user wants them, then a line in `live/RELEASES.md`. Publish often: when the live build falls behind `main`, store text and docs start describing features players don't have yet.
 - **After each publish:** watch the Creator Hub error report and server stats; anything that loses data, money or access is an incident.
-- **Live changes without a publish:** tuning, flags and timed content go through Roblox configs (`live/CONFIGS.md`).
+- **Live changes without a publish:** tuning, flags and timed content go through Roblox configs (CONFIGS.md).
 - **Weekly:** review the key numbers and let them steer `ROADMAP.md`: in our own data system once it exists (DATA-SYSTEM.md), until then in the Creator Hub (DASHBOARDS.md shows where each one is).
 - **Live events:** plan them in `live/CALENDAR.md`.
 - **Incidents:** anything that loses data, money or access gets a postmortem in `live/INCIDENTS.md`.

@@ -16,6 +16,7 @@ The same in every game; changed only through the template (CLAUDE.md "Template-o
 | `TESTING.md` | Studio tools, playtests, measuring, automated tests |
 | `ANALYTICS.md` | Sending events: the helper, slicing, naming, standard events |
 | `DASHBOARDS.md` | Finding numbers in the Creator Hub, Explore, alerts |
+| `CONFIGS.md` | Changing live values through Roblox configs |
 | `DATA-SYSTEM.md` | Our own metrics system (planned, not designed yet) |
 | `ART-PIPELINE.md` | Images and 3D assets, approvals, uploads, permissions |
 | `UI.md` | Programmer art, device layouts, the UI phase, readability rules |
@@ -49,8 +50,7 @@ At the repo root, beside `docs/`.
 | Doc | What |
 |---|---|
 | `RELEASES.md` | Every publish to players |
-| `EXPERIENCE.md` | Everything set on the Creator Dashboard, including dashboards and alerts |
-| `CONFIGS.md` | Live values through Roblox configs (stub) |
+| `EXPERIENCE.md` | Everything set on the Creator Dashboard, including configs, dashboards and alerts |
 | `EXPERIMENTS.md` | A/B tests (stub) |
 | `GAME-PAGE.md` | The game page as published |
 | `CALENDAR.md` | Live events, timed releases and game page events |

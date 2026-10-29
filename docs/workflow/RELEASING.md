@@ -14,7 +14,7 @@ When the user says they're **about to publish**, do "Before a publish" first. Wh
    - New products and passes exist on the dashboard, their ids are in code, and they're recorded in `live/EXPERIENCE.md`.
    - New assets load in the published experience (ART-PIPELINE.md "Ownership and permissions").
    - New analytics events are in `EVENT-CATALOG.md` and fire.
-   - New config keys exist on the dashboard, staged values are tested, and the code has defaults for them (`live/CONFIGS.md`).
+   - New config keys exist on the dashboard, staged values are tested, and the code has defaults for them (CONFIGS.md), and their live values are recorded in `live/EXPERIENCE.md`.
    - Changed screens are checked in every supported layout (UI.md).
 3. **Update notes, only if the user wants them.** If the game has an update log (`PROJECT.md`), ask whether this update gets notes. If yes, write them (below), show them to the user, apply their edits, and commit `Update notes: <title>`. If the game has no update log, skip this step.
 4. **Push `main`** and tell the user it's ready to publish, with anything they need to do on the dashboard: new products, game page text (`live/GAME-PAGE.md`), game page events (`live/CALENDAR.md`).
