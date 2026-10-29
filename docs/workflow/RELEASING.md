@@ -14,6 +14,7 @@ When the user says they're **about to publish**, do "Before a publish" first. Wh
    - New products and passes exist on the dashboard, their ids are in code, and they're recorded in `live/EXPERIENCE.md`.
    - New assets load in the published experience (ART-PIPELINE.md "Ownership and permissions").
    - New analytics events are in `EVENT-CATALOG.md` and fire.
+   - New config keys exist on the dashboard, staged values are tested, and the code has defaults for them (`live/CONFIGS.md`).
    - Changed screens are checked in every supported layout (UI.md).
 3. **Update notes, only if the user wants them.** If the game has an update log (`PROJECT.md`), ask whether this update gets notes. If yes, write them (below), show them to the user, apply their edits, and commit `Update notes: <title>`. If the game has no update log, skip this step.
 4. **Push `main`** and tell the user it's ready to publish, with anything they need to do on the dashboard: new products, game page text (`live/GAME-PAGE.md`), game page events (`live/CALENDAR.md`).
@@ -25,7 +26,7 @@ When the user says it's live:
 - **Record it** in `live/RELEASES.md`: date, the commit it covers, the notes title if it had notes, and anything notable.
 - **Tag it:** `git tag release/<YYYY-MM-DD>` on that commit (a second publish the same day adds `-b`), and push the tag.
 - **Ask the user to try it** in a live server: the headline features, a purchase if purchases changed.
-- **Watch the first hour:** real-time alerts and error reports (ANALYTICS.md, `live/METRICS.md`). Anything that loses data, money or access is an incident (`live/INCIDENTS.md`). Rolling back to the previous version on the dashboard is the user's call.
+- **Watch the first hour:** the Creator Hub error report and server stats. Anything that loses data, money or access is an incident (`live/INCIDENTS.md`). Rolling back to the previous version on the dashboard is the user's call.
 
 ## Update notes
 

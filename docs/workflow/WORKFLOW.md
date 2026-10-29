@@ -37,8 +37,8 @@ Decide what we're making before any code.
 
 Get the project running end to end, so everything built after it stands on code that lasts.
 
-- **Produces:** the project from the template (`NEW-PROJECT.md`): GitHub repo, `PROJECT.md` filled in, places and lanes. The foundation kit in `src/` (`CODING.md`): Services and Controllers loaders, a remotes registry, DataService with memory mode in Studio, the debug bridges, the Studio test kit (test profile, quiet playtests), the analytics module with the standard events, connected to the pipeline (`ANALYTICS.md`). A placeholder world. First versions of `ARCHITECTURE.md` and `CONTRACTS.md`.
-- **Gate (Claude's checklist, then tell the user):** every lane probes (`LANES.md`); a playtest in the Main place joins with no console errors or warnings; player data saves and loads through DataService; a quiet playtest is silent; the standard analytics events from a playtest arrive in the pipeline.
+- **Produces:** the project from the template (`NEW-PROJECT.md`): GitHub repo, `PROJECT.md` filled in, places and lanes. The foundation kit in `src/` (`CODING.md`): Services and Controllers loaders, a remotes registry, DataService with memory mode in Studio, the debug bridges, the Studio test kit (test profile, quiet playtests), the analytics helper with the standard events (`ANALYTICS.md`). A placeholder world. First versions of `ARCHITECTURE.md` and `CONTRACTS.md`.
+- **Gate (Claude's checklist, then tell the user):** every lane probes (`LANES.md`); a playtest in the Main place joins with no console errors or warnings; player data saves and loads through DataService; a quiet playtest is silent; the standard analytics events from a playtest show in the helper's Studio log with the right fields.
 
 ## 3. Core loop
 
@@ -76,7 +76,7 @@ Turn the programmer-art UI into the finished look. This is the most demanding ph
 
 Go public without losing player data or money.
 
-- **Produces:** every item in `LAUNCH.md` checked, including data safety, monetization set up and tested, Roblox's questionnaire, asset permissions, devices and performance, and the store page. Dashboards and real-time alerts live and tested in the pipeline. A launch review in `docs/archive/`. Start early: some of Roblox's checks take days.
+- **Produces:** every item in `LAUNCH.md` checked, including data safety, monetization set up and tested, Roblox's questionnaire, asset permissions, devices and performance, and the store page. Analytics events arriving in Roblox's dashboards from a published test. A launch review in `docs/archive/`. Start early: some of Roblox's checks take days.
 - **Gate:** the user publishes publicly. Record the date in `PROJECT.md` ("Launched") and the release in `live/RELEASES.md`.
 
 ## 7. Live
@@ -84,7 +84,8 @@ Go public without losing player data or money.
 Keep players coming back and ship updates safely.
 
 - **Every publish:** the pre-publish checklist (`RELEASING.md`), update notes when the user wants them, then a line in `live/RELEASES.md`. Publish often: when the live build falls behind `main`, store text and docs start describing features players don't have yet.
-- **Real-time alerts:** an alert means something is going wrong for players now. Look into it straight away; if it lost data, money or access, it's an incident.
+- **After each publish:** watch the Creator Hub error report and server stats; anything that loses data, money or access is an incident.
+- **Live changes without a publish:** tuning, flags and timed content go through Roblox configs (`live/CONFIGS.md`).
 - **Weekly:** review the numbers in `live/METRICS.md` and let them steer `ROADMAP.md`.
 - **Live events:** plan them in `live/CALENDAR.md`.
 - **Incidents:** anything that loses data, money or access gets a postmortem in `live/INCIDENTS.md`.

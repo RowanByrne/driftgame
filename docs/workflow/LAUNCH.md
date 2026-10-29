@@ -34,7 +34,7 @@ Claude works through the checklist below and writes a launch review in `docs/arc
   - Odds are shown as percentages before every purchase, for the current state.
   - Players whose policy restricts paid random items (`PolicyService`) can't buy them, and still have a way to play.
   - The questionnaire says the game has them.
-- **A way to switch checkout off** without republishing (a remote config flag), so a broken offer can be stopped at once.
+- **A way to switch checkout off** without republishing (a Roblox config flag, `live/CONFIGS.md`), so a broken offer can be stopped at once.
 - **Live smoke test (the user):** buy the smallest product once, rejoin, and confirm it stuck with no double grant. Check pass benefits with an account that isn't the creator's.
 
 ### Roblox rules
@@ -67,7 +67,7 @@ Claude works through the checklist below and writes a launch review in `docs/arc
 
 ### Analytics
 
-- **Live before launch:** dashboards and real-time alerts are live and tested (ANALYTICS.md).
+- **Arriving before launch:** the standard events show up in Roblox's dashboards from a published test, with the standard slice filled in (ANALYTICS.md).
 - **Events fire:** the onboarding funnel, every economy source and sink, purchases and progression.
 - **Privacy:** strings from the client are allow-listed, so no personal information gets through.
 
@@ -86,7 +86,7 @@ Claude works through the checklist below and writes a launch review in `docs/arc
 
 Not required to launch; the review lists whichever are missing, by priority.
 
-- **Remote config** for feature flags and calendar values, not just checkout.
+- **Roblox configs** for feature flags and calendar values, not just checkout (`live/CONFIGS.md`).
 - **Updating without kicking:** a soft shutdown with an "update available" notice, and the version number shown in settings.
 - **Return reasons:** experience notifications (opt-in after a first success) and daily or weekly goals.
 - **Social:** an invite prompt, a group-join reward, a favourite prompt after a first big moment, a playing-with-friends bonus.

@@ -77,7 +77,7 @@ The project folder sits in a RoDev folder next to `template\` and `_tools\` (WOR
 | `docs/workflow/LANES.md` | Adding a lane, Lync problems |
 | `docs/workflow/CODING.md` | Writing any Luau |
 | `docs/workflow/TESTING.md` | Before using Studio tools or starting a playtest |
-| `docs/workflow/ANALYTICS.md` | Adding or changing analytics events; anything touching the pipeline |
+| `docs/workflow/ANALYTICS.md` | Adding or changing analytics events, or reading the dashboards |
 | `docs/workflow/ART-PIPELINE.md` | Generating, approving or uploading art; finding Creator Store assets |
 | `docs/workflow/UI.md`, `docs/game/ART-DIRECTION.md` and `docs/game/UI-INVENTORY.md` | Any UI work |
 | `docs/workflow/RELEASING.md` | The user is about to publish, asks for update notes, or wants game page text or events |
@@ -85,7 +85,7 @@ The project folder sits in a RoDev folder next to `template\` and `_tools\` (WOR
 | `docs/workflow/WORKSTATION.md` | Where projects live, setting up a PC, ending a session, backups |
 | `docs/workflow/NEW-PROJECT.md` | Starting a new game from the template |
 | `docs/game/` | What this game is: PITCH, GDD, ARCHITECTURE, CONTRACTS, EVENT-CATALOG, ART-DIRECTION, UI-INVENTORY, MONETIZATION, ROADMAP, DECISIONS, `features/` |
-| `live/` | After launch: releases, dashboard settings, the game page, metrics, the calendar (live events, timed releases, game page events), incidents |
+| `live/` | After launch: releases, dashboard settings, configs, experiments, the game page, metrics, the calendar (live events, timed releases, game page events), incidents |
 
 Keep them current:
 - **New feature:** its own spec in `docs/game/features/<name>.md`, copied from `_TEMPLATE.md`. Don't grow one giant design doc.
