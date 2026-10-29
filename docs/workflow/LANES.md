@@ -14,14 +14,14 @@ The port base is in `PROJECT.md` and in `default.project.json`.
 - **Each place finds its own Lync server** through its `workspace.__lync_port` attribute.
 - **Idle lanes sit on a detached `origin/main`**, so every idle place shows the merged game. A worker switches its lane to its `agent/<task-slug>` branch; refresh puts it back (CONDUCTOR.md "Refresh").
 - **Workers work only in their lane.** `repo\` belongs to the conductor.
-- **Lane links use relative paths**, so lanes survive a drive-letter change. If git ever reports a lane missing after the project moved, run `git worktree repair` from `repo\`.
+- **Lane links use relative paths**, so lanes survive the project folder moving or its drive changing letter. If git ever reports a lane missing after a move, run `git worktree repair` from `repo\`.
 - **Each open lane place is a Studio instance**, and each one uses memory: 2 to 4 lanes suit most PCs. List the lanes in `PROJECT.md`.
 - **`list_roblox_studios` shows only the places open on this PC.** Match a lane to its place by name.
 
 ## Lync
 
 - **Starting servers:** `tools\serve-all.bat` starts Lync for the Main place and every lane, each in its own window; `tools\serve-all.bat dry` lists what it would start. `tools\serve.bat` serves just the checkout it's in. In a lane it reads `.lane-port` and serves a generated `lane.project.json` (both gitignored).
-- **Finding Lync:** `serve.bat` looks on the drive first (`RoDev\_tools\lync\lync.exe`), then on PATH, so a new PC needs no install. Lync's Studio plugin installs itself on the first serve; restart Studio after.
+- **Finding Lync:** `serve.bat` looks in the RoDev folder first (`RoDev\_tools\lync\lync.exe`), then on PATH, so every game in a RoDev folder shares one copy (WORKSTATION.md). Lync's Studio plugin installs itself on the first serve; restart Studio after.
 - **The user starts Lync.** A server started from a Claude shell dies with that shell. If the conductor must restart one, start it detached:
   `Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = 'cmd.exe /K "<checkout>\tools\serve.bat"' }`
   After a restart, Studio's Lync plugin may wait on **Resume** until the user clicks it.

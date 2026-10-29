@@ -1,6 +1,6 @@
 # Agent rules
 
-A Roblox game built from the RoDev template. Luau source in `src/` is synced into Studio by Lync. GitHub `origin/main` is the source of truth for code and every text file; place files and big art live on the SSD next to this repo, outside git.
+A Roblox game built from the RoDev template. Luau source in `src/` is synced into Studio by Lync. GitHub `origin/main` is the source of truth for code and every text file; place files and big art live in the project folder next to this repo, outside git.
 
 This file is the same in every game. This game's details (name, code, Roblox ids, port base, current phase, game-only rules) are in PROJECT.md:
 
@@ -8,7 +8,7 @@ This file is the same in every game. This game's details (name, code, Roblox ids
 
 ## Project layout
 
-The project folder sits on a portable SSD and may show up under any drive letter, so use paths relative to this repo and never write a drive letter into a file or script.
+The project folder sits in a RoDev folder next to `template\` and `_tools\` (WORKSTATION.md). That folder can be anywhere, from a user folder to a portable drive with a changing letter, so use paths relative to this repo and never write an absolute path or drive letter into a file or script.
 
 ```
 <Game>\
@@ -82,7 +82,7 @@ The project folder sits on a portable SSD and may show up under any drive letter
 | `docs/workflow/UI.md`, `docs/game/ART-DIRECTION.md` and `docs/game/UI-INVENTORY.md` | Any UI work |
 | `docs/workflow/RELEASING.md` | The user is about to publish, asks for update notes, or wants game page text or events |
 | `docs/workflow/LAUNCH.md` | Preparing for launch |
-| `docs/workflow/WORKSTATION.md` | On a new PC, before unplugging the SSD, backups |
+| `docs/workflow/WORKSTATION.md` | Where projects live, setting up a PC, ending a session, backups |
 | `docs/workflow/NEW-PROJECT.md` | Starting a new game from the template |
 | `docs/game/` | What this game is: PITCH, GDD, ARCHITECTURE, CONTRACTS, EVENT-CATALOG, ART-DIRECTION, UI-INVENTORY, MONETIZATION, ROADMAP, DECISIONS, `features/` |
 | `live/` | After launch: releases, dashboard settings, the game page, metrics, the calendar (live events, timed releases, game page events), incidents |
@@ -103,7 +103,7 @@ This repo started from `rodev_template` (remote `template`). These files belong 
 
 ## Workstations
 
-- **Memory stays on the PC.** Claude's memory is stored on each workstation, not on the SSD. Anything another session or PC must know goes in the repo: PROJECT.md, DECISIONS.md, or the relevant doc.
+- **Memory stays on the PC.** Claude's memory is stored on each workstation, not in the project. Anything another session or PC must know goes in the repo: PROJECT.md, DECISIONS.md, or the relevant doc.
 - **Studio tools are per PC.** `list_roblox_studios` only lists places open on this PC.
 - **The Studio MCP must be registered as `Roblox_Studio`.** The agent files allow Studio tools by that exact name; under any other name, workers get no Studio tools.
-- Setting up a new PC and the checklist before unplugging the SSD: WORKSTATION.md.
+- Setting up a new PC, and the checklist before stopping work: WORKSTATION.md.

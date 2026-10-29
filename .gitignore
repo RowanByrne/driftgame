@@ -1,4 +1,4 @@
-# Big binaries live on the SSD next to repo\ (places\, art\, backups\), not in git.
+# Big binaries live in the project folder next to repo\ (places\, art\, backups\), not in git.
 # These catch strays that land in the repo by mistake.
 *.rbxl
 *.rbxlx

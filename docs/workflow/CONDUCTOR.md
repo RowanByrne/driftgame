@@ -16,7 +16,7 @@ The conductor works in `repo\`, the main checkout, which is always on `main` and
 3. **Spawn** the workers in parallel. Each prompt gives:
    - **Task:** what to build, and what done looks like.
    - **Files owned:** exact paths; new files marked "(new)".
-   - **Lane:** the lane's absolute path, resolved now (the drive letter can change between sessions), and its place, `<CODE>-LaneN`.
+   - **Lane:** the lane's absolute path, resolved now (the project folder can move between sessions), and its place, `<CODE>-LaneN`.
    - **Branch:** `agent/<task-slug>`.
    - **Proof:** the numbers, logs or debug state that will show it works. Screenshots only for "does it look right?", 2 or 3 at most, and the final look is left to the user.
 4. **Merge.** When workers report, `git fetch origin`, `git pull`, then merge each `agent/*` branch into `main` with `--no-ff`. Resolve simple conflicts yourself; hand messy or multiple conflicts to the `git-integrator` agent. Record any contract or analytics changes the workers report in `CONTRACTS.md` / `EVENT-CATALOG.md`.
