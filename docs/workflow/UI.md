@@ -1,4 +1,150 @@
 # UI
 
-> **Stub, not written yet.**
-> **Purpose:** Readability and mobile gates, viewport checks, the whole-image workflow. Visual style lives in docs/game/ART-DIRECTION.md.
+How UI is built in every game. It happens in two stages (WORKFLOW.md): **programmer art** through Core loop and Production, then the **UI phase**, which turns it into the finished look.
+
+**Readability on every screen size comes first.** A beautiful screen that's hard to read or use on a phone is unfinished. When goals compete: working behaviour, readability and input access first; then visual hierarchy and consistency; then decorative detail.
+
+## Programmer art
+
+UI before the UI phase is placeholder: simple and plainly styled. Its job is to help the user work out the layout: what each screen shows, and where its text and buttons go.
+
+- **Build it from the UI kit** (`UI/Theme`, `UI/Create`; CODING.md): theme colours, plain panels and buttons, native text. No generated art, no decoration.
+- **Build UI in code:** one ScreenGui per feature, `ResetOnSpawn = false`.
+- **Use the shared pieces.** Buttons, panels, tabs and lists come from the kit rather than being drawn per screen, so the UI phase can restyle each one in one place.
+- **It still has to work.** The readability and layout rules below apply now, in every supported layout, with every input type. The layouts the user settles on here carry into the finished UI.
+- **Move things now.** Layout changes are cheap in programmer art and expensive after the UI phase.
+
+## Layouts per device
+
+Each device gets a layout that suits it, never a scaled copy of another. The HUD on a laptop and on a phone can be completely different, and so can a phone held in portrait and in landscape: what shows, where it sits, and when it appears.
+
+- **Decide the supported layouts when the first screens are built:** desktop, tablet, phone landscape, and phone portrait and console if the game supports them. Record them in `UI-INVENTORY.md`, with how each one is chosen.
+- **The user decides every layout during programmer art, not at the end.** Each new screen is built in every supported layout from its first version and shown to the user in each, at that layout's reference size ("Screen sizes" below). Never "desktop now, phone later": a layout left to the end means rebuilding finished screens.
+- **Choose the layout from the input type and the measured screen,** not a guess at the device, and switch live when the screen rotates or resizes.
+- **Same screen, different placement.** Every layout uses the same components and shows the same data; only position, size, grouping and visibility change. Keep each screen's per-layout placement together in one place in its code, so behaviour can't drift between layouts.
+- **Phones get a minimal HUD.** Decide, for each gameplay state, what shows, and cover as little of the screen as possible.
+
+## The UI phase
+
+### 1. Style
+
+- **Concepts.** Generate a few style directions with the image tool (ART-PIPELINE.md), each shown as a mock of a real screen from this game. The user picks one, or combines them.
+- **Record it** in `docs/game/ART-DIRECTION.md`:
+  - the approved reference images (`assets/reference/`)
+  - the palette as semantic tokens (`Surface.Primary`, `Text.Primary`, `Text.OnLight`, `Action.Primary`, `Focus`, `Error`, `Disabled`); components use tokens, never raw colours
+  - the fonts
+  - the input-icon set used for every input prompt
+  - the rules of the look (what it does and doesn't do)
+- **Fonts:** render the chosen fonts in Studio at the smallest size, numbers and punctuation included, before committing to them. Never substitute one silently.
+- **The style sets the look, not the words.** Keep the game's own terms and features; a reference doesn't license new themed copy.
+
+### 2. Inventory
+
+List every screen built so far in `docs/game/UI-INVENTORY.md`. Include the HUD, menus, dialogs, shops, notifications, onboarding, and UI created at runtime or placed in the world (billboards, prompts). Leave out what Roblox draws itself.
+
+For each screen record:
+- its source module and how it opens
+- how it's laid out in each supported layout
+- the data it shows and the inputs it takes
+- its states (empty, loading, error, full, locked, ...)
+- anything other code relies on (instance names, attributes, public API)
+
+Mark anything you couldn't see as unverified.
+
+### 3. Components
+
+From the inventory, list the components the screens are made of, in `UI-INVENTORY.md`. Only the ones this game uses: buttons, icon buttons, tabs, panels, dialogs, list rows, item slots, badges, counters, toggles, sliders, scroll areas, tooltips, notifications, input prompts.
+
+**Group, don't multiply.** The goal is a small, flexible component system that covers the whole game, so later screens are built from what exists instead of needing new components and new art.
+- **Merge similar elements into one component.** Programmer art grows many near-identical elements. Fold each family into one component with variants and options: one button with sizes, styles (primary, secondary, destructive) and an optional icon, not eight button components.
+- **Map every element.** In the inventory, map each programmer-art element to the component and variant it becomes.
+- **Extend before adding.** Add a variant to an existing component before creating a new one. A new component needs a role none of the others can fill.
+
+For each component, specify:
+- **Purpose and variants.**
+- **Size, padding and minimum touch target.**
+- **States:** normal, hover, focus, pressed, selected, disabled and loading, where they apply.
+- **Behaviour:** on compact screens and with long content.
+
+Build a component showcase in Studio before rebuilding any screen.
+
+### 4. Assets
+
+Work with the user through ART-PIPELINE.md to make the art each component needs: candidates, the user's pick, upload. UI art also follows these rules:
+
+- **Text stays native.** Changing text, numbers, icons and hit areas are never baked into an image.
+- **Whole images, not stretched ones.** A textured surface uses one image drawn for its shape, not nine-slicing or tiled edges.
+- **The 20% aspect limit.** Resizing an image unevenly may change its visible aspect by at most 20%: `max(target / source, source / target) <= 1.20`, measured on the visible artwork without its empty transparent edges. Past that, make an image for the new shape or reshape the component; never hide the mismatch by cropping decorative ends or repeating edges.
+- **Each component gets its own art.** A button, a panel and a tab each get art drawn for their role. Never spread one decorated texture across everything.
+- **Quiet interiors.** Keep the areas under text calm; weathering and ornament go at the edges, and only where they mark hierarchy.
+- **Size art for how big it renders**, and reuse uploads wherever the art is the same.
+
+### 5. Rebuild
+
+Apply the finished components to each screen, keeping the layout the user settled on in programmer art.
+
+- **A small group at a time**, each one checked in every supported layout against the rules below and compared with the approved reference, then shown to the user for approval. Numbers passing isn't the same as looking right: compare real screenshots with the reference.
+- **Fix recurring problems in the shared component**, not screen by screen. Allow a screen-specific exception only when its content needs one, and note why.
+- **Never change what a screen does:** same data, remotes, inputs and public API, and the instance names other code relies on.
+- **Remove old UI** only after its replacement is checked and nothing still uses it.
+
+## Readability rules
+
+These apply to every screen, programmer art included.
+
+**Text and contrast**
+- **Sizes:** body and control text around 18 to 20 px, secondary text around 16. Essential text never below 16 effective px in the smallest layout, after scaling. 14 px only for text a player can do without, and only after checking it visually.
+- **Never shrink text to make it fit.** Wrap, widen, reflow or scroll instead. Never cut off a cost, quantity, action, error or objective.
+- **`TextScaled` only inside a `UITextSizeConstraint`**, never across the board.
+- **Contrast:** at least 4.5:1 for text and 3:1 for meaningful outlines and indicators, measured on the real background, image textures included.
+- **Text over moving gameplay** gets a backing solid enough to read on bright, dark and busy scenes. An outline alone isn't enough.
+- **States show in more than colour:** hover, focus, selection, error and disabled each get a border, mark, icon or label too.
+
+**Layout and input**
+- **Measure the space first:** available space after safe areas, the top bar and on-screen controls (thumbstick, jump button).
+- **Reflow, don't shrink.** Compact and wide layouts are based on what the content needs. Reflow columns, simplify secondary detail and scroll long content; never scale the desktop screen down for phones.
+- **Targets:** at least 44 × 44 effective px, 48 × 48 for touch. Small art can sit inside a bigger target.
+- **Reachable:** long lists and dialogs scroll with their essential actions reachable, and there is always a visible way to close or go back.
+- **Every input type:** hover is never required, and everything works with touch, keyboard and mouse, and gamepad. Gamepad focus is obvious, moves logically and returns sensibly when a dialog closes. Input hints follow the input the player is using.
+- **Layering:** a fixed order (HUD, menus, dialog backdrops, dialogs, tooltips). Decoration never takes input, and a hidden screen leaves no invisible blocker or live handler behind.
+- **Motion:** transitions of about 160 ms that can be interrupted; rapid clicks always end in the same state.
+
+## Screen sizes
+
+Check these, then add the game's actual supported devices. Record the viewport, UI scale, safe insets and input for each check.
+
+| Layout | Check at | Risks |
+|---|---|---|
+| Small landscape | 640 × 360, 844 × 390 | Short height, notches, touch controls, tiny text |
+| Tablet | 1024 × 768 | In-between layouts, stretching |
+| Desktop | 1280 × 720, 1920 × 1080 | Density, spacing, hierarchy |
+| Ultrawide | 2560 × 1080 | Stretched panels, actions far apart |
+| Portrait, if supported | 360 × 640, 390 × 844 | Column reflow, keyboard, scrolling |
+| Console, if supported | Its resolution and TV-safe area | Viewing distance, focus, controller navigation |
+
+- **Check at real scale** and at widths around each layout breakpoint. A device preview in Studio shrinks the view to fit, so its screenshot doesn't prove real-size readability.
+- **Stress the content:** long names, 30 to 50% longer text, large numbers, empty and full lists, loading, errors and unavailable actions.
+- **If a supported size fails, fix the layout.** Don't quietly drop the device.
+
+## Done
+
+The UI phase is done when:
+
+- **Coverage:** every screen in `UI-INVENTORY.md` is rebuilt and approved in every supported layout, with no mix of old and new styling.
+- **Readable:** essential text is readable at the smallest supported size; nothing overlaps, clips or disappears.
+- **Usable:** touch targets, focus, scrolling, back and close, and input hints work with every supported input.
+- **Real states work:** real data updates, loading, empty and error states, repeated opening, respawn and other lifecycle moments, with no new errors or duplicated handlers.
+- **Assets and fonts:** every asset id loads in the published experience and the chosen fonts render.
+- **Performance:** the heaviest screens perform no worse than before.
+
+Properties alone aren't visual proof, and a screenshot alone isn't functional proof: check both. Report exactly what couldn't be checked.
+
+## Roblox references
+
+Check current API details before relying on them:
+[9-slice UI](https://create.roblox.com/docs/ui/9-slice) ·
+[Size modifiers and constraints](https://create.roblox.com/docs/ui/size-modifiers) ·
+[On-screen containers and safe areas](https://create.roblox.com/docs/ui/on-screen-containers) ·
+[UI styling](https://create.roblox.com/docs/ui/styling) ·
+[Font](https://create.roblox.com/docs/reference/engine/datatypes/Font) ·
+[Console guidelines](https://create.roblox.com/docs/production/publishing/console-guidelines)

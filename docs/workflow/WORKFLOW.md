@@ -54,7 +54,7 @@ Find out whether it's fun, as fast as possible.
 Build out the launch scope in rounds (`CONDUCTOR.md`).
 
 - **Produces:** the features and content in `ROADMAP.md`'s launch scope, each with a spec in `features/`. World art and models, with `ART-DIRECTION.md` set before the first art round (`ART-PIPELINE.md`). Sounds. The first-time player experience from join to the first reward. Monetization from `MONETIZATION.md`. Analytics events for every feature, listed in `EVENT-CATALOG.md`: a feature isn't done until its events fire.
-- **UI is programmer art until the UI phase:** simple placeholder screens with little styling, built on the shared theme. Their job is to help the user work out the layout: what each screen shows, and where text and buttons go, on phone and desktop. Spend the effort on layout and clarity, not looks.
+- **UI is programmer art until the UI phase:** simple placeholder screens with little styling, built on the shared theme. Their job is to help the user work out the layout: what each screen shows, and where text and buttons go. The user decides every device layout here (desktop, phone landscape and portrait can be completely different; UI.md "Layouts per device"), never at the end. Spend the effort on layout and clarity, not looks.
 - **Rules:** `main` must always play: a broken branch doesn't merge. Scope that isn't in the launch list goes to "Later".
 - **Gate:** the launch scope is done and the user agrees to start UI.
 
@@ -65,10 +65,10 @@ Turn the programmer-art UI into the finished look. This is the most demanding ph
 - **Why after production:** by now every screen's layout has been worked out in programmer art, so the style is designed once, for screens that have settled.
 - **Steps:**
   1. **Style.** Decide the concept art and style with the user. Record it in `ART-DIRECTION.md` with the approved reference images.
-  2. **Inventory.** Gather every screen built as programmer art so far, and what's on each.
-  3. **Components.** From the inventory, list the components the screens are made of (buttons, panels, tabs, counters, icons, ...).
+  2. **Inventory.** Gather every screen built as programmer art so far, and what's on each, in `UI-INVENTORY.md`.
+  3. **Components.** From the inventory, group similar elements into a small set of flexible components (buttons, panels, tabs, counters, icons, ...), in the same file: one button component with variants, not eight. The set should cover the whole game, so later screens don't need new components.
   4. **Assets.** Work with the user to generate the art for each component (`ART-PIPELINE.md`): candidates, the user's pick, upload.
-  5. **Rebuild.** Apply the finished components to every screen, keeping the layout the user settled on in programmer art.
+  5. **Rebuild.** Apply the finished components to every screen, keeping the layouts the user settled on in programmer art, for every device.
 - **Rules:** every screen passes the readability and layout checks in `UI.md` on every supported screen size. A rebuild never changes what a screen does: input and gameplay behaviour stay the same.
 - **Gate:** the user approves every screen.
 

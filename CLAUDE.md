@@ -78,12 +78,12 @@ The project folder sits on a portable SSD and may show up under any drive letter
 | `docs/workflow/TESTING.md` | Before using Studio tools or starting a playtest |
 | `docs/workflow/ANALYTICS.md` | Adding or changing analytics events; anything touching the pipeline |
 | `docs/workflow/ART-PIPELINE.md` | Generating, approving or uploading art; finding Creator Store assets |
-| `docs/workflow/UI.md` and `docs/game/ART-DIRECTION.md` | Any UI work |
+| `docs/workflow/UI.md`, `docs/game/ART-DIRECTION.md` and `docs/game/UI-INVENTORY.md` | Any UI work |
 | `docs/workflow/RELEASING.md` | The user is about to publish or asks for update notes |
 | `docs/workflow/LAUNCH.md` | Preparing for launch |
 | `docs/workflow/WORKSTATION.md` | On a new PC, before unplugging the SSD, backups |
 | `docs/workflow/NEW-PROJECT.md` | Starting a new game from the template |
-| `docs/game/` | What this game is: PITCH, GDD, ARCHITECTURE, CONTRACTS, EVENT-CATALOG, ART-DIRECTION, MONETIZATION, ROADMAP, DECISIONS, `features/` |
+| `docs/game/` | What this game is: PITCH, GDD, ARCHITECTURE, CONTRACTS, EVENT-CATALOG, ART-DIRECTION, UI-INVENTORY, MONETIZATION, ROADMAP, DECISIONS, `features/` |
 | `live/` | After launch: releases, dashboard settings, metrics, the live-events calendar, incidents |
 
 Keep them current:
