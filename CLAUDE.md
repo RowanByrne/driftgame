@@ -79,6 +79,7 @@ The project folder sits in a RoDev folder next to `template\` and `_tools\` (WOR
 | `docs/workflow/TESTING.md` | Before using Studio tools or starting a playtest |
 | `docs/workflow/ANALYTICS.md` | Adding or changing analytics events |
 | `docs/workflow/DASHBOARDS.md` | Finding a number in the Creator Hub, building a chart, setting up alerts |
+| `docs/workflow/DATA-SYSTEM.md` | Our own metrics system, planned and not designed yet |
 | `docs/workflow/ART-PIPELINE.md` | Generating, approving or uploading art; finding Creator Store assets |
 | `docs/workflow/UI.md`, `docs/game/ART-DIRECTION.md` and `docs/game/UI-INVENTORY.md` | Any UI work |
 | `docs/workflow/RELEASING.md` | The user is about to publish, asks for update notes, or wants game page text or events |

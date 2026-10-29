@@ -1,6 +1,6 @@
 # Dashboards
 
-The analytics guidebook: where to find each number in Roblox's Creator Hub, and how to use the dashboard's tools. The game sends its events as ANALYTICS.md describes; this guide is for reading them. This game's own custom dashboards and alerts are recorded in `live/EXPERIENCE.md`. Roblox moves pages now and then: when a path here is wrong, fix it in the template (CLAUDE.md "Template-owned files").
+The analytics guidebook: where to find each number in Roblox's Creator Hub, and how to use the dashboard's tools. The important metrics will move to our own data system once it's built (DATA-SYSTEM.md); this guide stays for everything only Roblox has, such as the Error Report, Performance and alerts. The game sends its events as ANALYTICS.md describes; this guide is for reading them. This game's own custom dashboards and alerts are recorded in `live/EXPERIENCE.md`. Roblox moves pages now and then: when a path here is wrong, fix it in the template (CLAUDE.md "Template-owned files").
 
 ## Getting in
 

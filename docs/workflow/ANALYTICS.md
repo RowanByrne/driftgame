@@ -2,6 +2,8 @@
 
 Every game sends a complete set of custom events to Roblox's analytics (the Creator Hub dashboards), so decisions rest on data. There's no backend of our own. If one is ever added, only the analytics helper changes. This game's events are listed in `docs/game/EVENT-CATALOG.md`.
 
+**Planned:** our own data system for the important metrics, filled from these same custom events and read there instead of the Creator Hub dashboards (DATA-SYSTEM.md, not designed yet). Until it exists, read them in the Creator Hub (DASHBOARDS.md).
+
 ## How events leave the game
 
 One server module, the **analytics helper** (part of the foundation kit, CODING.md), sends every event through `AnalyticsService`. Nothing else calls it.
