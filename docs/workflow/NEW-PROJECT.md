@@ -13,13 +13,14 @@ It pulls the template, copies it as `<Game>\` (never its lanes), sets the remote
 ## Starting a game
 
 1. **Update the template.** In the RoDev folder (WORKSTATION.md), pull the latest: `git -C template\repo pull`.
-   No `template\` yet? Clone it into `template\repo` (`git clone https://github.com/RowanByrne/rodev_template.git template\repo`; the repo is private, so ask its owner for access), then create the folders next to it: `lanes`, `places`, `art\generated`, `art\source`, `art\reference`, `art\captures`, `art\marketing`, `backups`, `scratch`.
+   No `template\` yet? Clone it into `template\repo` (`git clone https://github.com/RowanByrne/rodev_template.git template\repo`; the repo is private, so ask its owner for access), then in `template\repo` run `git config worktree.useRelativePaths true` and `git config core.hooksPath tools/hooks` (clones don't carry those settings), and create the folders next to it: `lanes`, `places`, `art\generated`, `art\source`, `art\reference`, `art\captures`, `art\marketing`, `backups`, `scratch`.
 2. **Duplicate** `template\` as `<Game>\`, named for the game. A short name without spaces is easiest to type.
 3. **Give the game its own GitHub repo.** Create an empty private repo on GitHub (no README, .gitignore or license), then in `<Game>\repo`:
    ```
    git remote rename origin template
    git remote add origin <the new repo's URL>
    git config worktree.useRelativePaths true
+   git config core.hooksPath tools/hooks
    git push -u origin main
    ```
    The game keeps the template's history; template updates arrive with "update from template" (CLAUDE.md).
@@ -40,7 +41,12 @@ It pulls the template, copies it as `<Game>\` (never its lanes), sets the remote
 
 To work on a game that isn't in this RoDev folder yet:
 
-1. **Clone it** into `RoDev\<Game>\repo`, and add the template remote: `git remote add template https://github.com/RowanByrne/rodev_template.git`.
+1. **Clone it** into `RoDev\<Game>\repo`. Then in `repo\`, add the template remote and turn on the settings clones don't carry:
+   ```
+   git remote add template https://github.com/RowanByrne/rodev_template.git
+   git config worktree.useRelativePaths true
+   git config core.hooksPath tools/hooks
+   ```
 2. **Create the folders** next to `repo\`: `lanes`, `places`, `art` (with its subfolders), `backups`, `scratch`.
 3. **Copy the place files** into `places\` from wherever they're backed up (WORKSTATION.md "Backups"). If there are none, make them as in steps 5 and 6.
 4. **Recreate the lanes** (LANES.md "Add a lane"), and give this PC its row in `PROJECT.md` "Workstations" if it has none.

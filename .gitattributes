@@ -1,1 +1,4 @@
 *.bat text eol=crlf
+
+# Git hooks run under sh, which needs LF line endings.
+tools/hooks/* text eol=lf

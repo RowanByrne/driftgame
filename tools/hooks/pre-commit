@@ -1,0 +1,15 @@
+#!/bin/sh
+# Refuses to commit any file over 5 MB: big files belong next to repo\, not in git
+# (docs/workflow/ART-PIPELINE.md "Where art lives"). Turned on with: git config core.hooksPath tools/hooks
+limit=5242880
+big=$(git -c core.quotePath=false diff --cached --name-only --diff-filter=AM | while IFS= read -r f; do
+	size=$(git cat-file -s ":$f" 2>/dev/null) || continue
+	if [ "$size" -gt "$limit" ]; then echo "  $f ($((size / 1048576)) MB)"; fi
+done)
+if [ -n "$big" ]; then
+	echo "Commit refused: these files are over 5 MB and belong outside git (docs/workflow/ART-PIPELINE.md):"
+	echo "$big"
+	echo "Move them to ..\art\ or another folder next to repo\, or make them smaller."
+	exit 1
+fi
+exit 0

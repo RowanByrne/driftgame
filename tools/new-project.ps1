@@ -35,6 +35,7 @@ New-Item -ItemType Directory -Force -Path (Join-Path $game 'lanes') | Out-Null
 git -C $repo worktree prune
 git -C $repo remote rename origin template
 git -C $repo config worktree.useRelativePaths true
+git -C $repo config core.hooksPath tools/hooks
 if ($GitHubRepo) { git -C $repo remote add origin $GitHubRepo }
 
 # 4. Fill in the game's details.

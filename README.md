@@ -40,4 +40,4 @@ The game's folder holds this repo and the working folders next to it. Only `repo
   scratch\              throwaway files; safe to delete
 ```
 
-**In git:** all text, and approved art up to about 5 MB a file. **Outside git:** image candidates, source files, video and place files.
+**In git:** all text, and approved art up to 5 MB a file (a commit check refuses bigger). **Outside git:** image candidates, source files, video and place files.

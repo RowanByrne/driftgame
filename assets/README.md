@@ -4,7 +4,7 @@ Approved art that ships in the game, kept in git so every PC and clone has the m
 
 ## What goes here
 
-- **Approved masters only,** about 5 MB a file at most: images, and model exports small enough. Candidates stay in `..\art\generated\`, and working files (.psd, .blend, .kra) in `..\art\source\`.
+- **Approved masters only,** up to 5 MB a file (a commit check refuses bigger): images, and model exports small enough. Candidates stay in `..\art\generated\`, and working files (.psd, .blend, .kra) in `..\art\source\`.
 - **One folder per topic,** named for its role: `assets/<topic>/`, such as `hud-currency`, `shop-buttons` or `boat-models`. Each topic has a `MANIFEST.md`.
 - **`reference/`** holds the approved style references (`docs/game/ART-DIRECTION.md`). **`marketing/`** holds the icon, thumbnails and event cards (`live/GAME-PAGE.md`, `live/CALENDAR.md`).
 

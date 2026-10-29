@@ -10,7 +10,7 @@ How art gets made, approved and into the game. The user picks; Claude generates,
 | Working source files (.psd, .blend, .kra) | `..\art\source\<topic>\` | No |
 | References and inspiration | `..\art\reference\` | No |
 | Approved style references | `assets/reference/` | Yes |
-| Approved masters, about 5 MB a file at most | `assets/<topic>/` | Yes |
+| Approved masters, up to 5 MB a file (a commit check refuses bigger) | `assets/<topic>/` | Yes |
 | The record: prompts, hashes, status, upload ids | `assets/<topic>/MANIFEST.md` | Yes |
 
 A topic is named for its role, like `hud-currency`, `shop-buttons` or `boat-models`.
