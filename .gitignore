@@ -1,0 +1,33 @@
+# Big binaries live on the SSD next to repo\ (places\, art\, backups\), not in git.
+# These catch strays that land in the repo by mistake.
+*.rbxl
+*.rbxlx
+*.rbxl.lock
+*.rbxlx.lock
+*.psd
+*.kra
+*.blend
+*.blend1
+*.mp4
+*.mov
+*.mkv
+
+# Lync / tooling output
+sourcemap.json
+Packages/
+ServerPackages/
+
+# Lane-local Lync config
+.lane-port
+lane.project.json
+
+# Claude Code
+.claude/worktrees/
+.claude/settings.local.json
+
+# OS / editor
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/*
+!.vscode/extensions.json
