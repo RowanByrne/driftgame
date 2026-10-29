@@ -51,6 +51,7 @@ Roblox already tracks sessions, retention and revenue. Every game adds these fro
 | Errors | Script errors on server and client, as one event with the script's area in a field, rate-limited |
 | Data | Load failures, save failures, kicks for data problems |
 | Performance | A sample every few minutes: frame rate and memory bands per device |
+| Builds | `ServerStarted` as each server starts, with its place version (`game.PlaceVersion`) in field 1, so each build's servers can be seen (POST-RELEASE.md) |
 
 ## Events from the client
 

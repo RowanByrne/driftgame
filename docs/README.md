@@ -20,7 +20,7 @@ The same in every game; changed only through the template (CLAUDE.md "Template-o
 | `ART-PIPELINE.md` | Images and 3D assets, approvals, uploads, permissions |
 | `UI.md` | Programmer art, device layouts, the UI phase, readability rules |
 | `RELEASING.md` | Before and after a publish, update notes, timed releases, the game page |
-| `POST-RELEASE.md` | Checking the live build after a publish (stub) |
+| `POST-RELEASE.md` | Checking the live build after a publish, and tidying up |
 | `LAUNCH.md` | The launch review and checklist |
 | `WORKSTATION.md` | Where projects live, setting up a PC, backups |
 | `NEW-PROJECT.md` | Starting a game from the template |
