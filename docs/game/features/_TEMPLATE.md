@@ -36,6 +36,10 @@
 
 > Anything it sells or that a purchase changes (`MONETIZATION.md`). Built in the Monetization phase.
 
+## Platform risks
+
+> The areas in docs/workflow/PLATFORM-RISKS.md this touches (random paid rewards, player text, outside assets, mature content...) and how it stays within the rules, or "none".
+
 ## Art and sound
 
 > The models, images and sounds it needs, and whether each is placeholder or final (`ART-PIPELINE.md`).

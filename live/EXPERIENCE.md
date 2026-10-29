@@ -50,6 +50,20 @@ Everything that exists only on the Creator Dashboard, written down so nobody has
 
 > When the maturity and compliance questionnaire was last submitted, the resulting label, and the answers that need re-checking after content changes (such as paid random items).
 
+## Platform risks
+
+> This game's position on each area in docs/workflow/PLATFORM-RISKS.md, and when it was last checked against Roblox's current rules. Grey areas name the decision in `docs/game/DECISIONS.md`.
+
+| Area | Our position | Last checked |
+|---|---|---|
+| Maturity label and audience | | |
+| Paid random items and trading | | |
+| Copyright and trademarks | | |
+| Uploads and account moderation | | |
+| Text, chat and links | | |
+| Engagement incentives | | |
+| Player data | | |
+
 ## Data deletion
 
 > The right-to-be-forgotten deletion templates, one per data store in `docs/game/CONTRACTS.md` "Stores".

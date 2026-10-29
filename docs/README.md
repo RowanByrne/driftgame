@@ -17,7 +17,8 @@ The same in every game; changed only through the template (CLAUDE.md "Template-o
 | `ANALYTICS.md` | Sending events: the helper, slicing, naming, standard events |
 | `DASHBOARDS.md` | Finding numbers in the Creator Hub, Explore, alerts |
 | `CONFIGS.md` | Changing live values through Roblox configs |
-| `DATA-SYSTEM.md` | Our own metrics system (planned, not designed yet) |
+| `PLATFORM-RISKS.md` | Maturity, audience, gambling rules, copyright, moderation |
+| `DATA-SYSTEM.md` | Our own dashboard for rapid iteration, from the custom events (being designed) |
 | `ART-PIPELINE.md` | Images and 3D assets, approvals, uploads, permissions |
 | `UI.md` | Programmer art, device layouts, the UI phase, readability rules |
 | `RELEASING.md` | Before and after a publish, update notes, timed releases, the game page |

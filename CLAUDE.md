@@ -81,7 +81,8 @@ The project folder sits in a RoDev folder next to `template\` and `_tools\` (WOR
 | `docs/workflow/ANALYTICS.md` | Adding or changing analytics events |
 | `docs/workflow/DASHBOARDS.md` | Finding a number in the Creator Hub, building a chart, setting up alerts |
 | `docs/workflow/CONFIGS.md` | Changing a value in the live game without publishing; kill switches |
-| `docs/workflow/DATA-SYSTEM.md` | Our own metrics system, planned and not designed yet |
+| `docs/workflow/PLATFORM-RISKS.md` | The maturity questionnaire, age and audience, paid random items, copyright, moderation, text and links |
+| `docs/workflow/DATA-SYSTEM.md` | Our own dashboard for rapid iteration, built on the custom events (being designed by the user) |
 | `docs/workflow/ART-PIPELINE.md` | Generating, approving or uploading art; finding Creator Store assets |
 | `docs/workflow/UI.md`, `docs/game/ART-DIRECTION.md` and `docs/game/UI-INVENTORY.md` | Any UI work |
 | `docs/workflow/RELEASING.md` | The user is about to publish, asks for update notes, or wants game page text or events |

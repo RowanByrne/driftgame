@@ -23,6 +23,7 @@ Phases are short until UI. With agents working in parallel, a core loop can be p
 - **Going back is fine.** If the game stops being fun in production, return to Core loop instead of piling on content.
 - **Write the docs as you go.** Each phase's docs are part of its work, not a cleanup afterwards.
 - **Out-of-phase ideas go in `ROADMAP.md` "Later"**, not into the current work.
+- **Platform risks get flagged early** (PLATFORM-RISKS.md): at the pitch, in every feature spec, and before every publish. How much risk to take is the user's call.
 - **Analytics runs through every phase** (`ANALYTICS.md`). Each phase below says what it adds. Events are designed with the feature they measure, never bolted on at the end.
 
 ## 1. Pitch

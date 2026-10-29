@@ -50,4 +50,4 @@ What we're making and why it can win on Roblox: the Pitch phase's output (docs/w
 
 ## Biggest risks
 
-> What could make this fail, and how we'd find out early.
+> What could make this fail, and how we'd find out early. Include platform risks: other companies' characters or names, random paid rewards, content only older players should see (docs/workflow/PLATFORM-RISKS.md).

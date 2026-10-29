@@ -14,7 +14,7 @@ After the user publishes, confirm the new build is really live and healthy, and 
 
 ## 2. Events are coming through
 
-On the hour-later pass, since custom events reach the dashboards after a delay:
+On the hour-later pass, since custom events reach the Creator Hub after a delay. Once our own data system exists (DATA-SYSTEM.md), read these within minutes of the publish there instead:
 
 - **The new build reports:** in Explore, `ServerStarted` broken down by field 1 shows the new version.
 - **New events arrive:** every event this release added to `docs/game/EVENT-CATALOG.md` shows up, with sensible fields and the standard slice filled in.

@@ -1,11 +1,18 @@
 # Data system
 
-> **Stub, not written yet.**
-> **Purpose:** Our own data system for the important metrics, the same for every game. It is filled from the game's custom events (ANALYTICS.md), and it's where we read those metrics, instead of Roblox's Creator Hub dashboards.
+> **Stub: the user is designing it.**
 >
-> **To settle when we design it:**
-> - Which metrics count as important: the pitch's numbers, retention, the economy, purchases, errors?
-> - Where the data is stored and added up. Decided so far: no external backend, and no Open Cloud API.
-> - How we read it: an in-game admin view, Studio, or exports into the repo.
-> - How long data is kept, and privacy: what identifies a player, and how deletion requests reach it.
-> - What stays in the Creator Hub (DASHBOARDS.md): likely the Error Report, Performance and alerts.
+> **What it is:** our own custom dashboard, built for rapid iteration and shared by every game. It runs off the game's custom events (ANALYTICS.md), pulled as soon as they happen. That gets around the delay of Roblox's own processing, so we see how an update performs within minutes of launch instead of waiting for the Creator Hub dashboards.
+>
+> **Decided so far:**
+> - Built on the custom events the analytics helper already sends.
+> - Anonymized, so the data can be stored locally.
+> - The specific dashboards and views come later, designed around the decisions we need to make fast.
+> - The Creator Hub stays for what only Roblox has: the Error Report, Performance and alerts (DASHBOARDS.md).
+> - Earlier decisions: no external backend, and no Open Cloud API.
+>
+> **Still open:**
+> - How events get from live servers to the local store within minutes.
+> - Where "locally" is (the RoDev folder, the game's folder, a PC), and how much of it goes in git.
+> - What anonymized means in practice: what, if anything, ties events from the same player together.
+> - The first views to build, and which decisions each one serves (a post-release view would fit POST-RELEASE.md).

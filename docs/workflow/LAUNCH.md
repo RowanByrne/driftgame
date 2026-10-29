@@ -41,6 +41,8 @@ Built and tested in the Monetization phase (WORKFLOW.md); check them again here 
 
 ### Roblox rules
 
+Every area in PLATFORM-RISKS.md is checked against Roblox's current rules, and the game's positions are recorded in `live/EXPERIENCE.md` "Platform risks".
+
 - **Questionnaire:** the maturity and compliance questionnaire is submitted and still true. Re-check it after content changes.
 - **No one else's names:** the name and description don't use another company's game or trademark. "Inspired by <game>" is a risk.
 - **Social links** go only on the game page and the group, never inside the game. In-game text may only point to "links on our game page".
