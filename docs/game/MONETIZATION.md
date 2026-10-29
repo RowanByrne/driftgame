@@ -1,6 +1,6 @@
 # Monetization
 
-What players can buy and why it's worth it. This is the design; product ids and dashboard settings live in `live/EXPERIENCE.md`, purchase code follows docs/workflow/CODING.md "Server rules", and the launch checks are in LAUNCH.md "Purchases". Prices and what to sell are the user's call. Replace each prompt with the answer.
+What players can buy and why it's worth it. The user fills this in early to mid project, during Production, so features leave room for what will be sold; it's built in its own Monetization phase after UI (docs/workflow/WORKFLOW.md). Product ids and dashboard settings live in `live/EXPERIENCE.md`, purchase code follows docs/workflow/CODING.md "Server rules", and the launch checks are in LAUNCH.md "Purchases". Prices and what to sell are the user's call. Replace each prompt with the answer.
 
 ## Targets
 

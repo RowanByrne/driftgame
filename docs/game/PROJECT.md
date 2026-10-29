@@ -8,7 +8,7 @@ This game's details. CLAUDE.md imports this file, so every session sees it: keep
 |---|---|
 | Game | {{GAME_NAME}} |
 | Code | `{{CODE}}`: the short prefix for this game's place files, e.g. `places\{{CODE}}-Main.rbxl` |
-| Phase | Pitch (Pitch, Foundation, Core loop, Production, UI, Launch, Live: see docs/workflow/WORKFLOW.md). Update it when a gate passes. |
+| Phase | Pitch (Pitch, Foundation, Core loop, Production, UI, Monetization, Launch, Live: see docs/workflow/WORKFLOW.md). Update it when a gate passes. |
 | Launched | Not yet. The date it went public, once it does. |
 | GitHub | `{{GITHUB_REPO}}` (`origin`); template `RowanByrne/rodev_template` (`template`) |
 | Roblox | Experience (universe) `{{UNIVERSE_ID}}`, start place `{{PLACE_ID}}`, owned by `{{OWNER}}` (the user's account or a group; it decides who must grant asset permissions) |

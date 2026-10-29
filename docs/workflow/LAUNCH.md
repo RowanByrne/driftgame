@@ -25,6 +25,8 @@ Claude works through the checklist below and writes a launch review in `docs/arc
 
 ### Purchases (if the game sells anything)
 
+Built and tested in the Monetization phase (WORKFLOW.md); check them again here on the build that goes public.
+
 - **Set up and recorded:** every pass and product exists on the dashboard with its name, description, price and image; its id is in code; it's recorded in `live/EXPERIENCE.md`.
 - **Descriptions are right:**
   - They describe what's live, with nothing retired.

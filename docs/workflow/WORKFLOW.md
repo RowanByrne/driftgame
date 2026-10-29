@@ -11,10 +11,11 @@ How a game goes from idea to live. The current phase is in `docs/game/PROJECT.md
 | 3 | Core loop | Find the fun | The user plays it and says go |
 | 4 | Production | Build the launch scope, with programmer-art UI | The launch scope in `ROADMAP.md` is done |
 | 5 | UI | Turn the programmer-art UI into the finished look | The user approves every screen |
-| 6 | Launch | Go public safely | The user publishes it publicly |
-| 7 | Live | Keep players coming back; ship updates safely | (ongoing) |
+| 6 | Monetization | Build every launch offer, the shop and checkout | Every launch offer works end to end in a published test |
+| 7 | Launch | Go public safely | The user publishes it publicly |
+| 8 | Live | Keep players coming back; ship updates safely | (ongoing) |
 
-Phases are short until UI. With agents working in parallel, a core loop can be playable on the first day and the launch scope built within weeks. UI is the long one: plan for it to take as long as everything before it.
+Phases are short until UI. With agents working in parallel, a core loop can be playable on the first day and the launch scope built within weeks. UI and Monetization are the long ones: plan for each to take as long as everything before UI.
 
 ## Rules for every phase
 
@@ -53,7 +54,7 @@ Find out whether it's fun, as fast as possible.
 
 Build out the launch scope in rounds (`CONDUCTOR.md`).
 
-- **Produces:** the features and content in `ROADMAP.md`'s launch scope, each with a spec in `features/`. World art and models, with `ART-DIRECTION.md` set before the first art round (`ART-PIPELINE.md`). Sounds. The first-time player experience from join to the first reward. Monetization from `MONETIZATION.md`. Analytics events for every feature, listed in `EVENT-CATALOG.md`: a feature isn't done until its events fire.
+- **Produces:** the features and content in `ROADMAP.md`'s launch scope, each with a spec in `features/`. World art and models, with `ART-DIRECTION.md` set before the first art round (`ART-PIPELINE.md`). Sounds. The first-time player experience from join to the first reward. `MONETIZATION.md` filled in with the user: the targets, how pay-to-win, currencies and offers, so features leave room for what will be sold (it's built in the Monetization phase). Analytics events for every feature, listed in `EVENT-CATALOG.md`: a feature isn't done until its events fire.
 - **UI is programmer art until the UI phase:** simple placeholder screens with little styling, built on the shared theme. Their job is to help the user work out the layout: what each screen shows, and where text and buttons go. The user decides every device layout here (desktop, phone landscape and portrait can be completely different; UI.md "Layouts per device"), never at the end. Spend the effort on layout and clarity, not looks.
 - **Rules:** `main` must always play: a broken branch doesn't merge. Scope that isn't in the launch list goes to "Later".
 - **Gate:** the launch scope is done and the user agrees to start UI.
@@ -70,16 +71,30 @@ Turn the programmer-art UI into the finished look. This is the most demanding ph
   4. **Assets.** Work with the user to generate the art for each component (`ART-PIPELINE.md`): candidates, the user's pick, upload.
   5. **Rebuild.** Apply the finished components to every screen, keeping the layouts the user settled on in programmer art, for every device.
 - **Rules:** every screen passes the readability and layout checks in `UI.md` on every supported screen size. A rebuild never changes what a screen does: input and gameplay behaviour stay the same.
-- **Gate:** the user approves every screen.
+- **Gate:** the user approves every screen, and agrees to start Monetization.
 
-## 6. Launch
+## 6. Monetization
+
+Build what `MONETIZATION.md` designed: every launch offer, the shop, checkout and what each purchase grants. This is a large phase of its own, not a task squeezed into another one.
+
+- **Why after UI:** offers need settled features to sell and finished UI to sell them in (the shop, purchase buttons, offer windows), so they're built once.
+- **Steps:**
+  1. **Review the design** in `MONETIZATION.md` with the user: targets, how pay-to-win, currencies, offers and prices. The user decides prices.
+  2. **Create the offers** on the Creator Dashboard: the user does it, or asks Claude to in the browser. Record ids and prices in `live/EXPERIENCE.md`, and the ids in code.
+  3. **Build** the shop and purchase flows from the UI phase's components (new art through `ART-PIPELINE.md`), the receipts and grants (CODING.md "Server rules"), currencies, the starter offer, recurring offers, and paid random items with their odds and policy gate.
+  4. **Instrument** the purchase funnel and every currency source and sink (`EVENT-CATALOG.md`).
+  5. **Test:** the purchase tests pass (TESTING.md "Automated tests"), checkout can be switched off by a Roblox config (`live/CONFIGS.md`), and the user runs a live smoke test in a private published test: buy the smallest offer, rejoin, and check it stuck with no double grant.
+- **Rules:** Claude never spends Robux. No purchase prompt appears on its own at the moments `MONETIZATION.md` rules out.
+- **Gate:** every launch offer works end to end in a published test, and the user approves the shop.
+
+## 7. Launch
 
 Go public without losing player data or money.
 
 - **Produces:** every item in `LAUNCH.md` checked, including data safety, monetization set up and tested, Roblox's questionnaire, asset permissions, devices and performance, and the store page. Analytics events arriving in Roblox's dashboards from a published test. A launch review in `docs/archive/`. Start early: some of Roblox's checks take days.
 - **Gate:** the user publishes publicly. Record the date in `PROJECT.md` ("Launched") and the release in `live/RELEASES.md`.
 
-## 7. Live
+## 8. Live
 
 Keep players coming back and ship updates safely.
 
