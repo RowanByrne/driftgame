@@ -83,7 +83,7 @@ Go public without losing player data or money.
 
 Keep players coming back and ship updates safely.
 
-- **Every publish:** update notes and the pre-publish checklist (`RELEASING.md`), then a line in `live/RELEASES.md`. Publish often: when the live build falls behind `main`, store text and docs start describing features players don't have yet.
+- **Every publish:** the pre-publish checklist (`RELEASING.md`), update notes when the user wants them, then a line in `live/RELEASES.md`. Publish often: when the live build falls behind `main`, store text and docs start describing features players don't have yet.
 - **Real-time alerts:** an alert means something is going wrong for players now. Look into it straight away; if it lost data, money or access, it's an incident.
 - **Weekly:** review the numbers in `live/METRICS.md` and let them steer `ROADMAP.md`.
 - **Live events:** plan them in `live/CALENDAR.md`.

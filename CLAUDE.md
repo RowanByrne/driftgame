@@ -30,7 +30,7 @@ The project folder sits on a portable SSD and may show up under any drive letter
 | Decides direction: the pitch, features, the look, names and prices players see | Proposes, plans, builds, tests, and keeps the docs current |
 | Plays the game and says go or no-go at each phase gate (WORKFLOW.md) | Proves work by measuring, and says what to look at |
 | Picks art from candidates | Generates candidates, uploads the picked art, sets the asset ids |
-| Publishes to players and changes Creator Dashboard settings | Writes update notes, runs the pre-publish checks, records dashboard settings in `live/EXPERIENCE.md` |
+| Publishes to players, and changes Creator Dashboard settings (or asks Claude to, in the browser) | Runs the pre-publish checks, writes update notes when asked, records dashboard settings in `live/EXPERIENCE.md` |
 | Starts Lync (`tools\serve-all.bat`) | Probes lanes before use; restarts Lync detached only when needed (LANES.md) |
 
 ## Rules
@@ -56,14 +56,15 @@ The project folder sits on a portable SSD and may show up under any drive letter
 - Show candidates to the user. Never upload art they haven't picked.
 
 **Publishing**
-- Publishing to players is the user's job, never Claude's. When they say they're about to publish, write the update notes and run the checks in RELEASING.md first.
+- Publishing to players is the user's job, never Claude's. When they say they're about to publish, run the checks in RELEASING.md first. Update notes are written only when the game has an update log and the user wants notes for this update.
 
 ## Shorthands
 
 | The user says | Do |
 |---|---|
 | "refresh" | Sync with GitHub both ways and move every idle lane to the latest `main` (CONDUCTOR.md "Refresh") |
-| "about to publish", "update notes" | Write update notes and run the pre-publish checklist (RELEASING.md) |
+| "about to publish" | Run the pre-publish checklist, and ask about update notes if the game has an update log (RELEASING.md) |
+| "update notes" | Write update notes for this update (RELEASING.md "Update notes") |
 | "update from template" | `git fetch template`, then `git merge template/main`, and report what changed |
 
 ## Docs
@@ -79,12 +80,12 @@ The project folder sits on a portable SSD and may show up under any drive letter
 | `docs/workflow/ANALYTICS.md` | Adding or changing analytics events; anything touching the pipeline |
 | `docs/workflow/ART-PIPELINE.md` | Generating, approving or uploading art; finding Creator Store assets |
 | `docs/workflow/UI.md`, `docs/game/ART-DIRECTION.md` and `docs/game/UI-INVENTORY.md` | Any UI work |
-| `docs/workflow/RELEASING.md` | The user is about to publish or asks for update notes |
+| `docs/workflow/RELEASING.md` | The user is about to publish, asks for update notes, or wants game page text or events |
 | `docs/workflow/LAUNCH.md` | Preparing for launch |
 | `docs/workflow/WORKSTATION.md` | On a new PC, before unplugging the SSD, backups |
 | `docs/workflow/NEW-PROJECT.md` | Starting a new game from the template |
 | `docs/game/` | What this game is: PITCH, GDD, ARCHITECTURE, CONTRACTS, EVENT-CATALOG, ART-DIRECTION, UI-INVENTORY, MONETIZATION, ROADMAP, DECISIONS, `features/` |
-| `live/` | After launch: releases, dashboard settings, metrics, the live-events calendar, incidents |
+| `live/` | After launch: releases, dashboard settings, the game page, metrics, the calendar (live events, timed releases, game page events), incidents |
 
 Keep them current:
 - **New feature:** its own spec in `docs/game/features/<name>.md`, copied from `_TEMPLATE.md`. Don't grow one giant design doc.

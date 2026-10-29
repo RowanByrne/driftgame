@@ -12,6 +12,7 @@ This game's details. CLAUDE.md imports this file, so every session sees it: keep
 | Launched | Not yet. The date it went public, once it does. |
 | GitHub | `{{GITHUB_REPO}}` (`origin`); template `RowanByrne/rodev_template` (`template`) |
 | Roblox | Experience (universe) `{{UNIVERSE_ID}}`, start place `{{PLACE_ID}}`, owned by `{{OWNER}}` (the user's account or a group; it decides who must grant asset permissions) |
+| Update log | No. Whether the game has an in-game update log is the user's call; even with one, they decide per update whether it gets notes (docs/workflow/RELEASING.md). |
 | Lync port base | `34870`: main serves on it, lane N on base + N. Must match `port` in `default.project.json`. Give each game its own base (34870, 34890, 34910, ...) so two can run at once. |
 
 ## Places
