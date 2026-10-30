@@ -16,6 +16,7 @@ Which AI model and settings each job uses. Every other doc names a **job** or a 
 | Creator Store lookups | `asset-scout` | Claude Sonnet 5.5, low effort | Claude Sonnet 5.5, low effort | `.claude/agents/asset-scout.md` |
 | 3D assets: building, rigging, texturing, animating (ART-PIPELINE.md) | A worker agent with the Blender MCP | Claude Opus 5.5, heavy tier | Claude Opus 5.5, heavy tier | The worker agent file; the Blender MCP set up on the PC (WORKSTATION.md) |
 | Images: reference sheets, textures, storyboards, UI art | `tools\imagegen.ps1` | Codex's built-in image generation | Codex's built-in image generation, through the Codex desktop app signed in on the PC | `tools\imagegen.ps1`, the Codex app |
+| Sound effects and music (AUDIO-PIPELINE.md) | The ElevenLabs API | ElevenLabs Sound Effects and Music | None yet: the user picks a tool and a plan that allows commercial use | `ELEVENLABS_API_KEY` on the PC, linked in Rocco's Connections (WORKSTATION.md) |
 
 ## Worker tiers
 

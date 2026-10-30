@@ -57,7 +57,7 @@ Everything code relies on across modules and tasks: data, remotes, tags, attribu
 
 ## Paths
 
-> Instance paths other code relies on, such as where the world is built or where a folder of models lives.
+> Instance paths other code relies on, such as where the world is built, its named-spot markers (WORLD.md "Named spots"), or where a folder of models lives.
 
 | Path | What's there | Made by |
 |---|---|---|

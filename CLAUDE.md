@@ -66,7 +66,7 @@ Then stop.
 
 **Art**
 - Images come from the image tool in MODELS.md (`tools\imagegen.ps1` today; ART-PIPELINE.md). On a PC where it can't run, say so; don't substitute.
-- Show candidates to the user. Never upload art they haven't picked.
+- Show candidates to the user. Never upload art or sounds they haven't picked (sounds: AUDIO-PIPELINE.md).
 
 **Publishing**
 - Publishing to players is the user's job, never Claude's. When they say they're about to publish, run the checks in RELEASING.md first. Update notes are written only when the game has an update log and the user wants notes for this update.
@@ -97,13 +97,15 @@ Then stop.
 | `docs/workflow/PLATFORM-RISKS.md` | The maturity questionnaire, age and audience, paid random items, copyright, moderation, text and links |
 | `docs/workflow/DATA-SYSTEM.md` | Our own dashboard for rapid iteration, built on the custom events (being designed by the user) |
 | `docs/workflow/ART-PIPELINE.md` | Generating, approving or uploading art; finding Creator Store assets |
+| `docs/workflow/AUDIO-PIPELINE.md` and `docs/game/AUDIO.md` | Any sound, music or voice: finding, generating, approving, uploading |
+| `docs/workflow/WORLD-BUILDING.md` and `docs/game/WORLD.md` | Laying out, building or changing the world and map |
 | `docs/workflow/UI.md`, `docs/game/ART-DIRECTION.md` and `docs/game/UI-INVENTORY.md` | Any UI work |
 | `docs/workflow/RELEASING.md` | The user is about to publish, asks for update notes, or wants game page text or events |
 | `docs/workflow/POST-RELEASE.md` | After a publish: checking the build is live and healthy, and tidying up after the release |
 | `docs/workflow/LAUNCH.md` | Preparing for launch |
 | `docs/workflow/WORKSTATION.md` | Where projects live, setting up a PC, ending a session, backups |
 | `docs/workflow/NEW-PROJECT.md` | Starting a new game from the template |
-| `docs/game/` | What this game is: PITCH, GDD, ARCHITECTURE, CONTRACTS, EVENT-CATALOG, ART-DIRECTION, UI-INVENTORY, AUDIO, MONETIZATION, ROADMAP, DECISIONS, `features/` |
+| `docs/game/` | What this game is: PITCH, GDD, ARCHITECTURE, CONTRACTS, EVENT-CATALOG, WORLD, ART-DIRECTION, UI-INVENTORY, AUDIO, MONETIZATION, ROADMAP, DECISIONS, `features/` |
 | `live/` | After launch: releases, dashboard settings (including configs, custom dashboards and alerts), experiments, the game page, the calendar (live events, timed releases, game page events), incidents |
 
 Keep them current:

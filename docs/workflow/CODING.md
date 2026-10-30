@@ -65,6 +65,6 @@ Built in the Foundation phase (WORKFLOW.md), before any gameplay. Record each pi
 
 - **Names:** `<Name>Service`, `<Name>Controller`, remotes `<Feature><Action>`. Studio-only attributes start with `__` (`__lync_port`, `__test_profile`, `__agent_play`). Every tag and attribute other code reads is listed in `CONTRACTS.md`.
 - **Input:** every action works on keyboard and mouse, touch, and gamepad from its first version.
-- **Third-party code** is vendored into `src/` (`Packages/` is gitignored). Record each library's version, source and local patches in `ARCHITECTURE.md`.
+- **Third-party code** is vendored into `src/` (`Packages/` is gitignored). Record each library's version, source (its GitHub repo) and local patches in `ARCHITECTURE.md` "Vendored libraries": Rocco's Connections reads that table and shows when a newer release is out.
 - **Contracts move first.** A change to `CONTRACTS.md`, `EVENT-CATALOG.md` or `Shared/` that other code builds on goes in as its own small commit (CONDUCTOR.md "Main").
-- **The world:** decide early whether it's built by code at runtime or by hand in Studio (LANES.md "Hand-built content"), and record the choice in `ARCHITECTURE.md`.
+- **The world:** decide early whether it's built by code at runtime or by hand in Studio, and record the choice in `ARCHITECTURE.md`. Gameplay code never holds world positions: it reads named spots (WORLD-BUILDING.md).

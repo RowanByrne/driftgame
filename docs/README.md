@@ -21,6 +21,8 @@ The same in every game; changed only through the template (CLAUDE.md "Template-o
 | `PLATFORM-RISKS.md` | Maturity, audience, gambling rules, copyright, moderation |
 | `DATA-SYSTEM.md` | Our own dashboard for rapid iteration, from the custom events (being designed) |
 | `ART-PIPELINE.md` | Images and 3D assets, approvals, uploads, permissions |
+| `AUDIO-PIPELINE.md` | Sound effects, music and voice: sources, AI tools, approvals, uploads |
+| `WORLD-BUILDING.md` | Laying out and building the world: stages, rules, the map audit |
 | `UI.md` | Programmer art, device layouts, the UI phase, readability rules |
 | `RELEASING.md` | Before and after a publish, update notes, timed releases, the game page |
 | `POST-RELEASE.md` | Checking the live build after a publish, and tidying up |
@@ -36,12 +38,13 @@ The same in every game; changed only through the template (CLAUDE.md "Template-o
 | `PITCH.md` | What we're making and why it can win |
 | `GDD.md` | The design map: loop, systems, progression, economy |
 | `features/` | One spec per feature, from `_TEMPLATE.md` |
+| `WORLD.md` | The world and map: areas, getting around, named spots, versions |
 | `ARCHITECTURE.md` | The code as built: modules, registries, Studio tools |
 | `CONTRACTS.md` | Data, remotes, tags, attributes, paths, service APIs |
 | `EVENT-CATALOG.md` | Every analytics event and the standard slice |
 | `ART-DIRECTION.md` | How the game looks: world, characters, UI tokens and fonts |
 | `UI-INVENTORY.md` | Layouts, screens and components, and where each stands |
-| `AUDIO.md` | Every sound: what it is for, its id, where it stands (a stub for now) |
+| `AUDIO.md` | How the game sounds (the user's direction), every sound in it, and credits |
 | `MONETIZATION.md` | What players can buy, and the pay-to-win stance |
 | `ROADMAP.md` | Milestones, launch scope, now, next, later |
 | `DECISIONS.md` | The user's decisions, dated, so they aren't reopened |

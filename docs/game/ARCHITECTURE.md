@@ -55,10 +55,12 @@ Where each kind of thing is listed in code, so nothing gets scattered.
 
 ## Vendored libraries
 
+> One row per library in `src/` (docs/workflow/CODING.md "Third-party code"). Source is its GitHub repo, like `github.com/owner/name`, so Rocco can check for new releases; local patches are what we changed, or "none".
+
 | Library | Version | Source | Local patches |
 |---|---|---|---|
 | | | | |
 
 ## World and streaming
 
-> Is the world built by code at runtime or by hand in Studio (docs/workflow/LANES.md "Hand-built content")? Is `StreamingEnabled` on or off, and why?
+> Is the world built by code at runtime, by hand in Studio, or both, and which parts are which (docs/workflow/WORLD-BUILDING.md)? Where the layout module and the named-spot markers live. Is `StreamingEnabled` on or off, and why?

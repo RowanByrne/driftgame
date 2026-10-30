@@ -55,7 +55,7 @@ The rules:
 
 - **No one else's names, characters, music or logos:** not in the game, its name, description, thumbnails or event cards. "Inspired by <another game>" on the game page is a risk too.
 - **Original art only:** references guide the style, but never copy their pixels (ART-PIPELINE.md). Prompts never ask for a protected character, brand or logo.
-- **Outside assets:** only from the Creator Store, free, with audio from Roblox's licensed libraries. Record each one (ART-PIPELINE.md "Creator Store assets").
+- **Outside assets:** only from the Creator Store, free; audio only from the sources AUDIO-PIPELINE.md allows. Record each one (ART-PIPELINE.md "Creator Store assets").
 - **DMCA takedowns:** a copyright holder can have an asset removed, which breaks whatever uses it, and repeat infringement is punished on the owner's account. If a takedown arrives, replace the asset and log an incident; a counter-notice is only for claims that are wrong.
 - **Our own work:** if someone copies our game or assets, Roblox's DMCA process applies the other way. That's the user's call.
 

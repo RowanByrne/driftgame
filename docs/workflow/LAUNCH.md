@@ -53,7 +53,7 @@ Every area in PLATFORM-RISKS.md is checked against Roblox's current rules, and t
 ### Assets
 
 - **Every asset loads in the published experience:** run the permissions check (ART-PIPELINE.md "Ownership and permissions").
-- **Audio** is from Roblox's licensed libraries or owned.
+- **Audio:** every sound has its source and license recorded, and any credits it needs show in the game (AUDIO-PIPELINE.md).
 - **Badges** are published, with their ids set in code.
 
 ### Devices and performance

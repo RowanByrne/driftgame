@@ -25,7 +25,7 @@ The RoDev folder can live anywhere: in your user folder (`C:\Users\<you>\RoDev`)
    - **Git for Windows**, 2.48 or newer (`git --version`), for relative lane paths. Its credential manager asks you to sign in to GitHub on the first push.
    - **Roblox Studio**, signed in as an account that can edit the game (or its group).
    - **The Claude desktop app.**
-   - **The tools in `MODELS.md`** that the game uses: the Codex desktop app, signed in, for the image tool; Blender with the Blender MCP for 3D assets.
+   - **The tools in `MODELS.md`** that the game uses: the Codex desktop app, signed in, for the image tool; Blender with the Blender MCP for 3D assets; the audio tool's API key, set as a user environment variable (never in the repo); for ElevenLabs, link it in Rocco's Connections.
 2. **Register the Roblox Studio MCP in Claude Code as `Roblox_Studio`** (its key under `mcpServers` in `%USERPROFILE%\.claude.json`), then quit and reopen the Claude app. The agent files allow Studio tools by that exact name; under any other name, workers get none.
 3. **Lync:** put `lync.exe` in `RoDev\_tools\lync\`, once per RoDev folder. Every game in it uses that copy (`tools\serve.bat` looks there first, then on PATH). Its Studio plugin installs itself on the first serve; restart Studio after.
 4. **Lanes for this PC:** the first time this PC works on a game, it gets a row in that game's `PROJECT.md` "Workstations": how many lanes it opens, measured or picked by the user (LANES.md "How many lanes").

@@ -67,7 +67,7 @@ The user approves at up to four gates: the reference, the gray model, the textur
 ## Creator Store assets
 
 - **The `asset-scout` agent** looks up free Creator Store assets and returns their ids. It never inserts anything.
-- **Audio:** prefer Roblox's licensed libraries (Pro Sound Effects, Roblox, APM), which play in every experience. Avoid random uploads.
+- **Audio** has its own pipeline: `AUDIO-PIPELINE.md`.
 - **Record every outside asset** with its id, creator and why it was chosen. Sound ids go in the sounds registry (CODING.md).
 
 ## Ownership and permissions

@@ -39,14 +39,14 @@ Decide what we're making before any code.
 
 Get the project running end to end, so everything built after it stands on code that lasts.
 
-- **Produces:** the project from the template (`NEW-PROJECT.md`): GitHub repo, `PROJECT.md` filled in, places and lanes. The foundation kit in `src/` (`CODING.md`): Services and Controllers loaders, a remotes registry, DataService with memory mode in Studio, the debug bridges, the Studio test kit (test profile, quiet playtests), the analytics helper with the standard events (`ANALYTICS.md`). A placeholder world. First versions of `ARCHITECTURE.md` and `CONTRACTS.md`.
+- **Produces:** the project from the template (`NEW-PROJECT.md`): GitHub repo, `PROJECT.md` filled in, places and lanes. The foundation kit in `src/` (`CODING.md`): Services and Controllers loaders, a remotes registry, DataService with memory mode in Studio, the debug bridges, the Studio test kit (test profile, quiet playtests), the analytics helper with the standard events (`ANALYTICS.md`). A placeholder world, built by code or by hand (`WORLD-BUILDING.md`). First versions of `ARCHITECTURE.md` and `CONTRACTS.md`.
 - **Gate (Claude's checklist, then tell the user):** every lane probes (`LANES.md`); a playtest in the Main place joins with no console errors or warnings; player data saves and loads through DataService; a quiet playtest is silent; the standard analytics events from a playtest show in the helper's Studio log with the right fields.
 
 ## 3. Core loop
 
 Find out whether it's fun, as fast as possible.
 
-- **Produces:** the core loop from `PITCH.md`, playable in the Main place with placeholder art and programmer-art UI (see Production). Tuning numbers live in config modules, never in the logic. The core loop section of `GDD.md` and a spec per loop feature in `features/`. Funnel events for each step of the loop, so the user's playtests produce data.
+- **Produces:** the core loop from `PITCH.md`, playable in the Main place with placeholder art and programmer-art UI (see Production), and only the world it needs, as a gray blockout (`WORLD-BUILDING.md`). Tuning numbers live in config modules, never in the logic. The core loop section of `GDD.md` and a spec per loop feature in `features/`. Funnel events for each step of the loop, so the user's playtests produce data.
 - **Rules:** speed over polish, but the code is real: server authority, contracts and tests still apply, because this code ships.
 - **Not yet:** final art, monetization, content beyond what the loop needs.
 - **Gate:** the user plays the first five minutes and says go, change or stop.
@@ -55,7 +55,7 @@ Find out whether it's fun, as fast as possible.
 
 Build out the launch scope in rounds (`CONDUCTOR.md`).
 
-- **Produces:** the features and content in `ROADMAP.md`'s launch scope, each with a spec in `features/`. World art and models, with `ART-DIRECTION.md` set before the first art round (`ART-PIPELINE.md`). Sounds. The first-time player experience from join to the first reward. `MONETIZATION.md` filled in with the user: the targets, how pay-to-win, currencies and offers, so features leave room for what will be sold (it's built in the Monetization phase). Analytics events for every feature, listed in `EVENT-CATALOG.md`: a feature isn't done until its events fire.
+- **Produces:** the features and content in `ROADMAP.md`'s launch scope, each with a spec in `features/`. The world, from a layout the user approved in `WORLD.md` (`WORLD-BUILDING.md`). World art and models, with `ART-DIRECTION.md` set before the first art round (`ART-PIPELINE.md`). Sounds, with the sound direction in `AUDIO.md` set before the first ones (`AUDIO-PIPELINE.md`). The first-time player experience from join to the first reward. `MONETIZATION.md` filled in with the user: the targets, how pay-to-win, currencies and offers, so features leave room for what will be sold (it's built in the Monetization phase). Analytics events for every feature, listed in `EVENT-CATALOG.md`: a feature isn't done until its events fire.
 - **UI is programmer art until the UI phase:** simple placeholder screens with little styling, built on the shared theme. Their job is to help the user work out the layout: what each screen shows, and where text and buttons go. The user decides every device layout here (desktop, phone landscape and portrait can be completely different; UI.md "Layouts per device"), never at the end. Spend the effort on layout and clarity, not looks.
 - **Rules:** `main` must always play: a broken branch doesn't merge. Scope that isn't in the launch list goes to "Later".
 - **Gate:** the launch scope is done and the user agrees to start UI.

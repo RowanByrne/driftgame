@@ -40,7 +40,7 @@ The map of the game's design: how the parts fit together. Keep it short. Each fe
 
 ## World
 
-> The places in the game and how the player moves between them.
+> The places in the game and how the player moves between them, in a few lines. The detail (areas, routes, named spots, the map) is in `WORLD.md`.
 
 ## Social
 
