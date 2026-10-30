@@ -103,7 +103,7 @@ Then stop.
 | `docs/workflow/LAUNCH.md` | Preparing for launch |
 | `docs/workflow/WORKSTATION.md` | Where projects live, setting up a PC, ending a session, backups |
 | `docs/workflow/NEW-PROJECT.md` | Starting a new game from the template |
-| `docs/game/` | What this game is: PITCH, GDD, ARCHITECTURE, CONTRACTS, EVENT-CATALOG, ART-DIRECTION, UI-INVENTORY, MONETIZATION, ROADMAP, DECISIONS, `features/` |
+| `docs/game/` | What this game is: PITCH, GDD, ARCHITECTURE, CONTRACTS, EVENT-CATALOG, ART-DIRECTION, UI-INVENTORY, AUDIO, MONETIZATION, ROADMAP, DECISIONS, `features/` |
 | `live/` | After launch: releases, dashboard settings (including configs, custom dashboards and alerts), experiments, the game page, the calendar (live events, timed releases, game page events), incidents |
 
 Keep them current:

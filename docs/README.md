@@ -41,6 +41,7 @@ The same in every game; changed only through the template (CLAUDE.md "Template-o
 | `EVENT-CATALOG.md` | Every analytics event and the standard slice |
 | `ART-DIRECTION.md` | How the game looks: world, characters, UI tokens and fonts |
 | `UI-INVENTORY.md` | Layouts, screens and components, and where each stands |
+| `AUDIO.md` | Every sound: what it is for, its id, where it stands (a stub for now) |
 | `MONETIZATION.md` | What players can buy, and the pay-to-win stance |
 | `ROADMAP.md` | Milestones, launch scope, now, next, later |
 | `DECISIONS.md` | The user's decisions, dated, so they aren't reopened |
