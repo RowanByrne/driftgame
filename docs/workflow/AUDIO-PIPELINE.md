@@ -76,10 +76,10 @@ Recorded voices need the speaker's written OK, kept with the manifest.
 3. **Show the user.** Ask in Rocco's Workboard with every candidate as an option the user can play:
 
    ```
-   rocco\rocco.ps1 ask T-012 -Question "Pick the sword swing" -Options "Short whoosh","Blade swing" -Audio a.ogg,b.ogg
+   ..\..\_tools\rocco\rocco.ps1 ask T-012 -Question "Pick the sword swing" -Options "Short whoosh","Blade swing" -Audio a.ogg,b.ogg
    ```
 
-   See rocco/README.md for the command. Without Rocco, list the files for the user to play. **Never use a sound the user hasn't picked.** Record the pick, and the user's words, in the manifest.
+   That's from `repo\`; from a lane it's `..\..\..\_tools\rocco\rocco.ps1`. See Rocco's README (`..\..\_tools\rocco\README.md`, "Commands"). Without Rocco, list the files for the user to play. **Never use a sound the user hasn't picked.** Record the pick, and the user's words, in the manifest.
 4. **Approve.** Copy the picked file **unchanged** into `assets/audio/<topic>/`; a master over 5 MB stays in `..\art\source\<topic>\`. Its status becomes `approved`; the others become `rejected`. A Creator Store pick has no file: record its id.
 5. **Upload**, as the owner in PROJECT.md, through Studio's Asset Manager (several at a time), the Creator Dashboard, or Open Cloud's Assets API:
    - **Files:** .ogg, .mp3, .wav or .flac, under 20 MB and 7 minutes, 48 kHz or lower.

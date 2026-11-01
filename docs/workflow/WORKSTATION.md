@@ -8,7 +8,7 @@ Every game sits in one **RoDev folder**, next to the template and the shared too
 
 ```
 RoDev\
-  _tools\      tools every game shares (Lync)
+  _tools\      tools every game shares: Lync, and Rocco (the app, its own repo)
   template\    the template; duplicate it to start a game (NEW-PROJECT.md)
   <Game>\      one folder per game (CLAUDE.md "Project layout")
 ```
@@ -28,13 +28,20 @@ The RoDev folder can live anywhere: in your user folder (`C:\Users\<you>\RoDev`)
    - **The tools in `MODELS.md`** that the game uses: the Codex desktop app, signed in, for the image tool; Blender with the Blender MCP for 3D assets; the audio tool's API key, set as a user environment variable (never in the repo); for ElevenLabs, link it in Rocco's Connections.
 2. **Register the Roblox Studio MCP in Claude Code as `Roblox_Studio`** (its key under `mcpServers` in `%USERPROFILE%\.claude.json`), then quit and reopen the Claude app. The agent files allow Studio tools by that exact name; under any other name, workers get none.
 3. **Lync:** put `lync.exe` in `RoDev\_tools\lync\`, once per RoDev folder. Every game in it uses that copy (`tools\serve.bat` looks there first, then on PATH). Its Studio plugin installs itself on the first serve; restart Studio after.
-4. **Lanes for this PC:** the first time this PC works on a game, it gets a row in that game's `PROJECT.md` "Workstations": how many lanes it opens, measured or picked by the user (LANES.md "How many lanes").
+4. **Rocco:** clone it into `RoDev\_tools\rocco\`, once per RoDev folder, and put it on the newest release. It's a private repo, so its owner adds your GitHub account first. In the RoDev folder, in PowerShell:
+   ```
+   git clone https://github.com/RowanByrne/rocco.git _tools\rocco
+   git -C _tools\rocco checkout (git -C _tools\rocco tag -l "v*" --sort=-v:refname | Select-Object -First 1)
+   ```
+   Every project opens it with `tools\rocco.bat`. From then on Rocco says in Connections when a new release is out, and updates itself (Rocco's README, "Updating").
+5. **Lanes for this PC:** the first time this PC works on a game, it gets a row in that game's `PROJECT.md` "Workstations": how many lanes it opens, measured or picked by the user (LANES.md "How many lanes").
 
 ## Starting a session
 
 1. **Open Claude** in `<Game>\repo`.
 2. **Say "refresh"** to sync with GitHub (CONDUCTOR.md).
 3. **Start Lync** (`tools\serve-all.bat`) and open the Main place and this PC's lane places (`PROJECT.md` "Workstations") from `<Game>\places\`.
+4. **Open Rocco** (`tools\rocco.bat`): the Workboard, Docs, History and Connections.
 
 ## Before you stop
 
@@ -52,7 +59,7 @@ The RoDev folder can live anywhere: in your user folder (`C:\Users\<you>\RoDev`)
 ## Backups
 
 - **GitHub has everything in git:** code, docs, live records, approved art.
-- **Everything else is only in the RoDev folder:** each game's `places\`, `art\` and `backups\`, and `_tools\`. Copy them somewhere else (another drive, or cloud storage as a copy rather than a live-synced folder) regularly, and always before risky work. Losing the folder, or the drive it's on, loses whatever was never copied.
+- **Everything else is only in the RoDev folder:** each game's `places\`, `art\`, `backups\` and `rocco\` (its Workboard tasks), and `_tools\lync\`. Rocco itself is on GitHub. Copy them somewhere else (another drive, or cloud storage as a copy rather than a live-synced folder) regularly, and always before risky work. Losing the folder, or the drive it's on, loses whatever was never copied.
 - **`backups\` sits next to the game.** It protects against mistakes, not against losing the folder.
 - **Claude's memory lives on each PC,** and also depends on the folder's path. Anything lasting goes in the repo (CLAUDE.md "Workstations").
 
@@ -63,5 +70,6 @@ The RoDev folder can live anywhere: in your user folder (`C:\Users\<you>\RoDev`)
 | Git says "detected dubious ownership" | Run the `git config --global --add safe.directory ...` command it prints |
 | Git reports a lane missing after the project folder moved | `git worktree repair` from `repo\` |
 | Workers have no Studio tools | The Studio MCP isn't registered as `Roblox_Studio` (setup step 2) |
+| `tools\rocco.bat` says Rocco isn't installed | Clone it into `_tools\rocco` (setup step 4) |
 | A place doesn't update from Lync | Click **Resume** in Studio's Lync plugin; then probe the lane (LANES.md) |
 | The image tool fails | The Codex app isn't installed or signed in on this PC. Say so; don't substitute (ART-PIPELINE.md) |
