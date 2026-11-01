@@ -75,7 +75,7 @@ if ($kind -eq 'git') {
 	}
 	Write-Host ''
 	Write-Host "$Name is cloned at $repo, with its history; the template is its 'template' remote."
-	Write-Host "  Code $Code. Free Lync port base: $PortBase"
+	Write-Host "  Code $Code. Its Lync port base is picked when the template is merged in."
 	Write-Host 'Next: your agent merges in the template and fills in the docs (docs\workflow\SETUP.md "Existing game", in the'
 	Write-Host 'template). Rocco''s onboarding starts it for you.'
 	exit 0
