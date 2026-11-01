@@ -28,6 +28,14 @@ Lync serves your lane into its place, so file edits show up there within a secon
 - **Studio is for testing,** never for writing code (TESTING.md): mark every playtest you start so it stays silent, prove behaviour by measuring, take at most 3 screenshots, and use the debug bridges to reach live state.
 - **Stay in scope and be quick.** Do the task you were given. Report anything else you notice instead of fixing it.
 
+## The Workboard
+
+If your task came with a Workboard id (`T-012`), keep its card current with Rocco, in PowerShell from your shell's folder (`repo\`): `..\..\_tools\rocco\rocco.ps1 <command>`. The user watches it live.
+
+- **As you go:** `set T-012 -Step "Wiring the shop remote" -Progress 40`, and `log T-012 -Text "..."` for what you found or measured.
+- **A decision only the user can make** (a look, a name, a sound): `ask T-012 -Question "..." -Options "A","B"` (sounds as `-Audio` files, one per option), then stop and report. The conductor carries on with their answer.
+- **Leave the status to the conductor:** never set your task `ready` or `done`.
+
 ## Finish
 
 1. **Test in your place** if it's open: start a quiet playtest, exercise the change, read `get_console_output` for errors and warnings, stop the playtest. Never leave one running. Run the automated tests for anything touching saving, purchases or odds.

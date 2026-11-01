@@ -29,6 +29,7 @@ The same in every game; changed only through the template (CLAUDE.md "Template-o
 | `LAUNCH.md` | The launch review and checklist |
 | `WORKSTATION.md` | Where projects live, setting up a PC, backups |
 | `NEW-PROJECT.md` | Starting a game from the template |
+| `TEMPLATE.md` | Which files are the template's and which the game's, releasing the template, and taking a release into a game |
 
 ## game/: what this game is
 

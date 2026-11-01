@@ -23,7 +23,7 @@ It pulls the template, copies it as `<Game>\` (never its lanes), sets the remote
    git config core.hooksPath tools/hooks
    git push -u origin main
    ```
-   The game keeps the template's history; template updates arrive with "update from template" (CLAUDE.md).
+   The game keeps the template's history and its release tags; later template releases arrive with "update from template" (TEMPLATE.md).
 4. **Fill in the game's details.** Replace every `{{...}}` in `docs/game/PROJECT.md`, `README.md` and `default.project.json`:
    - **Name** and **code**: a short prefix of 2 to 4 letters for the place files (`<CODE>-Main.rbxl`).
    - **GitHub:** the repo from step 3.

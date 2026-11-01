@@ -78,14 +78,15 @@ Then stop.
 | "refresh" | Sync with GitHub both ways and move every idle lane to the latest `main` (CONDUCTOR.md "Refresh") |
 | "about to publish" | Run the pre-publish checklist, and ask about update notes if the game has an update log (RELEASING.md) |
 | "update notes" | Write update notes for this update (RELEASING.md "Update notes") |
-| "update from template" | `git fetch template`, then `git merge template/main`, and report what changed |
+| "update from template" | Bring in the newest template release with `tools\update-from-template.ps1`, and report what's new (TEMPLATE.md "Taking an update") |
+| "release the template" | In the template's own repo: tag `main` as the next `template/vX.Y.Z`, with what's new as the message, and push the tag (TEMPLATE.md "Releasing") |
 
 ## Docs
 
 | Read | When |
 |---|---|
 | `docs/workflow/WORKFLOW.md` | Starting a phase, or unsure what the current phase allows |
-| `docs/workflow/CONDUCTOR.md` | Planning work, spawning workers, merging, "refresh" |
+| `docs/workflow/CONDUCTOR.md` | Planning work, spawning workers, merging, "refresh", keeping Rocco's Workboard current |
 | `docs/workflow/MODELS.md` | Which model and effort each job and worker tier uses; changing them |
 | `docs/workflow/LANES.md` | Adding a lane, Lync problems |
 | `docs/workflow/CODING.md` | Writing any Luau |
@@ -105,6 +106,7 @@ Then stop.
 | `docs/workflow/LAUNCH.md` | Preparing for launch |
 | `docs/workflow/WORKSTATION.md` | Where projects live, setting up a PC, ending a session, backups |
 | `docs/workflow/NEW-PROJECT.md` | Starting a new game from the template |
+| `docs/workflow/TEMPLATE.md` | "update from template", "release the template", and which files are the template's and which the game's |
 | `docs/game/` | What this game is: PITCH, GDD, ARCHITECTURE, CONTRACTS, EVENT-CATALOG, WORLD, ART-DIRECTION, UI-INVENTORY, AUDIO, MONETIZATION, ROADMAP, DECISIONS, `features/` |
 | `live/` | After launch: releases, dashboard settings (including configs, custom dashboards and alerts), experiments, the game page, the calendar (live events, timed releases, game page events), incidents |
 
@@ -118,7 +120,8 @@ Keep them current:
 
 This repo started from `rodev_template` (remote `template`). These files belong to the template and are the same in every game: `CLAUDE.md`, `AGENTS.md`, `.claude/`, `docs/workflow/`, `tools/`, `.gitignore`.
 
-- **Don't edit them in a game.** When one should change, tell the user, make the change in the template checkout (`..\..\template\repo` from a game's `repo\`), commit and push it there, then bring it into the game with "update from template". That keeps every game in step and template merges free of conflicts.
+- **Don't edit them in a game.** When one should change, tell the user, make the change in the template checkout (`..\..\template\repo` from a game's `repo\`), commit and push it there. Games get it in the next template release, with "update from template" (TEMPLATE.md). That keeps every game in step and template merges free of conflicts.
+- **Starter files** (`docs/game/`, `live/`, `src/` and the like) come from the template but are the game's own: a template update never overwrites a game's version of one (TEMPLATE.md "Three kinds of file").
 - **Game-specific rules go in `docs/game/PROJECT.md`**, never here. Game-only ignores go at the bottom of `.gitignore` under `# This game`.
 - **In the template repo itself**, these are the files you edit.
 
