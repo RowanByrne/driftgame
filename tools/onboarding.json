@@ -1,0 +1,119 @@
+{
+  "about": "Rocco's onboarding survey (docs/workflow/SETUP.md). Every answer is free text and optional. 'for' names the doc sections an answer feeds; ids are unique across flows and tiles, and a question shared by both flows keeps one id.",
+  "version": 1,
+  "flows": {
+    "new": {
+      "title": "A new game",
+      "blurb": "A few questions about the game: enough for the pitch, the core of the design and the look, so prototyping can start. Answer as much or as little as you like.",
+      "steps": [
+        {
+          "id": "game",
+          "title": "The game",
+          "questions": [
+            { "id": "idea", "prompt": "What's the game?", "hint": "Describe it like you would to a friend. One sentence is plenty; more is welcome.", "placeholder": "A pet-collecting game on floating islands, where...", "for": ["PITCH.md \"Hook\"", "GDD.md \"Overview\""] },
+            { "id": "loop", "prompt": "What does a player do, over and over?", "hint": "The few steps they repeat, like explore, collect, upgrade, unlock the next area.", "for": ["PITCH.md \"Core loop\"", "GDD.md \"Core loop\""] },
+            { "id": "firstMinutes", "prompt": "What happens in a player's first few minutes?", "hint": "From joining to the first reward, or the moment it clicks.", "for": ["GDD.md \"First five minutes\""] },
+            { "id": "players", "prompt": "Who is it for?", "hint": "Rough ages, the kind of Roblox player, and whether they're mostly on phones or PCs.", "for": ["PITCH.md \"Who it's for\""] },
+            { "id": "likeThese", "prompt": "Which games is it like, and what's different about yours?", "hint": "On Roblox or anywhere else.", "for": ["PITCH.md \"Games we borrow from\""] },
+            { "id": "comeBack", "prompt": "Why would someone come back tomorrow?", "hint": "Progress, collecting, friends, events, daily rewards...", "for": ["PITCH.md \"Why players come back\""] },
+            { "id": "smallest", "prompt": "What's the smallest version worth playtesting?", "hint": "Just enough to tell whether it's fun. Everything else can wait.", "for": ["PITCH.md \"Launch scope\"", "ROADMAP.md \"Launch scope\""] }
+          ]
+        },
+        {
+          "id": "look",
+          "title": "The look",
+          "questions": [
+            { "id": "look", "prompt": "How should it look?", "hint": "A few words is enough: cozy, chunky, low-poly, bright, spooky...", "for": ["ART-DIRECTION.md \"Pillars\"", "ART-DIRECTION.md \"World\""] },
+            { "id": "references", "prompt": "Any games, art or styles to look at?", "hint": "Names or links. Images can come later.", "for": ["ART-DIRECTION.md \"References\""] }
+          ]
+        },
+        {
+          "id": "else",
+          "title": "Anything else",
+          "questions": [
+            { "id": "avoid", "prompt": "Anything you don't want in this game?", "hint": "Ideas you've ruled out, or things you dislike in games like it.", "for": ["PITCH.md \"Not doing\""] },
+            { "id": "notes", "prompt": "Anything else your agent should know?", "hint": "A deadline, how you like to work, a name you're unsure of...", "for": ["PROJECT.md \"Current focus\"", "DECISIONS.md"] }
+          ]
+        }
+      ]
+    },
+    "existing": {
+      "title": "A game I've already made",
+      "blurb": "Questions about how the game is built and where it stands. Then your agent brings it into the workflow, reads all of its code, and fills in the docs from what it finds.",
+      "steps": [
+        {
+          "id": "stands",
+          "title": "Where it stands",
+          "questions": [
+            { "id": "built", "prompt": "How is it built today?", "hint": "Rojo, Argon, Lync, straight in Studio, packages from Wally... and where the code lives.", "for": ["ARCHITECTURE.md \"Overview\"", "default.project.json"] },
+            { "id": "live", "prompt": "Is it live?", "hint": "Not published, a private test, or public, and since when, roughly.", "for": ["PROJECT.md \"Phase\"", "PROJECT.md \"Launched\""] },
+            { "id": "published", "prompt": "Where is it published?", "hint": "The game's link, or its experience and place ids, and whether it's on your account or a group.", "for": ["PROJECT.md \"Roblox\"", "live/EXPERIENCE.md"] },
+            { "id": "doing", "prompt": "How is it doing?", "hint": "Players, revenue, the numbers you watch. Rough is fine.", "for": ["PITCH.md \"Numbers that show it works\"", "live/EXPERIENCE.md"] }
+          ]
+        },
+        {
+          "id": "game",
+          "title": "The game",
+          "questions": [
+            { "id": "idea", "prompt": "What's the game?", "hint": "Describe it like you would to a friend.", "for": ["PITCH.md \"Hook\"", "GDD.md \"Overview\""] },
+            { "id": "loop", "prompt": "What do players do, over and over?", "hint": "The few steps they repeat.", "for": ["PITCH.md \"Core loop\"", "GDD.md \"Core loop\""] },
+            { "id": "players", "prompt": "Who plays it?", "hint": "Rough ages, the kind of Roblox player, phones or PCs.", "for": ["PITCH.md \"Who it's for\""] },
+            { "id": "money", "prompt": "What does it sell today?", "hint": "Game passes, developer products, subscriptions, with prices if you know them.", "for": ["MONETIZATION.md \"Offers\""] }
+          ]
+        },
+        {
+          "id": "work",
+          "title": "Working on it",
+          "questions": [
+            { "id": "team", "prompt": "Who else works on it?", "hint": "Just you, or others in Studio or on GitHub? Any place your agent must never touch, like a Team Create place?", "for": ["PROJECT.md \"Hands-off places\"", "PROJECT.md \"Game-only rules\""] },
+            { "id": "next", "prompt": "What do you want to work on next?", "for": ["PROJECT.md \"Current focus\"", "ROADMAP.md \"Now\""] },
+            { "id": "problems", "prompt": "What's broken or messy right now?", "for": ["ROADMAP.md \"Now\""] },
+            { "id": "keep", "prompt": "Anything that must stay exactly as it is?", "hint": "Systems, names, or data formats that players' saves depend on...", "for": ["PROJECT.md \"Game-only rules\""] }
+          ]
+        }
+      ]
+    }
+  },
+  "tiles": [
+    { "id": "monetization", "title": "Monetization", "blurb": "What players can buy, and where the line is.", "questions": [
+      { "id": "buy", "prompt": "What would players buy?", "hint": "Game passes, items, currency, a season pass...", "for": ["MONETIZATION.md \"Offers\"", "PITCH.md \"How it makes money\""] },
+      { "id": "payToWin", "prompt": "Where's the line on pay-to-win?", "hint": "What must stay earnable by playing.", "for": ["MONETIZATION.md \"Principles\""] },
+      { "id": "moneyGoals", "prompt": "Any money goals?", "hint": "Or what matters more than money right now.", "for": ["MONETIZATION.md \"Targets\""] }
+    ] },
+    { "id": "economy", "title": "Economy", "blurb": "Currencies, where they come from and where they go.", "questions": [
+      { "id": "currencies", "prompt": "What do players earn and spend?", "hint": "Coins, gems, materials: where each comes from and where it goes.", "for": ["GDD.md \"Economy\"", "MONETIZATION.md \"Currencies\""] },
+      { "id": "valuable", "prompt": "What's rare or valuable?", "for": ["GDD.md \"Economy\""] }
+    ] },
+    { "id": "progression", "title": "Progression", "blurb": "How a player grows over days and weeks.", "questions": [
+      { "id": "grow", "prompt": "How does a player get stronger or further?", "hint": "Levels, upgrades, unlocks, rebirths...", "for": ["GDD.md \"Progression\""] },
+      { "id": "longTerm", "prompt": "What's the long-term goal?", "hint": "What keeps someone playing after a week.", "for": ["GDD.md \"Progression\"", "PITCH.md \"Why players come back\""] }
+    ] },
+    { "id": "world", "title": "World and map", "blurb": "Where it takes place, and how players get around.", "questions": [
+      { "id": "setting", "prompt": "Where does it take place?", "hint": "The setting, and its areas.", "for": ["WORLD.md \"Overview\"", "WORLD.md \"Areas\""] },
+      { "id": "travel", "prompt": "How do players get around?", "hint": "Walking, teleports, areas that unlock, vehicles...", "for": ["WORLD.md \"Getting around\""] }
+    ] },
+    { "id": "characters", "title": "Characters and creatures", "blurb": "Who or what lives in the world.", "questions": [
+      { "id": "cast", "prompt": "Who or what is in the world?", "hint": "NPCs, creatures, pets, enemies, and how they look.", "for": ["ART-DIRECTION.md \"Characters and creatures\"", "GDD.md \"Content\""] }
+    ] },
+    { "id": "content", "title": "Content", "blurb": "What there is to find, collect or beat.", "questions": [
+      { "id": "stuff", "prompt": "What is there to find, collect or beat?", "hint": "Items, areas, creatures, quests, and roughly how many at launch.", "for": ["GDD.md \"Content\"", "ROADMAP.md \"Launch scope\""] }
+    ] },
+    { "id": "social", "title": "Social", "blurb": "Playing with and around other players.", "questions": [
+      { "id": "together", "prompt": "What do players do together?", "hint": "Co-op, trading, competing, showing off, chat...", "for": ["GDD.md \"Social\""] }
+    ] },
+    { "id": "sound", "title": "Sound and music", "blurb": "How the game should sound.", "questions": [
+      { "id": "sound", "prompt": "How should it sound?", "hint": "The style of music, the mood of the effects, games whose sound you like.", "for": ["AUDIO.md \"Direction\""] }
+    ] },
+    { "id": "ui", "title": "UI and devices", "blurb": "Screens, and the devices that matter most.", "questions": [
+      { "id": "devices", "prompt": "Which devices matter most?", "hint": "Phone, PC, tablet, console.", "for": ["UI-INVENTORY.md \"Layouts\""] },
+      { "id": "screens", "prompt": "How should the screens feel?", "hint": "Minimal or busy, playful or clean, games whose menus you like.", "for": ["ART-DIRECTION.md \"UI\""] }
+    ] },
+    { "id": "later", "title": "Ideas for later", "blurb": "Things that aren't for the first version.", "questions": [
+      { "id": "ideas", "prompt": "Ideas for after the first version?", "for": ["ROADMAP.md \"Later\""] }
+    ] },
+    { "id": "risks", "title": "Risks and numbers", "blurb": "What could go wrong, and how you'll know it works.", "questions": [
+      { "id": "worries", "prompt": "What worries you about this game?", "for": ["PITCH.md \"Biggest risks\""] },
+      { "id": "numbers", "prompt": "How will you know it's working?", "hint": "Players coming back the next day, time played, purchases...", "for": ["PITCH.md \"Numbers that show it works\""] }
+    ] }
+  ]
+}

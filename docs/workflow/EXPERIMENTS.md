@@ -2,7 +2,7 @@
 
 A/B tests through Roblox's own experiments (Creator Hub → the game → **Experiments**), built on configs (CONFIGS.md). An experiment gives some players a different value for one config key and measures the difference. This game's experiments, with their hypotheses and results, are logged in `live/EXPERIMENTS.md`.
 
-**Who decides:** whether to run an experiment, what to test (prices especially), and which variant wins are the user's calls. Claude proposes hypotheses, sets experiments up, watches them and reports.
+**Who decides:** whether to run an experiment, what to test (prices especially), and which variant wins are the user's calls. The agent proposes hypotheses, sets experiments up, watches them and reports.
 
 ## Is it worth running?
 
@@ -16,7 +16,7 @@ A/B tests through Roblox's own experiments (Creator Hub → the game → **Exper
 2. **Make the code read a config key per player** (CONFIGS.md "In the code"), and publish that first. The control value is the config's current value; the code must handle every variant value.
 3. **Create the experiment:** type In-game, a name, the goal metric, a duration of 14 to 60 days, the rollout (the share of players included), up to two variants plus the control, and the split between them. Prefer one variant against the control, 50/50, on a large rollout: the easiest to set up and to read.
 4. **Target it, if needed,** to players by country, tenure, spending and the other config attributes. Targeting narrows the sample, so check the minimum detectable effect again.
-5. **Start or schedule it.** Like publishing a config, this changes the live game: the user starts it, or tells Claude to. Once scheduled, the setup can't change, only the start time. Once running, the config key and the conditions it uses are locked until it ends.
+5. **Start or schedule it.** Like publishing a config, this changes the live game: the user starts it, or tells the agent to. Once scheduled, the setup can't change, only the start time. Once running, the config key and the conditions it uses are locked until it ends.
 
 ## In the code
 

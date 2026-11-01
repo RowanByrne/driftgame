@@ -6,7 +6,7 @@ How the template and the games made from it stay in step: which files are whose,
 
 | Kind | Files | Whose | When a template update changes one |
 |---|---|---|---|
-| **Template-owned** | `CLAUDE.md`, `AGENTS.md`, `.claude/`, `docs/workflow/`, `tools/`, `.gitignore` | The template's. A game never edits them (CLAUDE.md "Template-owned files") | The game takes the change as it is |
+| **Template-owned** | `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `.claude/`, `docs/workflow/`, `tools/`, `.gitignore` | The template's. A game never edits them (AGENTS.md "Template-owned files") | The game takes the change as it is |
 | **Starter files** | `docs/game/`, `docs/CLAIMS.md`, `live/`, `src/`, `README.md`, `default.project.json` | The game's, from the day it's made | If the game never changed the file, it gets the new version. If it did, it keeps its own, and the update lists the file so the game can bring over what it wants |
 | **Shared** | `docs/README.md` (the template's index, with the game's own docs at the bottom), `assets/README.md`, `.gitattributes` | Both | A normal merge |
 
@@ -27,7 +27,7 @@ In the template's own repo, when its `main` has changes ready for games (the use
    git push origin template/v1.3.0
    ```
 
-Within half an hour, Rocco's Connections in every game shows the release and its notes, with a button that asks Claude to bring it in.
+Within half an hour, Rocco's Connections in every game shows the release and its notes, with a button that asks your agent to bring it in.
 
 ## Taking an update in a game
 
@@ -35,7 +35,7 @@ When the user says **"update from template"** (or asks from Rocco's Connections)
 
 1. **Look first:** `powershell -ExecutionPolicy Bypass -File tools\update-from-template.ps1 -Check` says which release the game is on and lists what's newer, with each release's notes.
 2. **Merge:** run it again without `-Check` (with `-To template/v1.2.0` for a release other than the newest). It needs `main`, with nothing uncommitted. It merges the release without committing, and lists the template-owned files that changed, the starter files it updated, and the starter files the game kept although the template changed them.
-3. **Conflicts** happen only where the game edited a template-owned or shared file. A template-owned file takes the template's side, unless the game changed it on purpose: then keep both, and tell the user the change belongs in the template (CLAUDE.md "Template-owned files"). To back out: `git merge --abort`.
+3. **Conflicts** happen only where the game edited a template-owned or shared file. A template-owned file takes the template's side, unless the game changed it on purpose: then keep both, and tell the user the change belongs in the template (AGENTS.md "Template-owned files"). To back out: `git merge --abort`.
 4. **Kept starter files:** for each, `git diff <old release> <new release> -- <file>` shows what the template changed. Bring over what the game wants (a new section in a form, usually), and leave what doesn't fit it.
 5. **Commit** as `Update from template: template/v1.2.0`, push `main`, and refresh the lanes (CONDUCTOR.md "Refresh").
 6. **Report:** what's new (the notes, in a line each), what was brought into the game's own files, and anything the user has to do (a MAJOR release says).

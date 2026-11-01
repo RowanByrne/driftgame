@@ -1,6 +1,6 @@
 # {{GAME_NAME}}
 
-This game's details. CLAUDE.md imports this file, so every session sees it: keep it short, and put design and detail in the other `docs/game/` files. Fill in every `{{...}}` when the game is created (docs/workflow/NEW-PROJECT.md).
+This game's details. Every agent reads this file first (AGENTS.md; CLAUDE.md and GEMINI.md load it), so every session sees it: keep it short, and put design and detail in the other `docs/game/` files. Fill in every `{{...}}` when the game is created (docs/workflow/NEW-PROJECT.md).
 
 ## At a glance
 
@@ -37,7 +37,7 @@ Each PC that works on this game opens `lane1` up to its number. A PC gets a row 
 
 ## Game-only rules
 
-Rules for agents that apply to this game only: exceptions, things to preserve, workshops. Rules that would suit every game belong in the template (CLAUDE.md "Template-owned files").
+Rules for agents that apply to this game only: exceptions, things to preserve, workshops. Rules that would suit every game belong in the template (AGENTS.md "Template-owned files").
 
 - None yet.
 

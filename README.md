@@ -1,11 +1,11 @@
 # {{GAME_NAME}}
 
-A Roblox game made with Claude, from the RoDev template. What it is: `docs/game/PITCH.md`. Where it stands: `docs/game/PROJECT.md` (the current phase) and `docs/game/ROADMAP.md`.
+A Roblox game made with an AI coding agent (Claude Code, Codex or another), from the RoDev template. What it is: `docs/game/PITCH.md`. Where it stands: `docs/game/PROJECT.md` (the current phase) and `docs/game/ROADMAP.md`.
 
 ## Working on it
 
 1. **First time on this PC?** Set it up once: `docs/workflow/WORKSTATION.md`.
-2. **Open Claude** in this folder (`repo\`) and say **"refresh"** to sync with GitHub.
+2. **Open your agent** in this folder (`repo\`) and say **"refresh"** to sync with GitHub.
 3. **Start Lync:** `tools\serve-all.bat`.
 4. **Open the places** in Studio from `..\places\`: the Main place, plus this PC's lane places (`docs/game/PROJECT.md` "Workstations").
 5. **Open Rocco:** `tools\rocco.bat`, for the Workboard, Docs, History and Connections.
@@ -20,8 +20,8 @@ The game's folder holds this repo and the working folders next to it. Only `repo
 ```
 <Game>\
   repo\                 this repo, on GitHub
-    CLAUDE.md, AGENTS.md  rules for Claude and Codex
-    .claude\agents\       worker agent definitions
+    AGENTS.md             rules for every agent (CLAUDE.md and GEMINI.md point to it)
+    .claude\agents\       Claude Code's worker subagents (every agent's worker brief: docs\workflow\WORKER.md)
     src\                  the game's Luau code, synced into Studio by Lync
     docs\workflow\        how we make games (the same in every game)
     docs\game\            what this game is

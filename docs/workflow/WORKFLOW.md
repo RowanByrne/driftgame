@@ -19,7 +19,7 @@ Phases are short until UI. With agents working in parallel, a core loop can be p
 
 ## Rules for every phase
 
-- **The user decides at every gate.** Before asking, Claude writes a short gate review in chat: what's done, what was measured, open risks, and a recommendation. When the user says go, update the phase in `PROJECT.md` and add a line to `DECISIONS.md`.
+- **The user decides at every gate.** Before asking, the agent writes a short gate review in chat: what's done, what was measured, open risks, and a recommendation. When the user says go, update the phase in `PROJECT.md` and add a line to `DECISIONS.md`.
 - **Going back is fine.** If the game stops being fun in production, return to Core loop instead of piling on content.
 - **Write the docs as you go.** Each phase's docs are part of its work, not a cleanup afterwards.
 - **Out-of-phase ideas go in `ROADMAP.md` "Later"**, not into the current work.
@@ -31,7 +31,7 @@ Phases are short until UI. With agents working in parallel, a core loop can be p
 Decide what we're making before any code.
 
 - **Produces:** `docs/game/PITCH.md`: the hook in one sentence, the core loop in 3 to 5 steps, who it's for, 2 or 3 games we borrow from and what we take from each, why players come back, how it makes money, the launch scope, the biggest risks, and the 3 to 5 numbers that will show the game works (day-1 retention, session length, purchase rate, ...). Also a first `ROADMAP.md`.
-- **Claude:** looks at comparable Roblox games, proposes 2 or 3 directions when the idea is open, drafts the pitch, and pushes on its weak spots (a vague hook, no reason to return, a scope too big for weeks).
+- **The agent:** looks at comparable Roblox games, proposes 2 or 3 directions when the idea is open, drafts the pitch, and pushes on its weak spots (a vague hook, no reason to return, a scope too big for weeks).
 - **Not yet:** code, art, places.
 - **Gate:** the user approves `PITCH.md`.
 
@@ -40,7 +40,7 @@ Decide what we're making before any code.
 Get the project running end to end, so everything built after it stands on code that lasts.
 
 - **Produces:** the project from the template (`NEW-PROJECT.md`): GitHub repo, `PROJECT.md` filled in, places and lanes. The foundation kit in `src/` (`CODING.md`): Services and Controllers loaders, a remotes registry, DataService with memory mode in Studio, the debug bridges, the Studio test kit (test profile, quiet playtests), the analytics helper with the standard events (`ANALYTICS.md`). A placeholder world, built by code or by hand (`WORLD-BUILDING.md`). First versions of `ARCHITECTURE.md` and `CONTRACTS.md`.
-- **Gate (Claude's checklist, then tell the user):** every lane probes (`LANES.md`); a playtest in the Main place joins with no console errors or warnings; player data saves and loads through DataService; a quiet playtest is silent; the standard analytics events from a playtest show in the helper's Studio log with the right fields.
+- **Gate (the agent's checklist, then tell the user):** every lane probes (`LANES.md`); a playtest in the Main place joins with no console errors or warnings; player data saves and loads through DataService; a quiet playtest is silent; the standard analytics events from a playtest show in the helper's Studio log with the right fields.
 
 ## 3. Core loop
 
@@ -81,11 +81,11 @@ Build what `MONETIZATION.md` designed: every launch offer, the shop, checkout an
 - **Why after UI:** offers need settled features to sell and finished UI to sell them in (the shop, purchase buttons, offer windows), so they're built once.
 - **Steps:**
   1. **Review the design** in `MONETIZATION.md` with the user: targets, how pay-to-win, currencies, offers and prices. The user decides prices.
-  2. **Create the offers** on the Creator Dashboard: the user does it, or asks Claude to in the browser. Record ids and prices in `live/EXPERIENCE.md`, and the ids in code.
+  2. **Create the offers** on the Creator Dashboard: the user does it, or asks the agent to in the browser. Record ids and prices in `live/EXPERIENCE.md`, and the ids in code.
   3. **Build** the shop and purchase flows from the UI phase's components (new art through `ART-PIPELINE.md`), the receipts and grants (CODING.md "Server rules"), currencies, the starter offer, recurring offers, and paid random items with their odds and policy gate.
   4. **Instrument** the purchase funnel and every currency source and sink (`EVENT-CATALOG.md`).
   5. **Test:** the purchase tests pass (TESTING.md "Automated tests"), checkout can be switched off by a Roblox config (CONFIGS.md), and the user runs a live smoke test in a private published test: buy the smallest offer, rejoin, and check it stuck with no double grant.
-- **Rules:** Claude never spends Robux. No purchase prompt appears on its own at the moments `MONETIZATION.md` rules out.
+- **Rules:** The agent never spends Robux. No purchase prompt appears on its own at the moments `MONETIZATION.md` rules out.
 - **Gate:** every launch offer works end to end in a published test, and the user approves the shop.
 
 ## 7. Launch

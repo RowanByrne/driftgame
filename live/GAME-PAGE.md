@@ -1,6 +1,6 @@
 # Game page
 
-What players see before they join, exactly as published on the Creator Dashboard. Claude drafts the text and makes the images; the user publishes them, or asks Claude to in the browser (docs/workflow/RELEASING.md "Game page"). Events and their cards are in `CALENDAR.md`. Replace each prompt with the answer.
+What players see before they join, exactly as published on the Creator Dashboard. The agent drafts the text and makes the images; the user publishes them, or asks the agent to in the browser (docs/workflow/RELEASING.md "Game page"). Events and their cards are in `CALENDAR.md`. Replace each prompt with the answer.
 
 - **Word for word.** Record what's live exactly as published, and read it back after saving: Roblox's text filter can turn text into `####`.
 - **No one else's names.** No other company's game names or trademarks, not even as "inspired by" (docs/workflow/LAUNCH.md "Roblox rules").

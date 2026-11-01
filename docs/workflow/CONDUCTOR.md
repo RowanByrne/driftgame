@@ -1,6 +1,6 @@
 # Conductor
 
-The main Claude session is the **conductor**. It plans the work, hands tasks to worker agents (each in its own lane, LANES.md), merges their branches into `main`, and keeps every place showing the latest build.
+The main agent session is the **conductor**, whichever agent the user works with (MODELS.md). It plans the work, hands tasks to workers (each in its own lane, LANES.md, following WORKER.md), merges their branches into `main`, and keeps every place showing the latest build.
 
 The conductor works in `repo\`, the main checkout, which is always on `main` and serves the Main place. Workers never touch it.
 
@@ -13,31 +13,31 @@ The user hands over work and follows it in Rocco's Workboard, and the conductor 
 
 ## A round
 
-1. **Plan.** Split the request into tasks that own **separate files**: no file belongs to two tasks. Shared modules (`src/ReplicatedStorage/Shared`, contracts) get one owner per round, or go first in a round of their own. Read `docs/CLAIMS.md` and never assign a file another task has claimed. Pick a lane and an agent per task (table below). Show the user the plan as a table (task, files, lane, branch, agent) before spawning. Each task is a Workboard task: the user's note itself, or one you add ("The Workboard").
+1. **Plan.** Split the request into tasks that own **separate files**: no file belongs to two tasks. Shared modules (`src/ReplicatedStorage/Shared`, contracts) get one owner per round, or go first in a round of their own. Read `docs/CLAIMS.md` and never assign a file another task has claimed. Pick a lane and a worker tier per task (table below). Show the user the plan as a table (task, files, lane, branch, tier) before spawning. Each task is a Workboard task: the user's note itself, or one you add ("The Workboard").
 2. **Claim and sync.** Add the round's claims to `docs/CLAIMS.md`, commit, and push `main`, so workers branch from the latest. Check each lane you'll use is idle (clean, detached HEAD) and its place is open and syncing (LANES.md "Probe").
-3. **Spawn** the workers in parallel, each task's card set Working first. Each prompt gives:
+3. **Spawn** the workers in parallel, each task's card set Working first, the way your agent starts workers (MODELS.md "Workers by agent"). Each prompt starts with "Follow docs/workflow/WORKER.md", then gives:
    - **Task:** what to build, and what done looks like, with its Workboard id (`T-012`).
    - **Files owned:** exact paths; new files marked "(new)".
    - **Lane:** the lane's absolute path, resolved now (the project folder can move between sessions), and its place, `<CODE>-LaneN`.
    - **Branch:** `agent/<task-slug>`.
    - **Proof:** the numbers, logs or debug state that will show it works. Screenshots only for "does it look right?", 2 or 3 at most, and the final look is left to the user.
-4. **Merge.** When workers report, `git fetch origin`, `git pull`, then merge each `agent/*` branch into `main` with `--no-ff`. Resolve simple conflicts yourself; hand messy or multiple conflicts to the `git-integrator` agent. Record any contract or analytics changes the workers report in `CONTRACTS.md` / `EVENT-CATALOG.md`.
+4. **Merge.** When workers report, `git fetch origin`, `git pull`, then merge each `agent/*` branch into `main` with `--no-ff`. Resolve simple conflicts yourself, keeping both sides' intent; with Claude Code, messy or multiple conflicts can go to the `git-integrator` subagent. Record any contract or analytics changes the workers report in `CONTRACTS.md` / `EVENT-CATALOG.md`.
 5. **Push and verify.** `git pull` again, push `main`, then check the merged build in the Main place with the Studio tools: playtest (marked quiet, TESTING.md), exercise what changed, read the console for errors and warnings.
 6. **Refresh lanes.** Move every idle lane to the new `main` ("Refresh" step 4), so every place shows the merged game.
 7. **Clean up.** Remove the round's lines from `docs/CLAIMS.md` and push. Delete the merged `agent/*` branches, locally and on GitHub.
-8. **Report** to the user, short (CLAUDE.md "Talking to the user"): what merged and what to try in the Main place, then anything flagged: problems workers raised, follow-ups, decisions needed. On the Workboard, each merged task goes to To test, with what to try.
+8. **Report** to the user, short (AGENTS.md "Talking to the user"): what merged and what to try in the Main place, then anything flagged: problems workers raised, follow-ups, decisions needed. On the Workboard, each merged task goes to To test, with what to try.
 
-### Which agent
+### Which tier
 
-Pick a worker tier by how hard the task is. `MODELS.md` says which model and effort each tier runs.
+Pick a worker tier by how hard the task is. `MODELS.md` says which model and effort each tier runs, and how your agent starts a worker of that tier (with Claude Code: the `roblox-dev-heavy`, `-standard` or `-light` subagent).
 
-| Tier | Agent | Use for |
-|---|---|---|
-| Heavy | `roblox-dev-heavy` | Core systems, tricky gameplay, anything touching player data or money |
-| Standard | `roblox-dev-standard` | Well-specified features, content, UI |
-| Light | `roblox-dev-light` | Small, mechanical, clearly specified fixes |
+| Tier | Use for |
+|---|---|
+| Heavy | Core systems, tricky gameplay, anything touching player data or money |
+| Standard | Well-specified features, content, UI |
+| Light | Small, mechanical, clearly specified fixes |
 
-The three share one body and differ only in their frontmatter; keep their bodies identical.
+Every tier follows the same brief, WORKER.md; only the model and effort differ.
 
 ## The Workboard
 

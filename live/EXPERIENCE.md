@@ -1,6 +1,6 @@
 # Experience settings
 
-Everything that exists only on the Creator Dashboard, written down so nobody has to go looking. The user changes the dashboard, or asks Claude to in the browser; whoever makes a change records it here, with the date. Configs are in `CONFIGS.md`, and the game page and events in `GAME-PAGE.md` and `CALENDAR.md`. Replace each prompt with the answer.
+Everything that exists only on the Creator Dashboard, written down so nobody has to go looking. The user changes the dashboard, or asks the agent to in the browser; whoever makes a change records it here, with the date. Configs are in `CONFIGS.md`, and the game page and events in `GAME-PAGE.md` and `CALENDAR.md`. Replace each prompt with the answer.
 
 ## Experience
 

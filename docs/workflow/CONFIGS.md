@@ -26,7 +26,7 @@ One server module, the **config wrapper**, reads every config (CODING.md "Founda
 
 ## Changing a value
 
-Publishing a config changes the live game for every player, so it's treated like publishing: the user publishes, or tells Claude to.
+Publishing a config changes the live game for every player, so it's treated like publishing: the user publishes, or tells the agent to.
 
 1. **Edit** the key on the Configs page or in Studio's Configs widget. The change is **staged**: only Studio play sessions see it.
 2. **Test** the staged value in a Studio play session, and check the game picks it up.

@@ -1,6 +1,6 @@
 # Art pipeline
 
-How art gets made, approved and into the game. The user picks; Claude generates, records, uploads and wires it in. The style to aim for is in `docs/game/ART-DIRECTION.md`; UI art has extra rules in `UI.md`.
+How art gets made, approved and into the game. The user picks; the agent generates, records, uploads and wires it in. The style to aim for is in `docs/game/ART-DIRECTION.md`; UI art has extra rules in `UI.md`.
 
 ## Where art lives
 
@@ -21,7 +21,7 @@ A topic is named for its role, like `hud-currency`, `shop-buttons` or `boat-mode
 2. **Generate candidates** with the image tool in `MODELS.md`. Today that's `powershell -ExecutionPolicy Bypass -File tools\imagegen.ps1 -Prompt "..." -Out ..\art\generated\<topic>\<name>-01.png [-Transparent] [-Reference a.png,b.png]`, which prints the size, alpha and SHA-256. Make 2 to 4 per brief. Log each in the topic's manifest: file, exact prompt, references used, hash, status `candidate`.
 3. **Show the user** the candidates side by side, in place on the real screen or model when possible. The user picks. **Never upload art the user hasn't picked.** Record the pick, and the user's words, in the manifest.
 4. **Approve.** Copy the picked file **unchanged** into `assets/<topic>/`: never re-save, recompress or crop it on the way. Its status becomes `approved`; the others become `rejected` and stay in `..\art\generated\`.
-5. **Upload.** Uploading is Claude's job. Use the Studio MCP `upload_image` (it takes http URLs: serve the folder from a local http server), then load the image in Studio and check it shows and its decoded size matches. Record the asset id and decoded size in the manifest.
+5. **Upload.** Uploading is the agent's job. Use the Studio MCP `upload_image` (it takes http URLs: serve the folder from a local http server), then load the image in Studio and check it shows and its decoded size matches. Record the asset id and decoded size in the manifest.
 6. **Wire it in.** Put the id in the game's asset registry module, one place in code (`ARCHITECTURE.md`), never scattered through scripts. Check it renders in a playtest.
 7. **Commit** the master, the manifest and the registry change together.
 

@@ -4,13 +4,13 @@ The Launch phase (WORKFLOW.md): go public without losing player data or money. *
 
 ## The launch review
 
-Claude works through the checklist below and writes a launch review in `docs/archive/LAUNCH-REVIEW-<date>.md`.
+The agent works through the checklist below and writes a launch review in `docs/archive/LAUNCH-REVIEW-<date>.md`.
 
 - **Look widely:**
   - The Creator Dashboard, read in the browser while the user is signed in.
   - The code, with separate passes for security and data, Roblox policy, and analytics and live ops.
   - A measured Studio performance and error run.
-- **Fix what's safe and in scope.** Anything that's the user's call, or that spends money, goes under "Your decisions". Claude never spends Robux.
+- **Fix what's safe and in scope.** Anything that's the user's call, or that spends money, goes under "Your decisions". The agent never spends Robux.
 - **The review's sections:** Verdict, Done, Blockers, Your decisions, After launch (recommendations by priority), Measurements.
 - **Run it again** when blockers are cleared, and update the verdict. The user decides when to go public, and publishes.
 

@@ -1,6 +1,6 @@
 # World building
 
-How the world gets laid out, built, and kept working as it changes. The user decides the layout and approves each stage; Claude sketches, builds, measures, and keeps `docs/game/WORLD.md` current. The look follows `docs/game/ART-DIRECTION.md`; models and textures come through `ART-PIPELINE.md`.
+How the world gets laid out, built, and kept working as it changes. The user decides the layout and approves each stage; the agent sketches, builds, measures, and keeps `docs/game/WORLD.md` current. The look follows `docs/game/ART-DIRECTION.md`; models and textures come through `ART-PIPELINE.md`.
 
 ## When
 

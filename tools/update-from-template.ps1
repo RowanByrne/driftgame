@@ -14,7 +14,7 @@ $ErrorActionPreference = 'Continue'
 # day it's made. While this merge runs, a starter file both sides changed keeps the game's version. Only here: a
 # worker's branch merges these files as usual.
 $Starter = 'docs/game/**', 'docs/CLAIMS.md', 'live/**', 'src/**', 'README.md', 'default.project.json'
-$TemplateOwned = '^(CLAUDE\.md|AGENTS\.md|\.claude/|docs/workflow/|tools/|\.gitignore$)'
+$TemplateOwned = '^(AGENTS\.md|CLAUDE\.md|GEMINI\.md|\.claude/|docs/workflow/|tools/|\.gitignore$)'
 
 $repo = Split-Path $PSScriptRoot -Parent
 function RepoGit { git -C $repo @args }

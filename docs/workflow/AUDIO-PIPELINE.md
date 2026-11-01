@@ -1,6 +1,6 @@
 # Audio pipeline
 
-How sound effects, music, ambience and voice get found or made, approved and into the game. The user sets the sound direction in `docs/game/AUDIO.md` and picks every sound; Claude finds or generates candidates, records them, uploads them and wires them in. It works like the art pipeline (`ART-PIPELINE.md`).
+How sound effects, music, ambience and voice get found or made, approved and into the game. The user sets the sound direction in `docs/game/AUDIO.md` and picks every sound; the agent finds or generates candidates, records them, uploads them and wires them in. It works like the art pipeline (`ART-PIPELINE.md`).
 
 ## Where audio lives
 
@@ -44,12 +44,12 @@ Uploaded as the game's own audio (Making a sound, step 5).
 
 The audio tools in `MODELS.md` make sounds to the brief. What each can do, as of October 2026:
 
-| Tool | Makes | How Claude uses it | Rights |
+| Tool | Makes | How the agent uses it | Rights |
 |---|---|---|---|
 | ElevenLabs Sound Effects | Effects from 0.1 to 30 s, including seamless loops | API, or ElevenLabs' MCP server | Commercial use from the paid Starter plan; the free plan has none |
 | ElevenLabs Music | Music up to 5 minutes, instrumental or with vocals | API, on paid plans | Self-serve plans cover indie games (its music terms set revenue limits); read them before the first track |
 | Stable Audio 3.0 | Effects, and music up to about 6 minutes | API, or the open models run on the PC | Commercial use while revenue is under $1M a year; trained on licensed audio |
-| Adobe Firefly (Generate Music, Generate Sound Effects) | Instrumental music and effects | No API: the user makes them in the browser, then Claude takes over from step 2 | Sold as commercially safe |
+| Adobe Firefly (Generate Music, Generate Sound Effects) | Instrumental music and effects | No API: the user makes them in the browser, then the agent takes over from step 2 | Sold as commercially safe |
 
 **Avoid:**
 - **Suno.** Lawsuits are pending, and Roblox's copyright filter has blocked Suno tracks. A blocked file stays blocked.
@@ -100,7 +100,7 @@ Recorded voices need the speaker's written OK, kept with the manifest.
 
 ## Rules
 
-- **The direction is the user's.** Claude proposes pillars, references and styles; the user decides them.
+- **The direction is the user's.** The agent proposes pillars, references and styles; the user decides them.
 - **Every sound has a record:** where it came from and its license, and for generated audio the tool, plan and exact prompt. A sound without a record doesn't ship.
 - **Generated audio needs a plan that allows commercial use**, on the account that made it. Most free plans don't.
 - **No one else's music.** Never name a real song, artist or game in a generation prompt. Uploads are fingerprinted: a match blocks the upload, and a takedown claim can strike the account (PLATFORM-RISKS.md).

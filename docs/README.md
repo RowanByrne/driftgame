@@ -1,17 +1,17 @@
 # docs
 
-Every doc in the project, by folder. Agents find which to read when in CLAUDE.md "Docs". Docs are kept current: a wrong doc gets fixed when it's noticed.
+Every doc in the project, by folder. Agents find which to read when in AGENTS.md "Docs". Docs are kept current: a wrong doc gets fixed when it's noticed.
 
 ## workflow/: how we make games
 
-The same in every game; changed only through the template (CLAUDE.md "Template-owned files").
+The same in every game; changed only through the template (AGENTS.md "Template-owned files").
 
 | Doc | What |
 |---|---|
 | `WORKFLOW.md` | The phases from pitch to live, and their gates |
 | `CONDUCTOR.md` | Work rounds: planning, claims, workers, merging, "refresh" |
 | `LANES.md` | Lanes, their places and ports, Lync, how many lanes a PC opens |
-| `MODELS.md` | Which AI model and effort each job uses |
+| `MODELS.md` | Your agent (Claude Code, Codex, Gemini CLI, ...), and which model runs each job |
 | `CODING.md` | Code layout, the foundation kit, server and saving rules |
 | `TESTING.md` | Studio tools, playtests, measuring, automated tests |
 | `ANALYTICS.md` | Sending events: the helper, slicing, naming, standard events |
@@ -28,14 +28,17 @@ The same in every game; changed only through the template (CLAUDE.md "Template-o
 | `POST-RELEASE.md` | Checking the live build after a publish, and tidying up |
 | `LAUNCH.md` | The launch review and checklist |
 | `WORKSTATION.md` | Where projects live, setting up a PC, backups |
-| `NEW-PROJECT.md` | Starting a game from the template |
+| `NEW-PROJECT.md` | Starting a game from the template, or bringing one in |
+| `SETUP.md` | Turning the onboarding answers into the docs: a new game, more detail, a game brought in |
+| `WORKER.md` | The brief for a worker: one task in one lane, for any agent |
 | `TEMPLATE.md` | Which files are the template's and which the game's, releasing the template, and taking a release into a game |
 
 ## game/: what this game is
 
 | Doc | What |
 |---|---|
-| `PROJECT.md` | This game's details, loaded into every Claude session |
+| `PROJECT.md` | This game's details, read by every agent session first |
+| `ONBOARDING.md` | The user's answers from Rocco's onboarding, in their own words (SETUP.md turns them into the docs) |
 | `PITCH.md` | What we're making and why it can win |
 | `GDD.md` | The design map: loop, systems, progression, economy |
 | `features/` | One spec per feature, from `_TEMPLATE.md` |

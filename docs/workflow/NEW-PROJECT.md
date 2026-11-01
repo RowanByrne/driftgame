@@ -1,8 +1,16 @@
 # New project
 
-How to start a game from the template. The pitch needs only steps 1 to 4: places, lanes and the Roblox experience can wait until Foundation (WORKFLOW.md).
+How to start a game from the template, or bring in one that already exists. The pitch needs only steps 1 to 4: places, lanes and the Roblox experience can wait until Foundation (WORKFLOW.md).
 
-**`tools\new-project.ps1` does steps 1 to 4.** Create the game's empty private GitHub repo first (no README, .gitignore or license), then from `template\repo` run:
+**Usually, Rocco's onboarding does it** (New project, in its project menu). It asks a new game or one already made, then:
+1. Makes the project, with the script below.
+2. Asks a few questions about the game: answer as little or as much as you like.
+3. Commits the answers to `docs/game/ONBOARDING.md`.
+4. Opens your agent on SETUP.md, which turns them into the first docs.
+
+Tiles add more detail (monetization, economy, the world, ...), then or any time later, from Docs ("Add game details").
+
+**By hand, `tools\new-project.ps1` does steps 1 to 4.** Create the game's empty private GitHub repo first (no README, .gitignore or license), then from `template\repo` run:
 
 ```
 powershell -ExecutionPolicy Bypass -File tools\new-project.ps1 -Name <Game> -Code <CODE> -GitHubRepo <the new repo's URL>
@@ -35,7 +43,26 @@ It pulls the template, copies it as `<Game>\` (never its lanes), sets the remote
 5. **Make the Main place.** In Studio, open a new Baseplate and save it to `<Game>\places\<CODE>-Main.rbxl`. In its command bar run `workspace:SetAttribute("__lync_port", <port base>)`, then save. Run `tools\serve.bat` in `repo\`; the Lync plugin connects. Probe it as for a lane (LANES.md "Probe a lane"), with the probe file in `repo\src\Workspace\`.
 6. **Add lanes.** Ask the user how many to create (LANES.md "How many lanes"): as many as the strongest PC that will work on the game opens. Create them all as in LANES.md "Add a lane", record the count in `PROJECT.md` ("Lanes"), and add this PC's row to "Workstations".
 7. **Create the Roblox experience** when the game is ready for its first published test. The user publishes the Main place as a new private experience. Then fill in the universe id, start place id and owner in `PROJECT.md`, and `experienceId` / `placeId` in `default.project.json`. Settle account versus group ownership now if possible (LAUNCH.md "Roblox rules").
-8. **Begin the Pitch:** open Claude in `<Game>\repo` and start with WORKFLOW.md.
+8. **Begin the Pitch:** open your agent in `<Game>\repo` and start with WORKFLOW.md. If the onboarding ran, SETUP.md has drafted the pitch already.
+
+## Bringing in a game made elsewhere
+
+A game that already exists, built in or out of this workflow, joins the RoDev folder through Rocco's onboarding ("A game I've already made") or `new-project.ps1 -Existing`:
+
+| The game is | `-Existing` | What the script does |
+|---|---|---|
+| In a GitHub repo, or a git folder on this PC | its address or folder | Clones it as `<Game>\repo`, with its history, and adds the template as the `template` remote. The game keeps its repo. |
+| In a folder without git | the folder | Makes a new project from the template, and copies the folder to `<Game>\import\` |
+| In a place file | the `.rbxl` or `.rbxlx` | Makes a new project from the template, and copies the place to `places\<CODE>-Main.rbxl` and `backups\` |
+| Only in Studio | `-StudioOnly` instead | Makes a new project from the template |
+
+Then an agent finishes the job by SETUP.md "Existing game":
+- **Merge in the template**, or import the code into `src\`.
+- **Fit `default.project.json`** to where the code is.
+- **Read all of the code** and fill in the docs.
+- **Fill in PROJECT.md** from the answers.
+
+Places and lanes follow, as in steps 5 and 6, when the user's ready.
 
 ## An existing game on another PC
 

@@ -1,6 +1,6 @@
 # Post-release check
 
-After the user publishes, confirm the new build is really live and healthy, and tidy up after the release. Claude runs it when the user says the update is live (RELEASING.md "After a publish"). The automated tests already ran before the publish; this checks the live game and the repo, not the code. Where to find each view is in DASHBOARDS.md "After a publish".
+After the user publishes, confirm the new build is really live and healthy, and tidy up after the release. The agent runs it when the user says the update is live (RELEASING.md "After a publish"). The automated tests already ran before the publish; this checks the live game and the repo, not the code. Where to find each view is in DASHBOARDS.md "After a publish".
 
 **When:** right after the publish, for what's up to the minute, and again about an hour later, for what fills in after a delay.
 

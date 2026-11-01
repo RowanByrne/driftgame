@@ -1,6 +1,6 @@
 # Releasing
 
-How an update gets from `main` to players. **Publishing is the user's job, never Claude's.** Claude gets every release ready: the checks, update notes when the user wants them, and the record afterwards.
+How an update gets from `main` to players. **Publishing is the user's job, never the agent's.** The agent gets every release ready: the checks, update notes when the user wants them, and the record afterwards.
 
 When the user says they're **about to publish**, do "Before a publish" first. When they ask for **update notes**, write them (below).
 
@@ -70,6 +70,6 @@ Content can ship closed and open itself at a set time, so it goes out in an earl
 The game page is what players see before they join: the description, icon, thumbnails, and events (Creator Dashboard, Events & updates) announcing what's coming.
 
 - **Events tease releases.** A game page event for a timed release starts when the release opens in game; keep both times in the same `live/CALENDAR.md` row so they can't drift apart.
-- **Claude drafts, the user publishes.** Claude drafts the text and makes the images through ART-PIPELINE.md (approved files in `assets/marketing/`). The user posts them on the dashboard, or asks Claude to do it in the browser.
+- **The agent drafts, the user publishes.** The agent drafts the text and makes the images through ART-PIPELINE.md (approved files in `assets/marketing/`). The user posts them on the dashboard, or asks the agent to do it in the browser.
 - **Event cards are 1024 × 576:** Roblox stores event images at that size, so make them that size.
 - **Record what's live,** word for word: events and their ids in `live/CALENDAR.md`, the description, icon and thumbnails in `live/GAME-PAGE.md`.

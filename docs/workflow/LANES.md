@@ -34,7 +34,7 @@ A lane is created once per game, but opened per PC. A lane that exists costs onl
 
 - **Starting servers:** `tools\serve-all.bat` starts Lync for the Main place and every lane this PC opens ("How many lanes"), each in its own window; `tools\serve-all.bat dry` lists what it would start. `tools\serve.bat` serves just the checkout it's in. In a lane it reads `.lane-port` and serves a generated `lane.project.json` (both gitignored).
 - **Finding Lync:** `serve.bat` looks in the RoDev folder first (`RoDev\_tools\lync\lync.exe`), then on PATH, so every game in a RoDev folder shares one copy (WORKSTATION.md). Lync's Studio plugin installs itself on the first serve; restart Studio after.
-- **The user starts Lync.** A server started from a Claude shell dies with that shell. If the conductor must restart one, start it detached:
+- **The user starts Lync.** A server started from an agent's shell dies with that shell. If the conductor must restart one, start it detached:
   `Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = 'cmd.exe /K "<checkout>\tools\serve.bat"' }`
   After a restart, Studio's Lync plugin may wait on **Resume** until the user clicks it.
 
