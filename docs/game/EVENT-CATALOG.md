@@ -14,21 +14,21 @@ Custom field 3 on every event (ANALYTICS.md "Slicing the data").
 
 ## Funnels
 
-> Each funnel's steps in order. Step names say what the game requires (ANALYTICS.md "Naming"). After launch, never renumber a live funnel: add a new one.
+> Each funnel's steps in order. A funnel is one custom event, with the step in field 1 (ANALYTICS.md "Naming"). After launch, never renumber a live funnel: add a new one.
 
-### Onboarding (Roblox's onboarding funnel)
+### FTUE (`FtueStep`)
 
 | # | Step | Source | Fields |
 |---|---|---|---|
 | 1 | | server / client | |
 
-### Core loop
+### Core loop (optional, `CoreLoopStep`)
 
 | # | Step | Source | Fields |
 |---|---|---|---|
 | 1 | | | |
 
-### Purchases
+### Purchases (`PurchaseStep`)
 
 | # | Step | Source | Fields |
 |---|---|---|---|

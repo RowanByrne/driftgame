@@ -46,7 +46,7 @@ Get the project running end to end, so everything built after it stands on code 
 
 Find out whether it's fun, as fast as possible.
 
-- **Produces:** the core loop from `PITCH.md`, playable in the Main place with placeholder art and programmer-art UI (see Production), and only the world it needs, as a gray blockout (`WORLD-BUILDING.md`). Tuning numbers live in config modules, never in the logic. The core loop section of `GDD.md` and a spec per loop feature in `features/`. Funnel events for each step of the loop, so the user's playtests produce data.
+- **Produces:** the core loop from `PITCH.md`, playable in the Main place with placeholder art and programmer-art UI (see Production), and only the world it needs, as a gray blockout (`WORLD-BUILDING.md`). Tuning numbers live in config modules, never in the logic. The core loop section of `GDD.md` and a spec per loop feature in `features/`. The FTUE funnel's first steps and the loop's own events (ANALYTICS.md), so the user's playtests produce data. Pacing targets for the loop in `PACING.md`.
 - **Rules:** speed over polish, but the code is real: server authority, contracts and tests still apply, because this code ships.
 - **Not yet:** final art, monetization, content beyond what the loop needs.
 - **Gate:** the user plays the first five minutes and says go, change or stop.
@@ -55,7 +55,7 @@ Find out whether it's fun, as fast as possible.
 
 Build out the launch scope in rounds (`CONDUCTOR.md`).
 
-- **Produces:** the features and content in `ROADMAP.md`'s launch scope, each with a spec in `features/`. The world, from a layout the user approved in `WORLD.md` (`WORLD-BUILDING.md`). World art and models, with `ART-DIRECTION.md` set before the first art round (`ART-PIPELINE.md`). Sounds, with the sound direction in `AUDIO.md` set before the first ones (`AUDIO-PIPELINE.md`). The first-time player experience from join to the first reward. `MONETIZATION.md` filled in with the user: the targets, how pay-to-win, currencies and offers, so features leave room for what will be sold (it's built in the Monetization phase). Analytics events for every feature, listed in `EVENT-CATALOG.md`: a feature isn't done until its events fire.
+- **Produces:** the features and content in `ROADMAP.md`'s launch scope, each with a spec in `features/`. The world, from a layout the user approved in `WORLD.md` (`WORLD-BUILDING.md`). World art and models, with `ART-DIRECTION.md` set before the first art round (`ART-PIPELINE.md`). Sounds, with the sound direction in `AUDIO.md` set before the first ones (`AUDIO-PIPELINE.md`). The first-time player experience from join to the first reward. `MONETIZATION.md` filled in with the user (REVENUE.md has every way a game earns): the targets, how pay-to-win, currencies and offers, so features leave room for what will be sold (it's built in the Monetization phase). Analytics events for every feature, listed in `EVENT-CATALOG.md`: a feature isn't done until its events fire.
 - **UI is programmer art until the UI phase:** simple placeholder screens with little styling, built on the shared theme. Their job is to help the user work out the layout: what each screen shows, and where text and buttons go. The user decides every device layout here (desktop, phone landscape and portrait can be completely different; UI.md "Layouts per device"), never at the end. Spend the effort on layout and clarity, not looks.
 - **Rules:** `main` must always play: a broken branch doesn't merge. Scope that isn't in the launch list goes to "Later".
 - **Gate:** the launch scope is done and the user agrees to start UI.
@@ -76,7 +76,7 @@ Turn the programmer-art UI into the finished look. This is the most demanding ph
 
 ## 6. Monetization
 
-Build what `MONETIZATION.md` designed: every launch offer, the shop, checkout and what each purchase grants. This is a large phase of its own, not a task squeezed into another one.
+Build what `MONETIZATION.md` designed: every launch offer, the shop, checkout and what each purchase grants. This is a large phase of its own, not a task squeezed into another one. How Roblox pays, and the current rules and APIs for each kind of offer, are in REVENUE.md.
 
 - **Why after UI:** offers need settled features to sell and finished UI to sell them in (the shop, purchase buttons, offer windows), so they're built once.
 - **Steps:**
@@ -102,7 +102,7 @@ Keep players coming back and ship updates safely.
 - **Every publish:** the pre-publish checklist (`RELEASING.md`), update notes when the user wants them, then a line in `live/RELEASES.md`. Publish often: when the live build falls behind `main`, store text and docs start describing features players don't have yet.
 - **After each publish:** watch the Creator Hub error report and server stats; anything that loses data, money or access is an incident.
 - **Live changes without a publish:** tuning, flags and timed content go through Roblox configs (CONFIGS.md).
-- **Weekly:** review the key numbers and let them steer `ROADMAP.md`: in our own data system once it exists (DATA-SYSTEM.md), until then in the Creator Hub (DASHBOARDS.md shows where each one is).
+- **Weekly:** review the key numbers and let them steer `ROADMAP.md` "After launch": in Rocco's Metrics once it's built (DATA-SYSTEM.md), until then in the Creator Hub (DASHBOARDS.md shows where each one is). Retention goes in `RETENTION.md` "Measured".
 - **Live events:** plan them in `live/CALENDAR.md`.
 - **Incidents:** anything that loses data, money or access gets a postmortem in `live/INCIDENTS.md`.
 - **Data changes:** a data schema change ships with a migration that was tested on saved data from the previous version.

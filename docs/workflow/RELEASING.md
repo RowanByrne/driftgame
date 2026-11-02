@@ -70,7 +70,8 @@ Content can ship closed and open itself at a set time, so it goes out in an earl
 The game page is what players see before they join: the description, icon, thumbnails, and events (Creator Hub, Events & updates) announcing what's coming. Rocco shows it: **Updates** has the calendar and the events, **Thumbnails** has the thumbnails and how each one does.
 
 - **The agent drafts, the user publishes.** The agent writes the text and makes the images through ART-PIPELINE.md (approved files in `assets/marketing/`). Nothing goes public without the user: an event goes up as a private draft, and the user publishes it (one click in Rocco's Updates, or the Creator Hub).
-- **Event cards are 1024 × 576:** Roblox stores event images at that size, so make them that size. **Thumbnails are 1920 × 1080.**
+- **Sizes:** the icon is 512 × 512. Thumbnails are 16:9 at 1920 × 1080, up to 10, plus up to 3 video thumbnails a month. Event cards are 16:9 too; Roblox's docs give no size, so make them 1024 × 576.
+- **Other languages:** the name and description are translated automatically where a language's entry is blank, and each language can have its own icon and thumbnails (UI.md "Localization").
 - **Record what's live,** word for word: events and their ids in `live/CALENDAR.md`, the description, icon and thumbnails in `live/GAME-PAGE.md`.
 
 ### Roblox Open Cloud
@@ -92,6 +93,15 @@ These APIs are experimental or beta at Roblox, so they change. When a call is re
 
 The update cards in `live/CALENDAR.md` are the plan, and each gets an event on the game page unless its card says `None`. Rocco queues the event as a Workboard task a set number of days before the update (the "Auto-queue" line at the top of CALENDAR.md, 14 by default), or when the user clicks to. When Rocco isn't running, the conductor checks the calendar on "refresh" and queues what's due itself.
 
+**A card's form.** Rocco reads and writes the cards, so every card keeps this form, soonest first under "Upcoming":
+
+- A marker line `<!-- update: <id> -->`, with a short id like `pet-evolution`, then the update's name as a `###` heading.
+- **When:** the day, `YYYY-MM-DD`, and its time in UTC when it has one: `2026-11-14 17:00 UTC`.
+- **Kind:** Update, Live event or Timed release.
+- **Game page event:** Not yet, Queued (T-012), Drafted, Scheduled, Live, Over, or None when it shouldn't get one.
+- **Event id:** once the event exists on Roblox. **Card image:** the card the user picked. **Release:** for timed content, its release id and the publish that carries it.
+- Then the user's notes, in their words: what's in it, and anything the event should say.
+
 For a queued event:
 
 1. **Write the text** from the card, in the user's words where they gave them: a short title (the hook), a subtitle, a description (what's new, and when), and its categories. A card with only a day and no time: ask the user for the time on the task.
@@ -104,7 +114,7 @@ For a queued event:
 
 Rocco's Thumbnails view shows the game page's thumbnails, how each one did over the last 7 days with the key (impressions, qualified plays, and qualified play-through: the share of impressions that became a real play), directions to try, and concepts made from them.
 
-- **Directions** are the agent's, in `live/GAME-PAGE.md` "Thumbnail directions", in the form described there. When the user asks for them (a Workboard task, with the numbers in its note): read the numbers, PITCH.md, ART-DIRECTION.md and what's on the page now, then write 3 to 5. Each says why it should work, tied to the numbers or the game, and its exact image prompt: what's in the shot, the style from ART-DIRECTION.md, no text, and a wide 16:9 composition with the subject centred. Replace directions that were tried and lost.
+- **Directions** are the agent's, in `live/GAME-PAGE.md` "Thumbnail directions". Rocco reads them, so each keeps this form: a marker line `<!-- direction: <id> -->` with a short id like `rare-pet`, the direction's name as a `###` heading, then **Why:** (why it should work for this game, from the numbers or the docs) and **Prompt:** (the exact image prompt, on one line). When the user asks for them (a Workboard task, with the numbers in its note): read the numbers, PITCH.md, ART-DIRECTION.md and what's on the page now, then write 3 to 5. Each says why it should work, tied to the numbers or the game, and its exact image prompt: what's in the shot, the style from ART-DIRECTION.md, no text, and a wide 16:9 composition with the subject centred. Replace directions that were tried and lost.
 - **Concepts** are made from a direction in Rocco, in one click, with the image tool (MODELS.md): candidates in `..\art\generated\thumbnails\<direction>\`, each with its prompt and hash in a `.json` beside it.
 - **The user picks one** in Rocco ("Use this one"), which queues a task: approve it into `assets/marketing/` (ART-PIPELINE.md step 4; the manifest takes the prompt and hash from its `.json`), fit it to 1920 × 1080, put it on the game page (with the key, or hand it to the user), and record it in `live/GAME-PAGE.md` "Icon and thumbnails". Fitting is the one change allowed on the way in: scale and crop to 16:9 without cutting into the subject, and note it in the manifest.
 - **Give a new thumbnail a week** of impressions before judging it.

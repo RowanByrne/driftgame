@@ -24,7 +24,7 @@ The map of the game's design: how the parts fit together. Keep it short. Each fe
 
 ## Progression
 
-> How the player grows: levels, unlocks, gates, and roughly how long each stage takes.
+> How the player grows: levels, unlocks and gates. How long each should take is in `PACING.md`.
 
 ## Economy
 
@@ -44,7 +44,7 @@ The map of the game's design: how the parts fit together. Keep it short. Each fe
 
 ## Social
 
-> What players do with or around each other: playing together, trading, competing, showing off.
+> What players do with or around each other: playing together, trading, competing, showing off. Server size, private servers and teleports are in `live/EXPERIENCE.md` "Multiplayer"; what brings players back is in `RETENTION.md`.
 
 ## First five minutes
 

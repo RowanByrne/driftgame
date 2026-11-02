@@ -48,6 +48,7 @@ Built in the Foundation phase (CODING.md). It only ever acts in Studio; publishe
 
 ## Gotchas
 
+- **A running playtest doesn't get file changes.** Lync syncs the Edit datamodel; its Playtest Sync toggle (off by default) reaches only the server side. Stop the playtest and start it again after a change.
 - **Stale modules.** `execute_luau`'s `require` cache outlives Lync edits. To check a pure module's current source, clone its folder into `ServerStorage`, require the clone, then destroy it.
 - **Camera changes get reverted.** A camera-type change made while an `execute_luau` call is running is reverted. Schedule it with `task.delay` and return straight away.
 - **Playtest won't start.** If `start_stop_play` hangs on "Start play hasn't finished yet", start from the Edit datamodel with `StudioTestService:ExecutePlayModeAsync` inside `task.spawn`, and return straight away.

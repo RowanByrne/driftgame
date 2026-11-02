@@ -21,6 +21,7 @@ The agent works through the checklist below and writes a launch review in `docs/
 - **Saving is safe:** the saving rules in CODING.md are in place, and the save tests pass (TESTING.md).
 - **Launch wipe (the user decides):** start everyone fresh by moving the data store names up a version, or carry beta progress over. Leave the old stores untouched either way.
 - **Right to be forgotten:** one deletion template per data store, keyed by user id (Creator Dashboard, data stores). These are standing auto-delete rules, so create them only with the user's OK.
+- **Storage:** a full server's save traffic fits the data store limits, and the storage total is well under the experience's limit (CODING.md "Data store limits"), with Roblox's storage notifications on.
 - **Tests never touch live data.** With Studio API access on, Studio uses the live data stores, so keep tests on memory mode or fake stores.
 
 ### Purchases (if the game sells anything)
@@ -72,7 +73,7 @@ Every area in PLATFORM-RISKS.md is checked against Roblox's current rules, and t
 ### Analytics
 
 - **Arriving before launch:** the standard events show up in Roblox's dashboards from a published test, with the standard slice filled in (ANALYTICS.md).
-- **Events fire:** the onboarding funnel, every economy source and sink, purchases and progression.
+- **Events fire:** the FTUE funnel, every economy source and sink, purchases and progression.
 - **Privacy:** strings from the client are allow-listed, so no personal information gets through.
 - **Alerts:** once the game has 100+ daily players, alerts for crashes and other critical health metrics are set up with a webhook (DASHBOARDS.md "Alerts"; record them in `live/EXPERIENCE.md`).
 

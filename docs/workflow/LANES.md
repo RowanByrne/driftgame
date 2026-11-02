@@ -51,7 +51,7 @@ Before assigning a lane, prove it syncs: write `src/Workspace/LaneProbe.luau` in
 
 ## Hand-built content
 
-Place files aren't in git, so anything built by hand in Studio (parts, models, UI) lives only in a place file. Build it in the Main place only. After it changes, re-copy `<CODE>-Main.rbxl` over each idle lane's place and set that lane's `__lync_port` and test profile again (steps 2 and 3 above). Take a copy in `backups\` before risky edits.
+Place files aren't in git, so anything built by hand in Studio (parts, models, UI) lives only in a place file. Lync leaves it alone as long as no file in `src\` has the same name in the same folder (CODING.md "Source and sync"). Build it in the Main place only. After it changes, re-copy `<CODE>-Main.rbxl` over each idle lane's place and set that lane's `__lync_port` and test profile again (steps 2 and 3 above). Take a copy in `backups\` before risky edits.
 
 ## Remove a lane
 

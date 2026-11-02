@@ -1,43 +1,40 @@
 # {{GAME_NAME}}
 
-This game's details. Every agent reads this file first (AGENTS.md; CLAUDE.md and GEMINI.md load it), so every session sees it: keep it short, and put design and detail in the other `docs/game/` files. Fill in every `{{...}}` when the game is created (docs/workflow/NEW-PROJECT.md).
+This game's details, loaded into every agent session: keep it short, and put design and detail in the other `docs/game/` files.
 
 ## At a glance
 
 | | |
 |---|---|
 | Game | {{GAME_NAME}} |
-| Code | `{{CODE}}`: the short prefix for this game's place files, e.g. `places\{{CODE}}-Main.rbxl` |
-| Phase | Pitch (Pitch, Foundation, Core loop, Production, UI, Monetization, Launch, Live: see docs/workflow/WORKFLOW.md). Update it when a gate passes. |
-| Launched | Not yet. The date it went public, once it does. |
-| GitHub | `{{GITHUB_REPO}}` (`origin`); template `RowanByrne/rodev_template` (`template`) |
-| Roblox | Experience (universe) `{{UNIVERSE_ID}}`, start place `{{PLACE_ID}}`, owned by `{{OWNER}}` (the user's account or a group; it decides who must grant asset permissions) |
-| Update log | No. Whether the game has an in-game update log is the user's call; even with one, they decide per update whether it gets notes (docs/workflow/RELEASING.md). |
-| Lanes | None yet. `lane1` to `laneN`: as many as the strongest PC below opens (docs/workflow/LANES.md "How many lanes"). |
-| Lync port base | `34870`: main serves on it, lane N on base + N. Must match `port` in `default.project.json`. Give each game its own base (34870, 34890, 34910, ...) so two can run at once. |
+| Code | `{{CODE}}` |
+| Phase | Pitch (docs/workflow/WORKFLOW.md) |
+| Launched | Not yet |
+| GitHub | `{{GITHUB_REPO}}` |
+| Roblox | Experience (universe) `{{UNIVERSE_ID}}`, start place `{{PLACE_ID}}`, owned by `{{OWNER}}` |
+| Update log | No |
+| Lanes | None yet |
+| Lync port base | `34870` |
 
 ## Places
 
+Main is `places\{{CODE}}-Main.rbxl`, served from `repo\` on the port base: always merged `main`, and the user's test place. Lane N is `{{CODE}}-LaneN.rbxl`, served from `lanes\laneN` on base + N (docs/workflow/LANES.md). Other places agents may use, such as an art workshop, and what they may do there:
+
 | Place file | Served from | Port | Use |
 |---|---|---|---|
-| `{{CODE}}-Main.rbxl` | `repo\` | base | Always shows merged `main`; the user's test place |
-| `{{CODE}}-LaneN.rbxl` | `lanes\laneN` | base + N | Worker places, one per lane (docs/workflow/LANES.md) |
+| | | | |
 
-Add a row for any other place agents may use, such as an art workshop, with what they may do there.
-
-**Hands-off places:** none yet. List any place agents must never inspect, playtest, attach Lync to or change (for example the user's Team Create map workplace).
+**Hands-off places:** none yet. Places agents must never inspect, playtest, attach Lync to or change, such as the user's Team Create map.
 
 ## Workstations
 
-Each PC that works on this game opens `lane1` up to its number. A PC gets a row the first time it works on the game (docs/workflow/LANES.md "How many lanes").
+Each PC that works on this game, and how many lanes it opens: `lane1` up to that number (docs/workflow/LANES.md "How many lanes").
 
 | PC (`$env:COMPUTERNAME`) | What it is | Lanes it opens |
 |---|---|---|
 | None yet | | |
 
 ## Game-only rules
-
-Rules for agents that apply to this game only: exceptions, things to preserve, workshops. Rules that would suit every game belong in the template (AGENTS.md "Template-owned files").
 
 - None yet.
 

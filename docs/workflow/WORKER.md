@@ -33,9 +33,9 @@ If your task came with a Workboard id (`T-012`), keep its card current with Rocc
 
 ## Finish
 
-1. **Test in your place** if it's open: start a quiet playtest, exercise the change, read `get_console_output` for errors and warnings, stop the playtest. Never leave one running. Run the automated tests for anything touching saving, purchases or odds.
-2. **Commit** in small logical commits, each ending with your Co-Authored-By line (AGENTS.md "Git").
-3. `git -C <lane> fetch origin`, then `git -C <lane> rebase origin/main`. If the rebase conflicts in files you don't own, `git rebase --abort` and report instead of guessing.
+1. **Commit** in small logical commits, each ending with your Co-Authored-By line (AGENTS.md "Git").
+2. `git -C <lane> fetch origin`, then `git -C <lane> rebase origin/main`, so what you test is what merges. If the rebase conflicts in files you don't own, `git rebase --abort` and report instead of guessing.
+3. **Test in your place** if it's open, on the rebased code (Lync has synced it): start a quiet playtest, exercise the change, read `get_console_output` for errors and warnings, stop the playtest. Never leave one running. Run the automated tests for anything touching saving, purchases or odds. Fix what fails, then commit again.
 4. `git -C <lane> push -u origin HEAD`.
 5. **Report briefly** (to the conductor, or in your session's last message):
    - your branch and commits, and the files you changed

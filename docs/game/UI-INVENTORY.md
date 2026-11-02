@@ -30,7 +30,7 @@ Every layout, screen and component in this game's UI, and where each one stands.
 |---|---|---|---|---|---|---|
 | | | | | | | |
 
-> For any screen whose layouts differ, a short section on how:
+For any screen whose layouts differ, a short section on how, in this form:
 
 ### <Screen>
 

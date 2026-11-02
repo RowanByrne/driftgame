@@ -2,27 +2,27 @@
 
 A Roblox game built from the RoDev template. Luau source in `src/` is synced into Studio by Lync. GitHub `origin/main` is the source of truth for code and every text file; place files and big art live in the project folder next to this repo, outside git.
 
-These rules are for whichever coding agent the user works with: Claude Code, Codex, Gemini CLI or another (`docs/workflow/MODELS.md`). `CLAUDE.md` and `GEMINI.md` only point here. This file is the same in every game.
+These rules are for whichever coding agent the user works with: Claude Code, Codex, Gemini CLI or another (`docs/workflow/MODELS.md`). `CLAUDE.md` and `GEMINI.md` only point here.
 
-**Read `docs/game/PROJECT.md` before any work:** this game's details (name, code, Roblox ids, port base, current phase, game-only rules).
+**This game's details are in `docs/game/PROJECT.md`:** name, code, Roblox ids, port base, current phase, game-only rules. Claude Code and Gemini CLI load it with this file; any other agent reads it before any work.
 
 ## Project layout
 
-The project folder sits in a RoDev folder next to `template\` and `_tools\` (WORKSTATION.md). That folder can be anywhere, from a user folder to a portable drive with a changing letter, so use paths relative to this repo and never write an absolute path or drive letter into a file or script.
+The project folder sits in a RoDev folder next to `template\` and `_tools\` (WORKSTATION.md). That folder can move, even to another drive letter, so never write an absolute path or drive letter into a file or script.
 
 ```
 <Game>\
-  repo\          this repo: code, docs, live records, approved art (origin = this game on GitHub, template = rodev_template)
+  repo\          this repo (origin = this game on GitHub, template = rodev_template)
   lanes\laneN\   worker checkouts of this repo, one per lane (docs/workflow/LANES.md)
   places\        Studio places: <CODE>-Main.rbxl is served from repo\, <CODE>-LaneN.rbxl from lanes\laneN
-  art\           art in progress: generated\ candidates, source\ (.psd, .blend), reference\, captures\, marketing\
+  art\           art in progress (docs/workflow/ART-PIPELINE.md)
   backups\       place snapshots before risky edits
   scratch\       throwaway files; anyone may delete them
 ```
 
 - **In git:** all text, and approved art that ships in the game, up to 5 MB a file (a commit check, `tools/hooks/pre-commit`, refuses anything bigger).
 - **Outside git:** image candidates, source files (.psd, .blend, .kra), video, `.rbxl` places, backups.
-- **Access:** agents work in the folders next to this repo and in the template's checkout too. How each agent is allowed in is in MODELS.md "Setting up an agent".
+- **Access:** agents work in the folders next to this repo and in the template's checkout too (MODELS.md "Setting up an agent").
 
 ## Who does what
 
@@ -30,8 +30,8 @@ The project folder sits in a RoDev folder next to `template\` and `_tools\` (WOR
 |---|---|
 | Decides direction: the pitch, features, the look, names and prices players see | Proposes, plans, builds, tests, and keeps the docs current |
 | Plays the game and says go or no-go at each phase gate (WORKFLOW.md) | Proves work by measuring, and says what to look at |
-| Picks art from candidates | Generates candidates, uploads the picked art, sets the asset ids |
-| Publishes to players, and changes Creator Dashboard settings (or asks the agent to, in the browser) | Runs the pre-publish checks, writes update notes when asked, records dashboard settings in `live/EXPERIENCE.md` |
+| Picks art and sounds from candidates | Generates candidates, uploads only what the user picked, sets the asset ids |
+| Publishes to players, never the agent, and changes Creator Dashboard settings (or asks the agent to, in the browser) | Runs the pre-publish checks, writes update notes when asked, records dashboard settings in `live/EXPERIENCE.md` |
 | Starts Lync (`tools\serve-all.bat`) | Probes lanes before use; restarts Lync detached only when needed (LANES.md) |
 
 The main session is the **conductor**: it plans, hands tasks to **workers** in lanes, and merges their work (CONDUCTOR.md). A worker follows `docs/workflow/WORKER.md`.
@@ -63,78 +63,73 @@ Then stop.
 - Code against `docs/game/CONTRACTS.md` (data, remotes, tags, attributes, service APIs) and `docs/game/EVENT-CATALOG.md` (analytics events). A contract change updates its doc in the same commit; a change other tasks build on goes in first as its own small commit.
 
 **Studio**
-- Studio is reached through the Roblox Studio MCP, registered in your agent as `Roblox_Studio` (WORKSTATION.md). Without it, say so and work without Studio.
-- Use only the place you were given (match its name in `list_roblox_studios`), and never touch the hands-off places listed in PROJECT.md.
-- Mark every playtest you start so it stays silent, and never leave one running (TESTING.md).
+- Studio is reached through the Roblox Studio MCP, registered in your agent as `Roblox_Studio` (WORKSTATION.md). Without it, say so and work without Studio. Read TESTING.md before using its tools.
+- Use only the place you were given (match its name in `list_roblox_studios`, which lists only this PC's open places), and never touch the hands-off places listed in PROJECT.md. Mark every playtest you start quiet, and never leave one running.
 - Prove behaviour with numbers: positions, sizes, counts, debug state, logs. Screenshot only to answer "does this look right?", at most 3 per task, and leave the final look to the user.
 
 **Art**
-- Images come from the image tool in MODELS.md (`tools\imagegen.ps1` today; ART-PIPELINE.md). An agent that makes images itself may use that instead, through the same steps: candidates in `..\art\generated\`, logged in their manifest. On a PC where neither can run, say so; don't substitute.
-- Show candidates to the user. Never upload art or sounds they haven't picked (sounds: AUDIO-PIPELINE.md).
-
-**Publishing**
-- Publishing to players is the user's job, never the agent's. When they say they're about to publish, run the checks in RELEASING.md first. Update notes are written only when the game has an update log and the user wants notes for this update.
+- Images come from the image tool in MODELS.md, or from an agent that makes images itself, through the same steps (ART-PIPELINE.md). On a PC where neither can run, say so; don't substitute.
 
 ## Shorthands
 
 | The user says | Do |
 |---|---|
 | "refresh" | Sync with GitHub both ways and move every idle lane to the latest `main` (CONDUCTOR.md "Refresh") |
-| "about to publish" | Run the pre-publish checklist, and ask about update notes if the game has an update log (RELEASING.md) |
-| "update notes" | Write update notes for this update (RELEASING.md "Update notes") |
+| "about to publish" | The pre-publish checks, and update notes if the game has an update log (RELEASING.md) |
+| "update notes" | RELEASING.md "Update notes" |
 | "set up the game" | Turn the onboarding answers in `docs/game/ONBOARDING.md` into the docs (SETUP.md) |
-| "update from template" | Bring in the newest template release with `tools\update-from-template.ps1`, and report what's new (TEMPLATE.md "Taking an update") |
-| "release the template" | In the template's own repo: tag `main` as the next `template/vX.Y.Z`, with what's new as the message, and push the tag (TEMPLATE.md "Releasing") |
+| "update from template" | TEMPLATE.md "Taking an update" |
+| "release the template" | In the template's own repo: TEMPLATE.md "Releasing" |
 
 ## Docs
+
+Every doc, with what it holds, is in `docs/README.md`. Read the workflow doc before the work it covers:
 
 | Read | When |
 |---|---|
 | `docs/workflow/WORKFLOW.md` | Starting a phase, or unsure what the current phase allows |
-| `docs/workflow/CONDUCTOR.md` | Planning work, spawning workers, merging, "refresh", keeping Rocco's Workboard current |
+| `docs/workflow/CONDUCTOR.md` | Planning, spawning workers, merging, "refresh", the Workboard |
+| `docs/workflow/ROLLBACK.md` | Something that went out broke: code on main, a publish, a config, the map |
 | `docs/workflow/WORKER.md` | Working on a task in a lane |
-| `docs/workflow/MODELS.md` | Which agent and model runs each job and worker tier; setting up an agent; changing them |
-| `docs/workflow/SETUP.md` | Turning the onboarding answers into the docs, for a new game or one brought in |
+| `docs/workflow/MODELS.md` | Which agent and model runs what; setting up an agent |
+| `docs/workflow/SETUP.md` | Turning the onboarding answers into the docs |
 | `docs/workflow/LANES.md` | Adding a lane, Lync problems |
 | `docs/workflow/CODING.md` | Writing any Luau |
 | `docs/workflow/TESTING.md` | Before using Studio tools or starting a playtest |
 | `docs/workflow/ANALYTICS.md` | Adding or changing analytics events |
-| `docs/workflow/DASHBOARDS.md` | Finding a number in the Creator Hub, building a chart, setting up alerts |
-| `docs/workflow/CONFIGS.md` | Changing a value in the live game without publishing; kill switches |
+| `docs/workflow/DATA-SYSTEM.md` | The game's own metrics, from its custom events |
+| `docs/workflow/DASHBOARDS.md` | Numbers, charts and alerts in the Creator Hub |
+| `docs/workflow/CONFIGS.md` | Changing a live value without publishing; kill switches |
 | `docs/workflow/EXPERIMENTS.md` | Proposing, running or deciding an A/B test |
-| `docs/workflow/PLATFORM-RISKS.md` | The maturity questionnaire, age and audience, paid random items, copyright, moderation, text and links |
-| `docs/workflow/DATA-SYSTEM.md` | Our own dashboard for rapid iteration, built on the custom events (being designed by the user) |
-| `docs/workflow/ART-PIPELINE.md` | Generating, approving or uploading art; finding Creator Store assets |
-| `docs/workflow/AUDIO-PIPELINE.md` and `docs/game/AUDIO.md` | Any sound, music or voice: finding, generating, approving, uploading |
-| `docs/workflow/WORLD-BUILDING.md` and `docs/game/WORLD.md` | Laying out, building or changing the world and map |
+| `docs/workflow/REVENUE.md` | Designing anything players pay for, or anything Roblox pays for |
+| `docs/workflow/PLATFORM-RISKS.md` | Maturity, audience, paid random items, copyright, moderation, text and links |
+| `docs/workflow/ART-PIPELINE.md` | Generating, approving or uploading art; Creator Store assets |
+| `docs/workflow/AUDIO-PIPELINE.md` and `docs/game/AUDIO.md` | Any sound, music or voice |
+| `docs/workflow/WORLD-BUILDING.md` and `docs/game/WORLD.md` | Laying out, building or changing the world |
 | `docs/workflow/UI.md`, `docs/game/ART-DIRECTION.md` and `docs/game/UI-INVENTORY.md` | Any UI work |
-| `docs/workflow/RELEASING.md` | The user is about to publish, asks for update notes, or wants game page text or events |
-| `docs/workflow/POST-RELEASE.md` | After a publish: checking the build is live and healthy, and tidying up after the release |
+| `docs/workflow/RELEASING.md` | About to publish, update notes, game page text, events and thumbnails |
+| `docs/workflow/POST-RELEASE.md` | After a publish |
 | `docs/workflow/LAUNCH.md` | Preparing for launch |
-| `docs/workflow/WORKSTATION.md` | Where projects live, setting up a PC, ending a session, backups |
-| `docs/workflow/NEW-PROJECT.md` | Starting a new game from the template, or bringing one in |
-| `docs/workflow/TEMPLATE.md` | "update from template", "release the template", and which files are the template's and which the game's |
-| `docs/game/` | What this game is: PITCH, GDD, ARCHITECTURE, CONTRACTS, EVENT-CATALOG, WORLD, ART-DIRECTION, UI-INVENTORY, AUDIO, MONETIZATION, ROADMAP, DECISIONS, `features/`, and ONBOARDING (the user's answers when the game was set up) |
-| `live/` | After launch: releases, dashboard settings (including configs, custom dashboards and alerts), experiments, the game page, the calendar (live events, timed releases, game page events), incidents |
+| `docs/workflow/WORKSTATION.md` | Setting up a PC, ending a session, backups |
+| `docs/workflow/NEW-PROJECT.md` | Starting a game, or bringing one in |
+| `docs/workflow/TEMPLATE.md` | Template updates and releases; which files are whose |
+| `docs/game/` | What this game is, for any work on it |
+| `live/` | After launch: releases, dashboard settings, experiments, the game page, the calendar, incidents |
 
 Keep them current:
 - **New feature:** its own spec in `docs/game/features/<name>.md`, copied from `_TEMPLATE.md`. Don't grow one giant design doc.
 - **User decision:** one dated line in `docs/game/DECISIONS.md`, so it isn't reopened later.
 - **One-off reviews and audits:** `docs/archive/`.
-- **Wrong doc:** fix it when you notice. A stale doc misleads every agent after you.
+- **Wrong doc:** fix it when you notice; a template-owned one is fixed in the template checkout ("Template-owned files"). A stale doc misleads every agent after you.
 
 ## Template-owned files
 
-This repo started from `rodev_template` (remote `template`). These files belong to the template and are the same in every game: `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `.claude/`, `docs/workflow/`, `tools/`, `.gitignore`.
+These files are the template's, the same in every game: `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `.claude/`, `docs/workflow/`, `tools/`, `.gitignore`. **Don't edit them in a game.** When one should change, tell the user, then change it in the template checkout (`..\..\template\repo` from a game's `repo\`), commit and push it there; games get it in the next template release ("update from template", TEMPLATE.md). In the template repo itself, these are the files you edit.
 
-- **Don't edit them in a game.** When one should change, tell the user, make the change in the template checkout (`..\..\template\repo` from a game's `repo\`), commit and push it there. Games get it in the next template release, with "update from template" (TEMPLATE.md). That keeps every game in step and template merges free of conflicts.
-- **Starter files** (`docs/game/`, `live/`, `src/` and the like) come from the template but are the game's own: a template update never overwrites a game's version of one (TEMPLATE.md "Three kinds of file").
-- **Game-specific rules go in `docs/game/PROJECT.md`**, never here. Game-only ignores go at the bottom of `.gitignore` under `# This game`.
-- **In the template repo itself**, these are the files you edit.
+- **Starter files** (`docs/game/`, `live/`, `src/` and the like) come from the template but are the game's own: a template update never overwrites them.
+- **Game-specific rules go in `docs/game/PROJECT.md`;** game-only ignores go at the bottom of `.gitignore` under `# This game`.
 
 ## Workstations
 
 - **Memory stays on the PC.** An agent's own memory, if it keeps one, is on each workstation, not in the project. Anything another session, PC or agent must know goes in the repo: PROJECT.md, DECISIONS.md, or the relevant doc.
-- **Studio tools are per PC.** `list_roblox_studios` only lists places open on this PC.
-- **The Studio MCP is registered as `Roblox_Studio`** in every agent that uses it. Worker setups allow Studio tools by that exact name (MODELS.md); under any other name, workers get no Studio tools.
 - Setting up a new PC, and the checklist before stopping work: WORKSTATION.md.

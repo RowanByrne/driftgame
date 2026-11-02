@@ -28,11 +28,7 @@ What players see before they join, exactly as published on the Creator Dashboard
 
 ## Thumbnail directions
 
-> Directions for new thumbnails, from the agent (docs/workflow/RELEASING.md "Thumbnails"). Rocco's Thumbnails view lists them and makes concepts from one in a click. One block each, in this form; Rocco reads them, so keep the marker line and the field names:
->
-> - A marker line `<!-- direction: <id> -->`, with a short id like `rare-pet`, then the direction's name as a `###` heading.
-> - **Why:** why it should work for this game, from the numbers or the docs.
-> - **Prompt:** the exact image prompt, on one line.
+Directions for new thumbnails, from the agent, in the form in docs/workflow/RELEASING.md "Thumbnails". Rocco's Thumbnails view lists them and makes concepts from one in a click. Rocco reads them: keep each one's marker line and field names.
 
 ## Social links
 

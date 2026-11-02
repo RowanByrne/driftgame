@@ -41,10 +41,23 @@ Everything that exists only on the Creator Dashboard, written down so nobody has
 |---|---|---|
 | Audience (who can play) | | |
 | Voice chat and camera | | |
-| Private servers | | |
 | Allow HTTP requests | | |
 | Studio access to API services | | Tests stay in memory mode either way (docs/workflow/LAUNCH.md "Player data") |
 | Genre and subgenre | | |
+
+## Multiplayer
+
+> How players share servers: the settings that decide it, and the design reason for each. What players do together is in `docs/game/GDD.md` "Social".
+
+| | Setting | Why |
+|---|---|---|
+| Players per server | | |
+| Server fill | > Roblox optimized, maximum, or customized with slots kept for friends | |
+| Playing alone | > How a session works with nobody else around | |
+| Joining friends | > Following friends in, and invite prompts | |
+| Private servers | > Free, a price in Robux, or off | |
+| Other places and teleports | > Places players move between, reserved servers, matchmaking | |
+| Across servers | > Anything shared between servers: global leaderboards, cross-server messages, shared events | |
 
 ## Questionnaire
 

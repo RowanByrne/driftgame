@@ -126,6 +126,27 @@ Check these, then add the game's actual supported devices. Record the viewport, 
 - **Stress the content:** long names, 30 to 50% longer text, large numbers, empty and full lists, loading, errors and unavailable actions.
 - **If a supported size fails, fix the layout.** Don't quietly drop the device.
 
+## Player settings
+
+What a player sets in their own Roblox settings, and what the game does with it (record each in `docs/game/SETTINGS.md` "From Roblox"). All of these can change while the player is in the game, so follow their changed signals. Checked 2026-11-02:
+
+- **Text size:** `GuiService.PreferredTextSize` (Medium by default, then Large, Larger, Largest). Text that uses `AutomaticSize` and `TextWrapped` grows with it; `TextScaled` text doesn't, so leave room for larger text in every layout.
+- **Transparency:** `GuiService.PreferredTransparency`, from 1 (the default) down to 0 (fully opaque). Multiply each panel's `BackgroundTransparency` by it.
+- **Reduced motion:** `GuiService.ReducedMotionEnabled`. When it's on, drop tweens to an instant change or a short fade, and stop camera shake and screen flashes.
+- **Input:** `UserInputService.PreferredInput` (`Touch`, `Gamepad` or `KeyboardAndMouse`) decides which input hints show, and changes as the player switches. Actions are bound through the Input Action System (CODING.md "Conventions").
+- **Also:** never rely on colour or sound alone, and give music and effects their own volume settings.
+
+## Localization
+
+Roblox translates games automatically, into 18 languages: Arabic, Chinese (Simplified and Traditional), English, French, German, Hindi, Indonesian, Italian, Japanese, Korean, Polish, Portuguese, Russian, Spanish, Thai, Turkish and Vietnamese. Checked 2026-11-02. For it to work:
+
+- **Text lives in text objects** with `AutoLocalize` on. Automatic text capture (turned on in the game's settings) collects them into the game's translation table. It can't capture text baked into images, what players type, or badge and pass names.
+- **Build sentences from a whole string with placeholders,** like `"{count:int} coins"`, translated as one, never glued from pieces in code.
+- **Text set from code** goes through a translator: `LocalizationService:GetTranslatorForPlayerAsync(player)`, in `pcall` since it can fail. A table key can swap an image per language.
+- **Leave room:** translated text runs longer ("Stress the content" above).
+- **Translation tables in git:** Lync syncs a `.csv` file into a `LocalizationTable`.
+- **The game page:** its name and description are translated automatically where a language's entry is blank, and each language can have its own icon and thumbnails (RELEASING.md "Game page").
+
 ## Done
 
 The UI phase is done when:
@@ -147,4 +168,7 @@ Check current API details before relying on them:
 [On-screen containers and safe areas](https://create.roblox.com/docs/ui/on-screen-containers) ·
 [UI styling](https://create.roblox.com/docs/ui/styling) ·
 [Font](https://create.roblox.com/docs/reference/engine/datatypes/Font) ·
-[Console guidelines](https://create.roblox.com/docs/production/publishing/console-guidelines)
+[Console guidelines](https://create.roblox.com/docs/production/publishing/console-guidelines) ·
+[Accessibility](https://create.roblox.com/docs/production/publishing/accessibility) ·
+[Localization](https://create.roblox.com/docs/production/localization) ·
+[Input Action System](https://create.roblox.com/docs/input/input-action-system)

@@ -5,7 +5,7 @@ Anything that loses players' data, money or access: saves lost or corrupted, pur
 ## While it's happening
 
 1. **Tell the user straight away**, with what's known: what's broken, since when, how many players it hits.
-2. **Stop the damage.** Switch the broken part off with a Roblox config (docs/workflow/CONFIGS.md), such as turning checkout off. Rolling back to the previous version, or shutting servers down, is the user's call on the dashboard.
+2. **Stop the damage.** Switch the broken part off with a Roblox config (docs/workflow/CONFIGS.md), such as turning checkout off. Rolling back to the previous version (docs/workflow/ROLLBACK.md), or shutting servers down, is the user's call on the dashboard.
 3. **Fix it** in a small, focused change, check it in the Main place, and release it (docs/workflow/RELEASING.md).
 4. **Check the fix live** (docs/workflow/POST-RELEASE.md), and repair what players lost where the game can: restore items, grant missing purchases.
 

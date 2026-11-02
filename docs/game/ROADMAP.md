@@ -32,6 +32,14 @@ What we're building, in what order. The current phase is in `PROJECT.md`; the ph
 
 > What comes after, in order.
 
+## After launch
+
+> How the game keeps going once it's live: how often updates ship, the kinds of update (new content, live events, seasons, fixes and tuning), and the plan for the first 4 to 8 weeks. Each dated update gets a card in `live/CALENDAR.md`; the weekly numbers that steer this come from Rocco's Metrics (docs/workflow/DATA-SYSTEM.md).
+
+- **Cadence:**
+- **Kinds of update:**
+- **First weeks:**
+
 ## Later
 
 > Ideas for after the current phase or after launch, so they don't creep into the current work. Each with a line on why it's worth doing.

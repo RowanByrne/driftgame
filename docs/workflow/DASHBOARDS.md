@@ -23,7 +23,7 @@ The analytics guidebook: where to find each number in Roblox's Creator Hub, and 
 | Where do new players come from? Do recommendations convert? | **Analytics → Acquisition** |
 | Age, gender, country, language | **Analytics → Demographics** |
 | Ratings and comments | **Analytics → Feedback** |
-| Where do players drop off? (onboarding, core loop, purchases) | **Analytics → Funnels**, one tab per funnel |
+| Where do players drop off? (the FTUE, purchases) | **Analytics → Explore**, with the funnel's custom event as the source, broken down by its step field. Our funnels are custom events, so Roblox's Funnels page doesn't show them |
 | Where currency comes from and goes | **Analytics → Economy** |
 | Any custom event | **Analytics → Explore**, with the custom event as the source (below) |
 | Errors and warnings, with stack traces | **Monitoring → Error Report**: up to the minute |

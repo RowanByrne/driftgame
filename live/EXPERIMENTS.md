@@ -6,7 +6,7 @@ This game's experiments, newest first: what was tested, what happened, and what 
 |---|---|---|---|---|---|
 | | | | | Significant / not significant / stopped | Control / variant |
 
-> For each experiment, a section:
+Each experiment gets a section, in this form:
 
 ### <Experiment name>
 

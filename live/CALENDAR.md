@@ -11,14 +11,7 @@ What's coming and when: updates, live events and timed releases (docs/workflow/R
 
 ## Upcoming
 
-> One card per update, soonest first, in this form. Rocco reads and writes them, so keep the marker line and the field names:
->
-> - A marker line `<!-- update: <id> -->`, with a short id like `pet-evolution`, then the update's name as a `###` heading.
-> - **When:** the day, `YYYY-MM-DD`, and its time in UTC when it has one: `2026-11-14 17:00 UTC`.
-> - **Kind:** Update, Live event or Timed release.
-> - **Game page event:** Not yet, Queued (T-012), Drafted, Scheduled, Live, Over, or None when it shouldn't get one.
-> - **Event id:** once the event exists on Roblox. **Card image:** the card the user picked. **Release:** for timed content, its release id and the publish that carries it.
-> - Then the user's notes, in their words: what's in it, and anything the event should say.
+One card per update, soonest first, in the form in docs/workflow/RELEASING.md "Game page events". Rocco reads and writes them: keep each card's marker line and field names.
 
 ## Past
 

@@ -20,9 +20,9 @@ The user hands over work and follows it in Rocco's Workboard, and the conductor 
    - **Files owned:** exact paths; new files marked "(new)".
    - **Lane:** the lane's absolute path, resolved now (the project folder can move between sessions), and its place, `<CODE>-LaneN`.
    - **Branch:** `agent/<task-slug>`.
-   - **Proof:** the numbers, logs or debug state that will show it works. Screenshots only for "does it look right?", 2 or 3 at most, and the final look is left to the user.
+   - **Proof:** the numbers, logs or debug state that will show it works. Screenshots only for "does it look right?", at most 3, and the final look is left to the user.
 4. **Merge.** When workers report, `git fetch origin`, `git pull`, then merge each `agent/*` branch into `main` with `--no-ff`. Resolve simple conflicts yourself, keeping both sides' intent; with Claude Code, messy or multiple conflicts can go to the `git-integrator` subagent. Record any contract or analytics changes the workers report in `CONTRACTS.md` / `EVENT-CATALOG.md`.
-5. **Push and verify.** `git pull` again, push `main`, then check the merged build in the Main place with the Studio tools: playtest (marked quiet, TESTING.md), exercise what changed, read the console for errors and warnings.
+5. **Verify, then push.** `git pull` again, then check the merged build in the Main place before it goes up: Main is served from `repo\`, so it already shows what you merged. Playtest (marked quiet, TESTING.md), exercise what changed, and read the console for errors and warnings. Push `main` only when it plays; when it doesn't, fix it first or back the merge out (ROLLBACK.md).
 6. **Refresh lanes.** Move every idle lane to the new `main` ("Refresh" step 4), so every place shows the merged game.
 7. **Clean up.** Remove the round's lines from `docs/CLAIMS.md` and push. Delete the merged `agent/*` branches, locally and on GitHub.
 8. **Report** to the user, short (AGENTS.md "Talking to the user"): what merged and what to try in the Main place, then anything flagged: problems workers raised, follow-ups, decisions needed. On the Workboard, each merged task goes to To test, with what to try.
@@ -79,7 +79,7 @@ When the user says **"refresh"**, sync with GitHub both ways and leave every pla
 
 1. **Check for local changes first; never throw anything away.** `git status` in `repo\` and every lane. Commit what you understand (docs, claims, finished work). Show the user anything unexplained or half-done, like a stopped worker's edits in a lane, and ask before committing it.
 2. **Merge.** `git pull` (merge, not rebase) into `main`, then merge finished `agent/*` branches whose workers have reported, as in round step 4.
-3. **Push** `main`. If it's rejected, pull, re-check, and push again.
+3. **Push** `main`, once anything merged in step 2 plays in the Main place (round step 5). If the push is rejected, pull, re-check, and push again.
 4. **Refresh every idle lane.** For each lane that is clean and on a detached HEAD: `git -C <lane> fetch origin`, then `git -C <lane> switch --detach origin/main`. Lync syncs it into its place; a place in the middle of a playtest picks it up on the next one. A lane with a branch checked out or uncommitted work is in use: leave it and say so.
 5. **Check the calendar.** An update in `live/CALENDAR.md` that's due its game page event and still says `Not yet` gets one queued (RELEASING.md "Game page events"). Rocco does this by itself while it runs.
 6. **Report**, short: what went up and what came down, then any lane or place that's in use or needs attention.
@@ -89,3 +89,4 @@ When the user says **"refresh"**, sync with GitHub both ways and leave every pla
 - `git pull` (merge, not rebase) right before merging workers and again right before pushing. Never force-push or rewrite `main`.
 - **Shared contracts move first.** A change to `CONTRACTS.md`, `EVENT-CATALOG.md` or `src/ReplicatedStorage/Shared` that other tasks build on is its own small commit, pushed straight away.
 - `main` must always play (WORKFLOW.md): a branch that breaks the build doesn't merge until it's fixed.
+

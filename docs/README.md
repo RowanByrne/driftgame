@@ -19,12 +19,14 @@ The same in every game; changed only through the template (AGENTS.md "Template-o
 | `CONFIGS.md` | Changing live values through Roblox configs |
 | `EXPERIMENTS.md` | A/B tests with Roblox experiments |
 | `PLATFORM-RISKS.md` | Maturity, audience, gambling rules, copyright, moderation |
-| `DATA-SYSTEM.md` | Our own dashboard for rapid iteration, from the custom events (being designed) |
+| `DATA-SYSTEM.md` | Our own metrics, from the custom events pulled through Roblox's API: Rocco's Metrics tab (being designed) |
+| `REVENUE.md` | Every way a game earns: Creator Rewards, Roblox Plus, passes and products with regional pricing, subscriptions, rewarded ads |
 | `ART-PIPELINE.md` | Images and 3D assets, approvals, uploads, permissions |
 | `AUDIO-PIPELINE.md` | Sound effects, music and voice: sources, AI tools, approvals, uploads |
 | `WORLD-BUILDING.md` | Laying out and building the world: stages, rules, the map audit |
 | `UI.md` | Programmer art, device layouts, the UI phase, readability rules |
 | `RELEASING.md` | Before and after a publish, update notes, timed releases, the game page |
+| `ROLLBACK.md` | Backing out what broke: code on main, a publish, a config, the map, a player's save |
 | `POST-RELEASE.md` | Checking the live build after a publish, and tidying up |
 | `LAUNCH.md` | The launch review and checklist |
 | `WORKSTATION.md` | Where projects live, setting up a PC, backups |
@@ -49,8 +51,11 @@ The same in every game; changed only through the template (AGENTS.md "Template-o
 | `ART-DIRECTION.md` | How the game looks: world, characters, UI tokens and fonts |
 | `UI-INVENTORY.md` | Layouts, screens and components, and where each stands |
 | `AUDIO.md` | How the game sounds (the user's direction), every sound in it, and credits |
+| `PACING.md` | How long things should take: session length, milestones, earn rates, and what was measured |
+| `RETENTION.md` | What brings players back: every hook, its cadence and reward, and how retention is doing |
+| `SETTINGS.md` | The controls on every input type, the settings menu, and what the game takes from Roblox settings |
 | `MONETIZATION.md` | What players can buy, and the pay-to-win stance |
-| `ROADMAP.md` | Milestones, launch scope, now, next, later |
+| `ROADMAP.md` | Milestones, launch scope, now, next, after launch, later |
 | `DECISIONS.md` | The user's decisions, dated, so they aren't reopened |
 
 ## live/: running the live game
@@ -60,7 +65,7 @@ At the repo root, beside `docs/`.
 | Doc | What |
 |---|---|
 | `RELEASES.md` | Every publish to players |
-| `EXPERIENCE.md` | Everything set on the Creator Dashboard, including configs, dashboards and alerts |
+| `EXPERIENCE.md` | Everything set on the Creator Dashboard, including multiplayer, configs, dashboards and alerts |
 | `EXPERIMENTS.md` | This game's experiments: hypotheses, results, decisions |
 | `GAME-PAGE.md` | The game page as published, and directions for new thumbnails |
 | `CALENDAR.md` | The calendar: a card per update, live event or timed release, with its game page event |

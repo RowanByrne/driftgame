@@ -2,7 +2,7 @@
 
 Every game sends a complete set of custom events to Roblox's analytics (the Creator Hub dashboards), so decisions rest on data. There's no backend of our own. If one is ever added, only the analytics helper changes. This game's events are listed in `docs/game/EVENT-CATALOG.md`.
 
-**Planned:** our own data system, a custom dashboard for rapid iteration that pulls these same custom events as soon as they happen, so an update's numbers show within minutes instead of after Roblox's processing (DATA-SYSTEM.md, being designed). Until it exists, read them in the Creator Hub (DASHBOARDS.md).
+**Being built:** Rocco's Metrics tab pulls these custom events back from Roblox's Analytics Query API into the project folder, for the game's own views and weekly numbers (DATA-SYSTEM.md). Until it exists, read them in the Creator Hub (DASHBOARDS.md).
 
 ## How events leave the game
 
@@ -11,7 +11,7 @@ One server module, the **analytics helper** (part of the foundation kit, CODING.
 - **Never in the way:** every call is wrapped in `pcall` and sent from its own thread, so analytics can never break or slow gameplay.
 - **Server only, published only:** Roblox accepts these events only from a server in a published game.
 - **Within Roblox's limits:** a server may send about 120 + 20 × players events a minute. The helper counts its sends and drops the least important events first when it gets close.
-- **What's real time:** custom-event dashboards fill in after a delay, and an event that stops sending drops off them 90 days later. The Error Report and Performance dashboard are up to the minute, and Roblox's alerts can notify a webhook in real time. Where to find each is in DASHBOARDS.md.
+- **What's real time:** custom-event dashboards fill in after a delay of up to 24 hours, and an event that stops sending drops off them 90 days later. The Error Report and Performance dashboard are up to the minute, and Roblox's alerts can notify a webhook in real time. Where to find each is in DASHBOARDS.md.
 - **In Studio:** nothing is sent. The helper keeps the most recent events in memory, readable through the debug bridge, so tests can check them.
 
 ## Slicing the data
@@ -26,27 +26,26 @@ Every number should be splittable by who the player is and where they are in the
 - **Field 3** is the game's **standard slice**, the same on every event:
   - **Default: the player's progress band** (level or stage bands such as `L1-5`, `L6-10`). This is defined per game in `EVENT-CATALOG.md`.
   - **During an experiment**, the events that measure it carry the player's variant there instead (EXPERIMENTS.md).
-- **Input device** (`touch`, `gamepad`, `keyboard`) goes on the onboarding and core-loop funnel steps, in a slot those steps leave free. Platform alone doesn't tell a phone with a controller from a phone with touch.
+- **Input device** (`touch`, `gamepad`, `keyboard`) goes on funnel steps, in field 2. Platform alone doesn't tell a phone with a controller from a phone with touch.
 
 ## Naming
 
 - **Event names** are `PascalCase` with the feature first: `ShopPurchase`, `DataSaveFailed`, `QuestCompleted`.
-- **Prefer fields to new names.** Roblox allows far fewer distinct event names than field values: `ShopPurchase` with `item:sword` beats `ShopPurchaseSword`.
+- **Prefer fields to new names.** Roblox allows at most 100 custom event names per game, far fewer than field values: `ShopPurchase` with `item:sword` beats `ShopPurchaseSword`.
 - **Few values per field.** Values across all custom fields share a pool of about 8,000 before Roblox groups the rest as "Other". Use bands (`0-24`, `25-49`), never free text or exact numbers.
 - **No commas or quotes** (`,` `"` `'`) in any name or value: Roblox rejects the whole event. The helper strips them.
-- **Funnel steps are named for what the game requires** ("Reached a shop", not "Clicked the shop sign"). Roblox counts only the first time a step is logged, and logging a later step completes every earlier one.
+- **Funnels are our own custom events,** not Roblox's funnel API: one event per funnel (`FtueStep`, `PurchaseStep`), with the step in field 1 as `step:<nn>-<Name>` (`step:03-FirstCatch`). Steps are named for what the game requires ("Reached a shop", not "Clicked the shop sign"). A one-time funnel like the FTUE logs each step at most once per player (the helper checks the profile). A funnel that repeats, such as one per round of the loop, logs every pass, and its conversion is each step's count against the first step's.
 - **Live names are fixed.** Once an event or funnel step has live data, never rename or renumber it: add a new one and mark the old one retired in the catalog. Before launch, renumbering only costs tester data.
 
 ## Standard events
 
-Roblox already tracks sessions, retention and revenue. Every game adds these from the Foundation phase onward:
+Roblox already tracks sessions, retention and revenue. Every game adds these from the Foundation phase onward; other funnels, such as one round of the core loop, are added when a game wants them:
 
 | Area | Events |
 |---|---|
-| Onboarding | A first-join funnel: loading, first control, first core action (Roblox's onboarding funnel) |
-| Core loop | A funnel for one round of the loop, from the Core loop phase |
+| FTUE | The main funnel: a new player's first-time experience, step by step (`FtueStep`): loading, first control, first core action, and the game's own steps to the first reward |
 | Economy | Every source and sink of every currency, with its transaction type, a SKU (`<Kind>:<id>`, like `Rod:oak`) and the balance after the change. Not admin grants or test fixtures |
-| Purchases | A funnel from prompt shown to receipt granted, plus failures, with the product and Robux value |
+| Purchases | A funnel (`PurchaseStep`) from prompt shown to receipt granted, plus failures, with the product and Robux value |
 | Progression | Levels and questlines: start and complete |
 | Errors | Script errors on server and client, as one event with the script's area in a field, rate-limited |
 | Data | Load failures, save failures, kicks for data problems |

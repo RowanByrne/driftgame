@@ -14,17 +14,20 @@ The big ways a game can get into trouble with Roblox: a wrong maturity rating, g
 
 ## Maturity questionnaire and labels
 
-Roblox rates every game from the **Maturity & Compliance Questionnaire** (Creator Hub → the game → Audience), and the label decides which accounts can see it.
+Roblox rates every game from the **Maturity & Compliance Questionnaire** (Creator Dashboard → the game → Publish settings → Content rating), and the label decides which accounts can see it. Checked 2026-11-02:
 
 | Label | Who can play |
 |---|---|
-| Minimal, Mild | All ages, including Roblox Kids (5–8) and Roblox Select (9–15) accounts |
-| Moderate | Roblox Select (9–15) and standard (16+) accounts |
-| Restricted | Only ID-verified users 18 and over |
+| Minimal, Mild | Roblox Kids (5–8) and Roblox Select (9–15) accounts, and everyone older |
+| Moderate | Roblox Select (9–15) and 16+ accounts |
+| Content May Vary | Age-checked 16+ |
+| Restricted | Only age-verified users 18 and over |
+
+- **What raises the label:** free-form drawing or writing, social hangouts, and sensitive or political content as a main theme make a game 16+. Social hangouts with private spaces (bedrooms, bathrooms), romantic themes, alcohol, strong language, and realistic blood or strong violence make it 18+, age-verified. Playable gambling isn't allowed at all.
 
 - **Answer for the most mature thing a player can run into,** not the typical session. The questionnaire covers areas such as violence, blood, fear, crude humor, gambling, paid random items, paid item trading, social features, AI interactions, free-form creation and media feeds.
 - **Re-take it whenever content changes** what an answer would be, and before the publish that ships it.
-- **Never leave a game unrated:** unrated games lose reach.
+- **Never leave a game unrated:** since 30 September 2025, an unrated game can't be played by the public, only edited and tested.
 - **Content May Vary** (16+, age-checked) applies to games whose content players create themselves.
 
 Record the date, the label and the answers that could change in `live/EXPERIENCE.md` "Questionnaire".
@@ -33,7 +36,7 @@ Record the date, the label and the answers that could change in `live/EXPERIENCE
 
 - **Account groups:** Roblox Kids (about 5–8, chat off by default), Roblox Select (9–15) and standard (16+). Design the first-time experience, text and social features for the youngest group the label lets in.
 - **Gambling-like content is off limits for under-13s.**
-- **Reach can be gated:** a new game may not reach younger players straight away, until it has enough engaged players or passes a review. Check the Audience page early in Launch.
+- **Reach can be gated:** since Roblox Kids and Select went worldwide (June 2026), reaching them takes an ID-verified creator with 2-step verification, and a game that passes Roblox's engagement review; Kids also takes a fee or a Plus or Premium subscription. Check the Audience page early in Launch, and the current numbers on Roblox's Kids and Select page.
 - **Voice chat and camera:** review them against the audience before opening the game to younger players.
 
 ## Paid random items and gambling
@@ -73,9 +76,20 @@ The rules:
 
 ## Text, chat and links
 
-- **Filter all player-written text** before anyone else sees it: names, signs, pet names, anything typed. Chat goes through `TextChatService`.
-- **No off-platform links inside the game:** no links, invite codes or "join our server" handles. In-game text may only point to "links on our game page". Social links go on the game page and group only, and Roblox shows them only to age-verified 16+ users.
+- **Filter all player-written text** before anyone else sees it: names, signs, pet names, anything typed.
+- **All chat goes through `TextChatService`,** custom messaging, party and trade chat, signs and input fields included. Since 7 January 2026, players who haven't done Roblox's age check can't chat at all. Preset or wheel messages are allowed when they're sent as `TextChatService` system messages.
+- **Ask before connecting players by chat.** `TextChatService:CanUserChatAsync(userId)`: can this player chat at all. `CanUsersChatAsync(fromId, toId)`, on the server: can these two talk. `CanUsersDirectChatAsync(requesterId, userIds)`, on the server: who may join a private channel the player opens, such as a whisper or party chat (with `TextChannel:SetDirectChatRequester`).
+- **No off-platform links inside the game:** no links, invite codes or "join our server" handles; `AllowedExternalLinkReferences` now returns nothing. In-game text may only point to "links on our game page". Social links go on the game page and group only, and Roblox shows them only to age-verified 16+ users.
 - **Romance and dating features** are against Roblox's rules.
+
+## Banning players
+
+Use Roblox's bans, not a list of your own in a data store: they cover the whole game and can catch alt accounts.
+
+- **In game:** `Players:BanAsync(config)` on the server, wrapped in `pcall`. `UserIds` (up to 50), `Duration` in seconds (`-1` for permanent), `DisplayReason` (shown to the player, filtered, up to 400 characters), `PrivateReason` (for the record, up to 1000), `ExcludeAltAccounts` (false by default, so alts are banned too). `UnbanAsync` lifts one; `GetBanHistoryAsync` works only on live servers.
+- **Turn it on:** `Players.BanningEnabled` in Studio. Bans made in Studio don't reach the live game.
+- **Without code:** Creator Dashboard → Moderation → Bans, or Open Cloud's user restrictions (beta, `universe.user-restriction:write`).
+- **Who decides:** a ban is the user's call, or the rules they set for the admin console (CODING.md "Foundation kit").
 
 ## Engagement incentives
 
@@ -94,5 +108,8 @@ Check these before deciding:
 - [Experience guidelines](https://create.roblox.com/docs/production/promotion/experience-guidelines)
 - [Paid random items](https://create.roblox.com/docs/production/monetization/paid-random-items)
 - [PolicyService](https://create.roblox.com/docs/reference/engine/classes/PolicyService)
+- [Kids and Select](https://create.roblox.com/docs/production/publishing/kids-and-select)
+- [Age checks for chat](https://devforum.roblox.com/t/age-checks-to-access-chat-studio-team-create-and-links-on-roblox/4079702)
+- [TextChatService](https://create.roblox.com/docs/reference/engine/classes/TextChatService) and [banning](https://create.roblox.com/docs/reference/engine/classes/Players)
 - [Roblox Terms of Use](https://en.help.roblox.com/hc/en-us/articles/115004647846)
 - [Community Standards](https://en.help.roblox.com/hc/en-us/articles/203313410)

@@ -32,7 +32,7 @@ The first drafts that prototyping needs; the Pitch phase carries on from them (W
    - **Who it's for** from `players`.
    - **Games we borrow from** from `likeThese`, as the table.
    - **Why players come back** from `comeBack`.
-   - **Launch scope** from `smallest`.
+   - **Launch scope:** a short proposal from the answers, marked "(proposed)": what the first public version needs. `smallest` is the first playtest, not the launch.
    - **Not doing** from `avoid`.
    - **How it makes money** from the Monetization tile if it was answered, else a one-line proposal.
    - **Numbers that show it works:** 3 proposed numbers and targets.
@@ -49,9 +49,10 @@ The first drafts that prototyping needs; the Pitch phase carries on from them (W
    - **References:** the games and styles in `references`, by name or link. Images come later, through ART-PIPELINE.md.
    - The UI part waits for the UI phase.
 4. **ROADMAP.md:**
-   - **Launch scope** from `smallest`.
-   - **Later:** anything the answers push out of the first version.
+   - **Launch scope:** the proposal from PITCH.md, still "(proposed)".
    - **Now:** "Pitch: approve PITCH.md".
+   - **Next:** "Core loop: " and `smallest`, the first version to playtest (WORKFLOW.md "Core loop").
+   - **Later:** anything the answers push out of the first version.
 5. **PROJECT.md:** "Current focus" from `notes`, or "The pitch". `notes` that are decisions also get a dated line in DECISIONS.md.
 6. **The card's test:** "Read PITCH.md, GDD.md and ART-DIRECTION.md, change anything in Rocco's Docs, and approve the pitch when it reads right."
 
@@ -79,7 +80,7 @@ Rocco has made the project folder. ONBOARDING.md's first lines say where the gam
      3. Leave anything that isn't code (models, place files) in `..\import\`, and list it in the summary.
    - **A place file, or only in Studio:** `repo\` is a new project from the template. A copy of the place is in `..\places\<CODE>-Main.rbxl` and `..\backups\`; if no file was given, the user opens the game in Studio.
      1. Through the Roblox Studio MCP, export every Script, LocalScript and ModuleScript into `src\`, following `default.project.json`'s mapping. They become `.luau` files with the right first-line markers (AGENTS.md "Code").
-     2. Count the scripts in Studio and the files in `src\`: they must match before anyone starts Lync on that place. Lync replaces the synced folders with what's in `src\`, so a script that wasn't exported would be lost from the place.
+     2. Count the scripts in Studio and the files in `src\`: they must match before anyone starts Lync on that place. Lync replaces each script that has a file of the same name and leaves the rest where they are, so a script that wasn't exported would stay in the place, running beside the synced code but outside git.
 2. **`default.project.json`** is what Lync serves (Rojo's project format).
    - It maps where the game's code really is: keep the game's own layout rather than moving everything.
    - It keeps the template's top-level fields: `name`; `port`, the game's Lync port base; and `experienceId` and `placeId` when they're known.

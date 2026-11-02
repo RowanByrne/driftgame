@@ -21,12 +21,12 @@ The RoDev folder can live anywhere: in your user folder (`C:\Users\<you>\RoDev`)
 
 ## Setting up a PC (once)
 
-1. **Install:**
+1. **Install,** on your own accounts: no AI plan comes with RoDev, and each tool's use counts against your own plan. Rocco's onboarding opens with **Your accounts**, which checks each one on this PC and signs you in (Settings opens it again later).
    - **Git for Windows**, 2.48 or newer (`git --version`), for relative lane paths. Its credential manager asks you to sign in to GitHub on the first push.
    - **Roblox Studio**, signed in as an account that can edit the game (or its group).
    - **Your coding agent,** signed in with your subscription: Claude Code, Codex, Gemini CLI or another (MODELS.md "Your agent"). One is enough; more is fine.
    - **The tools in `MODELS.md`** that the game uses: the Codex desktop app, signed in, for the image tool; Blender with the Blender MCP for 3D assets; the audio tool's API key, set as a user environment variable (never in the repo); for ElevenLabs, link it in Rocco's Connections.
-   - **A Roblox Open Cloud API key,** once the game is on Roblox: made on the Creator Hub (Credentials), limited to the game's experience, and linked in Rocco's Connections, which keeps it as `ROBLOX_API_KEY`. It lets Rocco and the agent work on the game page: events, thumbnails and their numbers (RELEASING.md "Roblox Open Cloud" lists the permissions).
+   - **A Roblox Open Cloud API key,** once the game is on Roblox: made on the Creator Hub (Credentials), limited to the game's experience (if you restrict it by IP address, add `0.0.0.0/0`, since a home connection's address changes), and linked in Rocco's Connections, which keeps it as `ROBLOX_API_KEY`. It lets Rocco and the agent work on the game page: events, thumbnails and their numbers (RELEASING.md "Roblox Open Cloud" lists the permissions).
 2. **Register the Roblox Studio MCP as `Roblox_Studio`** in each agent you use, where that agent keeps MCP servers (MODELS.md "Your agent"): Claude Code in `%USERPROFILE%\.claude.json` under `mcpServers`, Codex in `%USERPROFILE%\.codex\config.toml` as `[mcp_servers.Roblox_Studio]`, Gemini CLI in `%USERPROFILE%\.gemini\settings.json` under `mcpServers`. Then restart the agent. Workers get Studio tools by that exact name; under any other name, they get none.
 3. **Lync:** put `lync.exe` in `RoDev\_tools\lync\`, once per RoDev folder. Every game in it uses that copy (`tools\serve.bat` looks there first, then on PATH). Its Studio plugin installs itself on the first serve; restart Studio after.
 4. **Rocco:** clone it into `RoDev\_tools\rocco\`, once per RoDev folder, and put it on the newest release. It's a private repo, so its owner adds your GitHub account first. In the RoDev folder, in PowerShell:

@@ -16,7 +16,7 @@
             { "id": "players", "prompt": "Who is it for?", "hint": "Rough ages, the kind of Roblox player, and whether they're mostly on phones or PCs.", "for": ["PITCH.md \"Who it's for\""] },
             { "id": "likeThese", "prompt": "Which games is it like, and what's different about yours?", "hint": "On Roblox or anywhere else.", "for": ["PITCH.md \"Games we borrow from\""] },
             { "id": "comeBack", "prompt": "Why would someone come back tomorrow?", "hint": "Progress, collecting, friends, events, daily rewards...", "for": ["PITCH.md \"Why players come back\""] },
-            { "id": "smallest", "prompt": "What's the smallest version worth playtesting?", "hint": "Just enough to tell whether it's fun. Everything else can wait.", "for": ["PITCH.md \"Launch scope\"", "ROADMAP.md \"Launch scope\""] }
+            { "id": "smallest", "prompt": "What's the smallest version worth playtesting?", "hint": "Just enough to tell whether it's fun. Everything else can wait.", "for": ["ROADMAP.md \"Next\""] }
           ]
         },
         {

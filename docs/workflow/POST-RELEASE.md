@@ -18,7 +18,7 @@ On the hour-later pass, since custom events reach the Creator Hub after a delay.
 
 - **The new build reports:** in Explore, `ServerStarted` broken down by field 1 shows the new version.
 - **New events arrive:** every event this release added to `docs/game/EVENT-CATALOG.md` shows up, with sensible fields and the standard slice filled in.
-- **Funnels still flow:** the onboarding and core-loop funnels show no step suddenly dropping to zero.
+- **Funnels still flow:** the FTUE and purchase funnels show no step suddenly dropping to zero.
 
 If something is missing after a reasonable delay, find out why before the next release.
 

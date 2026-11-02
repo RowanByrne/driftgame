@@ -33,6 +33,16 @@ A topic is named for its role, like `hud-currency`, `shop-buttons` or `boat-mode
 - **Original art only.** References guide the style; never copy or crop pixels from them.
 - **If the image tool can't run on this PC, say so.** Don't substitute another source.
 
+## Roblox's limits
+
+Checked 2026-11-02 ([meshes](https://create.roblox.com/docs/art/modeling/specifications), [textures](https://create.roblox.com/docs/art/modeling/texture-specifications), [4K textures](https://devforum.roblox.com/t/4k-texture-rendering/4316229), [uploads](https://create.roblox.com/docs/cloud/guides/usage-assets)). Models' memory of these is often out of date.
+
+- **Meshes:** at most 20,000 triangles each, and at most 4 bone influences per vertex. Roblox publishes no bone limit for a skinned mesh; avatar bodies use 15 bones, plus up to 37 optional ones.
+- **Textures:** up to 4096 × 4096 renders in game since 30 January 2026 (meshes, SurfaceAppearance, textures, decals, material variants); imports up to 8K are scaled down to 4K. Studio shows 4K only with Texture Streaming on. Budget about 256 × 256 per 2 × 2 × 2 studs of object, up to 1024 × 1024 for most props, and keep 4K for what fills the screen.
+- **SurfaceAppearance:** a color map, a normal map (OpenGL tangent space only), roughness and metalness maps, and an emissive mask with `EmissiveStrength` and `EmissiveTint`.
+- **Uploads:** images under 8000 × 8000 through Open Cloud; videos at most 20 a day. Roblox publishes no monthly count for images or meshes.
+- **The game page:** sizes are in RELEASING.md "Game page".
+
 ## 3D assets
 
 Assets are built in Blender through the Blender MCP, by the 3D job in `MODELS.md`. When the user asks for an asset built straight in Studio instead, follow the same stages with Studio in Blender's place: build through the Studio MCP, texture with Roblox materials or SurfaceAppearance, animate with Studio's tools. Skip any stage that doesn't apply.
