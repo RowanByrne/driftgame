@@ -63,13 +63,48 @@ Content can ship closed and open itself at a set time, so it goes out in an earl
 - **Anything locked checks `isOpen` itself:** the server action that must refuse, the quests or shops that depend on it, and a "Coming soon" sign with the countdown where players would reach it.
 - **Running servers open it on time.** When it opens, the signs come down and everyone gets an announcement.
 - **Studio** can move a release's time through the debug bridge, to test the opening.
-- **Adding a release:** an id and time, the gates, the sign, the announcement, and its row in `live/CALENDAR.md`, with its game page event if it gets one (below).
+- **Adding a release:** an id and time, the gates, the sign, the announcement, and its card in `live/CALENDAR.md`, with its game page event if it gets one (below).
 
 ## Game page
 
-The game page is what players see before they join: the description, icon, thumbnails, and events (Creator Dashboard, Events & updates) announcing what's coming.
+The game page is what players see before they join: the description, icon, thumbnails, and events (Creator Hub, Events & updates) announcing what's coming. Rocco shows it: **Updates** has the calendar and the events, **Thumbnails** has the thumbnails and how each one does.
 
-- **Events tease releases.** A game page event for a timed release starts when the release opens in game; keep both times in the same `live/CALENDAR.md` row so they can't drift apart.
-- **The agent drafts, the user publishes.** The agent drafts the text and makes the images through ART-PIPELINE.md (approved files in `assets/marketing/`). The user posts them on the dashboard, or asks the agent to do it in the browser.
-- **Event cards are 1024 × 576:** Roblox stores event images at that size, so make them that size.
+- **The agent drafts, the user publishes.** The agent writes the text and makes the images through ART-PIPELINE.md (approved files in `assets/marketing/`). Nothing goes public without the user: an event goes up as a private draft, and the user publishes it (one click in Rocco's Updates, or the Creator Hub).
+- **Event cards are 1024 × 576:** Roblox stores event images at that size, so make them that size. **Thumbnails are 1920 × 1080.**
 - **Record what's live,** word for word: events and their ids in `live/CALENDAR.md`, the description, icon and thumbnails in `live/GAME-PAGE.md`.
+
+### Roblox Open Cloud
+
+With the user's Open Cloud API key (`ROBLOX_API_KEY` on the PC, linked in Rocco's Connections), the agent works on the game page directly. Send it as the `x-api-key` header to `https://apis.roblox.com`; the universe id is in PROJECT.md. Without the key, or when a call is refused, hand that step to the user with exactly what to enter, or do it in the browser if they ask.
+
+These APIs are experimental or beta at Roblox, so they change. When a call is refused, read the error, adjust, and say what changed in the report; and fix this table in the template (AGENTS.md "Template-owned files").
+
+| What | Call | The key needs |
+|---|---|---|
+| Events, drafts included | `GET /virtual-events/v3/universes/{universeId}/game-events` | Events: read |
+| A new event | `POST /virtual-events/v3/universes/{universeId}/game-events`: `title`, `subtitle`, `description`, `startTime` and `endTime` (UTC), `visibility: "private"`, `categories` (`[{ category, rank }]`, from `newContent`, `contentUpdate`, `newFeature`, `itemDrop`, `newSeason`, `festival`, `challenge`, `activity` and others), and `thumbnails` (`[{ mediaId, rank }]`, image asset ids) | Events: write |
+| A change to one | `PATCH /virtual-events/v3/game-events/{eventId}`, with only the fields that change | Events: write |
+| An image | The Assets API (`/assets/v1/assets`), as an image asset; its asset id is the event's `mediaId` | Assets: write |
+| Game page thumbnails | `POST /legacy-game-internationalization/v1/game-thumbnails/games/{universeId}/language-codes/en/image` (multipart field `Files`), then `.../images/order` | Legacy universe: manage |
+| How thumbnails do | `POST /analytics-query-api/v1/universes/{universeId}/metrics`: `metric` (`ThumbnailImpressions`, `ThumbnailQualifiedPlays`, `ThumbnailQualifiedPTR`), `granularity` `OneDay`, `startTime`, `endTime`, `breakdown: ["ThumbnailAsset"]`. A big query comes back pending: ask its `path` until `done` | Analytics: read |
+
+### Game page events
+
+The update cards in `live/CALENDAR.md` are the plan, and each gets an event on the game page unless its card says `None`. Rocco queues the event as a Workboard task a set number of days before the update (the "Auto-queue" line at the top of CALENDAR.md, 14 by default), or when the user clicks to. When Rocco isn't running, the conductor checks the calendar on "refresh" and queues what's due itself.
+
+For a queued event:
+
+1. **Write the text** from the card, in the user's words where they gave them: a short title (the hook), a subtitle, a description (what's new, and when), and its categories. A card with only a day and no time: ask the user for the time on the task.
+2. **Make the card image**, 1024 × 576, through ART-PIPELINE.md: 2 to 4 candidates in `..\art\generated\events\<card id>\`. Rocco shows them on the card, and the user picks one there; the pick lands on the card as `Card image`, and on the task as a follow-up.
+3. **Approve and upload** the picked image (ART-PIPELINE.md steps 4 and 5): into `assets/marketing/`, uploaded as an image asset, its id in the manifest.
+4. **Put the event up as a draft:** private, starting when the update opens in game and ending when its event should (a week later unless the card says otherwise). On the card: `Game page event: Drafted` and `Event id: <id>`. Without the key, put the text under "Game page event text", set `Drafted`, and the user makes it on the Creator Hub.
+5. **Hand it over:** the task goes to To test, saying the draft is ready to publish in Updates. Rocco marks the card `Scheduled` when the user publishes it. Record the published text, word for word, under "Game page event text".
+
+### Thumbnails
+
+Rocco's Thumbnails view shows the game page's thumbnails, how each one did over the last 7 days with the key (impressions, qualified plays, and qualified play-through: the share of impressions that became a real play), directions to try, and concepts made from them.
+
+- **Directions** are the agent's, in `live/GAME-PAGE.md` "Thumbnail directions", in the form described there. When the user asks for them (a Workboard task, with the numbers in its note): read the numbers, PITCH.md, ART-DIRECTION.md and what's on the page now, then write 3 to 5. Each says why it should work, tied to the numbers or the game, and its exact image prompt: what's in the shot, the style from ART-DIRECTION.md, no text, and a wide 16:9 composition with the subject centred. Replace directions that were tried and lost.
+- **Concepts** are made from a direction in Rocco, in one click, with the image tool (MODELS.md): candidates in `..\art\generated\thumbnails\<direction>\`, each with its prompt and hash in a `.json` beside it.
+- **The user picks one** in Rocco ("Use this one"), which queues a task: approve it into `assets/marketing/` (ART-PIPELINE.md step 4; the manifest takes the prompt and hash from its `.json`), fit it to 1920 × 1080, put it on the game page (with the key, or hand it to the user), and record it in `live/GAME-PAGE.md` "Icon and thumbnails". Fitting is the one change allowed on the way in: scale and crop to 16:9 without cutting into the subject, and note it in the manifest.
+- **Give a new thumbnail a week** of impressions before judging it.

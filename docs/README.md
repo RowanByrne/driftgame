@@ -62,8 +62,8 @@ At the repo root, beside `docs/`.
 | `RELEASES.md` | Every publish to players |
 | `EXPERIENCE.md` | Everything set on the Creator Dashboard, including configs, dashboards and alerts |
 | `EXPERIMENTS.md` | This game's experiments: hypotheses, results, decisions |
-| `GAME-PAGE.md` | The game page as published |
-| `CALENDAR.md` | Live events, timed releases and game page events |
+| `GAME-PAGE.md` | The game page as published, and directions for new thumbnails |
+| `CALENDAR.md` | The calendar: a card per update, live event or timed release, with its game page event |
 | `INCIDENTS.md` | What went wrong, and postmortems |
 
 ## Elsewhere

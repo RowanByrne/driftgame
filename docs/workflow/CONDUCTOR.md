@@ -81,7 +81,8 @@ When the user says **"refresh"**, sync with GitHub both ways and leave every pla
 2. **Merge.** `git pull` (merge, not rebase) into `main`, then merge finished `agent/*` branches whose workers have reported, as in round step 4.
 3. **Push** `main`. If it's rejected, pull, re-check, and push again.
 4. **Refresh every idle lane.** For each lane that is clean and on a detached HEAD: `git -C <lane> fetch origin`, then `git -C <lane> switch --detach origin/main`. Lync syncs it into its place; a place in the middle of a playtest picks it up on the next one. A lane with a branch checked out or uncommitted work is in use: leave it and say so.
-5. **Report**, short: what went up and what came down, then any lane or place that's in use or needs attention.
+5. **Check the calendar.** An update in `live/CALENDAR.md` that's due its game page event and still says `Not yet` gets one queued (RELEASING.md "Game page events"). Rocco does this by itself while it runs.
+6. **Report**, short: what went up and what came down, then any lane or place that's in use or needs attention.
 
 ## Main
 
