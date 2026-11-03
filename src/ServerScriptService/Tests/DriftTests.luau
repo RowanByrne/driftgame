@@ -34,12 +34,79 @@ local DriftTests = {}
 -- The scripted 90 degree corner the spec measures: stand still, run up, one input through
 -- the corner, catch the exit. Changing this changes what the numbers below mean, so it
 -- lives here as one named thing rather than inline in three checks.
+--
+-- It is 70% of a finger, not a full one, since the rebuild (features/drift-model.md "How
+-- it plays"): the offset now says how hard the car is sliding, and a full one held for a
+-- second and a half is not a corner, it is the brake. The old full-lock version of this
+-- line now turns the car 132 degrees and leaves it at 29% of its entry speed -- a useful
+-- number, and not a 90 degree corner.
 local CORNER = {
 	{ t = 0, steer = 0 },
-	{ t = 3.0, steer = 1, drift = true },
-	{ t = 4.43, steer = 0, drift = false },
+	{ t = 3.0, steer = 0.7 },
+	{ t = 4.6, steer = 0 },
 }
 local CORNER_SECONDS = 7
+
+-- Run up to top speed on flat ground, then hold one offset: the shape of the whole
+-- control, in one function. Returns what the hold cost.
+local function holdOffset(offset: number, holdFor: number)
+	local C = Config.Drift
+	local runner = Sim.newRunner(CFrame.new(0, C.RideHeight, 0))
+	local world = World.flat(0)
+	local runUp = 4
+	local entry, peak, samples = nil, 0, {}
+	local function observe(s)
+		if s.time < runUp then
+			return
+		end
+		if not entry then
+			entry = Model.speed(s)
+		end
+		peak = math.max(peak, math.abs(math.deg(s.slip)))
+		table.insert(samples, { t = s.time - runUp, slip = math.deg(s.slip), speed = Model.speed(s), r = s.r })
+	end
+	local function inputAt(t: number)
+		return { steer = t < runUp and 0 or offset, drift = false, brake = false }
+	end
+	local total, elapsed = runUp + holdFor, 0
+	while elapsed < total - 1e-9 do
+		local dt = math.min(1 / 60, total - elapsed)
+		Sim.advance(runner, dt, inputAt, world, observe)
+		elapsed += dt
+	end
+	-- Settled: the mean of the last second, so one wobble is not the answer.
+	local n, slipSum, speedSum, yawSum = 0, 0, 0, 0
+	for _, s in samples do
+		if s.t >= holdFor - 1 then
+			n += 1
+			slipSum += s.slip
+			speedSum += s.speed
+			yawSum += math.abs(s.r)
+		end
+	end
+	n = math.max(n, 1)
+	local settledSlip, settledSpeed, settledYaw = slipSum / n, speedSum / n, yawSum / n
+	local reached, stopped = -1, -1
+	for _, s in samples do
+		if reached < 0 and math.abs(s.slip) >= 0.9 * math.abs(settledSlip) then
+			reached = s.t
+		end
+		if stopped < 0 and s.speed <= 0.1 * C.TopSpeed then
+			stopped = s.t
+		end
+	end
+	return {
+		entry = entry or 0,
+		peakSlip = peak,
+		slip = settledSlip,
+		speed = settledSpeed,
+		share = settledSpeed / math.max(entry or 1, 1),
+		reached = reached,
+		stopped = stopped,
+		radius = settledYaw > 0.01 and settledSpeed / settledYaw or math.huge,
+		state = runner.state,
+	}
+end
 
 local function check(checks, name, ok, detail)
 	table.insert(checks, { name = name, ok = ok == true, detail = detail })
@@ -124,6 +191,125 @@ function DriftTests.run()
 			cornerA.exitSpeed or -1,
 			100 * (cornerA.exitSpeed or 0) / math.max(cornerA.entrySpeed or 1, 1),
 			cornerA.entrySpeed or -1
+		)
+	)
+
+	------------------------------------------------------------------ the finger is on the rear
+	-- The first thing the player feels, and the easiest to get backwards
+	-- (features/drift-model.md "How it plays", item 3). A finger to the RIGHT throws the
+	-- tail right, which points the nose left and arcs the car left. Measured three ways,
+	-- because a sign error can hide in any one of them: the slip angle, the heading, and
+	-- where the car actually ended up.
+	local invRunner = Sim.newRunner(CFrame.new(0, C.RideHeight, 0))
+	local invWorld = World.flat(0)
+	local startYaw, startPos = nil, nil
+	local invInput = function(t)
+		return { steer = t < 3 and 0 or 0.4, drift = false, brake = false }
+	end
+	local invElapsed = 0
+	while invElapsed < 4.5 - 1e-9 do
+		local dt = math.min(1 / 60, 4.5 - invElapsed)
+		Sim.advance(invRunner, dt, invInput, invWorld, function(s)
+			if s.time >= 3 and not startYaw then
+				startYaw, startPos = s.yaw, s.position
+			end
+		end)
+		invElapsed += dt
+	end
+	local invState = invRunner.state
+	local invFwd, invRight = Model.axes(startYaw or 0)
+	local moved = invState.position - (startPos or Vector3.zero)
+	local sideways = moved:Dot(invRight)
+	local turned = math.deg(invState.yaw - (startYaw or 0)) -- Roblox yaw: + is to the left
+	check(
+		checks,
+		"the finger is on the car's rear, not its nose",
+		math.deg(invState.slip) > 5 and turned > 5 and sideways < -5,
+		string.format(
+			"finger +0.4 (tail to the right) for 1.5 s: slip %+.1f deg (tail out to the right), heading %+.1f deg (left), ended %+.1f studs ahead and %+.1f to its right",
+			math.deg(invState.slip),
+			turned,
+			moved:Dot(invFwd),
+			sideways
+		)
+	)
+
+	------------------------------------------------------------------ the offset ladder
+	-- What the offset buys and what it costs, which is the whole control
+	-- (features/drift-model.md "How it plays", items 3 and 5). Each notch of finger has to
+	-- buy more slide than the last and cost more speed than the last, or the player has a
+	-- switch rather than a dial. The numbers themselves are the user's to judge; this only
+	-- catches a ladder that has stopped being one.
+	local rungs = {}
+	for _, offset in { 0.25, 0.5, 0.75, 1.0 } do
+		table.insert(rungs, { offset = offset, r = holdOffset(offset, 8) })
+	end
+	local climbs, costs = true, true
+	local parts = {}
+	for i, rung in rungs do
+		if i > 1 then
+			climbs = climbs and math.abs(rung.r.slip) > math.abs(rungs[i - 1].r.slip) - 2
+			costs = costs and rung.r.speed < rungs[i - 1].r.speed
+		end
+		table.insert(
+			parts,
+			string.format(
+				"%.0f%%: %.0f deg (leans %.0f), %.0f studs/s = %.0f%%, circle %.0f",
+				rung.offset * 100,
+				math.abs(rung.r.slip),
+				rung.r.peakSlip,
+				rung.r.speed,
+				100 * rung.r.share,
+				math.min(rung.r.radius, 999)
+			)
+		)
+	end
+	check(checks, "every notch of finger buys more slide and costs more speed", climbs and costs, table.concat(parts, " | "))
+
+	-- And the cost has to be worth feeling. A quarter of a finger should be nearly free
+	-- and three quarters should hurt: that gap is the trade the game is made of.
+	local shallow, deep = rungs[1].r, rungs[3].r
+	check(
+		checks,
+		"a shallow drift is nearly free and a big one is ruinous",
+		shallow.share > 0.8 and deep.share < 0.55,
+		string.format(
+			"a quarter offset keeps %.0f%% of entry speed at %.0f deg; three quarters keeps %.0f%% at %.0f deg",
+			100 * shallow.share,
+			math.abs(shallow.slip),
+			100 * deep.share,
+			math.abs(deep.slip)
+		)
+	)
+
+	------------------------------------------------------------------ full lock is the brake
+	-- The user's hard requirement: "putting it 100% to the side being an action that will
+	-- effectively kill our momentum fully if held there" (DECISIONS.md, 2026-11-03). It
+	-- falls out of the scrub and the throttle cut; nothing here is a brake force.
+	local lock = rungs[4].r
+	check(
+		checks,
+		"full offset held kills the car's momentum",
+		lock.stopped > 0 and lock.stopped < 3 and lock.share < 0.12,
+		string.format(
+			"from %.1f studs/s: under a tenth of top speed in %.2f s, settling at %.1f studs/s (%.0f%% of entry) with the car leaning %.0f deg across",
+			lock.entry,
+			lock.stopped,
+			lock.speed,
+			100 * lock.share,
+			lock.peakSlip
+		)
+	)
+
+	-- It must not be able to drive its way back out while the finger is still there.
+	check(
+		checks,
+		"and it stays stopped while the finger is held",
+		lock.state ~= nil and Model.speed(lock.state) <= 0.12 * C.TopSpeed,
+		string.format(
+			"still %.1f studs/s after 8 s of full offset held (top speed %.0f)",
+			Model.speed(lock.state),
+			C.TopSpeed
 		)
 	)
 

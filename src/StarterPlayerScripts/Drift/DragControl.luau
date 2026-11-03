@@ -4,13 +4,19 @@
 --
 -- A finger goes down, or the mouse button does. From then until it comes up, the only
 -- thing that matters is how far across the screen it has moved from where it went down.
--- That horizontal offset is the entire control:
+-- That horizontal offset is the entire control -- and it is on the car's REAR, not its
+-- nose (features/drift-model.md "How it plays"):
 --
---   a little offset steers;
---   past `DriftOffset`, or flicked across faster than `DriftFlickRate`, the rear lets go;
---   holding the offset holds the slide, and how far out it is sets how wide the slide runs;
+--   offset left swings the TAIL left, which arcs the car right, and the mirror of that;
+--   how far out it is says how hard the car is sliding, continuously, from a shallow
+--     fast arc to fully sideways -- there is no threshold to cross and no mode to enter;
+--   the harder the slide the more it scrubs, so the finger is also the brake, and held
+--     all the way out it stops the car;
 --   easing back toward the middle is the counter-steer, not a second mode;
 --   lifting the finger hooks the rear back up over `GripBlendOut`.
+--
+-- `DriftOffset` and `DriftFlickRate` no longer gate anything: they only decide when the
+-- readout calls it a drift, and what a flick is worth to the discrete inputs.
 --
 -- Touch and mouse run the same code, because they are the same gesture and there is no
 -- sense in tuning two of them. Keyboard and gamepad keep their own bindings in
@@ -269,8 +275,9 @@ function DragControl:_move(x: number)
 	end
 	self.steer = steer
 
-	-- Two ways in, both tunable, so which one dominates is a number and not a decision
-	-- buried in here: hold it far enough out, or snap it across fast enough.
+	-- The readout's own latch. It no longer decides whether the car slides -- the offset
+	-- does that, continuously -- but it is what lights the knob up, what the server is
+	-- told, and what a flick is worth to the model's discrete input.
 	if not self._latched then
 		if math.abs(steer) >= C.DriftOffset or self._flick >= C.DriftFlickRate then
 			self._latched = true
@@ -285,9 +292,12 @@ function DragControl:_draw()
 	self.knob.Position = UDim2.new(0.5, self.steer * C.DragFullLock, 0.5, 0)
 	local live = self._latched
 	self.knob.BackgroundColor3 = live and LIVE or KNOB
+	-- The sign is shown as the TAIL going left or right, because that is what the finger
+	-- does; the car goes the other way.
+	local side = if self.steer > 0 then "tail right" elseif self.steer < 0 then "tail left" else "centred"
 	self.label.Text = if live
-		then ("DRIFT  %+.0f%%"):format(self.steer * 100)
-		else ("steer  %+.0f%%"):format(self.steer * 100)
+		then ("DRIFT  %.0f%%  %s"):format(math.abs(self.steer) * 100, side)
+		else ("weight %.0f%%  %s"):format(math.abs(self.steer) * 100, side)
 	self.label.TextColor3 = live and LIVE or TEXT
 end
 

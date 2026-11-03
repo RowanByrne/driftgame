@@ -2,9 +2,11 @@
 -- CarInputController: steering, drift and brake, on touch, mouse, keyboard and gamepad.
 --
 -- The game's own scheme is one gesture: a finger or the mouse held down and slid left and
--- right, where the same offset steers and puts the car into the drift (DECISIONS.md,
--- 2026-11-03). That is not an InputBinding -- it is an analogue drag with a latch -- so
--- Drift/DragControl owns it and this controller merges it in.
+-- right (DECISIONS.md, 2026-11-03). The offset is not a steering angle -- it is how hard,
+-- and which way, the car's weight is thrown across, and the finger is on the car's REAR,
+-- so weight left swings the tail left and arcs the car right. That is not an InputBinding
+-- -- it is an analogue drag -- so Drift/DragControl owns it and this controller merges it
+-- in.
 --
 -- Keyboard and gamepad are the fallback, and keep discrete bindings through the Input
 -- Action System (docs/workflow/CODING.md "Conventions"): InputContext > InputAction >
@@ -18,6 +20,7 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local UserInputService = game:GetService("UserInputService")
 
+local Config = require(ReplicatedStorage.Shared.Config)
 local Signal = require(ReplicatedStorage.Shared.Signal)
 
 -- PlayerScripts.Controllers.CarInputController -> PlayerScripts.Drift
@@ -130,6 +133,15 @@ function CarInputController:Get(): { steer: number, drift: boolean, brake: boole
 	if self._actions and self._actions.Drift then
 		drift = self._actions.Drift:GetState() == true
 		brake = self._actions.Brake:GetState() == true
+	end
+
+	-- The axis is not a steering wheel any more: it is how hard the car's weight is thrown
+	-- across, and the car goes fully sideways at the end of its travel. A keyboard key is
+	-- always at the end of its travel, so a key on its own would mean "throw everything",
+	-- which is undrivable. It is worth `KeySteerShare` of a finger, and the drift button
+	-- buys the rest -- which is what that button is for now that the finger needs none.
+	if not drift then
+		steer *= Config.Drift.KeySteerShare
 	end
 
 	if self._drag then

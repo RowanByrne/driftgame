@@ -120,9 +120,9 @@ function DebugHud:Update(state: DriftModel.State?, extra)
 	local C = Config.Drift
 	local speed = DriftModel.speed(state)
 	L.speed.Text = ("speed  %6.1f studs/s  (%3.0f%% of top)"):format(speed, 100 * speed / C.TopSpeed)
-	L.slip.Text = ("slip   %6.1f deg  asked %5.1f   f %5.1f  r %5.1f"):format(
+	L.slip.Text = ("slip   %6.1f deg  %3.0f%% of full   f %5.1f  r %5.1f"):format(
 		math.deg(state.slip),
-		math.deg(state.wantedSlip),
+		state.slideFrac * 100,
 		math.deg(state.slipFront),
 		math.deg(state.slipRear)
 	)
@@ -141,8 +141,10 @@ function DebugHud:Update(state: DriftModel.State?, extra)
 		(extra and extra.steps) or 0,
 		((extra and extra.frameSeconds) or 0) * 1000
 	)
-	L.input.Text = ("input  steer %+5.2f  wheels %+5.1f deg  %s %s  [%s]"):format(
+	-- The finger and the weight apart: the gap between them is the lag you can feel.
+	L.input.Text = ("input  finger %+5.2f  weight %+5.2f  wheels %+5.1f deg  %s %s  [%s]"):format(
 		(extra and extra.steerInput) or 0,
+		state.load,
 		math.deg(state.wheelAngle),
 		if extra and extra.drift then "DRIFT" else "-----",
 		if extra and extra.brake then "BRAKE" else "-----",
