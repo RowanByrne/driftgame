@@ -42,7 +42,9 @@ Everything code relies on across modules and tasks: data, remotes, tags, attribu
 
 | Name | Type | Direction | Owner | Payload and checks |
 |---|---|---|---|---|
-| | RemoteEvent / UnreliableRemoteEvent / RemoteFunction | Client → server / Server → client | | |
+| `CarSpawn` | RemoteEvent | Server → client | `CarService` | `(car: Model, spawnCFrame: CFrame)`: the car this client drives, and where it starts |
+| `CarState` | UnreliableRemoteEvent | Client → server | `CarService` | `(cf: CFrame, velocity: Vector3, drifting: boolean)` at 20 Hz. Server checks: types; speed ≤ `Config.Drift.TopSpeed` × 1.25; movement since the last packet ≤ that speed × elapsed × 1.5; rate limit 30/s per UserId. Out of range is dropped and counted, not kicked, while this is a prototype. **Not yet authoritative:** before anything is scored or sold, the server simulates or re-checks the model (`features/drift-model.md` "Open questions") |
+| `CarStateOther` | UnreliableRemoteEvent | Server → client | `CarService` | `(userId: number, cf: CFrame, velocity: Vector3, drifting: boolean)`: another player's car, for drawing it |
 
 ## Tags and attributes
 
@@ -54,6 +56,7 @@ Everything code relies on across modules and tasks: data, remotes, tags, attribu
 | attr `__test_profile` | Workspace (Studio only) | Set by hand in worker places | DataService (docs/workflow/TESTING.md) |
 | attr `__agent_play` | Workspace (Studio only) | Agents, before each playtest | The quiet-playtest module (docs/workflow/TESTING.md) |
 | attr `__studio_audio` | Workspace (Studio only) | Agents, for deliberate audio tests | The quiet-playtest module (docs/workflow/TESTING.md) |
+| tag `DriftSurface` | Every part the car may drive on | `PlaygroundService`, when it builds the world | The drift model's ground rays filter to it |
 
 ## Paths
 
@@ -61,7 +64,9 @@ Everything code relies on across modules and tasks: data, remotes, tags, attribu
 
 | Path | What's there | Made by |
 |---|---|---|
-| | | |
+| `ReplicatedStorage.Remotes` | Every remote | `Shared/Net`, on the server |
+| `Workspace.Playground` | The prototype world: every surface, ramp and cone | `PlaygroundService` at start |
+| `Workspace.Cars` | One model per player's car | `CarService` |
 
 ## Service APIs
 
@@ -69,10 +74,17 @@ Everything code relies on across modules and tasks: data, remotes, tags, attribu
 
 | Module | Member | Signature | What it does |
 |---|---|---|---|
-| | | | |
+| `Shared/Net` | `event` / `unreliable` / `func` | `(name: string) -> RemoteEvent / UnreliableRemoteEvent / RemoteFunction` | Creates the remote on the server, waits for it on the client |
+| `Shared/Signal` | `new` | `() -> Signal` | `Connect(fn)`, `Once(fn)`, `Fire(...)`, `Wait()`, `DisconnectAll()` |
+| `Shared/Config` | (index) | `Config.<Feature>` | The feature's tuning table, from `Shared/Config/<Feature>.luau` |
+| `Shared/Loader` | `load` | `(folder: Instance?, label: string) -> { [string]: any }` | Requires each ModuleScript child, `Init()` by `Priority`, then `Start()` in threads |
+| `Shared/Loader` | `bridge` | `(loaded, parent: Instance, testsFolder: Instance?) -> BindableFunction?` | The Studio-only `DebugBridge` (docs/workflow/TESTING.md) |
+| `Shared/CarModel` | `build` | `() -> Model` | The placeholder car, built by code: anchored parts, no constraints |
+| `PlaygroundService` | `GetSpot` | `(name: string) -> CFrame` | A named spot in the world; errors on an unknown name |
+| `DriftController` | `DebugDrive` | `(inputs: { { t: number, steer: number, drift: boolean, brake: boolean } }, seconds: number) -> { Vector3 }` | Runs the model with no player and returns the path, for the determinism test |
 
 ## Place settings
 
 > Settings made in Studio, not in git, and set the same way in every place: the Main place, every lane, and the published game (docs/workflow/LANES.md "Add a lane").
 
-- `Workspace.StreamingEnabled`: (on or off, as recorded in `ARCHITECTURE.md`)
+- `Workspace.StreamingEnabled`: **off** (`ARCHITECTURE.md` "World and streaming"): the playground is small, and streaming surfaces in under a fast car would be felt as the ground failing a ray.

@@ -22,8 +22,8 @@ What we're building, in what order. The current phase is in `PROJECT.md`; the ph
 
 | Item | Spec | Status |
 |---|---|---|
-| Custom drift model (no Roblox physics) | `features/<name>.md` | Not started |
-| One-input drift control, mobile first | `features/<name>.md` | Not started |
+| Custom drift model (no Roblox physics) | `features/drift-model.md` | Prototype in progress |
+| One-input drift control, mobile first | `features/drift-model.md` | Prototype in progress |
 | One handcrafted drift map: corners, ramps, berms | `features/<name>.md` | Not started |
 | Clean-drift scoring and end-of-run readout | `features/<name>.md` | Not started |
 | A small set of cosmetic cars | `features/<name>.md` | Not started |
