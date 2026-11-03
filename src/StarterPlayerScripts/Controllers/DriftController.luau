@@ -213,7 +213,9 @@ end
 function DriftController:_send(state)
 	local fwd, right = DriftModel.axes(state.yaw)
 	local velocity = fwd * state.u + right * state.v + Vector3.yAxis * state.vy
-	self._carState:FireServer(DriftModel.cframe(state), velocity, state.gripBlend > 0.5)
+	-- `drifting` is read off the slide the car is in, not off the input: with a continuous
+	-- finger there is no mode to report (Config.Drift.PhaseDriftingAt).
+	self._carState:FireServer(DriftModel.cframe(state), velocity, state.phase == "drifting")
 end
 
 -- The camera asks for this every frame (docs/game/ARCHITECTURE.md "Studio tools").
@@ -243,9 +245,10 @@ function DriftController:DebugState()
 		slipDeg = math.deg(s.slip),
 		slipFrontDeg = math.deg(s.slipFront),
 		slipRearDeg = math.deg(s.slipRear),
-		wantedSlipDeg = math.deg(s.wantedSlip),
+		slideFrac = s.slideFrac,
 		wheelAngleDeg = math.deg(s.wheelAngle),
-		steer = s.steer,
+		steer = s.steer, -- what the finger is asking for: weight thrown, not a steer angle
+		load = s.load, -- where the weight has actually got to
 		gripBlend = s.gripBlend,
 		rearGrip = s.muRear,
 		phase = s.phase,

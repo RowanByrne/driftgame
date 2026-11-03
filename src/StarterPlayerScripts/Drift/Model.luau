@@ -13,6 +13,15 @@
 --   r  yaw rate                 (+ turning right)
 -- Roblox's Y rotation runs the other way, so `yaw` (the Roblox one) loses r each step.
 --
+-- The body slip angle beta = atan2(v, u) is the one number to keep straight here, because
+-- everything the player feels is a function of it:
+--   beta > 0  the velocity runs out to the car's RIGHT of its nose, which is the tail
+--             hung out to the right, which is a car arcing LEFT.
+--   beta < 0  the mirror of that.
+-- A positive yaw rate r turns the car right, and turning right closes a positive beta, so
+-- anything that opens the slide to the right is a NEGATIVE rdot. That one sentence is
+-- behind every sign in the slide section.
+--
 -- Every number comes from Config.Drift. There are no constants in here.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -22,8 +31,11 @@ local Config = require(ReplicatedStorage.Shared.Config)
 local Model = {}
 
 export type Input = {
-	steer: number, -- -1 full left .. +1 full right
-	drift: boolean,
+	-- NOT a steering wheel. The finger is on the car's REAR: this is how hard, and which
+	-- way, the car's weight is thrown across (features/drift-model.md "How it plays").
+	-- +1 throws the tail fully to the car's right, which arcs the car left.
+	steer: number, -- -1 .. +1
+	drift: boolean, -- a discrete press (keyboard, gamepad, a flick): worth `DriftOffset`
 	brake: boolean,
 }
 
@@ -43,9 +55,10 @@ export type State = {
 	v: number,
 	r: number,
 	vy: number, -- vertical speed
-	steer: number, -- where the steering input has got to, -1 .. 1
+	steer: number, -- what the finger is asking for this step, -1 .. 1 (see Input.steer)
+	load: number, -- where the car's weight has actually got to, -1 .. 1. Lags `steer`
 	wheelAngle: number, -- where the front wheels really point, radians, counter-steer included
-	wantedSlip: number, -- the slide angle the stick is asking for while drifting, radians
+	slideFrac: number, -- 0 straight .. 1 as sideways as the car gets (`SlideAngleFull`)
 	gripBlend: number, -- 0 gripping .. 1 drifting
 	airborne: boolean,
 	up: Vector3, -- smoothed surface normal
@@ -96,8 +109,9 @@ function Model.new(spawnCFrame: CFrame): State
 		r = 0,
 		vy = 0,
 		steer = 0,
+		load = 0,
 		wheelAngle = 0,
-		wantedSlip = 0,
+		slideFrac = 0,
 		gripBlend = 0,
 		airborne = false,
 		up = Vector3.yAxis,
@@ -157,10 +171,42 @@ function Model.step(s: State, input: Input, dt: number, world: World): State
 	local brake = input.brake == true
 	local drift = input.drift == true
 
-	---------------------------------------------------------------- the drift input
-	local blendSeconds = drift and C.GripBlendIn or C.GripBlendOut
-	s.gripBlend = toward(s.gripBlend, drift and 1 or 0, dt / math.max(blendSeconds, 1e-4))
-	if drift then
+	---------------------------------------------------------------- the finger
+	-- The finger is on the car's rear, and its offset is not an angle to point at: it is
+	-- how hard the car's weight is thrown across (features/drift-model.md "How it plays").
+	-- There is no drift mode to be in and out of -- a small offset is a small slide, a big
+	-- one is a big slide, and the whole range is one continuous thing.
+	local command = steerIn
+	if drift and command ~= 0 then
+		-- A keyboard, a gamepad and a flick have no analogue travel. A press is worth the
+		-- offset at which a finger breaks the rear loose, so the discrete inputs land
+		-- inside the same scale instead of beside it.
+		command = (command > 0 and 1 or -1) * math.max(math.abs(command), C.DriftOffset)
+	end
+	-- The finger's travel and the car's range are not the same thing. A car left to its
+	-- own tyres is nearly all-or-nothing -- stuck, then gone -- so a straight mapping
+	-- spends the first half of a thumb's reach doing almost nothing. `SlideCurve` below 1
+	-- gives the near half of the travel something to say.
+	if command ~= 0 and C.SlideCurve ~= 1 then
+		command = (command > 0 and 1 or -1) * math.abs(command) ^ C.SlideCurve
+	end
+	s.steer = command
+
+	-- Weight has mass. It takes time to arrive and time to settle, and that lag is the
+	-- whole difference between a car and a cursor: with no lag the car answers the finger
+	-- on the same frame, which is what reads as steering rather than as weight. Thrown out
+	-- is quicker than gathered back in, because that is how a car behaves.
+	local throwing = math.abs(command) > math.abs(s.load)
+	local weightRate = throwing and C.WeightThrowRate or C.WeightSettleRate
+	s.load = toward(s.load, command, weightRate * dt)
+	local loadMag = math.abs(s.load)
+
+	-- The rear lets go in proportion to the weight taken off it, over the blend times: the
+	-- short one going out, the long one coming back, which is the catch.
+	local blendSeconds = loadMag > s.gripBlend and C.GripBlendIn or C.GripBlendOut
+	s.gripBlend = toward(s.gripBlend, loadMag, dt / math.max(blendSeconds, 1e-4))
+
+	if math.abs(command) >= C.SlideHeldAt then
 		s.driftHeld = (s.driftHeld >= 0 and s.driftHeld or 0) + dt
 	else
 		s.driftHeld = -1
@@ -173,48 +219,52 @@ function Model.step(s: State, input: Input, dt: number, world: World): State
 	local uRef = math.max(s.u, C.MinSlipSpeed)
 	local latFront = s.v + a * s.r
 	local latRear = s.v - b * s.r
-	local beta = math.atan2(s.v, uRef)
+	local speed = math.sqrt(s.u * s.u + s.v * s.v)
+
+	-- The body slip angle, off the real velocity rather than off `uRef`. The tyres keep the
+	-- `MinSlipSpeed` floor, which stops their stiff equations dividing by a standstill; the
+	-- slide must not have it, for two reasons. A floor on `u` caps the angle at 90 degrees,
+	-- so a car that has gone right round reads as merely sideways and the spin guard below
+	-- never sees it. And it caps it well under 90 exactly when the car is slowest and most
+	-- sideways -- the one moment the scrub needs the truth.
+	--
+	-- `SlideSpeedFloor` fades the whole angle out under a crawl instead, by walking the
+	-- velocity back to straight ahead: a car barely moving has no slide worth the name,
+	-- which is also what lets one stopped sideways let go of it and drive off again.
+	local crawl = clamp(speed / math.max(C.SlideSpeedFloor, 1e-3), 0, 1)
+	local beta = math.atan2(s.v * crawl, s.u * crawl + (1 - crawl) * C.SlideSpeedFloor)
+	local slideFrac = clamp(math.abs(beta) / math.rad(C.SlideAngleFull), 0, 1)
+	s.slideFrac = slideFrac
 
 	---------------------------------------------------------------- steering
-	-- Gripping, the stick is the steering wheel: it points the front wheels.
+	-- Nobody steers this car. The finger is on the rear, so the front wheels are the
+	-- driver's hands, and they do what a driver's hands do in a slide: follow where the
+	-- front axle is actually going.
 	--
-	-- Drifting, it is not (features/drift-model.md "How it plays", item 5). A real slide is
-	-- an unstable balance held by the driver's own counter-steer, several corrections a
-	-- second; a thumb on a phone cannot do that and should not have to. So while the drift
-	-- input is held the stick asks for a *slide angle* -- full lock is `DriftAngleMax` of
-	-- slide, half lock is half of it, centred is straight -- and the front wheels servo
-	-- toward it on their own. Hard into the corner to break the rear loose, the wheels
-	-- unwinding as the angle builds, and a real counter-steer the moment the car goes past
-	-- the angle asked for, all fall out of one line.
+	-- That one line is the whole of it. Straight, the travel is straight ahead and the
+	-- wheels sit straight. Turning in, the front axle is tracking round the corner and the
+	-- wheels follow it into the corner. Properly sideways, the travel is already across the
+	-- nose, so following it IS counter-steer -- opposite lock, the right amount of it, for
+	-- free. On the travel the front tyre makes no force either way, which is exactly what
+	-- a driver counter-steers *for*; `CounterSteer` moves the hands off it in either
+	-- direction, and measured, zero was the best of them (Config.Drift).
 	--
-	-- `gripBlend` crossfades the two, so the catch is the servo handing the wheels back.
-	--
-	-- The wheels move at a rate, not instantly, and that lag is not cosmetic: a servo with
-	-- no delay is a loop with no phase margin, and the car hunts lock to lock instead of
-	-- settling.
-	s.steer = toward(s.steer, steerIn, C.SteerRate * dt)
+	-- The wheels move at a rate, not instantly: a servo with no delay is a loop with no
+	-- phase margin, and the car hunts lock to lock instead of settling.
 	local speedFrac = clamp(math.abs(s.u) / C.TopSpeed, 0, 1)
 	local maxAngle = math.rad(lerp(C.SteerAngleMax, C.SteerAngleMin, speedFrac))
 	local lock = math.rad(C.SteerAngleMax)
 
-	local gripAngle = steerIn * maxAngle
-	-- A right-hand slide (steer positive) runs with the velocity to the left of the nose,
-	-- which is a negative body slip angle: hence the minus.
-	local wantedSlip = -steerIn * math.rad(C.DriftAngleMax)
-	s.wantedSlip = wantedSlip
-
-	-- Point the front wheels where the front axle is really travelling, then nudge them by
-	-- how far the slide is from the angle asked for. That one line is the whole of it:
-	--   no slide yet, so the nudge is the whole angle and the wheels turn in hard;
-	--   slide holding, so the nudge is nothing and the wheels sit along the travel, making
-	--     no force either way -- which is exactly what a driver counter-steers *for*;
-	--   slide gone too far, so the nudge goes the other way and the wheels catch it.
-	-- Aiming at a fixed angle instead leaves the front tyre making a large force at a
-	-- 30-degree attitude, and that force spins the car: measured, not guessed.
 	local frontTravel = math.atan2(latFront, uRef)
-	local driftAngle = frontTravel + C.CounterSteer * (beta - wantedSlip)
+	local slideSteer = frontTravel + C.CounterSteer * beta
+	-- At a crawl there is no travel to follow, and a car that cannot be pointed at all
+	-- below walking pace is a car that cannot be parked. So the wheels take the weight
+	-- directly down there -- opposite to it, because the tail goes one way and the nose
+	-- the other, which keeps the finger meaning the same thing at every speed.
+	local crawlSteer = -s.load * maxAngle
+	local steerAuthority = clamp(speed / math.max(C.CrawlSpeed, 1e-3), 0, 1)
 
-	local wanted = clamp(lerp(gripAngle, driftAngle, s.gripBlend), -lock, lock)
+	local wanted = clamp(lerp(crawlSteer, slideSteer, steerAuthority), -lock, lock)
 	s.wheelAngle = toward(s.wheelAngle, wanted, C.SteerRate * lock * dt)
 	local delta = s.wheelAngle
 
@@ -242,37 +292,45 @@ function Model.step(s: State, input: Input, dt: number, world: World): State
 	---------------------------------------------------------------- yaw
 	local rdot
 	if s.airborne then
-		-- Airborne, steering only rotates the car in yaw; nothing else touches it.
-		local wanted = C.AirYawRate * s.steer
-		rdot = (wanted - s.r) / math.max(C.AirYawTime, 1e-3)
+		-- Airborne, the finger only rotates the car in yaw; nothing else touches it. The
+		-- minus keeps it meaning the same thing as on the ground: weight right, tail right,
+		-- nose left.
+		local wantedRate = -C.AirYawRate * s.load
+		rdot = (wantedRate - s.r) / math.max(C.AirYawTime, 1e-3)
 	else
 		rdot = (a * forceFront * math.cos(delta) - b * forceRear) / C.YawInertia
 		rdot -= C.YawDamping * s.r
-		-- The slide itself (features/drift-model.md "How it plays", item 4).
+		-- The slide itself: a shove and a fight, never a pose
+		-- (features/drift-model.md "How it plays", item 4).
 		--
 		-- Two tyres at saturation hold whatever angle the car is already at and pick none
-		-- of their own: with a tanh tyre the body's slip angle is a free mode at steady
-		-- state, so no amount of grip tuning produces a slide by itself. The drift input
-		-- has to drive it, and this is the one place the model is frankly an arcade one.
+		-- of their own, so the slide has to be driven and this is the one place the model
+		-- is frankly an arcade one. What it drives is a MOMENT, not a yaw rate: the thrown
+		-- weight shoves the tail round at `SlideKick`, and the car's own grip hauls it back
+		-- at `SlideBite`, harder the further out it is. The angle the player gets is where
+		-- the two cancel. Nothing anywhere names an angle.
 		--
-		-- It drives the *yaw rate*, not the moment. The slip angle only moves when the nose
-		-- turns faster than the velocity does, and the velocity turns at (lateral force /
-		-- speed): so the yaw rate that holds the slide where it is is known exactly, and
-		-- anything above it opens the slide further. Asking for that rate plus the error,
-		-- over `DriftAngleTime`, is a loop that closes -- a moment proportional to the
-		-- error alone leaves the car permanently short of the angle the stick asked for,
-		-- by more the harder the tyres fight it.
-		local lateral = forceFront * math.cos(delta) + forceRear
-		local speed = math.max(math.sqrt(s.u * s.u + s.v * s.v), C.MinSlipSpeed)
-		local holdRate = lateral / speed
-		local openRate = (beta - wantedSlip) / math.max(C.DriftAngleTime, 1e-3)
-		rdot += C.DriftYawAssist
-			* s.gripBlend
-			* (holdRate + openRate - s.r)
-			* clamp(math.abs(s.u) / C.AssistSpeed, 0, 1)
+		-- That is the whole of the rebuild. Driving the yaw *rate* -- the previous version,
+		-- at the rate that held a commanded angle plus the error over a settling time --
+		-- cancels the car's own dynamics on the way: the slide arrives at the number asked
+		-- for, smoothly, from any speed, and nothing fights. A moment leaves the inertia,
+		-- the damping and both tyres in the loop, so the car leans in, overshoots, sags
+		-- when the tyres bite, and snaps home when the finger does.
+		--
+		-- `SlideBiteShape` is how the fight grows with the angle, and the reason it has to
+		-- grow at all: the rear tyre's own pull is nearly flat in the slide angle once it
+		-- is sliding -- a saturated tyre makes the same force at 20 degrees as at 60 -- so
+		-- left to the tyres alone the car has two states, stuck and gone, and nothing in
+		-- between for the middle of the finger's travel to live in.
+		local slideAuthority = clamp(speed / math.max(C.SlideKickSpeed, 1e-3), 0, 1)
+		local kick = C.SlideKick * s.load * slideAuthority
+		local bite = C.SlideBite * slideFrac ^ C.SlideBiteShape * (beta >= 0 and 1 or -1) * slideAuthority
+		rdot += bite - kick
 		local betaMax = math.rad(C.SlipAngleMax)
 		if math.abs(beta) > betaMax then
-			-- Spinning out: the car straightens itself rather than carrying on round.
+			-- Past square across the car is going round, not drifting, and nothing the
+			-- player can do reaches it. A wall, not a feel knob: it has to be stiff enough
+			-- that a full offset pins the car sideways instead of spinning it through.
 			rdot += C.SpinRecover * (math.abs(beta) - betaMax) * (beta >= 0 and 1 or -1)
 		end
 	end
@@ -305,16 +363,37 @@ function Model.step(s: State, input: Input, dt: number, world: World): State
 				udot -= C.ReverseAccel * clamp(1 + s.u / C.ReverseSpeed, 0, 1)
 			end
 		elseif C.AutoThrottle then
-			udot += C.Accel * clamp(1 - s.u / C.TopSpeed, 0, 1)
+			-- The throttle is cut by the weight, not by the angle. Thrown across, the car
+			-- has nothing left on its driven wheels, and at a full offset it has nothing at
+			-- all -- which is what makes "100% to the side, held" a dead stop rather than a
+			-- fast donut, and makes it one the car cannot drive its way out of. Hanging it
+			-- on the finger rather than on the slide matters: a car that spins back toward
+			-- straight would otherwise get its engine back halfway through being stopped,
+			-- and pull away again while the player is still holding the brake.
+			local cut = 1 - loadMag ^ C.DriveCutShape
+			udot += C.Accel * clamp(1 - s.u / C.TopSpeed, 0, 1) * cut
 			if s.u < 0 then
 				udot += C.CoastDecel
 			end
 		else
 			udot -= C.CoastDecel * (s.u > 0 and 1 or (s.u < 0 and -1 or 0))
 		end
-		-- The slide itself bleeds speed: that is what makes a corner a drift, not a brake.
-		local bleed = C.SlipSpeedBleed * math.deg(math.abs(beta)) * clamp(math.abs(s.u) / C.MinSlipSpeed, 0, 1)
-		udot -= bleed * (s.u >= 0 and 1 or -1)
+		-- What a slide costs. Drifting makes friction, and the harder the drift the more
+		-- friction and the more speed it takes off -- the whole trade the game is made of
+		-- (features/drift-model.md "How it plays"). `SlideDragPower` is the shape of that
+		-- trade: above 1, a shallow drift is nearly free and a big one is ruinous.
+		--
+		-- It acts along the car's TRAVEL, not along its nose. A car 70 degrees across is
+		-- scrubbing almost entirely sideways, and taking the cost off `u` alone would
+		-- leave the speed sitting in `v` where the player can still feel it.
+		local scrub = C.SlideDrag * slideFrac ^ C.SlideDragPower
+		-- The same solver guard the tyres use: never cancel more of the velocity in one
+		-- step than there is, or a car at walking pace jitters about zero.
+		scrub = math.min(scrub, speed * C.StepGuard / dt)
+		if speed > 1e-3 then
+			udot -= scrub * (s.u / speed)
+			vdot -= scrub * (s.v / speed)
+		end
 	end
 
 	---------------------------------------------------------------- integrate
@@ -420,13 +499,16 @@ function Model.step(s: State, input: Input, dt: number, world: World): State
 	s.time += dt
 
 	---------------------------------------------------------------- readout
+	-- The phase is read off the slide the car is actually in, not off the input, because
+	-- with a continuous finger there is no mode to be in: `PhaseDriftingAt` is a share of
+	-- `SlideAngleFull`, so the readout says drifting when the car is.
 	if s.airborne then
 		s.phase = "airborne"
-	elseif s.gripBlend >= C.PhaseDriftingAt then
+	elseif s.slideFrac >= C.PhaseDriftingAt then
 		s.phase = "drifting"
-	elseif drift then
+	elseif loadMag > s.gripBlend and loadMag > C.PhaseCatchingAt then
 		s.phase = "breaking"
-	elseif s.gripBlend > C.PhaseCatchingAt then
+	elseif s.gripBlend > C.PhaseCatchingAt or s.slideFrac > C.PhaseCatchingAt then
 		s.phase = "catching"
 	else
 		s.phase = "gripping"

@@ -83,7 +83,10 @@ export type Summary = {
 	endPosition: Vector3,
 	endSpeed: number,
 	maxSpeed: number,
+	minSpeed: number, -- the slowest it got after the first second: what a slide cost it
 	peakSlipDeg: number,
+	peakSlipSeconds: number, -- when it got there, which is how fast the car answers
+	endSlipDeg: number, -- the slide it settled at
 	peakYawRate: number, -- rad/s
 	entrySpeed: number?, -- speed the moment the drift input went down
 	exitSpeed: number?, -- speed the moment grip had fully come back after it
@@ -120,7 +123,10 @@ function Sim.drive(inputs: { Keyframe }, seconds: number, opts: DriveOptions?): 
 		endPosition = runner.state.position,
 		endSpeed = 0,
 		maxSpeed = 0,
+		minSpeed = math.huge,
 		peakSlipDeg = 0,
+		peakSlipSeconds = 0,
+		endSlipDeg = 0,
 		peakYawRate = 0,
 		entrySpeed = nil,
 		exitSpeed = nil,
@@ -143,12 +149,20 @@ function Sim.drive(inputs: { Keyframe }, seconds: number, opts: DriveOptions?): 
 			summary.exitSpeed = nil
 		end
 		heldBefore = held
-		if everHeld and not held and summary.exitSpeed == nil and s.gripBlend <= 0.02 then
+		if everHeld and not held and summary.exitSpeed == nil and s.gripBlend <= C.PhaseCatchingAt then
 			summary.exitSpeed = speed
 		end
 
 		summary.maxSpeed = math.max(summary.maxSpeed, speed)
-		summary.peakSlipDeg = math.max(summary.peakSlipDeg, math.abs(math.deg(s.slip)))
+		if s.time >= 1 then
+			-- After the first second, so a standing start does not report a minimum of zero
+			summary.minSpeed = math.min(summary.minSpeed, speed)
+		end
+		local slipDeg = math.abs(math.deg(s.slip))
+		if slipDeg > summary.peakSlipDeg then
+			summary.peakSlipDeg = slipDeg
+			summary.peakSlipSeconds = s.time
+		end
 		summary.peakYawRate = math.max(summary.peakYawRate, math.abs(s.r))
 		if s.airborne then
 			summary.airborneSeconds += C.FixedStep
@@ -181,6 +195,10 @@ function Sim.drive(inputs: { Keyframe }, seconds: number, opts: DriveOptions?): 
 	summary.simSeconds = runner.state.time
 	summary.endPosition = runner.state.position
 	summary.endSpeed = Model.speed(runner.state)
+	summary.endSlipDeg = math.deg(runner.state.slip)
+	if summary.minSpeed == math.huge then
+		summary.minSpeed = summary.endSpeed
+	end
 	summary.headingChangeDeg = math.deg(runner.state.yaw - startYaw)
 	table.insert(path, runner.state.position)
 
