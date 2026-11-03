@@ -4,15 +4,17 @@ The map of the game's design: how the parts fit together. Keep it short. Each fe
 
 ## Overview
 
-> One paragraph: what the player does and why it's fun. The pitch is in `PITCH.md`.
+Drift is a car game about clean drifts. The player slides a low-poly car through corners, controlling speed and angle with the slide itself rather than the brake, and chases the feeling of a perfect, unbroken line. The cars are driven by our own movement code, not Roblox physics. Controls are simple enough for one finger on a phone, so the skill is in reading the corner and holding the slide, not in working the inputs. What sits on top of that feeling — progression, a meta game, the long-term scale — is deliberately undecided until the drifting feels right.
 
 ## Core loop
 
-> The loop step by step, with what the player sees, does and gets at each step, and roughly how long a round takes.
+1. **Approach.** The player reads the next corner and builds speed on the way in. *(sees: the road ahead and current speed)*
+2. **Break loose.** One input throws the car into a slide. *(does: a single held input)*
+3. **Hold.** The player steers through the corner on the slide, bleeding and carrying speed with the drift angle. *(sees: the car's angle and the line it's drawing)*
+4. **Catch.** The exit is caught cleanly and the speed carries into the next corner, or the drift breaks and the chain ends.
+5. **Read back.** How clean the drift was is shown, and the player goes again.
 
-1.
-2.
-3.
+**(proposed)** A free-roam run is endless; a scored run is 60 to 90 seconds. To settle after the first prototype.
 
 ## Systems
 
@@ -20,11 +22,13 @@ The map of the game's design: how the parts fit together. Keep it short. Each fe
 
 | System | What it does | Spec |
 |---|---|---|
-| | | `features/<name>.md` |
+| | `features/<name>.md` | |
 
 ## Progression
 
 > How the player grows: levels, unlocks and gates. How long each should take is in `PACING.md`.
+
+Not decided. The user wants the drift feel proven first (see "Open after the prototype").
 
 ## Economy
 
@@ -48,4 +52,18 @@ The map of the game's design: how the parts fit together. Keep it short. Each fe
 
 ## First five minutes
 
-> A new player's first five minutes, beat by beat, from join to the first reward.
+The player learns how to drive. That's all that's settled: the user's words were "not too important right now, we will revisit later".
+
+To revisit once the drifting works, beat by beat, from join to the first reward.
+
+### Open after the prototype
+
+The user asked for these to be written down rather than guessed at now:
+
+- How a player is taught to drift: a tutorial, a guided first corner, or just a forgiving space to try.
+- What the first reward is, and when it lands.
+- Meta progression: what the player grows, unlocks or collects.
+- The "big scale group" direction — what the game is beyond a single run.
+- Scored runs vs. free roam, and how a run is framed and ends.
+- Whether other players share a server, and what they do around each other.
+- How money is made (the cosmetic-only proposal in `PITCH.md` is a placeholder).

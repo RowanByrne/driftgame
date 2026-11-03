@@ -18,19 +18,24 @@ What we're building, in what order. The current phase is in `PROJECT.md`; the ph
 
 ## Launch scope
 
-> The features and content the game launches with, from `PITCH.md` "Launch scope". Production ends when every line is done (WORKFLOW.md).
+**(proposed)**, from `PITCH.md` "Launch scope". Not to be built until the pitch is approved and the drift feel is proven.
 
 | Item | Spec | Status |
 |---|---|---|
-| | `features/<name>.md` | Not started / in progress / done |
+| Custom drift model (no Roblox physics) | `features/<name>.md` | Not started |
+| One-input drift control, mobile first | `features/<name>.md` | Not started |
+| One handcrafted drift map: corners, ramps, berms | `features/<name>.md` | Not started |
+| Clean-drift scoring and end-of-run readout | `features/<name>.md` | Not started |
+| A small set of cosmetic cars | `features/<name>.md` | Not started |
+| Leaderboard or personal best | `features/<name>.md` | Not started |
 
 ## Now
 
-> What's being built this round or this week.
+Pitch: approve `PITCH.md`.
 
 ## Next
 
-> What comes after, in order.
+Core loop: a basic baseplate world with some obstacles to drift around, to feel how the drifting feels. That's step 1 — nothing else goes in it.
 
 ## After launch
 
@@ -42,4 +47,11 @@ What we're building, in what order. The current phase is in `PROJECT.md`; the ph
 
 ## Later
 
-> Ideas for after the current phase or after launch, so they don't creep into the current work. Each with a line on why it's worth doing.
+Parked until the drift feel is proven and the user picks a direction (`GDD.md` "Open after the prototype"):
+
+- **Meta progression** — undecided, and the main open question in the pitch. Worth doing because the hook is a feeling, and a feeling alone doesn't hold players past day 1.
+- **The "big scale group" direction** — what the game is beyond a single run. Decides most of the rest of the roadmap.
+- **Social and multiplayer** — ghosts, shared servers, competing. Worth doing because showing off a clean line is most of the appeal.
+- **Tutorial and first five minutes** — deliberately deferred: the user wants to revisit it once there's something to teach.
+- **Monetization beyond cosmetics** — only after the meta is chosen.
+- **An artist for the cars** — the user intends to bring one in if development goes well.

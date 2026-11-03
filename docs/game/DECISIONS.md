@@ -9,4 +9,5 @@ The user's decisions about this game, so they aren't reopened later. Before prop
 
 | Date | Decision | Why |
 |---|---|---|
-| | | |
+| 2026-11-03 | The cars are not driven by Roblox's physics system; the drift model is our own code | "its unreliable and too random" |
+| 2026-11-03 | Meta progression and the larger scale stay undecided until a baseplate prototype proves the drift feel | The user wants "the sleek drifting game feel" first; what's left to decide is in GDD.md "Open after the prototype" |

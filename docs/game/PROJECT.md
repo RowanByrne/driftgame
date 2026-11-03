@@ -40,4 +40,4 @@ Each PC that works on this game, and how many lanes it opens: `lane1` up to that
 
 ## Current focus
 
-One or two lines on what we're working on now. The plan is in ROADMAP.md.
+The pitch: get `PITCH.md` approved. After that the focus is the drift feel itself — meta progression and the larger scale stay undecided until a baseplate prototype proves it. The plan is in ROADMAP.md.

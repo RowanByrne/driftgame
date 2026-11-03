@@ -4,11 +4,13 @@ How this game looks. The world part is set in Production, before the first art r
 
 ## Pillars
 
-> Three short phrases the look always follows, such as "cozy, readable, hand-painted".
+- **Stylized low poly.**
+- **Cars you can see the facets on.**
+- **Drivable before pretty:** no surface the drift model can't hold.
 
 ## References
 
-> The approved reference images, stored in `assets/reference/`, and what we take from each. References guide the style; never copy their pixels.
+No references yet — the user's call: "not yet, for now we keep it simple". Added here when the first ones are approved; images come through ART-PIPELINE.md.
 
 | Image | What we take |
 |---|---|
@@ -16,11 +18,13 @@ How this game looks. The world part is set in Production, before the first art r
 
 ## World
 
-- **Style:** > Stylized or realistic, and how detailed.
+- **Style:** Stylized low poly throughout. Cars are noticeably low poly — the facets are part of the look, not a budget compromise. The environment can go much further: very low poly is fine for anything the car doesn't drive on.
 - **Surfaces:** > Usually a mix: Roblox materials on some assets, generated textures (on UV-unwrapped models, with shared atlases) on others, sometimes both on one asset. Say when each fits, such as "terrain and buildings use materials; creatures and hero props get textures". Each asset's surfaces are decided when it's made (ART-PIPELINE.md "3D assets").
-- **Shapes and proportions:** > Chunky or slender, rounded or sharp, and the scale of props next to a player.
+- **Shapes and proportions:** Faceted, flat-shaded forms with hard edges. **The driving surfaces are the exception to "very low poly":** roads, ramps and berms need enough geometric resolution that an elevation change reads as a curve, not as a stack of flat segments — a segmented low-poly road would break the drift model. Everything off the racing line can be as coarse as it likes.
 - **Lighting and mood:** > Time of day, atmosphere, how night looks.
 - **Palette:** > The main colours of the world, and what bright accents are for.
+
+**Open:** if development goes well the user intends to bring in an artist for the cars, so the car style should stay easy to hand over.
 
 ## Characters and creatures
 
@@ -62,4 +66,5 @@ Set in the UI phase's style step (UI.md).
 
 | Do | Don't |
 |---|---|
-| | |
+| Let car facets show | Build a road whose elevation reads as flat segments |
+| Keep off-road geometry very cheap | Copy a real manufacturer's car, name or badge |
