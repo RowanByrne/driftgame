@@ -56,7 +56,7 @@ Everything code relies on across modules and tasks: data, remotes, tags, attribu
 | attr `__test_profile` | Workspace (Studio only) | Set by hand in worker places | DataService (docs/workflow/TESTING.md) |
 | attr `__agent_play` | Workspace (Studio only) | Agents, before each playtest | The quiet-playtest module (docs/workflow/TESTING.md) |
 | attr `__studio_audio` | Workspace (Studio only) | Agents, for deliberate audio tests | The quiet-playtest module (docs/workflow/TESTING.md) |
-| tag `DriftSurface` | Every part the car may drive on | `PlaygroundService`, when it builds the world | The drift model's ground rays filter to it |
+| tag `DriftSurface` | Every part the car may drive on | `PlaygroundService`, when it builds the world | The drift model's ground rays filter to it. Buildings, pillars and cones deliberately don't carry it: they are things to hit, not ground |
 
 ## Paths
 
@@ -80,10 +80,11 @@ Everything code relies on across modules and tasks: data, remotes, tags, attribu
 | `Shared/Loader` | `load` | `(folder: Instance?, label: string) -> { [string]: any }` | Requires each ModuleScript child, `Init()` by `Priority`, then `Start()` in threads |
 | `Shared/Loader` | `bridge` | `(loaded, parent: Instance, testsFolder: Instance?) -> BindableFunction?` | The Studio-only `DebugBridge` (docs/workflow/TESTING.md) |
 | `Shared/CarModel` | `build` | `() -> Model` | The placeholder car, built by code: anchored parts, no constraints |
-| `PlaygroundService` | `GetSpot` | `(name: string) -> CFrame` | A named spot in the world; errors on an unknown name |
-| `PlaygroundService` | `DebugState` | `() -> { built: boolean, partCount: number, coneCount: number, spots: { [string]: CFrame }, segments: number, plate: { size: Vector3, y: number } }` | The world as built, for tests and agent playtests. `DebugWalk` and `DebugBounds` sit beside it, Studio only |
+| `PlaygroundService` | `GetSpot` | `(name: string) -> CFrame` | A named spot in the world; errors on an unknown name. The spots are `Spawn`, `OpenGround`, `PillarRun`, `DistrictGate`, `Boulevard`, `TightAlley`, `CircleCentre` and `RampBase` |
+| `PlaygroundService` | `DebugState` | `() -> { built: boolean, partCount: number, coneCount: number, buildingCount: number, pillarCount: number, spots: { [string]: CFrame }, segments: number, plate: { size: Vector3, y: number }, open: { minX, maxX, minZ, maxZ, clearRadius: number } }` | The world as built, for tests and agent playtests. `DebugWalk` and `DebugBounds` sit beside it, Studio only |
+| `PlaygroundService` | `DebugObstacles` | `() -> { { id: string, kind: string, x: number, z: number, halfX: number, halfZ: number, top: number, bottom: number } }` | Every wall as a flat footprint, measured from the built parts: the tests use it to prove the streets are open, that nothing drivable runs through a wall, and that the yard is clear. Studio only |
 | `DriftController` | `DebugDrive` | `(inputs: { { t: number, steer: number, drift: boolean, brake: boolean } }, seconds: number, opts: { fps: number?, sample: number?, start: CFrame?, live: boolean? }?) -> ({ Vector3 }, Summary)` | Runs the model with no player and returns the path, for the determinism test, with a summary beside it: entry and exit speed, peak slip, time to break loose, heading change |
-| `DriftController` | `DebugState` | `() -> { position: Vector3, heading: number, speed: number, slip: number, wantedSlipDeg: number, wheelAngleDeg: number, phase: string, steps: number }` | The model's full state, for tests and agent playtests |
+| `DriftController` | `DebugState` | `() -> { position: Vector3, headingDeg: number, speed: number, forwardSpeed: number, lateralSpeed: number, verticalSpeed: number, slipDeg: number, slipFrontDeg: number, slipRearDeg: number, wantedSlipDeg: number, wheelAngleDeg: number, yawRate: number, phase: string, gripBlend: number, rearGrip: number, airborne: boolean, wallHit: boolean, breakLooseSeconds: number, ... }` | The model's full state, for tests and agent playtests. Angles are degrees and named `*Deg` |
 | `CarInputController` | `DebugSetInput` / `DebugClearInput` | `(steer: number?, drift: boolean?, brake: boolean?) -> input` / `() -> boolean` | Studio only: drive the live car with no keyboard |
 | `CarInputController` | `DebugDrag` | `(offsetPx: number?, flickRate: number?) -> dragState` | Studio only: act out the real gesture rather than bypassing it. `nil` lifts the finger |
 | `Shared/CarModel` | `physicsOffenders` | `(model: Instance) -> { string }` | Everything in a car that would hand it to Roblox physics. Empty is the rule, and `DriftTests` asserts it |
