@@ -9,7 +9,6 @@ Every task in progress and the files it owns, so parallel sessions and workers n
 
 | Branch | Lane | Files owned | Since |
 |---|---|---|---|
-| `agent/drift-feel` | lane1 | `src/StarterPlayerScripts/Drift/*`, `src/StarterPlayerScripts/Controllers/DriftController.luau`, `src/StarterPlayerScripts/Controllers/CarInputController.luau`, `src/ReplicatedStorage/Shared/Config/Drift.luau`, `src/ServerScriptService/Tests/DriftTests.luau`, `docs/game/features/drift-model.md` | 2026-11-03 |
 
 ## Notes between sessions
 
