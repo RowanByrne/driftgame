@@ -24,6 +24,7 @@ return {
 	AutoThrottle = true, -- the prototype drives itself; brake is the only throttle input
 	ReverseSpeed = 25, -- studs/s, top speed backwards
 	ReverseAccel = 25, -- studs/s^2, how fast it backs up
+	BrakeToReverse = 0.5, -- studs/s below which the brake input starts backing up instead
 	SpeedCeiling = 1.15, -- guard: the most the whole velocity may reach, as a share of
 	-- TopSpeed. A slide puts speed into the lateral axis, so the cap is
 	-- on the total, not on the forward part alone.
@@ -68,6 +69,8 @@ return {
 	-- velocity one step may cancel. Keeps the stiff low-speed tyre
 	-- equations stable at FixedStep. Lower is safer and softer.
 	BreakLooseSlip = 12, -- deg of body slip counted as "the rear is loose", for the readout
+	PhaseDriftingAt = 0.95, -- grip blend at or above which the readout says "drifting"
+	PhaseCatchingAt = 0.02, -- and above which, on the way back, it says "catching"
 
 	-- ---------------------------------------------------------------- geometry
 	-- The wheelbase is not decoration: with the steering lock it fixes the tightest circle
@@ -92,6 +95,9 @@ return {
 	AirLevel = 0.25, -- s, how fast the car levels out while airborne
 	AirYawRate = 1.2, -- rad/s of yaw at full lock while airborne
 	AirYawTime = 0.3, -- s to reach it
+	TerminalFall = 200, -- studs/s, the fastest a fall may get. Without it a car that has
+	-- driven off the world accelerates without limit, and the state the
+	-- server is sent stops being anything the server can check.
 	RespawnBelowY = -150, -- studs; below this the car is put back at its spawn
 	SurfaceTag = "DriftSurface", -- the ground rays prefer parts with this tag; with none in
 	-- the world they fall back to whatever solid they hit
@@ -104,6 +110,12 @@ return {
 	-- ---------------------------------------------------------------- network
 	StateSendRate = 20, -- Hz, CarState to the server
 	RemoteCarSmoothing = 0.08, -- s, how fast another player's car eases to its reported pose
+	StateRateLimit = 30, -- packets a second per UserId the server will take before dropping
+	StateSpeedTolerance = 1.25, -- share of TopSpeed a reported horizontal speed may reach
+	StateMoveTolerance = 1.5, -- slack on how far a car may have moved since its last packet
+	StateMoveAllowance = 9, -- studs of slack on top, for a dropped packet or a jittery clock
+	StateResyncDrops = 5, -- packets rejected in a row before the server takes the new
+	-- position as the truth: a respawn is an honest teleport
 
 	-- ---------------------------------------------------------------- camera
 	CamDistance = 26, -- studs behind the car

@@ -22,8 +22,6 @@ local CarService = {}
 
 CarService.Priority = 50 -- remotes exist before any controller asks for them
 
-local RATE_LIMIT_PER_SECOND = 30
-
 function CarService:Init()
 	self.cars = {} -- userId -> Model
 	self.seen = {} -- userId -> { last, count, window, dropped }
@@ -129,7 +127,7 @@ function CarService:_onState(player: Player, cf, velocity, drifting)
 	local now = os.clock()
 	local seen = self.seen[player.UserId]
 	if not seen then
-		seen = { last = now, window = now, count = 0, position = cf.Position }
+		seen = { last = now, window = now, count = 0, runOfDrops = 0, position = cf.Position }
 		self.seen[player.UserId] = seen
 	end
 
@@ -139,22 +137,42 @@ function CarService:_onState(player: Player, cf, velocity, drifting)
 		seen.count = 0
 	end
 	seen.count += 1
-	if seen.count > RATE_LIMIT_PER_SECOND then
+	if seen.count > C.StateRateLimit then
 		self.dropped += 1
 		return
 	end
 
+	-- Horizontal and vertical are checked apart, because they are bounded by different
+	-- things: the model's top speed across the ground, and its terminal fall down. Checking
+	-- the magnitude of the two together rejects every honest packet from a car that has
+	-- driven off the world, which is a thing that happens in normal play.
 	local elapsed = math.max(now - seen.last, 1 / 1000)
-	local maxSpeed = C.TopSpeed * 1.25
-	if velocity.Magnitude > maxSpeed then
+	local maxFlat = C.TopSpeed * C.StateSpeedTolerance
+	local maxFall = C.TerminalFall * C.StateSpeedTolerance
+	if Vector3.new(velocity.X, 0, velocity.Z).Magnitude > maxFlat or math.abs(velocity.Y) > maxFall then
 		self.dropped += 1
 		return
 	end
-	if (cf.Position - seen.position).Magnitude > maxSpeed * elapsed * 1.5 + C.TopSpeed * 0.1 then
+	local moved = cf.Position - seen.position
+	local budget = elapsed * C.StateMoveTolerance
+	if
+		Vector3.new(moved.X, 0, moved.Z).Magnitude > maxFlat * budget + C.StateMoveAllowance
+		or math.abs(moved.Y) > maxFall * budget + C.StateMoveAllowance
+	then
+		-- A respawn is a teleport, and a teleport fails this check honestly. Dropping it is
+		-- right; dropping every packet after it is not, because the position we are
+		-- comparing against is now a place the car will never be again. So after a few in a
+		-- row, take the new one as the truth and carry on. A prototype's answer: the real
+		-- one is the server knowing where it put the car, which waits for the task that
+		-- makes this authoritative (features/drift-model.md "Open questions").
 		self.dropped += 1
-		return
+		seen.runOfDrops += 1
+		if seen.runOfDrops < C.StateResyncDrops then
+			return
+		end
 	end
 
+	seen.runOfDrops = 0
 	seen.last = now
 	seen.position = cf.Position
 

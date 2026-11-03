@@ -299,7 +299,7 @@ function Model.step(s: State, input: Input, dt: number, world: World): State
 	---------------------------------------------------------------- longitudinal
 	if not s.airborne then
 		if brake then
-			if s.u > 0.5 then
+			if s.u > C.BrakeToReverse then
 				udot -= C.BrakeDecel
 			else
 				udot -= C.ReverseAccel * clamp(1 + s.u / C.ReverseSpeed, 0, 1)
@@ -339,7 +339,7 @@ function Model.step(s: State, input: Input, dt: number, world: World): State
 	local planar = fwd * s.u + right * s.v
 
 	if s.airborne then
-		s.vy -= C.Gravity * dt
+		s.vy = math.max(s.vy - C.Gravity * dt, -C.TerminalFall)
 	end
 
 	local target = s.position + planar * dt + Vector3.yAxis * (s.vy * dt)
@@ -422,11 +422,11 @@ function Model.step(s: State, input: Input, dt: number, world: World): State
 	---------------------------------------------------------------- readout
 	if s.airborne then
 		s.phase = "airborne"
-	elseif s.gripBlend >= 0.95 then
+	elseif s.gripBlend >= C.PhaseDriftingAt then
 		s.phase = "drifting"
 	elseif drift then
 		s.phase = "breaking"
-	elseif s.gripBlend > 0.02 then
+	elseif s.gripBlend > C.PhaseCatchingAt then
 		s.phase = "catching"
 	else
 		s.phase = "gripping"

@@ -44,7 +44,9 @@ function DebugHud.new()
 	panel.BackgroundTransparency = 0.25 -- text over moving gameplay needs a real backing
 	panel.BorderSizePixel = 0
 	panel.Position = UDim2.fromOffset(12, 12)
-	panel.Size = UDim2.fromOffset(300, 8 + #ROWS * 22 + 8)
+	-- Wide enough for the longest row, which is the slip one: a panel its text runs out of
+	-- is a readout nobody trusts.
+	panel.Size = UDim2.fromOffset(560, 8 + #ROWS * 22 + 8)
 	panel.Parent = gui
 
 	local layout = Instance.new("UIListLayout")
