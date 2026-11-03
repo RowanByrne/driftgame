@@ -6,6 +6,11 @@
 -- server spawned, read the input once a frame, spend the frame in whole simulation steps,
 -- put the car where the model says, and tell the server at 20 Hz.
 --
+-- One thing this module does not do is decide where the car goes. A car that has fallen
+-- off the world asks the server for a respawn and waits for the position it sends back
+-- (`CarRespawn`); moving itself would be indistinguishable from a cheat, and the server
+-- rejects it as one (ServerScriptService/Services/CarService).
+--
 -- Roblox physics never touches the car (docs/game/DECISIONS.md, 2026-11-03). Every part is
 -- anchored and its CFrame is written from the simulation; there is no BodyMover, no force
 -- and no constraint anywhere in the car.
@@ -41,7 +46,11 @@ function DriftController:Init()
 	self.frameSeconds = 0
 	self.sendClock = 0
 	self.respawns = 0
+	self.respawnsAsked = 0
+	self.awaitingRespawn = false
+	self.askedAt = 0
 	self._carSpawn = Net.event("CarSpawn")
+	self._carRespawn = Net.event("CarRespawn")
 	self._carState = Net.unreliable("CarState")
 	self._carStateOther = Net.unreliable("CarStateOther")
 end
@@ -66,6 +75,10 @@ function DriftController:Start()
 
 	self._carSpawn.OnClientEvent:Connect(function(car, spawnCFrame)
 		self:_attach(car, spawnCFrame)
+	end)
+
+	self._carRespawn.OnClientEvent:Connect(function(cf)
+		self:_placeAt(cf)
 	end)
 
 	self._carStateOther.OnClientEvent:Connect(function(userId, cf, velocity, drifting)
@@ -110,12 +123,41 @@ function DriftController:_attach(car: Model, spawnCFrame: CFrame)
 	Render.apply(self.rig, self.runner.state)
 end
 
-function DriftController:_respawn()
+-- Ask the server to put the car back. The car keeps falling until the answer comes: it is
+-- the server that decides where a respawned car goes, and a client that helps itself is a
+-- client the server cannot tell from a cheat. Asking again is held off for
+-- `RespawnAnswerWait`, so one long fall is one request and not one a frame, and a lost
+-- answer still gets the car back.
+function DriftController:_askForRespawn()
 	if not self.runner then
 		return
 	end
-	self.runner = Sim.newRunner(self.spawnCFrame)
+	local now = os.clock()
+	if self.awaitingRespawn and now - self.askedAt < Config.Drift.RespawnAnswerWait then
+		return
+	end
+	self.awaitingRespawn = true
+	self.askedAt = now
+	self.respawnsAsked += 1
+	self._carRespawn:FireServer()
+end
+
+-- The answer: the server has moved the car, and this is where it is.
+function DriftController:_placeAt(cf: CFrame)
+	if typeof(cf) ~= "CFrame" then
+		warn("[DriftController] CarRespawn arrived without a CFrame")
+		return
+	end
+	self.awaitingRespawn = false
+	self.spawnCFrame = cf
+	if not self.runner then
+		return
+	end
+	self.runner = Sim.newRunner(cf)
 	self.respawns += 1
+	if self.rig then
+		Render.apply(self.rig, self.runner.state)
+	end
 end
 
 function DriftController:_frame(dt: number)
@@ -132,8 +174,7 @@ function DriftController:_frame(dt: number)
 	local state = self.runner.state
 
 	if state.fell then
-		self:_respawn()
-		state = self.runner.state
+		self:_askForRespawn()
 	end
 
 	if self.rig then
@@ -141,11 +182,19 @@ function DriftController:_frame(dt: number)
 	end
 	self.remoteCars:Update(dt)
 
-	self.sendClock += dt
+	-- One packet a frame at most, and never a backlog: a frame that took a second (the
+	-- first few, while the place is still loading) must not be paid back as a burst of
+	-- sends at frame rate, which is a burst the server's rate limit drops.
 	local period = 1 / math.max(Config.Drift.StateSendRate, 1)
+	self.sendClock = math.min(self.sendClock + dt, period)
 	if self.sendClock >= period then
 		self.sendClock -= period
-		self:_send(state)
+		if not self.awaitingRespawn then
+			-- Nothing is sent between asking and being put back. Where the car is while
+			-- it waits is of no interest to anyone, and the fewer packets in flight over
+			-- a respawn, the less the server has to forgive on the other side of it.
+			self:_send(state)
+		end
 	end
 
 	if self.hud then
@@ -180,7 +229,7 @@ end
 function DriftController:DebugState()
 	local s = self:CurrentState()
 	if not s then
-		return { hasCar = false, spawn = self.spawnCFrame.Position }
+		return { hasCar = false, spawn = self.spawnCFrame.Position, awaitingRespawn = self.awaitingRespawn }
 	end
 	return {
 		hasCar = true,
@@ -210,6 +259,8 @@ function DriftController:DebugState()
 		totalSteps = self.runner.totalSteps,
 		frameSeconds = self.frameSeconds,
 		respawns = self.respawns,
+		respawnsAsked = self.respawnsAsked,
+		awaitingRespawn = self.awaitingRespawn,
 		usingSurfaceTag = self.world and self.world.usingTag or false,
 		surfaceParts = self.world and self.world.surfaceCount or 0,
 		remoteCars = self.remoteCars and #self.remoteCars:DebugState() or 0,
@@ -235,12 +286,30 @@ function DriftController:DebugDrive(inputs, seconds: number, opts)
 	})
 end
 
--- Studio only: put the car back at its spawn, so a measured run always starts the same.
-function DriftController:DebugReset(cf: CFrame?)
-	if cf then
-		self.spawnCFrame = cf
+-- Studio only: put the car back, so a measured run always starts the same. It asks the
+-- server, like everything else does, and waits for the answer -- which is why it takes no
+-- CFrame any more: where a car goes is not the client's to say.
+function DriftController:DebugReset()
+	self:_askForRespawn()
+	local deadline = os.clock() + Config.Drift.RespawnAnswerWait
+	while self.awaitingRespawn and os.clock() < deadline do
+		task.wait()
 	end
-	self:_respawn()
+	return self:DebugState()
+end
+
+-- Studio only, and a cheat on purpose: move the car without asking the server. Every
+-- CarState that follows is a jump from where the server put the car, and the server drops
+-- it -- that is the whole point of the server owning respawns, and it is what the proof in
+-- features/drift-model.md "Testing" measures.
+function DriftController:DebugTeleport(cf: CFrame)
+	if typeof(cf) ~= "CFrame" or not self.runner then
+		return nil
+	end
+	self.runner = Sim.newRunner(cf)
+	if self.rig then
+		Render.apply(self.rig, self.runner.state)
+	end
 	return self:DebugState()
 end
 

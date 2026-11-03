@@ -114,8 +114,18 @@ return {
 	StateSpeedTolerance = 1.25, -- share of TopSpeed a reported horizontal speed may reach
 	StateMoveTolerance = 1.5, -- slack on how far a car may have moved since its last packet
 	StateMoveAllowance = 9, -- studs of slack on top, for a dropped packet or a jittery clock
-	StateResyncDrops = 5, -- packets rejected in a row before the server takes the new
-	-- position as the truth: a respawn is an honest teleport
+
+	-- ---------------------------------------------------------------- respawning
+	-- The server owns where a respawned car goes; the client only asks (CONTRACTS.md,
+	-- `CarRespawn`). These are the limits on the asking.
+	RespawnRateLimit = 5, -- requests a second per UserId the server will take before dropping
+	RespawnCooldown = 0.5, -- s the server makes a player wait between respawns
+	RespawnGrace = 1, -- s after a respawn in which a packet that fails against the new
+	-- position is still checked against the old one. A CarState sent
+	-- before the respawn can land after it -- unreliable packets and the
+	-- request race each other -- and it is an honest packet from a place
+	-- the server knows the car was. Past this the old track is gone.
+	RespawnAnswerWait = 1.5, -- s the client waits for an answer before it asks again
 
 	-- ---------------------------------------------------------------- camera
 	CamDistance = 26, -- studs behind the car
