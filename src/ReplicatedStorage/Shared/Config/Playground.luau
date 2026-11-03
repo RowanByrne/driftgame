@@ -19,16 +19,17 @@ return {
 	PartBudget = 1500,
 
 	-- Placeholder colours only (ART-DIRECTION.md: no art is generated for this world).
+	-- They are chosen for *value* contrast against the plate, not for looks: the old
+	-- course failed because road and ground were the same tone and the world vanished
+	-- from the driver's seat. Buildings are far darker and far lighter than the plate,
+	-- and alternate, so a street reads as a street at 800 studs.
 	Palette = {
 		Plate = Color3.fromRGB(104, 112, 120),
-		Road = Color3.fromRGB(74, 78, 84),
-		Corner = Color3.fromRGB(86, 96, 110),
-		Hairpin = Color3.fromRGB(96, 84, 110),
-		SBend = Color3.fromRGB(80, 104, 104),
-		Circle = Color3.fromRGB(88, 92, 70),
-		Berm = Color3.fromRGB(118, 94, 66),
-		Ramp = Color3.fromRGB(120, 104, 60),
-		BrakeMarker = Color3.fromRGB(196, 62, 48),
+		BuildingDark = Color3.fromRGB(38, 42, 50),
+		BuildingLight = Color3.fromRGB(206, 210, 214),
+		Pillar = Color3.fromRGB(24, 26, 32),
+		Circle = Color3.fromRGB(52, 58, 70),
+		Ramp = Color3.fromRGB(208, 160, 52),
 		SpotMarker = Color3.fromRGB(240, 196, 48),
 		Cone = Color3.fromRGB(226, 94, 32),
 		ConeStripe = Color3.fromRGB(236, 236, 236),
