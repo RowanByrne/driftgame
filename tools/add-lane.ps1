@@ -1,5 +1,6 @@
 # Creates lane N: a git worktree at <Game>\lanes\laneN with relative links, served by Lync on the
-# port base + N (docs\workflow\LANES.md "Add a lane").
+# port base + N (docs\workflow\LANES.md "Add a lane"). Rocco's `rocco.ps1 lanes` runs it, then makes the place,
+# starts Lync and opens Studio (LANES.md "Open them").
 # Usage: powershell -ExecutionPolicy Bypass -File tools\add-lane.ps1 2
 param([Parameter(Mandatory)][ValidateRange(1, 19)][int]$Number)
 
@@ -11,9 +12,14 @@ $port = $base + $Number
 
 if (Test-Path $path) { Write-Host "lane$Number already exists at $path"; exit 1 }
 
-git -C $repo fetch origin
-if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-git -C $repo worktree add --relative-paths --detach $path origin/main
+# From GitHub's main; a game without a GitHub repo yet branches from its local main.
+$from = 'main'
+if (git -C $repo remote get-url origin 2>$null) {
+	git -C $repo fetch origin
+	if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+	$from = 'origin/main'
+}
+git -C $repo worktree add --relative-paths --detach $path $from
 if ($LASTEXITCODE -ne 0) { Write-Host "git worktree add failed (relative lane links need Git 2.48 or newer)."; exit $LASTEXITCODE }
 [IO.File]::WriteAllText((Join-Path $path '.lane-port'), "$port")
 

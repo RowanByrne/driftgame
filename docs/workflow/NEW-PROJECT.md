@@ -1,12 +1,14 @@
 # New project
 
-How to start a game from the template, or bring in one that already exists. The pitch needs only steps 1 to 4: places, lanes and the Roblox experience can wait until Foundation (WORKFLOW.md).
+How to start a game from the template, or bring in one that already exists. By hand, the pitch needs only steps 1 to 4: places, lanes and the Roblox experience can wait until Foundation (WORKFLOW.md).
 
 **Usually, Rocco's onboarding does it** (New project, in its project menu). It asks a new game or one already made, then:
 1. Makes the project, with the script below.
 2. Asks a few questions about the game: answer as little or as much as you like.
-3. Commits the answers to `docs/game/ONBOARDING.md`.
-4. Opens your agent on SETUP.md, which turns them into the first docs.
+3. For a new game, asks how many lanes this PC can run (LANES.md "How many lanes").
+4. Commits the answers to `docs/game/ONBOARDING.md`, and this PC's lanes to `PROJECT.md`.
+5. Opens the Main place and the lanes: steps 5 and 6 below, done for you (LANES.md "Open them").
+6. Opens your agent on SETUP.md as the game's conductor. It turns the answers into the first docs, and for a new game goes straight on to build the prototype (SETUP.md "The prototype").
 
 Tiles add more detail (monetization, economy, the world, ...), then or any time later, from Docs ("Add game details").
 
@@ -40,10 +42,10 @@ It pulls the template, copies it as `<Game>\` (never its lanes), sets the remote
    - **Phase:** Pitch. **Update log:** the user's call, whenever they decide.
 
    Commit `Start <Game> from the template` and push.
-5. **Make the Main place.** In Studio, open a new Baseplate and save it to `<Game>\places\<CODE>-Main.rbxl`. In its command bar run `workspace:SetAttribute("__lync_port", <port base>)`, then save. Run `tools\serve.bat` in `repo\`; the Lync plugin connects. Probe it as for a lane (LANES.md "Probe a lane"), with the probe file in `repo\src\Workspace\`.
+5. **Make the Main place.** With Rocco, `rocco.ps1 lanes` makes it and the lanes' places, starts Lync and opens them (LANES.md "Open them"); probe each, and skip to step 7. By hand: in Studio, open a new Baseplate and save it to `<Game>\places\<CODE>-Main.rbxl`. In its command bar run `workspace:SetAttribute("__lync_port", <port base>)`, then save. Run `tools\serve.bat` in `repo\`; the Lync plugin connects. Probe it as for a lane (LANES.md "Probe a lane"), with the probe file in `repo\src\Workspace\`.
 6. **Add lanes.** Ask the user how many to create (LANES.md "How many lanes"): as many as the strongest PC that will work on the game opens. Create them all as in LANES.md "Add a lane", record the count in `PROJECT.md` ("Lanes"), and add this PC's row to "Workstations".
 7. **Create the Roblox experience** when the game is ready for its first published test. The user publishes the Main place as a new private experience. Then fill in the universe id, start place id and owner in `PROJECT.md`, and `experienceId` / `placeId` in `default.project.json`. Settle account versus group ownership now if possible (LAUNCH.md "Roblox rules").
-8. **Begin the Pitch:** open your agent in `<Game>\repo` and start with WORKFLOW.md. If the onboarding ran, SETUP.md has drafted the pitch already.
+8. **Begin the Pitch:** open your agent in `<Game>\repo` and start with WORKFLOW.md. If the onboarding ran, SETUP.md has drafted the pitch already, and the prototype is being built.
 
 ## Bringing in a game made elsewhere
 

@@ -43,11 +43,11 @@ Every tier follows the same brief, WORKER.md; only the model and effort differ.
 
 Rocco's Workboard (`tools\rocco.bat`) is where the user hands over work and follows it: notes they send, questions, plans to approve, and cards that move from Up next through Working (or Stuck) to To test, until they approve. Keep it current with Rocco's commands, run in PowerShell from `repo\`: `..\..\_tools\rocco\rocco.ps1 <command>` (Rocco's README, "Commands", and the script's header list every option). Not through `powershell -File`: lists like `-Steps` and `-Options` don't survive it. On a PC without Rocco, skip this section.
 
-**What waits on you.** At the start of a session, and of every round, `rocco.ps1 list -Pending`, then `show` each task it lists. What the user did decides what you do:
+**What waits on you.** At the start of a session, and of every round, `rocco.ps1 list -Pending`, then `show` each task it lists (between rounds, `wait` lists them as they come: "Watching the board"). What the user did decides what you do:
 
 | `list` shows | The user | You |
 |---|---|---|
-| `[plan]` | Sent a note: a bug, tweak, idea or feature | Plan it, as a round. Something with several tasks becomes a feature plan for them to approve: `plan -Title "..." -Summary "..." -Steps "title\|lane\|tier",...`, then `set <note> -Status removed`. A single task is the note itself |
+| `[plan]` | Sent a note: a bug, tweak, idea or feature | Plan it, as a round. Something with several tasks becomes a feature plan for them to approve: `plan -Title "..." -Summary "..." -Steps "title\|lane\|tier",...`, then `set <note> -Status removed`. A single task is the note itself. A setup card Rocco queued (its note starts "Follow docs/workflow/SETUP.md") is done as its note says |
 | `[question]` | Asked something | `reply T-012 -Text "..."`, short. It shows under their note box |
 | `[approved]` | Approved a feature plan | A task per step: `new -Title "..." -Plan T-020 [-After T-021]` (`-After`: it needs that done first). Then `clear T-020` |
 | `[revise]` | Asked for changes to a plan | `set T-020 -Summary "..." -Steps ...`, then `clear` |
@@ -63,7 +63,15 @@ Rocco's Workboard (`tools\rocco.bat`) is where the user hands over work and foll
 - **The user's questions while a task runs** (`ask` from a worker) turn its card Stuck until they answer.
 - **Things you notice outside the task:** `suggest -Title "..." -Summary "why"`. The user queues or dismisses them.
 
-The user approves a task, never you: don't set one `done`.
+The user approves a task, never you: don't set one `done`. Two things skip the user's OK, both by Rocco's rules: a setup card approves itself as it turns ready (SETUP.md), and a plan the user already said go to starts with `plan ... -Approved` (SETUP.md "The prototype"). Nothing else does.
+
+## Watching the board
+
+Between jobs, the conductor watches the Workboard, so what the user sends is picked up without them having to prompt you. `rocco.ps1 wait` returns as soon as something waits on you, listed as `list -Pending` lists it. Run it after every report, and handle what it returns as "What waits on you" says. Then run it again.
+
+- **How it runs depends on your agent.** Claude Code runs it as a background command and is woken when it returns. An agent without background commands runs it with `-Timeout 540`, and runs it again when it says nothing's new.
+- **Rocco shows it:** Up next says the conductor is listening while `wait` runs, and working while your agent runs anything else.
+- **No conductor running** when the user hands something over (a note, an answer, an approved plan): Rocco opens your agent in its own window as the conductor, on what's waiting. So keep one conductor per game: the session Rocco opened, or the one the user started.
 
 ## Claims
 

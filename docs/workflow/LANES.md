@@ -23,12 +23,16 @@ A lane is created once per game, but opened per PC. A lane that exists costs onl
 
 - **Created:** `lane1` to `laneN`, where N is what the strongest PC that works on the game opens. The user picks N; record it in `PROJECT.md` ("Lanes").
 - **Open on this PC:** `lane1` to `laneK` only, where K is this PC's row in `PROJECT.md` "Workstations" (match `$env:COMPUTERNAME`). Always the lowest numbers, so a PC opens the same places every time. `tools\serve-all.bat` serves only those, and the conductor assigns only those.
-- **A PC with no row:** before opening lanes, suggest a number, or let the user name one straight away:
+- **A PC with no row:** Rocco asks: in a new game's onboarding, or from Lanes in its sidebar. It suggests a number from the PC's memory and threads (about 3 GB a lane, less the Main place and 2 for other apps), records the user's pick in `PROJECT.md`, and opens them ("Open them"). Without Rocco, suggest a number, or let the user name one straight away:
   1. Read the PC's total memory and CPU cores.
   2. Measure one lane: with the Main place and one lane place open, start a playtest in the lane and read that Studio instance's memory use (Task Manager, or `Get-Process RobloxStudioBeta` with its window title).
   3. Suggest as many lanes as fit in memory, minus 2 to leave room for other apps, and show the numbers behind it.
   4. The user picks K. Add the row to `PROJECT.md`, commit and push.
-- **Lower K first** when a PC struggles, and re-measure when the game gets heavier (a bigger world, more art).
+- **Lower K first** when a PC struggles, and re-measure when the game gets heavier (a bigger world, more art). Rocco's guess is a starting point: once a lane has run a playtest, measure it (step 2) and suggest a better number if it's off.
+
+## Open them
+
+`..\..\_tools\rocco\rocco.ps1 lanes` (from `repo\`) opens this PC's lanes in one go: it makes any lane that's missing (`tools\add-lane.ps1`), makes any missing place (`places\<CODE>-Main.rbxl` and `<CODE>-LaneN.rbxl`, a plain baseplate with its `__lync_port` already set), starts Lync for each checkout that isn't served yet, and opens each place in Studio that isn't open. What's there already is left alone. `-Count K` records this PC's row first. Rocco runs the same thing when the user picks a number. Probe each lane before its first task, and set the worker test profile once the game has one (TESTING.md).
 
 ## Lync
 
@@ -40,7 +44,9 @@ A lane is created once per game, but opened per PC. A lane that exists costs onl
 
 ## Add a lane
 
-1. From `repo\`: `powershell -ExecutionPolicy Bypass -File tools\add-lane.ps1 N`. It creates `..\lanes\laneN` from `origin/main` with relative paths, writes its `.lane-port`, and prints the next steps with this lane's port and place name.
+By hand, without Rocco ("Open them" does all of this but the test profile):
+
+1. From `repo\`: `powershell -ExecutionPolicy Bypass -File tools\add-lane.ps1 N`. It creates `..\lanes\laneN` from `origin/main` (or local `main` before the game has a GitHub repo) with relative paths, writes its `.lane-port`, and prints the next steps with this lane's port and place name.
 2. Make the place: copy `places\<CODE>-Main.rbxl` to `places\<CODE>-LaneN.rbxl` and open it in Studio.
 3. In its command bar, set `workspace:SetAttribute("__lync_port", <base + N>)` and the worker test profile (TESTING.md). Check the place settings in `CONTRACTS.md` "Place settings" are right. Save.
 4. Add the lane to `PROJECT.md`, start its Lync server, and probe it.
