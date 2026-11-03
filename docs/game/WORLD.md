@@ -62,10 +62,13 @@ The one measurement that matters, because a surface that reads as segments quiet
 | 90 degree corner, 20 studs out | 32 | 0.098 studs | none |
 | Hairpin | 48 | 0.000 studs | none |
 | Berm, centre line | 192 | 0.078 studs | none |
-| Berm, at both road edges | 192 | 0.067 studs | none |
+| Berm, 24 studs in (the low edge) | 192 | 0.067 studs | none |
+| Berm, 24 studs out (the high edge) | 192 | 0.157 studs | none |
 | Ramp | 32 | 0.127 studs | none |
 
-The berm is the expensive one: a part can bank but it cannot twist, so where the bank changes, two neighbouring segments disagree at the road's edge. Its arc length, bank and segment count are all set by that, and the reasoning is written into the layout module beside the numbers.
+The limit asserted in `PlaygroundTests` is 0.25 studs per stud travelled, so the worst of these has a little over half the budget left.
+
+The berm is the expensive one: a part can bank but it cannot twist, so where the bank changes, two neighbouring segments disagree at the road's edge. Its outer edge is the worst case in the whole world, because it both climbs with the bank and carries that disagreement. Its arc length, bank and segment count are all set by that, and the reasoning is written into the layout module beside the numbers.
 
 ## Versions
 

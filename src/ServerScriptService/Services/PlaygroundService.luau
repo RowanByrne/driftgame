@@ -264,11 +264,22 @@ local function buildCones(parent: Instance)
 	end
 	table.insert(placeable, Layout.Circle.id)
 
+	-- A cone is placed out from the road's centre line, so one thrown wide of a raised
+	-- feature would hang in the air over the plate, fall, and be put back in the air by
+	-- every reset. Rest each one on whatever is actually under it instead.
+	local ground = RaycastParams.new()
+	ground.FilterType = Enum.RaycastFilterType.Exclude
+	ground.FilterDescendantsInstances = { folder, parent:FindFirstChild("Markers"), parent:FindFirstChild("SpotMarkers") }
+
 	for i = 1, spec.count do
 		local stepId = placeable[rng:NextInteger(1, #placeable)]
 		local pos, right = sampleAt(stepId, rng:NextNumber())
 		local lateral = rng:NextNumber(spec.lateralMin, spec.lateralMax) * (rng:NextInteger(0, 1) == 0 and -1 or 1)
 		local at = pos + right * lateral + Vector3.new(0, size.Y * 0.5 + 0.1, 0)
+		local below = workspace:Raycast(at + Vector3.new(0, 40, 0), Vector3.new(0, -200, 0), ground)
+		if below then
+			at = Vector3.new(at.X, below.Position.Y + size.Y * 0.5 + 0.1, at.Z)
+		end
 
 		local cone = Instance.new("Part")
 		cone.Name = `Cone_{i}`
@@ -393,10 +404,13 @@ function PlaygroundService:Build()
 	buildMarkers(root)
 	buildSpotMarkers(root)
 	buildSpawnLocation(root)
-	buildCones(root)
 
 	root.Parent = workspace
 	PlaygroundService.Root = root
+
+	-- The cones come last, with the world already in Workspace: each is rested on the
+	-- ground by a ray, and a ray needs the surfaces to be there to hit.
+	buildCones(root)
 
 	if not RunService:IsStudio() then
 		-- The fine samples are only there for the Studio tests.

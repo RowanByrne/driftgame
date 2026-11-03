@@ -83,7 +83,7 @@ Placeholder: flat colours from `ART-DIRECTION.md`'s palette if there is one, els
 
 **Why the berm costs 192 segments.** A part can bank but it cannot twist, so where the bank changes, two neighbouring segments disagree at the road's edge by half the width times the bank change over one segment. Its arc length, bank and segment count are set by that, not by taste. A banked ribbon also rotates about its centre line, which would bury its inner edge in the plate, so the centre line lifts with the bank to keep that edge level with the road: the berm and the circle are bowls to lean on, not walls.
 
-**Measured** (`DR-Lane2`, 2026-11-03): 493 parts, 64 cones. The largest surface height change per stud travelled, along the ideal curve of each feature, is in `WORLD.md` "Surface fidelity": 0.004 studs on the circle, 0.098 on the 90 degree corner, 0.078 on the berm, 0.127 up the ramp, with no sample missing a tagged surface.
+**Measured** (`DR-Lane2`, 2026-11-03, 42 checks passing): 493 parts, 64 cones. The largest surface height change per stud travelled, along the ideal curve of each feature, is in `WORLD.md` "Surface fidelity": 0.004 studs on the circle, 0.098 on the 90 degree corner, 0.078 along the berm's centre line and 0.157 at its high edge, 0.127 up the ramp, against a limit of 0.25, with no sample missing a tagged surface.
 
 ## Open questions
 
