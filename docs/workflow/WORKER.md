@@ -30,6 +30,7 @@ If your task came with a Workboard id (`T-012`), keep its card current with Rocc
 - **As you go:** `set T-012 -Step "Wiring the shop remote" -Progress 40`, and `log T-012 -Text "..."` for what you found or measured.
 - **A decision only the user can make** (a look, a name, a sound): `ask T-012 -Question "..." -Options "A","B"` (sounds as `-Audio` files, one per option), then stop and report. The conductor carries on with their answer. Options are a few words each ("A lap", "An open pad"); what each one means goes in the question, since the card shows two lines of an option at most.
 - **Leave the status to the conductor:** never set your task `ready` or `done`.
+- **Deleted:** if Rocco says the user deleted your task, stop: commit what you have to your branch and report. The conductor cleans up.
 
 ## Finish
 

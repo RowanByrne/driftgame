@@ -55,6 +55,7 @@ Rocco's Workboard (`tools\rocco.bat`) is where the user hands over work and foll
 | `[reopen]` | Tested it: not right yet | Their words are the last `you` line in `show`. Fix it as a task again |
 | `[followup]` | Added to a task while it ran | Fold it in, or pass it to the worker; then `clear` |
 | `[merge]` | Approved a feature they tested in a lane | Merge its branch ("A round", step 4), then `clear` |
+| `[cancel]` | Deleted a task while it ran, or before its branch merged (its status is `removed`) | Stop its worker, if one is on it (a worker hears it from `set` too). In its lane, commit what it left to its branch, so nothing is lost, then put the lane back on main: `git -C <lane> switch --detach origin/main`. Don't merge the branch, and leave it there in case they change their mind. Take its row out of `docs/CLAIMS.md` and push. What's already in `main` stays; if they want it out, they'll say. Then `clear` |
 
 **Through a round:**
 - **Spawning:** `set T-012 -Status working -Lane 3 -Branch agent/<slug> -Step "Starting"`, and give the worker its id. Workers add their own steps, progress and questions.
