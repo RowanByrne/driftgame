@@ -13,7 +13,7 @@ This game's details, loaded into every agent session: keep it short, and put des
 | GitHub | `RowanByrne/driftgame` |
 | Roblox | Experience (universe) `{{UNIVERSE_ID}}`, start place `{{PLACE_ID}}`, owned by `{{OWNER}}` |
 | Update log | No |
-| Lanes | None yet |
+| Lanes | 8 (lane1 to lane8) |
 | Lync port base | `34870` |
 
 ## Places
@@ -32,7 +32,7 @@ Each PC that works on this game, and how many lanes it opens: `lane1` up to that
 
 | PC (`$env:COMPUTERNAME`) | What it is | Lanes it opens |
 |---|---|---|
-| None yet | | |
+| `WKEYSTUDIOS1680` | 62 GB, 16 threads (AMD Ryzen 7 9800X3D 8-Core Processor) | 8 |
 
 ## Game-only rules
 
