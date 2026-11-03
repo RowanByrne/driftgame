@@ -38,6 +38,43 @@ function Build.surface(name: string, size: Vector3, cf: CFrame, colour: Color3, 
 	return part
 end
 
+-- A building or a standalone block: a wall, never a floor. It is deliberately not tagged
+-- DriftSurface, so the drift model's ground ray misses it and driving into one is a
+-- collision rather than a climb. It stands on the plate and sinks a stud into it, so no
+-- edge-on view ever shows daylight under it.
+function Build.block(
+	name: string,
+	x: number,
+	z: number,
+	sizeX: number,
+	sizeZ: number,
+	height: number,
+	colour: Color3,
+	parent: Instance
+): Part
+	local sink = 1
+	return Build.part(
+		name,
+		Vector3.new(sizeX, height + sink, sizeZ),
+		CFrame.new(x, (height - sink) * 0.5, z),
+		colour,
+		parent
+	)
+end
+
+function Build.pillar(name: string, x: number, z: number, radius: number, height: number, colour: Color3, parent: Instance): Part
+	local sink = 1
+	local part = Build.part(
+		name,
+		Vector3.new(height + sink, radius * 2, radius * 2),
+		CFrame.new(x, (height - sink) * 0.5, z) * CFrame.Angles(0, 0, math.rad(90)),
+		colour,
+		parent
+	)
+	part.Shape = Enum.PartType.Cylinder
+	return part
+end
+
 -- The height and bank profiles, by name. t runs 0 to 1 along the feature.
 local function smoothstep(t: number): number
 	return t * t * (3 - 2 * t)
@@ -136,10 +173,21 @@ function Build.ribbon(nodes: { { pos: Vector3, yaw: number } }, opts: RibbonOpti
 
 	local half = opts.thickness * 0.5
 	local overlap = 0.2
+	local halfWidth = opts.width * 0.5
 	for i = 1, count - 1 do
 		local a, b = tops[i], tops[i + 1]
 		local delta = b - a
 		local length = delta.Magnitude
+		-- On a curve, two neighbouring boxes share their centre point but turn by the
+		-- yaw step, so their *outer* corners pull apart by (half the width) x (that
+		-- step): the wedge that reads from the ground as a bite out of the rim. Lengthen
+		-- each box by exactly that, and the outer corners meet instead; the inner ones
+		-- overlap, which a banked surface hides because neighbours are never coplanar.
+		local yawStep = math.abs(nodes[i + 1].yaw - nodes[i].yaw)
+		if yawStep > math.pi then
+			yawStep = math.abs(yawStep - 2 * math.pi)
+		end
+		local close = halfWidth * yawStep
 		if length > 1e-4 then
 			local forward = delta.Unit
 			local up = (ups[i] + ups[i + 1]).Unit
@@ -151,7 +199,7 @@ function Build.ribbon(nodes: { { pos: Vector3, yaw: number } }, opts: RibbonOpti
 			local cf = CFrame.fromMatrix(centre, right, up)
 			local part = Build.surface(
 				`{opts.name}_{i}`,
-				Vector3.new(opts.width, opts.thickness, length + overlap),
+				Vector3.new(opts.width, opts.thickness, length + overlap + close),
 				cf,
 				opts.colour,
 				opts.parent

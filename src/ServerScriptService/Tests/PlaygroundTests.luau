@@ -1,7 +1,8 @@
 --!nonstrict
--- PlaygroundTests: asserts the two rules that quietly break the drift model if they
--- slip — surfaces smooth enough for a ground ray, and nothing of Roblox's physics
--- touching the car — plus the named spots and the part budget.
+-- PlaygroundTests: asserts the rules that quietly break the drift model if they slip —
+-- surfaces smooth enough for a ground ray, a plate that is actually flat, nothing
+-- floating, nothing drivable running through a wall — plus the named spots, the open
+-- yard round the spawn, and the part budget.
 --
 -- Run it through the server debug bridge (docs/workflow/TESTING.md):
 --   game.ServerStorage.DebugBridge:Invoke("DebugPlaygroundTests", "run")
@@ -20,40 +21,47 @@ local PlaygroundService = require(ServerScriptService.Services.PlaygroundService
 local SURFACE_TAG = "DriftSurface"
 local SPOT_RAY = 5 -- studs: a spot must sit this close above a drivable surface
 local MAX_STEP = 0.25 -- studs of surface height per stud travelled, along a feature
-local MIN_CORNER_SEGMENTS = 24
 local MIN_CIRCLE_SEGMENTS = 48
+local MIN_RAMP_SEGMENTS = 24
+local MIN_ALLEY = 40 -- studs: narrower than this and no car gets through at all
+local FEATURE_REACH = 1000 -- studs: nothing is further from the spawn than this
+local PLATE_FLAT = 1e-3 -- studs the plate's top may vary by
+local CONE_REST = 0.5 -- studs a cone's base may sit above what is under it
 
 local SPOT_NAMES = {
 	"Spawn",
-	"StraightStart",
-	"CornerEntry",
-	"HairpinEntry",
-	"SBendEntry",
+	"OpenGround",
+	"DistrictGate",
+	"Boulevard",
+	"TightAlley",
+	"PillarRun",
 	"CircleCentre",
 	"RampBase",
 }
 
--- The curved features and the smallest number of segments each may be built from.
-local CURVES = {
-	Corner = MIN_CORNER_SEGMENTS,
-	Hairpin = MIN_CORNER_SEGMENTS,
-	SBendA = MIN_CORNER_SEGMENTS,
-	SBendB = MIN_CORNER_SEGMENTS,
-	Berm = MIN_CORNER_SEGMENTS,
-	Circle = MIN_CIRCLE_SEGMENTS,
-}
-
 local Tests = {}
 
-local function spotRay(cf: CFrame)
+local function excludeParams()
 	local params = RaycastParams.new()
 	params.FilterType = Enum.RaycastFilterType.Exclude
 	params.FilterDescendantsInstances = {
 		PlaygroundService.Root.Cones,
-		PlaygroundService.Root.Markers,
 		PlaygroundService.Root.SpotMarkers,
 	}
-	return workspace:Raycast(cf.Position, Vector3.new(0, -SPOT_RAY - 1, 0), params)
+	return params
+end
+
+-- The world-space footprint of a part, however it is rotated.
+local function footprint(part: BasePart): (number, number, number, number)
+	local cf, size = part.CFrame, part.Size
+	local rx, uy, bz = cf.RightVector, cf.UpVector, cf.LookVector
+	local halfX = math.abs(rx.X) * size.X * 0.5 + math.abs(uy.X) * size.Y * 0.5 + math.abs(bz.X) * size.Z * 0.5
+	local halfZ = math.abs(rx.Z) * size.X * 0.5 + math.abs(uy.Z) * size.Y * 0.5 + math.abs(bz.Z) * size.Z * 0.5
+	return cf.Position.X, cf.Position.Z, halfX, halfZ
+end
+
+local function overlaps(ax, az, ahx, ahz, bx, bz, bhx, bhz, slack: number): boolean
+	return math.abs(ax - bx) < ahx + bhx - slack and math.abs(az - bz) < ahz + bhz - slack
 end
 
 function Tests.run()
@@ -77,7 +85,7 @@ function Tests.run()
 			check(`spot {name}`, false, tostring(cf))
 			continue
 		end
-		local hit = spotRay(cf)
+		local hit = workspace:Raycast(cf.Position, Vector3.new(0, -SPOT_RAY - 1, 0), excludeParams())
 		if not hit then
 			check(`spot {name}`, false, `nothing within {SPOT_RAY} studs below {cf.Position}`)
 		else
@@ -97,8 +105,8 @@ function Tests.run()
 	end)
 	check("GetSpot errors on an unknown name", unknownOk == false, `pcall returned {tostring(unknownOk)}`)
 
-	-- 2. Segment counts: the fidelity rule.
-	for id, minimum in CURVES do
+	-- 2. Segment counts: the fidelity rule, on the only two curved or sloped features.
+	for id, minimum in { Circle = MIN_CIRCLE_SEGMENTS, Ramp = MIN_RAMP_SEGMENTS } do
 		local built = state.segments[id]
 		check(
 			`{id} segments >= {minimum}`,
@@ -108,7 +116,8 @@ function Tests.run()
 	end
 
 	-- 3. Everything anchored, nothing constrained, except the cones.
-	local unanchored, constraints, taggedCones, welds = {}, 0, 0, 0
+	local unanchored, constraints = {}, 0
+	local taggedCones = 0
 	for _, d in root:GetDescendants() do
 		local inCones = d:IsDescendantOf(root.Cones)
 		if d:IsA("BasePart") then
@@ -126,13 +135,10 @@ function Tests.run()
 			or d:IsA("NoCollisionConstraint")
 		then
 			constraints += 1
-			if d:IsA("WeldConstraint") or d:IsA("Weld") then
-				welds += 1
-			end
 		end
 	end
 	check("every part anchored except the cones", #unanchored == 0, `{#unanchored} unanchored: {table.concat(unanchored, ", ")}`)
-	check("no constraints anywhere", constraints == 0, `{constraints} constraints ({welds} welds)`)
+	check("no constraints anywhere", constraints == 0, `{constraints} constraints`)
 	check("no cone is tagged DriftSurface", taggedCones == 0, `{taggedCones} of {state.coneCount} cones tagged`)
 	check("cones are unanchored", (function()
 		local loose = 0
@@ -157,17 +163,16 @@ function Tests.run()
 		`{live} parts under Workspace.Playground (DebugState says {state.partCount})`
 	)
 
-	-- 5. Smoothness: walk the ideal curve and read the surface under it.
+	-- 5. Smoothness: walk the ideal line of each elevated feature and read the surface
+	--    under it, at its centre and at both edges, where a banked box twists worst.
 	local walks = {
 		{ id = "Circle", lateral = 0 },
-		{ id = "Circle", lateral = 20 },
-		{ id = "Corner", lateral = 0 },
-		{ id = "Corner", lateral = 20 },
-		{ id = "Berm", lateral = 0 },
-		{ id = "Berm", lateral = 24 }, -- the road's edges, where a changing bank twists worst
-		{ id = "Berm", lateral = -24 },
-		{ id = "Hairpin", lateral = 0 },
+		{ id = "Circle", lateral = 24 },
+		{ id = "Circle", lateral = -24 },
 		{ id = "Ramp", lateral = 0 },
+		{ id = "Ramp", lateral = 24 },
+		{ id = "Ramp", lateral = -24 },
+		{ id = "RampLip", lateral = 0 },
 	}
 	for _, walk in walks do
 		local w = PlaygroundService:DebugWalk(walk.id, walk.lateral)
@@ -183,21 +188,21 @@ function Tests.run()
 		)
 	end
 
-	-- 6. The berm banks the right way: its outer edge is higher than its inner.
-	local half = Layout.Road.width * 0.5 - 6
-	local outer = PlaygroundService:DebugWalk("Berm", -half)
-	local inner = PlaygroundService:DebugWalk("Berm", half)
+	-- 6. The circle banks the right way: its outer edge is higher than its inner.
+	local half = Layout.Circle.width * 0.5 - 6
+	local outer = PlaygroundService:DebugWalk("Circle", -half)
+	local inner = PlaygroundService:DebugWalk("Circle", half)
 	check(
-		"the berm's outer edge is above its inner",
-		outer.maxY > inner.maxY,
-		`outer peaks at {outer.maxY}, inner at {inner.maxY}`
+		"the circle's outer edge is above its inner",
+		outer.maxY > inner.maxY + 1,
+		`outer at {outer.maxY}, inner at {inner.maxY}`
 	)
 
 	-- 7. Everything is on the plate.
 	local bounds = PlaygroundService:DebugBounds()
 	local edge = Layout.Plate.size * 0.5
 	check(
-		"the course fits on the plate",
+		"everything fits on the plate",
 		bounds.min.X > -edge and bounds.max.X < edge and bounds.min.Z > -edge and bounds.max.Z < edge,
 		`x {math.round(bounds.min.X)}..{math.round(bounds.max.X)}, z {math.round(bounds.min.Z)}..{math.round(bounds.max.Z)}, plate +-{edge}`
 	)
@@ -206,7 +211,165 @@ function Tests.run()
 	check("Studio's default Baseplate is gone", workspace:FindFirstChild("Baseplate") == nil, "")
 	local plate = root:FindFirstChild("Plate")
 	local topY = plate and (plate.Position.Y + plate.Size.Y * 0.5)
-	check("our plate's top is Y = 0", plate ~= nil and math.abs(topY) < 1e-3, `top at {tostring(topY)}`)
+	check("our plate's top is Y = 0", plate ~= nil and math.abs(topY) < PLATE_FLAT, `top at {tostring(topY)}`)
+
+	-- 9. The plate is flat: a grid of rays over the open yard either finds the plate at
+	--    exactly Y = 0, or finds an obstacle standing on it. Nothing in between.
+	local params = excludeParams()
+	local gridMisses, plateHits, offPlate, worstY = 0, 0, 0, 0
+	local obstacleHits = 0
+	for x = Layout.Open.minX, Layout.Open.maxX, 25 do
+		for z = Layout.Open.minZ, Layout.Open.maxZ, 25 do
+			local hit = workspace:Raycast(Vector3.new(x, 200, z), Vector3.new(0, -300, 0), params)
+			if not hit then
+				gridMisses += 1
+			elseif hit.Instance == plate then
+				plateHits += 1
+				worstY = math.max(worstY, math.abs(hit.Position.Y))
+				if math.abs(hit.Position.Y) > PLATE_FLAT then
+					offPlate += 1
+				end
+			else
+				obstacleHits += 1
+			end
+		end
+	end
+	check("no hole in the open yard", gridMisses == 0, `{gridMisses} of {plateHits + obstacleHits + gridMisses} rays hit nothing`)
+	check(
+		"the plate is flat at Y = 0",
+		offPlate == 0,
+		`{plateHits} plate hits, worst |Y| {math.round(worstY * 10000) / 10000}; {obstacleHits} rays landed on something standing on it`
+	)
+
+	-- 10. Nothing floats: every building and pillar is sunk into the plate, and every
+	--     cone rests on whatever is under it.
+	local obstacles = PlaygroundService:DebugObstacles()
+	local floating = {}
+	for _, o in obstacles do
+		if o.bottom > 0 then
+			table.insert(floating, `{o.id} at {math.round(o.bottom * 100) / 100}`)
+		end
+	end
+	check(
+		"no building or pillar floats",
+		#floating == 0,
+		`{#obstacles} obstacles, {#floating} with a base above the plate: {table.concat(floating, ", ")}`
+	)
+
+	local coneParams = excludeParams()
+	local coneFloat, coneMiss, worstGap = 0, 0, 0
+	for _, cone in root.Cones:GetChildren() do
+		if not cone:IsA("BasePart") then
+			continue
+		end
+		local base = cone.Position.Y - cone.Size.X * 0.5 -- a cylinder on its side: X is its height
+		local hit = workspace:Raycast(cone.Position, Vector3.new(0, -60, 0), coneParams)
+		if not hit then
+			coneMiss += 1
+		else
+			local gap = base - hit.Position.Y
+			worstGap = math.max(worstGap, gap)
+			if gap > CONE_REST or gap < -0.01 then
+				coneFloat += 1
+			end
+		end
+	end
+	check(
+		"every cone rests on the ground",
+		coneMiss == 0 and coneFloat == 0,
+		`{state.coneCount} cones, {coneMiss} over nothing, {coneFloat} not resting, worst gap {math.round(worstGap * 100) / 100} studs`
+	)
+
+	-- 11. Nothing drivable runs through a wall: no tagged surface but the plate shares a
+	--     footprint with a building or a pillar, so a car never climbs one or clips a
+	--     corner that is also a floor. Buildings do not overlap each other either.
+	local clash = {}
+	for _, part in root:GetDescendants() do
+		if not part:IsA("BasePart") or part == plate or not CollectionService:HasTag(part, SURFACE_TAG) then
+			continue
+		end
+		local px, pz, phx, phz = footprint(part)
+		for _, o in obstacles do
+			if overlaps(px, pz, phx, phz, o.x, o.z, o.halfX, o.halfZ, 0) then
+				table.insert(clash, `{part.Name} / {o.id}`)
+			end
+		end
+	end
+	check(
+		"no drivable surface runs through a building or pillar",
+		#clash == 0,
+		`{#clash} clashes{if #clash > 0 then ": " .. table.concat(clash, ", ", 1, math.min(5, #clash)) else ""}`
+	)
+
+	local building = {}
+	for _, o in obstacles do
+		if o.kind == "Buildings" then
+			table.insert(building, o)
+		end
+	end
+	local merged = {}
+	for i = 1, #building do
+		for j = i + 1, #building do
+			local a, b = building[i], building[j]
+			if overlaps(a.x, a.z, a.halfX, a.halfZ, b.x, b.z, b.halfX, b.halfZ, 0) then
+				table.insert(merged, `{a.id} / {b.id}`)
+			end
+		end
+	end
+	check("no two buildings overlap", #merged == 0, `{#building} buildings, {#merged} overlapping`)
+
+	-- 12. The streets. Measured from the layout's strips, which are what the builder uses.
+	local gaps = {}
+	for _, axis in { Layout.District.columns, Layout.District.rows } do
+		for i = 1, #axis - 1 do
+			table.insert(gaps, axis[i + 1].from - axis[i].to)
+		end
+	end
+	table.sort(gaps)
+	check(
+		`every street is at least {MIN_ALLEY} studs wide`,
+		gaps[1] >= MIN_ALLEY,
+		`{#gaps} streets, narrowest {gaps[1]}, widest {gaps[#gaps]} studs`
+	)
+
+	-- 13. The yard round the spawn is clear, and nothing is a long drive away.
+	local spawn = PlaygroundService:GetSpot("Spawn").Position
+	local nearest, nearestId = math.huge, "?"
+	for _, o in obstacles do
+		local dx = math.max(0, math.abs(o.x - spawn.X) - o.halfX)
+		local dz = math.max(0, math.abs(o.z - spawn.Z) - o.halfZ)
+		local d = math.sqrt(dx * dx + dz * dz)
+		if d < nearest then
+			nearest, nearestId = d, o.id
+		end
+	end
+	check(
+		`nothing stands within {Layout.Open.clearRadius} studs of the spawn`,
+		nearest >= Layout.Open.clearRadius,
+		`nearest is {nearestId} at {math.round(nearest)} studs`
+	)
+
+	local furthest, furthestId = 0, "?"
+	local function reach(x: number, z: number, id: string)
+		local d = math.sqrt((x - spawn.X) ^ 2 + (z - spawn.Z) ^ 2)
+		if d > furthest then
+			furthest, furthestId = d, id
+		end
+	end
+	for _, o in obstacles do
+		reach(o.x + o.halfX * (if o.x >= spawn.X then 1 else -1), o.z + o.halfZ * (if o.z >= spawn.Z then 1 else -1), o.id)
+	end
+	local circleAway = math.sqrt((Layout.Circle.centre.x - spawn.X) ^ 2 + (Layout.Circle.centre.z - spawn.Z) ^ 2)
+		+ Layout.Circle.radius
+	if circleAway > furthest then
+		furthest, furthestId = circleAway, "Circle (far rim)"
+	end
+	reach(Layout.Ramp.x, Layout.Ramp.z + Layout.Ramp.length + Layout.Ramp.lip.length, "Ramp (lip)")
+	check(
+		`nothing is more than {FEATURE_REACH} studs from the spawn`,
+		furthest <= FEATURE_REACH,
+		`furthest is {furthestId} at {math.round(furthest)} studs`
+	)
 
 	local passed = true
 	for _, c in checks do

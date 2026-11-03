@@ -1,11 +1,15 @@
 --!nonstrict
--- PlaygroundService: builds the prototype playground and hands out its named spots
+-- PlaygroundService: builds the open testing ground and hands out its named spots
 -- (docs/game/features/drift-playground.md).
 --
 -- It builds at Init, before anything else, so the world exists before a car spawns into
 -- it. Everything it builds is anchored and constraint-free except the cones, which live
 -- in their own folder, are never tagged DriftSurface, and so never touch the car's
 -- simulation (docs/game/DECISIONS.md, 2026-11-03).
+--
+-- What it builds, in order: the plate, the district of buildings, the yard blocks and
+-- pillars, the banked circle, the ramp, the spots and their ground discs, the spawn pad,
+-- and last of all the cones, which are rested on whatever a ray finds under them.
 
 local CollectionService = game:GetService("CollectionService")
 local Players = game:GetService("Players")
@@ -29,7 +33,7 @@ PlaygroundService.Spots = {} :: { [string]: CFrame }
 local tuning = Config.Playground
 local palette = tuning.Palette
 
-local steps: { [string]: any } = {} -- id -> { samples, segments, parts }
+local features: { [string]: any } = {} -- id -> { segments, folder, samples }
 local cones: { { part: BasePart, home: CFrame } } = {}
 local partCount = 0
 
@@ -37,84 +41,41 @@ local partCount = 0
 -- Building
 --------------------------------------------------------------------------------
 
-local function sign(n: number): number
-	return n >= 0 and 1 or -1
-end
-
--- Walks one course step at a fine spacing, so tests can raycast the ideal curve rather
--- than the polygon that was built from it.
-local function denseSamples(step: any, startCursor: any, heightAt, bankAt, baseY): { any }
-	local length = Path.length(step.kind, step)
-	local n = math.max(2, math.ceil(length / SAMPLE_SPACING))
-	local cursor = Path.clone(startCursor)
-	local nodes = if step.kind == "arc"
-		then Path.arc(cursor, step.angle, step.radius, n)
-		else Path.straight(cursor, step.length, n)
-
-	local out = {}
-	for i, node in nodes do
-		local t = (i - 1) / (#nodes - 1)
-		local bank = bankAt(t)
-		local pos, right = Build.frame(node, baseY + heightAt(t), bank)
-		out[i] = { pos = pos, right = right }
-	end
-	return out
+local function newFolder(name: string, parent: Instance): Folder
+	local folder = Instance.new("Folder")
+	folder.Name = name
+	folder.Parent = parent
+	return folder
 end
 
 local function buildPlate(parent: Instance): Part
 	local size = Layout.Plate.size
 	local thickness = Layout.Plate.thickness
-	local plate = Build.surface(
+	return Build.surface(
 		"Plate",
 		Vector3.new(size, thickness, size),
 		CFrame.new(0, -thickness * 0.5, 0),
 		palette.Plate,
 		parent
 	)
-	return plate
 end
 
-local function buildCourse(parent: Instance)
-	local cursor = Path.cursor(Layout.Start.x, Layout.Start.z, Layout.Start.heading)
-	local runningHeight = 0
-
-	for _, step in Layout.Course do
-		local startCursor = Path.clone(cursor)
-		local heightAt, endHeight = Build.heightProfile(step.height, runningHeight)
-		local turn = if step.kind == "arc" then sign(step.angle) else 1
-		local bankAt = Build.bankProfile(step.bank, turn)
-		if step.bank then
-			heightAt = Build.levelInnerEdge(heightAt, bankAt, Layout.Road.width * 0.5)
+-- The district and the two yard blocks. Untagged on purpose: a building is a wall.
+local function buildBuildings(parent: Instance)
+	local folder = newFolder("Buildings", parent)
+	for _, list in { Layout.Buildings, Layout.Blocks } do
+		for _, b in list do
+			Build.block(b.id, b.x, b.z, b.sizeX, b.sizeZ, b.height, palette[b.colour], folder)
+			partCount += 1
 		end
+	end
+end
 
-		local nodes = if step.kind == "arc"
-			then Path.arc(cursor, step.angle, step.radius, step.segments)
-			else Path.straight(cursor, step.length, step.segments)
-
-		local folder = Instance.new("Folder")
-		folder.Name = step.id
-		folder.Parent = parent
-
-		local parts = Build.ribbon(nodes, {
-			name = step.id,
-			width = Layout.Road.width,
-			thickness = Layout.Road.thickness,
-			colour = palette[step.colour] or palette.Road,
-			baseY = Layout.Road.height,
-			heightAt = heightAt,
-			bankAt = bankAt,
-			parent = folder,
-		})
-		partCount += #parts
-
-		steps[step.id] = {
-			id = step.id,
-			segments = #parts,
-			folder = folder,
-			samples = denseSamples(step, startCursor, heightAt, bankAt, Layout.Road.height),
-		}
-
-		runningHeight = endHeight
+local function buildPillars(parent: Instance)
+	local folder = newFolder("Pillars", parent)
+	for _, p in Layout.Pillars do
+		Build.pillar(p.id, p.x, p.z, p.radius, p.height, palette.Pillar, folder)
+		partCount += 1
 	end
 end
 
@@ -126,17 +87,14 @@ local function buildCircle(parent: Instance)
 		return 0
 	end, bankAt, spec.width * 0.5)
 
-	local folder = Instance.new("Folder")
-	folder.Name = spec.id
-	folder.Parent = parent
-
+	local folder = newFolder(spec.id, parent)
 	local nodes = Path.ring(centre, spec.radius, spec.segments)
 	local parts = Build.ribbon(nodes, {
 		name = spec.id,
 		width = spec.width,
-		thickness = Layout.Road.thickness,
+		thickness = spec.thickness,
 		colour = palette[spec.colour],
-		baseY = Layout.Road.height,
+		baseY = Layout.Surface.height,
 		heightAt = heightAt,
 		bankAt = bankAt,
 		closed = true,
@@ -148,97 +106,134 @@ local function buildCircle(parent: Instance)
 	local dense = Path.ring(centre, spec.radius, math.max(8, math.ceil(circumference / SAMPLE_SPACING)))
 	local samples = {}
 	for i, node in dense do
-		local pos, right = Build.frame(node, Layout.Road.height + heightAt(0), bankAt(0))
+		local pos, right = Build.frame(node, Layout.Surface.height + heightAt(0), bankAt(0))
 		samples[i] = { pos = pos, right = right }
 	end
 
-	steps[spec.id] = { id = spec.id, segments = #parts, folder = folder, samples = samples }
+	features[spec.id] = { id = spec.id, segments = #parts, folder = folder, samples = samples }
 end
 
-local function sampleAt(stepId: string, t: number): (Vector3, Vector3)
-	local step = steps[stepId]
-	if not step then
-		error(`PlaygroundService: no step '{stepId}'`, 0)
+local function denseStraight(cursor, length: number, heightAt, baseY: number)
+	local n = math.max(2, math.ceil(length / SAMPLE_SPACING))
+	local nodes = Path.straight(Path.clone(cursor), length, n)
+	local out = {}
+	for i, node in nodes do
+		local t = (i - 1) / (#nodes - 1)
+		local pos, right = Build.frame(node, baseY + heightAt(t), 0)
+		out[i] = { pos = pos, right = right }
 	end
-	local n = #step.samples
-	local i = math.clamp(math.floor(t * (n - 1)) + 1, 1, n)
-	local s = step.samples[i]
-	return s.pos, s.right
+	return out
 end
 
-local function buildMarkers(parent: Instance)
-	local folder = Instance.new("Folder")
-	folder.Name = "Markers"
-	folder.Parent = parent
+-- The ramp and its lip, as one chain: the lip starts exactly where the climb ended, so
+-- the two share their endpoint and a ground ray reads no step between them.
+local function buildRamp(parent: Instance)
+	local spec = Layout.Ramp
+	local folder = newFolder(spec.id, parent)
+	local cursor = Path.cursor(spec.x, spec.z, spec.heading)
+	local flat = Build.bankProfile(nil, 1)
 
-	local size = Vector3.new(Layout.BrakeMarker.size.x, Layout.BrakeMarker.size.y, Layout.BrakeMarker.size.z)
-	for _, step in Layout.Course do
-		if not step.brakeMarkers then
-			continue
-		end
-		local length = Path.length(step.kind, step)
-		for _, before in step.brakeMarkers do
-			local t = math.clamp((length - before) / length, 0, 1)
-			local pos, right = sampleAt(step.id, t)
-			for _, side in { -1, 1 } do
-				local at = pos + right * (Layout.BrakeMarker.offset * side) + Vector3.new(0, size.Y * 0.5, 0)
-				Build.part(`Brake_{before}_{side}`, size, CFrame.new(at), palette.BrakeMarker, folder)
-				partCount += 1
-			end
-		end
-	end
-end
+	local climbAt = Build.heightProfile({ shape = "ramp", to = spec.rise }, 0)
+	local startCursor = Path.clone(cursor)
+	local climbNodes = Path.straight(cursor, spec.length, spec.segments)
+	local climbParts = Build.ribbon(climbNodes, {
+		name = spec.id,
+		width = spec.width,
+		thickness = spec.thickness,
+		colour = palette[spec.colour],
+		baseY = Layout.Surface.height,
+		heightAt = climbAt,
+		bankAt = flat,
+		parent = folder,
+	})
+	partCount += #climbParts
+	features[spec.id] = {
+		id = spec.id,
+		segments = #climbParts,
+		folder = folder,
+		samples = denseStraight(startCursor, spec.length, climbAt, Layout.Surface.height),
+	}
 
-local function buildSpotMarkers(parent: Instance)
-	local folder = Instance.new("Folder")
-	folder.Name = "SpotMarkers"
-	folder.Parent = parent
-
-	local size = Vector3.new(Layout.Spot.markerSize.x, Layout.Spot.markerSize.y, Layout.Spot.markerSize.z)
-	for name, cf in PlaygroundService.Spots do
-		local at = cf.Position + Vector3.new(0, size.Y * 0.5, 0)
-		local part = Build.part(`Spot_{name}`, size, CFrame.new(at), palette.SpotMarker, folder)
-		part.CanCollide = false -- a marker is to see, never to hit
-		part.CanQuery = false
-		part.Transparency = 0.35
-		partCount += 1
-	end
+	local lipCursor = Path.clone(cursor)
+	local lipNodes = Path.straight(cursor, spec.lip.length, spec.lip.segments)
+	local lipParts = Build.ribbon(lipNodes, {
+		name = `{spec.id}Lip`,
+		width = spec.width,
+		thickness = spec.thickness,
+		colour = palette[spec.colour],
+		baseY = Layout.Surface.height,
+		heightAt = function()
+			return spec.rise
+		end,
+		bankAt = flat,
+		parent = folder,
+	})
+	partCount += #lipParts
+	features[`{spec.id}Lip`] = {
+		id = `{spec.id}Lip`,
+		segments = #lipParts,
+		folder = folder,
+		samples = denseStraight(lipCursor, spec.lip.length, function()
+			return spec.rise
+		end, Layout.Surface.height),
+	}
 end
 
 local function buildSpots()
 	local spots: { [string]: CFrame } = {}
 	local lift = Vector3.new(0, Layout.Spot.height, 0)
 
-	local function poseAt(stepId: string, t: number): CFrame
-		local step = steps[stepId]
-		local n = #step.samples
-		local i = math.clamp(math.floor(t * (n - 1)) + 1, 1, n - 1)
-		local a = step.samples[i].pos
-		local b = step.samples[i + 1].pos
-		return CFrame.lookAt(a + lift, Vector3.new(b.X, a.Y + lift.Y, b.Z))
+	-- A spot on the flat plate: the given heading, the plate's top, and the spot's lift.
+	for _, s in Layout.Spots do
+		local at = Vector3.new(s.x, Layout.Spot.height, s.z)
+		spots[s.name] = CFrame.new(at) * CFrame.Angles(0, math.rad(s.heading), 0)
 	end
 
-	for _, step in Layout.Course do
-		if step.spot then
-			spots[step.spot] = poseAt(step.id, step.spotAt or 0)
-		end
-	end
-	spots.Spawn = poseAt(Layout.Spawn.step, Layout.Spawn.at)
-
+	-- The circle's spot is its middle, which is bare plate: you drive on to the band.
 	local circle = Layout.Circle
-	spots[circle.spot] = CFrame.new(circle.centre.x, Layout.Road.height + Layout.Spot.height, circle.centre.z)
+	spots[circle.spot.name] = CFrame.new(circle.centre.x, Layout.Spot.height, circle.centre.z)
+		* CFrame.Angles(0, math.rad(circle.spot.heading), 0)
+
+	-- The ramp's spot sits on the ramp itself, facing the way it is driven.
+	local ramp = features[Layout.Ramp.id]
+	local n = #ramp.samples
+	local i = math.clamp(math.floor((Layout.Ramp.spot.at or 0) * (n - 1)) + 1, 1, n - 1)
+	local a, b = ramp.samples[i].pos, ramp.samples[i + 1].pos
+	spots[Layout.Ramp.spot.name] = CFrame.lookAt(a + lift, Vector3.new(b.X, a.Y + lift.Y, b.Z))
 
 	PlaygroundService.Spots = spots
+end
+
+-- A spot is shown by a flat disc lying on the ground, never a pillar: a marker standing
+-- in the driving line blocks the view, which is what made the old course unreadable.
+local function buildSpotMarkers(parent: Instance)
+	local folder = newFolder("SpotMarkers", parent)
+	local d = Layout.Spot.markerDiameter
+	for name, cf in PlaygroundService.Spots do
+		local at = cf.Position - Vector3.new(0, Layout.Spot.height, 0) + Vector3.new(0, 0.4, 0)
+		local part = Build.part(
+			`Spot_{name}`,
+			Vector3.new(Layout.Spot.markerThickness, d, d),
+			CFrame.new(at) * CFrame.Angles(0, 0, math.rad(90)),
+			palette.SpotMarker,
+			folder
+		)
+		part.Shape = Enum.PartType.Cylinder
+		part.CanCollide = false -- a marker is to see, never to hit
+		part.CanQuery = false
+		part.Transparency = 0.4
+		partCount += 1
+	end
 end
 
 local function buildSpawnLocation(parent: Instance)
 	local spawn = Instance.new("SpawnLocation")
 	spawn.Name = "PlaygroundSpawn"
-	spawn.Size = Vector3.new(Layout.Road.width * 0.5, 1, 12)
+	spawn.Size = Vector3.new(24, 1, 12)
 	spawn.CFrame = PlaygroundService.Spots.Spawn * CFrame.new(0, -Layout.Spot.height + 0.5, 0)
 	spawn.Anchored = true
 	spawn.CanCollide = false
-	spawn.CanQuery = false -- a ground ray must find the road under it, not the pad
+	spawn.CanQuery = false -- a ground ray must find the plate under it, not the pad
 	spawn.Transparency = 0.6
 	spawn.Color = palette.SpotMarker
 	spawn.Neutral = true
@@ -248,55 +243,53 @@ local function buildSpawnLocation(parent: Instance)
 end
 
 local function buildCones(parent: Instance)
-	local folder = Instance.new("Folder")
-	folder.Name = "Cones"
-	folder.Parent = parent
+	local folder = newFolder("Cones", parent)
 
 	local spec = Layout.Cones
 	local rng = Random.new(spec.seed)
 	local size = Vector3.new(spec.size.x, spec.size.y, spec.size.z)
 
-	local placeable = {}
-	for _, step in Layout.Course do
-		if not spec.skipSteps[step.id] then
-			table.insert(placeable, step.id)
-		end
-	end
-	table.insert(placeable, Layout.Circle.id)
-
-	-- A cone is placed out from the road's centre line, so one thrown wide of a raised
-	-- feature would hang in the air over the plate, fall, and be put back in the air by
-	-- every reset. Rest each one on whatever is actually under it instead.
+	-- A cone is scattered round a cluster's centre, which may be over the plate or over a
+	-- raised feature, so rest each one on whatever is actually under it rather than on an
+	-- assumed height: otherwise it hangs in the air, falls, and is put back in the air by
+	-- every reset.
 	local ground = RaycastParams.new()
 	ground.FilterType = Enum.RaycastFilterType.Exclude
-	ground.FilterDescendantsInstances = { folder, parent:FindFirstChild("Markers"), parent:FindFirstChild("SpotMarkers") }
+	ground.FilterDescendantsInstances = { folder, parent:FindFirstChild("SpotMarkers") }
 
-	for i = 1, spec.count do
-		local stepId = placeable[rng:NextInteger(1, #placeable)]
-		local pos, right = sampleAt(stepId, rng:NextNumber())
-		local lateral = rng:NextNumber(spec.lateralMin, spec.lateralMax) * (rng:NextInteger(0, 1) == 0 and -1 or 1)
-		local at = pos + right * lateral + Vector3.new(0, size.Y * 0.5 + 0.1, 0)
-		local below = workspace:Raycast(at + Vector3.new(0, 40, 0), Vector3.new(0, -200, 0), ground)
-		if below then
-			at = Vector3.new(at.X, below.Position.Y + size.Y * 0.5 + 0.1, at.Z)
+	local index = 0
+	for _, cluster in spec.clusters do
+		for _ = 1, cluster.count do
+			index += 1
+			local angle = rng:NextNumber() * math.pi * 2
+			local radius = cluster.radius * math.sqrt(rng:NextNumber())
+			local at = Vector3.new(
+				cluster.x + math.cos(angle) * radius,
+				size.Y * 0.5 + 0.1,
+				cluster.z + math.sin(angle) * radius
+			)
+			local below = workspace:Raycast(at + Vector3.new(0, 60, 0), Vector3.new(0, -200, 0), ground)
+			if below then
+				at = Vector3.new(at.X, below.Position.Y + size.Y * 0.5 + 0.1, at.Z)
+			end
+
+			local cone = Instance.new("Part")
+			cone.Name = `Cone_{index}`
+			cone.Shape = Enum.PartType.Cylinder -- a stand-in; no art is made for this world
+			cone.Size = Vector3.new(size.Y, size.X, size.Z)
+			cone.CFrame = CFrame.new(at) * CFrame.Angles(0, 0, math.rad(90))
+			cone.Color = palette.Cone
+			cone.Material = Enum.Material.SmoothPlastic
+			cone.CastShadow = false
+			cone.Anchored = false -- the one thing physics may touch
+			cone.CanCollide = true
+			cone.Massless = false
+			cone.CustomPhysicalProperties = PhysicalProperties.new(0.4, 0.3, 0.2)
+			cone.Parent = folder
+
+			table.insert(cones, { part = cone, home = cone.CFrame })
+			partCount += 1
 		end
-
-		local cone = Instance.new("Part")
-		cone.Name = `Cone_{i}`
-		cone.Shape = Enum.PartType.Cylinder -- a stand-in; no art is made for this world
-		cone.Size = Vector3.new(size.Y, size.X, size.Z)
-		cone.CFrame = CFrame.new(at) * CFrame.Angles(0, 0, math.rad(90))
-		cone.Color = palette.Cone
-		cone.Material = Enum.Material.SmoothPlastic
-		cone.CastShadow = false
-		cone.Anchored = false -- the one thing physics may touch
-		cone.CanCollide = true
-		cone.Massless = false
-		cone.CustomPhysicalProperties = PhysicalProperties.new(0.4, 0.3, 0.2)
-		cone.Parent = folder
-
-		table.insert(cones, { part = cone, home = cone.CFrame })
-		partCount += 1
 	end
 end
 
@@ -389,7 +382,7 @@ function PlaygroundService:Build()
 		existing:Destroy()
 	end
 
-	table.clear(steps)
+	table.clear(features)
 	table.clear(cones)
 	partCount = 0
 
@@ -398,10 +391,11 @@ function PlaygroundService:Build()
 
 	buildPlate(root)
 	partCount += 1
-	buildCourse(root)
+	buildBuildings(root)
+	buildPillars(root)
 	buildCircle(root)
+	buildRamp(root)
 	buildSpots()
-	buildMarkers(root)
 	buildSpotMarkers(root)
 	buildSpawnLocation(root)
 
@@ -414,8 +408,8 @@ function PlaygroundService:Build()
 
 	if not RunService:IsStudio() then
 		-- The fine samples are only there for the Studio tests.
-		for _, step in steps do
-			step.samples = nil
+		for _, feature in features do
+			feature.samples = nil
 		end
 	end
 end
@@ -463,16 +457,19 @@ function PlaygroundService:DebugState()
 		spots[name] = { x = math.round(p.X * 100) / 100, y = math.round(p.Y * 100) / 100, z = math.round(p.Z * 100) / 100 }
 	end
 	local segments = {}
-	for id, step in steps do
-		segments[id] = step.segments
+	for id, feature in features do
+		segments[id] = feature.segments
 	end
 	return {
 		built = PlaygroundService.Root ~= nil and PlaygroundService.Root.Parent ~= nil,
 		partCount = partCount,
 		coneCount = #cones,
+		buildingCount = #Layout.Buildings + #Layout.Blocks,
+		pillarCount = #Layout.Pillars,
 		spots = spots,
 		segments = segments,
 		plate = { size = Layout.Plate.size, topY = 0 },
+		open = Layout.Open,
 	}
 end
 
@@ -480,10 +477,10 @@ end
 -- reports how the surface height moves between samples: the fidelity check that
 -- matters most (features/drift-playground.md "Rules and numbers").
 -- `lateral` offsets the walk sideways from the centre line, in studs.
-function PlaygroundService:DebugWalk(stepId: string, lateral: number?, every: number?)
-	local step = steps[stepId]
-	if not step or not step.samples then
-		error(`PlaygroundService: no walkable samples for '{tostring(stepId)}'`, 2)
+function PlaygroundService:DebugWalk(featureId: string, lateral: number?, every: number?)
+	local feature = features[featureId]
+	if not feature or not feature.samples then
+		error(`PlaygroundService: no walkable samples for '{tostring(featureId)}'`, 2)
 	end
 	local offset = lateral or 0
 	local stride = math.max(1, math.floor(every or 1))
@@ -492,15 +489,14 @@ function PlaygroundService:DebugWalk(stepId: string, lateral: number?, every: nu
 	params.FilterType = Enum.RaycastFilterType.Exclude
 	params.FilterDescendantsInstances = {
 		PlaygroundService.Root.Cones,
-		PlaygroundService.Root.Markers,
 		PlaygroundService.Root.SpotMarkers,
 	}
 
 	local heights: { number } = {}
 	local misses = 0
 	local untagged = 0
-	for i = 1, #step.samples, stride do
-		local s = step.samples[i]
+	for i = 1, #feature.samples, stride do
+		local s = feature.samples[i]
 		local from = s.pos + s.right * offset + Vector3.new(0, 20, 0)
 		local hit = workspace:Raycast(from, Vector3.new(0, -60, 0), params)
 		if not hit then
@@ -527,7 +523,7 @@ function PlaygroundService:DebugWalk(stepId: string, lateral: number?, every: nu
 	end
 
 	return {
-		step = stepId,
+		feature = featureId,
 		samples = #heights,
 		spacingStuds = SAMPLE_SPACING * stride,
 		lateral = offset,
@@ -551,6 +547,43 @@ function PlaygroundService:DebugBounds()
 		end
 	end
 	return { min = minV, max = maxV }
+end
+
+-- Every obstacle as a flat footprint: {x, z, halfX, halfZ, kind, id}. The tests use it to
+-- prove the streets are open, nothing drivable runs through a wall, and the yard round
+-- the spawn is clear. Measured from the built parts, not from the layout, so it catches a
+-- builder that places something differently from what the layout says.
+function PlaygroundService:DebugObstacles()
+	local out = {}
+	for _, kind in { "Buildings", "Pillars" } do
+		local folder = PlaygroundService.Root:FindFirstChild(kind)
+		if not folder then
+			continue
+		end
+		for _, part in folder:GetChildren() do
+			if part:IsA("BasePart") then
+				local size = part.Size
+				local halfX, halfZ
+				if part.Shape == Enum.PartType.Cylinder then
+					-- Laid on its side: Y and Z are the diameter, X is the height.
+					halfX, halfZ = size.Y * 0.5, size.Z * 0.5
+				else
+					halfX, halfZ = size.X * 0.5, size.Z * 0.5
+				end
+				table.insert(out, {
+					id = part.Name,
+					kind = kind,
+					x = part.Position.X,
+					z = part.Position.Z,
+					halfX = halfX,
+					halfZ = halfZ,
+					top = part.Position.Y + (if part.Shape == Enum.PartType.Cylinder then size.X * 0.5 else size.Y * 0.5),
+					bottom = part.Position.Y - (if part.Shape == Enum.PartType.Cylinder then size.X * 0.5 else size.Y * 0.5),
+				})
+			end
+		end
+	end
+	return out
 end
 
 return PlaygroundService
