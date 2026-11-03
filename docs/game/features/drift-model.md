@@ -1,7 +1,7 @@
 # Feature: Drift model and one-input control
 
-**Status:** built, waiting on the user's feel judgement. **Owner task:** `T-003`, branch
-`agent/drift-model` (`docs/CLAIMS.md`).
+**Status:** built, waiting on the user's feel judgement. **Owner task:** none; built by `T-003`
+and extended by `T-005` (the server owning respawns), both merged (`docs/CLAIMS.md`).
 
 The prototype's whole point: prove the drift feels great before anything else is built
 (`PITCH.md` "Biggest risks", `ROADMAP.md` "Next").

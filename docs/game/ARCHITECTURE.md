@@ -64,7 +64,7 @@ Where each kind of thing is listed in code, so nothing gets scattered.
 
 - **Debug bridge members:**
   - Server, `game.ServerStorage.DebugBridge:Invoke(...)`: `PlaygroundService:DebugState()`, `DebugWalk(stepId, lateral, every)` and `DebugBounds()`, `CarService:DebugState()`.
-  - Client, `game.Players.LocalPlayer.PlayerScripts.DebugBridge:Invoke(...)`: `DriftController:DebugState()`, `DebugDrive(inputs, seconds, opts)` and `DebugReset()`, `CarInputController:DebugState()`, `DebugSetInput(steer, drift, brake)`, `DebugClearInput()` and `DebugDrag(offsetPx, flickRate)` (the real gesture, not a bypass), `CarCameraController:DebugState()`.
+  - Client, `game.Players.LocalPlayer.PlayerScripts.DebugBridge:Invoke(...)`: `DriftController:DebugState()`, `DebugDrive(inputs, seconds, opts)`, `DebugReset()` (asks the server for a respawn; where a car goes is not the client's to say) and `DebugTeleport(cf)` (moves it without asking, to prove the server rejects that), `CarInputController:DebugState()`, `DebugSetInput(steer, drift, brake)`, `DebugClearInput()` and `DebugDrag(offsetPx, flickRate)` (the real gesture, not a bypass), `CarCameraController:DebugState()`.
   - Tests: `Debug<Name>Tests` reaches `ServerScriptService/Tests/<Name>Tests`.
 - **Test profiles:** none yet; there is no DataService.
 - **Admin commands:** none yet.
