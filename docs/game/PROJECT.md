@@ -40,4 +40,4 @@ Each PC that works on this game, and how many lanes it opens: `lane1` up to that
 
 ## Current focus
 
-Building the first prototype: the drift model and a baseplate playground to feel it in (`ROADMAP.md` "Next", `docs/game/features/drift-model.md`). `PITCH.md` is still Draft and waiting on the user; the prototype runs ahead of that gate on the user's instruction (DECISIONS.md, 2026-11-03). Meta progression and the larger scale stay undecided until the feel is proven.
+The first prototype is built and on `main`: the drift model on one gesture, and an open plate to feel it in (`features/drift-model.md`, `features/drift-playground.md`). **It is waiting on the user to drive it** — the feel is the gate, and nothing past it is decided until they say it is right. `PITCH.md` is still Draft and waiting on them too; the prototype ran ahead of that gate on their instruction (DECISIONS.md, 2026-11-03). Meta progression and the larger scale stay undecided until the feel is proven. Tuning is numbers in `Shared/Config/Drift.luau`, not code.
