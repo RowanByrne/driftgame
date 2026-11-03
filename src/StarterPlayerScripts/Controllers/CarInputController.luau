@@ -1,10 +1,15 @@
 --!nonstrict
--- CarInputController: steering, drift and brake, on keyboard, touch and gamepad.
+-- CarInputController: steering, drift and brake, on touch, mouse, keyboard and gamepad.
 --
--- Bound with the Input Action System (docs/workflow/CODING.md "Conventions"):
---   InputContext > InputAction > InputBinding, parented under the player's PlayerScripts.
--- Touch is not an InputBinding: a steering stick is an analogue drag, so Drift/TouchControls
--- draws its own programmer-art pad and buttons and this controller merges them in.
+-- The game's own scheme is one gesture: a finger or the mouse held down and slid left and
+-- right, where the same offset steers and puts the car into the drift (DECISIONS.md,
+-- 2026-11-03). That is not an InputBinding -- it is an analogue drag with a latch -- so
+-- Drift/DragControl owns it and this controller merges it in.
+--
+-- Keyboard and gamepad are the fallback, and keep discrete bindings through the Input
+-- Action System (docs/workflow/CODING.md "Conventions"): InputContext > InputAction >
+-- InputBinding, under the player's PlayerScripts. Every device works from the first
+-- version, but only one of them is the scheme the game is designed around.
 --
 -- The whole controller exists to answer one question, once a frame: `Get()` -> what the
 -- player is asking the car to do. Nothing here knows anything about the drift model.
@@ -13,11 +18,10 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local UserInputService = game:GetService("UserInputService")
 
-local Config = require(ReplicatedStorage.Shared.Config)
 local Signal = require(ReplicatedStorage.Shared.Signal)
 
 -- PlayerScripts.Controllers.CarInputController -> PlayerScripts.Drift
-local TouchControls = require(script.Parent.Parent:WaitForChild("Drift").TouchControls)
+local DragControl = require(script.Parent.Parent:WaitForChild("Drift").DragControl)
 
 local CarInputController = {}
 
@@ -61,7 +65,8 @@ function CarInputController:Start()
 	binding("Stick", steer, { KeyCode = Enum.KeyCode.Thumbstick1, Deadzone = NumberRange.new(0.14, 1) })
 	self._actions.Steer = steer
 
-	-- One input starts the drift: that is the whole hook.
+	-- Keyboard and gamepad cannot slide a thumb, so they get a discrete drift button. The
+	-- model takes the same two values either way: a steering axis and a drift flag.
 	local drift = Instance.new("InputAction")
 	drift.Name = "Drift"
 	drift.Type = Enum.InputActionType.Bool
@@ -97,13 +102,14 @@ function CarInputController:Start()
 		self.DebugToggled:Fire()
 	end)
 
-	self._touch = TouchControls.new(function()
+	self._drag = DragControl.new(function()
 		self.DebugToggled:Fire()
 	end)
 end
 
--- What the player is asking for, this frame. Touch overrides the bound actions only while
--- a thumb is actually on the screen, so a phone with a gamepad plugged in still works.
+-- What the player is asking for, this frame. The gesture wins over the bound actions, but
+-- only while a finger or the mouse is actually down, so a player with a gamepad plugged in
+-- can still use it and a keyboard still steers between drags.
 function CarInputController:Get(): { steer: number, drift: boolean, brake: boolean }
 	if self._override then
 		self.steer, self.drift, self.brake = self._override.steer, self._override.drift, self._override.brake
@@ -126,13 +132,13 @@ function CarInputController:Get(): { steer: number, drift: boolean, brake: boole
 		brake = self._actions.Brake:GetState() == true
 	end
 
-	if self._touch then
-		local tSteer, tDrift, tBrake = self._touch:Get()
-		if math.abs(tSteer) > math.abs(steer) then
-			steer = tSteer
+	if self._drag then
+		local dSteer, dDrift, dBrake = self._drag:Get()
+		if math.abs(dSteer) > math.abs(steer) then
+			steer = dSteer
 		end
-		drift = drift or tDrift
-		brake = brake or tBrake
+		drift = drift or dDrift
+		brake = brake or dBrake
 	end
 
 	self.steer = math.clamp(steer, -1, 1)
@@ -151,8 +157,7 @@ function CarInputController:DebugState()
 		drift = self.drift,
 		brake = self.brake,
 		device = self:Device(),
-		touchScheme = Config.Drift.TouchScheme,
-		touchVisible = (self._touch ~= nil and self._touch.gui.Enabled) or false,
+		drag = if self._drag then self._drag:DebugState() else nil,
 		contextParent = (self._context and self._context.Parent and self._context.Parent:GetFullName()) or "none",
 		actions = if self._context then #self._context:GetChildren() else 0,
 		rawSteer = if self._actions and self._actions.Steer then tostring(self._actions.Steer:GetState()) else "none",
@@ -178,6 +183,15 @@ end
 
 function CarInputController:Override(): { steer: number, drift: boolean, brake: boolean }?
 	return self._override
+end
+
+-- Studio only: act out the real gesture, so a test exercises the control the player uses
+-- rather than the override that bypasses it. `offsetPx` nil lifts the finger.
+function CarInputController:DebugDrag(offsetPx: number?, flickRate: number?)
+	if not self._drag then
+		return nil
+	end
+	return self._drag:DebugDrag(offsetPx, flickRate)
 end
 
 return CarInputController

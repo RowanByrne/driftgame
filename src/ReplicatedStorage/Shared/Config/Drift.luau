@@ -131,11 +131,21 @@ return {
 	CamStandstillSeconds = 0.4, -- s of near-standstill before the camera stops leading
 
 	-- ---------------------------------------------------------------- controls
-	TouchScheme = "TwoThumb", -- "TwoThumb": left half steers, right half drifts.
-	-- "OneFinger": one finger drags to steer and holds to drift
-	-- (features/drift-model.md "Open questions")
-	TouchStickRadius = 90, -- px, how far the thumb travels for full lock
-	TouchDeadzone = 0.08, -- share of the stick ignored around centre
+	-- One gesture does the steering and the drift, on touch and on the mouse alike
+	-- (DECISIONS.md, 2026-11-03). Everything it needs is here, so the feel of the control
+	-- is tuned in this table and not in DragControl.
+	DragFullLock = 140, -- px of horizontal travel from where the finger went down to full
+	-- lock. Smaller is twitchier; it has to fit a thumb's reach on a phone
+	-- without the hand covering the car.
+	DragDeadzone = 0.06, -- share of full lock ignored around the origin, so resting a
+	-- finger still is straight
+	DriftOffset = 0.55, -- share of full lock held out past which the rear lets go. This is
+	-- the patient way in: slide the thumb out and keep it there.
+	DriftFlickRate = 1400, -- px/s across the screen that breaks the rear loose whatever the
+	-- offset. This is the quick way in: a flick. Which of the two a
+	-- player ends up using is what these two numbers decide between.
+	DriftFlickSmoothing = 0.06, -- s the flick rate is averaged over, so one jittery sample
+	-- from a cheap touchscreen cannot start a drift on its own
 	HideCharacter = true, -- the player is the car: no Roblox character is spawned
 	DebugReadout = true, -- build the debug readout at all
 	DebugReadoutOpen = true, -- show it from the start

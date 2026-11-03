@@ -16,13 +16,13 @@ Roblox's physics does not drive the car (`PITCH.md` "Not doing"). The car is mov
 
 1. The player spawns in the playground sitting in a car, already in control.
 2. Throttle is automatic in the prototype: the car accelerates toward its top speed on its own, so a first-time player only has to steer and drift. Brake and reverse are on a second input.
-3. Steering is an axis: left and right.
-4. **One input starts the drift.** Hold it with any steering angle and the rear breaks loose; the car rotates into the slide and holds it while held.
-5. While sliding, steering is not the steering wheel: it asks for a *slide angle*, full lock being `DriftAngleMax`, and the front wheels counter-steer to it by themselves. A real slide is an unstable balance held by several corrections a second, and a thumb on a phone cannot do that and should not have to. The car turns in, the wheels unwind as the angle builds, and they catch it the moment it goes past what was asked for. The slide bleeds speed, so a corner is taken by sliding rather than by braking.
-6. Releasing the input hooks the rear back up. Grip returns over a short blend, not instantly, so an exit can be caught cleanly or botched.
+3. **One gesture does everything.** A finger goes down, or the mouse button does, and from then until it comes up the only thing that matters is how far across the screen it has moved from where it went down (`DECISIONS.md`, 2026-11-03). A little offset steers.
+4. **The same offset starts the drift.** Hold it past `DriftOffset`, or flick it across faster than `DriftFlickRate`, and the rear breaks loose. There is no drift button: the patient way in and the quick way in are two numbers, so which one a player settles on is tuning and not a decision buried in the code. Once loose it stays loose while the pointer is down.
+5. While sliding, the offset is not the steering wheel: it asks for a *slide angle*, full lock being `DriftAngleMax`, and the front wheels counter-steer to it by themselves. A real slide is an unstable balance held by several corrections a second, and a thumb on a phone cannot do that and should not have to. The car turns in, the wheels unwind as the angle builds, and they catch it the moment it goes past what was asked for. **Easing the finger back toward the middle is the counter-steer** — asking for a narrower slide — which is why it is not a separate mode and there is nothing else to press. The slide bleeds speed, so a corner is taken by sliding rather than by braking.
+6. Lifting the finger hooks the rear back up. Grip returns over a short blend (`GripBlendOut`), not instantly, so an exit can be caught cleanly or botched.
 7. Hitting an obstacle or a wall scrubs speed and straightens the car; it never flips or ragdolls. Falling off the world respawns the car at the nearest spawn point.
 
-**(proposed)** The touch scheme is: the left half of the screen steers (a virtual stick), the right half held is drift. The alternative, one finger doing both (drag sideways to steer, hold to drift), is the closer match to the comparison game. Build the two-thumb scheme first because it separates the variables; the one-finger scheme is a config switch to try in the same playtest. The user picks after feeling both ("Open questions").
+**Touch and mouse are the same gesture and the same code** (`Drift/DragControl`), so there is one scheme to tune rather than two. Keyboard and gamepad cannot slide a thumb, so they keep a steering axis and a discrete drift button; every device works, but only one of them is the scheme the game is designed around.
 
 ## Rules and numbers
 
@@ -67,7 +67,15 @@ Every number below lives in `Shared/Config/Drift.luau`, none of them in the logi
 
 A programmer-art debug readout only, top left, toggled by a key or button: speed, slip angle, yaw rate, grip state (gripping, breaking, drifting, catching), airborne, and the frame step. Nothing else. The real HUD waits for scoring (`ROADMAP.md`).
 
-Touch controls are programmer art: a plain steering stick on the left and a plain drift button on the right, both sized for a thumb (`docs/workflow/UI.md` layouts).
+The control's own art is programmer art (`docs/workflow/UI.md` layouts): while a finger or the mouse is down, a track across the bottom of the screen with the middle marked and a knob showing the offset, turning red and reading DRIFT once the rear has let go. It is there so a tester can see what the gesture is being read as; it is not the shipping HUD. A plain BRAKE button sized for a thumb, and a DBG button for the readout, are the only other things on screen.
+
+| Number | Start | What it does |
+|---|---|---|
+| `DragFullLock` | 140 px | Horizontal travel from where the finger went down to full lock |
+| `DragDeadzone` | 0.06 | Share of full lock ignored around the origin |
+| `DriftOffset` | 0.55 | Share of full lock held out past which the rear lets go |
+| `DriftFlickRate` | 1400 px/s | Lateral speed that breaks the rear loose whatever the offset |
+| `DriftFlickSmoothing` | 0.06 s | What the flick rate is averaged over, so one jittery sample cannot start a drift |
 
 ## Server and client
 
@@ -134,7 +142,8 @@ The same corner driven live on the playground, through the client bridge: entry 
 
 ## Open questions
 
-- **The touch scheme:** two thumbs or a true one finger (above). Both are built; `Config.Drift.TouchScheme` switches between them in the same playtest. The user decides after feeling both.
+- ~~**The touch scheme:** two thumbs or a true one finger.~~ **Decided 2026-11-03:** one finger or the mouse, slid left and right, the same offset steering and drifting. The two-thumb scheme is dropped (`DECISIONS.md`).
+- **Where the two ways into a drift land.** `DriftOffset` (hold it out) and `DriftFlickRate` (snap it across) are both live, and the starting numbers are a guess at where a thumb sits. Which one a player ends up using, and whether the other should go, is a playtest answer.
 - **How much the car drifts for the player.** The stick asks for a slide angle and the front wheels counter-steer to it on their own (`CounterSteer`, `DriftAngleMax`, `DriftYawAssist`). That is a design decision, not only a tuning one: a car that holds its own slide is one a thumb can drive, and a car that does not is one the player learns to catch. Only the user can say which this game wants. The dials are there either way.
 - **Automatic throttle:** keeping it for good is a real design choice (accessibility, mobile), not only a prototype shortcut. Decide after the playtest.
 - **Server validation of car state**, before anything is scored or sold. Not in the prototype. What is there now is shape only: types, a rate limit, a top speed and a movement budget, horizontal and vertical checked apart, dropping rather than kicking. It cannot tell a respawn from a teleport, so after a few rejections in a row it takes the client's word (`StateResyncDrops`). The real answer is the server knowing where it put the car.
