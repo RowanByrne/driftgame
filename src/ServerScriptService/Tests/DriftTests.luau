@@ -16,6 +16,7 @@
 local CollectionService = game:GetService("CollectionService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
+local ServerScriptService = game:GetService("ServerScriptService")
 local StarterPlayer = game:GetService("StarterPlayer")
 
 assert(RunService:IsStudio(), "DriftTests only runs in Studio")
@@ -192,6 +193,77 @@ function DriftTests.run()
 			flat.endSpeed,
 			flat.airborneSeconds,
 			#CollectionService:GetTagged(C.SurfaceTag)
+		)
+	)
+
+	------------------------------------------------------------------ the server owns respawns
+	-- What the server owning respawns buys, checked where it lives: the movement check
+	-- (docs/game/CONTRACTS.md, `CarState` and `CarRespawn`). A respawn is a position the
+	-- server chose, so the first packet after it follows from something the server knows;
+	-- a jump the server did not choose is rejected, and stays rejected however often it is
+	-- repeated, because a rejected packet never becomes what the next one is measured
+	-- against. There is no run-of-drops amnesty left to wear down.
+	local CarService = require(ServerScriptService.Services.CarService)
+	local spawnAt = Vector3.new(0, C.RideHeight, 0)
+	local period = 1 / C.StateSendRate
+	local clock = 0
+
+	-- A car at top speed, one send period at a time: honest across the ground.
+	local track = CarService.track(spawnAt, clock)
+	clock += period
+	local driving = spawnAt + Vector3.new(C.TopSpeed * period, 0, 0)
+	local drivingOk = CarService.fits(track, driving, clock)
+
+	-- Off the edge: honest down the vertical axis too, at the fastest a fall may get.
+	track = CarService.track(driving, clock)
+	clock += period
+	local falling = driving + Vector3.new(C.TopSpeed * period, -C.TerminalFall * period, 0)
+	local fallingOk = CarService.fits(track, falling, clock)
+	local fallenTrack = CarService.track(falling, clock)
+
+	-- The server puts it back and records where: the next packet checks against that.
+	local respawned = CarService.track(spawnAt, clock)
+	local afterOk = CarService.fits(respawned, spawnAt + Vector3.new(C.TopSpeed * period, 0, 0), clock + period)
+	-- And a packet sent before the respawn, landing after it, still has the old track
+	-- (`RespawnGrace`), which is why a respawn costs no dropped packets at all.
+	local inFlightOk =
+		CarService.fits(fallenTrack, falling + Vector3.new(0, -C.TerminalFall * period, 0), clock + period)
+	check(
+		checks,
+		"a respawn the server decided is not a teleport",
+		drivingOk and fallingOk and afterOk and inFlightOk,
+		string.format(
+			"driving %s, falling at %.0f studs/s %s, the packet after the respawn %s, one in flight over it %s",
+			drivingOk and "fits" or "FAILS",
+			C.TerminalFall,
+			fallingOk and "fits" or "FAILS",
+			afterOk and "fits" or "FAILS",
+			inFlightOk and "fits" or "FAILS"
+		)
+	)
+
+	-- A jump nobody asked for. The track it is measured against never moves, so repeating
+	-- it does not wear the server down -- the thing `StateResyncDrops` used to do.
+	local jumped = spawnAt + Vector3.new(500, 0, 500)
+	local cheat = CarService.track(spawnAt, clock)
+	local rejected = 0
+	local tries = 20
+	for i = 1, tries do
+		if not CarService.fits(cheat, jumped, clock + i * period) then
+			rejected += 1
+		end
+	end
+	check(
+		checks,
+		"a jump the server did not decide stays rejected",
+		rejected == tries and C.StateResyncDrops == nil,
+		string.format(
+			"%d of %d packets %.0f studs from where the server put the car rejected, over %.1f s; no StateResyncDrops in Config: %s",
+			rejected,
+			tries,
+			(jumped - spawnAt).Magnitude,
+			tries * period,
+			tostring(C.StateResyncDrops == nil)
 		)
 	)
 
