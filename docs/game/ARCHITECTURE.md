@@ -63,8 +63,8 @@ Where each kind of thing is listed in code, so nothing gets scattered.
 > What tests and agents can reach (docs/workflow/TESTING.md).
 
 - **Debug bridge members:**
-  - Server, `game.ServerStorage.DebugBridge:Invoke(...)`: `PlaygroundService:DebugState()`, `CarService:DebugState()`.
-  - Client, `game.Players.LocalPlayer.PlayerScripts.DebugBridge:Invoke(...)`: `DriftController:DebugState()` and `DebugDrive(inputs, seconds)`, `CarInputController:DebugState()`, `CarCameraController:DebugState()`.
+  - Server, `game.ServerStorage.DebugBridge:Invoke(...)`: `PlaygroundService:DebugState()`, `DebugWalk(stepId, lateral, every)` and `DebugBounds()`, `CarService:DebugState()`.
+  - Client, `game.Players.LocalPlayer.PlayerScripts.DebugBridge:Invoke(...)`: `DriftController:DebugState()`, `DebugDrive(inputs, seconds, opts)` and `DebugReset()`, `CarInputController:DebugState()`, `DebugSetInput(steer, drift, brake)`, `DebugClearInput()` and `DebugDrag(offsetPx, flickRate)` (the real gesture, not a bypass), `CarCameraController:DebugState()`.
   - Tests: `Debug<Name>Tests` reaches `ServerScriptService/Tests/<Name>Tests`.
 - **Test profiles:** none yet; there is no DataService.
 - **Admin commands:** none yet.

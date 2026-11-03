@@ -43,7 +43,7 @@ Everything code relies on across modules and tasks: data, remotes, tags, attribu
 | Name | Type | Direction | Owner | Payload and checks |
 |---|---|---|---|---|
 | `CarSpawn` | RemoteEvent | Server → client | `CarService` | `(car: Model, spawnCFrame: CFrame)`: the car this client drives, and where it starts |
-| `CarState` | UnreliableRemoteEvent | Client → server | `CarService` | `(cf: CFrame, velocity: Vector3, drifting: boolean)` at 20 Hz. Server checks: types; speed ≤ `Config.Drift.TopSpeed` × 1.25; movement since the last packet ≤ that speed × elapsed × 1.5; rate limit 30/s per UserId. Out of range is dropped and counted, not kicked, while this is a prototype. **Not yet authoritative:** before anything is scored or sold, the server simulates or re-checks the model (`features/drift-model.md` "Open questions") |
+| `CarState` | UnreliableRemoteEvent | Client → server | `CarService` | `(cf: CFrame, velocity: Vector3, drifting: boolean)` at 20 Hz. Server checks: types; speed checked horizontal and vertical apart (`Config.Drift.TopSpeed` × `StateSpeedTolerance`, and `TerminalFall` × the same), with the movement budget since the last packet split the same way; rate limit `StateRateLimit`/s per UserId. Out of range is dropped and counted, not kicked, while this is a prototype. After `StateResyncDrops` rejections in a row the server takes the new position, because a respawn is an honest teleport. **Not yet authoritative:** before anything is scored or sold, the server simulates or re-checks the model (`features/drift-model.md` "Open questions") |
 | `CarStateOther` | UnreliableRemoteEvent | Server → client | `CarService` | `(userId: number, cf: CFrame, velocity: Vector3, drifting: boolean)`: another player's car, for drawing it |
 
 ## Tags and attributes
@@ -82,7 +82,11 @@ Everything code relies on across modules and tasks: data, remotes, tags, attribu
 | `Shared/CarModel` | `build` | `() -> Model` | The placeholder car, built by code: anchored parts, no constraints |
 | `PlaygroundService` | `GetSpot` | `(name: string) -> CFrame` | A named spot in the world; errors on an unknown name |
 | `PlaygroundService` | `DebugState` | `() -> { built: boolean, partCount: number, coneCount: number, spots: { [string]: CFrame }, segments: number, plate: { size: Vector3, y: number } }` | The world as built, for tests and agent playtests. `DebugWalk` and `DebugBounds` sit beside it, Studio only |
-| `DriftController` | `DebugDrive` | `(inputs: { { t: number, steer: number, drift: boolean, brake: boolean } }, seconds: number) -> { Vector3 }` | Runs the model with no player and returns the path, for the determinism test |
+| `DriftController` | `DebugDrive` | `(inputs: { { t: number, steer: number, drift: boolean, brake: boolean } }, seconds: number, opts: { fps: number?, sample: number?, start: CFrame?, live: boolean? }?) -> ({ Vector3 }, Summary)` | Runs the model with no player and returns the path, for the determinism test, with a summary beside it: entry and exit speed, peak slip, time to break loose, heading change |
+| `DriftController` | `DebugState` | `() -> { position: Vector3, heading: number, speed: number, slip: number, wantedSlipDeg: number, wheelAngleDeg: number, phase: string, steps: number }` | The model's full state, for tests and agent playtests |
+| `CarInputController` | `DebugSetInput` / `DebugClearInput` | `(steer: number?, drift: boolean?, brake: boolean?) -> input` / `() -> boolean` | Studio only: drive the live car with no keyboard |
+| `CarInputController` | `DebugDrag` | `(offsetPx: number?, flickRate: number?) -> dragState` | Studio only: act out the real gesture rather than bypassing it. `nil` lifts the finger |
+| `Shared/CarModel` | `physicsOffenders` | `(model: Instance) -> { string }` | Everything in a car that would hand it to Roblox physics. Empty is the rule, and `DriftTests` asserts it |
 
 ## Place settings
 
