@@ -40,4 +40,4 @@ Each PC that works on this game, and how many lanes it opens: `lane1` up to that
 
 ## Current focus
 
-The pitch: get `PITCH.md` approved. After that the focus is the drift feel itself — meta progression and the larger scale stay undecided until a baseplate prototype proves it. The plan is in ROADMAP.md.
+Building the first prototype: the drift model and a baseplate playground to feel it in (`ROADMAP.md` "Next", `docs/game/features/drift-model.md`). `PITCH.md` is still Draft and waiting on the user; the prototype runs ahead of that gate on the user's instruction (DECISIONS.md, 2026-11-03). Meta progression and the larger scale stay undecided until the feel is proven.
