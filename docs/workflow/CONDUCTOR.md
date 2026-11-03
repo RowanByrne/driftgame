@@ -60,7 +60,7 @@ Rocco's Workboard (`tools\rocco.bat`) is where the user hands over work and foll
 - **Spawning:** `set T-012 -Status working -Lane 3 -Branch agent/<slug> -Step "Starting"`, and give the worker its id. Workers add their own steps, progress and questions.
 - **Work you do yourself:** `set -Status working -Step "..."` as you start, and `log` what matters.
 - **Merged and checked:** `set T-012 -Status ready -Where main -Summary "what changed" -Test "what to try in the Main place"`. A feature the user should try before it merges stays on its branch: `-Where lane`, and the test is in that lane's place. Approving it asks you to merge it (`[merge]`).
-- **The user's questions while a task runs** (`ask` from a worker) turn its card Stuck until they answer.
+- **The user's questions while a task runs** (`ask` from a worker, or from you) turn its card Stuck until they answer. Options are a few words each, with what each means in the question (WORKER.md): the card shows two lines of an option at most.
 - **Things you notice outside the task:** `suggest -Title "..." -Summary "why"`. The user queues or dismisses them.
 
 The user approves a task, never you: don't set one `done`. Two things skip the user's OK, both by Rocco's rules: a setup card approves itself as it turns ready (SETUP.md), and a plan the user already said go to starts with `plan ... -Approved` (SETUP.md "The prototype"). Nothing else does.

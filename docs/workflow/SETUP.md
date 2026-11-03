@@ -18,7 +18,7 @@ There are three parts: **New game** (then **The prototype**), **More detail** (t
 - **The Workboard card** (Rocco's commands, in PowerShell from `repo\`: `..\..\_tools\rocco\rocco.ps1`):
   - **As you go:** `set T-012 -Step "PITCH.md"`.
   - **When done:** `set T-012 -Status ready -Where main -Summary "<what's filled, what's proposed, and the open questions>"`. Setup needs no review: Rocco approves the card as it turns ready. The user reads and changes the docs in Rocco's Docs whenever they like.
-  - **A question that blocks the docs:** `ask T-012 -Question "..." -Options "...","..."`, then stop. Anything that doesn't block goes in the summary instead.
+  - **A question that blocks the docs:** `ask T-012 -Question "..." -Options "...","..."`, then stop. Options are a few words each, the detail in the question (WORKER.md). Anything that doesn't block goes in the summary instead.
 - **Commit** as `Setup: <what>` with your Co-Authored-By line (AGENTS.md "Git"), then `git pull` and push `main`.
 - **Report** short (AGENTS.md "Talking to the user"): what's filled, and what the user should read or decide.
 
