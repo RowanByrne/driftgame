@@ -32,7 +32,7 @@ Each PC that works on this game, and how many lanes it opens: `lane1` up to that
 
 | PC (`$env:COMPUTERNAME`) | What it is | Lanes it opens |
 |---|---|---|
-| `WKEYSTUDIOS1680` | 62 GB, 16 threads (AMD Ryzen 7 9800X3D 8-Core Processor) | 8 |
+| `WKEYSTUDIOS1680` | 62 GB, 16 threads (AMD Ryzen 7 9800X3D 8-Core Processor) | 4 |
 
 ## Game-only rules
 
