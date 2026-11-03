@@ -1,4 +1,4 @@
-# {{GAME_NAME}}
+# Drift
 
 A Roblox game made with an AI coding agent (Claude Code, Codex or another), from the RoDev template. What it is: `docs/game/PITCH.md`. Where it stands: `docs/game/PROJECT.md` (the current phase) and `docs/game/ROADMAP.md`.
 

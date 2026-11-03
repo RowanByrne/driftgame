@@ -1,4 +1,4 @@
-# {{GAME_NAME}}
+# Drift
 
 This game's details, loaded into every agent session: keep it short, and put design and detail in the other `docs/game/` files.
 
@@ -6,11 +6,11 @@ This game's details, loaded into every agent session: keep it short, and put des
 
 | | |
 |---|---|
-| Game | {{GAME_NAME}} |
-| Code | `{{CODE}}` |
+| Game | Drift |
+| Code | `DR` |
 | Phase | Pitch (docs/workflow/WORKFLOW.md) |
 | Launched | Not yet |
-| GitHub | `{{GITHUB_REPO}}` |
+| GitHub | `RowanByrne/driftgame` |
 | Roblox | Experience (universe) `{{UNIVERSE_ID}}`, start place `{{PLACE_ID}}`, owned by `{{OWNER}}` |
 | Update log | No |
 | Lanes | None yet |
@@ -18,7 +18,7 @@ This game's details, loaded into every agent session: keep it short, and put des
 
 ## Places
 
-Main is `places\{{CODE}}-Main.rbxl`, served from `repo\` on the port base: always merged `main`, and the user's test place. Lane N is `{{CODE}}-LaneN.rbxl`, served from `lanes\laneN` on base + N (docs/workflow/LANES.md). Other places agents may use, such as an art workshop, and what they may do there:
+Main is `places\DR-Main.rbxl`, served from `repo\` on the port base: always merged `main`, and the user's test place. Lane N is `DR-LaneN.rbxl`, served from `lanes\laneN` on base + N (docs/workflow/LANES.md). Other places agents may use, such as an art workshop, and what they may do there:
 
 | Place file | Served from | Port | Use |
 |---|---|---|---|
