@@ -9,6 +9,7 @@ Every task in progress and the files it owns, so parallel sessions and workers n
 
 | Branch | Lane | Files owned | Since |
 |---|---|---|---|
+| `agent/server-owns-respawn` | lane1 | `src/ServerScriptService/Services/CarService.luau`, `src/StarterPlayerScripts/Controllers/DriftController.luau`, `src/ReplicatedStorage/Shared/Config/Drift.luau`, `src/ServerScriptService/Tests/DriftTests.luau`, `docs/game/CONTRACTS.md`, `docs/game/features/drift-model.md` | 2026-11-03 |
 
 ## Notes between sessions
 
