@@ -26,7 +26,11 @@ local MIN_RAMP_SEGMENTS = 24
 local MIN_ALLEY = 40 -- studs: narrower than this and no car gets through at all
 local FEATURE_REACH = 1000 -- studs: nothing is further from the spawn than this
 local PLATE_FLAT = 1e-3 -- studs the plate's top may vary by
-local CONE_REST = 0.5 -- studs a cone's base may sit above what is under it
+-- How far a cone's base may be from the surface under it. Positive is floating, which is
+-- the bug this catches; a little negative is the physics solver letting a settled cone
+-- rest a hair inside what it stands on, which is normal and not a hole.
+local CONE_REST_ABOVE = 0.5
+local CONE_REST_BELOW = -0.25
 
 local SPOT_NAMES = {
 	"Spawn",
@@ -257,7 +261,7 @@ function Tests.run()
 	)
 
 	local coneParams = excludeParams()
-	local coneFloat, coneMiss, worstGap = 0, 0, 0
+	local coneFloat, coneMiss, highest, lowest = 0, 0, -math.huge, math.huge
 	for _, cone in root.Cones:GetChildren() do
 		if not cone:IsA("BasePart") then
 			continue
@@ -268,16 +272,20 @@ function Tests.run()
 			coneMiss += 1
 		else
 			local gap = base - hit.Position.Y
-			worstGap = math.max(worstGap, gap)
-			if gap > CONE_REST or gap < -0.01 then
+			highest = math.max(highest, gap)
+			lowest = math.min(lowest, gap)
+			if gap > CONE_REST_ABOVE or gap < CONE_REST_BELOW then
 				coneFloat += 1
+			end
+			if not CollectionService:HasTag(hit.Instance, SURFACE_TAG) then
+				coneFloat += 1 -- a cone on a roof, not on something drivable
 			end
 		end
 	end
 	check(
-		"every cone rests on the ground",
+		"every cone rests on a drivable surface",
 		coneMiss == 0 and coneFloat == 0,
-		`{state.coneCount} cones, {coneMiss} over nothing, {coneFloat} not resting, worst gap {math.round(worstGap * 100) / 100} studs`
+		`{state.coneCount} cones, {coneMiss} over nothing, {coneFloat} not resting on one, gap {math.round(lowest * 1000) / 1000} to {math.round(highest * 1000) / 1000} studs`
 	)
 
 	-- 11. Nothing drivable runs through a wall: no tagged surface but the plate shares a
