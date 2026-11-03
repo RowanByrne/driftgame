@@ -65,7 +65,7 @@ Everything code relies on across modules and tasks: data, remotes, tags, attribu
 | Path | What's there | Made by |
 |---|---|---|
 | `ReplicatedStorage.Remotes` | Every remote | `Shared/Net`, on the server |
-| `Workspace.Playground` | The prototype world: every surface, ramp and cone | `PlaygroundService` at start |
+| `Workspace.Playground` | The prototype world: every surface, ramp and cone | `PlaygroundService` at `Init` (`Priority = 100`), before anything spawns into the world |
 | `Workspace.Cars` | One model per player's car | `CarService` |
 
 ## Service APIs
@@ -81,6 +81,7 @@ Everything code relies on across modules and tasks: data, remotes, tags, attribu
 | `Shared/Loader` | `bridge` | `(loaded, parent: Instance, testsFolder: Instance?) -> BindableFunction?` | The Studio-only `DebugBridge` (docs/workflow/TESTING.md) |
 | `Shared/CarModel` | `build` | `() -> Model` | The placeholder car, built by code: anchored parts, no constraints |
 | `PlaygroundService` | `GetSpot` | `(name: string) -> CFrame` | A named spot in the world; errors on an unknown name |
+| `PlaygroundService` | `DebugState` | `() -> { built: boolean, partCount: number, coneCount: number, spots: { [string]: CFrame }, segments: number, plate: { size: Vector3, y: number } }` | The world as built, for tests and agent playtests. `DebugWalk` and `DebugBounds` sit beside it, Studio only |
 | `DriftController` | `DebugDrive` | `(inputs: { { t: number, steer: number, drift: boolean, brake: boolean } }, seconds: number) -> { Vector3 }` | Runs the model with no player and returns the path, for the determinism test |
 
 ## Place settings
