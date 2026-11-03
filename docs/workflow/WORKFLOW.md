@@ -34,7 +34,7 @@ Decide what we're making before any code.
 - **The agent:** looks at comparable Roblox games, proposes 2 or 3 directions when the idea is open, drafts the pitch, and pushes on its weak spots (a vague hook, no reason to return, a scope too big for weeks).
 - **Not yet:** code, art, places.
 - **Gate:** the user approves `PITCH.md`.
-- **From Rocco's onboarding,** a new game skips ahead: finishing the onboarding is the user's go, so the agent drafts the pitch and goes straight on to build the prototype (Foundation, then Core loop; SETUP.md "The prototype"). The pitch stays a draft until the user has played it and approves it.
+- **From Rocco's onboarding,** a new game skips ahead: the agent drafts the pitch, then the prototype's spec and plan from the user's answers about the first build. Once the user approves that plan, it's built (Foundation, then Core loop; SETUP.md "The prototype"). The pitch stays a draft until the user has played it and approves it.
 
 ## 2. Foundation
 

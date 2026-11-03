@@ -1,6 +1,6 @@
 # Setup
 
-How an agent turns the user's onboarding answers into the game's docs, and, for a new game, goes straight on to build the prototype. The user answers Rocco's onboarding (the questions are in `tools/onboarding.json`). Rocco commits the answers to `docs/game/ONBOARDING.md`; for a new game it also records how many lanes this PC runs (PROJECT.md "Workstations") and opens them. Then it opens the user's agent on this brief, as the game's conductor, with a Workboard task. When the user says **"set up the game"**, the conductor does the same.
+How an agent turns the user's onboarding answers into the game's docs, and, for a new game, goes straight on to plan the prototype for the user to approve. The user answers Rocco's onboarding (the questions are in `tools/onboarding.json`). Rocco commits the answers to `docs/game/ONBOARDING.md`; for a new game it also records how many lanes this PC runs (PROJECT.md "Workstations") and opens them. Then it opens the user's agent on this brief, as the game's conductor, with a Workboard task. When the user says **"set up the game"**, the conductor does the same.
 
 There are three parts: **New game** (then **The prototype**), **More detail** (the optional tiles, now or later), and **Existing game**. The prompt names the part and the Workboard task (`T-012`).
 
@@ -54,26 +54,35 @@ The first drafts that the prototype needs. When they're done, go straight on to 
    - **Next:** "Pitch: the user approves PITCH.md", once they've played the prototype.
    - **Later:** anything the answers push out of the first version.
 5. **PROJECT.md:** "Current focus" from `notes`, or "The prototype". `notes` that are decisions also get a dated line in DECISIONS.md.
-6. **The card:** ready, with what's filled, what's proposed and what's open in its summary. It approves itself.
+6. **`features/prototype.md`,** the first build's spec, copied from `features/_TEMPLATE.md`. It's what the prototype plan builds and what the user approves, so it says plainly what they'll get:
+   - **Goal** from `smallest`: the one moment that has to feel right.
+   - **How it plays** from `controls` and `playground`: what the player does, on which device, and in what space, step by step.
+   - **Left out** from `notYet`, plus anything else the answers push past the first build.
+   - **Rules and numbers:** only the starting values the build needs, every one **(proposed)**.
+   - **Testing** from `judge`: what the user looks for when they play it, and what you'll measure.
+   - **Open questions:** each choice the answers leave open that changes what gets built (a control scheme, a camera, the size of the space), with the option you'd pick, marked **(proposed)**.
+   - Sections that don't apply to a first build (Monetization, mostly UI) say "Not in the prototype". Status: **specced**. Link it from GDD.md "Systems" and ROADMAP.md "Now".
+7. **The card:** ready, with what's filled, what's proposed and what's open in its summary. It approves itself.
 
 ## The prototype
 
-Straight after the New game docs, in the same session. The onboarding is the user's go-ahead: build the smallest version worth playtesting now, without waiting for the pitch to be approved. The pitch stays **Draft**; the user changes it in Rocco's Docs while the prototype comes together, and approves it once they've played it.
+Straight after the New game docs, in the same session. The onboarding is the go-ahead for the docs and for planning the prototype, not for building it: the first build is what the user plays first, so they see exactly what it will be, and approve it, before any code is written. The pitch stays **Draft**; the user changes it in Rocco's Docs while the prototype comes together, and approves it once they've played it.
 
-1. **Phase.** In PROJECT.md set "Phase" to Core loop, and add a dated line to DECISIONS.md: "Straight from onboarding to the prototype; the pitch stays a draft until the user approves it."
-2. **Places and lanes.** Rocco opened them as the onboarding finished: the Main place and this PC's lanes (PROJECT.md "Workstations"), each open in Studio with Lync serving it. Rocco makes a missing place as a plain baseplate with its `__lync_port` already set.
+1. **Places and lanes.** Rocco opened them as the onboarding finished: the Main place and this PC's lanes (PROJECT.md "Workstations"), each open in Studio with Lync serving it. Rocco makes a missing place as a plain baseplate with its `__lync_port` already set.
    - **Check each one:** it's in `list_roblox_studios`, and it probes (LANES.md "Probe a lane"; Main's probe file goes in `repo\src\Workspace\`). Still loading? Plan first, then check.
    - **Something missing or not syncing:** `rocco.ps1 lanes` opens whatever isn't open yet, and Lync's plugin may need Resume clicked in that place. A lane that still won't probe stays out of the round: say so in the plan.
    - **No Workstations row for this PC** (the user picked none in Rocco, or there's no Rocco): ask how many (LANES.md "How many lanes"), then `rocco.ps1 lanes -Count N`. Without Rocco, NEW-PROJECT.md steps 5 and 6.
    - **No Studio MCP:** say so, and build without Studio (AGENTS.md "Studio").
-3. **Plan it** as a feature plan that starts at once, from `smallest` (ROADMAP.md "Now") and the core loop in GDD.md:
-   - **Foundation first:** the foundation kit the loop stands on (WORKFLOW.md "Foundation", CODING.md), as the first task, which the others wait on. Shared modules and contracts have one owner (CONDUCTOR.md "A round").
-   - **Then the loop:** only what `smallest` needs, by WORKFLOW.md "Core loop": placeholder art, programmer-art UI, a gray blockout, tuning in config modules, and the loop's first analytics events.
-   - **On the Workboard:** `plan -Title "Prototype: <smallest, in a few words>" -Summary "..." -Steps "title|lane|tier",... -Approved`, then a task per step with `new -Title "..." -Plan <its id>`, adding `-After` for the ones that wait on the foundation.
-4. **Build it in rounds** (CONDUCTOR.md "A round") in the lanes that probed, or yourself in `repo\` with none. Show the user the plan as you start the first round, but don't wait for an OK: they said go when they finished the onboarding. Each merged task goes to To test, with what to try in the Main place.
+2. **Plan it for the user to approve,** from `features/prototype.md` and nothing beyond it:
+   - **Foundation first:** the foundation kit the loop stands on (WORKFLOW.md "Foundation", CODING.md), as the first step, which the others wait on. Shared modules and contracts have one owner (CONDUCTOR.md "A round").
+   - **Then the spec's Goal and How it plays,** by WORKFLOW.md "Core loop": placeholder art, programmer-art UI, a gray blockout, tuning in config modules, and the loop's first analytics events. Nothing from "Left out", and no extras the spec doesn't name: a good idea goes in its Open questions or ROADMAP.md "Later", not into the build.
+   - **On the Workboard:** `plan -Title "Prototype: <the Goal, in a few words>" -Summary "..." -Steps "title|lane|tier",... -Spec docs/game/features/prototype.md`. The summary is what the user reads to decide, so it says, in a few short lines: what they'll be able to play and how, what's placeholder, what's left out, and each choice you made for them that they might not expect ("drift on one key (proposed)"). The card links the spec.
+   - **Then wait for the user** (CONDUCTOR.md "Watching the board"). Nothing is built until they approve. They may ask for changes (`[revise]`): change the spec and the plan together (`set <plan> -Summary ... -Steps ...`), then `clear`.
+3. **When they approve** (`[approved]`): a task per step (CONDUCTOR.md "What waits on you"). In PROJECT.md set "Phase" to Core loop, and add a dated line to DECISIONS.md: "Prototype plan approved; the pitch stays a draft until the user has played it". Fold the spec's answered Open questions in, as DECISIONS.md lines.
+4. **Build it in rounds** (CONDUCTOR.md "A round") in the lanes that probed, or yourself in `repo\` with none, keeping to the approved spec. A worker that finds the spec doesn't say asks (`ask`), rather than deciding something the user will notice. Each merged task goes to To test, with what to try in the Main place.
 5. **When it plays end to end in the Main place:** the Core loop gate (WORKFLOW.md "Rules for every phase"). Write the short gate review, and ask the user to play the first five minutes, then approve the pitch or change it.
 
-Between rounds, and after the report, keep watching the board (CONDUCTOR.md "Watching the board"), so notes the user sends while it's built are picked up.
+Between rounds, and after the report, keep watching the board, so notes the user sends while it's built are picked up.
 
 ## More detail
 

@@ -12,6 +12,10 @@
 
 > What the player sees and does, step by step, including what happens when something goes wrong.
 
+## Left out
+
+> What this doesn't do yet, so nobody builds it by accident.
+
 ## Rules and numbers
 
 > How it works, with the starting tuning values. The live values sit in config modules (CODING.md), or in Roblox configs if they'll change without a publish (docs/workflow/CONFIGS.md).

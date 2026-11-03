@@ -47,10 +47,10 @@ Rocco's Workboard (`tools\rocco.bat`) is where the user hands over work and foll
 
 | `list` shows | The user | You |
 |---|---|---|
-| `[plan]` | Sent a note: a bug, tweak, idea or feature | Plan it, as a round. Something with several tasks becomes a feature plan for them to approve: `plan -Title "..." -Summary "..." -Steps "title\|lane\|tier",...`, then `set <note> -Status removed`. A single task is the note itself. A setup card Rocco queued (its note starts "Follow docs/workflow/SETUP.md") is done as its note says |
+| `[plan]` | Sent a note: a bug, tweak, idea or feature | Plan it, as a round. Something with several tasks becomes a feature plan for them to approve, with its spec in `docs/game/features/` written first: `plan -Title "..." -Summary "..." -Steps "title\|lane\|tier",... -Spec docs/game/features/<name>.md`, then `set <note> -Status removed`. The summary says what they'll get, what's left out, and any choice you made that they might not expect; nothing is built until they approve. A single task is the note itself. A setup card Rocco queued (its note starts "Follow docs/workflow/SETUP.md") is done as its note says |
 | `[question]` | Asked something | `reply T-012 -Text "..."`, short. It shows under their note box |
 | `[approved]` | Approved a feature plan | A task per step: `new -Title "..." -Plan T-020 [-After T-021]` (`-After`: it needs that done first). Then `clear T-020` |
-| `[revise]` | Asked for changes to a plan | `set T-020 -Summary "..." -Steps ...`, then `clear` |
+| `[revise]` | Asked for changes to a plan | Change its spec, then `set T-020 -Summary "..." -Steps ...`, then `clear` |
 | `[answer]` | Answered a Stuck task's question | Carry on with their answer (to the worker, if one asked), and `set -Status working` |
 | `[reopen]` | Tested it: not right yet | Their words are the last `you` line in `show`. Fix it as a task again |
 | `[followup]` | Added to a task while it ran | Fold it in, or pass it to the worker; then `clear` |
@@ -63,7 +63,7 @@ Rocco's Workboard (`tools\rocco.bat`) is where the user hands over work and foll
 - **The user's questions while a task runs** (`ask` from a worker, or from you) turn its card Stuck until they answer. Options are a few words each, with what each means in the question (WORKER.md): the card shows two lines of an option at most.
 - **Things you notice outside the task:** `suggest -Title "..." -Summary "why"`. The user queues or dismisses them.
 
-The user approves a task, never you: don't set one `done`. Two things skip the user's OK, both by Rocco's rules: a setup card approves itself as it turns ready (SETUP.md), and a plan the user already said go to starts with `plan ... -Approved` (SETUP.md "The prototype"). Nothing else does.
+The user approves a task, never you: don't set one `done`. Only a setup card skips the user's OK: it approves itself as it turns ready (SETUP.md), since it only fills in docs from their own answers. A plan always waits for them.
 
 ## Watching the board
 
