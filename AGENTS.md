@@ -32,7 +32,7 @@ The project folder sits in a RoDev folder next to `template\` and `_tools\` (WOR
 | Plays the game and says go or no-go at each phase gate (WORKFLOW.md) | Proves work by measuring, and says what to look at |
 | Picks art and sounds from candidates | Generates candidates, uploads only what the user picked, sets the asset ids |
 | Publishes to players, never the agent, and changes Creator Dashboard settings (or asks the agent to, in the browser) | Runs the pre-publish checks, writes update notes when asked, records dashboard settings in `live/EXPERIENCE.md` |
-| Starts Lync (`tools\serve-all.bat`) | Probes lanes before use; restarts Lync detached only when needed (LANES.md) |
+| Opens the lanes (Rocco's Lanes, which starts Lync with no windows; or `tools\serve-all.bat`) | Probes lanes before use; starts a Lync that isn't serving only when needed (LANES.md) |
 
 The main session is the **conductor**: it plans, hands tasks to **workers** in lanes, and merges their work (CONDUCTOR.md). A worker follows `docs/workflow/WORKER.md`.
 

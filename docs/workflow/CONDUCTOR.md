@@ -71,7 +71,7 @@ Between jobs, the conductor watches the Workboard, so what the user sends is pic
 
 - **How it runs depends on your agent.** Claude Code runs it as a background command and is woken when it returns. An agent without background commands runs it with `-Timeout 540`, and runs it again when it says nothing's new.
 - **Rocco shows it:** Up next says the conductor is listening while `wait` runs, and working while your agent runs anything else.
-- **No conductor running** when the user hands something over (a note, an answer, an approved plan): Rocco opens your agent in its own window as the conductor, on what's waiting. So keep one conductor per game: the session Rocco opened, or the one the user started.
+- **No conductor running** when the user hands something over (a note, an answer, an approved plan): Rocco opens your agent in its own window, minimized in the taskbar, as the conductor, on what's waiting. So keep one conductor per game: the session Rocco opened, or the one the user started.
 
 ## Claims
 

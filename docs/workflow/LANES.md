@@ -32,13 +32,13 @@ A lane is created once per game, but opened per PC. A lane that exists costs onl
 
 ## Open them
 
-`..\..\_tools\rocco\rocco.ps1 lanes` (from `repo\`) opens this PC's lanes in one go: it makes any lane that's missing (`tools\add-lane.ps1`), makes any missing place (`places\<CODE>-Main.rbxl` and `<CODE>-LaneN.rbxl`, a plain baseplate with its `__lync_port` already set), starts Lync for each checkout that isn't served yet, and opens each place in Studio that isn't open. What's there already is left alone. `-Count K` records this PC's row first. Rocco runs the same thing when the user picks a number. Probe each lane before its first task, and set the worker test profile once the game has one (TESTING.md).
+`..\..\_tools\rocco\rocco.ps1 lanes` (from `repo\`) opens this PC's lanes in one go: it makes any lane that's missing (`tools\add-lane.ps1`), makes any missing place (`places\<CODE>-Main.rbxl` and `<CODE>-LaneN.rbxl`, a plain baseplate with its `__lync_port` already set), starts Lync (with no window) for each checkout that isn't served yet, and opens each place in Studio that isn't open. What's there already is left alone. `-Count K` records this PC's row first. Rocco runs the same thing when the user picks a number. Probe each lane before its first task, and set the worker test profile once the game has one (TESTING.md).
 
 ## Lync
 
-- **Starting servers:** `tools\serve-all.bat` starts Lync for the Main place and every lane this PC opens ("How many lanes"), each in its own window; `tools\serve-all.bat dry` lists what it would start. `tools\serve.bat` serves just the checkout it's in. In a lane it reads `.lane-port` and serves a generated `lane.project.json` (both gitignored).
-- **Finding Lync:** `serve.bat` looks in the RoDev folder first (`RoDev\_tools\lync\lync.exe`), then on PATH, so every game in a RoDev folder shares one copy (WORKSTATION.md). Lync's Studio plugin installs itself on the first serve; restart Studio after.
-- **The user starts Lync.** A server started from an agent's shell dies with that shell. If the conductor must restart one, start it detached:
+- **Starting servers:** Rocco starts Lync for the Main place and every lane this PC opens ("How many lanes") with no windows: Lanes in its sidebar, `rocco.ps1 lanes`, or Start Lync in Connections. Each server's output goes to `<Game>\rocco\lync\main.log` or `laneN.log`; Connections' Studio sync row stops them, and so does quitting Rocco. Without Rocco, `tools\serve-all.bat` starts them, each in its own window (`tools\serve-all.bat dry` lists what it would start), and `tools\serve.bat` serves just the checkout it's in. In a lane, both read `.lane-port` and serve a generated `lane.project.json` (both gitignored).
+- **Finding Lync:** the RoDev folder's copy first (`RoDev\_tools\lync\lync.exe`), then PATH, so every game in a RoDev folder shares one copy (WORKSTATION.md). Lync's Studio plugin installs itself on the first serve; restart Studio after.
+- **The user starts Lync.** If the conductor must restart one (it isn't serving, so the place doesn't sync), `..\..\_tools\rocco\rocco.ps1 lanes` starts whichever of this PC's servers aren't running, detached from your shell. Without Rocco, a server started from an agent's shell dies with that shell, so start it detached:
   `Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = 'cmd.exe /K "<checkout>\tools\serve.bat"' }`
   After a restart, Studio's Lync plugin may wait on **Resume** until the user clicks it.
 
