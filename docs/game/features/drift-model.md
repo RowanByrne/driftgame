@@ -1,6 +1,7 @@
 # Feature: Drift model and one-input control
 
-**Status:** specced. **Owner task:** none yet (`docs/CLAIMS.md`).
+**Status:** built, waiting on the user's feel judgement. **Owner task:** `T-003`, branch
+`agent/drift-model` (`docs/CLAIMS.md`).
 
 The prototype's whole point: prove the drift feels great before anything else is built
 (`PITCH.md` "Biggest risks", `ROADMAP.md` "Next").
@@ -15,39 +16,48 @@ Roblox's physics does not drive the car (`PITCH.md` "Not doing"). The car is mov
 
 1. The player spawns in the playground sitting in a car, already in control.
 2. Throttle is automatic in the prototype: the car accelerates toward its top speed on its own, so a first-time player only has to steer and drift. Brake and reverse are on a second input.
-3. Steering is an axis: left and right.
-4. **One input starts the drift.** Hold it with any steering angle and the rear breaks loose; the car rotates into the slide and keeps rotating while held.
-5. While sliding, steering is counter-steer: it sets how wide the slide runs, and the slide itself bleeds speed, so a corner is taken by sliding rather than by braking.
-6. Releasing the input hooks the rear back up. Grip returns over a short blend, not instantly, so an exit can be caught cleanly or botched.
+3. **One gesture does everything.** A finger goes down, or the mouse button does, and from then until it comes up the only thing that matters is how far across the screen it has moved from where it went down (`DECISIONS.md`, 2026-11-03). A little offset steers.
+4. **The same offset starts the drift.** Hold it past `DriftOffset`, or flick it across faster than `DriftFlickRate`, and the rear breaks loose. There is no drift button: the patient way in and the quick way in are two numbers, so which one a player settles on is tuning and not a decision buried in the code. Once loose it stays loose while the pointer is down.
+5. While sliding, the offset is not the steering wheel: it asks for a *slide angle*, full lock being `DriftAngleMax`, and the front wheels counter-steer to it by themselves. A real slide is an unstable balance held by several corrections a second, and a thumb on a phone cannot do that and should not have to. The car turns in, the wheels unwind as the angle builds, and they catch it the moment it goes past what was asked for. **Easing the finger back toward the middle is the counter-steer** — asking for a narrower slide — which is why it is not a separate mode and there is nothing else to press. The slide bleeds speed, so a corner is taken by sliding rather than by braking.
+6. Lifting the finger hooks the rear back up. Grip returns over a short blend (`GripBlendOut`), not instantly, so an exit can be caught cleanly or botched.
 7. Hitting an obstacle or a wall scrubs speed and straightens the car; it never flips or ragdolls. Falling off the world respawns the car at the nearest spawn point.
 
-**(proposed)** The touch scheme is: the left half of the screen steers (a virtual stick), the right half held is drift. The alternative, one finger doing both (drag sideways to steer, hold to drift), is the closer match to the comparison game. Build the two-thumb scheme first because it separates the variables; the one-finger scheme is a config switch to try in the same playtest. The user picks after feeling both ("Open questions").
+**Touch and mouse are the same gesture and the same code** (`Drift/DragControl`), so there is one scheme to tune rather than two. Keyboard and gamepad cannot slide a thumb, so they keep a steering axis and a discrete drift button; every device works, but only one of them is the scheme the game is designed around.
 
 ## Rules and numbers
 
 Every number below lives in `Shared/Config/Drift.luau`, none of them in the logic. These are starting values to tune in the playtest, not decisions.
 
-**The model.** A bicycle model: one front contact point and one rear contact point, each producing a lateral force from its slip angle, integrated by hand at a fixed step.
+**The model.** A bicycle model: one front contact point and one rear contact point, each producing a lateral force from its slip angle, integrated by hand at a fixed step. Three things are easy to get wrong and were, so they are written down:
+
+- **The body axes turn.** `u` and `v` are measured along axes that rotate at the yaw rate, so a velocity that is not changing in the world still moves between them: `u̇` gains `v·r` and `v̇` loses `u·r`. Both halves, or the car's velocity is dragged round with its nose and the model pumps speed into itself until it runs away. They also give the airborne case for free: with no tyre force, those two terms alone hold the world velocity still while the body yaws.
+- **The front tyre's force is square to the wheel, not to the body.** At a steering angle it therefore has a backwards component as well as a sideways one. That component is cornering drag; without it the steered wheel does positive work on the car and a long corner accelerates past top speed.
+- **The slide angle is a free mode.** Once both tyres are saturated they hold whatever angle the car is already at and pick none of their own, so no amount of grip tuning produces a slide. `DriftYawAssist` is what drives it, and it drives the *yaw rate*, not a moment: the slip angle only moves when the nose turns faster than the velocity does, and the velocity turns at (lateral force ÷ speed), so the rate that holds the slide still is known exactly and anything above it opens the slide further.
 
 | Number | Start | What it does |
 |---|---|---|
 | `TopSpeed` | 90 studs/s | Free speed on a straight |
-| `Accel` | 45 studs/s² | How fast it reaches top speed |
+| `Accel` | 80 studs/s² | How fast it reaches top speed. It has to cover what a slide scrubs off, or every drift decays into a donut |
 | `BrakeDecel` | 90 studs/s² | Brake input |
 | `CoastDecel` | 12 studs/s² | Drag with no input |
 | `SteerAngleMax` | 32° | Front wheel angle at full lock, at low speed |
 | `SteerAngleMin` | 12° | Front wheel angle at full lock, at top speed |
 | `SteerRate` | 6 /s | How fast the wheels reach the commanded angle |
+| `DriftAngleMax` | 35° | The slide the stick asks for at full lock. The car settles a little under it, about 23° at these numbers, because the tyres fight it the whole way |
+| `CounterSteer` | 0.05 | How far past the travel direction the wheels are nudged, per radian of slide still wanted. Small because the nudge is a tyre *slip* angle and the tyre is saturated by 16° |
 | `GripFront` | 1.6 | Front lateral grip coefficient |
 | `GripRear` | 1.5 | Rear lateral grip, gripping |
-| `GripRearDrift` | 0.55 | Rear lateral grip while the drift input is held |
+| `GripRearDrift` | 0.4 | Rear lateral grip while the drift input is held |
 | `GripBlendIn` | 0.08 s | Grip fall-off when the drift input goes down |
 | `GripBlendOut` | 0.35 s | Grip return when it is released: the catch |
-| `SlipSpeedBleed` | 0.6 | What a degree of slip angle costs in speed per second |
-| `DriftYawAssist` | 1.1 | Extra yaw while drifting, so a slide starts without fighting it |
+| `SlipSpeedBleed` | 0.35 | What a degree of slip angle costs in speed per second, on top of what the lateral force already scrubs |
+| `DriftYawAssist` | 18 /s | How hard the car is held to the yaw rate its slide needs |
+| `DriftAngleTime` | 0.3 s | How long it takes to swing to the angle asked for |
 | `SlipAngleMax` | 55° | Past this the car is spinning out and straightens itself |
-| `Wheelbase` | 6 studs | Distance between the contact points |
+| `Wheelbase` | 12 studs | Distance between the contact points |
 | `FixedStep` | 1/120 s | Simulation step, independent of frame rate |
+
+**The car's size is a handling number, not decoration.** The wheelbase and the steering lock together fix the tightest circle the car can physically describe, `Wheelbase / tan(lock)`. At the 6 studs this spec first guessed, full lock is a 10-stud circle on a car 8 studs long: the car pirouettes rather than slides, and no tyre tuning reaches past that, because the geometry gets there first. The built car is 16 studs long on a 12-stud wheelbase — 19 studs at full lock, 56 at top speed — and `YawInertia` (25 studs²) is that body's own, `(length² + width²) / 12`. Change the body and change both.
 
 **Ground.** One downward ray per contact point each step finds the surface; the car's height and pitch and roll follow the surface normal over `GroundFollow` (0.12 s), so ramps and berms read as shape rather than as steps. Airborne (no hit within `RideHeight` + 2 studs) the car keeps its velocity, falls at `Gravity` (110 studs/s²), and steering only rotates it in yaw.
 
@@ -57,7 +67,15 @@ Every number below lives in `Shared/Config/Drift.luau`, none of them in the logi
 
 A programmer-art debug readout only, top left, toggled by a key or button: speed, slip angle, yaw rate, grip state (gripping, breaking, drifting, catching), airborne, and the frame step. Nothing else. The real HUD waits for scoring (`ROADMAP.md`).
 
-Touch controls are programmer art: a plain steering stick on the left and a plain drift button on the right, both sized for a thumb (`docs/workflow/UI.md` layouts).
+The control's own art is programmer art (`docs/workflow/UI.md` layouts): while a finger or the mouse is down, a track across the bottom of the screen with the middle marked and a knob showing the offset, turning red and reading DRIFT once the rear has let go. It is there so a tester can see what the gesture is being read as; it is not the shipping HUD. A plain BRAKE button sized for a thumb, and a DBG button for the readout, are the only other things on screen.
+
+| Number | Start | What it does |
+|---|---|---|
+| `DragFullLock` | 140 px | Horizontal travel from where the finger went down to full lock |
+| `DragDeadzone` | 0.06 | Share of full lock ignored around the origin |
+| `DriftOffset` | 0.55 | Share of full lock held out past which the rear lets go |
+| `DriftFlickRate` | 1400 px/s | Lateral speed that breaks the rear loose whatever the offset |
+| `DriftFlickSmoothing` | 0.06 s | What the flick rate is averaged over, so one jittery sample cannot start a drift |
 
 ## Server and client
 
@@ -67,12 +85,26 @@ For the prototype that is the whole contract: there is nothing scored, sold or s
 
 ## Contracts
 
-New, all added to `CONTRACTS.md` in the same commit as the code:
+In `CONTRACTS.md`:
 
 - Remote `CarSpawn` (server to client, event): the car model and its spawn CFrame.
 - Remote `CarState` (client to server, unreliable event): CFrame, velocity and drift state, at 20 Hz.
 - Remote `CarStateOther` (server to client, unreliable event): the same for other players' cars.
 - `DriftController:DebugState()` returns the model's full state, for tests and agent playtests.
+- `DriftController:DebugDrive(inputs, seconds, opts)` returns the path **and** a summary of what the drive did: entry and exit speed, peak slip, when the rear let go, how far round the car came.
+- `CarInputController:DebugSetInput(steer, drift, brake)` and `DebugClearInput()` drive the live car from a test with no keyboard.
+
+## How it is laid out
+
+`DriftController` is only the lifecycle: take the car the server spawned, read the input once a frame, spend the frame in whole simulation steps, draw it, tell the server. The work is in `StarterPlayerScripts/Drift/`:
+
+| Module | What it is |
+|---|---|
+| `Model` | The model: pure maths plus two injected world queries. No player, no car, no Workspace — which is what makes `DebugDrive` and the determinism test possible at all |
+| `Sim` | The fixed-step accumulator, in one place, shared by the live loop, `DebugDrive` and the tests, so all three run the same code |
+| `World` | The only two questions the model asks the Workspace: the ground under a contact point, and anything solid in the way. `World.flat(y)` is the same interface over a plane |
+| `Render` | Writes each part's CFrame from the state. Front wheels show the *real* wheel angle, counter-steer included |
+| `DebugHud`, `TouchControls`, `RemoteCars` | The readout, the thumb controls, and the other players' cars |
 
 ## Analytics
 
@@ -92,17 +124,27 @@ Placeholder: the car is a box with four cylinders, built by code. No sound in th
 
 ## Testing
 
-Measured, not guessed (`docs/workflow/TESTING.md`):
+Measured, not guessed (`docs/workflow/TESTING.md`). `ServerScriptService/Tests/DriftTests.luau`, through the server bridge as `DebugDriftTests`. Measured 2026-11-03 on `DR-Lane1`:
 
-- **A repeatable line.** `DebugDrive(inputs, seconds)` feeds a recorded input sequence to the model with no player and returns the path. Running it twice gives the same path to within a stud: that is determinism.
-- **A corner.** From a standing start, a scripted input sequence takes a 90° corner of the playground. The log gives entry speed, peak slip angle, exit speed, and the time from input to the rear breaking loose. Those are the numbers the tuning conversation uses.
-- **Frame independence.** The same input sequence at 30, 60 and 120 FPS ends within 2 studs of the same point.
-- **No physics.** The car's parts are anchored, and the car model holds no BodyMover, VectorForce or constraint: asserted in an automated test, because this is the rule most easily broken later.
-- **Playtest:** drive it. The user decides whether it feels right; that is the gate.
+| Check | Measured |
+|---|---|
+| **A repeatable line.** `DebugDrive` twice from the same start, within a stud | 142 points, worst deviation **0.000000 studs** |
+| **Frame independence.** The same inputs at 30, 60 and 120 FPS, within 2 studs | worst gap **0.727 studs**, all of it the leftover in the accumulator (839 steps against 840) |
+| **A corner.** A scripted 90° corner from a standing start | entry **83.9** studs/s, peak slip **25.8°**, exit **70.4** studs/s (84% of entry), rear loose **0.242 s** after the input, turned **94.6°** |
+| **No runaway.** 12 s of lock-to-lock with the drift held | top speed **61.3** (ceiling 103.5), top yaw **3.58 rad/s** (ceiling 4.0) |
+| **No physics.** No BodyMover, VectorForce, constraint or joint, every part anchored | a fresh car and every live car: **5 parts, all anchored, nothing that moves them** |
+| **A bare plate is drivable**, with nothing tagged `DriftSurface` | 87.5 studs/s, 0 s airborne |
+| **The numbers live in Config.** Halving `TopSpeed` halves the car | 89.9 → 45.0 studs/s |
+
+The same corner driven live on the playground, through the client bridge: entry 90 studs/s, slide held at **−25.8°** with the front wheels counter-steered **−22.1°**, 72.4 studs/s through the corner, exit 81.8 studs/s, turned **−93.4°**.
+
+- **Playtest:** drive it. The user decides whether it feels right; that is the gate. Nothing above is a feel judgement — those checks only catch a model that has stopped working.
 
 ## Open questions
 
-- **The touch scheme:** two thumbs or a true one finger (above). The user decides after feeling both.
+- ~~**The touch scheme:** two thumbs or a true one finger.~~ **Decided 2026-11-03:** one finger or the mouse, slid left and right, the same offset steering and drifting. The two-thumb scheme is dropped (`DECISIONS.md`).
+- **Where the two ways into a drift land.** `DriftOffset` (hold it out) and `DriftFlickRate` (snap it across) are both live, and the starting numbers are a guess at where a thumb sits. Which one a player ends up using, and whether the other should go, is a playtest answer.
+- **How much the car drifts for the player.** The stick asks for a slide angle and the front wheels counter-steer to it on their own (`CounterSteer`, `DriftAngleMax`, `DriftYawAssist`). That is a design decision, not only a tuning one: a car that holds its own slide is one a thumb can drive, and a car that does not is one the player learns to catch. Only the user can say which this game wants. The dials are there either way.
 - **Automatic throttle:** keeping it for good is a real design choice (accessibility, mobile), not only a prototype shortcut. Decide after the playtest.
-- **Server validation of car state**, before anything is scored or sold. Not in the prototype.
-- **Car dimensions and weight balance:** one car for now. Cars that feel different from each other is a meta decision, and waits on the open direction in `PITCH.md`.
+- **Server validation of car state**, before anything is scored or sold. Not in the prototype. What is there now is shape only: types, a rate limit, a top speed and a movement budget, horizontal and vertical checked apart, dropping rather than kicking. It cannot tell a respawn from a teleport, so after a few rejections in a row it takes the client's word (`StateResyncDrops`). The real answer is the server knowing where it put the car.
+- **Car dimensions and weight balance:** one car for now, 16 studs long on a 12-stud wheelbase, with the contact points evenly split. Cars that feel different from each other is a meta decision, and waits on the open direction in `PITCH.md`.
