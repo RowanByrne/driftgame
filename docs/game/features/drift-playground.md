@@ -1,6 +1,6 @@
 # Feature: Drift playground
 
-**Status:** specced. **Owner task:** none yet (`docs/CLAIMS.md`).
+**Status:** built (prototype). **Owner task:** `T-004`, branch `agent/drift-playground` (`docs/CLAIMS.md`). The world it describes is in `WORLD.md`; the numbers are in `src/ServerScriptService/Playground/Layout.luau`.
 
 The world the prototype is felt in: "a basic baseplate world with some obstacles to drift around" (`ROADMAP.md` "Next"). Not the game's map, and nothing in it survives into the real one except the lessons.
 
@@ -66,6 +66,24 @@ Placeholder: flat colours from `ART-DIRECTION.md`'s palette if there is one, els
 - A ray down from each named spot hits a part tagged `DriftSurface` within 5 studs.
 - The circle's and corners' segment counts are asserted, because the fidelity rule above is the one that quietly breaks the drift model.
 - Part count stays under 1,500, and a playtest joins with no console warnings.
+
+
+## As built
+
+| Module | What it is |
+|---|---|
+| `ServerScriptService/Playground/Layout.luau` | Every position and size: the plate, the course chain, the circle, the markers and the cone scatter. Nothing else holds a coordinate |
+| `ServerScriptService/Playground/Path.luau` | The pure maths: walking a straight, an arc and a ring. Every node of an arc sits on the true circle, so consecutive nodes are its chords |
+| `ServerScriptService/Playground/Build.luau` | Turns nodes into anchored, tagged parts. Neighbouring segments share their endpoints, so the top faces meet exactly and a ground ray reads a curve, never a joint |
+| `ServerScriptService/Services/PlaygroundService.luau` | Builds the world at `Init` (`Priority` 100), hands out the spots, catches fallers, resets cones |
+| `ReplicatedStorage/Shared/Config/Playground.luau` | The tuning that is not geometry: the fall height, the cone reset, the part budget, the placeholder palette |
+| `ServerScriptService/Tests/PlaygroundTests.luau` | The asserted rules: spots on surfaces, segment counts, everything anchored and constraint-free but the cones, the part budget, and the ray walks |
+
+**The course, as a chain.** Each step starts where the last one ended, so the surface is continuous by construction and moving one feature moves everything after it. Straight 620, 90 degree corner at radius 150 over a 4-stud crest, link 210, 180 degree hairpin at radius 62, link 190, S-bend of 72 degrees each way at radius 120 with 50 between, link 170, a 90 degree berm at radius 160 banked 12 degrees, link 150, a ramp climbing 11 studs over 130 and an 18-stud lip. The circle is separate: radius 150 to the middle of its road, banked 4 degrees.
+
+**Why the berm costs 192 segments.** A part can bank but it cannot twist, so where the bank changes, two neighbouring segments disagree at the road's edge by half the width times the bank change over one segment. Its arc length, bank and segment count are set by that, not by taste. A banked ribbon also rotates about its centre line, which would bury its inner edge in the plate, so the centre line lifts with the bank to keep that edge level with the road: the berm and the circle are bowls to lean on, not walls.
+
+**Measured** (`DR-Lane2`, 2026-11-03): 493 parts, 64 cones. The largest surface height change per stud travelled, along the ideal curve of each feature, is in `WORLD.md` "Surface fidelity": 0.004 studs on the circle, 0.098 on the 90 degree corner, 0.078 on the berm, 0.127 up the ramp, with no sample missing a tagged surface.
 
 ## Open questions
 

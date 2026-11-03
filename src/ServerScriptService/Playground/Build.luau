@@ -1,0 +1,166 @@
+--!nonstrict
+-- Build: turns a list of Path nodes into parts. Knows nothing about the layout; it is
+-- given nodes, a width and height and bank profiles, and it makes the surface.
+--
+-- Two rules it never breaks (features/drift-playground.md "Rules and numbers"):
+--   * Consecutive nodes share their endpoints, so the top faces meet exactly: a ray
+--     walking the surface reads a piecewise-linear curve, never a step at a joint.
+--   * Every part it makes is anchored and carries no constraint. Cones are built by
+--     the service, not here.
+
+local CollectionService = game:GetService("CollectionService")
+
+local Build = {}
+
+Build.SurfaceTag = "DriftSurface"
+
+local UP = Vector3.yAxis
+
+function Build.part(name: string, size: Vector3, cf: CFrame, colour: Color3, parent: Instance): Part
+	local part = Instance.new("Part")
+	part.Name = name
+	part.Size = size
+	part.CFrame = cf
+	part.Anchored = true
+	part.CanCollide = true
+	part.CastShadow = false
+	part.Material = Enum.Material.SmoothPlastic
+	part.Color = colour
+	part.TopSurface = Enum.SurfaceType.Smooth
+	part.BottomSurface = Enum.SurfaceType.Smooth
+	part.Parent = parent
+	return part
+end
+
+function Build.surface(name: string, size: Vector3, cf: CFrame, colour: Color3, parent: Instance): Part
+	local part = Build.part(name, size, cf, colour, parent)
+	CollectionService:AddTag(part, Build.SurfaceTag)
+	return part
+end
+
+-- The height and bank profiles, by name. t runs 0 to 1 along the feature.
+local function smoothstep(t: number): number
+	return t * t * (3 - 2 * t)
+end
+
+-- `from` is the height the previous feature ended at, so the chain stays continuous.
+function Build.heightProfile(spec: { [string]: any }?, from: number): ((number) -> number, number)
+	if not spec then
+		return function()
+			return from
+		end, from
+	end
+	local shape = spec.shape
+	if shape == "crest" then
+		local peak = spec.peak
+		return function(t: number)
+			return from + peak * math.sin(math.pi * t)
+		end, from
+	elseif shape == "ramp" then
+		local to = spec.to
+		return function(t: number)
+			return from + (to - from) * smoothstep(t)
+		end, to
+	end
+	return function()
+		return from
+	end, from
+end
+
+-- Bank in radians. `sign` is +1 for a left-hand turn and -1 for a right-hand one, so a
+-- positive `degrees` always raises the outer edge.
+function Build.bankProfile(spec: { [string]: any }?, sign: number): (number) -> number
+	if not spec then
+		return function()
+			return 0
+		end
+	end
+	local radians = math.rad(spec.degrees) * sign
+	if spec.shape == "crest" then
+		return function(t: number)
+			return radians * math.sin(math.pi * t)
+		end
+	end
+	return function()
+		return radians
+	end
+end
+
+-- A banked ribbon rotates about its centre line, which would bury its inner edge in the
+-- plate. This lifts the centre line by just enough to keep that inner edge level with
+-- the road, so a banked corner is a bowl you drive on to, never a wall or a trench.
+function Build.levelInnerEdge(heightAt: (number) -> number, bankAt: (number) -> number, halfWidth: number): (number) -> number
+	return function(t: number)
+		return heightAt(t) + halfWidth * math.abs(math.sin(bankAt(t)))
+	end
+end
+
+-- The world point and axes of a node, once the height and bank profiles are applied.
+function Build.frame(node: { pos: Vector3, yaw: number }, y: number, bank: number): (Vector3, Vector3, Vector3)
+	local rightFlat = Vector3.new(math.cos(node.yaw), 0, -math.sin(node.yaw))
+	local cosB, sinB = math.cos(bank), math.sin(bank)
+	local right = rightFlat * cosB + UP * sinB
+	local up = -rightFlat * sinB + UP * cosB
+	return Vector3.new(node.pos.X, y, node.pos.Z), right, up
+end
+
+export type RibbonOptions = {
+	name: string,
+	width: number,
+	thickness: number,
+	colour: Color3,
+	baseY: number, -- the road's top, in world Y, where the profile reads zero
+	heightAt: (number) -> number,
+	bankAt: (number) -> number,
+	closed: boolean?, -- a ring: the last node is the first
+	parent: Instance,
+}
+
+-- Builds one part per pair of nodes. Returns the parts and the world points of the
+-- centre line, which the service keeps so tests can walk the surface.
+function Build.ribbon(nodes: { { pos: Vector3, yaw: number } }, opts: RibbonOptions): ({ Part }, { Vector3 })
+	local count = #nodes
+	local parts: { Part } = {}
+	local points: { Vector3 } = {}
+
+	local tops: { Vector3 } = {}
+	local ups: { Vector3 } = {}
+	for i = 1, count do
+		local t = (i - 1) / (count - 1)
+		local y = opts.baseY + opts.heightAt(t)
+		local pos, _, up = Build.frame(nodes[i], y, opts.bankAt(t))
+		tops[i] = pos
+		ups[i] = up
+		points[i] = pos
+	end
+
+	local half = opts.thickness * 0.5
+	local overlap = 0.2
+	for i = 1, count - 1 do
+		local a, b = tops[i], tops[i + 1]
+		local delta = b - a
+		local length = delta.Magnitude
+		if length > 1e-4 then
+			local forward = delta.Unit
+			local up = (ups[i] + ups[i + 1]).Unit
+			local right = forward:Cross(up).Unit
+			-- Re-square the frame: right and forward are already perpendicular enough,
+			-- and up is rebuilt from them so the box is not skewed.
+			up = right:Cross(forward).Unit
+			local centre = (a + b) * 0.5 - up * half
+			local cf = CFrame.fromMatrix(centre, right, up)
+			local part = Build.surface(
+				`{opts.name}_{i}`,
+				Vector3.new(opts.width, opts.thickness, length + overlap),
+				cf,
+				opts.colour,
+				opts.parent
+			)
+			table.insert(parts, part)
+		end
+	end
+
+	return parts, points
+end
+
+return Build
