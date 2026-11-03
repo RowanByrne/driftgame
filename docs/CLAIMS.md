@@ -10,6 +10,7 @@ Every task in progress and the files it owns, so parallel sessions and workers n
 | Branch | Lane | Files owned | Since |
 |---|---|---|---|
 | `agent/drift-model` | lane1 | `src/StarterPlayerScripts/Controllers/*` (new), `src/StarterPlayerScripts/Drift/*` (new), `src/ReplicatedStorage/Shared/Config/Drift.luau` (new), `src/ReplicatedStorage/Shared/CarModel.luau` (new), `src/ServerScriptService/Services/CarService.luau` (new), `src/ServerScriptService/Tests/DriftTests.luau` (new), `docs/game/features/drift-model.md` | 2026-11-03 |
+| `agent/playground-open` | lane2 | `src/ServerScriptService/Services/PlaygroundService.luau`, `src/ServerScriptService/Playground/*`, `src/ReplicatedStorage/Shared/Config/Playground.luau`, `src/ServerScriptService/Tests/PlaygroundTests.luau`, `docs/game/features/drift-playground.md`, `docs/game/WORLD.md` | 2026-11-03 |
 
 ## Notes between sessions
 
