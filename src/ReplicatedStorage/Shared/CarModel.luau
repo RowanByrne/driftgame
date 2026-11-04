@@ -315,8 +315,9 @@ local function shellPart(d, scale: number, at: CFrame, meshes: { [string]: MeshP
 	return part
 end
 
--- A group of shell parts, built about its own origin, with its pivot there -- so `Render`
--- can put it anywhere with one `PivotTo`.
+-- A group of shell parts, built about its own origin. Its pivot is set there too, which
+-- `Render` does not use (it writes each part absolutely) but `car:PivotTo()` and Studio
+-- both do, so the group moves sensibly with the car it is parented into.
 local function shellGroup(
 	name: string,
 	parts,
