@@ -9,6 +9,7 @@ Every task in progress and the files it owns, so parallel sessions and workers n
 
 | Branch | Lane | Files owned | Since |
 |---|---|---|---|
+| `agent/remote-cars-freeze` (T-021) | 1 | `src/StarterPlayerScripts/Drift/RemoteCars.luau` | 2026-11-03 |
 
 ## Notes between sessions
 
