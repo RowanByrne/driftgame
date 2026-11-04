@@ -30,9 +30,11 @@ local Net = require(ReplicatedStorage.Shared.Net)
 local DriftFolder = script.Parent.Parent:WaitForChild("Drift")
 local DebugHud = require(DriftFolder.DebugHud)
 local DriftModel = require(DriftFolder.Model)
+local EngineSound = require(DriftFolder.EngineSound)
 local RemoteCars = require(DriftFolder.RemoteCars)
 local Render = require(DriftFolder.Render)
 local Sim = require(DriftFolder.Sim)
+local SkidSound = require(DriftFolder.SkidSound)
 local Trajectory = require(DriftFolder.Trajectory)
 local Wheels = require(DriftFolder.Wheels)
 local World = require(DriftFolder.World)
@@ -123,9 +125,18 @@ function DriftController:Init()
 	self.askedAt = 0
 	-- The tyre marks and the smoke (T-062, features/car-fx.md). The object is free until a
 	-- rig exists: it holds no instance and does no work without one, and its sixteen are
-	-- built once, when the rig is caught, and never again. The car's SOUNDS land beside it
+	-- built once, when the rig is caught, and never again. The car's SOUNDS sit beside it
 	-- (T-064) and take the same two calls, `Attach` on the rig and `Update` on the frame.
 	self.wheels = Wheels.new()
+	-- The engine note and the tyre squeal (T-064, features/car-fx.md). Free until a rig
+	-- exists, exactly as the wheels are: no `Sound` is made until the car's parts have
+	-- arrived, and then one each, once. BOTH ARE THE CLIENT'S AND THE LOCAL CAR'S -- no
+	-- remote, no packet field, no server instance, and another player's car is silent
+	-- this round. In an agent's playtest they are muted at the instance and go on
+	-- computing, so a silent test still measures the whole state machine
+	-- (ReplicatedFirst/QuietPlay, docs/workflow/TESTING.md).
+	self.engineSound = EngineSound.new()
+	self.skidSound = SkidSound.new()
 	self._carSpawn = Net.event("CarSpawn")
 	self._carRespawn = Net.event("CarRespawn")
 	self._carState = Net.unreliable("CarState")
@@ -220,9 +231,13 @@ function DriftController:_attach(car: Model, spawnCFrame: CFrame)
 	self.runner = Sim.newRunner(spawnCFrame)
 	self.remoteCars:SetOwnCar(car)
 	self.wheels:Cut()
+	self.engineSound:Cut()
+	self.skidSound:Cut()
 	if self:_ensureRig() then
 		Render.apply(self.rig, self.runner.state)
 		self.wheels:Attach(self.rig)
+		self.engineSound:Attach(self.rig)
+		self.skidSound:Attach(self.rig)
 	end
 end
 
@@ -304,8 +319,12 @@ function DriftController:_placeAt(cf: CFrame)
 	self.respawns += 1
 	-- Everything off BEFORE the car is put down. A trail that is still enabled across a
 	-- jump draws one straight black line from where the car was to where it now is,
-	-- across the whole world (T-062).
+	-- across the whole world (T-062). The sounds are cut with them: a squeal that was
+	-- fading up must not carry across the jump, and the gearbox goes back to first rather
+	-- than walking down five gears half a second each (T-064).
 	self.wheels:Cut()
+	self.engineSound:Cut()
+	self.skidSound:Cut()
 	if self:_ensureRig() then
 		Render.apply(self.rig, self.runner.state)
 	end
@@ -316,6 +335,14 @@ function DriftController:_frame(dt: number)
 	if not self.runner then
 		if self.wheels then
 			self.wheels:Update(nil, nil, dt)
+		end
+		-- Still updated with no car: both fade to their floor rather than holding
+		-- whatever they were at when the car went away.
+		if self.engineSound then
+			self.engineSound:Update(nil, nil, dt)
+		end
+		if self.skidSound then
+			self.skidSound:Update(nil, nil, dt)
 		end
 		if self.hud then
 			self.hud:Update(nil, nil)
@@ -348,10 +375,17 @@ function DriftController:_frame(dt: number)
 		-- nowhere else: the rig is the one thing that knows the car's parts have arrived,
 		-- and `Attach` does nothing at all once it has built for a body (T-062).
 		self.wheels:Attach(self.rig)
+		-- The sounds hang off the same body and are attached in the same place, for the
+		-- same reason (T-064).
+		self.engineSound:Attach(self.rig)
+		self.skidSound:Attach(self.rig)
 	end
 	-- Marks and smoke, from this frame's state and this frame's input: the handbrake is an
 	-- input and not model state, so both go in (Drift/Wheels).
 	self.wheels:Update(state, input, dt)
+	-- The engine note, from the road speed alone, and the squeal, from the slip angle.
+	self.engineSound:Update(state, input, dt)
+	self.skidSound:Update(state, input, dt)
 	self.remoteCars:Update(dt)
 
 	-- Where the car would go if the finger stayed exactly where it is: the real model run
@@ -543,6 +577,8 @@ function DriftController:DebugTeleport(cf: CFrame)
 	end
 	self.runner = Sim.newRunner(cf)
 	self.wheels:Cut()
+	self.engineSound:Cut()
+	self.skidSound:Cut()
 	if self:_ensureRig() then
 		Render.apply(self.rig, self.runner.state)
 	end
@@ -614,6 +650,43 @@ function DriftController:DebugWheelFx(on: boolean?): boolean
 		return self.wheels:SetEnabled(not self.wheels.enabled)
 	end
 	return self.wheels:SetEnabled(on == true)
+end
+
+-- What the car's two sounds are doing, and WHY (T-064, features/car-fx.md "Testing").
+-- Read against the live state, so a playtest can say "the squeal is silent because the
+-- slip is 3 degrees" and "the pitch is 1.44 because the box just shifted into second at
+-- 23.6 studs/s" rather than "no sound".
+--
+-- `quiet` being true means an agent's playtest has MUTED the instances and nothing else:
+-- every number below is computed and reported exactly as it would be with sound on.
+function DriftController:DebugSound()
+	local state = self:CurrentState()
+	return {
+		engine = self.engineSound and self.engineSound:DebugState(state) or { attached = false },
+		skid = self.skidSound and self.skidSound:DebugState(state) or { attached = false },
+	}
+end
+
+-- The largest single-frame change in each sound's lerped value since this was last
+-- called, and the counters reset. The "pitch is continuous" check: `engine` must stay
+-- under `(MaxPitch - MinPitch) * PitchLerpSpeed * dt` and a jump means the lerp is not
+-- doing its job.
+function DriftController:DebugSoundMeasure()
+	return {
+		engine = self.engineSound and self.engineSound:ResetMeasure() or 0,
+		skid = self.skidSound and self.skidSound:ResetMeasure() or 0,
+	}
+end
+
+-- The car's sounds on or off wholesale, the same switch `DebugWheelFx` is. It creates and
+-- destroys nothing either way. No argument toggles.
+function DriftController:DebugSoundFx(on: boolean?): boolean
+	if not self.engineSound or not self.skidSound then
+		return false
+	end
+	local want = if on == nil then not self.engineSound.enabled else on == true
+	self.skidSound:SetEnabled(want)
+	return self.engineSound:SetEnabled(want)
 end
 
 function DriftController:DebugToggleReadout(): boolean
