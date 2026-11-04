@@ -9,7 +9,6 @@ Every task in progress and the files it owns, so parallel sessions and workers n
 
 | Branch | Lane | Files owned | Since |
 |---|---|---|---|
-| `agent/ae86-car` (T-020) | 2 | `src/ReplicatedStorage/Shared/CarModel.luau`, `src/StarterPlayerScripts/Drift/Render.luau`, `src/ServerScriptService/Tests/DriftTests.luau`, `assets/*` | 2026-11-03 |
 
 ## Notes between sessions
 

@@ -341,16 +341,33 @@ None.
 
 ## Platform risks
 
-**Copyright.** The reference game's name, art, sound, text and source stay out of this game, its
-repo and anything a player sees — the decompile is read in `_decompiled\`, outside the repo, and
-nothing from it is committed. The car is an untextured block of our own with no manufacturer's
-shape, name or badge (`PITCH.md` "Biggest risks"). What we take is how the maths works, which is
-not what copyright covers.
+**The reference game.** Its name, art, sound, text and source stay out of this game, its repo and
+anything a player sees — the decompile is read in `_decompiled\`, outside the repo, and nothing
+from it is committed. What we take is how the maths works, which is not what copyright covers.
+
+**The car is no longer ours, and this is the open risk.** Since `T-020` it is a real
+manufacturer's car, taken from a third party's Creator Store upload that the uploader near
+certainly had no right to make, and the manufacturer's model name is now in our own source as mesh
+part names. No Initial D livery came across — every decal and texture was checked, and the body is
+plain white — so the anime trade dress is absent and the vehicle design is not. A takedown would
+land on the **owner's account**, not the uploader's.
+
+**It is a placeholder for the feel test and is not approved to publish.**
+`assets/car-ae86/MANIFEST.md` records where it came from and says so; a user decision in
+`DECISIONS.md` comes before it goes anywhere near a published place. Swapping it is one module in
+`Shared/Cars` and one string in `Config.Drift.CarBody`.
 
 ## Art and sound
 
-Placeholder: the car is a box with four cylinders, built by code. No sound yet; engine and tyre
-sound are their own task once the feel is agreed (`AUDIO.md`).
+Placeholder: the AE86 the user added to the Main place, read out of it and written down as Luau in
+`Shared/Cars/AE86` (`T-020`) — 98 anchored parts, scaled onto the config's wheelbase and wheel
+diameter rather than the config being bent to the car. Its PBR maps did not survive: a running game
+cannot create a `SurfaceAppearance` (plugin-only), so each mesh keeps its colour map as a
+`TextureID` and the normal, metalness and roughness maps are dropped.
+
+The box with four cylinders is still there as `CarBody = "block"`, for a place whose meshes will not
+load and for the tests. No sound yet; engine and tyre sound are their own task once the feel is
+agreed (`AUDIO.md`).
 
 ## Testing
 

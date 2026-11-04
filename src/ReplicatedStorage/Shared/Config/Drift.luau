@@ -116,6 +116,16 @@ return {
 	BodyLength = 14, -- studs. OURS: a 4 m car around the reference's wheelbase
 	BodyWidth = 6.4, -- studs. OURS
 	BodyHeight = 3.2, -- studs. OURS
+	CarBody = "ae86", -- OURS. Which body `Shared/CarModel` builds. "ae86" is the car the
+	-- user added to the Main place, read out of it and written down in
+	-- `Shared/Cars/AE86`; "block" is the box and four cylinders, which is
+	-- also what a place whose meshes will not load falls back to.
+	-- The three Body* numbers above only size the block now: the real car
+	-- is scaled onto `Wheelbase` and `WheelDiameter`, because that is
+	-- where the ground rays go. NOT APPROVED TO PUBLISH -- it is a real
+	-- manufacturer's car from a third party's upload
+	-- (`assets/car-ae86/MANIFEST.md`, features/drift-model.md
+	-- "Platform risks")
 	RideHeight = 2.4, -- studs from the car's origin down to the ground. OURS: the wheel
 	-- centres sit one wheel radius up from there and the body clears
 	-- the road
