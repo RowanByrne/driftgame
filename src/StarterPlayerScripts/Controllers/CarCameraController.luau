@@ -49,10 +49,15 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
+local CarModel = require(ReplicatedStorage.Shared.CarModel)
 local Config = require(ReplicatedStorage.Shared.Config)
 
 local DriftFolder = script.Parent.Parent:WaitForChild("Drift")
 local DriftModel = require(DriftFolder.Model)
+-- The car is drawn at the frame's own moment rather than at the last completed step, and
+-- the camera asks Render for that same carried-forward pose so the two never disagree
+-- about where the car is (T-025).
+local Render = require(DriftFolder.Render)
 
 local DriftController = require(script.Parent.DriftController)
 
@@ -125,7 +130,9 @@ end
 -- Everything the camera remembers between frames, in one table, so DebugProbe can run a
 -- second one against a made-up car without touching the live view.
 
-local function newRig(view: View?)
+-- Public so a test can settle a camera of its own against a made-up car without touching
+-- the live one (ServerScriptService/Tests/JitterTests, DebugProbe).
+function CarCameraController.newRig(view: View?)
 	local rig = {
 		ready = false,
 		position = Vector3.zero,
@@ -228,13 +235,25 @@ function CarCameraController._advance(rig, view: View, dt: number): CFrame
 	-- The targets, in whole fixed steps (see the header). The car's own pose is whatever
 	-- this frame says it is: the camera samples the car at frame rate, and only the
 	-- camera's own feedback is held to the step.
+	--
+	-- EACH STEP IS FED THE CAR AS IT WAS AT THAT STEP'S OWN MOMENT (T-025). A step does not
+	-- fall at an even share of the frame: it falls where the accumulator crosses the step,
+	-- which depends on what was left over from the frame before. Feeding it `i / steps`
+	-- instead -- an even share -- files the car's position under the wrong instant by up to
+	-- a whole frame, and a target built at the wrong instant is a camera that creeps and
+	-- snaps even when the car it is following is perfectly smooth. Measured on a 100 Hz
+	-- clock: 1.07 studs of camera movement a frame that the car had not made.
 	local step = math.max(C.CamTargetStep, EPS)
+	local before = rig.accumulator
 	rig.accumulator = math.min(rig.accumulator + dt, step * math.max(C.CamMaxTargetSteps, 1))
+	-- What the frame actually contributed, which is `dt` unless the clamp above ate some
+	-- of it; either way it is the span the fractions below are measured against.
+	local span = math.max(rig.accumulator - before, EPS)
 	local steps = math.floor(rig.accumulator / step)
 	local from = rig.lastView or view
 	for i = 1, steps do
 		rig.prevTarget, rig.prevLookTarget = rig.target, rig.lookTarget
-		stepTargets(rig, lerpView(from, view, i / steps), step)
+		stepTargets(rig, lerpView(from, view, math.clamp((i * step - before) / span, 0, 1)), step)
 		rig.accumulator -= step
 	end
 	rig.steps = steps
@@ -266,13 +285,20 @@ end
 
 -- ---------------------------------------------------------------- lifecycle
 
-local function viewFrom(state): View?
+-- The car as the camera sees it, AT THE FRAME'S OWN MOMENT -- the last completed step
+-- carried across whatever the simulation's accumulator has left over, which is exactly the
+-- pose Render draws the car at (T-025). Following `state.position` instead means the
+-- camera chases a car that is quantised to 1/120 while the car on screen is not, and the
+-- two disagree by up to 1.49 studs: the car shimmers against its own camera even though
+-- both are individually smooth.
+local function viewFrom(state, rem: number): View?
 	if not state then
 		return nil
 	end
+	local position, yaw = Render.subStep(state, rem)
 	return {
-		position = state.position,
-		yaw = state.yaw,
+		position = position,
+		yaw = yaw,
 		velocity = state.velocity,
 		slip = state.slip,
 		speed = DriftModel.speed(state),
@@ -280,7 +306,7 @@ local function viewFrom(state): View?
 end
 
 function CarCameraController:Init()
-	self.rig = newRig()
+	self.rig = CarCameraController.newRig()
 end
 
 function CarCameraController:Start()
@@ -314,7 +340,7 @@ function CarCameraController:_frame(dt: number)
 	if not camera then
 		return
 	end
-	local view = viewFrom(DriftController:CurrentState())
+	local view = viewFrom(DriftController:CurrentState(), DriftController:SubStep())
 	if not view then
 		return
 	end
@@ -393,7 +419,7 @@ function CarCameraController:DebugProbe(opts)
 		C.CamVelocityBlend = opts.blend
 	end
 
-	local rig = newRig(view)
+	local rig = CarCameraController.newRig(view)
 	local maxPosStep, maxLookStep, maxRollDeg = 0, 0, 0
 	local prevPos, prevLook = rig.position, rig.lookPoint
 	local steps = math.floor(seconds * fps)
@@ -457,6 +483,19 @@ end
 -- Watch the LIVE camera for `seconds` and report the worst frame of it: how far the
 -- camera and its look point jumped between frames, how far the view turned, and how far
 -- off the centre of the screen the car ever got. Studio only, and it yields.
+--
+-- It also carries the judder figures (T-025), because the real frame clock is the only
+-- place they can honestly be taken -- a headless harness has to make its frame times up,
+-- and on the clean ones (30, 60, 120 dead steady) every judder in this game measures zero:
+--
+--   `jumpStuds`    the car's drawn position, frame to frame, with the frame's own length
+--                  divided out. Smooth motion on an uneven clock is zero here; a drawing
+--                  that quantises to the simulation step is a whole step of it.
+--   `shimmerDeg`   the same for the angle from the camera's look axis to the car, which is
+--                  what the player actually watches. About 12 screen pixels a degree on a
+--                  1080-line display at this game's field of view.
+--   `drawnGapStuds` how far the drawn car is from where the simulation has it at that
+--                  frame's moment: the proof that none of the above was bought with lag.
 function CarCameraController:DebugRecord(seconds: number)
 	seconds = math.clamp(seconds or 5, 0, 30)
 	local camera = self.camera
@@ -479,14 +518,30 @@ function CarCameraController:DebugRecord(seconds: number)
 		maxSpeed = 0,
 		minFov = math.huge,
 		maxFov = 0,
+		-- the judder figures
+		minDt = math.huge,
+		maxDt = 0,
+		meanDt = 0,
+		maxJumpStuds = 0, -- the car's drawn position, frame length divided out
+		maxCameraJumpStuds = 0, -- the camera's own
+		maxShimmerDeg = 0, -- the car against the camera's look axis
+		maxShimmerPx = 0,
+		maxDrawnGapStuds = 0,
 	}
+
+	-- The previous frame's steps, kept so this frame can be compared with the frame
+	-- length taken out: a long frame moving further is not a jump.
 	local prevPos, prevLook, prevDir = nil, nil, nil
+	local lastCar, lastCarStep, lastDt = nil, nil, nil
+	local lastCamStep, lastAngle, lastAngleStep = nil, nil, nil
 	local clock = 0
 	while clock < seconds do
 		local dt = RunService.RenderStepped:Wait()
 		clock += dt
 		out.frames += 1
 		out.seconds = clock
+		out.minDt = math.min(out.minDt, dt)
+		out.maxDt = math.max(out.maxDt, dt)
 		local cam = self.camera
 		if not cam then
 			break
@@ -495,10 +550,16 @@ function CarCameraController:DebugRecord(seconds: number)
 		local pos = cf.Position
 		local look = pos + cf.LookVector
 		local dir = cf.LookVector
+		local scale = if lastDt and lastDt > 1e-9 then dt / lastDt else 1
 		if prevPos then
 			out.maxPosStep = math.max(out.maxPosStep, (pos - prevPos).Magnitude)
 			out.maxLookStep = math.max(out.maxLookStep, (look - prevLook).Magnitude)
 			out.maxTurnDeg = math.max(out.maxTurnDeg, math.deg(math.acos(math.clamp(dir:Dot(prevDir), -1, 1))))
+			local camStep = pos - prevPos
+			if lastCamStep then
+				out.maxCameraJumpStuds = math.max(out.maxCameraJumpStuds, (camStep - lastCamStep * scale).Magnitude)
+			end
+			lastCamStep = camStep
 		end
 		prevPos, prevLook, prevDir = pos, look, dir
 		out.maxRollDeg = math.max(out.maxRollDeg, math.abs(math.deg(math.asin(math.clamp(cf.RightVector.Y, -1, 1)))))
@@ -506,13 +567,48 @@ function CarCameraController:DebugRecord(seconds: number)
 		out.maxFov = math.max(out.maxFov, cam.FieldOfView)
 
 		local state = DriftController:CurrentState()
-		if state then
-			local d = (pos - state.position).Magnitude
+		local car = DriftController:Car()
+		local body = car and car:FindFirstChild(CarModel.BODY_NAME)
+		-- Where the car is actually DRAWN, read off the part in the world rather than off
+		-- the model: that is what the player is looking at.
+		local drawn = if body and body:IsA("BasePart") then body.Position else state and state.position
+		if state and drawn then
+			local d = (pos - drawn).Magnitude
 			out.minDistance = math.min(out.minDistance, d)
 			out.maxDistance = math.max(out.maxDistance, d)
 			out.maxSlipDeg = math.max(out.maxSlipDeg, math.abs(math.deg(state.slip)))
 			out.maxSpeed = math.max(out.maxSpeed, DriftModel.speed(state))
-			local point, onScreen = cam:WorldToViewportPoint(state.position)
+			out.maxDrawnGapStuds = math.max(out.maxDrawnGapStuds, DriftController:DrawnGap())
+
+			if lastCar then
+				local carStep = drawn - lastCar
+				if lastCarStep then
+					out.maxJumpStuds = math.max(out.maxJumpStuds, (carStep - lastCarStep * scale).Magnitude)
+				end
+				lastCarStep = carStep
+			end
+			lastCar = drawn
+
+			-- The angle from the camera's own look axis to the car: the shimmer the player
+			-- sees, in degrees and then in pixels off this screen.
+			local local3 = cf:PointToObjectSpace(drawn)
+			local depth = math.max(-local3.Z, 1e-3)
+			local angle = Vector2.new(math.deg(math.atan2(local3.X, depth)), math.deg(math.atan2(local3.Y, depth)))
+			if lastAngle then
+				local angleStep = angle - lastAngle
+				if lastAngleStep then
+					local shimmer = (angleStep - lastAngleStep * scale).Magnitude
+					out.maxShimmerDeg = math.max(out.maxShimmerDeg, shimmer)
+					local size = cam.ViewportSize
+					if size.Y > 0 and cam.FieldOfView > 0 then
+						out.maxShimmerPx = math.max(out.maxShimmerPx, shimmer * size.Y / cam.FieldOfView)
+					end
+				end
+				lastAngleStep = angleStep
+			end
+			lastAngle = angle
+
+			local point, onScreen = cam:WorldToViewportPoint(drawn)
 			local size = cam.ViewportSize
 			local centre = Vector2.new(size.X, size.Y) / 2
 			local offset = (Vector2.new(point.X, point.Y) - centre).Magnitude
@@ -524,6 +620,7 @@ function CarCameraController:DebugRecord(seconds: number)
 				out.offScreenFrames += 1
 			end
 		end
+		lastDt = dt
 	end
 	if out.minDistance == math.huge then
 		out.minDistance = 0
@@ -531,6 +628,10 @@ function CarCameraController:DebugRecord(seconds: number)
 	if out.minFov == math.huge then
 		out.minFov = 0
 	end
+	if out.minDt == math.huge then
+		out.minDt = 0
+	end
+	out.meanDt = if out.frames > 0 then out.seconds / out.frames else 0
 	return out
 end
 
