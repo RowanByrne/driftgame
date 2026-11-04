@@ -40,4 +40,8 @@ Each PC that works on this game, and how many lanes it opens: `lane1` up to that
 
 ## Current focus
 
-The first prototype is built and on `main`: the drift model on one gesture, and an open plate to feel it in (`features/drift-model.md`, `features/drift-playground.md`). **It is waiting on the user to drive it** — the feel is the gate, and nothing past it is decided until they say it is right. `PITCH.md` is still Draft and waiting on them too; the prototype ran ahead of that gate on their instruction (DECISIONS.md, 2026-11-03). Meta progression and the larger scale stay undecided until the feel is proven. Tuning is numbers in `Shared/Config/Drift.luau`, not code.
+**The feel gate is passed.** The drift model is a port of the reference game's, read off a decompile of it, and the user drove it and approved it on 2026-11-03 (DECISIONS.md): the finger IS the car's rate of turn, the drift is momentum lagging behind it, and a quadratic grip force pulls it back — past 90° of slip that force becomes a brake. The one-finger control and the camera are approved with it, and the car is the AE86 the user added, as a **placeholder that is not approved to publish** (`features/drift-model.md` "Platform risks").
+
+Not built, deliberately: the drift score and its multiplier ladder — specced in `features/drift-model.md` "Score", task deleted by the user. Still undecided: what a run is, meta progression and the larger scale. `PITCH.md` is still Draft.
+
+One open tuning question survives the approval: only the bottom fifth of the finger's travel is usable before the car spins rather than drifts, because the reference's real tuning is not in the decompile. Tripling the three grip numbers opens the whole stick (measured). Tuning is numbers in `Shared/Config/Drift.luau`, not code.

@@ -1,9 +1,14 @@
 # Feature: Drift model and one-input control
 
-**Status:** the model is built and measured (`T-012`), and **waiting on the user to drive it** — the
-feel is the gate. The control, the camera and the score below are specced and not yet built; each
-is its own task, and all three read the numbers `T-012` has already written into
-`Shared/Config/Drift.luau`. **Owner task:** `T-012` for the model; the plan behind `T-010`.
+**Status:** built, driven and **approved by the user on 2026-11-03** — the model (`T-012`), the
+one-finger control (`T-013`) and the camera (`T-014`), all merged and measured. The **Score**
+section below is specced and **deliberately not built**: the user deleted that task
+(`DECISIONS.md`, 2026-11-03). Everything else here describes code that exists. **Owner task:**
+none; the plan was `T-011`.
+
+Tuning is numbers in `Shared/Config/Drift.luau`, not code. One open tuning question survives the
+approval and is in "Open questions": only the bottom fifth of the finger's travel is usable before
+the car spins rather than drifts.
 
 **This spec was rewritten on 2026-11-03 and supersedes the model that was on `main`.** Two
 hand-built models have now been driven and neither felt right (`DECISIONS.md`, 2026-11-03): the
@@ -267,6 +272,11 @@ at 120. The model's step is deliberately separate and finer.
 Both are their own task if the user wants them.
 
 ## Score
+
+> **Specced, not built, and that is deliberate.** This was the fourth step of the plan and the user
+> deleted it on 2026-11-03 (`DECISIONS.md`). Nothing below exists in the code. It is kept because
+> the maths was read off the reference and is worth not having to read again — build it from here
+> if and when a run is worth scoring.
 
 Only while the car is drifting (slip ≥ `MinSlipAngleForDrift`) and making forward progress:
 
