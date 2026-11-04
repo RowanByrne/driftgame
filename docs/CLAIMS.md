@@ -9,7 +9,7 @@ Every task in progress and the files it owns, so parallel sessions and workers n
 
 | Branch | Lane | Files owned | Since |
 |---|---|---|---|
-| `agent/road-pieces` (T-044 step 2) | 2 | `src/ReplicatedStorage/Shared/Road/Pieces.luau`, `src/ReplicatedStorage/Shared/Config/Road.luau`, `src/ServerScriptService/Tests/RoadTests.luau`, `docs/game/features/track-generation.md` | 2026-11-04 |
+| `agent/road-search` (T-052) | 1 | `src/ReplicatedStorage/Shared/Road/Generator.luau`, `src/ReplicatedStorage/Shared/Config/Road.luau`, `src/ServerScriptService/Tests/RoadTests.luau` | 2026-11-04 |
 
 ## Notes between sessions
 
