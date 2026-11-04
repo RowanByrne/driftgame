@@ -9,7 +9,6 @@ Every task in progress and the files it owns, so parallel sessions and workers n
 
 | Branch | Lane | Files owned | Since |
 |---|---|---|---|
-| `agent/drifto-slider` (T-013) | 2 | `src/StarterPlayerScripts/Drift/DragControl.luau`, `src/StarterPlayerScripts/Controllers/CarInputController.luau`, `src/StarterPlayerScripts/Drift/SliderHud.luau` (new) | 2026-11-03 |
 | `agent/drifto-camera` (T-014) | 3 | `src/StarterPlayerScripts/Controllers/CarCameraController.luau` | 2026-11-03 |
 
 ## Notes between sessions
