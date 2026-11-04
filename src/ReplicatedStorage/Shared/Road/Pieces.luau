@@ -245,11 +245,30 @@ local function bankProfile(spec: any, sign: number): (number) -> number
 	end
 end
 
--- How much a bank blended from `roll0` into the piece's own reads at `u`. Smoothstepped,
--- so it leaves the socket at exactly the bank it arrived at AND at zero rate of change:
--- a join is never a kink, whichever way the two pieces are banked.
+-- How much a bank blended from `roll0` into the piece's own reads at `u`.
+--
+-- WHAT IS BLENDED IS THE DIFFERENCE AT THE SOCKET, NOT THE WHOLE PROFILE, and that
+-- distinction is a bug fix rather than a refinement (T-068). This used to be
+-- `roll0 + (own(u) - roll0) * smoothstep(u)`, which is right for a bank that is CONSTANT
+-- down the piece and wrong for one that is not: a crest's own bank is zero at both ends,
+-- so multiplying it by a smoothstep that is 0.5 at the middle of the piece attenuated the
+-- whole crest. MEASURED: a crest asking for 30 degrees reached 19.24, because
+-- `sin(pi x u) x smoothstep(u)` peaks at 0.641 rather than at 1.
+--
+-- So what decays is only the step between what the piece arrived at and what its own
+-- profile starts at, and the piece's own profile is laid down as written:
+--
+--   bank(0) = own(0) + (roll0 - own(0)) = roll0 exactly -- no step at the join
+--   bank(1) = own(1)                                    -- the piece's own exit bank
+--   own(0) == roll0 (the usual case, both zero)  =>  bank(u) IS own(u)
+--
+-- A CONSTANT BANK AND NO BANK AT ALL ARE ALGEBRAICALLY UNCHANGED by this -- for constant
+-- `own`, `own + (roll0 - own)(1 - ss)` and `roll0 + (own - roll0) ss` are the same
+-- expression -- so the unwind every unbanked piece does, which is the only bank behaviour
+-- the shipped road had before T-068, is exactly what it was.
 local function bankAt(own: (number) -> number, roll0: number, u: number): number
-	return roll0 + (own(u) - roll0) * smoothstep(u)
+	local own0 = own(0)
+	return own(u) + (roll0 - own0) * (1 - smoothstep(u))
 end
 
 --------------------------------------------------------------------------------

@@ -1,11 +1,17 @@
 # Feature: Elevation, banking, and the downhill road
 
-**Status:** approved by the user. Step 2 of 4 is **built** (`T-066`): a road piece can carry a
-height and a bank. The gravity change is `T-065`, the fall test and the four touge pieces are
-still to come. `T-073` lifted the limit that `T-066` ran into — the car's collision box now follows
-the surface — so the config's `MaxGrade` and `MaxBank` can be raised to 20° and 30°.
-**Owner task:** `T-061` (plan), `T-065` (gravity on the ground), `T-066` (the piece profile),
-`T-073` (the tilted sweep box).
+**Status:** approved by the user, and **all four steps are built**. Gravity acts along the ground
+(`T-065`), a piece can carry a height and a bank (`T-066`), the fall test is measured from the
+surface (`T-067`), the car's collision box follows the surface so `MaxGrade` and `MaxBank` could go
+to 20° and 30° (`T-073`), and **the four touge pieces are in the shipped set** (`T-068`, below).
+**Owner task:** `T-061` (plan), `T-065`, `T-066`, `T-067`, `T-073`, `T-068` (the pieces).
+
+**What the user should drive, and the one number that is theirs:** the road descends on balance —
+**−880 studs over 200 pieces**, 1.75% — in a band about 1 200 studs deep that climbs as well as
+falls. That is answer *(a)* to "does the road descend for ever" below, and whether it is the right
+answer is theirs. The other thing for them is the **banked 30**: it ships at 5° of bank because
+more than that pins the test autopilot against a barrier, and a human may well drive straight out
+of what stops it.
 
 ## What is built, and what the limits turned out to be
 
@@ -259,6 +265,81 @@ Each carries its own height and bank profile down its length, not one constant g
 exit height, pitch and bank are what the next piece has to start from**, which is what makes them
 join into a road rather than a staircase.
 
+### What was built (`T-068`), and the numbers it was built on
+
+Every number is in `Config/Road.luau` beside the piece it belongs to, with its measurement written
+out. Nothing here is a flat piece with a grade added.
+
+| | plan shape | height | bank | gate |
+|---|---|---|---|---|
+| `Link` | 140-stud straight | `EndGrade = 7°`, no drop: the grade blends **linearly** from whatever arrived, so the piece itself gains about 8 studs from level and *falls* when it arrives descending | none | `minPieces 0`, weight 3 |
+| `Banked30` | 400 radius, 30° (209 studs) | `Drop = 14, EndGrade = 0` — arrives level, 5.7° at its steepest | `5°, crest` — in and out again, level at both sockets | `minPieces 3` |
+| `HairpinStack` | 70 radius, 180° **each way** (440 studs, 280 across) | `Drop = 40, EndGrade = 0`, 7.8° at its steepest — which is the join between the two hairpins | none | `minPieces 14` |
+| `Corkscrew` | 150 radius, 45° each way (236 studs, 88 across) | `Drop = 20, EndGrade = −5°` — **the only piece that hands on a descent** | none | `minPieces 10` |
+
+**The road's height is a state machine and these four are its only inputs.** A piece with no
+`Height` does not flatten the road, it *carries* the grade it arrived at, so all nine flat pieces
+are followers. The corkscrew starts descents, the link ends them and starts climbs, the banked 30
+and the hairpin stack end level. That is what makes a band rather than a ramp.
+
+**Driven, the whole set, 50 generated pieces** (`RoadTests` section 11, seed 8080) — 50 of 50
+reached, mean 49 studs/s, top **108**, 0 steps off the road, 0 airborne, longest stop **0.45 s**:
+
+| on this piece | speed on it | drifting it | steps on a barrier |
+|---|---|---|---|
+| `Link` (4) | 39..103 | 52% | 7 |
+| `Banked30` (6) | 0..91 | 52% | 21 |
+| `HairpinStack` (3) | 2..68 | 70% | 10 |
+| `Corkscrew` (7) | 20..99 | 72% | 13 |
+| `Straight` (5) | 20..91 | 56% | 0 |
+| `Sweeper` (6) | 12..108 | 67% | 8 |
+| `Hairpin` (7) | 1..68 | 68% | 10 |
+
+The flat nine on the same seed reach 50 at a mean of **56** and a top of 117, so the touge set is
+about 13% slower, which is what a mountain road should be. **The top speed is 108, not 245:** the
+fall-test number came from a long unbroken descent, and this set does not have one — the longest
+run of pieces that keeps descending is 13, and the link catches it.
+
+### The banked 30 is the showcase and it ships at 5°, which is the one disappointment
+
+`MaxBank` is 30 and 30° is *geometrically* safe — `T-073`'s audit read the road as a wall 0 times
+in 18 865 sweeps at that bank. **It is not drivable, and nothing in that audit said it would be.**
+
+Gravity acts along the surface now, so on a bank it pulls the car down the slope at
+`Gravity × sin(bank)`, and the speed at which the corner's own `v²/r` pays for that is
+`sqrt(radius × Gravity × tan(bank))` — 37 studs/s at 5°, 61 at 15°, 90 at 30°. Below it the car
+slides down into the barrier at the low edge, the slide **is** slip, past 90° of slip the model's
+grip force is a brake, and it never builds the speed it would need to come off the wall. And this
+set delivers the car to that corner at anything from 0 to 99 studs/s, because what is either side
+of it is a hairpin stack. Measured, the same seed and 50 pieces, only `Bank.Degrees` changing:
+
+| bank | pieces reached | mean speed | barrier steps on it | longest stop |
+|---|---|---|---|---|
+| 0° | 50 | 49 | 4 | 0.4 s |
+| **5°** | **50** | **49** | **21** | **0.5 s** |
+| 8° | 50 | 41 | 158 | 11.9 s |
+| 10° | 50 | 36 | 387 | 40.2 s |
+| 12° | 37 | 32 | 253 | 21.7 s |
+| 15° | 37 | 28 | 247 | 113.8 s |
+
+It is monotone, and it is not the drop (level at 15° stopped the car for 20 s) and not the radius
+(550 measured worse than 400, 340 worse again). **Traced, 0 of 351 sweeps that stopped the car on
+this set were stopped by road** — every one was a barrier. So what the table measures is the test
+autopilot failing to get a pinned car off a wall; the fixture was given a floor under its steering
+for exactly this (`RoadTests`, `STEER_FLOOR`) and it was not enough. **10–15° is where the piece
+starts to look like a touge corner, and the only thing in the way is a car that cannot unstick
+itself.** That wants its own fix — an unstick, or a respawn that notices — rather than a smaller
+bank, and the number is one line in the config.
+
+### One bug in the piece maths, fixed
+
+`Pieces.bankAt` blended a piece's whole bank profile from what it arrived at with a smoothstep,
+which is right for a *constant* bank and wrong for any other: a crest is zero at both ends, so
+multiplying it by a smoothstep that is 0.5 in the middle attenuated the whole crest. **A crest
+asking for 30° reached 19.24°.** What is blended now is only the step between the arrival bank and
+`own(0)`, so a piece's own profile is laid down as written and a constant bank and no bank at all
+are algebraically unchanged. The `Horrible` fixture's measurements from `T-066` move with it.
+
 ## How it works
 
 ### A socket gains two angles
@@ -391,6 +472,17 @@ The six marked **done** are in `RoadTests` and pass; their numbers are in "What 
 | A fall on a descending road | Drive to piece 30, around 400 studs down, fall off on purpose: back **on the road at that height**, still in the run. On today's code this is the check that fails |
 | The body follows the surface | The car's `up` against the surface normal on a 7% grade and a 30° bank, and the per-wheel ray differences against what the geometry predicts |
 
+`T-068` added six more, all passing (`RoadTests`, 49 checks):
+
+| Check | Measured |
+|---|---|
+| **The flat nine are still the flat nine** | With the four gated out and the search budget held at the 2 000 it was pinned at, seed 1234 × 500 pieces and the first 20 built: all four fingerprints **identical** |
+| Each of the four does what its spec says | Placed from a level socket and from a 5° descent: drop, exit grade, exit roll, peak bank and peak grade all read off the built piece |
+| The road is a band, not a ramp | 5 seeds × 200: net −880 studs, lowest −950, highest **+244 above its own start**, longest unbroken descent 13 pieces |
+| Nothing is a wall | Steepest surface the shipped set generates: **9.72°** on a hairpin stack, against a 35° lid and the 45.6° that reads as a wall. Driven, **0 of 351** sweeps that stopped the car were stopped by road |
+| The bank holds the car | The same corner entered at 90 studs/s, banked and flat, side by side |
+| A ray down finds road where the piece says it is | 1 353 rays at both edges and the centre line of a banked, pitched window: worst **0.0498 studs** off `Pieces.poseAt`. (This check used to compare against `SurfaceY`, which was a lie once the road climbed) |
+
 The rest are drives, and belong to the gravity change and to the pieces that use the profile.
 
 ## Open questions
@@ -402,6 +494,19 @@ The rest are drives, and belong to the gravity change and to the pieces that use
   up under the car, a seam the player must not see; *(c)* **a run that starts at the top and ends at
   the bottom**, which is the most touge answer of the three and is not an endless road at all. This
   is downstream of what a run IS (`endless-run.md`, `PITCH.md` is Draft) and is the user's.
+
+  **The set as built is (a), and here is the number it is (a) by.** 5 seeds × 200 pieces, about
+  50 500 studs of road each: net **−880 studs** on average (−4.4 a piece, a 1.75% average grade),
+  ranging from −1 412 on one seed to −96 on another. The road's lowest point averages −950 and its
+  **highest +244 above where it started** — every seed climbs above its own start — so the band is
+  840 to 1 450 studs deep, and the longest unbroken descent is **13 pieces**. Per piece type over
+  1 000 pieces: `HairpinStack` −3 879, `Corkscrew` −2 240, `Banked30` −1 610 against `Link` +1 009
+  and the flat nine +2 320 between them (they carry whatever the link handed them).
+
+  **It is one number to move.** The whole of it is the link's `EndGrade`: at 0° the net over 200
+  pieces is **−2 190** studs and the road never once gets above its own start; at 4° −1 444; at 7°
+  (shipped) −880; at 10° −309; at 12° **+78**, which is a road that climbs on balance. Pick a
+  number and the road is that road.
 - **Whether the drawn body lean should answer to the bank**, as well as to the drift. The reference
   gets this free from its springs; we draw it, so it is a decision.
 - **Three-dimensional collision,** and the bridges and crossings it would allow.

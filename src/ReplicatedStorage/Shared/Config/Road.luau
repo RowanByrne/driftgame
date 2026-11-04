@@ -397,7 +397,38 @@ return {
 	-- budget in one go -- 1.4 seconds at 40 000, which is the bug this replaced.
 	-- Below it the road starts settling for proof it should not have to: 44 relaxations
 	-- against 20, and a run that got down to ONE piece of proof.
-	SearchNodeBudget = 2000, -- placements the plan may try for one piece before it
+	-- AND THEN THE SET WENT FROM NINE VARIANTS TO SIXTEEN (T-068), AND 2 000 WAS A NUMBER
+	-- ABOUT NINE. Every frame of the search shuffles everything legal at that depth and
+	-- tries them in turn, so the tree the budget is spent on is `variants ^ depth` wide:
+	-- adding the four touge pieces made it 16 wide where it was 9, and a budget that proved
+	-- fourteen deep over nine variants does not prove fourteen deep over sixteen.
+	--
+	-- WHAT THAT LOOKS LIKE IS NOT A SLOWER ROAD, IT IS A ROAD THAT SETTLES. When the plan
+	-- cannot prove itself it lays the best chain it stood up and carries on (`relax`), and
+	-- a piece laid on one piece of proof is how a road walks into a dead end three pieces
+	-- later. Measured over 45 runs of 500 pieces through `grow` -- the five suite seeds and
+	-- two pools of twenty -- counting the pieces laid on less than a full `LookAhead`:
+	--
+	--   set and budget        runs that boxed in   pieces on short proof   worst driven call
+	--   the flat nine, 2 000       0 of 45                58                   --
+	--   the sixteen,   2 000       1 of 45 (at            92                   8.20 ms
+	--                              piece 227)
+	--   the sixteen,   2 500       1 of 45 (at            72                   8.60
+	--                              piece 59)
+	--   the sixteen,   3 000       0 of 5 measured        --                  89.81
+	--
+	-- 2 500 TAKES A FIFTH OFF THE SETTLING FOR NOTHING, which is what it is for. It does not
+	-- take the tail stall away -- raising the budget only moves WHICH seed is unlucky, which
+	-- is why the row above is honest about still being 1 of 45 -- and the comparison that
+	-- actually says whether the set got worse is further down, under "the piece set".
+	--
+	-- 2 500 AND NOT 3 000, AND THE REASON IS THE 89.81 MS. The one path that ignores the
+	-- clock -- `MinAheadPieces`, the road having run out under the car -- pays the whole
+	-- budget in one go, and at 3 000 a 400-piece drive at 145 studs/s hit it once and stopped
+	-- the server for 90 ms. At 2 500 the worst single call over 12 seeds x 400 pieces at the
+	-- same cruel speed was 8.60 ms and NOT ONE call of 81 912 went past 10 ms. That is the
+	-- same property 2 000 was chosen for, kept.
+	SearchNodeBudget = 2500, -- placements the plan may try for one piece before it
 	-- settles for the best chain it found
 
 	-- ------------------------------------------------- how long one call may take, in ms
@@ -433,10 +464,14 @@ return {
 	-- it is bounded by the node budget like every other path.
 	-- Driven deliberately, with the car told to stand on the last
 	-- piece of the road for two hundred ticks running, the worst
-	-- call on this path measured 74 ms (`RoadTests`, "a car that
-	-- outruns the search still gets road"). That is the ONE
-	-- number in this file above ten milliseconds, and reaching it
-	-- means the road has already run out
+	-- call on this path measured 74 ms with the nine flat pieces
+	-- and a budget of 2 000, and 162 ms with the sixteen and a
+	-- budget of 2 500 (T-068; `RoadTests`, "a car that outruns
+	-- the search still gets road"). That is the ONE number in
+	-- this file above ten milliseconds, and reaching it means the
+	-- road has already run out -- which the same suite measures
+	-- never happening, the car never coming within two pieces of
+	-- the end over 43 810 ticks
 
 	-- How much each footprint quad is shrunk by before two of them are asked whether they
 	-- overlap. Neighbouring pieces SHARE a socket face by construction, and a corner's
@@ -445,10 +480,57 @@ return {
 	OverlapSlack = 0.75, -- studs off each side of every footprint quad
 
 	-- --------------------------------------------------------------------- the piece set
-	-- FIVE PIECE TYPES IN NINE VARIANTS, AND ALL OF THEM STILL FLAT. The road can carry a
-	-- height and a bank now (T-066) and not one of these uses it: the touge pieces that do
-	-- are their own step, and the nine below are measured, driven and approved as flat
-	-- pieces for flat driving (features/road-elevation.md, "designed, not tilted").
+	-- NINE PIECE TYPES IN SIXTEEN VARIANTS: the five FLAT ones the road shipped with, and
+	-- the four TOUGE ones that go somewhere vertically (T-068, features/road-elevation.md
+	-- "The pieces: designed, not tilted"). The nine flat variants are untouched -- same
+	-- numbers, same parts, same places -- and they are still what a flat road is made of.
+	--
+	-- THE FOUR ARE THE USER'S OWN FOUR, and they are DESIGNED, not tilted: not one of them
+	-- is a flat piece with a grade added. Each has its plan shape, its height profile and
+	-- its bank chosen together, and what it hands the next piece -- a height, a grade and a
+	-- bank -- is part of its design rather than a side effect:
+	--
+	--   Link           flat or nearly, short, and it LEVELS the road and hands on a gentle
+	--                  climb. The breather, and the piece that stops a descent being one
+	--                  long ramp
+	--   Banked30       a 30-degree direction change with 30 degrees of bank through it,
+	--                  losing height. The showcase: the bank is what holds the car
+	--   HairpinStack   two 180-degree hairpins back to back, opposite hands, dropping hard.
+	--                  How a mountain road actually loses height
+	--   Corkscrew      a flat entry and then the floor leaves: a chicane that drops away and
+	--                  HANDS ON A DESCENT, so the road keeps falling until a link catches it
+	--
+	-- THE ROAD'S HEIGHT IS A STATE MACHINE AND THESE FOUR ARE ITS ONLY INPUTS, which is the
+	-- thing to understand before changing any number in them. A piece with no `Height` does
+	-- not flatten the road, it CARRIES the grade it arrived at (`Road/Pieces`), so all nine
+	-- flat pieces are followers: whatever the last touge piece handed on, they keep doing.
+	-- So the whole of the road's vertical behaviour is four `EndGrade`s:
+	--
+	--   Corkscrew   ends descending  -> every flat piece after it descends, until
+	--   Link        ends climbing    -> every flat piece after it climbs, until
+	--   Banked30, HairpinStack  end level -> the road runs level again
+	--
+	-- That is what makes it a BAND rather than a ramp, and the measured numbers are under
+	-- `Link` below.
+	--
+	-- SEVEN MORE VARIANTS DID NOT MAKE THE GENERATOR WORSE, and that is measured rather than
+	-- hoped for. At the shipped `LookAhead` of 14 both sets box themselves in about never --
+	-- the flat nine 0 times in 45 runs of 500 pieces, the sixteen once, at piece 59 of one
+	-- seed -- which is a difference too small to read anything into. So the comparison is
+	-- made where stalls are COMMON enough to count, by cutting the lookahead down
+	-- (`RoadTests:stalls`, 20 runs of 400 pieces):
+	--
+	--   lookahead   the flat nine            the sixteen
+	--       5        11 of 20, 5 098 pieces   12 of 20, 5 493 pieces (earliest stall at
+	--                 (earliest at piece 25)   piece 56, not 25)
+	--       7         7 of 20, 6 775           4 of 20, 7 107
+	--      14         0 of 45 x 500            1 of 45 x 500
+	--
+	-- MORE WAYS TO TURN IS MORE WAYS OUT, which is the same thing step 2 found when it added
+	-- the hairpin: a piece that folds the road back on itself is a trap AND an escape hatch.
+	-- The tallies of what the road was standing on when it ran out of room put the
+	-- `HairpinStack` -- the biggest plan footprint in the set by some way -- at 0 of 4
+	-- stalls at depth 7 while it is a tenth of the pieces.
 	--
 	-- `Shape` is how a piece is drawn (`straight`, `arc`, `chicane`); `kind` is what it is
 	-- called. A corner, a sweeper and a hairpin are all `arc`, and the ENTIRE difference
@@ -674,9 +756,233 @@ return {
 			Arc = 40, -- degrees, each bend; 196 studs of road, jinking 65 studs across
 			Middle = 0, -- studs of straight between the two bends
 		},
+
+		------------------------------------------------------------------------------
+		-- THE TOUGE PIECES (T-068)
+		------------------------------------------------------------------------------
+
+		-- THE LINK IS THE ONLY PIECE THAT CLIMBS, AND IT IS WHY THE ROAD IS A BAND.
+		--
+		-- The user asked for "flat sections between sections", and flat is what the piece
+		-- itself is: `EndGrade` with no `Drop` blends the grade LINEARLY from whatever it
+		-- arrived at to this one, so the link's own height change is the average of the two
+		-- over its length -- about 6 studs from a level entry, and NEGATIVE from a steep
+		-- descent, where it is the piece that catches the fall. It is 140 studs where the
+		-- straight is 220, so it is a beat and not a leg.
+		--
+		-- `EndGrade` IS THE WHOLE OF THE ROAD'S HEIGHT BUDGET, because everything that is
+		-- not a touge piece carries whatever it arrived at. Measured by generating 200
+		-- pieces on each of 5 seeds and reading the net height at the end (`heightBand` in
+		-- `RoadTests`), with every other number in this set as it ships:
+		--
+		--   Link EndGrade   net over 200 pieces   mean lowest   mean highest
+		--      0 deg           -2 190 studs         -2 190          +0
+		--      4               -1 444               -1 471        +102
+		--      7 (shipped)       -880                 -950        +244
+		--     10                 -309                 -549        +443
+		--     12                  +78                 -373        +599
+		--
+		-- 7 IS WHERE THE ROAD IS A BAND THAT TRENDS DOWNHILL. 880 studs down over 200 pieces
+		-- is 1.75% of the 50 500 studs of road it took to get there -- a real mountain
+		-- road's average gradient -- and on the way it wanders about 1 200 studs between its
+		-- lowest and its highest point and climbs 244 studs ABOVE where it started. At 0 it
+		-- is a ramp and never once gets above its own start; at 12 it climbs on balance,
+		-- which is the wrong side of the user's "downhill map".
+		--
+		-- IT IS NOT A STEEP PIECE EVEN AT 7. A 7-degree climb is a grade the car does not
+		-- notice (it climbs 24 and the measured cost at 8 degrees is 116 studs/s against
+		-- 129 at 4), and what climbs at 7 degrees is the STRAIGHTS AND CORNERS after the
+		-- link, not the link itself.
+		Link = {
+			kind = "Link",
+			Shape = "straight",
+			weight = 3, -- as often as the straight: it is the piece the road is kept level
+			-- by, so it has to turn up as often as the things that unlevel it
+			minPieces = 0,
+			mirror = false,
+			Length = 140, -- studs. Short, and deliberately shorter than the straight's 220
+			Height = { EndGrade = 7 }, -- degrees; no `Drop`, so the grade blends linearly
+			-- from whatever arrived and the height falls out of it
+		},
+
+		-- THE BANKED 30 IS THE SHOWCASE: a 30-degree direction change with banking through
+		-- it, losing height. It is the one piece in the set whose shape is chosen BY the
+		-- bank rather than decorated with it.
+		--
+		-- THE 30 IS THE TURN, NOT THE BANK, and that distinction cost a morning to learn.
+		-- The spec's words are "30 degree turns that have big banking"; `MaxBank` was raised
+		-- to 30 for this piece and 30 degrees of bank IS geometrically safe -- T-073's
+		-- exhaustive audit read the road as a wall 0 times in 18 865 sweeps at that bank.
+		-- IT IS NOT DRIVABLE, and nothing about the audit said it would be.
+		--
+		-- A BANKED CORNER HAS A MINIMUM SPEED, which is the thing the audit could not see.
+		-- Gravity acts along the surface now (T-065), so on a bank it pulls the car down the
+		-- slope at `Gravity x sin(bank)` -- 35 x sin(bank) in this game's units -- and the
+		-- speed at which the corner's own v^2/r exactly pays for that is
+		--
+		--     v = sqrt(radius x Gravity x tan(bank))
+		--
+		--   bank   balance speed at radius 400
+		--    10 deg        50 studs/s
+		--    15            61
+		--    20            71
+		--    30            90
+		--
+		-- Below it the car slides DOWN the bank towards the inside of its own corner, and
+		-- the slide is slip: once the slip passes 90 degrees the model's grip force becomes
+		-- a brake (`features/drift-model.md`), which slows it further, which makes it slide
+		-- further. It is a trap with a floor and the car does not get out of it.
+		--
+		-- AND THE ROAD DELIVERS THE CAR AT 0 TO 99 STUDS/S, because the pieces either side
+		-- of this one are hairpin stacks and corkscrews and they are SLOW. So the piece has
+		-- to work at the bottom of that range, not at the top.
+		--
+		-- WHAT GOES WRONG IS NOT A SPIN, IT IS A PIN. A car that loses its speed on a bank
+		-- slides down it into the barrier at the low edge; gravity along the surface holds
+		-- it there; the sideways slide IS slip, and past 90 degrees of slip the grip force
+		-- is a brake, so it never builds the speed it would need to come off the wall. The
+		-- road is not what stops it -- traced, every sweep that stopped the car on this set
+		-- was a BARRIER and not one was road, 0 of 351 -- it is the wall at the bottom of
+		-- the bank plus a car that cannot get off it.
+		--
+		-- MEASURED, THE WHOLE SET DRIVEN 50 PIECES, radius 400, one seed, everything
+		-- identical and only `Bank.Degrees` changing. The column that decides is the last
+		-- one: `RoadTests` requires the shipped road never to stop the car for a second.
+		--
+		--   bank   pieces reached   mean speed   barrier steps on it   longest stop
+		--     0        50             49 studs/s        4                 0.4 s
+		--     5        50             49               21                 0.5
+		--     8        50             41              158                11.9
+		--    10        50             36              387                40.2
+		--    12        37             32              253                21.7
+		--    15        37             28              247               113.8
+		--
+		-- It is monotone and it is not the drop: the same sweep with the piece LEVEL (Drop
+		-- 0) at 15 degrees stopped the car for 20 s, and with Drop 6 at 12 degrees for 50 s.
+		-- It is not the radius either -- 550 measured worse than 400, and 340 worse again.
+		-- It is the bank, and only the bank.
+		--
+		-- SO 5, WHICH IS THE MOST THE CAR CAN BE SLOW ON, and the honest thing to say about
+		-- it is that it is a ROAD's superelevation rather than a speedway's: 5 degrees lifts
+		-- the outer edge 4.4 studs above the inner across a 50-stud road, which is what a
+		-- real mountain road is built with, and it is a bank on a road that was dead flat a
+		-- day ago.
+		--
+		-- THE USER DRIVES THIS ONE, AND THIS NUMBER IS ONE LINE. What the table above
+		-- measures is the TEST AUTOPILOT not getting a pinned car off a barrier, and a
+		-- player in that spot turns the wheel and drives out -- the fixture was already
+		-- given a floor under its steering for exactly this (`RoadTests`, `STEER_FLOOR`) and
+		-- it was not enough. 10 to 15 degrees is where this piece starts to LOOK like a
+		-- touge corner and the only thing in the way is a car that cannot unstick itself,
+		-- which wants its own fix rather than a smaller bank.
+		--
+		-- RADIUS 400 AND NOT 340, measured before the bank came down: at 340 the car spun on
+		-- every seed at 20 degrees of bank and above, and at 400 it did not. It is the
+		-- balance speed again -- a tighter corner needs MORE bank for the same speed.
+		--
+		-- `Shape = "crest"` IS WHAT MAKES IT A CORNER AND NOT A STATE. The bank runs in and
+		-- out again over the piece -- `sin(pi x u)`, level at both sockets -- which is how a
+		-- real carriageway is superelevated, and it means the piece hands the next one a
+		-- LEVEL road. Measured against a CONSTANT bank of the same size, which hands its
+		-- roll to the next piece to unwind: constant 20 got the car stuck for 142 s and
+		-- constant 30 threw it 203 studs off the centre line, where the crest at the same
+		-- numbers reached 26 pieces. Every socket in this set is unbanked for that reason.
+		Banked30 = {
+			kind = "Banked30",
+			Shape = "arc",
+			weight = 1,
+			minPieces = 3, -- not the first thing a player meets, but not a late piece either
+			mirror = true,
+			Radius = 400, -- studs
+			Arc = 30, -- degrees; 209 studs of corner
+			Height = { Drop = 14, EndGrade = 0 }, -- loses 14 studs and arrives LEVEL. A
+			-- vertical curve that is level at both ends is steepest in the middle at 1.5x
+			-- its average, so 14 over 209 studs peaks at 10.0% -- 5.7 degrees
+			Bank = { Degrees = 5, Shape = "crest" }, -- in and out again over the piece
+		},
+
+		-- THE HAIRPIN STACK IS HOW A MOUNTAIN ROAD LOSES HEIGHT: two 180-degree hairpins
+		-- back to back, opposite hands, dropping hard. It is the slowest and most technical
+		-- thing in the set and it is the only piece that drops a serious number of studs.
+		--
+		-- IT IS A `chicane`, WHICH IS NOT A TRICK -- the shape is literally "an arc, then
+		-- the same arc the other way", and at 180 degrees each that is two half-circles
+		-- tangent at a point: the road folds back on itself, comes out pointing the way it
+		-- went in, and has moved four radii sideways. `Middle = 0` because "back to back" is
+		-- what the user asked for and a straight between them would make it an S.
+		--
+		-- RADIUS 70 IS THE SHIPPED HAIRPIN'S, and it is used here precisely because it was
+		-- chosen by driving: tight enough that the car is braked and rotated rather than
+		-- drifted wide, wide enough that it holds a slide for four fifths of the piece.
+		-- Changing it here would be inventing a second answer to a question already
+		-- measured.
+		--
+		-- IT COSTS THE GENERATOR AND THAT IS WRITTEN DOWN RATHER THAN HIDDEN. Two tangent
+		-- 70-radius circles are 280 studs across and 140 deep, which is a bigger plan
+		-- footprint than any other piece in the set -- the straight is 220 x 50 -- and the
+		-- corridors it leaves are corridors the road then has to thread. The stall table in
+		-- `features/track-generation.md` is measured with it in.
+		--
+		-- `minPieces = 14`, LATER THAN THE PLAIN HAIRPIN'S 8. A hairpin stops the car; a
+		-- hairpin stack stops it twice while dropping 40 studs under it, and at 14 pieces --
+		-- about a minute of driving -- a player has met every other piece in the set first.
+		HairpinStack = {
+			kind = "HairpinStack",
+			Shape = "chicane",
+			weight = 1,
+			minPieces = 14,
+			mirror = true,
+			Radius = 70, -- studs, each hairpin
+			Arc = 180, -- degrees, each; 440 studs of road, moving 280 studs sideways
+			Middle = 0, -- studs between them: back to back
+			Height = { Drop = 40, EndGrade = 0 }, -- 40 studs down and arrives LEVEL. Over
+			-- 440 studs that is 13.6% at its steepest -- 7.77 degrees measured, and the
+			-- steepest surface anywhere in the shipped set -- and the steepest point is the
+			-- join between the two hairpins, which is where a real switchback is steepest too
+		},
+
+		-- THE CORKSCREW IS THE PIECE THE FLOOR LEAVES UNDER. Laguna Seca's: you commit on
+		-- the flat and the road drops away through a chicane.
+		--
+		-- IT IS THE ONLY PIECE THAT HANDS ON A DESCENT, and that is its whole design. Every
+		-- other touge piece arrives level; this one arrives at `EndGrade` and the straights
+		-- and corners after it CARRY that grade until a link catches it (see the state
+		-- machine at the head of this set). So the corkscrew is not a 20-stud drop, it is
+		-- the START of one: measured over 5 seeds x 200 pieces, each run holds 15 to 18
+		-- separate descents, a descent runs a mean of 2.6 to 3.1 pieces, and the longest
+		-- unbroken one anywhere is 13 pieces before a link levels it.
+		--
+		-- `Drop` AND `EndGrade` TOGETHER IS WHAT MAKES THE ENTRY FLAT. With both, the
+		-- vertical curve leaves the start socket at EXACTLY the grade it arrived at and
+		-- reaches `EndGrade` by the exit, so after a link (which hands on a climb) the
+		-- corkscrew is entered going UP and the floor drops 20 studs out from under the car
+		-- inside 236 studs. That is the user's "slide over a crest and into a downhill
+		-- drift" and it is free: no piece has to know what came before it.
+		--
+		-- RADIUS 150 AND ARC 45, which is a wider, faster jink than the shipped chicane's
+		-- 140 and 40 (88 studs across against 65) -- because this one is taken at the speed
+		-- a straight leaves the car at and the road is falling away while it is taken.
+		-- `minPieces = 10` so it is not the first thing after the gate.
+		Corkscrew = {
+			kind = "Corkscrew",
+			Shape = "chicane",
+			weight = 1,
+			minPieces = 10,
+			mirror = true,
+			Radius = 150, -- studs, each bend
+			Arc = 45, -- degrees, each bend; 236 studs of road, jinking 88 studs across
+			Middle = 0,
+			Height = { Drop = 20, EndGrade = -5 }, -- 20 studs down THIS piece, and hands on
+			-- 5 degrees of descent for the rest of the road to carry
+		},
 	},
 	-- The order a tie is broken in, and the order every report lists them in. A variant
 	-- not named here is still generated; this only fixes the reading order.
+	-- THE FLAT NINE COME FIRST AND IN THE ORDER THEY ALWAYS HAD, which is not only tidiness:
+	-- `Generator.biasedWeights` walks this order and skips whatever is gated out, so a run
+	-- with the touge pieces gated out draws exactly the list -- and therefore exactly the
+	-- random numbers -- it drew before they existed. That is what lets `RoadTests` check the
+	-- flat road against fingerprints taken before this set was written.
 	Order = {
 		"Straight",
 		"CornerL",
@@ -687,6 +993,13 @@ return {
 		"HairpinR",
 		"ChicaneL",
 		"ChicaneR",
+		"Link",
+		"Banked30L",
+		"Banked30R",
+		"HairpinStackL",
+		"HairpinStackR",
+		"CorkscrewL",
+		"CorkscrewR",
 	},
 
 	-- The first piece of every run, so a car is always put down on something straight
