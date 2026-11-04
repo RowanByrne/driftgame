@@ -1,12 +1,88 @@
 # Feature: Elevation, banking, and the downhill road
 
-**Status:** specced, revised once by the user, waiting on their approval of the plan.
-**Owner task:** none yet (`T-061`).
+**Status:** approved by the user. Step 2 of 4 is **built** (`T-066`): a road piece can carry a
+height and a bank. The gravity change is `T-065`, the fall test and the four touge pieces are
+still to come.
+**Owner task:** `T-061` (plan), `T-065` (gravity on the ground), `T-066` (the piece profile).
 
-The endless road is **dead flat** and says so in its own config: *"`SurfaceY = 0`, world Y of the
+## What is built, and what the limits turned out to be
+
+`T-066` gave `Road/Pieces` and `Road/Builder` the third dimension. **The nine flat pieces are
+byte-for-byte the road they were** -- same sequence, same parts, same places, pinned as
+fingerprints in `RoadTests` so it stays that way -- and nothing in the shipped set uses any of it
+yet.
+
+| What | Where | Measured |
+|---|---|---|
+| A socket is `{ x, y, z, yaw, pitch, roll }` | `Road/Pieces` | 200 generated pieces with profiles in them, over 3 258 studs of height: worst finish-to-start gap **exactly 0** in position and in all three angles, as on the flat |
+| Pitch persists, bank unwinds, neither steps | `applyProfile` | worst grade change between neighbouring boxes **1.150°** against the 1.15 limit, worst bank change **1.500°** against 1.5 -- across every join as well as inside pieces |
+| Nothing reads as a wall | `MaxSurfaceTilt` | the steepest surface the limits allow leans **30.95°**, normal Y 0.858, against the 45.6° (0.70) at which `Drift/World` calls it a wall. Driven: **0 of 7** sweeps that stopped the car were stopped by road |
+| `poseAt` answers with the piece's height and bank | `Road/Pieces` | 152 wheel rays over a banked descent and a banked corner: every wheel within **0.11 studs** of ride height along the surface normal, the pose's up within **0.45°** of the four rays' mean |
+| The generator is untouched | -- | 5 seeds x 500 pieces: 0 stalls, worst call 2.21 ms (2.15 before). 20 runs of 400: 0 boxed in, 20 of 8 000 on short proof -- identical to before |
+| The flat road is unchanged | `PINNED` in `RoadTests` | sequence, geometry, part count and every part's CFrame identical over 500 pieces and 1 448 parts |
+
+### The limits are the car's own collision box: 8° of grade, 20° of bank
+
+The spec chose both numbers against the 46° wall threshold. **That is not the binding limit.** The
+car's collision box is swept flat through the world and is **never pitched and never rolled**, so it
+rides with 1.44 studs of air under it, 7 studs of nose in front and 3.2 studs of width either side.
+Above `atan(1.44/7) = 11.6°` of grade its nose is inside the hill it is climbing; above
+`atan(1.44/3.2) = 24°` of bank its uphill side is inside the road it is leaning on. The face it
+meets in either case is near-vertical, the sweep calls that a **wall**, and the car stops dead
+against the road.
+
+Both measured, with gravity on the ground (`T-065`). A straight ramp at each grade, 90 studs/s in,
+no steering:
+
+| grade | climbed in 14 s | speed at the end |
+|---|---|---|
+| 4° | 70 studs | 129 studs/s |
+| 6° | 101 | 121 |
+| 8° | 136 | 116 |
+| 10° | 149 | 103 |
+| **12°** | 23 | **0 — stopped dead on the ramp** |
+| 14° | 26 | 5 |
+
+And a 90° corner banked, two seeds, with every sweep that stopped the car traced back to the part
+that stopped it:
+
+| bank | road read as a wall | stopped for |
+|---|---|---|
+| 10° | 0 times | 0.00 s |
+| 15° | 0 | 0.00 |
+| 20° | 0 | 0.00 |
+| 25° | 1 | 0.40 |
+| **30°** | **17** | **5.19** |
+
+Both brackets land either side of what the geometry predicts, which is the check that the
+explanation is the right one. **To lift either, pitch and roll the sweep box with the surface in
+`Drift/World`** — one change, its own task, its own measurement, and both limits move at once.
+
+**8° is a ceiling, not a target.** A road of nothing but descending corners: flat reaches 12 of 12
+pieces at a mean of 59 studs/s, 4° reaches 12 at a mean of 68, and 8° reaches 10 at a mean of 36
+while touching **120 studs/s against the flat road's 92**. The sweep was stopped by road zero times
+at both grades: that is not the road failing, it is the car carrying more speed downhill than a
+driver aimed on the flat can steer for. **Build a touge out of 4° descents and level links before
+reaching for 8.**
+
+**20° of bank is a real loss against the spec,** whose showcase piece is *"a 30-degree turn with big
+banking"*. 20 is the last angle that never once read as a wall.
+
+### Two things changed shape from the plan
+
+- **A piece's height is the integral of its clamped, rate-limited grade,** not a curve sampled
+  directly, which is what makes `MaxGrade`, `MaxPitchStep` and `MaxBankStep` true by construction
+  rather than by hope. A profile that asks to fall off a cliff gets a ramp.
+- **A barrier follows the grade but not the bank.** Leaning a six-stud wall with a 30° bank
+  overhangs the road by three studs, and since the car's box is never pitched either, what that
+  overhang catches is the car's roof while its wheels still have room.
+
+## Why (the spec as the user approved it)
+
+The endless road **was dead flat** and said so in its own config: *"`SurfaceY = 0`, world Y of the
 road's top. FLAT, everywhere: no elevation in this build at all (no crest, no banking)"*
-(`Config/Road.luau`). This feature gives the road height and bank, and then builds a mountain road
-out of them.
+(`Config/Road.luau`, before `T-066`). This feature gives the road height and bank, and then builds
+a mountain road out of them.
 
 The user asked for it, and then corrected the first version of this spec. Both halves matter:
 
@@ -140,7 +216,9 @@ join into a road rather than a staircase.
 
 ### A socket gains two angles
 
-A socket is `{ x, z, yaw }` today. It becomes `{ x, y, z, yaw, pitch, roll }`, and the join —
+**Built (`T-066`).** A socket was `{ x, z, yaw }`. It is now `{ x, y, z, yaw, pitch, roll }` — the
+three new fields optional and read as zero, which is what the generator's own first socket is — and
+the join —
 *rotate the new piece about its own start socket until that socket matches the previous finish, then
 translate* — matches all three angles instead of one. Every piece is still defined in its own frame
 with its start socket at the origin, so the road stays flush **by construction** and the measured
@@ -194,11 +272,13 @@ points to be driven and tuned**, except where a number is forced by something al
 | Number | Start | Why |
 |---|---|---|
 | `GravityOnGround` | 1 | Share of gravity that acts along the surface while grounded. **0 is exactly today's behaviour** |
-| `MaxGrade` | 0.25 (14°) | A hard ceiling, well under the 46° at which `Drift/World` calls a surface a wall and stops the car dead against it |
-| `MaxBank` | 30° | The banked-30's showcase angle. Also under the wall threshold, which matters because a bank is a surface normal too |
-| `MaxPitchStep`, `MaxBankStep` | 0.02, 1.5°/segment | How much either may change in one segment, so no join is a step and no bank is a kink |
-| `FallBelowSurface` | 150 studs | The old `RespawnBelowY` distance, measured from the road instead of from zero |
-| Per piece | — | Each of the four shapes carries its own height and bank profile; they are the piece's, not global |
+| ~~`MaxGrade`~~ | ~~0.25 (14°)~~ **8°** | Not the wall threshold: the car's own unpitched collision box. See "`MaxGrade` is 8 degrees" above (`T-066`) |
+| ~~`MaxBank`~~ | ~~30°~~ **20°** | Not the wall threshold either: the same collision box, never rolled. 30° read as a wall 17 times in two drives, 20° never did (`T-066`) |
+| `MaxSurfaceTilt` | 35° | **Added by `T-066`.** Grade and bank compound -- the normal's Y is cos(grade) x cos(bank) -- so it is the pair that is capped, never one at a time |
+| `MaxPitchStep`, `MaxBankStep` | 1.15°, 1.5°/segment | How much either may change in one segment, so no join is a step and no bank is a kink. The spec's 0.02 of grade is 1.15° |
+| `MaxProfileSegments` | 64 | **Added by `T-066`.** The ceiling on what those two may cut a piece into, so a careless profile costs a few parts rather than hundreds |
+| `FallBelowSurface` | 150 studs | The old `RespawnBelowY` distance, measured from the road instead of from zero. **Not built yet:** it is `CarService`/`RoadService`, not the piece |
+| Per piece | `Height`, `Bank` | Each piece carries its own; `Height = { Drop, EndGrade }` and `Bank = { Degrees, Shape }`, both optional, documented in `Config/Road` |
 
 ## UI
 
@@ -243,20 +323,24 @@ None this round.
 
 ## Testing
 
+The six marked **done** are in `RoadTests` and pass; their numbers are in "What is built" above.
+
 | Check | Measured |
 |---|---|
+| **The flat road is untouched** (done) | Three pinned fingerprints: the sequence a seed lays, every node and quad of the first 20 pieces, and every Part of those 20. Identical |
+| The join still has no gap (done) | 200 profiled pieces: exactly zero, in position and all three angles |
+| No join is a step (done) | 1.150° of 1.15 and 1.500° of 1.5, between neighbouring boxes, across joins included |
+| Nothing is a wall (done) | 30.95° of the 45.6° threshold; driven, 0 of 7 sweeps stopped by road |
+| The generator did not get worse (done) | 0 stalls over 5 x 500, worst call 2.21 ms against 2.15 before; 20 x 400 identical |
+| Where a car is put down (done) | every wheel within 0.11 studs of ride height, the pose's up within 0.45° of the rays' mean |
 | **The flat road is untouched** | `GravityOnGround` at 1, on flat ground: `g_along` is **exactly zero** every step, and a pinned-seed autopilot drive reproduces `RunTests`' end-to-end numbers unchanged. This is the check that protects the approved feel |
 | The hill pulls | Coast at zero throttle from 60 studs/s down a 200-stud 7% descent, and up the same climb. Speed at each end against `g·sin(pitch)` integrated |
 | **A drift downhill scrubs less** | The user's own words, as a number: the same slide, same entry speed, same angle, on the flat and on a descent — speed lost over the slide, both times |
 | The bank holds you | A steady drift round the banked 30 at a fixed finger, with the bank and with it flattened: lateral distance travelled before the car runs wide |
-| Nothing is a wall | The steepest surface normal over 500 generated pieces, against the 46° threshold. Bank and grade together, not separately — they compound |
-| The join still has no gap | Worst finish-to-start socket distance over 500 pieces: **expected exactly zero**, as today |
-| No join is a step | Largest pitch and roll change between neighbouring segments, against their limits |
-| The generator did not get worse | Stall rate over the same five seeds `track-generation.md` measures, before and after. The footprint is unchanged, so this should not move |
 | A fall on a descending road | Drive to piece 30, around 400 studs down, fall off on purpose: back **on the road at that height**, still in the run. On today's code this is the check that fails |
 | The body follows the surface | The car's `up` against the surface normal on a 7% grade and a 30° bank, and the per-wheel ray differences against what the geometry predicts |
 
-The first three are drives. The rest grow `RoadTests`.
+The rest are drives, and belong to the gravity change and to the pieces that use the profile.
 
 ## Open questions
 

@@ -50,9 +50,135 @@ return {
 	Width = 50, -- studs, kerb to kerb
 	Thickness = 12, -- studs of slab under the surface. Buried: nothing ever sees its sides
 	-- except at the very first and very last piece of a run
-	SurfaceY = 0, -- world Y of the road's top. FLAT, everywhere: no elevation in this
-	-- build at all (no crest, no banking), so both the other worlds'
-	-- `FallY` / `RespawnBelowY` pair is right for this one too
+	SurfaceY = 0, -- world Y of the road's top WHERE IT HAS NO PROFILE: the zero every
+	-- piece's height is measured from, exactly as `baseY` is for the
+	-- playground's ribbons. Every one of the nine pieces below is flat, so
+	-- today this is the whole of the road's height
+
+	-- ------------------------------------------------------------------ height and bank
+	-- A PIECE MAY START AT ONE HEIGHT AND FINISH AT ANOTHER, and may be banked across its
+	-- width (features/road-elevation.md, T-066). The capability is here; the pieces that
+	-- use it are not yet, so these five numbers bound what any piece may ask for rather
+	-- than describing anything the road currently does.
+	--
+	-- WHAT MAKES THEM LIMITS AND NOT WISHES: a piece's height is summed from its grade
+	-- AFTER the grade has been clamped (`Road/Pieces.applyProfile`), and its node count is
+	-- read off the swing its profile needs (`profileSegments`). A piece that asks for more
+	-- drop than `MaxGrade` allows gets the grade and lands higher than it wanted, rather
+	-- than getting a wall.
+	--
+	-- THE SPEC SAID 14 DEGREES AND THE CAR SAYS 8, which is a measured result and not a
+	-- preference. `features/road-elevation.md` picked 0.25 of grade -- 14.04 degrees --
+	-- against the 46 degrees at which `Drift/World` calls a surface a wall. That is not
+	-- the binding limit. The binding limit is THE CAR'S OWN COLLISION BOX, which is
+	-- `BodyLength` long, `BodyHeight x 0.6` tall and NEVER PITCHED: it is swept flat
+	-- through the world whatever the road is doing. So it rides `RideHeight` up with
+	-- 1.44 studs of air under it and 7 studs of nose in front of it, and on a climb
+	-- steeper than about atan(1.44 / 7) the nose is INSIDE the road ahead. The sweep sorts
+	-- what it finds by the normal; the face it meets there is vertical, so it is a WALL,
+	-- and the car stops dead against the hill it is driving up.
+	--
+	-- Measured, with gravity on the ground (T-065). A straight ramp at each grade, entered
+	-- at 90 studs/s, 14 seconds of throttle and no steering:
+	--
+	--   grade    climbed in 14 s    speed at the end    what happened
+	--     4 deg      70 studs           129 studs/s     climbs freely
+	--     6         101                 121             climbs freely
+	--     8         136                 116             climbs freely
+	--    10         149                 103             climbs freely
+	--    12          23                   0             STOPPED DEAD on the ramp
+	--    14          26                   5             stopped dead
+	--
+	-- The break lands either side of the 11.6 the geometry predicts, which is the check
+	-- that the explanation is the right one. (Before gravity it broke between 8 and 10
+	-- instead, because the car was 25 studs/s faster and the box is swept a step's TRAVEL
+	-- further forward as well.)
+	--
+	-- 8 AND NOT 10, for two reasons. The margin: at 10 the car is a degree and a half from
+	-- a dead stop, and anything that makes it faster -- a descent before the climb -- eats
+	-- that. And the drive below, which says 8 is already more than the car wants.
+	--
+	-- A DESCENT IS NOT LIMITED BY THIS directly: the ground falls away in front of the car
+	-- and nothing is swept into. The limit is symmetric anyway, because a car that spins
+	-- on a 14-degree descent is then facing up it and can never drive out -- which is how
+	-- this was found.
+	--
+	-- TO GO STEEPER, PITCH THE SWEEP BOX with the surface in `Drift/World`, which is the
+	-- one change that would lift this. It is a change to the drift model's collision and
+	-- wants its own task and its own measurement.
+	--
+	-- AND A WARNING FOR WHOEVER BUILDS THE PIECES THAT USE THIS. 8 degrees is what the car
+	-- can be driven ON; it is not what a road should be made of. A road of nothing but
+	-- descending corners, driven by the test autopilot (`RoadTests:drive`, 12 pieces, 120
+	-- seconds, one seed, each corner 220 studs of radius and 90 degrees of it, each losing
+	-- its height and handing on a level road):
+	--
+	--   the corner descends at   pieces reached   mean speed   top speed   stopped for
+	--     nothing (flat)              12            59 studs/s    92           0.00 s
+	--     4 degrees                   12            68            93          0.00
+	--     8 degrees                   10            36           120          1.75
+	--
+	-- None of that is the road failing: traced, the sweep was stopped by ROAD zero times
+	-- at both grades. It is the car going FASTER down a hill -- 120 against 92 -- while
+	-- the test driver's aim was tuned on a flat road, so it runs wide and grinds along the
+	-- outside wall. That is the feature working and the driver not keeping up. Build a
+	-- touge out of 4-degree descents and level links before reaching for 8.
+	MaxGrade = 8, -- degrees of climb or descent, anywhere on any piece. A 220-stud
+	-- straight at this grade loses 31 studs
+	-- THE SAME THING IN THE OTHER AXIS, AND THE SPEC'S 30 BECOMES 20. The collision box is
+	-- never ROLLED either, so on a bank its uphill side digs in: half the car's width is
+	-- 3.2 studs, the clearance is the same 1.44, and atan(1.44 / 3.2) is 24 degrees. Above
+	-- that the car's own box is inside the high side of the road, and every little step
+	-- between two segments at the road's edge -- a bank changing by `MaxBankStep` tips a
+	-- 50-stud road's edge by a quarter of a stud -- becomes a face it can hit. The sweep
+	-- calls a face a WALL and stops the car dead.
+	--
+	-- Measured the same way, two seeds, with every sweep that stopped the car traced back
+	-- to the part that stopped it:
+	--
+	--   bank     ROAD read as a wall   barriers hit   stopped for   pieces reached
+	--   10 deg           0 times           14           0.00 s          12/12, 12/12
+	--   15               0                 17           0.00            12/12, 12/12
+	--   20               0                 12           0.00            12/12, 12/12
+	--   25               1                 13           0.40            12/12, 12/12
+	--   30              17                  8           5.19            12/12, 12/12
+	--
+	-- Zero up to 20, one at 25, seventeen at 30 -- which brackets the 24 degrees the
+	-- geometry predicts, so the explanation is the right one. 20 is the last row that is
+	-- clean, and it is a real loss: `features/road-elevation.md`'s showcase piece is "a
+	-- 30-degree turn with big banking", and 20 degrees of bank is noticeably less bank.
+	-- IT IS THE SAME ONE FIX as the grade: roll and pitch the sweep box with the surface
+	-- in `Drift/World`, measure it, and both of these limits move at once.
+	MaxBank = 20, -- degrees across the road
+	-- NOTHING MAY READ AS A WALL, and the two of them COMPOUND -- a banked descent is
+	-- steeper than either alone. The surface normal's Y is exactly cos(grade) x cos(bank),
+	-- so the pair is capped as well as each one separately: at 8 and 20 the product is
+	-- 0.9903 x 0.9397 = 0.9305, a surface leaning 21.5 degrees.
+	--
+	-- `Drift/World` calls anything whose normal leans more than about 46 degrees
+	-- (`GROUND_NORMAL_Y = 0.7`) a WALL: its ground rays step past it and the car stops
+	-- dead against it instead of driving on it. 35 degrees leaves the normal at 0.819,
+	-- which is 11 degrees and 0.12 of normal clear of that threshold -- room for the
+	-- rounding in a chord's own slope, and nowhere near enough to be felt.
+	--
+	-- It is a BACKSTOP and not a working limit: 8 degrees of grade and 20 of bank come to
+	-- 21.5 together, so nothing the two limits above allow can reach it. It is here so
+	-- that a piece written with both of them opened up still cannot make a wall -- and the
+	-- day the sweep box is pitched and rolled with the surface, those two limits are what
+	-- will move and this is what will still be holding the line.
+	MaxSurfaceTilt = 35, -- degrees the surface may lean, grade and bank together
+	-- HOW MUCH EITHER MAY CHANGE IN ONE SEGMENT, which is `MaxSegmentChord` and
+	-- `MaxArcDeviation`'s idea in the other two axes: a segment is one flat box, so a
+	-- piece is cut into enough of them that its whole pitch and bank swing is shared out
+	-- and no single joint is a step or a kink. A profiled piece is therefore cut more
+	-- finely than a flat one -- a flat straight is ONE box however long it is, and a
+	-- straight that has to unwind a 30-degree bank is twenty.
+	MaxPitchStep = 1.15, -- degrees of grade change between neighbouring segments. The
+	-- spec's 0.02 of grade is 1.15 degrees
+	MaxBankStep = 1.5, -- degrees of bank change between neighbouring segments
+	MaxProfileSegments = 64, -- and the ceiling on what those two may ask for, so a profile
+	-- written carelessly costs a piece a few more parts rather than
+	-- hundreds. A hairpin is 30 segments and 90 parts today
 
 	-- HOW FINELY A CURVE IS CUT INTO STRAIGHT SEGMENTS. The car does not use Roblox
 	-- physics -- it finds the ground with four downward rays -- so a curve made of short
@@ -288,14 +414,36 @@ return {
 	OverlapSlack = 0.75, -- studs off each side of every footprint quad
 
 	-- --------------------------------------------------------------------- the piece set
-	-- FIVE PIECE TYPES IN NINE VARIANTS, and all of them FLAT: `Crest` -- a straight with
-	-- a rise and a fall -- is deliberately not here. The user asked for flat for this
-	-- first build and elevation is its own decision, so there is no height anywhere in
-	-- the set and `SurfaceY` is the whole of it.
+	-- FIVE PIECE TYPES IN NINE VARIANTS, AND ALL OF THEM STILL FLAT. The road can carry a
+	-- height and a bank now (T-066) and not one of these uses it: the touge pieces that do
+	-- are their own step, and the nine below are measured, driven and approved as flat
+	-- pieces for flat driving (features/road-elevation.md, "designed, not tilted").
 	--
 	-- `Shape` is how a piece is drawn (`straight`, `arc`, `chicane`); `kind` is what it is
 	-- called. A corner, a sweeper and a hairpin are all `arc`, and the ENTIRE difference
 	-- between them is the two numbers below each one.
+	--
+	-- HOW A PIECE IS GIVEN A HEIGHT AND A BANK, for the step that adds some. Both are
+	-- optional and both are ABOUT THIS PIECE -- what it arrived at is carried in and
+	-- blended, never snapped:
+	--
+	--   Height = { Drop = 60 }                 loses 60 studs and hands on the average
+	--                                          grade it did it at
+	--   Height = { EndGrade = -8 }             bends from the grade it arrived at to 8
+	--                                          degrees of descent; the height falls out
+	--   Height = { Drop = 60, EndGrade = 0 }   loses 60 studs and arrives LEVEL: a descent
+	--                                          that settles onto a flat section
+	--   Height = { Drop = 60, EndGrade = -12 } flat entry, floor leaves: with a level
+	--                                          entry this is the corkscrew's shape
+	--   Bank   = { Degrees = 25 }              banked 25 degrees through the piece, the
+	--                                          outer edge of its own turn raised
+	--   Bank   = { Degrees = 25, Shape = "crest" }   in and out again, level at both ends
+	--
+	-- NO `Height` AT ALL IS NOT "FLAT", IT IS "CARRY ON": a piece with no height profile
+	-- keeps the grade it arrived at for its whole length, which is what stops a descent
+	-- being a staircase of ramps. No `Bank` is the other way round -- a bank belongs to
+	-- the corner it is in, so a piece without one eases whatever it arrived with back to
+	-- level over its own length. Neither ever steps at a join.
 	--
 	-- `weight` is how often a variant should turn up relative to the others, BEFORE the
 	-- bias against recent use. `minPieces` is how far into a run before it may appear at
