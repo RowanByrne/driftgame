@@ -27,7 +27,7 @@ The car is **not** driven by Roblox's physics (`DECISIONS.md`, 2026-11-03). Its 
 |---|---|---|
 | `DriftController` | The drift model: the fixed-step simulation that moves the local player's car | `DebugState()`, `DebugDrive(inputs, seconds)` |
 | `CarInputController` | Steering, drift and brake input across keyboard, touch and gamepad | `DebugState()` |
-| `CarCameraController` | The chase camera that follows the car and leads the slide | `DebugState()` |
+| `CarCameraController` | The reference game's drift camera: it swings toward the velocity, rolls, and pulls in, all off the slip angle. Its targets run on their own fixed step (`CamTargetStep`), interpolated between, so every frame rate puts the camera in the same place | `Release()`, `Follow()`, `DebugState()`, `DebugProbe(opts)`, `DebugRecord(seconds)` |
 
 ## Shared modules
 
@@ -64,7 +64,7 @@ Where each kind of thing is listed in code, so nothing gets scattered.
 
 - **Debug bridge members:**
   - Server, `game.ServerStorage.DebugBridge:Invoke(...)`: `PlaygroundService:DebugState()`, `DebugWalk(stepId, lateral, every)` and `DebugBounds()`, `CarService:DebugState()`.
-  - Client, `game.Players.LocalPlayer.PlayerScripts.DebugBridge:Invoke(...)`: `DriftController:DebugState()`, `DebugDrive(inputs, seconds, opts)`, `DebugReset()` (asks the server for a respawn; where a car goes is not the client's to say) and `DebugTeleport(cf)` (moves it without asking, to prove the server rejects that), `CarInputController:DebugState()`, `DebugSetInput(steer, drift, brake)`, `DebugClearInput()` and `DebugDrag(offsetPx, flickRate)` (the real gesture, not a bypass), `CarCameraController:DebugState()`.
+  - Client, `game.Players.LocalPlayer.PlayerScripts.DebugBridge:Invoke(...)`: `DriftController:DebugState()`, `DebugDrive(inputs, seconds, opts)`, `DebugReset()` (asks the server for a respawn; where a car goes is not the client's to say) and `DebugTeleport(cf)` (moves it without asking, to prove the server rejects that), `CarInputController:DebugState()`, `DebugSetInput(steer, handbrake)`, `DebugClearInput()`, `DebugDrag(offsetPx, originPx)` (the real gesture, not a bypass), `DebugTravelPx(sensitivity?)` and `DebugSettings(mode?, sensitivity?)` (stands in for the settings screen), `CarCameraController:DebugState()`, `DebugProbe(opts)` (settles a throwaway rig against a car held at a fixed slip: `{ slipDeg, speed, seconds, fps, blend, yawDeg, sweepSeconds }`, where `blend` overrides `CamVelocityBlend` for that run only) and `DebugRecord(seconds)` (watches the live camera and returns the worst frame: position step, view turn, roll step, and the car's distance from the screen centre).
   - Tests: `Debug<Name>Tests` reaches `ServerScriptService/Tests/<Name>Tests`.
 - **Test profiles:** none yet; there is no DataService.
 - **Admin commands:** none yet.

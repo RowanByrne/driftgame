@@ -60,13 +60,11 @@ CarCameraController.Priority = 5 -- after DriftController, so a state exists to 
 local STEP_NAME = "DriftCamera"
 local EPS = 1e-4
 
--- The step the camera's targets run at. NOT `Config.Drift.FixedStep` (1/120): the
--- reference ran at 60, the swing-against-angle-lerp balance above settles somewhere
--- different at a different rate, and 60 is the rate that reproduces the look that was
--- measured and shown to the user. It is programmer art here only because Config belongs to
--- another task this round (docs/CLAIMS.md); it wants to be `CamTargetStep` in Config.
-local TARGET_STEP = 1 / 60
-local MAX_TARGET_STEPS = 8 -- a stalled frame must not be paid back as a burst of steps
+-- The step the camera's targets run at, and the clamp on how many one frame may spend:
+-- `CamTargetStep` and `CamMaxTargetSteps`, which say there why the camera's step is its
+-- own and not the model's `FixedStep`. Read once -- Config is not reloaded at runtime.
+local TARGET_STEP = Config.Drift.CamTargetStep
+local MAX_TARGET_STEPS = Config.Drift.CamMaxTargetSteps
 
 -- What the camera needs of the car, and nothing else. Built from the model's state, or
 -- made up by DebugProbe, which is how the zoom curve and the roll curve are measured

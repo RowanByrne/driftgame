@@ -221,6 +221,18 @@ return {
 	-- position, which is what keeps the horizon from jittering
 	CamFovBase = 70, -- deg at a standstill. OURS
 	CamFovTop = 86, -- deg at top speed. OURS
+	CamTargetStep = 1 / 60, -- s. OURS, and NOT `FixedStep`. The camera's targets feed back
+	-- into themselves (the swung target is what the next frame's resting
+	-- direction is measured from), so where they settle depends on how
+	-- often they are stepped: left at frame rate, the camera sat 16.2
+	-- studs above a drifting car at 30 FPS and 10.1 at 120. They run on
+	-- this fixed step instead, interpolated between, and 60 is the rate
+	-- the reference ran at -- so this number reproduces its look, and
+	-- changing it changes how the camera sits in a drift at every frame
+	-- rate at once. The model's own step is finer and deliberately
+	-- separate: the camera does not need 120 and the feedback is why.
+	CamMaxTargetSteps = 8, -- safety, as `MaxStepsPerFrame` is for the model: a stalled
+	-- frame must not be paid back as a burst of camera steps
 
 	-- ---------------------------------------------------------------- score
 	-- Owned by the score task. Points only while the car is drifting and making forward
@@ -247,27 +259,4 @@ return {
 	HideCharacter = true, -- the player is the car: no Roblox character is spawned
 	DebugReadout = true, -- build the debug readout at all
 	DebugReadoutOpen = true, -- show it from the start
-
-	-- ---------------------------------------------------------------- not the model's
-	-- Read by the three modules this port has not reached yet -- the gesture
-	-- (Drift/DragControl, Controllers/CarInputController) and the camera
-	-- (Controllers/CarCameraController) -- each of which is its own task behind this one.
-	-- NOTHING in the drift model reads anything below this line. Delete the block with the
-	-- task that replaces the last of those modules.
-	DragFullLock = 140, -- px of travel from where the finger went down to a full input
-	DragDeadzone = 0.06, -- share of it ignored around the origin
-	DriftOffset = 0.55, -- share of full travel the old readout called a drift
-	DriftFlickRate = 1400, -- px/s counted as a flick
-	DriftFlickSmoothing = 0.06, -- s the flick rate is averaged over
-	KeySteerShare = 0.35, -- what a keyboard key was worth before `KeySensitivity`
-	CamDistance = 26, -- studs behind the car
-	CamHeight = 8, -- studs above it
-	CamLookAhead = 14, -- studs ahead of the car the camera looks at
-	CamLookHeight = 2.5, -- studs above the car the camera looks at
-	CamVelocityLead = 0.65, -- 0 follows the nose, 1 follows where the car is going
-	CamStiffness = 9, -- per second, how fast the camera position catches up
-	CamYawStiffness = 5, -- per second, how fast it swings round
-	CamMinPitch = -32, -- deg, how far down it may look
-	CamStandstillSeconds = 0.4, -- s of near-standstill before it stops leading
-	MinSlipSpeed = 6, -- studs/s floor the old camera uses for its slip angle
 }
