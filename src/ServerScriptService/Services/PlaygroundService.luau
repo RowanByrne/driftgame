@@ -470,9 +470,10 @@ end
 
 function PlaygroundService:Build()
 	-- Studio's default plate goes, so every lane and the Main place look the same --
-	-- UNLESS a track has adopted it. A track is an island and that plate is its floor of
-	-- last resort (TrackService), and this world is thousands of studs away and builds
-	-- its own: destroying it would pull the ground out from under the other world.
+	-- UNLESS a track has adopted it. The plate is then the floor the two worlds SHARE: the
+	-- track sits on it, this world's own plate meets its edge exactly, and the bare strip
+	-- between them is what a car drives across to get from one world to the other.
+	-- Destroying it would put the void back and make the crossing a teleport again.
 	if not trackPresent then
 		local default = workspace:FindFirstChild(Config.Drift.TrackFloorName)
 		if default and default:IsA("BasePart") then

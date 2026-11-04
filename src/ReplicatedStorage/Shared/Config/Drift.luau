@@ -168,32 +168,32 @@ local Drift = {
 	-- place with no track builds it at the origin exactly as before, so every lane and
 	-- every test place is unchanged (T-026).
 	--
-	-- THE ONLY THING THE DISTANCE BUYS IS SEPARATION, so it is far enough that the two
-	-- boxes clear each other with room to spare and no further. It was -12 000 until the
-	-- user drove it and said "it's all the way over there lol": 12 000 studs is 67 seconds
-	-- at top speed, which is a continent away rather than a neighbour in the same build.
+	-- THE TWO WORLDS SIT SIDE BY SIDE ON ONE CONTINUOUS FLOOR, and that is the whole point
+	-- of the number. It was -12 000, then -2 200, and both left the playground an ISLAND
+	-- ACROSS A VOID: the user drove to the edge, looked at the gap and said "how the fuck
+	-- am i supposed to get there lol. put them on the same baseplate connected to eachtoher
+	-- just one right next to the other". Quite right -- a world you can only teleport to is
+	-- not in the same build, it is a second build.
 	--
-	-- Why -2 200 on X, and why only on X:
+	-- Why -2 024 on X, and why only on X:
 	--   * the playground's plate is 2 000 studs across, so it is +/-1 000 about wherever
-	--     it is put: at -2 200 its box is x -3 200..-1 200 against the track's -560..560
-	--     (scaled 2x), which is 640 studs of clear air between them;
-	--   * it is HORIZONTAL only, so both worlds' ground is still Y = 0 and the one
-	--     `FallY` / `RespawnBelowY` pair is right for both of them. Z is never offset, so
-	--     Z never needs separating either;
+	--     it is put. At -2 024 its plate runs x -3 024..-1 024, and the baseplate runs
+	--     -1 024..1 024 -- so the two plates MEET EXACTLY, edge to edge. No overlap, so no
+	--     z-fighting and no ambiguity about which surface a ground ray finds; no gap, so no
+	--     step and no bump; and every surface tops out at Y = 0, so a car drives from one
+	--     world into the other without noticing;
+	--   * from the playground's edge at -1 024 to the track's at -560 is 464 studs of bare
+	--     baseplate -- about three seconds at speed. Next door, with a short drive between,
+	--     which is what was asked for;
+	--   * it is HORIZONTAL only, so both worlds' ground is still Y = 0 and the one `FallY` /
+	--     `RespawnBelowY` pair is right for both. Z is never offset, so Z never needs
+	--     separating either;
 	--   * -X is the empty quarter: the collision tests stand their own rig at
-	--     (20 000, 500, 20 000) and the jitter tests probe at (2 000, 0, 0), so nothing
-	--     the tests build comes near it;
-	--   * it is far inside 16 384, where world coordinates still quantise at 1/1024 of a
-	--     stud in float32 -- a thousandth of a stud, against ground rays 28 studs long.
-	-- THE GAP IS NOT DRIVEABLE AT THIS OFFSET AND WAS NOT AT THE OLD ONE EITHER, which is
-	-- the part nobody had written down: the baseplate is only +/-1 024, so there is no
-	-- ground between the two worlds at ANY offset that separates them. Crossing is
-	-- `CarService:DebugCross()` (Studio only), a teleport, and will stay one unless
-	-- somebody floors the gap. Each world is an island over the void and the fall catcher
-	-- puts a car back in the world it left.
-	-- `DebugPlaygroundTests` fails loudly if this is ever set small enough to overlap, so
-	-- the value guards itself.
-	PlaygroundOffsetFromTrack = Vector3.new(-2200, 0, 0),
+	--     (20 000, 500, 20 000) and the jitter tests probe at (2 000, 0, 0).
+	-- `DebugCross()` is still there and still instant, but it is now a convenience rather
+	-- than the only way across. `DebugPlaygroundTests` fails loudly if this is ever set
+	-- small enough to overlap, so the value guards itself.
+	PlaygroundOffsetFromTrack = Vector3.new(-2024, 0, 0),
 
 	-- Which world a car SPAWNS in, and the world every respawn falls back to when the
 	-- server cannot tell where the car was: "track" or "playground". Track by default,
