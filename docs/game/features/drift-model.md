@@ -198,6 +198,22 @@ raycast-and-follow, because the kinematic car cannot take forces at a point and 
 only job the player can feel is the tilt. If the car later needs to visibly squat and dive, that is
 its own task.
 
+Three rules the ground code lives by, all three of them learned the hard way (`T-026`):
+
+- **The follow moves the car's height and nothing else.** The vertical speed is the speed the
+  *surface* is climbing under the car — the velocity's own component in the plane of the ground,
+  and zero if the ray came back with a normal too steep to stand on. Taking it from the follow
+  instead (`(newY - y) / dt`) makes the follow an undamped spring at about 8 per second: every
+  landing rang at 5 Hz for a second, and a kerb the rays found above the car threw it. Measured,
+  the playground's 8.35-stud rim took the car from 0 to 141 studs/s upward in two steps.
+- **Only the wheels that are carrying the car set its height and tilt.** A wheel whose ground is
+  more than a ride height below the highest is hanging over a drop; averaging it in sinks the body
+  into the edge the other wheels are still on. Grip and score still count all four, so what a slide
+  does at an edge is unchanged.
+- **A floor's sides are walls** — that is `Drift/World`'s business, not the model's, but it is the
+  other half of the same problem. A ramp is 14 studs thick and its flanks are as solid as a
+  building's.
+
 **Determinism.** Fixed step, no random input: the same inputs from the same start give the same
 line, at any frame rate. That is what makes a drift learnable and a score worth chasing.
 
@@ -397,6 +413,9 @@ server bridge. The checks that must still pass, and the new ones the port needs:
 | **Surfaces matter** | The same drift on tarmac and on dirt: grip and score both halve |
 | **The multiplier ladder** | A long drift climbs 1→9; letting go bleeds it down, faster from 9 than from 2 |
 | **Walls are solid** | Ram a building, a pillar and a cone head-on at top speed, plus a glancing hit, a sideways slide and the slowest possible nudge: the car's body never enters the part, and driving along a wall neither sticks nor climbs. `DebugCollisionTests` |
+| **A ramp is a jump** | The playground's ramp at five speeds from a crawl to top speed, square on and at 15 and 25 degrees off: the car leaves the ground, comes down on it, and never ends a step inside the ramp. `DebugCollisionTests` |
+| **A bowl is a surface** | The banked circle crossed at 60, 120 and 179 studs/s, square to it and on a chord through the band, driven out of the middle, driven round on the band and crawled into at a quarter of a stud a second: never airborne, never inside anything, and no vertical speed the ground cannot explain. `DebugCollisionTests` |
+| **Nothing is random** | The same approach at the bowl and the ramp twice, within a stud. `DebugCollisionTests` |
 | **The car is drawn where it is** | `drawnGap` stays near zero, and the drawn car's frame-to-frame step error stays under a tenth of a simulation step — **measured on a frame clock that does not divide `FixedStep`.** A dead-steady 30, 60 or 120 FPS all divide 1/120 exactly, empty the accumulator every frame, and measure this at 0.0002 studs whether it is broken or not. `DebugJitterTests` |
 | **The car never stops being drawn** | `drawnGap` stays near zero across a long drive, a fall and respawn, and a server-side car replacement. A Model replicates before its parts do, and a rig taken in that gap draws nothing for ever (T-016) |
 | No runaway | Lock-to-lock for 12 s: speed and yaw stay inside their ceilings |
