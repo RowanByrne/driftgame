@@ -44,6 +44,7 @@
 local CollectionService = game:GetService("CollectionService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
 local ServerScriptService = game:GetService("ServerScriptService")
 
 local CarModel = require(ReplicatedStorage.Shared.CarModel)
@@ -194,9 +195,28 @@ end
 --     world never drops you into the other;
 --   * `DebugCross` hops between them, which is the only way across: they are islands
 --     over the void and far too far apart to drive.
+--
+-- SINCE T-044 THERE IS A THIRD, AND IT COMES AND GOES: the endless road, at
+-- `Config.Road.Offset`, which exists only while somebody is driving a run
+-- (`RoadService`, features/endless-run.md). It is a world for exactly the reason the
+-- other two are -- so that falling out of it puts a car back INTO it -- and it is not in
+-- the fall-through order below, because nothing may ever SPAWN there: a run is entered by
+-- pressing the button and no other way. `Config.Drift.StartWorld` stays "track".
+--
+-- Two things about it are not like the other two, and both are handled here:
+--
+--   * it MOVES. The other two are fixed boxes round a fixed spawn, so "which world is
+--     this position in" is the nearest spawn. The road grows away from its start for as
+--     long as the run lasts, so the road is asked DIRECTLY whether a position is on it,
+--     and only the two fixed worlds are decided by distance;
+--   * its respawn is not its spawn. A car that falls off at piece 30 belongs back on
+--     piece 30, not on piece 1 -- which was destroyed twenty-six pieces ago, and would
+--     be the run starting again. `RoadService:SafeStart` is that place, and a fall
+--     never ends a run.
 
 local WORLD_TRACK = "track"
 local WORLD_PLAYGROUND = "playground"
+local WORLD_ROAD = "road"
 
 local function service(name: string): any?
 	local services = ServerScriptService:FindFirstChild("Services")
@@ -211,7 +231,22 @@ local function service(name: string): any?
 	return nil
 end
 
--- Each world's spawn, or nil for a world this place has not got.
+-- The road, if this place has one loaded AND a run is going. `nil` the rest of the time,
+-- which is most of the time: the road is off by default.
+local function liveRoad(): any?
+	local road = service("RoadService")
+	if not road or type(road.HasRoad) ~= "function" then
+		return nil
+	end
+	local ok, has = pcall(road.HasRoad, road)
+	if ok and has then
+		return road
+	end
+	return nil
+end
+
+-- Each world's spawn, or nil for a world this place has not got. The road is in here only
+-- while a run is going, and it is the only one of the three that can disappear.
 local function worldSpawns(): { [string]: CFrame }
 	local out = {}
 	local track = service("TrackService")
@@ -228,6 +263,13 @@ local function worldSpawns(): { [string]: CFrame }
 			out[WORLD_PLAYGROUND] = cf
 		end
 	end
+	local road = liveRoad()
+	if road and type(road.SpawnCFrame) == "function" then
+		local ok, cf = pcall(road.SpawnCFrame, road)
+		if ok and typeof(cf) == "CFrame" then
+			out[WORLD_ROAD] = cf
+		end
+	end
 	return out
 end
 
@@ -239,6 +281,10 @@ end
 -- Where a car starts in a named world. An unknown or missing world falls through to
 -- whichever one the place has, and a place with neither (a bare baseplate lane) puts the
 -- car above the origin, exactly as before.
+--
+-- THE ROAD IS DELIBERATELY NOT IN THE FALL-THROUGH. It can be asked for by name, which is
+-- how a run starts, but nothing is ever sent there by default: a place with a road up and
+-- no track would otherwise start spawning cars into somebody else's run.
 function CarService:SpawnCFrameIn(world: string?): CFrame
 	local spawns = worldSpawns()
 	local wanted = spawns[world or ""]
@@ -248,12 +294,28 @@ function CarService:SpawnCFrameIn(world: string?): CFrame
 	return spawns[WORLD_TRACK] or spawns[WORLD_PLAYGROUND] or CFrame.new(0, Config.Drift.RideHeight, 0)
 end
 
--- Which world a position is in: the nearer spawn, measured flat. The two worlds are
--- 12 000 studs apart and each is 2 000 across at the most, so "nearer" is never a close
--- call -- there is no need to box-test either of them.
+-- Which world a position is in.
+--
+-- THE ROAD IS ASKED, THE OTHER TWO ARE MEASURED. The track and the playground are fixed
+-- boxes round a fixed spawn 12 000 studs apart, each 2 000 across at the most, so "nearer"
+-- is never a close call and there is no need to box-test either of them. The road is not
+-- like that: it grows away from its own start for as long as the run lasts, so after an
+-- hour of driving "nearest to piece 1" would stop being true of a car that is plainly on
+-- it. It knows where it is, so it is asked -- `PieceAt` is nil for a position that is not
+-- on the road at all.
 function CarService:WorldAt(position: Vector3): string?
+	local road = liveRoad()
+	if road and type(road.PieceAt) == "function" then
+		local ok, piece = pcall(road.PieceAt, road, position)
+		if ok and piece then
+			return WORLD_ROAD
+		end
+	end
 	local nearest, nearestName = math.huge, nil
 	for name, cf in worldSpawns() do
+		if name == WORLD_ROAD then
+			continue -- answered above, by the road itself
+		end
 		local flat = Vector3.new(position.X - cf.Position.X, 0, position.Z - cf.Position.Z).Magnitude
 		if flat < nearest then
 			nearest, nearestName = flat, name
@@ -265,8 +327,22 @@ end
 -- Where a car that was last at `position` belongs: the spawn of the world it was in.
 -- PlaygroundService's fall catcher asks this too, so a car it scoops up off the void
 -- comes back in the world it fell out of.
+--
+-- The road answers with `SafeStart` and not with its spawn, because its spawn is piece 1
+-- and piece 1 stopped existing a long way back. A fall costs the piece you were in the
+-- middle of, and nothing else (`RoadService:SafeStart`).
 function CarService:SpawnCFrameNear(position: Vector3): CFrame
-	return self:SpawnCFrameIn(self:WorldAt(position))
+	local world = self:WorldAt(position)
+	if world == WORLD_ROAD then
+		local road = liveRoad()
+		if road and type(road.SafeStart) == "function" then
+			local ok, cf = pcall(road.SafeStart, road, position)
+			if ok and typeof(cf) == "CFrame" then
+				return cf
+			end
+		end
+	end
+	return self:SpawnCFrameIn(world)
 end
 
 -- Where a car starts: the configured world.
@@ -518,14 +594,58 @@ function CarService:Respawn(player: Player, to: CFrame?): CFrame?
 	-- a car that drove off the playground is not put down on the track 12 000 studs away
 	-- (T-026). Nothing believed yet -- a respawn before the first accepted packet -- is
 	-- the configured start world.
+	--
+	-- A PLAYER IN A RUN IS ASKED ABOUT FIRST, and the question is the roster, not the
+	-- position. Falling off the road usually leaves a believed position the road can still
+	-- place -- it locates in X and Z and a fall is in Y -- but a car that has not sent a
+	-- packet yet, or that went off the side and kept going, would fall through to
+	-- `SpawnCFrame` and be yanked back to the track, silently ending a run a fall is not
+	-- allowed to end (features/endless-run.md "What a fall does").
 	local believed = self:BelievedPosition(player.UserId)
-	local cf = to or (if believed then self:SpawnCFrameNear(believed) else self:SpawnCFrame())
+	local cf = to
+	if not cf then
+		local road = liveRoad()
+		if road and type(road.InRun) == "function" and type(road.SafeStart) == "function" then
+			local ok, inRun = pcall(road.InRun, road, player)
+			if ok and inRun then
+				local got, onRoad = pcall(road.SafeStart, road, believed)
+				if got and typeof(onRoad) == "CFrame" then
+					cf = onRoad
+				end
+			end
+		end
+	end
+	if not cf then
+		cf = if believed then self:SpawnCFrameNear(believed) else self:SpawnCFrame()
+	end
 	car:PivotTo(cf)
 	seen = self:_expect(player.UserId, cf.Position)
 	seen.respawnedAt = os.clock()
 	self.respawns += 1
 	self.carRespawn:FireClient(player, cf)
 	return cf
+end
+
+-- THE SERVER PUTTING A CAR SOMEWHERE BECAUSE IT DECIDED TO, rather than because a client
+-- asked. The only difference from `Respawn(player, cf)` is that the respawn cooldown and
+-- counter do not apply: they exist to stop a client hammering `CarRespawn` and teleporting
+-- itself about, and a move the server chose is not that.
+--
+-- It is still a narrow door. `cf` is never a value off the wire -- the two callers are
+-- `RoadService` starting and ending a run, which computes it from the generator, and
+-- `DebugCross`, which is Studio only. The caller's own rate limit is what bounds how often
+-- this can happen: a start button that could be pressed freely would be a teleport with a
+-- label on it (features/endless-run.md "What the client may say").
+function CarService:Place(player: Player, cf: CFrame): CFrame?
+	if typeof(cf) ~= "CFrame" then
+		return nil
+	end
+	local seen = self.seen[player.UserId]
+	if seen then
+		seen.respawnedAt = nil
+		seen.respawnCount = 0
+	end
+	return self:Respawn(player, cf)
 end
 
 function CarService:Despawn(player: Player)
@@ -646,6 +766,7 @@ end
 function CarService:DebugState()
 	local cars = {}
 	local offenders = {}
+	local road = liveRoad()
 	for userId, car in self.cars do
 		local seen = self.seen[userId]
 		local key = self.carKeys[userId] or Cars.Default
@@ -658,6 +779,10 @@ function CarService:DebugState()
 			-- Which world the server believes this car is in, which is what a respawn
 			-- reads (T-026).
 			world = self:WorldAt(self:BelievedPosition(userId) or car:GetPivot().Position),
+			-- Whether the ROSTER has them in a run, which is not the same question as
+			-- which world they are standing in: a car that has fallen off the road is
+			-- still in the run (T-044).
+			inRun = road ~= nil and road:InRun(Players:GetPlayerByUserId(userId)) or false,
 			dropped = seen and seen.dropped or 0,
 			-- The whole of T-033 in three fields: the car the SERVER says this player is
 			-- in, the speed it will take from them, and the shape it has dressed them in.
@@ -679,9 +804,11 @@ function CarService:DebugState()
 		cars = cars,
 		carCount = #cars,
 		spawn = self:SpawnCFrame().Position,
-		-- Both worlds, and which one a car starts in (T-026).
+		-- Every world this place has right now, and which one a car starts in (T-026).
+		-- `road` is in `worlds` only while a run is going, and is never `startWorld`.
 		worlds = worlds,
 		startWorld = Config.Drift.StartWorld,
+		roadUp = liveRoad() ~= nil,
 		droppedStates = self.dropped,
 		respawns = self.respawns,
 		respawnsRefused = self.respawnsRefused,
@@ -717,12 +844,7 @@ function CarService:DebugCross(world: string?, userId: number?)
 			end
 			-- The cooldown is there to stop a client asking twice; a Studio hop is not a
 			-- client, and waiting half a second for it only hides what is being measured.
-			local seen = self.seen[player.UserId]
-			if seen then
-				seen.respawnedAt = nil
-				seen.respawnCount = 0
-			end
-			local cf = self:Respawn(player, spawns[to])
+			local cf = self:Place(player, spawns[to])
 			return {
 				crossed = cf ~= nil,
 				from = from,
@@ -757,6 +879,22 @@ function CarService:DebugGroundUnder(position: Vector3)
 		drop = math.round((position.Y - hit.Position.Y) * 1000) / 1000,
 		surface = hit.Instance:GetAttribute(Config.Drift.SurfaceAttribute),
 	}
+end
+
+-- Studio only: tell the server it has agreed this car is here.
+--
+-- WHY A TEST NEEDS THIS. Where the server believes a car is, is the last `CarState` it
+-- accepted -- and a test with no client cannot send one, because the movement check would
+-- quite rightly refuse a car that covered three hundred studs between two calls in the
+-- same frame. Every question about which world a car is in, and about where a fall puts
+-- it, hangs off that one position, so a test that cannot set it cannot ask any of them.
+-- This sets it the same way a spawn and a respawn do -- through `_expect`, so the grace
+-- and the counters behave exactly as they do in play -- and it is the SERVER writing its
+-- own belief, not a client proposing one. Nothing in the game calls it.
+function CarService:DebugBelieve(userId: number, position: Vector3)
+	assert(RunService:IsStudio(), "DebugBelieve is Studio only")
+	self:_expect(userId, position)
+	return self:BelievedPosition(userId)
 end
 
 -- Studio only: respawn a player's car exactly as a request does, with no client involved.
