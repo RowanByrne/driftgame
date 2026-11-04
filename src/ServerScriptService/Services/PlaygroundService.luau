@@ -79,21 +79,14 @@ local function buildPillars(parent: Instance)
 	end
 end
 
-local function buildCircle(parent: Instance)
-	local spec = Layout.Circle
-	local centre = Vector3.new(spec.centre.x, 0, spec.centre.z)
-	local bankAt = Build.bankProfile({ shape = "flat", degrees = spec.bank }, -1) -- a right-hand turn
-	local heightAt = Build.levelInnerEdge(function()
-		return 0
-	end, bankAt, spec.width * 0.5)
-
-	local folder = newFolder(spec.id, parent)
-	local nodes = Path.ring(centre, spec.radius, spec.segments)
+-- One ring of the bowl: the banked band, or the apron that climbs to it.
+local function buildRing(id: string, folder: Instance, centre: Vector3, radius: number, segments: number, width: number, thickness: number, colour: Color3, heightAt, bankAt)
+	local nodes = Path.ring(centre, radius, segments)
 	local parts = Build.ribbon(nodes, {
-		name = spec.id,
-		width = spec.width,
-		thickness = spec.thickness,
-		colour = palette[spec.colour],
+		name = id,
+		width = width,
+		thickness = thickness,
+		colour = colour,
 		baseY = Layout.Surface.height,
 		heightAt = heightAt,
 		bankAt = bankAt,
@@ -102,15 +95,38 @@ local function buildCircle(parent: Instance)
 	})
 	partCount += #parts
 
-	local circumference = 2 * math.pi * spec.radius
-	local dense = Path.ring(centre, spec.radius, math.max(8, math.ceil(circumference / SAMPLE_SPACING)))
+	local circumference = 2 * math.pi * radius
+	local dense = Path.ring(centre, radius, math.max(8, math.ceil(circumference / SAMPLE_SPACING)))
 	local samples = {}
 	for i, node in dense do
 		local pos, right = Build.frame(node, Layout.Surface.height + heightAt(0), bankAt(0))
 		samples[i] = { pos = pos, right = right }
 	end
 
-	features[spec.id] = { id = spec.id, segments = #parts, folder = folder, samples = samples }
+	features[id] = { id = id, segments = #parts, folder = folder, samples = samples }
+end
+
+-- The bowl: the banked band, and the apron outside it that the car drives up to reach it.
+-- Without the apron the band's rim is an 8-stud wall all the way round (Layout.Circle).
+local function buildCircle(parent: Instance)
+	local spec = Layout.Circle
+	local centre = Vector3.new(spec.centre.x, 0, spec.centre.z)
+	local bankAt, heightAt, skirtBankAt, skirtHeightAt = Build.circleProfiles(spec)
+	local folder = newFolder(spec.id, parent)
+
+	buildRing(spec.id, folder, centre, spec.radius, spec.segments, spec.width, spec.thickness, palette[spec.colour], heightAt, bankAt)
+	buildRing(
+		`{spec.id}Skirt`,
+		folder,
+		centre,
+		spec.skirt.radius,
+		spec.skirt.segments,
+		spec.skirt.width,
+		spec.skirt.thickness,
+		palette[spec.skirt.colour],
+		skirtHeightAt,
+		skirtBankAt
+	)
 end
 
 local function denseStraight(cursor, length: number, heightAt, baseY: number)
@@ -133,7 +149,7 @@ local function buildRamp(parent: Instance)
 	local cursor = Path.cursor(spec.x, spec.z, spec.heading)
 	local flat = Build.bankProfile(nil, 1)
 
-	local climbAt = Build.heightProfile({ shape = "ramp", to = spec.rise }, 0)
+	local climbAt, lipAt = Build.rampProfiles(spec)
 	local startCursor = Path.clone(cursor)
 	local climbNodes = Path.straight(cursor, spec.length, spec.segments)
 	local climbParts = Build.ribbon(climbNodes, {
@@ -162,9 +178,7 @@ local function buildRamp(parent: Instance)
 		thickness = spec.thickness,
 		colour = palette[spec.colour],
 		baseY = Layout.Surface.height,
-		heightAt = function()
-			return spec.rise
-		end,
+		heightAt = lipAt,
 		bankAt = flat,
 		parent = folder,
 	})
@@ -173,9 +187,7 @@ local function buildRamp(parent: Instance)
 		id = `{spec.id}Lip`,
 		segments = #lipParts,
 		folder = folder,
-		samples = denseStraight(lipCursor, spec.lip.length, function()
-			return spec.rise
-		end, Layout.Surface.height),
+		samples = denseStraight(lipCursor, spec.lip.length, lipAt, Layout.Surface.height),
 	}
 end
 

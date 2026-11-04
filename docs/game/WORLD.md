@@ -4,7 +4,7 @@ This game's world and map: its areas, how players get around, and the named spot
 
 ## Overview
 
-There is no map yet. The only world is the **prototype testing ground**: a flat 2000 by 2000 stud plate with an open yard round the spawn, a district of blocky buildings making streets and alleys, scattered pillars and cones, and two elevated features — one banked circle and one ramp. It is built by code at runtime, so the lanes and the Main place are identical. It is a test rig for the drift model, not a level: there is no route, no racing line, no scoring and no goal, and nothing in it survives into the real map except the lessons. Its spec is `features/drift-playground.md`.
+There is no map yet. The only world is the **prototype testing ground**: a flat 2000 by 2000 stud plate with an open yard round the spawn, a district of blocky buildings making streets and alleys, scattered pillars and cones, and two elevated features — a banked bowl and a ramp. It is built by code at runtime, so the lanes and the Main place are identical. It is a test rig for the drift model, not a level: there is no route, no racing line, no scoring and no goal, and nothing in it survives into the real map except the lessons. Its spec is `features/drift-playground.md`.
 
 The real map is designed once the drift feel is agreed (`ROADMAP.md`). This doc is then rewritten from a layout sketch.
 
@@ -17,14 +17,14 @@ The real map is designed once the drift feel is agreed (`ROADMAP.md`). This doc 
 | The plate | The whole prototype world | A 2000-stud square plate at Y = 0, flat and drivable everywhere | — | 0 s | Built (code) |
 | The open yard | Room to reach top speed and hold a slide | 1000 by 740 studs of clear plate round the spawn, with pillars, two blocks and cone clusters scattered in it. Nothing at all within 200 studs of the spawn | — | 0 s, the spawn is in it | Built (code) |
 | The district | Streets and alleys to pick a line through | 15 buildings on a 3 by 5 grid, 32 to 140 studs tall, alternating near-black and near-white. The gaps between them are the streets: 44 to 110 studs wide | — | about 4 s to its near edge, 10 s to its far corner | Built (code) |
-| The banked circle | Holding one slide, and the ground-follow case | A 150-stud constant-radius band, 60 wide, banked 8 degrees, inner edge flush with the plate | — | about 6 s | Built (code) |
-| The ramp | The airborne case | 9 studs of climb over 110, eased in and out, with a 16-stud flat lip to leave from | — | about 6 s | Built (code) |
+| The bowl | Holding one slide, and the ground-follow case | A 150-stud constant-radius band, 60 wide, banked 8 degrees, inner edge flush with the plate, with an 80-wide apron outside it falling back to the plate: 259 studs from the middle to the outside | — | about 6 s | Built (code) |
+| The ramp | The airborne case | 9 studs of climb over 110, eased in at the bottom and steepest at the top, with a 16-stud lip carrying straight on at that slope to 11.9 studs | — | about 6 s | Built (code) |
 
 **There is no course and no order.** The player spawns in the middle of the yard facing the district with 360 studs of clear plate ahead — reaching top speed takes 90 — and drives wherever they like. The district's widest street, 110 studs, runs straight at the spawn; the narrowest alleys are 44 and punish a wide exit. The circle and the ramp sit off to either side of the yard, both within about 600 studs.
 
 ## Getting around
 
-By car, everywhere: the plate is one continuous flat drivable surface, so running wide costs a quarter-stud kerb and nothing else. Buildings and pillars are walls — untagged, so the drift model's ground ray misses them and driving into one is a collision, never a climb. The banked circle is a bowl entered from its middle: its inner edge is flush with the plate and its outer edge stands 8.4 studs proud. A car or character that drives off the plate's edge falls; `PlaygroundService` puts it back at `Spawn` once it is below Y = -40.
+By car, everywhere: the plate is one continuous flat drivable surface, so running wide costs a quarter-stud kerb and nothing else. Buildings and pillars are walls — untagged, so the drift model's ground ray misses them and driving into one is a collision, never a climb. The bowl is entered from any side: the band's inner edge is flush with the plate and its rim stands 8.4 studs proud, and the apron outside it climbs to that rim at 1 in 9.6, so there is no edge anywhere on it taller than the quarter-stud kerb. That matters since `T-026`: a raised surface's vertical faces are walls to the car whether or not they are road, so a rim the car cannot drive up is a rim it cannot cross. A car or character that drives off the plate's edge falls; `PlaygroundService` puts it back at `Spawn` once it is below Y = -40.
 
 ## Landmarks and wayfinding
 
@@ -52,8 +52,8 @@ A ray straight down from every one of them hits a part tagged `DriftSurface` wit
 - **Player:** the car, not a character: top speed 90 studs/s, wheelbase 6 studs (`features/drift-model.md`).
 - **Open yard:** x -800 to 200, z -380 to 360 — **1000 by 740 studs** of flat plate. Clear of everything for **200 studs** round the spawn (the nearest obstacle is a pillar at 253).
 - **Streets:** six of them, **narrowest 44 studs, widest 110**. Buildings are 92 by 56 studs at the smallest and 104 by 100 at the largest, and 32 to 140 tall.
-- **Reach:** the furthest thing in the world is the district's far corner, **895 studs** from the spawn — about 10 seconds at top speed. The circle is 550 to its middle, the ramp 497 to its base.
-- **World:** 2000 by 2000 studs. Streaming is **off** (`ARCHITECTURE.md`). Measured budget: **229 parts**, against a limit of 1,500 asserted in `PlaygroundTests`.
+- **Reach:** the furthest thing in the world is the district's far corner, **895 studs** from the spawn — about 10 seconds at top speed. The bowl is 550 to its middle and 809 to its far outside edge, the ramp 497 to its base.
+- **World:** 2000 by 2000 studs. Streaming is **off** (`ARCHITECTURE.md`). Measured budget: **325 parts**, against a limit of 1,500 asserted in `PlaygroundTests`.
 
 ### Surface fidelity
 
@@ -61,12 +61,16 @@ The one measurement that matters, because a surface that reads as segments quiet
 
 | Feature | Segments | Largest height change per stud | Holes |
 |---|---|---|---|
-| Circle, centre line | 96 | 0.004 studs | none |
-| Circle, 24 studs out (the high edge) | 96 | 0.005 studs | none |
-| Circle, 24 studs in (the low edge) | 96 | 0.004 studs | none |
-| Ramp, centre line | 32 | 0.123 studs | none |
-| Ramp, both edges | 32 | 0.123 studs | none |
-| Ramp lip | 2 | 0.000 studs | none |
+| Circle band, centre line | 96 | 0.004 studs | none |
+| Circle band, 24 studs out (the high edge) | 96 | 0.005 studs | none |
+| Circle band, 24 studs in (the low edge) | 96 | 0.004 studs | none |
+| Apron, centre line | 96 | 0.012 studs | none |
+| Apron, 34 studs in (the high edge) | 96 | 0.017 studs | none |
+| Apron, 34 studs out (the low edge) | 96 | 0.004 studs | none |
+| Ramp, centre line and both edges | 32 | 0.161 studs | none |
+| Ramp lip | 2 | 0.163 studs | none |
+
+The ramp's two numbers are its own slope, not a joint: the launch profile is steepest where it ends and the lip carries that slope on (`features/drift-playground.md`). The limit `PlaygroundTests` asserts is 0.25 studs per stud.
 
 The limit asserted in `PlaygroundTests` is 0.25 studs per stud travelled, so the worst of these has half the budget left. The plate itself is flat to within a thousandth of a stud, checked by a 25-stud grid of 1,230 rays over the open yard.
 
@@ -78,3 +82,4 @@ The limit asserted in `PlaygroundTests` is 0.25 studs per stud travelled, so the
 |---|---|---|
 | playground-v1 | 2026-11-03 | The first prototype playground: plate, a one-way course of track sections, circle, cones |
 | playground-v2 | 2026-11-03 | Replaced by the open testing ground: the course removed entirely, district of buildings and alleys added, one banked circle and one ramp kept |
+| playground-v3 | 2026-11-04 | `T-026`: an apron added round the banked circle so the bowl can be driven on to instead of only out of; the ramp's profile changed from eased-in-and-out to steepest-at-the-top so it jumps; the cone cluster in the ramp's mouth moved. 229 parts to 325 |

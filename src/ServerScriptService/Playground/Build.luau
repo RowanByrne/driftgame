@@ -98,10 +98,26 @@ function Build.heightProfile(spec: { [string]: any }?, from: number): ((number) 
 		return function(t: number)
 			return from + (to - from) * smoothstep(t)
 		end, to
+	elseif shape == "launch" then
+		-- t^2: eased in at the bottom, STEEPEST AT THE TOP. `smoothstep` eases out as well,
+		-- which is a ramp a car arrives at the end of travelling flat -- it does not jump,
+		-- it falls off the end (T-026). A ramp that is meant to launch has to end on its
+		-- steepest slope, and this is the shape that does it without a crease anywhere.
+		local to = spec.to
+		return function(t: number)
+			return from + (to - from) * t * t
+		end, to
 	end
 	return function()
 		return from
 	end, from
+end
+
+-- The slope a height profile ends on, in studs per stud travelled: what a ramp's lip has
+-- to carry on at so the car leaves it pointing up, instead of off a flat shelf.
+function Build.endSlope(heightAt: (number) -> number, length: number): number
+	local back = math.clamp(1 / math.max(length, 1e-4), 1e-6, 1)
+	return (heightAt(1) - heightAt(1 - back)) / (back * length)
 end
 
 -- Bank in radians. `sign` is +1 for a left-hand turn and -1 for a right-hand one, so a
@@ -209,6 +225,41 @@ function Build.ribbon(nodes: { { pos: Vector3, yaw: number } }, opts: RibbonOpti
 	end
 
 	return parts, points
+end
+
+--------------------------------------------------------------------------------
+-- The two elevated features' SHAPES, with no parts in them
+--------------------------------------------------------------------------------
+-- Here rather than in PlaygroundService so that the world and the collision tests build
+-- exactly the same shape: the tests stand their own copy of the circle and the ramp far
+-- from the world and drive at it (T-026).
+
+-- The banked band, and the apron that climbs to it. `right` along a `Path.ring` points
+-- INWARD, so `levelInnerEdge` levels the band's inner edge with the plate and leaves its
+-- rim standing `width x sin(bank)` proud; the apron is banked the other way, which levels
+-- its OUTER edge with the plate and lands its inner edge exactly on that rim. The two
+-- together are one continuous surface from the yard to the middle.
+function Build.circleProfiles(spec)
+	local zero = function(): number
+		return 0
+	end
+	local bankAt = Build.bankProfile({ shape = "flat", degrees = spec.bank }, -1) -- a right-hand turn
+	local heightAt = Build.levelInnerEdge(zero, bankAt, spec.width * 0.5)
+	local skirtBankAt = Build.bankProfile({ shape = "flat", degrees = spec.skirt.bank }, 1)
+	local skirtHeightAt = Build.levelInnerEdge(zero, skirtBankAt, spec.skirt.width * 0.5)
+	return bankAt, heightAt, skirtBankAt, skirtHeightAt
+end
+
+-- The ramp's climb and its lip. The lip is a straight continuation of the slope the climb
+-- ended on, so there is no crease between them and no flat shelf at the top to arrive at
+-- travelling level.
+function Build.rampProfiles(spec)
+	local climbAt = Build.heightProfile({ shape = spec.shape, to = spec.rise }, 0)
+	local slope = Build.endSlope(climbAt, spec.length)
+	local lipAt = function(t: number): number
+		return spec.rise + slope * spec.lip.length * t
+	end
+	return climbAt, lipAt, slope
 end
 
 return Build
