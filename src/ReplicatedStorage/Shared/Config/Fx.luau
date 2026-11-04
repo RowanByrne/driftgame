@@ -10,11 +10,9 @@
 --
 -- WHAT READS WHAT:
 --   `Marks` and `Smoke` and `Surfaces`  Drift/Wheels   (T-062, built)
---   `Engine`                            Drift/EngineSound (T-064, not built yet)
---   `Skid`                              Drift/SkidSound   (T-064, not built yet)
--- The sound tables are here because the spec puts every number of this feature in one
--- file and because the sound task should have to add a module and not a config. Nothing
--- reads them today.
+--   `Engine`                            Drift/EngineSound (T-064, built)
+--   `Skid`                              Drift/SkidSound   (T-064, built)
+-- Every number of this feature is in this one file, sound and look alike.
 --
 -- Angles are DEGREES in this table and radians nowhere in it, the same way `Config.Drift`
 -- keeps `MinSlipAngleForDrift` in degrees: a number a human tunes is a number a human can
@@ -141,6 +139,8 @@ return {
 		Attachment = "FxA_%s_%s", -- wheel name, then "L" or "R" (the two ends of the mark)
 		Trail = "FxMark_%s_%s", -- wheel name, then surface
 		Emitter = "FxSmoke_%s_%s", -- wheel name, then surface
+		Engine = "FxEngine", -- the one engine `Sound`, on the body (T-064)
+		Skid = "FxSkid_%s", -- surface. One `Sound` per surface in `Built`, on the body
 	},
 
 	-- ------------------------------------------------------------------ engine (T-064)
@@ -157,9 +157,32 @@ return {
 		MinTimeInGear = 0.5, -- s since the last shift before another is allowed
 		PitchLerpSpeed = 1, -- /s the pitch chases its target. NEVER SNAPPED: the lerp
 		-- across the gap is the whole reason a shift sounds like one
-		MinPitch = 0.7, -- OURS. The reference's live on its car config and are not in
-		MaxPitch = 2.2, -- the decompile, so these two are a guess to be tuned by ear
+		-- OURS, BOTH OF THEM. The reference's live on its car config and are not in the
+		-- decompile. What CAN be argued from numbers rather than from an ear:
+		--   * the sweep. 0.7 -> 2.2 is a ratio of 3.14, which is about what a real gear
+		--     sweeps (roughly 2 200 to 7 000 rpm). Keep the RATIO near 3 if these move
+		--   * the shift. The drop in pitch at each upshift is what a shift sounds like,
+		--     and the gearbox's own geometry decides it: 2.20 -> 1.44 at the 1-2, then
+		--     1.19, 1.03 and 0.92 at the three above it (measured, T-064). Narrow the
+		--     sweep and the 4-5 shift stops being audible as a shift at all
+		--   * the floor. The clip is a CAR IDLE and 4.64 s long, so at 0.7x a loop cycle
+		--     runs 6.63 s and its content drops about five semitones BELOW idle, into the
+		--     range a phone speaker reproduces least
+		-- THE LAST WORD IS THE USER'S EAR and nothing here is a substitute for it.
+		MinPitch = 0.7,
+		MaxPitch = 2.2,
 		-- AirbornePitch is MaxPitch: wheels up, engine free-revving
+
+		-- "The squeal sits on top, the engine under it" (AUDIO.md "Mix"). The engine is a
+		-- bed and never the loudest thing in a corner.
+		Volume = 0.45,
+		SoundId = "rbxassetid://5015124019", -- Creator Store, "Car idle" by 6ifqi, 4.64 s.
+		-- Used BY ID: nothing is uploaded and there is no master
+		-- (AUDIO.md "Sounds"). The user picked it by ear on
+		-- 2026-11-04 and it is not an agent's to swap
+		RollOffMin = 15, -- studs. Inside this the engine is at full volume
+		RollOffMax = 180, -- studs. Past this it is gone. `InverseTapered`, so another
+		-- player's car is heard WHERE IT IS and not everywhere
 	},
 
 	-- ------------------------------------------------------------------ skid (T-064)
@@ -170,5 +193,20 @@ return {
 		MinVolume = 0.25, -- the volume a drift that has just begun plays at
 		MaxSlipDegrees = 90, -- the angle the squeal is full at
 		VolumeLerpSpeed = 1, -- /s. Fading in and out instead of clicking on
+
+		-- The master the mix sets, on top of the `MinVolume`..1 lerp above: the squeal is
+		-- the loudest thing in a drift, and it is still under 1 so it has somewhere to go
+		-- the day anything else is in the mix (AUDIO.md "Mix").
+		Volume = 0.85,
+		-- One id per surface. ONLY THE SURFACES IN `Built` GET A SOUND, so this is one
+		-- `Sound` today and a table that already has room for the second. A surface with
+		-- no id here gets no sound and no error -- the day `dirt` is laid it needs a pick
+		-- from the user, not a default.
+		SoundIds = {
+			tarmac = "rbxassetid://124978127809544", -- Creator Store, "tyre_slide" by
+			-- knightracers, 3.00 s. By id, nothing uploaded
+		},
+		RollOffMin = 12, -- studs. Tighter than the engine's: a squeal is made at the road
+		RollOffMax = 150, -- studs
 	},
 }

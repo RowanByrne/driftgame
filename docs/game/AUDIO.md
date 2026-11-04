@@ -64,8 +64,8 @@ were not picked are in `..\art\generated\sfx-car\`, outside git.
 
 | Sound | Plays when | Registry name | Asset id | Source and license | Status |
 |---|---|---|---|---|---|
-| Engine loop | Always, while a car exists. Pitched 0.7x to 2.2x across five faked gears by road speed (`features/car-fx.md`) | `engine` | `5015124019` | Creator Store, "Car idle" by 6ifqi. Free in any experience, nothing uploaded. 4.64 s | Approved |
-| Tyre squeal, tarmac | While the car is drifting and grounded. Volume rises with the slip angle | `skid-tarmac` | `124978127809544` | Creator Store, "tyre_slide" by knightracers. Free in any experience, nothing uploaded. 3.00 s | Approved |
+| Engine loop | Always, while a car exists. Pitched 0.7x to 2.2x across five faked gears by road speed (`features/car-fx.md`) | `engine` | `5015124019` | Creator Store, "Car idle" by 6ifqi. Free in any experience, nothing uploaded. Measured loading in `DR-Lane2`: 4.638 s | In game (`Drift/EngineSound`, T-064) |
+| Tyre squeal, tarmac | While the car is drifting and grounded. Volume rises with the slip angle | `skid-tarmac` | `124978127809544` | Creator Store, "tyre_slide" by knightracers. Free in any experience, nothing uploaded. Measured loading in `DR-Lane2`: 2.996 s | In game (`Drift/SkidSound`, T-064) |
 | Backfire pop | — | — | — | — | **Not having one.** The user's call, 2026-11-04: the only candidate on the store that was not named after a real manufacturer ran 0.9 s, about twice as long as a pop wants, and several in a row would smear. The backfire stays specced in `features/car-fx.md` and unbuilt |
 
 ## Credits
