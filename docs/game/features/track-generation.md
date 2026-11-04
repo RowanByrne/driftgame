@@ -2,7 +2,9 @@
 
 **Status:** **steps 1 and 2 built** (`T-049`, `T-050`): the generator on five flat piece types,
 every number measured. Step 3 (the start button, spawning, falling, getting back to the other
-worlds) is `T-051` and is not built here. **Owner task:** `T-044` is the plan; specced as `T-030`.
+worlds) is `T-051` and is not built here. **The set is now nine types in sixteen variants** — the
+five flat ones here plus the four touge pieces that carry a height and a bank
+(`road-elevation.md`, `T-068`). **Owner task:** `T-044` is the plan; specced as `T-030`.
 
 Written from the reference game's own road generator, read off the decompile, the same way
 `drift-model.md` was. What we take is how the system works; none of its source, art or names come
@@ -191,6 +193,41 @@ seeds driven at 145 studs/s. And the road stopped trapping itself: backtracking 
 decided but not yet built, and when no chain 14 long exists it lays the best chain it did stand up
 rather than refusing. At 50 studs the old generator boxed in on all five suite seeds between
 pieces 187 and 448; this one reaches 500 on all five, and 0 of 20 runs box in over 400 pieces.
+
+**And then the set went from nine variants to sixteen (`T-068`), and the budget moved with it.**
+The tree a search spends its budget on is `variants ^ depth` wide, so a budget set for nine does
+not prove fourteen deep over sixteen; it runs out and the generator lays the best chain it found
+instead, and a piece laid on one piece of proof is how a road walks into a dead end. Measured over
+**45 runs of 500 pieces** — the five suite seeds and two pools of twenty — counting the pieces laid
+on less than a full `LookAhead`:
+
+| set and budget | boxed itself in | pieces on short proof | worst driven call |
+|---|---|---|---|
+| the flat nine, 2 000 | 0 of 45 | 58 | — |
+| the sixteen, 2 000 | **1 of 45** (piece 227) | 92 | 8.20 ms |
+| **the sixteen, 2 500** | **1 of 45** (piece 59) | **72** | **8.60 ms** |
+| the sixteen, 3 000 | 0 of 5 measured | — | **89.81 ms** |
+
+So `SearchNodeBudget` is **2 500**: it takes a fifth off the settling for nothing, and 3 000 is
+refused because the one path that ignores the clock (`MinAheadPieces`, the road having already run
+out under the car) then pays the whole budget in a single 90 ms call. Raising it does **not** take
+the tail stall away — it only moves which seed is unlucky.
+
+**Seven more variants did not make the generator worse.** At the shipped depth both sets box
+themselves in about never and the 1-in-45 difference is too small to read anything into, so the
+comparison is made where stalls are common enough to count, by cutting the lookahead down
+(`RoadTests:stalls`, 20 runs of 400):
+
+| lookahead | the flat nine | the sixteen |
+|---|---|---|
+| 5 | 11 of 20, 5 098 pieces, earliest stall at piece 25 | 12 of 20, 5 493 pieces, earliest at piece 56 |
+| 7 | 7 of 20, 6 775 pieces | **4 of 20, 7 107 pieces** |
+| 14 | 0 of 45 × 500 | 1 of 45 × 500 |
+
+More ways to turn is more ways out, which is what step 2 found when it added the hairpin. The
+tallies of what the road was standing on when it ran out of room put the `HairpinStack` — much the
+biggest plan footprint in the set, 280 × 140 studs — at **0 of 4** stalls at depth 7 while it is a
+tenth of the pieces.
 
 ### Progress
 
@@ -472,7 +509,11 @@ Enough to prove the system, not a content pass. Each mirrors except the straight
 | `Sweeper` | 400 radius, 45°, mirrored (314 studs) | The corner the car is happiest drifting: enters at 79 studs/s, holds the slide for 84% of it | **2, built** |
 | `Hairpin` | 70 radius, 180°, mirrored (220 studs), gated at `minPieces = 8` | Needs the car slowed and rotated: it leaves at 30 studs/s where a straight gives 94 | **2, built** |
 | `Chicane` | 140 radius, 40° each way, mirrored (196 studs, 65 across) | Tests the catch between two slides, which is the skill the model is built on: 1.5 slides caught and swapped per chicane | **2, built** |
-| `Crest` | A straight with a rise and fall | Proves pieces may change height and the car lands cleanly. **Deliberately out of this build: flat, no elevation at all** | Not built, if elevation ever earns its place |
+| `Crest` | A straight with a rise and fall | Proves pieces may change height and the car lands cleanly. **Deliberately out of steps 1 and 2** | Replaced by the four below |
+| `Link` | A 140-stud straight that levels the road and hands on a 7° climb | The breather, and the only thing in the set that climbs | **4, built (`T-068`)** |
+| `Banked30` | 400 radius, 30°, mirrored (209 studs), banked 5° in and out, losing 14 studs | The showcase: a direction change with superelevation through it | **4, built (`T-068`)** |
+| `HairpinStack` | 70 radius, 180° each way, mirrored (440 studs, 280 across), losing 40 studs, gated at `minPieces = 14` | Two hairpins back to back, opposite hands: how a mountain road loses height | **4, built (`T-068`)** |
+| `Corkscrew` | 150 radius, 45° each way, mirrored (236 studs, 88 across), losing 20 studs and handing on a 5° descent, gated at `minPieces = 10` | Flat entry, then the floor leaves — and it is what *starts* a descent | **4, built (`T-068`)** |
 
 **Each piece's numbers were measured, not chosen** — "The numbers, and the drives behind them"
 below has every table. The straight is weighted 3 and everything else 1, so a straight is 27% of
