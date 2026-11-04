@@ -46,6 +46,22 @@ local Drift = {
 	Gravity = 35, -- studs/s^2. EXACT (9.8 m/s^2). NOT Roblox's 196: the reference turns
 	-- the engine's gravity off and applies its own, and the whole feel --
 	-- how long a jump hangs, how a crest unloads the car -- is built on it
+	GravityOnGround = 1, -- EXACT in effect, OURS in form (T-065,
+	-- features/road-elevation.md "How the reference does gravity").
+	-- Share of gravity that acts ALONG the surface while the car is on
+	-- it. The reference never turns gravity off: it applies it every
+	-- step and four suspension springs push back along the car's own up
+	-- axis, so on a slope the part of gravity that is NOT into the
+	-- surface survives and the car runs away downhill. Ours is
+	-- kinematic and has no springs, so it does the springs' RESULT in
+	-- one line:
+	--     g_along = g - up * (g . up)      (`up` is the car's, smoothed)
+	--     velocity += g_along * GravityOnGround * dt
+	-- On flat ground `g_along` is EXACTLY zero, so this number cannot
+	-- touch flat driving at any value. 1 is the reference's behaviour;
+	-- 0 is the conditional gravity we shipped before T-065, kept as a
+	-- switch because this is the first change to the model since the
+	-- user approved the feel (DECISIONS.md, 2026-11-03)
 
 	-- ---------------------------------------------------------------- steering: the control
 	-- THE DIAL THE FEEL CONVERSATION STARTS WITH, and it is the CAR's:
