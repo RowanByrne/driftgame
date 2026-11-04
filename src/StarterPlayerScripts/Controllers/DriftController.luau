@@ -169,7 +169,13 @@ function DriftController:_frame(dt: number)
 		return
 	end
 
-	local input = CarInputController:Get()
+	-- The model wants one number and a handbrake. The input controller still answers in
+	-- the departed model's shape -- a steer, a drift flag and a brake -- so the drift flag
+	-- is dropped here (rotating is drifting; there is nothing for it to mean any more) and
+	-- the brake becomes the handbrake that stops a car after a run. The gesture task
+	-- behind this one replaces that shape with the real one.
+	local raw = CarInputController:Get()
+	local input = { steer = raw.steer, handbrake = raw.brake == true }
 	local steps = Sim.advance(self.runner, dt, input, self.world)
 	local state = self.runner.state
 
@@ -202,8 +208,7 @@ function DriftController:_frame(dt: number)
 			steps = steps,
 			frameSeconds = dt,
 			steerInput = input.steer,
-			drift = input.drift,
-			brake = input.brake,
+			handbrake = input.handbrake,
 			device = CarInputController:Device(),
 			surfaceTag = self.world.usingTag,
 		})
@@ -211,11 +216,9 @@ function DriftController:_frame(dt: number)
 end
 
 function DriftController:_send(state)
-	local fwd, right = DriftModel.axes(state.yaw)
-	local velocity = fwd * state.u + right * state.v + Vector3.yAxis * state.vy
-	-- `drifting` is read off the slide the car is in, not off the input: with a continuous
-	-- finger there is no mode to report (Config.Drift.PhaseDriftingAt).
-	self._carState:FireServer(DriftModel.cframe(state), velocity, state.phase == "drifting")
+	-- `drifting` is read off the car, not off the input: rotating is drifting, and there
+	-- is no drift input left to report (Config.Drift.MinSlipAngleForDrift).
+	self._carState:FireServer(DriftModel.cframe(state), state.velocity, state.drifting)
 end
 
 -- The camera asks for this every frame (docs/game/ARCHITECTURE.md "Studio tools").
@@ -238,24 +241,25 @@ function DriftController:DebugState()
 		position = s.position,
 		headingDeg = math.deg(s.yaw) % 360,
 		speed = DriftModel.speed(s),
+		velocity = s.velocity,
 		forwardSpeed = s.u,
 		lateralSpeed = s.v,
-		yawRate = s.r,
+		yawRate = s.r, -- rad/s, and it IS the finger times MaxSteeringSpeed
 		verticalSpeed = s.vy,
-		slipDeg = math.deg(s.slip),
-		slipFrontDeg = math.deg(s.slipFront),
-		slipRearDeg = math.deg(s.slipRear),
-		slideFrac = s.slideFrac,
-		wheelAngleDeg = math.deg(s.wheelAngle),
-		steer = s.steer, -- what the finger is asking for: weight thrown, not a steer angle
-		load = s.load, -- where the weight has actually got to
-		gripBlend = s.gripBlend,
-		rearGrip = s.muRear,
-		phase = s.phase,
+		slipDeg = math.deg(s.slip), -- + means the car is travelling out to its LEFT
+		steer = s.steer, -- the finger: a share of the car's maximum rate of turn
+		throttle = s.throttle, -- eased in over FullThrottleSeconds; never an input
+		gripAccel = s.gripAccel, -- studs/s^2 of lateral pull this step
+		braking = s.braking, -- past 90 deg of slip: the pull is against the travel
+		drifting = s.drifting,
+		surfaceGrip = s.surfaceGrip,
+		surfaceScore = s.surfaceScore,
+		wheelsDown = s.wheelsDown, -- FL, FR, RL, RR
+		rearDown = s.rearDown,
+		grounded = s.grounded,
 		airborne = s.airborne,
 		groundY = s.groundY,
 		wallHit = s.wallHit,
-		breakLooseSeconds = s.breakLoose,
 		simSeconds = s.time,
 		stepSeconds = Config.Drift.FixedStep,
 		stepsLastFrame = self.runner.steps,
@@ -272,8 +276,10 @@ end
 
 -- Run the model with no player and return the path it took. Deterministic: the same
 -- inputs from the same start give the same line (features/drift-model.md "Determinism").
--- `opts`: { fps, sample, start, world }. `live = true` uses the real Workspace instead of
--- a flat plane, so a recorded drive can be measured on the playground itself.
+-- `opts`: { fps, sample, start, velocity, world }. `live = true` uses the real Workspace
+-- instead of a flat plane, so a recorded drive can be measured on the playground itself,
+-- and `velocity` starts the car already moving, which is how a slide is measured without
+-- waiting out the run-up.
 function DriftController:DebugDrive(inputs, seconds: number, opts)
 	opts = opts or {}
 	local start = opts.start or self.spawnCFrame
@@ -285,6 +291,7 @@ function DriftController:DebugDrive(inputs, seconds: number, opts)
 		fps = opts.fps,
 		sample = opts.sample,
 		start = start,
+		velocity = opts.velocity,
 		world = world,
 	})
 end

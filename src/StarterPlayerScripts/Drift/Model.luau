@@ -1,26 +1,37 @@
 --!strict
 -- Model: the drift model itself, and nothing else.
 --
--- A bicycle model (docs/game/features/drift-model.md "Rules and numbers"): one front
--- contact point and one rear contact point, each making a lateral force from its slip
--- angle, integrated by hand at a fixed step. It is pure maths plus two injected world
--- queries, so it runs with no player, no car and no Workspace: that is what makes
--- DebugDrive and the determinism test possible.
+-- A port of the reference game's model (docs/game/features/drift-model.md), written from
+-- a description of how its maths works. It is pure maths plus two injected world queries,
+-- so it runs with no player, no car and no Workspace: that is what makes DebugDrive and
+-- the determinism test possible.
 --
--- Frames. The car's own frame is the usual car one:
---   u  forward speed            (+ forwards)
---   v  lateral speed            (+ to the car's right)
---   r  yaw rate                 (+ turning right)
--- Roblox's Y rotation runs the other way, so `yaw` (the Roblox one) loses r each step.
+-- THE WHOLE MODEL IN FIVE LINES, and the order is the step:
 --
--- The body slip angle beta = atan2(v, u) is the one number to keep straight here, because
--- everything the player feels is a function of it:
---   beta > 0  the velocity runs out to the car's RIGHT of its nose, which is the tail
---             hung out to the right, which is a car arcing LEFT.
---   beta < 0  the mirror of that.
--- A positive yaw rate r turns the car right, and turning right closes a positive beta, so
--- anything that opens the slide to the right is a NEGATIVE rdot. That one sentence is
--- behind every sign in the slide section.
+--   1. The finger IS the car's yaw rate.  yawRate = MaxSteeringSpeed * steer. Set, not
+--      pushed. Centre the finger and the car stops turning on the next step.
+--   2. Nothing moves the velocity when the car rotates, so the angle between the nose and
+--      where the car is actually going -- the slip angle -- opens on its own. ROTATING IS
+--      DRIFTING. There is no drift input, no threshold and no mode.
+--   3. Grip pulls the velocity back toward the nose, growing as a quadratic in the slip
+--      angle up to a ceiling. Past 90 degrees of slip it points against the travel
+--      instead and becomes a brake: spinning the car round is how you stop it.
+--   4. The drivetrain pushes along the NOSE, rear wheels only, with less to give the
+--      faster the car already is. A car that is sideways has its engine pushing across
+--      its own travel, so a drift costs speed without a number saying so.
+--   5. Downforce, then our own gravity (Config.Drift.Gravity, not Roblox's).
+--
+-- There is NO yaw inertia, NO yaw damping, NO steering lock, NO bicycle-model tyre slip
+-- and NO weight-throw in this model. Adding any of them breaks the feel this is for.
+--
+-- Signs, which are the only thing here that is easy to get wrong:
+--   `yaw`  Roblox's, radians. POSITIVE TURNS LEFT, and `yaw += r * dt`.
+--   `r`    the yaw rate, same sense: positive turns left.
+--   `b`    the slip angle (`s.slip`), the signed angle FROM THE NOSE TO THE VELOCITY
+--          about the car's up. POSITIVE means the car is travelling out to its LEFT,
+--          which is a car whose tail has swung right. Grip then pulls the velocity to the
+--          car's right -- `carRight * sign(b)` -- which is back toward the nose.
+--   `v`    lateral speed, positive to the car's RIGHT. So `b` and `v` have opposite signs.
 --
 -- Every number comes from Config.Drift. There are no constants in here.
 
@@ -30,16 +41,20 @@ local Config = require(ReplicatedStorage.Shared.Config)
 
 local Model = {}
 
+local EPS = 1e-4
+
 export type Input = {
-	-- NOT a steering wheel. The finger is on the car's REAR: this is how hard, and which
-	-- way, the car's weight is thrown across (features/drift-model.md "How it plays").
-	-- +1 throws the tail fully to the car's right, which arcs the car left.
+	-- NOT a steering wheel and NOT a weight to throw: this is the car's rate of turn, as a
+	-- share of `MaxSteeringSpeed` (features/drift-model.md "Steering -- the control").
 	steer: number, -- -1 .. +1
-	drift: boolean, -- a discrete press (keyboard, gamepad, a flick): worth `DriftOffset`
-	brake: boolean,
+	-- Only to stop the car once a run is over. There is no brake in normal play, and the
+	-- throttle is not an input at all.
+	handbrake: boolean?,
 }
 
-export type Hit = { y: number, normal: Vector3 }
+-- What a ground ray found. `grip` and `score` are the surface's own multipliers, so the
+-- model never has to know what a surface is called (Drift/World).
+export type Hit = { y: number, normal: Vector3, grip: number, score: number }
 
 -- The two queries the model makes of the world. Drift/World builds both, for the live
 -- Workspace and for a flat plane.
@@ -51,30 +66,32 @@ export type World = {
 export type State = {
 	position: Vector3,
 	yaw: number, -- radians, Roblox sense (+ turns left)
-	u: number,
-	v: number,
-	r: number,
-	vy: number, -- vertical speed
-	steer: number, -- what the finger is asking for this step, -1 .. 1 (see Input.steer)
-	load: number, -- where the car's weight has actually got to, -1 .. 1. Lags `steer`
-	wheelAngle: number, -- where the front wheels really point, radians, counter-steer included
-	slideFrac: number, -- 0 straight .. 1 as sideways as the car gets (`SlideAngleFull`)
-	gripBlend: number, -- 0 gripping .. 1 drifting
+	velocity: Vector3, -- world, studs/s, vertical included. The one thing the model moves
+	r: number, -- yaw rate, rad/s, + turns left. Set from the finger every step
+	u: number, -- forward speed along the nose (+ forwards), read off `velocity`
+	v: number, -- lateral speed (+ to the car's right), read off `velocity`
+	vy: number, -- vertical speed, read off `velocity`
+	slip: number, -- the slip angle `b`, radians, signed (see the header)
+	steer: number, -- the finger this step, -1 .. 1
+	throttle: number, -- 0 .. 1, eased in over `FullThrottleSeconds`; never an input
+	gripAccel: number, -- studs/s^2 of lateral pull the grip made this step
+	braking: boolean, -- past 90 degrees of slip: the grip is pointing against the travel
+	drifting: boolean, -- |slip| >= MinSlipAngleForDrift, for the readout and the score
+	wheelsDown: { boolean }, -- FL, FR, RL, RR
+	rearDown: boolean, -- at least one driven wheel is on the ground
+	surfaceGrip: number, -- mean of the four wheels' surface grip, 0 .. 1
+	surfaceScore: number, -- the same for the score multiplier
+	grounded: boolean,
 	airborne: boolean,
 	up: Vector3, -- smoothed surface normal
 	groundY: number?, -- last ground height found under the car
+	bodyRoll: number, -- radians of cosmetic lean, about the car's own forward axis
+	wheelSteer: number, -- radians the front wheels are DRAWN at. Cosmetic: they follow
+	-- the travel, which is opposite lock for free
 	wheelSpin: number, -- radians, for drawing only
-	slip: number, -- body slip angle, radians
-	slipFront: number,
-	slipRear: number,
-	muRear: number,
-	grounded: boolean,
 	wallHit: boolean,
 	fell: boolean,
-	phase: string, -- gripping | breaking | drifting | catching | airborne
 	time: number, -- seconds of simulation since the state was made
-	driftHeld: number, -- seconds the drift input has been held, -1 when it is not
-	breakLoose: number?, -- seconds from the drift input going down to the rear letting go
 }
 
 local function lerp(a: number, b: number, t: number): number
@@ -85,18 +102,39 @@ local function clamp(x: number, lo: number, hi: number): number
 	return math.max(lo, math.min(hi, x))
 end
 
-local function toward(current: number, target: number, maxDelta: number): number
-	local d = target - current
-	if math.abs(d) <= maxDelta then
-		return target
-	end
-	return current + (d > 0 and maxDelta or -maxDelta)
-end
+-- Where the four ground rays go, in the car's own axes: front/back, then left/right.
+-- Front is the look vector, which is Roblox's -Z, and the order is the one
+-- Shared/CarModel draws: FL, FR, RL, RR. The last two are the driven pair.
+local WHEELS = {
+	{ front = 1, side = -1 },
+	{ front = 1, side = 1 },
+	{ front = -1, side = -1 },
+	{ front = -1, side = 1 },
+}
+Model.WHEEL_COUNT = #WHEELS
+Model.REAR_WHEELS = { 3, 4 }
 
--- The car's forward and right vectors, from its Roblox yaw.
+-- The car's flat forward and right vectors, from its Roblox yaw. Used by anything that
+-- only wants the heading (the camera, the network send).
 function Model.axes(yaw: number): (Vector3, Vector3)
 	local s, c = math.sin(yaw), math.cos(yaw)
 	return Vector3.new(-s, 0, -c), Vector3.new(c, 0, -s)
+end
+
+-- The car's real basis, tilted onto the surface it is standing on: forward, right, up.
+local function basis(s: State): (Vector3, Vector3, Vector3)
+	local up = s.up
+	if up.Magnitude < EPS then
+		up = Vector3.yAxis
+	end
+	up = up.Unit
+	local flat = Model.axes(s.yaw)
+	local right = flat:Cross(up)
+	if right.Magnitude < EPS then
+		return flat, Vector3.new(flat.Z, 0, -flat.X), Vector3.yAxis
+	end
+	right = right.Unit
+	return up:Cross(right), right, up
 end
 
 function Model.new(spawnCFrame: CFrame): State
@@ -104,415 +142,257 @@ function Model.new(spawnCFrame: CFrame): State
 	return {
 		position = spawnCFrame.Position,
 		yaw = yaw,
+		velocity = Vector3.zero,
+		r = 0,
 		u = 0,
 		v = 0,
-		r = 0,
 		vy = 0,
+		slip = 0,
 		steer = 0,
-		load = 0,
-		wheelAngle = 0,
-		slideFrac = 0,
-		gripBlend = 0,
+		throttle = Config.Drift.StartThrottle,
+		gripAccel = 0,
+		braking = false,
+		drifting = false,
+		-- A car is spawned standing on the road, and the first step's grip and drivetrain
+		-- read these before the first ground ray has been cast. One step (1/120 s) later
+		-- the rays own them, so a car spawned in the air corrects itself immediately.
+		wheelsDown = { true, true, true, true },
+		rearDown = true,
+		surfaceGrip = Config.Drift.GripTarmac,
+		surfaceScore = Config.Drift.ScoreTarmac,
+		grounded = true,
 		airborne = false,
 		up = Vector3.yAxis,
 		groundY = nil,
+		bodyRoll = 0,
+		wheelSteer = 0,
 		wheelSpin = 0,
-		slip = 0,
-		slipFront = 0,
-		slipRear = 0,
-		muRear = Config.Drift.GripRear,
-		grounded = false,
 		wallHit = false,
 		fell = false,
-		phase = "gripping",
 		time = 0,
-		driftHeld = -1,
-		breakLoose = nil,
 	}
 end
 
+-- Speed across the ground: what the player reads off the HUD, and what the camera scales
+-- its field of view by. The vertical is deliberately left out of it.
 function Model.speed(s: State): number
 	return math.sqrt(s.u * s.u + s.v * s.v)
 end
 
 -- The car's pose, built from its position, yaw and the surface it is following.
 function Model.cframe(s: State): CFrame
-	local fwd = Model.axes(s.yaw)
-	local up = s.up
-	if up.Magnitude < 1e-3 then
-		up = Vector3.yAxis
-	end
-	up = up.Unit
-	local right = fwd:Cross(up)
-	if right.Magnitude < 1e-3 then
-		return CFrame.new(s.position) * CFrame.Angles(0, s.yaw, 0)
-	end
-	return CFrame.fromMatrix(s.position, right.Unit, up)
-end
-
--- One tyre. The force is an acceleration (per unit mass), positive to the car's right.
--- `slipVel` is how fast the contact point is sliding sideways across the tyre; the solver
--- guard caps the force at the share of that slide one step may cancel, which is what keeps
--- the stiff low-speed equations from exploding at FixedStep.
-local function tyreForce(slipAngle: number, mu: number, slipVel: number, dt: number): number
-	local C = Config.Drift
-	local peak = math.rad(C.TyrePeakSlip)
-	local force = mu * C.GripAccel * math.tanh(math.abs(slipAngle) / peak)
-	local cap = math.abs(slipVel) * C.StepGuard / dt
-	force = math.min(force, cap)
-	return slipAngle >= 0 and -force or force
+	local _, right, up = basis(s)
+	return CFrame.fromMatrix(s.position, right, up)
 end
 
 -- One fixed step. Mutates and returns `s`; the caller owns the state table.
 function Model.step(s: State, input: Input, dt: number, world: World): State
 	local C = Config.Drift
 
-	local steerIn = clamp(input.steer or 0, -1, 1)
-	local brake = input.brake == true
-	local drift = input.drift == true
+	local steer = clamp(input.steer or 0, -1, 1)
+	local handbrake = input.handbrake == true
+	s.steer = steer
 
-	---------------------------------------------------------------- the finger
-	-- The finger is on the car's rear, and its offset is not an angle to point at: it is
-	-- how hard the car's weight is thrown across (features/drift-model.md "How it plays").
-	-- There is no drift mode to be in and out of -- a small offset is a small slide, a big
-	-- one is a big slide, and the whole range is one continuous thing.
-	local command = steerIn
-	if drift and command ~= 0 then
-		-- A keyboard, a gamepad and a flick have no analogue travel. A press is worth the
-		-- offset at which a finger breaks the rear loose, so the discrete inputs land
-		-- inside the same scale instead of beside it.
-		command = (command > 0 and 1 or -1) * math.max(math.abs(command), C.DriftOffset)
-	end
-	-- The finger's travel and the car's range are not the same thing. A car left to its
-	-- own tyres is nearly all-or-nothing -- stuck, then gone -- so a straight mapping
-	-- spends the first half of a thumb's reach doing almost nothing. `SlideCurve` below 1
-	-- gives the near half of the travel something to say.
-	if command ~= 0 and C.SlideCurve ~= 1 then
-		command = (command > 0 and 1 or -1) * math.abs(command) ^ C.SlideCurve
-	end
-	s.steer = command
+	---------------------------------------------------------------- the throttle
+	-- Not an input. The car drives itself and eases in, so a first-time player is never
+	-- handed a car at top speed (features/drift-model.md "How it plays", item 2).
+	s.throttle = lerp(C.StartThrottle, 1, clamp(s.time / math.max(C.FullThrottleSeconds, EPS), 0, 1))
 
-	-- Weight has mass. It takes time to arrive and time to settle, and that lag is the
-	-- whole difference between a car and a cursor: with no lag the car answers the finger
-	-- on the same frame, which is what reads as steering rather than as weight. Thrown out
-	-- is quicker than gathered back in, because that is how a car behaves.
-	local throwing = math.abs(command) > math.abs(s.load)
-	local weightRate = throwing and C.WeightThrowRate or C.WeightSettleRate
-	s.load = toward(s.load, command, weightRate * dt)
-	local loadMag = math.abs(s.load)
-
-	-- The rear lets go in proportion to the weight taken off it, over the blend times: the
-	-- short one going out, the long one coming back, which is the catch.
-	local blendSeconds = loadMag > s.gripBlend and C.GripBlendIn or C.GripBlendOut
-	s.gripBlend = toward(s.gripBlend, loadMag, dt / math.max(blendSeconds, 1e-4))
-
-	if math.abs(command) >= C.SlideHeldAt then
-		s.driftHeld = (s.driftHeld >= 0 and s.driftHeld or 0) + dt
-	else
-		s.driftHeld = -1
-		s.breakLoose = nil
-	end
-
-	---------------------------------------------------------------- slip
-	local a = C.Wheelbase * 0.5
-	local b = C.Wheelbase * 0.5
-	local uRef = math.max(s.u, C.MinSlipSpeed)
-	local latFront = s.v + a * s.r
-	local latRear = s.v - b * s.r
-	local speed = math.sqrt(s.u * s.u + s.v * s.v)
-
-	-- The body slip angle, off the real velocity rather than off `uRef`. The tyres keep the
-	-- `MinSlipSpeed` floor, which stops their stiff equations dividing by a standstill; the
-	-- slide must not have it, for two reasons. A floor on `u` caps the angle at 90 degrees,
-	-- so a car that has gone right round reads as merely sideways and the spin guard below
-	-- never sees it. And it caps it well under 90 exactly when the car is slowest and most
-	-- sideways -- the one moment the scrub needs the truth.
+	---------------------------------------------------------------- the finger is the yaw rate
+	-- The one line the whole feel rests on. Not a torque, not a wheel angle, not a target
+	-- to ease toward: the rate of turn is SET, every step, from the finger. Centre it and
+	-- the car stops turning on the very next step.
 	--
-	-- `SlideSpeedFloor` fades the whole angle out under a crawl instead, by walking the
-	-- velocity back to straight ahead: a car barely moving has no slide worth the name,
-	-- which is also what lets one stopped sideways let go of it and drive off again.
-	local crawl = clamp(speed / math.max(C.SlideSpeedFloor, 1e-3), 0, 1)
-	local beta = math.atan2(s.v * crawl, s.u * crawl + (1 - crawl) * C.SlideSpeedFloor)
-	local slideFrac = clamp(math.abs(beta) / math.rad(C.SlideAngleFull), 0, 1)
-	s.slideFrac = slideFrac
+	-- `InvertSteering` is which way round that reads. True -- the sense the user asked for
+	-- -- is a finger to the right turning the car LEFT, because the gesture is on the
+	-- car's rear: push the tail right and the nose goes left.
+	s.r = C.MaxSteeringSpeed * steer * C.SteeringSensitivity * (if C.InvertSteering then 1 else -1)
+	s.yaw += s.r * dt
 
-	---------------------------------------------------------------- steering
-	-- Nobody steers this car. The finger is on the rear, so the front wheels are the
-	-- driver's hands, and they do what a driver's hands do in a slide: follow where the
-	-- front axle is actually going.
+	local fwd, right, up = basis(s)
+
+	---------------------------------------------------------------- the slip angle
+	-- Nothing above touched the velocity, so the nose has just moved out from under it:
+	-- this is where the drift comes from, and it is the whole of where it comes from.
+	local vel = s.velocity
+	local flow = vel - up * vel:Dot(up) -- the velocity in the car's own plane
+	local b = 0
+	if flow.Magnitude > EPS then
+		b = math.atan2(-flow:Dot(right), flow:Dot(fwd))
+	end
+	s.slip = b
+	s.drifting = math.abs(b) >= math.rad(C.MinSlipAngleForDrift)
+
+	---------------------------------------------------------------- grip closes it again
+	-- A quadratic in the slip angle, capped, times the surface. The angle it is read at is
+	-- capped at square-on, so the curve stops growing there and the ceiling is a real
+	-- ceiling rather than something a spin can climb past.
 	--
-	-- That one line is the whole of it. Straight, the travel is straight ahead and the
-	-- wheels sit straight. Turning in, the front axle is tracking round the corner and the
-	-- wheels follow it into the corner. Properly sideways, the travel is already across the
-	-- nose, so following it IS counter-steer -- opposite lock, the right amount of it, for
-	-- free. On the travel the front tyre makes no force either way, which is exactly what
-	-- a driver counter-steers *for*; `CounterSteer` moves the hands off it in either
-	-- direction, and measured, zero was the best of them (Config.Drift).
-	--
-	-- The wheels move at a rate, not instantly: a servo with no delay is a loop with no
-	-- phase margin, and the car hunts lock to lock instead of settling.
-	local speedFrac = clamp(math.abs(s.u) / C.TopSpeed, 0, 1)
-	local maxAngle = math.rad(lerp(C.SteerAngleMax, C.SteerAngleMin, speedFrac))
-	local lock = math.rad(C.SteerAngleMax)
+	-- Past 90 degrees the car is going backwards relative to its nose, and the pull stops
+	-- being sideways: it points straight against the travel and becomes a brake. That is
+	-- how a spun car stops, and nothing else in the model slows it down.
+	s.gripAccel = 0
+	s.braking = false
+	if s.grounded and s.surfaceGrip > 0 then
+		local bc = math.min(math.abs(b), math.pi * 0.5)
+		local f = math.min(C.ConstantFriction + C.SlipFriction * bc + C.SlipSqFriction * bc * bc, C.MaxFriction)
+		f *= s.surfaceGrip * C.FrictionMultiplier
 
-	local frontTravel = math.atan2(latFront, uRef)
-	local slideSteer = frontTravel + C.CounterSteer * beta
-	-- At a crawl there is no travel to follow, and a car that cannot be pointed at all
-	-- below walking pace is a car that cannot be parked. So the wheels take the weight
-	-- directly down there -- opposite to it, because the tail goes one way and the nose
-	-- the other, which keeps the finger meaning the same thing at every speed.
-	local crawlSteer = -s.load * maxAngle
-	local steerAuthority = clamp(speed / math.max(C.CrawlSpeed, 1e-3), 0, 1)
-
-	local wanted = clamp(lerp(crawlSteer, slideSteer, steerAuthority), -lock, lock)
-	s.wheelAngle = toward(s.wheelAngle, wanted, C.SteerRate * lock * dt)
-	local delta = s.wheelAngle
-
-	local slipFront = math.atan2(latFront, uRef) - delta
-	local slipRear = math.atan2(latRear, uRef)
-
-	s.slip = beta
-	s.slipFront = slipFront
-	s.slipRear = slipRear
-
-	if s.driftHeld >= 0 and s.breakLoose == nil and math.abs(beta) >= math.rad(C.BreakLooseSlip) then
-		s.breakLoose = s.driftHeld
-	end
-
-	---------------------------------------------------------------- tyres
-	local muRear = lerp(C.GripRear, C.GripRearDrift, s.gripBlend)
-	s.muRear = muRear
-
-	local forceFront, forceRear = 0, 0
-	if not s.airborne then
-		forceFront = tyreForce(slipFront, C.GripFront, latFront - uRef * math.tan(delta), dt)
-		forceRear = tyreForce(slipRear, muRear, latRear, dt)
-	end
-
-	---------------------------------------------------------------- yaw
-	local rdot
-	if s.airborne then
-		-- Airborne, the finger only rotates the car in yaw; nothing else touches it. The
-		-- minus keeps it meaning the same thing as on the ground: weight right, tail right,
-		-- nose left.
-		local wantedRate = -C.AirYawRate * s.load
-		rdot = (wantedRate - s.r) / math.max(C.AirYawTime, 1e-3)
-	else
-		rdot = (a * forceFront * math.cos(delta) - b * forceRear) / C.YawInertia
-		rdot -= C.YawDamping * s.r
-		-- The slide itself: a shove and a fight, never a pose
-		-- (features/drift-model.md "How it plays", item 4).
-		--
-		-- Two tyres at saturation hold whatever angle the car is already at and pick none
-		-- of their own, so the slide has to be driven and this is the one place the model
-		-- is frankly an arcade one. What it drives is a MOMENT, not a yaw rate: the thrown
-		-- weight shoves the tail round at `SlideKick`, and the car's own grip hauls it back
-		-- at `SlideBite`, harder the further out it is. The angle the player gets is where
-		-- the two cancel. Nothing anywhere names an angle.
-		--
-		-- That is the whole of the rebuild. Driving the yaw *rate* -- the previous version,
-		-- at the rate that held a commanded angle plus the error over a settling time --
-		-- cancels the car's own dynamics on the way: the slide arrives at the number asked
-		-- for, smoothly, from any speed, and nothing fights. A moment leaves the inertia,
-		-- the damping and both tyres in the loop, so the car leans in, overshoots, sags
-		-- when the tyres bite, and snaps home when the finger does.
-		--
-		-- `SlideBiteShape` is how the fight grows with the angle, and the reason it has to
-		-- grow at all: the rear tyre's own pull is nearly flat in the slide angle once it
-		-- is sliding -- a saturated tyre makes the same force at 20 degrees as at 60 -- so
-		-- left to the tyres alone the car has two states, stuck and gone, and nothing in
-		-- between for the middle of the finger's travel to live in.
-		local slideAuthority = clamp(speed / math.max(C.SlideKickSpeed, 1e-3), 0, 1)
-		local kick = C.SlideKick * s.load * slideAuthority
-		local bite = C.SlideBite * slideFrac ^ C.SlideBiteShape * (beta >= 0 and 1 or -1) * slideAuthority
-		rdot += bite - kick
-		local betaMax = math.rad(C.SlipAngleMax)
-		if math.abs(beta) > betaMax then
-			-- Past square across the car is going round, not drifting, and nothing the
-			-- player can do reaches it. A wall, not a feel knob: it has to be stiff enough
-			-- that a full offset pins the car sideways instead of spinning it through.
-			rdot += C.SpinRecover * (math.abs(beta) - betaMax) * (beta >= 0 and 1 or -1)
-		end
-	end
-
-	---------------------------------------------------------------- the rotating frame
-	-- u and v are measured along axes that turn at `r`, so a velocity that is not changing
-	-- in the world still moves between them. Both halves of that have to be here: with only
-	-- the `-u*r` the car's velocity is dragged round with its nose, which pumps speed in
-	-- until the model runs away. They also give the airborne case for free: with no tyre
-	-- force, these two alone hold the world velocity still while the body yaws.
-	local udot = s.v * s.r
-	local vdot = -s.u * s.r
-
-	---------------------------------------------------------------- the tyre forces
-	-- The front tyre's force is square to the *wheel*, not to the body, so at a steering
-	-- angle it has a backwards component as well as a sideways one. That component is
-	-- cornering drag, and leaving it out is not a small error: without it the steered
-	-- wheel does positive work on the car and a long corner accelerates past top speed.
-	if not s.airborne then
-		vdot += forceFront * math.cos(delta) + forceRear
-		udot -= forceFront * math.sin(delta)
-	end
-
-	---------------------------------------------------------------- longitudinal
-	if not s.airborne then
-		if brake then
-			if s.u > C.BrakeToReverse then
-				udot -= C.BrakeDecel
-			else
-				udot -= C.ReverseAccel * clamp(1 + s.u / C.ReverseSpeed, 0, 1)
-			end
-		elseif C.AutoThrottle then
-			-- The throttle is cut by the weight, not by the angle. Thrown across, the car
-			-- has nothing left on its driven wheels, and at a full offset it has nothing at
-			-- all -- which is what makes "100% to the side, held" a dead stop rather than a
-			-- fast donut, and makes it one the car cannot drive its way out of. Hanging it
-			-- on the finger rather than on the slide matters: a car that spins back toward
-			-- straight would otherwise get its engine back halfway through being stopped,
-			-- and pull away again while the player is still holding the brake.
-			local cut = 1 - loadMag ^ C.DriveCutShape
-			udot += C.Accel * clamp(1 - s.u / C.TopSpeed, 0, 1) * cut
-			if s.u < 0 then
-				udot += C.CoastDecel
-			end
+		local dir: Vector3
+		if math.abs(b) > math.pi * 0.5 and flow.Magnitude > EPS then
+			dir = -flow.Unit
+			s.braking = true
 		else
-			udot -= C.CoastDecel * (s.u > 0 and 1 or (s.u < 0 and -1 or 0))
+			dir = right * (if b >= 0 then 1 else -1)
 		end
-		-- What a slide costs. Drifting makes friction, and the harder the drift the more
-		-- friction and the more speed it takes off -- the whole trade the game is made of
-		-- (features/drift-model.md "How it plays"). `SlideDragPower` is the shape of that
-		-- trade: above 1, a shallow drift is nearly free and a big one is ruinous.
-		--
-		-- It acts along the car's TRAVEL, not along its nose. A car 70 degrees across is
-		-- scrubbing almost entirely sideways, and taking the cost off `u` alone would
-		-- leave the speed sitting in `v` where the player can still feel it.
-		local scrub = C.SlideDrag * slideFrac ^ C.SlideDragPower
-		-- The same solver guard the tyres use: never cancel more of the velocity in one
-		-- step than there is, or a car at walking pace jitters about zero.
-		scrub = math.min(scrub, speed * C.StepGuard / dt)
-		if speed > 1e-3 then
-			udot -= scrub * (s.u / speed)
-			vdot -= scrub * (s.v / speed)
-		end
+
+		-- The reference's own clamp, per WORLD axis: never pull an axis further in one
+		-- step than that axis is actually going. It is what stops the pull overshooting
+		-- through zero and juddering when the car is nearly stopped.
+		local dv = dir * (f * dt)
+		dv = Vector3.new(
+			clamp(dv.X, -math.abs(vel.X), math.abs(vel.X)),
+			clamp(dv.Y, -math.abs(vel.Y), math.abs(vel.Y)),
+			clamp(dv.Z, -math.abs(vel.Z), math.abs(vel.Z))
+		)
+		vel += dv
+		s.gripAccel = f
 	end
 
-	---------------------------------------------------------------- integrate
-	s.u += udot * dt
-	s.v += vdot * dt
-	s.r = clamp(s.r + rdot * dt, -C.YawRateMax, C.YawRateMax)
-	s.yaw -= s.r * dt -- Roblox yaw runs the other way to r
-
-	-- A ceiling on the whole velocity, not on u alone: a slide puts speed into v, and a cap
-	-- that held only u would let the total run away. A guard, not a feel knob: the throttle
-	-- and the slip bleed are what set the speed a player actually sees.
-	local planarSpeed = math.sqrt(s.u * s.u + s.v * s.v)
-	local ceiling = C.TopSpeed * C.SpeedCeiling
-	if planarSpeed > ceiling then
-		local k = ceiling / planarSpeed
-		s.u *= k
-		s.v *= k
+	---------------------------------------------------------------- the drivetrain
+	-- Along the NOSE, rear wheels only, with nothing left at top speed. `u` is a
+	-- magnitude, so a car travelling backwards under power counts that as speed for the
+	-- falloff: the reference's own quirk, and it only shows up in that rare case.
+	if s.rearDown then
+		local u = math.abs(vel:Dot(fwd)) / math.max(C.TopSpeed, EPS)
+		local a = C.MaxAcceleration * C.AccelMultiplier * clamp(s.throttle, 0, 1) * clamp(1 - u * u, 0, 1)
+		vel += fwd * (a * dt)
 	end
-	s.u = math.max(s.u, -C.ReverseSpeed)
 
-	local fwd, right = Model.axes(s.yaw)
-	local planar = fwd * s.u + right * s.v
-
+	---------------------------------------------------------------- downforce, then gravity
+	-- Downforce pins the car in proportion to its speed and switches off once the car is
+	-- genuinely falling, so a jump is a jump. On a car that follows the ground it is only
+	-- felt in the air -- it is what decides how far a jump carries.
+	if vel.Y >= C.DownforceCutoff then
+		vel -= Vector3.yAxis * (vel.Magnitude * C.DownforcePerSpeed * dt)
+	end
+	-- Our own gravity, not Roblox's, and only while the car is off the ground: on it, the
+	-- height and the vertical speed both come from the surface below.
 	if s.airborne then
-		s.vy = math.max(s.vy - C.Gravity * dt, -C.TerminalFall)
+		vel -= Vector3.yAxis * (C.Gravity * dt)
+		if vel.Y < -C.TerminalFall then
+			vel = Vector3.new(vel.X, -C.TerminalFall, vel.Z)
+		end
 	end
 
-	local target = s.position + planar * dt + Vector3.yAxis * (s.vy * dt)
+	---------------------------------------------------------------- the handbrake
+	-- Drag against the whole velocity, and never more of it than there is. Only used to
+	-- stop the car once a run is over.
+	if handbrake then
+		local speed = vel.Magnitude
+		if speed > EPS then
+			vel -= vel.Unit * math.min(C.HandbrakeDecel * dt, speed)
+		end
+	end
+
+	local target = s.position + vel * dt
 
 	---------------------------------------------------------------- walls
+	-- Ours, not the reference's: it ends a run on a hard hit, and what a run is has not
+	-- been decided. Here a hit slides the car along the surface and scrubs its speed.
 	s.wallHit = false
 	if world.sweep then
 		local hitPos, hitNormal = world.sweep(s.position, target, s.yaw)
 		if hitPos and hitNormal then
 			local n = Vector3.new(hitNormal.X, 0, hitNormal.Z)
-			if n.Magnitude > 1e-3 then
+			if n.Magnitude > EPS then
 				n = n.Unit
-				local into = planar:Dot(n)
+				local into = vel:Dot(n)
 				if into < 0 then
-					planar -= n * into -- slide along the surface instead of stopping dead
+					vel -= n * into -- slide along it instead of stopping dead
 				end
-				planar *= C.WallScrub
-				s.u = planar:Dot(fwd)
-				s.v = planar:Dot(right) * (1 - C.WallStraighten)
-				s.r *= 1 - C.WallStraighten
+				vel *= C.WallScrub
 				target = Vector3.new(hitPos.X, target.Y, hitPos.Z) + n * C.WallPush
 				s.wallHit = true
 			end
 		end
 	end
 
-	---------------------------------------------------------------- ground
-	local frontHit = world.probe(target + fwd * a)
-	local rearHit = world.probe(target - fwd * b)
-
-	local groundY: number? = nil
-	local normal = Vector3.yAxis
-	if frontHit and rearHit then
-		groundY = (frontHit.y + rearHit.y) * 0.5
-		local sum = frontHit.normal + rearHit.normal
-		normal = sum.Magnitude > 1e-3 and sum.Unit or Vector3.yAxis
-	elseif frontHit then
-		groundY, normal = frontHit.y, frontHit.normal
-	elseif rearHit then
-		groundY, normal = rearHit.y, rearHit.normal
+	---------------------------------------------------------------- the ground
+	-- One ray per wheel. Their surfaces are averaged over all four, so two wheels off the
+	-- road is half the grip, and a wheel over nothing counts as nothing.
+	local halfBase = C.Wheelbase * 0.5
+	local halfTrack = C.TrackWidth * 0.5
+	local hits = 0
+	local sumY, sumGrip, sumScore = 0, 0, 0
+	local normal = Vector3.zero
+	local found: { boolean } = table.create(#WHEELS, false)
+	for i, wheel in WHEELS do
+		local at = target + fwd * (halfBase * wheel.front) + right * (halfTrack * wheel.side)
+		local hit = world.probe(at)
+		if hit then
+			found[i] = true
+			hits += 1
+			sumY += hit.y
+			sumGrip += hit.grip
+			sumScore += hit.score
+			normal += hit.normal
+		end
 	end
+
+	local groundY: number? = if hits > 0 then sumY / hits else nil
+	normal = if normal.Magnitude > EPS then normal.Unit else Vector3.yAxis
 	s.groundY = groundY
 
-	local follow = 1 - math.exp(-dt / math.max(C.GroundFollow, 1e-4))
-	if groundY then
-		local desiredY = groundY + C.RideHeight
-		if target.Y - desiredY > C.AirborneMargin then
-			s.airborne = true
-		else
-			if s.airborne then
-				s.vy = 0 -- landing
-			end
-			s.airborne = false
-			local newY = lerp(target.Y, desiredY, follow)
-			-- Vertical speed comes from the ground itself, so cresting a ramp launches the car.
-			s.vy = clamp((newY - s.position.Y) / dt, -C.TopSpeed, C.TopSpeed)
-			target = Vector3.new(target.X, newY, target.Z)
-			s.up = s.up:Lerp(normal, follow)
-		end
+	local follow = 1 - math.exp(-dt / math.max(C.GroundFollow, EPS))
+	if groundY and target.Y - (groundY + C.RideHeight) <= C.AirborneMargin then
+		s.airborne = false
+		local newY = lerp(target.Y, groundY + C.RideHeight, follow)
+		-- The vertical speed comes from the ground itself, so cresting a ramp launches the
+		-- car rather than pinning it to the far side.
+		vel = Vector3.new(vel.X, clamp((newY - s.position.Y) / dt, -C.TopSpeed, C.TopSpeed), vel.Z)
+		target = Vector3.new(target.X, newY, target.Z)
+		s.up = s.up:Lerp(normal, follow)
 	else
 		s.airborne = true
-	end
-
-	if s.airborne then
-		s.up = s.up:Lerp(Vector3.yAxis, 1 - math.exp(-dt / math.max(C.AirLevel, 1e-4)))
+		s.up = s.up:Lerp(Vector3.yAxis, 1 - math.exp(-dt / math.max(C.AirLevel, EPS)))
 		if groundY and target.Y < groundY + C.RideHeight then
 			target = Vector3.new(target.X, groundY + C.RideHeight, target.Z)
 			s.airborne = false
-			s.vy = 0
+			vel = Vector3.new(vel.X, 0, vel.Z)
 		end
 	end
-	s.up = s.up.Magnitude > 1e-3 and s.up.Unit or Vector3.yAxis
-
+	s.up = if s.up.Magnitude > EPS then s.up.Unit else Vector3.yAxis
 	s.grounded = not s.airborne
+
+	for i = 1, #WHEELS do
+		found[i] = found[i] and s.grounded
+	end
+	s.wheelsDown = found
+	s.rearDown = false
+	for _, i in Model.REAR_WHEELS do
+		s.rearDown = s.rearDown or found[i]
+	end
+	s.surfaceGrip = if s.grounded then sumGrip / #WHEELS else 0
+	s.surfaceScore = if s.grounded then sumScore / #WHEELS else 0
+
+	---------------------------------------------------------------- the readout
+	s.velocity = vel
 	s.position = target
+	s.u = vel:Dot(fwd)
+	s.v = vel:Dot(right)
+	s.vy = vel.Y
 	s.fell = target.Y < C.RespawnBelowY
-	s.wheelSpin += (s.u / math.max(C.WheelDiameter * 0.5, 0.1)) * dt
+	s.wheelSpin += (s.u / math.max(C.WheelDiameter * 0.5, EPS)) * dt
 	s.time += dt
 
-	---------------------------------------------------------------- readout
-	-- The phase is read off the slide the car is actually in, not off the input, because
-	-- with a continuous finger there is no mode to be in: `PhaseDriftingAt` is a share of
-	-- `SlideAngleFull`, so the readout says drifting when the car is.
-	if s.airborne then
-		s.phase = "airborne"
-	elseif s.slideFrac >= C.PhaseDriftingAt then
-		s.phase = "drifting"
-	elseif loadMag > s.gripBlend and loadMag > C.PhaseCatchingAt then
-		s.phase = "breaking"
-	elseif s.gripBlend > C.PhaseCatchingAt or s.slideFrac > C.PhaseCatchingAt then
-		s.phase = "catching"
-	else
-		s.phase = "gripping"
-	end
+	-- Cosmetic, both of them, and neither is read by anything above. The body leans
+	-- outward, away from the way it is sliding; the front wheels point along where the car
+	-- is actually travelling, which is opposite lock the moment the tail is out.
+	local rollTo = -math.rad(C.BodyRollMax) * clamp(s.v / math.max(C.BodyRollSpeed, EPS), -1, 1)
+	s.bodyRoll = lerp(s.bodyRoll, rollTo, clamp(C.BodyRollRate * dt, 0, 1))
+	local steerTo = clamp(b, -math.rad(C.WheelSteerMax), math.rad(C.WheelSteerMax))
+	s.wheelSteer = lerp(s.wheelSteer, steerTo, clamp(C.WheelSteerRate * dt, 0, 1))
 
 	return s
 end
