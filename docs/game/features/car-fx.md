@@ -1,6 +1,15 @@
 # Feature: The car's sound and wheel effects
 
-**Status:** specced, waiting on the user's approval of the plan. **Owner task:** none yet (`T-056`).
+**Status:** approved; **step 1 of 3 is built** — the tyre marks and the smoke (`T-062`). The
+engine note and the tyre squeal are still unbuilt and are `T-064`'s. **Owner task:** `T-056`.
+
+| Part | State |
+|---|---|
+| Tyre marks and smoke, four gates, per wheel, per surface | **Built** — `Config/Fx.luau`, `Drift/Wheels.luau`, `Tests/FxTests.luau` (`T-062`) |
+| Engine note and the gearbox that does not exist | Not built (`T-064`) |
+| Tyre squeal | Not built (`T-064`) |
+| Backfire | Not built, and deliberately — see "Left out" |
+| Remote cars | Not built, and out of scope for this round |
 
 The car slides in silence and leaves nothing behind. This is the layer that makes a drift
 *read* — engine note, tyre squeal, tyre marks on the road and smoke off the wheels — ported
@@ -68,14 +77,14 @@ every frame it asks four questions:
 | Gate | What it does |
 |---|---|
 | **Is this wheel's surface this effect's surface?** | Picks which pair emits. Wrong surface, nothing |
-| **Is the slip angle past this wheel's threshold?** | **The fronts and the rears have different thresholds, and that is the detail that sells it.** The front wheels are drawn pointing along the travel (opposite lock, `Drift/Render`), so they are not sliding until the slip exceeds that steering angle: their threshold is `slip − MaxSteerAngle`, the rears' is `slip > 0`. The rears mark first and alone through a small slide, and the fronts join in once it is a big one |
-| **Is the throttle past `MinThrottleForFx`?** | A car coasting sideways does not light up the road |
-| **Or is the handbrake down?** | The handbrake marks and smokes on its own, above `MinHandbrakeSpeed`, throttle or no throttle |
+| **Is the slip angle past this wheel's threshold?** | **The fronts and the rears have different thresholds, and that is the detail that sells it.** The front wheels are drawn pointing along the travel (opposite lock, `Drift/Render`), so they are not sliding until the slip exceeds that steering angle: their threshold is `slip − Gates.MaxSteerDegrees`, the rears' is `slip > Gates.MinSlipDegrees`, a floating-point floor half a degree wide. The rears mark first and alone through a small slide, and the fronts join in once it is a big one |
+| **Is the throttle past `Gates.MinThrottle`?** | A car coasting sideways does not light up the road |
+| **Or is the handbrake down?** | The handbrake marks and smokes on its own, above `Gates.MinHandbrakeSpeed`, throttle or no throttle |
 
 Smoke's **emission rate** is lerped from a minimum to a maximum by `slip / π`, so a big angle is a
-big cloud. Marks have a fixed lifetime (`MarkSeconds`), with a hook to keep them for ever — the
-reference uses that for its end-of-run replay shot, and we would want it for the same reason one
-day.
+big cloud. Marks have a fixed lifetime (`Marks.Seconds`), with a hook to keep them for ever
+(`Wheels:SetMarkSeconds`) — the reference uses that for its end-of-run replay shot, and we would
+want it for the same reason one day.
 
 ### Backfire: a pop on the shift
 
@@ -102,7 +111,7 @@ Nothing in this feature needs a new number out of the drift model. `Drift/Model`
 | `_handbrake` | the input's `handbrake` | |
 | Per-wheel ground | `s.wheelsDown` (FL, FR, RL, RR) | |
 | `GetWheelSurfaceTypes()` | **a gap, and a small one.** `s.surfaceGrip` is the *mean* of four wheels' grip, not four surface names | One surface exists, so the port uses one surface for all four wheels and the per-wheel table is built but fed from one value. The day `dirt` is laid, `Drift/World`'s `Hit` grows a surface name and this reads it. Written down so it is a decision, not an oversight |
-| Wheel positions | `Render`'s rig: four wheels with their offsets | The effects hang off the wheel parts, which `Render` already places |
+| Wheel positions | `Render`'s rig: four wheels with their offsets | The OFFSETS are what the effects use; they hang off the car's `Body` and not off the wheel parts, because `Render` spins a wheel about its axle (see "The budget") |
 
 ## How it plays
 
@@ -110,8 +119,19 @@ You press the throttle and the engine note climbs, drops through a shift, climbs
 and the back steps out: a squeal fades up with the angle, the rear wheels start laying black on the
 road and puffing smoke, and as the slide deepens the fronts join them and the cloud grows. Catch it
 and all of it fades back down over about a second, leaving two dark lines through the corner that
-stay for `MarkSeconds` and then fade. Lift off mid-slide and the marks stop while the car keeps
-sliding — no throttle, no marks. Pull the handbrake at any speed and everything lights up at once.
+stay for `Marks.Seconds` and then fade. Pull the handbrake above `Gates.MinHandbrakeSpeed` and
+everything lights up at once, straight or sideways, throttle or no throttle.
+
+**One line of this was wrong, and `T-062` found it by trying to measure it:** *"lift off mid-slide
+and the marks stop while the car keeps sliding"*. **There is no lifting off in this game.** The
+throttle is not an input — `Drift/Model` eases `s.throttle` from 0 to 1 over
+`Config.Drift.FullThrottleSeconds` after a spawn and it stays at 1 for the rest of the run, so the
+only moment a live car is ever under `Gates.MinThrottle` is the first third of a second after a
+respawn. The gate is real, it is built, and it is measured in `FxTests` (60° of slip at zero
+throttle marks nothing; it marks at exactly `MinThrottle` and not a hundredth below) — but no
+player will ever see it fire. It earns its place as the thing that stops a car from marking while
+it is being eased back onto its feet, and it is **free the day a throttle or a brake becomes an
+input**.
 
 Go airborne and the engine screams, the squeal cuts dead, and nothing is laid down until the wheels
 are back.
@@ -159,14 +179,29 @@ Where the reference's unit is metres, the conversion is 3.571 studs/m.
 
 ### Marks and smoke
 
-| Number | Start | What it does |
-|---|---|---|
-| `MinThrottleForFx` | 0.2 | Coasting sideways leaves nothing |
-| `MaxSteerAngle` | 30° | The fronts' extra threshold (see the gates table) |
-| `MinHandbrakeSpeed` | 3.6 studs/s | Below this the handbrake smokes nothing |
-| `MarkSeconds` | 5 | `Trail.Lifetime` |
-| `MarkWidth` | 1.2 studs | A little under the tyre |
-| `SmokeRateMin`, `SmokeRateMax` | 8, 60 /s | `ParticleEmitter.Rate`, lerped by `slip / π` |
+**Built** (`T-062`). The names below are what is actually in `Config/Fx.luau`, which groups them —
+the names in the first draft of this spec are in the last column where they differ. Every value is
+still the reference's, converted, except the two marked **ours**.
+
+| Number | Start | Was called | What it does |
+|---|---|---|---|
+| `Gates.MinThrottle` | 0.2 | `MinThrottleForFx` | Coasting sideways leaves nothing |
+| `Gates.MaxSteerDegrees` | 30 | `MaxSteerAngle` | The fronts' extra threshold (see the gates table) |
+| `Gates.MinSlipDegrees` | 0.5 | — | **Ours, and new.** A floating-point floor and not a gate. The reference's rear threshold is literally `slip > 0`, which is right in its model; ours is an `atan2` of a velocity that gravity and grip are always nudging. **Measured in `DR-Lane2`: a car running dead straight at 40.2 studs/s reads 0.0916° of slip,** so `> 0` would have marked the whole road black. It is a two-hundredth of `MinSlipAngleForDrift` and is not a second drift threshold |
+| `Gates.MinHandbrakeSpeed` | 3.6 studs/s | — | Below this the handbrake smokes nothing |
+| `Gates.MaxSlipDegrees` | 180 | — | The angle the smoke rate is full at. This is the reference's `slip / π` written in degrees. **Note it is not the squeal's 90°:** at 90° of slip — a car fully sideways — the smoke is only at 34/s of its 60, which is a tuning question for the user's eye, not a bug |
+| `Marks.Seconds` | 5 | `MarkSeconds` | `Trail.Lifetime` |
+| `Marks.Width` | 1.2 studs | `MarkWidth` | The gap between the two attachments. A little under the tyre's 1.6 |
+| `Smoke.RateMin`, `Smoke.RateMax` | 8, 60 /s | `SmokeRateMin/Max` | `ParticleEmitter.Rate`, lerped by `slip / Gates.MaxSlipDegrees` |
+
+**The spec named one number for the look and the instances need fifteen,** so the rest are ours and
+are in `Config/Fx.luau` with a line each: `Marks.Lift` (0.05 studs, which stops a mark z-fighting
+the road it is drawn on), `Marks.Transparency`, `Marks.FadeAt`, `Marks.LightInfluence`,
+`Marks.TextureLength`, and the whole of the `Smoke` block beyond its rate — lifetime, start and end
+size, transparency, speed, spread, the upward acceleration, drag, rotation and lighting.
+`Surfaces.<name>.MarkColour` and `.SmokeColour` are the per-surface look, and `Built` is the list of
+surfaces a car is actually given instances for. **These are a first pass at a look and nothing
+more: the look is the user's call.**
 
 ### What it is made of in Roblox
 
@@ -180,7 +215,25 @@ Where the reference's unit is metres, the conversion is 3.571 studs/m.
 **The budget:** four wheels × (one `Trail` + one `ParticleEmitter` + two `Attachment`s) = 16
 instances per car, made once when the rig is built and never again. Nothing is created or destroyed
 while driving; emitters are switched with `Trail.Enabled` and `ParticleEmitter.Enabled`. **A frame
-that allocates is the thing to measure and the thing to fail on.**
+that allocates is the thing to measure and the thing to fail on.** Measured: 16 before a 60-second
+drive and 16 after, and the car's whole descendant count 56 either side.
+
+**They hang off the car's `Body`, not off the wheels, and that is not a detail.** `Drift/Render`
+spins each wheel about its own axle every frame (`CFrame.Angles(wheelSpin, 0, 0)`), so an
+attachment parented to a wheel and offset down to the contact patch would **orbit the axle** and
+draw a circle rather than a line. The `Body` part's CFrame *is* the car's pose, so the four contact
+patches are four fixed local offsets on it, read straight off the rig's own wheel offsets. The only
+error this costs is the body's cosmetic lean (`s.bodyRoll`, a couple of degrees), which moves a
+patch by hundredths of a stud — less than the mark is wide, and arguably the honest place for it.
+
+There is **no folder**: the eight attachments are direct children of `Body` (an `Attachment` has to
+be parented to a `BasePart` to have a position), and each wheel's `Trail` and `ParticleEmitter` hang
+off its first attachment. A folder would be a seventeenth instance for nothing.
+
+**A trail must be cut when the car jumps.** A spawn, a respawn or a `DebugTeleport` moves the body
+hundreds or thousands of studs in one frame, and a `Trail` that is still enabled across that draws
+one straight black line across the world. `Wheels:Cut()` puts everything out, and `DriftController`
+calls it on all three paths before the car is put down.
 
 ## UI
 
@@ -205,14 +258,17 @@ car's parts; effects hang off those parts and are made locally on each client.
 
 ## Contracts
 
-In `CONTRACTS.md`, in the same commit:
+In `CONTRACTS.md`. **What `T-062` built, for the conductor to record at merge:**
 
-- `Config.Fx`, the new config module and every number in it.
-- `Drift/Wheels`, `Drift/EngineSound`, `Drift/SkidSound`: the client modules and their
-  `attach(rig, state)` / `update(state, dt)` / `DebugState()` surfaces.
-- The `Trail`, `ParticleEmitter` and `Sound` instance names on a rig, so `Render` and the tests
-  agree on what they are called.
-- Any `Hit` change, if the per-wheel surface gap is closed in this round rather than deferred.
+| Entry | Surface |
+|---|---|
+| `Shared/Config/Fx` | `Config.Fx`: `Marks`, `Smoke`, `Gates`, `Surfaces`, `Built`, `Default`, `Names`, and `Engine` and `Skid` which nothing reads until `T-064`. A plain table with no write guard, like `Config.Road` |
+| `Drift/Wheels` | `new()`, `Attach(rig) -> boolean`, `Update(state, input, dt)`, `Cut()`, `Clear()`, `SetEnabled(on) -> boolean`, `SetMarkSeconds(s)`, `DebugState(state, input)`, `CountInstances() -> number`, and the pure `Wheels.evaluate(state, handbrake, front, down) -> (emit, rate, slipPast, throttleOk, handbrakeOk)` and `Wheels.surfaceOf(state, index, down) -> string?`. **`Update` takes the INPUT as well as the state**, unlike the `update(state, dt)` this spec first guessed at: the handbrake is a `Drift/Model` *input* and is not on the state, and there is nowhere else honest to read it |
+| `DriftController` | `DebugWheels() -> { enabled, attached, instances, liveInstances, surfaces, slipDeg, throttle, handbrake, speed, airborne, wheels: { { name, front, down, surface, thresholdDeg, slipPast, throttleOk, handbrakeOk, emit, emitting, rate } } }` and `DebugWheelFx(on: boolean?) -> boolean`. Studio only, through the client debug bridge |
+| Instance names on a rig | `Config.Fx.Names`: `FxA_<Wheel>_<L\|R>` (8 `Attachment`s, direct children of `Body`), `FxMark_<Wheel>_<surface>` (4 `Trail`s) and `FxSmoke_<Wheel>_<surface>` (4 `ParticleEmitter`s), each parented to that wheel's `_L` attachment |
+
+Still to come with `T-064`: `Drift/EngineSound`, `Drift/SkidSound` and the `Sound` names on a rig.
+**No `Hit` change:** the per-wheel surface gap is deferred, as planned.
 
 ## Analytics
 
@@ -278,12 +334,12 @@ feel.**
 | The gearbox | Drive 0 → top speed and record every shift's speed. They must match the computed series within `GearOverlap`, and no two shifts within `MinTimeInGear` |
 | Pitch is continuous | The largest single-frame change in `PlaybackSpeed` over a full-speed run, which must be bounded by `PitchLerpSpeed × dt` |
 | Airborne | Off a crest or a fall: pitch at `MaxPitch`, skid volume 0, no trail emitting |
-| The front/rear threshold | Hold a slide at 20° and at 60°: at 20° the two rear trails emit and the two fronts do not; at 60° all four do |
-| Throttle gate | Coast sideways at zero throttle: slip above the threshold, no trail, no smoke |
-| Handbrake | Handbrake from a standstill (nothing) and from 40 studs/s (all four, smoking) |
-| Smoke rate | `ParticleEmitter.Rate` at 10°, 45° and 90° of slip against the configured lerp |
-| It allocates nothing | Instance count on the rig before a 60-second drive and after: **identical**. The number that would fail this is the one worth having |
-| Frame cost | Frame time over a 60-second drive, effects on and off, on this PC. A cost worth naming is a cost worth a `SETTINGS.md` switch |
+| The front/rear threshold | Hold a slide at 20° and at 60°: at 20° the two rear trails emit and the two fronts do not; at 60° all four do. **Done (`T-062`):** live in `DR-Lane2` at 18.8° only `WheelRL` and `WheelRR` emitted, at 59.5° all four; and the pure sweep puts the fronts' switch-on at 30.5° against a configured 30 + 0.5 and the rears' at 0.50° |
+| Throttle gate | Coast sideways at zero throttle: slip above the threshold, no trail, no smoke. **Done in `FxTests`, and NOT reachable live** — the throttle is never an input in this model (see "How it plays"). 60° of slip at zero throttle marks nothing; it marks at exactly `MinThrottle` and not a hundredth below |
+| Handbrake | Handbrake from a standstill (nothing) and from 40 studs/s (all four, smoking). **Done (`T-062`):** live, nothing at 0.00 studs/s; all four emitting at 36.7 studs/s with the car dead straight (`slipPast` false) and off nothing but the brake |
+| Smoke rate | `ParticleEmitter.Rate` at 10°, 45° and 90° of slip against the configured lerp. **Done:** 10.89, 21.00 and 34.00 /s against the same three computed from the config, to within 1e-6, and 8.00 .. 60.00 at the two ends |
+| It allocates nothing | Instance count on the rig before a 60-second drive and after: **identical**. The number that would fail this is the one worth having. **Done:** 16 → 16, and the car's whole descendant count 56 → 56, over 60 s of a drive that was sliding past 5° on 2 884 of its frames; and 16 → 16 over 1 000 synthetic frames with 272 gate flips in `FxTests` |
+| Frame cost | Frame time over a 60-second drive, effects on and off, on this PC. A cost worth naming is a cost worth a `SETTINGS.md` switch. **Measured and inconclusive, and the reason is worth writing down:** Studio throttles rendering to exactly 30 fps when its window is not focused, which an agent's window never is. Interleaved in 5-second blocks inside one drive, 900 frames each way, the medians were 33.3028 ms with the effects on and 33.2936 ms with them off — **9 microseconds apart, both pinned at the cap.** All that proves is that the effects do not push a 30 fps frame over its budget. **A real headroom number needs the user's own focused window,** and `DriftController:DebugWheelFx(false)` is the switch to take it with |
 
 `DebugState()` on each of the three modules, reporting what it is doing and why — the gear and
 pitch, the skid volume and its gate, and each wheel's four gates — so a playtest can say *which*
@@ -295,5 +351,21 @@ gate is wrong rather than "no smoke".
 - **`MinPitch` and `MaxPitch`.** Not in the decompile. Ours to pick and then tune by ear.
 - **Remote cars** (above): derived slip, or silent this round.
 - **The backfire,** which needs an exhaust position per body.
-- **An effects switch in settings,** once the frame cost is measured.
+- **An effects switch in settings,** once the frame cost is measured. `Wheels:SetEnabled` and
+  `DriftController:DebugWheelFx` are already the switch; what is missing is a focused-window
+  measurement to say whether it is worth a setting.
 - **Coloured smoke and marks as a cosmetic,** which is a monetization decision and not this round's.
+
+Added by `T-062`, from building it:
+
+- **The look of the marks and the smoke.** The user's call, and the numbers to change are all in
+  `Config/Fx.luau` under `Marks`, `Smoke` and `Surfaces`. What is there now is a first pass: a
+  near-black mark at 0.45 transparency fading out over the last 40% of its five seconds, and a
+  near-white puff that grows from 2.5 to 11 studs, rises and drags out.
+- **Whether the smoke should be full at 90° rather than 180°.** The reference lerps the rate by
+  `slip / π`, which is what is built — so a car fully sideways at 90° is only at 34 of 60. The
+  squeal's own `MaxSlipDegrees` is 90. One number, `Gates.MaxSlipDegrees`.
+- **Whether a crawling car should mark at all.** There is no minimum speed on the marks, only on
+  the handbrake, which is what the reference does. Measured: a car creeping at 0.3 studs/s with
+  14° of slip still has its rear trails enabled. It lays a dot, not a line, so it costs nothing to
+  leave — but a `Gates.MinMarkSpeed` is a one-line addition if the user ever sees it.

@@ -34,6 +34,7 @@ local RemoteCars = require(DriftFolder.RemoteCars)
 local Render = require(DriftFolder.Render)
 local Sim = require(DriftFolder.Sim)
 local Trajectory = require(DriftFolder.Trajectory)
+local Wheels = require(DriftFolder.Wheels)
 local World = require(DriftFolder.World)
 
 local CarInputController = require(script.Parent.CarInputController)
@@ -120,6 +121,11 @@ function DriftController:Init()
 	self.rigWarned = false
 	self.awaitingRespawn = false
 	self.askedAt = 0
+	-- The tyre marks and the smoke (T-062, features/car-fx.md). The object is free until a
+	-- rig exists: it holds no instance and does no work without one, and its sixteen are
+	-- built once, when the rig is caught, and never again. The car's SOUNDS land beside it
+	-- (T-064) and take the same two calls, `Attach` on the rig and `Update` on the frame.
+	self.wheels = Wheels.new()
 	self._carSpawn = Net.event("CarSpawn")
 	self._carRespawn = Net.event("CarRespawn")
 	self._carState = Net.unreliable("CarState")
@@ -213,8 +219,10 @@ function DriftController:_attach(car: Model, spawnCFrame: CFrame)
 	self.rigWarned = false
 	self.runner = Sim.newRunner(spawnCFrame)
 	self.remoteCars:SetOwnCar(car)
+	self.wheels:Cut()
 	if self:_ensureRig() then
 		Render.apply(self.rig, self.runner.state)
+		self.wheels:Attach(self.rig)
 	end
 end
 
@@ -294,6 +302,10 @@ function DriftController:_placeAt(cf: CFrame)
 	end
 	self.runner = Sim.newRunner(cf)
 	self.respawns += 1
+	-- Everything off BEFORE the car is put down. A trail that is still enabled across a
+	-- jump draws one straight black line from where the car was to where it now is,
+	-- across the whole world (T-062).
+	self.wheels:Cut()
 	if self:_ensureRig() then
 		Render.apply(self.rig, self.runner.state)
 	end
@@ -302,6 +314,9 @@ end
 function DriftController:_frame(dt: number)
 	self.frameSeconds = dt
 	if not self.runner then
+		if self.wheels then
+			self.wheels:Update(nil, nil, dt)
+		end
 		if self.hud then
 			self.hud:Update(nil, nil)
 		end
@@ -329,7 +344,14 @@ function DriftController:_frame(dt: number)
 	-- up to 1.49 studs at top speed -- and a varying lag is a judder.
 	if self:_ensureRig() then
 		Render.apply(self.rig, state, self.runner.accumulator)
+		-- The wheel effects hang off the rig's own body, so they are attached here and
+		-- nowhere else: the rig is the one thing that knows the car's parts have arrived,
+		-- and `Attach` does nothing at all once it has built for a body (T-062).
+		self.wheels:Attach(self.rig)
 	end
+	-- Marks and smoke, from this frame's state and this frame's input: the handbrake is an
+	-- input and not model state, so both go in (Drift/Wheels).
+	self.wheels:Update(state, input, dt)
 	self.remoteCars:Update(dt)
 
 	-- Where the car would go if the finger stayed exactly where it is: the real model run
@@ -520,6 +542,7 @@ function DriftController:DebugTeleport(cf: CFrame)
 		return nil
 	end
 	self.runner = Sim.newRunner(cf)
+	self.wheels:Cut()
 	if self:_ensureRig() then
 		Render.apply(self.rig, self.runner.state)
 	end
@@ -564,6 +587,33 @@ function DriftController:DebugTrajectoryPoints(opts)
 		endSpeed = prediction.endSpeed,
 		stoppedEarly = prediction.stopped,
 	}
+end
+
+-- What each wheel's marks and smoke are doing, and WHICH GATE decided it (T-062,
+-- features/car-fx.md "Testing"). Read against the live state and the live input, so a
+-- playtest can say "the fronts are not emitting because the slip is 22 degrees and their
+-- threshold is 30" rather than "no smoke".
+function DriftController:DebugWheels()
+	if not self.wheels then
+		return { enabled = false, attached = false }
+	end
+	local input = CarInputController:Get()
+	local out = self.wheels:DebugState(self:CurrentState(), input)
+	out.liveInstances = self.wheels:CountInstances()
+	return out
+end
+
+-- The wheel effects on or off wholesale. Where a `show effects` setting would land, and
+-- how the frame cost is measured: the same drive with it true and with it false. It
+-- creates and destroys nothing either way.
+function DriftController:DebugWheelFx(on: boolean?): boolean
+	if not self.wheels then
+		return false
+	end
+	if on == nil then
+		return self.wheels:SetEnabled(not self.wheels.enabled)
+	end
+	return self.wheels:SetEnabled(on == true)
 end
 
 function DriftController:DebugToggleReadout(): boolean
