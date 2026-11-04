@@ -96,7 +96,11 @@ local GALLERY_MARGIN = 400 -- studs between the playground's plate and the grid
 local GALLERY_COLUMNS = 3
 local SIGN_DEPTH = 90 -- studs; the flat name sign at the front of each cell
 local SIGN_RISE = 0.25 -- studs the sign's top sits above the road surface
-local LABEL_HEIGHT = 90 -- studs the billboard floats above the piece
+-- The close-up billboard. Studs, all of it, including its own size: see `makeBillboard`.
+local LABEL_HEIGHT = 26 -- studs it floats above the road surface
+local LABEL_SIZE = 10 -- studs tall
+local LABEL_WIDTH = 40 -- studs wide
+local LABEL_RANGE = 420 -- studs past which it stops drawing, so a pulled-back view has none
 
 --------------------------------------------------------------------------------
 -- Little helpers
@@ -287,9 +291,22 @@ local function makeSign(id: string, centre: Vector3, width: number, parent: Inst
 	return part
 end
 
--- The billboard above a piece: legible from any angle, at road level, where a sign lying
--- on the ground is edge-on. It will not appear in a screen capture; that is Studio, not
--- this module.
+-- The billboard above a piece: the CLOSE-UP label, for when the camera is down among the
+-- pieces and the sign lying on the ground is edge-on and unreadable. It will not appear in
+-- a screen capture; that is Studio, not this module.
+--
+-- IT IS SIZED IN STUDS AND IT SWITCHES OFF AT RANGE, and both of those are the fix for
+-- what the first version got wrong (T-059, sent back). A `BillboardGui` sized in OFFSET is
+-- sized in PIXELS: 110 pixels tall is 110 pixels tall from ten studs away and from two
+-- thousand, so pulling the camera back to see the gallery grew the labels relative to the
+-- pieces until nine of them overlapped into a wall of text with no road visible behind it.
+-- A label must do the opposite of that. So:
+--
+--   SCALE in `Size` is STUDS, not a fraction, so the label shrinks with distance exactly
+--   as the piece it names does and can never cover it;
+--   `MaxDistance` stops it drawing at all past `LABEL_RANGE`, so the pull-back view --
+--   the one the user actually flies -- has no billboards in it and reads off the ground
+--   signs, which are what works from the air.
 local function makeBillboard(id: string, at: Vector3, parent: Instance): Part
 	local anchor = Instance.new("Part")
 	anchor.Name = `Label_{id}`
@@ -304,11 +321,11 @@ local function makeBillboard(id: string, at: Vector3, parent: Instance): Part
 
 	local gui = Instance.new("BillboardGui")
 	gui.Name = "Label"
-	gui.Size = UDim2.fromOffset(420, 110)
+	gui.Size = UDim2.fromScale(LABEL_WIDTH, LABEL_SIZE) -- studs, not a fraction of anything
 	gui.StudsOffsetWorldSpace = Vector3.new(0, LABEL_HEIGHT, 0)
-	gui.AlwaysOnTop = true
+	gui.AlwaysOnTop = true -- small enough to hide nothing, and a barrier must not hide it
 	gui.LightInfluence = 0
-	gui.MaxDistance = 100000
+	gui.MaxDistance = LABEL_RANGE
 	gui.Parent = anchor
 
 	local text = Instance.new("TextLabel")
