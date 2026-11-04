@@ -11,6 +11,15 @@
 -- over it falls through the world. A barrier is meant to be absent from the ground rays;
 -- that is exactly what makes it a wall and not a kerb you can climb.
 --
+-- THE CENTRE LINE IS SPACED ALONG THE RUN, NOT ALONG A PIECE. Its whole job is to say
+-- how fast the car is going, so the marks must pass at the car's speed divided by
+-- `MarkInterval` and at nothing else -- which means the interval is measured in the arc
+-- length of the WHOLE road, carried across every join (`markPhase` below). Spacing them
+-- per piece instead would make a hairpin's marks pass at a different rate from a
+-- straight's, which is a lie about the car's speed. A mark is laid with
+-- `Pieces.poseAt`, by arc-length fraction, so a corner is spaced exactly as evenly as a
+-- straight is.
+--
 -- One rule a curve breaks if it is built naively (learned the hard way in the playground,
 -- T-026): two neighbouring boxes on a curve share their centre point but turn by the yaw
 -- step, so their OUTER corners pull apart by (half the width) x (that step) and the gap
@@ -27,7 +36,14 @@ local Builder = {}
 
 local OVERLAP = 0.2 -- studs every box is lengthened by so no joint can show a hairline
 
-local function newPart(name: string, size: Vector3, cf: CFrame, colour: Color3, parent: Instance): Part
+local function newPart(
+	name: string,
+	size: Vector3,
+	cf: CFrame,
+	colour: Color3,
+	material: Enum.Material,
+	parent: Instance
+): Part
 	local part = Instance.new("Part")
 	part.Name = name
 	part.Size = size
@@ -35,7 +51,7 @@ local function newPart(name: string, size: Vector3, cf: CFrame, colour: Color3, 
 	part.Anchored = true
 	part.CanCollide = true
 	part.CastShadow = false
-	part.Material = Enum.Material.SmoothPlastic
+	part.Material = material
 	part.Color = colour
 	part.TopSurface = Enum.SurfaceType.Smooth
 	part.BottomSurface = Enum.SurfaceType.Smooth
@@ -64,6 +80,7 @@ local function span(
 	topY: number,
 	extra: number,
 	colour: Color3,
+	material: Enum.Material,
 	parent: Instance
 ): Part?
 	local dx, dz = bx - ax, bz - az
@@ -73,7 +90,53 @@ local function span(
 	end
 	local yaw = math.atan2(-dx, -dz) -- the heading whose forward is (dx, dz)
 	local cf = CFrame.new((ax + bx) * 0.5, topY - height * 0.5, (az + bz) * 0.5) * CFrame.Angles(0, yaw, 0)
-	return newPart(name, Vector3.new(width, height, len + OVERLAP + extra), cf, colour, parent)
+	return newPart(name, Vector3.new(width, height, len + OVERLAP + extra), cf, colour, material, parent)
+end
+
+-- Where the run's arc length had got to at the end of the last piece built. The window
+-- builds pieces in order (`RoadService.buildPiece`), so carrying one number is enough;
+-- anything else -- a piece built out of order, or piece 1 of a new run -- falls back to
+-- starting the pattern at zero, which is correct for a fresh road and harmless otherwise.
+local markPhase = { n = 0, distance = 0 }
+
+-- The centre line of one piece: dashes at a fixed interval along the WHOLE run, clipped
+-- at both ends of the piece rather than skipped (see the header). Returns the parts.
+local function centreLine(piece: Pieces.Placed, startDistance: number, parent: Instance): { Part }
+	local C = Config.Road
+	local interval, dash = C.MarkInterval, C.MarkDashLength
+	local marks: { Part } = {}
+	if interval <= 0 or dash <= 0 then
+		return marks
+	end
+
+	local finishDistance = startDistance + piece.length
+	local topY = C.SurfaceY + C.MarkLift
+	local first = math.floor(startDistance / interval) -- the dash that may straddle the start
+	local last = math.floor(finishDistance / interval)
+
+	for k = first, last do
+		-- The dash in run-space, then the slice of it that belongs to this piece.
+		local a = math.max(k * interval, startDistance) - startDistance
+		local b = math.min(k * interval + dash, finishDistance) - startDistance
+		local len = b - a
+		if len > C.MarkMinLength then
+			local mid = (a + b) * 0.5
+			local cf = Pieces.poseAt(piece, mid / piece.length, topY - C.MarkThickness * 0.5)
+			local part = newPart(
+				`Mark_{piece.n}_{k}`,
+				Vector3.new(C.MarkWidth, C.MarkThickness, len),
+				cf,
+				C.Colours.Marking,
+				Enum.Material.SmoothPlastic, -- paint, not asphalt: it should NOT have grain
+				parent
+			)
+			part.CanCollide = false
+			part.CanQuery = false -- the ground rays must never find a marking
+			part.CanTouch = false
+			marks[#marks + 1] = part
+		end
+	end
+	return marks
 end
 
 export type Built = {
@@ -81,6 +144,7 @@ export type Built = {
 	folder: Folder,
 	road: { Part },
 	barriers: { Part },
+	marks: { Part },
 	parts: number,
 }
 
@@ -119,6 +183,7 @@ function Builder.build(piece: Pieces.Placed, parent: Instance): Built
 			C.SurfaceY,
 			halfWidth * step,
 			C.Colours.Road,
+			C.RoadMaterial,
 			folder
 		)
 		if slab then
@@ -143,6 +208,7 @@ function Builder.build(piece: Pieces.Placed, parent: Instance): Built
 				C.SurfaceY + C.BarrierHeight,
 				C.BarrierThickness * 0.5 * step,
 				C.Colours.Barrier,
+				C.BarrierMaterial,
 				folder
 			)
 			if wall then
@@ -151,8 +217,20 @@ function Builder.build(piece: Pieces.Placed, parent: Instance): Built
 		end
 	end
 
+	-- The centre line last, so the slabs it sits on already exist.
+	local startDistance = if piece.n == markPhase.n + 1 then markPhase.distance else 0
+	markPhase.n, markPhase.distance = piece.n, startDistance + piece.length
+	local marks = centreLine(piece, startDistance, folder)
+
 	folder.Parent = parent
-	return { n = piece.n, folder = folder, road = road, barriers = barriers, parts = #road + #barriers }
+	return {
+		n = piece.n,
+		folder = folder,
+		road = road,
+		barriers = barriers,
+		marks = marks,
+		parts = #road + #barriers + #marks,
+	}
 end
 
 -- The wall that closes the road behind the car. It is part of the generator's job, not
@@ -165,6 +243,7 @@ function Builder.closingBarrier(parent: Instance): Part
 		Vector3.new(C.Width + C.BarrierThickness * 2, C.BarrierHeight * 2, C.BarrierThickness),
 		CFrame.new(0, -10000, 0),
 		C.Colours.Closing,
+		Enum.Material.SmoothPlastic,
 		parent
 	)
 	part.Transparency = C.BarrierTransparency

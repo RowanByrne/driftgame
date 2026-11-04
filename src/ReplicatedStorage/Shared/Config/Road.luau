@@ -79,6 +79,49 @@ return {
 	BarrierThickness = 2, -- studs
 	BarrierSink = 1, -- studs the wall drops into the slab, so no edge-on view shows daylight
 
+	-- --------------------------------------------------------------------- the markings
+	-- WHY THERE ARE MARKINGS AT ALL: on smooth plastic a player cannot tell 40 studs/s
+	-- from 120 (the user, 2026-11-04). A flat colour has nothing in it to stream past the
+	-- camera, so the road reads as a static plane however fast the car is going. Marks
+	-- laid at a fixed WORLD interval fix that exactly: the rate they pass the car is the
+	-- car's speed in studs per second divided by `MarkInterval`, and nothing else --
+	-- not the piece length, not the corner radius, not how finely a curve is segmented.
+	--
+	-- A MARKING IS DECORATION AND NOTHING ELSE. It is never tagged `DriftSurface`, so
+	-- the ground rays cannot see it, and it is `CanCollide = false` and `CanQuery = false`
+	-- so nothing else can either. The drift model is unchanged by anything in here.
+	--
+	-- THE INTERVAL IS THE WHOLE POINT, so it is chosen against the speeds the car really
+	-- does (40..120 studs/s, `features/track-generation.md`): at 24 studs a mark passes
+	-- 4.6 times a second at 110 studs/s and 1.7 at 40 -- fast enough to read as motion at
+	-- the top end, slow enough to count at the bottom. Shorter and the top end blurs into
+	-- a line; longer and the bottom end stops moving.
+	MarkInterval = 24, -- studs of road between one dash starting and the next
+	MarkDashLength = 10, -- studs of painted dash in each of those (so 14 studs of gap)
+	MarkWidth = 1.6, -- studs across. A real centre line next to a 50-stud road
+	MarkThickness = 0.4, -- studs tall. Mostly buried: only `MarkLift` of it is above the
+	-- road, the rest is inside the slab so no edge-on view shows a kerb
+	MarkLift = 0.02, -- studs the painted face sits above `SurfaceY`. Enough that the two
+	-- faces never z-fight, far too little for a wheel to notice (the
+	-- car rides 2+ studs up and rays to the slab, not to this)
+	-- DASHES STRADDLING A JOIN ARE CLIPPED, NOT SKIPPED. The interval is measured along
+	-- the whole run, so a dash that runs off the end of one piece is finished at the
+	-- start of the next -- the two halves meet flush because the sockets do. Skipping it
+	-- instead would leave one double-length gap at every join, which is the one
+	-- irregularity a player would actually see.
+	MarkMinLength = 0.05, -- studs. A clipped stub shorter than this is not worth a part
+
+	-- ------------------------------------------------------------- what the road is made of
+	-- Built-in materials only -- no uploaded textures anywhere in this game yet (art
+	-- approval is the user's and has not happened, `docs/workflow/ART-PIPELINE.md`).
+	-- Roblox projects a material's grain in WORLD space, so asphalt on the slab streams
+	-- past the car for free: no parts, no ids, and it works at every speed. It is the
+	-- floor under the markings, not a substitute for them -- grain this fine reads as
+	-- texture, not as motion, which is why the dashes carry the speed cue.
+	RoadMaterial = Enum.Material.Asphalt,
+	BarrierMaterial = Enum.Material.Concrete, -- the walls, for the same reason: peripheral
+	-- vision gets something that is not a flat colour
+
 	-- ------------------------------------------------------------------------ the window
 	-- The world stays about `AheadPieces + BehindPieces` pieces big however long the run
 	-- lasts, which is why `StreamingEnabled` can stay off (docs/game/ARCHITECTURE.md).
@@ -479,12 +522,16 @@ return {
 	BarrierTransparency = 0.45, -- the closing barrier. The spec calls it invisible; while it
 	-- is a prototype it is visible enough to be driven at on purpose
 
-	-- Programmer art, and nothing else: flat grey road, plain grey walls. A look is its
-	-- own task, after the system works.
+	-- Programmer art, and nothing else: grey asphalt, plain grey walls, a white centre
+	-- line. A look is its own task, after the system works; the markings are here because
+	-- speed has to be readable, not because the road has been art-directed.
 	Colours = {
 		Road = Color3.fromRGB(104, 112, 120),
 		Edge = Color3.fromRGB(170, 176, 182),
 		Barrier = Color3.fromRGB(142, 148, 156),
+		Marking = Color3.fromRGB(232, 230, 214), -- the centre line. Off-white, not pure
+		-- white: pure white blooms under the default
+		-- lighting and loses its edges at speed
 		Closing = Color3.fromRGB(196, 92, 72),
 	},
 }
