@@ -11,11 +11,26 @@
 -- counts the sixteen instances, and the one that drives a thousand frames through it and
 -- counts them again.
 --
--- WHAT THIS CANNOT TEST is the look, which is the user's, and the sound, which is T-064's
--- and does not exist yet.
+-- Since T-064 it covers the SOUNDS too -- the gearbox, the pitch lerp and the squeal's
+-- gate -- and the line between what a test can check and what only an ear can is worth
+-- stating plainly:
+--
+--   WHAT IS MEASURED HERE  the gear tops against the geometric series, the shift speeds
+--                          and their spacing, that no single frame moves the pitch more
+--                          than the lerp allows, the squeal's volume against the
+--                          configured lerp at every angle and its four ways to be silent,
+--                          and that a drive creates and destroys no instance.
+--   WHAT IS NOT            whether any of it SOUNDS right: whether the clip loops cleanly
+--                          when it is stretched, whether 0.7 and 2.2 are the right floor
+--                          and ceiling, whether the squeal sits over the engine. That is
+--                          the user's ear and no number here stands in for it.
+--
+-- The sound rig is built in SERVERSTORAGE on purpose: a `Sound` this test plays under a
+-- part in Workspace would replicate to every client and be heard.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
+local ServerStorage = game:GetService("ServerStorage")
 local StarterPlayer = game:GetService("StarterPlayer")
 
 assert(RunService:IsStudio(), "FxTests is Studio only")
@@ -24,13 +39,24 @@ local CarModel = require(ReplicatedStorage.Shared.CarModel)
 local Config = require(ReplicatedStorage.Shared.Config)
 
 local DriftFolder = StarterPlayer.StarterPlayerScripts:WaitForChild("Drift")
+local EngineSound = require(DriftFolder.EngineSound)
 local Model = require(DriftFolder.Model)
+local SkidSound = require(DriftFolder.SkidSound)
 local Wheels = require(DriftFolder.Wheels)
 
 local Tests = {}
 
 local FRAMES = 1000 -- frames the allocation check drives through `Update`
 local RATE_TOLERANCE = 1e-6
+
+-- A list of numbers, readable, for a check's detail line.
+local function fmtList(xs: { number }): string
+	local out = {}
+	for _, x in xs do
+		table.insert(out, string.format("%.2f", x))
+	end
+	return table.concat(out, ", ")
+end
 
 --------------------------------------------------------------------------------
 -- Helpers
@@ -416,6 +442,404 @@ function Tests.run(opts)
 
 		w:Clear()
 		check("Clear takes all of them away", w:CountInstances() == 0, `{#rig.body:GetDescendants()} left on the body`)
+		car:Destroy()
+	end
+
+	----------------------------------------------------------------------------
+	-- 8. THE GEARBOX, pure. A geometric series and nothing else.
+	----------------------------------------------------------------------------
+	do
+		local E = F.Engine
+		local top = Config.Drift.TopSpeed
+		local tops = EngineSound.gearTops(top, {})
+
+		-- The series computed here, independently of the module, from the spec's own
+		-- description: first gear is `TopSpeed / sum(m^i)` and each gear adds `m^i` of it.
+		local divisor, term = 0, 1
+		for _ = 1, E.GearCount do
+			divisor += term
+			term *= E.GearLengthMultiplier
+		end
+		local want, running = {}, 0
+		term = 1
+		for i = 1, E.GearCount do
+			running += (top / divisor) * term
+			want[i] = running
+			term *= E.GearLengthMultiplier
+		end
+
+		local worst, worstAt = 0, 0
+		for i = 1, E.GearCount do
+			local d = math.abs(tops[i] - want[i])
+			if d > worst then
+				worst, worstAt = d, i
+			end
+		end
+		check(
+			`the gear tops are the geometric series ({E.GearCount} gears, x{E.GearLengthMultiplier})`,
+			worst < 1e-6 and #tops == E.GearCount,
+			`{fmtList(tops)} studs/s; divisor {string.format("%.4f", divisor)}; worst gap {string.format("%.2e", worst)} at gear {worstAt}`
+		)
+		check(
+			"top gear tops out at the car's top speed, exactly",
+			math.abs(tops[E.GearCount] - top) < 1e-9,
+			`gear {E.GearCount} top {string.format("%.3f", tops[E.GearCount])}, car {string.format("%.3f", top)} studs/s`
+		)
+
+		-- The overlap is hysteresis and nothing else: a speed sitting on a shift point
+		-- must leave the gear it is in alone, in BOTH directions.
+		local onPoint = tops[1]
+		check(
+			"a speed sitting exactly on a shift point does not shift, either way",
+			EngineSound.wanted(tops, 1, onPoint) == 1 and EngineSound.wanted(tops, 2, onPoint) == 2,
+			`at {string.format("%.2f", onPoint)} studs/s: from 1st stays 1st, from 2nd stays 2nd `
+				.. `(overlap {E.GearOverlap} studs/s either side)`
+		)
+		check(
+			"clear of the overlap it does shift",
+			EngineSound.wanted(tops, 1, onPoint + E.GearOverlap + 0.01) == 2
+				and EngineSound.wanted(tops, 2, onPoint - E.GearOverlap - 0.01) == 1,
+			`up at {string.format("%.2f", onPoint + E.GearOverlap)}, down at {string.format("%.2f", onPoint - E.GearOverlap)}`
+		)
+		check(
+			"the box never skips a gear, however far the speed jumps",
+			EngineSound.wanted(tops, 1, top * 10) == 2 and EngineSound.wanted(tops, E.GearCount, -top) == E.GearCount - 1,
+			"one gear per call, up and down"
+		)
+		check(
+			"pitch runs the full sweep inside every gear",
+			math.abs(EngineSound.pitchFor(tops, 1, 0) - E.MinPitch) < 1e-9
+				and math.abs(EngineSound.pitchFor(tops, E.GearCount, top) - E.MaxPitch) < 1e-9,
+			`{E.MinPitch} at the bottom of 1st, {E.MaxPitch} at the top of {E.GearCount}th`
+		)
+
+		-- THE SHIFT ITSELF: how far the pitch TARGET falls at each upshift, which is what
+		-- a shift sounds like. Measured here so a change to the sweep or the multiplier
+		-- shows up as a number rather than as "it stopped sounding like a shift".
+		local drops = {}
+		for i = 1, E.GearCount - 1 do
+			local at = tops[i] + E.GearOverlap
+			drops[i] = EngineSound.pitchFor(tops, i, at) - EngineSound.pitchFor(tops, i + 1, at)
+		end
+		local smallest = math.huge
+		for _, d in drops do
+			smallest = math.min(smallest, d)
+		end
+		check(
+			"every upshift drops the pitch, and the smallest drop is still audible",
+			smallest > 0.25,
+			`drops {fmtList(drops)} of pitch at the {E.GearCount - 1} upshifts; smallest {string.format("%.3f", smallest)}`
+		)
+	end
+
+	----------------------------------------------------------------------------
+	-- 9. THE SQUEAL'S GATE, pure. Volume is the slip angle and four ways to be silent.
+	----------------------------------------------------------------------------
+	do
+		local S = F.Skid
+		local function vol(opts)
+			return SkidSound.volumeFor(stateWith(opts))
+		end
+
+		local worst = 0
+		local shown = {}
+		for _, deg in { 10, 45, 90 } do
+			local got = vol({ slipDeg = deg, speed = 60, throttle = 1 })
+			local t = math.clamp(deg / S.MaxSlipDegrees, 0, 1)
+			local wanted = S.MinVolume + (1 - S.MinVolume) * t
+			worst = math.max(worst, math.abs(got - wanted))
+			table.insert(shown, `{deg} deg -> {string.format("%.4f", got)} (want {string.format("%.4f", wanted)})`)
+		end
+		check(
+			"the squeal's volume is the configured lerp of the slip angle",
+			worst < 1e-9,
+			`{table.concat(shown, "; ")}; worst gap {string.format("%.2e", worst)}`
+		)
+		check(
+			"past the full angle it stays at 1, it does not keep climbing",
+			math.abs(vol({ slipDeg = 180, speed = 60, throttle = 1 }) - 1) < 1e-9,
+			`180 deg -> {string.format("%.4f", vol({ slipDeg = 180, speed = 60, throttle = 1 }))}`
+		)
+
+		local notDrifting = Config.Drift.MinSlipAngleForDrift - 0.01
+		check(
+			"silent when the car is not drifting, and loud a hundredth of a degree later",
+			vol({ slipDeg = notDrifting, speed = 60, throttle = 1 }) == 0
+				and vol({ slipDeg = Config.Drift.MinSlipAngleForDrift, speed = 60, throttle = 1 }) > 0,
+			`{string.format("%.2f", notDrifting)} deg silent, {Config.Drift.MinSlipAngleForDrift} deg not `
+				.. "(the model's own drift threshold, not a second one)"
+		)
+		check(
+			"silent in the air, whatever the angle",
+			vol({ slipDeg = 90, speed = 60, throttle = 1, airborne = true }) == 0,
+			"90 deg airborne -> 0"
+		)
+		check(
+			"silent under the minimum speed, and not a hundredth above it",
+			vol({ slipDeg = 90, speed = S.MinSpeed - 0.01 }) == 0 and vol({ slipDeg = 90, speed = S.MinSpeed }) > 0,
+			`{S.MinSpeed - 0.01} studs/s silent, {S.MinSpeed} studs/s not`
+		)
+		check("silent with no state at all", SkidSound.volumeFor(nil) == 0, "nil -> 0")
+		-- Not a check, a note: the squeal has no throttle gate and no handbrake gate. The
+		-- marks have both; the reference's squeal has neither, and nor does ours.
+		check(
+			"the surface is the one surface, and nothing in the air",
+			SkidSound.surfaceOf(stateWith({ slipDeg = 45, speed = 60 })) == F.Default
+				and SkidSound.surfaceOf(stateWith({ slipDeg = 45, speed = 60, airborne = true })) == nil,
+			`on the ground: {tostring(SkidSound.surfaceOf(stateWith({ slipDeg = 45, speed = 60 })))}`
+		)
+	end
+
+	----------------------------------------------------------------------------
+	-- 10. THE SOUNDS ON A RIG. Not pure: it builds a stand-in car, IN SERVERSTORAGE
+	-- so that a `Sound` this test plays can never replicate to a client and be heard.
+	----------------------------------------------------------------------------
+	if opts.skipInstances ~= true then
+		local E = F.Engine
+		local S = F.Skid
+		local rig, car = standInRig()
+		car.Parent = ServerStorage
+
+		local engine = EngineSound.new()
+		local skid = SkidSound.new()
+		local engineOk = engine:Attach(rig)
+		local skidOk = skid:Attach(rig)
+		local wantSounds = 1 + #F.Built -- one engine, one squeal per built surface
+		local soundsBefore = engine:CountInstances() + skid:CountInstances()
+		check(
+			`a rig gets exactly {wantSounds} sounds, once`,
+			engineOk and skidOk and soundsBefore == wantSounds,
+			`engine {engine:CountInstances()}, skid {skid:CountInstances()}`
+		)
+		engine:Attach(rig)
+		skid:Attach(rig)
+		check(
+			"attaching again makes no second sound",
+			engine:CountInstances() + skid:CountInstances() == wantSounds,
+			`{engine:CountInstances() + skid:CountInstances()} sounds`
+		)
+		check(
+			"both sounds are the ids the user picked, by id, nothing uploaded",
+			rig.body:FindFirstChild(F.Names.Engine).SoundId == E.SoundId
+				and rig.body:FindFirstChild(string.format(F.Names.Skid, F.Default)).SoundId == S.SoundIds[F.Default],
+			`{E.SoundId} and {S.SoundIds[F.Default]}`
+		)
+		check(
+			"both are 3D: tapered roll-off, so another car is heard where it is",
+			rig.body:FindFirstChild(F.Names.Engine).RollOffMode == Enum.RollOffMode.InverseTapered
+				and rig.body:FindFirstChild(string.format(F.Names.Skid, F.Default)).RollOffMode
+					== Enum.RollOffMode.InverseTapered,
+			`engine {E.RollOffMin}..{E.RollOffMax} studs, skid {S.RollOffMin}..{S.RollOffMax} studs`
+		)
+
+		----------------------------------------------------------------------
+		-- Drive 0 to top speed and record every shift.
+		----------------------------------------------------------------------
+		local DT = 1 / 60
+		local SECONDS = 20
+		local top = Config.Drift.TopSpeed
+		local tops = EngineSound.gearTops(top, {})
+		local shiftAt, shiftTime = {}, {}
+		local lastShifts, elapsed = engine.shifts, 0
+		local maxPitchStep = 0
+		local pitchWas = engine.pitch
+
+		engine:ResetMeasure()
+		for frame = 1, SECONDS / DT do
+			elapsed += DT
+			local speed = top * math.min(frame * DT / (SECONDS * 0.75), 1)
+			local s = stateWith({ slipDeg = 0, speed = speed, throttle = 1 })
+			engine:Update(s, nil, DT)
+			skid:Update(s, nil, DT)
+			if engine.shifts ~= lastShifts then
+				lastShifts = engine.shifts
+				table.insert(shiftAt, engine.lastShiftSpeed)
+				table.insert(shiftTime, elapsed)
+			end
+			maxPitchStep = math.max(maxPitchStep, math.abs(engine.pitch - pitchWas))
+			pitchWas = engine.pitch
+		end
+
+		local shiftWorst, shiftShown = 0, {}
+		for i, at in shiftAt do
+			local series = tops[i] or top
+			shiftWorst = math.max(shiftWorst, math.abs(at - series))
+			table.insert(
+				shiftShown,
+				`{i}-{i + 1} at {string.format("%.2f", at)} (gear {i} tops at {string.format("%.2f", series)})`
+			)
+		end
+		check(
+			`a run to top speed makes exactly {E.GearCount - 1} upshifts`,
+			#shiftAt == E.GearCount - 1,
+			`{#shiftAt} shifts: {table.concat(shiftShown, "; ")}`
+		)
+		-- WITHIN THE OVERLAP, which is what the overlap IS: a gear is held until the
+		-- speed is clear of its band, so a shift lands at its top plus the overlap, plus
+		-- whatever one frame of acceleration adds on top.
+		local allowed = E.GearOverlap + top * DT / (SECONDS * 0.75) + 1e-6
+		check(
+			"every shift lands within the overlap of the computed series",
+			shiftWorst <= allowed,
+			`worst {string.format("%.3f", shiftWorst)} studs/s against an allowance of `
+				.. `{string.format("%.3f", allowed)} (overlap {E.GearOverlap} + one frame)`
+		)
+		local closest = math.huge
+		for i = 2, #shiftTime do
+			closest = math.min(closest, shiftTime[i] - shiftTime[i - 1])
+		end
+		check(
+			`no two shifts closer together than MinTimeInGear ({E.MinTimeInGear} s)`,
+			#shiftTime < 2 or closest >= E.MinTimeInGear - 1e-6,
+			`closest pair {if closest == math.huge then "n/a" else string.format("%.3f", closest) .. " s"}`
+		)
+
+		-- And the debounce under something that WOULD machine-gun: slammed from a
+		-- standstill to top speed in one frame, the box must still walk up one gear every
+		-- `MinTimeInGear` and never faster. A real car cannot do this; a `DebugTeleport`
+		-- out of a wall can.
+		do
+			local e2 = EngineSound.new()
+			e2:Attach(rig)
+			local flat = stateWith({ slipDeg = 0, speed = top, throttle = 1 })
+			local at, clock = {}, 0
+			local was = e2.shifts
+			for _ = 1, 600 do
+				clock += DT
+				e2:Update(flat, nil, DT)
+				if e2.shifts ~= was then
+					was = e2.shifts
+					table.insert(at, clock)
+				end
+			end
+			local tightest = math.huge
+			for i = 2, #at do
+				tightest = math.min(tightest, at[i] - at[i - 1])
+			end
+			local shown = {}
+			for _, v in at do
+				table.insert(shown, string.format("%.3f", v))
+			end
+			check(
+				"slammed from a standstill to top speed, the box still walks up one gear per debounce",
+				#at == E.GearCount - 1 and tightest >= E.MinTimeInGear - 1e-6 and e2.gear == E.GearCount,
+				`{#at} shifts at {table.concat(shown, ", ")} s; tightest {string.format("%.3f", tightest)} s `
+					.. `against {E.MinTimeInGear} s; ends in gear {e2.gear}`
+			)
+			e2:Clear()
+		end
+
+		----------------------------------------------------------------------
+		-- Pitch is continuous: the lerp, not a snap.
+		----------------------------------------------------------------------
+		local bound = (E.MaxPitch - E.MinPitch) * E.PitchLerpSpeed * DT
+		check(
+			"the largest single-frame pitch change over the whole run is inside the lerp's bound",
+			maxPitchStep <= bound + 1e-9,
+			`largest {string.format("%.5f", maxPitchStep)}, bound {string.format("%.5f", bound)} `
+				.. `= ({E.MaxPitch} - {E.MinPitch}) x {E.PitchLerpSpeed}/s x {string.format("%.4f", DT)} s`
+		)
+		check(
+			"and the module's own measure agrees with the one taken here",
+			math.abs(engine:ResetMeasure() - maxPitchStep) < 1e-9,
+			"ResetMeasure() matches the frame-by-frame maximum"
+		)
+
+		----------------------------------------------------------------------
+		-- Airborne: the engine free-revs and the squeal cuts dead.
+		----------------------------------------------------------------------
+		local air = stateWith({ slipDeg = 90, speed = 120, throttle = 1, airborne = true })
+		for _ = 1, 600 do -- ten seconds: the lerp is exponential and never arrives exactly
+			engine:Update(air, nil, DT)
+			skid:Update(air, nil, DT)
+		end
+		check(
+			"airborne pitches to the ceiling and the squeal goes to nothing",
+			math.abs(engine.target - E.MaxPitch) < 1e-9 and math.abs(engine.pitch - E.MaxPitch) < 1e-3 and skid.volume < 1e-3,
+			`target {E.MaxPitch}, pitch {string.format("%.5f", engine.pitch)}, `
+				.. `skid {string.format("%.6f", skid.volume)} at 90 deg of slip in the air`
+		)
+
+		----------------------------------------------------------------------
+		-- The squeal fades up with the angle and back down when it is caught.
+		----------------------------------------------------------------------
+		local sliding = stateWith({ slipDeg = 45, speed = 60, throttle = 1 })
+		local climbed = {}
+		for frame = 1, 600 do
+			skid:Update(sliding, nil, DT)
+			if frame == 6 or frame == 60 or frame == 600 then
+				table.insert(climbed, string.format("%.1f s -> %.4f", frame * DT, skid.volume))
+			end
+		end
+		local wanted45 = S.MinVolume + (1 - S.MinVolume) * (45 / S.MaxSlipDegrees)
+		check(
+			"a held 45-degree slide fades the squeal up to its target rather than snapping to it",
+			skid.volume < wanted45 and math.abs(skid.volume - wanted45) < 1e-3 and climbed[1] ~= nil,
+			`{table.concat(climbed, ", ")} against a target of {string.format("%.4f", wanted45)} `
+				.. `at {S.VolumeLerpSpeed}/s`
+		)
+		local caught = stateWith({ slipDeg = 0, speed = 60, throttle = 1 })
+		for _ = 1, 600 do
+			skid:Update(caught, nil, DT)
+		end
+		check("catching it fades the squeal back down to nothing", skid.volume < 1e-3, string.format("%.6f", skid.volume))
+
+		----------------------------------------------------------------------
+		-- Cut, the switch, and the thing that matters: IT ALLOCATES NOTHING.
+		----------------------------------------------------------------------
+		skid:Update(sliding, nil, 10) -- one huge step: straight to the target
+		local wasWanted = skid.sounds[1].playing
+		local wasPlaying = skid.sounds[1].sound.IsPlaying
+		skid:Cut()
+		-- The LOGIC's flag, not the instance's: in a quiet playtest the clip is muted AND
+		-- never started, so `IsPlaying` is false throughout and would prove nothing here.
+		check(
+			"Cut silences the squeal at once and stops the clip",
+			wasWanted and not skid.sounds[1].playing and not skid.sounds[1].sound.IsPlaying and skid.volume == 0,
+			`wanted {wasWanted} -> {skid.sounds[1].playing}; the instance {wasPlaying} -> `
+				.. `{skid.sounds[1].sound.IsPlaying} (quiet playtest: {skid:DebugState(nil).quiet})`
+		)
+		engine.gear = E.GearCount
+		engine:Cut()
+		check("Cut puts the gearbox back into first", engine.gear == 1, `gear {engine.gear}`)
+
+		engine:SetEnabled(false)
+		skid:SetEnabled(false)
+		for _ = 1, 120 do
+			engine:Update(sliding, nil, DT)
+			skid:Update(sliding, nil, DT)
+		end
+		check(
+			"SetEnabled(false) is a real switch, and destroys nothing",
+			engine.target == E.MinPitch
+				and skid.volume < 1e-3
+				and engine:CountInstances() + skid:CountInstances() == wantSounds,
+			`engine target {engine.target}, skid {string.format("%.6f", skid.volume)}, `
+				.. `{engine:CountInstances() + skid:CountInstances()} sounds`
+		)
+		engine:SetEnabled(true)
+		skid:SetEnabled(true)
+
+		local soundsAfter = engine:CountInstances() + skid:CountInstances()
+		local bodySounds = 0
+		for _, child in rig.body:GetChildren() do
+			if child:IsA("Sound") then
+				bodySounds += 1
+			end
+		end
+		check(
+			`{math.floor(SECONDS / DT) + 1920} frames of driving create and destroy no sound`,
+			soundsAfter == soundsBefore and bodySounds == wantSounds,
+			`before {soundsBefore}, after {soundsAfter}; Sounds under the body {bodySounds}`
+		)
+
+		engine:Clear()
+		skid:Clear()
+		check(
+			"Clear takes both sounds away",
+			engine:CountInstances() + skid:CountInstances() == 0,
+			`{#rig.body:GetChildren()} children left on the body`
+		)
 		car:Destroy()
 	end
 
