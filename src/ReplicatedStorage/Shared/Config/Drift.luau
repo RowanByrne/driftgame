@@ -192,39 +192,35 @@ return {
 	-- is worth, as a share of full travel
 
 	-- ---------------------------------------------------------------- camera
-	-- Owned by the camera task. The reference's IN-GAME camera, which has no roll, no zoom
-	-- and no position smoothing: it is placed at its target each frame and looks at the
-	-- car, so the horizon is always level. The roll and the zoom that were here until
-	-- 2026-11-03 belonged to a predecessor camera the game does not run; the user drove
-	-- them and said the camera "spins/rotates wayyyyy to far"
-	-- (DECISIONS.md, features/drift-model.md "Camera").
+	-- Owned by the camera task. All three of its effects are driven by the same slip angle
+	-- the model already has, and together they are most of why a drift reads as a drift.
 	-- Offsets are in the CAR's own axes, Roblox sense: +x right, +y up, +z BEHIND the car
 	-- (the spec quotes the reference's Unity figures, where behind is -z).
-	CamOffset = Vector3.new(0, 14.3, 53.6), -- studs. FALLBACK ((0, 4, -15) m, from the
-	-- camera-mode setting's own default). Its LENGTH is the radius the
-	-- camera keeps from the car; its direction is the resting direction.
-	-- Low and well back, which is most of why the reference reads flat
-	-- and fast rather than like a drone shot
+	CamOffset = Vector3.new(0, 28.6, 35.7), -- studs. FALLBACK. The resting place, behind
+	-- and above the car
 	CamLookAt = Vector3.new(0, 0, -10.7), -- studs. FALLBACK. What it looks at, AHEAD of
 	-- the car
-	CamVelocityBlend = 0.05, -- EXACT, and small on purpose: how much of the lean toward
-	-- where the car is actually going is taken each frame. It looks
-	-- like a typo and is not -- the reference feeds its BLENDED target
-	-- back in as the next frame's resting direction, so the 5% is
-	-- applied again every frame and compounds. What the player sees is
-	-- the camera dropping and swinging wide through a drift, not a
-	-- side-on shot. Raising it is the dial for a more dramatic camera,
-	-- and it mostly buys height drop
-	CamSwingRate = 1, -- per second. FALLBACK. How fast the behind-the-travel point follows
-	CamAngleRate = 1, -- per second. FALLBACK. How fast the resting DIRECTION follows the
-	-- car round -- the position never eases, only this. THE MAIN FEEL
-	-- DIAL: low is a camera that lags and lets the car rotate in front
-	-- of it, high is one glued behind the nose
+	CamVelocityBlend = 0.05, -- EXACT, and small on purpose: how much of the swing toward
+	-- where the car is actually going is used. The reference's own
+	-- value -- the swing is a hint, not a side-on shot, and it is
+	-- why its camera looks calm. Worth raising to taste
+	CamSwingRate = 1, -- per second. FALLBACK. How fast the velocity-based target follows
+	CamAngleRate = 1, -- per second. FALLBACK. How fast the resting direction follows the
+	-- car round
 	CamHeightRate = 1, -- per second. FALLBACK. How fast the look-at height follows
-	CamFovBase = 60, -- deg at a standstill. FALLBACK
-	CamFovPerSpeed = 0.14, -- deg per stud/s. FALLBACK (0.5 per m/s): how far the FOV opens
-	-- with speed. 85 deg at top speed
-	CamFovRate = 0.5, -- per second. FALLBACK. How fast the FOV follows. Slow on purpose
+	CamRollMax = 45, -- deg. FALLBACK. The whole view tilts about its own forward axis: the
+	-- cheapest and largest part of the effect
+	CamRollAtAngle = 20, -- deg of slip that reaches the full roll. FALLBACK
+	CamRollRate = 20, -- per second. FALLBACK. How fast the roll follows
+	CamDriftDistance = 0.5, -- FALLBACK. Share of the resting distance at a full drift: the
+	-- camera pulls in as the slip opens
+	CamZoomAtAngle = 90, -- deg of slip that reaches it. FALLBACK
+	CamZoomRate = 1, -- per second. FALLBACK. How fast the zoom follows
+	CamSmoothTime = 0.1, -- s. FALLBACK. Position easing
+	CamLookRate = 8, -- per second. FALLBACK. Look-at easing, separate and slower than the
+	-- position, which is what keeps the horizon from jittering
+	CamFovBase = 70, -- deg at a standstill. OURS
+	CamFovTop = 86, -- deg at top speed. OURS
 	CamTargetStep = 1 / 60, -- s. OURS, and NOT `FixedStep`. The camera's targets feed back
 	-- into themselves (the swung target is what the next frame's resting
 	-- direction is measured from), so where they settle depends on how
