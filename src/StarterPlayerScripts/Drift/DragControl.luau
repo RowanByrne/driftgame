@@ -28,6 +28,12 @@
 -- Programmer art: the slider is Drift/SliderHud and exists only while the finger is down
 -- (docs/workflow/UI.md). The two buttons are the handbrake, which is only there to stop
 -- the car once a run is over, and the debug readout's toggle.
+--
+-- THE HANDBRAKE BUTTON IS A TOGGLE (T-041): one click or tap and the car brakes until it
+-- stops and stays stopped, another and it drives off. This file does NOT hold that state.
+-- It reports a PRESS to CarInputController and is told what to light up with `SetBrake`,
+-- because the same toggle is also on a key and a gamepad button, and two latches would be
+-- two answers. One owner, one state, one light.
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -64,10 +70,11 @@ local function button(name: string, text: string, parent: Instance): TextButton
 	return b
 end
 
-function DragControl.new(onDebugToggle: () -> ())
+function DragControl.new(onDebugToggle: () -> (), onBrakePressed: (() -> ())?)
 	local self = setmetatable({}, DragControl)
 	self.steer = 0 -- the raw share of full travel, -1 .. 1, sign as the finger moved
-	self.handbrake = false
+	self.handbrake = false -- MIRRORED from CarInputController for the light; never read back
+	self._onBrakePressed = onBrakePressed or function() end
 	self._pointer = nil -- the InputObject being dragged, or nil
 	self._originX = 0 -- where the finger went down, px (dynamic mode)
 	self._x = 0 -- where it is now, px
@@ -171,16 +178,11 @@ function DragControl:_build()
 			or input.UserInputType == Enum.UserInputType.MouseButton1
 	end
 
+	-- A PRESS, not a hold (T-041). Letting go does nothing: the state is the toggle's, and
+	-- it comes back through `SetBrake`.
 	connect(handbrake.InputBegan, function(input)
 		if isPointer(input) then
-			self.handbrake = true
-			handbrake.BackgroundColor3 = LIVE
-		end
-	end)
-	connect(handbrake.InputEnded, function(input)
-		if isPointer(input) then
-			self.handbrake = false
-			handbrake.BackgroundColor3 = PAD
+			self._onBrakePressed()
 		end
 	end)
 	connect(debugButton.Activated, function()
@@ -252,13 +254,23 @@ function DragControl:_move(x: number)
 	self.steer = clamp(offset / self:TravelPx(), -1, 1)
 end
 
--- What the gesture is asking for. `steer` is the car's rate of turn as a share of
--- `MaxSteeringSpeed`, before `InvertSteering`, which the model applies.
-function DragControl:Get(): (number, boolean)
+-- What the gesture is asking for: the car's rate of turn as a share of `MaxSteeringSpeed`,
+-- before `InvertSteering`, which the model applies. The brake is NOT here -- it is a
+-- toggle CarInputController owns, and handing a copy of it back would be a second answer.
+function DragControl:Get(): number
 	if not self._pointer then
-		return 0, self.handbrake
+		return 0
 	end
-	return self.steer, self.handbrake
+	return self.steer
+end
+
+-- The toggle's state, pushed in by its owner: the button's light, and nothing else.
+function DragControl:SetBrake(on: boolean)
+	self.handbrake = on == true
+	if self.handbrakeButton then
+		self.handbrakeButton.BackgroundColor3 = if self.handbrake then LIVE else PAD
+		self.handbrakeButton.Text = if self.handbrake then "GO" else "STOP"
+	end
 end
 
 function DragControl:Down(): boolean
@@ -316,6 +328,13 @@ function DragControl:DebugDrag(offsetPx: number?, originPx: number?)
 	end
 	self:_move(self._originX + offsetPx)
 	return self:DebugState()
+end
+
+-- Studio only: press the on-screen button, through the exact path a real tap takes, so a
+-- test proves the BUTTON toggles rather than poking the toggle it reports to.
+function DragControl:DebugPressBrake()
+	self._onBrakePressed()
+	return { brake = self.handbrake, buttonText = self.handbrakeButton and self.handbrakeButton.Text }
 end
 
 function DragControl:Destroy()
