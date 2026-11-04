@@ -22,16 +22,31 @@
 -- measurement that chose it, including the one that says the brief's premise was wrong.
 -- The move itself was proved free first: with the old values in this file, a recorded
 -- drive put the camera and its look point in exactly the same place, step for step, as
--- the build before the file existed. NOTHING NEW WAS ADDED. No roll, no shake, no zoom,
--- no position smoothing -- the roll and the shake are T-072's.
+-- the build before the file existed.
+--
+-- T-072 THEN ADDED SIX, and only six: `CamRollMax` / `CamRollAtAngle` / `CamRollRate` and
+-- `ShakePeriod` / `ShakeRotation` / `ShakePosition` / `ShakeRestoreRate`. Both effects are
+-- applied to the RENDERED camera, downstream of the stepped targets, exactly as the pan
+-- is, so neither joins the feedback loop that makes this camera frame-rate independent.
+-- EVERY ONE OF THEM IS ZEROABLE AND ZERO IS TODAY: with `CamRollMax = 0` and
+-- `ShakeRotation` / `ShakePosition` at zero, the same recorded drive matched the build
+-- before them to every digit printed, step for step. That is the test that lets the roll
+-- ship at all. Still no zoom and no position smoothing.
 --
 -- CORRECTED 2026-11-03: the decompile holds two cameras and the spec described the
--- predecessor, which nothing in the reference runs. The game's camera has NO ROLL, NO ZOOM
--- and NO POSITION SMOOTHING -- it is placed at its target each frame and looks at the car,
--- so the horizon is always level. `CamRollMax`, `CamRollAtAngle`, `CamRollRate`,
+-- predecessor, which nothing in the reference runs. The game's camera has NO ZOOM and NO
+-- POSITION SMOOTHING -- it is placed at its target each frame and looks at the car.
 -- `CamDriftDistance`, `CamZoomAtAngle`, `CamZoomRate`, `CamSmoothTime`, `CamLookRate` and
 -- `CamFovTop` were that predecessor's and are gone; if one turns up in this table again,
 -- something has drifted back to the wrong camera.
+--
+-- THE ROLL IS BACK, DELIBERATELY (T-072), and it is the one exception to the paragraph
+-- above. It was taken out because the PREDECESSOR'S numbers were violent -- 45 degrees of
+-- it, saturating at 20 degrees of slip, chased at rate 20 -- and the user drove that and
+-- said it "spins/rotates wayyyyy to far". The shape was never the problem. What is here is
+-- the same formula at about a ninth of the gain, measured (`CamRollMax` below), and
+-- `CamRollMax = 0` gives the level horizon back exactly. `CamZoom*` and `CamSmoothTime`
+-- stay gone.
 --
 -- Offsets are in the CAR's own axes, Roblox sense: +x right, +y up, +z BEHIND the car (the
 -- spec quotes the reference's Unity figures, where behind is -z). Angles are DEGREES
@@ -120,6 +135,85 @@ local Camera = {
 	-- Worst lag at 2 is 2.0 deg. Higher is not better: a wall hit drops the
 	-- speed instantly, and this is what decides whether that reads as a
 	-- shove or as a snap
+	-- THE ROLL (T-072), and the one number in this file with a history. The camera banks
+	-- with the slide: `CamRollMax` degrees of it, reached at `CamRollAtAngle` degrees of
+	-- slip, eased at `CamRollRate`. THE PREDECESSOR'S WERE 45, 20 AND 20 -- the horizon at
+	-- 45 degrees while the car was barely sideways -- and the user drove that and said it
+	-- "spins/rotates wayyyyy to far". These are about a NINTH of that gain: a ninth of the
+	-- angle, over more than twice the slip, chased at a third of the rate.
+	-- WHICH WAY IT GOES: the camera banks INTO the corner, as a motorcycle does. A
+	-- positive slip is the car travelling out to its LEFT, which is a RIGHT-hand drift
+	-- (the nose is turned into the corner and the tail is out to the left), and the camera
+	-- rolls right with it. NEGATE `CamRollMax` to go the other way -- the user said of the
+	-- predecessor that they were "not even sure if it's the right direction", and this is
+	-- where that is settled, with one minus sign
+	CamRollMax = 4, -- deg, at `CamRollAtAngle` of slip. OURS (T-072). The predecessor's
+	-- was 45. Measured over a full-lock drift the camera reaches its
+	-- 4.00 deg stop and the HORIZON tilts 3.92 -- a little less, because
+	-- the camera is pitched down and some of a roll about the look axis
+	-- goes into the pitch rather than into the horizon. Four degrees
+	-- moves the edge of a 1080-line screen by 67 pixels, so it is
+	-- nothing like invisible; five is one line away if it wants more
+	CamRollAtAngle = 45, -- deg of slip at which the roll saturates. OURS (T-072). The
+	-- predecessor's was 20, which is why it was at full tilt before the
+	-- car looked sideways at all. Measured, held: 10 deg of slip leans
+	-- 0.89, 20 leans 1.78 (where the predecessor was at 45), 30 -- an
+	-- ordinary drift -- leans 2.67, and 45 and anything past it is at
+	-- the stop
+	CamRollRate = 6, -- per second. OURS (T-072); a 167 ms time constant. The
+	-- predecessor's was 20, which is most of why it read as a flick rather
+	-- than a lean. Measured over a hard 20-second drive, the worst single
+	-- frame of roll is 0.147 deg at 60 FPS (0.293 at 30, 0.073 at 120 --
+	-- the same angular speed, which is what the exponential ease is for).
+	-- A twenty-fifth of the whole lean in a frame: it arrives, and it is
+	-- never caught moving
+	-- THE SPEED SHAKE (T-072), the reference's own (`CameraShake.cs`). A new random kick
+	-- is chosen every `ShakePeriod`, scaled by speed as a share of the CAR's top speed
+	-- (`Config.Drift.TopSpeed`, so a faster car does not shake harder for the same speed),
+	-- and the camera eases back toward zero between kicks at `ShakeRestoreRate`. The
+	-- result is a camera that gets BUSY at speed rather than violent -- the biggest "this
+	-- feels fast" lever there is after the FOV.
+	-- IT IS APPLIED TO THE RENDERED CAMERA ONLY and never written where a target can read
+	-- it, so it cannot move where the camera sits; and the kicks are chosen on their own
+	-- clock from a seeded sequence, so 30, 60 and 120 FPS get the SAME kicks at the SAME
+	-- moments and decay by the same exact exponential between them.
+	ShakePeriod = 0.05, -- s. EXACT (`_shakePeriod`). Twenty kicks a second
+	ShakeRotation = Vector3.new(0.15, 0.15, 0.1), -- DEGREES of pitch, yaw and roll at top
+	-- speed. OURS (T-072). The rotation is what is
+	-- actually seen, and THE ONLY HONEST UNIT FOR IT
+	-- IS SCREEN PIXELS: at top speed the FOV is 84
+	-- deg, so a 1080-line screen is 12.8 px to the
+	-- degree, and this makes the picture move
+	-- 3.3 px in the worst frame and 0.65 px in the
+	-- average one. For scale, the car itself is
+	-- about 210 px tall there, so the buzz is one
+	-- and a half per cent of the car. THE
+	-- CONSTRAINT IS THAT THE CAR STAYS EASY TO LOOK
+	-- AT while the player is placing a drift, and
+	-- what was measured against this is the whole
+	-- ladder: 0.10 is 2.2 px worst and 0.44 mean,
+	-- which is under what is felt; 0.20 is 4.5 and
+	-- 0.88; 0.30 is 6.7 and 1.3, which is a shimmer
+	-- rather than a buzz.
+	-- IT IS LINEAR IN SPEED, measured: the kick is
+	-- 0.043 deg at a quarter of top speed, 0.086 at
+	-- half, 0.129 at three quarters and 0.172 at the
+	-- top, and exactly nothing at a standstill
+	ShakePosition = Vector3.new(0.07, 0.07, 0), -- STUDS, in the camera's own axes, at top
+	-- speed. OURS (T-072). At a 46-stud radius
+	-- 0.07 studs is 0.09 deg of arc, about a pixel,
+	-- and it is there for texture under the rotation
+	-- rather than for its own sake. THE Z IS ZERO ON
+	-- PURPOSE: a tenth of a stud along the look axis
+	-- is a 0.2 per cent change of scale and nothing
+	-- else, so it costs a multiply and buys nothing
+	ShakeRestoreRate = 14, -- per second. OURS (T-072); the reference's own is 1, applied
+	-- to a kick it ADDS every frame rather than sets, which makes
+	-- its shake depend on the frame rate. A kick here decays to
+	-- half of itself in the 50 ms before the next one, so the
+	-- camera is always moving and never sits still at a corner.
+	-- Measured at the same magnitude, 8 is a sway (4.0 px worst,
+	-- 0.69 mean) and 24 is a fizz (2.5 and 0.59)
 	-- The pan (T-036): hold right and look around. An ORBIT OFFSET on the placed camera,
 	-- about the car, at the same radius -- applied downstream of the targets, so the
 	-- feedback that makes this camera frame-rate independent never sees it.
