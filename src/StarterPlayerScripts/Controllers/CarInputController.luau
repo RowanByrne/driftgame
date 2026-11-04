@@ -20,6 +20,17 @@
 --
 -- `InvertSteering` is applied by the model, at the single line that sets the yaw rate, and
 -- NOT here: what leaves this file is the raw signed share of the travel.
+--
+-- THE PAN is the one other thing a pointer does here (T-036): the RIGHT mouse button held
+-- and dragged looks around, the way every Roblox game does. It is deliberately a different
+-- button from the steering, which is a LEFT-button drag in Drift/DragControl, so the two
+-- never meet -- both can be held at once and the car keeps steering while the view moves.
+-- All this file does is collect the pixels; the feel, the limits and the return all live
+-- in CarCameraController, which pulls them once a frame with `PanInput()`.
+--
+-- The mouse is NOT locked while panning, and that is on purpose: the steering is measured
+-- from where the cursor IS, so locking it would freeze the car's rate of turn the moment
+-- the right button went down.
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -51,6 +62,12 @@ function CarInputController:Init()
 	self.handbrake = false
 	self.DebugToggled = Signal.new()
 	self._actions = {}
+	-- The pan, in PIXELS of mouse travel since the camera last took them. `dx`/`dy` are
+	-- drained by `PanInput()`; `totalX`/`totalY` are never drained and exist only so
+	-- `DebugState` can be read without stealing the camera's input.
+	self._pan = { held = false, dx = 0, dy = 0, totalX = 0, totalY = 0 }
+	self._panLastPos = nil
+	self._panConnections = {}
 end
 
 function CarInputController:Start()
@@ -103,6 +120,79 @@ function CarInputController:Start()
 	self._drag = DragControl.new(function()
 		self.DebugToggled:Fire()
 	end)
+
+	self:_bindPan()
+end
+
+-- ---------------------------------------------------------------- the pan
+--
+-- The right mouse button, held and dragged. Nothing else in the game uses that button:
+-- DragControl takes MouseButton1 and Touch only, so there is nothing here to fight.
+--
+-- `gameProcessedEvent` is DELIBERATELY IGNORED. DragControl's drag area is a full-screen
+-- Active frame, so every mouse event in the window comes through marked processed; filter
+-- on it and the pan never fires at all.
+function CarInputController:_bindPan()
+	local function connect(signal, fn)
+		table.insert(self._panConnections, signal:Connect(fn))
+	end
+
+	connect(UserInputService.InputBegan, function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton2 then
+			self._pan.held = true
+			self._panLastPos = nil -- the first move of a drag is measured from itself
+		end
+	end)
+
+	local function release(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton2 then
+			self._pan.held = false
+		end
+	end
+	connect(UserInputService.InputEnded, release)
+	-- A button released outside the window never ends: a stuck pan would be a view that
+	-- never comes back, so focus lost drops it the same way the steering drops its finger.
+	connect(UserInputService.WindowFocusReleased, function()
+		self._pan.held = false
+	end)
+
+	connect(UserInputService.InputChanged, function(input)
+		if input.UserInputType ~= Enum.UserInputType.MouseMovement then
+			return
+		end
+		local pos = Vector2.new(input.Position.X, input.Position.Y)
+		local last = self._panLastPos
+		self._panLastPos = pos
+		if not self._pan.held then
+			return
+		end
+		-- How far the mouse moved. Position first, because `Delta` is only filled in
+		-- reliably for a LOCKED mouse and this one is deliberately free (see the header);
+		-- `Delta` is the fallback for the frames where the cursor has hit a screen edge
+		-- and stopped moving but the mouse itself has not.
+		local d = if last then pos - last else Vector2.zero
+		if d.Magnitude < 1e-6 then
+			d = Vector2.new(input.Delta.X, input.Delta.Y)
+		end
+		self:_addPan(d.X, d.Y)
+	end)
+end
+
+function CarInputController:_addPan(dx: number, dy: number)
+	self._pan.dx += dx
+	self._pan.dy += dy
+	self._pan.totalX += dx
+	self._pan.totalY += dy
+end
+
+-- What the pan has been handed since this was last called, in pixels, and whether the
+-- button is still down. The camera pulls this once a frame and DRAINS it: nothing else may
+-- call it, or the pixels go to whoever asked first.
+function CarInputController:PanInput(): { held: boolean, dx: number, dy: number }
+	local pan = self._pan
+	local out = { held = pan.held, dx = pan.dx, dy = pan.dy }
+	pan.dx, pan.dy = 0, 0
+	return out
 end
 
 -- The one number the model wants, this frame, plus the handbrake that is not part of the
@@ -165,6 +255,30 @@ function CarInputController:DebugState()
 		actions = if self._context then #self._context:GetChildren() else 0,
 		rawSteer = if self._actions and self._actions.Steer then tostring(self._actions.Steer:GetState()) else "none",
 		overridden = self._override ~= nil,
+		pan = {
+			held = self._pan.held,
+			pendingX = self._pan.dx, -- not yet taken by the camera
+			pendingY = self._pan.dy,
+			totalX = self._pan.totalX, -- every pixel since the controller started
+			totalY = self._pan.totalY,
+		},
+	}
+end
+
+-- Studio only: act out the right-button drag, so a test exercises the real path into the
+-- camera rather than poking the camera's own state. `held` nil leaves the button as it is.
+function CarInputController:DebugPan(dxPx: number?, dyPx: number?, held: boolean?)
+	if held ~= nil then
+		self._pan.held = held
+		if held then
+			self._panLastPos = nil
+		end
+	end
+	self:_addPan(dxPx or 0, dyPx or 0)
+	return {
+		held = self._pan.held,
+		pendingX = self._pan.dx,
+		pendingY = self._pan.dy,
 	}
 end
 
