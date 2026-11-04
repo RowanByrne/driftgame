@@ -415,6 +415,17 @@ function PlaygroundService:Build()
 end
 
 function PlaygroundService:Init()
+	-- A place with a hand-placed track gets that instead. Both sit at the origin, so
+	-- building the plate as well would bury the track inside it (TrackService, T-031).
+	local services = script.Parent
+	local trackModule = services and services:FindFirstChild("TrackService")
+	if trackModule and trackModule:IsA("ModuleScript") then
+		local ok, track = pcall(require, trackModule)
+		if ok and type(track) == "table" and type(track.HasTrack) == "function" and track:HasTrack() then
+			PlaygroundService.SkippedForTrack = true
+			return
+		end
+	end
 	self:Build()
 end
 

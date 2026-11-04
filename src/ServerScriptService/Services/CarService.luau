@@ -122,6 +122,18 @@ end
 -- above the origin instead (docs/game/WORLD.md "Named spots").
 function CarService:SpawnCFrame(): CFrame
 	local services = ServerScriptService:FindFirstChild("Services")
+	-- A hand-placed track owns the spawn when the place has one: the playground was never
+	-- built, so its spots do not exist (TrackService, T-031).
+	local trackModule = services and services:FindFirstChild("TrackService")
+	if trackModule and trackModule:IsA("ModuleScript") then
+		local ok, track = pcall(require, trackModule)
+		if ok and type(track) == "table" and type(track.SpawnCFrame) == "function" then
+			local gotSpawn, cf = pcall(track.SpawnCFrame, track)
+			if gotSpawn and typeof(cf) == "CFrame" then
+				return cf
+			end
+		end
+	end
 	local module = services and services:FindFirstChild("PlaygroundService")
 	if module and module:IsA("ModuleScript") then
 		local ok, playground = pcall(require, module)

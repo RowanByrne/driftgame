@@ -125,6 +125,26 @@ local Drift = {
 	SurfaceAttribute = "Surface", -- attribute on a tagged part naming its surface
 	SurfaceDirt = "dirt", -- the value that means dirt; anything else tagged is tarmac
 
+	-- ---------------------------------------------------------------- a hand-placed track
+	-- The playground is built by code and is in git; a TRACK is a model someone placed in
+	-- the place file by hand, which git never sees (AGENTS.md "Hand-built content"). Both
+	-- sit at the origin, so a place gets one or the other and `TrackService` decides which.
+	-- A track carries none of our tags, so its road has to be recognised -- by COLOUR,
+	-- because its part names are whatever its author typed. Tarmac is grey: its channels
+	-- sit close together and it is neither black nor white.
+	TrackName = "Track", -- the model's name in Workspace. No track by that name, no track
+	TrackRoadColourSpread = 0.1, -- how far a part's R, G and B may differ and still read as
+	-- grey. Up if road is being missed, down if grass is being
+	-- taken for road -- and taking grass for road is the worse
+	-- failure, because the edge of the track is where a drift is
+	-- won or lost
+	TrackRoadMinBrightness = 0.2, -- darker than this is shadow, tyre marks or a tunnel
+	TrackRoadMaxBrightness = 0.88, -- brighter is a kerb, a line or a building
+	TrackSpawnSearchSteps = 60, -- grid resolution of the hunt for somewhere on the road to
+	-- start. 60 x 60 rays, once, at startup
+	TrackMinRoadRun = 4, -- studs of continuous road below which a crossing is a scan line
+	-- clipping a corner rather than a road worth measuring
+
 	-- ---------------------------------------------------------------- walls
 	WallScrub = 0.5, -- share of speed kept after hitting something
 	WallPush = 0.2, -- studs the car is held off the surface it hit
