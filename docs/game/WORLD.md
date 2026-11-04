@@ -4,11 +4,25 @@ This game's world and map: its areas, how players get around, and the named spot
 
 ## Overview
 
-There is no map yet. The only world is the **prototype testing ground**: a flat 2000 by 2000 stud plate with an open yard round the spawn, a district of blocky buildings making streets and alleys, scattered pillars and cones, and two elevated features — a banked bowl and a ramp. It is built by code at runtime, so the lanes and the Main place are identical. It is a test rig for the drift model, not a level: there is no route, no racing line, no scoring and no goal, and nothing in it survives into the real map except the lessons. Its spec is `features/drift-playground.md`.
+There is no map yet. There are **three separate worlds**, none of which is the map, each built a different way and each with a different job. They share one Y: every surface in the game tops out at Y = 0, so the one `FallY` / `RespawnBelowY` pair is right for all three.
+
+### The three worlds, and where each is
+
+| World | Where it is | Built by | What it is for |
+|---|---|---|---|
+| The hand-placed track | **At the origin**, where its author put it. Within about x/z ±560 | By hand, in `DR-Main` only; git never sees it (`AGENTS.md` "Hand-built content"). Adopted at runtime by `TrackService` | The kart circuit the user added. Only the Main place has one; no lane does |
+| The playground | **`Config.Drift.PlaygroundOffsetFromTrack` = (-2024, 0, 0)**, so its 2000-stud plate runs x -3024..-1024 and meets the track's baseplate edge to edge at x = -1024 | Code, by `PlaygroundService` at `Init`, from `Playground/Layout.luau` | Where the drift feel was approved, and where it is tuned. The two above are deliberately **side by side on one continuous floor**, 464 studs of bare baseplate apart, so a car can be driven from one to the other (`T-026`) |
+| **The road** | **`Config.Road.Offset` = (0, 0, -20000)** | Code, by `RoadService`, **only when something calls `Generate(seed)`** — it is off by default (`T-044`) | The endless generated road (`features/track-generation.md`). Flat, 35 studs wide, barriers down both edges |
+
+**The road is far away on purpose, and 20 000 studs is a measured number, not a gesture.** It is not a place on a plate: it grows away from its own start for as long as the run lasts, so it needs a quarter of the world to itself. -Z is the empty one — the other two worlds never leave z ±1024, the collision tests stand their rig at (20000, 500, 20000) and the jitter tests probe at (2000, 0, 0). Measured, 500 generated pieces wandered to x -22 739 and z -33 459 and never came back above z -15 821; a random walk of ~350-stud pieces would need about 3 300 of them — some three hours of continuous driving — to drift the 20 000 studs back to the others, and only about fourteen pieces exist at once anyway. `RoadTests` asserts the live window stays clear of both other worlds (18 761 studs at the last measurement).
+
+**Only the window exists.** The road is not a 500-piece object: `AheadPieces` 10 are built in front of the car and `BehindPieces` 4 kept behind it, so about 14 pieces — measured at a peak of 1 059 parts — are in the Workspace at any moment, however long the run. That is why `StreamingEnabled` can stay off for it too.
+
+The **prototype testing ground** (the playground) is a flat 2000 by 2000 stud plate with an open yard round the spawn, a district of blocky buildings making streets and alleys, scattered pillars and cones, and two elevated features — a banked bowl and a ramp. It is a test rig for the drift model, not a level: there is no route, no racing line, no scoring and no goal, and nothing in it survives into the real map except the lessons. Its spec is `features/drift-playground.md`.
 
 The real map is designed once the drift feel is agreed (`ROADMAP.md`). This doc is then rewritten from a layout sketch.
 
-**Map:** none yet. The testing ground needs no sketch: its areas are listed below and every number is in `src/ServerScriptService/Playground/Layout.luau`.
+**Map:** none yet. The testing ground needs no sketch: its areas are listed below and every number is in `src/ServerScriptService/Playground/Layout.luau`. The road has no sketch either, by its nature: every piece of it is in `src/ReplicatedStorage/Shared/Config/Road.luau`.
 
 ## Areas
 
@@ -85,3 +99,4 @@ The limit asserted in `PlaygroundTests` is 0.25 studs per stud travelled, so the
 | playground-v1 | 2026-11-03 | The first prototype playground: plate, a one-way course of track sections, circle, cones |
 | playground-v2 | 2026-11-03 | Replaced by the open testing ground: the course removed entirely, district of buildings and alleys added, one banked circle and one ramp kept |
 | playground-v3 | 2026-11-04 | `T-026`: an apron added round the banked circle so the bowl can be driven on to instead of only out of; the ramp's profile changed from eased-in-and-out to steepest-at-the-top so it jumps; the cone cluster in the ramp's mouth moved. 229 parts to 325 |
+| road-v1 | 2026-11-04 | `T-044` step 1: the endless road, a third world at (0, 0, -20 000). Two piece types — a 220-stud `Straight` and a mirrored 220-radius 90-degree `Corner` — 35 studs wide, flat, with barriers down both edges. Off by default; a run starts on `RoadService:Generate(seed)` |
