@@ -1,8 +1,8 @@
 # Feature: Road pieces and the endless road
 
-**Status:** **step 1 of 3 built** (`T-044`), the generator proven on two piece types. Steps 2
-(the other four pieces) and 3 (the start button, spawning, falling, getting back to the other
-worlds) are not built. **Owner task:** `T-044`; specced as `T-030`.
+**Status:** **steps 1 and 2 built** (`T-049`, `T-050`): the generator on five flat piece types,
+every number measured. Step 3 (the start button, spawning, falling, getting back to the other
+worlds) is `T-051` and is not built here. **Owner task:** `T-044` is the plan; specced as `T-030`.
 
 Written from the reference game's own road generator, read off the decompile, the same way
 `drift-model.md` was. What we take is how the system works; none of its source, art or names come
@@ -21,7 +21,7 @@ third world and must not collide with it, so everything here is `Road`:
 | `src/ReplicatedStorage/Shared/Road/Generator.luau` | The sequence: the bias, the lookahead, the window, progress |
 | `src/ReplicatedStorage/Shared/Road/Builder.luau` | A placed piece turned into parts |
 | `src/ServerScriptService/Services/RoadService.luau` | The service that owns the parts and follows the car |
-| `src/ServerScriptService/Tests/RoadTests.luau` | 25 checks, and the two measurement harnesses |
+| `src/ServerScriptService/Tests/RoadTests.luau` | 29 checks, and the two measurement harnesses |
 
 ## Goal
 
@@ -57,14 +57,14 @@ build a piece that would cross it.
 A piece is one length of road with **two sockets**: a **start** and an **end**, each a position and
 a heading. That is all the geometry the joining needs.
 
-| It carries | What for | Built in step 1? |
+| It carries | What for | Built? |
 |---|---|---|
 | `start`, `finish` | The sockets. A piece's end is the next piece's start | Yes |
 | `quads` | The footprint: a flat list of oriented rectangles, one per segment, covering the road and both barriers, plus a bounding box for a quick reject. **Not** the thing that is drawn — it is rough and deliberately cheap | Yes |
-| `kind` | Which piece type this is (`Straight`, `Corner`) | Yes |
-| `id` | Which **variant**: `Straight`, `CornerL`, `CornerR`. The placeable unit, and what the chooser counts | Yes |
+| `kind` | Which piece type this is (`Straight`, `Corner`, `Sweeper`, `Hairpin`, `Chicane`) | Yes |
+| `id` | Which **variant**: `Straight`, `CornerL`, `HairpinR` and so on. The placeable unit, and what the chooser counts | Yes |
 | `weight` | How often it should turn up relative to the others | Yes |
-| `minPieces` | How far into a run before this piece may appear at all. Gates the hard ones | Yes (nothing uses it yet: both pieces are 0) |
+| `minPieces` | How far into a run before this piece may appear at all. Gates the hard ones | Yes — the hairpin is gated at 8 |
 | `mirror` | Whether a left-hand version should exist. A mirrored piece doubles the set for free | Yes |
 | `nodes`, `cum`, `length` | A line of points down the middle and the arc length at each, for "how far along this piece are you" (see "Progress") | Yes |
 | `surface` | `tarmac` or `dirt`, per part, through the existing `Surface` attribute (`CONTRACTS.md`) | Tarmac only; every slab carries the attribute |
@@ -81,7 +81,14 @@ piece's end socket, then translate it into place.** That is the whole join. No s
 fitting, no runtime geometry. Every piece is defined in its own frame with its start socket at the
 origin facing -Z, so the road is flush **by construction**, and it measures that way: over 500
 generated pieces the worst gap between one piece's end socket and the next one's start is
-**exactly zero** — the sockets are the same float64 numbers, not two numbers that agree.
+**exactly zero** — the sockets are the same float64 numbers, not two numbers that agree. All nine
+variants, placed on a socket turned 37° and moved a thousand studs, come out with a start-socket
+gap and an end-socket gap of exactly zero too.
+
+A piece's shape need not be one shape. The chicane is **an arc, then the other way**, appended to
+the same open centre line, so the join inside a piece is the same construction as the join between
+two: `Shape` (`straight`, `arc`, `chicane`) says how a piece is drawn and `kind` says what it is
+called, and a corner, a sweeper and a hairpin are all `arc` with different numbers.
 
 ### The window
 
@@ -93,7 +100,7 @@ The generator keeps a window of road around the car and nothing else:
 | `BehindPieces` | 4 | How many are kept behind it before the oldest is destroyed |
 | `BarrierBehind` | 2 | How many pieces back the closing barrier sits |
 
-So the world stays about 14 pieces big however long the run is — **measured at a peak of 1 059
+So the world stays about 14 pieces big however long the run is — **measured at a peak of 909
 parts**, the biggest single piece being 81 — which is also why `StreamingEnabled` can stay off
 (`ARCHITECTURE.md`).
 
@@ -110,8 +117,9 @@ window is full of drops to the floor; one it has not used in a while rises. Then
 picks the order to try.
 
 That one line is most of why the reference's road does not feel repetitive, and it costs nothing.
-Measured over five seeds of 500 pieces with three equally weighted variants, the worst share was
-**1.3 points off** an even third, and the longest run of any one variant was **5**.
+Measured over five seeds of 500 pieces with nine variants, the worst share was **10.1 points off**
+its weighted share — the straight, which is weighted 3 and is after the bias 18% of the road
+rather than 27% — and the **longest run of any one variant was 4**.
 
 ### Looking ahead, so the road cannot trap itself
 
@@ -123,34 +131,61 @@ illegal if any candidate's footprint overlaps any piece already laid or any earl
 | Number | Value | What it does |
 |---|---|---|
 | `LookAhead` | **14** (the spec said 5; see below) | Pieces deep the search must find a legal continuation |
-| `SearchNodeBudget` | 4000 | Placements one search may try before it gives up. A guard, not a tuning number: the worst search over 150 000 generated pieces tried **527**, and a normal choice costs fourteen |
-| `SearchStepsPerFrame` | not built | Spreading the search over frames. Deferred: the whole search costs **0.46 ms** and a piece arrives every three seconds or so |
+| `SearchNodeBudget` | **40 000** (step 1 had 4 000) | Placements one search may try before it gives up. A real number now, not a guard: the biggest search that ran to the end of its own tree over ~30 000 pieces tried **29 297** |
+| `SearchStepsPerFrame` | **not built, and now needed** | Spreading one search over frames. The worst single choice measured is **356 ms**, and it belongs to `Road/Generator` |
 
 If no legal choice exists at all, **nothing is placed** — the road stops growing rather than
 growing wrongly, and it warns loudly naming the piece number and how many placements it tried.
 
-**`LookAhead = 5` is not enough, and that is measured, not an opinion.** With only two piece types
-a 90-degree corner whose radius equals the straight's length puts the whole road on a 220-stud
-square lattice, and a self-avoiding walk on a square lattice traps itself: four corners the same
-way close a ring exactly, and then every exit runs along road that is already there. From
-`RoadTests:stalls`, 40 runs of 400 pieces each:
+**`LookAhead = 5` is not enough, and that is measured, not an opinion.** With step 1's two piece
+types a 90-degree corner whose radius equals the straight's length puts the whole road on a
+220-stud square lattice, and a self-avoiding walk on a square lattice traps itself: four corners
+the same way close a ring exactly, and then every exit runs along road that is already there.
+Measured then, 40 runs of 400 pieces: depth 3 stalled 35 times, 5 stalled 13, 7 stalled 3, 9
+stalled once, 11 and 14 never.
 
-| `LookAhead` | Runs that boxed themselves in | Worst search |
-|---|---|---|
-| 3 | 35 of 40, by piece 9 | 21 nodes |
-| 5 | 13 of 40, by piece 16 | 45 |
-| 7 | 3 of 40, by piece 21 | 75 |
-| 9 | 1 of 40, by piece 263 | 117 |
-| 11 | 0 of 40 | 156 |
-| **14** | **0 of 300 runs of 500 pieces** | **527** |
+**Step 2 expected that four more piece types would mean shallower looking was enough. It is the
+opposite, and the measurement says so.** From `RoadTests:stalls` on the five-piece set, 20 runs of
+400 pieces each, with the budget held well clear so what is measured is the depth and not the
+giving up:
 
-14 is not a round number: it is `AheadPieces + BehindPieces`, how many pieces the window
-remembers. Look that far and a legal continuation reaches past everything currently being avoided,
-so what the search proves is "there is a way out of this window", which is the question. Over
-**150 000 generated pieces — about fifty hours of driving — it never once had nothing to place.**
+| `LookAhead` | Boxed itself in | Earliest | Worst search | Cost a piece | Worst single piece |
+|---|---|---|---|---|---|
+| 3 | 19 of 20 | piece 15 | 81 nodes | 0.11 ms | 2 ms |
+| 5 | 13 of 20 | piece 15 | 261 | 0.23 | 7 |
+| 7 | 8 of 20 | piece 43 | 989 | 0.36 | 30 |
+| 9 | 8 of 20 | piece 126 | 2 925 | 0.59 | 65 |
+| 11 | 3 of 20 | piece 116 | 7 902 | 0.82 | 175 |
+| **14** | **2 of 20** | **piece 231** | **22 779** | **1.30** | **356** |
+| 18 | 1 of 20 | piece 172 | 80 000 (the cap) | 3.95 | 2 321 |
 
-Step 2 adds four more piece types, and more ways out means shallower looking is enough. Re-run
-`RoadTests:stalls` then rather than keeping 14 out of habit.
+**More ways to turn is not more ways out.** A hairpin folds the road back on itself 140 studs from
+where it came and a chicane steps it 65 studs sideways without turning it: both make corridors the
+road then has to thread. Counting what the road was standing on when it ran out of room puts the
+hairpin and the chicane at about half the stalls between them while they are a third of the pieces
+— but taking either one out measures **worse**, not better (10 of 20 with no hairpin against 6 of
+20 with it, at depth 7), because a hairpin is also the one piece that can turn round inside a dead
+end. Shifting the sweeper's arc off 45° to break the heading lattice does not help either (10 of
+20 at 50°, 9 at 55°, against 6 at 45°).
+
+So **14 stays** — now the best point on a curve rather than the first clean one. It is still
+`AheadPieces + BehindPieces`, how many pieces the window remembers, so what the search proves is
+"there is a way out of this window". 18 halves the stalls again but costs three times as much a
+piece and its worst single choice is 2.3 seconds, by which point the search is hitting the budget
+rather than finishing.
+
+**What did have to change is the budget, and what a node costs.** At 4 000, every stall at depth 14
+was the search giving up rather than the road running out — the budget was deciding the answer.
+`Pieces.quadsOverlap` is the only thing a search does, millions of times a run, and rewriting it to
+allocate nothing took a node from **0.104 ms to 0.032** and the worst single choice from **3.0
+seconds to 0.93**. With the budget at 40 000 all five of the test suite's seeds run 500 pieces
+without a stall, where seed 7 stopped at piece 42 on a budget of 20 000.
+
+**What is left, honestly:** 2 runs in 20 of 400 pieces still box themselves in, the earliest at
+piece 231 — a quarter of an hour of driving — where the two-piece road had none; and the worst
+single choice is 356 ms of server time. Neither is a stutter the player sees, because the window is
+ten pieces of road ahead of the car, but both say the same thing: `SearchStepsPerFrame` has stopped
+being optional.
 
 ### Progress
 
@@ -192,9 +227,14 @@ plate. The whole road set is text in git, and a corner's radius changes in a com
 it finds the ground with four downward rays — so a curve made of short straight segments is
 *physically identical* to a smooth one as long as each segment is short next to the `Wheelbase`
 (9.6 studs). It is purely a question of how it looks, and the deviation from the true arc is
-`chord² / (8 × radius)`. `MaxSegmentChord` is 13 studs, so the built 220-radius corner is **27
-chords of 12.80 studs, 0.093 studs off the true arc**. A straight is **one part** however long it
-is, because it is straight.
+`chord² / (8 × radius)`. A straight is **one part** however long it is, because it is straight.
+
+**The chord was a proxy and the deviation is the thing**, which only showed once step 2 added a
+radius tighter than 220. At `MaxSegmentChord` = 13 studs the 220-radius corner is 0.093 studs off
+the arc but a 70-radius hairpin is **0.299** — three times as far out, on the piece where the car
+is slowest, closest to the barriers and most able to see it. So a curve is now cut by whichever of
+two limits bites, the chord or `MaxArcDeviation` = 0.1 studs, which takes the hairpin from 17
+segments to 30 and the whole set to a worst deviation of **0.096 studs**.
 
 **If segmentation ever shows,** Roblox can generate real meshes from code at runtime
 (`AssetService:CreateEditableMesh`, tested working in this game's Main place, 2026-11-03). The same
@@ -272,9 +312,80 @@ speed the next corner cannot be held at (111 against the ~75 a 220-radius corner
 straight ends in a real corner entry. At 100 it only reaches 102 and the entry stops being a
 decision; at 400 it reaches 132 and the road is mostly straight line.
 
-**The barriers get touched, and that is intended.** On the 50-piece drive the car was within 3.4
-studs of the edge at its worst and brushed a barrier on 303 of 22 168 steps — 1.4% of the time.
-The road is meant to be technical.
+### The three pieces step 2 added
+
+**A number about the road cannot choose a piece.** Twenty generated pieces containing three
+hairpins report mostly what the straights and the corners did, so `RoadTests:sweep` grew two
+things: it can push every other piece out of the run (`only = { "Straight", "Hairpin" }`, by
+setting their `minPieces` past any run), and the drive now keeps its numbers **per piece type**,
+one visit at a time, so "the hairpin never put a wheel off the road" is a sentence about the
+hairpin. Every table below is per-piece, from twenty-piece drives at seed 8080.
+
+**`Sweeper`, 400 radius and 45°** — the corner the car is happiest drifting:
+
+| Radius (arc 45°) | Speed on it | Drifting it | Held the slide the whole way | Longest slide |
+|---|---|---|---|---|
+| 280 | 49..135 | 83% | 5 of 10 | 4.8 s |
+| 340 | 70..132 | 82% | 3 of 10 | 5.8 |
+| **400** | **79..138** | **84%** | **5 of 10** | **6.1** |
+| 500 | 83..141 | 79% | 3 of 10 | 5.9 |
+| 650 | 91..145 | 76% | 3 of 10 | 5.8 |
+
+Arc, at radius 400: 30° drifts 81% for 53 steps on a barrier, **45° drifts 84% for 63**, 60° drops
+to 81% for 111, 90° to 77% for 103, 120° to 76% for 143. 400 and 45 is where **the slide lasts
+longest without the car running out of road**: the longest unbroken slide of any sweep run, the
+highest share of the piece spent sideways, and the car never below 79 studs/s where a 220 corner
+takes it to 53. Opening it further only makes it a straight; winding the arc on costs the road,
+because a long fast corner runs the car wide for longer.
+
+**`Hairpin`, 70 radius and 180°, gated at 8 pieces** — the piece that has to stop the car:
+
+| Radius (arc 180°) | Speed on it | Drifting it | Peak slip | Barrier steps per hairpin |
+|---|---|---|---|---|
+| 40 | 22..55 | 70% | 72° | 2.1 |
+| 50 | 27..57 | 74% | 65° | 2.1 |
+| 55 | 30..60 | 71% | 64° | 2.7 |
+| 65 | 28..65 | 78% | 61° | 4.1 |
+| **70** | **30..68** | **81%** | **63°** | **5.0** |
+| 80 | 32..72 | 81% | 57° | 6.7 |
+| 100 | 35..81 | 83% | 56° | 8.1 |
+| 120 | 33..88 | 84% | 62° | 9.9 |
+| 150 | 38..99 | 78% | 61° | 9.4 |
+
+**The autopilot gets round every one of them** — 0 steps off the road at every radius from 40 to
+150 — so the choice is not where it stops working. 70 is the tightest radius that still holds the
+car in a slide for four fifths of the piece (against 70–74% at 40–55, where it is being braked
+rather than drifted) while keeping peak slip at 63°, well short of the 90° where the grip force
+turns into a brake and the car spins. The arc is 180° because 120° leaves it drifting 79% and 150°
+72%, against 81%. **The tight radius costs the generator** and that is a real trade: a 70-radius
+fold leaves a 140-stud corridor nothing else fits down, and at lookahead 11, radius 70 stalled 3
+runs of 20 where 110 stalled 2 and 150 stalled 1.
+
+`minPieces = 8` is the gate, in pieces because that is what the generator counts: the first eight
+pieces are 1 780–2 200 studs and about **30 seconds** of driving, so a hairpin can never be the
+second thing a player meets.
+
+**`Chicane`, 140 radius and 40° each way, no straight between** — the catch between two slides, so
+the number that chooses it is how often the car actually swaps a slide one way for one the other
+(the slip passing all the way through zero, from 12° one side to 12° the other):
+
+| Radius (arc 40°) | Speed on it | Drifting it | Caught and swapped | Barrier steps per chicane |
+|---|---|---|---|---|
+| 110 | 49..90 | 69% | 1.1 | 2.2 |
+| **140** | **47..96** | **78%** | **1.5** | **5.6** |
+| 180 | 54..108 | 82% | 1.6 | 9.4 |
+| 240 | 63..125 | 84% | 1.7 | 13.9 |
+| 320 | 73..131 | 86% | 1.7 | 16.6 |
+
+Arc, at radius 140: **25° is the proof the piece earns its place** — the car straight-lines it,
+drifting 31% and swapping once in ten chicanes. 40° drifts 78% and swaps 1.5 times; 55° drifts 89%
+for 12.0 barrier steps; 70° drifts 91% for 14.6. 140 and 40 is the shallowest pair that transitions
+every time. `Middle`, a straight between the two bends, is **zero**: 30 studs of it buys 16 swaps
+against 15 and takes barrier contact from 5.6 steps a chicane to 9.4.
+
+**The barriers get touched, and that is intended.** On the 50-piece drive of the full set the car
+was within 3.5 studs of the edge at its worst and brushed a barrier on 181 of 23 910 steps — 0.8%
+of the time. The road is meant to be technical.
 
 **One number here is the driver, not the road, and it is written down so it is not mistaken for a
 result:** the autopilot's lookahead. At 0.55 seconds it chased its own slide round every corner and
@@ -286,16 +397,17 @@ Enough to prove the system, not a content pass. Each mirrors except the straight
 
 | Piece | Shape | Why it is in the set | Step |
 |---|---|---|---|
-| `Straight` | A plain 220-stud length | Breathing room, and the piece that makes a long corner feel long | **1, built** |
-| `Corner` | A 220-radius, 90-degree corner, mirrored | The staple, and the thing the whole machine is proven on | **1, built** |
-| `Sweeper` | A long, large-radius corner | The corner the car is happiest drifting: enters fast, holds. The 320 and 400 rows above are what it would feel like | 2 |
-| `Hairpin` | A tight corner | Needs the car slowed and rotated. `minPieces` gated. The 100 row is the shape of it | 2 |
-| `Chicane` | Left then right | Tests the catch between two slides, which is the skill the model is built on | 2 |
-| `Crest` | A straight with a rise and fall | Proves pieces may change height and the car lands cleanly. **Deliberately out of this build: flat, no elevation at all** | 2, if elevation earns its place |
+| `Straight` | A plain 220-stud length, weight 3 | Breathing room, and the piece that makes a long corner feel long | **1, built** |
+| `Corner` | 220 radius, 90°, mirrored | The staple, and the thing the whole machine is proven on | **1, built** |
+| `Sweeper` | 400 radius, 45°, mirrored (314 studs) | The corner the car is happiest drifting: enters at 79 studs/s, holds the slide for 84% of it | **2, built** |
+| `Hairpin` | 70 radius, 180°, mirrored (220 studs), gated at `minPieces = 8` | Needs the car slowed and rotated: it leaves at 30 studs/s where a straight gives 94 | **2, built** |
+| `Chicane` | 140 radius, 40° each way, mirrored (196 studs, 65 across) | Tests the catch between two slides, which is the skill the model is built on: 1.5 slides caught and swapped per chicane | **2, built** |
+| `Crest` | A straight with a rise and fall | Proves pieces may change height and the car lands cleanly. **Deliberately out of this build: flat, no elevation at all** | Not built, if elevation ever earns its place |
 
-**Two piece types exercise every part of the machinery** — one that does not turn, one that does,
-and the mirror that makes left and right both exist — which is why step 1 stops here rather than
-stubbing four more.
+**Each piece's numbers were measured, not chosen** — "The numbers, and the drives behind them"
+below has every table. The straight is weighted 3 and everything else 1, so a straight is 27% of
+the road rather than one piece in nine; the drive barely tells the two apart and that is written
+down rather than dressed up.
 
 ## Server and client
 
@@ -359,44 +471,52 @@ after the system works.
 
 ## Testing
 
-`ServerScriptService/Tests/RoadTests.luau`, 25 checks, run from the server debug bridge:
-`game.ServerStorage.DebugBridge:Invoke("DebugRoadTests", "run")`. All 25 passing, 9.4 s.
+`ServerScriptService/Tests/RoadTests.luau`, 29 checks, run from the server debug bridge:
+`game.ServerStorage.DebugBridge:Invoke("DebugRoadTests", "run")`. All 29 passing, 26 s.
 
 | Check | What proves it | Measured |
 |---|---|---|
-| **The piece set is what the config says** | Variants, segments, chord, deviation from the true arc | 3 variants; corner 27 chords of 12.80 studs, 0.093 off the arc |
+| **The piece set is what the config says** | Variants, kinds, segments, chord, deviation from the true arc | 5 kinds in 9 variants; worst deviation **0.096** studs (the hairpin, 30 chords of 7.33) |
+| **Every variant joins flush** | All nine placed on a socket turned 37° and moved a thousand studs | Worst start-socket gap **0.000e+00** studs, worst end-socket gap **0.000e+00**, no seam inside a piece |
+| **The chicane's two bends are opposite** | The yaw each half turns, the net turn, and how far across it steps | +40.0° then −40.0°, net **5.6e-15**, stepping **65.5** studs across a 35-stud road |
 | **The road is continuous** | Every piece's start socket against the previous piece's end socket, over 500 pieces | Worst gap **0.000e+00** studs and radians |
-| **The road never crosses itself while it exists** | At every moment of a 500-piece run, no two pieces alive at the same time overlap | **0** overlapping pairs. Ignoring the window: 29 pairs over the whole run, the closest 15 pieces apart — all long destroyed |
-| **The window holds** | Pieces in the world through a 150-piece drive, against folders, built pieces and generator pieces | 11..15 against 14; **0** disagreements; peak 1 059 parts |
+| **The road never crosses itself while it exists** | At every moment of a 500-piece run, no two pieces alive at the same time overlap | **0** overlapping pairs. Ignoring the window: 38 pairs over the whole run, the closest 16 pieces apart — all long destroyed |
+| **The window holds** | Pieces in the world through a 150-piece drive, against folders, built pieces and generator pieces | 11..15 against 14; **0** disagreements; peak 909 parts |
 | **Driving back does not drag the window back** | Told the car is at piece 40 after reaching 150 | Window still 146..160 |
 | **The closing barrier follows** | Walked 148 pieces, against where it belongs | **0** times absent, worst **0.0000** studs out, 39 studs wide on a 35-stud road |
-| **A seed is a road** | Two seeds, 200 pieces each, twice | Identical by variant and by position; a different seed differs in 141 of 200 |
-| **It does not repeat** | Shares and longest same-variant run, 5 seeds x 500 pieces | Worst share **1.3 points** off a third; longest run **5** |
-| **The lookahead works** | 5 seeds x 500 pieces; then forced into a closed ring by hand | **0** stalls, worst search 142 nodes. Driven into the ring it places **nothing** and warns; three corners in, it declines the ring-closing corner — which crosses nothing one piece deep — and places a right-hander instead |
+| **A seed is a road** | Two seeds, 200 pieces each, twice | Identical by variant and by position; a different seed differs in 177 of 200. A seed that boxes itself in stops at the same piece both times, which is the same road, not a difference |
+| **It does not repeat** | Shares and longest same-variant run, 5 seeds × 500 pieces | Worst share **10.1 points** off its weighted share; longest run of one variant **4** |
+| **The gated pieces never appear too early** | Every piece with a `minPieces`, 5 seeds × 500 pieces | **0** appearances too early; the earliest hairpin of all was at piece **9**, gated at 8 |
+| **The lookahead works** | 5 seeds × 500 pieces; then forced into a closed ring by hand | **0** stalls, worst search 29 297 placements against a budget of 40 000. Driven into the ring it places **nothing** and warns; three corners in, it declines the ring-closing corner — which crosses nothing one piece deep — and places a chicane instead |
 | **Progress is right** | 150 samples down 30 pieces, then 120 back up | Monotonic, forward-on-new-road true throughout; driving back, **0** of 120 read as new road and the backwards flag came up for 112 |
-| **Pieces are drivable ground** | Every part's tag, `Surface`, anchoring; 1 353 rays down the road | 193 road parts, 387 barriers; **0** wrongly tagged, **0** missing a `Surface`, **0** rays missed, worst height off **0.00000** studs |
+| **Pieces are drivable ground** | Every part's tag, `Surface`, anchoring; 1 353 rays down the road | **0** wrongly tagged, **0** missing a `Surface`, **0** rays missed, worst height off **0.00000** studs |
 | **No physics** | BodyMovers, constraints, scripts, unanchored parts | **0** of each |
-| **The road is nowhere near the other worlds** | The live window's box against the playground's and the track's | 18 761 studs clear |
-| **A car can actually drive it** | The autopilot down 50 generated pieces at speed | 50 pieces, 185 s, 22 168 steps; 43..120 studs/s, mean 81; drifting 68%; worst 14.1 of 17.5 studs from the centre line; **0** steps off the road, **0** airborne, **0** stuck |
+| **The road is nowhere near the other worlds** | The live window's box against the playground's and the track's | 18 115 studs clear |
+| **A car can actually drive it** | The autopilot down 50 generated pieces at speed | 50 pieces, 199 s, 23 910 steps; 24..117 studs/s, mean 65; drifting 73%, 34 slides caught and swapped; worst 14.0 of 17.5 studs from the centre line; **0** steps off the road, **0** airborne, **0** stuck |
+| **It drove all five piece types** | Which kinds the drive met, and what the car did on each | All five met: 10 straights, 8 corners, 11 sweepers, 12 hairpins, 8 chicanes; **0** steps off the road on any of them. Sweeper 45..115 drifting 70%, hairpin 24..68 drifting 80%, chicane 49..103 drifting 78% with 7 slides swapped |
 
 Two measurement harnesses sit beside the checks and are kept so the next person can repeat the
 work rather than take it on trust:
 
 - `DebugRoadTests "sweep"` — mutates `Config.Road` in the live VM, rebuilds the piece set, drives,
-  and puts everything back. The radius and length tables above are its output.
-- `DebugRoadTests "stalls"` — how often a long run boxes itself in, against `LookAhead` and the
-  corner's arc. The lookahead table above is its output.
+  and puts everything back. Every piece's table above is its output. It takes `piece`, `field` and
+  `values` to sweep anything, `set` to hold other numbers somewhere else while it does, and `only`
+  to push every other piece out of the run so the answer is about the piece.
+- `DebugRoadTests "stalls"` — how often a long run boxes itself in, against `LookAhead`,
+  `SearchNodeBudget` and a corner's arc. The lookahead table above is its output. It reports
+  **why** a run stalled — out of budget or out of road — because those want opposite fixes, and
+  which piece the road was standing on when it ran out of room.
 
 **The other six suites are unmoved by this work:** DriftTests 40/40, CollisionTests 39/39,
-PlaygroundTests 45/45, JitterTests 11/11, TrajectoryTests 13/13, GarageTests 17/17.
+PlaygroundTests 45/45, JitterTests 11/11, TrajectoryTests 13/13, GarageTests 24/24.
 
 ### One check the spec asked for that cannot be true
 
 The spec asked that no two pieces' footprints overlap over 500 pieces. **A bounded window cannot
 promise that, and it is not what the generator checks.** It keeps the last 14 pieces and tests
 against those, because the rest have been destroyed and are not in the world to cross. Measured,
-500 pieces of one seed contain 29 pairs that would overlap if they both still existed, the closest
-of them 15 pieces apart — about 5 000 studs of road and a minute of driving. The check that is
+500 pieces of one seed contain 38 pairs that would overlap if they both still existed, the closest
+of them 16 pieces apart — about 5 000 studs of road and a minute of driving. The check that is
 true, and the one that matters, is the one in the table.
 
 ## Open questions
@@ -404,9 +524,13 @@ true, and the one that matters, is the one in the table.
 - **What a run is** ("What this spec does NOT decide"). The road is the same either way, but the
   window, the barrier and the respawn all read differently if a run can be finished rather than
   only ended.
-- **Whether 35 studs is right once a person drives it.** The autopilot keeps the car 3.4 studs
-  inside the edge at its worst and brushes a barrier 1.4% of the time; a human on a touchscreen is
+- **Whether 35 studs is right once a person drives it.** The autopilot keeps the car 3.5 studs
+  inside the edge at its worst and brushes a barrier 0.8% of the time; a human on a touchscreen is
   not an autopilot. This wants the user, not another measurement.
+- **Whether the road may stop growing, and what a run does if it does.** 2 runs in 20 of 400
+  pieces box themselves in, the earliest at piece 231. The road warns and places nothing, which is
+  the right thing for it to do; what the game does about it is a question for whoever decides what
+  a run is. `SearchStepsPerFrame` in `Road/Generator` is the other half of the answer.
 - **Whether elevation earns its place.** `Crest` is dropped from this build. Hills make every other
   problem harder — the camera, the rays, the overlap test, which becomes genuinely 3D.
 - **Whether a long run can wander back into the other two worlds.** Measured, it would take some
