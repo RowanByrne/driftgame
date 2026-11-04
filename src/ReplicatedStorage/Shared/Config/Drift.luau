@@ -139,8 +139,10 @@ local Drift = {
 
 	-- ---------------------------------------------------------------- a hand-placed track
 	-- The playground is built by code and is in git; a TRACK is a model someone placed in
-	-- the place file by hand, which git never sees (AGENTS.md "Hand-built content"). Both
-	-- sit at the origin, so a place gets one or the other and `TrackService` decides which.
+	-- the place file by hand, which git never sees (AGENTS.md "Hand-built content"). A
+	-- place now gets BOTH (T-026): the track stays where its author put it, and the
+	-- playground, which is built from a layout and so can be built anywhere, is moved out
+	-- of its way by `PlaygroundOffsetFromTrack` below.
 	-- A track carries none of our tags, so its road has to be recognised -- by COLOUR,
 	-- because its part names are whatever its author typed. Tarmac is grey: its channels
 	-- sit close together and it is neither black nor white.
@@ -160,6 +162,34 @@ local Drift = {
 	-- resort, tagged as dirt. A track is an island and off its
 	-- edge there is otherwise nothing at all; the playground
 	-- needs none of this because it builds its own plate
+
+	-- ------------------------------------------------------------- both worlds at once
+	-- WHERE THE PLAYGROUND IS BUILT WHEN THE PLACE ALSO HAS A TRACK, and nothing else: a
+	-- place with no track builds it at the origin exactly as before, so every lane and
+	-- every test place is unchanged (T-026).
+	--
+	-- Why -12 000 on X, and why only on X:
+	--   * the playground's plate is 2 000 studs across, so its near edge is 11 000 studs
+	--     from the origin the track sits on -- more than three times the longest track
+	--     we have, and far past anything that can be seen from the other world;
+	--   * it is HORIZONTAL only, so both worlds' ground is still Y = 0 and the one
+	--     `FallY` / `RespawnBelowY` pair is right for both of them;
+	--   * -X is the empty quarter: the collision tests stand their own rig at
+	--     (20 000, 500, 20 000) and the jitter tests probe at (2 000, 0, 0), so nothing
+	--     the tests build comes within 30 000 studs of it;
+	--   * it stays under 16 384, so world coordinates there quantise at 1/1024 of a stud
+	--     in float32 -- a thousandth of a stud, against ground rays 28 studs long and a
+	--     plate-flatness tolerance the offset never touches, because Y is untouched.
+	-- Driving between them is not possible and is not meant to be: each world is an
+	-- island over the void, and the fall catcher puts a car back in the world it left.
+	-- Use `CarService:DebugCross()` (Studio only) to hop.
+	PlaygroundOffsetFromTrack = Vector3.new(-12000, 0, 0),
+
+	-- Which world a car SPAWNS in, and the world every respawn falls back to when the
+	-- server cannot tell where the car was: "track" or "playground". Track by default,
+	-- because that is the world being driven; a place with no track gets the playground
+	-- whatever this says.
+	StartWorld = "track",
 
 	-- ---------------------------------------------------------------- walls
 	WallScrub = 0.5, -- share of speed kept after hitting something

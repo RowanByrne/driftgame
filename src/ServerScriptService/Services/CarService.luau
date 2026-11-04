@@ -41,6 +41,7 @@
 -- model, and it is why the feel changes on the very next step -- but the server's answer
 -- is what settles it.
 
+local CollectionService = game:GetService("CollectionService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerScriptService = game:GetService("ServerScriptService")
@@ -179,34 +180,108 @@ function CarService:Start()
 	end)
 end
 
--- Where a car starts, and where every respawn puts it back. The playground owns its own
--- named spots; with no playground (a lane place with only a baseplate) the car starts
--- above the origin instead (docs/game/WORLD.md "Named spots").
-function CarService:SpawnCFrame(): CFrame
+--------------------------------------------------------------------------------
+-- Which world, and where in it
+--------------------------------------------------------------------------------
+-- A place has TWO worlds since T-026: the hand-placed track where its author left it,
+-- and the playground built from its layout thousands of studs away
+-- (`Config.Drift.PlaygroundOffsetFromTrack`). So "where a car goes" is a choice, and this
+-- service makes it, because it is the service that owns where a car may be put.
+--
+--   * a car SPAWNS in `Config.Drift.StartWorld`, and in whichever world exists if that
+--     one does not;
+--   * a car RESPAWNS in the world it was last believed to be in, so falling out of one
+--     world never drops you into the other;
+--   * `DebugCross` hops between them, which is the only way across: they are islands
+--     over the void and far too far apart to drive.
+
+local WORLD_TRACK = "track"
+local WORLD_PLAYGROUND = "playground"
+
+local function service(name: string): any?
 	local services = ServerScriptService:FindFirstChild("Services")
-	-- A hand-placed track owns the spawn when the place has one: the playground was never
-	-- built, so its spots do not exist (TrackService, T-031).
-	local trackModule = services and services:FindFirstChild("TrackService")
-	if trackModule and trackModule:IsA("ModuleScript") then
-		local ok, track = pcall(require, trackModule)
-		if ok and type(track) == "table" and type(track.SpawnCFrame) == "function" then
-			local gotSpawn, cf = pcall(track.SpawnCFrame, track)
-			if gotSpawn and typeof(cf) == "CFrame" then
-				return cf
-			end
+	local module = services and services:FindFirstChild(name)
+	if not module or not module:IsA("ModuleScript") then
+		return nil
+	end
+	local ok, loaded = pcall(require, module)
+	if ok and type(loaded) == "table" then
+		return loaded
+	end
+	return nil
+end
+
+-- Each world's spawn, or nil for a world this place has not got.
+local function worldSpawns(): { [string]: CFrame }
+	local out = {}
+	local track = service("TrackService")
+	if track and type(track.SpawnCFrame) == "function" then
+		local ok, cf = pcall(track.SpawnCFrame, track)
+		if ok and typeof(cf) == "CFrame" then
+			out[WORLD_TRACK] = cf
 		end
 	end
-	local module = services and services:FindFirstChild("PlaygroundService")
-	if module and module:IsA("ModuleScript") then
-		local ok, playground = pcall(require, module)
-		if ok and type(playground) == "table" and type(playground.GetSpot) == "function" then
-			local gotSpot, spot = pcall(playground.GetSpot, playground, "Spawn")
-			if gotSpot and typeof(spot) == "CFrame" then
-				return spot
-			end
+	local playground = service("PlaygroundService")
+	if playground and type(playground.GetSpot) == "function" then
+		local ok, cf = pcall(playground.GetSpot, playground, "Spawn")
+		if ok and typeof(cf) == "CFrame" then
+			out[WORLD_PLAYGROUND] = cf
 		end
 	end
-	return CFrame.new(0, Config.Drift.RideHeight, 0)
+	return out
+end
+
+-- The worlds this place has, named. Studio and the tests read it; so does `DebugState`.
+function CarService:Worlds(): { [string]: CFrame }
+	return worldSpawns()
+end
+
+-- Where a car starts in a named world. An unknown or missing world falls through to
+-- whichever one the place has, and a place with neither (a bare baseplate lane) puts the
+-- car above the origin, exactly as before.
+function CarService:SpawnCFrameIn(world: string?): CFrame
+	local spawns = worldSpawns()
+	local wanted = spawns[world or ""]
+	if wanted then
+		return wanted
+	end
+	return spawns[WORLD_TRACK] or spawns[WORLD_PLAYGROUND] or CFrame.new(0, Config.Drift.RideHeight, 0)
+end
+
+-- Which world a position is in: the nearer spawn, measured flat. The two worlds are
+-- 12 000 studs apart and each is 2 000 across at the most, so "nearer" is never a close
+-- call -- there is no need to box-test either of them.
+function CarService:WorldAt(position: Vector3): string?
+	local nearest, nearestName = math.huge, nil
+	for name, cf in worldSpawns() do
+		local flat = Vector3.new(position.X - cf.Position.X, 0, position.Z - cf.Position.Z).Magnitude
+		if flat < nearest then
+			nearest, nearestName = flat, name
+		end
+	end
+	return nearestName
+end
+
+-- Where a car that was last at `position` belongs: the spawn of the world it was in.
+-- PlaygroundService's fall catcher asks this too, so a car it scoops up off the void
+-- comes back in the world it fell out of.
+function CarService:SpawnCFrameNear(position: Vector3): CFrame
+	return self:SpawnCFrameIn(self:WorldAt(position))
+end
+
+-- Where a car starts: the configured world.
+function CarService:SpawnCFrame(): CFrame
+	return self:SpawnCFrameIn(Config.Drift.StartWorld)
+end
+
+-- Where the server last believed this player's car to be. NOT the model's pivot: the
+-- server does not simulate the car and never moves the model between the places it puts
+-- it, so the pivot is the last spawn and the believed position is the last `CarState` it
+-- accepted. That is what says which world a respawn belongs in.
+function CarService:BelievedPosition(userId: number): Vector3?
+	local seen = self.seen and self.seen[userId]
+	local track = seen and (seen.expect or seen.was)
+	return track and track.position or nil
 end
 
 -- Everything that puts a car somewhere goes through here, because the movement check is
@@ -410,7 +485,11 @@ end
 -- moves the car, records it as where the car is expected, and tells the client. Refused
 -- if the player has no car, if it asks again inside `RespawnCooldown`, or past
 -- `RespawnRateLimit` requests in a second (docs/game/CONTRACTS.md, `CarRespawn`).
-function CarService:Respawn(player: Player): CFrame?
+--
+-- `to` is for the server's own callers only -- the debug crossing between worlds -- and
+-- is never taken off the wire: `_onSwitch`'s neighbour here, the `CarRespawn` handler,
+-- passes nothing, because where a car goes is not the client's to say.
+function CarService:Respawn(player: Player, to: CFrame?): CFrame?
 	local car = self.cars[player.UserId]
 	if not car or not car.Parent then
 		self.respawnsRefused += 1
@@ -435,7 +514,12 @@ function CarService:Respawn(player: Player): CFrame?
 		end
 	end
 
-	local cf = self:SpawnCFrame()
+	-- WHICH WORLD it comes back in: the one the server last believed the car was in, so
+	-- a car that drove off the playground is not put down on the track 12 000 studs away
+	-- (T-026). Nothing believed yet -- a respawn before the first accepted packet -- is
+	-- the configured start world.
+	local believed = self:BelievedPosition(player.UserId)
+	local cf = to or (if believed then self:SpawnCFrameNear(believed) else self:SpawnCFrame())
 	car:PivotTo(cf)
 	seen = self:_expect(player.UserId, cf.Position)
 	seen.respawnedAt = os.clock()
@@ -571,6 +655,9 @@ function CarService:DebugState()
 			name = car.Name,
 			position = car:GetPivot().Position,
 			expected = seen and seen.expect and seen.expect.position or nil,
+			-- Which world the server believes this car is in, which is what a respawn
+			-- reads (T-026).
+			world = self:WorldAt(self:BelievedPosition(userId) or car:GetPivot().Position),
 			dropped = seen and seen.dropped or 0,
 			-- The whole of T-033 in three fields: the car the SERVER says this player is
 			-- in, the speed it will take from them, and the shape it has dressed them in.
@@ -584,10 +671,17 @@ function CarService:DebugState()
 			table.insert(offenders, problem)
 		end
 	end
+	local worlds = {}
+	for name, cf in worldSpawns() do
+		worlds[name] = cf.Position
+	end
 	return {
 		cars = cars,
 		carCount = #cars,
 		spawn = self:SpawnCFrame().Position,
+		-- Both worlds, and which one a car starts in (T-026).
+		worlds = worlds,
+		startWorld = Config.Drift.StartWorld,
 		droppedStates = self.dropped,
 		respawns = self.respawns,
 		respawnsRefused = self.respawnsRefused,
@@ -597,6 +691,71 @@ function CarService:DebugState()
 		switchInFlightKept = self.switchInFlightKept,
 		charactersOff = not Players.CharacterAutoLoads,
 		physicsOffenders = offenders,
+	}
+end
+
+-- Studio only: the way across. A place has two worlds and they are 12 000 studs apart,
+-- which is not drivable and is not meant to be, so this puts the car down in the OTHER
+-- one -- or in `world` by name -- through the same path a respawn takes: the server
+-- chooses the place, moves its own copy, records it as where it expects the car, and
+-- tells the client, which is what moves the car the player is actually driving.
+--
+-- Deliberately a bridge method and not a button: this is a dev convenience, not a
+-- feature, and nothing in the game offers it.
+function CarService:DebugCross(world: string?, userId: number?)
+	for _, player in Players:GetPlayers() do
+		if userId == nil or player.UserId == userId then
+			local believed = self:BelievedPosition(player.UserId)
+			local from = believed and self:WorldAt(believed) or Config.Drift.StartWorld
+			local to = world
+			if not to then
+				to = if from == WORLD_TRACK then WORLD_PLAYGROUND else WORLD_TRACK
+			end
+			local spawns = worldSpawns()
+			if not spawns[to] then
+				return { crossed = false, from = from, to = to, reason = `this place has no '{to}'` }
+			end
+			-- The cooldown is there to stop a client asking twice; a Studio hop is not a
+			-- client, and waiting half a second for it only hides what is being measured.
+			local seen = self.seen[player.UserId]
+			if seen then
+				seen.respawnedAt = nil
+				seen.respawnCount = 0
+			end
+			local cf = self:Respawn(player, spawns[to])
+			return {
+				crossed = cf ~= nil,
+				from = from,
+				to = to,
+				at = cf and cf.Position or nil,
+				ground = cf and self:DebugGroundUnder(cf.Position) or nil,
+			}
+		end
+	end
+	return { crossed = false, reason = "no player" }
+end
+
+-- Studio only: is there drivable ground under this point, and how far down? The crossing
+-- quotes it, because a hop that puts the car over the void is not a hop that worked.
+--
+-- Filtered the way the CAR's ground rays are (`Drift/World.live`): an INCLUDE list of
+-- everything tagged, not "whatever is solid". The difference matters -- the Studio
+-- default SpawnLocation sits untagged on the track at the origin, and an exclude ray
+-- lands on it and reports ground the car cannot see.
+function CarService:DebugGroundUnder(position: Vector3)
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Include
+	params.FilterDescendantsInstances = CollectionService:GetTagged(Config.Drift.SurfaceTag)
+	local up = Config.Drift.GroundRayUp
+	local hit = workspace:Raycast(position + Vector3.new(0, up, 0), Vector3.new(0, -Config.Drift.GroundRayLength, 0), params)
+	if not hit then
+		return { hit = false, surfaces = #params.FilterDescendantsInstances }
+	end
+	return {
+		hit = true,
+		part = hit.Instance.Name,
+		drop = math.round((position.Y - hit.Position.Y) * 1000) / 1000,
+		surface = hit.Instance:GetAttribute(Config.Drift.SurfaceAttribute),
 	}
 end
 

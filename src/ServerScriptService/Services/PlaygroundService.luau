@@ -10,6 +10,16 @@
 -- What it builds, in order: the plate, the district of buildings, the yard blocks and
 -- pillars, the banked circle, the ramp, the spots and their ground discs, the spawn pad,
 -- and last of all the cones, which are rested on whatever a ray finds under them.
+--
+-- WHERE IT BUILDS IT is the one thing that is not in the layout (T-026). A place can have
+-- a hand-placed track as well (TrackService), and a track is where its author put it,
+-- which is the origin -- the same place this world's 2 000-stud plate would be. So this
+-- world, the one that is built from a layout and can therefore be built anywhere, moves:
+-- with a track in the place everything here is shifted by
+-- `Config.Drift.PlaygroundOffsetFromTrack`, and with no track the offset is zero and not
+-- one coordinate changes. The shift is applied ONCE, to the built parts, the named spots
+-- and the test samples together, so the layout stays a layout and nothing downstream --
+-- `DebugWalk`, `DebugBounds`, `DebugObstacles` -- has to know about it.
 
 local CollectionService = game:GetService("CollectionService")
 local Players = game:GetService("Players")
@@ -29,6 +39,10 @@ PlaygroundService.Priority = 100 -- the world is built before anything spawns in
 
 PlaygroundService.Root = nil :: Folder?
 PlaygroundService.Spots = {} :: { [string]: CFrame }
+-- Where this playground was built, in world space. Zero unless the place has a track.
+PlaygroundService.Offset = Vector3.zero
+-- Kept so the old name still answers: nothing is skipped for a track any more (T-026).
+PlaygroundService.SkippedForTrack = false
 
 local tuning = Config.Playground
 local palette = tuning.Palette
@@ -36,6 +50,24 @@ local palette = tuning.Palette
 local features: { [string]: any } = {} -- id -> { segments, folder, samples }
 local cones: { { part: BasePart, home: CFrame } } = {}
 local partCount = 0
+local offset = Vector3.zero -- where this world is built; see the header
+local trackPresent = false
+
+-- TrackService, if this place has one loaded. Looked up rather than required at the top,
+-- because a lane place may have no track at all and the two services must not depend on
+-- each other's load order (TrackService has the higher priority, so it has already run).
+local function trackService(): any?
+	local services = script.Parent
+	local module = services and services:FindFirstChild("TrackService")
+	if not module or not module:IsA("ModuleScript") then
+		return nil
+	end
+	local ok, track = pcall(require, module)
+	if ok and type(track) == "table" then
+		return track
+	end
+	return nil
+end
 
 --------------------------------------------------------------------------------
 -- Building
@@ -275,11 +307,15 @@ local function buildCones(parent: Instance)
 			index += 1
 			local angle = rng:NextNumber() * math.pi * 2
 			local radius = cluster.radius * math.sqrt(rng:NextNumber())
+			-- The cones are the one thing built AFTER the world has been shifted into
+			-- place, because each is rested on the ground by a ray and a ray needs the
+			-- ground to be where it is going to stay. So the offset is applied here, to
+			-- the cluster's own coordinates, rather than afterwards.
 			local at = Vector3.new(
 				cluster.x + math.cos(angle) * radius,
 				size.Y * 0.5 + 0.1,
 				cluster.z + math.sin(angle) * radius
-			)
+			) + offset
 			local below = workspace:Raycast(at + Vector3.new(0, 60, 0), Vector3.new(0, -200, 0), ground)
 			if below then
 				at = Vector3.new(at.X, below.Position.Y + size.Y * 0.5 + 0.1, at.Z)
@@ -301,6 +337,34 @@ local function buildCones(parent: Instance)
 
 			table.insert(cones, { part = cone, home = cone.CFrame })
 			partCount += 1
+		end
+	end
+end
+
+-- Move the whole world, once, to where it is being built.
+--
+-- Everything above builds from the layout, which is written about the origin, and this is
+-- the only place that knows otherwise: the parts, the named spots and the fine samples
+-- the tests walk all move together, so nothing downstream can be left behind. Horizontal
+-- only in practice (`PlaygroundOffsetFromTrack` has no Y), which is why both worlds still
+-- share one `FallY`.
+local function shift(root: Instance, by: Vector3)
+	if by.Magnitude < 1e-6 then
+		return
+	end
+	for _, d in root:GetDescendants() do
+		if d:IsA("BasePart") then
+			d.CFrame = d.CFrame + by
+		end
+	end
+	for name, cf in PlaygroundService.Spots do
+		PlaygroundService.Spots[name] = cf + by
+	end
+	for _, feature in features do
+		if feature.samples then
+			for _, sample in feature.samples do
+				sample.pos = sample.pos + by
+			end
 		end
 	end
 end
@@ -352,11 +416,26 @@ local function resetCones()
 	end
 end
 
-local function catchFallers()
-	local spawnCF = PlaygroundService.Spots.Spawn
-	if not spawnCF then
-		return
+-- Where something that has fallen out of the world belongs: the spawn of the world it
+-- fell out of, which with two worlds is no longer a constant. CarService owns that
+-- choice -- it is the service that owns where a car may be put -- so this asks it, and
+-- falls back to this world's own spawn if it cannot (a place with no CarService loaded).
+local function catchSpawn(position: Vector3): CFrame?
+	local services = script.Parent
+	local module = services and services:FindFirstChild("CarService")
+	if module and module:IsA("ModuleScript") then
+		local ok, cars = pcall(require, module)
+		if ok and type(cars) == "table" and type(cars.SpawnCFrameNear) == "function" then
+			local got, cf = pcall(cars.SpawnCFrameNear, cars, position)
+			if got and typeof(cf) == "CFrame" then
+				return cf
+			end
+		end
 	end
+	return PlaygroundService.Spots.Spawn
+end
+
+local function catchFallers()
 	local carFolder = workspace:FindFirstChild("Cars")
 	if carFolder then
 		for _, car in carFolder:GetChildren() do
@@ -365,7 +444,10 @@ local function catchFallers()
 					return car:GetPivot()
 				end)
 				if ok and pivot.Position.Y < tuning.FallY then
-					car:PivotTo(spawnCF)
+					local back = catchSpawn(pivot.Position)
+					if back then
+						car:PivotTo(back)
+					end
 				end
 			end
 		end
@@ -374,7 +456,10 @@ local function catchFallers()
 		local character = player.Character
 		local root = character and character:FindFirstChild("HumanoidRootPart")
 		if root and root.Position.Y < tuning.FallY then
-			character:PivotTo(spawnCF * CFrame.new(0, 2, 0))
+			local back = catchSpawn(root.Position)
+			if back then
+				character:PivotTo(back * CFrame.new(0, 2, 0))
+			end
 		end
 	end
 end
@@ -384,10 +469,15 @@ end
 --------------------------------------------------------------------------------
 
 function PlaygroundService:Build()
-	-- Studio's default plate goes, so every lane and the Main place look the same.
-	local default = workspace:FindFirstChild("Baseplate")
-	if default and default:IsA("BasePart") then
-		default:Destroy()
+	-- Studio's default plate goes, so every lane and the Main place look the same --
+	-- UNLESS a track has adopted it. A track is an island and that plate is its floor of
+	-- last resort (TrackService), and this world is thousands of studs away and builds
+	-- its own: destroying it would pull the ground out from under the other world.
+	if not trackPresent then
+		local default = workspace:FindFirstChild(Config.Drift.TrackFloorName)
+		if default and default:IsA("BasePart") then
+			default:Destroy()
+		end
 	end
 	local existing = workspace:FindFirstChild("Playground")
 	if existing then
@@ -411,6 +501,11 @@ function PlaygroundService:Build()
 	buildSpotMarkers(root)
 	buildSpawnLocation(root)
 
+	-- Built about the origin, moved to where this place keeps it, and only then put in
+	-- the Workspace: one shift, before anything can read a position off it.
+	shift(root, offset)
+	PlaygroundService.Offset = offset
+
 	root.Parent = workspace
 	PlaygroundService.Root = root
 
@@ -427,17 +522,14 @@ function PlaygroundService:Build()
 end
 
 function PlaygroundService:Init()
-	-- A place with a hand-placed track gets that instead. Both sit at the origin, so
-	-- building the plate as well would bury the track inside it (TrackService, T-031).
-	local services = script.Parent
-	local trackModule = services and services:FindFirstChild("TrackService")
-	if trackModule and trackModule:IsA("ModuleScript") then
-		local ok, track = pcall(require, trackModule)
-		if ok and type(track) == "table" and type(track.HasTrack) == "function" and track:HasTrack() then
-			PlaygroundService.SkippedForTrack = true
-			return
-		end
-	end
+	-- A place with a hand-placed track gets BOTH worlds (T-026). The track is where its
+	-- author put it and does not move; this one is built from a layout, so it is the one
+	-- that moves out of the way. With no track the offset is zero and this world is built
+	-- exactly where it always was.
+	local track = trackService()
+	trackPresent = track ~= nil and type(track.HasTrack) == "function" and track:HasTrack() == true
+	offset = if trackPresent then Config.Drift.PlaygroundOffsetFromTrack else Vector3.zero
+	PlaygroundService.SkippedForTrack = false
 	self:Build()
 end
 
@@ -493,6 +585,21 @@ function PlaygroundService:DebugState()
 		segments = segments,
 		plate = { size = Layout.Plate.size, topY = 0 },
 		open = Layout.Open,
+		-- Where this world is, and why: zero unless the place also has a track (T-026).
+		offset = offset,
+		withTrack = trackPresent,
+		centre = Vector3.zero + offset,
+	}
+end
+
+-- This world's footprint, plate and all, so a caller can ask which world a position is
+-- in without knowing anything about the layout. The plate is the widest thing here, so
+-- it is the whole of it.
+function PlaygroundService:Bounds(): { min: Vector3, max: Vector3 }
+	local half = Layout.Plate.size * 0.5
+	return {
+		min = offset + Vector3.new(-half, -Layout.Plate.thickness, -half),
+		max = offset + Vector3.new(half, 200, half),
 	}
 end
 

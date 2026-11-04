@@ -78,22 +78,45 @@ function Tests.run()
 	local state = PlaygroundService:DebugState()
 	local root = PlaygroundService.Root
 
-	-- A place with a hand-placed track never builds the playground -- both sit at the
-	-- origin, so a place gets one or the other (TrackService, T-031). There is nothing
-	-- here to test, and saying so is not a failure: every check below would otherwise
-	-- index a world that was deliberately not made.
-	if PlaygroundService.SkippedForTrack or not root then
-		check(
-			"skipped: this place has a track, not a playground",
-			PlaygroundService.SkippedForTrack == true,
-			if PlaygroundService.SkippedForTrack
-				then "TrackService adopted a track, so PlaygroundService stood down"
-				else "no Playground and no track either, which should not happen"
-		)
-		return { passed = PlaygroundService.SkippedForTrack == true, checks = checks, skipped = true }
+	-- A place with a track used to build no playground at all, and this test reported a
+	-- skip. Since T-026 it builds both and moves this one out of the track's way, so
+	-- there is always a world here and every check below runs. `offset` is where it was
+	-- moved to: zero with no track. Every coordinate this test takes from the LAYOUT --
+	-- which is written about the origin -- is shifted by it, and everything it reads off
+	-- a built part or a named spot is already in world space.
+	if not root then
+		check("world built", false, "no Workspace.Playground, and nothing stands it down any more")
+		return { passed = false, checks = checks }
+	end
+	local offset = state.offset or Vector3.zero
+	local function world(x: number, z: number): (number, number)
+		return x + offset.X, z + offset.Z
 	end
 
 	check("world built", state.built == true, `Workspace.Playground present: {state.built}`)
+	check(
+		"built where this place keeps it",
+		(offset.Magnitude < 1e-6) == (state.withTrack ~= true) and offset.Y == 0,
+		`offset {offset}, track in this place: {tostring(state.withTrack)}`
+	)
+
+	-- The two worlds do not overlap. Only worth asking where there is a second one.
+	local TrackService = require(ServerScriptService.Services.TrackService)
+	local trackBounds = TrackService:Bounds()
+	if trackBounds then
+		local mine = PlaygroundService:Bounds()
+		local apart = mine.min.X > trackBounds.max.X
+			or mine.max.X < trackBounds.min.X
+			or mine.min.Z > trackBounds.max.Z
+			or mine.max.Z < trackBounds.min.Z
+		local gapX = math.max(mine.min.X - trackBounds.max.X, trackBounds.min.X - mine.max.X)
+		local gapZ = math.max(mine.min.Z - trackBounds.max.Z, trackBounds.min.Z - mine.max.Z)
+		check(
+			"the playground and the track do not overlap",
+			apart,
+			`gap {math.round(math.max(gapX, gapZ))} studs; playground x {math.round(mine.min.X)}..{math.round(mine.max.X)} z {math.round(mine.min.Z)}..{math.round(mine.max.Z)}, track x {math.round(trackBounds.min.X)}..{math.round(trackBounds.max.X)} z {math.round(trackBounds.min.Z)}..{math.round(trackBounds.max.Z)}`
+		)
+	end
 
 	-- 1. Named spots, each sitting on a drivable surface.
 	for _, name in SPOT_NAMES do
@@ -220,14 +243,23 @@ function Tests.run()
 	-- 7. Everything is on the plate.
 	local bounds = PlaygroundService:DebugBounds()
 	local edge = Layout.Plate.size * 0.5
+	local minX, minZ = world(-edge, -edge)
+	local maxX, maxZ = world(edge, edge)
 	check(
 		"everything fits on the plate",
-		bounds.min.X > -edge and bounds.max.X < edge and bounds.min.Z > -edge and bounds.max.Z < edge,
-		`x {math.round(bounds.min.X)}..{math.round(bounds.max.X)}, z {math.round(bounds.min.Z)}..{math.round(bounds.max.Z)}, plate +-{edge}`
+		bounds.min.X > minX and bounds.max.X < maxX and bounds.min.Z > minZ and bounds.max.Z < maxZ,
+		`x {math.round(bounds.min.X)}..{math.round(bounds.max.X)}, z {math.round(bounds.min.Z)}..{math.round(bounds.max.Z)}, plate x {math.round(minX)}..{math.round(maxX)} z {math.round(minZ)}..{math.round(maxZ)}`
 	)
 
-	-- 8. The Studio default plate is gone, and ours is at Y = 0.
-	check("Studio's default Baseplate is gone", workspace:FindFirstChild("Baseplate") == nil, "")
+	-- 8. The Studio default plate is gone -- unless the track has adopted it as its floor
+	--    of last resort, in which case destroying it would take the ground out from under
+	--    the other world (TrackService, T-026) -- and ours is at Y = 0.
+	local plateGone = workspace:FindFirstChild(Config.Drift.TrackFloorName) == nil
+	check(
+		"Studio's default Baseplate is gone, or is the track's floor",
+		plateGone or trackBounds ~= nil,
+		if plateGone then "" else `kept as the track's floor of last resort`
+	)
 	local plate = root:FindFirstChild("Plate")
 	local topY = plate and (plate.Position.Y + plate.Size.Y * 0.5)
 	check("our plate's top is Y = 0", plate ~= nil and math.abs(topY) < PLATE_FLAT, `top at {tostring(topY)}`)
@@ -237,8 +269,9 @@ function Tests.run()
 	local params = excludeParams()
 	local gridMisses, plateHits, offPlate, worstY = 0, 0, 0, 0
 	local obstacleHits = 0
-	for x = Layout.Open.minX, Layout.Open.maxX, 25 do
-		for z = Layout.Open.minZ, Layout.Open.maxZ, 25 do
+	for lx = Layout.Open.minX, Layout.Open.maxX, 25 do
+		for lz = Layout.Open.minZ, Layout.Open.maxZ, 25 do
+			local x, z = world(lx, lz)
 			local hit = workspace:Raycast(Vector3.new(x, 200, z), Vector3.new(0, -300, 0), params)
 			if not hit then
 				gridMisses += 1
@@ -382,12 +415,13 @@ function Tests.run()
 	for _, o in obstacles do
 		reach(o.x + o.halfX * (if o.x >= spawn.X then 1 else -1), o.z + o.halfZ * (if o.z >= spawn.Z then 1 else -1), o.id)
 	end
-	local circleAway = math.sqrt((Layout.Circle.centre.x - spawn.X) ^ 2 + (Layout.Circle.centre.z - spawn.Z) ^ 2)
-		+ Layout.Circle.radius
+	local circleX, circleZ = world(Layout.Circle.centre.x, Layout.Circle.centre.z)
+	local circleAway = math.sqrt((circleX - spawn.X) ^ 2 + (circleZ - spawn.Z) ^ 2) + Layout.Circle.radius
 	if circleAway > furthest then
 		furthest, furthestId = circleAway, "Circle (far rim)"
 	end
-	reach(Layout.Ramp.x, Layout.Ramp.z + Layout.Ramp.length + Layout.Ramp.lip.length, "Ramp (lip)")
+	local rampX, rampZ = world(Layout.Ramp.x, Layout.Ramp.z + Layout.Ramp.length + Layout.Ramp.lip.length)
+	reach(rampX, rampZ, "Ramp (lip)")
 	check(
 		`nothing is more than {FEATURE_REACH} studs from the spawn`,
 		furthest <= FEATURE_REACH,
