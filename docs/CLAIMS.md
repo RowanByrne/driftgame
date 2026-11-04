@@ -9,6 +9,7 @@ Every task in progress and the files it owns, so parallel sessions and workers n
 
 | Branch | Lane | Files owned | Since |
 |---|---|---|---|
+| `agent/both-worlds` (T-026) | 2 | `src/ServerScriptService/Services/TrackService.luau`, `src/ServerScriptService/Services/PlaygroundService.luau`, `src/ServerScriptService/Services/CarService.luau`, `src/ReplicatedStorage/Shared/Config/Drift.luau`, `src/ServerScriptService/Tests/PlaygroundTests.luau` | 2026-11-04 |
 
 ## Notes between sessions
 
