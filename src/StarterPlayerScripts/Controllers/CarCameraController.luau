@@ -22,11 +22,17 @@
 --      front of the camera or stays pinned to it.
 --   3. IT LEANS TOWARD WHERE THE CAR IS GOING as the slip opens, by an ease-in-out of
 --      |slip| / 180 deg toward a point behind the car's TRAVEL, and then only
---      `CamVelocityBlend` of that lean is taken. 0.05 is not a typo: the leaned target is
---      what the next frame's resting direction is measured from, so the 5% compounds, and
+--      `CamVelocityBlend` of that lean is taken. A tenth is not a typo: the leaned target
+--      is what the next step's resting direction is measured from, so it compounds, and
 --      what it buys is the camera dropping and swinging wide through a drift.
 --   4. THE FOV OPENS WITH SPEED: `CamFovBase + CamFovPerSpeed * speed`, eased at
 --      `CamFovRate`.
+--
+-- T-071 moved three of those numbers, and nothing else: the camera is 9.5 studs closer and
+-- 7 degrees steeper, the lean takes 0.12 of itself rather than 0.05, and the FOV's swing
+-- was reshaped to fall inside the speeds a car is actually driven at. All three are in
+-- Config.Camera with the measurements that chose them. NO NEW EFFECT WAS ADDED: the roll
+-- and the shake are T-072's, and the three things below are still out.
 --
 -- The camera is PLACED at its target each frame and told to look at the look-at point.
 -- There is no spring and no look easing: all the easing there is lives inside how the
@@ -331,7 +337,9 @@ local function stepTargets(rig, view: View, dt: number)
 	rig.velTarget = rig.velTarget:Lerp(wantVel, ease(dt, Cam.CamSwingRate))
 
 	-- ...and only `CamVelocityBlend` of it is taken. Small because it compounds: the next
-	-- line is what the next step's `haveDir` is measured from.
+	-- line is what the next step's `haveDir` is measured from. Measured, 0.12 settles the
+	-- camera 93% of the way round to the travel in a sustained 60-degree drift and 52% of
+	-- the way one second in, which is the figure that matters (Config.Camera).
 	local leanT = easeInOut(math.abs(math.deg(view.slip)) / 180)
 	rig.target = rig.restTarget:Lerp(rig.restTarget:Lerp(rig.velTarget, leanT), Cam.CamVelocityBlend)
 
