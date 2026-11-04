@@ -9,7 +9,6 @@ Every task in progress and the files it owns, so parallel sessions and workers n
 
 | Branch | Lane | Files owned | Since |
 |---|---|---|---|
-| `agent/touge-pieces` | lane3 | `src/ReplicatedStorage/Shared/Config/Road.luau`, `src/ReplicatedStorage/Shared/Road/Pieces.luau`, `src/ServerScriptService/Tests/RoadTests.luau`, `docs/game/features/road-elevation.md`, `docs/game/features/track-generation.md` | 2026-11-04 (T-068) |
 
 ## Notes between sessions
 
