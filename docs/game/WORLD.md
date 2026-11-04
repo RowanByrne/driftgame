@@ -34,6 +34,8 @@ Value contrast does the work, because the old course failed for want of it: buil
 
 Every spot comes from `PlaygroundService:GetSpot(name)`, which returns a CFrame facing a sensible way to set off; the positions live only in the layout module (`CONTRACTS.md`).
 
+**The spots are world-space and already carry `PlaygroundService.Offset`**, which is zero unless the place also has a hand-placed track — a place with both builds the playground out of the track's way (`PlaygroundOffsetFromTrack`, `T-026`). The layout's own coordinates stay written about the origin; where the playground *is* is a world-level fact and lives in `Config.Drift`. So read a spot, never a layout coordinate.
+
 | Spot | Area | How code finds it | Teleport |
 |---|---|---|---|
 | `Spawn` | The open yard | `PlaygroundService:GetSpot("Spawn")` | (no admin console yet) |

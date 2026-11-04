@@ -16,8 +16,9 @@ The car is **not** driven by Roblox's physics (`DECISIONS.md`, 2026-11-03). Its 
 
 | Service | What it does | Main entry points (signatures in `CONTRACTS.md`) |
 |---|---|---|
-| `PlaygroundService` | Builds the prototype playground from its layout module and gives out its named spots | `GetSpot(name)`, `DebugState()` |
-| `CarService` | Spawns a car per player, replicates each car's state to the other clients | `DebugState()` |
+| `PlaygroundService` | Builds the playground from its layout module and gives out its named spots. A place that also has a hand-placed track gets this one built **out of its way** (`PlaygroundOffsetFromTrack`) rather than not at all | `GetSpot(name)`, `Bounds()`, `DebugState()` |
+| `TrackService` | Adopts a hand-placed track: tags its road by colour, leaves everything else as dirt, anchors what is loose, deletes what runs, keeps the baseplate as the floor of last resort, and finds a spawn on the road by ray | `HasTrack()`, `SpawnCFrame()`, `Bounds()`, `DebugState()`, `DebugRoadWidths(lines?)` |
+| `CarService` | Spawns a car per player, replicates each car's state to the other clients, and owns **which archetype each player is in** and **which world they are in** | `SpawnCFrame()`, `CarKey(player)`, `SetCar(player, key)`, `Respawn(player, to?)`, `DebugState()` |
 
 ## Controllers (client)
 
@@ -63,7 +64,7 @@ Where each kind of thing is listed in code, so nothing gets scattered.
 > What tests and agents can reach (docs/workflow/TESTING.md).
 
 - **Debug bridge members:**
-  - Server, `game.ServerStorage.DebugBridge:Invoke(...)`: `PlaygroundService:DebugState()`, `DebugWalk(stepId, lateral, every)` and `DebugBounds()`, `CarService:DebugState()`.
+  - Server, `game.ServerStorage.DebugBridge:Invoke(...)`: `PlaygroundService:DebugState()`, `DebugWalk(stepId, lateral, every)`, `DebugBounds()` and `DebugObstacles()`, `TrackService:DebugState()` and `DebugRoadWidths(lines?)`, `CarService:DebugState()`, `DebugRespawn(userId?)`, `DebugCross(world?, userId?)` (puts the car in the other world) and `DebugGroundUnder(position)`, and `DebugDriftTests "useCar" <key>` (moves the SERVER's car and re-dresses every live one).
   - Client, `game.Players.LocalPlayer.PlayerScripts.DebugBridge:Invoke(...)`: `DriftController:DebugState()`, `DebugDrive(inputs, seconds, opts)`, `DebugReset()` (asks the server for a respawn; where a car goes is not the client's to say) and `DebugTeleport(cf)` (moves it without asking, to prove the server rejects that), `CarInputController:DebugState()`, `DebugSetInput(steer, handbrake)`, `DebugClearInput()`, `DebugDrag(offsetPx, originPx)` (the real gesture, not a bypass), `DebugTravelPx(sensitivity?)` and `DebugSettings(mode?, sensitivity?)` (stands in for the settings screen), `CarCameraController:DebugState()`, `DebugProbe(opts)` (settles a throwaway rig against a car held at a fixed slip: `{ slipDeg, speed, seconds, fps, blend, yawDeg, sweepSeconds }`, where `blend` overrides `CamVelocityBlend` for that run only) and `DebugRecord(seconds)` (watches the live camera and returns the worst frame: position step, view turn, roll step, and the car's distance from the screen centre).
   - Tests: `Debug<Name>Tests` reaches `ServerScriptService/Tests/<Name>Tests`.
 - **Test profiles:** none yet; there is no DataService.
