@@ -101,7 +101,7 @@ Each row says where the number comes from: **exact** (written in the reference's
 | Number | Start | Source | What it does |
 |---|---|---|---|
 | `FixedStep` | 1/120 s | ours | Simulation step. The reference uses 1/60; every term below is written per second and multiplied by the step, so the two agree |
-| `Gravity` | 35 studs/s² | exact | 9.8 m/s². **Not Roblox's 196** — the reference turns Unity's gravity off and applies its own, and the whole feel is built on that |
+| `Gravity` | 35 studs/s² | exact | 9.8 m/s². **Not Roblox's 196** — the reference turns Unity's gravity off and applies its own, and the whole feel is built on that. Applied every step, in the air and on the ground both ("Gravity", below) |
 
 The reference applies downforce once per physics step with no step length in it, which makes that
 one term depend on its 1/60. We write it per second (below) and it matches at 1/60.
@@ -182,6 +182,55 @@ If the car is not falling faster than `DownforceCutoff`:
 |---|---|---|---|
 | `DownforcePerSpeed` | 0.2 /s | **neither** | Extra downward pull per stud/s of speed: at top speed, one extra gravity. The reference's own value is an editor asset the decompile does not have, and its code's fallback is nonsense when converted. **Tune this first; it is the one number in this spec that is a guess** |
 | `DownforceCutoff` | −3.6 studs/s | fallback | Vertical speed below which downforce stops, so a real fall is a real fall |
+
+### Gravity (`T-065`)
+
+Gravity is applied **every step, grounded or not** — and that is a change made on 2026-11-04, the
+first change to this model since the user approved the feel. It was conditional before: full
+gravity in the air, none at all on the ground, *"on it, the height and the vertical speed both come
+from the surface below"*. On a flat road those are the same thing. On a slope they are not, and the
+conditional one is wrong.
+
+**What the reference does.** `CustomGravity.FixedUpdate` is two lines and has no condition in it:
+`rigidbody.velocity -= Vector3.up * 9.8 * dt`. The car is a Rigidbody held up by four suspension
+springs (`CarSuspension`), and each spring pushes along **the car's own up axis**. A spring pushes
+along that axis; gravity pulls straight down; **on a slope the two differ and the difference is
+never cancelled** — so the car runs away downhill with no code anywhere that mentions a slope. The
+behaviour is emergent, not scripted.
+
+**What we do.** Our car is kinematic — four downward rays and the surface height written straight
+in — so there is no spring to port. It does not need the spring; it needs the spring's *result*:
+
+```
+g_along   = g − up * (g · up)
+velocity += g_along * GravityOnGround * dt       -- while grounded. Airborne is unchanged
+```
+
+| Number | Start | Source | What it does |
+|---|---|---|---|
+| `GravityOnGround` | 1 | ours, from the reference's behaviour | Share of gravity that acts along the surface while grounded. **1 is the reference. 0 is exactly the model the user approved** — a switch, because this is the first change since that gate |
+
+Four things about it, and the last two are the ones that are easy to get wrong:
+
+- **On flat ground `g_along` is exactly zero.** Not small: zero, because `up` is exactly vertical
+  and stays there. Flat driving is untouched at any value of this number, and that is a measurement
+  (below), not an argument.
+- **A bank needs no special case.** `g_along` on a bank points down the banking, and the grip that
+  holds the car on it already acts in the surface's plane along the car's tilted right axis
+  (`basis`). That is *"how the tyres grip the road when you are on an angle"*, and it falls out.
+- **`up` is the SMOOTHED body up, not the raw normal the rays found,** and that is deliberate
+  twice over. It is the reference's own choice — the springs cancel gravity along `transform.up`,
+  the body's attitude, which lags the road because it is sprung — and it is the axis the grip
+  already acts in, so the model keeps **one frame for both forces**. The raw normal stays on the
+  constraint, where a raycast length is in the reference: the ground follow uses it to decide how
+  fast the surface is climbing. Over a crest the lag means the pull downhill arrives as the car
+  settles on to the new slope, rather than the instant a ray sees it.
+- **It is not double-counting `climb`.** `g_along` has a vertical part, and while the car is
+  grounded `climb` *overwrites* the vertical speed from the horizontal velocity and the surface —
+  so only the horizontal part of `g_along` survives a grounded step. That part is `g·sin(t)·cos(t)`,
+  which is exactly what a velocity held in the surface's plane needs: measured, the along-slope
+  deceleration is `g·sin(t)` to three decimals, every step. The vertical part survives only on the
+  one step the car leaves the ground, which is the step it should.
 
 ### The car
 
@@ -457,6 +506,10 @@ server bridge. The checks that must still pass, and the new ones the port needs:
 | No physics | Every car part anchored, no BodyMover, VectorForce, constraint or joint |
 | The numbers live in Config | Halving `MaxSteeringSpeed` halves the rate of turn |
 | The server still holds | A playtest with 0 dropped `CarState` packets, and a jump the server did not decide still rejected |
+| **Gravity never touches flat ground** | `g_along` exactly zero every step on the flat, and the same corner at `GravityOnGround` 1 and 0 matching at every sample. The check that protects the approved feel |
+| **A hill pulls** | A coast with the engine and the grip off, down a slope and up it: speed at each end against `v² = v0² + 2g·Δh`, with Δh read off the surface |
+| **A drift downhill scrubs less** | The same finger for the same time, flat and downhill: the speed each lost |
+| **A bank holds you** | A steady finger round a banked circle with the term on and off: how far round the band it got, and its radius at a fixed time |
 
 - **Playtest:** drive it. The user decides whether it feels right; that is the gate. Nothing above
   is a feel judgement — those checks only catch a model that has stopped working.
@@ -488,6 +541,32 @@ Three things the measurements say about the numbers, for the user to decide on:
 - **Downforce is only felt in the air.** A car that follows the ground cannot be pressed into it, so
   the only thing `DownforcePerSpeed` changes is a jump. Off a 1-in-4 ramp at 150 studs/s: 331 studs
   and 2.18 s at 0, 213 studs and 1.40 s at the specced 0.2, 168 studs and 1.11 s at 0.4.
+
+### What gravity on the ground measured, 2026-11-04 (`T-065`)
+
+All 45 `DriftTests` pass with `GravityOnGround` at 1, and so do `RoadTests` (34), `RunTests` (15),
+`PlaygroundTests` (45), `JitterTests` (11) and `TrajectoryTests` (13).
+
+| | |
+|---|---|
+| **The flat road is untouched** | On the flat, `g_along` is **0** studs/s² at its largest over 600 steps, and the five-second corner at `GravityOnGround` 1 and 0 matched at **all 602 samples, worst gap 0 studs**, ending at 28.866060 studs/s both times. The 50-piece autopilot drive down the generated road is identical in every number, `speedSum` included, to six decimals over 28 350 steps |
+| A hill pulls | 9.3° (the playground ramp at its steepest), 60 studs/s in, engine and grip off, 4 s. Downhill: 46 studs dropped, 82.62 studs/s against the 82.63 energy asks for. Uphill: 31 studs climbed, 37.38 against 37.39. The step-by-step deceleration is 5.656 studs/s², which is `g·sin(9.3°)` exactly |
+| The same hill, on the playground itself | Down the real ramp from the lip, 20 studs/s in, 2 s coasting: **29.95 studs/s with it on, 19.89 with it off**, having dropped 7.09 studs. Up it from the plate, 60 in: 55.50 with it on, **60.79 with it off** — the old model climbed a hill at a constant *horizontal* speed and so paid nothing for it at all |
+| **A drift downhill scrubs less** | The same finger for 1.5 s, 52° of slip on the flat and 54° down the hill. Flat: 124.2 → 113.0 studs/s, **lost 11.2**. Downhill: 129.7 → 125.2, **lost 4.4**. 6.8 studs/s less scrubbed, and it entered the slide 5.5 studs/s faster for the same second of straight before it. That is the user's sentence as a number |
+| A bank holds you | A cone at the circle's own radius and bank (150, 8°), 80 studs/s on one steady finger: held the 60-stud band for 50° of the circle with it on and 45° without, and sat 6.0 studs further down the bank at 2 s. On the playground's real circle at a firmer finger, 2.1 / 5.1 / 5.9 / 7.8 studs further in at 1 / 2 / 3 / 4 s |
+| What it costs | 60 s of simulation is 7200 steps: 2.60 µs a step with it off, 2.74 µs with it on. **+0.14 µs a step, about 1 ms over a whole minute of driving** |
+
+Two things the measurements turned up that are nobody's new bug, and both were mistaken for this
+one before being chased down:
+
+- **A fresh state believes it is on tarmac** until its first ground ray comes back (`Model.new`
+  says so on purpose, so a car spawned on the road grips on step one). A test that starts a car
+  facing one way and moving the other therefore gets one step of the brake past square-on, worth
+  0.6 studs/s, on a surface whose grip is zero.
+- **Downforce lowers the car's position even on the ground.** It is a no-op for the *velocity*,
+  because the ground follow overwrites the vertical speed — but it still lowers the position that
+  follow is easing, so a climbing car rides a hair below its ride height. Nothing a player can see,
+  and it is why the hill check reads the height off the **surface** rather than off the car.
 
 ## Open questions
 
