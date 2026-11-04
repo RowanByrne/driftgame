@@ -170,7 +170,7 @@ function Tests.run(opts)
 		)
 		check(
 			"nothing in this feature uploads an asset",
-			string.sub(F.Smoke.Texture, 1, 10) == "rbxasset://",
+			string.sub(F.Smoke.Texture, 1, 11) == "rbxasset://",
 			`smoke texture {F.Smoke.Texture}`
 		)
 	end
