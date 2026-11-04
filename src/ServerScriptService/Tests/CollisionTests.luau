@@ -69,6 +69,28 @@ local FPS = 60 -- what the live game feeds Sim; two steps a frame
 local FEATURES = BASE + Vector3.new(0, 0, 3000) -- the top of their plate
 local FEATURE_PLATE = 2000
 local BOWL_AT = Vector2.new(-500, 0) -- from FEATURES, in world XZ
+
+-- The third part of the rig: ROAD WITH A GRADE AND A BANK, on its own again (T-073).
+--
+-- The car's box used to be swept flat, never pitched and never rolled, whatever it was
+-- standing on. It rides 1.44 studs up with 7 studs of nose, so past atan(1.44 / 7) = 11.6
+-- degrees of grade its nose was inside the hill it was climbing, and past
+-- atan(1.44 / 3.2) = 24 degrees of bank its uphill side was inside the road it was leaning
+-- on. The road is abutting slabs, so what the buried nose met was the END FACE of the next
+-- one -- near-vertical, which the sweep calls a WALL -- and the car stopped dead against
+-- its own road. That is what held `Config.Road.MaxGrade` to 8 degrees and `MaxBank` to 20.
+--
+-- These are built out of the same ribbon the playground's ramp is, at the road's own width
+-- and thickness and cut at the road's own segment length, so the joint the nose used to
+-- find is the joint that is here. 35 degrees is `Config.Road.MaxSurfaceTilt`, the steepest
+-- surface the road may ever build.
+local SLOPES = BASE + Vector3.new(0, 0, 6000)
+local SLOPE_GRADES = { 8, 12, 20, 30, 35 }
+local SLOPE_BANKS = { 20, 25, 30 }
+local RAMP_RUNUP = 200 -- studs of level road before the climb starts
+local RAMP_LENGTH = 900
+local SLOPE_SEGMENT = 12 -- studs of plan length per slab, as a profiled road piece is cut
+local BANK_RADIUS = 200
 local RAMP_AT = Vector2.new(500, -400) -- where the ramp's climb starts; it runs +Z
 
 --------------------------------------------------------------------------------
@@ -161,6 +183,132 @@ local function buildFeatures(rig: Folder)
 			parent = rig,
 		})
 	end
+end
+
+-- A straight that runs level for `RAMP_RUNUP` studs and then climbs at `deg`, with the
+-- grade blended in no faster than the road's own `MaxPitchStep` per segment. The height is
+-- the integral of that grade, which is how `Road/Pieces` sets a piece's height out too.
+local function rampHeight(deg: number): ((number) -> number, number)
+	local g = math.tan(math.rad(deg))
+	local blend = math.max(120, math.ceil(deg / Config.Road.MaxPitchStep) * SLOPE_SEGMENT)
+	return function(t: number): number
+		local s = t * RAMP_LENGTH - RAMP_RUNUP
+		if s <= 0 then
+			return 0
+		end
+		if s >= blend then
+			return g * (s - blend * 0.5)
+		end
+		local u = s / blend
+		return g * blend * (u * u * u - 0.5 * u * u * u * u) -- the integral of smoothstep
+	end,
+		blend
+end
+
+local function buildRamp(deg: number): (Folder, { Part })
+	local rig = Instance.new("Folder")
+	rig.Name = RIG_NAME .. "_Ramp"
+	local heightAt = rampHeight(deg)
+	local parts = Build.ribbon(
+		Path.straight(Path.cursor(SLOPES.X, SLOPES.Z, 180), RAMP_LENGTH, math.floor(RAMP_LENGTH / SLOPE_SEGMENT)),
+		{
+			name = "Ramp",
+			width = Config.Road.Width,
+			thickness = Config.Road.Thickness,
+			colour = Color3.new(0.5, 0.5, 0.5),
+			baseY = SLOPES.Y,
+			heightAt = heightAt,
+			bankAt = function(): number
+				return 0
+			end,
+			parent = rig,
+		}
+	)
+	rig.Parent = workspace
+	return rig, parts
+end
+
+local function buildBankedRing(deg: number): (Folder, { Part })
+	local rig = Instance.new("Folder")
+	rig.Name = RIG_NAME .. "_Bank"
+	local bank = math.rad(deg)
+	local segments = math.ceil(2 * math.pi * BANK_RADIUS / SLOPE_SEGMENT)
+	local parts = Build.ribbon(Path.ring(Vector3.new(SLOPES.X, 0, SLOPES.Z + 1500), BANK_RADIUS, segments), {
+		name = "Bank",
+		width = Config.Road.Width,
+		thickness = Config.Road.Thickness,
+		colour = Color3.new(0.5, 0.5, 0.5),
+		baseY = SLOPES.Y,
+		heightAt = function(): number
+			return 0
+		end,
+		bankAt = function(): number
+			return bank
+		end,
+		closed = true,
+		parent = rig,
+	})
+	rig.Parent = workspace
+	return rig, parts
+end
+
+-- STANDING ANYWHERE ON IT, POINTING ANY WAY: does one step's sweep read a WALL?
+--
+-- This asks the question the drive asks, exhaustively and without a driver: a car at ride
+-- height all over every slab, at five places across the road and five headings, and a
+-- sweep as long as one step at 120 studs/s. A drive can only ever say that it did not
+-- happen to meet one.
+--
+-- WALKING ALONG EACH SLAB MATTERS AS MUCH AS WALKING ACROSS IT, and sampling slab centres
+-- alone would have found nothing at all: the car is 14 studs long and a slab is 12, so
+-- from a slab's middle the nose is already INSIDE the next slab -- and a Blockcast never
+-- reports a part its box already overlaps. The flat box only ever met a wall from the
+-- places where its nose was still just short of the next joint.
+local AUDIT_ALONG = { -0.4, -0.2, 0, 0.2, 0.4 } -- share of a slab's own length
+local AUDIT_ACROSS = { -18, -9, 0, 9, 18 } -- studs from the centre line
+local AUDIT_HEADINGS = { 0, 20, -20, 90, 180 } -- degrees off the road's direction
+
+local function sweepAudit(world, parts: { Part }): (number, number, string)
+	local travel = 120 * C.FixedStep
+	local walls, tried = 0, 0
+	local where = ""
+	for i, p in parts do
+		local cf = p.CFrame
+		local top = cf.Position + cf.UpVector * (p.Size.Y * 0.5)
+		local heading = math.atan2(-cf.LookVector.X, -cf.LookVector.Z)
+		for _, along in AUDIT_ALONG do
+			for _, off in AUDIT_ACROSS do
+				local at = top + cf.RightVector * off + cf.LookVector * (along * p.Size.Z)
+				local hit = world.probe(at + Vector3.new(0, 1, 0))
+				if not hit then
+					continue
+				end
+				local pos = Vector3.new(at.X, hit.y + C.RideHeight, at.Z)
+				for _, deg in AUDIT_HEADINGS do
+					local yaw = heading + math.rad(deg)
+					local fwd = Model.axes(yaw)
+					tried += 1
+					local _, normal = world.sweep(pos, pos + fwd * travel, yaw)
+					if normal then
+						walls += 1
+						if where == "" then
+							where = string.format(
+								"first on %s, %.1f along it, %d studs across it, %d degrees off it",
+								p.Name,
+								along,
+								off,
+								deg
+							)
+						end
+					end
+				end
+			end
+		end
+		if i % 20 == 0 then
+			task.wait()
+		end
+	end
+	return walls, tried, where
 end
 
 local function build(): Folder
@@ -806,6 +954,83 @@ function CollisionTests:run(driftFolder: Instance?)
 	local creepOk, creepDetail = sane(creep, plateY)
 	check(checks, "a crawl into the bowl's edge does not creep into it", creepOk, creepDetail)
 	task.wait()
+
+	------------------------------------------------------------------ grade and bank
+	-- The road's third dimension (T-073). The audit is the real check -- it asks every
+	-- slab, from five places across the road and seven headings, rather than hoping a
+	-- drive happens to meet the bad one -- and the drives are there because "stopped dead
+	-- on the hill" is what the player would actually see.
+	for _, deg in SLOPE_GRADES do
+		local ramp, ribbon = buildRamp(deg)
+		task.wait() -- let the tag signals run, so the ground rays can see it
+		local walls, tried, where = sweepAudit(world, ribbon)
+		check(
+			checks,
+			`a {deg} degree climb never reads as a wall`,
+			walls == 0,
+			string.format(
+				"%d of %d sweeps, from 25 places on each of %d slabs at five headings%s",
+				walls,
+				tried,
+				#ribbon,
+				if where ~= "" then " -- " .. where else ""
+			)
+		)
+		ramp:Destroy()
+		task.wait()
+	end
+
+	-- Driven, at the three grades the car has the power to climb. Above about 24 degrees
+	-- it runs out of drivetrain and stops, which is gravity and not the sweep: the audit
+	-- above is what covers the steep end.
+	for _, deg in { 8, 12, 20 } do
+		local ramp = buildRamp(deg)
+		task.wait()
+		local yaw = math.pi
+		local r = drive({
+			world = world,
+			probe = probe,
+			start = Vector3.new(SLOPES.X, SLOPES.Y, SLOPES.Z + 40),
+			yaw = yaw,
+			velocity = Model.axes(yaw) * 90,
+			seconds = 9,
+		})
+		local ok, detail = sane(r, SLOPES.Y)
+		check(
+			checks,
+			`a car driven at a {deg} degree climb climbs it instead of stopping dead`,
+			ok and r.wallSteps == 0 and r.endSpeed > 40,
+			string.format(
+				"entered at 90 studs/s, no steering: climbed %.1f studs in 9 s and left at %.1f studs/s, %d touching steps; %s",
+				r.apex - SLOPES.Y - C.RideHeight,
+				r.endSpeed,
+				r.wallSteps,
+				detail
+			)
+		)
+		ramp:Destroy()
+		task.wait()
+	end
+
+	for _, deg in SLOPE_BANKS do
+		local ring, ribbon = buildBankedRing(deg)
+		task.wait()
+		local walls, tried, where = sweepAudit(world, ribbon)
+		check(
+			checks,
+			`a {deg} degree bank never reads as a wall`,
+			walls == 0,
+			string.format(
+				"%d of %d sweeps, from 25 places on each of %d slabs at five headings%s",
+				walls,
+				tried,
+				#ribbon,
+				if where ~= "" then " -- " .. where else ""
+			)
+		)
+		ring:Destroy()
+		task.wait()
+	end
 
 	-- Determinism: the same approach twice, within a stud. There is nothing random in any
 	-- of this, and a drift is only learnable if that stays true.

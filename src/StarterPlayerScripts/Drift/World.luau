@@ -39,6 +39,28 @@
 -- of both queries left them with no sides at all. What sorts ground from wall here is the
 -- geometry -- a surface's normal for the sweep, a floor's top face for the overlap --
 -- never whether the part is tagged.
+--
+-- AND BOTH ASK ABOUT A BOX THAT FOLLOWS THE SURFACE (T-073). The box used to be swept
+-- flat -- yawed and never pitched, never rolled -- whatever the road was doing, and that
+-- was the binding limit on how steep a road could be. It rides `RideHeight` up with 1.44
+-- studs of air under it, 7 studs of nose in front and 3.2 studs either side, so above
+-- atan(1.44 / 7) = 11.6 degrees of grade its nose is inside the hill it is climbing, and
+-- above atan(1.44 / 3.2) = 24 degrees of bank its uphill side is inside the road it is
+-- leaning on. The road is built of abutting slabs, so what the buried nose meets is the
+-- END FACE of the next slab -- near-vertical, which is a WALL -- and the car stops dead
+-- against its own road. Measured before this change: a straight ramp stopped the car dead
+-- at 12 degrees, and a 30-degree bank read as a wall 17 times in two drives.
+--
+-- So the box is tilted on to the surface under it, exactly as `Drift/Model`'s `basis`
+-- tilts the car: the ground ray's own normal, the same ray `probe` makes. The model keeps
+-- a smoothed `up` on its state but hands this module only a yaw, so the tilt is read off
+-- the ground here rather than passed in -- and read off it fresh, which is if anything
+-- more current than the state's own `up` (the model updates that AFTER the wall pass).
+--
+-- ON LEVEL GROUND THE TILTED FRAME IS THE FLAT ONE, and the flat path below is kept as
+-- the exact expression it always was, so the playground, the buildings, the cones and the
+-- flat road are bit-for-bit what they were. In the air there is no tilt either: a car more
+-- than `AirborneMargin` above the surface gets the flat box, which is what it had.
 
 local CollectionService = game:GetService("CollectionService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -47,6 +69,13 @@ local Config = require(ReplicatedStorage.Shared.Config)
 local Model = require(script.Parent.Model)
 
 local World = {}
+
+-- SET THIS FALSE AND THE BOX IS SWEPT FLAT AGAIN, exactly as it was before T-073: both
+-- queries take their flat path, which is the expression they always had. It is here so
+-- that the measurement behind this change can be repeated -- a ramp at each grade, a
+-- corner at each bank, with and without -- rather than taken on trust. It is not a tuning
+-- number and nothing in the game reads it.
+World.DebugTilt = true
 
 local EPSILON = 1e-4
 
@@ -101,6 +130,33 @@ function World.flat(y: number, grip: number?, score: number?): Model.World
 		sweep = nil,
 		penetration = nil,
 	}
+end
+
+--------------------------------------------------------------------------------
+-- The car's own frame, tilted on to the surface it is standing on
+--------------------------------------------------------------------------------
+-- The same three vectors `Drift/Model`'s `basis` builds, from the same two things: the
+-- car's yaw, and the up it is standing on. Written out here rather than borrowed because
+-- `basis` is the model's own private function and takes a whole State.
+
+local function tiltedFrame(yaw: number, up: Vector3): (Vector3, Vector3, Vector3)
+	local flat, flatRight = Model.axes(yaw)
+	local right = flat:Cross(up)
+	if right.Magnitude < EPSILON then
+		return flat, flatRight, Vector3.yAxis -- the car is on its side: nothing to tilt to
+	end
+	right = right.Unit
+	return up:Cross(right), right, up
+end
+
+-- The car's box, posed. `Vector3.yAxis` is passed through as the EXACT expression the
+-- flat sweep always used, so level ground stays bit-for-bit what it was.
+local function carPose(pos: Vector3, yaw: number, up: Vector3): CFrame
+	if up == Vector3.yAxis then
+		return CFrame.new(pos) * CFrame.Angles(0, yaw, 0)
+	end
+	local _, right = tiltedFrame(yaw, up)
+	return CFrame.fromMatrix(pos, right, up)
 end
 
 --------------------------------------------------------------------------------
@@ -288,6 +344,9 @@ export type Live = Model.World & {
 	usingTag: boolean,
 	surfaceCount: number,
 	carBox: Vector3,
+	-- The pose `sweep` and `penetration` ask about: the car's box, tilted on to the
+	-- surface under it. Exposed so a test can rebuild the same box rather than guess at it.
+	carFrame: (pos: Vector3, yaw: number) -> CFrame,
 	destroy: () -> (),
 }
 
@@ -383,6 +442,36 @@ function World.live(ignore: { Instance }): Live
 		return nil
 	end
 
+	-- THE UP THE CAR'S BOX IS TILTED ON TO (T-073): the normal of the ground under it, or
+	-- straight up when there is nothing under it to follow. Nothing is smoothed and
+	-- nothing is remembered -- the same position and yaw always give the same box, which
+	-- is what keeps a drive repeatable.
+	--
+	-- A CAR IN THE AIR IS NOT TILTED, by the model's own test (`AirborneMargin`): over a
+	-- jump its body levels out, the ground below it is nothing to do with its attitude,
+	-- and a flat box there is exactly what it had before this change.
+	local function surfaceUp(pos: Vector3): Vector3
+		if not World.DebugTilt then
+			return Vector3.yAxis
+		end
+		local hit = self.probe(pos)
+		if not hit then
+			return Vector3.yAxis
+		end
+		if pos.Y - (hit.y + C.RideHeight) > C.AirborneMargin then
+			return Vector3.yAxis
+		end
+		local n = hit.normal
+		if n.Y <= 0 or n.Magnitude < EPSILON then
+			return Vector3.yAxis -- the underside of something: not an attitude
+		end
+		return n.Unit
+	end
+
+	function self.carFrame(pos: Vector3, yaw: number): CFrame
+		return carPose(pos, yaw, surfaceUp(pos))
+	end
+
 	-- WHERE THE CAR MAY GET TO, and the surface that stopped it -- not where the surface
 	-- is. Blockcast's `Position` is the point of contact ON THE SURFACE; putting the car's
 	-- centre there buries it half its own length in the wall, after which the box overlaps
@@ -394,6 +483,13 @@ function World.live(ignore: { Instance }): Live
 	-- facing up or down it is ground and the ground rays own it, so it is dropped from the
 	-- cast and the cast is made again to see what is behind it. Facing sideways it is a
 	-- wall, and a wall made of road -- a rim, a ramp's flank -- is as solid as a building.
+	--
+	-- The box is POSED ON THE SURFACE (T-073) and then cast HORIZONTALLY, which is what the
+	-- model asks for: the wall pass works in the flat and puts the height back afterwards.
+	-- The two are compatible as long as a step's travel cannot climb through the 1.44 studs
+	-- of air under the box, and it cannot: at top speed a step covers 1.49 studs, which on
+	-- a 35-degree surface -- the steepest `Config.Road.MaxSurfaceTilt` allows -- eats 0.86
+	-- of the 1.18 that is there. It would only run out at about 45 degrees.
 	local sweepSkip: { Instance } = {}
 	function self.sweep(from: Vector3, to: Vector3, yaw: number): (Vector3?, Vector3?)
 		local delta = to - from
@@ -402,7 +498,7 @@ function World.live(ignore: { Instance }): Live
 		if travel < EPSILON then
 			return nil, nil
 		end
-		local box = CFrame.new(from) * CFrame.Angles(0, yaw, 0)
+		local box = carPose(from, yaw, surfaceUp(from))
 		table.clear(sweepSkip)
 		table.move(ignore, 1, #ignore, 1, sweepSkip)
 		for _ = 1, MAX_SWEEP_LOOKS do
@@ -433,20 +529,53 @@ function World.live(ignore: { Instance }): Live
 	-- `GetPartBoundsInBox` is only the broad question (it measures parts by their bounding
 	-- boxes, so a pillar's corners answer yes when the pillar itself does not); the flat
 	-- shapes above are the exact one.
+	--
+	-- THE CAR'S BOX IS TILTED HERE TOO (T-073), and the tilt reaches three numbers. Its
+	-- FOOTPRINT is the box's shadow, which a tilt barely changes -- at 30 degrees of bank
+	-- the car is 6.50 studs wide instead of 6.40 -- but its BAND OF HEIGHT grows a lot: a
+	-- box pitched 12 degrees reaches 2.39 studs above and below its middle where a flat one
+	-- reaches 0.96. And the test that leaves a floor alone has to grow with it, or a car
+	-- climbing a hill would read its own road as something to be shoved sideways out of.
+	--
+	-- The horizontal AXES are untouched, and that is exact rather than near enough: tilting
+	-- about the car's own right or forward axis leaves both of their shadows pointing
+	-- exactly where they did. Only the reaches along them change.
 	function self.penetration(pos: Vector3, yaw: number): (Vector3?, number)
-		local hw = carBox.X * 0.5 + PENETRATION_MARGIN
-		local hl = carBox.Z * 0.5 + PENETRATION_MARGIN
-		local halfY = carBox.Y * 0.5
-		local grown = Vector3.new(hw * 2, carBox.Y, hl * 2)
+		local bw, bh, bl = carBox.X * 0.5, carBox.Y * 0.5, carBox.Z * 0.5
+		local sin, cos = math.sin(yaw), math.cos(yaw)
+		local right = Vector2.new(cos, -sin)
+		local fwd = Vector2.new(-sin, -cos)
+
+		local up = surfaceUp(pos)
+		local carFwd, carRight = tiltedFrame(yaw, up)
+		local hw, hl, halfY
+		if up == Vector3.yAxis then
+			-- Level ground: the expressions the flat overlap always used, to the bit.
+			hw = bw + PENETRATION_MARGIN
+			hl = bl + PENETRATION_MARGIN
+			halfY = bh
+		else
+			-- The box's shadow on the ground, along each of the two axes above, and the
+			-- band of world height it occupies. Each is the box's three half-extents
+			-- projected on to the direction being asked about.
+			local rightH = math.sqrt(carRight.X * carRight.X + carRight.Z * carRight.Z)
+			local fwdH = math.sqrt(carFwd.X * carFwd.X + carFwd.Z * carFwd.Z)
+			hw = bw * rightH + bh * math.abs(up.X * right.X + up.Z * right.Y) + PENETRATION_MARGIN
+			hl = bl * fwdH + bh * math.abs(up.X * fwd.X + up.Z * fwd.Y) + PENETRATION_MARGIN
+			halfY = bw * math.abs(carRight.Y) + bl * math.abs(carFwd.Y) + bh * math.abs(up.Y)
+		end
+
+		-- The broad question is asked about exactly the region the exact one covers: the
+		-- box's shadow, upright, through the band of height it occupies. Tilting this one
+		-- would make it SMALLER than what is tested against it. Flat, it is the same box
+		-- it always was -- `halfY * 2` is `carBox.Y`.
+		local grown = Vector3.new(hw * 2, halfY * 2, hl * 2)
 		local nearby =
 			workspace:GetPartBoundsInBox(CFrame.new(pos) * CFrame.Angles(0, yaw, 0), grown, overlapParams)
 		if #nearby == 0 then
 			return nil, 0
 		end
 
-		local sin, cos = math.sin(yaw), math.cos(yaw)
-		local right = Vector2.new(cos, -sin)
-		local fwd = Vector2.new(-sin, -cos)
 		local centre = Vector2.new(pos.X, pos.Z)
 		local low, high = pos.Y - halfY, pos.Y + halfY
 
@@ -464,8 +593,18 @@ function World.live(ignore: { Instance }): Live
 			-- solid -- below the top face this test does not fire -- and so are a
 			-- building's, while a car that lands on a building's roof is left on the roof
 			-- instead of being thrown half the building's width sideways in one step.
-			local up = part.CFrame.UpVector
-			if up.Y > GROUND_NORMAL_Y and low >= topOf(part, centre) - EPSILON then
+			--
+			-- ASKED ALONG THE FLOOR'S OWN NORMAL, not straight down, and against the car's
+			-- UNTILTED half-height: the question is whether the car is STANDING on this
+			-- floor, not whether a corner of its box grazes it. Those are not the same
+			-- question, and asking the second one is a trap -- a box pitched 12 degrees at
+			-- ride height reaches 2.394 studs below its middle and the ride height is 2.4,
+			-- so a car at the foot of a ramp would be six thousandths of a stud from being
+			-- "inside" the plate it is driving off, and the way out of a plate is half a
+			-- plate sideways. On level ground this is the plain `low >= topOf` it always
+			-- was, to the bit.
+			local n = part.CFrame.UpVector
+			if n.Y > GROUND_NORMAL_Y and (pos.Y - topOf(part, centre)) * n.Y >= bh - EPSILON then
 				continue
 			end
 			local dir, depth
