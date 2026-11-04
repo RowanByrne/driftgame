@@ -33,6 +33,7 @@ local DriftModel = require(DriftFolder.Model)
 local RemoteCars = require(DriftFolder.RemoteCars)
 local Render = require(DriftFolder.Render)
 local Sim = require(DriftFolder.Sim)
+local Trajectory = require(DriftFolder.Trajectory)
 local World = require(DriftFolder.World)
 
 local CarInputController = require(script.Parent.CarInputController)
@@ -113,6 +114,14 @@ function DriftController:Start()
 	end
 	self.world = World.live({ carsFolder })
 	self.remoteCars = RemoteCars.new(carsFolder, nil)
+
+	-- The projected line (T-032). A dev tool: the object is free -- it creates no instance
+	-- and does no work until it is switched on -- so it is always here, and
+	-- `Config.Drift.TrajectoryLine` only decides whether it starts on. F6 toggles it.
+	self.trajectory = Trajectory.new()
+	self.trajectory:SetWorld(self.world)
+	self.trajectory:BindToggle()
+	self.trajectory:SetEnabled(Config.Drift.TrajectoryLine)
 
 	if Config.Drift.DebugReadout then
 		self.hud = DebugHud.new()
@@ -274,6 +283,9 @@ function DriftController:_frame(dt: number)
 		if self.hud then
 			self.hud:Update(nil, nil)
 		end
+		if self.trajectory then
+			self.trajectory:Update(nil, nil, dt)
+		end
 		return
 	end
 
@@ -297,6 +309,13 @@ function DriftController:_frame(dt: number)
 		Render.apply(self.rig, state, self.runner.accumulator)
 	end
 	self.remoteCars:Update(dt)
+
+	-- Where the car would go if the finger stayed exactly where it is: the real model run
+	-- forward from a COPY of this state, so the line is the car and not a guess at it
+	-- (Drift/Trajectory). Off by default and free when it is off.
+	if self.trajectory then
+		self.trajectory:Update(state, input, dt)
+	end
 
 	-- One packet a frame at most, and never a backlog: a frame that took a second (the
 	-- first few, while the place is still loading) must not be paid back as a burst of
@@ -483,6 +502,46 @@ function DriftController:DebugTeleport(cf: CFrame)
 		Render.apply(self.rig, self.runner.state)
 	end
 	return self:DebugState()
+end
+
+-- The projected line, on or off (T-032). No argument toggles it. Returns whether it is on
+-- after the call; switching it off destroys its folder and every part in it.
+function DriftController:DebugTrajectory(on: boolean?): boolean
+	if not self.trajectory then
+		return false
+	end
+	if on == nil then
+		return self.trajectory:Toggle()
+	end
+	return self.trajectory:SetEnabled(on == true)
+end
+
+-- What the line is costing, what it drew and how far ahead it reaches.
+function DriftController:DebugTrajectoryState()
+	if not self.trajectory then
+		return { enabled = false }
+	end
+	return self.trajectory:DebugState()
+end
+
+-- The predicted path itself, as points: for measuring the line against where the car
+-- really goes. Predicted from the LIVE state with the finger held exactly where it is now,
+-- which is the same call the drawn line makes.
+function DriftController:DebugTrajectoryPoints(opts)
+	local state = self:CurrentState()
+	if not state then
+		return nil
+	end
+	local input = CarInputController:Get()
+	local prediction = Trajectory.predict(state, input, opts)
+	return {
+		points = prediction.points,
+		length = prediction.length,
+		steps = prediction.steps,
+		seconds = prediction.seconds,
+		endSpeed = prediction.endSpeed,
+		stoppedEarly = prediction.stopped,
+	}
 end
 
 function DriftController:DebugToggleReadout(): boolean
