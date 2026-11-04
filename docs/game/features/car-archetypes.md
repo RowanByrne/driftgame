@@ -83,10 +83,12 @@ Everything the reference varies, except which wheels drive (see "Open questions"
 - the geometry: `Wheelbase`, `TrackWidth`, `WheelDiameter`, `WheelWidth`, `RideHeight`,
   `CenterOfMass`, the body box, the cosmetic roll and the drawn wheel steer
 
-**Every archetype shares the approved car's geometry today**, because all four wear one
-body. Geometry is read when a car *model* is built, so changing it per car is legitimate
-but only lands on the next respawn; nothing in the drift reads it at all (the model has no
-bicycle geometry).
+**Every archetype shares the approved car's geometry**, and the four bodies are drawn
+around it rather than it around them (`T-028`). Geometry is read when a car *model* is
+built, so changing it per car is legitimate — but it lands on the next car **build**, and
+`CarService:Respawn` only pivots the car it already has, so today that means a rejoin.
+Nothing in the drift reads geometry at all: the model has no bicycle geometry, and the
+wheelbase only says where the ground rays go.
 
 ### The four cars
 
@@ -179,17 +181,42 @@ driven these and said which are worth keeping.
 
 ## Platform risks
 
-None beyond what the model already carries: all four cars wear the same placeholder body,
-which is the AE86 and is **not approved to publish** (`features/drift-model.md` "Platform
-risks"). The archetypes make that worse in one way worth saying out loud — four cars is
-four chances to reach for a real manufacturer's car for each. They get original bodies or
-Creator Store ones with a clean licence (`ART-PIPELINE.md`), and `T-028` owns that.
+**Closed by `T-028`, and this is the good news:** each archetype now has its own body, built
+from parts by code and entirely ours, and `Config.Drift.CarBody` defaults to `"auto"` — the
+active archetype's own. **The AE86 is no longer the default car.** The one thing in this
+game that cannot be published is now opt-in (`CarBody = "ae86"`) rather than what every
+player sees (`features/drift-model.md` "Platform risks",
+`assets/car-ae86/MANIFEST.md`).
+
+The risk worth keeping in view is the one the archetypes created: four cars is four
+chances to reach for a real manufacturer's car. The answer is the one taken here —
+original bodies, in git as text, or Creator Store ones with a licence we have actually
+read (`ART-PIPELINE.md`).
 
 ## Art and sound
 
-None yet, and the system is built so there need not be: any body may wear any archetype's
-numbers, so all four are driveable today on the one body the game has, and on the block
-car in a place whose meshes will not load. `T-028` draws them.
+**Built (`T-028`), ours, and in git as text.** A body is a palette plus a list of pieces —
+box, wedge, cylinder, ball, each with a size, an offset, a rotation, a colour and whether
+it mirrors — and one builder turns that into the same `Shell` the AE86 uses, so
+`Drift/Render` drives it unchanged. **A fifth body is a table, not a module.** They cost
+about a third of the AE86 to draw (0.077–0.082 ms a frame against 0.236).
+
+Y is authored up from the road, so a body never has to know the ride height. The four
+silhouettes, each meant to be namable from behind at speed:
+
+| Body | What it is | L × W × H | Roof |
+|---|---|---|---|
+| `balanced` | An upright three-box coupe: bonnet, tall glasshouse set back, short boot, two upright tail lights. White, red flank stripe. The one with a roof and nothing sticking out of it | 14.83 × 7.15 × 4.20 | 4.90 |
+| `gripper` | Low and wide and wedge-shaped: long flat nose on a splitter, a canopy barely above the wheels, fastback tail, full-width wing on two posts. Cyan, black aero, gold wheels. From behind it is the wing | 14.06 × 7.60 × 4.47 | 3.65 |
+| `slider` | A long low roadster with the roof cut off: raked screen, bare steel roll hoop over two visible seats, ducktail, fat arches. Magenta. From behind it is one full-width light bar | 16.00 × 6.90 × 3.68 | 4.43 |
+| `bruiser` | A tall square slab: dark chassis under an amber body, flat high bonnet with a scoop, upright cab, bull bars at both ends, twin pipes. From behind it is two wide horizontal bars | 16.73 × 7.40 × 5.30 | 5.90 |
+
+**The art follows the model, never the reverse**, and a check proves it: stretch the
+wheelbase from 9.6 to 14.4 and the body stretches 14.83 → 22.24 studs to match, while the
+wheels the ground rays cast from stay exactly where `wheelOffsets()` puts them.
+`BodyLength`/`Width`/`Height` are deliberately **not** per-body: they also size the
+collision box and the trajectory line, so changing them is a physics change and not an art
+one.
 
 ## Testing
 
