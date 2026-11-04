@@ -81,8 +81,9 @@ local function longRun(seed: number, count: number): ({ any }, any)
 			break
 		end
 		all[i] = piece
-		if i % 150 == 0 then
-			task.wait() -- a 14-deep search costs about half a millisecond a piece
+		if i % 50 == 0 then
+			task.wait() -- a 14-deep search over the five-piece set costs milliseconds a
+			-- piece, so this yields often enough that Studio keeps answering
 		end
 	end
 	return all, gen
@@ -144,13 +145,55 @@ function Tests:drive(o)
 		speedSum = 0,
 		speedN = 0,
 		peakSlip = 0,
+		longestDrift = 0, -- seconds of one unbroken slide: what a sweeper is for
+		slipFlips = 0, -- slides caught and swapped the other way: what a chicane is for
 		stuckSeconds = 0,
 		backwardsSteps = 0,
 		reached = 1,
 		steps = 0,
 		seconds = 0,
+		-- EVERY NUMBER ABOVE IS ABOUT THE ROAD, and a piece type cannot be chosen from a
+		-- number about the road: twenty pieces that contain three hairpins report mostly
+		-- what the straights and the corners did. So the drive also keeps the same
+		-- numbers PER PIECE TYPE, gathered one visit at a time -- a visit being the
+		-- contiguous stretch the car spends on one piece -- which is what makes "the
+		-- hairpin never touched a barrier" a sentence about the hairpin.
+		byKind = {},
 	}
 	local stuckSteps, lastN = 0, 1
+	local driftSteps, slipSign = 0, 0
+	local visit = nil
+
+	local function finishVisit()
+		if not visit or visit.steps < 5 then
+			visit = nil
+			return
+		end
+		local k = r.byKind[visit.kind]
+		if not k then
+			k = { visits = 0, steps = 0, drift = 0, held = 0, minSpeed = math.huge, maxSpeed = 0, lateral = 0, flips = 0, wall = 0, off = 0 }
+			r.byKind[visit.kind] = k
+		end
+		k.visits += 1
+		k.steps += visit.steps
+		k.drift += visit.drift
+		-- "Held" is a slide that lasted essentially the whole piece, which is the one
+		-- thing a sweeper is for and the one thing a hairpin is not.
+		if visit.drift / visit.steps >= 0.9 then
+			k.held += 1
+		end
+		k.minSpeed = math.min(k.minSpeed, visit.minSpeed)
+		k.maxSpeed = math.max(k.maxSpeed, visit.maxSpeed)
+		k.lateral = math.max(k.lateral, visit.lateral)
+		k.flips += visit.flips
+		k.wall += visit.wall
+		k.off += visit.off
+		visit = nil
+	end
+	-- A SLIDE IS NOT A SLIP READING. The car is always a degree or two out; what the
+	-- chicane is being asked to produce is a real slide one way, caught, and a real slide
+	-- the other. So a flip only counts when the slip passes this far through zero.
+	local FLIP_SLIP = 12 -- degrees
 
 	local function observe(s)
 		r.steps += 1
@@ -168,6 +211,20 @@ function Tests:drive(o)
 		end
 		if s.drifting then
 			r.driftSteps += 1
+			driftSteps += 1
+			r.longestDrift = math.max(r.longestDrift, driftSteps * D.FixedStep)
+		else
+			driftSteps = 0
+		end
+		local slipDeg = math.deg(s.slip)
+		local flipped = false
+		if math.abs(slipDeg) >= FLIP_SLIP then
+			local sign = if slipDeg > 0 then 1 else -1
+			if slipSign ~= 0 and sign ~= slipSign then
+				r.slipFlips += 1
+				flipped = true
+			end
+			slipSign = sign
 		end
 		if speed < 5 then
 			stuckSteps += 1
@@ -186,6 +243,31 @@ function Tests:drive(o)
 			if lateral > C.Width * 0.5 then
 				r.offRoadSteps += 1
 			end
+
+			if not visit or visit.n ~= n then
+				finishVisit()
+				local piece = gen:piece(n)
+				visit = {
+					n = n,
+					kind = if piece then piece.kind else "?",
+					steps = 0,
+					drift = 0,
+					minSpeed = math.huge,
+					maxSpeed = 0,
+					lateral = 0,
+					flips = 0,
+					wall = 0,
+					off = 0,
+				}
+			end
+			visit.steps += 1
+			visit.drift += if s.drifting then 1 else 0
+			visit.minSpeed = math.min(visit.minSpeed, speed)
+			visit.maxSpeed = math.max(visit.maxSpeed, speed)
+			visit.lateral = math.max(visit.lateral, lateral)
+			visit.flips += if flipped then 1 else 0
+			visit.wall += if s.wallHit then 1 else 0
+			visit.off += if lateral > C.Width * 0.5 then 1 else 0
 		end
 	end
 
@@ -225,11 +307,12 @@ function Tests:drive(o)
 		end
 	end
 
+	finishVisit()
 	r.seconds = elapsed
 	r.meanSpeed = r.speedSum / math.max(r.speedN, 1)
 	r.driftShare = r.driftSteps / math.max(r.steps, 1)
 	r.detail = string.format(
-		"%d pieces in %.0f s of simulation (%d steps); speed %.0f..%.0f, mean %.0f studs/s; drifting %.0f%% of it, peak slip %.0f deg; worst %.1f studs from the centre line (the road is %d wide, so %.1f studs of margin); %d steps off the road, %d airborne, %d touching a barrier, longest slow patch %.2f s",
+		"%d pieces in %.0f s of simulation (%d steps); speed %.0f..%.0f, mean %.0f studs/s; drifting %.0f%% of it (longest unbroken slide %.1f s, %d caught and swapped), peak slip %.0f deg; worst %.1f studs from the centre line (the road is %d wide, so %.1f studs of margin); %d steps off the road, %d airborne, %d touching a barrier, longest slow patch %.2f s",
 		r.reached,
 		elapsed,
 		r.steps,
@@ -237,6 +320,8 @@ function Tests:drive(o)
 		r.maxSpeed,
 		r.meanSpeed,
 		100 * r.driftShare,
+		r.longestDrift,
+		r.slipFlips,
 		r.peakSlip,
 		r.worstLateral,
 		C.Width,
@@ -252,101 +337,239 @@ function Tests:drive(o)
 	return r
 end
 
--- The measurement the corner's radius and the straight's length were chosen with, kept so
--- the next person can repeat it rather than take it on trust. It mutates `Config.Road` in
--- the live VM, rebuilds the piece set, drives, and puts everything back.
---   game.ServerStorage.DebugBridge:Invoke("DebugRoadTests", "sweep")
+-- The measurement every piece's numbers were chosen with, kept so the next person can
+-- repeat it rather than take it on trust. It mutates `Config.Road` in the live VM,
+-- rebuilds the piece set, drives, and puts everything back.
+--
+--   game.ServerStorage.DebugBridge:Invoke("DebugRoadTests", "sweep")      -- step 1's
+--   ... "sweep", { piece = "Hairpin", field = "Radius", values = { 60, 80, 100 },
+--                  only = { "Straight", "Hairpin" } }
+--
+-- `only` is what makes a sweep about ONE PIECE. With the whole set enabled a drive down
+-- twenty pieces might meet two hairpins, and the number that comes back is about the
+-- road rather than about the hairpin. Naming the pieces to keep pushes everything else
+-- out of reach (`minPieces` beyond any run), so every corner the car meets is the one
+-- being measured. `Straight` is always kept: it is the start piece, and without it the
+-- generator has nothing to run between the corners.
+local function setOnly(names)
+	local was = {}
+	for name, spec in Config.Road.Pieces do
+		was[name] = spec.minPieces
+	end
+	if names then
+		local keep = {}
+		for _, n in names do
+			keep[n] = true
+		end
+		keep.Straight = true
+		for name, spec in Config.Road.Pieces do
+			if not keep[name] then
+				spec.minPieces = math.huge
+			else
+				spec.minPieces = 0
+			end
+		end
+	end
+	return was
+end
+
+-- `set = { Sweeper = { Arc = 45 } }`: hold a piece's other numbers somewhere other than
+-- where the config has them for the length of a measurement, and put them back after.
+local function applySet(set)
+	local was = {}
+	for name, fields in set or {} do
+		was[name] = {}
+		for f, v in fields do
+			was[name][f] = Config.Road.Pieces[name][f]
+			Config.Road.Pieces[name][f] = v
+		end
+	end
+	return was
+end
+
+local function restoreSet(was)
+	for name, fields in was do
+		for f, v in fields do
+			Config.Road.Pieces[name][f] = v
+		end
+	end
+end
+
+-- What the car did ON one kind of piece, over however many of them the drive met.
+local function kindRow(r, kind: string): string
+	local k = r.byKind[kind]
+	if not k or k.visits == 0 then
+		return "never met one"
+	end
+	return string.format(
+		"%2d of them: speed %3.0f..%3.0f on it, drifting %3.0f%% of it (%d of %d held the slide the whole way), %2d caught and swapped, worst lateral %4.1f, %4d steps on a barrier, %d off the road",
+		k.visits,
+		k.minSpeed,
+		k.maxSpeed,
+		100 * k.drift / math.max(k.steps, 1),
+		k.held,
+		k.visits,
+		k.flips,
+		k.lateral,
+		k.wall,
+		k.off
+	)
+end
+
+local function restoreMinPieces(was)
+	for name, value in was do
+		Config.Road.Pieces[name].minPieces = value
+	end
+end
+
 function Tests:sweep(o)
 	o = o or {}
 	local C = Config.Road
-	local radii = o.radii or { 120, 160, 200, 250, 320 }
-	local lengths = o.lengths or { C.Pieces.Straight.Length }
-	local wasRadius = C.Pieces.Corner.Radius
+	-- Step 1's sweep, unchanged, is what a bare `"sweep"` still runs.
+	local piece = o.piece or "Corner"
+	local field = o.field or "Radius"
+	local values = o.values or o.radii or { 120, 160, 200, 250, 320 }
+	local spec = C.Pieces[piece]
+	assert(spec, `no piece called {piece}`)
+
+	-- A sweep of the radius can be a sweep of the radius at a chosen arc, rather than
+	-- only at the one already written down.
+	local wasSet = applySet(o.set)
+
+	local wasValue = spec[field]
 	local wasLength = C.Pieces.Straight.Length
+	local lengths = o.lengths or { wasLength }
+	local wasMin = setOnly(o.only)
 	local rows = {}
 	for _, length in lengths do
-		for _, radius in radii do
-			C.Pieces.Corner.Radius = radius
+		for _, value in values do
+			spec[field] = value
 			C.Pieces.Straight.Length = length
 			Pieces.rebuild()
-			local r = Tests:drive({ seed = o.seed or 8080, pieces = o.pieces or 20, seconds = o.seconds or 240, look = o.look, brake = o.brake })
+			local r = Tests:drive({
+				seed = o.seed or 8080,
+				pieces = o.pieces or 20,
+				seconds = o.seconds or 240,
+				look = o.look,
+				brake = o.brake,
+			})
 			table.insert(
 				rows,
 				string.format(
-					"R %3d, straight %3d: %2d pieces, speed %3.0f..%3.0f mean %3.0f, drifting %2.0f%%, peak slip %3.0f, worst lateral %4.1f of %.1f, off-road %4d, barrier %4d, slow %.1fs",
-					radius,
-					length,
+					"%s %s %4s | the run: %2d pieces, speed %3.0f..%3.0f mean %3.0f, drifting %2.0f%% (longest %4.1f s), peak slip %3.0f, worst lateral %4.1f of %.1f, off-road %4d, barrier %4d, slow %.1fs\n%22s| the %s: %s",
+					piece,
+					field,
+					tostring(value),
 					r.reached,
 					r.minSpeed,
 					r.maxSpeed,
 					r.meanSpeed,
 					100 * r.driftShare,
+					r.longestDrift,
 					r.peakSlip,
 					r.worstLateral,
 					C.Width * 0.5,
 					r.offRoadSteps,
 					r.wallSteps,
-					r.stuckSeconds
+					r.stuckSeconds,
+					"",
+					piece,
+					kindRow(r, piece)
 				)
 			)
 		end
 	end
-	C.Pieces.Corner.Radius = wasRadius
+	spec[field] = wasValue
 	C.Pieces.Straight.Length = wasLength
+	restoreSet(wasSet)
+	restoreMinPieces(wasMin)
 	Pieces.rebuild()
 	return table.concat(rows, "\n")
 end
 
--- How often a long run boxes itself in, against the two numbers that decide it: how deep
--- the lookahead searches, and what a corner's arc is. Pure, so it costs no parts and no
--- playtest. This is the measurement `LookAhead` and `Arc` were set from, and it is kept
--- so the next piece type can be checked the same way:
+-- How often a long run boxes itself in, against the numbers that decide it: how deep the
+-- lookahead searches, how many placements it may try before giving up, and what a
+-- corner's arc is. Pure, so it costs no parts and no playtest. This is the measurement
+-- `LookAhead` and `SearchNodeBudget` were set from, and it is kept so the next piece type
+-- can be checked the same way:
 --   game.ServerStorage.DebugBridge:Invoke("DebugRoadTests", "stalls")
+--   ... "stalls", { depths = { 9, 11 }, budgets = { 4000, 20000 }, seeds = 40 }
+--
+-- IT REPORTS WHY A RUN STALLED, not only that it did, and the distinction is the whole
+-- point: a search that ran out of BUDGET has not proved there is no way out, it has only
+-- stopped looking. Those two want opposite fixes -- more budget, or more depth -- so
+-- they are counted apart.
 function Tests:stalls(o)
 	o = o or {}
 	local C = Config.Road
-	local depths = o.depths or { 3, 5, 7, 9 }
-	local arcs = o.arcs or { 90, 75, 60 }
-	local seeds = o.seeds or 60
-	local length = o.pieces or 500
-	local wasLook, wasArc = C.LookAhead, C.Pieces.Corner.Arc
+	local depths = o.depths or { 3, 5, 7, 9, 11, 14 }
+	local budgets = o.budgets or { C.SearchNodeBudget }
+	local arcs = o.arcs or { C.Pieces.Corner.Arc }
+	local seeds = o.seeds or 40
+	local length = o.pieces or 400
+	local wasLook, wasArc, wasBudget = C.LookAhead, C.Pieces.Corner.Arc, C.SearchNodeBudget
+	local wasSet = applySet(o.set)
 	local rows = {}
 	for _, arc in arcs do
-		for _, depth in depths do
-			C.LookAhead = depth
-			C.Pieces.Corner.Arc = arc
-			Pieces.rebuild()
-			local stalls, earliest, worstNodes, total = 0, math.huge, 0, 0
-			local t0 = os.clock()
-			for seed = 1, seeds do
-				local run, g = longRun(seed * 1013, length)
-				total += #run
-				if #run < length then
-					stalls += 1
-					earliest = math.min(earliest, #run)
+		for _, budget in budgets do
+			for _, depth in depths do
+				C.LookAhead = depth
+				C.SearchNodeBudget = budget
+				C.Pieces.Corner.Arc = arc
+				Pieces.rebuild()
+				local stalls, earliest, worstNodes, total, outOfBudget = 0, math.huge, 0, 0, 0
+				local endedOn = {}
+				local t0 = os.clock()
+				for seed = 1, seeds do
+					local run, g = longRun(seed * 1013, length)
+					total += #run
+					if #run < length then
+						stalls += 1
+						earliest = math.min(earliest, #run)
+						if g.searchNodes >= budget then
+							outOfBudget += 1
+						end
+						-- Which piece the road was standing on when it ran out of room.
+						-- A piece that turns up here far more than its share is the one
+						-- making the traps, which is a thing about the SET, not the depth.
+						local last = run[#run]
+						if last then
+							endedOn[last.id] = (endedOn[last.id] or 0) + 1
+						end
+					end
+					worstNodes = math.max(worstNodes, g.worstNodes)
+					task.wait() -- a deep search over many seeds is the one slow thing here,
+					-- and a Studio that stops answering is a Studio that
+					-- cannot be asked what the answer was
 				end
-				worstNodes = math.max(worstNodes, g.worstNodes)
-				if seed % 4 == 0 then
-					task.wait() -- a deep search over many seeds is the one slow thing here
+				local ended = {}
+				for _, id in Pieces.order() do
+					if endedOn[id] then
+						table.insert(ended, `{id} {endedOn[id]}`)
+					end
 				end
-			end
-			table.insert(
-				rows,
-				string.format(
-					"arc %3d, lookahead %d: %2d of %d runs stalled (earliest at piece %s), %d pieces generated, worst search %4d nodes, %.0f ms",
-					arc,
-					depth,
-					stalls,
-					seeds,
-					if earliest == math.huge then "-" else tostring(earliest),
-					total,
-					worstNodes,
-					(os.clock() - t0) * 1000
+				table.insert(
+					rows,
+					string.format(
+						"arc %3d, lookahead %2d, budget %6d: %2d of %d runs stalled (%d of them out of budget rather than out of road; earliest at piece %s), %d pieces generated, worst search %5d nodes, %.0f ms%s",
+						arc,
+						depth,
+						budget,
+						stalls,
+						seeds,
+						outOfBudget,
+						if earliest == math.huge then "-" else tostring(earliest),
+						total,
+						worstNodes,
+						(os.clock() - t0) * 1000,
+						if #ended > 0 then "; stalled standing on " .. table.concat(ended, ", ") else ""
+					)
 				)
-			)
+			end
 		end
 	end
-	C.LookAhead, C.Pieces.Corner.Arc = wasLook, wasArc
+	C.LookAhead, C.Pieces.Corner.Arc, C.SearchNodeBudget = wasLook, wasArc, wasBudget
+	restoreSet(wasSet)
 	Pieces.rebuild()
 	return table.concat(rows, "\n")
 end
@@ -385,7 +608,19 @@ function Tests:run(opts)
 				string.format("%s %d seg, %.1f studs, chord %.2f, off the true arc %.3f", id, segments, v.length, chord, deviation)
 			)
 		end
-		check("the piece set is Straight plus a mirrored Corner", #ids == 3, table.concat(lines, "; "))
+		local kinds = {}
+		for _, id in ids do
+			kinds[Pieces.get(id).kind] = true
+		end
+		local kindCount = 0
+		for _ in kinds do
+			kindCount += 1
+		end
+		check(
+			"the piece set is five types in nine variants",
+			#ids == 9 and kindCount == 5 and kinds.Straight and kinds.Corner and kinds.Sweeper and kinds.Hairpin and kinds.Chicane,
+			table.concat(lines, "; ")
+		)
 		check(
 			`no curve chord is longer than {C.MaxSegmentChord} studs`,
 			worstChord <= C.MaxSegmentChord + 1e-6,
@@ -396,6 +631,89 @@ function Tests:run(opts)
 			worstDeviation <= 0.12,
 			string.format("worst deviation %.4f studs", worstDeviation)
 		)
+	end
+
+	----------------------------------------------------------------------------
+	-- 1b. Every variant joins flush, and the chicane bends both ways
+	----------------------------------------------------------------------------
+	-- The 500-piece continuity check below proves the road is flush where it is actually
+	-- generated. This proves it for EVERY variant, including ones a seed might not reach,
+	-- and on a socket that is turned and moved rather than the origin: the join is one
+	-- rotation and one addition, so if it is right anywhere it is right everywhere, and
+	-- this is where that claim is tested rather than assumed.
+	do
+		local socket = { x = -1234.5, z = 678.25, yaw = math.rad(37) }
+		local worstStart, worstStep, worstEnd = 0, 0, 0
+		local lines = {}
+		for i, id in Pieces.order() do
+			local v = Pieces.get(id)
+			local placed = Pieces.place(v, socket, i)
+			worstStart = math.max(worstStart, (socketGap(placed.start, placed.nodes[1])))
+			local d = math.sqrt((placed.finish.x - placed.nodes[#placed.nodes].x) ^ 2 + (placed.finish.z - placed.nodes[#placed.nodes].z) ^ 2)
+			worstEnd = math.max(worstEnd, d)
+			-- Inside a piece too: a chicane is two shapes end to end, and a gap between
+			-- them would be a seam in the middle of one piece rather than between two.
+			-- A seam shows up as a node step longer than a chord is allowed to be.
+			for n = 1, #placed.nodes - 1 do
+				local a, b = placed.nodes[n], placed.nodes[n + 1]
+				worstStep = math.max(worstStep, math.sqrt((b.x - a.x) ^ 2 + (b.z - a.z) ^ 2))
+			end
+			table.insert(lines, string.format("%s %.1f studs", id, placed.length))
+		end
+		check(
+			`all {#Pieces.order()} variants join flush on a turned socket`,
+			worstStart <= SOCKET_TOLERANCE
+				and worstEnd <= SOCKET_TOLERANCE
+				and worstStep <= math.max(C.MaxSegmentChord, C.Pieces.Straight.Length) + 1e-6,
+			string.format(
+				"placed on a socket at (%.1f, %.1f) facing 37 deg: worst start-socket gap %.3e studs, worst end-socket gap %.3e, longest step between two nodes %.2f (no seam inside a piece). %s",
+				socket.x,
+				socket.z,
+				worstStart,
+				worstEnd,
+				worstStep,
+				table.concat(lines, ", ")
+			)
+		)
+
+		-- The chicane is the one piece whose shape is not one shape. What makes it a
+		-- chicane rather than a wide corner is that the second bend is the OPPOSITE of
+		-- the first, so it comes out pointing the way it went in, having moved sideways.
+		local okBends = true
+		local report = {}
+		for _, id in { "ChicaneL", "ChicaneR" } do
+			local v = Pieces.get(id)
+			local first, second = 0, 0
+			local half = (#v.nodes - 1) / 2
+			for n = 1, #v.nodes - 1 do
+				local step = v.nodes[n + 1].yaw - v.nodes[n].yaw
+				if n <= half then
+					first += step
+				else
+					second += step
+				end
+			end
+			local net = v.nodes[#v.nodes].yaw
+			local across = math.abs(v.nodes[#v.nodes].x)
+			okBends = okBends
+				and math.abs(net) < 1e-9 -- it leaves pointing the way it arrived
+				and math.abs(first + second) < 1e-9 -- the two bends cancel exactly
+				and first * second < 0 -- and they are genuinely opposite, not both zero
+				and across > C.Width -- having moved more than a road's width across
+			table.insert(
+				report,
+				string.format(
+					"%s bends %+.1f deg then %+.1f, net %+.2e, and steps %.1f studs across a %d-stud road",
+					id,
+					math.deg(first),
+					math.deg(second),
+					math.deg(net),
+					across,
+					C.Width
+				)
+			)
+		end
+		check("the chicane's two bends are opposite and cancel", okBends, table.concat(report, "; "))
 	end
 
 	----------------------------------------------------------------------------
@@ -488,15 +806,21 @@ function Tests:run(opts)
 	do
 		local same = true
 		local firstDifference = ""
+		local stoppedAt = ""
 		for _, seed in { 1234, 7 } do
 			local a = longRun(seed, 200)
 			local b = longRun(seed, 200)
-			for i = 1, 200 do
-				if not a[i] or not b[i] then
-					same = false
-					firstDifference = `seed {seed}: one run stopped at {i}`
-					break
-				end
+			-- A SEED THAT BOXES ITSELF IN IS STILL THE SAME ROAD TWICE, and it must not
+			-- read here as non-determinism: both runs stop at the same piece because
+			-- they are the same road. What this check is about is whether they AGREE,
+			-- so it compares as far as they both go and holds them to the same length.
+			if #a ~= #b then
+				same = false
+				firstDifference = `seed {seed}: one run is {#a} pieces and the other {#b}`
+			elseif #a < 200 then
+				stoppedAt ..= `seed {seed} boxed itself in at piece {#a}, identically both times; `
+			end
+			for i = 1, math.min(#a, #b) do
 				local dp = socketGap(a[i].start, b[i].start)
 				if a[i].id ~= b[i].id or dp > 0 then
 					same = false
@@ -516,7 +840,9 @@ function Tests:run(opts)
 		check(
 			"the same seed gives the same road, twice",
 			same,
-			if same then "two seeds, 200 pieces each, identical by variant and by position" else firstDifference
+			if same
+				then "two seeds, 200 pieces each, identical by variant and by position. " .. stoppedAt
+				else firstDifference
 		)
 		check(
 			"a different seed gives a different road",
@@ -572,6 +898,52 @@ function Tests:run(opts)
 			`the longest run of one variant is at most {MAX_SAME_RUN}`,
 			longest <= MAX_SAME_RUN,
 			`longest {longest} ({longestId}), over {#SEEDS} seeds x {LONG_RUN} pieces`
+		)
+	end
+
+	----------------------------------------------------------------------------
+	-- 5b. The hard piece is gated
+	----------------------------------------------------------------------------
+	-- `minPieces` is how far into a run a piece may first appear, and the hairpin is the
+	-- only piece that has one: it is the piece that stops the car dead, and it must not
+	-- be the second thing a player ever meets. Nothing enforced this in step 1, because
+	-- both pieces then were ungated.
+	do
+		local gates = {}
+		for _, id in Pieces.order() do
+			local m = Pieces.get(id).minPieces
+			if m > 0 then
+				gates[id] = m
+			end
+		end
+		local worst, worstId, earliest = math.huge, "?", {}
+		local tooEarly = 0
+		for _, seed in SEEDS do
+			local run = longRun(seed, LONG_RUN)
+			for _, piece in run do
+				local gate = gates[piece.id]
+				if gate then
+					if piece.n <= gate then
+						tooEarly += 1
+					end
+					if not earliest[piece.id] or piece.n < earliest[piece.id] then
+						earliest[piece.id] = piece.n
+					end
+				end
+			end
+		end
+		local lines = {}
+		for id, gate in gates do
+			local first = earliest[id]
+			table.insert(lines, `{id} (gate {gate}) first appeared at piece {tostring(first)}`)
+			if first and first < worst then
+				worst, worstId = first, id
+			end
+		end
+		check(
+			"the gated pieces never appear before their minPieces",
+			tooEarly == 0 and next(gates) ~= nil,
+			`{#SEEDS} seeds x {LONG_RUN} pieces, {tooEarly} appearances too early; earliest of all was {worstId} at piece {if worst == math.huge then "never" else tostring(worst)}. {table.concat(lines, "; ")}`
 		)
 	end
 
@@ -923,6 +1295,28 @@ function Tests:run(opts)
 			"never airborne, never stuck, never off the road",
 			r.airSteps == 0 and r.stuckSeconds < 1 and r.offRoadSteps == 0 and r.backwardsSteps == 0,
 			driveReport
+		)
+
+		-- And it drove ALL OF THEM. A 50-piece drive that happened to meet no hairpin
+		-- would pass both checks above while proving nothing about the hairpin, so the
+		-- drive is also asked which pieces it actually met, and what it did on each.
+		local missing, lines = {}, {}
+		local kinds = {}
+		for _, id in Pieces.order() do
+			kinds[Pieces.get(id).kind] = true
+		end
+		for kind in kinds do
+			if not r.byKind[kind] then
+				table.insert(missing, kind)
+			else
+				table.insert(lines, `{kind}: {kindRow(r, kind)}`)
+			end
+		end
+		table.sort(lines)
+		check(
+			"every piece type turns up in the drive, and the car gets round all of them",
+			#missing == 0,
+			`{if #missing == 0 then "all five met" else "never met: " .. table.concat(missing, ", ")}. ` .. table.concat(lines, " | ")
 		)
 	end
 
