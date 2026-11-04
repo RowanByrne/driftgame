@@ -31,6 +31,7 @@ local Config = require(ReplicatedStorage.Shared.Config)
 
 local DriftFolder = StarterPlayer.StarterPlayerScripts:WaitForChild("Drift")
 local Model = require(DriftFolder.Model)
+local Render = require(DriftFolder.Render)
 local Sim = require(DriftFolder.Sim)
 local World = require(DriftFolder.World)
 
@@ -164,19 +165,26 @@ local function check(checks, name, ok, detail)
 	return ok == true
 end
 
--- Every physics object a car must not have, wherever it came from.
+-- Every physics object a car must not have, wherever it came from -- and, since the car
+-- is now a stripped Creator Store vehicle, everything else that came with it and was
+-- thrown away: scripts, sounds, lights, emitters, a seat (T-020, the user's "ditch all
+-- the scripts attached to it").
 local function offenderReport(model: Instance): (boolean, string)
 	local offenders = CarModel.physicsOffenders(model)
-	if #offenders == 0 then
+	local strays = CarModel.strayOffenders(model)
+	if #offenders == 0 and #strays == 0 then
 		local parts = 0
 		for _, d in model:GetDescendants() do
 			if d:IsA("BasePart") then
 				parts += 1
 			end
 		end
-		return true, `{model.Name}: {parts} parts, all anchored, nothing that moves them`
+		return true, `{model.Name}: {parts} parts, all anchored, nothing that moves them and nothing that runs`
 	end
-	return false, `{model.Name}: {table.concat(offenders, "; ")}`
+	local all = {}
+	table.move(offenders, 1, #offenders, 1, all)
+	table.move(strays, 1, #strays, #all + 1, all)
+	return false, `{model.Name}: {table.concat(all, "; ")}`
 end
 
 function DriftTests.run()
@@ -501,6 +509,182 @@ function DriftTests.run()
 		if liveCount == 0
 			then "no cars spawned yet (nothing to check: start a playtest to cover this)"
 			else table.concat(liveDetails, " | ")
+	)
+
+	------------------------------------------------------------------ the car is the AE86
+	-- The body the simulation drives is the car the user added to the Main place, read out
+	-- of it and written down in `Shared/Cars/AE86` (T-020). None of the checks above knows
+	-- or cares: the simulation only ever sees five parts at `wheelOffsets()`, and these
+	-- are the checks that the shell riding on them is right.
+	local ae86 = CarModel.build()
+	local shell = ae86:FindFirstChild(CarModel.SHELL_NAME)
+	local shellParts = 0
+	if shell then
+		for _, d in shell:GetDescendants() do
+			if d:IsA("BasePart") then
+				shellParts += 1
+			end
+		end
+	end
+	local simParts = 0
+	for _, d in ae86:GetChildren() do
+		if d:IsA("BasePart") then
+			simParts += 1
+		end
+	end
+	check(
+		checks,
+		"the car is the AE86, on the five parts the model drives",
+		shell ~= nil and shellParts == 98 and simParts == 5,
+		if shell
+			then `{shellParts} shell parts on {simParts} simulation parts (a body and four wheels), body '{CarModel.bodyName()}'`
+			else `no shell: the car fell back to the block (body '{CarModel.bodyName()}'). The meshes would not load`
+	)
+
+	-- The config is the car's truth and the model is not: a real car's proportions and
+	-- `BodyLength`/`Width`/`Height` cannot both be honoured, so the WHEELS win -- that is
+	-- where the ground rays go. The box those three describe is only ever the fallback's
+	-- shape, and the numbers below say how far from it the real car is.
+	local AE86Data = require(ReplicatedStorage.Shared.Cars.AE86)
+	local bodyScale = C.Wheelbase / AE86Data.measured.wheelbase
+	local wheelScale = C.WheelDiameter / AE86Data.measured.wheelDiameter
+	local shellBody = shell and shell:FindFirstChild(CarModel.BODY_NAME)
+	local lo, hi = Vector3.new(1e9, 1e9, 1e9), Vector3.new(-1e9, -1e9, -1e9)
+	if shellBody then
+		local root = ae86:GetPivot()
+		for _, p in shellBody:GetChildren() do
+			if p:IsA("BasePart") then
+				local local_ = root:ToObjectSpace(p.CFrame)
+				local h = p.Size * 0.5
+				for i = -1, 1, 2 do
+					for j = -1, 1, 2 do
+						for k = -1, 1, 2 do
+							local pt = local_ * Vector3.new(h.X * i, h.Y * j, h.Z * k)
+							lo, hi = lo:Min(pt), hi:Max(pt)
+						end
+					end
+				end
+			end
+		end
+	end
+	local size = hi - lo
+	check(
+		checks,
+		"the model is scaled onto the config, not the config onto the model",
+		shellBody ~= nil
+			and math.abs(size.Z - AE86Data.measured.bodyLength * bodyScale) < 0.01
+			and math.abs(bodyScale - wheelScale) < 0.05,
+		string.format(
+			"wheelbase %.1f / %.4f = x%.5f on the body, wheel %.1f / %.4f = x%.5f on the wheels; "
+				.. "the car comes out %.2f x %.2f x %.2f against the config's box of %.1f x %.1f x %.1f (W x H x L)",
+			C.Wheelbase,
+			AE86Data.measured.wheelbase,
+			bodyScale,
+			C.WheelDiameter,
+			AE86Data.measured.wheelDiameter,
+			wheelScale,
+			size.X,
+			size.Y,
+			size.Z,
+			C.BodyWidth,
+			C.BodyHeight,
+			C.BodyLength
+		)
+	)
+
+	-- Placed by `Render`, exactly as the game places it, on a road at y = 0.
+	local rig = Render.rig(ae86)
+	local onRoad = CFrame.new(0, C.RideHeight, 0)
+	Render.place(rig, onRoad, 0, 0, 0)
+	local gaps, worstGap = {}, 0
+	for _, name in CarModel.WHEEL_NAMES do
+		local group = shell and shell:FindFirstChild(name)
+		local tyre = group and group:FindFirstChild("Tire")
+		if tyre and tyre:IsA("BasePart") then
+			-- the tyre's thin axis is its own Y; its diameter is X and Z, and the axle is
+			-- horizontal, so the lowest point is the centre less the radius
+			local gap = tyre.Position.Y - tyre.Size.X * 0.5
+			table.insert(gaps, string.format("%s %+.4f", string.sub(name, 6), gap))
+			worstGap = math.max(worstGap, math.abs(gap))
+		end
+	end
+	check(
+		checks,
+		"every wheel sits on the road",
+		#gaps == 4 and worstGap < 0.01,
+		`gap in studs at each corner, road at y = 0: {table.concat(gaps, ", ")}`
+	)
+
+	-- The wheels turn, and only the front pair points anywhere. Read back off the shell
+	-- parts themselves, not off anything the placement was told.
+	local byName = {}
+	for _, wheel in rig.wheels do
+		byName[wheel.part.Name] = wheel
+	end
+	local steerRead, spinRead = {}, {}
+	local steerOk, steerSeen = true, 0
+	for _, angle in { -25, 0, 25 } do
+		Render.place(rig, onRoad, math.rad(angle), 0, 0)
+		local reads = {}
+		for _, name in CarModel.WHEEL_NAMES do
+			local frame = byName[name] and Render.shellFrame(byName[name].shell)
+			if frame then
+				local _, yaw = onRoad:ToObjectSpace(frame):ToOrientation()
+				local want = if CarModel.isFrontWheel(name) then angle else 0
+				steerOk = steerOk and math.abs(math.deg(yaw) - want) < 0.1
+				steerSeen += 1
+				table.insert(reads, string.format("%s %+.1f", string.sub(name, 6), math.deg(yaw)))
+			end
+		end
+		table.insert(steerRead, string.format("asked %+d deg -> %s", angle, table.concat(reads, " ")))
+	end
+	check(
+		checks,
+		"the front wheels steer and the rear pair does not",
+		steerOk and steerSeen == 12,
+		table.concat(steerRead, " | ")
+	)
+
+	-- Spin is read as the pitch of the wheel about its own axle, so it is measured inside
+	-- a quarter turn either way -- past that the Euler read-back folds and says nothing.
+	local spinOk, spinSeen = true, 0
+	for _, spin in { 0, 45, 85 } do
+		Render.place(rig, onRoad, 0, math.rad(spin), 0)
+		local frame = byName.WheelRL and Render.shellFrame(byName.WheelRL.shell)
+		if frame then
+			local pitch = select(1, onRoad:ToObjectSpace(frame):ToOrientation())
+			spinOk = spinOk and math.abs(math.deg(pitch) - spin) < 0.1
+			spinSeen += 1
+			table.insert(spinRead, string.format("spin %+d deg -> RL reads %+.1f", spin, math.deg(pitch)))
+		end
+	end
+	check(
+		checks,
+		"the wheels turn with the car's travel",
+		spinOk and spinSeen == 3,
+		table.concat(spinRead, ", ")
+	)
+	ae86:Destroy()
+
+	-- And the block is still buildable, because a place whose meshes will not load still
+	-- has to run.
+	CarModel.setBody("block")
+	local block = CarModel.build()
+	local blockParts = 0
+	for _, d in block:GetDescendants() do
+		if d:IsA("BasePart") then
+			blockParts += 1
+		end
+	end
+	local blockOk, blockDetail = offenderReport(block)
+	local blockHasShell = block:FindFirstChild(CarModel.SHELL_NAME) ~= nil
+	block:Destroy()
+	CarModel.setBody(nil)
+	check(
+		checks,
+		"the block car is still there as the fallback",
+		blockParts == 5 and not blockHasShell and blockOk,
+		`setBody("block") builds {blockParts} parts and no shell -- {blockDetail}`
 	)
 
 	------------------------------------------------------------------ the ground
