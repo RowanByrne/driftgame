@@ -31,12 +31,31 @@
 -- The mouse is NOT locked while panning, and that is on purpose: the steering is measured
 -- from where the cursor IS, so locking it would freeze the car's rate of turn the moment
 -- the right button went down.
+--
+-- THE HANDBRAKE IS A TOGGLE AND THIS FILE OWNS IT (T-041). Press the on-screen button,
+-- the key or the gamepad button once and the car brakes until it stops and stays stopped;
+-- press any of them again and it drives off. It is still the one handbrake the model
+-- already has -- while the toggle is on, this hands the model `handbrake = true` every
+-- frame, exactly as a held button used to -- and there is no second braking mechanism.
+-- Steering is untouched by it, so a stopped car still rotates under the finger, which is
+-- how a player lines a shot up.
+--
+-- Every path is the SAME latch: the button reports a press (DragControl has no state of
+-- its own) and the InputAction's `Pressed` reports one, both land in `_toggleBrake`, so
+-- key-then-button and button-then-key cannot disagree.
+--
+-- IT CLEARS ON A RESPAWN AND ON A CAR SWITCH (`CarRespawn`, `CarSwitch`). Both are the
+-- server handing the player a fresh car, and a latch left on would hold that new car still
+-- with nothing but a button colour to say why -- a respawn in particular is how a player
+-- gets going again after stopping. Listening here, rather than being told by
+-- DriftController, keeps the toggle's whole life in one file.
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local UserInputService = game:GetService("UserInputService")
 
 local Config = require(ReplicatedStorage.Shared.Config)
+local Net = require(ReplicatedStorage.Shared.Net)
 local Signal = require(ReplicatedStorage.Shared.Signal)
 
 -- PlayerScripts.Controllers.CarInputController -> PlayerScripts.Drift
@@ -59,7 +78,12 @@ end
 
 function CarInputController:Init()
 	self.steer = 0
+	-- The toggle. `brakeOn` IS the latch; `handbrake` is only what the last `Get()` handed
+	-- the model, which is the latch except under a Studio override.
+	self.brakeOn = false
 	self.handbrake = false
+	self.brakeToggles = 0 -- how many times it has flipped, for a test to count
+	self.brakeCleared = 0 -- and how many times a respawn or a switch dropped it
 	self.DebugToggled = Signal.new()
 	self._actions = {}
 	-- The pan, in PIXELS of mouse travel since the camera last took them. `dx`/`dy` are
@@ -117,11 +141,74 @@ function CarInputController:Start()
 		self.DebugToggled:Fire()
 	end)
 
-	self._drag = DragControl.new(function()
-		self.DebugToggled:Fire()
+	-- One press, one flip, whichever of the two things was pressed.
+	handbrake.Pressed:Connect(function()
+		self:_toggleBrake()
 	end)
 
+	self._drag = DragControl.new(function()
+		self.DebugToggled:Fire()
+	end, function()
+		self:_toggleBrake()
+	end)
+	self._drag:SetBrake(self.brakeOn)
+
 	self:_bindPan()
+	self:_bindCarEvents()
+end
+
+-- ---------------------------------------------------------------- the brake toggle
+
+function CarInputController:_setBrake(on: boolean): boolean
+	on = on == true
+	if self.brakeOn ~= on then
+		self.brakeOn = on
+		self.brakeToggles += 1
+	end
+	-- Pushed every time, even when nothing changed: it is the button's light, and a light
+	-- out of step with the latch is the bug this one-owner design exists to rule out.
+	if self._drag then
+		self._drag:SetBrake(self.brakeOn)
+	end
+	return self.brakeOn
+end
+
+function CarInputController:_toggleBrake(): boolean
+	return self:_setBrake(not self.brakeOn)
+end
+
+-- A respawn or a car switch drops it (see the header). Bound in the background because
+-- both remotes may not exist yet when this starts, and a latch cleared a moment late is a
+-- latch nobody has had time to set.
+function CarInputController:_bindCarEvents()
+	task.spawn(function()
+		local function clear()
+			if self.brakeOn then
+				self.brakeCleared += 1
+				self:_setBrake(false)
+			end
+		end
+		local ok, err = pcall(function()
+			Net.event("CarRespawn").OnClientEvent:Connect(clear)
+			-- `CarSwitch` is also the answer to the question this client asks at startup,
+			-- and to a switch the server REFUSED. Neither changes the car under the
+			-- player, so neither may let the brake off: only a key that is actually
+			-- different from the one we were last told does.
+			Net.event("CarSwitch").OnClientEvent:Connect(function(key: any, accepted: any)
+				local was = self._carKey
+				if type(key) == "string" then
+					self._carKey = key
+				end
+				if accepted == true and was ~= nil and type(key) == "string" and key ~= was then
+					clear()
+				end
+			end)
+		end)
+		self._carEventsBound = ok
+		if not ok then
+			warn("[CarInputController] the brake toggle cannot watch CarRespawn/CarSwitch: " .. tostring(err))
+		end
+	end)
 end
 
 -- ---------------------------------------------------------------- the pan
@@ -220,16 +307,14 @@ function CarInputController:Get(): { steer: number, handbrake: boolean }
 	-- that only ever spins. It is worth `KeySensitivity` of a full finger.
 	steer *= Config.Drift.KeySensitivity
 
-	if self._actions and self._actions.Handbrake then
-		handbrake = self._actions.Handbrake:GetState() == true
-	end
+	-- The brake is the latch, not a button read this frame: every press, from every input
+	-- path, has already been folded into it by `_toggleBrake`.
+	handbrake = self.brakeOn
 
 	if self._drag then
-		local dSteer, dHandbrake = self._drag:Get()
 		if self._drag:Down() then
-			steer = dSteer
+			steer = self._drag:Get()
 		end
-		handbrake = handbrake or dHandbrake
 	end
 
 	self.steer = math.clamp(steer, -1, 1)
@@ -245,6 +330,10 @@ function CarInputController:DebugState()
 	return {
 		steer = self.steer,
 		handbrake = self.handbrake,
+		brakeOn = self.brakeOn, -- the toggle's own state (T-041)
+		brakeToggles = self.brakeToggles,
+		brakeCleared = self.brakeCleared,
+		brakeWatching = self._carEventsBound == true,
 		device = self:Device(),
 		mode = if self._drag then self._drag:Mode() else Config.Drift.InputMode,
 		sensitivity = Config.Drift.Sensitivity,
@@ -291,6 +380,43 @@ function CarInputController:DebugSetInput(steer: number?, handbrake: boolean?)
 		handbrake = handbrake == true,
 	}
 	return self._override
+end
+
+-- Studio only: the brake toggle's two press paths, each through exactly the code the real
+-- thing runs (T-041). `DebugPressBrakeButton` goes in at DragControl's button handler;
+-- `DebugPressBrakeKey` goes in where the Handbrake InputAction's `Pressed` lands, which is
+-- the one thing a test cannot make the engine fire for it. Neither sets the state
+-- directly, so the two cannot be proven to agree by cheating.
+function CarInputController:DebugPressBrakeButton()
+	if self._drag then
+		self._drag:DebugPressBrake()
+	end
+	return self:DebugBrakeState()
+end
+
+function CarInputController:DebugPressBrakeKey()
+	self:_toggleBrake()
+	return self:DebugBrakeState()
+end
+
+function CarInputController:DebugBrakeState()
+	local drag = if self._drag then self._drag:DebugState() else nil
+	return {
+		brakeOn = self.brakeOn,
+		handbrake = self.handbrake,
+		toggles = self.brakeToggles,
+		cleared = self.brakeCleared,
+		watching = self._carEventsBound == true,
+		-- What the button is showing. It must always equal `brakeOn`.
+		buttonLit = if drag then drag.handbrake else nil,
+	}
+end
+
+-- Studio only: put the toggle somewhere known, the same way a press does, so a test can
+-- set up a case without pressing its way there.
+function CarInputController:DebugSetBrake(on: boolean?)
+	self:_setBrake(on == true)
+	return self:DebugBrakeState()
 end
 
 function CarInputController:DebugClearInput()
