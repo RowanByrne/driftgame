@@ -462,7 +462,9 @@ function GarageTests:run()
 		-- for six seconds.
 		local backoff = Config.Drift.GarageRetryBackoff
 		Config.Drift.GarageRetryBackoff = 0
+		GarageService.silent = true -- the failure is the point; the warning is not
 		local wrote = GarageService:_write(TEST_USER, GarageService.garages[TEST_USER])
+		GarageService.silent = nil
 		Config.Drift.GarageRetryBackoff = backoff
 
 		local kept = GarageService.garages[TEST_USER].Doomed

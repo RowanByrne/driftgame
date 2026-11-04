@@ -374,8 +374,12 @@ local Drift = {
 	TunerOpen = false, -- but CLOSED from the start: the user driving for feel
 	-- should see the car and nothing else. F7, the gamepad's Y,
 	-- or the TUNE button opens it
-	TunerKey = Enum.KeyCode.F7, -- opens and closes it. F3/F4/F5 are the readout's and F6
-	-- is the trajectory line's
+	TunerKey = Enum.KeyCode.F8, -- opens and closes it. F3/F4/F5 are the readout's and F6
+	-- is the trajectory line's, so F7 was the obvious next one --
+	-- AND STUDIO EATS F7. It is Studio's own Client/Server view
+	-- toggle and the keypress never reaches the game: measured in
+	-- DR-Lane2, where F8, F10, G and T all arrived and F7 alone did
+	-- not. Worth knowing before binding the next dev key
 	TunerGamepadKey = Enum.KeyCode.ButtonY, -- the same, on a pad. DPad up/right/left are
 	-- already the readout's, the car switch and the line's
 	TunerWidth = 336, -- px. The panel's column, on the RIGHT: the readout owns the top

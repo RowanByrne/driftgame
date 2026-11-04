@@ -18,7 +18,7 @@ edit `Archetypes.luau` and wait for a sync.
 
 ## How it plays
 
-1. **F7** opens the panel (the gamepad's **Y**, or the **TUNE** button under the readout's
+1. **F8** opens the panel (the gamepad's **Y**, or the **TUNE** button under the readout's
    **DBG**). It sits on the right; the debug readout owns the top left and the two are
    meant to be open together.
 2. **Eight sliders.** Drag one and the car changes **on the next simulation step** — one
@@ -114,7 +114,7 @@ NaN velocity and a car that is nowhere. Its floor is 20 studs/s.
 
 ### The numbers behind it
 
-All in `Config.Drift` ("the tuner", "the garage"): `Tuner`, `TunerOpen`, `TunerKey` (F7),
+All in `Config.Drift` ("the tuner", "the garage"): `Tuner`, `TunerOpen`, `TunerKey` (F8),
 `TunerGamepadKey` (ButtonY), `TunerWidth` (336 px), `TunerRowHeight` (38 px),
 `TunerSendRate` (10 Hz), `GarageMaxCars` (12), `GarageNameMax` (24), `GarageSaveRateLimit`
 (4/s), `GarageTuneRateLimit` (30/s), `GarageWriteInterval` (8 s), `GarageWriteRetries` (3),
@@ -160,7 +160,7 @@ child called `Name` shadows `Instance.Name`, so `NameDialog.Name` is the string
 **Input.** Pointer and touch drag the tracks; the `-` / `+` buttons either side of every
 track are `Selectable`, so a gamepad reaches every slider through Roblox's own GUI
 navigation without a single new keybind — which matters, because the arrow keys and `S` are
-already steering and the handbrake. F7 / ButtonY / the TUNE button open it.
+already steering and the handbrake. F8 / ButtonY / the TUNE button open it. **Not F7**, which was the obvious next key after the readout's F3/F4/F5 and the line's F6: Studio eats F7 for its own Client/Server view toggle and the press never reaches the game (measured: F8, F10, G and T all arrive, F7 alone does not).
 
 ### Why it does not fight the steering
 

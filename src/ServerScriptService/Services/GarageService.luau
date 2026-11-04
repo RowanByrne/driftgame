@@ -251,7 +251,10 @@ function GarageService:_write(userId: number, garage): boolean
 		if attempt < Config.Drift.GarageWriteRetries then
 			task.wait(wait)
 			wait *= 2
-		else
+		elseif not self.silent then
+			-- `silent` is `GarageTests` driving a store that refuses every write ON
+			-- PURPOSE. A test that leaves a warning in the console is a test that makes
+			-- the next agent's console check lie.
 			warn(`[GarageService] gave up writing {userId}'s garage after {attempt} tries: {tostring(err)}`)
 		end
 	end
