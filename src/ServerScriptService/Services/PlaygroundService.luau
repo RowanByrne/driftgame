@@ -435,6 +435,33 @@ local function catchSpawn(position: Vector3): CFrame?
 	return PlaygroundService.Spots.Spawn
 end
 
+-- THIS WORLD CATCHES ITS OWN FALLERS AND NOBODY ELSE'S, and `FallY` is why (T-067).
+-- It is an absolute world height, -40, which was right while every world's ground was at
+-- Y = 0. The road descends now (features/road-elevation.md), so a car eleven pieces down
+-- an ordinary descent is below -40 while sitting perfectly on the road, and this would
+-- pivot it back to a spawn on every tick, for ever. The client's own fall test is the one
+-- that matters there and it is measured from the ground the car last touched, not from
+-- zero.
+--
+-- So ask CarService which world the position is in and leave anything that is not ours
+-- alone. A place with no CarService answers nil, and then this behaves exactly as it did:
+-- a lane with only a playground in it must not stop catching fallers because a lookup
+-- failed.
+local function notOurWorld(position: Vector3): boolean
+	local services = script.Parent
+	local module = services and services:FindFirstChild("CarService")
+	if module and module:IsA("ModuleScript") then
+		local ok, cars = pcall(require, module)
+		if ok and type(cars) == "table" and type(cars.WorldAt) == "function" then
+			local got, world = pcall(cars.WorldAt, cars, position)
+			if got and type(world) == "string" then
+				return world ~= "playground"
+			end
+		end
+	end
+	return false
+end
+
 local function catchFallers()
 	local carFolder = workspace:FindFirstChild("Cars")
 	if carFolder then
@@ -443,7 +470,7 @@ local function catchFallers()
 				local ok, pivot = pcall(function()
 					return car:GetPivot()
 				end)
-				if ok and pivot.Position.Y < tuning.FallY then
+				if ok and pivot.Position.Y < tuning.FallY and not notOurWorld(pivot.Position) then
 					local back = catchSpawn(pivot.Position)
 					if back then
 						car:PivotTo(back)
@@ -455,7 +482,7 @@ local function catchFallers()
 	for _, player in Players:GetPlayers() do
 		local character = player.Character
 		local root = character and character:FindFirstChild("HumanoidRootPart")
-		if root and root.Position.Y < tuning.FallY then
+		if root and root.Position.Y < tuning.FallY and not notOurWorld(root.Position) then
 			local back = catchSpawn(root.Position)
 			if back then
 				character:PivotTo(back * CFrame.new(0, 2, 0))
