@@ -23,11 +23,16 @@
 -- the body. Any body may wear any car's numbers, which is how an archetype is driven
 -- before its art exists.
 --
--- THE ACTIVE CAR IS GLOBAL TO ONE LUA VM, like `CarBody` already is. The client that
--- drives a car owns its simulation, so switching on the client is what a player would
--- feel; the server keeps its own active car for the checks it makes. That is fine while
--- this is a prototype switch and is NOT fine the day a car is something a player owns --
--- see the spec's "Open questions".
+-- THE ACTIVE CAR IS GLOBAL TO ONE LUA VM, like `CarBody` already is, and on the CLIENT
+-- that is exactly right: a client simulates one car, its own, so "the active car" and
+-- "the car this player is in" are the same thing.
+--
+-- THE SERVER IS NOT LIKE THAT. It holds every player's car at once, so it cannot have one
+-- active car and be telling the truth about any of them. It keeps a key per player
+-- (`CarService`, T-033) and asks this module for that car's numbers through `resolve`,
+-- which answers for ANY car without switching the active one; `withActive` is for the one
+-- thing that genuinely reads the global -- building or dressing a car's SHAPE, which goes
+-- through `CarModel` and `Config.Drift.CarBody`.
 
 local Archetypes = require(script.Archetypes)
 
@@ -36,6 +41,7 @@ local Cars = {}
 Cars.Archetypes = Archetypes
 Cars.Order = Archetypes.Order
 Cars.StatMax = Archetypes.StatMax
+Cars.Default = Archetypes.Default
 
 -- The three fields that are about SELLING a car rather than driving one. They never
 -- resolve through `Config.Drift`: nothing in the simulation may read them, and the whole
@@ -55,19 +61,26 @@ local activeKey: string = Archetypes.Default
 local tuned: { [string]: any } = {}
 local resolved: { [string]: any } = {}
 
-local function rebuild()
-	local car = Archetypes.Cars[activeKey] or {}
+-- One car's numbers, every field, the three layers applied in order. The ACTIVE car's
+-- copy is cached (`resolved`) because the model reads it twenty times a step; any other
+-- car's is built on the spot, which is what the server does per player and what the stat
+-- panel does for a car nobody is driving.
+local function layers(key: string): { [string]: any }
 	local out = {}
-	for key, value in Archetypes.Base do
-		out[key] = value
+	for field, value in Archetypes.Base do
+		out[field] = value
 	end
-	for key, value in car do
-		out[key] = value
+	for field, value in Archetypes.Cars[key] or {} do
+		out[field] = value
 	end
-	for key, value in tuned do
-		out[key] = value
+	for field, value in tuned do
+		out[field] = value
 	end
-	resolved = out
+	return out
+end
+
+local function rebuild()
+	resolved = layers(activeKey)
 end
 
 rebuild()
@@ -85,7 +98,22 @@ function Cars.active(): { [string]: any }
 end
 
 function Cars.exists(key: string): boolean
-	return Archetypes.Cars[key] ~= nil
+	return type(key) == "string" and Archetypes.Cars[key] ~= nil
+end
+
+-- ANY car's numbers, without touching which one is active, and nil for a car that does
+-- not exist. This is how the SERVER reads a player's car: it holds every player at once,
+-- so it can never use the active one (`CarService`, T-033).
+--
+-- A fresh table every call, on purpose: the caller is free to keep it, and a car switch
+-- cannot reach back into a copy somebody is holding. Tuning DOES apply -- `tune` is a
+-- layer over whichever car is being asked about, not over one of them -- so a tuning
+-- session moves the server's bounds with the client's feel.
+function Cars.resolve(key: string): { [string]: any }?
+	if not Cars.exists(key) then
+		return nil
+	end
+	return layers(key) -- a copy, never the cached table the model reads
 end
 
 -- Switch car. Takes effect on the very next simulation step: the model reads
@@ -107,20 +135,50 @@ function Cars.setActive(key: string)
 	rebuild()
 end
 
--- The next car round the list, for the panel's one key and for a test that wants to walk
--- all of them. Returns the key it switched to.
-function Cars.cycle(): string
+-- The next car round the list after `key` (the active one by default), switching nothing.
+-- The client's F4 needs this rather than `cycle`: it has to name the car it is ASKING the
+-- server for, and the server is the one that decides (`CarService`, T-033).
+function Cars.nextKey(key: string?): string
 	local order = Archetypes.Order
+	local from = key or activeKey
 	local at = 1
-	for i, key in order do
-		if key == activeKey then
+	for i, k in order do
+		if k == from then
 			at = i
 			break
 		end
 	end
-	local nextKey = order[(at % #order) + 1]
+	return order[(at % #order) + 1]
+end
+
+-- The next car round the list, for a test that wants to walk all of them. Returns the key
+-- it switched to.
+--
+-- NOT what the F4 key does any more: a player's car is the SERVER's to decide, so the
+-- panel asks over `CarSwitch` and this would be the client deciding for itself.
+function Cars.cycle(): string
+	local nextKey = Cars.nextKey()
 	Cars.setActive(nextKey)
 	return nextKey
+end
+
+-- Run `fn` with another car active, and put the active one back however it ends.
+--
+-- For the one thing that really does read the global active car: the SHAPE. `CarModel`
+-- builds and dresses a car around `Cars.activeKey()` (`CarBody = "auto"`) and around the
+-- active car's geometry, so dressing one player's car in their own archetype means making
+-- it active for the length of that call. Nothing in the simulation runs on the server, so
+-- nothing there can see the flip -- but it is not re-entrant across a yield, and the
+-- server serialises its dressing for that reason (`CarService:_withCar`).
+function Cars.withActive(key: string, fn: () -> ...any): ...any
+	local was = activeKey
+	Cars.setActive(key)
+	local results = table.pack(pcall(fn))
+	Cars.setActive(was)
+	if not results[1] then
+		error(results[2], 2)
+	end
+	return table.unpack(results, 2, results.n)
 end
 
 -- ---------------------------------------------------------------------- what Config asks
@@ -213,18 +271,7 @@ end
 -- the curve those four make.
 function Cars.stats(key: string?): { [string]: any }
 	local carKey = key or activeKey
-	local car = if carKey == activeKey
-		then resolved
-		else (function()
-			local out = {}
-			for k, v in Archetypes.Base do
-				out[k] = v
-			end
-			for k, v in Archetypes.Cars[carKey] or {} do
-				out[k] = v
-			end
-			return out
-		end)()
+	local car = if carKey == activeKey then resolved else (Cars.resolve(carKey) or resolved)
 
 	local reals = {}
 	for _, field in { "MaxSteeringSpeed", "ConstantFriction", "SlipFriction", "SlipSqFriction" } do

@@ -156,6 +156,10 @@ local Drift = {
 	-- start. 60 x 60 rays, once, at startup
 	TrackMinRoadRun = 4, -- studs of continuous road below which a crossing is a scan line
 	-- clipping a corner rather than a road worth measuring
+	TrackFloorName = "Baseplate", -- the part kept under a track as the floor of last
+	-- resort, tagged as dirt. A track is an island and off its
+	-- edge there is otherwise nothing at all; the playground
+	-- needs none of this because it builds its own plate
 
 	-- ---------------------------------------------------------------- walls
 	WallScrub = 0.5, -- share of speed kept after hitting something
@@ -166,13 +170,30 @@ local Drift = {
 	RemoteCarSmoothing = 0.08, -- s, how fast another player's car eases to its reported pose
 	StateRateLimit = 30, -- packets a second per UserId the server will take before dropping
 	StateSpeedTolerance = 1.25, -- share of TopSpeed a reported horizontal speed may reach.
-	-- The server bounds it against the TopSpeed of the car IT
-	-- thinks is active, and the panel's car switch is
-	-- client-side, so every archetype's top speed stays under
-	-- the default car's 179 x 1.25 = 223.75
-	-- (features/car-archetypes.md "Open questions")
+	-- SINCE T-033 THAT IS THE TOP SPEED OF THE CAR THAT PLAYER
+	-- IS IN, not of one global car: the server is told which car
+	-- each player is in over `CarSwitch` and keeps its own copy
+	-- of that car's numbers, so the bruiser is bounded at 215 x
+	-- 1.25 and the gripper at 150 x 1.25 in the same server, in
+	-- the same second (docs/game/CONTRACTS.md, `CarState`)
 	StateMoveTolerance = 1.5, -- slack on how far a car may have moved since its last packet
 	StateMoveAllowance = 9, -- studs of slack on top, for a dropped packet or a jittery clock
+
+	-- ---------------------------------------------------------------- the car a player is in
+	-- The server owns it (`CarService`, docs/game/CONTRACTS.md `CarSwitch`). These are the
+	-- limits on the asking, and they are the respawn's numbers in a different hat: a
+	-- client may ask, a client may not insist, and a packet already on the wire when the
+	-- answer lands is honest and must not be thrown away.
+	CarSwitchRateLimit = 5, -- requests a second per UserId the server will take. Above it
+	-- the ask is refused, counted and ANSWERED -- the answer is how
+	-- a refused client is put back in the car the server believes
+	CarSwitchGrace = 1, -- s after a switch in which a CarState that fails against the new
+	-- car's numbers is also tried against the car the player was just
+	-- in. A packet sent a moment before the switch lands after it --
+	-- `CarState` is unreliable and the switch is a reliable round trip
+	-- -- and bounding the bruiser's honest 215 studs/s against the
+	-- gripper it has just become would drop it. Exactly `RespawnGrace`'s
+	-- problem and exactly its answer, which is why the number matches
 
 	-- ---------------------------------------------------------------- respawning
 	-- The server owns where a respawned car goes; the client only asks (CONTRACTS.md,
@@ -310,12 +331,21 @@ local Drift = {
 	TrajectoryHz = 0, -- predictions a second. 0 is EVERY FRAME, which is what it is
 	-- measured cheap enough to do; raise it off zero to predict less
 	-- often and leave the drawn line alone in between
-	TrajectoryFlat = true, -- OURS, and the big one. True predicts against a flat plane at
+	TrajectoryFlat = false, -- OURS, and the big one. True predicts against a flat plane at
 	-- the car's current ground height: no raycasts at all, nearly
 	-- free -- and WRONG OVER A CREST, A RAMP OR A WALL, because the
-	-- plane does not know they are there. That is a trade, not a
-	-- bug. False predicts against the live Workspace and pays four
-	-- ground rays per step for a line that follows the ground
+	-- plane does not know they are there. False predicts against the
+	-- live Workspace and pays four ground rays per step for a line
+	-- that follows the ground.
+	-- FLAT WAS RIGHT WHILE THE ONLY WORLD WAS FLAT, and the
+	-- playground is: there the two agreed to within a stud and the
+	-- plane was free. A TRACK IS WHY IT IS NOT: the Main place's
+	-- hand-placed track has 27 studs of elevation and banked
+	-- corners, and there the flat line came back 56.25 studs
+	-- along-track and 52.81 across against the real world's 24.20
+	-- and 4.85 -- a line 56 studs wrong is not a line showing where
+	-- the car will go. Measured, the real world costs 0.66 ms a
+	-- frame against about 0.4 flat, which is affordable
 	TrajectoryMaxSegments = 64, -- parts the line may use. The pool is created once and
 	-- reused; spares are hidden, never destroyed
 	TrajectoryWidth = 0.35, -- studs. Thin on purpose: it is an overlay, not scenery
