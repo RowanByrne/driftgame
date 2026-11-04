@@ -78,6 +78,21 @@ function Tests.run()
 	local state = PlaygroundService:DebugState()
 	local root = PlaygroundService.Root
 
+	-- A place with a hand-placed track never builds the playground -- both sit at the
+	-- origin, so a place gets one or the other (TrackService, T-031). There is nothing
+	-- here to test, and saying so is not a failure: every check below would otherwise
+	-- index a world that was deliberately not made.
+	if PlaygroundService.SkippedForTrack or not root then
+		check(
+			"skipped: this place has a track, not a playground",
+			PlaygroundService.SkippedForTrack == true,
+			if PlaygroundService.SkippedForTrack
+				then "TrackService adopted a track, so PlaygroundService stood down"
+				else "no Playground and no track either, which should not happen"
+		)
+		return { passed = PlaygroundService.SkippedForTrack == true, checks = checks, skipped = true }
+	end
+
 	check("world built", state.built == true, `Workspace.Playground present: {state.built}`)
 
 	-- 1. Named spots, each sitting on a drivable surface.
