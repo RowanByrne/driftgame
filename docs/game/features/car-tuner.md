@@ -1,9 +1,10 @@
 # Feature: Car tuner
 
 **Status:** built, and **not driven by the user yet**. The sliders, the garage and the
-server's half are measured; what the eight sliders should be called and whether the panel
+server's half are measured; what the sliders should be called and whether the panel
 is the right shape are the user's, and so is every number anybody saves with it.
-**Owner task:** `T-040` (`agent/car-tuner`).
+**Owner tasks:** `T-040` (`agent/car-tuner`), and the three that drive the eight,
+`T-046` (`agent/three-stats`).
 
 It is a **dev tool**, in the same family as the debug readout (`F3`) and the trajectory
 line (`F6`): off by default, Studio-grade, and none of it is the garage screen this game
@@ -21,20 +22,24 @@ edit `Archetypes.luau` and wait for a sync.
 1. **F8** opens the panel (the gamepad's **Y**, or the **TUNE** button under the readout's
    **DBG**). It sits on the right; the debug readout owns the top left and the two are
    meant to be open together.
-2. **Eight sliders.** Drag one and the car changes **on the next simulation step** — one
-   120th of a second — with no rebuild and nothing to refresh. A finger held on the steering
-   through a slider move feels the car change underneath it.
-3. Each row says what the driver feels, then the number, then a dim line with **the real
+2. **It opens simple: three sliders, 0–10** — Acceleration, Handling, Top speed — and the
+   eight detailed ones folded behind a header above them. Drag Handling and the six
+   numbers that decide how the car corners all move together, in the echo line under the
+   track and, when the eight are open, in the rows above ("The three").
+3. **Eight sliders**, one tap away. Drag one and the car changes **on the next simulation
+   step** — one 120th of a second — with no rebuild and nothing to refresh. A finger held
+   on the steering through a slider move feels the car change underneath it.
+4. Each row says what the driver feels, then the number, then a dim line with **the real
    key it is moving** and what that does. The names are not technical; the line underneath
    is, so the tool is never dishonest about what it is doing.
-4. **A notch on each track** is the base car's own value, so "how far have I moved this
+5. **A notch on each track** is the base car's own value, so "how far have I moved this
    from the car it came from" needs no arithmetic. A moved slider's number goes orange.
-5. **`<` and `>`** change the base archetype under the tune. The tune is kept: "the gripper
+6. **`<` and `>`** change the base archetype under the tune. The tune is kept: "the gripper
    with my steering rate" is a car somebody may want.
-6. **SAVE** writes over the car being edited; **SAVE AS…** asks for a name; **RESET** puts
+7. **SAVE** writes over the car being edited; **SAVE AS…** asks for a name; **RESET** puts
    the plain archetype back. Saved cars list underneath: click one to **drive it**, `×` to
    delete it. The one being edited is highlighted, with a `*` while it has unsaved changes.
-7. **It never steers the car.** The whole screen is a drag pad (`Drift/DragControl`), and
+8. **It never steers the car.** The whole screen is a drag pad (`Drift/DragControl`), and
    this panel sits above it: a thumb on a slider is a slider. Closed, the panel gives the
    whole screen back.
 
@@ -112,6 +117,113 @@ that breaks the simulation, and there is exactly one such number: **`TopSpeed` c
 zero**, because the drivetrain divides by it (`clamp01(1 - (u/TopSpeed)^2)`) and zero is a
 NaN velocity and a car that is nowhere. Its floor is 20 studs/s.
 
+### The three (`T-046`)
+
+The user opened the panel and said there were too many numbers, that they did not know
+what each one did, and asked for the three the reference game shows — "i imagine those
+influence these stats you are showing me here".
+
+**They do not, and that is the whole point of this layer.** In the reference those three
+bars are a hand-written display field per car: nothing computes them from the physics and
+nothing reads them back, which is why ours carry the words `HAND-WRITTEN, display only`
+(`features/car-archetypes.md` "Why the three bars are a lie, on purpose"). So this is not
+"expose what was already there". These three are a **real control layer** that does what
+the reference's bars only pretend to: moving one writes the car fields under it, and the
+eight visibly answer. `Archetypes.Bars` is untouched and still inert.
+
+| Stat | Drives | Range |
+|---|---|---|
+| **Acceleration** | `MaxAcceleration` | 0 – 10 |
+| **Handling** | `MaxSteeringSpeed`, `ConstantFriction`, `SlipFriction`, `SlipSqFriction`, `MaxFriction`, `DownforcePerSpeed` | 0 – 10 |
+| **Top speed** | `TopSpeed` | 0 – 10 |
+
+#### The curve, and why it is this one
+
+Six numbers out of one slider is a choice, and a bad one makes every car feel the same.
+Each key is **piecewise linear through three anchors**:
+
+- **0** — the detailed slider's own floor: the least of everything the tuner allows.
+- **5** — **the approved car's** value for that key (`Archetypes.Base`, 2026-11-03).
+- **10** — a **car-shaped ceiling**: about twice the most extreme of the four archetypes,
+  capped at the reference's own design maxima where it states one.
+
+| Stat | 0 | 2.5 | **5** | 7.5 | 10 |
+|---|---|---|---|---|---|
+| Acceleration → `MaxAcceleration` | 0 | 7.2 | **14.3** | 29.6 | 45 |
+| Top speed → `TopSpeed` | 20 | 100 | **179** | 250 | 320 |
+| Handling → `MaxSteeringSpeed` | 0.2 | 1.1 | **2** | 3 | 4 |
+| … `ConstantFriction` | 0 | 7.2 | **14.3** | 64.3 | 114.3 |
+| … `SlipFriction` | 0 | 7.2 | **14.3** | 50 | 85.8 |
+| … `SlipSqFriction` | 0 | 7.2 | **14.3** | 64.3 | 114.3 |
+| … `MaxFriction` | 0 | 54 | **107** | 161 | 215 |
+| … `DownforcePerSpeed` | 0 | 0.1 | **0.2** | 0.45 | 0.7 |
+
+Three things follow, and all three are deliberate:
+
+- **5 is the approved car, whatever the base is.** The axis is **absolute**, not relative
+  to the archetype being edited, so "handling 7" is one car-feel wherever you started and
+  the four archetypes land on four different numbers instead of all reading 5. The notch
+  on each of the three tracks is where the base car sits.
+- **Every one of the six rises with Handling** — more grip at every slip angle, a faster
+  rate of turn, more downforce. It is the obvious reading of "more handling" and it is the
+  only honest one for a single number: a car with a huge `SlipSqFriction` and a modest
+  `ConstantFriction` is a completely different animal from the reverse, and **one number
+  cannot say which**. That spread is what the eight are for.
+- **10 is a car, not the end of the detailed slider.** The design space runs far past any
+  real car — `SlipFriction` maxes at 228.6 where the grippiest archetype is 28.6 — so
+  anchoring 10 there would spend the top half of the slider on cars nobody would drive and
+  squeeze the four archetypes into a sliver. **The three cover the range of real cars with
+  headroom; the eight cover the whole space.**
+
+**What it costs, stated plainly:** Handling 7 on the gripper overwrites the six numbers
+that made the gripper the gripper. The base still gives the body, the geometry and
+everything else; the cornering character becomes the curve's.
+
+#### Where the four cars land
+
+Read back out of the curve, not written by hand (`Garage.statsFor`):
+
+| Car | Acceleration | Handling | Top speed | The hand-written bars, for contrast |
+|---|---|---|---|---|
+| `balanced` | **5.0** | **5.0** | **5.0** | 5 / 5 / 7 |
+| `gripper` | 6.2 | **6.4** | 4.1 | 7 / 9 / 5 |
+| `slider` | 5.3 | **3.8** | 4.7 | 6 / 3 / 6 |
+| `bruiser` | 3.5 | **4.9** | 6.3 | 3 / 4 / 10 |
+
+The two ends agree with what the model measured: the `slider` keeps 13% of its entry speed
+through a corner and is lowest here, the `gripper` keeps 63% and is highest
+(`features/car-archetypes.md`). **The middle pair are 0.1 apart, and that is a true
+statement rather than a failure of the fit:** the bruiser has about as much cornering grip
+in total as the balanced car, arranged completely differently — `ConstantFriction` at 6.1
+on this axis and `SlipFriction` at 7.0, but `SlipSqFriction` at 2.5 and the slowest
+steering of the four at 2.8. One number cannot
+show that; the echo line under the slider, and the eight above it, can. The hand-written
+bar said 4 and was a guess.
+
+#### The other direction, and `custom`
+
+Moving one of the eight by hand afterwards **cannot** be read back into one number without
+lying. So:
+
+- the knob is drawn at the **nearest point on the curve** — the mean of where the six sit
+  on the axis, which is the least-squares answer in stat units;
+- and the value says **`custom`**, in orange, whenever putting that number back through the
+  curve would not reproduce the car to the digit. All four plain archetypes read `custom`
+  on Handling, because none of them is a point on the curve;
+- moving one of the eight also says so on the status line — *"Handling is custom now: Bite
+  was moved by hand"* — and only the stat that owns that key is affected.
+
+**A car built from the three reads back as those three**, which is not free: each of the
+eight is snapped to its own step on the way out, and down at the bottom of the axis one
+step of `MaxSteeringSpeed` is 0.14 of a stat. The fit searches a window around the mean for
+the value that reproduces the car exactly; it is checked across all 1001 values of each of
+the three.
+
+**Nothing new is saved and nothing new is on the wire.** A stat writes ordinary slider
+values into the same tune, so the store, the remotes, the server's checks and a saved car
+are all exactly what they were. The three are worked out again from what a car *is*
+whenever it is loaded, reset, or re-based.
+
 ### The numbers behind it
 
 All in `Config.Drift` ("the tuner", "the garage"): `Tuner`, `TunerOpen`, `TunerKey` (F8),
@@ -131,7 +243,10 @@ the debug readout's palette so the two read as one tool.
 | header | fixed, top | `CAR TUNER` and a CLOSE button |
 | car | fixed, top | `<` `Balanced (balanced)` `>` |
 | editing | fixed, top | which saved car is being edited, with `*` while it has unsaved changes |
-| slider ×8 | **scrolls** | `Eagerness` + the real key in grey, the value on the right; then `-` track `+`. The base car's own value is a notch on the track |
+| detail header | **scrolls** | `▸ THE EIGHT NUMBERS · tap to open (8)`. Folded by default; one tap and it stays open for the session |
+| slider ×8 | scrolls, **folded** | `Eagerness` + the real key in grey, the value on the right; then `-` track `+`. The base car's own value is a notch on the track |
+| the three header | scrolls | `THE THREE · each one drives the numbers above` |
+| stat ×3 | scrolls | `Handling` + what it drives in grey, `6.4` or `6.4 custom` on the right; then `-` track `+` with the base car's notch; then the **echo line** — the real numbers it is driving, as they are right now |
 | actions | scrolls | `SAVE` `SAVE AS…` `RESET` |
 | garage | scrolls | `SAVED CARS n/12`, then a row per car: the name (loads it) and `×` (deletes it) |
 | status | fixed, bottom | **the tooltip** — touch or hover a slider and this is what that slider does — and what just happened, and a warning when the store is this-server-only |
@@ -147,6 +262,16 @@ clear air**, on a screen where the un-scrolled version reached 719.
 
 That is also why the real key sits beside the slider's name rather than under it, and why
 what the driver *feels* is a tooltip on the status line: two lines a row instead of three.
+
+**Why the eight start folded (`T-046`).** The other half of what the user asked for was a
+simpler panel, so it opens on the three and the eight are one tap above them. The sizing
+settles it: the body of this panel measures **190 px** on this screen, and eight rows is
+**296 px** — left unfolded, the three would sit 300 px below the fold, under a scroll, in a
+panel opened by somebody who had just said there was too much in it. Folded, the two
+section headers and the three rows are 184 px and **all three are on screen with nothing to
+scroll** (measured: body 193 → 383, the last stat row ending at 376). The eight are not
+hidden from the feature's point — the echo line under each of the three shows the real
+numbers moving whether the detail is open or not.
 
 **Layouts.** One layout today, 336 px wide on the right. It is a dev tool, so it does not
 get the per-device treatment a player-facing screen must have (`UI.md` "Layouts per
@@ -277,7 +402,10 @@ reason: the server decides which archetype a player is in.
 **New service API** (`CONTRACTS.md`):
 
 - `Shared/Cars/Garage` (ModuleScript, `ReplicatedStorage.Shared.Cars.Garage`):
-  `Sliders`, `Order`, `Version`, `slider(id)`, `sliderForKey(key)`, `clamp(id, v)`,
+  `Sliders`, `Order`, `Version`, `Stats`, `StatOrder`, `StatRange`, `StatAnchors`,
+  `stat(id)`, `clampStat(v)`, `statValue(sliderId, stat)`, `statPosition(sliderId, v)`,
+  `statTune(statId, stat)`, `statFit(statId, values)`, `statsFor(base, tune)`,
+  `slider(id)`, `sliderForKey(key)`, `clamp(id, v)`,
   `sanitizeTune(t)`, `toCarFields(t)`, `baseValues(base)`, `values(base, tune)`,
   `cleanName(n)`, `sanitizeCar(c)`, `sanitizeGarage(raw)`, `count(g)`, `names(g)`,
   `topSpeed(base, tune)`, `fastestArchetype()`, `finite(v)`.
@@ -286,8 +414,9 @@ reason: the server decides which archetype a player is in.
 - `Services/GarageService`: `Flush(now?)`, `DebugState()`, `DebugSave`, `DebugTune`,
   `DebugForget`, `DebugRejoin`, `DebugCar`, `DebugSwapStore`, `MemoryStore`.
 - Client: `PlayerScripts.TunerBridge`, a Studio-only `BindableFunction` —
-  `Invoke("DebugState" | "Toggle" | "SetOpen" | "Set" | "SetBase" | "Save" | "Load" |
-  "Delete" | "Reset", ...)`. It exists because the client debug bridge only reaches loaded
+  `Invoke("DebugState" | "Toggle" | "SetOpen" | "Set" | "SetStat" | "Detail" | "SetBase" |
+  "Save" | "Load" | "Delete" | "Reset", ...)`, and `DebugState` gained `stats`,
+  `baseStats` and `detail`. It exists because the client debug bridge only reaches loaded
   **controllers** and this is a LocalScript.
 
 **New data, and the only data this game saves:** one key per player,
@@ -329,7 +458,7 @@ base archetype's body, which is ours and in git as text (`features/car-archetype
 ## Testing
 
 `ServerScriptService/Tests/GarageTests.luau`, through the server debug bridge
-(`DebugGarageTests`). **Seventeen checks, all passing.** It gets the treatment saving gets
+(`DebugGarageTests`). **Twenty-four checks, all passing.** It gets the treatment saving gets
 (`TESTING.md`): the store is a **fake one swapped in for the length of the run**, no real
 player's garage is touched, and the checks cover what loses data.
 
@@ -352,6 +481,22 @@ player's garage is touched, and the checks cover what loses data.
 | **A tuned car faster than its archetype is not dropped** | gripper at 299: **dropped** against its own 150 (bound 187.5), **accepted** against the ceiling 300 (bound 375); a plain bruiser at 215 still accepted while somebody tunes *down* to 60 |
 | The ceiling's floor is the fastest archetype | 215, the fastest of the four |
 | The tests left no tuning behind | the car is the car |
+
+**The three (`T-046`), seven more:**
+
+| Check | What it reported, 2026-11-04 |
+|---|---|
+| The three are anchored on the approved car at 5 | 8 keys across 3 stats: 5 is `Archetypes.Base` to the value |
+| **Every number the three drive rises with them** | 8 keys × 1001 steps, never once falling |
+| **The four cars land on four different places** | balanced 5.0/5.0/5.0, gripper 6.2/6.4/4.1, slider 5.3/3.8/4.7, bruiser 3.5/4.9/6.3 |
+| **A car built from the three reads back as the three** | 3 stats × 1001 values, every one exact |
+| **A detailed slider moved by hand makes its stat `custom`, and only its own** | handling 7.00 exact → bite 90 → 7.31 `custom`; accel 5.99 still exact |
+| **Handling changes how the car rotates and how hard it grips** | handling 3: 1.3 rad/s and 12.45 studs/s² sideways; handling 7: 2.8 and **73.92** |
+| **A car tuned only with the three comes back as those three** | "Simple" on bruiser, saved, forgotten, read back: 8.00 / 7.50 / 6.49 against 8 / 7.5 / 6.5 asked, all exact |
+
+One of those checks caught a real bug in the fit: the search window was being walked out
+from the best candidate so far rather than from the mean, which shifted it as it went and
+stepped straight over the only exact value (handling 0.87 came back as 0.86, `custom`).
 
 Also run after any change here, and all passing on this branch: `DebugDriftTests` (40),
 `DebugCollisionTests` (39), `DebugJitterTests` (11), `DebugTrajectoryTests` (13),
@@ -393,6 +538,43 @@ edited to power 12.5 and saved again; *Night Runner* reloaded unchanged at 2.65 
 
 **The console** was clean of anything from game code across both playtests.
 
+### What the three measured in a playtest, 2026-11-04 (`T-046`, `DR-Lane2`)
+
+**One real mouse drag on the Handling track moves six numbers at once.** Pressed at the
+middle of the track and dragged to both ends and back: Handling finished at **7.0**, and
+the eight above it went `ConstantFriction` 14.3 → **54.3**, `SlipSqFriction` 14.3 →
+**54.3**, `SlipFriction` 14.3 → **42.9**, `MaxFriction` 107 → **150**, `MaxSteeringSpeed`
+2 → **2.8**, `DownforcePerSpeed` 0.2 → **0.4** — with `MaxAcceleration` and `TopSpeed`
+untouched at 14.3 and 179, and `Config.Drift` (what the model reads next step) agreeing
+with every one. **`CarInputController.steer` was 0 across all 1852 frames of it.**
+
+**And it changes the car, driven.** One steering key held, sampled over 1.2 s at each
+setting, on the flat:
+
+| | yaw rate | lateral grip | slip angle |
+|---|---|---|---|
+| Handling 3 | 0.975 rad/s | 12.98 studs/s² | 19.3° |
+| Handling 5 (the approved car) | 1.500 | 25.49 | 29.6° |
+| Handling 8 | 2.400 | **87.43** | **10.2°** |
+
+Grip up seven times and the slip angle halved, off one slider.
+
+**Save and load, with the three.** A car tuned only with them — Handling 6.4, Acceleration
+7.0 — saved, the panel reset to the plain car (5.0 / 5.0 / 5.0), then loaded again: back to
+**6.4 / 7.0**, not `custom`. Carried across all four base archetypes with `<` and `>`, the
+six stayed at 6.4 and Top speed followed each base (gripper 4.1, slider 4.7, bruiser 6.3,
+balanced 5.0) — because top speed was never tuned and comes from the car.
+
+**`custom` says so.** `Set("bite", 90)` on a car at Handling 10: the row became
+**`9.8 custom`** and the status line read *"Handling is custom now: Bite was moved by
+hand"*. Acceleration and Top speed, which share none of its keys, stayed exact.
+
+**It fits.** Folded, the panel's body is 193 → 383 px and the three rows end at **376** —
+all three on screen, nothing to scroll. The panel still stops at 415 against a handbrake
+whose top edge is 481. The Handling echo line measures **182 px** of the 312 it has.
+
+**The console** was clean of anything from game code.
+
 **Not checked:** real typed characters reaching the TextBox (the MCP's synthetic key presses
 do not reach one), and the panel on a phone or a gamepad — the `-` / `+` buttons are
 `Selectable` but gamepad navigation was not driven.
@@ -413,3 +595,18 @@ do not reach one), and the panel on a phone or a gamepad — the `-` / `+` butto
   a player can have.
 - **Does the panel belong on the right?** It is where the readout is not. On a phone the two
   together cover a lot of screen.
+- **Is "more of everything" the right meaning of Handling?** It is the only honest reading
+  of one number and it is monotonic by design, but it means the top of the slider is a car
+  that grips hard *and* turns fast, and no amount of Handling will ever build the `slider`
+  archetype's character — loose at the back, quick to rotate. The day the user wants a
+  second axis, the obvious one is **balance**: the same total grip pushed towards
+  `ConstantFriction` at one end and `SlipSqFriction` at the other.
+- **Should the three be in the stat panel too?** `Drift/DebugHud` still draws
+  `Archetypes.Bars`, which are hand-written and reach nothing. Now that a real
+  acceleration/handling/top-speed number can be computed from a car, those three bars
+  could be replaced by it — a small change in a file `T-046` did not own, and a decision
+  about whether a car's advertised stats should be derived at all
+  (`features/car-archetypes.md` "Why the three bars are a lie, on purpose").
+- **The three are not on the gamepad's navigation path in any special way.** Their `-` and
+  `+` buttons are `Selectable` like the eight, but gamepad navigation still has not been
+  driven by anyone.
