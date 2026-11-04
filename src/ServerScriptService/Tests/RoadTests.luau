@@ -89,6 +89,64 @@ local function longRun(seed: number, count: number): ({ any }, any)
 	return all, gen
 end
 
+-- THE SERVICE'S OWN TICK LOOP, WITH NO SERVICE AND NO CAR. `RoadService` reads where the
+-- cars are every `TickSeconds` and asks the generator for `windowCentre + AheadPieces`;
+-- this does exactly that, against a car moving at a fixed speed, and times every single
+-- call. It is the only way to measure the thing the player would feel -- the longest the
+-- server is ever stopped inside the road -- because `grow` is the FORCED path and says
+-- nothing about it.
+--
+-- `speed` is deliberately cruel: 145 studs/s held for the whole run, where the drive
+-- measures the car at a mean of about 90 and a peak of 146 only on a sweeper.
+local function drivenRun(seed: number, pieces: number, speed: number)
+	local C = Config.Road
+	local gen = Generator.new(seed)
+	local carN, along, calls, total = 1, 0, 0, 0
+	local worst, worstAt = 0, 0
+	local leastAhead, dryTicks = math.huge, 0
+	while carN < pieces do
+		local t0 = os.clock()
+		gen:extendTo(carN + C.AheadPieces)
+		local dt = (os.clock() - t0) * 1000
+		calls += 1
+		total += dt
+		if dt > worst then
+			worst, worstAt = dt, gen.last
+		end
+		if gen.stalled then
+			break
+		end
+		leastAhead = math.min(leastAhead, gen.last - carN)
+		if gen.last <= carN then
+			dryTicks += 1
+		end
+		along += speed * C.TickSeconds
+		local piece = gen:piece(carN)
+		while piece and along >= piece.length do
+			along -= piece.length
+			carN += 1
+			piece = gen:piece(carN)
+			if not piece then
+				break
+			end
+		end
+		gen:trimBefore(carN - C.BehindPieces)
+		if calls % 500 == 0 then
+			task.wait()
+		end
+	end
+	return {
+		gen = gen,
+		reached = carN,
+		calls = calls,
+		mean = total / math.max(calls, 1),
+		worst = worst,
+		worstAt = worstAt,
+		leastAhead = if leastAhead == math.huge then 0 else leastAhead,
+		dryTicks = dryTicks,
+	}
+end
+
 local function socketGap(a, b): (number, number)
 	local d = math.sqrt((a.x - b.x) ^ 2 + (a.z - b.z) ^ 2)
 	local dyaw = math.abs(a.yaw - b.yaw) % (2 * math.pi)
@@ -518,11 +576,14 @@ function Tests:stalls(o)
 				C.Pieces.Corner.Arc = arc
 				Pieces.rebuild()
 				local stalls, earliest, worstNodes, total, outOfBudget = 0, math.huge, 0, 0, 0
+				local relaxed, leastProof = 0, math.huge
 				local endedOn = {}
 				local t0 = os.clock()
 				for seed = 1, seeds do
 					local run, g = longRun(seed * 1013, length)
 					total += #run
+					relaxed += g.relaxed
+					leastProof = math.min(leastProof, g.worstProof)
 					if #run < length then
 						stalls += 1
 						earliest = math.min(earliest, #run)
@@ -551,7 +612,7 @@ function Tests:stalls(o)
 				table.insert(
 					rows,
 					string.format(
-						"arc %3d, lookahead %2d, budget %6d: %2d of %d runs stalled (%d of them out of budget rather than out of road; earliest at piece %s), %d pieces generated, worst search %5d nodes, %.0f ms%s",
+						"arc %3d, lookahead %2d, budget %6d: %2d of %d runs boxed themselves in (%d of them out of budget rather than out of road; earliest at piece %s), %d pieces generated, %d of them on short proof (least %s of %d), worst search %5d nodes, %.0f ms%s",
 						arc,
 						depth,
 						budget,
@@ -560,6 +621,9 @@ function Tests:stalls(o)
 						outOfBudget,
 						if earliest == math.huge then "-" else tostring(earliest),
 						total,
+						relaxed,
+						if leastProof == math.huge then "-" else tostring(leastProof),
+						depth,
 						worstNodes,
 						(os.clock() - t0) * 1000,
 						if #ended > 0 then "; stalled standing on " .. table.concat(ended, ", ") else ""
@@ -986,35 +1050,274 @@ function Tests:run(opts)
 			`a ring of four corners closes on itself; it grew {if none then none.id else "nothing"} and set the stalled flag to {tostring(ring.stalled)}. One warning in the log is this check, and is expected`
 		)
 
-		-- Part two, and the point of the exercise: three corners in, the fourth is still
-		-- LEGAL one piece deep -- it crosses nothing, it only closes the ring -- so a
-		-- generator that checked one piece ahead would take it and trap itself on the next
-		-- one. Looking further, this one refuses it and goes elsewhere.
-		local three = Generator.new(5150)
-		for _ = 1, 3 do
-			three:DebugForce("CornerL")
+		-- Part two, and the point of the exercise: a piece that is LEGAL ONE DEEP -- it
+		-- crosses nothing at all -- but after which there is nothing to place. A
+		-- generator that checked one piece ahead would take it and be stuck on the very
+		-- next one; this one refuses it and goes elsewhere.
+		--
+		-- FOUND BY SEARCH, NOT BY HAND, over 40 seeds and every head from piece 10 to 60
+		-- (the search is in this file's history; the answer is pinned here so the check
+		-- is cheap and deterministic). Step 2's version of this check used a ring of four
+		-- 220-radius corners, whose fourth piece used to be legal one deep; at 50 studs
+		-- wide it is not -- its footprint reaches into the first corner's -- so the ring
+		-- stopped being an example of the thing and this replaced it.
+		local TRAP_SEED, TRAP_AT, TRAP_ID = 1, 14, "ChicaneL"
+		local grown = Generator.new(TRAP_SEED)
+		local grewClean = true
+		for _ = 1, TRAP_AT do
+			grewClean = grewClean and grown:grow() ~= nil
 		end
-		local closes = Pieces.place(Pieces.get("CornerL"), three.next, 4)
+		local trap = Pieces.place(Pieces.get(TRAP_ID), grown.next, TRAP_AT + 1)
 		local legalOneDeep = true
-		for n = 1, 3 do
-			legalOneDeep = legalOneDeep and not Pieces.overlap(closes, three:piece(n))
+		for n = 1, TRAP_AT do
+			legalOneDeep = legalOneDeep and not Pieces.overlap(trap, grown:piece(n))
 		end
-		local chosen = three:grow()
+		-- Forced in, it is a dead end: nothing at all is legal after it.
+		local trapped = Generator.new(TRAP_SEED)
+		for _ = 1, TRAP_AT do
+			trapped:grow()
+		end
+		trapped:DebugForce(TRAP_ID)
+		local afterTrap = trapped:grow()
+		-- Left to itself, the generator takes something else, and that something crosses
+		-- nothing either.
+		local chosen = grown:grow()
 		local crossed = false
 		if chosen then
-			for n = 1, 3 do
-				crossed = crossed or Pieces.overlap(chosen, three:piece(n))
+			for n = 1, TRAP_AT do
+				crossed = crossed or Pieces.overlap(chosen, grown:piece(n))
 			end
 		end
 		check(
 			"a piece that is legal now but traps the road later is declined",
-			legalOneDeep and chosen ~= nil and chosen.id ~= "CornerL" and not crossed,
-			`the ring-closing corner crosses nothing one piece deep: {legalOneDeep}. The generator placed {if chosen then chosen.id else "nothing"} instead, crossing anything: {crossed}`
+			grewClean and legalOneDeep and afterTrap == nil and chosen ~= nil and chosen.id ~= TRAP_ID and not crossed,
+			`{TRAP_AT} pieces into seed {TRAP_SEED}, a {TRAP_ID} crosses nothing one piece deep ({legalOneDeep}) and leaves {if afterTrap then afterTrap.id else "nothing at all"} legal after it. The generator placed {if chosen then chosen.id else "nothing"} instead, crossing anything: {crossed}. Two warnings in the log are this check and the one above it, and are expected`
 		)
 	end
 
 	----------------------------------------------------------------------------
-	-- 7. Progress
+	-- 7. The search never stops the server (T-052)
+	----------------------------------------------------------------------------
+	-- The defect this replaced: the lookahead ran the whole depth-first search inside one
+	-- call and the worst one measured was 922 ms on seed 7 at 35 studs wide, 1 422 ms at
+	-- the 50 the game ships -- the entire server stopped, every car's replication with
+	-- it, while a car doing 110 studs/s was mid-corner. Everything here is about that
+	-- number, so every one of these checks reports milliseconds.
+	do
+		local SPEED = 145 -- studs/s, held: faster than the drive has ever measured the car
+		local ALLOW = C.SearchMillisUrgent + 2 -- the stated budget, plus the overrun one
+		-- step past the check can cost
+
+		-- (a) THE HEADLINE. Five hundred pieces, driven, every call timed.
+		local worstOfAll, worstSeed, worstPiece = 0, 0, 0
+		local meanOfAll, callsOfAll, leastAhead, dry = 0, 0, math.huge, 0
+		local relaxed, stalls = 0, 0
+		local rows = {}
+		for _, seed in SEEDS do
+			local r = drivenRun(seed, LONG_RUN, SPEED)
+			callsOfAll += r.calls
+			meanOfAll += r.mean * r.calls
+			if r.worst > worstOfAll then
+				worstOfAll, worstSeed, worstPiece = r.worst, seed, r.worstAt
+			end
+			leastAhead = math.min(leastAhead, r.leastAhead)
+			dry += r.dryTicks
+			relaxed += r.gen.relaxed
+			if r.gen.stalled then
+				stalls += 1
+			end
+			table.insert(rows, string.format("seed %d reached %d, worst %.2f ms", seed, r.reached, r.worst))
+			task.wait()
+		end
+		check(
+			`no call into the generator takes longer than {ALLOW} ms`,
+			worstOfAll <= ALLOW and stalls == 0,
+			string.format(
+				"%d seeds x %d pieces driven at %d studs/s through the service's own tick: %d calls, mean %.3f ms, WORST %.2f ms (seed %d, piece %d). Was 1 422 ms before T-052, at this width. %d stalled, %d pieces placed on short proof. %s",
+				#SEEDS,
+				LONG_RUN,
+				SPEED,
+				callsOfAll,
+				meanOfAll / math.max(callsOfAll, 1),
+				worstOfAll,
+				worstSeed,
+				worstPiece,
+				stalls,
+				relaxed,
+				table.concat(rows, "; ")
+			)
+		)
+
+		-- (b) AND THE ROAD IS NEVER SHORT. The window is ten pieces; this is how close
+		-- the car ever got to the end of it, over the same runs.
+		check(
+			"the car never catches the end of the road",
+			leastAhead >= 1 and dry == 0,
+			`the closest the car came to the end of the road was {leastAhead} pieces, over {callsOfAll} ticks; {dry} of them had no road past the car at all`
+		)
+
+		-- (c) SLICING CANNOT CHANGE THE ROAD, which is the property the whole design
+		-- turns on and the one that is not negotiable. The same seed is generated four
+		-- ways: all at once (`grow`, which never stops mid-search), in windows of three
+		-- and of thirty-seven pieces, and -- the one that matters -- with `pump` chopping
+		-- the search into slices far shorter than one piece takes, so almost every piece
+		-- is decided across several interruptions.
+		local function viaGrow(seed: number, n: number)
+			local g = Generator.new(seed)
+			local out = {}
+			for i = 1, n do
+				local p = g:grow()
+				if not p then
+					break
+				end
+				out[i] = p
+			end
+			return out
+		end
+		local function viaWindow(seed: number, n: number, chunk: number)
+			local g = Generator.new(seed)
+			local out = {}
+			local target = 0
+			while g.last < n do
+				local before = g.last
+				target = math.min(math.max(target + chunk, g.last + 1), n)
+				g:extendTo(target)
+				for i = before + 1, g.last do
+					out[i] = g:piece(i)
+				end
+				if g.last == before and g.stalled then
+					break
+				end
+			end
+			return out
+		end
+		local function viaInterrupted(seed: number, n: number, millis: number)
+			local g = Generator.new(seed)
+			local out = {}
+			while g.last < n do
+				g:pump(millis) -- stop the search somewhere arbitrary
+				local before = g.last
+				g:extendTo(g.last + 1 + C.AheadPieces)
+				for i = before + 1, g.last do
+					out[i] = g:piece(i)
+				end
+				if g.last == before and g.stalled then
+					break
+				end
+			end
+			return out
+		end
+		local function firstDifference(a, b): string?
+			for i = 1, math.min(#a, #b) do
+				local gap = socketGap(a[i].start, b[i].start)
+				if a[i].id ~= b[i].id or gap > SOCKET_TOLERANCE then
+					return `piece {i}: {a[i].id} vs {b[i].id}, {gap} studs apart`
+				end
+			end
+			if #a == 0 or #b == 0 then
+				return "one of them generated nothing"
+			end
+			return nil
+		end
+		local sliceWord, sliced = "", 0
+		for _, seed in { 8080, 1013, 1234, 7 } do
+			local base = viaGrow(seed, 150)
+			local ways = {
+				[`windows of 3`] = viaWindow(seed, 150, 3),
+				[`windows of 37`] = viaWindow(seed, 150, 37),
+				[`interrupted every 0.02 ms`] = viaInterrupted(seed, 150, 0.02),
+				[`interrupted every 0.4 ms`] = viaInterrupted(seed, 150, 0.4),
+			}
+			for name, road in ways do
+				sliced += 1
+				local diff = firstDifference(base, road)
+				if diff and sliceWord == "" then
+					sliceWord = `seed {seed}, {name}: {diff}`
+				end
+			end
+			task.wait()
+		end
+		check(
+			"the same seed gives the same road however the search was sliced",
+			sliceWord == "",
+			if sliceWord == ""
+				then `4 seeds x 150 pieces, generated {sliced // 4} ways each including a search interrupted every 0.02 ms -- identical by variant and by position`
+				else sliceWord
+		)
+
+		-- (d) THE CAR OUTRUNNING THE SEARCH. The window is what buys the search its time,
+		-- so take the window away entirely: the car is told to be standing on the LAST
+		-- piece of the road, every single tick, for two hundred pieces. That is the state
+		-- `MinAheadPieces` exists for and the one place the generator is allowed past its
+		-- slice, so this measures what that costs as well as proving it never comes back
+		-- empty-handed. It cannot be reached in play -- check (b) above measures the car
+		-- never getting closer than three pieces to the end -- but it is what happens if
+		-- it ever is.
+		local FORCED_ALLOW = 150 -- ms: the node budget's worth of search in one call,
+		-- which is this path's whole bound
+		local sprint = Generator.new(60606)
+		local missed, worstSprint, emptyAt = 0, 0, 0
+		for _ = 1, 200 do
+			local before = sprint.last
+			local t0 = os.clock()
+			sprint:extendTo(sprint.last + C.AheadPieces) -- the car IS the head of the road
+			worstSprint = math.max(worstSprint, (os.clock() - t0) * 1000)
+			if sprint.last == before then
+				missed += 1
+				if emptyAt == 0 then
+					emptyAt = before
+				end
+			end
+			task.wait()
+		end
+		check(
+			"a car that outruns the search still gets road",
+			missed == 0 and sprint.last >= 200 and worstSprint <= FORCED_ALLOW,
+			string.format(
+				"200 ticks with the car on the last piece of the road every one of them: %d pieces placed, %d calls came back empty%s, worst call %.2f ms against the %d ms the node budget allows this path, %d calls forced past the slice, %d pieces placed on short proof",
+				sprint.last,
+				missed,
+				if emptyAt == 0 then "" else ` (first at piece {emptyAt})`,
+				worstSprint,
+				FORCED_ALLOW,
+				sprint.forcedCalls,
+				sprint.relaxed
+			)
+		)
+
+		-- (e) RECOVERY. The plan backtracks into road it has decided but not built, which
+		-- is the thing step 2 could not do at all. This drives twenty seeds four hundred
+		-- pieces to count how often the road still boxes itself in completely.
+		local boxed, earliest, totalPieces, totalRelaxed, leastProof = 0, math.huge, 0, 0, math.huge
+		for seed = 1, 20 do
+			local run, g = longRun(seed * 1013, 400)
+			totalPieces += #run
+			totalRelaxed += g.relaxed
+			leastProof = math.min(leastProof, g.worstProof)
+			if #run < 400 then
+				boxed += 1
+				earliest = math.min(earliest, #run)
+			end
+			task.wait()
+		end
+		check(
+			"the road recovers rather than stopping",
+			boxed <= 2 and totalPieces >= 20 * 400 * 0.97,
+			string.format(
+				"20 runs of 400 pieces at %d studs wide: %d boxed themselves in (earliest at piece %s), %d of 8 000 pieces placed, %d of them on short proof, the least proof any piece was placed on was %s of %d",
+				C.Width,
+				boxed,
+				if earliest == math.huge then "-" else tostring(earliest),
+				totalPieces,
+				totalRelaxed,
+				if leastProof == math.huge then "-" else tostring(leastProof),
+				C.LookAhead
+			)
+		)
+	end
+
+	----------------------------------------------------------------------------
+	-- 8. Progress
 	----------------------------------------------------------------------------
 	do
 		local g = Generator.new(4242)
@@ -1079,7 +1382,7 @@ function Tests:run(opts)
 	end
 
 	----------------------------------------------------------------------------
-	-- 8. The window, with real parts in it
+	-- 9. The window, with real parts in it
 	----------------------------------------------------------------------------
 	local driveReport = ""
 	do
@@ -1168,7 +1471,7 @@ function Tests:run(opts)
 	end
 
 	----------------------------------------------------------------------------
-	-- 9. Every part is drivable ground, and nothing in it is physics
+	-- 10. Every part is drivable ground, and nothing in it is physics
 	----------------------------------------------------------------------------
 	do
 		RoadService:Generate(31337)
@@ -1285,7 +1588,7 @@ function Tests:run(opts)
 	end
 
 	----------------------------------------------------------------------------
-	-- 10. A car can actually drive it
+	-- 11. A car can actually drive it
 	----------------------------------------------------------------------------
 	if opts.skipDrive ~= true then
 		local r = Tests:drive({ seed = opts.driveSeed or 8080, pieces = DRIVE_PIECES })

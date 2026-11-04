@@ -35,10 +35,19 @@ return {
 
 	-- ------------------------------------------------------------------- the road itself
 	-- WIDTH IS THE USER'S NUMBER (docs/game/DECISIONS.md, 2026-11-04). The car is 14.83
-	-- studs long and 7.14 wide as it is actually built, so 35 studs is 4.9 car widths --
-	-- deliberately tight. A big drift at speed will touch the barriers; that is intended.
-	-- The car is NOT rescaled to the road and the road is NOT rescaled to the car.
-	Width = 35, -- studs, kerb to kerb
+	-- studs long and 7.14 wide as it is actually built, so 50 studs is 7.0 car widths.
+	-- It was 35 -- 4.9 car widths -- until the user drove it and asked for 50; the
+	-- barriers stay exactly as they were. The car is NOT rescaled to the road and the
+	-- road is NOT rescaled to the car.
+	--
+	-- IT IS NOT ONLY A LOOK, it is the generator's hardest number. `footprintHalfWidth`
+	-- is `Width / 2 + BarrierThickness - OverlapSlack`, so every piece's footprint grew
+	-- from 18.25 to 25.75 studs either side -- 15 studs wider overall -- and two pieces
+	-- that used to pass each other now collide. The road therefore traps itself MORE
+	-- easily at 50 than at 35, which is the opposite direction to the stall work in
+	-- T-052, and the stall table in `features/track-generation.md` is measured at 50 for
+	-- that reason.
+	Width = 50, -- studs, kerb to kerb
 	Thickness = 12, -- studs of slab under the surface. Buried: nothing ever sees its sides
 	-- except at the very first and very last piece of a run
 	SurfaceY = 0, -- world Y of the road's top. FLAT, everywhere: no elevation in this
@@ -121,30 +130,113 @@ return {
 	-- at that point the search is hitting the budget rather than finishing, so what it
 	-- would be proving is "I gave up" rather than "there is a way out".
 	--
-	-- WHAT DID HAVE TO CHANGE IS THE BUDGET. At 4 000 every stall at depth 14 was the
-	-- search giving up rather than the road running out: it was deciding the answer. The
-	-- biggest search that ran to the END OF ITS OWN TREE, over some 30 000 pieces, tried
-	-- 29 297, so the budget has to be clear of that, and 40 000 is. All five of the test
-	-- suite's seeds then run 500 pieces without a stall where seed 7 stopped at piece 42
-	-- on a budget of 20 000.
+	-- WHAT DID HAVE TO CHANGE IS THE BUDGET -- and this paragraph is step 2's reasoning,
+	-- kept because it is why the budget used to be 40 000; it is NO LONGER the reasoning,
+	-- see `SearchNodeBudget` below. At 4 000 every stall at depth 14 was the search giving
+	-- up rather than the road running out: it was deciding the answer. The biggest search
+	-- that ran to the END OF ITS OWN TREE, over some 30 000 pieces, tried 29 297, so the
+	-- budget has to be clear of that, and 40 000 is. All five of the test suite's seeds
+	-- then run 500 pieces without a stall where seed 7 stopped at piece 42 on a budget of
+	-- 20 000.
 	--
 	-- WHAT A NODE COSTS IS A PROPERTY OF `Pieces.quadsOverlap`, which is the only thing
 	-- a search does. Rewriting it to allocate nothing took a node from 0.104 ms to 0.032
 	-- and the worst single choice from 3.0 seconds to 0.93, which is most of why a budget
 	-- this size is affordable at all.
 	--
-	-- WHAT IS LEFT, HONESTLY, AND IT IS TWO THINGS. 2 runs in 20 of 400 pieces still box
-	-- themselves in, the earliest at piece 231 -- a quarter of an hour of driving -- and
-	-- the two-piece road had none. And the worst single choice measured is 356 ms, which
-	-- is a server hitch, not a stutter the player sees: the window is ten pieces of road
-	-- ahead of the car, twenty seconds of driving, so a late piece is invisible. Both of
-	-- these say the same thing: the spec's `SearchStepsPerFrame` -- spreading one search
-	-- over frames -- has stopped being optional, and it belongs to `Road/Generator`.
+	-- AND THEN T-052 TOOK THE SEARCH OFF THE CALL STACK, AND THE ROAD GOT WIDER. Two
+	-- things changed at once and both of them land here. `Road/Generator` now keeps the
+	-- search as a standing plan -- a stack of frames it can stop in the middle of -- so a
+	-- piece costs only the frontier plus whatever backtracking it needs, the work is
+	-- sliced across ticks, the backtracking RE-CHOOSES pieces that were decided but never
+	-- built, and when even that fails it lays the best chain it found rather than
+	-- stopping. And `Width` went from 35 to 50, which widened every footprint by 15 studs
+	-- and makes the road trap itself more easily, not less.
+	--
+	-- THE TABLE ABOVE RE-MEASURED AT 50, with the plan and its recovery, 20 runs of 400
+	-- pieces (`RoadTests:stalls`). The column the old table does not have is the price of
+	-- carrying on: how many pieces went down on less than a full `LookAhead` of proof.
+	--
+	--   lookahead   boxed itself in   earliest   pieces   on short proof   worst search
+	--        3        20 of 20         piece 17   2 311      22 (least 1)      86 nodes
+	--        5        11 of 20         piece 25   5 098      41 (least 1)     180
+	--        7         7 of 20         piece 120  6 775      49 (least 1)     578
+	--        9         3 of 20         piece 129  7 476      45 (least 1)   2 000 (cap)
+	--       11         0 of 20         never      8 000      19 (least 4)   2 000
+	--       14         0 of 20         never      8 000      20 (least 4)   2 000
+	--
+	-- 14 STILL STAYS, and now it earns it twice over: it is the shallowest depth at which
+	-- no run of 400 pieces boxes itself in at all -- where step 2 measured 2 in 20 at a
+	-- NARROWER road -- and it is the depth at which the road almost never has to settle
+	-- for short proof, 20 pieces in 8 000 and never below 4 of 14. Everything the old
+	-- table says about WHY depth helps is unchanged and is still above.
 	LookAhead = 14,
-	SearchNodeBudget = 40000, -- placements one search may try before it gives up. A real
-	-- number now rather than a guard: see above. Clear of the
-	-- 29 297 the biggest complete search measured, and it bounds
-	-- the worst hitch at roughly 40 000 x 0.032 ms = 1.3 s
+
+	-- THE BUDGET WENT DOWN, NOT UP, AND THAT IS THE WHOLE TRICK. Step 2 raised it from
+	-- 4 000 to 40 000 because hitting it meant the road stopped, so the budget was
+	-- deciding the answer. It no longer means that: when the plan cannot prove fourteen
+	-- deep inside the budget it lays the best chain it DID stand up and carries on
+	-- (`Road/Generator`, "what the road does when it cannot prove itself fourteen deep").
+	-- Hitting the budget now costs a little proof, not the run, so the budget can be set
+	-- where it bounds the worst call instead of where it never bites.
+	--
+	-- 20 runs of 400 pieces at the width the game ships, driven by the simulated service
+	-- tick at 145 studs/s -- faster than the car has ever been measured going -- with the
+	-- whole 8 000 pieces of road generated through `extendTo`:
+	--
+	--   budget   boxed itself in   pieces   WORST SINGLE CALL   least road ahead   gave up proof
+	--    40 000     0 of 20         8 000      1 421.93 ms           1 piece          6 times
+	--     8 000     1 of 20         7 885        263.37              1               23
+	--     2 000     0 of 20         8 000          8.15              3               20
+	--       800     1 of 20         7 644          2.44              4               44
+	--
+	-- 2 000 is where the worst call stops being a hitch at all: 8.15 ms IS
+	-- `SearchMillisUrgent`, which is to say no call ever ran past its slice, and the car
+	-- never got closer than three pieces to the end of the road. Above it the car does
+	-- catch the road up, and then the one path that ignores the clock pays the whole
+	-- budget in one go -- 1.4 seconds at 40 000, which is the bug this replaced.
+	-- Below it the road starts settling for proof it should not have to: 44 relaxations
+	-- against 20, and a run that got down to ONE piece of proof.
+	SearchNodeBudget = 2000, -- placements the plan may try for one piece before it
+	-- settles for the best chain it found
+
+	-- ------------------------------------------------- how long one call may take, in ms
+	-- THE NUMBER THAT MATTERS: no call into the generator may stop the server for long.
+	-- Step 2's worst single call was 922 ms on seed 7 at 35 studs wide and 1 422 ms at
+	-- the 50 the game ships -- every car's replication and every other player stopped for
+	-- a second and a half, while a car travelling over 100 studs/s was mid-corner. These
+	-- three numbers are what replaced it.
+	--
+	-- MEASURED AFTER: 40 seeds driven 400 pieces each at 145 studs/s through the
+	-- service's own tick -- 282 360 calls -- the worst single call was 8.31 ms and the
+	-- mean 0.03 ms. 8 ms of that is the urgent slice itself, so no call ever ran past
+	-- its budget; the extra 0.31 is the one placement that was already running when the
+	-- clock went. The road never came within 3 pieces of running out underneath the car.
+	--
+	-- `RoadService` ticks ten times a second and asks for `windowCentre + AheadPieces`,
+	-- so the generator can read how much road is in front of the car out of what it was
+	-- asked for, and spend accordingly. It is never in a hurry when it does not have to
+	-- be: ten pieces of window is about forty seconds of driving, and at 2 ms a tick that
+	-- is 800 ms of search time available before the car arrives -- far more than any one
+	-- piece now costs.
+	SearchMillisPerTick = 2, -- the normal slice. 2 ms of a 100 ms tick is 2% of one
+	-- server thread, which is cheap enough to be always on, and
+	-- small enough that nothing can see it
+	SearchMillisUrgent = 8, -- when fewer than `UrgentAheadPieces` of road are left in
+	-- front of the car. Still under half a frame at 60 FPS
+	UrgentAheadPieces = 4, -- pieces of road ahead of the car below which it hurries
+	MinAheadPieces = 1, -- and below which it IGNORES THE CLOCK: there is no road past
+	-- the one the car is standing on, so a gap is imminent and a
+	-- hitch is the lesser evil. In a run this is only ever the
+	-- first call of `Generate`, where there is no road at all --
+	-- measured, `forcedCalls` is 1 over a 500-piece drive -- and
+	-- it is bounded by the node budget like every other path.
+	-- Driven deliberately, with the car told to stand on the last
+	-- piece of the road for two hundred ticks running, the worst
+	-- call on this path measured 74 ms (`RoadTests`, "a car that
+	-- outruns the search still gets road"). That is the ONE
+	-- number in this file above ten milliseconds, and reaching it
+	-- means the road has already run out
 
 	-- How much each footprint quad is shrunk by before two of them are asked whether they
 	-- overlap. Neighbouring pieces SHARE a socket face by construction, and a corner's
@@ -342,7 +434,9 @@ return {
 		-- sideways, for 5.6 steps on a barrier. Opening the radius buys almost nothing
 		-- more (1.7 swaps at 320) and triples what it costs in wall contact, because the
 		-- jink across the road grows with it -- 65 studs at 140, 150 at 320 -- while the
-		-- road stays 35 wide.
+		-- road stays one width wide. (Every number in this block was measured on a
+		-- 35-stud road, before the user asked for 50; the wall-contact columns will have
+		-- come down with the extra width and nobody has re-driven them.)
 		--
 		-- `Middle` is a straight between the two bends, a beat to catch the first slide in
 		-- before starting the second. It is ZERO because the beat is not worth what it
