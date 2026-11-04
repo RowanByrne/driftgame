@@ -121,10 +121,37 @@ Layout.Circle = {
 	bank = 8, -- degrees, outer edge up
 	colour = "Circle",
 	spot = { name = "CircleCentre", heading = -90 },
+	-- The apron outside the band. The band's rim stands `width x sin(bank)` -- 8.35 studs
+	-- -- above the plate, which is a wall and not a kerb: once drivable parts had sides
+	-- (T-026) the only way on to the bowl would have been over that wall, and before they
+	-- had sides the car went straight through it and was thrown 144 studs into the air.
+	-- This is a second ring banked the other way, its outer edge level with the plate and
+	-- its inner edge exactly on the rim, so the bowl can be driven on to from any side.
+	skirt = { width = 80, thickness = 14, segments = 96, colour = "Circle" },
 }
 
--- The ramp: the airborne case, and nothing more. Modest on purpose — 9 studs over 110,
--- eased in and out so the car never reads a crease — with a short flat lip to leave from.
+-- Derived, so the apron can never drift away from the band it has to meet.
+--
+-- `rise` is how far the band's rim stands above the plate, and the apron's bank is
+-- whatever puts its own raised edge at exactly that height. Its radius is worked out from
+-- the two edges' HORIZONTAL reach, not from the nominal widths: a banked band of width w
+-- only covers w x cos(bank) of ground, and taking the widths at face value left a
+-- half-stud slot between the two rings, two studs deep, with a near-vertical face in it
+-- that a ground ray reads as a surface climbing nine times faster than the car is going
+-- (T-026). `overlap` buries the apron's inner edge inside the band instead.
+Layout.Circle.skirt.overlap = 0.5
+Layout.Circle.skirt.rise = Layout.Circle.width * math.sin(math.rad(Layout.Circle.bank))
+Layout.Circle.skirt.bank = math.deg(math.asin(Layout.Circle.skirt.rise / Layout.Circle.skirt.width))
+Layout.Circle.skirt.radius = Layout.Circle.radius
+	+ Layout.Circle.width * 0.5 * math.cos(math.rad(Layout.Circle.bank))
+	- Layout.Circle.skirt.overlap
+	+ Layout.Circle.skirt.width * 0.5 * math.cos(math.rad(Layout.Circle.skirt.bank))
+
+-- The ramp: the airborne case, and nothing more. Modest on purpose — 9 studs over 110 —
+-- eased in at the bottom and STEEPEST AT THE TOP, with a lip that carries straight on at
+-- that slope. It was eased out as well, and a car reached the flat lip travelling level
+-- and simply fell off the end: 179 studs/s off it reached 11.7 studs, which is the height
+-- of the ramp itself (T-026). `launch` is the shape that makes it a jump.
 -- It is a solid prism too, for the same reason as the circle.
 Layout.Ramp = {
 	id = "Ramp",
@@ -135,6 +162,7 @@ Layout.Ramp = {
 	thickness = 14,
 	length = 110,
 	rise = 9,
+	shape = "launch",
 	segments = 32,
 	lip = { length = 16, segments = 2 },
 	colour = "Ramp",
@@ -172,7 +200,11 @@ Layout.Cones = {
 		{ x = 150, z = -75, radius = 40, count = 8 },
 		{ x = 328, z = -75, radius = 36, count = 6 },
 		{ x = -420, z = -380, radius = 50, count = 8 },
-		{ x = -380, z = 290, radius = 40, count = 6 },
+		-- Moved out of the ramp's mouth (T-026). It was at (-380, 290), 80 studs square in
+		-- front of it and 40 wide against the ramp's 60: a car making the only straight run
+		-- at the ramp met a cone, and a cone stops a car dead -- 179 studs/s to nothing in
+		-- 30 steps. The ramp was unreachable at speed.
+		{ x = -250, z = 180, radius = 40, count = 6 },
 		{ x = -580, z = 150, radius = 60, count = 8 },
 		{ x = 0, z = 280, radius = 50, count = 10 },
 	},
