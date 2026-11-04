@@ -37,6 +37,13 @@
 --      every frame, so 0 is the default and this is the dial if that ever stops being
 --      true.
 --
+-- THE LINE FADES ALONG ITSELF, not by distance from the camera: solid at the car, gone
+-- at the far end, so the end of the prediction reads as "this is where it ends" rather
+-- than as a line that was cut off. The ramp HOLDS near-solid over the first stretch and
+-- then falls away on a smoothstep, which has no slope at either end: no kink where the
+-- fade starts, and it settles into invisible rather than hitting it. It costs nothing
+-- extra -- one number per segment, written when the segment is placed.
+--
 -- The line is drawn as a pool of thin anchored parts that is REUSED, never rebuilt: parts
 -- are created once, up to `TrajectoryMaxSegments`, and spare ones are made invisible
 -- rather than destroyed. They live in their own folder in Workspace, NEVER inside
@@ -213,10 +220,42 @@ function Trajectory:_segment(i: number): BasePart
 	return part
 end
 
+-- THE FADE'S OWN NUMBERS. These three want to be `Config.Drift.Trajectory*` keys; they
+-- are locals only because `Shared/Config/Drift` is claimed by another task while this is
+-- being written (docs/CLAIMS.md, T-032). Lift them across when it frees up.
+local FADE_HOLD = 0.35 -- fraction of the line held at `TrajectoryTransparency` before the
+-- fade starts at all. The near stretch is the one being read
+local FADE_END = 1 -- transparency at the far tip. 1 is fully invisible
+local FADE_SHAPE = 1.15 -- >1 lingers a little longer before falling away, <1 leaves sooner
+
+-- How transparent segment `i` of `count` should be: `TrajectoryTransparency` (`near`) over
+-- the first `FADE_HOLD` of the path, then a smoothstep out to `FADE_END` at the tip.
+local function fadeAt(i: number, count: number, near: number): number
+	if count < 2 then
+		return near
+	end
+	-- the segment's CENTRE along the path, so the first segment is not already fading
+	local t = (i - 0.5) / count
+	if t <= FADE_HOLD then
+		return near
+	end
+	local f = math.clamp((t - FADE_HOLD) / (1 - FADE_HOLD), 0, 1) ^ FADE_SHAPE
+	local eased = f * f * (3 - 2 * f) -- smoothstep: flat at both ends, no kink, no wall
+	return near + (FADE_END - near) * eased
+end
+
 function Trajectory:_draw(points: { Vector3 })
 	local C = Config.Drift
 	local lift = Vector3.yAxis * C.TrajectoryLift
 	local used = 0
+	-- Counted first, so the fade knows how long the line is before it places the first
+	-- segment. A pass over points, not over parts: no instance is touched.
+	local total = 0
+	for i = 2, math.min(#points, C.TrajectoryMaxSegments + 1) do
+		if (points[i] - points[i - 1]).Magnitude > 1e-3 then
+			total += 1
+		end
+	end
 	for i = 2, math.min(#points, C.TrajectoryMaxSegments + 1) do
 		local a, b = points[i - 1] + lift, points[i] + lift
 		local delta = b - a
@@ -226,7 +265,7 @@ function Trajectory:_draw(points: { Vector3 })
 			local part = self:_segment(used)
 			part.Size = Vector3.new(C.TrajectoryWidth, C.TrajectoryWidth, len)
 			part.CFrame = CFrame.lookAt(a + delta * 0.5, b)
-			part.Transparency = C.TrajectoryTransparency
+			part.Transparency = fadeAt(used, total, C.TrajectoryTransparency)
 		end
 	end
 	-- Spare segments are HIDDEN, not destroyed: the pool is the whole point.
@@ -317,6 +356,19 @@ function Trajectory:Destroy()
 	self:SetEnabled(false)
 end
 
+-- The drawn transparency of every visible segment, near end to far end. The fade is a
+-- look, and this is how a look is proved with numbers rather than a screenshot.
+function Trajectory:SegmentTransparencies(): { number }
+	local out = {}
+	for i = 1, self.shown do
+		local part = self.parts[i]
+		if part and part.Parent then
+			out[i] = part.Transparency
+		end
+	end
+	return out
+end
+
 -- What it is costing and what it drew, for the tests and for an agent playtest.
 function Trajectory:DebugState()
 	local last = self.last
@@ -340,6 +392,8 @@ function Trajectory:DebugState()
 		avgMs = self.avgMs,
 		worstMs = self.worstMs,
 		folder = if self.folder then self.folder:GetFullName() else nil,
+		-- near end to far end: the fade curve, for the readout and for a test
+		transparencies = self:SegmentTransparencies(),
 	}
 end
 
