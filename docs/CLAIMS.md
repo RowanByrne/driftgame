@@ -9,7 +9,6 @@ Every task in progress and the files it owns, so parallel sessions and workers n
 
 | Branch | Lane | Files owned | Since |
 |---|---|---|---|
-| `agent/camera-close` | lane1 | `src/StarterPlayerScripts/Controllers/CarCameraController.luau`, `src/ReplicatedStorage/Shared/Config/Camera.luau` (new), `src/ReplicatedStorage/Shared/Config/Drift.luau` (the `Cam*` keys only, moving out), `src/ReplicatedStorage/Shared/Config/init.luau`, `docs/game/features/drift-camera.md` | 2026-11-04 (T-071) |
 | `agent/road-profile` | lane3 | `src/ReplicatedStorage/Shared/Road/Pieces.luau`, `src/ReplicatedStorage/Shared/Road/Builder.luau`, `src/ReplicatedStorage/Shared/Config/Road.luau`, `src/ServerScriptService/Tests/RoadTests.luau`, `docs/game/features/road-elevation.md` | 2026-11-04 (T-066) |
 
 ## Notes between sessions
