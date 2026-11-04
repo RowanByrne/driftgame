@@ -9,7 +9,7 @@ Every task in progress and the files it owns, so parallel sessions and workers n
 
 | Branch | Lane | Files owned | Since |
 |---|---|---|---|
-| `agent/tuner-contrast` (T-040) | 2 | `src/StarterPlayerScripts/Drift/TunerUI.luau` | 2026-11-04 |
+| `agent/three-stats` (T-046) | 2 | `src/StarterPlayerScripts/Drift/TunerUI.luau`, `src/ReplicatedStorage/Shared/Cars/Garage.luau`, `src/ServerScriptService/Tests/GarageTests.luau`, `docs/game/features/car-tuner.md` | 2026-11-04 |
 
 ## Notes between sessions
 
