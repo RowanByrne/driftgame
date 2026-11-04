@@ -115,6 +115,11 @@ label.Text = "not in a run"
 label.TextColor3 = DIM
 label.TextSize = 13
 label.FontFace = Font.fromEnum(Enum.Font.Gotham)
+-- It sits over the SKY, not over a plate, and light grey on a bright sky is the "i can't
+-- see the text" bug this game has already had twice (T-040). A black stroke reads on
+-- anything the camera can be pointing at, and costs no layout.
+label.TextStrokeColor3 = Color3.new(0, 0, 0)
+label.TextStrokeTransparency = 0.35
 label.ZIndex = 2
 label.Parent = gui
 
