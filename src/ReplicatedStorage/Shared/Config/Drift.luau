@@ -151,7 +151,14 @@ local Drift = {
 	TerminalFall = 200, -- studs/s, the fastest a fall may get. Without it a car that has
 	-- driven off the world accelerates without limit and the state the
 	-- server is sent stops being anything the server can check
-	RespawnBelowY = -150, -- studs; below this the car asks the server to put it back
+	FallBelowSurface = 150, -- studs BELOW THE LAST GROUND THE CAR TOUCHED: fall further than
+	-- this and the car asks the server to put it back. It was
+	-- `RespawnBelowY = -150`, a world Y, and that only worked because
+	-- every surface in both flat worlds tops out at Y = 0. A road that
+	-- descends about 14 studs a piece had every car on it "fallen" by
+	-- piece eleven (features/road-elevation.md "The fall test stops
+	-- being absolute"). Measured from the ground instead, the flat
+	-- worlds catch a fall at exactly the same place they always did
 	SurfaceTag = "DriftSurface", -- the ground rays prefer parts with this tag; in a place
 	-- with nothing tagged at all they fall back to whatever
 	-- solid they hit and treat it as road, so a bare plate is
@@ -207,9 +214,10 @@ local Drift = {
 	--   * from the playground's edge at -1 024 to the track's at -560 is 464 studs of bare
 	--     baseplate -- about three seconds at speed. Next door, with a short drive between,
 	--     which is what was asked for;
-	--   * it is HORIZONTAL only, so both worlds' ground is still Y = 0 and the one `FallY` /
-	--     `RespawnBelowY` pair is right for both. Z is never offset, so Z never needs
-	--     separating either;
+	--   * it is HORIZONTAL only, so both worlds' ground is still Y = 0 and the one `FallY`
+	--     is right for both. (A car's own fall is no longer absolute at all --
+	--     `FallBelowSurface` -- but PlaygroundService's catcher still is.) Z is never
+	--     offset, so Z never needs separating either;
 	--   * -X is the empty quarter: the collision tests stand their own rig at
 	--     (20 000, 500, 20 000) and the jitter tests probe at (2 000, 0, 0).
 	-- `DebugCross()` is still there and still instant, but it is now a convenience rather

@@ -102,7 +102,9 @@ export type State = {
 	grounded: boolean,
 	airborne: boolean,
 	up: Vector3, -- smoothed surface normal
-	groundY: number?, -- last ground height found under the car
+	groundY: number?, -- ground height under the car THIS step; nil over a void
+	fallFrom: number, -- the last ground height the car had under it, kept after the ground
+	-- is gone. A fall is measured from this, never from a world Y
 	bodyRoll: number, -- radians of cosmetic lean, about the car's own forward axis
 	wheelSteer: number, -- radians the front wheels are DRAWN at. Cosmetic: they follow
 	-- the travel, which is opposite lock for free
@@ -182,6 +184,10 @@ function Model.new(spawnCFrame: CFrame): State
 		airborne = false,
 		up = Vector3.yAxis,
 		groundY = nil,
+		-- A car is spawned standing on something, at ride height above it, so that is the
+		-- ground a fall is measured from until the first ray finds the real one -- one step
+		-- later. Without it a car spawned over a void could never be caught at all.
+		fallFrom = spawnCFrame.Position.Y - Config.Drift.RideHeight,
 		bodyRoll = 0,
 		wheelSteer = 0,
 		wheelSpin = 0,
@@ -467,6 +473,14 @@ function Model.step(s: State, input: Input, dt: number, world: World): State
 	local groundY: number? = if carrying > 0 then sumY / carrying else nil
 	normal = if normal.Magnitude > EPS then normal.Unit else Vector3.yAxis
 	s.groundY = groundY
+	-- THE ONE LINE A FALL IS MEASURED FROM. `groundY` goes nil the moment the car is over
+	-- nothing, which is exactly when a fall is being decided, so the last height it had is
+	-- kept: the ground the car drove off. The model needs to know nothing about the road,
+	-- the track or the playground to use it, and on ground that is flat at Y = 0 it IS zero,
+	-- so the old absolute test and this one catch a fall in the same place (T-067).
+	if groundY then
+		s.fallFrom = groundY
+	end
 
 	local follow = 1 - math.exp(-dt / math.max(C.GroundFollow, EPS))
 	if groundY and target.Y - (groundY + C.RideHeight) <= C.AirborneMargin then
@@ -526,7 +540,7 @@ function Model.step(s: State, input: Input, dt: number, world: World): State
 	s.u = vel:Dot(fwd)
 	s.v = vel:Dot(right)
 	s.vy = vel.Y
-	s.fell = target.Y < C.RespawnBelowY
+	s.fell = target.Y < s.fallFrom - C.FallBelowSurface
 	s.wheelSpin += (s.u / math.max(C.WheelDiameter * 0.5, EPS)) * dt
 	s.time += dt
 
