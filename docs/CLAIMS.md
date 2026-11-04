@@ -9,7 +9,6 @@ Every task in progress and the files it owns, so parallel sessions and workers n
 
 | Branch | Lane | Files owned | Since |
 |---|---|---|---|
-| `agent/showroom` | lane4 | `src/ServerScriptService/Tools/Showroom.luau` (new), `docs/game/WORLD.md` | 2026-11-04 (T-059) |
 
 ## Notes between sessions
 
