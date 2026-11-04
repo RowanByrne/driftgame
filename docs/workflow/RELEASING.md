@@ -7,7 +7,7 @@ When the user says they're **about to publish**, do "Before a publish" first. Wh
 ## Before a publish
 
 1. **Sync.** Refresh (CONDUCTOR.md "Refresh"), so `main` has every finished branch meant for this release and is pushed. The release is `origin/main` at that commit.
-2. **Check the build** in the Main place:
+2. **Check the build** in the Main place, since it's what the user publishes. They asked for this check, so Main is yours for it, once they're not in a playtest (`get_studio_state`, TESTING.md):
    - A playtest joins with no console errors or warnings, and the update's headline features work.
    - Automated tests pass for anything touching saving, purchases or odds since the last release (TESTING.md).
    - A data schema change has its migration, tested on saved data from the previous version (CODING.md "Saving").

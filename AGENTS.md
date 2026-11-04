@@ -32,7 +32,7 @@ The project folder sits in a RoDev folder next to `template\` and `_tools\` (WOR
 | Plays the game and says go or no-go at each phase gate (WORKFLOW.md) | Proves work by measuring, and says what to look at |
 | Picks art and sounds from candidates | Generates candidates, uploads only what the user picked, sets the asset ids |
 | Publishes to players, never the agent, and changes Creator Dashboard settings (or asks the agent to, in the browser) | Runs the pre-publish checks, writes update notes when asked, records dashboard settings in `live/EXPERIENCE.md` |
-| Starts Lync (`tools\serve-all.bat`) | Probes lanes before use; restarts Lync detached only when needed (LANES.md) |
+| Opens the lanes (Rocco's Lanes, which starts Lync with no windows; or `tools\serve-all.bat`) | Probes lanes before use; starts a Lync that isn't serving only when needed (LANES.md) |
 
 The main session is the **conductor**: it plans, hands tasks to **workers** in lanes, and merges their work (CONDUCTOR.md). A worker follows `docs/workflow/WORKER.md`.
 
@@ -65,6 +65,7 @@ Then stop.
 **Studio**
 - Studio is reached through the Roblox Studio MCP, registered in your agent as `Roblox_Studio` (WORKSTATION.md). Without it, say so and work without Studio. Read TESTING.md before using its tools.
 - Use only the place you were given (match its name in `list_roblox_studios`, which lists only this PC's open places), and never touch the hands-off places listed in PROJECT.md. Mark every playtest you start quiet, and never leave one running.
+- **The Main place is the user's:** they playtest there. Check your work in a lane's place, never in Main, and don't change Main unless they ask (TESTING.md). Code reaches `main` only after it's checked in a lane (CONDUCTOR.md "Checking in a lane").
 - Prove behaviour with numbers: positions, sizes, counts, debug state, logs. Screenshot only to answer "does this look right?", at most 3 per task, and leave the final look to the user.
 
 **Art**

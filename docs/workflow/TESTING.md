@@ -4,7 +4,8 @@ How agents test in Studio. The rule behind all of it: **prove it by measuring**,
 
 ## Studio tools
 
-- **Use only your place.** Pass only the `studio_id` whose name matches your place (`list_roblox_studios`): `<CODE>-Main` for the conductor, `<CODE>-LaneN` for a worker. Never touch the hands-off places in `PROJECT.md`. If your place isn't open, say so and work without Studio.
+- **Use only your place.** Pass only the `studio_id` whose name matches your place (`list_roblox_studios`): `<CODE>-LaneN`, a worker's lane, or the lane the conductor is checking in (CONDUCTOR.md "Checking in a lane"). Never touch the hands-off places in `PROJECT.md`. If your place isn't open, say so and work without Studio.
+- **The Main place (`<CODE>-Main`) is the user's.** They playtest there, so never start or stop a playtest in it or change it, unless they ask: their pre-publish check (RELEASING.md), or hand-built content (LANES.md). Even then, check first that they're not in a playtest (`get_studio_state`). Reading its console or state when they point you at something there is fine. On a PC with no lanes, Main is the only place: CONDUCTOR.md "Checking in a lane" says how.
 - **Studio is for testing and inspecting:** playtests, console output, the instance tree, screenshots. Code goes in files (CODING.md).
 - **Inspect a running playtest** with `execute_luau` on the `Server` or `Client` datamodel. If the world is built by code, the Edit datamodel looks nearly empty: playtest to see the game.
 - **No DataStores in unpublished places.** DataService runs in memory mode there; that's expected, not an error.

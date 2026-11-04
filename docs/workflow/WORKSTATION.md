@@ -35,19 +35,19 @@ The RoDev folder can live anywhere: in your user folder (`C:\Users\<you>\RoDev`)
    git -C _tools\rocco checkout (git -C _tools\rocco tag -l "v*" --sort=-v:refname | Select-Object -First 1)
    ```
    Every project opens it with `tools\rocco.bat`. From then on Rocco says in Connections when a new release is out, and updates itself (Rocco's README, "Updating"). In Rocco's Settings, pick **Your agent**: Rocco opens it for onboarding and names it where it asks for something.
-5. **Lanes for this PC:** the first time this PC works on a game, it gets a row in that game's `PROJECT.md` "Workstations": how many lanes it opens, measured or picked by the user (LANES.md "How many lanes").
+5. **Lanes for this PC:** the first time this PC works on a game, it gets a row in that game's `PROJECT.md` "Workstations": how many lanes it opens, picked by the user in Rocco or measured (LANES.md "How many lanes").
 
 ## Starting a session
 
 1. **Open your agent** in `<Game>\repo`.
 2. **Say "refresh"** to sync with GitHub (CONDUCTOR.md).
-3. **Start Lync** (`tools\serve-all.bat`) and open the Main place and this PC's lane places (`PROJECT.md` "Workstations") from `<Game>\places\`.
-4. **Open Rocco** (`tools\rocco.bat`): the Workboard, Docs, History and Connections.
+3. **Open Rocco** (`tools\rocco.bat`): the Workboard, Docs, History and Connections. It runs in the background, with no window.
+4. **Open the lanes:** Lanes in Rocco's sidebar starts Lync (with no windows) and opens the Main place and this PC's lane places (`PROJECT.md` "Workstations") in Studio. Without Rocco: `tools\serve-all.bat`, then open the places from `<Game>\places\`.
 
 ## Before you stop
 
 1. **Studio:** stop any playtest, save every place, and close Studio, so the place files are fully written.
-2. **Lync:** close the server windows.
+2. **Lync and Rocco:** Quit Rocco in its Settings, which stops Lync too. Lync servers you started with `serve-all.bat`: close their windows.
 3. **Git:** commit and push (say "refresh"). Nothing that belongs in git should exist only in the RoDev folder.
 
 ## On a portable drive

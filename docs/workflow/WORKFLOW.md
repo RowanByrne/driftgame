@@ -34,13 +34,14 @@ Decide what we're making before any code.
 - **The agent:** looks at comparable Roblox games, proposes 2 or 3 directions when the idea is open, drafts the pitch, and pushes on its weak spots (a vague hook, no reason to return, a scope too big for weeks).
 - **Not yet:** code, art, places.
 - **Gate:** the user approves `PITCH.md`.
+- **From Rocco's onboarding,** a new game skips ahead: the agent drafts the pitch, then the prototype's spec and plan from the user's answers about the first build. Once the user approves that plan, it's built (Foundation, then Core loop; SETUP.md "The prototype"). The pitch stays a draft until the user has played it and approves it.
 
 ## 2. Foundation
 
 Get the project running end to end, so everything built after it stands on code that lasts.
 
 - **Produces:** the project from the template (`NEW-PROJECT.md`): GitHub repo, `PROJECT.md` filled in, places and lanes. The foundation kit in `src/` (`CODING.md`): Services and Controllers loaders, a remotes registry, DataService with memory mode in Studio, the debug bridges, the Studio test kit (test profile, quiet playtests), the analytics helper with the standard events (`ANALYTICS.md`). A placeholder world, built by code or by hand (`WORLD-BUILDING.md`). First versions of `ARCHITECTURE.md` and `CONTRACTS.md`.
-- **Gate (the agent's checklist, then tell the user):** every lane probes (`LANES.md`); a playtest in the Main place joins with no console errors or warnings; player data saves and loads through DataService; a quiet playtest is silent; the standard analytics events from a playtest show in the helper's Studio log with the right fields.
+- **Gate (the agent's checklist, then tell the user):** every lane probes (`LANES.md`); a playtest of `main`, in an idle lane, joins with no console errors or warnings; player data saves and loads through DataService; a quiet playtest is silent; the standard analytics events from a playtest show in the helper's Studio log with the right fields.
 
 ## 3. Core loop
 

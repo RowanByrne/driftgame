@@ -1,10 +1,10 @@
 {
   "about": "Rocco's onboarding survey (docs/workflow/SETUP.md). Every answer is free text and optional. 'for' names the doc sections an answer feeds; ids are unique across flows and tiles, and a question shared by both flows keeps one id.",
-  "version": 1,
+  "version": 2,
   "flows": {
     "new": {
       "title": "A new game",
-      "blurb": "A few questions about the game: enough for the pitch, the core of the design and the look, so prototyping can start. Answer as much or as little as you like.",
+      "blurb": "A few questions about the game and the first thing to build: enough for the pitch, the core of the design and the look, and a plan for the prototype that you approve before anything is built. Answer as much or as little as you like.",
       "steps": [
         {
           "id": "game",
@@ -15,8 +15,18 @@
             { "id": "firstMinutes", "prompt": "What happens in a player's first few minutes?", "hint": "From joining to the first reward, or the moment it clicks.", "for": ["GDD.md \"First five minutes\""] },
             { "id": "players", "prompt": "Who is it for?", "hint": "Rough ages, the kind of Roblox player, and whether they're mostly on phones or PCs.", "for": ["PITCH.md \"Who it's for\""] },
             { "id": "likeThese", "prompt": "Which games is it like, and what's different about yours?", "hint": "On Roblox or anywhere else.", "for": ["PITCH.md \"Games we borrow from\""] },
-            { "id": "comeBack", "prompt": "Why would someone come back tomorrow?", "hint": "Progress, collecting, friends, events, daily rewards...", "for": ["PITCH.md \"Why players come back\""] },
-            { "id": "smallest", "prompt": "What's the smallest version worth playtesting?", "hint": "Just enough to tell whether it's fun. Everything else can wait.", "for": ["ROADMAP.md \"Next\""] }
+            { "id": "comeBack", "prompt": "Why would someone come back tomorrow?", "hint": "Progress, collecting, friends, events, daily rewards...", "for": ["PITCH.md \"Why players come back\""] }
+          ]
+        },
+        {
+          "id": "first",
+          "title": "The first build",
+          "questions": [
+            { "id": "smallest", "prompt": "What's the first thing you want to play?", "hint": "The smallest version worth playtesting: the one moment that has to feel right, like drifting round a corner or catching your first pet. Everything else can wait.", "for": ["ROADMAP.md \"Now\"", "features/prototype.md \"Goal\""] },
+            { "id": "controls", "prompt": "How does the player control it?", "hint": "Keys, mouse, touch or a controller, and what each one does. Phone or PC first?", "for": ["features/prototype.md \"How it plays\""] },
+            { "id": "playground", "prompt": "Where does it happen?", "hint": "A flat test area is fine. Or a track, an island, a room: roughly how big, and what's in it.", "for": ["features/prototype.md \"How it plays\"", "WORLD.md \"Overview\""] },
+            { "id": "notYet", "prompt": "What should the first build leave out?", "hint": "Menus, saving, shops, other players... anything that can wait until the core feels right.", "for": ["features/prototype.md \"Left out\""] },
+            { "id": "judge", "prompt": "How will you know it's working?", "hint": "What you'll look for the first time you play it.", "for": ["features/prototype.md \"Testing\""] }
           ]
         },
         {

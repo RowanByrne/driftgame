@@ -18,7 +18,9 @@ This game's details, loaded into every agent session: keep it short, and put des
 
 ## Places
 
-Main is `places\DR-Main.rbxl`, served from `repo\` on the port base: always merged `main`, and the user's test place. Lane N is `DR-LaneN.rbxl`, served from `lanes\laneN` on base + N (docs/workflow/LANES.md). Other places agents may use, such as an art workshop, and what they may do there:
+Main is `places\DR-Main.rbxl`, served from `repo\` on the port base: always merged `main`, and the user's test place: agents check their work in lanes, not here (docs/workflow/TESTING.md). Lane N is `DR-LaneN.rbxl`, served from `lanes\laneN` on base + N (docs/workflow/LANES.md). Other places agents may use, such as an art workshop, and what they may do there:
+
+**`DR-Main.rbxl` holds hand-built content that git never sees** (AGENTS.md "Hand-built content"): the kart circuit the user added as `workspace.Track`, scaled 2x and lifted onto the baseplate, which `TrackService` adopts at runtime. No lane has it, so anything that needs a real track is checked in Main by the user or built as a stand-in in a lane.
 
 | Place file | Served from | Port | Use |
 |---|---|---|---|

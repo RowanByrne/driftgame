@@ -11,7 +11,7 @@ How the world gets laid out, built, and kept working as it changes. The user dec
 ## By code or by hand
 
 - **By code:** the world is generated at runtime by modules in `src/`. It can be reviewed and merged like any code, and every lane builds the same world. Best for worlds made of repeated pieces: islands, terrain, paths, rooms. The Edit datamodel looks nearly empty, so use the map preview (below) or a playtest to see it.
-- **By hand:** built in Studio, in the Main place only, and copied to the lanes after it changes (`LANES.md` "Hand-built content"). Best for one-off, sculpted spaces.
+- **By hand:** built in Studio, in the Main place only (when the user asks: Main is theirs), and copied to the lanes after it changes (`LANES.md` "Hand-built content"). Best for one-off, sculpted spaces.
 - **Mixed** is common: a code-built layout with hand-built set pieces, or the reverse. Record which parts are which in `ARCHITECTURE.md`.
 - **One lane owns the map at a time.** Claim the world's modules, or the Main place's map, before editing (`CONDUCTOR.md` "Claims").
 
