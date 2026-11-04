@@ -9,6 +9,7 @@ Every task in progress and the files it owns, so parallel sessions and workers n
 
 | Branch | Lane | Files owned | Since |
 |---|---|---|---|
+| `agent/road-surface` | lane1 | `src/ReplicatedStorage/Shared/Road/Builder.luau`, `src/ReplicatedStorage/Shared/Config/Road.luau`, `docs/game/features/track-generation.md` | 2026-11-04 (T-055) |
 
 ## Notes between sessions
 
