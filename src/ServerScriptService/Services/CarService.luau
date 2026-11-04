@@ -130,7 +130,18 @@ function CarService:Init()
 	self.switchInFlightKept = 0
 	self.dressing = false -- one car dressed at a time: dressing flips the active car
 
+	-- IT HAS TO BE A FOLDER, and asking by name alone is not enough. A place file can
+	-- carry anything called `Cars` -- `DR-Lane2` had a stray ModuleScript of that name,
+	-- left over from some earlier session -- and `FindFirstChild` would hand it back. The
+	-- cars then hang off a ModuleScript, which happens to render, so nothing looks wrong
+	-- until something walks `Workspace.Cars` expecting the folder `CONTRACTS.md` promises.
+	-- Anything else of that name is pushed aside rather than destroyed: it is not ours.
 	local folder = workspace:FindFirstChild("Cars")
+	if folder and not folder:IsA("Folder") then
+		warn(`[CarService] Workspace.Cars is a {folder.ClassName}, not a Folder. Renaming it to Cars_NotOurs and making the folder.`)
+		folder.Name = "Cars_NotOurs"
+		folder = nil
+	end
 	if not folder then
 		folder = Instance.new("Folder")
 		folder.Name = "Cars"
