@@ -560,12 +560,12 @@ function CarModel.dress(model: Model, shell: Model?)
 	model:SetAttribute(CarModel.SHELL_NAME, shell ~= nil or nil)
 end
 
--- WHEN A SWITCH LANDS, AND WHY A CLIENT CANNOT MAKE IT LAND SOONER.
+-- WHEN A SWITCH LANDS, AND WHY IT HAD TO BE THE SERVER THAT LANDED IT.
 --
 -- `bodyName()` answers for the active archetype the instant F4 switches it, so every car
--- BUILT after that is the right shape -- and nothing rebuilds a car after it is spawned
--- (`CarService:Respawn` moves the car, it does not remake it), so in a live game the
--- shape follows the archetype at join and the feel follows it immediately.
+-- BUILT after that is the right shape -- and since T-033 the SERVER re-dresses a car that
+-- is already spawned (`CarService:SetCar`), so a switch changes the shape at once and
+-- every other client sees it. What follows is why a CLIENT could never have done it.
 --
 -- Closing that gap from the client does not work, and this is the measurement rather than
 -- an opinion (T-028, in `DR-Lane1`): the car belongs to the server, and a client that
@@ -573,11 +573,12 @@ end
 -- again at +0.5 s, +1.0 s, +1.5 s and +2.0 s. The client's own `Body` attribute goes back
 -- with it. A client re-dress is therefore a flicker, not a feature.
 --
--- The honest fix is the open question the archetypes already carry
--- (features/car-archetypes.md, "Open questions"): the SERVER has to be told which car
--- each player is in, and then it builds the right body itself and replicates it like any
--- other. Until a car is a player's choice rather than a tester's key, that remote is not
--- worth adding.
+-- THE HONEST FIX IS IN (T-033). The server is told which car each player is in, over
+-- `CarSwitch`, and it re-dresses the car itself through `CarService:SetCar` -- so the
+-- shape now follows a switch on a car that is already spawned, and every other client
+-- sees it, because the `Body` attribute and the new `Shell` replicate like anything else
+-- the server does. The measurement above is why it had to be the server: a client
+-- re-dress is a flicker, not a feature.
 
 -- ---------------------------------------------------------------------- the rules
 

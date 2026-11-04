@@ -57,14 +57,12 @@
 -- `_advance` with no pan argument -- which is how the tests call it -- is the camera
 -- exactly as it was.
 --
--- Let go and it comes back: a moment's grace (`PanReturnDelay`) so a nudge of the mouse
+-- Let go and it comes back: a moment's grace (`CamPanReturnDelay`) so a nudge of the mouse
 -- does not snap the view out of the player's hand, and then an ease home. The input itself
 -- is eased too, lightly: "smoothened slightly ... a bit cinematic" is the brief, and this
 -- camera is already calm, so a heavy filter here reads as lag rather than as cinema.
 --
--- Every number is in Config.Drift; none is in here -- EXCEPT the pan's, which are the
--- named locals below only because Config.Drift was claimed by another task the day this
--- was written. They want to move there verbatim.
+-- Every number is in Config.Drift; none is in here.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
@@ -88,28 +86,14 @@ CarCameraController.Priority = 5 -- after DriftController, so a state exists to 
 local STEP_NAME = "DriftCamera"
 local EPS = 1e-4
 
--- ---------------------------------------------------------------- the pan's numbers
---
--- THESE WANT TO BE CONFIG KEYS (`Config.Drift`, next to the other `Cam*` numbers). They
--- are locals only because that file was owned by another task when this was written; move
--- them across as they stand, comments and all, and swap the locals for `C.CamPan*`.
-
-local PanSensitivity = 0.005 -- rad per pixel of mouse travel: 0.286 deg/px, so a
--- 400-pixel drag is 114.6 deg. OURS. Roblox's own camera is about this
-local PanRate = 9 -- per second. OURS. How fast the view follows the hand: a 111 ms
--- time constant. THE "SLIGHTLY SMOOTHENED" DIAL -- lower is more cinematic and, past
--- about 5, starts reading as lag rather than as weight
-local PanReturnDelay = 0.5 -- s. OURS. How long after letting go before the view starts
--- coming home. Without it a release snaps and feels cheap; much past a second and the
--- player has started driving again before the camera lets go
-local PanReturnRate = 2 -- per second. OURS. How fast it comes home once it starts: a
--- 500 ms time constant, so about 2.1 s from a big pan to centred
-local PanPitchMin = math.rad(-12) -- how far the player may drag the view DOWN, as an
--- offset from where the camera already sits. OURS
-local PanPitchMax = math.rad(60) -- and UP. OURS
-local PanElevationMin = math.rad(1) -- the hard guard, on the RESULT rather than the
--- offset: the camera may never go below this above the car, or it is under the road. OURS
-local PanElevationMax = math.rad(80) -- nor past this, or it is straight down the roof. OURS
+-- The pan's numbers are Config's, like everything else here: `CamPanSensitivity`,
+-- `CamPanRate`, `CamPanReturnDelay`, `CamPanReturnRate`, and the four limits. The four
+-- angles are DEGREES in Config, because degrees are what the tuning conversation uses, and
+-- are converted here once rather than on every frame.
+local PanPitchMin = math.rad(Config.Drift.CamPanPitchMin)
+local PanPitchMax = math.rad(Config.Drift.CamPanPitchMax)
+local PanElevationMin = math.rad(Config.Drift.CamPanElevationMin)
+local PanElevationMax = math.rad(Config.Drift.CamPanElevationMax)
 
 -- What the camera needs of the car, and nothing else. Built from the model's state, or
 -- made up by DebugProbe, which is how the curves below are measured without a car.
@@ -247,20 +231,21 @@ end
 -- CarInputController, or nil for "nobody is panning" -- which is what every headless
 -- caller passes, and which costs nothing once the offsets are home.
 local function stepPan(rig, dt: number, pan)
+	local C = Config.Drift
 	if pan and pan.held then
 		rig.panHeld = true
 		rig.panIdle = 0
 		-- Mouse right turns the view right, mouse down looks down, the way Roblox's own
 		-- camera does. The view turning right is the camera swinging the other way round
 		-- the car, hence the minus.
-		rig.panTargetYaw = wrapPi(rig.panTargetYaw - pan.dx * PanSensitivity)
-		rig.panTargetPitch = math.clamp(rig.panTargetPitch + pan.dy * PanSensitivity, PanPitchMin, PanPitchMax)
+		rig.panTargetYaw = wrapPi(rig.panTargetYaw - pan.dx * C.CamPanSensitivity)
+		rig.panTargetPitch = math.clamp(rig.panTargetPitch + pan.dy * C.CamPanSensitivity, PanPitchMin, PanPitchMax)
 	else
 		rig.panHeld = false
 		if rig.panTargetYaw ~= 0 or rig.panTargetPitch ~= 0 then
 			rig.panIdle += dt
-			if rig.panIdle >= PanReturnDelay then
-				local home = ease(dt, PanReturnRate)
+			if rig.panIdle >= C.CamPanReturnDelay then
+				local home = ease(dt, C.CamPanReturnRate)
 				rig.panTargetYaw -= rig.panTargetYaw * home
 				rig.panTargetPitch -= rig.panTargetPitch * home
 				-- Land exactly, so a rig that is home stops doing arithmetic for ever.
@@ -271,7 +256,7 @@ local function stepPan(rig, dt: number, pan)
 		end
 	end
 
-	local k = ease(dt, PanRate)
+	local k = ease(dt, C.CamPanRate)
 	rig.panYaw = wrapPi(rig.panYaw + wrapPi(rig.panTargetYaw - rig.panYaw) * k)
 	rig.panPitch += (rig.panTargetPitch - rig.panPitch) * k
 end
@@ -696,7 +681,7 @@ function CarCameraController:DebugPanProbe(opts)
 		endPitchDeg = 0,
 		-- How far the view moved on each of the first frames of the way home. This is the
 		-- proof that the return is not a snap: it has to RAMP, because the applied angle
-		-- only ever eases toward the target at `PanRate`.
+		-- only ever eases toward the target at `CamPanRate`.
 		returnTrace = {},
 	}
 

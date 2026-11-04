@@ -9,8 +9,6 @@ Every task in progress and the files it owns, so parallel sessions and workers n
 
 | Branch | Lane | Files owned | Since |
 |---|---|---|---|
-| `agent/camera-pan` (T-036) | 3 | `src/StarterPlayerScripts/Controllers/CarCameraController.luau`, `src/StarterPlayerScripts/Controllers/CarInputController.luau` | 2026-11-04 |
-| `agent/server-knows-the-car` (T-033) | 1 | `src/ServerScriptService/Services/CarService.luau`, `src/ReplicatedStorage/Shared/Cars/init.luau`, `src/StarterPlayerScripts/Drift/DebugHud.luau`, `src/ReplicatedStorage/Shared/Config/Drift.luau`, `src/ServerScriptService/Tests/DriftTests.luau`, `docs/game/CONTRACTS.md` | 2026-11-04 |
 
 ## Notes between sessions
 

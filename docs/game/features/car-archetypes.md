@@ -143,20 +143,29 @@ The panel redraws only when the car changes, not every frame.
 
 ## Server and client
 
-Unchanged, and this adds nothing to the wire. The client that drives a car simulates it,
-so switching car on the client is what a player would feel; the server keeps its own
-active car for the checks it makes on `CarState`.
+**The server owns which car each player is in** (`T-033`). The client that drives a car
+simulates it, so it may switch its own model the instant it asks and the feel changes
+under a held finger — but it **asks**, over `CarSwitch`, and the server's answer settles
+it. The server validates the key against the known archetypes, rate-limits the asking,
+ignores anything it does not recognise, re-dresses that player's car itself (so the shape
+follows on a car already spawned, and every other client sees it), and bounds that
+player's `CarState` against **their** car's top speed.
 
-**The two can disagree, and that is why every archetype's top speed stays under 223.75
-studs/s** — the default car's 179 times `StateSpeedTolerance`. A client in the bruiser
-(215) is still inside what a server that thinks it is the `balanced` car will accept, so
-no packet is dropped. See "Open questions": that slack is a prototype's answer, not a
-game's.
+**What that replaced:** the server used to bound every packet against the top speed of
+whichever car *it* happened to have active, and the two were only ever reconciled by
+keeping every archetype under the default car's 223.75 studs/s. That is not a rule a game
+can keep. Measured now: 215 studs/s fits on the bruiser and is **dropped** on the gripper,
+which is the case the old slack hid.
+
+**A packet in flight across a switch** borrows `RespawnGrace`'s shape and its number
+(`CarSwitchGrace`, 1 s): one that fails against the new car's numbers is tried against the
+car the player was just in, kept if it passes, and counted in `switchInFlightKept`. Past
+the grace only the new car counts, so a switch to a slower car really does tighten.
 
 ## Contracts
 
-No new remotes, no new data keys, no new tags or attributes. New service API, in
-`CONTRACTS.md`:
+One new remote — `CarSwitch`, both ways, in `CONTRACTS.md` with every check the server
+makes on it. No new data keys, tags or attributes. New service API, in `CONTRACTS.md`:
 
 - `Shared/Cars` (ModuleScript, `ReplicatedStorage.Shared.Cars`):
   `activeKey()`, `active()`, `exists(key)`, `setActive(key)`, `cycle()`, `isField(key)`,
@@ -301,11 +310,14 @@ panel followed on the same frame. `get_console_output` clean of anything from ga
   making it a car field is a small change in a file this task did not own. It would be a
   genuinely different feel — a front-drive car pulls itself straight out of a slide — and
   is the obvious fifth archetype.
-- **The server does not know which car a player is in.** It bounds a reported speed against
-  the top speed of the car *it* thinks is active, so every archetype is deliberately kept
-  under the default car's tolerance. The day a car is a player's choice, the server has to
-  be told, and has to keep its own copy of that car's numbers — the same open question the
-  model already carries about validation (`features/drift-model.md`, "Open questions").
+- ~~**The server does not know which car a player is in.**~~ **Closed by `T-033`:** the
+  client asks over `CarSwitch`, the server validates and decides, re-dresses the car
+  itself, and bounds each player's `CarState` against their own car ("Server and client").
+  What is still open is the half the model has always carried: the server bounds speed and
+  distance, it does not re-run the model (`features/drift-model.md`, "Open questions").
+  **One limit worth knowing:** the client's only listener for `CarSwitch` is `DebugHud`,
+  which exists only while `DebugReadout` is on. Fine while the switch is a tester's key,
+  wrong the day a car is a player's choice — it belongs in a controller then.
 - **The display bars are placeholders too.** Three hand-written numbers per car, written by
   the agent. They are marketing and the user owns marketing.
 - **A fifth axis nobody has asked for yet:** the reference layers per-car multipliers over

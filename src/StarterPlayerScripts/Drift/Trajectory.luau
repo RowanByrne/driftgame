@@ -220,28 +220,21 @@ function Trajectory:_segment(i: number): BasePart
 	return part
 end
 
--- THE FADE'S OWN NUMBERS. These three want to be `Config.Drift.Trajectory*` keys; they
--- are locals only because `Shared/Config/Drift` is claimed by another task while this is
--- being written (docs/CLAIMS.md, T-032). Lift them across when it frees up.
-local FADE_HOLD = 0.35 -- fraction of the line held at `TrajectoryTransparency` before the
--- fade starts at all. The near stretch is the one being read
-local FADE_END = 1 -- transparency at the far tip. 1 is fully invisible
-local FADE_SHAPE = 1.15 -- >1 lingers a little longer before falling away, <1 leaves sooner
-
 -- How transparent segment `i` of `count` should be: `TrajectoryTransparency` (`near`) over
--- the first `FADE_HOLD` of the path, then a smoothstep out to `FADE_END` at the tip.
+-- the first `TrajectoryFadeHold` of the path, then a smoothstep out to `TrajectoryFadeEnd`
+-- at the tip. All three numbers are Config's.
 local function fadeAt(i: number, count: number, near: number): number
 	if count < 2 then
 		return near
 	end
 	-- the segment's CENTRE along the path, so the first segment is not already fading
 	local t = (i - 0.5) / count
-	if t <= FADE_HOLD then
+	if t <= Config.Drift.TrajectoryFadeHold then
 		return near
 	end
-	local f = math.clamp((t - FADE_HOLD) / (1 - FADE_HOLD), 0, 1) ^ FADE_SHAPE
+	local f = math.clamp((t - Config.Drift.TrajectoryFadeHold) / (1 - Config.Drift.TrajectoryFadeHold), 0, 1) ^ Config.Drift.TrajectoryFadeShape
 	local eased = f * f * (3 - 2 * f) -- smoothstep: flat at both ends, no kink, no wall
-	return near + (FADE_END - near) * eased
+	return near + (Config.Drift.TrajectoryFadeEnd - near) * eased
 end
 
 function Trajectory:_draw(points: { Vector3 })

@@ -145,11 +145,12 @@ Archetypes.Order = { "balanced", "gripper", "slider", "bruiser" }
 -- Four cars, each a sparse table of overrides on `Base`. The keys are internal; the
 -- `Name` is a placeholder the user replaces when a car is something a player buys.
 --
--- THE ONE RULE ON TOP SPEED: the server bounds a reported speed at the TopSpeed of the
--- car IT thinks is active (`CarService.sane`, `Config.Drift.StateSpeedTolerance`), and
--- the panel's switch is client-side, so every archetype stays under
--- `179 * 1.25 = 223.75` studs/s. When a car becomes a real player choice the server has
--- to be told which one each player is in (see the spec's "Open questions").
+-- TOP SPEED IS NO LONGER CAPPED BY THE SERVER'S SLACK. Until T-033 every archetype had to
+-- stay under `179 * 1.25 = 223.75` studs/s, because the server bounded every packet
+-- against the top speed of the car IT happened to have active and the switch was
+-- client-side. The server is now told which car each player is in (`CarSwitch`,
+-- `CarService:SetCar`) and bounds each player against THEIR car, so a car here may be as
+-- fast as it deserves to be. The thing that still binds is taste, not the wire.
 Archetypes.Cars = {
 	-- -------------------------------------------------------------- balanced
 	-- THE DEFAULT, AND IT OVERRIDES NOTHING. The car on `main`, approved 2026-11-03.
@@ -213,7 +214,8 @@ Archetypes.Cars = {
 		-- round, and only the constant term hauls it in again
 		MaxFriction = 107, -- reached at 78 deg of slip
 		MaxAcceleration = 10,
-		TopSpeed = 215, -- under the server's 223.75 ceiling, see above
+		TopSpeed = 215, -- the fastest of the four, and since T-033 the server bounds it against
+		-- this number rather than the default car's (see the note above)
 		DownforcePerSpeed = 0.35,
 	} :: Car,
 }

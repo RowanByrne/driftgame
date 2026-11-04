@@ -280,6 +280,38 @@ at 120. The model's step is deliberately separate and finer.
 | `CamFovBase` | 60° | fallback | FOV at a standstill |
 | `CamFovPerSpeed` | 0.14 °/(stud/s) | fallback | How much it opens with speed: 85° at top speed. (0.5 per m/s) |
 | `CamFovRate` | 0.5 /s | fallback | How fast the FOV follows. Slow on purpose |
+
+### The pan (`T-036`) — ours, not the reference's
+
+Hold the **right** mouse button and drag to look around. It is an **orbit offset**, not a second
+aim: a yaw and a pitch the placed camera is rotated by *about the car*, at the same radius, still
+looking at the same point. So the car stays centred and followed, the lean and the FOV keep doing
+exactly what they did, and the player is only moving round the car to see something.
+
+**It is applied to the rendered position, after the fixed-step targets are done with, and written
+nowhere the targets can read it.** That is the whole reason it cannot disturb the camera — part 3
+feeds back into part 2, and the pan is downstream of both. Proven rather than asserted: `main`'s
+camera and this one, run side by side through the same probe at 30, 60 and 120 FPS and at 0° and
+45° of slip, differ by **exactly 0** on distance, height, lean, FOV and roll.
+
+**The mouse is deliberately not locked.** Steering is measured from where the cursor *is*, so
+locking it would freeze the car's rate of turn the moment the right button went down. The cost is
+that a pan stops at a screen edge, which is the better half of that trade.
+
+Let go and it comes back: a moment's grace so a nudge does not snap the view out of the player's
+hand, then an ease home over about three seconds.
+
+**Touch and gamepad have no pan.** A second finger would collide with the steering finger, and
+nobody has asked for one — it is a decision, not an oversight.
+
+| Number | Start | Source | What it does |
+|---|---|---|---|
+| `CamPanSensitivity` | 0.005 rad/px | ours | 0.286°/px, so a 400-pixel drag is 114.6°. About what Roblox's own camera does |
+| `CamPanRate` | 9 /s | ours | How fast the view follows the hand: a 111 ms time constant. **The "slightly smoothened" dial** — lower is more cinematic, and past about 5 it reads as lag rather than weight |
+| `CamPanReturnDelay` | 0.5 s | ours | How long after letting go before it starts coming home |
+| `CamPanReturnRate` | 2 /s | ours | How fast it comes home once it starts |
+| `CamPanPitchMin` / `CamPanPitchMax` | −12° / 60° | ours | How far the view may be dragged down and up, as an offset |
+| `CamPanElevationMin` / `CamPanElevationMax` | 1° / 80° | ours | The hard guard, on the **result**: never under the road, never straight down the roof |
 | `CamTargetStep` | 1/60 s | ours | The step the targets run at, interpolated between (above) |
 | `CamMaxTargetSteps` | 8 | ours | Safety: a stalled frame is not paid back as a burst |
 

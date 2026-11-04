@@ -257,6 +257,27 @@ local Drift = {
 	CamFovBase = 60, -- deg at a standstill. FALLBACK
 	CamFovPerSpeed = 0.14, -- deg per stud/s. FALLBACK (0.5 per m/s): 85 deg at top speed
 	CamFovRate = 0.5, -- per second. FALLBACK. How fast the FOV follows. Slow on purpose
+	-- The pan (T-036): hold right and look around. An ORBIT OFFSET on the placed camera,
+	-- about the car, at the same radius -- applied downstream of the targets, so the
+	-- feedback that makes this camera frame-rate independent never sees it.
+	CamPanSensitivity = 0.005, -- rad per pixel of mouse travel: 0.286 deg/px, so a
+	-- 400-pixel drag is 114.6 deg. OURS, and about what Roblox's
+	-- own camera does
+	CamPanRate = 9, -- per second. OURS. How fast the view follows the hand: a 111 ms time
+	-- constant. THE "SLIGHTLY SMOOTHENED" DIAL -- lower is more cinematic,
+	-- and past about 5 it starts reading as lag rather than as weight
+	CamPanReturnDelay = 0.5, -- s. OURS. How long after letting go before the view starts
+	-- coming home. Without it a release snaps and feels cheap; much
+	-- past a second and the player is driving again before it lets go
+	CamPanReturnRate = 2, -- per second. OURS. How fast it comes home once it starts: a
+	-- 500 ms time constant, about 2.1 s from a big pan to centred
+	CamPanPitchMin = -12, -- deg. OURS. How far the player may drag the view DOWN, as an
+	-- offset from where the camera already sits
+	CamPanPitchMax = 60, -- deg. OURS. And UP
+	CamPanElevationMin = 1, -- deg. OURS. The hard guard, on the RESULT rather than the
+	-- offset: the camera may never sit below this above the car,
+	-- or it is under the road
+	CamPanElevationMax = 80, -- deg. OURS. Nor past this, or it is straight down the roof
 	CamTargetStep = 1 / 60, -- s. OURS, and NOT `FixedStep`. The camera's targets feed back
 	-- into themselves (the swung target is what the next frame's resting
 	-- direction is measured from), so where they settle depends on how
@@ -331,27 +352,42 @@ local Drift = {
 	TrajectoryHz = 0, -- predictions a second. 0 is EVERY FRAME, which is what it is
 	-- measured cheap enough to do; raise it off zero to predict less
 	-- often and leave the drawn line alone in between
-	TrajectoryFlat = false, -- OURS, and the big one. True predicts against a flat plane at
+	TrajectoryFlat = true, -- OURS, and the big one. True predicts against a flat plane at
 	-- the car's current ground height: no raycasts at all, nearly
 	-- free -- and WRONG OVER A CREST, A RAMP OR A WALL, because the
 	-- plane does not know they are there. False predicts against the
 	-- live Workspace and pays four ground rays per step for a line
 	-- that follows the ground.
-	-- FLAT WAS RIGHT WHILE THE ONLY WORLD WAS FLAT, and the
-	-- playground is: there the two agreed to within a stud and the
-	-- plane was free. A TRACK IS WHY IT IS NOT: the Main place's
-	-- hand-placed track has 27 studs of elevation and banked
-	-- corners, and there the flat line came back 56.25 studs
-	-- along-track and 52.81 across against the real world's 24.20
-	-- and 4.85 -- a line 56 studs wrong is not a line showing where
-	-- the car will go. Measured, the real world costs 0.66 ms a
-	-- frame against about 0.4 flat, which is affordable
+	-- IT IS A COST DECISION AND IT DEPENDS ON THE WORLD, which is
+	-- the thing to know before changing it. On the PLAYGROUND, which
+	-- is built from a few hundred parts, the real world costs about
+	-- 0.66 ms a frame against 0.4 flat and the two agree to within a
+	-- stud -- so false is nearly free and strictly better there. On
+	-- the Main place's hand-placed TRACK, 5580 parts of wedges and
+	-- unions, the same setting measured 21.7 ms a frame average and
+	-- 32.1 ms worst: a frame at 60 FPS is 16.7 ms, so it is not a
+	-- trade, it is unusable. Flat on that track is 0.3 ms and some
+	-- of its line is wrong where the ground rises (measured 56 studs
+	-- out at one spot, against the real world's 24).
+	-- SO: TRUE. This is a dev tool, and a line that costs the frame
+	-- rate teaches nothing. Set it false on a cheap world, or when
+	-- the ground under the line matters more than the frame does
 	TrajectoryMaxSegments = 64, -- parts the line may use. The pool is created once and
 	-- reused; spares are hidden, never destroyed
 	TrajectoryWidth = 0.35, -- studs. Thin on purpose: it is an overlay, not scenery
 	TrajectoryLift = 1, -- studs above the predicted path, so the line is not inside the road
 	TrajectoryColour = Color3.fromRGB(94, 255, 162),
 	TrajectoryTransparency = 0.25,
+	-- The line fades ALONG ITSELF, not by distance from the camera: solid near the car,
+	-- gone at the far tip, so the end reads as "this is where it ends" and not as a cut.
+	TrajectoryFadeHold = 0.35, -- OURS. Fraction of the line held at
+	-- `TrajectoryTransparency` before the fade starts at all.
+	-- The near stretch is the one being read, so it stays solid
+	TrajectoryFadeEnd = 1, -- OURS. Transparency at the far tip; 1 is fully invisible
+	TrajectoryFadeShape = 1.15, -- OURS. Above 1 lingers a little longer before falling
+	-- away, below 1 leaves sooner. Fed into a smoothstep,
+	-- which is flat at both ends: no kink where the fade
+	-- starts and no wall where it ends
 	TrajectoryFolder = "DriftTrajectory", -- its folder in Workspace. NEVER inside
 	-- `Workspace.Cars`, where the ground rays and the
 	-- car-claiming logic both look
