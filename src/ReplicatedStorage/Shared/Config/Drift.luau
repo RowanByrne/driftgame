@@ -92,18 +92,30 @@ local Drift = {
 	-- it per car (see the spec's "Open questions").
 
 	-- ---------------------------------------------------------------- the car
-	CarBody = "ae86", -- OURS, and NOT the archetype: this is which SHAPE `Shared/CarModel`
-	-- builds, and the two are deliberately different axes. "ae86" is
-	-- the car the user added to the Main place, read out of it and
-	-- written down in `Shared/Cars/AE86`; "block" is the box and four
-	-- cylinders, which is also what a place whose meshes will not load
-	-- falls back to. ANY BODY MAY WEAR ANY ARCHETYPE'S NUMBERS, which
-	-- is how an archetype is driven before its art exists (T-028).
-	-- The real car is scaled onto the active car's `Wheelbase` and
-	-- `WheelDiameter`, because that is where the ground rays go.
-	-- NOT APPROVED TO PUBLISH -- it is a real manufacturer's car from
-	-- a third party's upload (`assets/car-ae86/MANIFEST.md`,
-	-- features/drift-model.md "Platform risks")
+	CarBody = "auto", -- OURS, and NOT the archetype: this is which SHAPE `Shared/CarModel`
+	-- builds, and the two are deliberately different axes.
+	--   "auto"   the ACTIVE archetype's own body, one each, assembled
+	--            out of boxes and wedges by code (`Shared/Cars/Bodies`,
+	--            T-028). Read when a car is BUILT, so a switched car
+	--            brings its shape with it the next time one is built
+	--            (`Shared/CarModel`, "when a switch lands")
+	--   "balanced" / "gripper" / "slider" / "bruiser"
+	--            one of those four bodies, on EVERY car, whichever is
+	--            being driven
+	--   "ae86"   the car the user added to the Main place, read out of
+	--            it and written down in `Shared/Cars/AE86`. NOT
+	--            APPROVED TO PUBLISH -- it is a real manufacturer's
+	--            car from a third party's upload
+	--            (`assets/car-ae86/MANIFEST.md`, features/drift-model.md
+	--            "Platform risks") -- and it is kept because it is the
+	--            shape the feel gate was passed on
+	--   "block"  the box and four cylinders, which is also what a place
+	--            whose meshes will not load falls back to
+	-- ANY BODY MAY WEAR ANY ARCHETYPE'S NUMBERS: setting this to
+	-- anything but "auto" overrides the shape and leaves the feel
+	-- alone. Every body is built around the ACTIVE car's `Wheelbase`,
+	-- `TrackWidth` and `WheelDiameter`, because that is where the
+	-- ground rays go -- the art never moves the geometry
 
 	-- ---------------------------------------------------------------- ground
 	-- One downward ray per wheel each step; the car's height and tilt follow the surface.

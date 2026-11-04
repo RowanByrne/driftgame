@@ -2,13 +2,22 @@
 -- CarModel: the car, built by code, shared so the server and client agree on it
 -- (docs/game/features/drift-model.md "Art and sound").
 --
--- There are two bodies and the simulation cannot tell them apart:
+-- There are six bodies and the simulation cannot tell them apart:
 --
---   `ae86`  the car the user added to the Main place, read out of it and written down in
---           `Shared/Cars/AE86`. 98 parts of shell and wheels, scaled onto the config.
---   `block` the original: a box and four cylinders, our own shape. Still here because a
---           place whose meshes will not load still has to run, and because the tests need
---           something that cannot fail to build.
+--   the four  `balanced`, `gripper`, `slider`, `bruiser`: OUR OWN art, assembled out of
+--             boxes and wedges by code from a table each (`Shared/Cars/Bodies`, T-028).
+--             One per archetype, and `CarBody = "auto"` draws whichever archetype is
+--             active when a car is BUILT, so a car brings its own shape with it. Nothing
+--             to download. See "when a switch lands", below, for what F4 does and does
+--             not move.
+--   `ae86`    the car the user added to the Main place, read out of it and written down in
+--             `Shared/Cars/AE86`. 98 parts of shell and wheels, scaled onto the config.
+--             NOT APPROVED TO PUBLISH (`assets/car-ae86/MANIFEST.md`) -- it is still here
+--             because it is the shape the feel gate was passed on, and setting
+--             `CarBody = "ae86"` still drives it on any archetype's numbers.
+--   `block`   the original: a box and four cylinders. Still here because a place whose
+--             meshes will not load still has to run, and because the tests need something
+--             that cannot fail to build.
 --
 -- EITHER WAY the car's shape to the rest of the game is identical: a BasePart named `Body`
 -- and four named `WheelFL`/`FR`/`RL`/`RR`, at exactly `wheelOffsets()`. The simulation's
@@ -31,6 +40,8 @@ local AssetService = game:GetService("AssetService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
+local Bodies = require(ReplicatedStorage.Shared.Cars.Bodies)
+local Cars = require(ReplicatedStorage.Shared.Cars)
 local Config = require(ReplicatedStorage.Shared.Config)
 
 local CarModel = {}
@@ -39,18 +50,26 @@ CarModel.WHEEL_NAMES = { "WheelFL", "WheelFR", "WheelRL", "WheelRR" }
 CarModel.BODY_NAME = "Body"
 CarModel.SHELL_NAME = "Shell"
 
--- The bodies this game can build, and the module in `Shared/Cars` each reads.
+-- The MESH bodies this game can build, and the module in `Shared/Cars` each reads. The
+-- four PARTS bodies -- one per archetype, assembled out of boxes and wedges by code --
+-- are in `Shared/Cars/Bodies` and need none of the machinery below: no asset, no
+-- download, no yield (T-028).
 CarModel.BODIES = { ae86 = "AE86" }
+
+-- `CarBody = "auto"` means "whatever body the ACTIVE archetype owns", which is what ties
+-- the shape to the car being driven. Any other value overrides it for every car, which is
+-- how the AE86 is still driven on any archetype's numbers.
+CarModel.AUTO = "auto"
 
 -- Which one a car is built with. `Config.Drift.CarBody` decides it; this is the fallback
 -- if that key is ever absent.
 --
 -- A BODY IS NOT A CAR. Which shape is drawn and which archetype is driven are separate
 -- axes on purpose (`Shared/Cars`, docs/game/features/car-archetypes.md): any body may
--- wear any archetype's numbers, which is how an archetype is driven before its art
--- exists. Nothing in here reads the active car except through `Config.Drift`, which is
--- where the geometry the shell is scaled onto comes from.
-local DEFAULT_BODY = "ae86"
+-- wear any archetype's numbers, and `"auto"` is simply the setting that keeps the two
+-- in step. The geometry a body is built around is still the ACTIVE car's, read through
+-- `Config.Drift`, because that is where the ground rays go.
+local DEFAULT_BODY = CarModel.AUTO
 local bodyOverride: string? = nil
 
 -- How long `build()` will wait for the shell before giving up and handing back a block,
@@ -78,16 +97,20 @@ function CarModel.isFrontWheel(name: string): boolean
 	return name == "WheelFL" or name == "WheelFR"
 end
 
--- Which body the next car gets.
+-- Which body the next car gets. `"auto"` resolves to the active archetype's own body, and
+-- falls back to the block if that archetype has no art yet -- so a fifth archetype with
+-- no body is a block car rather than an error.
 function CarModel.bodyName(): string
-	if bodyOverride then
-		return bodyOverride
+	local name = bodyOverride
+	if not name then
+		local configured = (Config.Drift :: any).CarBody
+		name = if type(configured) == "string" then configured else DEFAULT_BODY
 	end
-	local configured = (Config.Drift :: any).CarBody
-	if type(configured) == "string" then
-		return configured
+	if name == CarModel.AUTO then
+		local key = Cars.activeKey()
+		return if Bodies.exists(key) then key else "block"
 	end
-	return DEFAULT_BODY
+	return name :: string
 end
 
 -- Tests and the user's own switch: `setBody("block")` puts the box back, `setBody(nil)`
@@ -437,7 +460,9 @@ end
 function CarModel.preload()
 	if templateState == "none" or templateFor ~= CarModel.bodyName() then
 		local name = CarModel.bodyName()
-		if name ~= "block" then
+		-- A parts body has nothing to fetch and nothing to wait for: it is built fresh
+		-- every time, in microseconds.
+		if name ~= "block" and not Bodies.exists(name) then
 			task.spawn(buildTemplate, name)
 		end
 	end
@@ -449,6 +474,14 @@ function CarModel.shell(): Model?
 	local name = CarModel.bodyName()
 	if name == "block" then
 		return nil
+	end
+	-- A PARTS BODY IS NOT CACHED, on purpose. It is twenty-odd `Instance.new` calls, which
+	-- is microseconds, and it is built against the ACTIVE car's geometry -- so a cache
+	-- would be a body drawn for the last archetype the first time two archetypes have
+	-- different wheelbases. The mesh path below keeps its template because that one costs
+	-- 82 downloads.
+	if Bodies.exists(name) then
+		return Bodies.build(name)
 	end
 	if templateFor ~= name then
 		templateState = "none"
@@ -493,26 +526,58 @@ function CarModel.build(): Model
 		wheel.Parent = model
 	end
 
-	local shell = CarModel.shell()
-	if shell then
-		-- The five simulation parts stay, exactly where they were: everything else in the
-		-- game still finds the car through them. They just stop being what you see.
-		for _, part in model:GetChildren() do
-			if part:IsA("BasePart") then
-				part.Transparency = 1
-				part.CastShadow = false
-			end
-		end
-		shell.Parent = model
-		-- An attribute arrives with the Model itself, ahead of its hundred parts, so a
-		-- client that catches the car mid-replication knows to wait for a shell rather
-		-- than deciding there is not one (Drift/Render, `resolve`).
-		model:SetAttribute(CarModel.SHELL_NAME, true)
-	end
-
+	CarModel.dress(model, CarModel.shell())
 	model:PivotTo(CFrame.identity)
 	return model
 end
+
+-- Put a shell on a car, or take one off (`shell = nil` is a block car). Separate from
+-- `build` because the client re-dresses its own car when the driver switches archetype,
+-- below.
+function CarModel.dress(model: Model, shell: Model?)
+	local old = model:FindFirstChild(CarModel.SHELL_NAME)
+	if old then
+		old:Destroy()
+	end
+	-- Which body this car is wearing, so the watcher below can tell that it is no longer
+	-- the one the active car asks for without rebuilding anything to find out.
+	model:SetAttribute("Body", CarModel.bodyName())
+	for _, part in model:GetChildren() do
+		if part:IsA("BasePart") then
+			-- The five simulation parts stay, exactly where they were: everything else in
+			-- the game still finds the car through them. With a shell on they simply stop
+			-- being what you see.
+			part.Transparency = if shell then 1 else 0
+			part.CastShadow = shell == nil
+		end
+	end
+	if shell then
+		shell.Parent = model
+	end
+	-- An attribute arrives with the Model itself, ahead of its hundred parts, so a client
+	-- that catches the car mid-replication knows to wait for a shell rather than deciding
+	-- there is not one (Drift/Render, `resolve`).
+	model:SetAttribute(CarModel.SHELL_NAME, shell ~= nil or nil)
+end
+
+-- WHEN A SWITCH LANDS, AND WHY A CLIENT CANNOT MAKE IT LAND SOONER.
+--
+-- `bodyName()` answers for the active archetype the instant F4 switches it, so every car
+-- BUILT after that is the right shape -- and nothing rebuilds a car after it is spawned
+-- (`CarService:Respawn` moves the car, it does not remake it), so in a live game the
+-- shape follows the archetype at join and the feel follows it immediately.
+--
+-- Closing that gap from the client does not work, and this is the measurement rather than
+-- an opinion (T-028, in `DR-Lane1`): the car belongs to the server, and a client that
+-- destroys its `Shell` gets it back, whole, inside half a second -- 5 parts, then 34
+-- again at +0.5 s, +1.0 s, +1.5 s and +2.0 s. The client's own `Body` attribute goes back
+-- with it. A client re-dress is therefore a flicker, not a feature.
+--
+-- The honest fix is the open question the archetypes already carry
+-- (features/car-archetypes.md, "Open questions"): the SERVER has to be told which car
+-- each player is in, and then it builds the right body itself and replicates it like any
+-- other. Until a car is a player's choice rather than a tester's key, that remote is not
+-- worth adding.
 
 -- ---------------------------------------------------------------------- the rules
 
