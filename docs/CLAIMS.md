@@ -9,7 +9,6 @@ Every task in progress and the files it owns, so parallel sessions and workers n
 
 | Branch | Lane | Files owned | Since |
 |---|---|---|---|
-| `agent/endless-road` (T-044) | 1 | `src/ReplicatedStorage/Shared/Config/Road.luau` (new), `src/ReplicatedStorage/Shared/Road/*` (new), `src/ServerScriptService/Services/RoadService.luau` (new), `src/ServerScriptService/Tests/RoadTests.luau` (new), `docs/game/features/track-generation.md`, `docs/game/WORLD.md`, `docs/game/CONTRACTS.md` | 2026-11-04 |
 
 ## Notes between sessions
 
