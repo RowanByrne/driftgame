@@ -7,11 +7,14 @@
 -- this service decides which one the place gets, and PlaygroundService asks it.
 --
 -- What adopting a track means:
---   * every part of it that reads as ROAD gets the `DriftSurface` tag and a `Surface`
---     value, because that is the only thing the car's ground rays look for
---     (docs/game/CONTRACTS.md). Grass, hedges and scenery are deliberately left untagged:
---     the rays then treat them as `GripUnspecified`, which is nearly frictionless, so
---     going off the road feels like going off the road.
+--   * EVERY part of it gets the `DriftSurface` tag, because that is the only thing the
+--     car's ground rays look for (docs/game/CONTRACTS.md), and what differs is the
+--     `Surface` value: grey reads as road and is tarmac, everything else is dirt and so
+--     has half the grip. Leaving scenery untagged was the first attempt and it was wrong
+--     -- the rays filter to an INCLUDE list, so an untagged part is not low-grip ground,
+--     it is not there at all, and a car put down on the grass fell straight through it.
+--   * the place's baseplate stays and is tagged as the floor of last resort, because a
+--     track is an island and off its edge there was nothing.
 --   * anything that could hand it to Roblox physics is anchored. A hand-placed model is a
 --     stranger's work and may contain anything; the car is kinematic and the world must be
 --     too (DECISIONS.md, 2026-11-03).
@@ -32,8 +35,14 @@ TrackService.Priority = 110 -- before PlaygroundService (100), which asks whethe
 
 local C = Config.Drift
 
+-- The part kept under a track as the floor of last resort. A local and not a Config key
+-- only because `Config/Drift.luau` is claimed by another task as this lands
+-- (docs/CLAIMS.md); it wants to be `Config.Drift.TrackFloorName` and should move there.
+local FLOOR_NAME = "Baseplate"
+
 local adopted: Model? = nil
 local spawnCFrame: CFrame? = nil
+local floor: BasePart? = nil
 local counts = { road = 0, scenery = 0, anchored = 0, parts = 0 }
 
 -- Is this part road, or is it scenery?
@@ -68,12 +77,24 @@ local function adopt(track: Model)
 				d.Anchored = true
 				counts.anchored += 1
 			end
+			-- EVERYTHING gets tagged, road and scenery alike, and only the SURFACE differs.
+			--
+			-- Leaving scenery untagged was this service's first attempt and it was wrong:
+			-- the ground rays filter to an INCLUDE list of tagged parts, so an untagged
+			-- part is not low-grip ground, it is NOT THERE. Measured before this fix: a car
+			-- put down on the track's grass was `grounded = false` and falling at 21.9
+			-- studs/s through it. "Off the road is nearly frictionless" needs the ground to
+			-- exist first.
+			--
+			-- Verticals are not a problem here: since T-026 the wall sweep sorts a hit by
+			-- its NORMAL and not by its tag, so a hedge's side is a wall whether or not its
+			-- top is drivable.
+			CollectionService:AddTag(d, C.SurfaceTag)
 			if readsAsRoad(d) then
-				CollectionService:AddTag(d, C.SurfaceTag)
 				d:SetAttribute(C.SurfaceAttribute, "tarmac")
 				counts.road += 1
 			else
-				-- Left untagged on purpose: off the road is nearly frictionless.
+				d:SetAttribute(C.SurfaceAttribute, C.SurfaceDirt)
 				counts.scenery += 1
 			end
 		elseif d:IsA("BodyMover") or d:IsA("Constraint") or d:IsA("JointInstance") then
@@ -123,11 +144,22 @@ function TrackService:Init()
 	if not track then
 		return
 	end
-	-- Studio's default plate goes, exactly as PlaygroundService drops it: it sits at the
-	-- origin, which is inside the track, and the ground rays would find it under the road.
-	local plate = workspace:FindFirstChild("Baseplate")
+	-- The baseplate STAYS, and is tagged as the floor of last resort.
+	--
+	-- This service used to destroy it, the way PlaygroundService does -- and that is right
+	-- for the playground, which builds its own plate in its place. A track does not: it is
+	-- an island, and off its edge there was nothing at all. The user drove off and asked
+	-- for the plate back ("put the baseplate back when you playtest it shouldn't
+	-- disappear"), and they were right.
+	--
+	-- It is safe underneath: the track's road surfaces run from y = -0.05 upward and only
+	-- two of 3693 dip below the plate's top at all, by five hundredths of a stud.
+	local plate = workspace:FindFirstChild(FLOOR_NAME)
 	if plate and plate:IsA("BasePart") then
-		plate:Destroy()
+		plate.Anchored = true
+		CollectionService:AddTag(plate, C.SurfaceTag)
+		plate:SetAttribute(C.SurfaceAttribute, C.SurfaceDirt)
+		floor = plate
 	end
 
 	adopt(track)
@@ -164,6 +196,7 @@ function TrackService:DebugState()
 		scenery = counts.scenery,
 		anchoredHere = counts.anchored,
 		spawn = spawnCFrame and spawnCFrame.Position or nil,
+		floor = floor and floor.Name or nil,
 	}
 end
 
