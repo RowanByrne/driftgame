@@ -100,9 +100,11 @@ The generator keeps a window of road around the car and nothing else:
 | `BehindPieces` | 4 | How many are kept behind it before the oldest is destroyed |
 | `BarrierBehind` | 2 | How many pieces back the closing barrier sits |
 
-So the world stays about 14 pieces big however long the run is — **measured at a peak of 909
-parts**, the biggest single piece being 81 — which is also why `StreamingEnabled` can stay off
-(`ARCHITECTURE.md`).
+So the world stays about 14 pieces big however long the run is — **measured at a peak of 1 340
+parts**, the biggest single piece being 100 — which is also why `StreamingEnabled` can stay off
+(`ARCHITECTURE.md`). The 909 this said before was step 2's; on the same harness the window now
+reads **1 182 parts without the centre line and 1 340 with it**, which is what the markings cost
+(see "The surface").
 
 **The window only ever moves forward.** A piece behind the car has been destroyed, and nothing can
 un-destroy it, so a player who turns round does not drag the window back with them. The closing
@@ -216,6 +218,61 @@ A wall sits `BarrierBehind` pieces behind the window and moves up with it, so a 
 back down the road they came from into pieces that are about to be destroyed. It is part of the
 generator, not scenery. The spec calls it invisible; while this is a prototype it is a translucent
 red-grey, so it can be driven at on purpose.
+
+### The surface, and how a player sees their speed
+
+**On smooth plastic a player cannot tell 40 studs/s from 120** (the user, 2026-11-04). A flat colour
+has nothing in it to stream past the camera, so the road read as a static plane at every speed. The
+fix is three things, strongest first, and all of them are built-in materials and colours — **no
+uploaded asset and no Creator Store insert anywhere in the road** (`ART-PIPELINE.md`):
+
+| | What it is | What it costs |
+|---|---|---|
+| **A dashed centre line** | 10 studs of white every 24, laid at a fixed interval along the **whole run** | +158 parts in the window, **+13.4%** |
+| **Asphalt on the slab** | `Enum.Material.Asphalt`, grain projected in world space | nothing |
+| **Concrete on the barriers** | `Enum.Material.Concrete`, for peripheral vision | nothing |
+
+**The interval is measured along the run, not along a piece, and that is the whole point.** A mark
+passes the car at `speed / MarkInterval` and at nothing else — not the piece length, not the corner
+radius, not how finely a curve is cut. At 24 studs that is **4.6 marks a second at 110 studs/s and
+1.7 at 40**, which is the range the car actually does. So the builder carries the run's arc length
+across every join, and a dash that runs off the end of a piece is **clipped and finished at the
+start of the next** rather than skipped: skipping would leave one double-length gap at every join,
+the one irregularity a player would see. Measured, the two halves meet within **0.089 studs**.
+
+**Even spacing through a corner is the thing most likely to be wrong,** so it is measured. Marks are
+placed with `Pieces.poseAt(piece, t, y)` — by arc-length fraction, not by segment — and over a
+40-piece road the gap between consecutive marks is:
+
+| Piece | Gaps | Measured spacing |
+|---|---|---|
+| Straight | 18 | 23.991..24.003 |
+| Sweeper | 26 | 23.994..24.000 |
+| Corner | 28 | 23.983..23.997 |
+| Chicane | 24 | 23.946..23.997 |
+| Hairpin | 28 | 23.895..23.997 |
+
+**Worst deviation from the configured 24 studs: 0.105 studs, on the hairpin** — and that is not an
+error in the spacing, it is the chord of a 24-stud arc at radius 70 being 0.12 studs shorter than
+the arc. The spacing in arc length is exact.
+
+Per piece, the centre line costs: Straight **+10** (3 parts to 13), Hairpin **+10** (90 to 100),
+Chicane **+8** (60 to 68), Sweeper **+13** (75 to 88), Corner **+15** (81 to 96).
+
+**A marking is decoration and the ground rays never see it.** It is not tagged `DriftSurface`, it is
+`CanCollide = false` and `CanQuery = false`, and its painted face sits `MarkLift` = 0.02 studs above
+`SurfaceY` with the rest of its 0.4 studs buried in the slab, so nothing z-fights and nothing is a
+kerb. Measured on a live road: 131 marks, every top at Y = 0.0200, **0 tagged, 0 queryable, 0
+colliding**, and the drive is unchanged — `RoadTests`' 50-piece drive reports the same 28 182 steps
+and 0 steps off the road as before, and a real run reports `grounded`, `surfaceGrip 1.00`, four
+wheels down.
+
+**What is deliberately not built:** solid edge lines. They cost one part per segment per side —
+**about +460 parts, +40%** — against a budget of about +25%, and dashed edge marks at every second
+interval would be +158 more on top of the centre line (+26.7% in total). The centre line already
+carries the speed cue; if the edges want detail later, the cheap version is edge marks every third
+interval (+105, +22% in total). `BarrierMaterial` is the other free knob: `Brick` or `Slate` has
+much stronger world-space grain than `Concrete` if peripheral motion ever needs more.
 
 ## Rules and numbers
 
@@ -455,6 +512,9 @@ In `CONTRACTS.md`:
 - The `DriftSurface` tag and the `Surface` attribute are already contracted; the row for the tag now
   names the road's builder and says why the barriers are **not** tagged.
 - The `N`, `Kind` and `Variant` attributes on a `Piece_<n>` folder.
+- `Mark_<n>_<k>` parts inside a piece's folder: the centre line. **Never tagged**, never queryable,
+  never collidable — decoration, and nothing may rely on them. `k` is the dash's index along the
+  whole run, which is why one dash can appear as two parts in two neighbouring pieces.
 
 ## UI
 
@@ -476,8 +536,9 @@ placeholder, which is **not approved to publish** (`drift-model.md` "Platform ri
 
 ## Art and sound
 
-Programmer art, and nothing else: flat grey road, plain grey barriers. A real look is its own task,
-after the system works.
+Programmer art, and nothing else: asphalt-grey road, concrete barriers, a white dashed centre line
+("The surface" has every number). Built-in materials and colours only — no uploaded asset, no
+Creator Store insert. A real look is its own task, after the system works.
 
 ## Testing
 
@@ -491,7 +552,7 @@ after the system works.
 | **The chicane's two bends are opposite** | The yaw each half turns, the net turn, and how far across it steps | +40.0° then −40.0°, net **5.6e-15**, stepping **65.5** studs across a 35-stud road |
 | **The road is continuous** | Every piece's start socket against the previous piece's end socket, over 500 pieces | Worst gap **0.000e+00** studs and radians |
 | **The road never crosses itself while it exists** | At every moment of a 500-piece run, no two pieces alive at the same time overlap | **0** overlapping pairs. Ignoring the window: 38 pairs over the whole run, the closest 16 pieces apart — all long destroyed |
-| **The window holds** | Pieces in the world through a 150-piece drive, against folders, built pieces and generator pieces | 11..15 against 14; **0** disagreements; peak 909 parts |
+| **The window holds** | Pieces in the world through a 150-piece drive, against folders, built pieces and generator pieces | 11..15 against 14; **0** disagreements; peak **1 340** parts, biggest piece 100 (1 182 and 90 before the centre line) |
 | **Driving back does not drag the window back** | Told the car is at piece 40 after reaching 150 | Window still 146..160 |
 | **The closing barrier follows** | Walked 148 pieces, against where it belongs | **0** times absent, worst **0.0000** studs out, 39 studs wide on a 35-stud road |
 | **A seed is a road** | Two seeds, 200 pieces each, twice | Identical by variant and by position; a different seed differs in 177 of 200. A seed that boxes itself in stops at the same piece both times, which is the same road, not a difference |
@@ -499,7 +560,7 @@ after the system works.
 | **The gated pieces never appear too early** | Every piece with a `minPieces`, 5 seeds × 500 pieces | **0** appearances too early; the earliest hairpin of all was at piece **9**, gated at 8 |
 | **The lookahead works** | 5 seeds × 500 pieces; then forced into a closed ring by hand | **0** stalls, worst search 29 297 placements against a budget of 40 000. Driven into the ring it places **nothing** and warns; three corners in, it declines the ring-closing corner — which crosses nothing one piece deep — and places a chicane instead |
 | **Progress is right** | 150 samples down 30 pieces, then 120 back up | Monotonic, forward-on-new-road true throughout; driving back, **0** of 120 read as new road and the backwards flag came up for 112 |
-| **Pieces are drivable ground** | Every part's tag, `Surface`, anchoring; 1 353 rays down the road | **0** wrongly tagged, **0** missing a `Surface`, **0** rays missed, worst height off **0.00000** studs |
+| **Pieces are drivable ground** | Every part's tag, `Surface`, anchoring; 1 353 rays down the road | **0** wrongly tagged, **0** missing a `Surface`, **0** rays missed, worst height off **0.00000** studs. It counts anything not named `Road_*` as a wall, so the 118 centre-line marks in the window are in its "485 barrier parts" — what it asserts of them (untagged, anchored) is exactly right, only the word is wrong |
 | **No physics** | BodyMovers, constraints, scripts, unanchored parts | **0** of each |
 | **The road is nowhere near the other worlds** | The live window's box against the playground's and the track's | 18 115 studs clear |
 | **A car can actually drive it** | The autopilot down 50 generated pieces at speed | 50 pieces, 199 s, 23 910 steps; 24..117 studs/s, mean 65; drifting 73%, 34 slides caught and swapped; worst 14.0 of 17.5 studs from the centre line; **0** steps off the road, **0** airborne, **0** stuck |
