@@ -1,20 +1,25 @@
 --!nonstrict
--- CarInputController: steering, drift and brake, on touch, mouse, keyboard and gamepad.
+-- CarInputController: one number, from whatever the player is holding
+-- (docs/game/features/drift-model.md "The control").
 --
--- The game's own scheme is one gesture: a finger or the mouse held down and slid left and
--- right (DECISIONS.md, 2026-11-03). The offset is not a steering angle -- it is how hard,
--- and which way, the car's weight is thrown across, and the finger is on the car's REAR,
--- so weight left swings the tail left and arcs the car right. That is not an InputBinding
--- -- it is an analogue drag -- so Drift/DragControl owns it and this controller merges it
--- in.
+-- The model takes exactly one input: `steer`, -1 .. 1, which IS the car's rate of turn.
+-- There is no drift input, no throttle input and no brake in normal play -- the throttle
+-- eases itself in inside the model, and the handbrake is only there to stop the car once
+-- a run is over. So this controller answers one question once a frame: how far across is
+-- the finger, as a share of full travel.
 --
--- Keyboard and gamepad are the fallback, and keep discrete bindings through the Input
--- Action System (docs/workflow/CODING.md "Conventions"): InputContext > InputAction >
--- InputBinding, under the player's PlayerScripts. Every device works from the first
--- version, but only one of them is the scheme the game is designed around.
+-- The game's own scheme is that finger: held down and slid left and right, measured from
+-- the middle of the screen or from where it went down (`Config.Drift.InputMode`). That is
+-- an analogue drag rather than an InputBinding, so Drift/DragControl owns it and this
+-- merges it in.
 --
--- The whole controller exists to answer one question, once a frame: `Get()` -> what the
--- player is asking the car to do. Nothing here knows anything about the drift model.
+-- Keyboard and gamepad feed the SAME single axis through the Input Action System
+-- (docs/workflow/CODING.md "Conventions"): InputContext > InputAction > InputBinding under
+-- the player's PlayerScripts. A key is always at the end of its travel, so it is worth
+-- `KeySensitivity` of a full finger; a stick is analogue and is scaled the same way.
+--
+-- `InvertSteering` is applied by the model, at the single line that sets the yaw rate, and
+-- NOT here: what leaves this file is the raw signed share of the travel.
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -43,8 +48,7 @@ end
 
 function CarInputController:Init()
 	self.steer = 0
-	self.drift = false
-	self.brake = false
+	self.handbrake = false
 	self.DebugToggled = Signal.new()
 	self._actions = {}
 end
@@ -68,28 +72,19 @@ function CarInputController:Start()
 	binding("Stick", steer, { KeyCode = Enum.KeyCode.Thumbstick1, Deadzone = NumberRange.new(0.14, 1) })
 	self._actions.Steer = steer
 
-	-- Keyboard and gamepad cannot slide a thumb, so they get a discrete drift button. The
-	-- model takes the same two values either way: a steering axis and a drift flag.
-	local drift = Instance.new("InputAction")
-	drift.Name = "Drift"
-	drift.Type = Enum.InputActionType.Bool
-	drift.Parent = context
-	binding("Space", drift, { KeyCode = Enum.KeyCode.Space })
-	binding("Shift", drift, { KeyCode = Enum.KeyCode.LeftShift })
-	binding("Trigger", drift, { KeyCode = Enum.KeyCode.ButtonR2, PressedThreshold = 0.2 })
-	binding("Face", drift, { KeyCode = Enum.KeyCode.ButtonA })
-	self._actions.Drift = drift
-
-	-- Brake and reverse; the throttle drives itself in the prototype.
-	local brake = Instance.new("InputAction")
-	brake.Name = "Brake"
-	brake.Type = Enum.InputActionType.Bool
-	brake.Parent = context
-	binding("S", brake, { KeyCode = Enum.KeyCode.S })
-	binding("Down", brake, { KeyCode = Enum.KeyCode.Down })
-	binding("Trigger", brake, { KeyCode = Enum.KeyCode.ButtonL2, PressedThreshold = 0.2 })
-	binding("Face", brake, { KeyCode = Enum.KeyCode.ButtonB })
-	self._actions.Brake = brake
+	-- Not part of the control: the handbrake exists only to stop the car once a run is
+	-- over (features/drift-model.md "How it plays" 2). There is no drift button and no
+	-- throttle, because rotating is drifting and the car drives itself.
+	local handbrake = Instance.new("InputAction")
+	handbrake.Name = "Handbrake"
+	handbrake.Type = Enum.InputActionType.Bool
+	handbrake.Parent = context
+	binding("Space", handbrake, { KeyCode = Enum.KeyCode.Space })
+	binding("S", handbrake, { KeyCode = Enum.KeyCode.S })
+	binding("Down", handbrake, { KeyCode = Enum.KeyCode.Down })
+	binding("Trigger", handbrake, { KeyCode = Enum.KeyCode.ButtonL2, PressedThreshold = 0.2 })
+	binding("Face", handbrake, { KeyCode = Enum.KeyCode.ButtonB })
+	self._actions.Handbrake = handbrake
 
 	local debugToggle = Instance.new("InputAction")
 	debugToggle.Name = "DebugReadout"
@@ -110,16 +105,17 @@ function CarInputController:Start()
 	end)
 end
 
--- What the player is asking for, this frame. The gesture wins over the bound actions, but
--- only while a finger or the mouse is actually down, so a player with a gamepad plugged in
--- can still use it and a keyboard still steers between drags.
-function CarInputController:Get(): { steer: number, drift: boolean, brake: boolean }
+-- The one number the model wants, this frame, plus the handbrake that is not part of the
+-- control. The finger wins while it is down -- it is the scheme the game is designed
+-- around -- and the keys steer between drags, so a player with a gamepad plugged in can
+-- still use it.
+function CarInputController:Get(): { steer: number, handbrake: boolean }
 	if self._override then
-		self.steer, self.drift, self.brake = self._override.steer, self._override.drift, self._override.brake
+		self.steer, self.handbrake = self._override.steer, self._override.handbrake
 		return self._override
 	end
 
-	local steer, drift, brake = 0, false, false
+	local steer, handbrake = 0, false
 
 	local steerAction = self._actions and self._actions.Steer
 	if steerAction then
@@ -130,33 +126,25 @@ function CarInputController:Get(): { steer: number, drift: boolean, brake: boole
 			steer = value
 		end
 	end
-	if self._actions and self._actions.Drift then
-		drift = self._actions.Drift:GetState() == true
-		brake = self._actions.Brake:GetState() == true
-	end
+	-- A key held is the end of its travel, which on a rate-of-turn control would be a car
+	-- that only ever spins. It is worth `KeySensitivity` of a full finger.
+	steer *= Config.Drift.KeySensitivity
 
-	-- The axis is not a steering wheel any more: it is how hard the car's weight is thrown
-	-- across, and the car goes fully sideways at the end of its travel. A keyboard key is
-	-- always at the end of its travel, so a key on its own would mean "throw everything",
-	-- which is undrivable. It is worth `KeySteerShare` of a finger, and the drift button
-	-- buys the rest -- which is what that button is for now that the finger needs none.
-	if not drift then
-		steer *= Config.Drift.KeySteerShare
+	if self._actions and self._actions.Handbrake then
+		handbrake = self._actions.Handbrake:GetState() == true
 	end
 
 	if self._drag then
-		local dSteer, dDrift, dBrake = self._drag:Get()
-		if math.abs(dSteer) > math.abs(steer) then
+		local dSteer, dHandbrake = self._drag:Get()
+		if self._drag:Down() then
 			steer = dSteer
 		end
-		drift = drift or dDrift
-		brake = brake or dBrake
+		handbrake = handbrake or dHandbrake
 	end
 
 	self.steer = math.clamp(steer, -1, 1)
-	self.drift = drift
-	self.brake = brake
-	return { steer = self.steer, drift = drift, brake = brake }
+	self.handbrake = handbrake
+	return { steer = self.steer, handbrake = handbrake }
 end
 
 function CarInputController:Device(): string
@@ -166,9 +154,12 @@ end
 function CarInputController:DebugState()
 	return {
 		steer = self.steer,
-		drift = self.drift,
-		brake = self.brake,
+		handbrake = self.handbrake,
 		device = self:Device(),
+		mode = if self._drag then self._drag:Mode() else Config.Drift.InputMode,
+		sensitivity = Config.Drift.Sensitivity,
+		keySensitivity = Config.Drift.KeySensitivity,
+		travelPx = if self._drag then self._drag:TravelPx() else 0,
 		drag = if self._drag then self._drag:DebugState() else nil,
 		contextParent = (self._context and self._context.Parent and self._context.Parent:GetFullName()) or "none",
 		actions = if self._context then #self._context:GetChildren() else 0,
@@ -177,13 +168,13 @@ function CarInputController:DebugState()
 	}
 end
 
--- Studio only: pretend a key is held, so an agent playtest can drive a measured line
--- without touching the keyboard (docs/workflow/TESTING.md).
-function CarInputController:DebugSetInput(steer: number?, drift: boolean?, brake: boolean?)
+-- Studio only: pretend an input is held, so an agent playtest can drive a measured line
+-- without touching the keyboard (docs/workflow/TESTING.md). There is no throttle argument:
+-- the throttle is not an input and the model eases it in itself.
+function CarInputController:DebugSetInput(steer: number?, handbrake: boolean?)
 	self._override = {
-		steer = steer or 0,
-		drift = drift == true,
-		brake = brake == true,
+		steer = math.clamp(steer or 0, -1, 1),
+		handbrake = handbrake == true,
 	}
 	return self._override
 end
@@ -193,17 +184,31 @@ function CarInputController:DebugClearInput()
 	return true
 end
 
-function CarInputController:Override(): { steer: number, drift: boolean, brake: boolean }?
+function CarInputController:Override(): { steer: number, handbrake: boolean }?
 	return self._override
 end
 
+-- Studio only: a full finger in pixels, optionally at a sensitivity other than the one in
+-- Config, so the travel curve can be measured end to end (Drift/DragControl).
+function CarInputController:DebugTravelPx(sensitivity: number?): number
+	return if self._drag then self._drag:TravelPx(sensitivity) else 0
+end
+
+-- Studio only: stand in for the settings screen that does not exist yet, so both input
+-- modes and the sensitivity range can be driven in a test. Either argument nil goes back
+-- to Config.
+function CarInputController:DebugSettings(mode: string?, sensitivity: number?)
+	return if self._drag then self._drag:DebugSettings(mode, sensitivity) else nil
+end
+
 -- Studio only: act out the real gesture, so a test exercises the control the player uses
--- rather than the override that bypasses it. `offsetPx` nil lifts the finger.
-function CarInputController:DebugDrag(offsetPx: number?, flickRate: number?)
+-- rather than the override that bypasses it. The finger goes down at `originPx`, the
+-- middle of the screen by default; `offsetPx` nil lifts it.
+function CarInputController:DebugDrag(offsetPx: number?, originPx: number?)
 	if not self._drag then
 		return nil
 	end
-	return self._drag:DebugDrag(offsetPx, flickRate)
+	return self._drag:DebugDrag(offsetPx, originPx)
 end
 
 return CarInputController

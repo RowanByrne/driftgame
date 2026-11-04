@@ -1,56 +1,52 @@
 --!nonstrict
--- DragControl: the whole control scheme, in one gesture
--- (docs/game/DECISIONS.md, 2026-11-03; features/drift-model.md "How it plays").
+-- DragControl: one finger, held, is the whole control
+-- (docs/game/features/drift-model.md "The control", "How it plays" 2-4).
 --
--- A finger goes down, or the mouse button does. From then until it comes up, the only
--- thing that matters is how far across the screen it has moved from where it went down.
--- That horizontal offset is the entire control -- and it is on the car's REAR, not its
--- nose (features/drift-model.md "How it plays"):
+-- A finger goes down anywhere, or the mouse button does. From then until it comes up the
+-- only thing that matters is its HORIZONTAL distance -- measured either from the middle of
+-- the screen or from where it went down, which is `Config.Drift.InputMode` -- as a share
+-- of a full travel. That share IS the car's rate of turn: the model multiplies it by
+-- `MaxSteeringSpeed` and sets the yaw, so centring the finger stops the turn on the next
+-- step and holding it out keeps the car rotating. Nothing here is a steering angle, a
+-- weight to throw, a drift or a brake; the throttle is not an input at all and drives
+-- itself inside the model.
 --
---   offset left swings the TAIL left, which arcs the car right, and the mirror of that;
---   how far out it is says how hard the car is sliding, continuously, from a shallow
---     fast arc to fully sideways -- there is no threshold to cross and no mode to enter;
---   the harder the slide the more it scrubs, so the finger is also the brake, and held
---     all the way out it stops the car;
---   easing back toward the middle is the counter-steer, not a second mode;
---   lifting the finger hooks the rear back up over `GripBlendOut`.
+-- Full travel is `SliderWidthMin`..`SliderWidthMax` of HALF the screen width, lerped by
+-- `Sensitivity` (1..10) BACKWARDS: a higher sensitivity is a SHORTER travel, so the same
+-- finger movement turns the car more. That inversion is the reference's and it is
+-- deliberate.
 --
--- `DriftOffset` and `DriftFlickRate` no longer gate anything: they only decide when the
--- readout calls it a drift, and what a flick is worth to the discrete inputs.
+-- `InvertSteering` is NOT applied here. The model owns it (Drift/Model.luau, at the one
+-- line that sets the yaw rate), so what this returns is the raw signed share of the
+-- travel -- positive is a finger to the right -- and the slider's knob can simply sit
+-- where the finger is.
 --
--- Touch and mouse run the same code, because they are the same gesture and there is no
--- sense in tuning two of them. Keyboard and gamepad keep their own bindings in
--- CarInputController, so every device works (docs/workflow/CODING.md "Conventions").
+-- Touch and mouse are the same gesture and the same code. Keyboard and gamepad feed the
+-- same single axis from CarInputController, scaled by `KeySensitivity`, because the model
+-- only ever wanted one number.
 --
--- Programmer art: a track, a knob, and a word that lights up (docs/workflow/UI.md). The
--- UI kit does not exist yet and this is here to be felt, not looked at.
+-- Programmer art: the slider is Drift/SliderHud and exists only while the finger is down
+-- (docs/workflow/UI.md). The two buttons are the handbrake, which is only there to stop
+-- the car once a run is over, and the debug readout's toggle.
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
+local GuiService = game:GetService("GuiService")
 
 local Config = require(ReplicatedStorage.Shared.Config)
+local SliderHud = require(script.Parent.SliderHud)
 
 local DragControl = {}
 DragControl.__index = DragControl
 
 local PAD = Color3.fromRGB(30, 32, 38)
-local KNOB = Color3.fromRGB(150, 155, 165)
 local LIVE = Color3.fromRGB(230, 90, 70)
 local TEXT = Color3.fromRGB(235, 235, 240)
 
-local function clamp(x, lo, hi)
+local function clamp(x: number, lo: number, hi: number): number
 	return math.max(lo, math.min(hi, x))
-end
-
-local function frame(name: string, parent: Instance): Frame
-	local f = Instance.new("Frame")
-	f.Name = name
-	f.BackgroundColor3 = PAD
-	f.BackgroundTransparency = 0.55
-	f.BorderSizePixel = 0
-	f.Parent = parent
-	return f
 end
 
 local function button(name: string, text: string, parent: Instance): TextButton
@@ -61,7 +57,7 @@ local function button(name: string, text: string, parent: Instance): TextButton
 	b.BorderSizePixel = 0
 	b.Text = text
 	b.TextColor3 = TEXT
-	b.TextSize = 20
+	b.TextSize = 18
 	b.FontFace = Font.fromEnum(Enum.Font.GothamMedium)
 	b.AutoButtonColor = false
 	b.Parent = parent
@@ -70,14 +66,14 @@ end
 
 function DragControl.new(onDebugToggle: () -> ())
 	local self = setmetatable({}, DragControl)
-	self.steer = 0
-	self.drift = false
-	self.brake = false
-	self._pointer = nil -- the InputObject being dragged, or "mouse"
-	self._originX = 0
-	self._lastX = 0
-	self._flick = 0 -- px/s, smoothed
-	self._latched = false -- the rear has let go and stays gone while the finger is down
+	self.steer = 0 -- the raw share of full travel, -1 .. 1, sign as the finger moved
+	self.handbrake = false
+	self._pointer = nil -- the InputObject being dragged, or nil
+	self._originX = 0 -- where the finger went down, px (dynamic mode)
+	self._x = 0 -- where it is now, px
+	self._y = 0 -- and its height, for where the track is drawn
+	self._mode = nil -- Studio-only overrides of the two settings (DebugSettings)
+	self._sensitivity = nil
 	self._onDebugToggle = onDebugToggle
 	self._connections = {}
 
@@ -89,87 +85,80 @@ function DragControl.new(onDebugToggle: () -> ())
 	gui.Parent = Players.LocalPlayer:WaitForChild("PlayerGui")
 	self.gui = gui
 
+	self.hud = SliderHud.new(gui)
 	self:_build()
 	return self
 end
 
-function DragControl:_build()
+-- The screen, in pixels. The ScreenGui ignores the inset, so its own size is the window's;
+-- input positions do not, so the inset goes back on the Y to put the track under the
+-- finger. Only the X matters to the steering.
+function DragControl:_screen(): (number, number)
+	local size = self.gui.AbsoluteSize
+	if size.X < 1 then
+		local camera = workspace.CurrentCamera
+		size = camera and camera.ViewportSize or Vector2.new(1280, 720)
+	end
+	return size.X, size.Y
+end
+
+-- A full finger, in pixels. `Sensitivity` 1..10 lerps the share of half the screen width
+-- between `SliderWidthMax` and `SliderWidthMin` BACKWARDS, so 10 is the shortest travel.
+-- `sensitivity` is a Studio-only override, for measuring the curve without editing Config.
+function DragControl:TravelPx(sensitivity: number?): number
 	local C = Config.Drift
+	local width = self:_screen()
+	local s = sensitivity or self._sensitivity or C.Sensitivity
+	local t = clamp((s - 1) / 9, 0, 1)
+	local share = C.SliderWidthMax + (C.SliderWidthMin - C.SliderWidthMax) * t
+	return math.max(share * width * 0.5, 1)
+end
+
+function DragControl:Mode(): string
+	return self._mode or Config.Drift.InputMode
+end
+
+-- Where the middle of the travel sits on screen this frame, in gui pixels.
+function DragControl:CentreX(): number
+	local width = self:_screen()
+	if self:Mode() == "centred" then
+		return width * 0.5
+	end
+	return self._originX
+end
+
+function DragControl:_build()
 	local gui = self.gui
 
-	-- The whole screen takes the drag. It sits under the buttons, so a thumb on BRAKE is a
-	-- brake and not a steering input.
-	local pad = frame("DragArea", gui)
+	-- The whole screen takes the drag. It sits under the buttons, so a thumb on the
+	-- handbrake is a handbrake and not a steering input.
+	local pad = Instance.new("Frame")
+	pad.Name = "DragArea"
 	pad.BackgroundTransparency = 0.99 -- not quite invisible, so touches actually arrive
+	pad.BorderSizePixel = 0
 	pad.Active = true
 	pad.Size = UDim2.fromScale(1, 1)
 	pad.ZIndex = 1
+	pad.Parent = gui
 	self.pad = pad
 
-	-- The readout of the gesture: a track with the middle marked, and a knob on it. It
-	-- only appears while a finger or the mouse is actually down.
-	local track = frame("Track", gui)
-	track.AnchorPoint = Vector2.new(0.5, 1)
-	track.Position = UDim2.new(0.5, 0, 1, -60)
-	track.Size = UDim2.fromOffset(C.DragFullLock * 2 + 60, 14)
-	track.ZIndex = 2
-	track.Visible = false
-	local trackCorner = Instance.new("UICorner")
-	trackCorner.CornerRadius = UDim.new(1, 0)
-	trackCorner.Parent = track
-	self.track = track
-
-	local centre = frame("Centre", track)
-	centre.AnchorPoint = Vector2.new(0.5, 0.5)
-	centre.Position = UDim2.fromScale(0.5, 0.5)
-	centre.Size = UDim2.fromOffset(3, 22)
-	centre.BackgroundColor3 = TEXT
-	centre.BackgroundTransparency = 0.4
-	centre.ZIndex = 3
-
-	local knob = frame("Knob", track)
-	knob.BackgroundColor3 = KNOB
-	knob.BackgroundTransparency = 0.1
-	knob.AnchorPoint = Vector2.new(0.5, 0.5)
-	knob.Size = UDim2.fromOffset(56, 56)
-	knob.Position = UDim2.fromScale(0.5, 0.5)
-	knob.ZIndex = 4
-	local knobCorner = Instance.new("UICorner")
-	knobCorner.CornerRadius = UDim.new(1, 0)
-	knobCorner.Parent = knob
-	self.knob = knob
-
-	local label = Instance.new("TextLabel")
-	label.Name = "State"
-	label.BackgroundTransparency = 1
-	label.AnchorPoint = Vector2.new(0.5, 1)
-	label.Position = UDim2.new(0.5, 0, 0, -8)
-	label.Size = UDim2.fromOffset(200, 22)
-	label.TextColor3 = TEXT
-	label.TextSize = 18
-	label.FontFace = Font.fromEnum(Enum.Font.GothamMedium)
-	label.Text = ""
-	label.ZIndex = 4
-	label.Parent = track
-	self.label = label
-
-	-- Brake and reverse keep their own input: the decision is that *one* input does the
-	-- steering and the drift, not that there is only one input (DECISIONS.md, 2026-11-03).
-	local brakeButton = button("Brake", "BRAKE", gui)
-	brakeButton.AnchorPoint = Vector2.new(1, 1)
-	brakeButton.Size = UDim2.fromOffset(120, 120)
-	brakeButton.Position = UDim2.new(1, -28, 1, -28)
-	brakeButton.ZIndex = 5
-	local brakeCorner = Instance.new("UICorner")
-	brakeCorner.CornerRadius = UDim.new(1, 0)
-	brakeCorner.Parent = brakeButton
-	self.brakeButton = brakeButton
+	-- Not part of the control: the handbrake only stops the car once a run is over
+	-- (features/drift-model.md "How it plays" 2), and the readout's toggle is for us.
+	local handbrake = button("Handbrake", "STOP", gui)
+	handbrake.AnchorPoint = Vector2.new(1, 1)
+	handbrake.Size = UDim2.fromOffset(96, 96)
+	handbrake.Position = UDim2.new(1, -28, 1, -28)
+	handbrake.ZIndex = 5
+	local hbCorner = Instance.new("UICorner")
+	hbCorner.CornerRadius = UDim.new(1, 0)
+	hbCorner.Parent = handbrake
+	self.handbrakeButton = handbrake
 
 	local debugButton = button("DebugToggle", "DBG", gui)
-	debugButton.Size = UDim2.fromOffset(64, 48)
+	debugButton.Size = UDim2.fromOffset(64, 44)
 	debugButton.AnchorPoint = Vector2.new(1, 0)
 	debugButton.Position = UDim2.new(1, -16, 0, 64)
-	debugButton.TextSize = 16
+	debugButton.TextSize = 15
 	debugButton.ZIndex = 5
 	self.debugButton = debugButton
 
@@ -177,21 +166,21 @@ function DragControl:_build()
 		table.insert(self._connections, signal:Connect(fn))
 	end
 
-	local function pointerType(input: InputObject): boolean
+	local function isPointer(input: InputObject): boolean
 		return input.UserInputType == Enum.UserInputType.Touch
 			or input.UserInputType == Enum.UserInputType.MouseButton1
 	end
 
-	connect(brakeButton.InputBegan, function(input)
-		if pointerType(input) then
-			self.brake = true
-			brakeButton.BackgroundColor3 = LIVE
+	connect(handbrake.InputBegan, function(input)
+		if isPointer(input) then
+			self.handbrake = true
+			handbrake.BackgroundColor3 = LIVE
 		end
 	end)
-	connect(brakeButton.InputEnded, function(input)
-		if pointerType(input) then
-			self.brake = false
-			brakeButton.BackgroundColor3 = PAD
+	connect(handbrake.InputEnded, function(input)
+		if isPointer(input) then
+			self.handbrake = false
+			handbrake.BackgroundColor3 = PAD
 		end
 	end)
 	connect(debugButton.Activated, function()
@@ -199,17 +188,13 @@ function DragControl:_build()
 	end)
 
 	connect(pad.InputBegan, function(input)
-		if not pointerType(input) or self._pointer then
+		if not isPointer(input) or self._pointer then
 			return
 		end
 		self._pointer = input
 		self._originX = input.Position.X
-		self._lastX = input.Position.X
-		self._flick = 0
-		self._latched = false
-		self.steer = 0
-		track.Visible = true
-		self:_draw()
+		self._y = input.Position.Y + GuiService:GetGuiInset().Y
+		self:_move(input.Position.X)
 	end)
 
 	-- Touch reports its moves on the same InputObject; the mouse reports MouseMovement,
@@ -218,12 +203,13 @@ function DragControl:_build()
 		if not self._pointer then
 			return
 		end
-		local isOurs = input == self._pointer
+		local ours = input == self._pointer
 			or (
 				self._pointer.UserInputType == Enum.UserInputType.MouseButton1
 				and input.UserInputType == Enum.UserInputType.MouseMovement
 			)
-		if isOurs then
+		if ours then
+			self._y = input.Position.Y + GuiService:GetGuiInset().Y
 			self:_move(input.Position.X)
 		end
 	end)
@@ -232,118 +218,103 @@ function DragControl:_build()
 		if not self._pointer then
 			return
 		end
-		local isOurs = input == self._pointer or input.UserInputType == self._pointer.UserInputType
-		if not isOurs then
+		if input ~= self._pointer and input.UserInputType ~= self._pointer.UserInputType then
 			return
 		end
-		self._pointer = nil
-		self._latched = false
-		self.steer = 0
-		self._flick = 0
-		track.Visible = false
+		self:_lift()
 	end
 
 	connect(pad.InputEnded, release)
 	connect(UserInputService.InputEnded, release)
 	-- A finger that leaves the window, or focus lost mid-drag, must not leave the car
-	-- locked over: the slide would hold with nobody holding it.
+	-- turning: the yaw rate IS the finger, so a stuck finger is a car that never stops
+	-- rotating.
 	connect(UserInputService.WindowFocusReleased, function()
-		self._pointer = nil
-		self._latched = false
-		self.steer = 0
-		track.Visible = false
+		self:_lift()
+	end)
+
+	-- The slider is drawn here rather than by whoever reads the input, so it is right even
+	-- on a frame the car is not being simulated at all.
+	connect(RunService.RenderStepped, function(dt)
+		self.hud:Update(dt, self._pointer ~= nil, self:CentreX(), self._y, self:TravelPx(), self.steer)
 	end)
 end
 
--- One move of the pointer. `dt` is not available here, so the flick rate is measured
--- against the clock: this fires far more often than a frame does.
+function DragControl:_lift()
+	self._pointer = nil
+	self.steer = 0
+end
+
+-- One move of the pointer: the whole control, in three lines.
 function DragControl:_move(x: number)
-	local C = Config.Drift
-	local now = os.clock()
-	local dt = math.max(now - (self._lastMove or now - 1 / 60), 1 / 1000)
-	self._lastMove = now
-
-	local rate = math.abs(x - self._lastX) / dt
-	local alpha = 1 - math.exp(-dt / math.max(C.DriftFlickSmoothing, 1e-3))
-	self._flick += (rate - self._flick) * alpha
-	self._lastX = x
-
-	local offset = x - self._originX
-	local steer = clamp(offset / math.max(C.DragFullLock, 1), -1, 1)
-	if math.abs(steer) < C.DragDeadzone then
-		steer = 0
-	end
-	self.steer = steer
-
-	-- The readout's own latch. It no longer decides whether the car slides -- the offset
-	-- does that, continuously -- but it is what lights the knob up, what the server is
-	-- told, and what a flick is worth to the model's discrete input.
-	if not self._latched then
-		if math.abs(steer) >= C.DriftOffset or self._flick >= C.DriftFlickRate then
-			self._latched = true
-		end
-	end
-
-	self:_draw()
+	self._x = x
+	local offset = x - self:CentreX()
+	self.steer = clamp(offset / self:TravelPx(), -1, 1)
 end
 
-function DragControl:_draw()
-	local C = Config.Drift
-	self.knob.Position = UDim2.new(0.5, self.steer * C.DragFullLock, 0.5, 0)
-	local live = self._latched
-	self.knob.BackgroundColor3 = live and LIVE or KNOB
-	-- The sign is shown as the TAIL going left or right, because that is what the finger
-	-- does; the car goes the other way.
-	local side = if self.steer > 0 then "tail right" elseif self.steer < 0 then "tail left" else "centred"
-	self.label.Text = if live
-		then ("DRIFT  %.0f%%  %s"):format(math.abs(self.steer) * 100, side)
-		else ("weight %.0f%%  %s"):format(math.abs(self.steer) * 100, side)
-	self.label.TextColor3 = live and LIVE or TEXT
-end
-
--- What the gesture is asking for. The drift stays latched while the pointer is down, which
--- is what makes easing back toward the middle a counter-steer instead of an exit.
-function DragControl:Get(): (number, boolean, boolean)
+-- What the gesture is asking for. `steer` is the car's rate of turn as a share of
+-- `MaxSteeringSpeed`, before `InvertSteering`, which the model applies.
+function DragControl:Get(): (number, boolean)
 	if not self._pointer then
-		return 0, false, self.brake
+		return 0, self.handbrake
 	end
-	return self.steer, self._latched, self.brake
+	return self.steer, self.handbrake
+end
+
+function DragControl:Down(): boolean
+	return self._pointer ~= nil
 end
 
 function DragControl:DebugState()
+	local width = self:_screen()
 	return {
-		dragging = self._pointer ~= nil,
-		pointer = if self._pointer then self._pointer.UserInputType.Name else "none",
+		down = self._pointer ~= nil,
+		pointer = if self._pointer and self._pointer.UserInputType then self._pointer.UserInputType.Name else "none",
+		mode = self:Mode(),
+		sensitivity = self._sensitivity or Config.Drift.Sensitivity,
 		steer = self.steer,
-		latched = self._latched,
-		flickRate = self._flick,
-		brake = self.brake,
-		offsetPx = self.steer * Config.Drift.DragFullLock,
+		travelPx = self:TravelPx(),
+		centreX = self:CentreX(),
+		originX = self._originX,
+		x = self._x,
+		offsetPx = self._x - self:CentreX(),
+		screenWidth = width,
+		handbrake = self.handbrake,
+		slider = self.hud:DebugState(),
 	}
 end
 
--- Studio only: act out a drag, so an agent playtest can drive the real control path
--- rather than the override behind it (docs/workflow/TESTING.md).
-function DragControl:DebugDrag(offsetPx: number?, flickRate: number?)
+-- Studio only: stand in for the settings screen that does not exist yet, so both input
+-- modes and the whole sensitivity range can be measured without editing Config, which the
+-- model and the camera read too. Either argument nil goes back to Config.
+function DragControl:DebugSettings(mode: string?, sensitivity: number?)
+	self._mode = mode
+	self._sensitivity = sensitivity
+	if self._pointer then
+		self:_move(self._x)
+	end
+	return self:DebugState()
+end
+
+-- Studio only: act out the real gesture, so a test exercises the control the player uses
+-- rather than the override that bypasses it (docs/workflow/TESTING.md). The finger goes
+-- down at `originPx` across the screen, the middle of it by default, and moves `offsetPx`
+-- from there -- which is what tells the two input modes apart, because only `dynamic`
+-- measures from where the finger landed. `nil` lifts it.
+function DragControl:DebugDrag(offsetPx: number?, originPx: number?)
 	if offsetPx == nil then
-		self._pointer = nil
-		self._latched = false
-		self.steer = 0
-		self.track.Visible = false
+		self:_lift()
 		return self:DebugState()
 	end
-	self._pointer = self._pointer or { UserInputType = Enum.UserInputType.Touch }
-	self._flick = flickRate or 0
-	self._lastX = offsetPx
-	self._originX = 0
-	local C = Config.Drift
-	local steer = clamp(offsetPx / math.max(C.DragFullLock, 1), -1, 1)
-	self.steer = if math.abs(steer) < C.DragDeadzone then 0 else steer
-	if math.abs(self.steer) >= C.DriftOffset or self._flick >= C.DriftFlickRate then
-		self._latched = true
+	local width, height = self:_screen()
+	if not self._pointer then
+		self._pointer = { UserInputType = Enum.UserInputType.Touch }
+		self._originX = originPx or width * 0.5
+		self._y = height * 0.8
+	elseif originPx then
+		self._originX = originPx
 	end
-	self.track.Visible = true
-	self:_draw()
+	self:_move(self._originX + offsetPx)
 	return self:DebugState()
 end
 
@@ -351,6 +322,7 @@ function DragControl:Destroy()
 	for _, c in self._connections do
 		c:Disconnect()
 	end
+	self.hud:Destroy()
 	self.gui:Destroy()
 end
 

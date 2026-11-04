@@ -169,13 +169,11 @@ function DriftController:_frame(dt: number)
 		return
 	end
 
-	-- The model wants one number and a handbrake. The input controller still answers in
-	-- the departed model's shape -- a steer, a drift flag and a brake -- so the drift flag
-	-- is dropped here (rotating is drifting; there is nothing for it to mean any more) and
-	-- the brake becomes the handbrake that stops a car after a run. The gesture task
-	-- behind this one replaces that shape with the real one.
-	local raw = CarInputController:Get()
-	local input = { steer = raw.steer, handbrake = raw.brake == true }
+	-- The model wants one number and a handbrake, and that is exactly what the input
+	-- controller answers now (T-013): `steer` is the car's rate of turn as a share of
+	-- `MaxSteeringSpeed`, and the handbrake only stops the car once a run is over. There
+	-- is no drift input left -- rotating is drifting.
+	local input = CarInputController:Get()
 	local steps = Sim.advance(self.runner, dt, input, self.world)
 	local state = self.runner.state
 
