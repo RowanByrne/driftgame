@@ -9,6 +9,8 @@ Every task in progress and the files it owns, so parallel sessions and workers n
 
 | Branch | Lane | Files owned | Since |
 |---|---|---|---|
+| `agent/tilted-sweep` | lane2 | `src/StarterPlayerScripts/Drift/World.luau`, `src/ServerScriptService/Tests/CollisionTests.luau`, `docs/game/features/road-elevation.md` | 2026-11-04 (T-073) |
+| `agent/road-fall` | lane1 | `src/StarterPlayerScripts/Drift/Model.luau`, `src/ReplicatedStorage/Shared/Config/Drift.luau`, `src/ServerScriptService/Tests/RunTests.luau`, `src/ServerScriptService/Services/CarService.luau` | 2026-11-04 (T-067) |
 
 ## Notes between sessions
 
