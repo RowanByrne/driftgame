@@ -9,6 +9,7 @@ Every task in progress and the files it owns, so parallel sessions and workers n
 
 | Branch | Lane | Files owned | Since |
 |---|---|---|---|
+| `agent/archetype-bodies` (T-028) | 1 | `src/ReplicatedStorage/Shared/Cars/Bodies/*` (new), `src/ReplicatedStorage/Shared/CarModel.luau`, `src/ReplicatedStorage/Shared/Config/Drift.luau`, `src/ServerScriptService/Tests/DriftTests.luau` | 2026-11-04 |
 
 ## Notes between sessions
 
