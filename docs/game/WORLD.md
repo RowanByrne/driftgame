@@ -92,6 +92,32 @@ The limit asserted in `PlaygroundTests` is 0.25 studs per stud travelled, so the
 
 **Two things a banked box gets wrong, and how they are fixed.** A part can bank but it cannot twist, and two neighbours on a curve share their centre point while turning by the yaw step, so their *outer* corners pull apart into a wedge — from the ground that reads as a bite out of the rim. Each box is now lengthened by exactly (half the width) times (the yaw step), which closes it. Separately, a raised edge on a thin ribbon shows daylight under it: the circle and the ramp are 14-stud-thick prisms and the plate is 24 thick, so every underside is buried. Both were checked by eye from the ground, not only by ray.
 
+## Looking at it in Studio: the showroom
+
+Every one of the three worlds is built by code at runtime, so in Studio's **edit mode** the place is empty and there is nothing to fly around. `src/ServerScriptService/Tools/Showroom.luau` is the answer to that: an edit-mode tool that builds the playground and one of every road piece into the open place's Workspace, where they can be flown around, clicked and looked at while the code that makes them is still being written. Nothing in the game requires it and it is never reached at runtime.
+
+Run it from Studio's command bar, and take it away again the same way:
+
+```
+require(game.ServerScriptService.Tools.Showroom).build()
+require(game.ServerScriptService.Tools.Showroom).clear()
+```
+
+What it leaves behind, all of it under one folder and all of it anchored:
+
+| Under `Workspace.Showroom` | What it is |
+|---|---|
+| `Playground` | exactly what `PlaygroundService:Build()` makes, where it makes it: 325 parts |
+| `Gallery` | one of every variant in `Pieces.order()`, in a grid: 9 pieces, 634 parts |
+
+The gallery sits past the playground's plate -- 527 studs clear of it -- in a grid of cells as wide as the widest piece plus a gap, so no two pieces are closer than 317 studs and the whole layout re-measures itself when the piece set changes. Each piece has its variant id on a sign lying flat in front of it, in 90-stud letters, and on a billboard above it. `build()` is `clear()` followed by a fresh build, so seeing a code change is one line and there is never a second showroom.
+
+Three things to know:
+
+- **Save the place (Ctrl+S) or it is gone.** The showroom is ordinary instances in the Workspace, not something a script rebuilds on open.
+- **Clear it before a playtest.** At runtime `PlaygroundService` builds its own playground at the same coordinates, into `Workspace.Playground`, and has no way to know the showroom is there: a playtest with it saved in the place gets two playgrounds in one space. `clear()` first, `build()` again afterwards.
+- **It borrows the place's baseplate.** The playground's own 2 000-stud plate is coplanar with Studio's default `Baseplate`, so `Build()` destroys it exactly as the game does. The showroom records its size, position, colour and material first, and `clear()` puts it back.
+
 ## Versions
 
 | Version | Date | What changed |
