@@ -9,8 +9,6 @@ Every task in progress and the files it owns, so parallel sessions and workers n
 
 | Branch | Lane | Files owned | Since |
 |---|---|---|---|
-| `agent/trajectory-line` (T-032) | 1 | `src/StarterPlayerScripts/Drift/Trajectory.luau` (new), `src/StarterPlayerScripts/Controllers/DriftController.luau`, `src/ReplicatedStorage/Shared/Config/Drift.luau`, `src/ServerScriptService/Tests/TrajectoryTests.luau` (new) | 2026-11-04 |
-| `agent/bowl-and-ramp` (T-026) | 2 | `src/StarterPlayerScripts/Drift/Model.luau`, `src/StarterPlayerScripts/Drift/World.luau`, `src/ServerScriptService/Tests/CollisionTests.luau`, `src/ServerScriptService/Playground/*` | 2026-11-03 |
 
 ## Notes between sessions
 
