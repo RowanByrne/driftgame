@@ -1,4 +1,4 @@
---!strict
+--!nonstrict
 -- Every tuning number for the drift model, and none of them in the logic
 -- (docs/game/features/drift-model.md "Rules and numbers").
 --
@@ -10,6 +10,21 @@
 -- steering lock and no tyre model. If a number that implies one of those turns up in this
 -- table, something has drifted from the spec.
 --
+-- THIS FILE IS THE MODEL. THE CAR IS IN `Shared/Cars` (T-027,
+-- docs/game/features/car-archetypes.md). Every number that is a property of one CAR --
+-- its rate of turn, its four grip numbers, its drivetrain, its downforce, its geometry --
+-- was moved out of here into `Cars/Archetypes` and is resolved through the ACTIVE car by
+-- the metatable at the bottom. So `Config.Drift.MaxSteeringSpeed` still answers, and
+-- still answers in `Drift/Model`'s hot loop, but what it answers is whichever car is in
+-- play. What is left here is the simulation itself: the step, gravity, the surfaces, the
+-- ground, the walls, the network, the respawn, the control, the camera, the score, the
+-- debug UI -- and `CarBody`, which is which SHAPE is drawn and is a separate axis from
+-- which car is driven.
+--
+-- WRITING A CAR NUMBER INTO THIS TABLE ERRORS, on purpose: it would survive a car switch
+-- and silently make every car the same. Use `Cars.tune(key, value)` / `Cars.untune(key)`,
+-- or `Cars.withTuning({...}, fn)`.
+--
 -- Units: studs, studs/s, studs/s^2, seconds, radians per second, and DEGREES wherever a
 -- name says Angle or Slip, because degrees are what the tuning conversation uses. The
 -- reference is in metres; everything converted carries 1 stud = 0.28 m (x 3.571).
@@ -19,7 +34,9 @@
 -- code declares when an editor asset does not override it, so a credible car but not the
 -- shipped one) or OURS. The fallbacks are a starting point to tune from, not decisions.
 
-return {
+local Cars = require(script.Parent.Parent.Cars)
+
+local Drift = {
 	-- ---------------------------------------------------------------- the step
 	FixedStep = 1 / 120, -- s. OURS. The simulation step, independent of frame rate. The
 	-- reference runs 1/60; every term below is written per
@@ -31,20 +48,18 @@ return {
 	-- how long a jump hangs, how a crest unloads the car -- is built on it
 
 	-- ---------------------------------------------------------------- steering: the control
-	-- THE DIAL THE FEEL CONVERSATION STARTS WITH. Every step the car's yaw rate is SET:
+	-- THE DIAL THE FEEL CONVERSATION STARTS WITH, and it is the CAR's:
+	-- `MaxSteeringSpeed` and `SteeringSensitivity` are in `Cars/Archetypes`. Every step
+	-- the car's yaw rate is SET:
 	--     yawRate = MaxSteeringSpeed * steer * SteeringSensitivity
 	-- Not a torque, not a wheel angle, not a target to ease toward. Centre the finger and
 	-- the car stops turning on the next step. Nothing moves the velocity when the car
 	-- rotates, so the slip angle opens by itself: rotating IS drifting.
-	MaxSteeringSpeed = 2, -- rad/s. FALLBACK. The car's rate of turn at a full finger:
-	-- 115 deg/s. Up for a car that whips round, down for one that
-	-- has to be led into a slide. The single biggest feel dial
-	SteeringSensitivity = 1, -- OURS/EXACT. Per-car multiplier on the rate of turn, so a
-	-- future car list can move one car without moving the model
 	InvertSteering = true, -- OURS. Which way a finger turns the car. True is the sense the
 	-- user asked for in T-007: a finger to the right swings the
 	-- car's REAR right and the nose left, which reads as holding
-	-- the car's weight rather than steering its front wheels
+	-- the car's weight rather than steering its front wheels.
+	-- A SETTING, not a car: every car reads the finger the same
 
 	-- ---------------------------------------------------------------- grip: the drift
 	-- With any wheel on the ground, and `b` the slip angle (signed, nose to velocity):
@@ -52,23 +67,13 @@ return {
 	--     f   = f * surfaceGrip * FrictionMultiplier            (|b| capped at 90 deg)
 	--     dir = |b| > 90 deg and -travel or carRight*sign(b)
 	--     velocity += f * dt * dir, each world axis clamped to that axis's own speed
-	-- The whole feel of the car is in these four numbers: a small slide is tidied gently,
-	-- a big one is hauled round hard, and past the ceiling the car cannot pull any harder.
-	ConstantFriction = 14.3, -- studs/s^2. FALLBACK (4 m/s^2). Grip with the car dead
-	-- straight: how quickly a tiny slide tidies itself up
-	SlipFriction = 14.3, -- studs/s^2 per radian. FALLBACK. How fast grip builds with the
-	-- angle: the straight-line part of the curve
-	SlipSqFriction = 14.3, -- studs/s^2 per radian^2. FALLBACK. The squared term, and what
-	-- makes a big slide bite far harder than a small one. RAISE
-	-- it for a car that catches itself, DROP it for one that
-	-- keeps going round
-	MaxFriction = 107, -- studs/s^2. FALLBACK (30 m/s^2, about 3 g). The ceiling on all of
-	-- it, which is the tightest circle the car can hold. Reached at
-	-- about 65 deg of slip with the three terms above
+	-- THE FOUR NUMBERS IN THAT CURVE ARE THE CAR'S and live in `Cars/Archetypes`: they are
+	-- the whole of how one car drifts differently from another, and the stat panel draws
+	-- them. What is left here is the SURFACE, which is the world's, not the car's.
 	MinSlipAngleForDrift = 5, -- deg. EXACT. Below this the car does not count as drifting,
 	-- for the readout and for the score. Not a threshold in the
-	-- model: the grip and the slide are continuous through it
-	FrictionMultiplier = 1, -- EXACT. Per-car multiplier on the whole grip curve
+	-- model: the grip and the slide are continuous through it,
+	-- and it is the same for every car
 	GripTarmac = 1, -- FALLBACK. Surface grip on the road
 	GripDirt = 0.5, -- FALLBACK. On dirt: half the pull and half the score
 	GripUnspecified = 0.1, -- FALLBACK. Anything solid that is not a tagged surface.
@@ -76,72 +81,29 @@ return {
 	-- and a slide there is a passenger
 
 	-- ---------------------------------------------------------------- drivetrain
-	-- Rear-wheel drive: the push happens only when a rear wheel is down, and it is always
-	-- along the car's NOSE. A car that is sideways has its engine pushing across its own
-	-- travel, so a drift costs speed without a single number saying so -- the cost falls
-	-- out of the geometry.
+	-- Rear-wheel drive, every car: the push happens only when a rear wheel is down, and it
+	-- is always along the car's NOSE. A car that is sideways has its engine pushing across
+	-- its own travel, so a drift costs speed without a single number saying so -- the cost
+	-- falls out of the geometry.
 	--     u = |velocity along the nose|
 	--     a = MaxAcceleration * AccelMultiplier * throttle * clamp01(1 - (u/TopSpeed)^2)
-	MaxAcceleration = 14.3, -- studs/s^2. FALLBACK (4 m/s^2). The push off the line
-	AccelMultiplier = 1, -- EXACT. Per-car multiplier on it
-	TopSpeed = 179, -- studs/s. FALLBACK (50 m/s). Where the push reaches zero
-	StartThrottle = 0.5, -- FALLBACK. Throttle at the start of a run. The throttle is NOT
-	-- an input: the car drives itself, and it eases in so a
-	-- first-time player is never handed a car at top speed
-	FullThrottleSeconds = 5, -- s. FALLBACK. How long the ease-in takes
-	HandbrakeDecel = 36, -- studs/s^2. FALLBACK (10 m/s^2). Only used to stop the car once
-	-- a run is over; there is no brake in normal play
-
-	-- ---------------------------------------------------------------- downforce
-	-- `velocity += down * speed * DownforcePerSpeed * dt`, unless the car is already
-	-- falling faster than the cutoff, so a real fall is a real fall. On a kinematic car
-	-- that follows the ground this is only felt in the air: it is what decides how far a
-	-- jump carries and how hard a crest throws the car.
-	DownforcePerSpeed = 0.2, -- per second. NEITHER EXACT NOR FALLBACK -- the one number in
-	-- the spec that is a guess (features/drift-model.md "Open
-	-- questions"). At top speed it is one extra gravity. Up for
-	-- a car pinned to the road over crests, down for one that
-	-- flies. TUNE THIS FIRST
-	DownforceCutoff = -3.6, -- studs/s. FALLBACK (-1 m/s). Vertical speed below which
-	-- downforce switches off, so a jump is a jump
+	-- All five of those numbers are the CAR's (`Cars/Archetypes`). Which wheels drive is
+	-- not a number at all yet -- it is `Model.REAR_WHEELS` -- and the reference does vary
+	-- it per car (see the spec's "Open questions").
 
 	-- ---------------------------------------------------------------- the car
-	-- The model has no bicycle geometry and no steering lock: the wheelbase and the track
-	-- are where the four ground rays go and where the wheels are drawn, and nothing else.
-	Wheelbase = 9.6, -- studs between the front and rear contact points. FALLBACK
-	-- (1.42 m front + 1.28 m rear of centre)
-	TrackWidth = 5.6, -- studs between the left and right wheels. FALLBACK (1.56 / 1.6 m)
-	WheelDiameter = 2.3, -- studs. FALLBACK (0.65 m)
-	WheelWidth = 1.6, -- studs. OURS, for drawing a cylinder that reads as a tyre
-	BodyLength = 14, -- studs. OURS: a 4 m car around the reference's wheelbase
-	BodyWidth = 6.4, -- studs. OURS
-	BodyHeight = 3.2, -- studs. OURS
-	CarBody = "ae86", -- OURS. Which body `Shared/CarModel` builds. "ae86" is the car the
-	-- user added to the Main place, read out of it and written down in
-	-- `Shared/Cars/AE86`; "block" is the box and four cylinders, which is
-	-- also what a place whose meshes will not load falls back to.
-	-- The three Body* numbers above only size the block now: the real car
-	-- is scaled onto `Wheelbase` and `WheelDiameter`, because that is
-	-- where the ground rays go. NOT APPROVED TO PUBLISH -- it is a real
-	-- manufacturer's car from a third party's upload
-	-- (`assets/car-ae86/MANIFEST.md`, features/drift-model.md
-	-- "Platform risks")
-	RideHeight = 2.4, -- studs from the car's origin down to the ground. OURS: the wheel
-	-- centres sit one wheel radius up from there and the body clears
-	-- the road
-	CenterOfMass = Vector3.new(0, 0.71, 0), -- studs from the origin. FALLBACK
-	-- (0, 0.2, 0 m). Nothing in a kinematic car takes a
-	-- force at a point, so this is only the pivot the
-	-- cosmetic body roll leans about
-	BodyRollMax = 10, -- deg. FALLBACK. Cosmetic lean, outward, at `BodyRollSpeed` of
-	-- sideways speed. Nothing in the model reads it
-	BodyRollSpeed = 107, -- studs/s. FALLBACK (30 m/s) of lateral speed for a full lean
-	BodyRollRate = 10, -- per second. FALLBACK. How fast the lean follows
-	WheelSteerMax = 30, -- deg. EXACT. The front wheels are drawn pointing along where the
-	-- car is actually TRAVELLING, capped here. That is opposite lock
-	-- for free, and on a box with four cylinders it is the one thing
-	-- that reads as a drift. Cosmetic: no wheel angle is in the model
-	WheelSteerRate = 4, -- per second. EXACT. How fast the drawn wheels follow
+	CarBody = "ae86", -- OURS, and NOT the archetype: this is which SHAPE `Shared/CarModel`
+	-- builds, and the two are deliberately different axes. "ae86" is
+	-- the car the user added to the Main place, read out of it and
+	-- written down in `Shared/Cars/AE86`; "block" is the box and four
+	-- cylinders, which is also what a place whose meshes will not load
+	-- falls back to. ANY BODY MAY WEAR ANY ARCHETYPE'S NUMBERS, which
+	-- is how an archetype is driven before its art exists (T-028).
+	-- The real car is scaled onto the active car's `Wheelbase` and
+	-- `WheelDiameter`, because that is where the ground rays go.
+	-- NOT APPROVED TO PUBLISH -- it is a real manufacturer's car from
+	-- a third party's upload (`assets/car-ae86/MANIFEST.md`,
+	-- features/drift-model.md "Platform risks")
 
 	-- ---------------------------------------------------------------- ground
 	-- One downward ray per wheel each step; the car's height and tilt follow the surface.
@@ -171,7 +133,12 @@ return {
 	StateSendRate = 20, -- Hz, CarState to the server
 	RemoteCarSmoothing = 0.08, -- s, how fast another player's car eases to its reported pose
 	StateRateLimit = 30, -- packets a second per UserId the server will take before dropping
-	StateSpeedTolerance = 1.25, -- share of TopSpeed a reported horizontal speed may reach
+	StateSpeedTolerance = 1.25, -- share of TopSpeed a reported horizontal speed may reach.
+	-- The server bounds it against the TopSpeed of the car IT
+	-- thinks is active, and the panel's car switch is
+	-- client-side, so every archetype's top speed stays under
+	-- the default car's 179 x 1.25 = 223.75
+	-- (features/car-archetypes.md "Open questions")
 	StateMoveTolerance = 1.5, -- slack on how far a car may have moved since its last packet
 	StateMoveAllowance = 9, -- studs of slack on top, for a dropped packet or a jittery clock
 
@@ -190,6 +157,7 @@ return {
 	-- ---------------------------------------------------------------- the control
 	-- One finger, held, is the whole control (features/drift-model.md "The control").
 	-- Owned by the gesture task, not by the model: the model only ever wanted one number.
+	-- A SETTING, not a car: the gesture is the player's, the car is what it drives.
 	InputMode = "dynamic", -- EXACT. "centred": the offset is measured from the middle of
 	-- the screen. "dynamic": from where the finger went down. The
 	-- reference ships both as a setting and they feel different
@@ -277,4 +245,40 @@ return {
 	-- instrument, not part of the game, and the user driving
 	-- for feel should see the car and the slider and nothing
 	-- else. F3, DPad up or the DBG button brings them back
+	DebugStatsOpen = false, -- and the car's stat panel is folded inside it, closed too.
+	-- F5, or clicking its header, unfolds it; F4 switches car
 }
+
+-- ---------------------------------------------------------------------- the active car
+--
+-- Every CAR key is absent from the table above, so reading one misses and lands here, and
+-- `Shared/Cars` answers with whatever car is active. That is the whole mechanism, and it
+-- is why `Drift/Model` reads the active car without one line of it changing.
+--
+-- `__index` is the hot path -- the model makes about twenty of these a step, 120 times a
+-- second -- and it is one function call and one table index. The alternative, copying a
+-- car's numbers into this table on a switch, was rejected: it leaves two copies of every
+-- number and nothing to stop them drifting apart.
+--
+-- `__newindex` refuses a car key outright. `Config.Drift.MaxSteeringSpeed = 1` would
+-- write a RAW key here, which from then on shadows every car and makes them all the same:
+-- the one failure this split exists to prevent, so it is an error with the answer in it
+-- rather than something to notice later. Model keys are all present raw, so writing one
+-- (the camera test does) never reaches this at all.
+setmetatable(Drift, {
+	__index = function(_, key: string): any
+		return Cars.value(key)
+	end,
+	__newindex = function(self, key: string, value: any)
+		if Cars.isField(key) then
+			error(
+				`Config.Drift.{key} belongs to the CAR, not the model: `
+					.. `use Cars.tune("{key}", v) / Cars.untune("{key}"), or Cars.withTuning (Shared/Cars)`,
+				2
+			)
+		end
+		rawset(self, key, value)
+	end,
+})
+
+return Drift

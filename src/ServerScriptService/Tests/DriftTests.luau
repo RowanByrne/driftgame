@@ -27,6 +27,7 @@ local StarterPlayer = game:GetService("StarterPlayer")
 assert(RunService:IsStudio(), "DriftTests only runs in Studio")
 
 local CarModel = require(ReplicatedStorage.Shared.CarModel)
+local Cars = require(ReplicatedStorage.Shared.Cars)
 local Config = require(ReplicatedStorage.Shared.Config)
 
 local DriftFolder = StarterPlayer.StarterPlayerScripts:WaitForChild("Drift")
@@ -79,8 +80,17 @@ local function hold(steer: number, speed: number, seconds: number, world)
 
 	local samples = {}
 	local peak = 0
+	-- When the car first counts as drifting. With the finger held from a rolling start
+	-- this is "how long it takes to get the tail out", and it is the number that tells
+	-- two archetypes apart fastest: a grippy car can hold a finger at speed for ever and
+	-- never slide at all, which comes back as nil (T-027).
+	local slideAt: number? = nil
 	local function observe(s)
-		peak = math.max(peak, math.abs(math.deg(s.slip)))
+		local slipDeg = math.abs(math.deg(s.slip))
+		peak = math.max(peak, slipDeg)
+		if not slideAt and slipDeg >= C.MinSlipAngleForDrift then
+			slideAt = s.time
+		end
 		table.insert(samples, {
 			t = s.time,
 			slip = math.deg(s.slip),
@@ -117,6 +127,7 @@ local function hold(steer: number, speed: number, seconds: number, world)
 		grip = gripSum / n,
 		share = settledSpeed / math.max(speed, 1e-3),
 		radius = if yaw > 1e-3 then settledSpeed / yaw else math.huge,
+		slideAt = slideAt,
 		state = runner.state,
 	}
 end
@@ -279,12 +290,14 @@ function DriftTests.run()
 	end
 	check(checks, "the finger is the car's rate of turn, at any speed", turnOk, table.concat(turnParts, " | "))
 
-	-- And it halves when the dial halves: the numbers are in Config, not in the logic.
+	-- And it halves when the dial halves: the numbers are in the car, not in the logic
+	-- (T-027 -- `MaxSteeringSpeed` is the CAR's, so it is moved with `Cars.withTuning`,
+	-- which puts it back however this ends. Writing it into `Config.Drift` now errors).
 	local maxSteer = C.MaxSteeringSpeed
 	local _, fullTurn = Sim.drive({ { t = 0, steer = 1 } }, 1, { fps = 60, start = startCF(TEST_YAW), velocity = ahead(80, TEST_YAW) })
-	C.MaxSteeringSpeed = maxSteer * 0.5
-	local _, halfTurn = Sim.drive({ { t = 0, steer = 1 } }, 1, { fps = 60, start = startCF(TEST_YAW), velocity = ahead(80, TEST_YAW) })
-	C.MaxSteeringSpeed = maxSteer
+	local halfTurn = Cars.withTuning({ MaxSteeringSpeed = maxSteer * 0.5 }, function()
+		return (select(2, Sim.drive({ { t = 0, steer = 1 } }, 1, { fps = 60, start = startCF(TEST_YAW), velocity = ahead(80, TEST_YAW) })))
+	end)
 	check(
 		checks,
 		"halving MaxSteeringSpeed halves the rate of turn",
@@ -368,9 +381,13 @@ function DriftTests.run()
 	-- tunes `MaxFriction` expecting it to do something.
 	local uncapped = gripAt(89, 80).measured
 	local c0, c1, c2 = C.ConstantFriction, C.SlipFriction, C.SlipSqFriction
-	C.ConstantFriction, C.SlipFriction, C.SlipSqFriction = c0 * 3, c1 * 3, c2 * 3
-	local capped = gripAt(89, 80).measured
-	C.ConstantFriction, C.SlipFriction, C.SlipSqFriction = c0, c1, c2
+	local capped = Cars.withTuning({
+		ConstantFriction = c0 * 3,
+		SlipFriction = c1 * 3,
+		SlipSqFriction = c2 * 3,
+	}, function()
+		return gripAt(89, 80).measured
+	end)
 	check(
 		checks,
 		"the grip ceiling holds",
@@ -401,10 +418,9 @@ function DriftTests.run()
 	-- The car is going backwards relative to its nose, so the pull stops being sideways
 	-- and points straight against the travel. The drivetrain is turned off for this one,
 	-- so what is left is only the grip and it can be read along the travel directly.
-	local maxAccel = C.MaxAcceleration
-	C.MaxAcceleration = 0
-	local spun = gripAt(135, 80)
-	C.MaxAcceleration = maxAccel
+	local spun = Cars.withTuning({ MaxAcceleration = 0 }, function()
+		return gripAt(135, 80)
+	end)
 	local dir = spun.travel
 	local alongBefore = spun.before:Dot(dir)
 	local alongAfter = spun.after:Dot(dir)
@@ -452,6 +468,234 @@ function DriftTests.run()
 		)
 	end
 	check(checks, "every notch of finger costs more speed than the last", costs, table.concat(parts, " | "))
+
+	------------------------------------------------------------------ the cars (T-027)
+	-- `Config.Drift` is the model and `Shared/Cars` is the car: everything above measured
+	-- whichever car is active, which is `balanced` -- the one the user approved on
+	-- 2026-11-03 -- and the first check here is that it still is, to the number. If this
+	-- one fails, somebody has retuned the approved car while adding a new one, which is
+	-- the one thing the archetypes were not allowed to do.
+	local APPROVED = {
+		MaxSteeringSpeed = 2,
+		SteeringSensitivity = 1,
+		ConstantFriction = 14.3,
+		SlipFriction = 14.3,
+		SlipSqFriction = 14.3,
+		MaxFriction = 107,
+		FrictionMultiplier = 1,
+		MaxAcceleration = 14.3,
+		AccelMultiplier = 1,
+		TopSpeed = 179,
+		StartThrottle = 0.5,
+		FullThrottleSeconds = 5,
+		HandbrakeDecel = 36,
+		DownforcePerSpeed = 0.2,
+		DownforceCutoff = -3.6,
+		Wheelbase = 9.6,
+		TrackWidth = 5.6,
+		WheelDiameter = 2.3,
+		RideHeight = 2.4,
+		BodyRollMax = 10,
+		BodyRollSpeed = 107,
+		BodyRollRate = 10,
+		WheelSteerMax = 30,
+		WheelSteerRate = 4,
+	}
+	local wasCar = Cars.activeKey()
+	Cars.setActive("balanced")
+	local approvedOk, approvedBad, approvedCount = true, {}, 0
+	for key, want in APPROVED do
+		approvedCount += 1
+		local got = C[key]
+		if got ~= want then
+			approvedOk = false
+			table.insert(approvedBad, string.format("%s is %s, was %s", key, tostring(got), tostring(want)))
+		end
+	end
+	check(
+		checks,
+		"the default car is still the car the user approved",
+		approvedOk and Cars.activeKey() == "balanced",
+		if approvedOk
+			then string.format(
+				"all %d of the approved car's numbers unchanged, and `balanced` is still the default",
+				approvedCount
+			)
+			else table.concat(approvedBad, "; ")
+	)
+
+	------------------------------------------------------------------ four different cars
+	-- The proof that these are four cars and not one car with four labels: the SAME
+	-- rolling start and the SAME held finger, and what each settles at. Two strict
+	-- orderings have to survive -- how much speed a car keeps through the corner, and how
+	-- far round its tail comes -- plus how long each takes to get the tail out at all.
+	local HELD = 0.5
+	local ENTRY = 140
+	local carRows, carRow = {}, {}
+	for _, key in Cars.Order do
+		Cars.setActive(key)
+		local half = hold(HELD, ENTRY, 8)
+		local quarter = hold(0.25, ENTRY, 8)
+		carRow[key] = { half = half, quarter = quarter }
+		table.insert(
+			carRows,
+			string.format(
+				"%s: half finger -> %.1f deg (peak %.1f), %.1f studs/s (%.0f%%), circle %.0f studs, sliding after %s; quarter finger -> %.1f deg, %.1f studs/s, circle %.0f, sliding after %s",
+				key,
+				half.slip,
+				half.peakSlip,
+				half.speed,
+				100 * half.share,
+				math.min(half.radius, 9999),
+				if half.slideAt then string.format("%.2f s", half.slideAt) else "NEVER",
+				quarter.slip,
+				quarter.speed,
+				math.min(quarter.radius, 9999),
+				if quarter.slideAt then string.format("%.2f s", quarter.slideAt) else "NEVER"
+			)
+		)
+	end
+	Cars.setActive(wasCar)
+
+	local keptOrder = { "slider", "balanced", "bruiser", "gripper" } -- least speed kept to most
+	local slipOrder = { "bruiser", "gripper", "balanced", "slider" } -- least sideways to most
+	local distinct = true
+	for i = 2, #keptOrder do
+		distinct = distinct and carRow[keptOrder[i]].half.speed > carRow[keptOrder[i - 1]].half.speed + 5
+	end
+	for i = 2, #slipOrder do
+		distinct = distinct and carRow[slipOrder[i]].half.slip > carRow[slipOrder[i - 1]].half.slip + 2
+	end
+	-- And at a quarter finger the grippy car does not slide at all, where the loose one is
+	-- sideways in under a fifth of a second. That gap is the archetypes in one number.
+	local function slideTime(key: string): number
+		return carRow[key].quarter.slideAt or math.huge
+	end
+	distinct = distinct
+		and carRow.gripper.quarter.slideAt == nil
+		and carRow.slider.quarter.slideAt ~= nil
+		and slideTime("bruiser") > slideTime("balanced") * 2
+		and slideTime("balanced") > slideTime("slider")
+	check(
+		checks,
+		"four archetypes that settle somewhere different from the same start",
+		distinct,
+		table.concat(carRows, " | ")
+	)
+
+	------------------------------------------------------------------ each car's own curve
+	-- The grip curve the panel draws is the same `f(b)` the model steps with, for every
+	-- car: sampled through the model itself and fitted against that car's own four
+	-- numbers. A car whose panel and whose physics disagree is worse than no panel.
+	-- Measured through the model at 15 to 89 degrees: a car dead straight has no lateral
+	-- axis to read a pull on, and 90 exactly is the edge the model's own cap sits at, so
+	-- the two ends of the reported curve are the curve's own values and the five in
+	-- between are measured against them.
+	local curveOk, curveWorst, curveParts = true, 0, {}
+	for _, key in Cars.Order do
+		Cars.setActive(key)
+		for _, slipDeg in { 15, 30, 45, 60, 89 } do
+			local err = math.abs(gripAt(slipDeg, 80).measured - Cars.gripAt(slipDeg))
+			curveWorst = math.max(curveWorst, err)
+			curveOk = curveOk and err < 0.5
+		end
+		local sampled = {}
+		for _, slipDeg in { 0, 15, 30, 45, 60, 90 } do
+			table.insert(sampled, string.format("%d:%.1f", slipDeg, Cars.gripAt(slipDeg)))
+		end
+		table.insert(curveParts, string.format("%s %s", key, table.concat(sampled, " ")))
+	end
+	Cars.setActive(wasCar)
+	check(
+		checks,
+		"every car's grip curve is its own four numbers, through the model",
+		curveOk,
+		string.format(
+			"studs/s^2 at 0/15/30/45/60/90 deg of slip -- %s -- worst gap between the drawn curve and the measured pull %.3f",
+			table.concat(curveParts, " | "),
+			curveWorst
+		)
+	)
+
+	------------------------------------------------------------------ switching car
+	-- It has to take effect on the next step, and switching back has to put the car back
+	-- exactly: the model holds nothing from the step before, so the same inputs after a
+	-- round trip have to draw the same line to the bit.
+	local switchOpts = { fps = 60, start = startCF(TEST_YAW), velocity = ahead(CORNER_ENTRY, TEST_YAW) }
+	Cars.setActive("balanced")
+	local beforeSwitch = Sim.drive(CORNER, CORNER_SECONDS, switchOpts)
+	Cars.setActive("gripper")
+	local switched = Sim.drive(CORNER, CORNER_SECONDS, switchOpts)
+	local gripperSteer = C.MaxSteeringSpeed
+	Cars.setActive("balanced")
+	local afterSwitch = Sim.drive(CORNER, CORNER_SECONDS, switchOpts)
+	local roundTrip, changed = 0, 0
+	for i = 1, math.min(#beforeSwitch, #afterSwitch) do
+		roundTrip = math.max(roundTrip, (beforeSwitch[i] - afterSwitch[i]).Magnitude)
+		changed = math.max(changed, (beforeSwitch[i] - switched[i]).Magnitude)
+	end
+	Cars.setActive(wasCar)
+	check(
+		checks,
+		"switching car changes the car, and switching back puts it back",
+		changed > 10 and roundTrip < 1e-6 and gripperSteer ~= APPROVED.MaxSteeringSpeed,
+		string.format(
+			"the same corner moved %.1f studs on the gripper (its rate of turn %.2f rad/s against the default's %.2f) and came back to within %.9f studs of itself",
+			changed,
+			gripperSteer,
+			APPROVED.MaxSteeringSpeed,
+			roundTrip
+		)
+	)
+
+	------------------------------------------------------------------ the bars are marketing
+	-- The three display bars are hand-written and NOTHING computes them. The proof is
+	-- that they cannot be seen from where the model reads its numbers, and that moving
+	-- them to the top of their scale changes not one stud of the line the car draws.
+	Cars.setActive("gripper")
+	local barsBefore = Sim.drive(CORNER, CORNER_SECONDS, switchOpts)
+	local realBars = Cars.Archetypes.Cars.gripper.Bars
+	Cars.Archetypes.Cars.gripper.Bars = { Acceleration = 10, Handling = 10, TopSpeed = 10 }
+	Cars.setActive("gripper") -- rebuild with the lie in it
+	local barsAfter = Sim.drive(CORNER, CORNER_SECONDS, switchOpts)
+	Cars.Archetypes.Cars.gripper.Bars = realBars
+	Cars.setActive(wasCar)
+	local barsMoved = 0
+	for i = 1, math.min(#barsBefore, #barsAfter) do
+		barsMoved = math.max(barsMoved, (barsBefore[i] - barsAfter[i]).Magnitude)
+	end
+	check(
+		checks,
+		"the three display bars reach nothing in the simulation",
+		barsMoved == 0 and C.Bars == nil and C.Name == nil and not Cars.isField("Bars"),
+		string.format(
+			"acceleration, handling and top speed all set to 10 on the gripper: the same corner moved %.9f studs, and Config.Drift cannot see them at all",
+			barsMoved
+		)
+	)
+
+	------------------------------------------------------------------ the split holds
+	-- A car number written into the model's table would survive a car switch and quietly
+	-- make every car the same, so it is refused outright. A model number still writes.
+	local wrote = pcall(function()
+		C.MaxSteeringSpeed = 1
+	end)
+	local modelWrote = pcall(function()
+		C.CamVelocityBlend = C.CamVelocityBlend
+	end)
+	Cars.tune("MaxSteeringSpeed", 1)
+	local tunedTo = C.MaxSteeringSpeed
+	Cars.untune("MaxSteeringSpeed")
+	check(
+		checks,
+		"a car number cannot be written into the model's table, and tuning puts itself back",
+		not wrote and modelWrote and tunedTo == 1 and C.MaxSteeringSpeed == APPROVED.MaxSteeringSpeed and rawget(C, "MaxSteeringSpeed") == nil,
+		string.format(
+			"Config.Drift.MaxSteeringSpeed = 1 refused, a model number still writes, Cars.tune moved it to %.1f and untune put it back to %.1f",
+			tunedTo,
+			C.MaxSteeringSpeed
+		)
+	)
 
 	------------------------------------------------------------------ nothing runs away
 	-- The whole model rests on being able to trust the numbers it produces. The yaw rate
