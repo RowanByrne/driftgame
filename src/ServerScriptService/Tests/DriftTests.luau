@@ -26,6 +26,7 @@ local StarterPlayer = game:GetService("StarterPlayer")
 
 assert(RunService:IsStudio(), "DriftTests only runs in Studio")
 
+local Bodies = require(ReplicatedStorage.Shared.Cars.Bodies)
 local CarModel = require(ReplicatedStorage.Shared.CarModel)
 local Cars = require(ReplicatedStorage.Shared.Cars)
 local Config = require(ReplicatedStorage.Shared.Config)
@@ -760,6 +761,11 @@ function DriftTests.run()
 	-- of it and written down in `Shared/Cars/AE86` (T-020). None of the checks above knows
 	-- or cares: the simulation only ever sees five parts at `wheelOffsets()`, and these
 	-- are the checks that the shell riding on them is right.
+	--
+	-- IT IS NO LONGER THE DEFAULT (T-028): `CarBody = "auto"` draws the active
+	-- archetype's own body instead, so these checks ask for the AE86 by name. That the
+	-- ask still works IS the check that a body can override an archetype's own.
+	CarModel.setBody("ae86")
 	local ae86 = CarModel.build()
 	local shell = ae86:FindFirstChild(CarModel.SHELL_NAME)
 	local shellParts = 0
@@ -909,6 +915,7 @@ function DriftTests.run()
 		table.concat(spinRead, ", ")
 	)
 	ae86:Destroy()
+	CarModel.setBody(nil)
 
 	-- And the block is still buildable, because a place whose meshes will not load still
 	-- has to run.
@@ -929,6 +936,204 @@ function DriftTests.run()
 		"the block car is still there as the fallback",
 		blockParts == 5 and not blockHasShell and blockOk,
 		`setBody("block") builds {blockParts} parts and no shell -- {blockDetail}`
+	)
+
+	------------------------------------------------------------------ a body per archetype
+	-- Four shapes, one builder, no assets: `Shared/Cars/Bodies` turns a table of boxes and
+	-- wedges into the same `Shell` the AE86 makes, one per archetype, and `CarBody =
+	-- "auto"` draws whichever archetype is being driven (T-028). A fifth body is a table.
+	--
+	-- THE ART NEVER MOVES THE MODEL. `Wheelbase`, `TrackWidth`, `WheelDiameter` and
+	-- `RideHeight` are the archetype's and are where the ground rays go; a body is built
+	-- around them. The checks below measure that from the other end -- the wheels, on the
+	-- road, at the offsets the simulation rays from -- rather than trusting it.
+	local function lowestY(g: Instance?): number
+		local low = 1e9
+		if g then
+			for _, p in g:GetDescendants() do
+				if p:IsA("BasePart") then
+					local h = p.Size * 0.5
+					for i = -1, 1, 2 do
+						for j = -1, 1, 2 do
+							for k = -1, 1, 2 do
+								low = math.min(low, (p.CFrame * Vector3.new(h.X * i, h.Y * j, h.Z * k)).Y)
+							end
+						end
+					end
+				end
+			end
+		end
+		return low
+	end
+
+	local dims, shapeRows = {}, {}
+	local shapesOk, cleanOk, gapOk = true, true, true
+	local cleanRows, gapRows = {}, {}
+	local onRoadAt = CFrame.new(0, C.RideHeight, 0)
+	for _, key in Bodies.Order do
+		CarModel.setBody(key)
+		local car = CarModel.build()
+		local carShell = car:FindFirstChild(CarModel.SHELL_NAME)
+		local group = carShell and carShell:FindFirstChild(CarModel.BODY_NAME)
+		local lo, hi = Bodies.bounds(group)
+		local parts = 0
+		for _, p in car:GetDescendants() do
+			if p:IsA("BasePart") then
+				parts += 1
+			end
+		end
+		local roofPart = group and group:FindFirstChild("Roof")
+		local roof = hi.Y + C.RideHeight
+		if roofPart and roofPart:IsA("BasePart") then
+			roof = roofPart.Position.Y + roofPart.Size.Y * 0.5 + C.RideHeight
+		end
+		local row = {
+			key = key,
+			length = hi.Z - lo.Z,
+			width = hi.X - lo.X,
+			height = hi.Y - lo.Y,
+			top = hi.Y + C.RideHeight,
+			roof = roof,
+			parts = parts,
+		}
+		table.insert(dims, row)
+		shapesOk = shapesOk and carShell ~= nil and group ~= nil and parts >= 20
+		table.insert(
+			shapeRows,
+			string.format(
+				"%s %.2f x %.2f x %.2f (L x W x H), roof %.2f, %d parts",
+				key,
+				row.length,
+				row.width,
+				row.height,
+				row.roof,
+				parts
+			)
+		)
+
+		-- anchored, nothing that moves it, nothing that runs
+		local ok, detail = offenderReport(car)
+		cleanOk = cleanOk and ok
+		table.insert(cleanRows, if ok then `{key}: {parts} parts clean` else `{key}: {detail}`)
+
+		-- and on the road, placed exactly as the game places it
+		local rig = Render.rig(car)
+		Render.place(rig, onRoadAt, 0, 0, 0)
+		local worst = 0
+		local corners = {}
+		for _, name in CarModel.WHEEL_NAMES do
+			local gap = lowestY(carShell and carShell:FindFirstChild(name))
+			worst = math.max(worst, math.abs(gap))
+			table.insert(corners, string.format("%s %+.4f", string.sub(name, 6), gap))
+		end
+		gapOk = gapOk and worst < 0.01
+		table.insert(gapRows, `{key}: {table.concat(corners, " ")}`)
+
+		car:Destroy()
+	end
+	CarModel.setBody(nil)
+
+	-- No two of them are the same shape, and you could tell them apart from behind: every
+	-- pair differs by at least half a stud in length, width or roof height.
+	local closest, closestPair = 1e9, ""
+	for i = 1, #dims do
+		for j = i + 1, #dims do
+			local a, b = dims[i], dims[j]
+			local apart = math.max(
+				math.abs(a.length - b.length),
+				math.abs(a.width - b.width),
+				math.abs(a.roof - b.roof)
+			)
+			if apart < closest then
+				closest, closestPair = apart, `{a.key}/{b.key}`
+			end
+		end
+	end
+	check(
+		checks,
+		"every archetype has a body of its own, and no two are the same shape",
+		shapesOk and #dims == 4 and closest > 0.5,
+		`{table.concat(shapeRows, " | ")} -- the closest pair is {closestPair}, {string.format("%.2f", closest)} studs apart`
+	)
+
+	check(checks, "a parts body holds no physics object and nothing that runs", cleanOk, table.concat(cleanRows, " | "))
+
+	check(
+		checks,
+		"every wheel sits on the road, on all four bodies",
+		gapOk,
+		`gap in studs at each corner, road at y = 0: {table.concat(gapRows, " | ")}`
+	)
+
+	-- The geometry is the model's. Stretch the wheelbase and the BODY follows it, because
+	-- the wheels it has to sit between have moved; the body never asks the wheels to move
+	-- to suit it. (Geometry is read when a car MODEL is built, so this only ever lands on
+	-- the next respawn -- `Shared/Cars`, `setActive`.)
+	CarModel.setBody("balanced")
+	local baseShell = CarModel.shell()
+	local baseLo, baseHi = Bodies.bounds(baseShell:FindFirstChild(CarModel.BODY_NAME))
+	baseShell:Destroy()
+	local stretchedZ, stretchedX = 0, 0
+	local stretchedWheel = Vector3.zero
+	Cars.withTuning({ Wheelbase = C.Wheelbase * 1.5, TrackWidth = C.TrackWidth * 1.25 }, function()
+		local s = CarModel.shell()
+		local lo2, hi2 = Bodies.bounds(s:FindFirstChild(CarModel.BODY_NAME))
+		stretchedZ, stretchedX = hi2.Z - lo2.Z, hi2.X - lo2.X
+		s:Destroy()
+		stretchedWheel = CarModel.wheelOffsets().WheelRR
+	end)
+	CarModel.setBody(nil)
+	local wantZ = (baseHi.Z - baseLo.Z) * 1.5
+	local wantX = (baseHi.X - baseLo.X) * 1.25
+	check(
+		checks,
+		"a body is built around the model's geometry, not the other way round",
+		math.abs(stretchedZ - wantZ) < 0.01 and math.abs(stretchedX - wantX) < 0.01,
+		string.format(
+			"wheelbase %.1f -> %.1f stretches the body %.2f -> %.2f studs long (wanted %.2f); "
+				.. "track %.1f -> %.1f widens it %.2f -> %.2f (wanted %.2f); the rear wheel the rays go from is at %s",
+			C.Wheelbase,
+			C.Wheelbase * 1.5,
+			baseHi.Z - baseLo.Z,
+			stretchedZ,
+			wantZ,
+			C.TrackWidth,
+			C.TrackWidth * 1.25,
+			baseHi.X - baseLo.X,
+			stretchedX,
+			wantX,
+			tostring(stretchedWheel)
+		)
+	)
+
+	-- And the switch itself: the car the player picks picks the shape, unless the config
+	-- says otherwise.
+	local wasCar = Cars.activeKey()
+	local wasBody = C.CarBody
+	local autoRows, autoOk = {}, true
+	C.CarBody = CarModel.AUTO
+	for _, key in Bodies.Order do
+		Cars.setActive(key)
+		local drawn = CarModel.bodyName()
+		autoOk = autoOk and drawn == key
+		table.insert(autoRows, `{key} -> {drawn}`)
+	end
+	C.CarBody = "ae86"
+	local overrideRows, overrideOk = {}, true
+	for _, key in Bodies.Order do
+		Cars.setActive(key)
+		local drawn = CarModel.bodyName()
+		overrideOk = overrideOk and drawn == "ae86"
+		table.insert(overrideRows, `{key} -> {drawn}`)
+	end
+	C.CarBody = wasBody
+	Cars.setActive(wasCar)
+	check(
+		checks,
+		"switching car switches the shape, and CarBody still overrides it",
+		autoOk and overrideOk and CarModel.bodyName() == Cars.activeKey(),
+		`CarBody "auto": {table.concat(autoRows, ", ")} | CarBody "ae86": {table.concat(overrideRows, ", ")} | `
+			.. `back to "{tostring(wasBody)}" on '{Cars.activeKey()}', drawing '{CarModel.bodyName()}'`
 	)
 
 	------------------------------------------------------------------ the ground
@@ -1046,6 +1251,32 @@ function DriftTests.run()
 		passed = passed and c.ok
 	end
 	return { passed = passed, checks = checks }
+end
+
+-- Studio only, and no part of `run()`: switch the SERVER's active car and re-dress every
+-- live car with that archetype's body, so a playtest can be driven on more than one shape
+-- without rejoining (T-028).
+--
+--   game.ServerStorage.DebugBridge:Invoke("DebugDriftTests", "useCar", "bruiser")
+--
+-- The client keeps its own active car, because the two are deliberately separate
+-- (features/car-archetypes.md, "Server and client"): this moves the SHAPE a tester sees
+-- and leaves the feel to F4. Re-dressing from the SERVER is the half that holds -- the
+-- client's own copy does not, because the server pivots each car as its state arrives and
+-- that restores anything the client deleted.
+function DriftTests:useCar(key: string): string
+	Cars.setActive(key)
+	local cars = workspace:FindFirstChild("Cars")
+	local n = 0
+	if cars then
+		for _, car in cars:GetChildren() do
+			if car:IsA("Model") then
+				CarModel.dress(car, CarModel.shell())
+				n += 1
+			end
+		end
+	end
+	return `{key}: {n} live car(s) now wearing '{CarModel.bodyName()}'`
 end
 
 return DriftTests
