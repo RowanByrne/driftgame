@@ -89,8 +89,14 @@ function DriftController:Start()
 
 	-- CarSpawn can fire before this controller is listening, and the car model can
 	-- replicate after it. Either way the car is picked up: the folder is the backstop.
+	-- Bail only on the car we are ALREADY driving, never on "we hold some car". The server
+	-- may replace a player's car -- a run ending and handing out a fresh one is the case
+	-- that is coming -- and the old test, `if self.car then return`, ignored the new model
+	-- for ever: the simulation drove on while `Render` kept writing to parts that were no
+	-- longer in the world, so the car the player saw sat still and invisible (T-016).
+	-- `_attach` already re-rigs when the model differs; it was never reached.
 	local function claim(child: Instance)
-		if self.car then
+		if child == self.car then
 			return
 		end
 		if child:IsA("Model") and child:GetAttribute("UserId") == Players.LocalPlayer.UserId then
