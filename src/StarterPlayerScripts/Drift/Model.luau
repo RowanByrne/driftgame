@@ -19,7 +19,9 @@
 --   4. The drivetrain pushes along the NOSE, rear wheels only, with less to give the
 --      faster the car already is. A car that is sideways has its engine pushing across
 --      its own travel, so a drift costs speed without a number saying so.
---   5. Downforce, then our own gravity (Config.Drift.Gravity, not Roblox's).
+--   5. Downforce, then our own gravity (Config.Drift.Gravity, not Roblox's) -- all of it
+--      in the air, and on the ground the part of it that points ALONG the surface, which
+--      is zero on the flat and is what makes a hill a hill (T-065).
 --
 -- There is NO yaw inertia, NO yaw damping, NO steering lock, NO bicycle-model tyre slip
 -- and NO weight-throw in this model. Adding any of them breaks the feel this is for.
@@ -292,12 +294,50 @@ function Model.step(s: State, input: Input, dt: number, world: World): State
 	if vel.Y >= C.DownforceCutoff then
 		vel -= Vector3.yAxis * (vel.Magnitude * C.DownforcePerSpeed * dt)
 	end
-	-- Our own gravity, not Roblox's, and only while the car is off the ground: on it, the
-	-- height and the vertical speed both come from the surface below.
+	-- Our own gravity, not Roblox's. In the air it is the whole of it, straight down.
+	--
+	-- ON THE GROUND IT IS THE PART THAT POINTS ALONG THE SURFACE, and nothing else
+	-- (T-065, features/road-elevation.md "How the reference does gravity"). The reference
+	-- never turns gravity off: it applies it every step and four suspension springs push
+	-- back along the CAR'S OWN UP AXIS. A spring pushes along that axis; gravity pulls
+	-- straight down; on a slope those differ, and the difference is never cancelled -- so
+	-- the car runs away downhill with no code anywhere that mentions a slope. A kinematic
+	-- car has no spring to port, but it does not need one: it needs the spring's RESULT,
+	-- which is that the into-the-surface part goes away and the along-the-surface part
+	-- does not.
+	--
+	-- `up` is the SMOOTHED body up, not the raw normal the rays found, and that is
+	-- deliberate twice over. It is the reference's own choice -- the springs cancel
+	-- gravity along `transform.up`, the body's attitude, which lags the road because it is
+	-- sprung -- and it is the axis the grip above already acts in (`basis`), so the model
+	-- keeps ONE frame for both forces. The raw normal stays where it belongs, on the
+	-- constraint: the ground follow below uses it to decide how fast the surface is
+	-- climbing, as a raycast length does in the reference. Forces in the body frame, the
+	-- constraint in the ray's -- and on a crest the lag means the pull downhill arrives as
+	-- the car settles on to the new slope, rather than the instant a ray sees it.
+	--
+	-- This term carries a vertical part as well, and it is not double-counting `climb`
+	-- below: while the car is grounded `climb` OVERWRITES vel.Y from the horizontal
+	-- velocity and the surface, so only the horizontal part of `g_along` survives a
+	-- grounded step -- and `|g_along| = g sin(t)` means that horizontal part is exactly
+	-- `g sin(t) cos(t)`, which is what a velocity held in the surface's plane needs. The
+	-- vertical part only survives on the one step the car leaves the ground, which is the
+	-- step it should.
+	--
+	-- On flat ground `g_along` is EXACTLY zero (`up` is exactly yAxis and stays there), so
+	-- flat driving is untouched at any value of `GravityOnGround` -- the guard below means
+	-- the velocity is not even written. That is the check that protects the feel the user
+	-- approved on 2026-11-03.
 	if s.airborne then
 		vel -= Vector3.yAxis * (C.Gravity * dt)
 		if vel.Y < -C.TerminalFall then
 			vel = Vector3.new(vel.X, -C.TerminalFall, vel.Z)
+		end
+	elseif C.GravityOnGround > 0 then
+		local g = Vector3.yAxis * -C.Gravity
+		local along = g - up * g:Dot(up)
+		if along.Magnitude > EPS then
+			vel += along * (C.GravityOnGround * dt)
 		end
 	end
 

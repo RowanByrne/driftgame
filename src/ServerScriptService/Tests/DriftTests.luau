@@ -173,6 +173,108 @@ local function gripAt(slipDeg: number, speed: number, world)
 	}
 end
 
+--------------------------------------------------------------------------------
+-- Gravity on the ground (T-065): the worlds it is measured on, and the switch
+--------------------------------------------------------------------------------
+-- These are analytic surfaces, not the playground: a plane tilted by exactly `pitchDeg`
+-- and a cone banked by exactly `bankDeg`, so what the car does can be compared with
+-- `g sin(t)` rather than with another simulation. The playground's ramp (9 studs over 110,
+-- steepest at the top: 9.3 deg) and its banked circle (radius 150, 8 deg) are what these
+-- numbers are chosen to match, so the drive in the place and the check here agree.
+
+-- A plane that DESCENDS along the heading `yaw`, through the origin: a car spawned at
+-- (0, RideHeight, 0) on that heading is pointing straight down it. Returns the world, the
+-- surface normal and the unit vector down the slope, which is what the car's velocity has
+-- to start as for it to be ON the surface rather than diving into it.
+--
+-- Pass grip 0 for a frictionless surface -- the model skips the grip block entirely at
+-- zero surface grip -- which is how a coast can be read against the energy it gained.
+local function slopePlane(pitchDeg: number, yaw: number, grip: number?, score: number?): (Model.World, Vector3, Vector3)
+	local C = Config.Drift
+	local m = math.tan(math.rad(pitchDeg))
+	local f = Model.axes(yaw) -- the car's flat forward
+	local normal = Vector3.new(m * f.X, 1, m * f.Z).Unit
+	local downhill = Vector3.new(f.X, -m, f.Z).Unit
+	local world: Model.World = {
+		probe = function(pos: Vector3): Model.Hit?
+			return {
+				y = -m * (pos.X * f.X + pos.Z * f.Z),
+				normal = normal,
+				grip = if grip then grip else C.GripTarmac,
+				score = if score then score else C.ScoreTarmac,
+			}
+		end,
+	}
+	return world, normal, downhill
+end
+
+-- A cone banked `bankDeg` with its band's centre line at `radius`, outer edge up: the
+-- playground's circle, as maths. The whole plane is the cone, so a car that runs wide
+-- keeps finding surface and the measurement is how far out it got, not where it fell off.
+local function bankedCone(radius: number, bankDeg: number): (Model.World, (Vector3) -> Vector3)
+	local C = Config.Drift
+	local t = math.tan(math.rad(bankDeg))
+	local function normalAt(pos: Vector3): Vector3
+		local r = math.sqrt(pos.X * pos.X + pos.Z * pos.Z)
+		if r < 1e-4 then
+			return Vector3.yAxis
+		end
+		return Vector3.new(-t * pos.X / r, 1, -t * pos.Z / r).Unit
+	end
+	local world: Model.World = {
+		probe = function(pos: Vector3): Model.Hit?
+			local r = math.sqrt(pos.X * pos.X + pos.Z * pos.Z)
+			return { y = (r - radius) * t, normal = normalAt(pos), grip = C.GripTarmac, score = C.ScoreTarmac }
+		end,
+	}
+	return world, normalAt
+end
+
+-- `GravityOnGround` is a MODEL key, present raw in `Config.Drift`, so it can be written
+-- directly (a CAR key would error -- that is what the metatable is for). Restored however
+-- the body ends, so one failing check cannot leave the switch flipped for the next one.
+local function withGravityOnGround(value: number, fn)
+	local was = Config.Drift.GravityOnGround
+	Config.Drift.GravityOnGround = value
+	local ok, a, b = pcall(fn)
+	Config.Drift.GravityOnGround = was
+	if not ok then
+		error(a, 0)
+	end
+	return a, b
+end
+
+-- The part of gravity that points along a surface whose up is `up`: what the model adds
+-- to the velocity every grounded step. Written out here rather than imported, so the
+-- checks below measure the statement and not the implementation.
+local function gravityAlong(up: Vector3): Vector3
+	local g = Vector3.yAxis * -Config.Drift.Gravity
+	return g - up * g:Dot(up)
+end
+
+-- One drive with the state set up by hand: the sloped checks need the car's `up` and its
+-- velocity put in the surface's plane before the first step, which `Sim.drive` has no way
+-- to do. Everything else is `Sim.drive`'s own loop.
+local function driveOn(opts: { [string]: any })
+	local runner = Sim.newRunner(opts.start)
+	runner.state.velocity = opts.velocity or Vector3.zero
+	if opts.up then
+		runner.state.up = opts.up
+	end
+	local inputs = opts.inputs or { { t = 0, steer = 0 } }
+	local fn = function(t: number): Model.Input
+		return Sim.inputAt(inputs, t)
+	end
+	local elapsed = 0
+	local step = 1 / (opts.fps or 60)
+	while elapsed < opts.seconds - 1e-9 do
+		local dt = math.min(step, opts.seconds - elapsed)
+		Sim.advance(runner, dt, fn, opts.world, opts.onStep)
+		elapsed += dt
+	end
+	return runner.state
+end
+
 local function check(checks, name, ok, detail)
 	table.insert(checks, { name = name, ok = ok == true, detail = detail })
 	return ok == true
@@ -1151,6 +1253,310 @@ function DriftTests.run()
 			flat.airborneSeconds,
 			flat.peakSlipDeg,
 			#CollectionService:GetTagged(C.SurfaceTag)
+		)
+	)
+
+	------------------------------------------------------------------ flat ground is untouched (T-065)
+	-- THE CHECK THAT PROTECTS THE APPROVED FEEL (DECISIONS.md, 2026-11-03). Gravity on
+	-- the ground is the part of gravity that points ALONG the surface, and on the flat
+	-- that part is exactly zero -- not small, zero -- so the flat road and the
+	-- playground's plate must be identical to what the user drove, step for step.
+	--
+	-- Two statements, both exact. The term itself is zero every step, and the corner the
+	-- rest of this file measures runs to the same position at every one of its samples
+	-- with the switch at 1 and at 0.
+	local flatAlong = 0
+	local flatSteps = 0
+	withGravityOnGround(1, function()
+		driveOn({
+			inputs = CORNER,
+			seconds = CORNER_SECONDS,
+			fps = 60,
+			world = World.flat(0),
+			start = startCF(TEST_YAW),
+			velocity = ahead(CORNER_ENTRY, TEST_YAW),
+			onStep = function(s)
+				flatSteps += 1
+				flatAlong = math.max(flatAlong, gravityAlong(s.up).Magnitude)
+			end,
+		})
+	end)
+
+	local sameLineOpts = {
+		fps = 60,
+		sample = C.FixedStep,
+		start = startCF(TEST_YAW),
+		velocity = ahead(CORNER_ENTRY, TEST_YAW),
+		world = World.flat(0),
+	}
+	local gravOnPath, gravOn = withGravityOnGround(1, function()
+		return Sim.drive(CORNER, CORNER_SECONDS, sameLineOpts)
+	end)
+	local gravOffPath, gravOff = withGravityOnGround(0, function()
+		return Sim.drive(CORNER, CORNER_SECONDS, sameLineOpts)
+	end)
+	local flatDrift = 0
+	for i = 1, math.min(#gravOnPath, #gravOffPath) do
+		flatDrift = math.max(flatDrift, (gravOnPath[i] - gravOffPath[i]).Magnitude)
+	end
+	check(
+		checks,
+		"gravity on the ground does not touch flat ground",
+		flatAlong == 0
+			and flatSteps > 0
+			and #gravOnPath == #gravOffPath
+			and flatDrift == 0
+			and gravOn.endSpeed == gravOff.endSpeed
+			and gravOn.endPosition == gravOff.endPosition,
+		string.format(
+			"%d steps on the flat with GravityOnGround at 1: the along-surface term was %.1g studs/s^2 at its largest. "
+				.. "The same corner at 1 and at 0 matched at all %d samples (worst gap %.1g studs) and ended at %.6f studs/s both times",
+			flatSteps,
+			flatAlong,
+			#gravOnPath,
+			flatDrift,
+			gravOn.endSpeed
+		)
+	)
+
+	------------------------------------------------------------------ the hill pulls (T-065)
+	-- A coast, which is the cleanest statement of it: no engine, no grip, so the only
+	-- thing acting on the car along the surface IS gravity, and the speed it ends at can
+	-- be read against the height it dropped. `v^2 - v0^2 = 2 g dh`, with no slope anywhere
+	-- in that sentence -- the slope is what decides `dh`.
+	local RAMP_PITCH = 9.3 -- deg, the playground ramp at its steepest (9 studs over 110, t^2)
+	local COAST_SECONDS = 4
+	local COAST_ENTRY = 60
+	local coastWorld, coastNormal, coastDown = slopePlane(RAMP_PITCH, TEST_YAW, 0, 0)
+	local function coast(direction: number)
+		return Cars.withTuning({ MaxAcceleration = 0 }, function()
+			return withGravityOnGround(1, function()
+				-- The car faces the way it is going, both times. Turning only the velocity
+				-- round for the climb points the nose 180 degrees from the travel, which is
+				-- the grip past square-on -- and a FRESH state believes it is on tarmac
+				-- until its first ground ray comes back (`Model.new`), so the surface's
+				-- grip of zero does not apply yet. Measured, that one step took 0.6 studs/s
+				-- off the climb and made it look as though gravity had overdone it.
+				local s = driveOn({
+					seconds = COAST_SECONDS,
+					fps = 60,
+					world = coastWorld,
+					start = startCF(TEST_YAW + (if direction < 0 then math.pi else 0)),
+					up = coastNormal,
+					velocity = coastDown * (COAST_ENTRY * direction),
+				})
+				-- The height the SURFACE lost, not the car's own Y, and the difference is
+				-- not nothing: downforce is a no-op on the ground only because the ground
+				-- follow overwrites the vertical speed, and it still lowers the position it
+				-- overwrites. Climbing, that leaves the car riding about a stud lower than
+				-- its ride height -- measured, 1.0 stud at 50 studs/s -- which is `speed *
+				-- DownforcePerSpeed * FixedStep` against the follow's 8% a step. It is
+				-- older than this task and nothing a player can see; it would have shown
+				-- up here as a 1 studs/s error in the climb and been blamed on gravity.
+				return { speed = Model.speed(s), drop = -(s.groundY or 0) }
+			end)
+		end)
+	end
+	local downhill, uphill = coast(1), coast(-1)
+	local downPredicted = math.sqrt(COAST_ENTRY * COAST_ENTRY + 2 * C.Gravity * downhill.drop)
+	local upPredicted = math.sqrt(math.max(COAST_ENTRY * COAST_ENTRY + 2 * C.Gravity * uphill.drop, 0))
+	check(
+		checks,
+		"a hill pulls, by g sin(pitch) and nothing else",
+		math.abs(downhill.speed - downPredicted) < 0.5
+			and math.abs(uphill.speed - upPredicted) < 0.5
+			and downhill.speed > COAST_ENTRY
+			and uphill.speed < COAST_ENTRY,
+		string.format(
+			"%.1f deg, %.0f studs/s in, engine and grip off, %.0f s: downhill %.0f studs dropped -> %.2f studs/s (energy says %.2f); "
+				.. "uphill %.0f studs climbed -> %.2f studs/s (energy says %.2f). g sin(pitch) is %.2f studs/s^2",
+			RAMP_PITCH,
+			COAST_ENTRY,
+			COAST_SECONDS,
+			downhill.drop,
+			downhill.speed,
+			downPredicted,
+			-uphill.drop,
+			uphill.speed,
+			upPredicted,
+			C.Gravity * math.sin(math.rad(RAMP_PITCH))
+		)
+	)
+
+	------------------------------------------------------------------ a drift downhill scrubs less (T-065)
+	-- The user's own sentence, as a number: "when i slide over a crest and into a downhill
+	-- drift, im sliding faster and not slowing down as much as i would if it was flat".
+	--
+	-- The same finger for the same time, on the flat and down the slope, and what is
+	-- compared is the speed each one LOST over the slide -- read at the two ends of a
+	-- fixed window rather than as a minimum over the whole drive, because after a slide
+	-- ends the two cars are pointing different ways down the hill and the recovery is a
+	-- different question from the drift.
+	--
+	-- `CORNER`'s own finger is deliberately not used: 0.6 held for 1.6 s spins this car
+	-- past 85 degrees of slip, which is the brake past square-on and not a drift. 0.4 for
+	-- 1.5 s settles at about 52 degrees, which is the slide the sentence is about.
+	local SLIDE = { { t = 0, steer = 0 }, { t = 1, steer = 0.4 }, { t = 2.5, steer = 0 } }
+	local hillWorld, hillNormal, hillDown = slopePlane(RAMP_PITCH, TEST_YAW)
+	local function slide(world, normal, velocity)
+		return withGravityOnGround(1, function()
+			local before, after, peak = 0, 0, 0
+			driveOn({
+				inputs = SLIDE,
+				seconds = 2.5,
+				fps = 60,
+				world = world,
+				start = startCF(TEST_YAW),
+				up = normal,
+				velocity = velocity,
+				onStep = function(st)
+					if st.time <= 1 + C.FixedStep * 0.5 then
+						before = Model.speed(st)
+					end
+					after = Model.speed(st)
+					peak = math.max(peak, math.abs(math.deg(st.slip)))
+				end,
+			})
+			return { before = before, after = after, lost = before - after, peak = peak }
+		end)
+	end
+	local onFlat = slide(World.flat(0), Vector3.yAxis, ahead(CORNER_ENTRY, TEST_YAW))
+	local onHill = slide(hillWorld, hillNormal, hillDown * CORNER_ENTRY)
+	check(
+		checks,
+		"the same drift scrubs less speed downhill than on the flat",
+		onHill.lost < onFlat.lost and math.abs(onHill.peak - onFlat.peak) < 5,
+		string.format(
+			"the same finger for 1.5 s, %.0f deg of slip on the flat and %.0f deg down %.1f deg of hill: "
+				.. "on the flat %.1f -> %.1f studs/s (lost %.1f), downhill %.1f -> %.1f studs/s (lost %.1f). "
+				.. "%.1f studs/s less scrubbed, and it entered %.1f studs/s faster for the same second of straight before it",
+			onFlat.peak,
+			onHill.peak,
+			RAMP_PITCH,
+			onFlat.before,
+			onFlat.after,
+			onFlat.lost,
+			onHill.before,
+			onHill.after,
+			onHill.lost,
+			onFlat.lost - onHill.lost,
+			onHill.before - onFlat.before
+		)
+	)
+
+	------------------------------------------------------------------ the bank holds you (T-065)
+	-- The playground's banked circle as maths: radius 150, 8 degrees, outer edge up. One
+	-- steady finger from a tangent on the band's centre line, with the term on and off.
+	-- The bank's own gravity points DOWN the banking, which is toward the inside of the
+	-- corner, so it is the thing that keeps the car on the band.
+	local BANK_RADIUS, BANK_DEG, BANK_WIDTH = 150, 8, 60
+	local BANK_ENTRY = 80
+	local coneWorld, coneNormal = bankedCone(BANK_RADIUS, BANK_DEG)
+	-- Started a third of a radian round the circle rather than on an axis, and travelling
+	-- the way the circle goes: the grip's per-axis clamp is the reference's own, so a car
+	-- travelling exactly along one world axis has no speed on the other for the clamp to
+	-- allow (TEST_YAW, above, is there for the same reason). On a bank that would be a
+	-- real confound, because the gravity term itself makes that speed.
+	local BANK_START = 0.6 -- radians round the circle
+	local function roundTheBank(onOff: number)
+		return withGravityOnGround(onOff, function()
+			local startAt = Vector3.new(
+				BANK_RADIUS * math.cos(BANK_START),
+				C.RideHeight,
+				BANK_RADIUS * math.sin(BANK_START)
+			)
+			-- Along +theta, which puts the centre of the circle on the car's right, so the
+			-- finger that holds the line is a right-hand one (negative: positive turns left).
+			local travel = Vector3.new(-math.sin(BANK_START), 0, math.cos(BANK_START))
+			local swept, wide, at2s = 0, nil, BANK_RADIUS
+			local last = BANK_START
+			local turns = 0
+			driveOn({
+				inputs = { { t = 0, steer = -0.27 } },
+				seconds = 12,
+				fps = 60,
+				world = coneWorld,
+				start = CFrame.new(startAt) * CFrame.Angles(0, math.pi - BANK_START, 0),
+				up = coneNormal(startAt),
+				velocity = travel * BANK_ENTRY,
+				onStep = function(s)
+					local a = math.atan2(s.position.Z, s.position.X)
+					local d = a - last
+					while d > math.pi do
+						d -= math.pi * 2
+					end
+					while d < -math.pi do
+						d += math.pi * 2
+					end
+					turns += d
+					last = a
+					local r = math.sqrt(s.position.X * s.position.X + s.position.Z * s.position.Z)
+					if not wide and math.abs(r - BANK_RADIUS) > BANK_WIDTH * 0.5 then
+						wide = { at = math.abs(math.deg(turns)), r = r }
+					end
+					if not wide then
+						swept = math.abs(math.deg(turns))
+					end
+					if s.time <= 2 + C.FixedStep * 0.5 then
+						at2s = r
+					end
+				end,
+			})
+			return { swept = swept, wide = wide, at2s = at2s }
+		end)
+	end
+	local bankOn = roundTheBank(1)
+	local bankOff = roundTheBank(0)
+	check(
+		checks,
+		"a bank holds the car on it",
+		bankOn.swept > bankOff.swept and bankOn.at2s < bankOff.at2s,
+		string.format(
+			"radius %d, %d deg of bank, %.0f studs/s in on one steady finger. With gravity on the ground the car held the %d-stud band for %.0f deg of the circle and was at r = %.1f after 2 s; "
+				.. "without it, %.0f deg and r = %.1f -- %.1f studs further out, which is the bank not being allowed to pull it down",
+			BANK_RADIUS,
+			BANK_DEG,
+			BANK_ENTRY,
+			BANK_WIDTH,
+			bankOn.swept,
+			bankOn.at2s,
+			bankOff.swept,
+			bankOff.at2s,
+			bankOff.at2s - bankOn.at2s
+		)
+	)
+
+	------------------------------------------------------------------ what it costs (T-065)
+	-- One subtraction, one dot product and one compare in the step, and the compare skips
+	-- the write on flat ground. This is the model's own loop, not a frame: 60 seconds of
+	-- simulation is 7200 steps, which is what a minute of driving actually runs.
+	local function costOf(onOff: number): number
+		return withGravityOnGround(onOff, function()
+			local world = World.flat(0)
+			local runner = Sim.newRunner(startCF(TEST_YAW))
+			runner.state.velocity = ahead(CORNER_ENTRY, TEST_YAW)
+			Sim.advance(runner, 1, { steer = 0.3 }, world) -- warm, so neither run pays for the first touch
+			local started = os.clock()
+			local elapsed = 0
+			while elapsed < 60 - 1e-9 do
+				Sim.advance(runner, 1 / 60, { steer = 0.3 }, world)
+				elapsed += 1 / 60
+			end
+			return (os.clock() - started) * 1e6 / runner.totalSteps
+		end)
+	end
+	local costOff = costOf(0)
+	local costOn = costOf(1)
+	check(
+		checks,
+		"gravity on the ground costs nothing worth measuring",
+		costOn < costOff * 1.5 + 1,
+		string.format(
+			"60 s of simulation (7200 steps): %.2f us a step with it off, %.2f us with it on -- %+.2f us, or %+.3f ms over a whole minute of driving",
+			costOff,
+			costOn,
+			costOn - costOff,
+			(costOn - costOff) * 7200 / 1000
 		)
 	)
 
