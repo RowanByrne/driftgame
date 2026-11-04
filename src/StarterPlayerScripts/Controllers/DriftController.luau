@@ -56,6 +56,22 @@ local STEP_NAME = "DriftSim"
 -- `IsDescendantOf` rather than `.Parent ==` on purpose: a car model is free to put its
 -- parts inside a folder or a sub-model (Shared/CarModel), and a rig built from one is
 -- still a rig this controller can write through.
+--
+-- THE SHELL IS CHECKED TOO, a group at a time by its first part, exactly as
+-- `Drift/RemoteCars` has always checked another player's car. Since T-033 the SERVER
+-- re-dresses a car when its driver switches archetype, which destroys the old `Shell` and
+-- replicates a new one: without this the rig goes on writing to parts that no longer
+-- exist and the new body is never placed at all. Measured in DR-Lane1 before the check
+-- was here: the new shell's parts sat 282.68 studs from the car, where the server's own
+-- copy of it is.
+local function shellStands(shell, car: Model): boolean
+	if not shell then
+		return true -- no shell group is not a missing one: a block car has none
+	end
+	local first = shell.parts[1]
+	return first ~= nil and first.part:IsDescendantOf(car)
+end
+
 local function rigIsLive(rig, car: Model?): boolean
 	if not rig or not car or rig.car ~= car then
 		return false
@@ -71,6 +87,12 @@ local function rigIsLive(rig, car: Model?): boolean
 		if not wheel.part or not wheel.part:IsDescendantOf(car) then
 			return false
 		end
+		if not shellStands(wheel.shell, car) then
+			return false
+		end
+	end
+	if not shellStands(rig.bodyShell, car) then
+		return false
 	end
 	return true
 end
