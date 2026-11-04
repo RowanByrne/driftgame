@@ -369,6 +369,8 @@ server bridge. The checks that must still pass, and the new ones the port needs:
 | **A drift costs speed** | Held drifts at a quarter, half and full finger: speed kept, and the circle each describes |
 | **Surfaces matter** | The same drift on tarmac and on dirt: grip and score both halve |
 | **The multiplier ladder** | A long drift climbs 1→9; letting go bleeds it down, faster from 9 than from 2 |
+| **Walls are solid** | Ram a building, a pillar and a cone head-on at top speed, plus a glancing hit, a sideways slide and the slowest possible nudge: the car's body never enters the part, and driving along a wall neither sticks nor climbs. `DebugCollisionTests` |
+| **The car never stops being drawn** | `drawnGap` stays near zero across a long drive, a fall and respawn, and a server-side car replacement. A Model replicates before its parts do, and a rig taken in that gap draws nothing for ever (T-016) |
 | No runaway | Lock-to-lock for 12 s: speed and yaw stay inside their ceilings |
 | No physics | Every car part anchored, no BodyMover, VectorForce, constraint or joint |
 | The numbers live in Config | Halving `MaxSteeringSpeed` halves the rate of turn |
