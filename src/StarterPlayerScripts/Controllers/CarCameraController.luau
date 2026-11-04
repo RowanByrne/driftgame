@@ -22,11 +22,17 @@
 --      front of the camera or stays pinned to it.
 --   3. IT LEANS TOWARD WHERE THE CAR IS GOING as the slip opens, by an ease-in-out of
 --      |slip| / 180 deg toward a point behind the car's TRAVEL, and then only
---      `CamVelocityBlend` of that lean is taken. 0.05 is not a typo: the leaned target is
---      what the next frame's resting direction is measured from, so the 5% compounds, and
+--      `CamVelocityBlend` of that lean is taken. A tenth is not a typo: the leaned target
+--      is what the next step's resting direction is measured from, so it compounds, and
 --      what it buys is the camera dropping and swinging wide through a drift.
 --   4. THE FOV OPENS WITH SPEED: `CamFovBase + CamFovPerSpeed * speed`, eased at
 --      `CamFovRate`.
+--
+-- T-071 moved three of those numbers, and nothing else: the camera is 9.5 studs closer and
+-- 7 degrees steeper, the lean takes 0.12 of itself rather than 0.05, and the FOV's swing
+-- was reshaped to fall inside the speeds a car is actually driven at. All three are in
+-- Config.Camera with the measurements that chose them. NO NEW EFFECT WAS ADDED: the roll
+-- and the shake are T-072's, and the three things below are still out.
 --
 -- The camera is PLACED at its target each frame and told to look at the look-at point.
 -- There is no spring and no look easing: all the easing there is lives inside how the
@@ -62,7 +68,8 @@
 -- is eased too, lightly: "smoothened slightly ... a bit cinematic" is the brief, and this
 -- camera is already calm, so a heavy filter here reads as lag rather than as cinema.
 --
--- Every number is in Config.Drift; none is in here.
+-- Every number is in Config.Camera; none is in here (T-071: they moved out of
+-- Config.Drift, name for name, because the camera is a look and not the model).
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
@@ -79,6 +86,14 @@ local Render = require(DriftFolder.Render)
 
 local DriftController = require(script.Parent.DriftController)
 
+-- EVERY NUMBER THE CAMERA USES IS IN HERE, and it is a different file from the model's
+-- (T-071): the camera reads `Drift/Model`'s state and writes nothing, so its numbers are a
+-- look rather than a simulation. The keys kept their `Cam` prefix when they moved, so
+-- `Cam.CamOffset` reads oddly and every other line about this camera still says the thing
+-- it always said. `Config.Drift` is still reached for the CAR's own numbers -- `TopSpeed`
+-- and `RideHeight`, in the probes at the bottom -- and for nothing else.
+local Cam = Config.Camera
+
 local CarCameraController = {}
 
 CarCameraController.Priority = 5 -- after DriftController, so a state exists to follow
@@ -90,10 +105,10 @@ local EPS = 1e-4
 -- `CamPanRate`, `CamPanReturnDelay`, `CamPanReturnRate`, and the four limits. The four
 -- angles are DEGREES in Config, because degrees are what the tuning conversation uses, and
 -- are converted here once rather than on every frame.
-local PanPitchMin = math.rad(Config.Drift.CamPanPitchMin)
-local PanPitchMax = math.rad(Config.Drift.CamPanPitchMax)
-local PanElevationMin = math.rad(Config.Drift.CamPanElevationMin)
-local PanElevationMax = math.rad(Config.Drift.CamPanElevationMax)
+local PanPitchMin = math.rad(Cam.CamPanPitchMin)
+local PanPitchMax = math.rad(Cam.CamPanPitchMax)
+local PanElevationMin = math.rad(Cam.CamPanElevationMin)
+local PanElevationMax = math.rad(Cam.CamPanElevationMax)
 
 -- What the camera needs of the car, and nothing else. Built from the model's state, or
 -- made up by DebugProbe, which is how the curves below are measured without a car.
@@ -170,7 +185,7 @@ function CarCameraController.newRig(view: View?)
 		target = Vector3.zero, -- after the lean
 		lastTarget = Vector3.zero,
 		lastCarPos = Vector3.zero,
-		fov = Config.Drift.CamFovBase,
+		fov = Cam.CamFovBase,
 		released = false,
 		-- The fixed-step accumulator, and the step before the current one, so a frame that
 		-- lands between two steps is rendered between them rather than on whichever step
@@ -199,16 +214,15 @@ end
 -- Start where the camera would have settled, so the first frame of a run is not a swoop
 -- in from the origin.
 function CarCameraController._seed(rig, view: View)
-	local C = Config.Drift
-	rig.lookTarget = carPoint(view, C.CamLookAt)
-	rig.restTarget = carPoint(view, C.CamOffset)
+	rig.lookTarget = carPoint(view, Cam.CamLookAt)
+	rig.restTarget = carPoint(view, Cam.CamOffset)
 	rig.velTarget = rig.restTarget
 	rig.target = rig.restTarget
 	rig.position = rig.restTarget
 	rig.lookPoint = rig.lookTarget
 	rig.lastTarget = rig.restTarget
 	rig.lastCarPos = view.position
-	rig.fov = C.CamFovBase + C.CamFovPerSpeed * view.speed
+	rig.fov = Cam.CamFovBase + Cam.CamFovPerSpeed * view.speed
 	rig.accumulator = 0
 	rig.prevTarget = rig.target
 	rig.prevLookTarget = rig.lookTarget
@@ -231,21 +245,20 @@ end
 -- CarInputController, or nil for "nobody is panning" -- which is what every headless
 -- caller passes, and which costs nothing once the offsets are home.
 local function stepPan(rig, dt: number, pan)
-	local C = Config.Drift
 	if pan and pan.held then
 		rig.panHeld = true
 		rig.panIdle = 0
 		-- Mouse right turns the view right, mouse down looks down, the way Roblox's own
 		-- camera does. The view turning right is the camera swinging the other way round
 		-- the car, hence the minus.
-		rig.panTargetYaw = wrapPi(rig.panTargetYaw - pan.dx * C.CamPanSensitivity)
-		rig.panTargetPitch = math.clamp(rig.panTargetPitch + pan.dy * C.CamPanSensitivity, PanPitchMin, PanPitchMax)
+		rig.panTargetYaw = wrapPi(rig.panTargetYaw - pan.dx * Cam.CamPanSensitivity)
+		rig.panTargetPitch = math.clamp(rig.panTargetPitch + pan.dy * Cam.CamPanSensitivity, PanPitchMin, PanPitchMax)
 	else
 		rig.panHeld = false
 		if rig.panTargetYaw ~= 0 or rig.panTargetPitch ~= 0 then
 			rig.panIdle += dt
-			if rig.panIdle >= C.CamPanReturnDelay then
-				local home = ease(dt, C.CamPanReturnRate)
+			if rig.panIdle >= Cam.CamPanReturnDelay then
+				local home = ease(dt, Cam.CamPanReturnRate)
 				rig.panTargetYaw -= rig.panTargetYaw * home
 				rig.panTargetPitch -= rig.panTargetPitch * home
 				-- Land exactly, so a rig that is home stops doing arithmetic for ever.
@@ -256,7 +269,7 @@ local function stepPan(rig, dt: number, pan)
 		end
 	end
 
-	local k = ease(dt, C.CamPanRate)
+	local k = ease(dt, Cam.CamPanRate)
 	rig.panYaw = wrapPi(rig.panYaw + wrapPi(rig.panTargetYaw - rig.panYaw) * k)
 	rig.panPitch += (rig.panTargetPitch - rig.panPitch) * k
 end
@@ -291,17 +304,16 @@ end
 
 -- One fixed step of the targets, and nothing else. `dt` here is always `CamTargetStep`.
 local function stepTargets(rig, view: View, dt: number)
-	local C = Config.Drift
 	if rig.released then
 		return -- a run has ended: hold whatever the targets last were
 	end
 
 	-- (1) The look-at: ahead of the nose, with only its HEIGHT eased. A car cresting a
 	-- jump keeps the horizon still while the camera itself follows the car up.
-	local wantLook = carPoint(view, C.CamLookAt)
+	local wantLook = carPoint(view, Cam.CamLookAt)
 	rig.lookTarget = Vector3.new(
 		wantLook.X,
-		rig.lookTarget.Y + (wantLook.Y - rig.lookTarget.Y) * ease(dt, C.CamHeightRate),
+		rig.lookTarget.Y + (wantLook.Y - rig.lookTarget.Y) * ease(dt, Cam.CamHeightRate),
 		wantLook.Z
 	)
 
@@ -309,10 +321,10 @@ local function stepTargets(rig, view: View, dt: number)
 	-- car round at `CamAngleRate`. The length is always the offset's own length, so easing
 	-- the direction can never change how far away the camera is -- it swings around the
 	-- car instead of being dragged behind it.
-	local wantDir = safeUnit(carPoint(view, C.CamOffset) - view.position, Vector3.yAxis)
+	local wantDir = safeUnit(carPoint(view, Cam.CamOffset) - view.position, Vector3.yAxis)
 	local haveDir = safeUnit(rig.lastTarget - rig.lastCarPos, wantDir)
-	local dir = safeUnit(haveDir:Lerp(wantDir, ease(dt, C.CamAngleRate)), wantDir)
-	rig.restTarget = view.position + dir * C.CamOffset.Magnitude
+	local dir = safeUnit(haveDir:Lerp(wantDir, ease(dt, Cam.CamAngleRate)), wantDir)
+	rig.restTarget = view.position + dir * Cam.CamOffset.Magnitude
 
 	-- (3) The lean. A point the same height and the same distance behind, but behind the
 	-- VELOCITY instead of the nose, hung off the look-at point rather than off the car. It
@@ -321,13 +333,15 @@ local function stepTargets(rig, view: View, dt: number)
 	local flatVel = Vector3.new(view.velocity.X, 0, view.velocity.Z)
 	local fwd = DriftModel.axes(view.yaw)
 	local back = safeUnit(-flatVel, -fwd)
-	local wantVel = rig.lookTarget + back * C.CamOffset.Z + Vector3.yAxis * C.CamOffset.Y
-	rig.velTarget = rig.velTarget:Lerp(wantVel, ease(dt, C.CamSwingRate))
+	local wantVel = rig.lookTarget + back * Cam.CamOffset.Z + Vector3.yAxis * Cam.CamOffset.Y
+	rig.velTarget = rig.velTarget:Lerp(wantVel, ease(dt, Cam.CamSwingRate))
 
 	-- ...and only `CamVelocityBlend` of it is taken. Small because it compounds: the next
-	-- line is what the next step's `haveDir` is measured from.
+	-- line is what the next step's `haveDir` is measured from. Measured, 0.12 settles the
+	-- camera 93% of the way round to the travel in a sustained 60-degree drift and 52% of
+	-- the way one second in, which is the figure that matters (Config.Camera).
 	local leanT = easeInOut(math.abs(math.deg(view.slip)) / 180)
-	rig.target = rig.restTarget:Lerp(rig.restTarget:Lerp(rig.velTarget, leanT), C.CamVelocityBlend)
+	rig.target = rig.restTarget:Lerp(rig.restTarget:Lerp(rig.velTarget, leanT), Cam.CamVelocityBlend)
 
 	rig.lastTarget = rig.target
 	rig.lastCarPos = view.position
@@ -335,7 +349,6 @@ end
 
 -- One frame. Returns the camera's CFrame.
 function CarCameraController._advance(rig, view: View, dt: number, pan): CFrame
-	local C = Config.Drift
 	if not rig.ready then
 		CarCameraController._seed(rig, view)
 	end
@@ -352,9 +365,9 @@ function CarCameraController._advance(rig, view: View, dt: number, pan): CFrame
 	-- a whole frame, and a target built at the wrong instant is a camera that creeps and
 	-- snaps even when the car it is following is perfectly smooth. Measured on a 100 Hz
 	-- clock: 1.07 studs of camera movement a frame that the car had not made.
-	local step = math.max(C.CamTargetStep, EPS)
+	local step = math.max(Cam.CamTargetStep, EPS)
 	local before = rig.accumulator
-	rig.accumulator = math.min(rig.accumulator + dt, step * math.max(C.CamMaxTargetSteps, 1))
+	rig.accumulator = math.min(rig.accumulator + dt, step * math.max(Cam.CamMaxTargetSteps, 1))
 	-- What the frame actually contributed, which is `dt` unless the clamp above ate some
 	-- of it; either way it is the span the fractions below are measured against.
 	local span = math.max(rig.accumulator - before, EPS)
@@ -380,8 +393,8 @@ function CarCameraController._advance(rig, view: View, dt: number, pan): CFrame
 	applyPan(rig, view.position)
 
 	-- The FOV has no feedback in it, so it is eased once a frame.
-	local wantFov = C.CamFovBase + C.CamFovPerSpeed * view.speed
-	rig.fov += (wantFov - rig.fov) * ease(dt, C.CamFovRate)
+	local wantFov = Cam.CamFovBase + Cam.CamFovPerSpeed * view.speed
+	rig.fov += (wantFov - rig.fov) * ease(dt, Cam.CamFovRate)
 
 	-- Placed, not eased into place, and looking AT the car: the horizon is level because
 	-- nothing ever rolls it.
@@ -552,9 +565,9 @@ function CarCameraController:DebugProbe(opts)
 		speed = speed,
 	}
 
-	local was = C.CamVelocityBlend
+	local was = Cam.CamVelocityBlend
 	if opts.blend then
-		C.CamVelocityBlend = opts.blend
+		Cam.CamVelocityBlend = opts.blend
 	end
 
 	local rig = CarCameraController.newRig(view)
@@ -588,7 +601,7 @@ function CarCameraController:DebugProbe(opts)
 		end
 	end)
 
-	C.CamVelocityBlend = was
+	Cam.CamVelocityBlend = was
 	if not ok then
 		return { error = tostring(err) }
 	end

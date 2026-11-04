@@ -785,7 +785,7 @@ function DriftTests.run()
 		C.MaxSteeringSpeed = 1
 	end)
 	local modelWrote = pcall(function()
-		C.CamVelocityBlend = C.CamVelocityBlend
+		C.FixedStep = C.FixedStep
 	end)
 	Cars.tune("MaxSteeringSpeed", 1)
 	local tunedTo = C.MaxSteeringSpeed
