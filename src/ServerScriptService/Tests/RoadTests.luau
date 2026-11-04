@@ -55,6 +55,10 @@ local LOOK_SECONDS = 0.9 -- how far ahead it aims, in seconds of travel. MEASURE
 -- says nothing about the road and everything about the driver, which
 -- is why it is written down here rather than treated as a result
 local LOOK_MIN, LOOK_MAX = 30, 120 -- studs
+local STEER_FLOOR = 15 -- studs/s. The speed the autopilot steers as though it had, when it
+-- has less: see where it is used. The flat road's own drive never
+-- goes below 14, so this is reaching into the moments a touge road
+-- stops the car and nowhere else
 local BRAKE_LOOK = 1.6 -- seconds ahead it reads the corner it is about to meet
 local BRAKE_LIMIT = 65 -- studs/s^2 of cornering it is willing to ask of the car before
 -- it uses the handbrake. The grip curve reaches 43 at about 57 degrees
@@ -201,6 +205,54 @@ local PINNED = {
 	parts = 1448, -- Parts in the first 20 pieces, built
 	built = 147459104, -- and their names, sizes and CFrames
 }
+
+-- The four pieces that go somewhere vertically (T-068). They are named here because two
+-- things have to be able to reach for them as a group: the flat fingerprint, which gates
+-- them out, and the drives, which single them out.
+local TOUGE = { "Link", "Banked30", "HairpinStack", "Corkscrew" }
+
+-- GATE THE FOUR OUT AND THE FLAT ROAD IS THE FLAT ROAD, BIT FOR BIT. The fingerprints
+-- above were taken when nine variants existed, and adding seven more would change the
+-- sequence a seed lays -- not because the flat pieces moved, but because there are more
+-- things to choose between. So the check that the flat pieces did not move has to ask the
+-- question the pin can answer: with the touge pieces out of reach, is the road the same?
+--
+-- IT IS THE SAME RANDOM NUMBERS AND NOT ONLY THE SAME PIECES, which is the only reason
+-- this works. `Generator.biasedWeights` walks `Pieces.order()`, skips anything whose
+-- `minPieces` puts it out of reach, and hands the survivors to a weighted shuffle. Gated
+-- out, the seven contribute nothing to the list and nothing to the `most` tally, so the
+-- shuffle draws the same list in the same order and spends the RNG identically.
+--
+-- AND THE SEARCH BUDGET IS HELD AT WHAT IT WAS WHEN THE PIN WAS TAKEN, for the same
+-- reason and not for a different one. `SearchNodeBudget` decides when the generator stops
+-- proving and lays the best chain it found (`Generator.relax`), so it is part of what
+-- chooses the road, and the sixteen-variant set needed it raised from 2 000 to 2 500
+-- (`Config/Road`). Measured: with it left at 2 500 the first twenty pieces and every Part
+-- in them are still IDENTICAL -- `geometry`, `parts` and `built` all match -- and only the
+-- 500-piece `sequence` moves, which is the generator choosing differently a long way down
+-- the road, not a flat piece having changed shape. Holding it keeps all four pinned
+-- numbers meaning what they meant.
+local PINNED_BUDGET = 2000
+local function withFlatSetOnly<T>(fn: () -> T): T
+	local was = {}
+	for _, name in TOUGE do
+		was[name] = Config.Road.Pieces[name].minPieces
+		Config.Road.Pieces[name].minPieces = math.huge
+	end
+	local wasBudget = Config.Road.SearchNodeBudget
+	Config.Road.SearchNodeBudget = PINNED_BUDGET
+	Pieces.rebuild()
+	local ok, result = pcall(fn)
+	for _, name in TOUGE do
+		Config.Road.Pieces[name].minPieces = was[name]
+	end
+	Config.Road.SearchNodeBudget = wasBudget
+	Pieces.rebuild()
+	if not ok then
+		error(result, 0)
+	end
+	return result
+end
 
 local function hasher()
 	local h = 2166136261
@@ -517,7 +569,24 @@ function Tests:drive(o)
 			local len = math.sqrt(dx * dx + dz * dz)
 			if len > 1e-3 then
 				local alpha = signedAngle(heading.X, heading.Z, dx / len, dz / len)
-				local yawWanted = speed * (2 * math.sin(alpha) / look)
+				-- A DRIVER WHO HAS NEARLY STOPPED STILL TURNS THE WHEEL (T-068). Pure
+				-- pursuit asks for the yaw RATE that curves a car travelling at `speed`
+				-- on to the target, so as the speed falls the command falls with it and
+				-- at a standstill this autopilot steers nothing at all. On the flat road
+				-- that never mattered, because the flat road never stops the car. On a
+				-- banked, descending one it does: gravity acts along the surface now
+				-- (T-065), so a car that loses its speed on a bank slides down it, the
+				-- slide IS slip, past 90 degrees of slip the model's grip force becomes a
+				-- brake, and the car sits there for the rest of the drive with the
+				-- steering commanding nothing. That is the FIXTURE failing to answer the
+				-- question rather than the road failing to be drivable -- a player in that
+				-- spot turns the wheel and drives out of it.
+				--
+				-- So the yaw rate is asked for as though the car were doing at least
+				-- `STEER_FLOOR`. Above that speed it changes nothing, which is every
+				-- number this file has measured on the flat road bar the moments the car
+				-- is slowest in a hairpin.
+				local yawWanted = math.max(speed, STEER_FLOOR) * (2 * math.sin(alpha) / look)
 				input.steer = math.clamp(yawWanted / (D.MaxSteeringSpeed * D.SteeringSensitivity), -1, 1)
 			end
 		end
@@ -831,8 +900,14 @@ function Tests:sweep(o)
 	end
 	spec[field] = wasValue
 	C.Pieces.Straight.Length = wasLength
-	restoreSet(wasSet)
+	-- THE GATES GO BACK BEFORE `set` DOES, and the order is a bug fix rather than taste
+	-- (T-068). `wasMin` is read AFTER `applySet`, so when a `set` names a `minPieces` --
+	-- which is how a measurement pushes a whole group of pieces out of reach -- undoing it
+	-- second would write the mutated gate back over the real one and leave the piece set
+	-- wrong for everything that ran after. Measured: a drive that followed one met none of
+	-- the four touge pieces at all.
 	restoreMinPieces(wasMin)
+	restoreSet(wasSet)
 	Pieces.rebuild()
 	return table.concat(rows, "\n")
 end
@@ -930,6 +1005,122 @@ function Tests:stalls(o)
 	return table.concat(rows, "\n")
 end
 
+-- WHERE THE ROAD GOES VERTICALLY OVER A LONG RUN, which is the question the touge set has
+-- to answer and the one number that cannot be read off any single piece (T-068). A piece
+-- with no height profile CARRIES the grade it arrived at, so the road's height is a state
+-- machine driven by the four touge pieces' `EndGrade`s, and the only honest way to read it
+-- is to generate a long run and look.
+--
+-- Pure: no parts, no playtest.
+--   game.ServerStorage.DebugBridge:Invoke("DebugRoadTests", "heightBand")
+--   ... "heightBand", { pieces = 200, set = { Link = { Height = { EndGrade = 5 } } } }
+function Tests:heightBand(o)
+	o = o or {}
+	local C = Config.Road
+	local pieces = o.pieces or PROFILE_RUN
+	local seeds = o.seeds or SEEDS
+	local wasSet = applySet(o.set)
+	Pieces.rebuild()
+
+	local rows = {}
+	local sumNet, sumLow, sumHigh, worstTilt, worstTiltId = 0, 0, 0, 0, "?"
+	local sumRuns, sumRunPieces, longestDescent = 0, 0, 0
+	local byKind = {}
+	for _, seed in seeds do
+		local run = longRun(seed, pieces)
+		local low, high, net = 0, 0, 0
+		local studs = 0
+		-- A DESCENT IS A STRETCH, NOT A PIECE: how long the road keeps falling once a
+		-- corkscrew has set it falling is what decides whether a descent is a feature or a
+		-- plunge, and it is the thing `EndGrade` actually controls.
+		local descents, descentPieces, here = 0, 0, 0
+		for _, piece in run do
+			local k = byKind[piece.kind]
+			if not k then
+				k = { n = 0, drop = 0 }
+				byKind[piece.kind] = k
+			end
+			k.n += 1
+			k.drop += (piece.finish.y or 0) - (piece.start.y or 0)
+			studs += piece.length
+			for _, node in piece.nodes do
+				low = math.min(low, node.y)
+				high = math.max(high, node.y)
+				local tilt = math.deg(math.acos(math.clamp(math.cos(node.pitch) * math.cos(node.bank), -1, 1)))
+				if tilt > worstTilt then
+					worstTilt, worstTiltId = tilt, piece.id
+				end
+			end
+			net = piece.finish.y or 0
+			if (piece.finish.pitch or 0) < -1e-6 then
+				here += 1
+				longestDescent = math.max(longestDescent, here)
+			else
+				if here > 0 then
+					descents += 1
+					descentPieces += here
+				end
+				here = 0
+			end
+		end
+		if here > 0 then
+			descents += 1
+			descentPieces += here
+		end
+		sumNet += net
+		sumLow += low
+		sumHigh += high
+		sumRuns += descents
+		sumRunPieces += descentPieces
+		table.insert(
+			rows,
+			string.format(
+				"seed %8d: %3d pieces over %6.0f studs of road, net %+7.1f studs (%.2f%% average grade), lowest %+7.1f, highest %+6.1f, band %6.1f; %d descents averaging %.1f pieces",
+				seed,
+				#run,
+				studs,
+				net,
+				-100 * net / math.max(studs, 1),
+				low,
+				high,
+				high - low,
+				descents,
+				descentPieces / math.max(descents, 1)
+			)
+		)
+	end
+
+	local kinds = {}
+	for _, id in Pieces.order() do
+		local kind = Pieces.get(id).kind
+		local k = byKind[kind]
+		if k and not kinds[kind] then
+			kinds[kind] = true
+			table.insert(rows, string.format("  %-13s %4d of them, %+8.1f studs between them (%+6.1f each)", kind, k.n, k.drop, k.drop / k.n))
+		end
+	end
+	table.insert(
+		rows,
+		string.format(
+			"MEAN over %d seeds: net %+.1f studs over %d pieces (%+.2f a piece), lowest %+.1f, highest %+.1f; longest unbroken descent %d pieces; steepest surface anywhere %.2f deg on a %s (the lid is %.0f)",
+			#seeds,
+			sumNet / #seeds,
+			pieces,
+			sumNet / #seeds / pieces,
+			sumLow / #seeds,
+			sumHigh / #seeds,
+			longestDescent,
+			worstTilt,
+			worstTiltId,
+			C.MaxSurfaceTilt
+		)
+	)
+
+	restoreSet(wasSet)
+	Pieces.rebuild()
+	return table.concat(rows, "\n")
+end
+
 --------------------------------------------------------------------------------
 -- The run
 --------------------------------------------------------------------------------
@@ -973,8 +1164,18 @@ function Tests:run(opts)
 			kindCount += 1
 		end
 		check(
-			"the piece set is five types in nine variants",
-			#ids == 9 and kindCount == 5 and kinds.Straight and kinds.Corner and kinds.Sweeper and kinds.Hairpin and kinds.Chicane,
+			"the piece set is nine types in sixteen variants: five flat and four touge",
+			#ids == 16
+				and kindCount == 9
+				and kinds.Straight
+				and kinds.Corner
+				and kinds.Sweeper
+				and kinds.Hairpin
+				and kinds.Chicane
+				and kinds.Link
+				and kinds.Banked30
+				and kinds.HairpinStack
+				and kinds.Corkscrew,
 			table.concat(lines, "; ")
 		)
 		check(
@@ -1076,7 +1277,7 @@ function Tests:run(opts)
 	-- 1c. The flat road is the road it was before it could climb (T-066)
 	----------------------------------------------------------------------------
 	do
-		local f = flatFingerprint()
+		local f = withFlatSetOnly(flatFingerprint)
 		local same = f.pieces == PINNED.pieces
 			and f.sequence == PINNED.sequence
 			and f.geometry == PINNED.geometry
@@ -1090,7 +1291,8 @@ function Tests:run(opts)
 			"the nine flat pieces are the same road, piece for piece and part for part",
 			same,
 			string.format(
-				"seed 1234 x %d pieces and the first 20 of them built, against fingerprints taken before a socket had a height: %s.%s",
+				"with the four touge pieces gated out and the search budget held at %d, seed 1234 x %d pieces and the first 20 of them built, against fingerprints taken before a socket had a height: %s.%s",
+				PINNED_BUDGET,
 				PINNED.pieces,
 				table.concat(who, ", "),
 				if same
@@ -1306,6 +1508,230 @@ function Tests:run(opts)
 		if not ok then
 			error(err, 0)
 		end
+	end
+
+	----------------------------------------------------------------------------
+	-- 1f. The four touge pieces go where they say they go (T-068)
+	----------------------------------------------------------------------------
+	-- Each of the four is placed on a LEVEL socket and on a DESCENDING one, and asked for
+	-- the three things its design is: how much height it loses, what grade it hands on, and
+	-- what bank it reaches. All of it read off the built piece, never off the spec that
+	-- asked for it, because the clamps in `applyProfile` are allowed to have had their say.
+	do
+		local level = { x = 0, z = 0, yaw = 0 }
+		local falling = { x = 0, z = 0, yaw = 0, y = 0, pitch = math.rad(-5), roll = 0 }
+		local function read(id: string, socket)
+			local p = Pieces.place(Pieces.get(id), socket, 5)
+			local bank, grade, tilt = 0, 0, 0
+			for _, n in p.nodes do
+				bank = math.max(bank, math.abs(math.deg(n.bank)))
+				grade = math.max(grade, math.abs(math.deg(n.pitch)))
+				tilt = math.max(tilt, math.deg(math.acos(math.clamp(math.cos(n.pitch) * math.cos(n.bank), -1, 1))))
+			end
+			return {
+				piece = p,
+				drop = (socket.y or 0) - (p.finish.y :: number),
+				endGrade = math.deg(p.finish.pitch :: number),
+				endRoll = math.deg(p.finish.roll :: number),
+				startGrade = math.deg(p.nodes[1].pitch),
+				peakBank = bank,
+				peakGrade = grade,
+				peakTilt = tilt,
+			}
+		end
+
+		local link, linkFalling = read("Link", level), read("Link", falling)
+		local bank, bankFalling = read("Banked30L", level), read("Banked30L", falling)
+		local stack = read("HairpinStackL", level)
+		local cork, corkFalling = read("CorkscrewL", level), read("CorkscrewL", falling)
+		local lines = {}
+		for name, r in { Link = link, Banked30L = bank, HairpinStackL = stack, CorkscrewL = cork } do
+			table.insert(
+				lines,
+				string.format(
+					"%s from level: %+.1f studs of height, hands on %+.2f deg and %+.2f of roll, peak bank %.2f, peak grade %.2f, peak tilt %.2f",
+					name,
+					-r.drop,
+					r.endGrade,
+					r.endRoll,
+					r.peakBank,
+					r.peakGrade,
+					r.peakTilt
+				)
+			)
+		end
+		table.sort(lines)
+
+		-- THE LINK IS NEARLY FLAT AND IT HANDS ON A CLIMB, which is the whole of its job:
+		-- it is the only thing in the set that climbs, and what climbs after it is the
+		-- straights and corners that carry the grade it leaves.
+		local linkSpec = C.Pieces.Link.Height.EndGrade
+		check(
+			"the link is nearly flat, and it levels a descent and hands on a climb",
+			math.abs(link.endGrade - linkSpec) < 0.01
+				and math.abs(linkFalling.endGrade - linkSpec) < 0.01
+				and math.abs(link.drop) < 15
+				-- `drop` is start minus finish, so a rise is negative: arriving on a
+				-- descent the link rises LESS, which is a drop CLOSER TO ZERO.
+				and linkFalling.drop > link.drop
+				and link.peakBank == 0,
+			string.format(
+				"from level it gains %.1f studs over %.0f and hands on %+.2f deg; arriving on a 5-degree descent it gains %.1f and hands on the same %+.2f. No bank, ever",
+				-link.drop,
+				link.piece.length,
+				link.endGrade,
+				-linkFalling.drop,
+				linkFalling.endGrade
+			)
+		)
+
+		-- THE SHOWCASE: a 30-degree direction change with 30 degrees of bank, losing
+		-- height, and level and unbanked at both sockets.
+		local wantBank = C.Pieces.Banked30.Bank.Degrees
+		local wantDrop = C.Pieces.Banked30.Height.Drop
+		check(
+			`the banked 30 reaches {wantBank} degrees of bank, loses its height and arrives level`,
+			math.abs(bank.peakBank - wantBank) < 0.5
+				and math.abs(bank.drop - wantDrop) < 0.1
+				and math.abs(bank.endGrade) < 0.01
+				and math.abs(bank.endRoll) < 0.01
+				and math.abs(bankFalling.peakBank - wantBank) < 0.5
+				and bank.peakTilt <= C.MaxSurfaceTilt + 1e-6
+				and bank.peakTilt < WALL_DEGREES - 8,
+			string.format(
+				"asked for %.0f degrees of bank and reached %.2f, at the apex and not at a socket (it leaves at %.2f of roll); lost %.2f studs of the %.0f it asked for and hands on %+.3f deg. Steepest surface on it %.2f deg, normal Y %.4f against the %.2f that reads as a wall. Arriving on a descent it still reaches %.2f",
+				wantBank,
+				bank.peakBank,
+				bank.endRoll,
+				bank.drop,
+				wantDrop,
+				bank.endGrade,
+				bank.peakTilt,
+				math.cos(math.rad(bank.peakTilt)),
+				WALL_NORMAL_Y,
+				bankFalling.peakBank
+			)
+		)
+
+		-- THE STACK IS TWO HAIRPINS, OPPOSITE HANDS: it comes out pointing the way it went
+		-- in, having moved four radii sideways, and it has dropped hard doing it.
+		local R = C.Pieces.HairpinStack.Radius
+		local turned = math.deg(angleGap(stack.piece.start.yaw, stack.piece.finish.yaw))
+		local across = math.sqrt((stack.piece.finish.x - stack.piece.start.x) ^ 2 + (stack.piece.finish.z - stack.piece.start.z) ^ 2)
+		-- The two bends must genuinely go opposite ways, which is the difference between a
+		-- stack and one very long corner: the heading swings a full half-turn each way.
+		local swing = 0
+		for _, n in stack.piece.nodes do
+			swing = math.max(swing, math.deg(angleGap(n.yaw, stack.piece.start.yaw)))
+		end
+		check(
+			"the hairpin stack is two hairpins the opposite way, and it drops hard",
+			turned < 0.5 and math.abs(across - 4 * R) < 1 and swing > 179
+				and math.abs(stack.drop - C.Pieces.HairpinStack.Height.Drop) < 0.1
+				and math.abs(stack.endGrade) < 0.01,
+			string.format(
+				"%.0f studs of road: the heading swings %.1f deg away from where it started and comes back to within %.2f of it, and the piece ends %.1f studs sideways (four radii is %.0f). It loses %.1f studs and arrives level (%+.3f deg), steepest %.2f deg",
+				stack.piece.length,
+				swing,
+				turned,
+				across,
+				4 * R,
+				stack.drop,
+				stack.endGrade,
+				stack.peakGrade
+			)
+		)
+
+		-- THE CORKSCREW'S ENTRY IS THE GRADE IT ARRIVED AT, EXACTLY -- which is what makes
+		-- it a flat entry after anything level, and a crest after a link -- and it hands on
+		-- a descent for the rest of the road to carry.
+		local wantEnd = C.Pieces.Corkscrew.Height.EndGrade
+		check(
+			"the corkscrew enters at the grade it arrived at and hands on a descent",
+			math.abs(cork.startGrade) < 1e-9
+				and math.abs(corkFalling.startGrade + 5) < 1e-9
+				and math.abs(cork.endGrade - wantEnd) < 0.01
+				and math.abs(corkFalling.endGrade - wantEnd) < 0.01
+				and math.abs(cork.drop - C.Pieces.Corkscrew.Height.Drop) < 0.1,
+			string.format(
+				"from a level socket it starts at %.2e deg -- flat -- steepens to %.2f and hands on %+.2f, having lost %.1f studs over %.0f. From a 5-degree descent it starts at exactly %+.2f and hands on the same %+.2f",
+				cork.startGrade,
+				cork.peakGrade,
+				cork.endGrade,
+				cork.drop,
+				cork.piece.length,
+				corkFalling.startGrade,
+				corkFalling.endGrade
+			)
+		)
+		check("what the four touge pieces do, placed on a level socket", true, table.concat(lines, " | "))
+	end
+
+	----------------------------------------------------------------------------
+	-- 1g. The road is a band, not a ramp (T-068)
+	----------------------------------------------------------------------------
+	-- THE ONE NUMBER THAT CANNOT BE READ OFF A PIECE. A piece with no height profile
+	-- carries the grade it arrived at, so the road's height is a state machine with four
+	-- inputs, and where it ends up after two hundred pieces is a property of the SET and of
+	-- the generator's bias together. It is also the number the open question in
+	-- `features/road-elevation.md` turns on -- is this an endless road or a descent -- so
+	-- it is measured and reported rather than asserted tightly.
+	do
+		local nets, lows, highs = {}, {}, {}
+		local steepest, steepestId = 0, "?"
+		local longestDescent = 0
+		for _, seed in SEEDS do
+			local run = longRun(seed, PROFILE_RUN)
+			local low, high, here = 0, 0, 0
+			for _, piece in run do
+				for _, node in piece.nodes do
+					low = math.min(low, node.y)
+					high = math.max(high, node.y)
+					local tilt = math.deg(math.acos(math.clamp(math.cos(node.pitch) * math.cos(node.bank), -1, 1)))
+					if tilt > steepest then
+						steepest, steepestId = tilt, piece.id
+					end
+				end
+				if (piece.finish.pitch :: number) < -1e-6 then
+					here += 1
+					longestDescent = math.max(longestDescent, here)
+				else
+					here = 0
+				end
+			end
+			table.insert(nets, run[#run].finish.y :: number)
+			table.insert(lows, low)
+			table.insert(highs, high)
+		end
+		local net, low, high = 0, 0, 0
+		for i = 1, #nets do
+			net += nets[i] / #nets
+			low += lows[i] / #lows
+			high += highs[i] / #highs
+		end
+		local rose = true
+		for _, h in highs do
+			rose = rose and h > 20 -- every seed gets above where it started, somewhere
+		end
+		check(
+			"the road is a band that trends downhill, and never only downhill",
+			net < 0 and rose and low < -100 and steepest <= C.MaxSurfaceTilt + 1e-6 and steepest < WALL_DEGREES - 8,
+			string.format(
+				"%d seeds x %d pieces: net %+.0f studs on average (%+.1f a piece), lowest %+.0f, highest %+.0f -- a band %.0f studs deep, and every seed climbs above its own start. Longest unbroken descent %d pieces. Steepest surface anywhere %.2f deg on a %s, against the %.0f lid and the %.1f that reads as a wall",
+				#SEEDS,
+				PROFILE_RUN,
+				net,
+				net / PROFILE_RUN,
+				low,
+				high,
+				high - low,
+				longestDescent,
+				steepest,
+				steepestId,
+				C.MaxSurfaceTilt,
+				WALL_DEGREES
+			)
+		)
 	end
 
 	----------------------------------------------------------------------------
@@ -1564,6 +1990,14 @@ function Tests:run(opts)
 		-- tangent and a 220-stud arc to come 37 studs apart. So the ring is a dead end,
 		-- and it is the dead end the whole lookahead exists to see coming.
 		--
+		-- BOTH PARTS BELOW RUN ON THE FLAT NINE (T-068), and that is a statement about what
+		-- they test rather than a dodge. They are about the LOOKAHEAD -- that a piece which
+		-- is legal now and traps the road later is declined -- and the example has to be a
+		-- pinned seed and a pinned piece number for the check to be cheap and deterministic.
+		-- Every one of those pins is a fact about the piece set that laid it, so adding
+		-- seven variants moves the trap somewhere else and the pin stops being an example of
+		-- anything. The mechanism is the same whatever is in the set; the example is not.
+		withFlatSetOnly(function()
 		-- Part one: driven into it with `DebugForce`, the generator places NOTHING rather
 		-- than something that crosses.
 		local ring = Generator.new(5150)
@@ -1619,8 +2053,9 @@ function Tests:run(opts)
 		check(
 			"a piece that is legal now but traps the road later is declined",
 			grewClean and legalOneDeep and afterTrap == nil and chosen ~= nil and chosen.id ~= TRAP_ID and not crossed,
-			`{TRAP_AT} pieces into seed {TRAP_SEED}, a {TRAP_ID} crosses nothing one piece deep ({legalOneDeep}) and leaves {if afterTrap then afterTrap.id else "nothing at all"} legal after it. The generator placed {if chosen then chosen.id else "nothing"} instead, crossing anything: {crossed}. Two warnings in the log are this check and the one above it, and are expected`
+			`on the flat nine, {TRAP_AT} pieces into seed {TRAP_SEED}, a {TRAP_ID} crosses nothing one piece deep ({legalOneDeep}) and leaves {if afterTrap then afterTrap.id else "nothing at all"} legal after it. The generator placed {if chosen then chosen.id else "nothing"} instead, crossing anything: {crossed}. Two warnings in the log are this check and the one above it, and are expected`
 		)
+		end)
 	end
 
 	----------------------------------------------------------------------------
@@ -1781,8 +2216,12 @@ function Tests:run(opts)
 		-- empty-handed. It cannot be reached in play -- check (b) above measures the car
 		-- never getting closer than three pieces to the end -- but it is what happens if
 		-- it ever is.
-		local FORCED_ALLOW = 150 -- ms: the node budget's worth of search in one call,
-		-- which is this path's whole bound
+		local FORCED_ALLOW = 250 -- ms: the node budget's worth of search in one call, which
+		-- is this path's whole bound. It was 150 when the budget was 2 000 and the set was
+		-- nine variants and the worst measured was 74 ms; the sixteen-variant set at a
+		-- budget of 2 500 measures 162 (T-068). Both of those numbers are a quarter of a
+		-- second of server inside a path that needs the road to have ALREADY run out under
+		-- the car, which check (b) above measures never getting closer than two pieces to.
 		local sprint = Generator.new(60606)
 		local missed, worstSprint, emptyAt = 0, 0, 0
 		for _ = 1, 200 do
@@ -2048,8 +2487,16 @@ function Tests:run(opts)
 			`{unanchored} unanchored, {physics} movers, constraints or scripts`
 		)
 
-		-- A ray straight down from the centre line finds road, every time, and the road is
-		-- flat: no elevation at all in this build.
+		-- A ray straight down finds road, every time, AND THE ROAD IS WHERE THE PIECE SAYS
+		-- IT IS. This used to compare the hit against `SurfaceY`, which was right while the
+		-- whole road was flat and is a lie now that it climbs and banks (T-068). What it
+		-- compares against instead is `Pieces.poseAt`, which is the one thing in the game
+		-- that answers "where is the surface of this piece" -- the same call `SafeStart`,
+		-- the respawn and every centre-line mark go through -- so this is now a check that
+		-- the BUILT road and the piece AGREE, across a profile, which is strictly more than
+		-- it checked before. The sample point is the pose pushed sideways along the
+		-- surface's own banked right, so on a 15-degree bank it is 6.5 studs higher at one
+		-- edge than the other and the ray still has to land on it.
 		-- Every piece, and NOT the closing barrier: that one is deliberately in the way --
 		-- it is what stops a player driving back down the road -- and it stands twelve
 		-- studs above the road it closes, so a ray straight down finds it rather than the
@@ -2071,12 +2518,13 @@ function Tests:run(opts)
 				local cf = Pieces.poseAt(piece, s / 40, 0)
 				for _, lateral in { -C.Width * 0.5 + 2, 0, C.Width * 0.5 - 2 } do
 					samples += 1
-					local from = cf.Position + cf.RightVector * lateral + Vector3.new(0, 20, 0)
+					local want = cf.Position + cf.RightVector * lateral
+					local from = want + Vector3.new(0, 20, 0)
 					local hit = workspace:Raycast(from, Vector3.new(0, -60, 0), params)
 					if not hit then
 						misses += 1
 					else
-						worstY = math.max(worstY, math.abs(hit.Position.Y - C.SurfaceY))
+						worstY = math.max(worstY, math.abs(hit.Position.Y - want.Y))
 						if not CollectionService:HasTag(hit.Instance, D.SurfaceTag) then
 							wrongTag += 1
 						end
@@ -2084,10 +2532,27 @@ function Tests:run(opts)
 				end
 			end
 		end
+		-- THREE TENTHS OF A STUD, not a thousandth, and the slack is the profile's. Two
+		-- things make it, both of them `Builder`'s and both deliberate: a segment's box is
+		-- square to the AVERAGE of its two ends' ups, so where the surface is twisting the
+		-- box's top face is a plane through a curve; and every box is lengthened past its
+		-- own segment (`OVERLAP`, and the widening a curve needs) so no joint can show a
+		-- hairline, which means a ray near a node lands on the neighbour's overhang. Worst
+		-- measured across the whole generated window, at both edges of a banked road and
+		-- down the centre line: 0.148 studs, against a ride height of 2.4.
+		local RAY_SLACK = 0.3
 		check(
-			"a ray down anywhere on the road finds tagged, flat road",
-			misses == 0 and wrongTag == 0 and worstY < 1e-3,
-			string.format("%d rays over %d pieces: %d missed, %d hit something untagged, worst height off %.5f studs", samples, #RoadService:DebugPieces(), misses, wrongTag, worstY)
+			"a ray down anywhere on the road finds tagged road where the piece says it is",
+			misses == 0 and wrongTag == 0 and worstY < RAY_SLACK,
+			string.format(
+				"%d rays over %d pieces, at both edges and the centre line: %d missed, %d hit something untagged, worst %.5f studs off where `Pieces.poseAt` puts the surface (slack %.2f)",
+				samples,
+				#RoadService:DebugPieces(),
+				misses,
+				wrongTag,
+				worstY,
+				RAY_SLACK
+			)
 		)
 
 		-- And it is nowhere near the other two worlds.
@@ -2255,7 +2720,7 @@ function Tests:run(opts)
 		check(
 			"every piece type turns up in the drive, and the car gets round all of them",
 			#missing == 0,
-			`{if #missing == 0 then "all five met" else "never met: " .. table.concat(missing, ", ")}. ` .. table.concat(lines, " | ")
+			`{if #missing == 0 then `all {#lines} met` else "never met: " .. table.concat(missing, ", ")}. ` .. table.concat(lines, " | ")
 		)
 
 		-- AND THE DELIBERATELY HORRIBLE PIECE IS DRIVEN (T-066). Steep, banked, both
@@ -2269,6 +2734,62 @@ function Tests:run(opts)
 		-- anything leaning more than about 46 degrees, and grade and bank compound -- so
 		-- every sweep that stopped the car is traced back to the part that stopped it.
 		-- Barriers are meant to stop it. Road is not, ever.
+		-- THE BANK HOLDS THE CAR, AS A NUMBER (T-068). The showcase piece's whole claim is
+		-- that you carry speed through it because the bank is holding you, and the only
+		-- honest way to show that is the same road twice: the same seed, the same entry
+		-- speed, the same corners, with `Bank.Degrees` as it ships and at 0. Everything
+		-- else -- the radius, the arc, the drop -- is identical, so the difference IS the
+		-- bank.
+		--
+		-- IT IS ENTERED FAST ON PURPOSE. A banked corner has a minimum speed
+		-- (`Config/Road`, `Banked30`): below `sqrt(radius x Gravity x tan(bank))` the bank
+		-- is pulling the car down the slope faster than the corner is pushing it up, and
+		-- what the bank does then is hold it DOWN rather than hold it on. So this starts
+		-- the car at 90 studs/s, well above the 37 the shipped bank needs, which is the
+		-- state the piece is designed for and the state the claim is about.
+		--
+		-- AND WHAT IT ASSERTS IS THAT THE BANK COSTS NOTHING, not that it is faster. At the
+		-- 5 degrees this ships with -- a road's superelevation, chosen because more of it
+		-- pins the test autopilot against a barrier, see `Config/Road` -- the difference
+		-- between banked and flat is small and the two rows are printed side by side so it
+		-- can be read rather than claimed. THE USER'S DRIVE DECIDES WHETHER IT FEELS LIKE
+		-- ANYTHING.
+		do
+			local wasMin = setOnly({ "Banked30" })
+			local ok, err = pcall(function()
+				local rows = {}
+				for _, degrees in { C.Pieces.Banked30.Bank.Degrees, 0 } do
+					local was = applySet({ Banked30 = { Bank = { Degrees = degrees, Shape = "crest" } } })
+					Pieces.rebuild()
+					local d = Tests:drive({ seed = 1717, pieces = 12, seconds = 150, startSpeed = 90 })
+					restoreSet(was)
+					Pieces.rebuild()
+					table.insert(rows, { degrees = degrees, r = d, k = d.byKind.Banked30 })
+				end
+				local banked, flat = rows[1], rows[2]
+				check(
+					"the bank holds the car through the banked 30",
+					banked.k ~= nil
+						and flat.k ~= nil
+						and banked.k.off == 0
+						and banked.r.offRoadSteps == 0
+						and banked.r.stuckSeconds < 1
+						and banked.k.minSpeed > 20,
+					string.format(
+						"the same seed and the same corner, entered at 90 studs/s, banked %d degrees and flat. BANKED: %s. FLAT: %s",
+						banked.degrees,
+						kindRow(banked.r, "Banked30"),
+						kindRow(flat.r, "Banked30")
+					)
+				)
+			end)
+			restoreMinPieces(wasMin)
+			Pieces.rebuild()
+			if not ok then
+				error(err, 0)
+			end
+		end
+
 		local restore = useProfilePieces({ "Horrible" }, { "Horrible" })
 		local ok, err = pcall(function()
 			local h = Tests:drive({ seed = 4242, pieces = 12, seconds = 120, startSpeed = 40, wallParts = true })
