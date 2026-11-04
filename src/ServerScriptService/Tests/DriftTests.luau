@@ -221,6 +221,35 @@ function DriftTests.run()
 		)
 	)
 
+	------------------------------------------------------------------ a drive without `fps` is a real drive
+	-- `DebugDrive` is the tool every tuning conversation uses, so it must not quietly
+	-- simulate less than it was asked for. `advance` clamps one frame to
+	-- `FixedStep * MaxStepsPerFrame`; a drive handed to it as a single frame of `seconds`
+	-- therefore used to run for 0.133 s and report `simSeconds` to match, and every
+	-- measurement taken without `fps` was of a drive that never happened.
+	local noFps, withFps = select(2, Sim.drive(CORNER, CORNER_SECONDS, {
+		start = startCF(TEST_YAW),
+		velocity = ahead(CORNER_ENTRY, TEST_YAW),
+	})), select(2, Sim.drive(CORNER, CORNER_SECONDS, {
+		fps = 60,
+		start = startCF(TEST_YAW),
+		velocity = ahead(CORNER_ENTRY, TEST_YAW),
+	}))
+	check(
+		checks,
+		"a drive with no frame rate runs for as long as it was asked to",
+		math.abs(noFps.simSeconds - CORNER_SECONDS) < 0.05
+			and math.abs(noFps.headingChangeDeg - withFps.headingChangeDeg) < 2,
+		string.format(
+			"asked for %.1f s: ran %.3f s and turned %.1f deg, against %.3f s and %.1f deg at 60 FPS",
+			CORNER_SECONDS,
+			noFps.simSeconds,
+			noFps.headingChangeDeg,
+			withFps.simSeconds,
+			withFps.headingChangeDeg
+		)
+	)
+
 	------------------------------------------------------------------ the finger IS the rate of turn
 	-- The thing the whole port is for (features/drift-model.md "Steering -- the control").
 	-- Not a torque, not a wheel angle, not a target: the heading change over a hold is the

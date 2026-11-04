@@ -192,7 +192,14 @@ function Sim.drive(inputs: { Keyframe }, seconds: number, opts: DriveOptions?): 
 		return Sim.inputAt(inputs, t)
 	end
 
-	local frameDt = if o.fps then 1 / o.fps else seconds
+	-- With no `fps`, spend the drive in the largest chunks the accumulator will actually
+	-- take, NOT in one frame of `seconds`. `advance` clamps a frame to
+	-- `FixedStep * MaxStepsPerFrame` -- that clamp is there so one stalled frame in a live
+	-- game cannot spend a second of CPU catching up -- so handing it the whole drive at
+	-- once silently threw all but the first 16 steps away, and a four-second drive ran for
+	-- 0.133 s and reported `simSeconds` to match. Every measurement taken without `fps`
+	-- was of a drive that never happened.
+	local frameDt = if o.fps then 1 / o.fps else C.FixedStep * C.MaxStepsPerFrame
 	local elapsed = 0
 	while elapsed < seconds - 1e-9 do
 		local dt = math.min(frameDt, seconds - elapsed)
