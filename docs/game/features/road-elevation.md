@@ -2,8 +2,10 @@
 
 **Status:** approved by the user. Step 2 of 4 is **built** (`T-066`): a road piece can carry a
 height and a bank. The gravity change is `T-065`, the fall test and the four touge pieces are
-still to come.
-**Owner task:** `T-061` (plan), `T-065` (gravity on the ground), `T-066` (the piece profile).
+still to come. `T-073` lifted the limit that `T-066` ran into — the car's collision box now follows
+the surface — so the config's `MaxGrade` and `MaxBank` can be raised to 20° and 30°.
+**Owner task:** `T-061` (plan), `T-065` (gravity on the ground), `T-066` (the piece profile),
+`T-073` (the tilted sweep box).
 
 ## What is built, and what the limits turned out to be
 
@@ -21,52 +23,94 @@ yet.
 | The generator is untouched | -- | 5 seeds x 500 pieces: 0 stalls, worst call 2.21 ms (2.15 before). 20 runs of 400: 0 boxed in, 20 of 8 000 on short proof -- identical to before |
 | The flat road is unchanged | `PINNED` in `RoadTests` | sequence, geometry, part count and every part's CFrame identical over 500 pieces and 1 448 parts |
 
-### The limits are the car's own collision box: 8° of grade, 20° of bank
+### The limit WAS the car's own collision box — and it has been lifted (`T-073`)
 
-The spec chose both numbers against the 46° wall threshold. **That is not the binding limit.** The
-car's collision box is swept flat through the world and is **never pitched and never rolled**, so it
-rides with 1.44 studs of air under it, 7 studs of nose in front and 3.2 studs of width either side.
-Above `atan(1.44/7) = 11.6°` of grade its nose is inside the hill it is climbing; above
-`atan(1.44/3.2) = 24°` of bank its uphill side is inside the road it is leaning on. The face it
-meets in either case is near-vertical, the sweep calls that a **wall**, and the car stops dead
-against the road.
+The spec chose 14° of grade and 30° of bank against the 46° wall threshold. **That was never the
+binding limit.** The car's collision box was swept flat through the world and was **never pitched
+and never rolled**, so it rode with 1.44 studs of air under it, 7 studs of nose in front and 3.2
+studs of width either side. Above `atan(1.44/7) = 11.6°` of grade its nose was inside the hill it
+was climbing; above `atan(1.44/3.2) = 24°` of bank its uphill side was inside the road it was
+leaning on. The road is abutting slabs, so what the buried nose met was the **end face of the next
+slab** — near-vertical, which the sweep calls a **wall** — and the car stopped dead against its own
+road. That is where `MaxGrade = 8` and `MaxBank = 20` came from.
 
-Both measured, with gravity on the ground (`T-065`). A straight ramp at each grade, 90 studs/s in,
-no steering:
+**`T-073` tilts the box on to the surface under it** — `Drift/World` reads the ground ray's own
+normal and poses the box the way `Drift/Model`'s `basis` poses the car — and **both limits move at
+once.** `World.DebugTilt = false` gives the flat box back exactly, which is how every row below was
+measured twice.
 
-| grade | climbed in 14 s | speed at the end |
+**The sweep, asked exhaustively.** The real road, generated at each limit, with the car stood at
+ride height at 25 places on every slab × 5 headings — about 16 000 sweeps a row — and every sweep
+that read a wall traced to the part that it read:
+
+| the road's grade | flat box | **tilted box** | | the road's bank | flat box | **tilted box** |
+|---|---|---|---|---|---|---|
+| 8° | 0 of 15 820 | **0** | | 20° | 267 of 17 815 | **0** |
+| 12° | 1 316 | **0** | | 25° | 2 216 of 18 340 | **0** |
+| 16° | 1 287 | **0** | | 30° | 2 431 of 18 865 | **0** |
+| 20° | 898 | **0** | | 35° | 2 429 of 19 390 | 10 |
+| 25° | 896 | **0** | | 40° | 2 750 of 19 915 | 38 |
+| 30° | 871 | **0** | | | | |
+| 35° | 48 | **0** | | | | |
+
+So the road stops reading as a wall **everywhere `MaxSurfaceTilt` allows**, on both axes: zero of
+~16 000 at every grade to 35°, and zero at every bank to 30° with 35° only marginal.
+
+**Driven, the same two brackets.** A straight ramp at each grade, 90 studs/s in, no steering:
+
+| grade | before (flat box) | **after (tilted box)** |
 |---|---|---|
-| 4° | 70 studs | 129 studs/s |
-| 6° | 101 | 121 |
-| 8° | 136 | 116 |
-| 10° | 149 | 103 |
-| **12°** | 23 | **0 — stopped dead on the ramp** |
-| 14° | 26 | 5 |
+| 8° | climbs freely | climbs freely, leaves at 138 studs/s |
+| 10° | 1 wall, ends at 10 studs/s | climbs freely, 130 |
+| **12°** | **stopped dead, 24 studs climbed** | climbs freely, 123 |
+| 14° | **stopped dead**, 267 wall steps | climbs freely, 115 |
+| 20° | **stopped dead** | climbs freely, 93 |
+| 24° | — | climbs freely, 74 |
+| **25°** | — | **stops — and not on a wall: 1 touching step against the audit's zero. It is gravity against the drivetrain** |
 
-And a 90° corner banked, two seeds, with every sweep that stopped the car traced back to the part
-that stopped it:
+And a 12-piece road of banked 90° corners, two seeds, the test autopilot driving:
 
-| bank | road read as a wall | stopped for |
+| bank | before | **after** |
 |---|---|---|
-| 10° | 0 times | 0.00 s |
-| 15° | 0 | 0.00 |
-| 20° | 0 | 0.00 |
-| 25° | 1 | 0.40 |
-| **30°** | **17** | **5.19** |
+| 20° | 5/12 and 4/12 pieces, stopped for 96 s and 110 s | **12/12 and 12/12, 0 road walls, 0.00 s stopped** |
+| 25° | 3/12 and 4/12, stopped for 110 s and 101 s | **10/12 and 12/12, 0 road walls, 0.00 s** |
+| 30° | 3/12 and 3/12, stopped for 112 s and 94 s | **12/12 and 9/12, 0.63 s and 0.46 s slow** |
+| 35° | 3/12 and 3/12, stopped for 112 s each | 2/12 and 4/12 — the bank costs plan width and the driver runs out of road |
 
-Both brackets land either side of what the geometry predicts, which is the check that the
-explanation is the right one. **To lift either, pitch and roll the sweep box with the surface in
-`Drift/World`** — one change, its own task, its own measurement, and both limits move at once.
+(The 30° row's two "road wall" attributions come from `RoadTests:drive`'s tracer, which rebuilds a
+**flat** box to name the part it hit; with a tilted sweep that over-reports road. The exhaustive
+audit, which uses the box the sweep actually used, says zero.)
 
-**8° is a ceiling, not a target.** A road of nothing but descending corners: flat reaches 12 of 12
-pieces at a mean of 59 studs/s, 4° reaches 12 at a mean of 68, and 8° reaches 10 at a mean of 36
-while touching **120 studs/s against the flat road's 92**. The sweep was stopped by road zero times
-at both grades: that is not the road failing, it is the car carrying more speed downhill than a
-driver aimed on the flat can steer for. **Build a touge out of 4° descents and level links before
-reaching for 8.**
+### What the limits should be now
 
-**20° of bank is a real loss against the spec,** whose showcase piece is *"a 30-degree turn with big
-banking"*. 20 is the last angle that never once read as a wall.
+| number | was | **measured safe** | what binds it now |
+|---|---|---|---|
+| `MaxGrade` | 8° | **20°** | Not the sweep: that is clean to 35°. **The car's power.** It climbs 24° and cannot climb 25°, so 20 leaves the same four degrees of margin 8 had against 10 |
+| `MaxBank` | 20° | **30°** | The sweep, still: 0 of 18 865 at 30°, 10 of 19 390 at 35°. **This is the "30-degree turn with big banking" the spec asked for** |
+| `MaxSurfaceTilt` | 35° | **35°, unchanged** | It is the backstop and it is now the thing actually holding the line. 20° of grade and 30° of bank come to 35.5° together, so the lid trims the bank to 29.4° where both are at maximum — which is the lid doing its job |
+
+**20° of grade is a ceiling, not a target, and the `T-066` warning still stands.** A road of nothing
+but descending corners: flat reaches 12 of 12 pieces at a mean of 59 studs/s, 4° reaches 12 at a
+mean of 68, and 8° reaches 10 at a mean of 36 while touching **120 studs/s against the flat road's
+92**. That was never the road failing — the sweep was stopped by road zero times at both grades — it
+is the car carrying more speed downhill than a driver aimed on the flat can steer for. **Build a
+touge out of 4° descents and level links before reaching for anything bigger.**
+
+**Nothing about the flat world moved.** On level ground the tilted frame IS the flat one and both
+queries take the exact expression they always had: 26 of `CollisionTests`' 39 original checks are
+byte-identical, every other suite passes unchanged, and a pinned-seed drive down the flat road
+reproduces its numbers to the character. The 13 that moved are all on the playground's banked bowl
+and its ramp taken at an angle — including the two that **failed** on `main` ("the ramp taken ±15
+degrees off square keeps the car out of itself": the car ended 0.182 studs inside the ramp's lip for
+3 steps, and now ends inside nothing).
+
+`CollisionTests` grew from 39 checks to 50: five grades and three banks audited exhaustively, and
+three drives up a ramp. Eight of the eleven fail with `World.DebugTilt = false`, which is what makes
+them a test of this and not of nothing. The whole suite costs 2.3 s.
+
+**The price is two raycasts a step** — one in `sweep`, one in `penetration`, to read the surface the
+box is tilted on to. Measured on the road at 120 steps/s: **0.0309 ms a step becomes 0.0436**, which
+is 0.025 ms a frame at 60 fps.
 
 ### Two things changed shape from the plan
 
@@ -74,8 +118,11 @@ banking"*. 20 is the last angle that never once read as a wall.
   directly, which is what makes `MaxGrade`, `MaxPitchStep` and `MaxBankStep` true by construction
   rather than by hope. A profile that asks to fall off a cliff gets a ramp.
 - **A barrier follows the grade but not the bank.** Leaning a six-stud wall with a 30° bank
-  overhangs the road by three studs, and since the car's box is never pitched either, what that
-  overhang catches is the car's roof while its wheels still have room.
+  overhangs the road by three studs, and what that overhang would catch is the car's roof while its
+  wheels still have room. **Still right after `T-073`,** and the barrier is still solid with the
+  tilted box: 120 rams at 179 studs/s into barriers on a flat, a 20°-banked and a 30°-banked road —
+  none went through, worst gap 7.05 studs, and where the flat box let the body touch a barrier for 3
+  steps on a bank the tilted one never did.
 
 ## Why (the spec as the user approved it)
 
@@ -272,8 +319,8 @@ points to be driven and tuned**, except where a number is forced by something al
 | Number | Start | Why |
 |---|---|---|
 | `GravityOnGround` | 1 | Share of gravity that acts along the surface while grounded. **0 is exactly today's behaviour** |
-| ~~`MaxGrade`~~ | ~~0.25 (14°)~~ **8°** | Not the wall threshold: the car's own unpitched collision box. See "`MaxGrade` is 8 degrees" above (`T-066`) |
-| ~~`MaxBank`~~ | ~~30°~~ **20°** | Not the wall threshold either: the same collision box, never rolled. 30° read as a wall 17 times in two drives, 20° never did (`T-066`) |
+| `MaxGrade` | ~~0.25 (14°)~~ ~~8°~~ **20°** | `T-066` cut it to 8 for the car's unpitched collision box; `T-073` tilted the box and the sweep is clean to 35°, so what binds it now is **the car's power**: it climbs 24° and cannot climb 25°. **Still in the config at 8 — the conductor raises it** |
+| `MaxBank` | ~~30°~~ ~~20°~~ **30°** | The same box, and the same fix: 0 of 18 865 sweeps read the road as a wall at 30°. That is the spec's showcase piece back. **Still in the config at 20 — the conductor raises it** |
 | `MaxSurfaceTilt` | 35° | **Added by `T-066`.** Grade and bank compound -- the normal's Y is cos(grade) x cos(bank) -- so it is the pair that is capped, never one at a time |
 | `MaxPitchStep`, `MaxBankStep` | 1.15°, 1.5°/segment | How much either may change in one segment, so no join is a step and no bank is a kink. The spec's 0.02 of grade is 1.15° |
 | `MaxProfileSegments` | 64 | **Added by `T-066`.** The ceiling on what those two may cut a piece into, so a careless profile costs a few parts rather than hundreds |
@@ -295,6 +342,9 @@ things to prove rather than assume:
   code, but it is the first time it carries weight.
 - **The wall threshold.** `Drift/World` calls anything steeper than about 46° a wall. A 30° bank is
   a long way inside that and must stay there — a bank that reads as a wall stops the car dead.
+  **Done and measured (`T-073`):** what was actually reading as a wall was not the surface but the
+  end face of the next slab, which the flat sweep box's buried nose met. Tilt the box and it is zero
+  of ~16 000 sweeps at every grade to 35° and every bank to 30°.
 - **Where a car is put down.** `SafeStart`, `JoinCFrame` and the respawn all go through
   `Pieces.poseAt`, which takes a height. They must take the piece's, not zero — and on a banked
   piece, its bank too.
@@ -331,6 +381,7 @@ The six marked **done** are in `RoadTests` and pass; their numbers are in "What 
 | The join still has no gap (done) | 200 profiled pieces: exactly zero, in position and all three angles |
 | No join is a step (done) | 1.150° of 1.15 and 1.500° of 1.5, between neighbouring boxes, across joins included |
 | Nothing is a wall (done) | 30.95° of the 45.6° threshold; driven, 0 of 7 sweeps stopped by road |
+| **The road never reads as a wall, at any grade or bank** (done, `T-073`) | In `CollisionTests`: five grades to 35° and three banks to 30°, the car stood at 25 places on every slab × 5 headings, **0 of 9 375 and 0 of 13 125 sweeps**. On the generated road, the same audit: 0 of ~16 000 a row. Eight of those eleven checks fail with `World.DebugTilt = false` |
 | The generator did not get worse (done) | 0 stalls over 5 x 500, worst call 2.21 ms against 2.15 before; 20 x 400 identical |
 | Where a car is put down (done) | every wheel within 0.11 studs of ride height, the pose's up within 0.45° of the rays' mean |
 | **The flat road is untouched** | `GravityOnGround` at 1, on flat ground: `g_along` is **exactly zero** every step, and a pinned-seed autopilot drive reproduces `RunTests`' end-to-end numbers unchanged. This is the check that protects the approved feel |
