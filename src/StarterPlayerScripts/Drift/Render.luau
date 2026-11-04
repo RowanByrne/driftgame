@@ -4,6 +4,19 @@
 -- Every part is anchored, so nothing here asks Roblox to move anything: each part's CFrame
 -- is written straight from the simulation state.
 --
+-- THE CAR IS DRAWN AT THE FRAME'S OWN MOMENT, NOT AT THE LAST STEP (T-025). The model
+-- steps at `FixedStep` and keeps the leftover in an accumulator, so a frame almost never
+-- lands on a step boundary: at 179 studs/s one step is 1.49 studs, and drawing the car at
+-- the last COMPLETED step leaves it a varying fraction of that behind where it really is.
+-- A varying lag is a judder -- the car creeps and snaps, frame after frame -- and it is
+-- what the user saw. So `apply` takes the accumulator's leftover and carries the pose
+-- forward across it (`Render.subStep`): position by the velocity, heading by the yaw rate,
+-- wheel spin by the road speed. All three are exact to first order and the model's own
+-- second-order terms over 1/120 s are under three thousandths of a stud, so this is not a
+-- guess at where the car will be -- it is where the car IS at the moment the frame is
+-- drawn. It removes lag rather than adding any; the camera reads the same carried-forward
+-- pose, so what the player sees on screen moves smoothly too.
+--
 -- The simulation only ever knows five things: a body and four wheels, at `wheelOffsets()`.
 -- A car with the AE86 shell on it (Shared/CarModel) carries five matching groups under
 -- `Shell`, and each one is pivoted to the same place as the part it shadows -- so a shelled
@@ -171,9 +184,63 @@ function Render.shellFrame(shell: Shell?): CFrame?
 	return first.part.CFrame * first.offset:Inverse()
 end
 
--- Place the whole car from one simulation state.
-function Render.apply(rig: Rig, state: DriftModel.State)
-	Render.place(rig, DriftModel.cframe(state), state.wheelSteer, state.wheelSpin, state.bodyRoll)
+-- ---------------------------------------------------------------- the sub-step
+--
+-- Where the car is `rem` seconds past the last completed step, with `rem` the leftover in
+-- Sim's accumulator (0 .. FixedStep). Position, heading and wheel spin only: those are the
+-- three the model integrates at the car's own speed, and they are the three that judder.
+--
+-- The cosmetic easings (`bodyRoll`, `wheelSteer`) and the surface normal (`up`) are NOT
+-- carried forward, because each is an ease toward a target and extrapolating one of those
+-- can only overshoot it. Measured on the live playground, the most any of them moves in
+-- one step is: body roll 0.19 degrees and drawn wheel angle 2.0 degrees, both in the most
+-- violent spin the car can make, which at the camera's 55 studs is hundredths of a stud of
+-- movement; and the surface normal 2.35 degrees, on the lip of the ramp -- one or two
+-- frames of a car that is genuinely pitching that fast as it launches, and nothing a
+-- player meets on the road, where it is 0.0000 degrees a step.
+--
+-- `rem` is clamped to one step: a caller that hands in a whole frame is asking for a
+-- prediction, and this is not one.
+function Render.subStep(state: DriftModel.State, rem: number?): (Vector3, number, number)
+	local dt = math.clamp(rem or 0, 0, Config.Drift.FixedStep)
+	if dt <= 0 then
+		return state.position, state.yaw, state.wheelSpin
+	end
+	local radius = math.max(Config.Drift.WheelDiameter * 0.5, 1e-4)
+	return state.position + state.velocity * dt, state.yaw + state.r * dt, state.wheelSpin + (state.u / radius) * dt
+end
+
+-- The car's basis from a heading and the surface normal it is following. This mirrors
+-- `Model.cframe`, which builds the same matrix from the state's own yaw: the only reason
+-- it is written out again is that the drawn heading is the state's PLUS the sub-step, and
+-- the model has no business knowing about frames. If `Model.cframe` ever changes shape,
+-- this changes with it.
+local function poseOf(position: Vector3, yaw: number, up: Vector3): CFrame
+	local u = if up.Magnitude > 1e-4 then up.Unit else Vector3.yAxis
+	local flat = DriftModel.axes(yaw)
+	local right = flat:Cross(u)
+	if right.Magnitude < 1e-4 then
+		return CFrame.fromMatrix(position, Vector3.new(flat.Z, 0, -flat.X), Vector3.yAxis)
+	end
+	return CFrame.fromMatrix(position, right.Unit, u)
+end
+
+-- The whole pose the car is drawn at, `rem` seconds past the last step: the body's frame,
+-- the angle the front wheels are drawn at, how far the wheels have spun, and the lean.
+-- Pure, so the tests can measure what a frame WOULD draw without a car in the world
+-- (ServerScriptService/Tests/JitterTests).
+function Render.pose(state: DriftModel.State, rem: number?): (CFrame, number, number, number)
+	local position, yaw, spin = Render.subStep(state, rem)
+	return poseOf(position, yaw, state.up), state.wheelSteer, spin, state.bodyRoll
+end
+
+-- Place the whole car from one simulation state, drawn `rem` seconds past the last step
+-- (Sim's accumulator; see the header). `rem` nil or 0 draws the car at the step itself,
+-- which is what it did before T-025 and what a one-off placement -- a spawn, a respawn,
+-- a teleport -- still wants.
+function Render.apply(rig: Rig, state: DriftModel.State, rem: number?)
+	local cf, wheelAngle, wheelSpin, bodyRoll = Render.pose(state, rem)
+	Render.place(rig, cf, wheelAngle, wheelSpin, bodyRoll)
 end
 
 return Render

@@ -289,8 +289,12 @@ function DriftController:_frame(dt: number)
 		self:_askForRespawn()
 	end
 
+	-- Drawn at THIS FRAME'S moment, not at the last completed step: the accumulator's
+	-- leftover is handed to Render, which carries the pose across it (T-025, Drift/Render
+	-- header). Without it the car is drawn a varying fraction of a step behind itself --
+	-- up to 1.49 studs at top speed -- and a varying lag is a judder.
 	if self:_ensureRig() then
-		Render.apply(self.rig, state)
+		Render.apply(self.rig, state, self.runner.accumulator)
 	end
 	self.remoteCars:Update(dt)
 
@@ -330,6 +334,14 @@ end
 -- The camera asks for this every frame (docs/game/ARCHITECTURE.md "Studio tools").
 function DriftController:CurrentState()
 	return self.runner and self.runner.state or nil
+end
+
+-- How far into the current step this frame is, in seconds (0 .. FixedStep): what Sim's
+-- accumulator has left over after the whole steps it spent. The car is DRAWN this far past
+-- the last step (Drift/Render) and the camera follows the same carried-forward pose, so
+-- the two agree about where the car is (T-025).
+function DriftController:SubStep(): number
+	return self.runner and self.runner.accumulator or 0
 end
 
 function DriftController:Car(): Model?
@@ -388,6 +400,13 @@ end
 -- How far the drawn car is from where the simulation says it is, in studs, or -1 when
 -- there is nothing drawn to measure. Read off a part in the world, not off the rig, so a
 -- rig holding parts that left the car still reads as the long gap it is.
+--
+-- Measured against where the car is AT THIS MOMENT, which is the last completed step
+-- carried across the accumulator's leftover -- not against the step itself (T-025). The
+-- two differ by up to 1.49 studs at top speed, and the carried-forward one is the honest
+-- answer: `state.position` is where the car was up to 1/120 s ago. The alarm this number
+-- exists to raise is unchanged, because a car that has stopped being drawn is hundreds of
+-- studs out, not one (T-016).
 function DriftController:DrawnGap(): number
 	local state = self:CurrentState()
 	local rig = self.rig
@@ -395,7 +414,8 @@ function DriftController:DrawnGap(): number
 	if not state or not body or not self.car or not body:IsDescendantOf(self.car) then
 		return -1
 	end
-	return (body.Position - state.position).Magnitude
+	local drawnAt = Render.subStep(state, self:SubStep())
+	return (body.Position - drawnAt).Magnitude
 end
 
 -- What the car is being drawn through, and what it cost to get hold of it. `firstParts`
