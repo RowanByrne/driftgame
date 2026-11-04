@@ -24,7 +24,8 @@ Drift is a car game about clean drifts. The player slides a low-poly car through
 |---|---|---|
 | Drift model and one-finger control | The car. The finger IS its rate of turn; the drift is momentum lagging behind, and a quadratic grip force pulling it back. **Built and approved** | `features/drift-model.md` |
 | The playground | A flat plate with buildings, alleys and a ramp: the place the feel was proved in. **Built** | `features/drift-playground.md` |
-| Car archetypes and stats | Per-car configs so cars feel genuinely different, plus the stat breakdown and the grip curve. **Being built** | `features/car-archetypes.md` |
+| Car archetypes and stats | Four cars that measurably differ, each with its own body, plus the stat breakdown and the grip curve. **Built** | `features/car-archetypes.md` |
+| The car tuner | Eight sliders named for what the driver feels, live on the next simulation step, and a garage of saved cars. **Built — a dev tool, not a player feature** | `features/car-tuner.md` |
 | Track pieces and the endless road | Socket-to-socket pieces chosen against repetition, with a lookahead so the road cannot trap itself. **Specced, not built** | `features/track-generation.md` |
 | Drift score and the multiplier ladder | Points from slip × speed × surface, and a 1–9 ladder. **Specced, deliberately not built** (`DECISIONS.md`) | `features/drift-model.md` "Score" |
 

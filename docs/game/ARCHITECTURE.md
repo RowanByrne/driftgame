@@ -19,6 +19,7 @@ The car is **not** driven by Roblox's physics (`DECISIONS.md`, 2026-11-03). Its 
 | `PlaygroundService` | Builds the playground from its layout module and gives out its named spots. A place that also has a hand-placed track gets this one built **out of its way** (`PlaygroundOffsetFromTrack`) rather than not at all | `GetSpot(name)`, `Bounds()`, `DebugState()` |
 | `TrackService` | Adopts a hand-placed track: tags its road by colour, leaves everything else as dirt, anchors what is loose, deletes what runs, keeps the baseplate as the floor of last resort, and finds a spawn on the road by ray | `HasTrack()`, `SpawnCFrame()`, `Bounds()`, `DebugState()`, `DebugRoadWidths(lines?)` |
 | `CarService` | Spawns a car per player, replicates each car's state to the other clients, and owns **which archetype each player is in** and **which world they are in** | `SpawnCFrame()`, `CarKey(player)`, `SetCar(player, key)`, `Respawn(player, to?)`, `DebugState()` |
+| `GarageService` | The player's tuned cars: validates a save against `Shared/Cars/Garage`, keeps them in a **throwaway dev store** (not `DataService`, which is still unbuilt), and widens the server's speed bound to cover a tuned car rather than dropping its packets | `Get(player)`, `Save(player, name, car)`, `Delete(player, name)`, `SetTune(player, car?)`, `DebugState()` |
 
 ## Controllers (client)
 
@@ -41,6 +42,8 @@ The car is **not** driven by Roblox's physics (`DECISIONS.md`, 2026-11-03). Its 
 | `Signal` | Events between modules: `new`, `Connect`, `Once`, `Fire`, `Wait`, `DisconnectAll` |
 | `Config` | Every tuning number, one child module per feature, loaded on first use (`Config.Drift`) |
 | `CarModel` | The car's shape and dimensions, built by code, shared so the server and client agree |
+| `Cars` | Which archetype is active, how a key resolves, the live tune layer, the grip curve and the stat panel's data (`features/car-archetypes.md`) |
+| `Cars/Garage` | The tuner's eight sliders **and every rule about what a tuned car may be**. Shared so the client draws from it and the server validates against it (`features/car-tuner.md`) |
 
 Loaders: `ServerScriptService/Main.luau` loads `Services/`, `StarterPlayerScripts/Client.luau` loads `Controllers/`. Both call `Init()` on every module in `Priority` order (highest first, nothing yields), then `Start()` on each in its own thread. A module that fails to load is warned about and skipped.
 
