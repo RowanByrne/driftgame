@@ -20,6 +20,7 @@ local StarterPlayer = game:GetService("StarterPlayer")
 
 assert(RunService:IsStudio(), "RoadTests is Studio only")
 
+local Builder = require(ReplicatedStorage.Shared.Road.Builder)
 local Config = require(ReplicatedStorage.Shared.Config)
 local Generator = require(ReplicatedStorage.Shared.Road.Generator)
 local Pieces = require(ReplicatedStorage.Shared.Road.Pieces)
@@ -31,6 +32,15 @@ local LONG_RUN = 500 -- pieces the pure checks generate
 local SOCKET_TOLERANCE = 1e-3 -- studs, and radians: "a thousandth of a stud"
 local SHARE_MARGIN = 0.12 -- a variant may be this far off its fair share of the run
 local MAX_SAME_RUN = 8 -- the longest run of one variant the bias may leave
+local PROFILE_RUN = 200 -- pieces the profiled checks generate. Shorter than `LONG_RUN`
+-- because a profiled piece is cut into many more segments than a
+-- flat one, so every overlap test it is in costs more
+-- WHAT `Drift/World` CALLS A WALL, copied here because it is a constant in that module
+-- rather than a number in a config (`GROUND_NORMAL_Y`). A surface whose normal's Y is
+-- below it is not ground: the ground rays step past it and the car stops dead against it.
+-- If that constant ever moves, this has to move with it.
+local WALL_NORMAL_Y = 0.7
+local WALL_DEGREES = math.deg(math.acos(WALL_NORMAL_Y)) -- 45.57
 local DRIVE_PIECES = 50 -- pieces the real model is driven down
 local DRIVE_SECONDS = 400 -- the drive gives up after this much simulated time
 local DRIVE_FPS = 60
@@ -162,6 +172,128 @@ local function signedAngle(ax: number, az: number, bx: number, bz: number): numb
 	return math.atan2(bx * az - bz * ax, bx * ax + bz * az)
 end
 
+-- The smallest angle between two headings, in radians.
+local function angleGap(a: number, b: number): number
+	local d = math.abs(a - b) % (2 * math.pi)
+	return if d > math.pi then 2 * math.pi - d else d
+end
+
+--------------------------------------------------------------------------------
+-- The flat road, pinned
+--------------------------------------------------------------------------------
+-- T-066 gave a road piece a height and a bank. The nine pieces the road ships are flat
+-- and have to STAY the road they were -- the same pieces in the same order, the same
+-- parts in the same places -- and "we did not mean to change it" is not a test.
+--
+-- So three fingerprints, taken off the code AS IT WAS, on main at 3ef953e, before a
+-- socket had a `y`: the sequence a seed lays, the nodes and footprint quads it lays it
+-- out of, and the actual Parts a builder makes of the first twenty of them. They are
+-- pinned here as numbers because the old code is not around to ask any more.
+--
+-- IF THIS CHECK FAILS AND THE ROAD WAS MEANT TO CHANGE -- a different `Width`, another
+-- piece, a new radius -- then re-measure and re-pin these four numbers in the same
+-- commit, and say in the message what moved. If it fails and nothing was meant to change,
+-- something in the third dimension has leaked into the flat path.
+local PINNED = {
+	pieces = 500, -- seed 1234, through `grow`
+	sequence = 4229837996, -- their ids, sockets, lengths and node counts
+	geometry = 1094750648, -- every node and every footprint quad of the first 20
+	parts = 1448, -- Parts in the first 20 pieces, built
+	built = 147459104, -- and their names, sizes and CFrames
+}
+
+local function hasher()
+	local h = 2166136261
+	local self = {}
+	function self.s(str: string)
+		for i = 1, #str do
+			h = bit32.bxor(h, string.byte(str, i))
+			h = (h * 16777619) % 4294967296
+		end
+	end
+	function self.n(x: number)
+		self.s(string.format("%.17g", x))
+	end
+	function self.get(): number
+		return h
+	end
+	return self
+end
+
+local function flatFingerprint()
+	local gen = Generator.new(1234)
+	local all = {}
+	local H = hasher()
+	for i = 1, PINNED.pieces do
+		local p = gen:grow()
+		if not p then
+			break
+		end
+		all[i] = p
+		H.s(p.id)
+		H.n(p.start.x)
+		H.n(p.start.z)
+		H.n(p.start.yaw)
+		H.n(p.finish.x)
+		H.n(p.finish.z)
+		H.n(p.finish.yaw)
+		H.n(p.length)
+		H.s(tostring(#p.nodes))
+		if i % 100 == 0 then
+			task.wait()
+		end
+	end
+
+	local G = hasher()
+	for i = 1, 20 do
+		for _, n in all[i].nodes do
+			G.n(n.x)
+			G.n(n.z)
+			G.n(n.yaw)
+		end
+		for _, q in all[i].quads do
+			G.n(q.cx)
+			G.n(q.cz)
+			G.n(q.ux)
+			G.n(q.uz)
+			G.n(q.hu)
+			G.n(q.hv)
+		end
+	end
+
+	-- Built into a folder that is never in the DataModel, so this costs the place nothing.
+	local B = hasher()
+	local holder = Instance.new("Folder")
+	local parts = 0
+	Builder.DebugResetMarks() -- the dash pattern carries across pieces, so it has to start
+	-- where it started when these numbers were taken
+	for i = 1, 20 do
+		local built = Builder.build(all[i], holder)
+		parts += built.parts
+		local names, byName = {}, {}
+		for _, d in built.folder:GetDescendants() do
+			table.insert(names, d.Name)
+			byName[d.Name] = d
+		end
+		table.sort(names)
+		for _, nm in names do
+			local d = byName[nm] :: BasePart
+			B.s(nm)
+			B.n(d.Size.X)
+			B.n(d.Size.Y)
+			B.n(d.Size.Z)
+			for _, v in { d.CFrame:GetComponents() } do
+				B.n(v)
+			end
+		end
+	end
+	holder:Destroy()
+	Builder.DebugResetMarks()
+
+	return { pieces = #all, sequence = H.get(), geometry = G.get(), parts = parts, built = B.get() }
+end
+
+
 --------------------------------------------------------------------------------
 -- The drive: the real model, the real Workspace, and a stand-in for a player
 --------------------------------------------------------------------------------
@@ -189,6 +321,46 @@ function Tests:drive(o)
 	local gen = RoadService:DebugGenerator()
 	local world = World.live({})
 	local runner = Sim.newRunner(spawn)
+
+	-- WHAT STOPPED THE CAR, ROAD OR WALL (`o.wallParts`, T-066). `Drift/World` sorts what
+	-- its sweep finds by the normal: anything leaning more than about 46 degrees is a wall
+	-- and the car stops dead against it, and a wall made of ROAD is the one thing a piece
+	-- with a grade and a bank could accidentally become. The model only reports THAT it
+	-- hit something, so this repeats the cast when it does and reads the part's name.
+	-- Off by default: it doubles the cost of every step that touches anything.
+	local roadWalls, barrierWalls = 0, 0
+	if o.wallParts then
+		local realSweep = world.sweep
+		local params = RaycastParams.new()
+		params.FilterType = Enum.RaycastFilterType.Exclude
+		world.sweep = function(from, to, yaw)
+			local safe, normal = realSweep(from, to, yaw)
+			if normal then
+				local delta = to - from
+				local flat = Vector3.new(delta.X, 0, delta.Z)
+				local box = CFrame.new(from) * CFrame.Angles(0, yaw, 0)
+				local skip = {}
+				for _ = 1, 6 do
+					params.FilterDescendantsInstances = skip
+					local hit = workspace:Blockcast(box, world.carBox, flat, params)
+					if not hit then
+						break
+					end
+					if math.abs(hit.Normal.Y) > 0.7 then
+						table.insert(skip, hit.Instance)
+						continue
+					end
+					if string.sub(hit.Instance.Name, 1, 5) == "Road_" then
+						roadWalls += 1
+					else
+						barrierWalls += 1
+					end
+					break
+				end
+			end
+			return safe, normal
+		end
+	end
 	runner.state.velocity = spawn.LookVector * (o.startSpeed or 60)
 	runner.state.time = 10 -- past the throttle's ease-in
 
@@ -367,6 +539,7 @@ function Tests:drive(o)
 
 	finishVisit()
 	r.seconds = elapsed
+	r.roadWalls, r.barrierWalls = roadWalls, barrierWalls
 	r.meanSpeed = r.speedSum / math.max(r.speedN, 1)
 	r.driftShare = r.driftSteps / math.max(r.steps, 1)
 	r.detail = string.format(
@@ -477,6 +650,125 @@ end
 local function restoreMinPieces(was)
 	for name, value in was do
 		Config.Road.Pieces[name].minPieces = value
+	end
+end
+
+--------------------------------------------------------------------------------
+-- Pieces with a height and a bank, which the road does not have yet
+--------------------------------------------------------------------------------
+-- TEST FIXTURES, NOT ROAD. The road's own nine are flat and stay flat; the touge pieces
+-- that will use the profile are their own task. These five exist to drive the capability
+-- past where any real piece should go, and each one is here for a reason the checks name:
+--
+--   Plunge   loses height and arrives LEVEL, which is the vertical curve both ways round
+--   Rise     the same climbing, so the run does not only ever go down
+--   Swoop    a banked corner that loses height: the two profiles at once
+--   Horrible steep, banked, and CHANGING BOTH down its length: it reaches the steepest
+--            grade there is halfway down itself, banks 30 degrees over the same stretch,
+--            and hands the next piece a level road
+--   Cliff    asks for four times the drop it is allowed, to prove the clamp is the thing
+--            that decides and not the profile
+--
+-- A STRAIGHT THAT STARTS AND ENDS LEVEL IS STEEPEST IN THE MIDDLE, at 1.5x its average
+-- grade -- a property of the vertical curve, and the reason `Plunge` only drops 20 studs
+-- over 220 when 31 would be within `MaxGrade` as an average.
+local PROFILE_PIECES = {
+	Plunge = {
+		kind = "Plunge",
+		Shape = "straight",
+		weight = 1,
+		minPieces = 0,
+		mirror = false,
+		Length = 220,
+		Height = { Drop = 20, EndGrade = 0 },
+	},
+	Rise = {
+		kind = "Rise",
+		Shape = "straight",
+		weight = 1,
+		minPieces = 0,
+		mirror = false,
+		Length = 220,
+		Height = { Drop = -20, EndGrade = 0 },
+	},
+	Swoop = {
+		kind = "Swoop",
+		Shape = "arc",
+		weight = 1,
+		minPieces = 0,
+		mirror = true,
+		Radius = 220,
+		Arc = 30,
+		Height = { Drop = 12 },
+		Bank = { Degrees = 25 },
+	},
+	-- ITS PLAN SHAPE IS THE SHIPPED CORNER'S, DELIBERATELY: 220 studs of radius and 90
+	-- degrees of it, the one the piece set was measured and driven on. Everything horrible
+	-- about it is in the two new axes -- it descends the whole way, at the steepest grade
+	-- allowed by the time it hands over, while banking from level to 30 degrees and back
+	-- -- so when it is driven, what is being asked about is the grade and the bank and not
+	-- the corner.
+	--
+	-- THE FIRST VERSION OF IT WAS A 120-DEGREE CORNER AT RADIUS 90 and the autopilot got
+	-- pinned on its outside wall at 17 studs/s and never got going again. Nothing about
+	-- that was elevation: a bank also COSTS PLAN WIDTH, because a 50-stud road banked 30
+	-- degrees is only 43 studs wide seen from above, and a corner tighter than anything in
+	-- the set plus three fewer studs either side is a corner the autopilot cannot hold.
+	Horrible = {
+		kind = "Horrible",
+		Shape = "arc",
+		weight = 1,
+		minPieces = 0,
+		mirror = true,
+		Radius = 220,
+		Arc = 90,
+		Height = { Drop = 40, EndGrade = 0 },
+		Bank = { Degrees = 30, Shape = "crest" },
+	},
+	Cliff = {
+		kind = "Cliff",
+		Shape = "straight",
+		weight = 1,
+		minPieces = 0,
+		mirror = false,
+		Length = 220,
+		Height = { Drop = 200 },
+	},
+	-- Asks for more grade and more bank than the config allows at once, which is the only
+	-- way to make the COMBINED cap bite: 14 degrees of grade and 30 of bank only come to
+	-- 32.8 together, so with the shipped numbers nothing can reach the 35 that is the
+	-- limit. Both of its own numbers are clamped to the config's on the way in.
+	Brutal = {
+		kind = "Brutal",
+		Shape = "arc",
+		weight = 1,
+		minPieces = 0,
+		mirror = true,
+		Radius = 120,
+		Arc = 90,
+		Height = { EndGrade = -25 },
+		Bank = { Degrees = 40 },
+	},
+}
+
+-- Splice some of them into the live piece set, optionally pushing everything but a named
+-- few out of reach, and hand back the undo. Every check that uses it calls the undo.
+local function useProfilePieces(add: { string }, only: { string }?)
+	local added = {}
+	for _, name in add do
+		Config.Road.Pieces[name] = PROFILE_PIECES[name]
+		table.insert(added, name)
+	end
+	local wasMin = if only then setOnly(only) else nil
+	Pieces.rebuild()
+	return function()
+		if wasMin then
+			restoreMinPieces(wasMin)
+		end
+		for _, name in added do
+			Config.Road.Pieces[name] = nil
+		end
+		Pieces.rebuild()
 	end
 end
 
@@ -778,6 +1070,242 @@ function Tests:run(opts)
 			)
 		end
 		check("the chicane's two bends are opposite and cancel", okBends, table.concat(report, "; "))
+	end
+
+	----------------------------------------------------------------------------
+	-- 1c. The flat road is the road it was before it could climb (T-066)
+	----------------------------------------------------------------------------
+	do
+		local f = flatFingerprint()
+		local same = f.pieces == PINNED.pieces
+			and f.sequence == PINNED.sequence
+			and f.geometry == PINNED.geometry
+			and f.parts == PINNED.parts
+			and f.built == PINNED.built
+		local who = {}
+		for _, key in { "pieces", "sequence", "geometry", "parts", "built" } do
+			table.insert(who, string.format("%s %d%s", key, f[key], if f[key] == PINNED[key] then "" else ` (pinned {PINNED[key]})`))
+		end
+		check(
+			"the nine flat pieces are the same road, piece for piece and part for part",
+			same,
+			string.format(
+				"seed 1234 x %d pieces and the first 20 of them built, against fingerprints taken before a socket had a height: %s.%s",
+				PINNED.pieces,
+				table.concat(who, ", "),
+				if same
+					then " Identical."
+					else " RE-PIN ONLY IF THE ROAD WAS MEANT TO CHANGE (see `PINNED` in this file)."
+			)
+		)
+	end
+
+	----------------------------------------------------------------------------
+	-- 1d. A piece can have a height and a bank, and the road stays flush (T-066)
+	----------------------------------------------------------------------------
+	-- Everything here is pure: no parts, no playtest. The profiled pieces are test
+	-- fixtures spliced into the set for the length of the check and taken out again.
+	do
+		local restore = useProfilePieces({ "Plunge", "Rise", "Swoop", "Horrible", "Cliff", "Brutal" })
+		local ok, err = pcall(function()
+			local run = longRun(2468, PROFILE_RUN)
+
+			-- (a) THE JOIN. In three dimensions and in all three angles this time.
+			local worstGap, worstYaw, worstPitch, worstRoll, worstNode = 0, 0, 0, 0, 0
+			local profiledPieces = 0
+			local lowest, highest = math.huge, -math.huge
+			for i, piece in run do
+				if not piece.flat then
+					profiledPieces += 1
+				end
+				local n1 = piece.nodes[1]
+				worstNode = math.max(
+					worstNode,
+					math.sqrt((n1.x - piece.start.x) ^ 2 + (n1.y - (piece.start.y or 0)) ^ 2 + (n1.z - piece.start.z) ^ 2)
+				)
+				for _, node in piece.nodes do
+					lowest = math.min(lowest, node.y)
+					highest = math.max(highest, node.y)
+				end
+				if i > 1 then
+					local a, b = run[i - 1].finish, piece.start
+					worstGap = math.max(worstGap, math.sqrt((a.x - b.x) ^ 2 + ((a.y or 0) - (b.y or 0)) ^ 2 + (a.z - b.z) ^ 2))
+					worstYaw = math.max(worstYaw, angleGap(a.yaw, b.yaw))
+					worstPitch = math.max(worstPitch, math.abs((a.pitch or 0) - (b.pitch or 0)))
+					worstRoll = math.max(worstRoll, math.abs((a.roll or 0) - (b.roll or 0)))
+				end
+			end
+			check(
+				`{#run} pieces with height and bank in them, and still not one gap`,
+				#run == PROFILE_RUN
+					and worstGap == 0
+					and worstYaw == 0
+					and worstPitch == 0
+					and worstRoll == 0
+					and worstNode == 0,
+				string.format(
+					"%d pieces, %d of them profiled, over %.0f studs of height (%.0f to %.0f): worst finish-to-start socket gap %.3e studs, yaw %.3e, pitch %.3e, roll %.3e rad; worst start-node gap %.3e. Exactly zero, as on the flat",
+					#run,
+					profiledPieces,
+					highest - lowest,
+					lowest,
+					highest,
+					worstGap,
+					worstYaw,
+					worstPitch,
+					worstRoll,
+					worstNode
+				)
+			)
+
+			-- (b) NO JOIN IS A STEP AND NO BANK IS A KINK. What a ground ray actually
+			-- reads is the SEGMENTS -- each one a flat box -- so the step measured here is
+			-- between the slopes of neighbouring boxes, right across the joins as well as
+			-- inside a piece, and never between the smooth numbers behind them.
+			local worstPitchStep, worstBankStep, where = 0, 0, ""
+			local lastPitch, lastBank, lastWhere = nil, nil, ""
+			for _, piece in run do
+				for i = 1, #piece.nodes - 1 do
+					local a, b = piece.nodes[i], piece.nodes[i + 1]
+					local plan = piece.cum[i + 1] - piece.cum[i]
+					local chord = if plan > 1e-9 then math.atan((b.y - a.y) / plan) else 0
+					local bank = (a.bank + b.bank) * 0.5
+					local here = `{piece.id} {piece.n} seg {i}`
+					if lastPitch then
+						local dp = math.deg(math.abs(chord - lastPitch))
+						local db = math.deg(math.abs(bank - lastBank))
+						if dp > worstPitchStep then
+							worstPitchStep, where = dp, `{lastWhere} -> {here}`
+						end
+						worstBankStep = math.max(worstBankStep, db)
+					end
+					lastPitch, lastBank, lastWhere = chord, bank, here
+				end
+			end
+			-- THE LIMIT IS ON THE NODES AND THIS MEASURES THE BOXES, and the two differ by
+			-- a hair for a reason worth writing down: a box's own slope is the mean of its
+			-- two ends' TANGENTS, not of their angles, so where the grade is steepest two
+			-- neighbouring boxes can read 0.003 of a degree further apart than the nodes
+			-- behind them are. That is the whole of this slack.
+			local STEP_SLACK = 0.01 -- degrees
+			check(
+				"no join is a step and no bank is a kink",
+				worstPitchStep <= C.MaxPitchStep + STEP_SLACK and worstBankStep <= C.MaxBankStep + STEP_SLACK,
+				string.format(
+					"over %d pieces, between every pair of neighbouring segments including across every join: worst grade change %.3f deg (limit %.2f, at %s), worst bank change %.3f deg (limit %.2f)",
+					#run,
+					worstPitchStep,
+					C.MaxPitchStep,
+					where,
+					worstBankStep,
+					C.MaxBankStep
+				)
+			)
+
+			-- (c) NOTHING READS AS A WALL. `Drift/World` calls a surface whose normal
+			-- leans more than about 46 degrees a wall and stops the car dead against it,
+			-- and GRADE AND BANK COMPOUND: the normal's Y is cos(grade) x cos(bank), so it
+			-- is the pair that has to be measured and never one at a time.
+			local worstTilt, worstGrade, worstBank, tiltAt = 0, 0, 0, ""
+			for _, piece in run do
+				for _, node in piece.nodes do
+					local tilt = math.deg(math.acos(math.clamp(math.cos(node.pitch) * math.cos(node.bank), -1, 1)))
+					worstGrade = math.max(worstGrade, math.abs(math.deg(node.pitch)))
+					worstBank = math.max(worstBank, math.abs(math.deg(node.bank)))
+					if tilt > worstTilt then
+						worstTilt, tiltAt = tilt, piece.id
+					end
+				end
+			end
+			check(
+				"nothing the road can generate reads as a wall",
+				worstTilt <= C.MaxSurfaceTilt + 1e-6 and worstTilt < WALL_DEGREES - 8 and worstGrade <= C.MaxGrade + 1e-6 and worstBank <= C.MaxBank + 1e-6,
+				string.format(
+					"the steepest surface over %d pieces leans %.2f deg (on a %s): grade %.2f of %.1f allowed, bank %.2f of %.1f, and the two together %.2f of %.1f. The normal's Y is %.4f against the %.2f at which Drift/World calls it a wall (%.1f deg)",
+					#run,
+					worstTilt,
+					tiltAt,
+					worstGrade,
+					C.MaxGrade,
+					worstBank,
+					C.MaxBank,
+					worstTilt,
+					C.MaxSurfaceTilt,
+					math.cos(math.rad(worstTilt)),
+					WALL_NORMAL_Y,
+					WALL_DEGREES
+				)
+			)
+		end)
+		restore()
+		if not ok then
+			error(err, 0)
+		end
+	end
+
+	----------------------------------------------------------------------------
+	-- 1e. The caps decide, not the profile (T-066)
+	----------------------------------------------------------------------------
+	-- Two separate claims, both about what happens when a piece asks for too much.
+	do
+		local restore = useProfilePieces({ "Cliff", "Brutal" })
+		local ok, err = pcall(function()
+			-- (a) A PIECE THAT ASKS FOR MORE DROP THAN IT MAY HAVE gets the grade it is
+			-- allowed and lands higher than it wanted, rather than getting a wall.
+			local cliff = Pieces.place(Pieces.get("Cliff"), { x = 0, z = 0, yaw = 0 }, 1)
+			local got = -(cliff.finish.y or 0)
+			local allowed = math.tan(math.rad(C.MaxGrade)) * cliff.length
+			local steepest = 0
+			for _, node in cliff.nodes do
+				steepest = math.max(steepest, math.abs(math.deg(node.pitch)))
+			end
+			check(
+				"a piece that asks for more drop than MaxGrade allows gets MaxGrade",
+				got < allowed + 1e-6 and steepest <= C.MaxGrade + 1e-6 and got > allowed * 0.8,
+				string.format(
+					"Cliff asked to lose %d studs over %.0f; it lost %.1f, which is %.0f%% of the %.1f a %.1f-degree grade can lose over that length. Steepest anywhere on it: %.3f deg",
+					PROFILE_PIECES.Cliff.Height.Drop,
+					cliff.length,
+					got,
+					100 * got / allowed,
+					allowed,
+					C.MaxGrade,
+					steepest
+				)
+			)
+
+			-- (b) THE COMBINED CAP BITES, which cannot be shown with the shipped numbers
+			-- because 14 degrees of grade and 30 of bank only come to 32.8 together. So
+			-- the two separate limits are opened up for one placement and the combined one
+			-- is left where it is: the bank is what gives way.
+			local wasGrade, wasBank = C.MaxGrade, C.MaxBank
+			C.MaxGrade, C.MaxBank = 30, 45
+			Pieces.rebuild()
+			local loose = Pieces.place(Pieces.get("BrutalL"), { x = 0, z = 0, yaw = 0 }, 1)
+			local tilt, grade, bank = 0, 0, 0
+			for _, node in loose.nodes do
+				tilt = math.max(tilt, math.deg(math.acos(math.clamp(math.cos(node.pitch) * math.cos(node.bank), -1, 1))))
+				grade = math.max(grade, math.abs(math.deg(node.pitch)))
+				bank = math.max(bank, math.abs(math.deg(node.bank)))
+			end
+			C.MaxGrade, C.MaxBank = wasGrade, wasBank
+			Pieces.rebuild()
+			check(
+				"grade and bank are capped together, not one at a time",
+				tilt <= C.MaxSurfaceTilt + 1e-6 and grade > C.MaxGrade and bank < PROFILE_PIECES.Brutal.Bank.Degrees - 1,
+				string.format(
+					"with MaxGrade opened to 30 and MaxBank to 45 and MaxSurfaceTilt left at %.0f: the piece reached %.2f deg of grade and asked for 40 of bank, and came out leaning %.2f deg -- the bank was cut to %.2f to pay for the grade",
+					C.MaxSurfaceTilt,
+					grade,
+					tilt,
+					bank
+				)
+			)
+		end)
+		restore()
+		if not ok then
+			error(err, 0)
+		end
 	end
 
 	----------------------------------------------------------------------------
@@ -1588,6 +2116,114 @@ function Tests:run(opts)
 	end
 
 	----------------------------------------------------------------------------
+	-- 10b. A car put down on a pitched, banked piece (T-066)
+	----------------------------------------------------------------------------
+	-- The one thing a pure check cannot answer: where the PARTS ended up, and what four
+	-- rays fired down at the wheels find there. `SafeStart`, `JoinCFrame` and the respawn
+	-- all come through `Pieces.poseAt`, so this asks it for a pose on a profiled piece,
+	-- stands the car's four wheels on it, and measures.
+	do
+		local restore = useProfilePieces({ "Plunge", "Swoop", "Horrible" })
+		local ok, err = pcall(function()
+			-- A chain by hand rather than a seed, so the check is about these pieces.
+			local chain, socket = {}, { x = 0, z = 0, yaw = 0 }
+			for i, id in { "Straight", "Plunge", "SwoopL", "HorribleR", "Straight" } do
+				chain[i] = Pieces.place(Pieces.get(id), socket, i)
+				socket = chain[i].finish
+			end
+			local holder = Instance.new("Folder")
+			holder.Name = "ProfileProbe"
+			holder.Parent = workspace
+			Builder.DebugResetMarks()
+			for _, piece in chain do
+				Builder.build(piece, holder)
+			end
+
+			local params = RaycastParams.new()
+			params.FilterType = Enum.RaycastFilterType.Include
+			params.FilterDescendantsInstances = { holder }
+
+			local WHEELS = { { 1, 1 }, { 1, -1 }, { -1, 1 }, { -1, -1 } } -- front/rear, right/left
+			local halfBase, halfTrack = D.Wheelbase * 0.5, D.TrackWidth * 0.5
+			local misses, worstRide, worstNormal, worstThrough = 0, 0, 0, math.huge
+			local samples, rows = 0, {}
+			for _, piece in { chain[3], chain[4] } do
+				local pieceWorstRide, pieceWorstNormal, pieceTilt = 0, 0, 0
+				for s = 1, 19 do
+					local cf = Pieces.poseAt(piece, s / 20, C.SurfaceY + D.RideHeight)
+					local _, pitch, bank = Pieces.surfaceAt(piece, s / 20)
+					pieceTilt = math.max(pieceTilt, math.deg(math.acos(math.clamp(math.cos(pitch) * math.cos(bank), -1, 1))))
+					local mean = Vector3.zero
+					for _, w in WHEELS do
+						samples += 1
+						local at = cf.Position + cf.LookVector * (halfBase * w[1]) + cf.RightVector * (halfTrack * w[2])
+						local hit = workspace:Raycast(at + Vector3.new(0, 20, 0), Vector3.new(0, -60, 0), params)
+						if not hit then
+							misses += 1
+						else
+							-- How far the wheel is off the road MEASURED ALONG THE ROAD'S
+							-- OWN NORMAL, which is the number that says "on it" rather
+							-- than "through it" or "floating".
+							local ride = (at - hit.Position):Dot(hit.Normal)
+							pieceWorstRide = math.max(pieceWorstRide, math.abs(ride - D.RideHeight))
+							worstThrough = math.min(worstThrough, ride)
+							mean += hit.Normal
+						end
+					end
+					-- THE MEAN OF THE FOUR, because that is what the car reads: the drift
+					-- model averages its four wheel rays and leans the body on the answer
+					-- (`Drift/Model`, "the ground"). One wheel against the pose's own
+					-- point on the centre line is a different question and a worse one --
+					-- the car is 14.8 studs long, so on a piece cut into 3-stud boxes its
+					-- wheels are two facets away from its middle and read as much.
+					if mean.Magnitude > 1e-6 then
+						pieceWorstNormal =
+							math.max(pieceWorstNormal, math.deg(math.acos(math.clamp(mean.Unit:Dot(cf.UpVector), -1, 1))))
+					end
+				end
+				worstRide = math.max(worstRide, pieceWorstRide)
+				worstNormal = math.max(worstNormal, pieceWorstNormal)
+				table.insert(
+					rows,
+					string.format(
+						"%s (leaning up to %.1f deg): every wheel within %.3f studs of ride height, the pose's up within %.2f deg of the four rays' mean normal",
+						piece.id,
+						pieceTilt,
+						pieceWorstRide,
+						pieceWorstNormal
+					)
+				)
+			end
+
+			holder:Destroy()
+			Builder.DebugResetMarks()
+			-- WHAT THE TWO TOLERANCES ARE. The pose is read off the SMOOTH profile and the
+			-- road is built out of FLAT BOXES, so the two can only agree to within half a
+			-- segment's worth of step: a quarter of a stud of height and a degree or so of
+			-- lean. Anything larger than that is not faceting, it is a car in the road or
+			-- above it.
+			check(
+				"a car put down on a pitched, banked piece stands on it",
+				misses == 0 and worstRide < 0.25 and worstNormal < 2 and worstThrough > 0,
+				string.format(
+					"%d wheel rays over a banked descent and a banked 120-degree corner: %d found nothing, every wheel between %.3f and %.3f studs off the surface along its normal (ride height is %.2f), and the pose's up never more than %.2f deg off the mean of the four. %s",
+					samples,
+					misses,
+					worstThrough,
+					D.RideHeight + worstRide,
+					D.RideHeight,
+					worstNormal,
+					table.concat(rows, "; ")
+				)
+			)
+		end)
+		restore()
+		if not ok then
+			error(err, 0)
+		end
+	end
+
+	----------------------------------------------------------------------------
 	-- 11. A car can actually drive it
 	----------------------------------------------------------------------------
 	if opts.skipDrive ~= true then
@@ -1621,6 +2257,38 @@ function Tests:run(opts)
 			#missing == 0,
 			`{if #missing == 0 then "all five met" else "never met: " .. table.concat(missing, ", ")}. ` .. table.concat(lines, " | ")
 		)
+
+		-- AND THE DELIBERATELY HORRIBLE PIECE IS DRIVEN (T-066). Steep, banked, both
+		-- changing down its length, and nothing else in the road but straights to reach it
+		-- from, so every corner the car meets is that piece.
+		--
+		-- WHAT IS BEING ASKED IS NOT WHETHER THE AUTOPILOT IS QUICK ON IT. It is not: the
+		-- test driver was tuned on a flat road, and a car that carries more speed down a
+		-- hill runs wider than it can steer for. What is being asked is whether any of
+		-- that road ever reads as a WALL -- `Drift/World` stops the car dead against
+		-- anything leaning more than about 46 degrees, and grade and bank compound -- so
+		-- every sweep that stopped the car is traced back to the part that stopped it.
+		-- Barriers are meant to stop it. Road is not, ever.
+		local restore = useProfilePieces({ "Horrible" }, { "Horrible" })
+		local ok, err = pcall(function()
+			local h = Tests:drive({ seed = 4242, pieces = 12, seconds = 120, startSpeed = 40, wallParts = true })
+			check(
+				"nothing on the worst piece the limits allow reads as a wall",
+				h.roadWalls == 0 and h.stuckSeconds < 2 and h.offRoadSteps == 0 and h.reached >= 5,
+				string.format(
+					"%d sweeps were stopped by something, and %d of them by ROAD rather than by a barrier. Reached piece %d. %s | on the Horrible pieces themselves -- %s",
+					h.roadWalls + h.barrierWalls,
+					h.roadWalls,
+					h.reached,
+					h.detail,
+					kindRow(h, "Horrible")
+				)
+			)
+		end)
+		restore()
+		if not ok then
+			error(err, 0)
+		end
 	end
 
 	local passed = true
