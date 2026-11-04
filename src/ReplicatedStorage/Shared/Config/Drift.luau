@@ -168,22 +168,32 @@ local Drift = {
 	-- place with no track builds it at the origin exactly as before, so every lane and
 	-- every test place is unchanged (T-026).
 	--
-	-- Why -12 000 on X, and why only on X:
-	--   * the playground's plate is 2 000 studs across, so its near edge is 11 000 studs
-	--     from the origin the track sits on -- more than three times the longest track
-	--     we have, and far past anything that can be seen from the other world;
+	-- THE ONLY THING THE DISTANCE BUYS IS SEPARATION, so it is far enough that the two
+	-- boxes clear each other with room to spare and no further. It was -12 000 until the
+	-- user drove it and said "it's all the way over there lol": 12 000 studs is 67 seconds
+	-- at top speed, which is a continent away rather than a neighbour in the same build.
+	--
+	-- Why -2 200 on X, and why only on X:
+	--   * the playground's plate is 2 000 studs across, so it is +/-1 000 about wherever
+	--     it is put: at -2 200 its box is x -3 200..-1 200 against the track's -560..560
+	--     (scaled 2x), which is 640 studs of clear air between them;
 	--   * it is HORIZONTAL only, so both worlds' ground is still Y = 0 and the one
-	--     `FallY` / `RespawnBelowY` pair is right for both of them;
+	--     `FallY` / `RespawnBelowY` pair is right for both of them. Z is never offset, so
+	--     Z never needs separating either;
 	--   * -X is the empty quarter: the collision tests stand their own rig at
 	--     (20 000, 500, 20 000) and the jitter tests probe at (2 000, 0, 0), so nothing
-	--     the tests build comes within 30 000 studs of it;
-	--   * it stays under 16 384, so world coordinates there quantise at 1/1024 of a stud
-	--     in float32 -- a thousandth of a stud, against ground rays 28 studs long and a
-	--     plate-flatness tolerance the offset never touches, because Y is untouched.
-	-- Driving between them is not possible and is not meant to be: each world is an
-	-- island over the void, and the fall catcher puts a car back in the world it left.
-	-- Use `CarService:DebugCross()` (Studio only) to hop.
-	PlaygroundOffsetFromTrack = Vector3.new(-12000, 0, 0),
+	--     the tests build comes near it;
+	--   * it is far inside 16 384, where world coordinates still quantise at 1/1024 of a
+	--     stud in float32 -- a thousandth of a stud, against ground rays 28 studs long.
+	-- THE GAP IS NOT DRIVEABLE AT THIS OFFSET AND WAS NOT AT THE OLD ONE EITHER, which is
+	-- the part nobody had written down: the baseplate is only +/-1 024, so there is no
+	-- ground between the two worlds at ANY offset that separates them. Crossing is
+	-- `CarService:DebugCross()` (Studio only), a teleport, and will stay one unless
+	-- somebody floors the gap. Each world is an island over the void and the fall catcher
+	-- puts a car back in the world it left.
+	-- `DebugPlaygroundTests` fails loudly if this is ever set small enough to overlap, so
+	-- the value guards itself.
+	PlaygroundOffsetFromTrack = Vector3.new(-2200, 0, 0),
 
 	-- Which world a car SPAWNS in, and the world every respawn falls back to when the
 	-- server cannot tell where the car was: "track" or "playground". Track by default,
@@ -351,6 +361,53 @@ local Drift = {
 	-- else. F3, DPad up or the DBG button brings them back
 	DebugStatsOpen = false, -- and the car's stat panel is folded inside it, closed too.
 	-- F5, or clicking its header, unfolds it; F4 switches car
+
+	-- ---------------------------------------------------------------- the tuner
+	-- The car tuner and its garage (`Drift/TunerUI`, `Services/GarageService`,
+	-- features/car-tuner.md). A DEV TOOL, like the readout and the trajectory line: it
+	-- moves the active car's numbers live and saves named sets of them, and none of it is
+	-- a shop, a garage screen or anything a player will ever see.
+	--
+	-- NOT the stat panel. That is a READOUT of the car (`Drift/DebugHud`); this is the
+	-- instrument that moves it. They are deliberately separate and both can be open.
+	Tuner = true, -- build the tuner at all
+	TunerOpen = false, -- but CLOSED from the start: the user driving for feel
+	-- should see the car and nothing else. F7, the gamepad's Y,
+	-- or the TUNE button opens it
+	TunerKey = Enum.KeyCode.F7, -- opens and closes it. F3/F4/F5 are the readout's and F6
+	-- is the trajectory line's
+	TunerGamepadKey = Enum.KeyCode.ButtonY, -- the same, on a pad. DPad up/right/left are
+	-- already the readout's, the car switch and the line's
+	TunerWidth = 336, -- px. The panel's column, on the RIGHT: the readout owns the top
+	-- left and both are often open at once
+	TunerRowHeight = 38, -- px per slider row, the track and its two labels
+	TunerSendRate = 10, -- Hz the live tune is sent to the server while a slider is being
+	-- dragged. The TUNE ITSELF IS INSTANT AND LOCAL -- the model reads
+	-- the car every step -- and this is only so the server's speed bound
+	-- keeps up with it (`GarageService`, "the ceiling"). Sent again on
+	-- release, so the server always ends up with the final value
+
+	-- ---------------------------------------------------------------- the garage
+	-- The dev store behind the tuner. THE FIRST THING IN THIS GAME THAT SAVES ANYTHING,
+	-- and deliberately not the start of the save system: `DataService` and `PlayerData`
+	-- are still unbuilt (`ARCHITECTURE.md`), and this is one small server-owned store for
+	-- tuned cars only, to be deleted when the real one arrives.
+	GarageMaxCars = 12, -- saved cars a player may keep. A full garage refuses a NEW name
+	-- and still overwrites an existing one, so a tuning session is
+	-- never stuck with nowhere to put the car it is driving
+	GarageNameMax = 24, -- characters in a car's name, after trimming
+	GarageSaveRateLimit = 4, -- saves or deletes a second per UserId before the ask is
+	-- ignored. A save is a DataStore write eventually, and a
+	-- client that asks faster than a person can type is not a person
+	GarageTuneRateLimit = 30, -- live tune packets a second per UserId. `TunerSendRate` is
+	-- 10, so this is three times what an honest client sends
+	GarageWriteInterval = 8, -- s between writes of a garage that has changed. NEVER on
+	-- every slider move: the in-memory copy is the live one and the
+	-- store catches up behind it (CODING.md "Data store limits")
+	GarageWriteRetries = 3, -- attempts at a write before it is given up on and warned
+	-- about. THE IN-MEMORY COPY IS KEPT EITHER WAY: a failed write
+	-- must never cost the user the car they are driving
+	GarageRetryBackoff = 2, -- s before the first retry, doubled each time after
 
 	-- ---------------------------------------------------------------- the trajectory line
 	-- Where the car will go if the finger stays exactly where it is (`Drift/Trajectory`).
