@@ -323,8 +323,11 @@ crowds itself SOONER. That is measurable: at 50 the pre-`T-052` generator boxed 
 five suite seeds where at 35 it managed 500 pieces. Changing this number means re-measuring the
 stall table, not re-typing it.
 
-**Flat.** No elevation at all in this build: no crest, no banking. Every surface tops out at Y = 0,
-which is why the other two worlds' `FallY` / `RespawnBelowY` pair is right for this one too.
+**Flat, when this was written.** No elevation at all, no crest, no banking: every surface topped out
+at Y = 0. **Both halves of that have since changed.** A piece can carry a height and a bank
+(`T-066`, `features/road-elevation.md`), and a fall is no longer an absolute world height but a
+distance below the last ground the car touched (`T-067`), because a descending road would otherwise
+drown every car on it by about piece eleven. The nine pieces in the set below are still flat.
 
 **The corner's radius and the straight's length were measured, not chosen.** `RoadTests:drive` is
 an autopilot — a pure-pursuit controller aiming a fixed distance down the road's own centre line,

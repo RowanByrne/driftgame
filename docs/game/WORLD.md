@@ -4,7 +4,7 @@ This game's world and map: its areas, how players get around, and the named spot
 
 ## Overview
 
-There is no map yet. There are **three separate worlds**, none of which is the map, each built a different way and each with a different job. They share one Y: every surface in the game tops out at Y = 0, so the one `FallY` / `RespawnBelowY` pair is right for all three.
+There is no map yet. There are **three separate worlds**, none of which is the map, each built a different way and each with a different job. They share one Y: every surface in the game tops out at Y = 0 -- except the road, which descends as it is generated (`features/road-elevation.md`). **A fall is therefore measured from the last ground the car touched, not from a world height** (`T-067`): `Config.Drift.FallBelowSurface`, which on flat ground at Y = 0 is the same comparison the old absolute number made. `Config.Playground.FallY` is still absolute and still right for the plate.
 
 ### The three worlds, and where each is
 

@@ -84,9 +84,12 @@ road yet.
 
 ### What a fall does
 
-The game already had a `FallY` / `RespawnBelowY` pair and all three worlds top out at Y = 0, so no
-new number was needed. A car below `RespawnBelowY` asks the server for a respawn (`CarRespawn`,
-unchanged), and `CarService` answers with a place on the road.
+When this was built, all three worlds topped out at Y = 0 and one absolute height
+(`RespawnBelowY`) decided a fall everywhere. **The road can descend now** (`T-066`), so that number
+is gone: a car asks for a respawn when it is more than `Config.Drift.FallBelowSurface` studs below
+**the last ground its wheels found** (`T-067`). On flat ground at Y = 0 that is the same comparison,
+so nothing here changed in behaviour. `CarRespawn` is unchanged, and `CarService` still answers with
+a place on the road.
 
 **A fall never ends a run, and it never moves `N` backwards.** `furthestN` is the generator's own
 high-water mark and nothing in the respawn path writes it; the car is put back on the piece it fell
