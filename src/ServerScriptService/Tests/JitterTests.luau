@@ -251,6 +251,18 @@ function JitterTests:measure(opts)
 	local settle = opts.settle or 1
 	local firstCounted = 1
 
+	-- THE SPEED SHAKE IS OFF FOR THE LENGTH OF THIS MEASUREMENT (T-072), and it is the
+	-- only thing this file turns off. Everything here is a SECOND DIFFERENCE -- movement
+	-- the player should not be able to see -- and the shake is deliberate movement the
+	-- player should: a new random kick twenty times a second, which measures as 0.37 deg
+	-- of arc a frame against a limit of 0.1 and would fail every scenario by design. The
+	-- shake's own size is measured where it belongs, in screen pixels, by
+	-- `CarCameraController:DebugShakeProbe`. The ROLL IS LEFT ON, because it is slow
+	-- enough to measure as nothing (it moves the picture by a tenth of a degree over a
+	-- sixth of a second) and leaving it on is the check that it stays that way.
+	local shakeWas = { Config.Camera.ShakeRotation, Config.Camera.ShakePosition }
+	Config.Camera.ShakeRotation, Config.Camera.ShakePosition = Vector3.zero, Vector3.zero
+
 	local clock = 0
 	while clock < seconds do
 		local dt = nextDt()
@@ -294,6 +306,8 @@ function JitterTests:measure(opts)
 			out.gap[#out.gap + 1] = (cf.Position - state.position).Magnitude
 		end
 	end
+
+	Config.Camera.ShakeRotation, Config.Camera.ShakePosition = shakeWas[1], shakeWas[2]
 
 	-- THE LAG, after the fact. Where the simulation really had the car at a frame's own
 	-- moment is the chord between the two steps that moment falls between -- and that needs

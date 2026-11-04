@@ -10,7 +10,15 @@
 -- and that was the roll. The game's camera has NO ROLL, NO ZOOM and NO POSITION
 -- SMOOTHING. If any of the three comes back, it is the wrong camera again.
 --
--- What it is, all four parts:
+-- AMENDED 2026-11-04 (T-072), honestly: ONE OF THE THREE IS BACK, ON PURPOSE. The roll
+-- returns at `CamRollMax = 4` degrees saturating at 45 degrees of slip and chased at rate
+-- 6 -- against the predecessor's 45 at 20 chased at 20, which is about a ninth of the
+-- gain. The sentence above still holds for the other two and for the SIZE of this one: the
+-- shape was never what was wrong, the numbers were, and a roll anywhere near the old gain
+-- is the wrong camera again. It is zeroable and zero is exactly the level horizon this
+-- file shipped with, proved step for step. THE ZOOM AND THE POSITION SMOOTHING STAY OUT.
+--
+-- What it is, all four parts (and the two the rendered camera gets on top, below):
 --
 --   1. IT LOOKS AT A POINT JUST AHEAD OF THE CAR (`CamLookAt`), with only that point's
 --      HEIGHT eased (`CamHeightRate`), so a crest does not throw the horizon about. It
@@ -31,8 +39,22 @@
 -- T-071 moved three of those numbers, and nothing else: the camera is 9.5 studs closer and
 -- 7 degrees steeper, the lean takes 0.12 of itself rather than 0.05, and the FOV's swing
 -- was reshaped to fall inside the speeds a car is actually driven at. All three are in
--- Config.Camera with the measurements that chose them. NO NEW EFFECT WAS ADDED: the roll
--- and the shake are T-072's, and the three things below are still out.
+-- Config.Camera with the measurements that chose them.
+--
+-- AND TWO THINGS SIT ON TOP OF ALL FOUR (T-072), the style the user asked for:
+--
+--   5. A TOUCH OF ROLL. The camera banks into the corner with the slide, by a clamped
+--      linear reading of the slip angle eased at `CamRollRate`. See the amendment above:
+--      this is the predecessor's formula at a ninth of its gain, and the gain is the
+--      whole difference between a lean and the thing that was rejected.
+--   6. THE SPEED SHAKE, the reference's own (`CameraShake.cs`): a new random rotation and
+--      position kick every `ShakePeriod`, scaled by speed as a share of the car's top
+--      speed, decaying toward zero between kicks at `ShakeRestoreRate`. Busy at speed,
+--      invisible at a standstill.
+--
+-- BOTH ARE APPLIED TO THE RENDERED CAMERA, downstream of the fixed-step targets, exactly
+-- as the pan is -- `rig.position` and `rig.lookPoint` never see either of them, so neither
+-- can join the feedback loop in part 3. That is why they do not have to be stepped.
 --
 -- The camera is PLACED at its target each frame and told to look at the look-at point.
 -- There is no spring and no look easing: all the easing there is lives inside how the
@@ -100,6 +122,10 @@ CarCameraController.Priority = 5 -- after DriftController, so a state exists to 
 
 local STEP_NAME = "DriftCamera"
 local EPS = 1e-4
+
+-- The shake's random sequence is seeded (T-072), so the same drive shakes the same way
+-- twice and a measurement means something. See `newRig`.
+local SHAKE_SEED = 20261104
 
 -- The pan's numbers are Config's, like everything else here: `CamPanSensitivity`,
 -- `CamPanRate`, `CamPanReturnDelay`, `CamPanReturnRate`, and the four limits. The four
@@ -204,6 +230,16 @@ function CarCameraController.newRig(view: View?)
 		panTargetPitch = 0,
 		panHeld = false,
 		panIdle = 0, -- seconds since the button came up, for the grace
+		-- The style (T-072), and the same rule as the pan: all of it is applied to the
+		-- RENDERED camera and NOTHING ABOVE THIS LINE EVER READS IT.
+		roll = 0, -- radians, signed, what the horizon is actually leaning by
+		shakeRot = Vector3.zero, -- radians of pitch, yaw and roll, in the camera's axes
+		shakePos = Vector3.zero, -- studs, in the camera's axes
+		shakeTimer = 0, -- toward the next kick
+		-- SEEDED, so a probe measures the same shake twice and 30, 60 and 120 FPS get the
+		-- same kicks. Nobody can tell a fixed seed from a random one at twenty kicks a
+		-- second, and a test can.
+		shakeRng = Random.new(SHAKE_SEED),
 	}
 	if view then
 		CarCameraController._seed(rig, view)
@@ -230,6 +266,9 @@ function CarCameraController._seed(rig, view: View)
 	rig.panYaw, rig.panPitch = 0, 0
 	rig.panTargetYaw, rig.panTargetPitch = 0, 0
 	rig.panHeld, rig.panIdle = false, 0
+	rig.roll = 0
+	rig.shakeRot, rig.shakePos, rig.shakeTimer = Vector3.zero, Vector3.zero, 0
+	rig.shakeRng = Random.new(SHAKE_SEED)
 	rig.ready = true
 end
 
@@ -300,6 +339,96 @@ local function applyPan(rig, carPos: Vector3)
 	elevation = math.clamp(elevation + rig.panPitch, floor, ceiling)
 	dir = CFrame.Angles(0, rig.panYaw, 0) * dir
 	rig.position = carPos + dir * (radius * math.cos(elevation)) + Vector3.yAxis * (radius * math.sin(elevation))
+end
+
+-- -------------------------------------------------------- the roll and the shake (T-072)
+--
+-- Both live down here with the pan rather than up with the targets, and that is the whole
+-- design: they are applied to the RENDERED camera, they are stored in fields nothing above
+-- this line reads, and so they cannot feed back into where the camera sits. Anything that
+-- fed back would have to be stepped (see the header); the cheapest way not to think about
+-- it is not to feed back.
+
+-- How far the camera should be leaning, in radians, signed.
+--
+-- The sign is the one thing here that is a judgement. `view.slip` positive is the car
+-- travelling out to its LEFT -- which is a RIGHT-hand drift, because the nose is turned
+-- into the corner while the tail goes out to the left -- and the camera banks RIGHT with
+-- it, into the corner, the way a motorcycle or an aircraft does. A camera's right vector
+-- going DOWN is a right bank, so the target is negative for a positive slip. A negative
+-- `CamRollMax` is the other convention, and it is one character.
+local function rollTarget(view: View): number
+	local at = Cam.CamRollAtAngle
+	if Cam.CamRollMax == 0 or at <= 0 then
+		return 0
+	end
+	return -math.rad(Cam.CamRollMax) * math.clamp(math.deg(view.slip) / at, -1, 1)
+end
+
+local function stepRoll(rig, dt: number, view: View)
+	local want = rollTarget(view)
+	-- Zeroed, this is not an easing toward zero that takes a while: `rig.roll` was never
+	-- anything but zero, so the camera is bit for bit the one that has no roll.
+	if want == 0 and rig.roll == 0 then
+		return
+	end
+	rig.roll += (want - rig.roll) * ease(dt, Cam.CamRollRate)
+	if want == 0 and math.abs(rig.roll) < 1e-6 then
+		rig.roll = 0 -- land exactly, so a car driven straight stops rolling for ever
+	end
+end
+
+-- The shake decays by an EXACT exponential, `exp(-rate * dt)`, which composes: two half
+-- steps leave it exactly where one whole step would. That is what makes the shake land in
+-- the same place at 30, 60 and 120 FPS, and it is why the stepping below bothers to split
+-- a frame at the moment a kick falls rather than kicking once a frame.
+local function decayShake(rig, dt: number)
+	local k = math.exp(-dt * math.max(Cam.ShakeRestoreRate, 0))
+	rig.shakeRot *= k
+	rig.shakePos *= k
+end
+
+-- A new kick, scaled by speed as a share of the CAR's top speed -- the reference scales by
+-- its own car's max speed, so a faster car does not shake harder at the same speed.
+local function kickShake(rig, speed: number)
+	local top = Config.Drift.TopSpeed
+	local t = if top and top > EPS then math.clamp(speed / top, 0, 1) else 0
+	local rng = rig.shakeRng
+	local rot = Cam.ShakeRotation * t
+	local pos = Cam.ShakePosition * t
+	rig.shakeRot = Vector3.new(
+		math.rad(rot.X) * rng:NextNumber(-1, 1),
+		math.rad(rot.Y) * rng:NextNumber(-1, 1),
+		math.rad(rot.Z) * rng:NextNumber(-1, 1)
+	)
+	rig.shakePos =
+		Vector3.new(pos.X * rng:NextNumber(-1, 1), pos.Y * rng:NextNumber(-1, 1), pos.Z * rng:NextNumber(-1, 1))
+end
+
+-- One frame of the shake, on its own clock. A frame longer than `ShakePeriod` takes every
+-- kick it is owed, each at its own moment, so the sequence does not depend on the frame
+-- rate -- and neither does what it has decayed to by the time the frame is drawn.
+local function stepShake(rig, dt: number, speed: number)
+	if Cam.ShakeRotation.Magnitude <= 0 and Cam.ShakePosition.Magnitude <= 0 then
+		-- Zeroed: nothing to decay, nothing to choose, and the rendered camera is
+		-- untouched. The random sequence is not advanced either, so a zeroed run is
+		-- repeatable to the bit.
+		rig.shakeRot, rig.shakePos, rig.shakeTimer = Vector3.zero, Vector3.zero, 0
+		return
+	end
+	local period = math.max(Cam.ShakePeriod, EPS)
+	local left = dt
+	local guard = 0
+	while rig.shakeTimer + left >= period and guard < 64 do
+		guard += 1
+		local toKick = period - rig.shakeTimer
+		decayShake(rig, toKick)
+		left -= toKick
+		rig.shakeTimer = 0
+		kickShake(rig, speed)
+	end
+	decayShake(rig, left)
+	rig.shakeTimer += left
 end
 
 -- One fixed step of the targets, and nothing else. `dt` here is always `CamTargetStep`.
@@ -396,13 +525,31 @@ function CarCameraController._advance(rig, view: View, dt: number, pan): CFrame
 	local wantFov = Cam.CamFovBase + Cam.CamFovPerSpeed * view.speed
 	rig.fov += (wantFov - rig.fov) * ease(dt, Cam.CamFovRate)
 
-	-- Placed, not eased into place, and looking AT the car: the horizon is level because
-	-- nothing ever rolls it.
+	-- The style, LAST and on the rendered camera only (T-072): the roll leans the horizon
+	-- with the slide and the shake buzzes at speed. Neither is written anywhere a target
+	-- can read it, which is the whole reason they do not need the fixed step.
+	stepRoll(rig, dt, view)
+	stepShake(rig, dt, view.speed)
+
+	-- Placed, not eased into place, and looking AT the car. The horizon is level until the
+	-- roll leans it, and with `CamRollMax` at zero nothing below this line runs at all.
 	local toLook = rig.lookPoint - rig.position
 	if toLook.Magnitude < EPS then
 		return CFrame.new(rig.position)
 	end
-	return CFrame.lookAt(rig.position, rig.lookPoint)
+	local cf = CFrame.lookAt(rig.position, rig.lookPoint)
+	if rig.roll ~= 0 then
+		cf *= CFrame.Angles(0, 0, rig.roll)
+	end
+	-- The shake's position is in the camera's OWN axes and is a rendered offset: it moves
+	-- the picture, never `rig.position`, so the next step's geometry is untouched.
+	if rig.shakePos ~= Vector3.zero then
+		cf *= CFrame.new(rig.shakePos)
+	end
+	if rig.shakeRot ~= Vector3.zero then
+		cf *= CFrame.Angles(rig.shakeRot.X, rig.shakeRot.Y, rig.shakeRot.Z)
+	end
+	return cf
 end
 
 -- How far the lean actually moved the camera's target, in studs.
@@ -507,9 +654,19 @@ function CarCameraController:DebugState()
 		position = rig.position,
 		lookPoint = rig.lookPoint,
 		fieldOfView = rig.fov,
-		-- There is no roll in this camera. Measured off the real CFrame rather than
-		-- asserted, so a test can prove it rather than take its word for it.
+		-- The roll (T-072), MEASURED OFF THE REAL CFRAME rather than asserted, which is
+		-- how `rollDeg` proved there was none before there was any. It reads a little
+		-- under `rolledDeg` because the camera is pitched down and some of a roll about
+		-- the look axis goes into the pitch rather than the horizon.
 		rollDeg = if cf then math.deg(math.asin(math.clamp(cf.RightVector.Y, -1, 1))) else nil,
+		rolledDeg = math.deg(rig.roll), -- what the camera was actually told to roll by
+		-- The shake (T-072): the kick currently applied, decayed to where it is now.
+		shakeRotDeg = Vector3.new(
+			math.deg(rig.shakeRot.X),
+			math.deg(rig.shakeRot.Y),
+			math.deg(rig.shakeRot.Z)
+		),
+		shakePosStuds = rig.shakePos,
 		leanStuds = leanStuds(rig),
 		slipDeg = state and math.deg(state.slip) or nil,
 		speed = state and DriftModel.speed(state) or nil,
@@ -539,7 +696,9 @@ end
 -- camera does there. This is how the curves are measured: no car, no Workspace and no
 -- waiting.
 --
--- `opts`: { slipDeg, speed, seconds, fps, blend, yawDeg, sweepSeconds }. `blend` overrides
+-- `opts`: { slipDeg, speed, seconds, fps, blend, config, yawDeg, sweepSeconds }. `config`
+-- is a table of Camera numbers to use for this run only, which is how the zeroed camera is
+-- measured beside the shipped one. `blend` overrides
 -- `CamVelocityBlend` for the run only (it is put back afterwards) so the same drift can be
 -- measured at 0.05 and at anything else. `sweepSeconds` swings the slip from +slipDeg to
 -- -slipDeg and back over that long instead of holding it, which is what the jitter numbers
@@ -569,9 +728,20 @@ function CarCameraController:DebugProbe(opts)
 	if opts.blend then
 		Cam.CamVelocityBlend = opts.blend
 	end
+	-- Any other camera number, for the length of this run only (T-072): `config =
+	-- { CamRollMax = 0, ShakeRotation = Vector3.zero }` is how the zeroed camera is
+	-- measured beside the shipped one without editing a file between the two.
+	local saved = {}
+	if opts.config then
+		for key, value in opts.config do
+			saved[key] = Cam[key]
+			Cam[key] = value
+		end
+	end
 
 	local rig = CarCameraController.newRig(view)
-	local maxPosStep, maxLookStep, maxRollDeg = 0, 0, 0
+	local maxPosStep, maxLookStep, maxRollDeg, maxRollStepDeg = 0, 0, 0, 0
+	local prevRollDeg = 0
 	local prevPos, prevLook = rig.position, rig.lookPoint
 	local steps = math.floor(seconds * fps)
 	local settled = math.floor(steps * 0.75) -- the jitter numbers ignore the settling in
@@ -592,7 +762,14 @@ function CarCameraController:DebugProbe(opts)
 				speed = speed,
 			}
 			local cf = CarCameraController._advance(rig, view, dt)
-			maxRollDeg = math.max(maxRollDeg, math.abs(math.deg(math.asin(math.clamp(cf.RightVector.Y, -1, 1)))))
+			local rollDeg = math.deg(math.asin(math.clamp(cf.RightVector.Y, -1, 1)))
+			if math.abs(rollDeg) > math.abs(maxRollDeg) then
+				maxRollDeg = rollDeg -- SIGNED, so the probe says which way it leans
+			end
+			if i > 1 then
+				maxRollStepDeg = math.max(maxRollStepDeg, math.abs(rollDeg - prevRollDeg))
+			end
+			prevRollDeg = rollDeg
 			if i > settled then
 				maxPosStep = math.max(maxPosStep, (rig.position - prevPos - view.velocity * dt).Magnitude)
 				maxLookStep = math.max(maxLookStep, (rig.lookPoint - prevLook - view.velocity * dt).Magnitude)
@@ -602,6 +779,9 @@ function CarCameraController:DebugProbe(opts)
 	end)
 
 	Cam.CamVelocityBlend = was
+	for key, value in saved do
+		Cam[key] = value
+	end
 	if not ok then
 		return { error = tostring(err) }
 	end
@@ -617,7 +797,12 @@ function CarCameraController:DebugProbe(opts)
 		distance = toCar.Magnitude,
 		height = toCar.Y,
 		flatDistance = Vector3.new(toCar.X, 0, toCar.Z).Magnitude,
-		maxRollDeg = maxRollDeg, -- must be 0: this camera has no roll
+		maxRollDeg = maxRollDeg, -- the furthest the horizon leaned (T-072). Zero with
+		-- `CamRollMax` at zero, which is what it measured before
+		-- the roll came back
+		maxRollStepDeg = maxRollStepDeg, -- the worst single frame of it: the proof that
+		-- the roll is a lean and not a flick
+		rollDeg = math.deg(rig.roll), -- where it settled, for a slip held steady
 		leanStuds = leanStuds(rig),
 		leanSideways = lean:Dot(sRight), -- + is out to the car's right
 		leanBackwards = -lean:Dot(sFwd), -- + is further behind the nose
@@ -628,6 +813,95 @@ function CarCameraController:DebugProbe(opts)
 		-- the camera has not settled, or is jittering.
 		maxPosStep = maxPosStep,
 		maxLookStep = maxLookStep,
+	}
+end
+
+-- What the shake actually does to the picture, at a speed (T-072). The only honest unit
+-- for it is SCREEN PIXELS, because a rotation of the camera and a sideways shift of it an
+-- arm's length behind the car are the same thing to the player: both move the whole image.
+-- So everything below is reported in degrees of arc AND in pixels of a 1080-line screen at
+-- the FOV the camera is actually running at that speed.
+--
+-- `opts`: { speed, seconds, fps, viewportY, config }. The car is driven straight, because
+-- the shake does not care about the slip and a drift would only add the camera's own
+-- movement to what is being measured.
+function CarCameraController:DebugShakeProbe(opts)
+	opts = opts or {}
+	local C = Config.Drift
+	local speed = opts.speed or C.TopSpeed
+	local fps = math.max(opts.fps or 60, 1)
+	local dt = 1 / fps
+	local seconds = math.clamp(opts.seconds or 10, 0, 60)
+	local viewportY = opts.viewportY or 1080
+	local yaw = math.rad(15)
+
+	local saved = {}
+	if opts.config then
+		for key, value in opts.config do
+			saved[key] = Cam[key]
+			Cam[key] = value
+		end
+	end
+
+	local fwd = DriftModel.axes(yaw)
+	local function viewAt(position)
+		return { position = position, yaw = yaw, velocity = fwd * speed, slip = 0, speed = speed }
+	end
+	local view = viewAt(Vector3.new(0, C.RideHeight, 0))
+	local rig = CarCameraController.newRig(view)
+
+	-- The picture's own movement, with the camera's geometry taken out: the angle from the
+	-- look axis to a point fixed to the car, which is what the player watches.
+	local function aimDeg(cf: CFrame, point: Vector3): Vector2
+		local p = cf:PointToObjectSpace(point)
+		local depth = math.max(-p.Z, 1e-3)
+		return Vector2.new(math.deg(math.atan2(p.X, depth)), math.deg(math.atan2(p.Y, depth)))
+	end
+
+	local maxKickDeg, maxKickStuds = 0, 0
+	local maxAimStepDeg, meanAimStepDeg, n = 0, 0, 0
+	local maxAimDeg = 0
+	local prevAim = nil
+	local frames = math.floor(seconds * fps)
+	for i = 1, frames do
+		view = viewAt(view.position + view.velocity * dt)
+		local cf = CarCameraController._advance(rig, view, dt)
+		maxKickDeg = math.max(maxKickDeg, math.deg(rig.shakeRot.Magnitude))
+		maxKickStuds = math.max(maxKickStuds, rig.shakePos.Magnitude)
+		-- The car's own point, against the camera: the shake is the only thing moving it,
+		-- because a car driven straight sits still on screen once the camera has settled.
+		local aim = aimDeg(cf, view.position)
+		if i > fps then -- past the settling
+			maxAimDeg = math.max(maxAimDeg, aim.Magnitude)
+			if prevAim then
+				local stepDeg = (aim - prevAim).Magnitude
+				maxAimStepDeg = math.max(maxAimStepDeg, stepDeg)
+				meanAimStepDeg += stepDeg
+				n += 1
+			end
+		end
+		prevAim = aim
+	end
+
+	for key, value in saved do
+		Cam[key] = value
+	end
+
+	local pxPerDeg = viewportY / math.max(rig.fov, 1)
+	return {
+		speed = speed,
+		speedFraction = speed / math.max(C.TopSpeed, 1),
+		fps = fps,
+		fov = rig.fov,
+		pxPerDeg = pxPerDeg,
+		maxKickDeg = maxKickDeg, -- the biggest rotation kick that survived to a frame
+		maxKickPx = maxKickDeg * pxPerDeg,
+		maxKickStuds = maxKickStuds, -- and the biggest position kick
+		maxAimStepDeg = maxAimStepDeg, -- how far the car moved on screen in one frame
+		maxAimStepPx = maxAimStepDeg * pxPerDeg,
+		meanAimStepPx = (if n > 0 then meanAimStepDeg / n else 0) * pxPerDeg,
+		maxAimDeg = maxAimDeg, -- and how far off centre it ever got
+		maxAimPx = maxAimDeg * pxPerDeg,
 	}
 end
 
@@ -793,7 +1067,8 @@ function CarCameraController:DebugRecord(seconds: number)
 		maxPosStep = 0, -- studs the camera moved between two frames, car's own motion included
 		maxLookStep = 0,
 		maxTurnDeg = 0, -- degrees the view direction turned between two frames
-		maxRollDeg = 0, -- must stay 0: this camera has no roll
+		maxRollDeg = 0, -- the furthest the horizon leaned (T-072). It was 0 before the
+		-- roll came back, and `CamRollMax` at zero puts it back to 0
 		maxScreenOffsetPx = 0,
 		maxScreenOffsetFrac = 0, -- of half the screen's smaller side: 1 is the edge
 		offScreenFrames = 0,
