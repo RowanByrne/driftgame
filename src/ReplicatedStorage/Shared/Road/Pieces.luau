@@ -34,8 +34,8 @@ export type Node = { x: number, z: number, yaw: number }
 export type Quad = { cx: number, cz: number, ux: number, uz: number, hu: number, hv: number }
 
 export type Variant = {
-	id: string, -- `Straight`, `CornerL`, `CornerR`: the placeable unit
-	kind: string, -- `Straight`, `Corner`: the piece type it is a version of
+	id: string, -- `Straight`, `CornerL`, `HairpinR`: the placeable unit
+	kind: string, -- `Straight`, `Corner`, `Sweeper`, `Hairpin`, `Chicane`: the piece type
 	dir: number, -- +1 left, -1 right, 0 neither
 	weight: number,
 	minPieces: number,
@@ -82,52 +82,81 @@ end
 -- The local shapes
 --------------------------------------------------------------------------------
 
+-- Shapes are APPENDED to an open centre line rather than returned whole, because a piece
+-- is not always one shape: a chicane is an arc, then the other way. A shape starts from
+-- wherever the line has got to and leaves it ready for the next one, so a two-bend piece
+-- is flush inside itself by exactly the construction that makes two pieces flush.
+local function openLine(): ({ Node }, { number })
+	return { { x = 0, z = 0, yaw = 0 } }, { 0 }
+end
+
 -- A straight is ONE segment however long it is, because it is straight: cutting it up
 -- would only cost parts and gain nothing a ground ray could tell apart.
-local function straightNodes(length: number): ({ Node }, { number })
-	return { { x = 0, z = 0, yaw = 0 }, { x = 0, z = -length, yaw = 0 } }, { 0, length }
+local function appendStraight(nodes: { Node }, cum: { number }, length: number)
+	local last = nodes[#nodes]
+	local fx, fz = forward(last.yaw)
+	nodes[#nodes + 1] = { x = last.x + fx * length, z = last.z + fz * length, yaw = last.yaw }
+	cum[#cum + 1] = cum[#cum] + length
 end
 
 -- A corner is short straight segments. Each one turns half the step, advances one chord,
 -- then turns the other half, which puts every node exactly on the true circle: the
 -- segments are its chords, so more of them is a closer curve and the error is
 -- chord^2 / (8 x radius) (`Config.Road.MaxSegmentChord`).
-local function arcNodes(radius: number, arcDeg: number, maxChord: number): ({ Node }, { number })
+local function appendArc(nodes: { Node }, cum: { number }, radius: number, arcDeg: number, maxChord: number)
 	local total = math.rad(arcDeg)
 	local arcLength = math.abs(total) * radius
-	local n = math.max(1, math.ceil(arcLength / maxChord))
+	-- Whichever limit bites: a chord no longer than `MaxSegmentChord`, AND a curve no
+	-- further inside the true arc than `MaxArcDeviation`. The deviation is the one that
+	-- matters and the chord is a proxy for it, so a tight radius is cut more finely than
+	-- a wide one at the same chord (`Config.Road.MaxArcDeviation`).
+	local byDeviation = math.sqrt(8 * radius * Config.Road.MaxArcDeviation)
+	local n = math.max(1, math.ceil(arcLength / math.min(maxChord, byDeviation)))
 	local dTheta = total / n
 	local chord = 2 * radius * math.sin(math.abs(dTheta) * 0.5)
 
-	local nodes: { Node } = { { x = 0, z = 0, yaw = 0 } }
-	local cum: { number } = { 0 }
-	local x, z, yaw = 0, 0, 0
+	local last = nodes[#nodes]
+	local x, z, yaw = last.x, last.z, last.yaw
+	local base = cum[#cum]
 	for i = 1, n do
 		yaw += dTheta * 0.5
 		local fx, fz = forward(yaw)
 		x += fx * chord
 		z += fz * chord
 		yaw += dTheta * 0.5
-		nodes[i + 1] = { x = x, z = z, yaw = yaw }
-		cum[i + 1] = (arcLength / n) * i
+		nodes[#nodes + 1] = { x = x, z = z, yaw = yaw }
+		cum[#cum + 1] = base + (arcLength / n) * i
 	end
-	return nodes, cum
 end
 
 --------------------------------------------------------------------------------
 -- The variant set, built once from the config
 --------------------------------------------------------------------------------
 
+-- `Shape` is HOW a piece is drawn; `kind` is what it is called. They are deliberately
+-- separate: a corner, a sweeper and a hairpin are the same shape with different numbers,
+-- and the whole difference between them is the numbers (`Config.Road.Pieces`).
 local function makeVariant(id: string, kind: string, spec: any, dir: number, maxChord: number): Variant
-	local nodes, cum
-	local length: number
-	if kind == "Corner" then
-		nodes, cum = arcNodes(spec.Radius, spec.Arc * dir, maxChord)
-		length = math.rad(spec.Arc) * spec.Radius
+	local shape = spec.Shape or (if kind == "Corner" then "arc" else "straight")
+	local nodes, cum = openLine()
+	if shape == "arc" then
+		appendArc(nodes, cum, spec.Radius, spec.Arc * dir, maxChord)
+	elseif shape == "chicane" then
+		-- Left then right, or right then left: two equal and opposite bends, with an
+		-- optional straight between them so the car has a beat to catch the first slide
+		-- in before it has to start the second.
+		appendArc(nodes, cum, spec.Radius, spec.Arc * dir, maxChord)
+		if (spec.Middle or 0) > 0 then
+			appendStraight(nodes, cum, spec.Middle)
+		end
+		appendArc(nodes, cum, spec.Radius, -spec.Arc * dir, maxChord)
 	else
-		nodes, cum = straightNodes(spec.Length)
-		length = spec.Length
+		appendStraight(nodes, cum, spec.Length)
 	end
+	-- The length is the centre line's own arc length, never a formula beside it: `locate`
+	-- and `poseAt` both read `cum`, so a length that disagreed with it would put `t`
+	-- quietly out of step with where the car actually is.
+	local length: number = cum[#cum]
 	local last = nodes[#nodes]
 	return {
 		id = id,
@@ -135,8 +164,12 @@ local function makeVariant(id: string, kind: string, spec: any, dir: number, max
 		dir = dir,
 		weight = spec.weight or 1,
 		minPieces = spec.minPieces or 0,
-		radius = if kind == "Corner" then spec.Radius else nil,
-		arcDeg = if kind == "Corner" then spec.Arc * dir else nil,
+		-- A chicane keeps its radius even though its curvature changes sign halfway: the
+		-- only reader is `Generator.ahead`, which hands out `dir / radius`, and the only
+		-- reader of THAT is a brake that takes its magnitude. The magnitude is right
+		-- everywhere on a chicane; the sign is right on its first bend.
+		radius = if shape == "straight" then nil else spec.Radius,
+		arcDeg = if shape == "straight" then nil else spec.Arc * dir,
 		length = length,
 		nodes = nodes,
 		cum = cum,
@@ -287,25 +320,47 @@ end
 
 -- Two oriented rectangles, by separating axes: four axes in two dimensions, and a gap on
 -- any one of them is a gap.
+--
+-- THIS IS THE HOTTEST FUNCTION IN THE GAME and it is written to look like it. The
+-- lookahead asks it millions of times a run -- every candidate placement against every
+-- quad of fourteen remembered pieces, and a hairpin alone is 27 quads -- so it builds no
+-- table, calls nothing, and gets out on the first axis that separates. An earlier version
+-- that packed the four axes into a table it allocated per call cost 0.104 ms a NODE,
+-- which turned a deep search into a freeze measured in seconds.
 local function quadsOverlap(a: Quad, b: Quad): boolean
 	local dx, dz = b.cx - a.cx, b.cz - a.cz
-	local axes = {
-		a.ux,
-		a.uz,
-		-a.uz,
-		a.ux, -- a's across axis is its long axis turned 90 degrees
-		b.ux,
-		b.uz,
-		-b.uz,
-		b.ux,
-	}
-	for i = 1, 8, 2 do
-		local ax, az = axes[i], axes[i + 1]
-		local ra = a.hu * math.abs(a.ux * ax + a.uz * az) + a.hv * math.abs(-a.uz * ax + a.ux * az)
-		local rb = b.hu * math.abs(b.ux * ax + b.uz * az) + b.hv * math.abs(-b.uz * ax + b.ux * az)
-		if math.abs(dx * ax + dz * az) >= ra + rb then
-			return false
-		end
+
+	-- Cheapest reject first: two circles round the rectangles. `hu + hv` is an upper
+	-- bound on either one's reach from its centre, and most pairs the search asks about
+	-- are nowhere near each other.
+	local reach = (a.hu + a.hv) + (b.hu + b.hv)
+	if dx * dx + dz * dz >= reach * reach then
+		return false
+	end
+
+	local aux, auz, ahu, ahv = a.ux, a.uz, a.hu, a.hv
+	local bux, buz, bhu, bhv = b.ux, b.uz, b.hu, b.hv
+	-- Each rectangle's across axis is its long axis turned 90 degrees, so the four axes
+	-- are (aux, auz), (-auz, aux), (bux, buz), (-buz, bux).
+	local dot = aux * bux + auz * buz -- cos of the angle between them
+	local cross = aux * buz - auz * bux -- sin of it
+	local adot, across = math.abs(dot), math.abs(cross)
+
+	-- a's long axis
+	if math.abs(dx * aux + dz * auz) >= ahu + bhu * adot + bhv * across then
+		return false
+	end
+	-- a's across axis
+	if math.abs(-dx * auz + dz * aux) >= ahv + bhu * across + bhv * adot then
+		return false
+	end
+	-- b's long axis
+	if math.abs(dx * bux + dz * buz) >= bhu + ahu * adot + ahv * across then
+		return false
+	end
+	-- b's across axis
+	if math.abs(-dx * buz + dz * bux) >= bhv + ahu * across + ahv * adot then
+		return false
 	end
 	return true
 end
@@ -325,9 +380,13 @@ function Pieces.overlap(a: Placed, b: Placed): boolean
 	if Pieces.boxesApart(a, b) then
 		return false
 	end
-	for _, qa in a.quads do
-		for _, qb in b.quads do
-			if quadsOverlap(qa, qb) then
+	-- Numeric loops, not generic ones: see `quadsOverlap` for why this one function's
+	-- shape is worth caring about.
+	local qa, qb = a.quads, b.quads
+	for i = 1, #qa do
+		local q = qa[i]
+		for j = 1, #qb do
+			if quadsOverlap(q, qb[j]) then
 				return true
 			end
 		end
