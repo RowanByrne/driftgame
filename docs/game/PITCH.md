@@ -29,7 +29,8 @@ Mobile first, all ages. Controls are simple enough that anyone can slide on thei
 | Game | What we take | What we do differently |
 |---|---|---|
 | DRIFTO (mobile) | One-finger drift control: a single held input does the whole slide | Nearly everything past the control scheme; what it becomes depends on the progression and meta, still open |
-| | | *(two more comparisons to add, once the direction is chosen)* |
+| Impossible Road (mobile) | The endless mode's shape: a generated track that falls away ahead of you into empty space, where the road itself is the only obstacle and speed is what a clean line pays. No traffic, no pickups | Ours is a drift game, so the line is held sideways rather than threaded, and leaving the road is a fall and not a shortcut. Its track is bare white; ours is not (`ART-DIRECTION.md`) |
+| Subway Surfers (mobile) | The endless run's framing: a run that ends, a score that climbs while it lasts, things to read and react to arriving down the road, and a cosmetic meta (characters, boards) that the run pays into | Not lane-based and not a runner: the car is steered freely across a 50-stud road and the skill is the drift, not the dodge. What ends a run is still open (`features/endless-run.md`) |
 
 ## Why players come back
 

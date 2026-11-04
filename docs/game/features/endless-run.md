@@ -264,6 +264,11 @@ The suite runs on the server and the button is on the client. Measured in `DR-La
 
 ## Open questions
 
+**Where the answers are coming from.** The user named two games the endless mode borrows from, on
+2026-11-04: **Impossible Road** for the shape of the road, and **Subway Surfers** for the framing of
+a run and the meta it pays into (`PITCH.md` "Games we borrow from", `DECISIONS.md`). They settle the
+direction, not the questions below.
+
 - **The two guards want their own numbers.** `Config.Road.RunRateLimit` and `RunCooldown`, once
   `T-050` has released `Config/Road.luau`. They are borrowed, not chosen, and the borrowing is the
   only thing in this feature that is not where it belongs.
