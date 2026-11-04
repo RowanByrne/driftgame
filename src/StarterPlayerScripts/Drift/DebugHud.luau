@@ -25,6 +25,14 @@
 -- does the same. The switch takes effect on the next simulation step, so a tester can
 -- hold one finger through it and feel the car change underneath them.
 --
+-- F4 ASKS; IT DOES NOT DECIDE (T-033). Which car a player is in is the server's
+-- (`CarService`, docs/game/CONTRACTS.md `CarSwitch`): the key switches this client's car
+-- at once, because a client-side model is the only reason the feel can change under a
+-- held finger, and it sends the same key to the server in the same breath. The server
+-- validates it, re-dresses the car so the SHAPE follows too, and answers -- and the
+-- answer is what settles it. A refused ask puts this client back in the car the server
+-- believes, which is why the prediction is safe: it can be taken away.
+--
 -- The readout is off while anyone is driving: it is a measuring instrument, not part of
 -- the game, and a wall of numbers over the car is the one thing a feel test cannot
 -- afford. Whether it opens at spawn is `Config.Drift.DebugReadoutOpen`, which should be
@@ -37,6 +45,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Cars = require(ReplicatedStorage.Shared.Cars)
 local Config = require(ReplicatedStorage.Shared.Config)
 local DriftModel = require(script.Parent.Model)
+local Net = require(ReplicatedStorage.Shared.Net)
 
 local DebugHud = {}
 DebugHud.__index = DebugHud
@@ -282,6 +291,22 @@ function DebugHud.new()
 		self:ToggleStats()
 	end)
 
+	-- Which car this client is in is the SERVER's answer, and this is where the client
+	-- hears it. The listener lives here because F4 lives here: while switching car is a
+	-- tester's key rather than a player's choice, the debug readout is the whole of the
+	-- feature on this side (docs/game/CONTRACTS.md, `CarSwitch`).
+	self.asked = 0
+	self.refused = 0
+	self.pending = nil -- a car asked for and not yet answered
+	self.serverCar = Cars.activeKey()
+	self.carSwitch = Net.event("CarSwitch")
+	self.carSwitch.OnClientEvent:Connect(function(key, accepted)
+		self:_answered(key, accepted)
+	end)
+	-- "Which car does the server have me in?" The server sends this with the spawn too,
+	-- and a client built after that would have missed it.
+	self.carSwitch:FireServer()
+
 	-- F4 switches car, F5 folds the panel. Bound here rather than in CarInputController
 	-- because both are about this panel and nothing else; the driving controls are that
 	-- file's and stay there.
@@ -289,7 +314,7 @@ function DebugHud.new()
 	self.actionFold = "DriftDebugFoldStats"
 	ContextActionService:BindAction(self.actionNext, function(_, state)
 		if state == Enum.UserInputState.Begin then
-			Cars.cycle()
+			self:AskForNextCar()
 		end
 		return Enum.ContextActionResult.Sink
 	end, false, Enum.KeyCode.F4, Enum.KeyCode.DPadRight)
@@ -301,6 +326,40 @@ function DebugHud.new()
 	end, false, Enum.KeyCode.F5)
 
 	return self
+end
+
+-- Ask for the next car round the list, and take it locally while the asking is in flight.
+--
+-- PREDICTING IS THE POINT, not a shortcut: the model runs on this client, so taking the
+-- car now is what makes the feel change under a finger already held, on the very next
+-- step. It is safe because it is not a decision -- the server's answer overwrites it, and
+-- a refusal puts this client back in whatever car the server believes.
+function DebugHud:AskForNextCar(): string
+	local want = Cars.nextKey()
+	self.pending = want
+	self.asked += 1
+	Cars.setActive(want) -- predicted; the answer below settles it
+	self.shownCar = nil
+	self.carSwitch:FireServer(want)
+	return want
+end
+
+-- The server's answer: the car it says this client is in, and whether the last ask was
+-- taken. Either way this client ends up in the server's car, because the server is the
+-- one that knows.
+function DebugHud:_answered(key: string, accepted: boolean?)
+	if type(key) ~= "string" or not Cars.exists(key) then
+		return
+	end
+	if accepted == false then
+		self.refused += 1
+	end
+	self.pending = nil
+	self.serverCar = key
+	if Cars.activeKey() ~= key then
+		Cars.setActive(key)
+	end
+	self.shownCar = nil -- the header says which car and whether it was refused
 end
 
 function DebugHud:Toggle(): boolean
@@ -332,9 +391,16 @@ function DebugHud:drawCar()
 	end
 	self.shownCar = s.key
 
-	self.header.Text = ("car    %-10s [%s]   F4 next   F5 %s"):format(
+	-- The server's word on which car this is, on screen beside the car: `asking` while an
+	-- ask is in flight, `refused` when one came back no, `server` when the two agree.
+	local answer = if self.pending
+		then ("asking %s"):format(self.pending)
+		elseif self.refused > 0 then ("server %s, %d refused"):format(self.serverCar, self.refused)
+		else ("server %s"):format(self.serverCar)
+	self.header.Text = ("car    %-10s [%s]  %-22s F4 next   F5 %s"):format(
 		s.name,
 		s.key,
+		answer,
 		if self.statsBody.Visible then "fold" else "unfold"
 	)
 	self.stat.character.Text = ("       %s"):format(s.character)

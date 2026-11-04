@@ -35,11 +35,6 @@ TrackService.Priority = 110 -- before PlaygroundService (100), which asks whethe
 
 local C = Config.Drift
 
--- The part kept under a track as the floor of last resort. A local and not a Config key
--- only because `Config/Drift.luau` is claimed by another task as this lands
--- (docs/CLAIMS.md); it wants to be `Config.Drift.TrackFloorName` and should move there.
-local FLOOR_NAME = "Baseplate"
-
 local adopted: Model? = nil
 local spawnCFrame: CFrame? = nil
 local floor: BasePart? = nil
@@ -154,7 +149,7 @@ function TrackService:Init()
 	--
 	-- It is safe underneath: the track's road surfaces run from y = -0.05 upward and only
 	-- two of 3693 dip below the plate's top at all, by five hundredths of a stud.
-	local plate = workspace:FindFirstChild(FLOOR_NAME)
+	local plate = workspace:FindFirstChild(C.TrackFloorName)
 	if plate and plate:IsA("BasePart") then
 		plate.Anchored = true
 		CollectionService:AddTag(plate, C.SurfaceTag)

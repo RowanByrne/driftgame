@@ -19,6 +19,7 @@
 -- server can see -- and that is deliberate: one code path, tested where the test kit is.
 
 local CollectionService = game:GetService("CollectionService")
+local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local ServerScriptService = game:GetService("ServerScriptService")
@@ -1246,6 +1247,143 @@ function DriftTests.run()
 		)
 	)
 
+	------------------------------------------------------------------ the server knows the car
+	-- Every bound above is a share of A top speed, and until T-033 it was one global car's
+	-- -- so the bruiser's honest 215 studs/s only survived because it happened to sit
+	-- under the DEFAULT car's 179 x 1.25 = 223.75. That is slack, not a check. The server
+	-- is told which car each player is in and bounds them against THAT car.
+	local perCar = true
+	local perCarDetail = {}
+	for _, key in Cars.Order do
+		local car = Cars.resolve(key)
+		local top = car.TopSpeed
+		-- Its own top speed is honest; a hair past its own tolerance is not.
+		local honest = CarService.speedFits(Vector3.new(top, 0, 0), car)
+		local tooFast = not CarService.speedFits(Vector3.new(top * C.StateSpeedTolerance + 1, 0, 0), car)
+		perCar = perCar and honest and tooFast
+		table.insert(perCarDetail, string.format("%s %.0f<=%.1f", key, top, top * C.StateSpeedTolerance))
+	end
+	-- And the case the old slack hid: the fastest car's top speed, reported by a player
+	-- the server has in the slowest.
+	local gripper = Cars.resolve("gripper")
+	local bruiser = Cars.resolve("bruiser")
+	local fast = Vector3.new(bruiser.TopSpeed, 0, 0)
+	local droppedOnGripper = not CarService.speedFits(fast, gripper)
+	local keptOnBruiser = CarService.speedFits(fast, bruiser)
+	-- The same packet, judged by the car the server USED to use: accepted, every time.
+	local oldWayKept = CarService.speedFits(fast, Cars.resolve("balanced"))
+	check(
+		checks,
+		"a CarState is bounded against the player's own car",
+		perCar and droppedOnGripper and keptOnBruiser and oldWayKept,
+		string.format(
+			"%s; %.0f studs/s %s on the bruiser and %s on the gripper (%.1f) -- the global default would have taken it at %.1f",
+			table.concat(perCarDetail, ", "),
+			bruiser.TopSpeed,
+			keptOnBruiser and "fits" or "FAILS",
+			droppedOnGripper and "is dropped" or "IS TAKEN",
+			gripper.TopSpeed * C.StateSpeedTolerance,
+			Cars.resolve("balanced").TopSpeed * C.StateSpeedTolerance
+		)
+	)
+
+	-- A packet in flight across a switch. `CarState` is unreliable and 50 ms apart and the
+	-- switch is a reliable round trip, so a packet sent by the car they were in lands
+	-- after they are in another one -- and it is honest. `CarSwitchGrace` is the respawn's
+	-- answer to the respawn's version of this, applied to the car.
+	local duringGrace, keptByOld = CarService.allows(fast, gripper, bruiser)
+	local afterGrace = CarService.allows(fast, gripper, nil)
+	local graceCoversPackets = C.CarSwitchGrace >= 3 / C.StateSendRate
+	check(
+		checks,
+		"a packet in flight across a car switch is not thrown away",
+		duringGrace == bruiser and keptByOld and afterGrace == nil and graceCoversPackets,
+		string.format(
+			"%.0f studs/s after a bruiser->gripper switch: inside the %.1f s grace it is kept (counted, by the old car), after it it is dropped; the grace covers %.0f send periods",
+			bruiser.TopSpeed,
+			C.CarSwitchGrace,
+			C.CarSwitchGrace * C.StateSendRate
+		)
+	)
+
+	-- The switch itself: the server validates the key, and the client cannot name one it
+	-- does not know. `exists` is what `SetCar` gates on, and it is the whole of "ignore
+	-- anything you do not recognise".
+	local junk = { "", "Balanced", "ae86", "block", "balanced ", "gripper2" }
+	local junkRefused = 0
+	for _, key in junk do
+		if not Cars.exists(key) and Cars.resolve(key) == nil then
+			junkRefused += 1
+		end
+	end
+	local nonStrings = { 1, true, {}, Vector3.zero, Cars.Order }
+	local nonStringsRefused = 0
+	for _, value in nonStrings do
+		if not Cars.exists(value :: any) then
+			nonStringsRefused += 1
+		end
+	end
+	local realKept = 0
+	for _, key in Cars.Order do
+		if Cars.exists(key) then
+			realKept += 1
+		end
+	end
+	check(
+		checks,
+		"a car key off the wire is checked, not trusted",
+		junkRefused == #junk and nonStringsRefused == #nonStrings and realKept == #Cars.Order,
+		string.format(
+			"%d near-miss keys and %d non-strings refused, %d real ones taken",
+			junkRefused,
+			nonStringsRefused,
+			realKept
+		)
+	)
+
+	-- And the live half, which needs a player: the refusals the SERVICE counts, and the
+	-- car that does not move. Skipped outside a playtest, where there is nobody to be in a
+	-- car (the same way the world checks skip in a place with no playground).
+	local player = Players:GetPlayers()[1]
+	if player then
+		local service = ServerScriptService.Services:FindFirstChild("CarService")
+		local live = require(service)
+		local before = live:DebugState()
+		local wasKey = live:CarKey(player)
+		local wasBody = live.cars[player.UserId] and live.cars[player.UserId]:GetAttribute("Body")
+		-- Junk, a non-string, and a flood of asks, straight at the remote's own handler.
+		live:_onSwitch(player, "gripper2")
+		live:_onSwitch(player, 7)
+		live:_onSwitch(player, nil)
+		for _ = 1, C.CarSwitchRateLimit + 5 do
+			live:_onSwitch(player, wasKey)
+		end
+		local after = live:DebugState()
+		local stillThere = Players:FindFirstChild(player.Name) ~= nil
+		local sameCar = live:CarKey(player) == wasKey
+		local sameBody = (live.cars[player.UserId] and live.cars[player.UserId]:GetAttribute("Body")) == wasBody
+		local counted = after.switchesRefused > before.switchesRefused
+		check(
+			checks,
+			"a car switch the server refuses costs the asker nothing but the ask",
+			counted and sameCar and sameBody and stillThere,
+			string.format(
+				"%d refusals counted (junk key, a number, and a flood past %d/s); still in '%s' wearing '%s', still in the game",
+				after.switchesRefused - before.switchesRefused,
+				C.CarSwitchRateLimit,
+				live:CarKey(player),
+				tostring(wasBody)
+			)
+		)
+	else
+		check(
+			checks,
+			"a car switch the server refuses costs the asker nothing but the ask",
+			true,
+			"no player in the place: the live half of this check is skipped, the pure half above is not"
+		)
+	end
+
 	local passed = true
 	for _, c in checks do
 		passed = passed and c.ok
@@ -1253,30 +1391,40 @@ function DriftTests.run()
 	return { passed = passed, checks = checks }
 end
 
--- Studio only, and no part of `run()`: switch the SERVER's active car and re-dress every
--- live car with that archetype's body, so a playtest can be driven on more than one shape
--- without rejoining (T-028).
+-- Studio only, and no part of `run()`: put every player in `key`, exactly as the remote
+-- does, so a playtest can be driven on more than one car without rejoining.
 --
 --   game.ServerStorage.DebugBridge:Invoke("DebugDriftTests", "useCar", "bruiser")
 --
--- The client keeps its own active car, because the two are deliberately separate
--- (features/car-archetypes.md, "Server and client"): this moves the SHAPE a tester sees
--- and leaves the feel to F4. Re-dressing from the SERVER is the half that holds -- the
--- client's own copy does not, because the server pivots each car as its state arrives and
--- that restores anything the client deleted.
+-- SINCE T-033 THIS GOES THROUGH THE SERVER'S OWN DECISION (`CarService:SetCar`) rather
+-- than flipping the server's global active car and dressing the cars behind its back.
+-- That is the point of the task: there is one place that knows which car a player is in,
+-- and a test tool that writes around it would be the first thing to make it a lie. The
+-- service re-dresses the car and tells the client, so the feel follows the shape.
 function DriftTests:useCar(key: string): string
-	Cars.setActive(key)
+	if not Cars.exists(key) then
+		return `no car '{key}'; there is: {table.concat(Cars.Order, ", ")}`
+	end
+	local CarService = require(ServerScriptService.Services.CarService)
+	local told, refused = {}, 0
+	for _, player in Players:GetPlayers() do
+		if CarService:DebugSetCar(key, player.UserId) then
+			table.insert(told, player.Name)
+		else
+			refused += 1
+		end
+	end
 	local cars = workspace:FindFirstChild("Cars")
-	local n = 0
+	local bodies = {}
 	if cars then
 		for _, car in cars:GetChildren() do
 			if car:IsA("Model") then
-				CarModel.dress(car, CarModel.shell())
-				n += 1
+				table.insert(bodies, tostring(car:GetAttribute("Body")))
 			end
 		end
 	end
-	return `{key}: {n} live car(s) now wearing '{CarModel.bodyName()}'`
+	return `{key}: {#told} player(s) moved{if refused > 0 then `, {refused} refused` else ""}; `
+		.. `live cars wearing [{table.concat(bodies, ", ")}]`
 end
 
 return DriftTests
