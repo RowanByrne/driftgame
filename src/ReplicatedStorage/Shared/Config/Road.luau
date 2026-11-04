@@ -78,26 +78,30 @@ return {
 	-- what it finds by the normal; the face it meets there is vertical, so it is a WALL,
 	-- and the car stops dead against the hill it is driving up.
 	--
-	-- Measured. A straight ramp at each grade, entered at 90 studs/s, 14 seconds of
-	-- throttle and no steering (the ramp sweep is in this task's history):
+	-- Measured, with gravity on the ground (T-065). A straight ramp at each grade, entered
+	-- at 90 studs/s, 14 seconds of throttle and no steering:
 	--
 	--   grade    climbed in 14 s    speed at the end    what happened
-	--     4 deg      48 studs           142 studs/s     climbs freely
-	--     6          99                 140             climbs freely
-	--     8         137                 140             climbs freely
-	--    10         155                  24             stops partway up
-	--    11          66                  11             stops
-	--    12          27                   0             stopped dead
-	--    14          19                   0             stopped dead on the ramp
+	--     4 deg      70 studs           129 studs/s     climbs freely
+	--     6         101                 121             climbs freely
+	--     8         136                 116             climbs freely
+	--    10         149                 103             climbs freely
+	--    12          23                   0             STOPPED DEAD on the ramp
+	--    14          26                   5             stopped dead
 	--
-	-- It breaks between 8 and 10 rather than at the 11.6 the geometry alone gives, because
-	-- the box is swept a step's TRAVEL further forward as well -- 2.3 studs at 140 studs/s.
-	-- 8 degrees is the last row that drives, and it drives exactly as the flat does.
+	-- The break lands either side of the 11.6 the geometry predicts, which is the check
+	-- that the explanation is the right one. (Before gravity it broke between 8 and 10
+	-- instead, because the car was 25 studs/s faster and the box is swept a step's TRAVEL
+	-- further forward as well.)
 	--
-	-- A DESCENT IS NOT LIMITED BY THIS at all: the ground falls away in front of the car
-	-- and nothing is ever swept into. 14 degrees downhill drives perfectly. The limit is
-	-- kept symmetric anyway, because a car that spins on a 14-degree descent is then
-	-- facing up it and can never drive out -- which is how this was found.
+	-- 8 AND NOT 10, for two reasons. The margin: at 10 the car is a degree and a half from
+	-- a dead stop, and anything that makes it faster -- a descent before the climb -- eats
+	-- that. And the drive below, which says 8 is already more than the car wants.
+	--
+	-- A DESCENT IS NOT LIMITED BY THIS directly: the ground falls away in front of the car
+	-- and nothing is swept into. The limit is symmetric anyway, because a car that spins
+	-- on a 14-degree descent is then facing up it and can never drive out -- which is how
+	-- this was found.
 	--
 	-- TO GO STEEPER, PITCH THE SWEEP BOX with the surface in `Drift/World`, which is the
 	-- one change that would lift this. It is a change to the drift model's collision and
@@ -106,43 +110,50 @@ return {
 	-- AND A WARNING FOR WHOEVER BUILDS THE PIECES THAT USE THIS. 8 degrees is what the car
 	-- can be driven ON; it is not what a road should be made of. A road of nothing but
 	-- descending corners, driven by the test autopilot (`RoadTests:drive`, 12 pieces, 120
-	-- seconds, the same seed, each corner 220 studs of radius and 90 degrees of it):
+	-- seconds, one seed, each corner 220 studs of radius and 90 degrees of it, each losing
+	-- its height and handing on a level road):
 	--
-	--   the corner descends at   pieces reached   mean speed   top speed
-	--     nothing (flat)              12            59 studs/s    92
-	--     4 degrees                   12            56            92
-	--     6 degrees                    8            29            92
-	--     8 degrees                    7            19           120
+	--   the corner descends at   pieces reached   mean speed   top speed   stopped for
+	--     nothing (flat)              12            59 studs/s    92           0.00 s
+	--     4 degrees                   12            68            93          0.00
+	--     8 degrees                   10            36           120          1.75
 	--
-	-- Nothing there is the road failing: traced, the sweep was stopped by ROAD zero times
-	-- at every grade and by a barrier six or seven times. It is the car going FASTER down
-	-- a hill -- 120 against 92 -- while the test driver's aim was tuned on a flat road, so
-	-- it runs wide and grinds along the outside wall. That is the feature working and the
-	-- driver not keeping up, and it was measured BEFORE `GravityOnGround` existed
-	-- (T-065), which will make it more pronounced, not less. Build a touge out of 4-degree
-	-- descents and level links before reaching for 8.
+	-- None of that is the road failing: traced, the sweep was stopped by ROAD zero times
+	-- at both grades. It is the car going FASTER down a hill -- 120 against 92 -- while
+	-- the test driver's aim was tuned on a flat road, so it runs wide and grinds along the
+	-- outside wall. That is the feature working and the driver not keeping up. Build a
+	-- touge out of 4-degree descents and level links before reaching for 8.
 	MaxGrade = 8, -- degrees of climb or descent, anywhere on any piece. A 220-stud
 	-- straight at this grade loses 31 studs
-	-- A BANK IS NOT LIMITED THE SAME WAY, because the car is only ever swept ACROSS one
-	-- while it is sliding, and then only at the sideways speed of the slide. Same drive,
-	-- a 90-degree corner at 220 studs of radius, banked:
+	-- THE SAME THING IN THE OTHER AXIS, AND THE SPEC'S 30 BECOMES 20. The collision box is
+	-- never ROLLED either, so on a bank its uphill side digs in: half the car's width is
+	-- 3.2 studs, the clearance is the same 1.44, and atan(1.44 / 3.2) is 24 degrees. Above
+	-- that the car's own box is inside the high side of the road, and every little step
+	-- between two segments at the road's edge -- a bank changing by `MaxBankStep` tips a
+	-- 50-stud road's edge by a quarter of a stud -- becomes a face it can hit. The sweep
+	-- calls a face a WALL and stops the car dead.
 	--
-	--   bank    reached   mean speed   sideways   stopped for   on a barrier
-	--   10 deg    12/12     62 studs/s    83%        0.0 s          18 steps
-	--   20        12/12     53            44%        0.6           21
-	--   25        12/12     34            24%        0.8          202
-	--   30        12/12     49            37%        1.1           93
+	-- Measured the same way, two seeds, with every sweep that stopped the car traced back
+	-- to the part that stopped it:
 	--
-	-- All of them are driven. What a heavy bank costs is MOMENTS: the same flat box digs
-	-- into the high side of the bank when the car slides up it, and the car jams for a
-	-- fraction of a second before sliding off again. It is kept at the spec's 30 because
-	-- that is the banked 30's showcase angle and it does drive, but a piece that wants the
-	-- car SLIDING all the way round it should be nearer 10 than 30 on this evidence.
-	MaxBank = 30, -- degrees across the road. The banked 30's showcase angle
+	--   bank     ROAD read as a wall   barriers hit   stopped for   pieces reached
+	--   10 deg           0 times           14           0.00 s          12/12, 12/12
+	--   15               0                 17           0.00            12/12, 12/12
+	--   20               0                 12           0.00            12/12, 12/12
+	--   25               1                 13           0.40            12/12, 12/12
+	--   30              17                  8           5.19            12/12, 12/12
+	--
+	-- Zero up to 20, one at 25, seventeen at 30 -- which brackets the 24 degrees the
+	-- geometry predicts, so the explanation is the right one. 20 is the last row that is
+	-- clean, and it is a real loss: `features/road-elevation.md`'s showcase piece is "a
+	-- 30-degree turn with big banking", and 20 degrees of bank is noticeably less bank.
+	-- IT IS THE SAME ONE FIX as the grade: roll and pitch the sweep box with the surface
+	-- in `Drift/World`, measure it, and both of these limits move at once.
+	MaxBank = 20, -- degrees across the road
 	-- NOTHING MAY READ AS A WALL, and the two of them COMPOUND -- a banked descent is
 	-- steeper than either alone. The surface normal's Y is exactly cos(grade) x cos(bank),
-	-- so it is the product that is capped and never the two separately: at 14 and 30 it is
-	-- 0.9702 x 0.8660 = 0.840, which is a surface leaning 32.8 degrees.
+	-- so the pair is capped as well as each one separately: at 8 and 20 the product is
+	-- 0.9903 x 0.9397 = 0.9305, a surface leaning 21.5 degrees.
 	--
 	-- `Drift/World` calls anything whose normal leans more than about 46 degrees
 	-- (`GROUND_NORMAL_Y = 0.7`) a WALL: its ground rays step past it and the car stops
@@ -150,9 +161,11 @@ return {
 	-- which is 11 degrees and 0.12 of normal clear of that threshold -- room for the
 	-- rounding in a chord's own slope, and nowhere near enough to be felt.
 	--
-	-- It is a BACKSTOP and not a working limit: 8 degrees of grade and 30 of bank come to
-	-- 31.0 together, so nothing the two limits above allow can reach it. It is here so
-	-- that a piece written with both of them opened up still cannot make a wall.
+	-- It is a BACKSTOP and not a working limit: 8 degrees of grade and 20 of bank come to
+	-- 21.5 together, so nothing the two limits above allow can reach it. It is here so
+	-- that a piece written with both of them opened up still cannot make a wall -- and the
+	-- day the sweep box is pitched and rolled with the surface, those two limits are what
+	-- will move and this is what will still be holding the line.
 	MaxSurfaceTilt = 35, -- degrees the surface may lean, grade and bank together
 	-- HOW MUCH EITHER MAY CHANGE IN ONE SEGMENT, which is `MaxSegmentChord` and
 	-- `MaxArcDeviation`'s idea in the other two axes: a segment is one flat box, so a

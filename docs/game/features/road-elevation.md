@@ -21,39 +21,52 @@ yet.
 | The generator is untouched | -- | 5 seeds x 500 pieces: 0 stalls, worst call 2.21 ms (2.15 before). 20 runs of 400: 0 boxed in, 20 of 8 000 on short proof -- identical to before |
 | The flat road is unchanged | `PINNED` in `RoadTests` | sequence, geometry, part count and every part's CFrame identical over 500 pieces and 1 448 parts |
 
-### `MaxGrade` is 8 degrees, not the spec's 14, and that is measured
+### The limits are the car's own collision box: 8° of grade, 20° of bank
 
-The spec chose 0.25 of grade against the 46° wall threshold. **That is not the binding limit.** The
-car's collision box is swept flat through the world and is never pitched, so it rides with 1.44
-studs of air under it and 7 studs of nose in front: on a climb steeper than about `atan(1.44/7)` the
-nose is inside the hill, the face it meets is vertical, and the car stops dead against the road it
-is driving up. A ramp at each grade, 90 studs/s in, no steering:
+The spec chose both numbers against the 46° wall threshold. **That is not the binding limit.** The
+car's collision box is swept flat through the world and is **never pitched and never rolled**, so it
+rides with 1.44 studs of air under it, 7 studs of nose in front and 3.2 studs of width either side.
+Above `atan(1.44/7) = 11.6°` of grade its nose is inside the hill it is climbing; above
+`atan(1.44/3.2) = 24°` of bank its uphill side is inside the road it is leaning on. The face it
+meets in either case is near-vertical, the sweep calls that a **wall**, and the car stops dead
+against the road.
+
+Both measured, with gravity on the ground (`T-065`). A straight ramp at each grade, 90 studs/s in,
+no steering:
 
 | grade | climbed in 14 s | speed at the end |
 |---|---|---|
-| 4° | 48 studs | 142 studs/s |
-| 6° | 99 | 140 |
-| 8° | 137 | 140 |
-| 10° | 155 | 24 |
-| 12° | 27 | 0 |
-| 14° | 19 | 0 (stopped dead on the ramp) |
+| 4° | 70 studs | 129 studs/s |
+| 6° | 101 | 121 |
+| 8° | 136 | 116 |
+| 10° | 149 | 103 |
+| **12°** | 23 | **0 — stopped dead on the ramp** |
+| 14° | 26 | 5 |
 
-A **descent** is not limited by this -- the ground falls away and nothing is swept into -- but the
-limit is kept symmetric, because a car that spins on a 14° descent is then facing up it and can
-never drive out. **To go steeper, pitch the sweep box with the surface in `Drift/World`**: one
-change, its own task, its own measurement.
+And a 90° corner banked, two seeds, with every sweep that stopped the car traced back to the part
+that stopped it:
 
-**And 8° is a ceiling, not a target.** A road of nothing but descending corners, driven by the test
-autopilot: flat and 4° both reach 12 of 12 pieces at a mean of 56-59 studs/s; 6° reaches 8, and 8°
-reaches 7 at a mean of 19 while touching a top speed of **120 against the flat road's 92**. None of
-that is the road failing -- traced, the sweep was stopped by road zero times at every grade. It is
-the car carrying more speed downhill than a driver aimed on the flat can steer for, which is the
-feature working, measured before `GravityOnGround` exists. **Build a touge out of 4° descents and
-level links before reaching for 8.**
+| bank | road read as a wall | stopped for |
+|---|---|---|
+| 10° | 0 times | 0.00 s |
+| 15° | 0 | 0.00 |
+| 20° | 0 | 0.00 |
+| 25° | 1 | 0.40 |
+| **30°** | **17** | **5.19** |
 
-A bank is not limited the same way, because the car is only swept across one while sliding: 10, 20,
-25 and 30 degrees all drive 12 of 12, and what a heavy bank costs is moments -- the same flat box
-digs into the high side and the car jams for a fraction of a second. 30 stays.
+Both brackets land either side of what the geometry predicts, which is the check that the
+explanation is the right one. **To lift either, pitch and roll the sweep box with the surface in
+`Drift/World`** — one change, its own task, its own measurement, and both limits move at once.
+
+**8° is a ceiling, not a target.** A road of nothing but descending corners: flat reaches 12 of 12
+pieces at a mean of 59 studs/s, 4° reaches 12 at a mean of 68, and 8° reaches 10 at a mean of 36
+while touching **120 studs/s against the flat road's 92**. The sweep was stopped by road zero times
+at both grades: that is not the road failing, it is the car carrying more speed downhill than a
+driver aimed on the flat can steer for. **Build a touge out of 4° descents and level links before
+reaching for 8.**
+
+**20° of bank is a real loss against the spec,** whose showcase piece is *"a 30-degree turn with big
+banking"*. 20 is the last angle that never once read as a wall.
 
 ### Two things changed shape from the plan
 
@@ -260,7 +273,7 @@ points to be driven and tuned**, except where a number is forced by something al
 |---|---|---|
 | `GravityOnGround` | 1 | Share of gravity that acts along the surface while grounded. **0 is exactly today's behaviour** |
 | ~~`MaxGrade`~~ | ~~0.25 (14°)~~ **8°** | Not the wall threshold: the car's own unpitched collision box. See "`MaxGrade` is 8 degrees" above (`T-066`) |
-| `MaxBank` | 30° | The banked-30's showcase angle. Also under the wall threshold, which matters because a bank is a surface normal too. Driven at 10, 20, 25 and 30; all four drive |
+| ~~`MaxBank`~~ | ~~30°~~ **20°** | Not the wall threshold either: the same collision box, never rolled. 30° read as a wall 17 times in two drives, 20° never did (`T-066`) |
 | `MaxSurfaceTilt` | 35° | **Added by `T-066`.** Grade and bank compound -- the normal's Y is cos(grade) x cos(bank) -- so it is the pair that is capped, never one at a time |
 | `MaxPitchStep`, `MaxBankStep` | 1.15°, 1.5°/segment | How much either may change in one segment, so no join is a step and no bank is a kink. The spec's 0.02 of grade is 1.15° |
 | `MaxProfileSegments` | 64 | **Added by `T-066`.** The ceiling on what those two may cut a piece into, so a careless profile costs a few parts rather than hundreds |

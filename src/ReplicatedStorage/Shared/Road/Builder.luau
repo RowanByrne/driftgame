@@ -284,13 +284,13 @@ function Builder.build(piece: Pieces.Placed, parent: Instance): Built
 		-- walls differ in length and in height and neither has to be fudged.
 		--
 		-- A WALL FOLLOWS THE GRADE AND NOT THE BANK, and that is a measured choice rather
-		-- than a tidy one. Leaning it with the road puts its inner face OVER the road: six
-		-- studs of wall banked 30 degrees overhangs by three, and since the car's collision
-		-- box is never pitched either, what that overhang catches is the car's ROOF while
-		-- its wheels still have room. Measured, a 30-degree banked corner with leaning
-		-- walls: the car ground along the outside wall at 13 studs/s and took 150 seconds
-		-- to cover six pieces. Standing it up costs a little daylight at the join between
-		-- the wall and a steeply banked road and gives the road its full width back.
+		-- than a tidy one. Leaning it with the road puts its inner face OVER the road:
+		-- six studs of wall at the 20 degrees `MaxBank` allows overhangs by two, and since
+		-- the car's collision box is never rolled either, what that overhang catches is
+		-- the car's ROOF while its wheels still have room. Measured on a banked corner
+		-- with leaning walls, the car ground along the outside of it at 13 studs/s.
+		-- Standing it up costs a little daylight where the wall meets a steeply banked
+		-- road, and gives the road its full width back.
 		local barrierDrop = (C.BarrierSink - C.BarrierHeight) * 0.5
 		for i = 1, #nodes - 1 do
 			local a, b = nodes[i], nodes[i + 1]
