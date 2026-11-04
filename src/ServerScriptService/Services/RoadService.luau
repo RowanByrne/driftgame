@@ -7,9 +7,10 @@
 -- `Config.Road.Offset`, far from both the others. Nothing here touches either of them.
 --
 -- OFF BY DEFAULT. This service builds nothing at `Init` and nothing at `Start`: a run
--- begins on an explicit `Generate(seed)`, which is what the start button becomes in step
--- 3. `Config.Drift.StartWorld` is untouched, so every place still spawns a car where it
--- always did.
+-- begins on an explicit `Generate(seed)`, and `Config.Drift.StartWorld` is untouched, so
+-- every place still spawns a car where it always did. The ONLY thing in the game that
+-- starts a road is a player pressing the start button (`Drift/RoadHud`, the `RoadRun`
+-- remote, features/endless-run.md).
 --
 -- What it actually owns:
 --   * the parts -- one folder per piece under `Workspace.Road`, built by `Road/Builder`
@@ -18,16 +19,30 @@
 --   * progress -- which piece each car is on, how far along, and whether that is forward
 --     on road it has not used. The server owns this for the same reason it owns the seed:
 --     a client that reports its own progress reports its own score later.
+--   * THE RUN (T-044 step 3): who is on the road, which world each of them came from, and
+--     what a fall puts them back on.
+--
+-- WHAT THE CLIENT MAY SAY, which is the whole of the trust boundary here: one of three
+-- things -- "start", "end", or "which is it?". It may not name a seed, a spawn, a piece
+-- or a progress, and nothing on the wire is read as any of those. The seed is picked
+-- here, the spawn is computed here from the generator, and progress is measured here from
+-- the position `CarService` has already agreed to. A client that reported its own progress
+-- would be reporting its own score the day there is one.
+--
+-- NOTHING HERE MOVES A CAR. `CarService:Respawn(player, cf)` is still the only thing that
+-- does, as it has been since T-026: this service decides WHERE and asks.
 --
 -- The sequence itself is `Shared/Road/Generator`, which is pure and has no idea any of
 -- this exists.
 
+local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
 local Config = require(ReplicatedStorage.Shared.Config)
 local Builder = require(ReplicatedStorage.Shared.Road.Builder)
 local Generator = require(ReplicatedStorage.Shared.Road.Generator)
+local Net = require(ReplicatedStorage.Shared.Net)
 local Pieces = require(ReplicatedStorage.Shared.Road.Pieces)
 
 local RoadService = {}
@@ -40,6 +55,21 @@ RoadService.Running = false
 
 local ROOT_NAME = "Road"
 
+-- The world's name, the one `CarService` knows it by. A third name beside "track" and
+-- "playground" (`WORLD.md` "The three worlds"), and the only one of the three that is not
+-- always there.
+local WORLD_ROAD = "road"
+
+-- THE TWO LIMITS ON THE START BUTTON, and neither is a new number. Nothing in
+-- `Config.Road` may be touched by this task (lane 2 owns that file), so the run reuses the
+-- two numbers that already bound the two other things a client may ask the server to do
+-- to its car: how many asks a second it will take, and how long it must wait between two
+-- that land. A press is a car being put somewhere, so a respawn's cooldown is the right
+-- shape for it. They want their own `Config.Road.RunRateLimit` / `RunCooldown` the day
+-- that file is free (features/endless-run.md "Open questions").
+local RUN_RATE_LIMIT = "CarSwitchRateLimit" -- asks a second per UserId
+local RUN_COOLDOWN = "RespawnCooldown" -- seconds between two presses that land
+
 local generator = nil :: any
 local built: { [number]: any } = {} -- n -> Builder.Built
 local closing: Part? = nil
@@ -48,6 +78,12 @@ local leaderN = 1
 local windowCentre = 1 -- the furthest the window has been asked to reach; it never goes back
 local ticking = false
 local lastProgress = nil :: any
+
+-- Who is on the road: userId -> { from, since, n, t, position, told }. `from` is the world
+-- they pressed start in, so ending a run puts them back where they came from rather than
+-- wherever `StartWorld` happens to say.
+local runners: { [number]: any } = {}
+local runnerCount = 0
 
 --------------------------------------------------------------------------------
 -- The window
@@ -158,9 +194,11 @@ local function carService(): any?
 	return nil
 end
 
--- The furthest car down the road. One world, one window: with two players the road is
--- kept around whoever is ahead, and the closing barrier follows the same car. What a run
--- with more than one player in it actually means is not decided yet (`PITCH.md`).
+-- The furthest car down the road. ONE WORLD, ONE WINDOW: with two players the road is
+-- kept around whoever is ahead, and the closing barrier follows the same car. A second
+-- player who presses start while a run is going JOINS THIS ROAD rather than getting one
+-- of their own (features/endless-run.md "More than one player") -- which is the honest
+-- answer for a test build, and is also the only one a single server-owned window can give.
 --
 -- WHERE A CAR IS, ON THE SERVER, IS NOT ITS PIVOT. The client simulates its own car and
 -- writes the CFrames locally; those writes never replicate, so the server's copy of the
@@ -168,19 +206,28 @@ end
 -- answer is `CarService:BelievedPosition`, the last `CarState` packet the server accepted
 -- (`CONTRACTS.md`). The pivot is the fallback, and it is the right one in a test with no
 -- player in it.
+--
+-- ONLY RUNNERS MOVE THE WINDOW once anyone is in a run: a player sitting on the track is
+-- 20 000 studs away and would locate nowhere anyway, but saying so is cheaper than relying
+-- on it. With nobody in a run at all (a test driving the road with no player) every car is
+-- read, exactly as before.
 local function readCars(): (Vector3?, number?)
 	local folder = workspace:FindFirstChild("Cars")
 	if not folder then
 		return nil, nil
 	end
 	local cars = carService()
+	local onlyRunners = runnerCount > 0
 	local bestPos, bestN = nil, nil
 	for _, car in folder:GetChildren() do
 		if not car:IsA("Model") then
 			continue
 		end
-		local at: Vector3? = nil
 		local userId = tonumber(car:GetAttribute("UserId"))
+		if onlyRunners and (not userId or not runners[userId]) then
+			continue
+		end
+		local at: Vector3? = nil
 		if cars and userId and type(cars.BelievedPosition) == "function" then
 			local ok, believed = pcall(cars.BelievedPosition, cars, userId)
 			if ok and typeof(believed) == "Vector3" then
@@ -196,7 +243,17 @@ local function readCars(): (Vector3?, number?)
 		if not at then
 			continue
 		end
-		local n = generator:locate(at)
+		local n, t = generator:locate(at)
+		local entry = userId and runners[userId]
+		if entry then
+			-- Each runner's own place in the run, measured here from the position the
+			-- server has already agreed to. This is the number the HUD is told, and it is
+			-- never one the client sent.
+			entry.position = at
+			if n then
+				entry.n, entry.t = n, t
+			end
+		end
 		if n and (bestN == nil or n > bestN) then
 			bestPos, bestN = at, n
 		end
@@ -215,6 +272,18 @@ local function tick()
 	end
 	window(leaderN)
 	moveClosingBarrier()
+	-- Tell each runner where the SERVER says they are, and only when it has changed piece.
+	-- A HUD that is pushed ten times a second to say the same number is ten packets a
+	-- second saying nothing.
+	for userId, entry in runners do
+		if entry.n ~= entry.told then
+			entry.told = entry.n
+			local player = Players:GetPlayerByUserId(userId)
+			if player then
+				RoadService:_tell(player)
+			end
+		end
+	end
 end
 
 --------------------------------------------------------------------------------
@@ -222,10 +291,28 @@ end
 --------------------------------------------------------------------------------
 
 function RoadService:Init()
-	-- Deliberately nothing. The road is off until something asks for it.
+	-- No road is built here, and none ever is until a player presses start. The ONE thing
+	-- that has to exist before any controller asks for it is the remote.
+	self.roadRun = Net.event("RoadRun")
+	self.asks = 0
+	self.asksRefused = 0
+	self.started = 0
+	self.ended = 0
+	self.limits = {} -- userId -> { window, count, lastAt }
 end
 
 function RoadService:Start()
+	self.roadRun.OnServerEvent:Connect(function(player, want)
+		self:_onRun(player, want)
+	end)
+
+	-- A player who leaves mid-run leaves the run. Without this the road stays up for ever
+	-- around a car that is not there, because the roster is what decides when it comes
+	-- down.
+	Players.PlayerRemoving:Connect(function(player)
+		self:_leave(player.UserId)
+	end)
+
 	task.spawn(function()
 		ticking = true
 		while ticking do
@@ -236,6 +323,213 @@ function RoadService:Start()
 			end
 		end
 	end)
+end
+
+--------------------------------------------------------------------------------
+-- The run
+--------------------------------------------------------------------------------
+
+-- The roster, with nothing instanced: who is on the road and where each of them came
+-- from. A seed is not in here -- the generator holds it -- and nothing a client said is.
+function RoadService:InRun(player: Player?): boolean
+	return player ~= nil and runners[player.UserId] ~= nil
+end
+
+function RoadService:RunnerCount(): number
+	return runnerCount
+end
+
+-- What the server will tell a client about the run. Every field is the server's own:
+-- `n` and `furthestN` are measured from positions `CarService` agreed to, `players` is
+-- the roster's size. The seed is deliberately NOT in it -- nothing on the client needs it
+-- and a seed on the wire is a seed a client can be seen to have.
+function RoadService:RunState(player: Player?)
+	local entry = player and runners[player.UserId]
+	return {
+		running = self:HasRoad(),
+		inRun = entry ~= nil,
+		players = runnerCount,
+		n = entry and entry.n or 0,
+		furthestN = if generator then generator.furthestN else 0,
+	}
+end
+
+-- Start a run for one player.
+--
+-- The seed is picked HERE, from the clock, and never comes off the wire. The world they
+-- came from is read BEFORE they are moved, because once they are on the road
+-- `CarService:WorldAt` will quite correctly say they are on the road.
+function RoadService:StartRun(player: Player): CFrame?
+	if runners[player.UserId] then
+		return nil -- already in it; a second press is the END press, not a restart
+	end
+
+	local cars = carService()
+	if not cars or type(cars.Place) ~= "function" then
+		warn("[Road] a run was asked for with no CarService to move a car")
+		return nil
+	end
+
+	-- Where they are now, so ending the run can put them back there. Measured, not
+	-- remembered from a config: a player who drove from the track to the playground ends
+	-- their run on the playground.
+	local from = Config.Drift.StartWorld
+	if type(cars.WorldAt) == "function" and type(cars.BelievedPosition) == "function" then
+		local ok, believed = pcall(cars.BelievedPosition, cars, player.UserId)
+		if ok and typeof(believed) == "Vector3" then
+			local got, world = pcall(cars.WorldAt, cars, believed)
+			if got and type(world) == "string" and world ~= WORLD_ROAD then
+				from = world
+			end
+		end
+	end
+
+	local fresh = not self:HasRoad()
+	if fresh then
+		self:Generate()
+	end
+
+	local cf = self:JoinCFrame()
+	if not cf then
+		if fresh then
+			self:Stop()
+		end
+		return nil
+	end
+
+	-- On the roster BEFORE the car moves: `CarService:Respawn` asks this service where a
+	-- runner belongs, and a player who is not on the roster yet would be sent to the world
+	-- they are standing in instead of onto the road.
+	runners[player.UserId] = { from = from, since = os.clock(), n = 1, t = 0, told = nil }
+	runnerCount += 1
+
+	local ok, placed = pcall(cars.Place, cars, player, cf)
+	if not ok or not placed then
+		runners[player.UserId] = nil
+		runnerCount -= 1
+		if fresh then
+			self:Stop()
+		end
+		return nil
+	end
+	self.started += 1
+	return placed
+end
+
+-- End one player's run and put them back in the world they started it from.
+--
+-- ONE PLAYER ENDING A RUN CANNOT STRAND ANOTHER: the road comes down only when the roster
+-- empties. While anyone is still on it the window, the barrier and every piece stay
+-- exactly where they are, and the player who pressed end simply leaves.
+function RoadService:EndRun(player: Player): CFrame?
+	local entry = runners[player.UserId]
+	if not entry then
+		return nil
+	end
+
+	local cars = carService()
+	local cf = nil
+	if cars and type(cars.SpawnCFrameIn) == "function" then
+		local ok, got = pcall(cars.SpawnCFrameIn, cars, entry.from)
+		if ok and typeof(got) == "CFrame" then
+			cf = got
+		end
+	end
+
+	-- Off the roster first, for the same reason they went on it first: the respawn below
+	-- asks this service where this player belongs, and the answer has to be "not here".
+	runners[player.UserId] = nil
+	runnerCount -= 1
+	self.ended += 1
+
+	if cf and cars and type(cars.Place) == "function" then
+		pcall(cars.Place, cars, player, cf)
+	end
+
+	if runnerCount <= 0 then
+		self:Stop()
+	end
+	return cf
+end
+
+-- A player who left the place, or whose car went away. No car to move, just the roster.
+function RoadService:_leave(userId: number)
+	if not runners[userId] then
+		return
+	end
+	runners[userId] = nil
+	runnerCount -= 1
+	if runnerCount <= 0 then
+		self:Stop()
+	end
+end
+
+-- THE WIRE. One of three things, and nothing else is read off it:
+--
+--   nil   a QUESTION -- "am I in a run?" -- which the HUD asks when it starts up, so a
+--         client that missed the answer sent with its last press is never out of step;
+--   true  start;
+--   false end.
+--
+-- There is no seed here, no position, no piece and no progress, and there is nowhere for
+-- one to hide: anything that is not a boolean or nil is refused and counted. Rate-limited
+-- by UserId so rejoining does not reset it, and held to one press every `RunCooldown`, the
+-- same two guards `CarRespawn` and `CarSwitch` already have.
+--
+-- Every path answers, refusals included: the answer is what puts a HUD that guessed wrong
+-- back in step with the server.
+function RoadService:_onRun(player: Player, want: any)
+	self.asks += 1
+	local now = os.clock()
+	local limit = self.limits[player.UserId]
+	if not limit then
+		limit = { window = now, count = 0, lastAt = -math.huge }
+		self.limits[player.UserId] = limit
+	end
+	if now - limit.window >= 1 then
+		limit.window = now
+		limit.count = 0
+	end
+	limit.count += 1
+	if limit.count > Config.Drift[RUN_RATE_LIMIT] then
+		self.asksRefused += 1
+		self:_tell(player)
+		return
+	end
+
+	if want == nil then
+		self:_tell(player) -- a question, answered, changing nothing
+		return
+	end
+	if type(want) ~= "boolean" then
+		self.asksRefused += 1
+		self:_tell(player)
+		return
+	end
+	if now - limit.lastAt < Config.Drift[RUN_COOLDOWN] then
+		self.asksRefused += 1
+		self:_tell(player)
+		return
+	end
+
+	local acted
+	if want then
+		acted = self:StartRun(player) ~= nil
+	else
+		acted = self:EndRun(player) ~= nil
+	end
+	if acted then
+		limit.lastAt = now
+	else
+		self.asksRefused += 1
+	end
+	self:_tell(player)
+end
+
+function RoadService:_tell(player: Player)
+	if self.roadRun then
+		self.roadRun:FireClient(player, self:RunState(player))
+	end
 end
 
 --------------------------------------------------------------------------------
@@ -262,8 +556,16 @@ function RoadService:Generate(seed: number?): CFrame
 end
 
 -- Tear the road down. Leaves no folder and no parts behind.
+--
+-- IT EMPTIES THE ROSTER TOO, because a road that does not exist has nobody on it. A car
+-- left over the void where the road was falls, asks for a respawn, is no longer a runner,
+-- and so comes back in the nearest world that does exist -- which is a graceful landing
+-- rather than a hole. In normal play this never happens: `EndRun` only reaches here once
+-- the last runner has already left.
 function RoadService:Stop()
 	RoadService.Running = false
+	table.clear(runners)
+	runnerCount = 0
 	for n in built do
 		destroyPiece(n)
 	end
@@ -288,7 +590,8 @@ function RoadService:HasRoad(): boolean
 end
 
 -- Where a car starts: on the centre line of piece 1, a little way in, facing the way the
--- road goes. Who calls this, and when, is step 3's: nothing does yet.
+-- road goes. This is where the FIRST player of a run lands; a player joining a run already
+-- under way lands on `JoinCFrame` instead, because piece 1 has long been destroyed.
 function RoadService:SpawnCFrame(): CFrame
 	if not generator then
 		error("RoadService: no road. Call Generate(seed) first.", 2)
@@ -297,8 +600,65 @@ function RoadService:SpawnCFrame(): CFrame
 	if not piece then
 		error("RoadService: the road has no first piece", 2)
 	end
+	return RoadService:_poseOn(piece)
+end
+
+-- A pose on a piece's centre line, a little way in from its start socket, at ride height.
+-- The same pose for piece 1 (a spawn), for the piece a joiner lands on, and for the piece
+-- a fall puts a car back on -- the spec's `safeStart`.
+function RoadService:_poseOn(piece: any): CFrame
 	local t = math.clamp(20 / math.max(piece.length, 1), 0, 0.5)
 	return Pieces.poseAt(piece, t, Config.Road.SurfaceY + Config.Drift.RideHeight)
+end
+
+-- WHERE A CAR THAT CAME OFF THE ROAD GOES BACK ON, and the one rule it obeys: forward, or
+-- where it was -- never backward past the closing barrier.
+--
+--   * it is put on the piece it was last on, so a fall costs the piece it was in the
+--     middle of and not the run. `N` cannot go backwards, because `furthestN` is the
+--     generator's own high-water mark and nothing here writes it;
+--   * never before `BarrierBehind - 1` pieces back from the window's centre, because the
+--     closing barrier is a WALL at `BarrierBehind` and a car put down behind it would be
+--     facing it;
+--   * never before the first piece that still exists, because the rest have been
+--     destroyed;
+--   * `nil` position -- a joiner, who has no place on the road yet -- lands at the
+--     window's centre, which is where whoever is furthest is driving.
+--
+-- A fall does NOT end a run, and nothing in this function can end one: it returns a place
+-- on the road, and that is all it does.
+function RoadService:SafeStart(position: Vector3?): CFrame?
+	if not generator then
+		return nil
+	end
+	local C = Config.Road
+	local want = nil
+	if position then
+		want = generator:locate(position)
+	end
+	want = want or windowCentre
+
+	local lo = math.max(generator.first, windowCentre - C.BarrierBehind + 1)
+	local hi = generator.last
+	if hi < lo then
+		return nil
+	end
+	local n = math.clamp(want, lo, hi)
+	local piece = generator:piece(n)
+	if not piece then
+		return nil
+	end
+	return RoadService:_poseOn(piece)
+end
+
+-- Where a player pressing start lands. On a fresh road that is piece 1; on a road someone
+-- is already driving it is the window's centre, so a joiner arrives beside the leader
+-- rather than behind a barrier on road that is about to be destroyed.
+function RoadService:JoinCFrame(): CFrame?
+	if not generator then
+		return nil
+	end
+	return self:SafeStart(nil)
 end
 
 -- Which piece a world position is on, and how far along it. `nil` off the road entirely.
@@ -354,9 +714,39 @@ function RoadService:Bounds(): { min: Vector3, max: Vector3 }?
 	}
 end
 
+-- The roster as plain numbers, for the HUD's tests and for a playtest. Not Studio-only:
+-- it says nothing a player could not see on their own screen.
+function RoadService:RunReport()
+	local out = {}
+	for userId, entry in runners do
+		table.insert(out, {
+			userId = userId,
+			from = entry.from,
+			n = entry.n,
+			t = entry.t,
+			seconds = os.clock() - entry.since,
+			position = entry.position,
+		})
+	end
+	table.sort(out, function(a, b)
+		return a.userId < b.userId
+	end)
+	return out
+end
+
 function RoadService:DebugState()
 	if not generator then
-		return { running = false, built = 0, pieces = 0 }
+		return {
+			running = false,
+			built = 0,
+			pieces = 0,
+			runners = 0,
+			run = {},
+			asks = self.asks or 0,
+			asksRefused = self.asksRefused or 0,
+			started = self.started or 0,
+			ended = self.ended or 0,
+		}
 	end
 	local report = generator:report()
 	local parts = 0
@@ -374,7 +764,75 @@ function RoadService:DebugState()
 	report.closingAt = if closing then closing.Position else nil
 	report.offset = Config.Road.Offset
 	report.width = Config.Road.Width
+	report.runners = runnerCount
+	report.run = self:RunReport()
+	report.asks = self.asks or 0
+	report.asksRefused = self.asksRefused or 0
+	report.started = self.started or 0
+	report.ended = self.ended or 0
+	report.safeStart = self:SafeStart(nil)
 	return report
+end
+
+-- Studio only: press the start button for a player with no client involved, through the
+-- exact path the remote takes -- rate limit, cooldown, type check and all -- so a test
+-- exercises what a tap really does rather than the method behind it. `want` nil is the
+-- question.
+function RoadService:DebugPress(want: boolean?, userId: number?)
+	assert(RunService:IsStudio(), "DebugPress is Studio only")
+	for _, player in Players:GetPlayers() do
+		if userId == nil or player.UserId == userId then
+			self:_onRun(player, want)
+			return self:RunState(player)
+		end
+	end
+	return nil
+end
+
+-- Studio only: the cooldown and the rate limit exist to stop a client hammering the
+-- button, and a test that waits half a second between presses is only measuring the wait.
+function RoadService:DebugClearLimits()
+	assert(RunService:IsStudio(), "DebugClearLimits is Studio only")
+	self.limits = {}
+end
+
+-- Studio only: a SECOND DRIVER, with no second client to be one.
+--
+-- Studio gives a test exactly one player, and "what happens when somebody else presses
+-- start while a run is going" is a question about the roster, the window and the road
+-- staying up -- none of which need a car. So this puts a bare userId on the roster, the
+-- way `StartRun` does, and hands back where that player's car WOULD have been put. The
+-- half this cannot prove is the car moving, which the real player beside it proves
+-- (Tests/RunTests). Nothing in the game calls either of these.
+function RoadService:DebugJoin(userId: number)
+	assert(RunService:IsStudio(), "DebugJoin is Studio only")
+	if runners[userId] or not generator then
+		return nil
+	end
+	local cf = self:JoinCFrame()
+	if not cf then
+		return nil
+	end
+	runners[userId] = { from = Config.Drift.StartWorld, since = os.clock(), n = 1, t = 0, told = nil }
+	runnerCount += 1
+	return cf
+end
+
+-- Studio only: run the service's own tick now, rather than waiting up to `TickSeconds` for
+-- the thread to come round. A drive that moved the car and then slept a tenth of a second
+-- for the window to notice would spend almost all of its time asleep; this runs the REAL
+-- path -- read the runners' believed positions, move the window, move the barrier -- so
+-- what is measured is the thing that runs in play, only sooner.
+function RoadService:DebugTick()
+	assert(RunService:IsStudio(), "DebugTick is Studio only")
+	tick()
+	return self:DebugState()
+end
+
+function RoadService:DebugLeave(userId: number)
+	assert(RunService:IsStudio(), "DebugLeave is Studio only")
+	self:_leave(userId)
+	return runnerCount
 end
 
 -- Studio only: step the window on as if a car were at `position`, with no car and no
