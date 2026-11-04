@@ -49,8 +49,11 @@ finger across the screen is the whole control.
 1. The player spawns in the playground already in the car and already moving.
 2. **The throttle is not an input.** The car drives itself, and it eases in: half throttle at the
    start of a run rising to full over about five seconds, so a first-time player is never handed a
-   car at top speed. There is no brake and no handbrake in normal play; the handbrake exists only
-   to stop the car once a run is over.
+   car at top speed. There is no brake pedal — **the handbrake is a latch** (`T-041`): one press
+   stops the car and it stays stopped, a second drives off again, and the button and the key share
+   one latch so they cannot disagree. A respawn or a car switch clears it, because both are the
+   server handing over a fresh car. You can still rotate the car while it is stopped, which is how
+   a shot gets lined up.
 3. **One finger, held, is the steering.** A finger goes down anywhere and from then on only its
    horizontal distance matters, measured either from the centre of the screen or from where it went
    down — a setting, because the reference ships both and they feel different. Full travel is a
