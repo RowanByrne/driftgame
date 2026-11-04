@@ -1,6 +1,9 @@
 # Feature: Drift model and one-input control
 
-**Status:** specced, waiting on approval to build. **Owner task:** none yet; the plan behind `T-010`.
+**Status:** the model is built and measured (`T-012`), and **waiting on the user to drive it** — the
+feel is the gate. The control, the camera and the score below are specced and not yet built; each
+is its own task, and all three read the numbers `T-012` has already written into
+`Shared/Config/Drift.luau`. **Owner task:** `T-012` for the model; the plan behind `T-010`.
 
 **This spec was rewritten on 2026-11-03 and supersedes the model that was on `main`.** Two
 hand-built models have now been driven and neither felt right (`DECISIONS.md`, 2026-11-03): the
@@ -123,7 +126,11 @@ velocity += dv
 
 `surfaceGrip` is the mean of the four wheels' surface grip, so two wheels off the tarmac means half
 the grip. The per-axis clamp is the reference's own, and it is what stops the pull overshooting
-through zero at low speed.
+through zero at low speed. It has one artefact worth knowing before measuring anything: a car
+travelling *exactly* along a world axis has no speed on the perpendicular axis for the clamp to
+allow, so its sideways pull is suppressed until it has yawed far enough to build one. A player can
+never be in that state; a test that starts a car at a heading of zero is, so the tests start theirs
+at 15°.
 
 | Number | Start | Source | What it does |
 |---|---|---|---|
@@ -298,7 +305,10 @@ No new remotes. Changed in `CONTRACTS.md` in the same commit as the code:
   `breakLooseSeconds` (there is no break-loose event any more — rotating is drifting) and gains
   `peakMultiplier` and `score`.
 - `CarInputController:DebugSetInput(steer, throttle)` replaces the three-argument form; `drift` and
-  `brake` are gone. `DebugDrag(offsetPx)` still acts out the real gesture.
+  `brake` are gone. `DebugDrag(offsetPx)` still acts out the real gesture. **Not done yet:** that
+  file belongs to the gesture task. Until it lands, `DriftController` takes the old three-value
+  answer and drops the drift flag (rotating is drifting, so it has nothing left to mean) and passes
+  the brake through as the handbrake.
 - New `ScoreController:DebugState()`: score, multiplier, progress and the live bonuses.
 
 ## Analytics
@@ -348,10 +358,41 @@ server bridge. The checks that must still pass, and the new ones the port needs:
 - **Playtest:** drive it. The user decides whether it feels right; that is the gate. Nothing above
   is a feel judgement — those checks only catch a model that has stopped working.
 
+### What it measured, 2026-11-03 (`T-012`)
+
+All eighteen checks pass. The numbers worth carrying into the tuning conversation:
+
+| | |
+|---|---|
+| The finger is the rate of turn | A second of half a finger turns the car 56.82°, against the 57.30° `MaxSteeringSpeed` asks for, from 40 studs/s and from 150 alike. The 0.48° is one step of the accumulator's leftover, not the model |
+| Centring | Yaw rate exactly 0 and the heading exactly still on the next step |
+| Grip, measured against the curve | 15°: 19.0, 30°: 25.7, 45°: 34.4, 60°: 45.0, 80°: 62.1 studs/s², every one within 0.001 of `C0 + C1·b + C2·b²`. Dirt is exactly half |
+| Past 90° | 135° of slip, engine off: 72 studs/s² straight against the travel and 0.000 sideways |
+| A held finger | ¼: 12° of slip, 40 studs/s, a 79-stud circle. ½: 33°, 32 studs/s, 32 studs. Full: 30°, 15 studs/s, 7 studs — from 140 studs/s in each case |
+| Determinism | Identical twice over; 0.24 studs between 30, 60 and 120 FPS over a five-second corner |
+| Nothing runs away | 12 s lock to lock from top speed: 179.0 studs/s and 2.000 rad/s, both their own ceilings |
+
+Three things the measurements say about the numbers, for the user to decide on:
+
+- **`MaxFriction` is inert as tuned.** The three friction terms reach only 72 studs/s² at square-on,
+  so the 107 ceiling is never touched. Raising `MaxFriction` alone does nothing; the three terms are
+  the dial.
+- **A hold at speed is a spin, not a drift.** Holding half a finger at 140 studs/s needs 140 studs/s²
+  of pull to hold the circle and the car can make 72, so the slip runs past 90°, the grip turns into
+  a brake, and the car settles at 28 studs/s. The car can only *hold* a drift at about a quarter of
+  its top speed. That is the fallbacks, not the port — it is what "expect to move `MaxSteeringSpeed`,
+  the three friction terms and `MaxFriction` together" means in numbers.
+- **Downforce is only felt in the air.** A car that follows the ground cannot be pressed into it, so
+  the only thing `DownforcePerSpeed` changes is a jump. Off a 1-in-4 ramp at 150 studs/s: 331 studs
+  and 2.18 s at 0, 213 studs and 1.40 s at the specced 0.2, 168 studs and 1.11 s at 0.4.
+
 ## Open questions
 
 - **`DownforcePerSpeed` is a guess** (above). It is the only number here that is not read off the
-  reference, and it changes how planted the car feels. First thing to tune.
+  reference. Measured, 0.2 is a fair starting point and the car is neither glued nor floaty on the
+  road — because on the road it changes nothing at all (above). It only shortens a jump, and the
+  reason a jump feels long is `Gravity` being the reference's 35 studs/s² rather than Roblox's 196.
+  If jumps want to feel heavier, raise this to 0.4 before touching gravity.
 - **The tuning values are fallbacks, not the shipped car.** The reference's real numbers live in
   editor assets the decompile does not contain. Expect to move `MaxSteeringSpeed`, the three
   friction terms and `MaxFriction` together before it feels like the reference.
