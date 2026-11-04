@@ -4,30 +4,34 @@ How this game sounds, and every sound in it. The direction is the user's, set in
 
 ## Direction
 
+Set 2026-11-04, with the user's approval of the `car-fx.md` plan. These are the first sounds in
+the game, so approving that plan set the direction.
+
 ### Pillars
 
-> Three short phrases the sound always follows, such as "bouncy, warm, never harsh".
+**Weighty, clean, never harsh.**
+
+- **Weighty:** the engine is felt more than heard. It sits under everything and gives the car mass.
+- **Clean:** nothing muddy and nothing clipping. A drift is a lot of sound at once and it has to stay legible.
+- **Never harsh:** nothing shrill enough to wear a player out over a ten-minute session. The squeal is the loudest thing in the game and it still has to be bearable the fiftieth time.
 
 ### References
 
-> Games, films or tracks whose sound we're after, and what we take from each. References guide the feel: never copy them, and never name them in a generation prompt.
-
 | Reference | What we take |
 |---|---|
-| | |
+| The reference game (`PITCH.md` "Games we borrow from") | How the sound is *driven*, not how it sounds: one engine loop pitched by faked gears, one squeal loop whose volume is the slip angle. Its own audio never comes near this game (`PLATFORM-RISKS.md`) |
+| Real cars | Realism. The drift model is a simulation and the sound should agree with it rather than cartoon it |
 
 ### Music
 
-- **Genre and instruments:** > Such as "lo-fi with ukulele and soft drums" or "orchestral, light and adventurous".
-- **Energy:** > How it changes between places and moments: the lobby, exploring, a boss, a reward.
-- **Shape:** > Short loops that play forever, or longer tracks that change as you play.
-- **Vocals:** > Usually none.
+**Not decided.** There is no music in the game and no decision about it. It waits on what a run is
+(`PITCH.md` is still Draft).
 
 ### Sound effects
 
-- **Style:** > Realistic, cartoony, retro (chiptune), or a mix, and where each fits.
-- **Feel:** > Punchy or soft, dry or with a tail.
-- **Rewards and rarity:** > How a better reward sounds better.
+- **Style:** realistic, not cartoon. The drift model is a simulation and the sound agrees with it.
+- **Feel:** dry and close. No long tails — a tail on a looping sound is a smear, and both of the first two sounds loop.
+- **Rewards and rarity:** nothing to sound better yet; there is no score and nothing is sold.
 
 ### UI sounds
 
@@ -43,15 +47,26 @@ How this game sounds, and every sound in it. The direction is the user's, set in
 
 ### Mix
 
-> What's loudest, how far music sits under gameplay, and the volumes players can change in settings (for example music and effects).
+**The squeal sits on top, the engine under it, everything else under both.** A player with the sound
+off loses information but not the game — the drift is already readable from the car, the camera and
+the tyre marks.
+
+Player volume controls wait for a settings screen (`SETTINGS.md`, the UI phase).
 
 ## Sounds
 
 Every sound in the game. Status: candidate, approved, uploaded, in game.
 
+The first two were picked by the user on 2026-11-04 from Creator Store candidates, played to them on
+the card. **Both are used by id and nothing is uploaded**, so there is no master and no manifest:
+Creator Store audio is licensed for use in any experience (`AUDIO-PIPELINE.md`). The candidates that
+were not picked are in `..\art\generated\sfx-car\`, outside git.
+
 | Sound | Plays when | Registry name | Asset id | Source and license | Status |
 |---|---|---|---|---|---|
-| | | | | | |
+| Engine loop | Always, while a car exists. Pitched 0.7x to 2.2x across five faked gears by road speed (`features/car-fx.md`) | `engine` | `5015124019` | Creator Store, "Car idle" by 6ifqi. Free in any experience, nothing uploaded. 4.64 s | Approved |
+| Tyre squeal, tarmac | While the car is drifting and grounded. Volume rises with the slip angle | `skid-tarmac` | `124978127809544` | Creator Store, "tyre_slide" by knightracers. Free in any experience, nothing uploaded. 3.00 s | Approved |
+| Backfire pop | — | — | — | — | **Not having one.** The user's call, 2026-11-04: the only candidate on the store that was not named after a real manufacturer ran 0.9 s, about twice as long as a pop wants, and several in a row would smear. The backfire stays specced in `features/car-fx.md` and unbuilt |
 
 ## Credits
 
