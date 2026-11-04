@@ -131,8 +131,8 @@ illegal if any candidate's footprint overlaps any piece already laid or any earl
 | Number | Value | What it does |
 |---|---|---|
 | `LookAhead` | **14** (the spec said 5; see below) | Pieces deep the search must find a legal continuation |
-| `SearchNodeBudget` | **40 000** (step 1 had 4 000) | Placements one search may try before it gives up. A real number now, not a guard: the biggest search that ran to the end of its own tree over ~30 000 pieces tried **29 297** |
-| `SearchStepsPerFrame` | **not built, and now needed** | Spreading one search over frames. The worst single choice measured is **356 ms**, and it belongs to `Road/Generator` |
+| `SearchNodeBudget` | **2 000** (step 2 had 40 000) | Placements the plan may try for one piece before it relaxes. It went DOWN because hitting it no longer stops the road, so it is now set where it bounds the worst call: 40 000 gave 1 422 ms, 8 000 gave 263 ms, 2 000 gives 8.15 ms |
+| `SearchMillisPerTick` / `SearchMillisUrgent` / `UrgentAheadPieces` / `MinAheadPieces` | **2 ms / 8 ms / 4 / 1** | What the spec called `SearchStepsPerFrame`, **built** (`T-052`). The lookahead is a standing plan sliced across ticks: 2 ms of work a tick normally, 8 ms when fewer than 4 pieces of road are left ahead, and below 1 piece the clock is ignored entirely, bounded by `SearchNodeBudget` |
 
 If no legal choice exists at all, **nothing is placed** — the road stops growing rather than
 growing wrongly, and it warns loudly naming the piece number and how many placements it tried.
@@ -181,11 +181,14 @@ allocate nothing took a node from **0.104 ms to 0.032** and the worst single cho
 seconds to 0.93**. With the budget at 40 000 all five of the test suite's seeds run 500 pieces
 without a stall, where seed 7 stopped at piece 42 on a budget of 20 000.
 
-**What is left, honestly:** 2 runs in 20 of 400 pieces still box themselves in, the earliest at
-piece 231 — a quarter of an hour of driving — where the two-piece road had none; and the worst
-single choice is 356 ms of server time. Neither is a stutter the player sees, because the window is
-ten pieces of road ahead of the car, but both say the same thing: `SearchStepsPerFrame` has stopped
-being optional.
+**Both of those problems are now fixed, and the fix is `T-052`.** The search is explicit state
+advanced by a `step()` that reads no clock, so the time slice decides only HOW MANY steps run in
+one call, never which — slicing cannot reach the choice, and a seed is still a road. The worst
+single call went from **1 422 ms at this width to 8.31 ms**, measured over 282 360 calls across 40
+seeds driven at 145 studs/s. And the road stopped trapping itself: backtracking re-chooses pieces
+decided but not yet built, and when no chain 14 long exists it lays the best chain it did stand up
+rather than refusing. At 50 studs the old generator boxed in on all five suite seeds between
+pieces 187 and 448; this one reaches 500 on all five, and 0 of 20 runs box in over 400 pieces.
 
 ### Progress
 
@@ -251,10 +254,17 @@ last measurement).
 
 ### The numbers, and the drives behind them
 
-**Road width is 35 studs, and it is the user's number** (`DECISIONS.md`, 2026-11-04). The car is
-14.83 studs long and 7.14 wide as it is actually built, and a default R15 avatar is 5.46 tall, so
-the car is within 6% of real car-to-person proportions. 35 studs is 4.9 car widths — deliberately
-tight. **The car is not rescaled to the road and the road is not rescaled to the car.**
+**Road width is 50 studs, and it is the user's number** (`DECISIONS.md`, 2026-11-04). It was 35
+first; they drove it and asked for 50. The car is 14.83 studs long and 7.14 wide as it is actually
+built, and a default R15 avatar is 5.46 tall, so the car is within 6% of real car-to-person
+proportions. 50 studs is 7.0 car widths. **The car is not rescaled to the road and the road is not
+rescaled to the car.**
+
+**Widening is not free, and it is not only a feel number.** A piece's footprint is half the road
+width plus the barrier, so every piece takes 15 studs more room at 50 than at 35 and the road
+crowds itself SOONER. That is measurable: at 50 the pre-`T-052` generator boxed itself in on all
+five suite seeds where at 35 it managed 500 pieces. Changing this number means re-measuring the
+stall table, not re-typing it.
 
 **Flat.** No elevation at all in this build: no crest, no banking. Every surface tops out at Y = 0,
 which is why the other two worlds' `FallY` / `RespawnBelowY` pair is right for this one too.
@@ -524,13 +534,12 @@ true, and the one that matters, is the one in the table.
 - **What a run is** ("What this spec does NOT decide"). The road is the same either way, but the
   window, the barrier and the respawn all read differently if a run can be finished rather than
   only ended.
-- **Whether 35 studs is right once a person drives it.** The autopilot keeps the car 3.5 studs
-  inside the edge at its worst and brushes a barrier 0.8% of the time; a human on a touchscreen is
-  not an autopilot. This wants the user, not another measurement.
-- **Whether the road may stop growing, and what a run does if it does.** 2 runs in 20 of 400
-  pieces box themselves in, the earliest at piece 231. The road warns and places nothing, which is
-  the right thing for it to do; what the game does about it is a question for whoever decides what
-  a run is. `SearchStepsPerFrame` in `Road/Generator` is the other half of the answer.
+- ~~Whether 35 studs is right once a person drives it.~~ **Answered by the user on 2026-11-04:
+  50 studs.** Whether 50 is right is now the open one, and it is still theirs, not a measurement.
+- ~~Whether the road may stop growing, and what a run does if it does.~~ **Answered by `T-052`:**
+  it recovers rather than refusing. 0 of 20 runs box in over 400 pieces; when no chain 14 long
+  exists it lays the best chain it found. The road stops only when nothing at all is legal, which
+  no sweep has produced.
 - **Whether elevation earns its place.** `Crest` is dropped from this build. Hills make every other
   problem harder — the camera, the rays, the overlap test, which becomes genuinely 3D.
 - **Whether a long run can wander back into the other two worlds.** Measured, it would take some
