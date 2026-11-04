@@ -25,6 +25,15 @@
 -- step, so their OUTER corners pull apart by (half the width) x (that step) and the gap
 -- reads from the ground as a bite out of the edge. Each box is lengthened by exactly
 -- that, so the outer corners meet and the inner ones overlap instead.
+--
+-- THERE ARE TWO LOOPS IN HERE AND THAT IS DELIBERATE (T-066). A flat piece is built the
+-- way it has always been built -- a box per pair of points, square to the world, placed
+-- by `span` -- and a piece with a height or a bank is built from the two end FRAMES of
+-- each segment, which is `Playground/Build.ribbon`'s way and includes its trick of
+-- averaging the two ups and re-squaring the frame off the segment's own forward. Writing
+-- one loop that did both would have meant the nine flat pieces coming out of a different
+-- formula from the one that measured them; keeping the old one untouched is what makes
+-- "the flat road is exactly the road it was" a fact rather than a tolerance.
 
 local CollectionService = game:GetService("CollectionService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -93,11 +102,57 @@ local function span(
 	return newPart(name, Vector3.new(width, height, len + OVERLAP + extra), cf, colour, material, parent)
 end
 
+-- One box spanning two POINTS IN SPACE, lying in the surface rather than square to the
+-- world: `a` and `b` are the two ends of the segment's centre line and `ua`, `ub` the
+-- surface's up at each. The box's top face is the road, so its centre is half its
+-- thickness down its own up.
+--
+-- The frame is re-squared off the segment's own forward, exactly as `ribbon` does it: the
+-- averaged up is not quite perpendicular to a segment that is both turning and tilting,
+-- and a box built from a skewed frame is a box with a twist in it.
+local function spanFrame(
+	name: string,
+	a: Vector3,
+	b: Vector3,
+	ua: Vector3,
+	ub: Vector3,
+	width: number,
+	height: number,
+	drop: number, -- studs from the top face down to the centre of the box
+	extra: number,
+	colour: Color3,
+	material: Enum.Material,
+	parent: Instance
+): Part?
+	local delta = b - a
+	local len = delta.Magnitude
+	if len < 1e-4 then
+		return nil
+	end
+	local forward = delta.Unit
+	local up = (ua + ub).Unit
+	local right = forward:Cross(up)
+	if right.Magnitude < 1e-6 then
+		return nil
+	end
+	right = right.Unit
+	up = right:Cross(forward).Unit
+	local centre = (a + b) * 0.5 - up * drop
+	local cf = CFrame.fromMatrix(centre, right, up)
+	return newPart(name, Vector3.new(width, height, len + OVERLAP + extra), cf, colour, material, parent)
+end
+
 -- Where the run's arc length had got to at the end of the last piece built. The window
 -- builds pieces in order (`RoadService.buildPiece`), so carrying one number is enough;
 -- anything else -- a piece built out of order, or piece 1 of a new run -- falls back to
 -- starting the pattern at zero, which is correct for a fresh road and harmless otherwise.
 local markPhase = { n = 0, distance = 0 }
+
+-- Start the dash pattern again from zero. Only `RoadTests` calls it, so that a road built
+-- for a measurement comes out the same whatever was built before it.
+function Builder.DebugResetMarks()
+	markPhase.n, markPhase.distance = 0, 0
+end
 
 -- The centre line of one piece: dashes at a fixed interval along the WHOLE run, clipped
 -- at both ends of the piece rather than skipped (see the header). Returns the parts.
@@ -168,51 +223,123 @@ function Builder.build(piece: Pieces.Placed, parent: Instance): Built
 	local barrierOffset = halfWidth + C.BarrierThickness * 0.5
 	local nodes = piece.nodes
 
-	for i = 1, #nodes - 1 do
-		local a, b = nodes[i], nodes[i + 1]
-		local step = yawStep(a.yaw, b.yaw)
+	if piece.flat then
+		for i = 1, #nodes - 1 do
+			local a, b = nodes[i], nodes[i + 1]
+			local step = yawStep(a.yaw, b.yaw)
 
-		local slab = span(
-			`Road_{piece.n}_{i}`,
-			a.x,
-			a.z,
-			b.x,
-			b.z,
-			C.Width,
-			C.Thickness,
-			C.SurfaceY,
-			halfWidth * step,
-			C.Colours.Road,
-			C.RoadMaterial,
-			folder
-		)
-		if slab then
-			CollectionService:AddTag(slab, surfaceTag)
-			slab:SetAttribute(surfaceAttr, C.SurfaceTarmac)
-			table.insert(road, slab)
-		end
-
-		-- Both walls. Each is built from its OWN pair of points -- the centre line pushed
-		-- sideways at each node -- so the inner wall comes out shorter than the outer one
-		-- on a curve and neither has to be fudged.
-		for _, side in { -1, 1 } do
-			local ra, rb = Pieces.right(a.yaw), Pieces.right(b.yaw)
-			local wall = span(
-				`Barrier_{if side < 0 then "L" else "R"}_{piece.n}_{i}`,
-				a.x + ra.X * barrierOffset * side,
-				a.z + ra.Z * barrierOffset * side,
-				b.x + rb.X * barrierOffset * side,
-				b.z + rb.Z * barrierOffset * side,
-				C.BarrierThickness,
-				C.BarrierHeight + C.BarrierSink,
-				C.SurfaceY + C.BarrierHeight,
-				C.BarrierThickness * 0.5 * step,
-				C.Colours.Barrier,
-				C.BarrierMaterial,
+			local slab = span(
+				`Road_{piece.n}_{i}`,
+				a.x,
+				a.z,
+				b.x,
+				b.z,
+				C.Width,
+				C.Thickness,
+				C.SurfaceY,
+				halfWidth * step,
+				C.Colours.Road,
+				C.RoadMaterial,
 				folder
 			)
-			if wall then
-				table.insert(barriers, wall)
+			if slab then
+				CollectionService:AddTag(slab, surfaceTag)
+				slab:SetAttribute(surfaceAttr, C.SurfaceTarmac)
+				table.insert(road, slab)
+			end
+
+			-- Both walls. Each is built from its OWN pair of points -- the centre line
+			-- pushed sideways at each node -- so the inner wall comes out shorter than the
+			-- outer one on a curve and neither has to be fudged.
+			for _, side in { -1, 1 } do
+				local ra, rb = Pieces.right(a.yaw), Pieces.right(b.yaw)
+				local wall = span(
+					`Barrier_{if side < 0 then "L" else "R"}_{piece.n}_{i}`,
+					a.x + ra.X * barrierOffset * side,
+					a.z + ra.Z * barrierOffset * side,
+					b.x + rb.X * barrierOffset * side,
+					b.z + rb.Z * barrierOffset * side,
+					C.BarrierThickness,
+					C.BarrierHeight + C.BarrierSink,
+					C.SurfaceY + C.BarrierHeight,
+					C.BarrierThickness * 0.5 * step,
+					C.Colours.Barrier,
+					C.BarrierMaterial,
+					folder
+				)
+				if wall then
+					table.insert(barriers, wall)
+				end
+			end
+		end
+	else
+		-- THE PROFILED PATH. The road rotates about its own centre line, so a banked
+		-- segment is a bowl you drive on to from either edge, never a trench on one side
+		-- and a wall on the other. (The playground's `levelInnerEdge` lifts the centre
+		-- line to keep a banked ring's inner edge down on the plate; a road has no plate
+		-- under it and wants the rotation plain.)
+		--
+		-- Each barrier is built from ITS OWN pair of points, as on the flat -- the centre
+		-- line pushed out along the surface's banked right -- so on a banked curve the two
+		-- walls differ in length and in height and neither has to be fudged.
+		--
+		-- A WALL FOLLOWS THE GRADE AND NOT THE BANK, and that is a measured choice rather
+		-- than a tidy one. Leaning it with the road puts its inner face OVER the road: six
+		-- studs of wall banked 30 degrees overhangs by three, and since the car's collision
+		-- box is never pitched either, what that overhang catches is the car's ROOF while
+		-- its wheels still have room. Measured, a 30-degree banked corner with leaning
+		-- walls: the car ground along the outside wall at 13 studs/s and took 150 seconds
+		-- to cover six pieces. Standing it up costs a little daylight at the join between
+		-- the wall and a steeply banked road and gives the road its full width back.
+		local barrierDrop = (C.BarrierSink - C.BarrierHeight) * 0.5
+		for i = 1, #nodes - 1 do
+			local a, b = nodes[i], nodes[i + 1]
+			local step = yawStep(a.yaw, b.yaw)
+			local ra, ua = Pieces.frame(a.yaw, a.pitch, a.bank)
+			local rb, ub = Pieces.frame(b.yaw, b.pitch, b.bank)
+			local _, wa = Pieces.frame(a.yaw, a.pitch, 0) -- the same up with the bank taken
+			local _, wb = Pieces.frame(b.yaw, b.pitch, 0) -- out of it, for the walls
+			local pa = Vector3.new(a.x, C.SurfaceY + a.y, a.z)
+			local pb = Vector3.new(b.x, C.SurfaceY + b.y, b.z)
+
+			local slab = spanFrame(
+				`Road_{piece.n}_{i}`,
+				pa,
+				pb,
+				ua,
+				ub,
+				C.Width,
+				C.Thickness,
+				C.Thickness * 0.5,
+				halfWidth * step,
+				C.Colours.Road,
+				C.RoadMaterial,
+				folder
+			)
+			if slab then
+				CollectionService:AddTag(slab, surfaceTag)
+				slab:SetAttribute(surfaceAttr, C.SurfaceTarmac)
+				table.insert(road, slab)
+			end
+
+			for _, side in { -1, 1 } do
+				local wall = spanFrame(
+					`Barrier_{if side < 0 then "L" else "R"}_{piece.n}_{i}`,
+					pa + ra * (barrierOffset * side),
+					pb + rb * (barrierOffset * side),
+					wa,
+					wb,
+					C.BarrierThickness,
+					C.BarrierHeight + C.BarrierSink,
+					barrierDrop,
+					C.BarrierThickness * 0.5 * step,
+					C.Colours.Barrier,
+					C.BarrierMaterial,
+					folder
+				)
+				if wall then
+					table.insert(barriers, wall)
+				end
 			end
 		end
 	end
