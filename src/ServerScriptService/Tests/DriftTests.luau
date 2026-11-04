@@ -9,6 +9,11 @@
 -- run with no player, no car and no playtest. The one check that needs the Workspace
 -- (`no physics`) builds its own car and also looks at any live ones.
 --
+-- None of this is a feel judgement -- that is the user's, and it is the gate. These catch
+-- a model that has stopped being the one the spec describes: the finger that is a rate of
+-- turn, the slip angle that opens by itself, the quadratic that closes it, the brake past
+-- square-on, and the speed a drift costs.
+--
 -- The model lives in StarterPlayerScripts because the client that drives a car owns its
 -- simulation. The server can still require it -- it is a ModuleScript in a container the
 -- server can see -- and that is deliberate: one code path, tested where the test kit is.
@@ -31,80 +36,126 @@ local World = require(DriftFolder.World)
 
 local DriftTests = {}
 
--- The scripted 90 degree corner the spec measures: stand still, run up, one input through
--- the corner, catch the exit. Changing this changes what the numbers below mean, so it
+-- The scripted corner the checks below measure: already moving, straight for a moment,
+-- then one steady finger, then let go. Changing it changes what every number means, so it
 -- lives here as one named thing rather than inline in three checks.
---
--- It is 70% of a finger, not a full one, since the rebuild (features/drift-model.md "How
--- it plays"): the offset now says how hard the car is sliding, and a full one held for a
--- second and a half is not a corner, it is the brake. The old full-lock version of this
--- line now turns the car 132 degrees and leaves it at 29% of its entry speed -- a useful
--- number, and not a 90 degree corner.
 local CORNER = {
 	{ t = 0, steer = 0 },
-	{ t = 3.0, steer = 0.7 },
-	{ t = 4.6, steer = 0 },
+	{ t = 1, steer = 0.6 },
+	{ t = 2.6, steer = 0 },
 }
-local CORNER_SECONDS = 7
+local CORNER_SECONDS = 5
+local CORNER_ENTRY = 120 -- studs/s the corner is entered at
 
--- Run up to top speed on flat ground, then hold one offset: the shape of the whole
--- control, in one function. Returns what the hold cost.
-local function holdOffset(offset: number, holdFor: number)
+-- Every check that measures GRIP starts the car on this heading rather than on a world
+-- axis. The reference clamps each step's pull per world axis against that axis's own
+-- speed -- its guard against overshooting through zero at a standstill, and the spec's
+-- (features/drift-model.md "Grip -- the drift") -- so a car travelling exactly along -Z
+-- has no X speed for the clamp to allow, and the sideways pull is suppressed until the
+-- car has yawed far enough to build one. That is a measurement artefact of a perfectly
+-- axis-aligned start, not something a player can ever be in; 15 degrees is off it.
+local TEST_YAW = math.rad(15)
+
+local function startCF(yaw: number?): CFrame
+	local cf = CFrame.new(0, Config.Drift.RideHeight, 0)
+	return if yaw then cf * CFrame.Angles(0, yaw, 0) else cf
+end
+
+-- Straight ahead at speed, on a heading.
+local function ahead(speed: number, yaw: number?): Vector3
+	local fwd = Model.axes(yaw or 0)
+	return fwd * speed
+end
+
+-- Hold one finger from a rolling start and report what the car settles at: the slip angle
+-- it reaches, the speed it keeps, the circle it describes. The means are over the last
+-- second, so one wobble is not the answer.
+local function hold(steer: number, speed: number, seconds: number, world)
 	local C = Config.Drift
-	local runner = Sim.newRunner(CFrame.new(0, C.RideHeight, 0))
-	local world = World.flat(0)
-	local runUp = 4
-	local entry, peak, samples = nil, 0, {}
+	local runner = Sim.newRunner(startCF(TEST_YAW))
+	runner.state.velocity = ahead(speed, TEST_YAW)
+	world = world or World.flat(0)
+
+	local samples = {}
+	local peak = 0
 	local function observe(s)
-		if s.time < runUp then
-			return
-		end
-		if not entry then
-			entry = Model.speed(s)
-		end
 		peak = math.max(peak, math.abs(math.deg(s.slip)))
-		table.insert(samples, { t = s.time - runUp, slip = math.deg(s.slip), speed = Model.speed(s), r = s.r })
+		table.insert(samples, {
+			t = s.time,
+			slip = math.deg(s.slip),
+			speed = Model.speed(s),
+			r = s.r,
+			grip = s.gripAccel,
+		})
 	end
-	local function inputAt(t: number)
-		return { steer = t < runUp and 0 or offset, drift = false, brake = false }
-	end
-	local total, elapsed = runUp + holdFor, 0
-	while elapsed < total - 1e-9 do
-		local dt = math.min(1 / 60, total - elapsed)
-		Sim.advance(runner, dt, inputAt, world, observe)
+
+	local elapsed = 0
+	while elapsed < seconds - 1e-9 do
+		local dt = math.min(1 / 60, seconds - elapsed)
+		Sim.advance(runner, dt, { steer = steer }, world, observe)
 		elapsed += dt
 	end
-	-- Settled: the mean of the last second, so one wobble is not the answer.
-	local n, slipSum, speedSum, yawSum = 0, 0, 0, 0
+
+	local n, slipSum, speedSum, gripSum = 0, 0, 0, 0
 	for _, s in samples do
-		if s.t >= holdFor - 1 then
+		if s.t >= seconds - 1 then
 			n += 1
-			slipSum += s.slip
+			slipSum += math.abs(s.slip)
 			speedSum += s.speed
-			yawSum += math.abs(s.r)
+			gripSum += s.grip
 		end
 	end
 	n = math.max(n, 1)
-	local settledSlip, settledSpeed, settledYaw = slipSum / n, speedSum / n, yawSum / n
-	local reached, stopped = -1, -1
-	for _, s in samples do
-		if reached < 0 and math.abs(s.slip) >= 0.9 * math.abs(settledSlip) then
-			reached = s.t
-		end
-		if stopped < 0 and s.speed <= 0.1 * C.TopSpeed then
-			stopped = s.t
-		end
-	end
+	local settledSpeed = speedSum / n
+	local yaw = math.abs(runner.state.r)
 	return {
-		entry = entry or 0,
+		entry = speed,
 		peakSlip = peak,
-		slip = settledSlip,
+		slip = slipSum / n,
 		speed = settledSpeed,
-		share = settledSpeed / math.max(entry or 1, 1),
-		reached = reached,
-		stopped = stopped,
-		radius = settledYaw > 0.01 and settledSpeed / settledYaw or math.huge,
+		grip = gripSum / n,
+		share = settledSpeed / math.max(speed, 1e-3),
+		radius = if yaw > 1e-3 then settledSpeed / yaw else math.huge,
 		state = runner.state,
+	}
+end
+
+-- One step with the car held at a known slip angle, and what the grip did about it.
+-- The car's nose is at `yaw`, its velocity `slipDeg` round from that, and the measurement
+-- is the velocity change along the car's RIGHT -- which is where the grip points, and
+-- which the drivetrain (along the nose) and the downforce (straight down) cannot reach.
+-- `yaw` is deliberately off the world axes: the reference's per-axis clamp would hide the
+-- pull on an axis the car happens to have no speed along.
+local function gripAt(slipDeg: number, speed: number, world)
+	local C = Config.Drift
+	local yaw = TEST_YAW
+	local runner = Sim.newRunner(startCF(yaw))
+	local travel = Model.axes(yaw + math.rad(slipDeg))
+	world = world or World.flat(0)
+
+	-- One step to let the ground rays find the surface under the car -- a fresh state has
+	-- not cast one yet -- then the state is put back exactly where the measurement wants
+	-- it and the step that follows is the one that is read.
+	runner.state.velocity = travel * speed
+	Sim.advance(runner, C.FixedStep, { steer = 0 }, world)
+	runner.state.velocity = travel * speed
+	runner.state.yaw = yaw
+
+	local _, right = Model.axes(yaw)
+	local before = runner.state.velocity
+	Sim.advance(runner, C.FixedStep, { steer = 0 }, world)
+	local after = runner.state.velocity
+
+	local b = math.abs(math.rad(slipDeg))
+	local bc = math.min(b, math.pi * 0.5)
+	local expected = math.min(C.ConstantFriction + C.SlipFriction * bc + C.SlipSqFriction * bc * bc, C.MaxFriction)
+	return {
+		measured = math.abs((after - before):Dot(right)) / C.FixedStep,
+		expected = expected,
+		slipRead = math.deg(runner.state.slip),
+		before = before,
+		after = after,
+		travel = travel,
 	}
 end
 
@@ -133,8 +184,9 @@ function DriftTests.run()
 	local C = Config.Drift
 
 	------------------------------------------------------------------ determinism
-	local pathA, cornerA = Sim.drive(CORNER, CORNER_SECONDS, { fps = 60 })
-	local pathB = Sim.drive(CORNER, CORNER_SECONDS, { fps = 60 })
+	local driveOpts = { fps = 60, start = startCF(TEST_YAW), velocity = ahead(CORNER_ENTRY, TEST_YAW) }
+	local pathA, cornerA = Sim.drive(CORNER, CORNER_SECONDS, driveOpts)
+	local pathB = Sim.drive(CORNER, CORNER_SECONDS, driveOpts)
 	local worst = 0
 	for i = 1, math.min(#pathA, #pathB) do
 		worst = math.max(worst, (pathA[i] - pathB[i]).Magnitude)
@@ -149,7 +201,7 @@ function DriftTests.run()
 	------------------------------------------------------------------ frame independence
 	local ends, spread = {}, 0
 	for _, fps in { 30, 60, 120 } do
-		local _, summary = Sim.drive(CORNER, CORNER_SECONDS, { fps = fps })
+		local _, summary = Sim.drive(CORNER, CORNER_SECONDS, { fps = fps, start = startCF(TEST_YAW), velocity = ahead(CORNER_ENTRY, TEST_YAW) })
 		ends[fps] = summary.endPosition
 	end
 	for _, a in ends do
@@ -161,179 +213,235 @@ function DriftTests.run()
 		checks,
 		"the same line at 30, 60 and 120 FPS",
 		spread < 2,
-		`worst gap between the three end points {string.format("%.3f", spread)} studs`
-	)
-
-	------------------------------------------------------------------ the corner
-	-- Not a feel judgement: that is the user's (features/drift-model.md "Testing"). These
-	-- only catch a model that has stopped working -- a corner that never breaks loose, one
-	-- that spins, or one that arrives at the exit stopped.
-	local turned = math.abs(cornerA.headingChangeDeg)
-	check(
-		checks,
-		"a 90 degree corner, taken sideways",
-		turned > 60 and turned < 170 and cornerA.peakSlipDeg > C.BreakLooseSlip and cornerA.peakSlipDeg < C.SlipAngleMax,
 		string.format(
-			"entry %.1f studs/s, peak slip %.1f deg, exit %.1f studs/s, loose %.3f s after the input, turned %.1f deg",
-			cornerA.entrySpeed or -1,
-			cornerA.peakSlipDeg,
-			cornerA.exitSpeed or -1,
-			cornerA.breakLooseSeconds or -1,
-			cornerA.headingChangeDeg
-		)
-	)
-	check(
-		checks,
-		"the exit carries speed",
-		(cornerA.exitSpeed or 0) > C.TopSpeed * 0.4,
-		string.format(
-			"exit %.1f studs/s, %.0f%% of the %.0f it went in at",
-			cornerA.exitSpeed or -1,
-			100 * (cornerA.exitSpeed or 0) / math.max(cornerA.entrySpeed or 1, 1),
-			cornerA.entrySpeed or -1
+			"worst gap between the three end points %.3f studs; the corner turned %.1f deg and went in at %.0f studs/s",
+			spread,
+			cornerA.headingChangeDeg,
+			CORNER_ENTRY
 		)
 	)
 
-	------------------------------------------------------------------ the finger is on the rear
-	-- The first thing the player feels, and the easiest to get backwards
-	-- (features/drift-model.md "How it plays", item 3). A finger to the RIGHT throws the
-	-- tail right, which points the nose left and arcs the car left. Measured three ways,
-	-- because a sign error can hide in any one of them: the slip angle, the heading, and
-	-- where the car actually ended up.
-	local invRunner = Sim.newRunner(CFrame.new(0, C.RideHeight, 0))
-	local invWorld = World.flat(0)
-	local startYaw, startPos = nil, nil
-	local invInput = function(t)
-		return { steer = t < 3 and 0 or 0.4, drift = false, brake = false }
+	------------------------------------------------------------------ the finger IS the rate of turn
+	-- The thing the whole port is for (features/drift-model.md "Steering -- the control").
+	-- Not a torque, not a wheel angle, not a target: the heading change over a hold is the
+	-- finger times `MaxSteeringSpeed` times the time, at any speed, and the two speeds
+	-- here are there to prove the car's own state does not get a say.
+	local turnOk, turnParts = true, {}
+	for _, speed in { 40, 150 } do
+		local steerHeld = 0.5
+		local seconds = 1
+		local _, summary = Sim.drive({ { t = 0, steer = steerHeld } }, seconds, {
+			fps = 60,
+			start = startCF(TEST_YAW),
+			velocity = ahead(speed, TEST_YAW),
+		})
+		local wanted = math.deg(C.MaxSteeringSpeed * steerHeld * C.SteeringSensitivity * seconds)
+		local got = math.abs(summary.headingChangeDeg)
+		turnOk = turnOk and math.abs(got - wanted) <= 1
+		table.insert(turnParts, string.format("from %d studs/s: %.2f deg, asked for %.2f", speed, got, wanted))
 	end
-	local invElapsed = 0
-	while invElapsed < 4.5 - 1e-9 do
-		local dt = math.min(1 / 60, 4.5 - invElapsed)
-		Sim.advance(invRunner, dt, invInput, invWorld, function(s)
-			if s.time >= 3 and not startYaw then
-				startYaw, startPos = s.yaw, s.position
-			end
-		end)
-		invElapsed += dt
-	end
-	local invState = invRunner.state
-	local invFwd, invRight = Model.axes(startYaw or 0)
-	local moved = invState.position - (startPos or Vector3.zero)
-	local sideways = moved:Dot(invRight)
-	local turned = math.deg(invState.yaw - (startYaw or 0)) -- Roblox yaw: + is to the left
+	check(checks, "the finger is the car's rate of turn, at any speed", turnOk, table.concat(turnParts, " | "))
+
+	-- And it halves when the dial halves: the numbers are in Config, not in the logic.
+	local maxSteer = C.MaxSteeringSpeed
+	local _, fullTurn = Sim.drive({ { t = 0, steer = 1 } }, 1, { fps = 60, start = startCF(TEST_YAW), velocity = ahead(80, TEST_YAW) })
+	C.MaxSteeringSpeed = maxSteer * 0.5
+	local _, halfTurn = Sim.drive({ { t = 0, steer = 1 } }, 1, { fps = 60, start = startCF(TEST_YAW), velocity = ahead(80, TEST_YAW) })
+	C.MaxSteeringSpeed = maxSteer
 	check(
 		checks,
-		"the finger is on the car's rear, not its nose",
-		math.deg(invState.slip) > 5 and turned > 5 and sideways < -5,
+		"halving MaxSteeringSpeed halves the rate of turn",
+		math.abs(math.abs(halfTurn.headingChangeDeg) * 2 - math.abs(fullTurn.headingChangeDeg)) < 0.5,
 		string.format(
-			"finger +0.4 (tail to the right) for 1.5 s: slip %+.1f deg (tail out to the right), heading %+.1f deg (left), ended %+.1f studs ahead and %+.1f to its right",
-			math.deg(invState.slip),
-			turned,
-			moved:Dot(invFwd),
-			sideways
+			"a second of full finger turned %.1f deg at %.1f rad/s and %.1f deg at %.1f",
+			math.abs(fullTurn.headingChangeDeg),
+			maxSteer,
+			math.abs(halfTurn.headingChangeDeg),
+			maxSteer * 0.5
 		)
 	)
 
-	------------------------------------------------------------------ the offset ladder
-	-- What the offset buys and what it costs, which is the whole control
-	-- (features/drift-model.md "How it plays", items 3 and 5). Each notch of finger has to
-	-- buy more slide than the last and cost more speed than the last, or the player has a
-	-- switch rather than a dial. The numbers themselves are the user's to judge; this only
-	-- catches a ladder that has stopped being one.
+	------------------------------------------------------------------ centring stops the turn at once
+	-- No yaw inertia and no damping anywhere, so there is nothing left to spin down.
+	local centring = Sim.newRunner(startCF(TEST_YAW))
+	centring.state.velocity = ahead(100, TEST_YAW)
+	local world = World.flat(0)
+	Sim.advance(centring, 1, { steer = 1 }, world)
+	local turningRate = centring.state.r
+	local yawBefore = centring.state.yaw
+	Sim.advance(centring, C.FixedStep, { steer = 0 }, world)
+	local yawAfter = centring.state.yaw
+	check(
+		checks,
+		"centring the finger stops the turn on the next step",
+		turningRate ~= 0 and centring.state.r == 0 and yawAfter == yawBefore,
+		string.format(
+			"turning at %.2f rad/s, then one step with the finger centred: %.4f rad/s, heading moved %.6f deg",
+			turningRate,
+			centring.state.r,
+			math.deg(yawAfter - yawBefore)
+		)
+	)
+
+	------------------------------------------------------------------ rotating is drifting
+	-- No drift input exists to use. A steady finger from speed opens the slip angle on its
+	-- own, because nothing moves the velocity when the car rotates.
+	local opener = hold(0.5, 140, 6)
+	check(
+		checks,
+		"rotating is drifting: a steady finger opens the slip angle by itself",
+		opener.peakSlip > C.MinSlipAngleForDrift * 2 and opener.slip > C.MinSlipAngleForDrift,
+		string.format(
+			"half a finger from 140 studs/s, no drift input anywhere: slip peaked at %.1f deg and settled at %.1f, speed settled at %.0f studs/s on a %.0f stud circle",
+			opener.peakSlip,
+			opener.slip,
+			opener.speed,
+			math.min(opener.radius, 9999)
+		)
+	)
+
+	------------------------------------------------------------------ grip is a quadratic
+	-- Held at a known angle, one step, and the pull measured along the car's right, which
+	-- is the only axis the grip acts on and neither the drivetrain nor the downforce can
+	-- reach. The fit is the spec's own curve, capped at `MaxFriction`.
+	local quadOk, quadParts, quadWorst = true, {}, 0
+	for _, slipDeg in { 15, 30, 45, 60, 80 } do
+		local g = gripAt(slipDeg, 80)
+		local err = math.abs(g.measured - g.expected)
+		quadWorst = math.max(quadWorst, err)
+		quadOk = quadOk and err < 0.5
+		table.insert(quadParts, string.format("%d deg: %.1f (curve %.1f)", slipDeg, g.measured, g.expected))
+	end
+	check(
+		checks,
+		"grip grows as a quadratic in the slip angle, to its ceiling",
+		quadOk,
+		string.format(
+			"%s studs/s^2, worst gap %.3f; ceiling %.0f",
+			table.concat(quadParts, " | "),
+			quadWorst,
+			C.MaxFriction
+		)
+	)
+
+	-- And the ceiling is wired, which the starting numbers alone cannot show: the three
+	-- terms top out at 72 studs/s^2 at square-on, well under `MaxFriction`, so the cap is
+	-- inert as the car is tuned today. Tripling them proves it binds, and the detail says
+	-- what the shipped curve actually reaches -- a number worth knowing before anyone
+	-- tunes `MaxFriction` expecting it to do something.
+	local uncapped = gripAt(89, 80).measured
+	local c0, c1, c2 = C.ConstantFriction, C.SlipFriction, C.SlipSqFriction
+	C.ConstantFriction, C.SlipFriction, C.SlipSqFriction = c0 * 3, c1 * 3, c2 * 3
+	local capped = gripAt(89, 80).measured
+	C.ConstantFriction, C.SlipFriction, C.SlipSqFriction = c0, c1, c2
+	check(
+		checks,
+		"the grip ceiling holds",
+		math.abs(capped - C.MaxFriction) < 0.5 and uncapped < C.MaxFriction,
+		string.format(
+			"89 deg of slip pulls %.1f studs/s^2 as tuned -- the ceiling of %.0f is never reached -- and %.1f with the three terms tripled, which is the ceiling exactly",
+			uncapped,
+			C.MaxFriction,
+			capped
+		)
+	)
+
+	------------------------------------------------------------------ surfaces matter
+	local onTarmac = gripAt(45, 80, World.flat(0, C.GripTarmac, C.ScoreTarmac))
+	local onDirt = gripAt(45, 80, World.flat(0, C.GripDirt, C.ScoreDirt))
+	check(
+		checks,
+		"dirt makes half the grip tarmac does",
+		math.abs(onDirt.measured - onTarmac.measured * (C.GripDirt / C.GripTarmac)) < 0.5,
+		string.format(
+			"45 deg of slip pulls %.1f studs/s^2 on tarmac and %.1f on dirt",
+			onTarmac.measured,
+			onDirt.measured
+		)
+	)
+
+	------------------------------------------------------------------ past 90 degrees it brakes
+	-- The car is going backwards relative to its nose, so the pull stops being sideways
+	-- and points straight against the travel. The drivetrain is turned off for this one,
+	-- so what is left is only the grip and it can be read along the travel directly.
+	local maxAccel = C.MaxAcceleration
+	C.MaxAcceleration = 0
+	local spun = gripAt(135, 80)
+	C.MaxAcceleration = maxAccel
+	local dir = spun.travel
+	local alongBefore = spun.before:Dot(dir)
+	local alongAfter = spun.after:Dot(dir)
+	-- Across the travel, and only across the ground: the vertical is the ground follow
+	-- writing the car's height back, which is not the grip and is not sideways.
+	local delta = spun.after - spun.before
+	local flat = Vector3.new(delta.X, 0, delta.Z)
+	local across = flat - dir * flat:Dot(dir)
+	check(
+		checks,
+		"past 90 degrees the grip brakes instead of steering",
+		alongAfter < alongBefore and across.Magnitude / C.FixedStep < 0.5,
+		string.format(
+			"spun to 135 deg at 80 studs/s, engine off: speed along its travel %.2f -> %.2f studs/s (%.1f studs/s^2 of braking), sideways %.3f studs/s^2",
+			alongBefore,
+			alongAfter,
+			(alongBefore - alongAfter) / C.FixedStep,
+			across.Magnitude / C.FixedStep
+		)
+	)
+
+	------------------------------------------------------------------ a drift costs speed
+	-- Nothing in the model says so: the engine pushes along the nose, and a car that is
+	-- sideways is pushing across its own travel. The cost falls out of the geometry, and
+	-- it has to grow with the finger or the player has a switch rather than a dial.
 	local rungs = {}
-	for _, offset in { 0.25, 0.5, 0.75, 1.0 } do
-		table.insert(rungs, { offset = offset, r = holdOffset(offset, 8) })
+	for _, steer in { 0.25, 0.5, 1 } do
+		table.insert(rungs, { steer = steer, r = hold(steer, 140, 8) })
 	end
-	local climbs, costs = true, true
-	local parts = {}
+	local costs, parts = true, {}
 	for i, rung in rungs do
 		if i > 1 then
-			climbs = climbs and math.abs(rung.r.slip) > math.abs(rungs[i - 1].r.slip) - 2
 			costs = costs and rung.r.speed < rungs[i - 1].r.speed
 		end
 		table.insert(
 			parts,
 			string.format(
-				"%.0f%%: %.0f deg (leans %.0f), %.0f studs/s = %.0f%%, circle %.0f",
-				rung.offset * 100,
-				math.abs(rung.r.slip),
-				rung.r.peakSlip,
+				"%.0f%%: %.0f deg of slip, %.0f studs/s kept (%.0f%% of entry), circle %.0f studs",
+				rung.steer * 100,
+				rung.r.slip,
 				rung.r.speed,
 				100 * rung.r.share,
-				math.min(rung.r.radius, 999)
+				math.min(rung.r.radius, 9999)
 			)
 		)
 	end
-	check(checks, "every notch of finger buys more slide and costs more speed", climbs and costs, table.concat(parts, " | "))
-
-	-- And the cost has to be worth feeling. A quarter of a finger should be nearly free
-	-- and three quarters should hurt: that gap is the trade the game is made of.
-	local shallow, deep = rungs[1].r, rungs[3].r
-	check(
-		checks,
-		"a shallow drift is nearly free and a big one is ruinous",
-		shallow.share > 0.8 and deep.share < 0.55,
-		string.format(
-			"a quarter offset keeps %.0f%% of entry speed at %.0f deg; three quarters keeps %.0f%% at %.0f deg",
-			100 * shallow.share,
-			math.abs(shallow.slip),
-			100 * deep.share,
-			math.abs(deep.slip)
-		)
-	)
-
-	------------------------------------------------------------------ full lock is the brake
-	-- The user's hard requirement: "putting it 100% to the side being an action that will
-	-- effectively kill our momentum fully if held there" (DECISIONS.md, 2026-11-03). It
-	-- falls out of the scrub and the throttle cut; nothing here is a brake force.
-	local lock = rungs[4].r
-	check(
-		checks,
-		"full offset held kills the car's momentum",
-		lock.stopped > 0 and lock.stopped < 3 and lock.share < 0.12,
-		string.format(
-			"from %.1f studs/s: under a tenth of top speed in %.2f s, settling at %.1f studs/s (%.0f%% of entry) with the car leaning %.0f deg across",
-			lock.entry,
-			lock.stopped,
-			lock.speed,
-			100 * lock.share,
-			lock.peakSlip
-		)
-	)
-
-	-- It must not be able to drive its way back out while the finger is still there.
-	check(
-		checks,
-		"and it stays stopped while the finger is held",
-		lock.state ~= nil and Model.speed(lock.state) <= 0.12 * C.TopSpeed,
-		string.format(
-			"still %.1f studs/s after 8 s of full offset held (top speed %.0f)",
-			Model.speed(lock.state),
-			C.TopSpeed
-		)
-	)
+	check(checks, "every notch of finger costs more speed than the last", costs, table.concat(parts, " | "))
 
 	------------------------------------------------------------------ nothing runs away
-	-- The whole model rests on being able to trust the numbers it produces. A model that
-	-- can reach twice its top speed, or spin at ten radians a second, is broken whatever
-	-- it looks like on screen -- and that is how it was broken when this task picked it up.
-	local held = {
-		{ t = 0, steer = 1, drift = true },
-		{ t = 2, steer = -1, drift = true },
-		{ t = 4, steer = 1, drift = false, brake = true },
-		{ t = 6, steer = -1, drift = true },
+	-- The whole model rests on being able to trust the numbers it produces. The yaw rate
+	-- cannot run away by construction -- it is set, not integrated -- so this is really a
+	-- check on the speed, which no term in the model caps directly: the drivetrain's
+	-- falloff is what holds it, and the grip is what takes it away.
+	local abuse = {
+		{ t = 0, steer = 1 },
+		{ t = 2, steer = -1 },
+		{ t = 4, steer = 1 },
+		{ t = 6, steer = -1 },
+		{ t = 8, steer = 1 },
+		{ t = 10, steer = -1 },
 	}
-	local _, abused = Sim.drive(held, 12, { fps = 60 })
+	local _, abused = Sim.drive(abuse, 12, { fps = 60, start = startCF(TEST_YAW), velocity = ahead(C.TopSpeed, TEST_YAW) })
+	local speedCeiling = C.TopSpeed * C.StateSpeedTolerance
 	check(
 		checks,
-		"no runaway under abuse",
-		abused.maxSpeed <= C.TopSpeed * C.SpeedCeiling + 1 and abused.peakYawRate <= C.YawRateMax + 0.01,
+		"no runaway over 12 s lock to lock",
+		abused.maxSpeed <= speedCeiling and abused.peakYawRate <= C.MaxSteeringSpeed + 1e-6,
 		string.format(
-			"12 s of lock-to-lock with the drift held: top speed %.1f (ceiling %.1f), top yaw %.2f rad/s (ceiling %.2f)",
+			"12 s of lock to lock from top speed: fastest %.1f studs/s (the server drops anything over %.0f), top yaw %.3f rad/s (the finger's own %.2f), ended at %.1f",
 			abused.maxSpeed,
-			C.TopSpeed * C.SpeedCeiling,
+			speedCeiling,
 			abused.peakYawRate,
-			C.YawRateMax
+			C.MaxSteeringSpeed,
+			abused.endSpeed
 		)
 	)
 
@@ -369,16 +477,40 @@ function DriftTests.run()
 	------------------------------------------------------------------ the ground
 	-- The model must drive on a bare plate, with nothing tagged, as well as on the
 	-- playground (docs/game/CONTRACTS.md, tag `DriftSurface`).
-	local _, flat = Sim.drive({ { t = 0, steer = 0 } }, 4, { fps = 60, world = World.flat(0) })
+	local _, flat = Sim.drive({ { t = 0, steer = 0 } }, 6, { fps = 60, world = World.flat(0) })
 	check(
 		checks,
 		"a bare plate is drivable",
-		flat.airborneSeconds == 0 and flat.endSpeed > 0,
+		flat.airborneSeconds == 0 and flat.endSpeed > 0 and flat.peakSlipDeg < C.MinSlipAngleForDrift,
 		string.format(
-			"4 s on a flat plane with nothing tagged: %.1f studs/s, %.2f s airborne, %d surfaces tagged in this place",
+			"6 s on a flat plane with nothing tagged: %.1f studs/s from a standing start, %.2f s airborne, straight to within %.2f deg, %d surfaces tagged in this place",
 			flat.endSpeed,
 			flat.airborneSeconds,
+			flat.peakSlipDeg,
 			#CollectionService:GetTagged(C.SurfaceTag)
+		)
+	)
+
+	------------------------------------------------------------------ the throttle is not an input
+	-- It eases in, so a first-time player is never handed a car at top speed.
+	local easing = Sim.newRunner(startCF())
+	local throttleAtStart = easing.state.throttle
+	local easeWorld = World.flat(0)
+	local easeElapsed = 0
+	while easeElapsed < C.FullThrottleSeconds - 1e-9 do
+		local dt = math.min(1 / 60, C.FullThrottleSeconds - easeElapsed)
+		Sim.advance(easing, dt, { steer = 0 }, easeWorld)
+		easeElapsed += dt
+	end
+	check(
+		checks,
+		"the throttle eases itself in",
+		math.abs(throttleAtStart - C.StartThrottle) < 1e-6 and easing.state.throttle > 0.99,
+		string.format(
+			"%.3f at the start of a run, %.3f after %.0f s, and no input anywhere feeds it",
+			throttleAtStart,
+			easing.state.throttle,
+			C.FullThrottleSeconds
 		)
 	)
 
@@ -388,7 +520,7 @@ function DriftTests.run()
 	-- server chose, so the first packet after it follows from something the server knows;
 	-- a jump the server did not choose is rejected, and stays rejected however often it is
 	-- repeated, because a rejected packet never becomes what the next one is measured
-	-- against. There is no run-of-drops amnesty left to wear down.
+	-- against.
 	local CarService = require(ServerScriptService.Services.CarService)
 	local spawnAt = Vector3.new(0, C.RideHeight, 0)
 	local period = 1 / C.StateSendRate
@@ -429,7 +561,7 @@ function DriftTests.run()
 	)
 
 	-- A jump nobody asked for. The track it is measured against never moves, so repeating
-	-- it does not wear the server down -- the thing `StateResyncDrops` used to do.
+	-- it does not wear the server down.
 	local jumped = spawnAt + Vector3.new(500, 0, 500)
 	local cheat = CarService.track(spawnAt, clock)
 	local rejected = 0
@@ -444,28 +576,12 @@ function DriftTests.run()
 		"a jump the server did not decide stays rejected",
 		rejected == tries and C.StateResyncDrops == nil,
 		string.format(
-			"%d of %d packets %.0f studs from where the server put the car rejected, over %.1f s; no StateResyncDrops in Config: %s",
+			"%d of %d packets %.0f studs from where the server put the car rejected, over %.1f s",
 			rejected,
 			tries,
 			(jumped - spawnAt).Magnitude,
-			tries * period,
-			tostring(C.StateResyncDrops == nil)
+			tries * period
 		)
-	)
-
-	------------------------------------------------------------------ no numbers in the logic
-	-- Config is the only place a tuning number may live (docs/workflow/CODING.md). Move one
-	-- and the model must move with it: if it does not, something has been hard-coded.
-	local topSpeed = C.TopSpeed
-	C.TopSpeed = topSpeed * 0.5
-	local _, slow = Sim.drive({ { t = 0, steer = 0 } }, 8, { fps = 60 })
-	C.TopSpeed = topSpeed
-	local _, fast = Sim.drive({ { t = 0, steer = 0 } }, 8, { fps = 60 })
-	check(
-		checks,
-		"the model reads its numbers from Config",
-		slow.endSpeed < fast.endSpeed * 0.7,
-		string.format("halving Config.Drift.TopSpeed took the car from %.1f to %.1f studs/s", fast.endSpeed, slow.endSpeed)
 	)
 
 	local passed = true

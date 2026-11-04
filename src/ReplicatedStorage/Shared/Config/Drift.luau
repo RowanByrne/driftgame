@@ -2,170 +2,159 @@
 -- Every tuning number for the drift model, and none of them in the logic
 -- (docs/game/features/drift-model.md "Rules and numbers").
 --
--- These are starting values to tune in a playtest, not decisions. Change a number here
--- and the whole model changes: the logic in StarterPlayerScripts/Drift reads this table
--- and holds no constants of its own.
+-- The model is a port of the reference game's: the finger IS the car's yaw rate, nothing
+-- moves the velocity when the car rotates, so the slip angle opens on its own and
+-- rotating is drifting. A lateral grip force closes it again, growing as a quadratic in
+-- the slip angle up to a ceiling, and past 90 degrees of slip it turns into a brake.
+-- There is no drift input, no threshold, no mode, no yaw inertia, no yaw damping, no
+-- steering lock and no tyre model. If a number that implies one of those turns up in this
+-- table, something has drifted from the spec.
 --
 -- Units: studs, studs/s, studs/s^2, seconds, radians per second, and DEGREES wherever a
--- name says Angle or Slip, because degrees are what the tuning conversation uses.
+-- name says Angle or Slip, because degrees are what the tuning conversation uses. The
+-- reference is in metres; everything converted carries 1 stud = 0.28 m (x 3.571).
+--
+-- Every row of the spec's tables says where its number came from, and so does every
+-- comment here: EXACT (written in the reference's own logic), FALLBACK (the value its
+-- code declares when an editor asset does not override it, so a credible car but not the
+-- shipped one) or OURS. The fallbacks are a starting point to tune from, not decisions.
 
 return {
-	-- ---------------------------------------------------------------- simulation
-	FixedStep = 1 / 120, -- s. The simulation step, independent of frame rate
-	MaxStepsPerFrame = 16, -- safety: never spend more than this many steps on one frame
-	Gravity = 110, -- studs/s^2, falling only
+	-- ---------------------------------------------------------------- the step
+	FixedStep = 1 / 120, -- s. OURS. The simulation step, independent of frame rate. The
+	-- reference runs 1/60; every term below is written per
+	-- second and multiplied by the step, so the two agree
+	MaxStepsPerFrame = 16, -- OURS. Safety: never spend more than this many steps on one
+	-- frame, so a hitch cannot turn into a spiral
+	Gravity = 35, -- studs/s^2. EXACT (9.8 m/s^2). NOT Roblox's 196: the reference turns
+	-- the engine's gravity off and applies its own, and the whole feel --
+	-- how long a jump hangs, how a crest unloads the car -- is built on it
 
-	-- ---------------------------------------------------------------- speed
-	TopSpeed = 90, -- studs/s, free speed on a straight
-	Accel = 80, -- studs/s^2, how fast it reaches top speed
-	-- The slide is the car's speed control, and the only one it needs: a shallow drift is
-	-- nearly free, a big one is ruinous, and full lock held is the brake and the panic
-	-- button both. These two are the trade the whole game is made of.
-	SlideDrag = 32, -- studs/s^2 scrubbed off at SlideAngleFull, along the car's TRAVEL
-	SlideDragPower = 2.3, -- the shape of the trade. 1 is a straight line; above 1 a shallow
-	-- drift costs almost nothing and a big one costs everything.
-	DriveCutShape = 3, -- how much of the throttle the thrown weight takes away. At a full
-	-- offset it takes all of it, whatever the car is doing, which is
-	-- what makes full lock held a stop the car cannot drive out of.
-	-- The exponent decides how far down the finger's travel that
-	-- reaches: 1 takes it in proportion, higher leaves small offsets
-	-- alone and only bites near the end.
-	BrakeDecel = 90, -- studs/s^2, brake input
-	CoastDecel = 12, -- studs/s^2, drag with no throttle
-	AutoThrottle = true, -- the prototype drives itself; brake is the only throttle input
-	ReverseSpeed = 25, -- studs/s, top speed backwards
-	ReverseAccel = 25, -- studs/s^2, how fast it backs up
-	BrakeToReverse = 0.5, -- studs/s below which the brake input starts backing up instead
-	SpeedCeiling = 1.15, -- guard: the most the whole velocity may reach, as a share of
-	-- TopSpeed. A slide puts speed into the lateral axis, so the cap is
-	-- on the total, not on the forward part alone.
+	-- ---------------------------------------------------------------- steering: the control
+	-- THE DIAL THE FEEL CONVERSATION STARTS WITH. Every step the car's yaw rate is SET:
+	--     yawRate = MaxSteeringSpeed * steer * SteeringSensitivity
+	-- Not a torque, not a wheel angle, not a target to ease toward. Centre the finger and
+	-- the car stops turning on the next step. Nothing moves the velocity when the car
+	-- rotates, so the slip angle opens by itself: rotating IS drifting.
+	MaxSteeringSpeed = 2, -- rad/s. FALLBACK. The car's rate of turn at a full finger:
+	-- 115 deg/s. Up for a car that whips round, down for one that
+	-- has to be led into a slide. The single biggest feel dial
+	SteeringSensitivity = 1, -- OURS/EXACT. Per-car multiplier on the rate of turn, so a
+	-- future car list can move one car without moving the model
+	InvertSteering = true, -- OURS. Which way a finger turns the car. True is the sense the
+	-- user asked for in T-007: a finger to the right swings the
+	-- car's REAR right and the nose left, which reads as holding
+	-- the car's weight rather than steering its front wheels
 
-	-- ---------------------------------------------------------------- the finger
-	-- THE THREE DIALS THE FEEL CONVERSATION STARTS WITH. The finger is on the car's rear,
-	-- not its nose: its offset says how hard the car's weight is thrown across, and the
-	-- slide that comes of it is a balance between the shove and the car's own grip
-	-- (features/drift-model.md "How it plays"). Nothing here names an angle for the car to
-	-- go to.
-	--
-	--   SlideKick / SlideBite -- their RATIO is how sideways the car gets for a given
-	--     finger, and their SIZE is how violently it answers. Kick up or bite down for a
-	--     looser, wilder car; the other way for a car that has to be bullied sideways.
-	--   SlideDrag  -- what a slide costs in speed. Up for a car that is punished for
-	--     staying sideways, down for one that carries speed through anything.
-	SlideKick = 78, -- rad/s^2 of yaw the thrown weight shoves the tail round with, at a
-	-- full offset. Measured against SlideBite, not on its own.
-	SlideBite = 78, -- rad/s^2 the car's own grip hauls the tail back with, at
-	-- SlideAngleFull
-	SlideBiteShape = 1, -- how the fight grows with the slide. 1 is a straight line; above
-	-- it, a small slide is easy to open and a big one is very hard, which
-	-- is what spreads the ladder across the finger's travel instead of
-	-- leaving the car stuck or gone with nothing in between.
-	SlideAngleFull = 65, -- deg: as sideways as this car gets. Where SlideBite is at full,
-	-- where the throttle has died completely and where SlideDrag is at
-	-- full. "100% to the side" means this.
-	SlideCurve = 0.75, -- how the finger's travel maps onto the car's range. 1 is straight;
-	-- below 1 the near half of the travel buys more, which is what keeps
-	-- a thumb's first inch from being wasted on a car that is still stuck.
-	SlideKickSpeed = 8, -- studs/s at which the shove and the fight are both at full. Below
-	-- it both fade together, so a car at a standstill does not pirouette.
-	SlideSpeedFloor = 1, -- studs/s floor under the slide angle. A crawl, not a speed: it
-	-- says a car barely moving has no slide, which is what lets one
-	-- stopped sideways let go and drive off again.
-	SlideHeldAt = 0.1, -- offset above which the readout counts the finger as asking for a
-	-- slide at all (entry speed, how long to break loose)
+	-- ---------------------------------------------------------------- grip: the drift
+	-- With any wheel on the ground, and `b` the slip angle (signed, nose to velocity):
+	--     f   = min(ConstantFriction + SlipFriction*|b| + SlipSqFriction*|b|^2, MaxFriction)
+	--     f   = f * surfaceGrip * FrictionMultiplier            (|b| capped at 90 deg)
+	--     dir = |b| > 90 deg and -travel or carRight*sign(b)
+	--     velocity += f * dt * dir, each world axis clamped to that axis's own speed
+	-- The whole feel of the car is in these four numbers: a small slide is tidied gently,
+	-- a big one is hauled round hard, and past the ceiling the car cannot pull any harder.
+	ConstantFriction = 14.3, -- studs/s^2. FALLBACK (4 m/s^2). Grip with the car dead
+	-- straight: how quickly a tiny slide tidies itself up
+	SlipFriction = 14.3, -- studs/s^2 per radian. FALLBACK. How fast grip builds with the
+	-- angle: the straight-line part of the curve
+	SlipSqFriction = 14.3, -- studs/s^2 per radian^2. FALLBACK. The squared term, and what
+	-- makes a big slide bite far harder than a small one. RAISE
+	-- it for a car that catches itself, DROP it for one that
+	-- keeps going round
+	MaxFriction = 107, -- studs/s^2. FALLBACK (30 m/s^2, about 3 g). The ceiling on all of
+	-- it, which is the tightest circle the car can hold. Reached at
+	-- about 65 deg of slip with the three terms above
+	MinSlipAngleForDrift = 5, -- deg. EXACT. Below this the car does not count as drifting,
+	-- for the readout and for the score. Not a threshold in the
+	-- model: the grip and the slide are continuous through it
+	FrictionMultiplier = 1, -- EXACT. Per-car multiplier on the whole grip curve
+	GripTarmac = 1, -- FALLBACK. Surface grip on the road
+	GripDirt = 0.5, -- FALLBACK. On dirt: half the pull and half the score
+	GripUnspecified = 0.1, -- FALLBACK. Anything solid that is not a tagged surface.
+	-- Nearly nothing: off the road the car barely corrects itself
+	-- and a slide there is a passenger
 
-	-- Weight has mass: it takes time to throw and time to settle, and that lag is the
-	-- difference between a car and a cursor. Out is quicker than back, as a car is.
-	WeightThrowRate = 3.5, -- /s, how fast the weight moves out (centre to full in 0.29 s)
-	WeightSettleRate = 3, -- /s, how fast it gathers back in (0.33 s)
+	-- ---------------------------------------------------------------- drivetrain
+	-- Rear-wheel drive: the push happens only when a rear wheel is down, and it is always
+	-- along the car's NOSE. A car that is sideways has its engine pushing across its own
+	-- travel, so a drift costs speed without a single number saying so -- the cost falls
+	-- out of the geometry.
+	--     u = |velocity along the nose|
+	--     a = MaxAcceleration * AccelMultiplier * throttle * clamp01(1 - (u/TopSpeed)^2)
+	MaxAcceleration = 14.3, -- studs/s^2. FALLBACK (4 m/s^2). The push off the line
+	AccelMultiplier = 1, -- EXACT. Per-car multiplier on it
+	TopSpeed = 179, -- studs/s. FALLBACK (50 m/s). Where the push reaches zero
+	StartThrottle = 0.5, -- FALLBACK. Throttle at the start of a run. The throttle is NOT
+	-- an input: the car drives itself, and it eases in so a
+	-- first-time player is never handed a car at top speed
+	FullThrottleSeconds = 5, -- s. FALLBACK. How long the ease-in takes
+	HandbrakeDecel = 36, -- studs/s^2. FALLBACK (10 m/s^2). Only used to stop the car once
+	-- a run is over; there is no brake in normal play
 
-	-- ---------------------------------------------------------------- steering
-	-- Nobody steers this car. The front wheels follow where the front axle is travelling,
-	-- which IS counter-steer once the back is out; these only shape that.
-	SteerAngleMax = 32, -- deg, front wheel angle at full lock, at low speed
-	SteerAngleMin = 12, -- deg, front wheel angle at full lock, at top speed
-	SteerRate = 6, -- /s, how fast the wheels reach the commanded angle (full lock in 1/6 s)
-	CounterSteer = 0, -- how far PAST the travel direction the front wheels are carried, per
-	-- radian of slide. Zero is the hands exactly on the travel, which is
-	-- what measured best: the front tyre then makes no force of its own
-	-- either way. Positive carries them further out, so the front fights
-	-- the slide and the car corners wider the harder it is drifted -- the
-	-- wrong way round, measured. Negative pulls them back into the corner,
-	-- which tightens every radius and makes the car much more willing to
-	-- swap ends. A small dial with a big reach: move it in hundredths.
-	CrawlSpeed = 12, -- studs/s below which the wheels take the finger directly instead of
-	-- following the travel, so the car can still be parked and reversed
+	-- ---------------------------------------------------------------- downforce
+	-- `velocity += down * speed * DownforcePerSpeed * dt`, unless the car is already
+	-- falling faster than the cutoff, so a real fall is a real fall. On a kinematic car
+	-- that follows the ground this is only felt in the air: it is what decides how far a
+	-- jump carries and how hard a crest throws the car.
+	DownforcePerSpeed = 0.2, -- per second. NEITHER EXACT NOR FALLBACK -- the one number in
+	-- the spec that is a guess (features/drift-model.md "Open
+	-- questions"). At top speed it is one extra gravity. Up for
+	-- a car pinned to the road over crests, down for one that
+	-- flies. TUNE THIS FIRST
+	DownforceCutoff = -3.6, -- studs/s. FALLBACK (-1 m/s). Vertical speed below which
+	-- downforce switches off, so a jump is a jump
 
-	-- ---------------------------------------------------------------- tyres
-	GripFront = 1.6, -- front lateral grip coefficient
-	GripRear = 1.5, -- rear lateral grip, gripping
-	GripRearDrift = 0.4, -- rear lateral grip with the weight fully thrown across
-	GripAccel = 40, -- studs/s^2 of lateral grip per 1.0 of coefficient. It sets the circle
-	-- the car can physically describe, and so how tight a drift looks: at
-	-- the 110 this started from, two saturated tyres pull about 5g and the
-	-- car pirouettes on a 13-stud radius the moment it slides, which no
-	-- amount of input tuning reaches past. At 40 a held drift runs a
-	-- 110-stud circle at half lock and a 24-stud one at three quarters.
-	TyrePeakSlip = 8, -- deg of slip at which a tyre is making all the grip it has
-	GripBlendIn = 0.08, -- s, grip fall-off as the weight goes across
-	GripBlendOut = 0.35, -- s, grip return as it comes back: the catch
-	SlipAngleMax = 88, -- deg; past square across the car is going round, not drifting, and
-	-- it straightens itself. A wall above SlideAngleFull, not a feel knob.
-	SpinRecover = 120, -- rad/s^2 per radian past SlipAngleMax. Stiff on purpose: a full
-	-- offset must pin the car sideways, not spin it through.
-	YawRateMax = 4, -- rad/s guard: the fastest the car may ever spin
-	YawInertia = 25, -- studs^2, yaw inertia per unit mass. A box of the body's own size:
-	-- (BodyLength^2 + BodyWidth^2) / 12. Change the body and change this.
-	YawDamping = 11, -- /s, yaw rate bled off by the body. This is the car's mass answering
-	-- the shove, and it is what decides how far the slide overshoots
-	-- before it settles: at 1.2 a three-quarter offset threw the car to
-	-- 91 deg on its way to 37, which is a spin, not a drift. At 11 the
-	-- same offset leans to 48 and settles at 36. Lower it for a car that
-	-- snaps and overshoots; raise it for one that leans in and holds.
-	MinSlipSpeed = 6, -- studs/s floor used for slip angles, so a standstill is not a divide by zero
-	StepGuard = 0.3, -- solver guard, not a feel knob: the share of a contact point's slip
-	-- velocity one step may cancel. Keeps the stiff low-speed tyre
-	-- equations stable at FixedStep. Lower is safer and softer.
-	BreakLooseSlip = 12, -- deg of body slip counted as "the rear is loose", for the readout
-	PhaseDriftingAt = 0.35, -- share of SlideAngleFull at or above which the car counts as
-	-- drifting, for the readout and for the `drifting` flag the server
-	-- is sent. Read off the slide, not off the input: with a continuous
-	-- finger there is no mode to be in.
-	PhaseCatchingAt = 0.05, -- and above which, on the way back, it says "catching"
-
-	-- ---------------------------------------------------------------- geometry
-	-- The wheelbase is not decoration: with the steering lock it fixes the tightest circle
-	-- the car can physically describe (radius = Wheelbase / tan(lock)). At the 6 studs the
-	-- spec started from, full lock is a 10-stud circle on a car 8 studs long, so the car
-	-- pirouettes instead of sliding and no amount of tyre tuning helps. 12 studs is a car,
-	-- not a go-kart: 19 studs at full lock, 56 at top speed (features/drift-model.md).
-	Wheelbase = 12, -- studs between the front and rear contact points
-	TrackWidth = 5.6, -- studs between the left and right wheels
-	RideHeight = 2, -- studs from the car's origin down to the ground
-	BodyLength = 16,
-	BodyWidth = 6.4,
-	BodyHeight = 2.6,
-	WheelDiameter = 4,
-	WheelWidth = 1.6,
+	-- ---------------------------------------------------------------- the car
+	-- The model has no bicycle geometry and no steering lock: the wheelbase and the track
+	-- are where the four ground rays go and where the wheels are drawn, and nothing else.
+	Wheelbase = 9.6, -- studs between the front and rear contact points. FALLBACK
+	-- (1.42 m front + 1.28 m rear of centre)
+	TrackWidth = 5.6, -- studs between the left and right wheels. FALLBACK (1.56 / 1.6 m)
+	WheelDiameter = 2.3, -- studs. FALLBACK (0.65 m)
+	WheelWidth = 1.6, -- studs. OURS, for drawing a cylinder that reads as a tyre
+	BodyLength = 14, -- studs. OURS: a 4 m car around the reference's wheelbase
+	BodyWidth = 6.4, -- studs. OURS
+	BodyHeight = 3.2, -- studs. OURS
+	RideHeight = 2.4, -- studs from the car's origin down to the ground. OURS: the wheel
+	-- centres sit one wheel radius up from there and the body clears
+	-- the road
+	CenterOfMass = Vector3.new(0, 0.71, 0), -- studs from the origin. FALLBACK
+	-- (0, 0.2, 0 m). Nothing in a kinematic car takes a
+	-- force at a point, so this is only the pivot the
+	-- cosmetic body roll leans about
+	BodyRollMax = 10, -- deg. FALLBACK. Cosmetic lean, outward, at `BodyRollSpeed` of
+	-- sideways speed. Nothing in the model reads it
+	BodyRollSpeed = 107, -- studs/s. FALLBACK (30 m/s) of lateral speed for a full lean
+	BodyRollRate = 10, -- per second. FALLBACK. How fast the lean follows
+	WheelSteerMax = 30, -- deg. EXACT. The front wheels are drawn pointing along where the
+	-- car is actually TRAVELLING, capped here. That is opposite lock
+	-- for free, and on a box with four cylinders it is the one thing
+	-- that reads as a drift. Cosmetic: no wheel angle is in the model
+	WheelSteerRate = 4, -- per second. EXACT. How fast the drawn wheels follow
 
 	-- ---------------------------------------------------------------- ground
+	-- One downward ray per wheel each step; the car's height and tilt follow the surface.
+	-- The reference runs a spring-and-damper suspension per wheel, which a kinematic car
+	-- cannot have; the only part of it a player feels is the tilt, and this is that.
 	GroundFollow = 0.12, -- s, how fast height and tilt follow the surface
 	AirborneMargin = 2, -- studs above RideHeight with no ground before the car is airborne
 	GroundRayUp = 4, -- studs above the contact point each ray starts from
 	GroundRayLength = 28, -- studs each ray reaches
 	AirLevel = 0.25, -- s, how fast the car levels out while airborne
-	AirYawRate = 1.2, -- rad/s of yaw at full lock while airborne
-	AirYawTime = 0.3, -- s to reach it
 	TerminalFall = 200, -- studs/s, the fastest a fall may get. Without it a car that has
-	-- driven off the world accelerates without limit, and the state the
-	-- server is sent stops being anything the server can check.
-	RespawnBelowY = -150, -- studs; below this the car is put back at its spawn
-	SurfaceTag = "DriftSurface", -- the ground rays prefer parts with this tag; with none in
-	-- the world they fall back to whatever solid they hit
+	-- driven off the world accelerates without limit and the state the
+	-- server is sent stops being anything the server can check
+	RespawnBelowY = -150, -- studs; below this the car asks the server to put it back
+	SurfaceTag = "DriftSurface", -- the ground rays prefer parts with this tag; in a place
+	-- with nothing tagged at all they fall back to whatever
+	-- solid they hit and treat it as road, so a bare plate is
+	-- still drivable (docs/game/CONTRACTS.md)
+	SurfaceAttribute = "Surface", -- attribute on a tagged part naming its surface
+	SurfaceDirt = "dirt", -- the value that means dirt; anything else tagged is tarmac
 
 	-- ---------------------------------------------------------------- walls
 	WallScrub = 0.5, -- share of speed kept after hitting something
-	WallStraighten = 0.7, -- share of the slide and spin killed by the hit
 	WallPush = 0.2, -- studs the car is held off the surface it hit
 
 	-- ---------------------------------------------------------------- network
@@ -179,52 +168,106 @@ return {
 	-- ---------------------------------------------------------------- respawning
 	-- The server owns where a respawned car goes; the client only asks (CONTRACTS.md,
 	-- `CarRespawn`). These are the limits on the asking.
-	RespawnRateLimit = 5, -- requests a second per UserId the server will take before dropping
+	RespawnRateLimit = 5, -- requests a second per UserId the server will take
 	RespawnCooldown = 0.5, -- s the server makes a player wait between respawns
 	RespawnGrace = 1, -- s after a respawn in which a packet that fails against the new
 	-- position is still checked against the old one. A CarState sent
 	-- before the respawn can land after it -- unreliable packets and the
 	-- request race each other -- and it is an honest packet from a place
-	-- the server knows the car was. Past this the old track is gone.
+	-- the server knows the car was. Past this the old track is gone
 	RespawnAnswerWait = 1.5, -- s the client waits for an answer before it asks again
 
+	-- ---------------------------------------------------------------- the control
+	-- One finger, held, is the whole control (features/drift-model.md "The control").
+	-- Owned by the gesture task, not by the model: the model only ever wanted one number.
+	InputMode = "dynamic", -- EXACT. "centred": the offset is measured from the middle of
+	-- the screen. "dynamic": from where the finger went down. The
+	-- reference ships both as a setting and they feel different
+	SliderWidthMin = 0.5, -- FALLBACK. Full travel as a share of half the screen width, at
+	-- the HIGHEST sensitivity
+	SliderWidthMax = 1.2, -- FALLBACK. The same at the lowest. Sensitivity lerps between
+	-- them BACKWARDS: more sensitivity means a shorter travel
+	Sensitivity = 5, -- OURS, 1..10. Where that starts, until there is a settings screen
+	KeySensitivity = 0.75, -- FALLBACK. What a keyboard key or a stick at full deflection
+	-- is worth, as a share of full travel
+
 	-- ---------------------------------------------------------------- camera
+	-- Owned by the camera task. All three of its effects are driven by the same slip angle
+	-- the model already has, and together they are most of why a drift reads as a drift.
+	-- Offsets are in the CAR's own axes, Roblox sense: +x right, +y up, +z BEHIND the car
+	-- (the spec quotes the reference's Unity figures, where behind is -z).
+	CamOffset = Vector3.new(0, 28.6, 35.7), -- studs. FALLBACK. The resting place, behind
+	-- and above the car
+	CamLookAt = Vector3.new(0, 0, -10.7), -- studs. FALLBACK. What it looks at, AHEAD of
+	-- the car
+	CamVelocityBlend = 0.05, -- EXACT, and small on purpose: how much of the swing toward
+	-- where the car is actually going is used. The reference's own
+	-- value -- the swing is a hint, not a side-on shot, and it is
+	-- why its camera looks calm. Worth raising to taste
+	CamSwingRate = 1, -- per second. FALLBACK. How fast the velocity-based target follows
+	CamAngleRate = 1, -- per second. FALLBACK. How fast the resting direction follows the
+	-- car round
+	CamHeightRate = 1, -- per second. FALLBACK. How fast the look-at height follows
+	CamRollMax = 45, -- deg. FALLBACK. The whole view tilts about its own forward axis: the
+	-- cheapest and largest part of the effect
+	CamRollAtAngle = 20, -- deg of slip that reaches the full roll. FALLBACK
+	CamRollRate = 20, -- per second. FALLBACK. How fast the roll follows
+	CamDriftDistance = 0.5, -- FALLBACK. Share of the resting distance at a full drift: the
+	-- camera pulls in as the slip opens
+	CamZoomAtAngle = 90, -- deg of slip that reaches it. FALLBACK
+	CamZoomRate = 1, -- per second. FALLBACK. How fast the zoom follows
+	CamSmoothTime = 0.1, -- s. FALLBACK. Position easing
+	CamLookRate = 8, -- per second. FALLBACK. Look-at easing, separate and slower than the
+	-- position, which is what keeps the horizon from jittering
+	CamFovBase = 70, -- deg at a standstill. OURS
+	CamFovTop = 86, -- deg at top speed. OURS
+
+	-- ---------------------------------------------------------------- score
+	-- Owned by the score task. Points only while the car is drifting and making forward
+	-- progress; the multiplier climbs while it is sideways and bleeds while it is not,
+	-- faster the higher it already is, so the ladder gets harder every rung.
+	ScoreRate = 0.2864789, -- points per radian of slip per stud travelled. EXACT (the
+	-- reference's constant is per metre; this is it converted)
+	MaxMultiplier = 9, -- FALLBACK. The top of the ladder
+	ProgressRate = 0.06, -- FALLBACK. How fast drifting fills the next rung
+	MultiplierDecay = 0.15, -- per second per rung, on the ground. FALLBACK (its 3 x 0.05)
+	MaxProgressUp = 1, -- per second. FALLBACK. Ceiling on how fast the bar fills
+	MaxProgressDown = 0.75, -- per second. FALLBACK. And empties
+	MinProgress = -0.25, -- FALLBACK. How far below empty before a rung is lost
+	ScoreTarmac = 1, -- FALLBACK. Score multiplier by surface, averaged over four wheels
+	ScoreDirt = 0.5, -- FALLBACK
+	ScoreUnspecified = 0.1, -- FALLBACK. Anything solid that is not a tagged surface, for
+	-- the score as well as for the grip: a slide in the gutter is
+	-- worth almost nothing
+	ReverseDriftBonus = 400, -- FALLBACK. A drift held past 90 deg: floor(ln(t+1) * this)
+	AirTimeBonusMin = 10, -- FALLBACK. Airborne and forward: an exponential in the air
+	-- time, ignored below this
+
+	-- ---------------------------------------------------------------- the prototype's UI
+	HideCharacter = true, -- the player is the car: no Roblox character is spawned
+	DebugReadout = true, -- build the debug readout at all
+	DebugReadoutOpen = true, -- show it from the start
+
+	-- ---------------------------------------------------------------- not the model's
+	-- Read by the three modules this port has not reached yet -- the gesture
+	-- (Drift/DragControl, Controllers/CarInputController) and the camera
+	-- (Controllers/CarCameraController) -- each of which is its own task behind this one.
+	-- NOTHING in the drift model reads anything below this line. Delete the block with the
+	-- task that replaces the last of those modules.
+	DragFullLock = 140, -- px of travel from where the finger went down to a full input
+	DragDeadzone = 0.06, -- share of it ignored around the origin
+	DriftOffset = 0.55, -- share of full travel the old readout called a drift
+	DriftFlickRate = 1400, -- px/s counted as a flick
+	DriftFlickSmoothing = 0.06, -- s the flick rate is averaged over
+	KeySteerShare = 0.35, -- what a keyboard key was worth before `KeySensitivity`
 	CamDistance = 26, -- studs behind the car
 	CamHeight = 8, -- studs above it
 	CamLookAhead = 14, -- studs ahead of the car the camera looks at
 	CamLookHeight = 2.5, -- studs above the car the camera looks at
-	CamVelocityLead = 0.65, -- 0 follows the car's nose, 1 follows where it is actually going
-	CamStiffness = 9, -- /s, how fast the camera position catches up
-	CamYawStiffness = 5, -- /s, how fast the camera swings round
-	CamFovBase = 70, -- deg at a standstill
-	CamFovTop = 86, -- deg at top speed
-	CamMinPitch = -32, -- deg, how far down the camera may look
-	CamStandstillSeconds = 0.4, -- s of near-standstill before the camera stops leading
-
-	-- ---------------------------------------------------------------- controls
-	-- One gesture does the steering and the drift, on touch and on the mouse alike
-	-- (DECISIONS.md, 2026-11-03). Everything it needs is here, so the feel of the control
-	-- is tuned in this table and not in DragControl.
-	DragFullLock = 140, -- px of horizontal travel from where the finger went down to full
-	-- lock. Smaller is twitchier; it has to fit a thumb's reach on a phone
-	-- without the hand covering the car.
-	DragDeadzone = 0.06, -- share of full lock ignored around the origin, so resting a
-	-- finger still is straight
-	DriftOffset = 0.55, -- share of full lock past which the readout calls it a drift, and
-	-- what one press of a DISCRETE drift input (keyboard, gamepad, a
-	-- flick) is worth on the same scale. It is no longer a gate: the
-	-- offset commands the slide continuously from nothing to full, so
-	-- there is no edge here for a finger to fall over.
-	KeySteerShare = 0.35, -- how much of a full finger a keyboard key or a stick is worth on
-	-- its own, with no drift button held. A digital key is always at
-	-- full travel, and a car that went fully sideways the moment a key
-	-- went down would be undrivable; holding drift gives the rest.
-	DriftFlickRate = 1400, -- px/s across the screen that breaks the rear loose whatever the
-	-- offset. This is the quick way in: a flick. Which of the two a
-	-- player ends up using is what these two numbers decide between.
-	DriftFlickSmoothing = 0.06, -- s the flick rate is averaged over, so one jittery sample
-	-- from a cheap touchscreen cannot start a drift on its own
-	HideCharacter = true, -- the player is the car: no Roblox character is spawned
-	DebugReadout = true, -- build the debug readout at all
-	DebugReadoutOpen = true, -- show it from the start
+	CamVelocityLead = 0.65, -- 0 follows the nose, 1 follows where the car is going
+	CamStiffness = 9, -- per second, how fast the camera position catches up
+	CamYawStiffness = 5, -- per second, how fast it swings round
+	CamMinPitch = -32, -- deg, how far down it may look
+	CamStandstillSeconds = 0.4, -- s of near-standstill before it stops leading
+	MinSlipSpeed = 6, -- studs/s floor the old camera uses for its slip angle
 }

@@ -6,7 +6,7 @@
 -- 30, 60 and 120 FPS run the same line (docs/game/features/drift-model.md "Determinism"),
 -- and why DebugDrive, the live loop and DriftTests all share one code path.
 --
--- The live loop reads the player's sticks once a frame and hands Sim that one input, which
+-- The live loop reads the player's finger once a frame and hands Sim that one input, which
 -- is honest: that is all the information a frame has. A recorded drive hands Sim a
 -- function of simulation time instead, so the inputs land at the same simulated moments at
 -- every frame rate and the only difference left between 30 and 120 FPS is the leftover in
@@ -27,8 +27,10 @@ export type Runner = {
 	totalSteps: number,
 }
 
--- One line of a recorded drive: from second `t`, hold these.
-export type Keyframe = { t: number, steer: number?, drift: boolean?, brake: boolean? }
+-- One line of a recorded drive: from second `t`, hold this finger. `steer` is the car's
+-- rate of turn as a share of `MaxSteeringSpeed` -- there is no drift input and no brake
+-- in normal play, and the handbrake is only ever used to stop a car after a run.
+export type Keyframe = { t: number, steer: number?, handbrake: boolean? }
 
 function Sim.newRunner(spawnCFrame: CFrame): Runner
 	return {
@@ -72,9 +74,9 @@ function Sim.inputAt(inputs: { Keyframe }, t: number): Model.Input
 		end
 	end
 	if not chosen then
-		return { steer = 0, drift = false, brake = false }
+		return { steer = 0, handbrake = false }
 	end
-	return { steer = chosen.steer or 0, drift = chosen.drift == true, brake = chosen.brake == true }
+	return { steer = chosen.steer or 0, handbrake = chosen.handbrake == true }
 end
 
 export type Summary = {
@@ -88,9 +90,10 @@ export type Summary = {
 	peakSlipSeconds: number, -- when it got there, which is how fast the car answers
 	endSlipDeg: number, -- the slide it settled at
 	peakYawRate: number, -- rad/s
-	entrySpeed: number?, -- speed the moment the drift input went down
-	exitSpeed: number?, -- speed the moment grip had fully come back after it
-	breakLooseSeconds: number?, -- drift input down to the rear letting go
+	peakGripAccel: number, -- studs/s^2 of lateral pull the grip reached
+	entrySpeed: number?, -- speed the moment the car first counted as drifting
+	exitSpeed: number?, -- speed the moment it stopped, which is what the drift cost
+	driftSeconds: number, -- how long it spent past `MinSlipAngleForDrift`
 	airborneSeconds: number,
 	wallHits: number,
 	headingChangeDeg: number, -- how far round the car came: a corner, measured
@@ -100,6 +103,7 @@ export type DriveOptions = {
 	fps: number?, -- frames a second to feed it; nil runs the whole thing in one frame
 	sample: number?, -- seconds of simulation between path points
 	start: CFrame?, -- where the car starts
+	velocity: Vector3?, -- what it starts moving at; nil starts it stopped
 	world: Model.World?, -- defaults to a flat plane under the start
 }
 
@@ -114,6 +118,9 @@ function Sim.drive(inputs: { Keyframe }, seconds: number, opts: DriveOptions?): 
 	seconds = math.clamp(seconds, 0, 120)
 
 	local runner = Sim.newRunner(startCF)
+	if o.velocity then
+		runner.state.velocity = o.velocity
+	end
 	local startYaw = runner.state.yaw
 	local path: { Vector3 } = { runner.state.position }
 
@@ -128,29 +135,33 @@ function Sim.drive(inputs: { Keyframe }, seconds: number, opts: DriveOptions?): 
 		peakSlipSeconds = 0,
 		endSlipDeg = 0,
 		peakYawRate = 0,
+		peakGripAccel = 0,
 		entrySpeed = nil,
 		exitSpeed = nil,
-		breakLooseSeconds = nil,
+		driftSeconds = 0,
 		airborneSeconds = 0,
 		wallHits = 0,
 		headingChangeDeg = 0,
 	}
 
 	local nextSample = sample
-	local heldBefore = false
-	local everHeld = false
+	local wasDrifting = false
 
 	local function observe(s: Model.State)
 		local speed = Model.speed(s)
-		local held = s.driftHeld >= 0
-		if held and not heldBefore then
-			summary.entrySpeed = speed
-			everHeld = true
+
+		-- Entry and exit are read off the car, not off an input: there is no drift input
+		-- to read. The car counts as drifting when its slip angle passes
+		-- `MinSlipAngleForDrift`, and the gap between the two speeds is what it cost.
+		if s.drifting and not wasDrifting then
+			summary.entrySpeed = summary.entrySpeed or speed
 			summary.exitSpeed = nil
-		end
-		heldBefore = held
-		if everHeld and not held and summary.exitSpeed == nil and s.gripBlend <= C.PhaseCatchingAt then
+		elseif wasDrifting and not s.drifting then
 			summary.exitSpeed = speed
+		end
+		wasDrifting = s.drifting
+		if s.drifting then
+			summary.driftSeconds += C.FixedStep
 		end
 
 		summary.maxSpeed = math.max(summary.maxSpeed, speed)
@@ -164,14 +175,12 @@ function Sim.drive(inputs: { Keyframe }, seconds: number, opts: DriveOptions?): 
 			summary.peakSlipSeconds = s.time
 		end
 		summary.peakYawRate = math.max(summary.peakYawRate, math.abs(s.r))
+		summary.peakGripAccel = math.max(summary.peakGripAccel, s.gripAccel)
 		if s.airborne then
 			summary.airborneSeconds += C.FixedStep
 		end
 		if s.wallHit then
 			summary.wallHits += 1
-		end
-		if s.breakLoose and not summary.breakLooseSeconds then
-			summary.breakLooseSeconds = s.breakLoose
 		end
 		if s.time >= nextSample then
 			table.insert(path, s.position)
