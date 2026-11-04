@@ -14,6 +14,11 @@
 -- Roblox physics never touches the car (docs/game/DECISIONS.md, 2026-11-03). Every part is
 -- anchored and its CFrame is written from the simulation; there is no BodyMover, no force
 -- and no constraint anywhere in the car.
+--
+-- Which is why the one thing this module must never stop doing is WRITING. The car is
+-- drawn only by `Render.apply`; the moment it has nothing to write through, the car stops
+-- dead while everything else -- the simulation, the camera, the packets -- carries on
+-- without it, and the player is left looking at empty world (`_ensureRig`, T-016).
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -38,6 +43,44 @@ DriftController.Priority = 10 -- after CarInputController (20), before the camer
 
 local STEP_NAME = "DriftSim"
 
+-- Is this rig still holding parts that are in the world?
+--
+-- A rig is a handful of direct references to the car's parts, taken once. Two things make
+-- one useless, and both leave `Render.apply` silently writing nothing -- which looks
+-- exactly like a car that has stopped following the simulation (T-016):
+--
+--   * it was built from a model whose parts had not replicated yet, so it caught nothing;
+--   * its parts have since left the car (a part replaced, a model streamed out).
+--
+-- `IsDescendantOf` rather than `.Parent ==` on purpose: a car model is free to put its
+-- parts inside a folder or a sub-model (Shared/CarModel), and a rig built from one is
+-- still a rig this controller can write through.
+local function rigIsLive(rig, car: Model?): boolean
+	if not rig or not car or rig.car ~= car then
+		return false
+	end
+	if not rig.body or not rig.body:IsDescendantOf(car) then
+		return false
+	end
+	local wheels = rig.wheels
+	if not wheels or #wheels == 0 then
+		return false
+	end
+	for _, wheel in wheels do
+		if not wheel.part or not wheel.part:IsDescendantOf(car) then
+			return false
+		end
+	end
+	return true
+end
+
+local function rigParts(rig): number
+	if not rig then
+		return 0
+	end
+	return (if rig.body then 1 else 0) + #(rig.wheels or {})
+end
+
 function DriftController:Init()
 	self.runner = nil
 	self.rig = nil
@@ -47,6 +90,11 @@ function DriftController:Init()
 	self.sendClock = 0
 	self.respawns = 0
 	self.respawnsAsked = 0
+	self.rigAttempts = 0 -- how many times the rig has been taken for the car we hold
+	self.rigFirstParts = -1 -- parts the first attempt found: 0 is the race in "the rig"
+	self.rigLiveAfter = -1 -- seconds from the first attempt until it caught the parts
+	self.rigAskedAt = 0
+	self.rigWarned = false
 	self.awaitingRespawn = false
 	self.askedAt = 0
 	self._carSpawn = Net.event("CarSpawn")
@@ -92,9 +140,12 @@ function DriftController:Start()
 	-- Bail only on the car we are ALREADY driving, never on "we hold some car". The server
 	-- may replace a player's car -- a run ending and handing out a fresh one is the case
 	-- that is coming -- and the old test, `if self.car then return`, ignored the new model
-	-- for ever: the simulation drove on while `Render` kept writing to parts that were no
-	-- longer in the world, so the car the player saw sat still and invisible (T-016).
-	-- `_attach` already re-rigs when the model differs; it was never reached.
+	-- for ever (T-016). `_attach` already re-rigs when the model differs; it was never
+	-- reached.
+	--
+	-- This fires on a model that usually has NO CHILDREN YET -- the parts are still on the
+	-- wire -- and that is fine here and handled in `_ensureRig`. Nothing in this function
+	-- may assume the car has parts.
 	local function claim(child: Instance)
 		if child == self.car then
 			return
@@ -123,10 +174,61 @@ function DriftController:_attach(car: Model, spawnCFrame: CFrame)
 		return -- already driving it; the folder and the remote both found the same car
 	end
 	self.car = car
-	self.rig = Render.rig(car)
+	self.rig = nil
+	self.rigAttempts = 0
+	self.rigFirstParts = -1
+	self.rigLiveAfter = -1
+	self.rigAskedAt = os.clock()
+	self.rigWarned = false
 	self.runner = Sim.newRunner(spawnCFrame)
 	self.remoteCars:SetOwnCar(car)
-	Render.apply(self.rig, self.runner.state)
+	if self:_ensureRig() then
+		Render.apply(self.rig, self.runner.state)
+	end
+end
+
+-- Hold a rig that can actually draw the car, and take it again until it can.
+--
+-- THIS IS THE WHOLE OF T-016. A Model replicates BEFORE its parts do: when the server
+-- hands this client a car mid-session -- `CarService:Spawn` again, which is the path a run
+-- ending will take -- `Workspace.Cars.ChildAdded` fires on a model with ZERO children, and
+-- a rig taken at that instant catches no body and no wheels. `Render.apply` then writes
+-- nothing, for ever: the simulation drives on, the camera follows the simulation, and the
+-- car the player sees stays at the spawn with the right model held and its parts parented
+-- in the world. Measured in DR-Lane3: 0 children at the event, 5 of them 0.5 s later, and
+-- the car 380 studs behind the simulation by the time it was asked.
+--
+-- So the rig is not something taken once at attach. It is taken until it holds parts that
+-- are in the world, and taken again if it ever stops holding them.
+function DriftController:_ensureRig(): boolean
+	local car = self.car
+	if not car then
+		return false
+	end
+	if rigIsLive(self.rig, car) then
+		return true
+	end
+	self.rig = Render.rig(car)
+	self.rigAttempts += 1
+	if self.rigFirstParts < 0 then
+		self.rigFirstParts = rigParts(self.rig)
+	end
+	if rigIsLive(self.rig, car) then
+		if self.rigLiveAfter < 0 then
+			self.rigLiveAfter = os.clock() - self.rigAskedAt
+		end
+		return true
+	end
+	-- A car whose parts never arrive is a car the player will never see, and silence is
+	-- what made this bug cost a day. Said once per car.
+	if not self.rigWarned and os.clock() - self.rigAskedAt > Config.Drift.RespawnAnswerWait then
+		self.rigWarned = true
+		warn(
+			`[DriftController] {car.Name} still has no parts to draw after {self.rigAttempts} tries; `
+				.. `the car will not move`
+		)
+	end
+	return false
 end
 
 -- Ask the server to put the car back. The car keeps falling until the answer comes: it is
@@ -161,7 +263,7 @@ function DriftController:_placeAt(cf: CFrame)
 	end
 	self.runner = Sim.newRunner(cf)
 	self.respawns += 1
-	if self.rig then
+	if self:_ensureRig() then
 		Render.apply(self.rig, self.runner.state)
 	end
 end
@@ -187,7 +289,7 @@ function DriftController:_frame(dt: number)
 		self:_askForRespawn()
 	end
 
-	if self.rig then
+	if self:_ensureRig() then
 		Render.apply(self.rig, state)
 	end
 	self.remoteCars:Update(dt)
@@ -272,9 +374,45 @@ function DriftController:DebugState()
 		respawns = self.respawns,
 		respawnsAsked = self.respawnsAsked,
 		awaitingRespawn = self.awaitingRespawn,
+		-- The one number T-016 is about: how far the car the player SEES is from the car
+		-- the simulation says is there. It is a frame of lag at most -- under a stud at
+		-- any speed -- and anything more means the drawing has stopped.
+		drawnGap = self:DrawnGap(),
+		rigParts = rigParts(self.rig),
 		usingSurfaceTag = self.world and self.world.usingTag or false,
 		surfaceParts = self.world and self.world.surfaceCount or 0,
 		remoteCars = self.remoteCars and #self.remoteCars:DebugState() or 0,
+	}
+end
+
+-- How far the drawn car is from where the simulation says it is, in studs, or -1 when
+-- there is nothing drawn to measure. Read off a part in the world, not off the rig, so a
+-- rig holding parts that left the car still reads as the long gap it is.
+function DriftController:DrawnGap(): number
+	local state = self:CurrentState()
+	local rig = self.rig
+	local body = rig and rig.body
+	if not state or not body or not self.car or not body:IsDescendantOf(self.car) then
+		return -1
+	end
+	return (body.Position - state.position).Magnitude
+end
+
+-- What the car is being drawn through, and what it cost to get hold of it. `firstParts`
+-- is the T-016 race, in one number: 0 means the model arrived before its parts did, and
+-- `attempts` and `liveAfter` are how long it took to catch them.
+function DriftController:DebugRig()
+	return {
+		car = self.car and self.car.Name or nil,
+		carInWorld = self.car ~= nil and self.car.Parent ~= nil,
+		live = rigIsLive(self.rig, self.car),
+		parts = rigParts(self.rig),
+		wheels = self.rig and #(self.rig.wheels or {}) or 0,
+		hasBody = self.rig ~= nil and self.rig.body ~= nil,
+		attempts = self.rigAttempts,
+		firstParts = self.rigFirstParts,
+		liveAfter = self.rigLiveAfter,
+		drawnGap = self:DrawnGap(),
 	}
 end
 
@@ -321,7 +459,7 @@ function DriftController:DebugTeleport(cf: CFrame)
 		return nil
 	end
 	self.runner = Sim.newRunner(cf)
-	if self.rig then
+	if self:_ensureRig() then
 		Render.apply(self.rig, self.runner.state)
 	end
 	return self:DebugState()
