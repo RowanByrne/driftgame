@@ -22,11 +22,15 @@
 local CollectionService = game:GetService("CollectionService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
+local ServerScriptService = game:GetService("ServerScriptService")
 local StarterPlayer = game:GetService("StarterPlayer")
 
 assert(RunService:IsStudio(), "CollisionTests only runs in Studio")
 
 local Config = require(ReplicatedStorage.Shared.Config)
+local Build = require(ServerScriptService.Playground.Build)
+local Layout = require(ServerScriptService.Playground.Layout)
+local Path = require(ServerScriptService.Playground.Path)
 
 local DriftFolder = StarterPlayer.StarterPlayerScripts:WaitForChild("Drift")
 
@@ -58,6 +62,15 @@ local CONE_AT = Vector3.new(-400, 0, 300)
 local CONE_RADIUS = 1.2 -- the playground's own: a 2.4-stud cone
 local FPS = 60 -- what the live game feeds Sim; two steps a frame
 
+-- The second half of the rig: the two ELEVATED features, on their own plate well clear of
+-- the first, built from the playground's own Layout and Build so the shapes under test are
+-- the shapes the world is made of (T-026). The user drove the real ones and reported "some
+-- odd interactions there with the physics"; these are what that turned into.
+local FEATURES = BASE + Vector3.new(0, 0, 3000) -- the top of their plate
+local FEATURE_PLATE = 2000
+local BOWL_AT = Vector2.new(-500, 0) -- from FEATURES, in world XZ
+local RAMP_AT = Vector2.new(500, -400) -- where the ramp's climb starts; it runs +Z
+
 --------------------------------------------------------------------------------
 -- The geometry, written out: how far is the car's BODY from a thing?
 --------------------------------------------------------------------------------
@@ -87,6 +100,68 @@ end
 --------------------------------------------------------------------------------
 -- The rig
 --------------------------------------------------------------------------------
+
+-- The bowl and the ramp, on a plate of their own. `Path` gives nodes at y = 0 and the
+-- ribbon's `baseY` puts the whole feature where it belongs, so the only thing that moves
+-- is the origin: the geometry is the playground's, to the stud.
+local function buildFeatures(rig: Folder)
+	local plate = Instance.new("Part")
+	plate.Name = "FeaturePlate"
+	plate.Anchored = true
+	plate.Size = Vector3.new(FEATURE_PLATE, Layout.Plate.thickness, FEATURE_PLATE)
+	plate.CFrame = CFrame.new(FEATURES - Vector3.new(0, Layout.Plate.thickness * 0.5, 0))
+	plate.Parent = rig
+	CollectionService:AddTag(plate, C.SurfaceTag)
+
+	local baseY = FEATURES.Y + Layout.Surface.height
+
+	local bowl = Layout.Circle
+	local bankAt, heightAt, skirtBankAt, skirtHeightAt = Build.circleProfiles(bowl)
+	local centre = Vector3.new(FEATURES.X + BOWL_AT.X, 0, FEATURES.Z + BOWL_AT.Y)
+	for _, ring in {
+		{ name = "RigBand", radius = bowl.radius, segments = bowl.segments, width = bowl.width, height = heightAt, bank = bankAt },
+		{
+			name = "RigApron",
+			radius = bowl.skirt.radius,
+			segments = bowl.skirt.segments,
+			width = bowl.skirt.width,
+			height = skirtHeightAt,
+			bank = skirtBankAt,
+		},
+	} do
+		Build.ribbon(Path.ring(centre, ring.radius, ring.segments), {
+			name = ring.name,
+			width = ring.width,
+			thickness = bowl.thickness,
+			colour = Color3.new(0.4, 0.4, 0.4),
+			baseY = baseY,
+			heightAt = ring.height,
+			bankAt = ring.bank,
+			closed = true,
+			parent = rig,
+		})
+	end
+
+	local ramp = Layout.Ramp
+	local climbAt, lipAt = Build.rampProfiles(ramp)
+	local cursor = Path.cursor(FEATURES.X + RAMP_AT.X, FEATURES.Z + RAMP_AT.Y, ramp.heading)
+	local flat = Build.bankProfile(nil, 1)
+	for _, piece in {
+		{ name = "RigRamp", length = ramp.length, segments = ramp.segments, height = climbAt },
+		{ name = "RigRampLip", length = ramp.lip.length, segments = ramp.lip.segments, height = lipAt },
+	} do
+		Build.ribbon(Path.straight(cursor, piece.length, piece.segments), {
+			name = piece.name,
+			width = ramp.width,
+			thickness = ramp.thickness,
+			colour = Color3.new(0.5, 0.5, 0.5),
+			baseY = baseY,
+			heightAt = piece.height,
+			bankAt = flat,
+			parent = rig,
+		})
+	end
+end
 
 local function build(): Folder
 	local old = workspace:FindFirstChild(RIG_NAME)
@@ -132,6 +207,8 @@ local function build(): Folder
 	cone.Size = Vector3.new(4, CONE_RADIUS * 2, CONE_RADIUS * 2)
 	cone.CFrame = CFrame.new(BASE + CONE_AT + Vector3.new(0, 2.1, 0)) * CFrame.Angles(0, 0, math.rad(90))
 	cone.Parent = rig
+
+	buildFeatures(rig)
 
 	rig.Parent = workspace
 	return rig
@@ -223,6 +300,170 @@ local function atWall(world, speed: number, angleDeg: number, noseOffset: number
 			return gapToPlane(pos, carYaw, faceAt, outward)
 		end,
 	})
+end
+
+--------------------------------------------------------------------------------
+-- The bowl and the ramp
+--------------------------------------------------------------------------------
+
+-- The car's own body, as a part, so Roblox can be asked its own exact question: is any of
+-- it inside anything? It is CanQuery false, so the model's rays and sweeps never see it.
+local function bodyProbe(rig: Folder): BasePart
+	local probe = Instance.new("Part")
+	probe.Name = "CarBody"
+	probe.Size = Vector3.new(C.BodyWidth, C.BodyHeight * 0.6, C.BodyLength)
+	probe.Anchored = true
+	probe.CanCollide = false
+	probe.CanQuery = false
+	probe.Transparency = 1
+	probe.Parent = rig
+	return probe
+end
+
+-- How far the car's body is inside a floor, in studs: the deepest of its eight corners
+-- below that floor's top face, counting only corners the floor is actually under. A
+-- corner hanging over an edge is measured against nothing, which is what it is over.
+local function depthInto(pose: CFrame, box: Vector3, part: BasePart): number
+	local cf, size = part.CFrame, part.Size
+	if cf.UpVector.Y <= 0.7 then
+		return math.huge -- not a floor at all: being inside it is never all right
+	end
+	local worst = 0
+	for dx = -1, 1, 2 do
+		for dy = -1, 1, 2 do
+			for dz = -1, 1, 2 do
+				local corner = (pose * CFrame.new(dx * box.X * 0.5, dy * box.Y * 0.5, dz * box.Z * 0.5)).Position
+				local local_ = cf:PointToObjectSpace(corner)
+				if math.abs(local_.X) <= size.X * 0.5 and math.abs(local_.Z) <= size.Z * 0.5 then
+					worst = math.max(worst, size.Y * 0.5 - local_.Y)
+				end
+			end
+		end
+	end
+	return worst
+end
+
+-- One drive at an elevated feature, with everything the complaint needs answering read off
+-- it: how high the car got and for how long, where it came down, what its vertical speed
+-- did, and whether its body was ever inside the world.
+--
+-- The car is DROPPED ON TO the surface under `start` rather than placed at a height, so a
+-- run never begins with the car half inside the ground it starts on.
+local function drive(o): any
+	local groundAt = RaycastParams.new()
+	groundAt.FilterType = Enum.RaycastFilterType.Exclude
+	groundAt.FilterDescendantsInstances = { o.probe }
+	local below = workspace:Raycast(o.start + Vector3.new(0, 80, 0), Vector3.new(0, -200, 0), groundAt)
+	local start = Vector3.new(o.start.X, (if below then below.Position.Y else o.start.Y) + C.RideHeight, o.start.Z)
+
+	local runner = Sim.newRunner(CFrame.new(start) * CFrame.Angles(0, o.yaw, 0))
+	runner.state.velocity = o.velocity
+	runner.state.time = 10 -- past the throttle's ease-in
+
+	local overlap = OverlapParams.new()
+	overlap.FilterType = Enum.RaycastFilterType.Exclude
+	overlap.FilterDescendantsInstances = { o.probe }
+	overlap.MaxParts = 4
+	local box = o.probe.Size
+
+	local r = {
+		start = start,
+		apex = -math.huge,
+		lowest = math.huge,
+		airSeconds = 0,
+		longestAir = 0,
+		landedAt = -1,
+		landedPos = nil,
+		takeoffAt = -1,
+		maxVy = 0,
+		minVy = 0,
+		overVy = 0, -- vertical speed the ground cannot explain, while grounded
+		insideSteps = 0,
+		insideDepth = 0,
+		insideWhere = "",
+		wallSteps = 0,
+	}
+	local curAir, airStart = 0, 0
+
+	local function observe(s)
+		r.apex = math.max(r.apex, s.position.Y)
+		r.lowest = math.min(r.lowest, s.position.Y)
+		r.maxVy = math.max(r.maxVy, s.velocity.Y)
+		r.minVy = math.min(r.minVy, s.velocity.Y)
+		if s.wallHit then
+			r.wallSteps += 1
+		end
+		if s.grounded then
+			-- On the ground the car's vertical speed is the surface climbing under it, and
+			-- a surface it can stand on is never steeper than 45 degrees: anything past the
+			-- horizontal speed is the old spring, or a wall being read as a floor (T-026).
+			local flat = math.sqrt(s.velocity.X * s.velocity.X + s.velocity.Z * s.velocity.Z)
+			r.overVy = math.max(r.overVy, math.abs(s.velocity.Y) - flat)
+		end
+		if s.airborne then
+			if curAir == 0 then
+				airStart = s.time
+			end
+			curAir += C.FixedStep
+			r.airSeconds += C.FixedStep
+		else
+			if curAir > r.longestAir then
+				r.longestAir, r.landedAt, r.landedPos, r.takeoffAt = curAir, s.time, s.position, airStart
+			end
+			curAir = 0
+		end
+
+		local pose = Model.cframe(s)
+		o.probe.CFrame = pose
+		for _, part in workspace:GetPartsInPart(o.probe, overlap) do
+			local depth = depthInto(pose, box, part)
+			if depth > 0 then
+				r.insideSteps += 1
+				if depth > r.insideDepth then
+					r.insideDepth = depth
+					r.insideWhere = string.format(
+						"%s, %.3f studs, at (%.1f, %.2f, %.1f)",
+						part.Name,
+						depth,
+						s.position.X,
+						s.position.Y,
+						s.position.Z
+					)
+				end
+			end
+		end
+	end
+
+	local input = { steer = o.steer or 0 }
+	local elapsed = 0
+	while elapsed < o.seconds - 1e-9 do
+		local dt = math.min(1 / FPS, o.seconds - elapsed)
+		Sim.advance(runner, dt, input, o.world, observe)
+		elapsed += dt
+	end
+	r.state = runner.state
+	r.endSpeed = Model.speed(runner.state)
+	r.landedAt -= 10
+	r.takeoffAt -= 10
+	return r
+end
+
+-- The three numbers every one of these runs has to come back with.
+local function sane(r, plateY: number): (boolean, string)
+	local landed = r.longestAir == 0 or (r.landedPos ~= nil and math.abs(r.landedPos.Y - plateY - C.RideHeight) < 3)
+	return r.insideDepth <= 0 and r.overVy <= 1e-6 and landed and r.lowest > plateY - 1,
+		string.format(
+			"apex %.2f, %.2f s of air, landed %s, vy %.1f..%.1f (%.3f past what the ground can explain), lowest %.2f, inside %d steps%s",
+			r.apex - plateY,
+			r.longestAir,
+			if r.landedPos then string.format("%.1f studs up", r.landedPos.Y - plateY) else "never left",
+			r.minVy,
+			r.maxVy,
+			r.overVy,
+			r.lowest - plateY,
+			r.insideSteps,
+			if r.insideWhere ~= "" then " (" .. r.insideWhere .. ")" else ""
+		)
 end
 
 function CollisionTests:run(driftFolder: Instance?)
@@ -444,6 +685,165 @@ function CollisionTests:run(driftFolder: Instance?)
 			standing and standing.Distance or -1
 		)
 	)
+
+	------------------------------------------------------------------ the bowl and the ramp
+	-- What the user reported: "when i go over to the bowl ramp thing, there's some odd
+	-- interactions there with the physics" (T-026). Before these, the bowl's rim threw the
+	-- car 144 studs into the air and the ramp was not a jump at all.
+	local probe = bodyProbe(rig)
+	local plateY = FEATURES.Y
+	local rampZ = FEATURES.Z + RAMP_AT.Y
+	local rampX = FEATURES.X + RAMP_AT.X
+	local bowl = Vector3.new(FEATURES.X + BOWL_AT.X, plateY, FEATURES.Z + BOWL_AT.Y)
+	local bowlOuter = Layout.Circle.skirt.radius + Layout.Circle.skirt.width * 0.5
+
+	-- A line into a feature: `yaw` is where the nose points, and the car travels that way.
+	local function at(from: Vector3, yaw: number, speed: number, seconds: number, steer: number?)
+		return drive({
+			world = world,
+			probe = probe,
+			start = from,
+			yaw = yaw,
+			velocity = Model.axes(yaw) * speed,
+			steer = steer,
+			seconds = seconds,
+		})
+	end
+
+	-- The ramp, square on, from a crawl to top speed. It has to leave the ground and come
+	-- down on it, every time, and never end a step inside itself.
+	local jumps = {}
+	for _, speed in { 20, 60, 100, 140, 179 } do
+		-- Long enough that even a car that arrives at the ramp at a crawl has climbed it,
+		-- flown and come down again inside the run.
+		local r = at(Vector3.new(rampX, plateY, rampZ - 60), math.pi, speed, 7)
+		table.insert(jumps, r)
+		local ok, detail = sane(r, plateY)
+		check(
+			checks,
+			`the ramp jumps the car at {speed} studs/s and lands it on the ground`,
+			ok and r.longestAir > 0.5,
+			detail
+		)
+		task.wait()
+	end
+	check(
+		checks,
+		"the faster the ramp is taken, the further the car goes",
+		(function()
+			for i = 2, #jumps do
+				if jumps[i].apex <= jumps[i - 1].apex or jumps[i].longestAir <= jumps[i - 1].longestAir then
+					return false
+				end
+			end
+			return true
+		end)(),
+		(function()
+			local parts = {}
+			for _, r in jumps do
+				table.insert(parts, string.format("%.2f studs / %.2f s", r.apex - plateY, r.longestAir))
+			end
+			return "20 to 179 studs/s, apex and air time: " .. table.concat(parts, ", ")
+		end)()
+	)
+
+	-- And taken at an angle, including off the side of it.
+	for _, deg in { -25, -15, 15, 25 } do
+		local r = at(Vector3.new(rampX, plateY, rampZ + 5), math.pi + math.rad(deg), 140, 5)
+		local ok, detail = sane(r, plateY)
+		check(checks, `the ramp taken {deg} degrees off square keeps the car out of itself`, ok, detail)
+		task.wait()
+	end
+
+	-- The ramp's flank is 9 studs of road standing out of the plate, and road or not it is
+	-- a wall: this is the one the car used to be thrown 43 studs into the air by.
+	for _, speed in { 0.25, 20, 179 } do
+		local r = at(Vector3.new(rampX - 70, plateY, rampZ + 60), -math.pi * 0.5, speed, 6)
+		local ok, detail = sane(r, plateY)
+		check(
+			checks,
+			`the ramp's flank stops a car at {speed} studs/s instead of launching it`,
+			ok and r.airSeconds == 0 and r.apex - plateY < C.RideHeight + 0.5,
+			detail .. string.format(", %d touching steps, ended at %.1f studs/s", r.wallSteps, r.endSpeed)
+		)
+		task.wait()
+	end
+
+	-- The bowl: across it, round it, and out of the middle of it. `miss` is how far from
+	-- the middle the line is aimed, so 0 is dead across and 150 is a chord through the
+	-- band -- the car crossing the rim at an angle rather than square to it.
+	local approach = bowlOuter + 90
+	for _, speed in { 60, 120, 179 } do
+		for _, miss in { 0, 150 } do
+			local off = math.asin(miss / approach)
+			local yaw = math.pi * 0.5 + off
+			local r = at(bowl + Vector3.new(approach, 0, 0), yaw, speed, math.min(6, 760 / speed))
+			local ok, detail = sane(r, plateY)
+			check(
+				checks,
+				`the bowl is crossed at {speed} studs/s, aimed {miss} studs off the middle`,
+				ok and r.airSeconds == 0,
+				detail
+			)
+			task.wait()
+		end
+	end
+	for _, speed in { 60, 179 } do
+		local r = at(bowl, math.pi * 0.5, speed, math.min(5, 450 / speed))
+		local ok, detail = sane(r, plateY)
+		check(checks, `the bowl is driven out of the middle at {speed} studs/s`, ok and r.airSeconds == 0, detail)
+		task.wait()
+	end
+	local around = at(bowl + Vector3.new(Layout.Circle.radius, 0, 0), math.pi, 90, 6, -0.3)
+	local aroundOk, aroundDetail = sane(around, plateY)
+	check(checks, "the bowl is driven round, on the band, with a finger held", aroundOk, aroundDetail)
+	task.wait()
+
+	-- The slowest possible approach to the rim, which a sweep alone cannot hold: a
+	-- Blockcast only reaches as far as the step travels, so at a crawl it never reports a
+	-- hit at all and the standoff closes without one (T-026).
+	local creep = at(bowl + Vector3.new(bowlOuter + 10, 0, 0), math.pi * 0.5, 0.25, 8)
+	local creepOk, creepDetail = sane(creep, plateY)
+	check(checks, "a crawl into the bowl's edge does not creep into it", creepOk, creepDetail)
+	task.wait()
+
+	-- Determinism: the same approach twice, within a stud. There is nothing random in any
+	-- of this, and a drift is only learnable if that stays true.
+	local repeats = {
+		{ label = "the ramp at top speed", from = Vector3.new(rampX, plateY, rampZ - 60), yaw = math.pi, speed = 179, steer = 0 },
+		{
+			label = "the ramp at 15 degrees",
+			from = Vector3.new(rampX, plateY, rampZ + 5),
+			yaw = math.pi + math.rad(15),
+			speed = 140,
+			steer = 0,
+		},
+		{
+			label = "the bowl with a finger held",
+			from = bowl + Vector3.new(bowlOuter + 90, 0, 0),
+			yaw = math.pi * 0.5,
+			speed = 120,
+			steer = -0.3,
+		},
+	}
+	for _, c in repeats do
+		local a = at(c.from, c.yaw, c.speed, 5, c.steer)
+		local b = at(c.from, c.yaw, c.speed, 5, c.steer)
+		local apart = (a.state.position - b.state.position).Magnitude
+		check(
+			checks,
+			`{c.label}, twice, is the same line`,
+			apart < 1,
+			string.format(
+				"%.6f studs apart after 5 s, ending at (%.1f, %.2f, %.1f)",
+				apart,
+				a.state.position.X,
+				a.state.position.Y,
+				a.state.position.Z
+			)
+		)
+		task.wait()
+	end
 
 	world.destroy()
 	rig:Destroy()
