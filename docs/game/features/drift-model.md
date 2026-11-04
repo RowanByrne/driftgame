@@ -212,40 +212,59 @@ programmer art, plus a readout of speed, slip angle, yaw rate, grounded and the 
 
 ## Camera
 
-The reference's camera does three things at once, and together they are most of why its drifts read
-as drifts. All three are driven by the same slip angle the model already has.
+**Corrected 2026-11-03, after the user drove the first build:** "the camera is off in a big way. it
+spins/rotates wayyyyy to far and i'm not even sure if it's the right direction. just copy drifto for
+now." The cause was this spec, not the build. The decompile contains **two** cameras and this
+section described the wrong one. The game's camera is the one whose field another script calls
+`...New`, which the player's camera-mode setting drives and which the FOV controller reads; the
+other is its predecessor, kept in the binary and driven by nothing the game runs. **The roll and the
+zoom were the old one's, and the game has neither.**
 
-1. **It swings toward where the car is going, not where it points.** The resting place is behind
-   the car's nose; as the slip angle opens, the target slides toward a point directly behind the
-   *velocity*, by an ease-in-out of `|slip| / 180°`. So a straight line is a chase camera and a big
-   drift is a side-on shot, with everything between.
-2. **It rolls.** The whole view tilts about its own forward axis, up to `CamRollMax`, reaching full
-   tilt by `CamRollAtAngle` of slip. This is the cheapest and largest part of the effect.
-3. **It pulls in.** The distance shrinks toward `CamDriftDistance` of its resting length as the
-   slip opens, full in by `CamZoomAtAngle`.
+So: no roll, no zoom, no position smoothing. The camera is **placed** each frame, not eased into
+place — the easing is all inside how its target is worked out — and it simply looks at the car, so
+the horizon is always level.
 
-Position eases toward its target rather than snapping; the look-at eases separately and more
-slowly, which is what keeps the horizon from jittering. On a run ending the camera lets go and
-holds its last target.
+What it does:
+
+1. **It looks at a point just ahead of the car** (`CamLookAt`), with only that point's *height*
+   eased (`CamHeightRate`).
+2. **It sits at `CamOffset`'s distance from the car, in a direction that follows the car round.**
+   The direction, not the position, is what eases (`CamAngleRate`) — so the camera swings around
+   the car at a fixed radius instead of being dragged behind it.
+3. **It leans that place toward being behind the car's travel as the slip angle opens**, by an
+   ease-in-out of `|slip| / 180°`, toward a point that itself eases (`CamSwingRate`). Then only
+   `CamVelocityBlend` of that lean is taken.
+4. **The FOV opens with speed** (`CamFovBase` + `CamFovPerSpeed` × speed, eased at `CamFovRate`).
+
+On a run ending the camera lets go and holds its last target.
+
+**`CamVelocityBlend` is 0.05 and that is not a typo.** The reference feeds its *blended* target back
+in as the next frame's resting direction, so the 5% is applied again every frame and compounds: what
+the player sees is not a side-on shot but the camera **dropping and swinging wide** through a drift.
+Raising it is the dial for a more dramatic camera, and it mostly buys height drop.
+
+**The targets run on their own fixed step** (`CamTargetStep`, 1/60, the rate the reference ran at).
+That feedback means where the camera settles depends on how often it is stepped, so left at frame
+rate it sits at a different height on every machine — measured, 16.2 studs up at 30 FPS against 10.1
+at 120. The model's step is deliberately separate and finer.
 
 | Number | Start | Source | What it does |
 |---|---|---|---|
-| `CamOffset` | (0, 28.6, −35.7) studs | fallback | Resting place behind and above the car |
-| `CamLookAt` | (0, 0, 10.7) studs | fallback | What it looks at, ahead of the car |
-| `CamVelocityBlend` | 0.05 | exact | How much of the swing-to-velocity is actually used. **The reference's own value, and it is small** — the swing is a hint, not a side-on shot. Worth raising to taste; it is why its camera looks calm |
-| `CamSwingRate` | 1 /s | fallback | How fast the velocity-based target follows |
-| `CamAngleRate` | 1 /s | fallback | How fast the resting direction follows the car round |
-| `CamHeightRate` | 1 /s | fallback | How fast the look-at height follows |
-| `CamRollMax` | 45° | fallback | Full roll |
-| `CamRollAtAngle` | 20° | fallback | Slip angle that reaches it |
-| `CamRollRate` | 20 /s | fallback | How fast the roll follows |
-| `CamDriftDistance` | 0.5 | fallback | Share of the resting distance at full drift |
-| `CamZoomAtAngle` | 90° | fallback | Slip angle that reaches it |
-| `CamZoomRate` | 1 /s | fallback | How fast the zoom follows |
-| `CamSmoothTime` | 0.1 s | fallback | Position easing |
-| `CamLookRate` | 8 /s | fallback | Look-at easing |
-| `CamFovBase` | 70° | ours | Kept from what is on `main` |
-| `CamFovTop` | 86° | ours | At top speed |
+| `CamOffset` | (0, 14.3, −53.6) studs | fallback | Resting place: how far behind and above. Its **length** is the radius the camera keeps; its direction is the resting direction. (0, 4, −15) m, from the camera-mode setting's own default — low and well back, which is most of why the reference reads flat and fast |
+| `CamLookAt` | (0, 0, 10.7) studs | exact | The point it looks at, ahead of the car |
+| `CamVelocityBlend` | 0.05 | exact | How much of the lean toward the travel is taken each frame — and it compounds (above) |
+| `CamSwingRate` | 1 /s | fallback | How fast the behind-the-travel point follows |
+| `CamAngleRate` | 1 /s | fallback | How fast the resting direction follows the car round. **The main feel dial:** low is a camera that lags and lets the car rotate in front of it, high is one glued behind the nose |
+| `CamHeightRate` | 1 /s | fallback | How fast the look-at's height follows |
+| `CamFovBase` | 60° | fallback | FOV at a standstill |
+| `CamFovPerSpeed` | 0.14 °/(stud/s) | fallback | How much it opens with speed: 85° at top speed. (0.5 per m/s) |
+| `CamFovRate` | 0.5 /s | fallback | How fast the FOV follows. Slow on purpose |
+| `CamTargetStep` | 1/60 s | ours | The step the targets run at, interpolated between (above) |
+| `CamMaxTargetSteps` | 8 | ours | Safety: a stalled frame is not paid back as a burst |
+
+**Not built, and deliberately:** the reference also has three camera modes the player picks between
+(normal, far, chase — only their class default is in the decompile) and a speed-based camera shake.
+Both are their own task if the user wants them.
 
 ## Score
 

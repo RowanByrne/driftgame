@@ -27,7 +27,7 @@ The car is **not** driven by Roblox's physics (`DECISIONS.md`, 2026-11-03). Its 
 |---|---|---|
 | `DriftController` | The drift model: the fixed-step simulation that moves the local player's car | `DebugState()`, `DebugDrive(inputs, seconds)` |
 | `CarInputController` | Steering, drift and brake input across keyboard, touch and gamepad | `DebugState()` |
-| `CarCameraController` | The reference game's drift camera: it swings toward the velocity, rolls, and pulls in, all off the slip angle. Its targets run on their own fixed step (`CamTargetStep`), interpolated between, so every frame rate puts the camera in the same place | `Release()`, `Follow()`, `DebugState()`, `DebugProbe(opts)`, `DebugRecord(seconds)` |
+| `CarCameraController` | The reference game's in-game camera: it looks at the car from a fixed radius, swings that place round as the car turns, and leans it toward the travel as the slip opens. No roll, no zoom. Its targets run on their own fixed step (`CamTargetStep`), interpolated between, so every frame rate puts the camera in the same place | `Release()`, `Follow()`, `DebugState()`, `DebugProbe(opts)`, `DebugRecord(seconds)` |
 
 ## Shared modules
 
