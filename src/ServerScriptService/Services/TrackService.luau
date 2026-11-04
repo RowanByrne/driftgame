@@ -3,8 +3,14 @@
 --
 -- The playground (PlaygroundService) is built by code and is in git. A TRACK is the other
 -- kind of world: a model someone placed in the place file by hand, which git never sees
--- (AGENTS.md "Hand-built content"). Both sit at the origin, so a place cannot have both --
--- this service decides which one the place gets, and PlaygroundService asks it.
+-- (AGENTS.md "Hand-built content").
+--
+-- A PLACE HAS BOTH (T-026). It used to have one or the other, because both were built at
+-- the origin and the playground's 2 000-stud plate would have buried the track inside it;
+-- this service made the playground stand down. The user asked for both at once, so the
+-- one that can be moved moves: the track stays exactly where its author put it, and
+-- PlaygroundService builds its world at `Config.Drift.PlaygroundOffsetFromTrack` when it
+-- asks here and is told there is a track. Nothing in this file places anything.
 --
 -- What adopting a track means:
 --   * EVERY part of it gets the `DriftSurface` tag, because that is the only thing the
@@ -161,7 +167,9 @@ function TrackService:Init()
 	spawnCFrame = findSpawn(track)
 	adopted = track
 	if not spawnCFrame then
-		warn(`[TrackService] adopted '{track.Name}' but found no road to spawn on; the playground will be built instead`)
+		-- No road found is the same as no track: the playground then owns the origin
+		-- again, and a car has somewhere to start.
+		warn(`[TrackService] adopted '{track.Name}' but found no road to spawn on; it will be left where it is and the playground built at the origin`)
 		adopted = nil
 	end
 end
@@ -170,8 +178,8 @@ end
 -- Contract (docs/game/CONTRACTS.md)
 --------------------------------------------------------------------------------
 
--- Has this place got a track? PlaygroundService asks before building, and CarService asks
--- before choosing a spawn.
+-- Has this place got a track? PlaygroundService asks before building -- not to decide
+-- WHETHER to build any more, but WHERE -- and CarService asks before choosing a spawn.
 function TrackService:HasTrack(): boolean
 	return adopted ~= nil
 end
@@ -180,12 +188,25 @@ function TrackService:SpawnCFrame(): CFrame?
 	return spawnCFrame
 end
 
+-- The track's world-space box, so a test can prove the two worlds do not overlap. `nil`
+-- where there is no track.
+function TrackService:Bounds(): { min: Vector3, max: Vector3 }?
+	if not adopted then
+		return nil
+	end
+	local cf, size = adopted:GetBoundingBox()
+	return { min = cf.Position - size * 0.5, max = cf.Position + size * 0.5 }
+end
+
 function TrackService:DebugState()
 	local size = if adopted then select(2, adopted:GetBoundingBox()) else Vector3.zero
+	local bounds = self:Bounds()
 	return {
 		hasTrack = adopted ~= nil,
 		name = if adopted then adopted.Name else nil,
 		size = size,
+		min = bounds and bounds.min or nil,
+		max = bounds and bounds.max or nil,
 		parts = counts.parts,
 		road = counts.road,
 		scenery = counts.scenery,
