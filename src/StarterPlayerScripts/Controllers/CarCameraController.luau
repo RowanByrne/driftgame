@@ -2,46 +2,49 @@
 -- CarCameraController: the drift camera.
 --
 -- A port of the reference game's camera (docs/game/features/drift-model.md "Camera"),
--- written from a description of how it works. Three things happen at once, and all three
--- are driven by the one slip angle the model already publishes:
+-- written from a description of how it works.
 --
---   1. IT SWINGS toward where the car is going, not where it points. The resting place is
---      behind the nose; as the slip opens, the target slides toward a point directly
---      behind the VELOCITY, by an ease-in-out of |slip| / 180 deg. Then only
---      `CamVelocityBlend` of that swing is actually used -- and the reference's own value
---      is 0.05. That is not a mistake: the swing is a hint, not a side-on shot, and it is
---      most of why its camera reads as calm at 179 studs/s.
---   2. IT ROLLS about its own forward axis, to `CamRollMax` by `CamRollAtAngle` of slip.
---      The cheapest and largest part of the effect.
---   3. IT PULLS IN toward `CamDriftDistance` of its resting length, full in by
---      `CamZoomAtAngle`.
+-- CORRECTED 2026-11-03. The decompile holds TWO cameras and the first build was made
+-- against the wrong one: the predecessor, with a 45-degree roll and a drift zoom, which
+-- nothing in the reference runs. The user drove it -- "it spins/rotates wayyyyy to far" --
+-- and that was the roll. The game's camera has NO ROLL, NO ZOOM and NO POSITION
+-- SMOOTHING. If any of the three comes back, it is the wrong camera again.
 --
--- The position eases toward its target with a critically damped spring (`CamSmoothTime`);
--- the look-at eases SEPARATELY and more slowly (`CamLookRate`), as a rotation rather than
--- as a point, which is what keeps the horizon from jittering and what stops the car
--- sliding off centre at speed -- a lagged look POINT lags by speed/rate studs for ever,
--- a lagged look DIRECTION settles with no error at all in a straight line.
+-- What it is, all four parts:
 --
--- On a run ending the camera lets go (`Release`) and holds its last target.
+--   1. IT LOOKS AT A POINT JUST AHEAD OF THE CAR (`CamLookAt`), with only that point's
+--      HEIGHT eased (`CamHeightRate`), so a crest does not throw the horizon about. It
+--      looks AT the car, which is why the horizon is always level.
+--   2. IT KEEPS A FIXED RADIUS. The camera is placed at `|CamOffset|` from the car, in a
+--      direction that eases toward the resting direction at `CamAngleRate`. The
+--      DIRECTION eases, never the position: the camera swings around the car rather than
+--      being dragged behind it. That is the dial that decides whether the car rotates in
+--      front of the camera or stays pinned to it.
+--   3. IT LEANS TOWARD WHERE THE CAR IS GOING as the slip opens, by an ease-in-out of
+--      |slip| / 180 deg toward a point behind the car's TRAVEL, and then only
+--      `CamVelocityBlend` of that lean is taken. 0.05 is not a typo: the leaned target is
+--      what the next frame's resting direction is measured from, so the 5% compounds, and
+--      what it buys is the camera dropping and swinging wide through a drift.
+--   4. THE FOV OPENS WITH SPEED: `CamFovBase + CamFovPerSpeed * speed`, eased at
+--      `CamFovRate`.
+--
+-- The camera is PLACED at its target each frame and told to look at the look-at point.
+-- There is no spring and no look easing: all the easing there is lives inside how the
+-- target is worked out. On a run ending the camera lets go (`Release`) and holds its last
+-- target.
 --
 -- Offsets are in the car's own flat axes: +x right, +y up, +z BEHIND. The car's pitch and
 -- roll are deliberately NOT in that basis -- the camera follows the heading and the height
--- only, so a crest does not throw the view about.
+-- only.
 --
--- THE TARGETS RUN ON A FIXED STEP, and they have to. The resting direction eases toward
--- the car's heading by a share of each step, while the swing knocks it off by a fixed
--- distance every step; the two balance at a deviation of roughly one over step times
--- `CamAngleRate`, which is to say the camera's whole geometry in a drift depended on frame
--- rate. Measured before this was fixed: at 45 deg of slip and 120 studs/s the camera sat
--- 16.25 studs above the car at 30 FPS, 13.09 at 60 and 10.12 at 120. The model is
--- deliberately frame-rate independent (Drift/Sim) and a camera that is not hands two
--- players different games, so the targets are stepped like the model is, and the rendered
--- camera is interpolated between steps. Everything downstream of the targets -- the
--- position spring, the look rotation, the field of view -- is already frame-rate
--- independent and still runs once a frame.
+-- THE TARGETS RUN ON A FIXED STEP (`CamTargetStep`), and they have to. Part 3 feeds its
+-- own output back in as part 2's input, so where the camera settles depends on how often
+-- it is stepped; left at frame rate it sat 16.2 studs above a drifting car at 30 FPS and
+-- 10.1 at 120, which is two players getting different games. The rendered camera is
+-- interpolated between steps, so a 144 Hz screen still gets its own smooth motion. The FOV
+-- has no feedback and is eased once a frame.
 --
--- Every number is in Config.Drift; none is in here, with one exception noted at
--- `TARGET_STEP`.
+-- Every number is in Config.Drift; none is in here.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
@@ -60,15 +63,8 @@ CarCameraController.Priority = 5 -- after DriftController, so a state exists to 
 local STEP_NAME = "DriftCamera"
 local EPS = 1e-4
 
--- The step the camera's targets run at, and the clamp on how many one frame may spend:
--- `CamTargetStep` and `CamMaxTargetSteps`, which say there why the camera's step is its
--- own and not the model's `FixedStep`. Read once -- Config is not reloaded at runtime.
-local TARGET_STEP = Config.Drift.CamTargetStep
-local MAX_TARGET_STEPS = Config.Drift.CamMaxTargetSteps
-
 -- What the camera needs of the car, and nothing else. Built from the model's state, or
--- made up by DebugProbe, which is how the zoom curve and the roll curve are measured
--- without a car.
+-- made up by DebugProbe, which is how the curves below are measured without a car.
 export type View = {
 	position: Vector3,
 	yaw: number, -- radians, Roblox sense
@@ -94,25 +90,6 @@ local function easeInOut(t: number): number
 	return -1 + (4 - 2 * t) * t
 end
 
--- A critically damped spring, the shape Unity's SmoothDamp uses: `CamSmoothTime` is the
--- time it takes to cover most of the gap, and it never overshoots.
---
--- The decay is the real `exp(-x)`, not the cubic Unity substitutes for it. That
--- substitution is a speed trick with an error that grows with the step, and the error is a
--- frame-rate dependence by another name: with the cubic, the camera trailed 44.1 studs
--- behind a car at 120 studs/s at 30 FPS and 47.5 at 120. Exactly solved, the spring is the
--- same spring at any step.
-local function smoothDamp(current: Vector3, target: Vector3, vel: Vector3, smoothTime: number, dt: number): (Vector3, Vector3)
-	smoothTime = math.max(smoothTime, EPS)
-	local omega = 2 / smoothTime
-	local x = omega * dt
-	local decay = math.exp(-x)
-	local change = current - target
-	local temp = (vel + change * omega) * dt
-	local newVel = (vel - temp * omega) * decay
-	return target + (change + temp) * decay, newVel
-end
-
 -- A point in the car's own flat axes: +x right, +y up, +z behind.
 local function carPoint(view: View, offset: Vector3): Vector3
 	local fwd, right = DriftModel.axes(view.yaw)
@@ -131,8 +108,8 @@ end
 
 -- Where the car was a fraction of the way through this frame. A frame that owes the
 -- accumulator two steps must not hand both of them the same car pose: that samples the car
--- at frame rate inside a fixed-step loop, and it is how the camera's distance ends up
--- depending on frame rate even once its geometry does not.
+-- at frame rate inside a fixed-step loop, and it is how the camera ends up depending on
+-- frame rate even once its geometry does not.
 local function lerpView(a: View, b: View, t: number): View
 	return {
 		position = a.position:Lerp(b.position, t),
@@ -152,16 +129,13 @@ local function newRig(view: View?)
 	local rig = {
 		ready = false,
 		position = Vector3.zero,
-		posVel = Vector3.zero,
-		lookDir = Vector3.new(0, 0, -1),
+		lookPoint = Vector3.zero, -- where it is actually looking this frame
 		lookTarget = Vector3.zero,
 		velTarget = Vector3.zero,
-		fixedTarget = Vector3.zero, -- behind the nose: what the swing is measured from
-		target = Vector3.zero, -- after the swing and the blend
+		restTarget = Vector3.zero, -- behind the nose: what the lean is measured from
+		target = Vector3.zero, -- after the lean
 		lastTarget = Vector3.zero,
 		lastCarPos = Vector3.zero,
-		distMult = 1,
-		roll = 0,
 		fov = Config.Drift.CamFovBase,
 		released = false,
 		-- The fixed-step accumulator, and the step before the current one, so a frame that
@@ -170,8 +144,6 @@ local function newRig(view: View?)
 		accumulator = 0,
 		prevTarget = Vector3.zero,
 		prevLookTarget = Vector3.zero,
-		prevRoll = 0,
-		renderRoll = 0, -- the roll actually used this frame, interpolated
 		steps = 0,
 		lastView = nil, -- the car as the previous frame saw it, for the sub-step lerp
 	}
@@ -186,79 +158,66 @@ end
 function CarCameraController._seed(rig, view: View)
 	local C = Config.Drift
 	rig.lookTarget = carPoint(view, C.CamLookAt)
-	rig.fixedTarget = carPoint(view, C.CamOffset)
-	rig.velTarget = rig.fixedTarget
-	rig.target = rig.fixedTarget
-	rig.position = rig.fixedTarget
-	rig.posVel = Vector3.zero
-	rig.lastTarget = rig.fixedTarget
+	rig.restTarget = carPoint(view, C.CamOffset)
+	rig.velTarget = rig.restTarget
+	rig.target = rig.restTarget
+	rig.position = rig.restTarget
+	rig.lookPoint = rig.lookTarget
+	rig.lastTarget = rig.restTarget
 	rig.lastCarPos = view.position
-	rig.lookDir = safeUnit(rig.lookTarget - rig.position, Vector3.new(0, 0, -1))
-	rig.distMult = 1
-	rig.roll = 0
+	rig.fov = C.CamFovBase + C.CamFovPerSpeed * view.speed
 	rig.accumulator = 0
 	rig.prevTarget = rig.target
 	rig.prevLookTarget = rig.lookTarget
-	rig.prevRoll = 0
-	rig.renderRoll = 0
 	rig.lastView = view
 	rig.ready = true
 end
 
--- One fixed step of the targets, and nothing else. `dt` here is always `TARGET_STEP`.
+-- One fixed step of the targets, and nothing else. `dt` here is always `CamTargetStep`.
 local function stepTargets(rig, view: View, dt: number)
 	local C = Config.Drift
-	if not rig.released then
-		-- (3) THE ZOOM. The whole offset shrinks toward `CamDriftDistance` of itself,
-		-- full in by `CamZoomAtAngle` of slip, and the shrink itself eases.
-		local zoomT = math.clamp(math.abs(math.deg(view.slip)) / math.max(C.CamZoomAtAngle, EPS), 0, 1)
-		local wantMult = 1 + (C.CamDriftDistance - 1) * zoomT
-		rig.distMult += (wantMult - rig.distMult) * ease(dt, C.CamZoomRate)
-		local offset = C.CamOffset * rig.distMult
-
-		-- The look-at: ahead of the nose, with only its HEIGHT eased (`CamHeightRate`).
-		-- A car cresting a jump therefore keeps the horizon still while the camera
-		-- itself follows the car up.
-		local wantLook = carPoint(view, C.CamLookAt)
-		rig.lookTarget = Vector3.new(
-			wantLook.X,
-			rig.lookTarget.Y + (wantLook.Y - rig.lookTarget.Y) * ease(dt, C.CamHeightRate),
-			wantLook.Z
-		)
-
-		-- The resting place: behind the nose, but the DIRECTION it sits in follows the
-		-- car round at `CamAngleRate` rather than snapping to the new heading. The length
-		-- is always the (zoomed) offset's own length, so easing the direction can never
-		-- change how far away the camera is.
-		local wantDir = safeUnit(carPoint(view, offset) - view.position, Vector3.yAxis)
-		local haveDir = safeUnit(rig.lastTarget - rig.lastCarPos, wantDir)
-		local dir = safeUnit(haveDir:Lerp(wantDir, ease(dt, C.CamAngleRate)), wantDir)
-		rig.fixedTarget = view.position + dir * offset.Magnitude
-
-		-- (1) THE SWING. A point the same height and the same distance behind, but behind
-		-- the VELOCITY instead of the nose, hung off the look-at point rather than off the
-		-- car. It follows at `CamSwingRate`, so it is always a little behind the truth.
-		local flatVel = Vector3.new(view.velocity.X, 0, view.velocity.Z)
-		local fwd = DriftModel.axes(view.yaw)
-		local back = safeUnit(-flatVel, -fwd)
-		local wantVel = rig.lookTarget + back * offset.Z + Vector3.yAxis * offset.Y
-		rig.velTarget = rig.velTarget:Lerp(wantVel, ease(dt, C.CamSwingRate))
-
-		-- ...and then only `CamVelocityBlend` of that swing is used. Small on purpose.
-		local swingT = easeInOut(math.abs(math.deg(view.slip)) / 180)
-		rig.target = rig.fixedTarget:Lerp(rig.fixedTarget:Lerp(rig.velTarget, swingT), C.CamVelocityBlend)
-
-		-- (2) THE ROLL, about the camera's own forward axis.
-		local rollT = math.clamp(math.deg(view.slip) / math.max(C.CamRollAtAngle, EPS), -1, 1)
-		local wantRoll = math.rad(C.CamRollMax) * rollT
-		rig.roll += (wantRoll - rig.roll) * ease(dt, C.CamRollRate)
-
-		rig.lastTarget = rig.target
-		rig.lastCarPos = view.position
+	if rig.released then
+		return -- a run has ended: hold whatever the targets last were
 	end
+
+	-- (1) The look-at: ahead of the nose, with only its HEIGHT eased. A car cresting a
+	-- jump keeps the horizon still while the camera itself follows the car up.
+	local wantLook = carPoint(view, C.CamLookAt)
+	rig.lookTarget = Vector3.new(
+		wantLook.X,
+		rig.lookTarget.Y + (wantLook.Y - rig.lookTarget.Y) * ease(dt, C.CamHeightRate),
+		wantLook.Z
+	)
+
+	-- (2) The resting place: `|CamOffset|` from the car, in a direction that follows the
+	-- car round at `CamAngleRate`. The length is always the offset's own length, so easing
+	-- the direction can never change how far away the camera is -- it swings around the
+	-- car instead of being dragged behind it.
+	local wantDir = safeUnit(carPoint(view, C.CamOffset) - view.position, Vector3.yAxis)
+	local haveDir = safeUnit(rig.lastTarget - rig.lastCarPos, wantDir)
+	local dir = safeUnit(haveDir:Lerp(wantDir, ease(dt, C.CamAngleRate)), wantDir)
+	rig.restTarget = view.position + dir * C.CamOffset.Magnitude
+
+	-- (3) The lean. A point the same height and the same distance behind, but behind the
+	-- VELOCITY instead of the nose, hung off the look-at point rather than off the car. It
+	-- follows at `CamSwingRate`, so it is always a long way behind the truth at speed --
+	-- which is part of why the blend below is small.
+	local flatVel = Vector3.new(view.velocity.X, 0, view.velocity.Z)
+	local fwd = DriftModel.axes(view.yaw)
+	local back = safeUnit(-flatVel, -fwd)
+	local wantVel = rig.lookTarget + back * C.CamOffset.Z + Vector3.yAxis * C.CamOffset.Y
+	rig.velTarget = rig.velTarget:Lerp(wantVel, ease(dt, C.CamSwingRate))
+
+	-- ...and only `CamVelocityBlend` of it is taken. Small because it compounds: the next
+	-- line is what the next step's `haveDir` is measured from.
+	local leanT = easeInOut(math.abs(math.deg(view.slip)) / 180)
+	rig.target = rig.restTarget:Lerp(rig.restTarget:Lerp(rig.velTarget, leanT), C.CamVelocityBlend)
+
+	rig.lastTarget = rig.target
+	rig.lastCarPos = view.position
 end
 
--- One frame. Returns the camera's CFrame, roll included.
+-- One frame. Returns the camera's CFrame.
 function CarCameraController._advance(rig, view: View, dt: number): CFrame
 	local C = Config.Drift
 	if not rig.ready then
@@ -269,44 +228,40 @@ function CarCameraController._advance(rig, view: View, dt: number): CFrame
 	-- The targets, in whole fixed steps (see the header). The car's own pose is whatever
 	-- this frame says it is: the camera samples the car at frame rate, and only the
 	-- camera's own feedback is held to the step.
-	rig.accumulator = math.min(rig.accumulator + dt, TARGET_STEP * MAX_TARGET_STEPS)
-	local steps = math.floor(rig.accumulator / TARGET_STEP)
+	local step = math.max(C.CamTargetStep, EPS)
+	rig.accumulator = math.min(rig.accumulator + dt, step * math.max(C.CamMaxTargetSteps, 1))
+	local steps = math.floor(rig.accumulator / step)
 	local from = rig.lastView or view
 	for i = 1, steps do
-		rig.prevTarget, rig.prevLookTarget, rig.prevRoll = rig.target, rig.lookTarget, rig.roll
-		stepTargets(rig, lerpView(from, view, i / steps), TARGET_STEP)
-		rig.accumulator -= TARGET_STEP
+		rig.prevTarget, rig.prevLookTarget = rig.target, rig.lookTarget
+		stepTargets(rig, lerpView(from, view, i / steps), step)
+		rig.accumulator -= step
 	end
 	rig.steps = steps
 	rig.lastView = view
 
 	-- ...and the frame is rendered between the last two of them, so a 90 or a 144 Hz
 	-- screen gets its own smooth motion out of a 60 Hz target.
-	local alpha = math.clamp(rig.accumulator / TARGET_STEP, 0, 1)
-	local target = rig.prevTarget:Lerp(rig.target, alpha)
-	local lookTarget = rig.prevLookTarget:Lerp(rig.lookTarget, alpha)
-	rig.renderRoll = rig.prevRoll + (rig.roll - rig.prevRoll) * alpha
+	local alpha = math.clamp(rig.accumulator / step, 0, 1)
+	rig.position = rig.prevTarget:Lerp(rig.target, alpha)
+	rig.lookPoint = rig.prevLookTarget:Lerp(rig.lookTarget, alpha)
 
-	-- The position eases...
-	rig.position, rig.posVel = smoothDamp(rig.position, target, rig.posVel, C.CamSmoothTime, dt)
+	-- The FOV has no feedback in it, so it is eased once a frame.
+	local wantFov = C.CamFovBase + C.CamFovPerSpeed * view.speed
+	rig.fov += (wantFov - rig.fov) * ease(dt, C.CamFovRate)
 
-	-- ...and the look-at eases separately and more slowly, as a ROTATION. In a straight
-	-- line the wanted direction stops changing and this settles with no error, however
-	-- fast the car is going; easing the look POINT instead would leave the car permanently
-	-- off centre by speed / CamLookRate studs.
-	local wantLookDir = safeUnit(lookTarget - rig.position, rig.lookDir)
-	rig.lookDir = safeUnit(rig.lookDir:Lerp(wantLookDir, ease(dt, C.CamLookRate)), wantLookDir)
-
-	local speedFrac = math.clamp(view.speed / math.max(C.TopSpeed, EPS), 0, 1)
-	rig.fov = C.CamFovBase + (C.CamFovTop - C.CamFovBase) * speedFrac
-
-	return CFrame.lookAt(rig.position, rig.position + rig.lookDir) * CFrame.Angles(0, 0, rig.renderRoll)
+	-- Placed, not eased into place, and looking AT the car: the horizon is level because
+	-- nothing ever rolls it.
+	local toLook = rig.lookPoint - rig.position
+	if toLook.Magnitude < EPS then
+		return CFrame.new(rig.position)
+	end
+	return CFrame.lookAt(rig.position, rig.lookPoint)
 end
 
--- How far the swing actually moved the camera's target, in studs: the whole point of the
--- `CamVelocityBlend` question.
-local function swingStuds(rig): number
-	return (rig.target - rig.fixedTarget).Magnitude
+-- How far the lean actually moved the camera's target, in studs.
+local function leanStuds(rig): number
+	return (rig.target - rig.restTarget).Magnitude
 end
 
 -- ---------------------------------------------------------------- lifecycle
@@ -382,27 +337,30 @@ function CarCameraController:DebugState()
 	local rig = self.rig
 	local state = DriftController:CurrentState()
 	local carPos = state and state.position or nil
+	local cf = self.camera and self.camera.CFrame or nil
 	return {
 		hasCamera = self.camera ~= nil,
 		cameraType = self.camera and self.camera.CameraType.Name or "none",
 		ready = rig.ready,
 		released = rig.released,
 		position = rig.position,
-		lookPoint = rig.lookTarget,
+		lookPoint = rig.lookPoint,
 		fieldOfView = rig.fov,
-		rollDeg = math.deg(rig.renderRoll),
-		distanceMultiplier = rig.distMult,
-		swingStuds = swingStuds(rig),
+		-- There is no roll in this camera. Measured off the real CFrame rather than
+		-- asserted, so a test can prove it rather than take its word for it.
+		rollDeg = if cf then math.deg(math.asin(math.clamp(cf.RightVector.Y, -1, 1))) else nil,
+		leanStuds = leanStuds(rig),
 		slipDeg = state and math.deg(state.slip) or nil,
 		speed = state and DriftModel.speed(state) or nil,
 		distanceToCar = carPos and (rig.position - carPos).Magnitude or nil,
 		heightAboveCar = carPos and (rig.position.Y - carPos.Y) or nil,
+		stepsLastFrame = rig.steps,
 	}
 end
 
 -- Settle a throwaway rig against a car held at a fixed slip angle, and report what the
--- camera does there. This is how the zoom curve, the roll curve and the swing are
--- measured: no car, no Workspace and no waiting.
+-- camera does there. This is how the curves are measured: no car, no Workspace and no
+-- waiting.
 --
 -- `opts`: { slipDeg, speed, seconds, fps, blend, yawDeg, sweepSeconds }. `blend` overrides
 -- `CamVelocityBlend` for the run only (it is put back afterwards) so the same drift can be
@@ -422,11 +380,10 @@ function CarCameraController:DebugProbe(opts)
 	local fwd = DriftModel.axes(yaw)
 	-- + slip means the car is travelling out to its LEFT, so the velocity is the nose
 	-- rotated by +slip about the world up.
-	local velDir = (CFrame.Angles(0, slip, 0) * fwd).Unit
 	local view: View = {
 		position = Vector3.new(0, C.RideHeight, 0),
 		yaw = yaw,
-		velocity = velDir * speed,
+		velocity = (CFrame.Angles(0, slip, 0) * fwd).Unit * speed,
 		slip = slip,
 		speed = speed,
 	}
@@ -437,19 +394,19 @@ function CarCameraController:DebugProbe(opts)
 	end
 
 	local rig = newRig(view)
-	local maxPosStep, maxLookStep = 0, 0
-	local prevPos, prevLook = rig.position, rig.position + rig.lookDir
+	local maxPosStep, maxLookStep, maxRollDeg = 0, 0, 0
+	local prevPos, prevLook = rig.position, rig.lookPoint
 	local steps = math.floor(seconds * fps)
 	local settled = math.floor(steps * 0.75) -- the jitter numbers ignore the settling in
 	local ok, err = pcall(function()
 		for i = 1, steps do
-			-- A FRESH table each frame, because the rig keeps the previous frame's view to
-			-- interpolate its sub-steps from: handing it the same table mutated in place
-			-- would make that interpolation a no-op and hide what it is there to fix.
 			local s = slip
 			if opts.sweepSeconds then
 				s = slip * math.sin(2 * math.pi * (i * dt) / opts.sweepSeconds)
 			end
+			-- A FRESH table each frame, because the rig keeps the previous frame's view to
+			-- interpolate its sub-steps from: handing it the same table mutated in place
+			-- would make that interpolation a no-op and hide what it is there to fix.
 			view = {
 				position = view.position + view.velocity * dt,
 				yaw = yaw,
@@ -457,13 +414,13 @@ function CarCameraController:DebugProbe(opts)
 				slip = s,
 				speed = speed,
 			}
-			CarCameraController._advance(rig, view, dt)
-			local look = rig.position + rig.lookDir
+			local cf = CarCameraController._advance(rig, view, dt)
+			maxRollDeg = math.max(maxRollDeg, math.abs(math.deg(math.asin(math.clamp(cf.RightVector.Y, -1, 1)))))
 			if i > settled then
 				maxPosStep = math.max(maxPosStep, (rig.position - prevPos - view.velocity * dt).Magnitude)
-				maxLookStep = math.max(maxLookStep, (look - prevLook - view.velocity * dt).Magnitude)
+				maxLookStep = math.max(maxLookStep, (rig.lookPoint - prevLook - view.velocity * dt).Magnitude)
 			end
-			prevPos, prevLook = rig.position, look
+			prevPos, prevLook = rig.position, rig.lookPoint
 		end
 	end)
 
@@ -473,9 +430,8 @@ function CarCameraController:DebugProbe(opts)
 	end
 
 	local toCar = rig.position - view.position
-	-- Where the swing actually took the target, split into the car's own axes: how much
-	-- of it is sideways (the "side-on shot") and how much is simply further back.
-	local swing = rig.target - rig.fixedTarget
+	-- Where the lean actually took the target, split into the car's own axes.
+	local lean = rig.target - rig.restTarget
 	local sFwd, sRight = DriftModel.axes(yaw)
 	return {
 		slipDeg = opts.slipDeg or 0,
@@ -484,13 +440,12 @@ function CarCameraController:DebugProbe(opts)
 		distance = toCar.Magnitude,
 		height = toCar.Y,
 		flatDistance = Vector3.new(toCar.X, 0, toCar.Z).Magnitude,
-		rollDeg = math.deg(rig.renderRoll),
-		distanceMultiplier = rig.distMult,
-		swingStuds = swingStuds(rig), -- how far the blend actually moved the target
-		swingSideways = swing:Dot(sRight), -- + is out to the car's right
-		swingBackwards = -swing:Dot(sFwd), -- + is further behind the nose
-		swingDown = -swing.Y,
-		fullSwingStuds = (rig.velTarget - rig.fixedTarget).Magnitude, -- before the blend
+		maxRollDeg = maxRollDeg, -- must be 0: this camera has no roll
+		leanStuds = leanStuds(rig),
+		leanSideways = lean:Dot(sRight), -- + is out to the car's right
+		leanBackwards = -lean:Dot(sFwd), -- + is further behind the nose
+		leanDown = -lean.Y,
+		fullLeanStuds = (rig.velTarget - rig.restTarget).Magnitude, -- before the blend
 		fov = rig.fov,
 		-- Drift left over after the car's own motion is taken out: anything but ~0 means
 		-- the camera has not settled, or is jittering.
@@ -500,8 +455,8 @@ function CarCameraController:DebugProbe(opts)
 end
 
 -- Watch the LIVE camera for `seconds` and report the worst frame of it: how far the
--- camera and its look point jumped between frames, and how far off the centre of the
--- screen the car ever got. Studio only, and it yields.
+-- camera and its look point jumped between frames, how far the view turned, and how far
+-- off the centre of the screen the car ever got. Studio only, and it yields.
 function CarCameraController:DebugRecord(seconds: number)
 	seconds = math.clamp(seconds or 5, 0, 30)
 	local camera = self.camera
@@ -514,7 +469,7 @@ function CarCameraController:DebugRecord(seconds: number)
 		maxPosStep = 0, -- studs the camera moved between two frames, car's own motion included
 		maxLookStep = 0,
 		maxTurnDeg = 0, -- degrees the view direction turned between two frames
-		maxRollStepDeg = 0,
+		maxRollDeg = 0, -- must stay 0: this camera has no roll
 		maxScreenOffsetPx = 0,
 		maxScreenOffsetFrac = 0, -- of half the screen's smaller side: 1 is the edge
 		offScreenFrames = 0,
@@ -522,9 +477,10 @@ function CarCameraController:DebugRecord(seconds: number)
 		maxDistance = 0,
 		maxSlipDeg = 0,
 		maxSpeed = 0,
-		maxRollDeg = 0,
+		minFov = math.huge,
+		maxFov = 0,
 	}
-	local prevPos, prevLook, prevDir, prevRoll = nil, nil, nil, nil
+	local prevPos, prevLook, prevDir = nil, nil, nil
 	local clock = 0
 	while clock < seconds do
 		local dt = RunService.RenderStepped:Wait()
@@ -535,18 +491,19 @@ function CarCameraController:DebugRecord(seconds: number)
 		if not cam then
 			break
 		end
-		local pos = cam.CFrame.Position
-		local look = pos + cam.CFrame.LookVector
-		local dir = cam.CFrame.LookVector
+		local cf = cam.CFrame
+		local pos = cf.Position
+		local look = pos + cf.LookVector
+		local dir = cf.LookVector
 		if prevPos then
 			out.maxPosStep = math.max(out.maxPosStep, (pos - prevPos).Magnitude)
 			out.maxLookStep = math.max(out.maxLookStep, (look - prevLook).Magnitude)
 			out.maxTurnDeg = math.max(out.maxTurnDeg, math.deg(math.acos(math.clamp(dir:Dot(prevDir), -1, 1))))
-			out.maxRollStepDeg = math.max(out.maxRollStepDeg, math.abs(math.deg(self.rig.renderRoll) - prevRoll))
 		end
 		prevPos, prevLook, prevDir = pos, look, dir
-		prevRoll = math.deg(self.rig.renderRoll)
-		out.maxRollDeg = math.max(out.maxRollDeg, math.abs(math.deg(self.rig.renderRoll)))
+		out.maxRollDeg = math.max(out.maxRollDeg, math.abs(math.deg(math.asin(math.clamp(cf.RightVector.Y, -1, 1)))))
+		out.minFov = math.min(out.minFov, cam.FieldOfView)
+		out.maxFov = math.max(out.maxFov, cam.FieldOfView)
 
 		local state = DriftController:CurrentState()
 		if state then
@@ -570,6 +527,9 @@ function CarCameraController:DebugRecord(seconds: number)
 	end
 	if out.minDistance == math.huge then
 		out.minDistance = 0
+	end
+	if out.minFov == math.huge then
+		out.minFov = 0
 	end
 	return out
 end

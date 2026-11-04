@@ -192,35 +192,40 @@ return {
 	-- is worth, as a share of full travel
 
 	-- ---------------------------------------------------------------- camera
-	-- Owned by the camera task. All three of its effects are driven by the same slip angle
-	-- the model already has, and together they are most of why a drift reads as a drift.
+	-- Owned by the camera task. CORRECTED 2026-11-03: the decompile holds two cameras and
+	-- the spec described the predecessor, which nothing in the reference runs. The game's
+	-- camera has NO ROLL, NO ZOOM and NO POSITION SMOOTHING -- it is placed at its target
+	-- each frame and looks at the car, so the horizon is always level. `CamRollMax`,
+	-- `CamRollAtAngle`, `CamRollRate`, `CamDriftDistance`, `CamZoomAtAngle`, `CamZoomRate`,
+	-- `CamSmoothTime`, `CamLookRate` and `CamFovTop` were that predecessor's and are gone;
+	-- if one turns up in this table again, something has drifted back to the wrong camera.
 	-- Offsets are in the CAR's own axes, Roblox sense: +x right, +y up, +z BEHIND the car
 	-- (the spec quotes the reference's Unity figures, where behind is -z).
-	CamOffset = Vector3.new(0, 28.6, 35.7), -- studs. FALLBACK. The resting place, behind
-	-- and above the car
-	CamLookAt = Vector3.new(0, 0, -10.7), -- studs. FALLBACK. What it looks at, AHEAD of
-	-- the car
-	CamVelocityBlend = 0.05, -- EXACT, and small on purpose: how much of the swing toward
-	-- where the car is actually going is used. The reference's own
-	-- value -- the swing is a hint, not a side-on shot, and it is
-	-- why its camera looks calm. Worth raising to taste
-	CamSwingRate = 1, -- per second. FALLBACK. How fast the velocity-based target follows
-	CamAngleRate = 1, -- per second. FALLBACK. How fast the resting direction follows the
-	-- car round
+	CamOffset = Vector3.new(0, 14.3, 53.6), -- studs. FALLBACK (0, 4, -15 m), from the
+	-- camera-mode setting's own default. Its LENGTH is the
+	-- radius the camera keeps from the car and its direction
+	-- is the resting direction. Low and well back, which is
+	-- most of why the reference reads flat and fast rather
+	-- than like a drone shot
+	CamLookAt = Vector3.new(0, 0, -10.7), -- studs. EXACT. What it looks at, AHEAD of the
+	-- car. Only its HEIGHT is eased (`CamHeightRate`)
+	CamVelocityBlend = 0.05, -- EXACT, and small on purpose: how much of the lean toward
+	-- where the car is actually going is taken each frame. It is
+	-- small because it COMPOUNDS -- the leaned target is what the
+	-- next frame's resting direction is measured from, so the 5%
+	-- is applied again every frame. What the player sees is the
+	-- camera dropping and swinging wide through a drift, not a
+	-- side-on shot. Raise it for a more dramatic camera
+	CamSwingRate = 1, -- per second. FALLBACK. How fast the behind-the-travel point follows
+	CamAngleRate = 1, -- per second. FALLBACK. How fast the resting DIRECTION follows the
+	-- car round -- the camera swings around the car at a fixed radius
+	-- rather than being dragged behind it. THE MAIN FEEL DIAL: low is
+	-- a camera that lags and lets the car rotate in front of it, high
+	-- is one glued behind the nose
 	CamHeightRate = 1, -- per second. FALLBACK. How fast the look-at height follows
-	CamRollMax = 45, -- deg. FALLBACK. The whole view tilts about its own forward axis: the
-	-- cheapest and largest part of the effect
-	CamRollAtAngle = 20, -- deg of slip that reaches the full roll. FALLBACK
-	CamRollRate = 20, -- per second. FALLBACK. How fast the roll follows
-	CamDriftDistance = 0.5, -- FALLBACK. Share of the resting distance at a full drift: the
-	-- camera pulls in as the slip opens
-	CamZoomAtAngle = 90, -- deg of slip that reaches it. FALLBACK
-	CamZoomRate = 1, -- per second. FALLBACK. How fast the zoom follows
-	CamSmoothTime = 0.1, -- s. FALLBACK. Position easing
-	CamLookRate = 8, -- per second. FALLBACK. Look-at easing, separate and slower than the
-	-- position, which is what keeps the horizon from jittering
-	CamFovBase = 70, -- deg at a standstill. OURS
-	CamFovTop = 86, -- deg at top speed. OURS
+	CamFovBase = 60, -- deg at a standstill. FALLBACK
+	CamFovPerSpeed = 0.14, -- deg per stud/s. FALLBACK (0.5 per m/s): 85 deg at top speed
+	CamFovRate = 0.5, -- per second. FALLBACK. How fast the FOV follows. Slow on purpose
 	CamTargetStep = 1 / 60, -- s. OURS, and NOT `FixedStep`. The camera's targets feed back
 	-- into themselves (the swung target is what the next frame's resting
 	-- direction is measured from), so where they settle depends on how
