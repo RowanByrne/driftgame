@@ -56,6 +56,27 @@ local DRIVE_SEED = 8080 -- the road the drive is measured on. PINNED, and only h
 -- measurement -- and 8080 is the seed `RoadTests` published its numbers on,
 -- so the two drives are comparable
 
+-- THE DESCENDING ROAD, which the shipped piece set cannot lay: every one of its nine
+-- pieces is flat (`features/road-elevation.md`). This is `RoadTests`' `Plunge` fixture --
+-- a straight that loses 20 studs over its 220 and hands the next piece a level road -- and
+-- it is spliced in for one drive and taken straight back out. 30 of them is 600 studs
+-- below where the old absolute `RespawnBelowY = -150` sat, which is the only road on which
+-- the difference between an absolute fall test and a relative one can be measured at all.
+local OLD_RESPAWN_BELOW_Y = -150 -- what `Config.Drift.RespawnBelowY` was before T-067, and
+-- it is in this suite for one reason: so a drive can say how many
+-- of its own steps the old absolute test would have called a fall
+local DESCENT_SEED = 8080
+local DESCENT_PIECES = 30
+local DESCENT_PIECE = {
+	kind = "Descent",
+	Shape = "straight",
+	weight = 1,
+	minPieces = 0,
+	mirror = false,
+	Length = 220,
+	Height = { Drop = 20, EndGrade = 0 },
+}
+
 local Tests = {}
 
 local Sim, World
@@ -106,6 +127,26 @@ local function press(want: boolean?, player: Player)
 	return RoadService:DebugPress(want, player.UserId)
 end
 
+-- Splice the descending straight into the live piece set and push every flat piece out of
+-- reach, so the road the next drive lays goes nowhere but down. Hands back the undo, and
+-- every caller calls it -- `Config.Road.Pieces` is the real config table.
+local function useDescent()
+	local was = {}
+	for name, spec in Config.Road.Pieces do
+		was[name] = spec.minPieces
+		spec.minPieces = math.huge
+	end
+	Config.Road.Pieces.Descent = DESCENT_PIECE
+	Pieces.rebuild()
+	return function()
+		Config.Road.Pieces.Descent = nil
+		for name, value in was do
+			Config.Road.Pieces[name].minPieces = value
+		end
+		Pieces.rebuild()
+	end
+end
+
 -- Where a position is on the road, or nil off it entirely.
 local function pieceAt(position: Vector3?)
 	if not position then
@@ -154,6 +195,15 @@ function Tests:drive(opts)
 		wallSteps = 0,
 		stuckSeconds = 0,
 		fell = false,
+		-- What the MODEL thought, as opposed to the fall this drive stages on purpose:
+		-- how many steps it asked to be respawned on, and how far down the drive got.
+		-- On a descending road these two together are the whole of T-067.
+		modelFellSteps = 0,
+		lowestY = math.huge,
+		-- And the same question asked the OLD way, which is the only way to show the bug
+		-- and the fix in one run: how many of those steps were below the world Y the fall
+		-- test used to be a comparison against.
+		oldWouldFallSteps = 0,
 		recovered = false,
 		recoveredAt = 0,
 		furthestBefore = 0,
@@ -165,6 +215,13 @@ function Tests:drive(opts)
 
 	local function observe(s)
 		r.steps += 1
+		if s.fell then
+			r.modelFellSteps += 1
+		end
+		if s.position.Y < OLD_RESPAWN_BELOW_Y then
+			r.oldWouldFallSteps += 1
+		end
+		r.lowestY = math.min(r.lowestY, s.position.Y)
 		local speed = math.sqrt(s.velocity.X ^ 2 + s.velocity.Z ^ 2)
 		r.minSpeed = math.min(r.minSpeed, speed)
 		r.maxSpeed = math.max(r.maxSpeed, speed)
@@ -210,7 +267,10 @@ function Tests:drive(opts)
 			fallDone = true
 			r.fell = true
 			r.furthestBefore = gen.furthestN
-			local off = s.position + Vector3.new(0, D.RespawnBelowY - 60, 0)
+			-- Below the road the car is on, not below a world Y: the same 210 studs the
+			-- old `RespawnBelowY - 60` was from a road at zero, and still 210 from a road
+			-- 600 studs down (T-067).
+			local off = s.position - Vector3.new(0, D.FallBelowSurface + 60, 0)
 			CarService:DebugBelieve(player.UserId, off)
 			task.wait(D.RespawnCooldown + 0.05)
 			local back = CarService:DebugRespawn(player.UserId)
@@ -441,8 +501,10 @@ function Tests:run(opts)
 		local furthestBefore = gen.furthestN
 		local roadPartsBefore = #workspace.Road:GetChildren()
 
-		-- Straight down through the world, which is what `RespawnBelowY` catches.
-		local below = onRoad + Vector3.new(0, D.RespawnBelowY - 80, 0)
+		-- Straight down through the world, far enough below the road it fell off that
+		-- `FallBelowSurface` catches it. 230 studs, which is what `RespawnBelowY - 80`
+		-- came to when every road was at Y = 0 (T-067).
+		local below = onRoad - Vector3.new(0, D.FallBelowSurface + 80, 0)
 		CarService:DebugBelieve(player.UserId, below)
 		task.wait(D.RespawnCooldown + 0.05)
 		local back = CarService:DebugRespawn(player.UserId)
@@ -760,10 +822,135 @@ function Tests:run(opts)
 			driveDetail
 		)
 		check(
-			"the drive never left the road and never went backwards",
-			r.offRoadSteps == 0 and r.airSteps == 0 and r.backwardsSteps == 0,
-			driveDetail
+			"the drive never left the road, never went backwards, and never asked to be respawned",
+			r.offRoadSteps == 0 and r.airSteps == 0 and r.backwardsSteps == 0 and r.modelFellSteps == 0,
+			driveDetail .. string.format("; the model asked to be respawned on %d of %d steps", r.modelFellSteps, r.steps)
 		)
+	end
+
+	----------------------------------------------------------------------------
+	-- 10. A DESCENDING road: a fall is measured from the ground, not from Y = 0
+	----------------------------------------------------------------------------
+	-- The case the absolute test got wrong (`features/road-elevation.md`, "The fall test
+	-- stops being absolute"). Two halves, and they pull in opposite directions:
+	--
+	--   * 600 studs down a hill, with road under the car the whole way, NOTHING is a fall;
+	--   * one car width to the side of that same road, where there is no piece and no
+	--     ground at all, a fall is still a fall and still comes back -- which is what the
+	--     old test caught by accident and the easy thing to lose.
+	--
+	-- The second half is staged by moving the model sideways rather than by steering off,
+	-- because there is a barrier in the way: a car cannot be driven off the side of this
+	-- road at all. What is being measured is the model's own `fell`, from the ground it
+	-- last had under it, so where it was put matters and how it got there does not.
+	if opts.skipDrive ~= true and opts.skipDescent ~= true then
+		loadModel()
+		local restore = useDescent()
+		local ok, err = pcall(function()
+			RoadService:Stop()
+			RoadService:DebugClearLimits()
+			task.wait(D.RespawnCooldown + 0.05)
+			RoadService:Generate(DESCENT_SEED)
+			press(true, player)
+			local r = Tests:drive({
+				player = player,
+				pieces = DESCENT_PIECES,
+				startCFrame = RoadService:SpawnCFrame(),
+			})
+			local gen = RoadService:DebugGenerator()
+			check(
+				"a car driven to the bottom of a descending road never asks to be respawned",
+				r.modelFellSteps == 0 and r.lowestY < -300 and r.reached >= 15 and r.oldWouldFallSteps > 0,
+				string.format(
+					"%d pieces of descent in %.0f s (%d steps), down to Y %.0f -- %.0f studs below the old RespawnBelowY of %d. THE OLD TEST WOULD HAVE CALLED %d OF THOSE %d STEPS A FALL; this one calls %d of them a fall. %.0f..%.0f studs/s, %d steps off the road, %d airborne",
+					r.reached,
+					r.seconds,
+					r.steps,
+					r.lowestY,
+					OLD_RESPAWN_BELOW_Y - r.lowestY,
+					OLD_RESPAWN_BELOW_Y,
+					r.oldWouldFallSteps,
+					r.steps,
+					r.modelFellSteps,
+					r.minSpeed,
+					r.maxSpeed,
+					r.offRoadSteps,
+					r.airSteps
+				)
+			)
+
+			-- ...and off the side of it, at that depth.
+			local piece = assert(gen:piece(r.reached), "no piece to fall off")
+			local pose = Pieces.poseAt(piece, 0.5, C.SurfaceY + D.RideHeight)
+			local roadY = select(1, Pieces.surfaceAt(piece, 0.5))
+			local world = World.live({ workspace:FindFirstChild("Cars") })
+			local runner = Sim.newRunner(pose)
+			runner.state.time = 10
+			local input = { steer = 0, handbrake = false }
+			-- One step ON the road, so the ground rays -- and nothing else -- say where the
+			-- fall is measured from.
+			Sim.advance(runner, 1 / DRIVE_FPS, input, world)
+			local measuredFrom = runner.state.fallFrom
+			local onRoadFell = runner.state.fell
+			-- Over the void beside it, standing still: only gravity from here.
+			runner.state.position = pose.Position + pose.RightVector * (C.Width * 0.5 + 60)
+			runner.state.velocity = Vector3.zero
+			local seconds = 0
+			while seconds < 20 and not runner.state.fell do
+				Sim.advance(runner, 1 / DRIVE_FPS, input, world)
+				seconds += 1 / DRIVE_FPS
+			end
+			local fell = runner.state.fell
+			local droppedBy = measuredFrom - runner.state.position.Y
+			world.destroy()
+
+			-- And the server puts it back, on the road, at the road's height.
+			local furthestBefore = gen.furthestN
+			CarService:DebugBelieve(player.UserId, runner.state.position)
+			task.wait(D.RespawnCooldown + 0.05)
+			local back = CarService:DebugRespawn(player.UserId)
+			local at = pieceAt(back)
+			local furthestAfter = gen.furthestN
+			local backPiece = at and gen:piece(at.n)
+			local backSurface = if backPiece then (select(1, Pieces.surfaceAt(backPiece, at.t))) else 0
+			local offSurface = if back then math.abs(back.Y - (backSurface + D.RideHeight)) else math.huge
+			check(
+				"a fall off the side of a road 600 studs down is still a fall, and comes back on the road at that height",
+				fell
+					and not onRoadFell
+					and math.abs(droppedBy - D.FallBelowSurface) < 12
+					and back ~= nil
+					and at ~= nil
+					and at.onRoad
+					and offSurface < 2
+					and RoadService:InRun(player)
+					and furthestAfter >= furthestBefore,
+				string.format(
+					"on the road at piece %d (Y %.0f) nothing was falling; beside it the car fell %.0f studs from the %.0f it last had ground at -- FallBelowSurface is %d -- in %.1f s, and reported fell=%s. The server put it back on piece %s at Y %.1f, %.2f studs above a road whose surface there is Y %.1f (%.2f off ride height); still in the run: %s; furthest N %d -> %d",
+					r.reached,
+					roadY,
+					droppedBy,
+					measuredFrom,
+					D.FallBelowSurface,
+					seconds,
+					tostring(fell),
+					at and tostring(at.n) or "NOT ON THE ROAD",
+					back and back.Y or -1,
+					back and (back.Y - backSurface) or -1,
+					backSurface,
+					offSurface,
+					tostring(RoadService:InRun(player)),
+					furthestBefore,
+					furthestAfter
+				)
+			)
+			press(false, player)
+			RoadService:Stop()
+		end)
+		restore()
+		if not ok then
+			error(err, 0)
+		end
 	end
 
 	----------------------------------------------------------------------------
