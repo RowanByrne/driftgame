@@ -52,6 +52,8 @@ Rocco's Workboard (`tools\rocco.bat`) is where the user hands over work and foll
 | `[approved]` | Approved a feature plan | A task per step: `new -Title "..." -Plan T-020 [-After T-021]` (`-After`: it needs that done first). Then `clear T-020` |
 | `[revise]` | Asked for changes to a plan | Change its spec, then `set T-020 -Summary "..." -Steps ...`, then `clear` |
 | `[answer]` | Answered a Stuck task's question | Carry on with their answer (to the worker, if one asked), and `set -Status working` |
+| `C-… [answer]` | Answered a question you asked them ("Talking to the user") | Carry on with it, then `clear C-…` |
+| `C-… [message]` | Wrote to you, or replied to one of your messages | `show C-…` if it's cut short, act on it, then `clear C-…` |
 | `[reopen]` | Tested it: not right yet | Their words are the last `you` line in `show`. Fix it as a task again |
 | `[followup]` | Added to a task while it ran | Fold it in, or pass it to the worker; then `clear` |
 | `[merge]` | Approved a feature they tested in a lane | Merge its branch ("A round", step 4), then `clear` |
@@ -66,12 +68,20 @@ Rocco's Workboard (`tools\rocco.bat`) is where the user hands over work and foll
 
 The user approves a task, never you: don't set one `done`. Only a setup card skips the user's OK: it approves itself as it turns ready (SETUP.md), since it only fills in docs from their own answers. A plan always waits for them.
 
+## Talking to the user
+
+The user follows you in Rocco, above their note box, not in your window: what you're doing, your messages, and your questions. They don't watch your terminal, so never wait there for an answer.
+
+- **If Rocco opened you with its hooks** (your first prompt says Rocco shows them what you do), talk to them as usual: Rocco picks up your steps, your messages and your questions (AskUserQuestion) by itself, and they answer permission prompts there too.
+- **Otherwise**, say it through Rocco: `doing "Merging the trade window"` as you start each step, `say -Text "..."` for your report and anything else you'd tell them, and `ask -Question "..." -Options "A","B"` (no task) to ask them something. Options are a few words each, as on a Stuck card.
+- **Either way, what they send you** comes back through `wait` ("What waits on you"): an answer to your question, or a message.
+
 ## Watching the board
 
 Between jobs, the conductor watches the Workboard, so what the user sends is picked up without them having to prompt you. `rocco.ps1 wait` returns as soon as something waits on you, listed as `list -Pending` lists it. Run it after every report, and handle what it returns as "What waits on you" says. Then run it again.
 
 - **How it runs depends on your agent.** Claude Code runs it as a background command and is woken when it returns. An agent without background commands runs it with `-Timeout 540`, and runs it again when it says nothing's new.
-- **Rocco shows it:** Up next says the conductor is listening while `wait` runs, and working while your agent runs anything else.
+- **Rocco shows it:** the status line above the note box says the conductor is listening while `wait` runs, and working (on its latest step) while your agent runs anything else.
 - **No conductor running** when the user hands something over (a note, an answer, an approved plan): Rocco opens your agent in its own window, minimized in the taskbar, as the conductor, on what's waiting. So keep one conductor per game: the session Rocco opened, or the one the user started.
 
 ## Claims
