@@ -10,7 +10,11 @@
 --
 -- There are three layers, nearest first:
 --
---   tuned       a runtime override, for a test or a tuning session (`tune`/`untune`)
+--   tuned       a runtime override, for a test or a tuning session (`tune`/`untune`,
+--               `setTuning` for the whole layer at once). THE TUNER IS BUILT ON IT
+--               (`Shared/Cars/Garage`, `Drift/TunerUI`, T-040): a saved car is one of the
+--               four archetypes plus a tune layer, which is why a slider moves the car on
+--               the next simulation step and why the car keeps its own body while it does
 --   the car     the active archetype's sparse overrides
 --   Base        the approved car, every field (`Archetypes.Base`)
 --
@@ -218,6 +222,36 @@ end
 
 function Cars.untuneAll()
 	tuned = {}
+	rebuild()
+end
+
+-- What is tuned right now, as a copy. The tuner reads it to draw its knobs and to save
+-- the car that is being driven (`Shared/Cars/Garage`, T-040).
+function Cars.tuning(): { [string]: any }
+	local out = {}
+	for key, value in tuned do
+		out[key] = value
+	end
+	return out
+end
+
+-- Replace the WHOLE tuning layer in one go: whatever was tuned before is gone, and only
+-- `overrides` is left. One rebuild, not one per key, which matters because the tuner
+-- loads a saved car by writing eight numbers at once and the model may read the car
+-- between any two of them -- a car assembled a number at a time is a car nobody designed,
+-- for however many steps that takes.
+--
+-- Nothing is written until every key has been checked, so a bad key leaves the car it
+-- found, not half of a new one.
+function Cars.setTuning(overrides: { [string]: any }?)
+	local next_: { [string]: any } = {}
+	for key, value in overrides or {} do
+		if not FIELDS[key] then
+			error(`Cars.setTuning: '{key}' is not a car number. Model numbers live in Config.Drift`, 2)
+		end
+		next_[key] = value
+	end
+	tuned = next_
 	rebuild()
 end
 
