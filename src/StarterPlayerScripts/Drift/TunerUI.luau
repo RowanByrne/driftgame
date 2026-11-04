@@ -189,20 +189,24 @@ gui.Parent = playerGui
 local openButton = button(gui, "TunerToggle", "TUNE")
 openButton.Size = UDim2.fromOffset(64, 44)
 openButton.AnchorPoint = Vector2.new(1, 0)
-openButton.Position = UDim2.new(1, -16, 0, 116)
+openButton.Position = UDim2.new(1, -16, 0, C.TunerTop - 52) -- just above the panel
 openButton.BackgroundTransparency = 0.35
 openButton.BackgroundColor3 = PANEL
 openButton.ZIndex = 5
 
+-- THE PANEL IS SIZED FROM THE SCREEN, NOT FROM ITS CONTENTS. Eight sliders, three
+-- buttons and twelve saved cars is 870 px of panel, and a phone in landscape has 660 of
+-- screen -- so a panel that grew to fit would run off the bottom and, worse, cover the
+-- handbrake, which is the only way to stop a car once a run is over. It stops short of
+-- both corners instead and the middle of it scrolls.
 local panel = Instance.new("Frame")
 panel.Name = "Panel"
 panel.BackgroundColor3 = BG
 panel.BackgroundTransparency = 0.08
 panel.BorderSizePixel = 0
 panel.AnchorPoint = Vector2.new(1, 0)
-panel.Position = UDim2.new(1, -16, 0, 168)
-panel.Size = UDim2.fromOffset(C.TunerWidth, 100)
-panel.AutomaticSize = Enum.AutomaticSize.Y
+panel.Position = UDim2.new(1, -16, 0, C.TunerTop)
+panel.Size = UDim2.new(0, C.TunerWidth, 1, -(C.TunerTop + C.TunerBottomGap))
 panel.Active = true -- the panel's own background absorbs a touch too, so a thumb that
 -- misses a slider does not fall through and steer the car
 panel.Visible = false
@@ -216,13 +220,45 @@ panelPad.PaddingLeft = UDim.new(0, PAD)
 panelPad.PaddingRight = UDim.new(0, PAD)
 panelPad.Parent = panel
 
+local INNER = C.TunerWidth - PAD * 2
+
+-- The three fixed rows at the top and the status line at the bottom are placed by hand;
+-- everything between them lives in the scrolling body below.
+local function fixedRow(parent: Instance, y: number, height: number, name: string): Frame
+	local f = Instance.new("Frame")
+	f.Name = name
+	f.BackgroundTransparency = 1
+	f.BorderSizePixel = 0
+	f.Position = UDim2.fromOffset(0, y)
+	f.Size = UDim2.new(1, 0, 0, height)
+	f.ZIndex = 2
+	f.Parent = parent
+	return f
+end
+
+local TOP = 73 -- header + car + editing, and the gaps between them
+local BOTTOM = 22 -- the status line and its gap
+
+local body = Instance.new("ScrollingFrame")
+body.Name = "Body"
+body.BackgroundTransparency = 1
+body.BorderSizePixel = 0
+body.Position = UDim2.fromOffset(0, TOP)
+body.Size = UDim2.new(1, 0, 1, -(TOP + BOTTOM))
+body.CanvasSize = UDim2.new()
+body.AutomaticCanvasSize = Enum.AutomaticSize.Y
+body.ScrollBarThickness = 4
+body.ScrollBarImageColor3 = DIM
+body.Active = true
+body.ZIndex = 2
+body.Parent = panel
+
 local list = Instance.new("UIListLayout")
 list.FillDirection = Enum.FillDirection.Vertical
 list.SortOrder = Enum.SortOrder.LayoutOrder
 list.Padding = UDim.new(0, 4)
-list.Parent = panel
+list.Parent = body
 
-local INNER = C.TunerWidth - PAD * 2
 local order = 0
 local function nextOrder(): number
 	order += 1
@@ -234,15 +270,15 @@ local function row(height: number, name: string): Frame
 	f.Name = name
 	f.BackgroundTransparency = 1
 	f.BorderSizePixel = 0
-	f.Size = UDim2.new(1, 0, 0, height)
+	f.Size = UDim2.new(1, -6, 0, height) -- -6 leaves the scrollbar its lane
 	f.LayoutOrder = nextOrder()
 	f.ZIndex = 2
-	f.Parent = panel
+	f.Parent = body
 	return f
 end
 
 -- ------------------------------------------------------------------ header
-local header = row(20, "Header")
+local header = fixedRow(panel, 0, 20, "Header")
 local title = label(header, "Title", "CAR TUNER", 15, TEXT)
 title.Size = UDim2.new(1, -60, 1, 0)
 title.FontFace = FONT_UI
@@ -254,7 +290,7 @@ closeButton.TextSize = 12
 closeButton.ZIndex = 3
 
 -- ------------------------------------------------------------------ which car
-local carRow = row(26, "Car")
+local carRow = fixedRow(panel, 24, 26, "Car")
 local prevCar = button(carRow, "Prev", "<")
 prevCar.Size = UDim2.fromOffset(26, 26)
 prevCar.ZIndex = 3
@@ -268,15 +304,26 @@ carName.Size = UDim2.new(1, -60, 1, 0)
 carName.Position = UDim2.fromOffset(30, 0)
 carName.TextXAlignment = Enum.TextXAlignment.Center
 
-local drivingRow = row(15, "Driving")
+local drivingRow = fixedRow(panel, 54, 15, "Driving")
 local driving = label(drivingRow, "Text", "", 11, DIM)
 driving.Size = UDim2.fromScale(1, 1)
+
+-- The bottom line: what just happened, and -- while a slider is being touched -- what
+-- that slider does. THE TOOLTIP, in other words, and the reason the rows above can be
+-- two lines instead of three.
+local statusRow = fixedRow(panel, 0, 16, "Status")
+statusRow.AnchorPoint = Vector2.new(0, 1)
+statusRow.Position = UDim2.new(0, 0, 1, 0)
+local statusLabel = label(statusRow, "Text", "", 11, DIM)
+statusLabel.Size = UDim2.fromScale(1, 1)
 
 --------------------------------------------------------------------------------
 -- The sliders
 --------------------------------------------------------------------------------
 
-local TRACK_W = INNER - (NUDGE + GAP) * 2
+-- The rows sit inside the scrolling body, which keeps 6 px for its scrollbar.
+local ROW_W = INNER - 6
+local TRACK_W = ROW_W - (NUDGE + GAP) * 2
 
 local function format(slider, value: number): string
 	return string.format(`%.{slider.decimals}f`, value)
@@ -294,27 +341,35 @@ local function setValue(id: string, value: number, fromDrag: boolean?)
 	Tuner.refresh()
 end
 
-local function buildSlider(slider)
-	local f = row(C.TunerRowHeight + 14, `Slider_{slider.id}`)
+local DIM_HEX = DIM:ToHex()
 
-	local name = label(f, "Label", slider.label, 13, TEXT)
-	name.Size = UDim2.new(0.6, 0, 0, 15)
+local function buildSlider(slider)
+	local f = row(C.TunerRowHeight, `Slider_{slider.id}`)
+
+	-- THE HONEST HALF, and it is on the same line as the name rather than under it: the
+	-- user asked for names that are not technical, so the name is "Eagerness" and the key
+	-- it really moves is right beside it in grey. What the driver FEELS is the tooltip --
+	-- touch the row and it is on the status line at the bottom.
+	local name = label(f, "Label", "", 13, TEXT)
+	name.RichText = true
+	name.Text = `{slider.label}  <font color="#{DIM_HEX}" size="10">{slider.key}</font>`
+	name.Size = UDim2.new(0.62, 0, 0, 15)
 	name.FontFace = FONT_UI
 
 	local value = label(f, "Value", "", 13, FILL)
-	value.Size = UDim2.new(0.4, 0, 0, 15)
-	value.Position = UDim2.new(0.6, 0, 0, 0)
+	value.Size = UDim2.new(0.38, 0, 0, 15)
+	value.Position = UDim2.new(0.62, 0, 0, 0)
 	value.TextXAlignment = Enum.TextXAlignment.Right
 
 	local minus = button(f, "Minus", "-")
 	minus.Size = UDim2.fromOffset(NUDGE, 16)
-	minus.Position = UDim2.fromOffset(0, 17)
+	minus.Position = UDim2.fromOffset(0, 16)
 	minus.TextSize = 13
 	minus.ZIndex = 3
 
 	local plus = button(f, "Plus", "+")
 	plus.Size = UDim2.fromOffset(NUDGE, 16)
-	plus.Position = UDim2.fromOffset(NUDGE + GAP + TRACK_W + GAP, 17)
+	plus.Position = UDim2.fromOffset(NUDGE + GAP + TRACK_W + GAP, 16)
 	plus.TextSize = 13
 	plus.ZIndex = 3
 
@@ -322,7 +377,7 @@ local function buildSlider(slider)
 	-- or the drag pad under it takes that press and the car turns instead.
 	local track = button(f, "Track", "")
 	track.Size = UDim2.fromOffset(TRACK_W, 16)
-	track.Position = UDim2.fromOffset(NUDGE + GAP, 17)
+	track.Position = UDim2.fromOffset(NUDGE + GAP, 16)
 	track.BackgroundColor3 = TRACK
 	track.AutoButtonColor = false
 	track.ZIndex = 3
@@ -346,11 +401,11 @@ local function buildSlider(slider)
 	notch.ZIndex = 5
 	notch.Parent = track
 
-	-- The honest line: the real key this is moving, and its range. The user asked for
-	-- names that are not technical; this is how the tool stays truthful anyway.
-	local real = label(f, "Real", "", 10, DIM)
-	real.Size = UDim2.new(1, 0, 0, 13)
-	real.Position = UDim2.fromOffset(0, C.TunerRowHeight - 2)
+	local function tooltip()
+		setStatus(`{slider.label}: {slider.feel}`, DIM)
+		statusLabel.Text = Tuner.status
+		statusLabel.TextColor3 = Tuner.statusColour
+	end
 
 	local function fromX(x: number)
 		local width = math.max(track.AbsoluteSize.X, 1)
@@ -364,13 +419,18 @@ local function buildSlider(slider)
 			or input.UserInputType == Enum.UserInputType.MouseButton1
 		then
 			Tuner.dragging = slider.id
+			tooltip()
 			fromX(input.Position.X)
 		end
 	end)
+	-- A mouse over the row says what the slider does, before anything has been moved.
+	track.MouseEnter:Connect(tooltip)
 	minus.Activated:Connect(function()
+		tooltip()
 		setValue(slider.id, (values()[slider.id] or slider.min) - slider.step)
 	end)
 	plus.Activated:Connect(function()
+		tooltip()
 		setValue(slider.id, (values()[slider.id] or slider.min) + slider.step)
 	end)
 
@@ -380,7 +440,6 @@ local function buildSlider(slider)
 		fill = fill,
 		notch = notch,
 		track = track,
-		real = real,
 	}
 end
 
@@ -436,7 +495,7 @@ UserInputService.WindowFocusReleased:Connect(endDrag)
 
 local actions = row(24, "Actions")
 local saveButton = button(actions, "Save", "SAVE")
-saveButton.Size = UDim2.fromOffset(math.floor((INNER - GAP * 2) / 3), 24)
+saveButton.Size = UDim2.fromOffset(math.floor((ROW_W - GAP * 2) / 3), 24)
 saveButton.ZIndex = 3
 local saveAsButton = button(actions, "SaveAs", "SAVE AS…")
 saveAsButton.Size = saveButton.Size
@@ -454,20 +513,16 @@ garageHeader.Size = UDim2.fromScale(1, 1)
 local garageList = Instance.new("Frame")
 garageList.Name = "Garage"
 garageList.BackgroundTransparency = 1
-garageList.Size = UDim2.new(1, 0, 0, 0)
+garageList.Size = UDim2.new(1, -6, 0, 0)
 garageList.AutomaticSize = Enum.AutomaticSize.Y
 garageList.LayoutOrder = nextOrder()
 garageList.ZIndex = 2
-garageList.Parent = panel
+garageList.Parent = body
 
 local garageLayout = Instance.new("UIListLayout")
 garageLayout.SortOrder = Enum.SortOrder.LayoutOrder
 garageLayout.Padding = UDim.new(0, 2)
 garageLayout.Parent = garageList
-
-local statusRow = row(16, "Status")
-local statusLabel = label(statusRow, "Text", "", 11, DIM)
-statusLabel.Size = UDim2.fromScale(1, 1)
 
 -- ------------------------------------------------------------------ the name dialog
 local dialog = Instance.new("Frame")
@@ -488,7 +543,9 @@ dialogTitle.Size = UDim2.new(1, -24, 0, 18)
 dialogTitle.ZIndex = 11
 
 local nameBox = Instance.new("TextBox")
-nameBox.Name = "Name"
+-- NOT "Name": a child called that shadows `Instance.Name`, so `NameDialog.Name` is the
+-- string "NameDialog" and every path to the box is a trap.
+nameBox.Name = "Entry"
 nameBox.BackgroundColor3 = TRACK
 nameBox.BorderSizePixel = 0
 nameBox.Position = UDim2.fromOffset(12, 34)
@@ -547,7 +604,6 @@ local function refreshSliders()
 		r.value.TextColor3 = if Tuner.tune[id] ~= nil then FILL else TEXT
 		r.fill.Size = UDim2.fromScale(math.clamp((v - slider.min) / span, 0, 1), 1)
 		r.notch.Position = UDim2.fromScale(math.clamp((base[id] - slider.min) / span, 0, 1), 0)
-		r.real.Text = `{slider.key}  ·  {slider.feel}`
 	end
 
 	statusLabel.Text = Tuner.status

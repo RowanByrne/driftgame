@@ -379,8 +379,15 @@ local Drift = {
 	TunerGamepadKey = Enum.KeyCode.ButtonY, -- the same, on a pad. DPad up/right/left are
 	-- already the readout's, the car switch and the line's
 	TunerWidth = 336, -- px. The panel's column, on the RIGHT: the readout owns the top
-	-- left and both are often open at once
-	TunerRowHeight = 38, -- px per slider row, the track and its two labels
+	-- left (measured 508 px wide) and both are often open at once
+	TunerTop = 168, -- px from the top of the screen. Under the readout's DBG button and
+	-- the tuner's own TUNE button, which share that corner
+	TunerBottomGap = 190, -- px of screen the panel must leave clear at the bottom, so it
+	-- never covers the handbrake (96 px at 28 from the corner). The
+	-- panel is sized from the VIEWPORT rather than from its contents
+	-- for this reason: a dev panel that grows over the STOP button
+	-- on a phone is a dev panel that strands the car
+	TunerRowHeight = 33, -- px per slider row: the label and value line, then the track
 	TunerSendRate = 10, -- Hz the live tune is sent to the server while a slider is being
 	-- dragged. The TUNE ITSELF IS INSTANT AND LOCAL -- the model reads
 	-- the car every step -- and this is only so the server's speed bound

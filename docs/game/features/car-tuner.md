@@ -126,21 +126,36 @@ Programmer art, one `ScreenGui` (`DriftTuner`), built in code, `ResetOnSpawn = f
 There is no UI kit in this game yet (`ARCHITECTURE.md`), so it draws its own flat frames in
 the debug readout's palette so the two read as one tool.
 
-| Row | What it is |
-|---|---|
-| header | `CAR TUNER` and a CLOSE button |
-| car | `<` `Balanced (balanced)` `>` |
-| editing | which saved car is being edited, with `*` while it has unsaved changes |
-| slider ×8 | label + value; `-` track `+`; a dim line with the real key and what it does |
-| actions | `SAVE` `SAVE AS…` `RESET` |
-| garage | `SAVED CARS n/12`, then a row per car: the name (loads it) and `×` (deletes it) |
-| status | what just happened, and a warning when the store is this-server-only |
-| dialog | a centred name box with SAVE and CANCEL, Enter to accept |
+| Row | Where | What it is |
+|---|---|---|
+| header | fixed, top | `CAR TUNER` and a CLOSE button |
+| car | fixed, top | `<` `Balanced (balanced)` `>` |
+| editing | fixed, top | which saved car is being edited, with `*` while it has unsaved changes |
+| slider ×8 | **scrolls** | `Eagerness` + the real key in grey, the value on the right; then `-` track `+`. The base car's own value is a notch on the track |
+| actions | scrolls | `SAVE` `SAVE AS…` `RESET` |
+| garage | scrolls | `SAVED CARS n/12`, then a row per car: the name (loads it) and `×` (deletes it) |
+| status | fixed, bottom | **the tooltip** — touch or hover a slider and this is what that slider does — and what just happened, and a warning when the store is this-server-only |
+| dialog | centred | a name box with SAVE and CANCEL, Enter to accept |
 
-**Layouts.** One layout today, at 336 px wide on the right. It is a dev tool, so it does not
+**The panel is sized from the screen, not from its contents,** and the middle of it
+scrolls. Eight sliders, three buttons and twelve saved cars is about 870 px of panel;
+measured in the lane place the viewport was **663 px tall**. A panel that grew to fit would
+run off the bottom and, worse, **cover the handbrake** — the only way to stop a car once a
+run is over. It is `TunerTop` (168) from the top and leaves `TunerBottomGap` (190) clear at
+the bottom: measured 110 → 415 against a handbrake whose top edge is at 481, **66 px of
+clear air**, on a screen where the un-scrolled version reached 719.
+
+That is also why the real key sits beside the slider's name rather than under it, and why
+what the driver *feels* is a tooltip on the status line: two lines a row instead of three.
+
+**Layouts.** One layout today, 336 px wide on the right. It is a dev tool, so it does not
 get the per-device treatment a player-facing screen must have (`UI.md` "Layouts per
 device") — and it must not be the model for one. On a phone it covers about a third of the
 screen; the rest still steers.
+
+**One naming trap, worth knowing:** the dialog's TextBox is called `Entry`, not `Name` — a
+child called `Name` shadows `Instance.Name`, so `NameDialog.Name` is the string
+`"NameDialog"` and every path to the box is a trap. It cost a confusing half-hour here.
 
 **Input.** Pointer and touch drag the tracks; the `-` / `+` buttons either side of every
 track are `Selectable`, so a gamepad reaches every slider through Roblox's own GUI
@@ -314,37 +329,73 @@ base archetype's body, which is ours and in git as text (`features/car-archetype
 ## Testing
 
 `ServerScriptService/Tests/GarageTests.luau`, through the server debug bridge
-(`DebugGarageTests`). Fifteen checks. It gets the treatment saving gets (`TESTING.md`): the
-store is a **fake one swapped in for the length of the run**, no real player's garage is
-touched, and the checks cover what loses data.
+(`DebugGarageTests`). **Seventeen checks, all passing.** It gets the treatment saving gets
+(`TESTING.md`): the store is a **fake one swapped in for the length of the run**, no real
+player's garage is touched, and the checks cover what loses data.
 
-| Check | What proves it |
+| Check | What it reported, 2026-11-04 |
 |---|---|
-| Every car is inside every slider | all 8 sliders × 4 archetypes |
-| Top speed can never reach zero | the one number that could wedge the simulation |
-| NaN, infinity, junk and unknown sliders never reach the car | seven kinds of garbage in, one clamped number out |
-| A clamped value is stable | clamp(clamp(x)) == clamp(x) on every slider |
-| Names | trimmed, control chars stripped, empty refused, over-long cut |
-| **Eagerness / Grip / Power change the car on the next step** | the real model, one step, measured three ways |
-| The tuning layer goes on and comes off exactly | `Config.Drift` back to the value |
-| **A saved car survives being forgotten, to the value** | saved, written, memory dropped, read back |
-| **Two saved cars are edited independently** | one edited twice, the other untouched |
-| A full garage refuses a new name and still takes an overwrite | nobody is ever stuck with nowhere to put the car they are driving |
-| A flood of saves is rate-limited | 40 asked, 4 taken |
-| **A failed write keeps the in-memory car and stays dirty** | a store that refuses every write |
-| **A tuned car faster than its archetype is not dropped** | `CarService.speedFits` before and after the ceiling, and a plain bruiser still accepted while somebody tunes *down* |
-| The ceiling's floor is the fastest archetype | it only ever loosens |
+| Every car is inside every slider | 8 sliders × 4 cars, all inside |
+| Top speed can never reach zero | min 20; `clamp(0)` = 20, `clamp(-500)` = 20 |
+| NaN, infinity, junk and unknown sliders never reach the car | 7 kinds of garbage in, 1 clamped number out |
+| A clamped value is stable | `clamp(clamp(x)) == clamp(x)` on all 8 |
+| Names | 6 cases: trimmed, newline → space, empty refused, over-long cut |
+| **Eagerness changes the yaw rate on the next step** | 2 rad/s → **2.000000 measured**; 4 → **4.000000** |
+| **Grip changes the sideways pull on the next step** | grip 14.3 → **20.56 studs/s²** at 20° of slip; grip 100 → **106.73** |
+| **Power changes the acceleration on the next step** | power 14.3 → **4.63 studs/s²** from 20 studs/s; power 50 → **24.73** |
+| The tuning layer goes on and comes off exactly | 2 → 3.5 → 2 |
+| **A saved car survives being forgotten, to the value** | "Night Runner" on gripper: 2.65 / 41.3 / 233 / 0.44, identical |
+| **Two saved cars are edited independently** | Alpha grip 10 → 95.5; Beta untouched at 3.2 / 300, no grip |
+| A full garage refuses a new name and takes an overwrite | 12/12 from 15 asked; "car 1" overwritten |
+| A flood of saves is rate-limited | **4 of 40 taken** |
+| **A failed write keeps the in-memory car and stays dirty** | write false, car still there at 390, dirty true |
+| **A tuned car faster than its archetype is not dropped** | gripper at 299: **dropped** against its own 150 (bound 187.5), **accepted** against the ceiling 300 (bound 375); a plain bruiser at 215 still accepted while somebody tunes *down* to 60 |
+| The ceiling's floor is the fastest archetype | 215, the fastest of the four |
 | The tests left no tuning behind | the car is the car |
 
-Also run after any change here: `DebugDriftTests`, `DebugCollisionTests`,
-`DebugJitterTests`, `DebugTrajectoryTests`, `DebugPlaygroundTests` — this task touches
-`Config.Drift` and `Shared/Cars`, which every one of them reads.
+Also run after any change here, and all passing on this branch: `DebugDriftTests` (40),
+`DebugCollisionTests` (39), `DebugJitterTests` (11), `DebugTrajectoryTests` (13),
+`DebugPlaygroundTests` (45) — this task touches `Config.Drift` and `Shared/Cars`, which
+every one of them reads.
 
-**In a playtest:** open with F7, drag a slider, and read
-`PlayerScripts.TunerBridge:Invoke("DebugState")` — its `values` (what the panel thinks) and
-its `live` (what `Config.Drift` will hand the model on its next step) must agree. Read
-`CarInputController`'s `DebugState().drag` at the same time: `down` false and `steer` 0 is
-the proof the panel did not steer the car.
+### What a playtest measured, 2026-11-04 (`T-040`, `DR-Lane2`)
+
+**A slider lands, and the model agrees.** One real mouse drag across the whole screen,
+started on the Eagerness track: the value tracked the pointer from 2 → **3.8** at the right
+edge → **0.2** at the left, and `Config.Drift.MaxSteeringSpeed` — what `Drift/Model` reads
+on its next step — followed it to **0.2** exactly.
+
+**The panel does not steer the car.** Over **1720 frames**, **956** of them with a slider
+being dragged across the full width of the screen: `CarInputController.steer` **0**,
+`DragControl.steer` **0**, and the pad was down on **0 frames**. Closed again, the same
+screen region steers normally: the pad down for **755 frames** at a steer of **0.236** (160
+px of a 678 px travel).
+
+**Typing a car's name does not drive it.** The name box focused for **1498 of 1498 frames**
+while `D`, `A`, `D` and `S` — two steering keys and the handbrake — were pressed: steer
+**0**, raw `InputAction` state **(0, 0)**, handbrake on **0 frames**. Roblox's focused
+TextBox swallows the keyboard before the Input Action System sees it. *(Synthetic key
+presses do not put characters in a Roblox TextBox, so the text itself was placed and the
+real SAVE button clicked: the name `"  Sad Dad Salad  "` saved as `Sad Dad Salad`.)*
+
+**A tuned car faster than its archetype is not dropped, live.** A gripper (top speed 150,
+un-ceilinged bound 187.5) tuned to 233 and driven flat out reached **214.1 studs/s** over 15
+seconds: the server believed **233**, allowed **291.25**, and dropped **0 of 0** packets.
+With the top speed tuned to 310 the ceiling followed to **310** and the bound to **387.5**.
+The car kept its **gripper body** throughout.
+
+**Save, forget, reload.** Two cars saved, then everything the server held in memory for that
+player dropped exactly as leaving drops it, then read back out of the store exactly as
+joining reads it: *Night Runner* (gripper, 2.65 / 41.3 / 233) and *Brick* (bruiser, bite 90,
+power 35) both came back **identical**, and were nil in between. *Brick* was then loaded,
+edited to power 12.5 and saved again; *Night Runner* reloaded unchanged at 2.65 / 41.3 /
+233, with `MaxAcceleration` back to the gripper's own 21.5.
+
+**The console** was clean of anything from game code across both playtests.
+
+**Not checked:** real typed characters reaching the TextBox (the MCP's synthetic key presses
+do not reach one), and the panel on a phone or a gamepad — the `-` / `+` buttons are
+`Selectable` but gamepad navigation was not driven.
 
 - **Playtest:** the user drives it and moves the sliders. Whether these are the right eight,
   what they should be called and whether the panel is in the right place are theirs.
