@@ -175,6 +175,12 @@ end
 -- rebuilds the variant set from them. That is as far as a module can reach: if Studio's
 -- own require cache is still holding the old result for the SAME instance, only reopening
 -- the place clears it.
+--
+-- SO IF THE PIECES COME OUT LOOKING OLD, OR `build()` ERRORS ON A PROPERTY THAT IS NIL,
+-- CLOSE THE PLACE AND OPEN IT AGAIN. Both are the same cause: an edit session that has a
+-- half-refreshed set of modules in its cache, where (say) a new `Builder` is reading a
+-- `Config.Road` that has not been re-required and has none of its new fields. Nothing a
+-- module can do about it from the inside; a reopened place is always right.
 local function refreshConfig()
 	for _, key in { "Road", "Playground", "Drift" } do
 		rawset(Config, key, nil)
