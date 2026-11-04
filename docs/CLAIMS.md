@@ -9,6 +9,7 @@ Every task in progress and the files it owns, so parallel sessions and workers n
 
 | Branch | Lane | Files owned | Since |
 |---|---|---|---|
+| `agent/wheel-fx` | lane2 | `src/StarterPlayerScripts/Drift/Wheels.luau` (new), `src/ReplicatedStorage/Shared/Config/Fx.luau` (new), `src/StarterPlayerScripts/Controllers/DriftController.luau`, `src/ServerScriptService/Tests/FxTests.luau` (new), `docs/game/features/car-fx.md` | 2026-11-04 (T-062) |
 
 ## Notes between sessions
 
