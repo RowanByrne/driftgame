@@ -42,9 +42,14 @@ CarModel.SHELL_NAME = "Shell"
 -- The bodies this game can build, and the module in `Shared/Cars` each reads.
 CarModel.BODIES = { ae86 = "AE86" }
 
--- Which one a car is built with. `Config.Drift.CarBody` decides it when that key exists
--- -- it does not yet, and that file belongs to another task (T-014), so this is the local
--- fallback until it lands. See the report for the key and the comment asked for.
+-- Which one a car is built with. `Config.Drift.CarBody` decides it; this is the fallback
+-- if that key is ever absent.
+--
+-- A BODY IS NOT A CAR. Which shape is drawn and which archetype is driven are separate
+-- axes on purpose (`Shared/Cars`, docs/game/features/car-archetypes.md): any body may
+-- wear any archetype's numbers, which is how an archetype is driven before its art
+-- exists. Nothing in here reads the active car except through `Config.Drift`, which is
+-- where the geometry the shell is scaled onto comes from.
 local DEFAULT_BODY = "ae86"
 local bodyOverride: string? = nil
 
