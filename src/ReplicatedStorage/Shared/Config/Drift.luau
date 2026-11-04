@@ -267,6 +267,52 @@ local Drift = {
 	-- else. F3, DPad up or the DBG button brings them back
 	DebugStatsOpen = false, -- and the car's stat panel is folded inside it, closed too.
 	-- F5, or clicking its header, unfolds it; F4 switches car
+
+	-- ---------------------------------------------------------------- the trajectory line
+	-- Where the car will go if the finger stays exactly where it is (`Drift/Trajectory`).
+	-- A DEV TOOL, like the readout: off by default, built only when switched on (F6, or
+	-- `DriftController:DebugTrajectory(true)`), and destroyed again when switched off.
+	--
+	-- The line is the real model run forward from a COPY of the live state, so it is the
+	-- car rather than a guess at it -- which also means it costs what the model costs, and
+	-- these numbers are what keeps that cost in hand (`Drift/Trajectory` header).
+	--
+	-- MODEL NUMBERS, NOT THE CAR'S: a trajectory is a thing we draw, not a property of a
+	-- car. The one car number it uses it reads -- `BodyLength` -- so ten car lengths is ten
+	-- lengths of whichever car is active.
+	TrajectoryLine = false, -- OURS. Draw the line at all. OFF: it is a measuring
+	-- instrument, not part of the game
+	TrajectoryCarLengths = 10, -- OURS. How far ahead to draw, in the active car's own
+	-- `BodyLength`. Walked by DISTANCE, not by time, so the
+	-- line stays the same length as the car speeds up
+	TrajectoryStep = 1 / 30, -- s. OURS, and DELIBERATELY COARSER than `FixedStep`: the
+	-- line only has to look right, not be exact to a thousandth,
+	-- and at 1/120 this would be ~200 steps every frame. Measured,
+	-- the coarse step costs well under a stud over the whole line
+	TrajectoryPointSpacing = 5, -- studs between the points the line is drawn through. Not
+	-- the simulation's resolution -- it steps at
+	-- `TrajectoryStep` and only marks a point this often
+	TrajectoryMaxSteps = 200, -- safety: a car crawling forward must not walk the full ten
+	-- lengths one millimetre at a time
+	TrajectoryMinSpeed = 1, -- studs/s. Stop the walk early once the car has stopped
+	TrajectoryHz = 0, -- predictions a second. 0 is EVERY FRAME, which is what it is
+	-- measured cheap enough to do; raise it off zero to predict less
+	-- often and leave the drawn line alone in between
+	TrajectoryFlat = true, -- OURS, and the big one. True predicts against a flat plane at
+	-- the car's current ground height: no raycasts at all, nearly
+	-- free -- and WRONG OVER A CREST, A RAMP OR A WALL, because the
+	-- plane does not know they are there. That is a trade, not a
+	-- bug. False predicts against the live Workspace and pays four
+	-- ground rays per step for a line that follows the ground
+	TrajectoryMaxSegments = 64, -- parts the line may use. The pool is created once and
+	-- reused; spares are hidden, never destroyed
+	TrajectoryWidth = 0.35, -- studs. Thin on purpose: it is an overlay, not scenery
+	TrajectoryLift = 1, -- studs above the predicted path, so the line is not inside the road
+	TrajectoryColour = Color3.fromRGB(94, 255, 162),
+	TrajectoryTransparency = 0.25,
+	TrajectoryFolder = "DriftTrajectory", -- its folder in Workspace. NEVER inside
+	-- `Workspace.Cars`, where the ground rays and the
+	-- car-claiming logic both look
 }
 
 -- ---------------------------------------------------------------------- the active car
