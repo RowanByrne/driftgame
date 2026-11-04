@@ -43,6 +43,11 @@ local Model = {}
 
 local EPS = 1e-4
 
+-- How many times one step may stop at a surface and spend what is left of itself sliding
+-- along it. A loop guard, not a tuning number -- one is a wall, two is a corner, and
+-- nothing the car can reach in 1/120 s needs a third.
+local MAX_SLIDES = 3
+
 export type Input = {
 	-- NOT a steering wheel and NOT a weight to throw: this is the car's rate of turn, as a
 	-- share of `MaxSteeringSpeed` (features/drift-model.md "Steering -- the control").
@@ -56,11 +61,17 @@ export type Input = {
 -- model never has to know what a surface is called (Drift/World).
 export type Hit = { y: number, normal: Vector3, grip: number, score: number }
 
--- The two queries the model makes of the world. Drift/World builds both, for the live
+-- The queries the model makes of the world. Drift/World builds them, for the live
 -- Workspace and for a flat plane.
+--
+-- `sweep` answers WHERE THE CAR MAY GET TO, not where the surface is, and the difference
+-- is the whole of whether a building is solid (Drift/World, T-018). `penetration` says
+-- which way is out of anything the car is inside; both are optional, and a world without
+-- them has no walls at all.
 export type World = {
 	probe: (pos: Vector3) -> Hit?,
 	sweep: ((from: Vector3, to: Vector3, yaw: number) -> (Vector3?, Vector3?))?,
+	penetration: ((pos: Vector3, yaw: number) -> (Vector3?, number))?,
 }
 
 export type State = {
@@ -299,22 +310,70 @@ function Model.step(s: State, input: Input, dt: number, world: World): State
 
 	---------------------------------------------------------------- walls
 	-- Ours, not the reference's: it ends a run on a hard hit, and what a run is has not
-	-- been decided. Here a hit slides the car along the surface and scrubs its speed.
+	-- been decided. Here a hit stops the car at the surface and spends what is left of the
+	-- step sliding along it.
+	--
+	-- THE CAR IS KINEMATIC, so a building is solid only because of these few lines, and
+	-- they are written around one fact: a Blockcast whose box already overlaps a part does
+	-- not report that part at all. A car a tenth of a stud inside a building is blind to
+	-- it and drives out the far side, which is exactly what it used to do -- the old code
+	-- took the sweep's CONTACT POINT for the car's new centre and so buried the car half
+	-- its own length in the first wall it touched (T-018). Hence two passes: `sweep` keeps
+	-- the car out, and `penetration` puts it back out if anything else has got it in.
 	s.wallHit = false
+	local targetY = target.Y
 	if world.sweep then
-		local hitPos, hitNormal = world.sweep(s.position, target, s.yaw)
-		if hitPos and hitNormal then
-			local n = Vector3.new(hitNormal.X, 0, hitNormal.Z)
-			if n.Magnitude > EPS then
-				n = n.Unit
-				local into = vel:Dot(n)
-				if into < 0 then
-					vel -= n * into -- slide along it instead of stopping dead
-				end
-				vel *= C.WallScrub
-				target = Vector3.new(hitPos.X, target.Y, hitPos.Z) + n * C.WallPush
-				s.wallHit = true
+		local at = s.position
+		for _ = 1, MAX_SLIDES do
+			local safe, hitNormal = world.sweep(at, target, s.yaw)
+			if not safe or not hitNormal then
+				break
 			end
+			local n = (hitNormal :: Vector3).Unit
+			s.wallHit = true
+
+			-- The speed a hit costs is in proportion to how much of it was INTO the
+			-- surface: a ram keeps `WallScrub` of what is left, a graze keeps all of it. A
+			-- flat scrub on every step a wall is touched brings a car driving along one to
+			-- a standstill in a fifth of a second, which is a car glued to the wall.
+			local into = vel:Dot(n)
+			if into < 0 then
+				local speed = vel.Magnitude
+				vel -= n * into -- slide along it instead of stopping dead
+				if speed > EPS then
+					vel *= lerp(1, C.WallScrub, clamp(-into / speed, 0, 1))
+				end
+			end
+
+			-- What is left of the step after stopping, with the part of it that pointed
+			-- into the surface taken out, spent along the surface instead.
+			local leftover = (target - (safe :: Vector3))
+			leftover = Vector3.new(leftover.X, 0, leftover.Z)
+			local dig = leftover:Dot(n)
+			if dig < 0 then
+				leftover -= n * dig
+			end
+			at = safe :: Vector3
+			target = Vector3.new(at.X + leftover.X, targetY, at.Z + leftover.Z)
+			if leftover.Magnitude < EPS then
+				break
+			end
+		end
+	end
+
+	-- Out of anything the car is in, however it got in: its own rotation pressed against a
+	-- wall, a cone rolling into it, a respawn on top of something. Without this one
+	-- hundredth of a stud of overlap makes the car permanently blind to what it is in.
+	if world.penetration then
+		local push, depth = world.penetration(target, s.yaw)
+		if push and depth > 0 and (push :: Vector3).Magnitude > EPS then
+			local out = (push :: Vector3).Unit
+			target += out * (depth + C.WallPush)
+			local into = vel:Dot(out)
+			if into < 0 then
+				vel -= out * into
+			end
+			s.wallHit = true
 		end
 	end
 
