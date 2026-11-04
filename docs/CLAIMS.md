@@ -9,6 +9,7 @@ Every task in progress and the files it owns, so parallel sessions and workers n
 
 | Branch | Lane | Files owned | Since |
 |---|---|---|---|
+| `agent/drifto-model` (T-012) | 1 | `src/ReplicatedStorage/Shared/Config/Drift.luau`, `src/ReplicatedStorage/Shared/CarModel.luau`, `src/StarterPlayerScripts/Drift/Model.luau`, `src/StarterPlayerScripts/Drift/Sim.luau`, `src/StarterPlayerScripts/Drift/World.luau`, `src/StarterPlayerScripts/Drift/Render.luau`, `src/StarterPlayerScripts/Drift/DebugHud.luau`, `src/StarterPlayerScripts/Controllers/DriftController.luau`, `src/ServerScriptService/Tests/DriftTests.luau`, `docs/game/CONTRACTS.md`, `docs/game/features/drift-model.md` | 2026-11-03 |
 
 ## Notes between sessions
 
