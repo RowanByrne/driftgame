@@ -44,7 +44,27 @@
 -- interpolated between steps, so a 144 Hz screen still gets its own smooth motion. The FOV
 -- has no feedback and is eased once a frame.
 --
--- Every number is in Config.Drift; none is in here.
+-- THE PAN (T-036) is the player's own hand on top of all of that, and it is an ORBIT, not
+-- a second aim. The right mouse button held and dragged turns a yaw and a pitch offset
+-- that the camera's placed position is rotated by ABOUT THE CAR, at the same fixed radius,
+-- still looking at the same look-at point. So the car stays centred and followed, the lean
+-- and the FOV keep doing exactly what they did, and the player is only moving round the
+-- car to see something.
+--
+-- It is applied to the RENDERED position, after the fixed-step targets are done with, and
+-- it is written nowhere the targets can read it. That is the whole reason it cannot
+-- disturb the camera: part 3 feeds back into part 2, and the pan is downstream of both.
+-- `_advance` with no pan argument -- which is how the tests call it -- is the camera
+-- exactly as it was.
+--
+-- Let go and it comes back: a moment's grace (`PanReturnDelay`) so a nudge of the mouse
+-- does not snap the view out of the player's hand, and then an ease home. The input itself
+-- is eased too, lightly: "smoothened slightly ... a bit cinematic" is the brief, and this
+-- camera is already calm, so a heavy filter here reads as lag rather than as cinema.
+--
+-- Every number is in Config.Drift; none is in here -- EXCEPT the pan's, which are the
+-- named locals below only because Config.Drift was claimed by another task the day this
+-- was written. They want to move there verbatim.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
@@ -67,6 +87,29 @@ CarCameraController.Priority = 5 -- after DriftController, so a state exists to 
 
 local STEP_NAME = "DriftCamera"
 local EPS = 1e-4
+
+-- ---------------------------------------------------------------- the pan's numbers
+--
+-- THESE WANT TO BE CONFIG KEYS (`Config.Drift`, next to the other `Cam*` numbers). They
+-- are locals only because that file was owned by another task when this was written; move
+-- them across as they stand, comments and all, and swap the locals for `C.CamPan*`.
+
+local PanSensitivity = 0.005 -- rad per pixel of mouse travel: 0.286 deg/px, so a
+-- 400-pixel drag is 114.6 deg. OURS. Roblox's own camera is about this
+local PanRate = 9 -- per second. OURS. How fast the view follows the hand: a 111 ms
+-- time constant. THE "SLIGHTLY SMOOTHENED" DIAL -- lower is more cinematic and, past
+-- about 5, starts reading as lag rather than as weight
+local PanReturnDelay = 0.5 -- s. OURS. How long after letting go before the view starts
+-- coming home. Without it a release snaps and feels cheap; much past a second and the
+-- player has started driving again before the camera lets go
+local PanReturnRate = 2 -- per second. OURS. How fast it comes home once it starts: a
+-- 500 ms time constant, so about 2.1 s from a big pan to centred
+local PanPitchMin = math.rad(-12) -- how far the player may drag the view DOWN, as an
+-- offset from where the camera already sits. OURS
+local PanPitchMax = math.rad(60) -- and UP. OURS
+local PanElevationMin = math.rad(1) -- the hard guard, on the RESULT rather than the
+-- offset: the camera may never go below this above the car, or it is under the road. OURS
+local PanElevationMax = math.rad(80) -- nor past this, or it is straight down the roof. OURS
 
 -- What the camera needs of the car, and nothing else. Built from the model's state, or
 -- made up by DebugProbe, which is how the curves below are measured without a car.
@@ -153,6 +196,15 @@ function CarCameraController.newRig(view: View?)
 		prevLookTarget = Vector3.zero,
 		steps = 0,
 		lastView = nil, -- the car as the previous frame saw it, for the sub-step lerp
+		-- The pan: where the player's hand has put the view (`panTarget*`) and where the
+		-- view has eased to (`pan*`). Both are offsets, both are zero when nobody is
+		-- panning, and NOTHING above this line ever reads them.
+		panYaw = 0,
+		panPitch = 0,
+		panTargetYaw = 0,
+		panTargetPitch = 0,
+		panHeld = false,
+		panIdle = 0, -- seconds since the button came up, for the grace
 	}
 	if view then
 		CarCameraController._seed(rig, view)
@@ -177,7 +229,79 @@ function CarCameraController._seed(rig, view: View)
 	rig.prevTarget = rig.target
 	rig.prevLookTarget = rig.lookTarget
 	rig.lastView = view
+	rig.panYaw, rig.panPitch = 0, 0
+	rig.panTargetYaw, rig.panTargetPitch = 0, 0
+	rig.panHeld, rig.panIdle = false, 0
 	rig.ready = true
+end
+
+-- ---------------------------------------------------------------- the pan
+
+-- An angle brought back inside -pi .. pi, so the view always comes home the short way
+-- round however far the player dragged it.
+local function wrapPi(a: number): number
+	return (a + math.pi) % (2 * math.pi) - math.pi
+end
+
+-- One frame of the player's hand. `pan` is `{ held, dx, dy }` in PIXELS, drained from
+-- CarInputController, or nil for "nobody is panning" -- which is what every headless
+-- caller passes, and which costs nothing once the offsets are home.
+local function stepPan(rig, dt: number, pan)
+	if pan and pan.held then
+		rig.panHeld = true
+		rig.panIdle = 0
+		-- Mouse right turns the view right, mouse down looks down, the way Roblox's own
+		-- camera does. The view turning right is the camera swinging the other way round
+		-- the car, hence the minus.
+		rig.panTargetYaw = wrapPi(rig.panTargetYaw - pan.dx * PanSensitivity)
+		rig.panTargetPitch = math.clamp(rig.panTargetPitch + pan.dy * PanSensitivity, PanPitchMin, PanPitchMax)
+	else
+		rig.panHeld = false
+		if rig.panTargetYaw ~= 0 or rig.panTargetPitch ~= 0 then
+			rig.panIdle += dt
+			if rig.panIdle >= PanReturnDelay then
+				local home = ease(dt, PanReturnRate)
+				rig.panTargetYaw -= rig.panTargetYaw * home
+				rig.panTargetPitch -= rig.panTargetPitch * home
+				-- Land exactly, so a rig that is home stops doing arithmetic for ever.
+				if math.abs(rig.panTargetYaw) < 1e-5 and math.abs(rig.panTargetPitch) < 1e-5 then
+					rig.panTargetYaw, rig.panTargetPitch = 0, 0
+				end
+			end
+		end
+	end
+
+	local k = ease(dt, PanRate)
+	rig.panYaw = wrapPi(rig.panYaw + wrapPi(rig.panTargetYaw - rig.panYaw) * k)
+	rig.panPitch += (rig.panTargetPitch - rig.panPitch) * k
+end
+
+-- Swing the placed camera round the car by the pan, at the radius it already has. The
+-- RADIUS IS PRESERVED EXACTLY -- the whole camera is built on a fixed distance from the
+-- car -- and the look point is not touched, so the car stays centred.
+local function applyPan(rig, carPos: Vector3)
+	if math.abs(rig.panYaw) < 1e-5 and math.abs(rig.panPitch) < 1e-5 then
+		return
+	end
+	local o = rig.position - carPos
+	local radius = o.Magnitude
+	if radius < EPS then
+		return
+	end
+	local flat = Vector3.new(o.X, 0, o.Z)
+	local dir = if flat.Magnitude > EPS then flat.Unit else Vector3.zAxis
+	local elevation = math.atan2(o.Y, flat.Magnitude)
+	-- The offset is clamped as the player drags it; the RESULT is clamped again here,
+	-- because the camera's own elevation moves too (the lean drops it through a drift) and
+	-- it is the sum that must never be under the road or straight down the roof.
+	-- The guard never makes the shot worse than the camera had it on its own: if the lean
+	-- has already taken it below the floor, that is where the floor is for this frame.
+	-- Otherwise the first pixel of a pan would snap the view up to the limit.
+	local floor = math.min(PanElevationMin, elevation)
+	local ceiling = math.max(PanElevationMax, elevation)
+	elevation = math.clamp(elevation + rig.panPitch, floor, ceiling)
+	dir = CFrame.Angles(0, rig.panYaw, 0) * dir
+	rig.position = carPos + dir * (radius * math.cos(elevation)) + Vector3.yAxis * (radius * math.sin(elevation))
 end
 
 -- One fixed step of the targets, and nothing else. `dt` here is always `CamTargetStep`.
@@ -225,7 +349,7 @@ local function stepTargets(rig, view: View, dt: number)
 end
 
 -- One frame. Returns the camera's CFrame.
-function CarCameraController._advance(rig, view: View, dt: number): CFrame
+function CarCameraController._advance(rig, view: View, dt: number, pan): CFrame
 	local C = Config.Drift
 	if not rig.ready then
 		CarCameraController._seed(rig, view)
@@ -264,6 +388,11 @@ function CarCameraController._advance(rig, view: View, dt: number): CFrame
 	local alpha = math.clamp(rig.accumulator / step, 0, 1)
 	rig.position = rig.prevTarget:Lerp(rig.target, alpha)
 	rig.lookPoint = rig.prevLookTarget:Lerp(rig.lookTarget, alpha)
+
+	-- The player's own hand, LAST: downstream of every target, so the fixed-step feedback
+	-- above cannot see it and the camera is unchanged whenever nobody is panning.
+	stepPan(rig, dt, pan)
+	applyPan(rig, view.position)
 
 	-- The FOV has no feedback in it, so it is eased once a frame.
 	local wantFov = C.CamFovBase + C.CamFovPerSpeed * view.speed
@@ -319,6 +448,12 @@ function CarCameraController:Start()
 	camera.CameraSubject = nil
 	self.camera = camera
 
+	-- Required HERE and not at the top of the file: this is the client's own lifecycle,
+	-- and JitterTests requires this module on the SERVER to settle a rig of its own. A
+	-- top-level require would drag the whole input stack, its GUI and its WaitForChilds
+	-- onto the server with it.
+	self._input = require(script.Parent.CarInputController)
+
 	-- A new camera arrives on respawn and on some Studio actions; take it over again.
 	workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(function()
 		local cam = workspace.CurrentCamera
@@ -344,7 +479,9 @@ function CarCameraController:_frame(dt: number)
 	if not view then
 		return
 	end
-	camera.CFrame = CarCameraController._advance(self.rig, view, dt)
+	-- Drained once a frame, here and nowhere else.
+	local pan = if self._input then self._input:PanInput() else nil
+	camera.CFrame = CarCameraController._advance(self.rig, view, dt, pan)
 	camera.FieldOfView = self.rig.fov
 end
 
@@ -381,6 +518,22 @@ function CarCameraController:DebugState()
 		distanceToCar = carPos and (rig.position - carPos).Magnitude or nil,
 		heightAboveCar = carPos and (rig.position.Y - carPos.Y) or nil,
 		stepsLastFrame = rig.steps,
+		-- The pan: what the hand asked for, what the view has eased to, and where that
+		-- leaves the camera above the car.
+		panHeld = rig.panHeld,
+		panYawDeg = math.deg(rig.panYaw),
+		panPitchDeg = math.deg(rig.panPitch),
+		panTargetYawDeg = math.deg(rig.panTargetYaw),
+		panTargetPitchDeg = math.deg(rig.panTargetPitch),
+		panIdle = rig.panIdle,
+		elevationDeg = if carPos
+			then math.deg(
+				math.atan2(
+					rig.position.Y - carPos.Y,
+					Vector3.new(rig.position.X - carPos.X, 0, rig.position.Z - carPos.Z).Magnitude
+				)
+			)
+			else nil,
 	}
 end
 
@@ -478,6 +631,140 @@ function CarCameraController:DebugProbe(opts)
 		maxPosStep = maxPosStep,
 		maxLookStep = maxLookStep,
 	}
+end
+
+-- Drag the pan by a measured number of pixels against a car held at a fixed slip, let go,
+-- and report what the view did: the angles reached, the limits holding, how long the
+-- return takes and its worst single frame. No car, no Workspace, no waiting, and nothing
+-- made up -- it runs the same `_advance` the live camera runs, through the same pan input
+-- shape CarInputController hands it.
+--
+-- `opts`: { dxPx, dyPx, dragSeconds, fps, seconds, slipDeg, speed, yawDeg }. The drag is
+-- spread evenly over `dragSeconds`, exactly as a real mouse would deliver it.
+function CarCameraController:DebugPanProbe(opts)
+	opts = opts or {}
+	local C = Config.Drift
+	local fps = math.max(opts.fps or 60, 1)
+	local dt = 1 / fps
+	local seconds = math.clamp(opts.seconds or 8, 0, 60)
+	local dragSeconds = math.clamp(opts.dragSeconds or 0.5, dt, seconds)
+	local dragFrames = math.max(math.floor(dragSeconds * fps), 1)
+	local frames = math.floor(seconds * fps)
+	local dxPx, dyPx = opts.dxPx or 0, opts.dyPx or 0
+	local slip = math.rad(opts.slipDeg or 0)
+	local speed = opts.speed or C.TopSpeed
+	local yaw = math.rad(opts.yawDeg or 15)
+
+	local fwd = DriftModel.axes(yaw)
+	local function viewAt(position)
+		return {
+			position = position,
+			yaw = yaw,
+			velocity = (CFrame.Angles(0, slip, 0) * fwd).Unit * speed,
+			slip = slip,
+			speed = speed,
+		}
+	end
+	local view = viewAt(Vector3.new(0, C.RideHeight, 0))
+	local rig = CarCameraController.newRig(view)
+	-- A settling second before the drag, so what follows is the camera at rest and not
+	-- the seed working itself out.
+	for _ = 1, math.floor(fps) do
+		view = viewAt(view.position + view.velocity * dt)
+		CarCameraController._advance(rig, view, dt, nil)
+	end
+
+	local out = {
+		dxPx = dxPx,
+		dyPx = dyPx,
+		fps = fps,
+		dragFrames = dragFrames,
+		elevationRest = 0,
+		yawAtRelease = 0,
+		pitchAtRelease = 0,
+		yawPeak = 0, -- the furthest the view actually got, after the easing caught up
+		pitchPeak = 0,
+		targetYaw = 0,
+		targetPitch = 0,
+		elevationPeak = 0,
+		radiusError = 0, -- the pan must never change how far away the camera is
+		maxDragStepDeg = 0,
+		returnSeconds = -1, -- until both offsets are inside 0.5 deg
+		maxReturnStepDeg = 0, -- worst frame-to-frame movement of the view on the way home
+		maxReturnStepStuds = 0, -- the same in studs, the car's own motion taken out
+		endYawDeg = 0,
+		endPitchDeg = 0,
+		-- How far the view moved on each of the first frames of the way home. This is the
+		-- proof that the return is not a snap: it has to RAMP, because the applied angle
+		-- only ever eases toward the target at `PanRate`.
+		returnTrace = {},
+	}
+
+	local before = rig.position - view.position
+	out.elevationRest =
+		math.deg(math.atan2(before.Y, Vector3.new(before.X, 0, before.Z).Magnitude))
+	local restRadius = before.Magnitude
+
+	local prevYaw, prevPitch = 0, 0
+	local prevOffset = before
+	local released = -1
+	for i = 1, frames do
+		local pan = nil
+		if i <= dragFrames then
+			pan = { held = true, dx = dxPx / dragFrames, dy = dyPx / dragFrames }
+		end
+		view = viewAt(view.position + view.velocity * dt)
+		CarCameraController._advance(rig, view, dt, pan)
+
+		local o = rig.position - view.position
+		out.radiusError = math.max(out.radiusError, math.abs(o.Magnitude - restRadius))
+		local elevation = math.deg(math.atan2(o.Y, Vector3.new(o.X, 0, o.Z).Magnitude))
+		out.elevationPeak = math.max(out.elevationPeak, elevation)
+		out.elevationFloor = math.min(out.elevationFloor or elevation, elevation)
+		if math.abs(rig.panYaw) > math.abs(math.rad(out.yawPeak)) then
+			out.yawPeak = math.deg(rig.panYaw)
+		end
+		if math.abs(rig.panPitch) > math.abs(math.rad(out.pitchPeak)) then
+			out.pitchPeak = math.deg(rig.panPitch)
+		end
+		out.targetYaw = math.max(out.targetYaw, math.abs(math.deg(rig.panTargetYaw)))
+		out.targetPitch = if math.abs(math.deg(rig.panTargetPitch)) > math.abs(out.targetPitch)
+			then math.deg(rig.panTargetPitch)
+			else out.targetPitch
+
+		local stepDeg = Vector2.new(
+			math.deg(wrapPi(rig.panYaw - prevYaw)),
+			math.deg(rig.panPitch - prevPitch)
+		).Magnitude
+		-- The camera's own movement with the car's taken out, so a fast car is not
+		-- mistaken for a jumpy view.
+		local stepStuds = (o - prevOffset).Magnitude
+		if i <= dragFrames then
+			out.maxDragStepDeg = math.max(out.maxDragStepDeg, stepDeg)
+		else
+			if released < 0 then
+				released = i
+				out.yawAtRelease = math.deg(rig.panYaw)
+				out.pitchAtRelease = math.deg(rig.panPitch)
+			end
+			out.maxReturnStepDeg = math.max(out.maxReturnStepDeg, stepDeg)
+			out.maxReturnStepStuds = math.max(out.maxReturnStepStuds, stepStuds)
+			if #out.returnTrace < 24 then
+				table.insert(out.returnTrace, math.floor(stepDeg * 1000 + 0.5) / 1000)
+			end
+			if
+				out.returnSeconds < 0
+				and math.abs(math.deg(rig.panYaw)) < 0.5
+				and math.abs(math.deg(rig.panPitch)) < 0.5
+			then
+				out.returnSeconds = (i - released + 1) * dt
+			end
+		end
+		prevYaw, prevPitch, prevOffset = rig.panYaw, rig.panPitch, o
+	end
+	out.endYawDeg = math.deg(rig.panYaw)
+	out.endPitchDeg = math.deg(rig.panPitch)
+	return out
 end
 
 -- Watch the LIVE camera for `seconds` and report the worst frame of it: how far the
