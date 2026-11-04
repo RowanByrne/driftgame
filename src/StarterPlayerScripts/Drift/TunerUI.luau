@@ -1,10 +1,18 @@
 --@localscript
 -- TunerUI: the car tuner (docs/game/features/car-tuner.md).
 --
--- Eight sliders that move the car you are driving, live, and a garage of named cars you
--- can come back to. Programmer art, like everything until the UI phase
--- (docs/workflow/UI.md): plain frames, native text, no decoration and none of it is the
--- shop this game will one day have.
+-- Eight sliders that move the car you are driving, live, THREE that drive those eight,
+-- and a garage of named cars you can come back to. Programmer art, like everything until
+-- the UI phase (docs/workflow/UI.md): plain frames, native text, no decoration and none
+-- of it is the shop this game will one day have.
+--
+-- THE THREE ARE NOT THE REFERENCE'S THREE BARS. Acceleration, handling and top speed are
+-- hand-written display fields in the reference game and in our own stat panel -- nothing
+-- computes them and nothing reads them back. These three really drive the eight: pull
+-- Handling up and grip, catch, bite, the grip limit, the rate of turn and downforce all
+-- move together, on the curve in `Shared/Cars/Garage` ("the three"). The eight start
+-- FOLDED behind a header, because the other half of what was asked for was a simpler
+-- panel; the echo line under each of the three shows the real numbers moving either way.
 --
 -- WHY A SLIDER LANDS INSTANTLY. It does not push anything into the simulation: it calls
 -- `Cars.tune(key, value)`, and `Config.Drift` resolves every car number through the
@@ -124,11 +132,28 @@ local Tuner = {
 	status = "",
 	statusColour = DIM,
 	dragging = nil, -- the slider id being dragged, or nil
+	draggingStat = nil, -- the stat id being dragged, or nil
 	sent = 0, -- os.clock() of the last tune sent to the server
 	pending = false, -- a tune the send rate has not let through yet
 	rows = {}, -- slider id -> the row's instances
+	statRows = {}, -- stat id -> the row's instances
+	-- What the THREE were last set to, by hand, on this car: stat id -> 0..10, or absent.
+	-- Present means "this number IS the car, because I am the one who wrote the car";
+	-- absent means "work out where it sits" (`Garage.statFit`), which is also what says
+	-- `custom`. Cleared whenever the car is replaced under it -- loaded, reset, re-based.
+	stats = {},
+	detail = false, -- are the eight showing? (see "the eight start folded")
 	garageRows = {},
 }
+
+-- Which of the three owns each of the eight, so moving one of the eight by hand knows
+-- which of the three it has just made a liar.
+local statForSlider: { [string]: string } = {}
+for _, stat in Garage.Stats do
+	for _, sliderId in stat.keys do
+		statForSlider[sliderId] = stat.id
+	end
+end
 
 local garageData = Net.event("GarageData")
 local garageSave = Net.event("GarageSave")
@@ -284,7 +309,7 @@ local function nextOrder(): number
 	return order
 end
 
-local function row(height: number, name: string): Frame
+local function row(height: number, name: string, parent: Instance?): Frame
 	local f = Instance.new("Frame")
 	f.Name = name
 	f.BackgroundTransparency = 1
@@ -292,7 +317,7 @@ local function row(height: number, name: string): Frame
 	f.Size = UDim2.new(1, -6, 0, height) -- -6 leaves the scrollbar its lane
 	f.LayoutOrder = nextOrder()
 	f.ZIndex = 2
-	f.Parent = body
+	f.Parent = parent or body
 	return f
 end
 
@@ -348,6 +373,18 @@ local function format(slider, value: number): string
 	return string.format(`%.{slider.decimals}f`, value)
 end
 
+-- Moving one of the eight by hand CANNOT be read back into one of the three, and the
+-- panel refuses to pretend otherwise: the three the moved number belongs to is forgotten,
+-- which makes it `custom` on screen until it is dragged again or the car is replaced.
+local function forgetStat(sliderId: string): string?
+	local statId = statForSlider[sliderId]
+	if statId and Tuner.stats[statId] ~= nil then
+		Tuner.stats[statId] = nil
+		return statId
+	end
+	return nil
+end
+
 local function setValue(id: string, value: number, fromDrag: boolean?)
 	local clamped = Garage.clamp(id, value)
 	if clamped == nil then
@@ -355,6 +392,12 @@ local function setValue(id: string, value: number, fromDrag: boolean?)
 	end
 	Tuner.tune[id] = clamped
 	Tuner.dirtySince = true
+	local forgotten = forgetStat(id)
+	if forgotten then
+		local stat = Garage.stat(forgotten)
+		local slider = Garage.slider(id)
+		setStatus(`{stat and stat.label or forgotten} is custom now: {slider and slider.label or id} was moved by hand`, FILL)
+	end
 	applyTune()
 	sendTune(not fromDrag)
 	Tuner.refresh()
@@ -362,8 +405,51 @@ end
 
 local DIM_HEX = DIM:ToHex()
 
+-- ------------------------------------------------------------------ the eight, folded
+--
+-- WHY THEY START FOLDED. The other half of what the user asked for was "too many stats
+-- right now... I want the interface to be a bit more simple", so the panel OPENS simple:
+-- the three, the buttons and the garage, all on screen at once. The eight are one tap
+-- away behind this header and stay open for the rest of the session once they are.
+--
+-- The measured reason it is this way round rather than the other: the body of this panel
+-- is about 190 px tall on this screen (the panel is sized from the screen so it cannot
+-- cover the handbrake -- see the spec), and eight rows is 296 px. Left unfolded, the three
+-- would sit 300 px below the fold, under a scroll, in a panel opened by somebody who had
+-- just said there was too much in it.
+--
+-- AND THE EIGHT STILL VISIBLY ANSWER THE THREE, folded or not: every stat row carries a
+-- live echo of the numbers it drives, right under its own track, so a thumb on Handling
+-- watches grip, catch, bite, the limit, the rate of turn and downforce all move together
+-- without opening anything. Unfolded, the rows above move with it too.
+local detailHeader = row(16, "DetailHeader")
+local detailToggle = button(detailHeader, "Toggle", "")
+detailToggle.Size = UDim2.fromScale(1, 1)
+detailToggle.BackgroundTransparency = 1
+detailToggle.TextXAlignment = Enum.TextXAlignment.Left
+detailToggle.TextColor3 = DIM
+detailToggle.TextSize = 11
+detailToggle.FontFace = FONT
+detailToggle.ZIndex = 3
+
+local detailBox = Instance.new("Frame")
+detailBox.Name = "Detail"
+detailBox.BackgroundTransparency = 1
+detailBox.Size = UDim2.new(1, -6, 0, 0)
+detailBox.AutomaticSize = Enum.AutomaticSize.Y
+detailBox.LayoutOrder = nextOrder()
+detailBox.ZIndex = 2
+detailBox.Visible = Tuner.detail
+detailBox.Parent = body
+
+local detailLayout = Instance.new("UIListLayout")
+detailLayout.SortOrder = Enum.SortOrder.LayoutOrder
+detailLayout.Padding = UDim.new(0, 4)
+detailLayout.Parent = detailBox
+
 local function buildSlider(slider)
-	local f = row(C.TunerRowHeight, `Slider_{slider.id}`)
+	local f = row(C.TunerRowHeight, `Slider_{slider.id}`, detailBox)
+	f.Size = UDim2.new(1, 0, 0, C.TunerRowHeight) -- the box already keeps the scrollbar's lane
 
 	-- THE HONEST HALF, and it is on the same line as the name rather than under it: the
 	-- user asked for names that are not technical, so the name is "Eagerness" and the key
@@ -466,30 +552,219 @@ for _, slider in Garage.Sliders do
 	buildSlider(slider)
 end
 
+--------------------------------------------------------------------------------
+-- The three
+--------------------------------------------------------------------------------
+
+-- THREE SLIDERS THAT REALLY DRIVE THE EIGHT. In the reference game the three bars a car
+-- shows are hand-written display fields -- nothing computes them and nothing reads them
+-- back, which is exactly what our own stat panel labels "HAND-WRITTEN, display only".
+-- These are the opposite: Handling is six of the eight above, moving together, on one
+-- curve (`Shared/Cars/Garage`, "the three"). Drag it and watch them.
+--
+-- Nothing new is saved. A stat writes ordinary slider values into the same tune, so the
+-- wire, the store, the server's checks and a saved car are all exactly what they were.
+
+-- The echo line under each track: the numbers that stat is driving, as they are right now.
+local ECHO = {
+	eagerness = "eag",
+	grip = "gr",
+	catch = "ca",
+	bite = "bi",
+	griplimit = "lim",
+	planted = "pl",
+}
+
+-- px: the name line, the track, and the echo line under it. Three of these plus the two
+-- section headers is 184 px, and the panel's body measures 190 px on this screen -- so
+-- folded, all three are on screen at once with nothing to scroll. That is the whole
+-- sizing argument for folding the eight.
+local STAT_ROW = 46
+
+local function statState(): { [string]: { value: number, exact: boolean } }
+	local vals = values()
+	local out = {}
+	for _, stat in Garage.Stats do
+		local set = Tuner.stats[stat.id]
+		if set ~= nil then
+			-- We wrote this car FROM this number, so it is the car, exactly.
+			out[stat.id] = { value = set, exact = true }
+		else
+			local value, exact = Garage.statFit(stat.id, vals)
+			out[stat.id] = { value = value or 0, exact = exact }
+		end
+	end
+	return out
+end
+
+local function setStat(statId: string, value: number, fromDrag: boolean?)
+	local stat = Garage.stat(statId)
+	local s = Garage.clampStat(value)
+	if not stat or s == nil then
+		return
+	end
+	for sliderId, v in Garage.statTune(statId, s) do
+		Tuner.tune[sliderId] = v
+	end
+	Tuner.stats[statId] = s
+	Tuner.dirtySince = true
+	applyTune()
+	sendTune(not fromDrag)
+	Tuner.refresh()
+end
+
+local statHeaderRow = row(14, "StatHeader")
+local statHeader = label(statHeaderRow, "Text", "THE THREE  ·  each one drives the numbers above", 11, DIM)
+statHeader.Size = UDim2.fromScale(1, 1)
+
+local function buildStat(stat)
+	local f = row(STAT_ROW, `Stat_{stat.id}`)
+
+	local name = label(f, "Label", "", 13, TEXT)
+	name.RichText = true
+	local what = if #stat.keys > 1
+		then `{#stat.keys} of the numbers above`
+		else (Garage.slider(stat.keys[1]) :: any).key
+	name.Text = `{stat.label}  <font color="#{DIM_HEX}" size="10">{what}</font>`
+	name.Size = UDim2.new(0.62, 0, 0, 15)
+	name.FontFace = FONT_UI
+
+	local value = label(f, "Value", "", 13, FILL)
+	value.Size = UDim2.new(0.38, 0, 0, 15)
+	value.Position = UDim2.new(0.62, 0, 0, 0)
+	value.TextXAlignment = Enum.TextXAlignment.Right
+
+	local minus = button(f, "Minus", "-")
+	minus.Size = UDim2.fromOffset(NUDGE, 16)
+	minus.Position = UDim2.fromOffset(0, 16)
+	minus.TextSize = 13
+	minus.ZIndex = 3
+
+	local plus = button(f, "Plus", "+")
+	plus.Size = UDim2.fromOffset(NUDGE, 16)
+	plus.Position = UDim2.fromOffset(NUDGE + GAP + TRACK_W + GAP, 16)
+	plus.TextSize = 13
+	plus.ZIndex = 3
+
+	local track = button(f, "Track", "")
+	track.Size = UDim2.fromOffset(TRACK_W, 16)
+	track.Position = UDim2.fromOffset(NUDGE + GAP, 16)
+	track.BackgroundColor3 = TRACK
+	track.AutoButtonColor = false
+	track.ZIndex = 3
+
+	local fill = Instance.new("Frame")
+	fill.Name = "Fill"
+	fill.BackgroundColor3 = FILL
+	fill.BorderSizePixel = 0
+	fill.Size = UDim2.fromScale(0, 1)
+	fill.ZIndex = 4
+	fill.Parent = track
+
+	-- The notch is where the BASE ARCHETYPE sits on this axis -- the four of them land on
+	-- four different numbers, because the axis is absolute and 5 is the approved car
+	-- rather than whichever car you happen to be on.
+	local notch = Instance.new("Frame")
+	notch.Name = "Base"
+	notch.BackgroundColor3 = TEXT
+	notch.BorderSizePixel = 0
+	notch.Size = UDim2.new(0, 1, 1, 0)
+	notch.AnchorPoint = Vector2.new(0.5, 0)
+	notch.ZIndex = 5
+	notch.Parent = track
+
+	local echo = label(f, "Echo", "", 10, DIM)
+	echo.Size = UDim2.new(1, 0, 0, 13)
+	echo.Position = UDim2.fromOffset(0, 33)
+	echo.TextTruncate = Enum.TextTruncate.AtEnd
+
+	local function tooltip()
+		setStatus(`{stat.label}: {stat.feel}`, DIM)
+		statusLabel.Text = Tuner.status
+		statusLabel.TextColor3 = Tuner.statusColour
+	end
+
+	local r = Garage.StatRange
+	local function nudge(dir: number)
+		tooltip()
+		local now = statState()[stat.id].value
+		-- From the nudge grid, not from wherever a drag or a fit left it: pressing + twice
+		-- from 6.17 should be 6.2 then 6.3, not 6.27.
+		local on = math.round(now / r.nudge) * r.nudge
+		setStat(stat.id, on + dir * r.nudge)
+	end
+
+	track.InputBegan:Connect(function(input)
+		if
+			input.UserInputType == Enum.UserInputType.Touch
+			or input.UserInputType == Enum.UserInputType.MouseButton1
+		then
+			Tuner.draggingStat = stat.id
+			tooltip()
+			local width = math.max(track.AbsoluteSize.X, 1)
+			local t = math.clamp((input.Position.X - track.AbsolutePosition.X) / width, 0, 1)
+			setStat(stat.id, r.min + t * (r.max - r.min), true)
+		end
+	end)
+	track.MouseEnter:Connect(tooltip)
+	minus.Activated:Connect(function()
+		nudge(-1)
+	end)
+	plus.Activated:Connect(function()
+		nudge(1)
+	end)
+
+	Tuner.statRows[stat.id] = {
+		stat = stat,
+		value = value,
+		fill = fill,
+		notch = notch,
+		track = track,
+		echo = echo,
+	}
+end
+
+for _, stat in Garage.Stats do
+	buildStat(stat)
+end
+
 -- A drag follows the pointer anywhere on the screen once it has started on a track, and
 -- ends wherever it is let go. Connected to UserInputService rather than to the track, so
 -- a finger that slides off the end of the track still moves the slider instead of
 -- silently stopping.
 UserInputService.InputChanged:Connect(function(input)
-	if not Tuner.dragging then
+	if not Tuner.dragging and not Tuner.draggingStat then
 		return
 	end
 	if
-		input.UserInputType == Enum.UserInputType.Touch
-		or input.UserInputType == Enum.UserInputType.MouseMovement
+		input.UserInputType ~= Enum.UserInputType.Touch
+		and input.UserInputType ~= Enum.UserInputType.MouseMovement
 	then
+		return
+	end
+	local function along(track: GuiObject): number
+		local width = math.max(track.AbsoluteSize.X, 1)
+		return math.clamp((input.Position.X - track.AbsolutePosition.X) / width, 0, 1)
+	end
+	if Tuner.dragging then
 		local row_ = Tuner.rows[Tuner.dragging]
 		if row_ then
-			local width = math.max(row_.track.AbsoluteSize.X, 1)
-			local t = math.clamp((input.Position.X - row_.track.AbsolutePosition.X) / width, 0, 1)
+			local t = along(row_.track)
 			setValue(Tuner.dragging, row_.slider.min + t * (row_.slider.max - row_.slider.min), true)
+		end
+	elseif Tuner.draggingStat then
+		local row_ = Tuner.statRows[Tuner.draggingStat]
+		if row_ then
+			local r = Garage.StatRange
+			setStat(Tuner.draggingStat, r.min + along(row_.track) * (r.max - r.min), true)
 		end
 	end
 end)
 
 local function endDrag()
-	if Tuner.dragging then
+	if Tuner.dragging or Tuner.draggingStat then
 		Tuner.dragging = nil
+		Tuner.draggingStat = nil
 		sendTune(true) -- the server ends the drag holding the final number
 	end
 end
@@ -625,6 +900,46 @@ local function refreshSliders()
 		r.notch.Position = UDim2.fromScale(math.clamp((base[id] - slider.min) / span, 0, 1), 0)
 	end
 
+	-- ---------------------------------------------------------------- the three
+	detailBox.Visible = Tuner.detail
+	detailToggle.Text = if Tuner.detail
+		then `▾ THE EIGHT NUMBERS  ·  tap to fold`
+		else `▸ THE EIGHT NUMBERS  ·  tap to open ({#Garage.Sliders})`
+
+	local stats = statState()
+	local baseStats = Garage.statsFor(Tuner.base, nil)
+	local r = Garage.StatRange
+	local statSpan = math.max(r.max - r.min, 1e-9)
+	for id, sr in Tuner.statRows do
+		local state = stats[id]
+		local atBase = baseStats[id]
+		sr.value.Text = `{string.format("%.1f", state.value)}{if state.exact then "" else "  custom"}`
+		-- Orange whenever this is not simply where the base car sits: either it has been
+		-- dragged, or one of the numbers under it has been moved by hand and the number
+		-- shown is only the nearest point on the curve.
+		sr.value.TextColor3 = if not state.exact or Tuner.stats[id] ~= nil then FILL else TEXT
+		sr.fill.Size = UDim2.fromScale(math.clamp((state.value - r.min) / statSpan, 0, 1), 1)
+		sr.notch.Position =
+			UDim2.fromScale(math.clamp(((atBase and atBase.value or 5) - r.min) / statSpan, 0, 1), 0)
+
+		-- The echo: the real numbers this stat is driving, as they are right now. This is
+		-- what makes the three teach the eight rather than hide them.
+		local parts = {}
+		local keys = (Garage.stat(id) :: any).keys
+		for _, sliderId in keys do
+			local slider = Garage.slider(sliderId)
+			if slider then
+				local shown = format(slider, vals[sliderId])
+				if #keys > 1 then
+					table.insert(parts, `{ECHO[sliderId] or sliderId} {shown}`)
+				else
+					table.insert(parts, `{shown}{if slider.unit then " " .. slider.unit else ""}`)
+				end
+			end
+		end
+		sr.echo.Text = table.concat(parts, " · ")
+	end
+
 	statusLabel.Text = Tuner.status
 	statusLabel.TextColor3 = Tuner.statusColour
 end
@@ -698,7 +1013,11 @@ function Tuner.setOpen(open: boolean)
 	if not open then
 		dialog.Visible = false
 		Tuner.dragging = nil
+		Tuner.draggingStat = nil
 	else
+		if Tuner.status == "" then
+			setStatus("the three at the bottom drive the eight: open them to watch", DIM)
+		end
 		refresh()
 	end
 end
@@ -721,6 +1040,11 @@ function Tuner.setBase(key: string)
 	end
 	Tuner.base = key
 	Tuner.dirtySince = true
+	-- The car under the tune has changed, so "I set Handling to 7" is no longer a claim
+	-- about THIS car: anything the tune does not cover now comes from the new base. The
+	-- three are worked out again from what the car actually is, and say `custom` if that
+	-- is no longer a point on the curve.
+	Tuner.stats = {}
 	Cars.setActive(key)
 	applyTune()
 	carSwitch:FireServer(key)
@@ -730,6 +1054,7 @@ end
 
 function Tuner.reset()
 	Tuner.tune = {}
+	Tuner.stats = {}
 	Tuner.loadedName = nil
 	Tuner.dirtySince = false
 	applyTune()
@@ -748,6 +1073,11 @@ function Tuner.load(name: string)
 	Tuner.loadedName = name
 	Tuner.dirtySince = false
 	Tuner.tune = Garage.sanitizeTune(car.tune)
+	-- A saved car is eight numbers, never three: where it sits on the three is worked out
+	-- from what it IS (`Garage.statFit`), so a car tuned with the three comes back reading
+	-- as those three and a car tuned by hand comes back `custom`. Nothing is stored for
+	-- the three and nothing needs to be.
+	Tuner.stats = {}
 	if car.base ~= Tuner.base then
 		Tuner.base = car.base
 		Cars.setActive(car.base)
@@ -800,6 +1130,10 @@ saveAsButton.Activated:Connect(function()
 	Tuner.askName()
 end)
 resetButton.Activated:Connect(Tuner.reset)
+detailToggle.Activated:Connect(function()
+	Tuner.detail = not Tuner.detail
+	refresh()
+end)
 okButton.Activated:Connect(function()
 	local clean = Garage.cleanName(nameBox.Text)
 	if not clean then
@@ -851,6 +1185,7 @@ carSwitch.OnClientEvent:Connect(function(key, accepted)
 	end
 	if key ~= Tuner.base then
 		Tuner.base = key
+		Tuner.stats = {} -- a different car under the tune: work the three out again
 		if Cars.activeKey() ~= key then
 			Cars.setActive(key)
 		end
@@ -922,10 +1257,31 @@ local function debugState()
 			tuned = Tuner.tune[id] ~= nil,
 		}
 	end
+	local statsShown = {}
+	for id, sr in Tuner.statRows do
+		local state = statState()[id]
+		statsShown[id] = {
+			value = state.value,
+			exact = state.exact,
+			set = Tuner.stats[id],
+			text = sr.value.Text,
+			echo = sr.echo.Text,
+			echoWidth = sr.echo.TextBounds.X,
+			fill = sr.fill.Size.X.Scale,
+			notch = sr.notch.Position.X.Scale,
+			trackX = sr.track.AbsolutePosition.X,
+			trackW = sr.track.AbsoluteSize.X,
+			trackY = sr.track.AbsolutePosition.Y + GuiService:GetGuiInset().Y,
+			visible = sr.track.Visible and panel.Visible,
+		}
+	end
 	return {
 		open = Tuner.open,
 		visible = panel.Visible,
 		active = panel.Active,
+		detail = Tuner.detail,
+		stats = statsShown,
+		baseStats = Garage.statsFor(Tuner.base, nil),
 		base = Tuner.base,
 		activeCar = Cars.activeKey(),
 		loadedName = Tuner.loadedName,
@@ -971,6 +1327,14 @@ if RunService:IsStudio() then
 			local id, value = ...
 			setValue(id, value)
 			return debugState()
+		elseif member == "SetStat" then
+			local id, value = ...
+			setStat(id, value)
+			return debugState()
+		elseif member == "Detail" then
+			Tuner.detail = (...) == true
+			refresh()
+			return debugState()
 		elseif member == "SetBase" then
 			Tuner.setBase((...))
 			return debugState()
@@ -987,7 +1351,10 @@ if RunService:IsStudio() then
 			Tuner.reset()
 			return debugState()
 		end
-		error(`TunerBridge: no '{tostring(member)}'. There is: DebugState, Toggle, SetOpen, Set, SetBase, Save, Load, Delete, Reset`, 0)
+		error(
+			`TunerBridge: no '{tostring(member)}'. There is: DebugState, Toggle, SetOpen, Set, SetStat, Detail, SetBase, Save, Load, Delete, Reset`,
+			0
+		)
 	end
 	bridge.Parent = player:WaitForChild("PlayerScripts")
 end

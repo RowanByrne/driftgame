@@ -541,7 +541,234 @@ function GarageTests:run()
 		)
 	end
 
-	-- 15. Nothing above left a tune on the car, which would poison every check after it
+	-- ----------------------------------------------------------------- the three
+	--
+	-- Three sliders, 0..10, that really drive the eight above them -- unlike the reference
+	-- game's three bars, and unlike our own `Archetypes.Bars`, which are hand-written
+	-- display fields that reach nothing (`DriftTests` proves that separately).
+
+	-- 15. The curve is anchored where it says it is: 5 is the approved car on every one of
+	-- the eight keys the three touch, 0 is the slider's floor and 10 is the stated
+	-- ceiling. If this fails, "handling 5" has stopped meaning the car the user approved.
+	do
+		local bad = {}
+		for _, stat in Garage.Stats do
+			for _, id in stat.keys do
+				local slider = Garage.slider(id)
+				local low, mid, top = Garage.statValue(id, 0), Garage.statValue(id, 5), Garage.statValue(id, 10)
+				local wantedMid = Garage.clamp(id, Archetypes.Base[slider.key])
+				local anchor = Garage.StatAnchors[id]
+				local wantedTop = Garage.clamp(id, (anchor and anchor.top) or slider.max)
+				local wantedLow = Garage.clamp(id, (anchor and anchor.low) or slider.min)
+				if mid ~= wantedMid or low ~= wantedLow or top ~= wantedTop then
+					table.insert(bad, `{id}: {low}/{mid}/{top} wanted {wantedLow}/{wantedMid}/{wantedTop}`)
+				end
+			end
+		end
+		pass(
+			check(
+				checks,
+				"the three are anchored on the approved car at 5",
+				#bad == 0,
+				if #bad == 0
+					then `8 keys across {#Garage.Stats} stats: 5 is Archetypes.Base to the value`
+					else table.concat(bad, "; ")
+			)
+		)
+	end
+
+	-- 16. Every number a stat drives RISES with it, all the way across. This is the whole
+	-- claim the one slider makes -- "more handling" is more grip, a faster rate of turn and
+	-- more downforce, together -- and a curve with a dip in it would be a slider that
+	-- sometimes makes the car worse as you pull it up.
+	do
+		local bad = {}
+		for _, stat in Garage.Stats do
+			for _, id in stat.keys do
+				local last = Garage.statValue(id, 0)
+				for i = 1, 1000 do
+					local v = Garage.statValue(id, i / 100)
+					if v < last then
+						table.insert(bad, `{id} fell at {i / 100}: {last} -> {v}`)
+						break
+					end
+					last = v
+				end
+				if last <= Garage.statValue(id, 0) then
+					table.insert(bad, `{id} never rose`)
+				end
+			end
+		end
+		pass(
+			check(
+				checks,
+				"every number the three drive rises with them",
+				#bad == 0,
+				if #bad == 0
+					then "8 keys x 1001 steps, never once falling"
+					else table.concat(bad, "; ")
+			)
+		)
+	end
+
+	-- 17. The four archetypes land on four different numbers rather than all on 5, which
+	-- is what makes the axis absolute rather than relative to whatever car is under it.
+	do
+		local shown, values = {}, {}
+		for _, key in Archetypes.Order do
+			local stats = Garage.statsFor(key, nil)
+			values[key] = stats
+			table.insert(
+				shown,
+				`{key} {string.format("%.1f/%.1f/%.1f", stats.accel.value, stats.handling.value, stats.top.value)}`
+			)
+		end
+		-- The grippiest car is the highest and the loosest is the lowest, and that matches
+		-- the model's own measured ordering of how much speed each keeps through a corner
+		-- (features/car-archetypes.md).
+		local ok = values.gripper.handling.value > values.balanced.handling.value
+			and values.slider.handling.value < values.balanced.handling.value
+			and values.bruiser.top.value > values.gripper.top.value
+			and values.bruiser.accel.value < values.gripper.accel.value
+			and math.abs(values.balanced.handling.value - 5) < 1e-9
+		pass(
+			check(
+				checks,
+				"the four cars land on four different places on the three",
+				ok,
+				`accel/handling/top: {table.concat(shown, ", ")}`
+			)
+		)
+	end
+
+	-- 18. A car built from one of the three reads back AS that number. The eight are each
+	-- snapped to their own step on the way out, so this is not free -- it is what lets the
+	-- panel show a number rather than `custom` after a save and a load.
+	do
+		local bad = {}
+		for _, stat in Garage.Stats do
+			for i = 0, 1000 do
+				local s = i / 100
+				local tune = Garage.statTune(stat.id, s)
+				local _, exact = Garage.statFit(stat.id, Garage.values("balanced", tune))
+				if not exact then
+					table.insert(bad, `{stat.id} at {s}`)
+					break
+				end
+			end
+		end
+		pass(
+			check(
+				checks,
+				"a car built from the three reads back as the three",
+				#bad == 0,
+				if #bad == 0
+					then `{#Garage.Stats} stats x 1001 values, every one exact`
+					else table.concat(bad, "; ")
+			)
+		)
+	end
+
+	-- 19. AND THE HONEST HALF. Move one of the eight by hand afterwards and the stat above
+	-- it cannot be read back as one number any more, so it says so. The other two, which
+	-- share none of its keys, are untouched.
+	do
+		local tune = Garage.statTune("handling", 7)
+		for id, v in Garage.statTune("accel", 6) do
+			tune[id] = v
+		end
+		local clean = Garage.statsFor("balanced", tune)
+		tune.bite = Garage.clamp("bite", 90) -- one of handling's six, moved by hand
+		local dirty = Garage.statsFor("balanced", tune)
+		local ok = clean.handling.exact
+			and clean.accel.exact
+			and not dirty.handling.exact
+			and dirty.accel.exact
+			and dirty.accel.value == clean.accel.value
+		pass(
+			check(
+				checks,
+				"a detailed slider moved by hand makes its stat custom, and only its own",
+				ok,
+				`handling {string.format("%.2f", clean.handling.value)} exact -> bite 90 -> `
+					.. `{string.format("%.2f", dirty.handling.value)} custom; `
+					.. `accel {string.format("%.2f", dirty.accel.value)} still exact`
+			)
+		)
+	end
+
+	-- 20. THE POINT OF THE WHOLE FEATURE, measured out of the real model: pulling Handling
+	-- up changes how the car rotates AND how hard it is held sideways, on the next step.
+	do
+		local low = oneStep(Garage.statTune("handling", 3), 20, 120, 1)
+		local high = oneStep(Garage.statTune("handling", 7), 20, 120, 1)
+		-- The rate of turn IS one of handling's six, so the yaw rate the model produces is
+		-- the number the curve asked for, to the digit.
+		local ok = math.abs(math.abs(low.yawRate) - Garage.statValue("eagerness", 3)) < 1e-6
+			and math.abs(math.abs(high.yawRate) - Garage.statValue("eagerness", 7)) < 1e-6
+			and high.gripPull > low.gripPull * 2
+		pass(
+			check(
+				checks,
+				"Handling changes how the car rotates and how hard it grips",
+				ok,
+				`handling 3: {round(math.abs(low.yawRate), 3)} rad/s, {round(low.gripPull, 2)} studs/s^2 sideways; `
+					.. `handling 7: {round(math.abs(high.yawRate), 3)} rad/s, {round(high.gripPull, 2)}`
+			)
+		)
+	end
+
+	-- 21. A car tuned ONLY with the three saves and loads like any other, because it IS
+	-- any other: the three write ordinary slider values and nothing new is stored.
+	do
+		local store = GarageService.MemoryStore("test")
+		local was = GarageService:DebugSwapStore(store)
+		local player = standIn(TEST_USER)
+		GarageService.garages[TEST_USER] = {}
+		GarageService.limits[TEST_USER] = nil
+
+		local tune = Garage.statTune("handling", 7.5)
+		for id, v in Garage.statTune("accel", 8) do
+			tune[id] = v
+		end
+		for id, v in Garage.statTune("top", 6.5) do
+			tune[id] = v
+		end
+		GarageService:_onSave(player, "Simple", "bruiser", tune)
+		GarageService:_write(TEST_USER, GarageService.garages[TEST_USER])
+		GarageService.garages[TEST_USER] = nil
+		GarageService.loaded[TEST_USER] = nil
+
+		local ok, raw = store:Get("garage_" .. TEST_USER)
+		local back = Garage.sanitizeGarage(if type(raw) == "table" then raw.cars else nil)
+		local car = back.Simple
+		local stats = if car then Garage.statsFor(car.base, car.tune) else nil
+		local same = car ~= nil
+			and car.base == "bruiser"
+			and stats.handling.exact
+			and stats.accel.exact
+			and stats.top.exact
+			and math.abs(stats.handling.value - 7.5) < 0.05
+			and math.abs(stats.accel.value - 8) < 0.05
+			and math.abs(stats.top.value - 6.5) < 0.05
+		pass(
+			check(
+				checks,
+				"a car tuned only with the three comes back as those three",
+				ok and same,
+				if stats
+					then `"Simple" on {car.base}: {string.format("%.2f / %.2f / %.2f", stats.accel.value, stats.handling.value, stats.top.value)} `
+						.. `(asked 8 / 7.5 / 6.5), all exact`
+					else "the car did not come back"
+			)
+		)
+		GarageService:DebugSwapStore(was)
+		GarageService.garages[TEST_USER] = nil
+		GarageService.dirty[TEST_USER] = nil
+		GarageService.limits[TEST_USER] = nil
+	end
+
+	-- 22. Nothing above left a tune on the car, which would poison every check after it
 	-- and every playtest in this server.
 	do
 		local left = {}

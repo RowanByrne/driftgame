@@ -277,6 +277,285 @@ function Garage.values(base: string?, tune: { [string]: number }?): { [string]: 
 	return out
 end
 
+-- ---------------------------------------------------------------------- the three
+--
+-- THREE SLIDERS, 0 TO 10, THAT REALLY DRIVE THE EIGHT. The user opened the tuner, said
+-- there were too many numbers and that they did not know what each one did, and asked for
+-- the three the reference game shows -- acceleration, handling, top speed.
+--
+-- IN THE REFERENCE THOSE THREE DRIVE NOTHING. They are a hand-written display field per
+-- car; no code computes them from the physics and no code reads them back into it, which
+-- is why ours are labelled "HAND-WRITTEN, display only" in the stat panel
+-- (`Archetypes.Bars`, features/car-archetypes.md "Why the three bars are a lie, on
+-- purpose"). THESE ARE NOT THOSE. These are a real control layer: moving one writes the
+-- car fields underneath it, and the detailed sliders above visibly move with it. That is
+-- the point -- the user learns what the eight do by watching them answer the three.
+--
+-- `Archetypes.Bars` is untouched and still a lie; nothing here reads it.
+--
+-- THE CURVE, AND WHY IT IS THIS ONE. Six numbers out of one slider is a choice, and a bad
+-- choice makes every car feel the same. Each of the six is PIECEWISE LINEAR through three
+-- anchors:
+--
+--   stat 0  -> the slider's own floor: the least of everything the tuner allows
+--   stat 5  -> THE APPROVED CAR's value for that key (`Archetypes.Base`, 2026-11-03)
+--   stat 10 -> a car-shaped ceiling: about twice the most extreme of the four archetypes,
+--              capped at the reference's own design maxima where it states one
+--
+-- Three things follow from that, and all three are deliberate:
+--
+--   * **5 is the approved car, on every base.** The axis is ABSOLUTE, not relative to the
+--     archetype being edited: "handling 7" is one car-feel whichever car you started from,
+--     and the four archetypes land on four different numbers instead of all reading 5.
+--   * **Every one of the six RISES with handling.** More handling means more grip at every
+--     slip angle, a faster rate of turn and more downforce -- the car does what you ask,
+--     sooner and harder. It is the obvious reading and it is the only honest one for a
+--     single number: a car with a huge `SlipSqFriction` and a modest `ConstantFriction` is
+--     a completely different animal from the reverse, and ONE NUMBER CANNOT SAY WHICH.
+--     That spread is what the eight are for, and moving one of them by hand is what marks
+--     the three custom (`statFit`).
+--   * **The ceiling at 10 is a car, not the slider's end.** The design space runs far past
+--     any real car (`SlipFriction` maxes at 228.6 where the grippiest archetype is 28.6),
+--     so anchoring 10 there would spend the whole top half of the slider on cars nobody
+--     would drive and squeeze the four archetypes into a sliver. The three cover the range
+--     of real cars with headroom; the eight cover the whole space.
+--
+-- WHAT IT COSTS, stated plainly: handling 7 on the gripper overwrites the six numbers that
+-- made the gripper the gripper. The base still gives the body, the geometry and everything
+-- else; the cornering character becomes the curve's. That is what "one slider for six
+-- numbers" means, and it is why the eight are still there underneath.
+
+export type Stat = {
+	id: string,
+	label: string,
+	feel: string,
+	keys: { string }, -- slider ids, in panel order
+}
+
+-- 0..10, as the reference shows them. `step` is what a value is snapped to, `nudge` what
+-- the - and + buttons move by: the step is fine enough that a car built from the three
+-- reads back as the same three (checked over all 1001 values of each), and the nudge is
+-- what a person actually wants from a button.
+Garage.StatRange = { min = 0, max = 10, step = 0.01, nudge = 0.1 }
+
+local STAT_MID = (Garage.StatRange.min + Garage.StatRange.max) / 2
+
+-- The low and high anchors, per slider. The middle anchor is never written here: it is
+-- always the approved car's own value for that key, so this table cannot drift away from
+-- `Archetypes.Base`. `low = nil` means the slider's own floor.
+Garage.StatAnchors = {
+	-- handling
+	eagerness = { top = 4 }, -- rad/s, the reference's own max for it
+	grip = { top = 114.3 }, -- 2x the gripper's 57.2, and the reference's max
+	catch = { top = 85.8 }, -- 2x the bruiser's 42.9 (the slider runs to 228.6)
+	bite = { top = 114.3 }, -- 1.3x the gripper's 85.8, and the reference's max
+	griplimit = { top = 215 }, -- 1.5x the gripper's 143: 6 g (the slider runs to 300)
+	planted = { top = 0.7 }, -- 2x the bruiser's 0.35
+	-- acceleration
+	power = { top = 45 }, -- 2x the gripper's 21.5
+	-- top speed
+	topspeed = { top = 320 }, -- 1.5x the bruiser's 215 (the slider runs to 400)
+}
+
+Garage.Stats = {
+	{
+		id = "accel",
+		label = "Acceleration",
+		feel = "how hard it pulls away, and nothing else",
+		keys = { "power" },
+	},
+	{
+		id = "handling",
+		label = "Handling",
+		feel = "all six of the numbers that decide how it corners and slides, together",
+		keys = { "eagerness", "grip", "catch", "bite", "griplimit", "planted" },
+	},
+	{
+		id = "top",
+		label = "Top speed",
+		feel = "where it stops pulling, and nothing else",
+		keys = { "topspeed" },
+	},
+}
+
+-- NOT "topspeed": that is a SLIDER id, and one namespace with two meanings is a bug
+-- waiting for a careless lookup.
+Garage.StatOrder = {}
+local statById: { [string]: Stat } = {}
+for _, stat in Garage.Stats do
+	table.insert(Garage.StatOrder, stat.id)
+	statById[stat.id] = stat
+end
+
+function Garage.stat(id: string): Stat?
+	return if type(id) == "string" then statById[id] else nil
+end
+
+function Garage.clampStat(value: any): number?
+	if not finite(value) then
+		return nil
+	end
+	local r = Garage.StatRange
+	local v = math.clamp(value, r.min, r.max)
+	return math.round(v / r.step) * r.step
+end
+
+-- The three anchors for one slider: its floor, the approved car's value, its ceiling.
+local function anchors(sliderId: string): (number?, number?, number?)
+	local slider = byId[sliderId]
+	if not slider then
+		return nil, nil, nil
+	end
+	local a = Garage.StatAnchors[sliderId]
+	local low = if a and a.low then a.low else slider.min
+	local top = if a and a.top then a.top else slider.max
+	local mid = Archetypes.Base[slider.key]
+	return low, mid, top
+end
+
+-- What one of the eight becomes at a given stat value. Clamped and snapped like any other
+-- slider value, so a car built from the three is a car the store and the server already
+-- understand: THE THREE SAVE NOTHING OF THEIR OWN.
+function Garage.statValue(sliderId: string, stat: number): number?
+	local low, mid, top = anchors(sliderId)
+	if low == nil then
+		return nil
+	end
+	local s = Garage.clampStat(stat)
+	if s == nil then
+		return nil
+	end
+	local v
+	if s <= STAT_MID then
+		v = low + (s / STAT_MID) * (mid - low)
+	else
+		v = mid + ((s - STAT_MID) / STAT_MID) * (top - mid)
+	end
+	return Garage.clamp(sliderId, v)
+end
+
+-- The other direction for ONE slider: where this value sits on the 0..10 axis. The honest
+-- per-key answer, and what the fit below averages.
+function Garage.statPosition(sliderId: string, value: number): number?
+	local low, mid, top = anchors(sliderId)
+	if low == nil or not finite(value) then
+		return nil
+	end
+	local s
+	if value <= mid then
+		s = if mid > low then STAT_MID * (value - low) / (mid - low) else STAT_MID
+	else
+		s = if top > mid then STAT_MID + STAT_MID * (value - mid) / (top - mid) else STAT_MID
+	end
+	return math.clamp(s, Garage.StatRange.min, Garage.StatRange.max)
+end
+
+-- Every slider value one stat produces.
+function Garage.statTune(statId: string, stat: number): { [string]: number }
+	local out = {}
+	local s = Garage.stat(statId)
+	if not s then
+		return out
+	end
+	for _, sliderId in s.keys do
+		local v = Garage.statValue(sliderId, stat)
+		if v ~= nil then
+			out[sliderId] = v
+		end
+	end
+	return out
+end
+
+-- THE OTHER DIRECTION, AND THE HONEST PART. A car whose six handling numbers were moved by
+-- hand is NOT a point on the curve, and reading one number back out of it would be a lie
+-- that looks like a fact -- the same lie the reference's bars tell.
+--
+-- So this returns two things: WHERE the car sits (the mean of the six per-key positions,
+-- which is the least-squares answer in stat units and is where the knob is drawn) and
+-- WHETHER that is the whole truth -- `exact` is true only when putting that stat value
+-- back through `statValue` reproduces every one of the car's numbers to the digit. An
+-- archetype, or any car with a detailed slider moved by hand, comes back `exact = false`
+-- and the panel says `custom`.
+--
+-- The window around the mean is searched because each of the six is snapped to its own
+-- step on the way out, and down at the bottom of the axis those steps are coarse in stat
+-- units -- one step of `MaxSteeringSpeed` (0.05 of a 1.8 span over five stat units) is
+-- 0.14 of a stat, fourteen times the stat's own resolution. The mean of six such roundings
+-- can therefore sit a tenth of a stat away from the value that produced them. SEARCH_STEPS
+-- covers that, which is what makes a car built from the three read back AS those three
+-- (checked across all 1001 values of each, `GarageTests`).
+local SEARCH_STEPS = 15
+function Garage.statFit(statId: string, values: { [string]: number }): (number?, boolean)
+	local stat = Garage.stat(statId)
+	if not stat or type(values) ~= "table" then
+		return nil, false
+	end
+
+	local function errorAt(s: number): (number, boolean)
+		local err, exact = 0, true
+		for _, sliderId in stat.keys do
+			local actual = Garage.clamp(sliderId, values[sliderId])
+			local produced = Garage.statValue(sliderId, s)
+			if actual == nil or produced == nil then
+				continue
+			end
+			if produced ~= actual then
+				exact = false
+			end
+			local d = (Garage.statPosition(sliderId, produced) or 0) - (Garage.statPosition(sliderId, actual) or 0)
+			err += d * d
+		end
+		return err, exact
+	end
+
+	local sum, n = 0, 0
+	for _, sliderId in stat.keys do
+		local p = Garage.statPosition(sliderId, Garage.clamp(sliderId, values[sliderId]) or 0)
+		if p ~= nil then
+			sum += p
+			n += 1
+		end
+	end
+	if n == 0 then
+		return nil, false
+	end
+
+	-- The mean is the least-squares answer in stat units, and the SEARCH ORIGIN. Note the
+	-- window is measured from `mean` and never from `best`: walking the window out from a
+	-- moving best shifts it as it goes and can step straight over the one value that is
+	-- exact, which is a bug this had and a check caught (handling 0.87 came back as 0.86,
+	-- `custom`, on a car built from the three).
+	local mean = Garage.clampStat(sum / n) :: number
+	local best = mean
+	local bestErr, bestExact = errorAt(best)
+	for d = -SEARCH_STEPS, SEARCH_STEPS do
+		if d ~= 0 then
+			local s = Garage.clampStat(mean + d * Garage.StatRange.step)
+			if s ~= nil then
+				local err, exact = errorAt(s)
+				if (exact and not bestExact) or (exact == bestExact and err < bestErr - 1e-12) then
+					best, bestErr, bestExact = s, err, exact
+				end
+			end
+		end
+	end
+	return best, bestExact
+end
+
+-- All three for a car, as the panel draws them: where each knob sits, and whether that
+-- number IS the car or only the nearest point on the curve to it.
+function Garage.statsFor(base: string?, tune: { [string]: number }?): { [string]: { value: number, exact: boolean } }
+	local values = Garage.values(base, tune)
+	local out = {}
+	for _, stat in Garage.Stats do
+		local value, exact = Garage.statFit(stat.id, values)
+		if value ~= nil then
+			out[stat.id] = { value = value, exact = exact }
+		end
+	end
+	return out
+end
+
 -- ---------------------------------------------------------------------- a saved car
 
 -- A name, trimmed and bounded. Returns nil for anything that is not a name: the client
