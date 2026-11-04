@@ -94,18 +94,29 @@ return {
 	-- instead, because the car was 25 studs/s faster and the box is swept a step's TRAVEL
 	-- further forward as well.)
 	--
-	-- 8 AND NOT 10, for two reasons. The margin: at 10 the car is a degree and a half from
-	-- a dead stop, and anything that makes it faster -- a descent before the climb -- eats
-	-- that. And the drive below, which says 8 is already more than the car wants.
+	-- THAT HAS BEEN FIXED (T-073). The sweep box is posed on the surface under the car
+	-- now, so the nose no longer digs into the hill it is climbing, and the whole table
+	-- above belongs to history. Re-measured the same way with the tilted box:
+	--
+	--   grade    what happened
+	--    12 deg   climbs freely, out at 123 studs/s   (used to STOP DEAD)
+	--    20       climbs freely, out at 93
+	--    24       climbs freely, out at 74
+	--    25       stops -- and ONE touching step, against the audit's zero
+	--
+	-- So the binding limit is no longer the collision box at all: it is THE CAR'S POWER.
+	-- It climbs 24 degrees and cannot climb 25, and that is gravity against the drivetrain,
+	-- not a wall. An exhaustive audit -- the car placed at 25 points on every slab of a
+	-- generated road, five headings each, about 16 000 sweeps a row -- read road as a wall
+	-- ZERO times at every grade from 8 to 35. The flat box read 267 to 2 750 a row.
+	--
+	-- 20 AND NOT 24, for the margin: 24 is the last grade that works and leaves nothing,
+	-- and a descent before a climb arrives faster than the test's 90 studs/s.
 	--
 	-- A DESCENT IS NOT LIMITED BY THIS directly: the ground falls away in front of the car
 	-- and nothing is swept into. The limit is symmetric anyway, because a car that spins
-	-- on a 14-degree descent is then facing up it and can never drive out -- which is how
-	-- this was found.
-	--
-	-- TO GO STEEPER, PITCH THE SWEEP BOX with the surface in `Drift/World`, which is the
-	-- one change that would lift this. It is a change to the drift model's collision and
-	-- wants its own task and its own measurement.
+	-- on a steep descent is then facing up it and can never drive out -- which is how the
+	-- original 8 was found.
 	--
 	-- AND A WARNING FOR WHOEVER BUILDS THE PIECES THAT USE THIS. 8 degrees is what the car
 	-- can be driven ON; it is not what a road should be made of. A road of nothing but
@@ -123,8 +134,15 @@ return {
 	-- the test driver's aim was tuned on a flat road, so it runs wide and grinds along the
 	-- outside wall. That is the feature working and the driver not keeping up. Build a
 	-- touge out of 4-degree descents and level links before reaching for 8.
-	MaxGrade = 8, -- degrees of climb or descent, anywhere on any piece. A 220-stud
-	-- straight at this grade loses 31 studs
+	--
+	-- THAT WARNING STANDS, AND 20 MAKES IT LOUDER. This is a safety lid -- the steepest
+	-- road the car can physically be on -- and not a number any piece should go near. The
+	-- drivable range is still the single digits: a fall test drive down an ordinary
+	-- descent touched 245 studs/s against the flat road's 106 (T-067), which is well past
+	-- what anyone can place a drift at. Whoever builds the touge pieces picks real grades
+	-- from driving, and they will be nearer 4 than 20.
+	MaxGrade = 20, -- degrees of climb or descent, anywhere on any piece. A SAFETY LID, not
+	-- a target: see the warning above. A 220-stud straight at this grade loses 75 studs
 	-- THE SAME THING IN THE OTHER AXIS, AND THE SPEC'S 30 BECOMES 20. The collision box is
 	-- never ROLLED either, so on a bank its uphill side digs in: half the car's width is
 	-- 3.2 studs, the clearance is the same 1.44, and atan(1.44 / 3.2) is 24 degrees. Above
@@ -144,12 +162,23 @@ return {
 	--   30              17                  8           5.19            12/12, 12/12
 	--
 	-- Zero up to 20, one at 25, seventeen at 30 -- which brackets the 24 degrees the
-	-- geometry predicts, so the explanation is the right one. 20 is the last row that is
-	-- clean, and it is a real loss: `features/road-elevation.md`'s showcase piece is "a
-	-- 30-degree turn with big banking", and 20 degrees of bank is noticeably less bank.
-	-- IT IS THE SAME ONE FIX as the grade: roll and pitch the sweep box with the surface
-	-- in `Drift/World`, measure it, and both of these limits move at once.
-	MaxBank = 20, -- degrees across the road
+	-- geometry predicts, so the explanation was the right one.
+	--
+	-- AND THAT IS ALSO FIXED (T-073), by the same one change: the box is rolled onto the
+	-- surface as well as pitched. Re-measured, two seeds of a 12-piece road of banked
+	-- corners, with every sweep that stopped the car traced to the part that stopped it:
+	--
+	--   bank    before (flat box)              after (tilted box)
+	--   20 deg   5/12 and 4/12 pieces,          12/12 and 12/12, 0 road walls, 0.00 s
+	--            stopped 96 s and 110 s
+	--   30       3/12 both seeds, ~100 s        12/12 and 9/12, 0.63 s and 0.46 s slow
+	--
+	-- The exhaustive audit read road as a wall ZERO times at 20, 25 and 30 degrees of
+	-- bank, and 10 times in 19 390 sweeps at 35. So 30 is clean and 35 is not.
+	--
+	-- 30 IS THE SPEC'S SHOWCASE PIECE BACK: `features/road-elevation.md` asks for "a
+	-- 30-degree turn with big banking", which 20 could not give.
+	MaxBank = 30, -- degrees across the road
 	-- NOTHING MAY READ AS A WALL, and the two of them COMPOUND -- a banked descent is
 	-- steeper than either alone. The surface normal's Y is exactly cos(grade) x cos(bank),
 	-- so the pair is capped as well as each one separately: at 8 and 20 the product is
@@ -161,11 +190,13 @@ return {
 	-- which is 11 degrees and 0.12 of normal clear of that threshold -- room for the
 	-- rounding in a chord's own slope, and nowhere near enough to be felt.
 	--
-	-- It is a BACKSTOP and not a working limit: 8 degrees of grade and 20 of bank come to
-	-- 21.5 together, so nothing the two limits above allow can reach it. It is here so
-	-- that a piece written with both of them opened up still cannot make a wall -- and the
-	-- day the sweep box is pitched and rolled with the surface, those two limits are what
-	-- will move and this is what will still be holding the line.
+	-- IT IS NO LONGER A BACKSTOP: IT IS THE THING ACTUALLY HOLDING THE LINE (T-073). It
+	-- was written when 8 and 20 came to 21.5 together and nothing could reach 35. Now 20
+	-- of grade and 30 of bank come to 35.5, so at both maxima at once this lid bites and
+	-- trims the bank back to 29.4 degrees. That is the right behaviour and it is why this
+	-- number is not being raised with the other two: the audit found road reading as a
+	-- wall 10 times in 19 390 sweeps at 35 degrees of bank, so 35 is where the evidence
+	-- runs out.
 	MaxSurfaceTilt = 35, -- degrees the surface may lean, grade and bank together
 	-- HOW MUCH EITHER MAY CHANGE IN ONE SEGMENT, which is `MaxSegmentChord` and
 	-- `MaxArcDeviation`'s idea in the other two axes: a segment is one flat box, so a
