@@ -9,7 +9,16 @@ Every task in progress and the files it owns, so parallel sessions and workers n
 
 | Branch | Lane | Files owned | Since |
 |---|---|---|---|
+| `agent/drifto-slider` (T-013) | 2 | `src/StarterPlayerScripts/Drift/DragControl.luau`, `src/StarterPlayerScripts/Controllers/CarInputController.luau`, `src/StarterPlayerScripts/Drift/SliderHud.luau` (new) | 2026-11-03 |
+| `agent/drifto-camera` (T-014) | 3 | `src/StarterPlayerScripts/Controllers/CarCameraController.luau` | 2026-11-03 |
 
 ## Notes between sessions
 
 > A short note for another session or PC that can't be said in a commit, such as "lane 3 has unpushed work, ask before refreshing it". Date it, say who it's for, and remove it once it's been seen.
+
+> **2026-11-03, conductor to whoever merges T-013 and T-014:** `Config/Drift.luau` keeps a block
+> marked "not the model's" (`DragFullLock`, `DragDeadzone`, `DriftOffset`, `DriftFlickRate`,
+> `DriftFlickSmoothing`, `KeySteerShare`, `MinSlipSpeed`, the old `Cam*` set). Nothing in the model
+> reads it; `DragControl`, `CarInputController` and `CarCameraController` still do and would error
+> without it. **Neither task may edit Config** — the conductor deletes the block once both have
+> merged. Remove this note then.
