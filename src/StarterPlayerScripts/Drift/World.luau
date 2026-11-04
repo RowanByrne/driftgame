@@ -28,6 +28,17 @@
 -- far the car's own box may travel, which is not where the surface is -- and
 -- `penetration` is there to put the car back out when something else has got it in: its
 -- own rotation against a wall, a cone rolling into it, a respawn on top of something.
+--
+-- And a sweep ALONE is not enough, which is the second thing to know (T-026): a Blockcast
+-- only reaches as far as the car travels in that step, so a car crawling at a stud a
+-- second closes a standoff without ever reporting a hit, and the moment it touches it is
+-- blind. `penetration` is what holds the line at a walking pace.
+--
+-- NEITHER QUESTION TREATS THE ROAD AS SPECIAL. A ramp is 14 studs thick and the banked
+-- circle's rim stands 8 studs out of the plate; those are walls, and leaving the road out
+-- of both queries left them with no sides at all. What sorts ground from wall here is the
+-- geometry -- a surface's normal for the sweep, a floor's top face for the overlap --
+-- never whether the part is tagged.
 
 local CollectionService = game:GetService("CollectionService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -40,9 +51,28 @@ local World = {}
 local EPSILON = 1e-4
 
 -- A surface facing this far up or down is ground, not a wall: the ground rays own it.
--- Only a fallback now -- in a world that tags its road, the road is filtered out of the
--- sweep entirely -- but it is what keeps an untagged world drivable.
+-- Anything steeper than about 46 degrees is a wall, whether or not it is road -- the
+-- banked circle's rim and the ramp's flanks are road, and they stand 8 and 9 studs out of
+-- the plate (T-026).
 local GROUND_NORMAL_Y = 0.7
+
+-- How many surfaces one sweep may look PAST before it gives up. A Blockcast reports only
+-- its nearest hit, so the road under the car can hide the wall beyond it for that whole
+-- step; rather than throw the road out of the cast -- which is what used to happen, and
+-- which left every drivable part without sides -- each ground-facing hit is dropped from
+-- the cast and the cast is made again. Four is the road, a kerb, a slope and one spare:
+-- nothing in a step at top speed needs a fifth.
+local MAX_SWEEP_LOOKS = 4
+
+-- The same for a ground ray, and for the same reason. A ribbon's end face leans back
+-- under its own lip, so a wheel a hand's breadth past the end of the ramp finds that face
+-- rather than the plate, and its normal -- 80 degrees off level -- poisons the average of
+-- the four. Measured, that threw the car DOWN at 97 studs/s off the top of the ramp
+-- (T-026). Each such hit is stepped past and the ray carries on down.
+local MAX_PROBE_LOOKS = 3
+
+-- How far below a face the ray restarts. Small enough never to skip a real floor under it.
+local PROBE_STEP_DOWN = 0.05
 
 -- The car's footprint is GROWN by this much on each side before anything is asked whether
 -- the car is inside something, so what `penetration` actually keeps is a hair of clear
@@ -174,6 +204,16 @@ local function footprint(part: BasePart): Footprint
 	return base
 end
 
+-- Where the top face of a box-shaped floor is, at one horizontal point: the height a car
+-- standing on it sits at. Extrapolated beyond the part's own edges, which is what makes it
+-- the right question to ask beside a part as well as on top of one.
+local function topOf(part: BasePart, at: Vector2): number
+	local cf = part.CFrame
+	local up = cf.UpVector
+	local c = cf.Position
+	return c.Y + (part.Size.Y * 0.5 - (at.X - c.X) * up.X - (at.Y - c.Z) * up.Z) / up.Y
+end
+
 -- The shortest shove that gets the car's footprint out of a circle, in world XZ.
 local function pushFromCircle(
 	centre: Vector2,
@@ -271,16 +311,18 @@ function World.live(ignore: { Instance }): Live
 	local function refresh()
 		local tagged = CollectionService:GetTagged(C.SurfaceTag)
 		self.surfaceCount = #tagged
-		-- Whatever the sweep must never see: the cars, and the road. The road is the
-		-- ground rays' business, and it has to be filtered out rather than thrown away on
-		-- its normal afterwards -- a Blockcast reports its NEAREST hit, so a ramp surface
-		-- under the car used to hide the building beyond it for that whole step.
-		local blind: { Instance } = table.clone(ignore)
+		-- The ONLY thing hidden from the sweep and the overlap is the cars themselves. The
+		-- road used to be hidden from both -- a Blockcast reports only its nearest hit, so
+		-- the road under the car hid the building beyond it -- and the price of that
+		-- blindness was that no drivable part had any sides at all: the car drove through
+		-- the circle's rim and the ramp's flanks and was thrown into the air by the ground
+		-- rays on the far side (T-026). The sweep looks past a ground-facing hit instead
+		-- (`MAX_SWEEP_LOOKS`); the overlap asks whether the car is above the floor it has
+		-- found (`topOf`) before it calls it something to be pushed out of.
 		if #tagged > 0 then
 			self.usingTag = true
 			groundParams.FilterType = Enum.RaycastFilterType.Include
 			groundParams.FilterDescendantsInstances = tagged
-			table.move(tagged, 1, #tagged, #blind + 1, blind)
 		else
 			-- Nothing is tagged yet: hit whatever is solid, minus the cars.
 			self.usingTag = false
@@ -288,9 +330,9 @@ function World.live(ignore: { Instance }): Live
 			groundParams.FilterDescendantsInstances = ignore
 		end
 		sweepParams.FilterType = Enum.RaycastFilterType.Exclude
-		sweepParams.FilterDescendantsInstances = blind
+		sweepParams.FilterDescendantsInstances = ignore
 		overlapParams.FilterType = Enum.RaycastFilterType.Exclude
-		overlapParams.FilterDescendantsInstances = blind
+		overlapParams.FilterDescendantsInstances = ignore
 	end
 
 	refresh()
@@ -319,12 +361,26 @@ function World.live(ignore: { Instance }): Live
 	end
 
 	function self.probe(pos: Vector3): Model.Hit?
-		local result = workspace:Raycast(pos + up, down, groundParams)
-		if not result then
-			return nil
+		local from = pos + up
+		local bottom = from.Y + down.Y
+		for _ = 1, MAX_PROBE_LOOKS do
+			local reach = from.Y - bottom
+			if reach <= EPSILON then
+				return nil
+			end
+			local result = workspace:Raycast(from, Vector3.yAxis * -reach, groundParams)
+			if not result then
+				return nil
+			end
+			if math.abs(result.Normal.Y) > GROUND_NORMAL_Y then
+				local grip, score = surfaceOf(result.Instance)
+				return { y = result.Position.Y, normal = result.Normal, grip = grip, score = score }
+			end
+			-- The SIDE of something, not a floor (`MAX_PROBE_LOOKS`): drop below it and keep
+			-- looking down for the floor it is standing on.
+			from = Vector3.new(from.X, result.Position.Y - PROBE_STEP_DOWN, from.Z)
 		end
-		local grip, score = surfaceOf(result.Instance)
-		return { y = result.Position.Y, normal = result.Normal, grip = grip, score = score }
+		return nil
 	end
 
 	-- WHERE THE CAR MAY GET TO, and the surface that stopped it -- not where the surface
@@ -333,6 +389,12 @@ function World.live(ignore: { Instance }): Live
 	-- and Blockcast stops reporting that wall at all. `Distance` is the honest number: how
 	-- far the car's own box may travel before it touches. We stop it `WallPush` short of
 	-- that, so the next step's cast starts with a gap and can still see the wall.
+	--
+	-- Every solid is cast against, the road included, and a hit is sorted by its NORMAL:
+	-- facing up or down it is ground and the ground rays own it, so it is dropped from the
+	-- cast and the cast is made again to see what is behind it. Facing sideways it is a
+	-- wall, and a wall made of road -- a rim, a ramp's flank -- is as solid as a building.
+	local sweepSkip: { Instance } = {}
 	function self.sweep(from: Vector3, to: Vector3, yaw: number): (Vector3?, Vector3?)
 		local delta = to - from
 		local flat = Vector3.new(delta.X, 0, delta.Z)
@@ -340,19 +402,27 @@ function World.live(ignore: { Instance }): Live
 		if travel < EPSILON then
 			return nil, nil
 		end
-		local result = workspace:Blockcast(CFrame.new(from) * CFrame.Angles(0, yaw, 0), carBox, flat, sweepParams)
-		if not result then
-			return nil, nil
+		local box = CFrame.new(from) * CFrame.Angles(0, yaw, 0)
+		table.clear(sweepSkip)
+		table.move(ignore, 1, #ignore, 1, sweepSkip)
+		for _ = 1, MAX_SWEEP_LOOKS do
+			sweepParams.FilterDescendantsInstances = sweepSkip
+			local result = workspace:Blockcast(box, carBox, flat, sweepParams)
+			if not result then
+				return nil, nil
+			end
+			if math.abs(result.Normal.Y) > GROUND_NORMAL_Y then
+				table.insert(sweepSkip, result.Instance) -- ground: look past it
+				continue
+			end
+			local n = Vector3.new(result.Normal.X, 0, result.Normal.Z)
+			if n.Magnitude < EPSILON then
+				return nil, nil
+			end
+			local allowed = math.max(result.Distance - C.WallPush, 0)
+			return from + (flat / travel) * allowed, n.Unit
 		end
-		if math.abs(result.Normal.Y) > GROUND_NORMAL_Y then
-			return nil, nil
-		end
-		local n = Vector3.new(result.Normal.X, 0, result.Normal.Z)
-		if n.Magnitude < EPSILON then
-			return nil, nil
-		end
-		local allowed = math.max(result.Distance - C.WallPush, 0)
-		return from + (flat / travel) * allowed, n.Unit
+		return nil, nil
 	end
 
 	-- IS THE CAR INSIDE SOMETHING, AND WHICH WAY IS OUT. The sweep keeps the car out of
@@ -386,6 +456,17 @@ function World.live(ignore: { Instance }): Live
 			local shape = footprint(part)
 			if shape.high <= low or shape.low >= high then
 				continue -- the car is over it or under it, not in it
+			end
+			-- A FLOOR the car's underside is above is something it is standing on, not
+			-- something it is inside, and the flat shapes above cannot tell the two apart:
+			-- a banked band's box reaches as high as its outer edge all the way across, and
+			-- the shortest way out of it is sideways off the road. Its SIDES are still
+			-- solid -- below the top face this test does not fire -- and so are a
+			-- building's, while a car that lands on a building's roof is left on the roof
+			-- instead of being thrown half the building's width sideways in one step.
+			local up = part.CFrame.UpVector
+			if up.Y > GROUND_NORMAL_Y and low >= topOf(part, centre) - EPSILON then
+				continue
 			end
 			local dir, depth
 			if shape.circle then

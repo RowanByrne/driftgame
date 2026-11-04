@@ -48,6 +48,11 @@ local EPS = 1e-4
 -- nothing the car can reach in 1/120 s needs a third.
 local MAX_SLIDES = 3
 
+-- A surface facing this far up is ground the car can be carried along by. Steeper than
+-- that and a ground ray has found the side of something, which the car is never carried
+-- up: Drift/World calls anything steeper a wall and stops the car against it.
+local GROUND_NORMAL_Y = 0.7
+
 export type Input = {
 	-- NOT a steering wheel and NOT a weight to throw: this is the car's rate of turn, as a
 	-- share of `MaxSteeringSpeed` (features/drift-model.md "Steering -- the control").
@@ -382,35 +387,75 @@ function Model.step(s: State, input: Input, dt: number, world: World): State
 	-- road is half the grip, and a wheel over nothing counts as nothing.
 	local halfBase = C.Wheelbase * 0.5
 	local halfTrack = C.TrackWidth * 0.5
-	local hits = 0
 	local sumY, sumGrip, sumScore = 0, 0, 0
 	local normal = Vector3.zero
 	local found: { boolean } = table.create(#WHEELS, false)
+	local wheelHits: { Hit? } = table.create(#WHEELS, nil)
+	local highest = -math.huge
 	for i, wheel in WHEELS do
 		local at = target + fwd * (halfBase * wheel.front) + right * (halfTrack * wheel.side)
 		local hit = world.probe(at)
 		if hit then
 			found[i] = true
-			hits += 1
-			sumY += hit.y
+			wheelHits[i] = hit
+			highest = math.max(highest, hit.y)
 			sumGrip += hit.grip
 			sumScore += hit.score
+		end
+	end
+
+	-- The car's HEIGHT and TILT come only from the wheels that are carrying it. A wheel
+	-- whose ground is more than a ride height below the highest is hanging over a drop --
+	-- it is lower than the car's own floor, so it cannot be holding the car up -- and
+	-- averaging it in dropped the body into the edge the other wheels were still on:
+	-- measured, four tenths of a stud of the car inside the ramp when it ran off the side
+	-- of it (T-026). Grip and score still count all four, so what a slide does at an edge
+	-- is unchanged.
+	--
+	-- On any surface the car can actually drive, all four are within this of each other:
+	-- the ramp at its steepest spreads them 1.8 studs, the banked circle 0.8.
+	local carrying = 0
+	for i = 1, #WHEELS do
+		local hit = wheelHits[i]
+		if hit and highest - hit.y <= C.RideHeight then
+			carrying += 1
+			sumY += hit.y
 			normal += hit.normal
 		end
 	end
 
-	local groundY: number? = if hits > 0 then sumY / hits else nil
+	local groundY: number? = if carrying > 0 then sumY / carrying else nil
 	normal = if normal.Magnitude > EPS then normal.Unit else Vector3.yAxis
 	s.groundY = groundY
 
 	local follow = 1 - math.exp(-dt / math.max(C.GroundFollow, EPS))
 	if groundY and target.Y - (groundY + C.RideHeight) <= C.AirborneMargin then
 		s.airborne = false
-		local newY = lerp(target.Y, groundY + C.RideHeight, follow)
-		-- The vertical speed comes from the ground itself, so cresting a ramp launches the
-		-- car rather than pinning it to the far side.
-		vel = Vector3.new(vel.X, clamp((newY - s.position.Y) / dt, -C.TopSpeed, C.TopSpeed), vel.Z)
-		target = Vector3.new(target.X, newY, target.Z)
+		-- The height eases on to the surface, and that easing is ALL it does. The car's
+		-- vertical speed is the speed the SURFACE is climbing under it -- the velocity's
+		-- own component in the plane of the ground -- so cresting a ramp still launches the
+		-- car, at exactly the angle the ramp left it at, and nothing else can.
+		--
+		-- It used to be `(newY - position.Y) / dt`, the suspension catching up, and that
+		-- made the follow an UNDAMPED SPRING: a step in the ground became a vertical speed
+		-- of `follow / dt` -- 8 per second -- times the error, with the old `vel.Y` still in
+		-- it. Two things fell out of that, and both are what the user drove into (T-026):
+		-- every landing rang at 5 Hz for about a second, and any kerb the rays found above
+		-- the car threw it. Measured, the banked circle's 8.35-stud rim took the car from 0
+		-- to 141 studs/s upward in two steps and 144 studs into the air.
+		target = Vector3.new(target.X, lerp(target.Y, groundY + C.RideHeight, follow), target.Z)
+		--
+		-- Bounded twice, and both bounds are the same statement: a car cannot climb faster
+		-- than it is travelling. A ray that comes back with a near-horizontal normal has
+		-- found a FACE, not a floor -- the half-stud slot the two rings of the bowl used to
+		-- leave between them had one, and `-(n.xz . v) / n.y` through it is nine times the
+		-- car's speed, straight up.
+		local flatSpeed = math.sqrt(vel.X * vel.X + vel.Z * vel.Z)
+		local climb = 0
+		if normal.Y > GROUND_NORMAL_Y then
+			climb = clamp(-(normal.X * vel.X + normal.Z * vel.Z) / normal.Y, -flatSpeed, flatSpeed)
+		end
+		vel = Vector3.new(vel.X, clamp(climb, -C.TopSpeed, C.TopSpeed), vel.Z)
 		s.up = s.up:Lerp(normal, follow)
 	else
 		s.airborne = true
