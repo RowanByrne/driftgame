@@ -115,7 +115,7 @@ The gallery sits past the playground's plate -- 527 studs clear of it -- in a gr
 Three things to know:
 
 - **Save the place (Ctrl+S) or it is gone.** The showroom is ordinary instances in the Workspace, not something a script rebuilds on open.
-- **Clear it before a playtest.** At runtime `PlaygroundService` builds its own playground at the same coordinates, into `Workspace.Playground`, and has no way to know the showroom is there: a playtest with it saved in the place gets two playgrounds in one space. `clear()` first, `build()` again afterwards.
+- **A playtest takes it down by itself, and leaves it alone.** `PlaygroundService:Build()` destroys `Workspace.Showroom` before it lays its own playground, because the two sit at the same coordinates and two playgrounds in one space is a place nobody can drive in. A playtest runs on a copy of the datamodel, so nothing that is saved is touched: stop the playtest and the showroom is still there to fly around. You do not have to clear it by hand.
 - **It borrows the place's baseplate.** The playground's own 2 000-stud plate is coplanar with Studio's default `Baseplate`, so `Build()` destroys it exactly as the game does. The showroom records its size, position, colour and material first, and `clear()` puts it back.
 
 ## Versions

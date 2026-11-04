@@ -24,11 +24,12 @@
 -- THE PLACE MUST BE SAVED for the showroom to still be there next time Studio opens it
 -- (Ctrl+S). It is ordinary instances in the Workspace, not something a script rebuilds.
 --
--- AND IT MUST BE CLEARED BEFORE A PLAYTEST. At runtime `PlaygroundService` builds its own
--- playground at the same world coordinates, into `Workspace.Playground`; it has no way to
--- know about `Workspace.Showroom`, so a playtest with the showroom saved in the place gets
--- two playgrounds in the same space -- doubled geometry, doubled cones, and a second
--- spawn pad. Run `clear()` before pressing Play, and `build()` again afterwards.
+-- A PLAYTEST TAKES IT DOWN BY ITSELF, AND LEAVES IT ALONE. `PlaygroundService:Build()`
+-- destroys `Workspace.Showroom` before laying its own playground, because the two sit at
+-- the same world coordinates and two playgrounds in one space is doubled geometry,
+-- doubled cones and a second spawn pad. Play runs on a COPY of the datamodel, so nothing
+-- saved is touched: stop the playtest and the showroom is still there. Nothing to clear
+-- by hand, and nothing to rebuild afterwards.
 --
 --------------------------------------------------------------------------------
 -- How it gets the playground in edit mode
@@ -491,7 +492,7 @@ function Showroom.build()
 	print(
 		`Showroom: built {report.playgroundParts} playground parts and {#report.pieces} road pieces `
 			.. `({report.galleryParts} parts) in a {grid.columns}x{grid.rows} grid of {math.round(grid.cell)}-stud cells. `
-			.. `Save the place (Ctrl+S) to keep it; clear() it before a playtest.`
+			.. `Save the place (Ctrl+S) to keep it. A playtest takes it down by itself and leaves the saved one alone.`
 	)
 	for _, p in report.pieces do
 		print(`  {p.id}: {p.parts} parts, {p.sizeX} x {p.sizeZ} studs`)

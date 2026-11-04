@@ -485,6 +485,17 @@ function PlaygroundService:Build()
 		existing:Destroy()
 	end
 
+	-- A place that has the showroom saved in it (Tools/Showroom, T-059) carries a second
+	-- copy of this world, at these same coordinates, built in edit mode so the user can
+	-- fly around it. It is scenery, it is not tagged the way a live world is, and two
+	-- playgrounds in one space is a place nobody can drive in -- so a playtest takes it
+	-- down. Play runs on a COPY of the datamodel, so this never touches what is saved:
+	-- stop the playtest and the showroom is still there to look at.
+	local showroom = workspace:FindFirstChild("Showroom")
+	if showroom then
+		showroom:Destroy()
+	end
+
 	table.clear(features)
 	table.clear(cones)
 	partCount = 0
