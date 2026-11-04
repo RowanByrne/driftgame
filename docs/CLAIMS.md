@@ -9,11 +9,8 @@ Every task in progress and the files it owns, so parallel sessions and workers n
 
 | Branch | Lane | Files owned | Since |
 |---|---|---|---|
-| `agent/drifto-camera` (T-014) | 3 | `src/StarterPlayerScripts/Controllers/CarCameraController.luau`, `src/ReplicatedStorage/Shared/Config/Drift.luau` (the `camera` section only) | 2026-11-03 |
 | `agent/wall-collisions` (T-018) | 1 | `src/StarterPlayerScripts/Drift/Model.luau`, `src/StarterPlayerScripts/Drift/World.luau`, `src/ServerScriptService/Tests/CollisionTests.luau` (new) | 2026-11-03 |
 | `agent/ae86-car` (T-020) | 2 | `src/ReplicatedStorage/Shared/CarModel.luau`, `src/StarterPlayerScripts/Drift/Render.luau`, `src/ServerScriptService/Tests/DriftTests.luau`, `assets/*` | 2026-11-03 |
-| `agent/hide-the-math` (T-019) | 4 | `src/StarterPlayerScripts/Drift/DebugHud.luau`, `src/StarterPlayerScripts/Drift/SliderHud.luau` | 2026-11-03 |
-| conductor, in `repo\` (T-016) | — | `src/StarterPlayerScripts/Controllers/DriftController.luau` | 2026-11-03 |
 
 ## Notes between sessions
 

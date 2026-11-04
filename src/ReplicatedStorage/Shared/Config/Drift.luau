@@ -263,5 +263,8 @@ return {
 	-- ---------------------------------------------------------------- the prototype's UI
 	HideCharacter = true, -- the player is the car: no Roblox character is spawned
 	DebugReadout = true, -- build the debug readout at all
-	DebugReadoutOpen = true, -- show it from the start
+	DebugReadoutOpen = false, -- but CLOSED from the start: the numbers are a measuring
+	-- instrument, not part of the game, and the user driving
+	-- for feel should see the car and the slider and nothing
+	-- else. F3, DPad up or the DBG button brings them back
 }
