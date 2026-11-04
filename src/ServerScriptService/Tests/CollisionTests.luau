@@ -225,7 +225,7 @@ local function atWall(world, speed: number, angleDeg: number, noseOffset: number
 	})
 end
 
-function CollisionTests.run(driftFolder: Instance?)
+function CollisionTests:run(driftFolder: Instance?)
 	load(driftFolder)
 	local checks = {}
 	local rig = build()
@@ -457,7 +457,7 @@ end
 
 -- The ram, step by step, for a report: every position through the wall rather than the
 -- verdict. `angle` is degrees off square, `speed` studs/s.
-function CollisionTests.trace(speed: number?, driftFolder: Instance?)
+function CollisionTests:trace(speed: number?, driftFolder: Instance?)
 	load(driftFolder)
 	local rig = build()
 	local world = World.live({})
