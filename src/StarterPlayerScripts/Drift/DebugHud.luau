@@ -8,6 +8,11 @@
 -- finger is setting, the lateral pull the grip is actually making against its ceiling,
 -- the throttle easing itself in, which wheels are down and on what, and the simulation
 -- step the frame really spent. Toggled by F3, gamepad DPad up, or the DBG button on touch.
+--
+-- It is off while anyone is driving: the readout is a measuring instrument, not part of
+-- the game, and a wall of numbers over the car is the one thing a feel test cannot
+-- afford. Whether it opens at spawn is `Config.Drift.DebugReadoutOpen`, which should be
+-- false; this file only obeys it, and the toggle brings it back whole.
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -17,6 +22,13 @@ local DriftModel = require(script.Parent.Model)
 
 local DebugHud = {}
 DebugHud.__index = DebugHud
+
+-- Art, not tuning. The rows are monospace, so the widest one sets the width: the grip row
+-- measured 592 px at text size 17, inside a 540 px panel, so it was running out of its own
+-- panel. 592 * 14 / 17 = 488, plus 20 px of padding.
+local TEXT_SIZE = 14
+local ROW_HEIGHT = 17
+local PANEL_WIDTH = 508
 
 local ROWS = {
 	"speed",
@@ -46,9 +58,9 @@ function DebugHud.new()
 	panel.BackgroundTransparency = 0.25 -- text over moving gameplay needs a real backing
 	panel.BorderSizePixel = 0
 	panel.Position = UDim2.fromOffset(12, 12)
-	-- Wide enough for the longest row, which is the slip one: a panel its text runs out of
-	-- is a readout nobody trusts.
-	panel.Size = UDim2.fromOffset(560, 8 + #ROWS * 22 + 8)
+	-- Wide enough for the longest row: a readout whose text is clipped is one nobody
+	-- trusts, and small, because when it is open it is sitting over the car.
+	panel.Size = UDim2.fromOffset(PANEL_WIDTH, 8 + #ROWS * (ROW_HEIGHT + 2) + 8)
 	panel.Parent = gui
 
 	local layout = Instance.new("UIListLayout")
@@ -67,11 +79,11 @@ function DebugHud.new()
 		local label = Instance.new("TextLabel")
 		label.Name = key
 		label.BackgroundTransparency = 1
-		label.Size = UDim2.new(1, 0, 0, 20)
+		label.Size = UDim2.new(1, 0, 0, ROW_HEIGHT)
 		label.LayoutOrder = i
 		label.TextXAlignment = Enum.TextXAlignment.Left
 		label.TextColor3 = Color3.fromRGB(235, 238, 245)
-		label.TextSize = 17
+		label.TextSize = TEXT_SIZE
 		label.FontFace = Font.fromEnum(Enum.Font.Code)
 		label.Text = ""
 		label.Parent = panel
