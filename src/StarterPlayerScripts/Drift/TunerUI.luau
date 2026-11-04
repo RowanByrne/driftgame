@@ -55,6 +55,12 @@ local playerGui = player:WaitForChild("PlayerGui")
 -- ---------------------------------------------------------------------- the look
 -- Flat, dark, two greys and one accent, matched to the debug readout so the two panels
 -- read as the same tool. Nothing here survives the UI phase.
+--
+-- Measured against the panel (WCAG relative-luminance contrast, text on BG, and on the
+-- worst case the panel can reach where a white sky shows through its 8%): TEXT 15.5 /
+-- 12.6, DIM 6.6 / 5.4, FILL 5.2 / 4.2, GOOD 10.9 / 8.9, BAD 7.7 / 6.2. All of them clear
+-- 4.5:1, so the quiet grey is quiet and still readable rather than one shade off the
+-- background. Keep any new colour above 4.5:1 on BG.
 local BG = Color3.fromRGB(18, 20, 26)
 local PANEL = Color3.fromRGB(28, 31, 39)
 local TRACK = Color3.fromRGB(44, 48, 60)
@@ -178,6 +184,19 @@ local gui = Instance.new("ScreenGui")
 gui.Name = "DriftTuner"
 gui.ResetOnSpawn = false
 gui.IgnoreGuiInset = true
+-- WHY THE TEXT WAS UNREADABLE. `Instance.new("ScreenGui")` still defaults to the legacy
+-- `Global` ZIndexBehavior, where a child does NOT automatically draw above its parent:
+-- every ZIndex in the whole tree is compared against every other. The panel is ZIndex 2
+-- and 8% transparent; every TextLabel here is the default ZIndex 1 -- so the panel's own
+-- dark background was composited OVER all of it, and near-white text came out at 8%
+-- strength: (235,235,240) drawn as (35,37,43) on a (18,20,26) panel, a contrast ratio of
+-- 1.20:1. Invisible. Only the things given ZIndex 3+ by hand -- the buttons, the slider
+-- fills, the notch -- were above the panel, which is why those alone read fine.
+-- `Sibling` is what the rest of this file already assumes: a child is always above its
+-- parent, and ZIndex only orders things against their own siblings. Every hand-set
+-- ZIndex here is already consistent with that, so nothing moves; the text just stops
+-- being painted over. The palette below is unchanged and was never the problem.
+gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 -- ABOVE THE DRAG PAD (`DriftControls`, DisplayOrder 5). This one number is what makes a
 -- thumb on a slider a slider and not a steering input.
 gui.DisplayOrder = 20
