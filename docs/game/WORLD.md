@@ -110,7 +110,9 @@ What it leaves behind, all of it under one folder and all of it anchored:
 | `Playground` | exactly what `PlaygroundService:Build()` makes, where it makes it: 325 parts |
 | `Gallery` | one of every variant in `Pieces.order()`, in a grid: 9 pieces, 634 parts |
 
-The gallery sits past the playground's plate -- 527 studs clear of it -- in a grid of cells as wide as the widest piece plus a gap, so no two pieces are closer than 317 studs and the whole layout re-measures itself when the piece set changes. Each piece has its variant id on a sign lying flat in front of it, in 90-stud letters, and on a billboard above it. `build()` is `clear()` followed by a fresh build, so seeing a code change is one line and there is never a second showroom.
+The gallery sits past the playground's plate -- 527 studs clear of it -- in a grid of cells as wide as the widest piece plus a gap, so no two pieces are closer than 317 studs and the whole layout re-measures itself when the piece set changes. `build()` is `clear()` followed by a fresh build, so seeing a code change is one line and there is never a second showroom.
+
+**The labels are two, and they take turns.** Each piece has its variant id on a sign lying flat in front of it, in 90-stud letters, and on a small billboard 26 studs above it. The sign is the one that reads from the air; the billboard is only for when the camera is down among the pieces, where a sign lying on the ground is edge-on. Both are sized in **studs**, so both shrink with distance like the thing they name, and the billboard stops drawing past 420 studs so a pulled-back view has none of them in it at all. Measured at camera heights of 300, 800 and 1 500 studs over the grid: no two labels overlap on screen at any of them, no billboard draws at any of them, and the signs read between 5 and 47 pixels tall. The first version sized the billboard in *pixels*, which does not shrink with distance: nine labels 110 pixels tall, a sixth of the screen each, overlapping in 27 to 36 of the 36 pairs and hiding every piece.
 
 Three things to know:
 
