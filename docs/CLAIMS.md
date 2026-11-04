@@ -9,6 +9,8 @@ Every task in progress and the files it owns, so parallel sessions and workers n
 
 | Branch | Lane | Files owned | Since |
 |---|---|---|---|
+| `agent/car-tuner` (T-040) | 2 | `src/StarterPlayerScripts/Drift/TunerUI.luau` (new), `src/ReplicatedStorage/Shared/Cars/init.luau`, `src/ReplicatedStorage/Shared/Cars/Garage.luau` (new), `src/ServerScriptService/Services/GarageService.luau` (new), `src/ReplicatedStorage/Shared/Config/Drift.luau`, `src/ServerScriptService/Tests/GarageTests.luau` (new), `docs/game/features/car-tuner.md` (new) | 2026-11-04 |
+| `agent/brake-toggle` (T-041) | 3 | `src/StarterPlayerScripts/Drift/DragControl.luau`, `src/StarterPlayerScripts/Controllers/CarInputController.luau` | 2026-11-04 |
 
 ## Notes between sessions
 
