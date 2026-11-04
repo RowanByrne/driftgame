@@ -615,16 +615,21 @@ function DriftTests.run()
 		`gap in studs at each corner, road at y = 0: {table.concat(gaps, ", ")}`
 	)
 
-	-- The wheels turn, and only the front pair points anywhere.
+	-- The wheels turn, and only the front pair points anywhere. Read back off the shell
+	-- parts themselves, not off anything the placement was told.
+	local byName = {}
+	for _, wheel in rig.wheels do
+		byName[wheel.part.Name] = wheel
+	end
 	local steerRead, spinRead = {}, {}
 	local steerOk, steerSeen = true, 0
 	for _, angle in { -25, 0, 25 } do
 		Render.place(rig, onRoad, math.rad(angle), 0, 0)
 		local reads = {}
 		for _, name in CarModel.WHEEL_NAMES do
-			local group = shell and shell:FindFirstChild(name)
-			if group then
-				local _, yaw = onRoad:ToObjectSpace(group:GetPivot()):ToOrientation()
+			local frame = byName[name] and Render.shellFrame(byName[name].shell)
+			if frame then
+				local _, yaw = onRoad:ToObjectSpace(frame):ToOrientation()
 				local want = if CarModel.isFrontWheel(name) then angle else 0
 				steerOk = steerOk and math.abs(math.deg(yaw) - want) < 0.1
 				steerSeen += 1
@@ -645,9 +650,9 @@ function DriftTests.run()
 	local spinOk, spinSeen = true, 0
 	for _, spin in { 0, 45, 85 } do
 		Render.place(rig, onRoad, 0, math.rad(spin), 0)
-		local group = shell and shell:FindFirstChild("WheelRL")
-		if group then
-			local pitch = select(1, onRoad:ToObjectSpace(group:GetPivot()):ToOrientation())
+		local frame = byName.WheelRL and Render.shellFrame(byName.WheelRL.shell)
+		if frame then
+			local pitch = select(1, onRoad:ToObjectSpace(frame):ToOrientation())
 			spinOk = spinOk and math.abs(math.deg(pitch) - spin) < 0.1
 			spinSeen += 1
 			table.insert(spinRead, string.format("spin %+d deg -> RL reads %+.1f", spin, math.deg(pitch)))

@@ -145,19 +145,44 @@ local function toCFrame(d, scale: number): CFrame
 	return CFrame.new(p[1] * scale, p[2] * scale, p[3] * scale)
 end
 
+-- A SurfaceAppearance's maps can only be written by a plugin ("lacking capability
+-- Plugin"), so a running game cannot make one -- and this car has 33. What it CAN write is
+-- a MeshPart's `TextureID`, and a colour map is exactly that: the albedo, in the mesh's own
+-- UVs. So the colour map becomes the texture and the normal, metalness and roughness maps
+-- are dropped. The car keeps its paint and its markings and loses its PBR shading, which on
+-- a placeholder is nothing. (The alternative is shipping 33 SurfaceAppearance instances in
+-- an .rbxmx for Lync to sync and cloning those; it is worth it only if the user wants the
+-- extra depth -- see the report.)
+-- Asset ids the car carries that Roblox will not serve us: "Asset is not approved for the
+-- requester", once per part per join. They are left in `Shared/Cars/AE86` because that
+-- file is the record of what the model actually had; they are skipped here because the
+-- part looks the same without them and the console should not.
+--   1539341292  the brake caliper's texture. The caliper keeps its colour
+local DENIED = {
+	["rbxassetid://1539341292"] = true,
+}
+
+local function colourMap(kids): string?
+	if not kids then
+		return nil
+	end
+	for _, k in kids do
+		if k.k == "sa" and k.cm ~= "" then
+			return k.cm
+		end
+	end
+	return nil
+end
+
 local function addKids(part: BasePart, kids)
 	if not kids then
 		return
 	end
 	for _, k in kids do
 		if k.k == "sa" then
-			local sa = Instance.new("SurfaceAppearance")
-			sa.ColorMap = k.cm
-			sa.NormalMap = k.nm
-			sa.MetalnessMap = k.mm
-			sa.RoughnessMap = k.rm
-			sa.AlphaMode = (Enum.AlphaMode :: any)[k.am]
-			sa.Parent = part
+			-- handled by `colourMap`, above: nothing to make here
+		elseif (k.k == "tex" or k.k == "dec") and DENIED[k.t] then
+			-- skipped, see DENIED
 		elseif k.k == "tex" then
 			local t = Instance.new("Texture")
 			t.Texture = k.t
@@ -246,8 +271,9 @@ local function shellPart(d, scale: number, at: CFrame, meshes: { [string]: MeshP
 			return nil
 		end
 		local mp = prototype:Clone()
-		if d.tex then
-			mp.TextureID = d.tex
+		local texture = d.tex or colourMap(d.kids)
+		if texture and not DENIED[texture] then
+			mp.TextureID = texture
 		end
 		mp.DoubleSided = d.ds == true
 		part = mp
@@ -261,7 +287,17 @@ local function shellPart(d, scale: number, at: CFrame, meshes: { [string]: MeshP
 
 	part.Name = d.n
 	part.Size = Vector3.new(d.s[1], d.s[2], d.s[3]) * scale
-	part.CFrame = at * toCFrame(d, scale)
+	local offset = at * toCFrame(d, scale)
+	part.CFrame = offset
+	-- Where this part sits in its group, written down rather than inferred. `Render` reads
+	-- it once and then writes every shell part an ABSOLUTE CFrame each frame, the same way
+	-- it already writes the five simulation parts.
+	--
+	-- Moving the group with `Model:PivotTo` instead looks right and is wrong: a shell part
+	-- belongs to the server, the server re-asserts its CFrame, and a pivot is a DELTA, so
+	-- each re-assertion is applied again and the shell walks away from the car. Measured,
+	-- it was 2 500 studs out inside a minute. An absolute write cannot drift.
+	part:SetAttribute("L", offset)
 	part.Color = Color3.new(d.col[1], d.col[2], d.col[3])
 	part.Material = (Enum.Material :: any)[d.m]
 	part.Transparency = d.tr or 0
@@ -301,6 +337,9 @@ local function shellGroup(
 		end
 	end
 	group.WorldPivot = CFrame.identity
+	-- How many parts to expect. A Model replicates before its contents, so a client has to
+	-- know when it has all of them (Drift/Render, `resolve`).
+	group:SetAttribute("N", built)
 	return group, built, failed
 end
 
@@ -309,9 +348,7 @@ local templateFor: string? = nil
 local templateState = "none" -- none | building | ready | failed
 
 -- Build the shell once. Yields: every mesh goes through `CreateMeshPartAsync`.
-local function buildTemplate(name: string)
-	templateState = "building"
-	templateFor = name
+local function buildShell(name: string)
 	local moduleName = CarModel.BODIES[name]
 	local cars = ReplicatedStorage.Shared:FindFirstChild("Cars")
 	local module = if moduleName and cars then cars:FindFirstChild(moduleName) else nil
@@ -372,6 +409,21 @@ local function buildTemplate(name: string)
 
 	template = shell
 	templateState = "ready"
+end
+
+-- Anything that goes wrong in there has to end the wait, not outlive it: a thread that
+-- dies half way leaves `build()` waiting the whole timeout for a shell that is never
+-- coming, and every car after it too.
+local function buildTemplate(name: string)
+	templateState = "building"
+	templateFor = name
+	local ok, err = pcall(buildShell, name)
+	if not ok then
+		warn(`[CarModel] body '{name}' would not build: {err}; the car is a block`)
+		templateState = "failed"
+	elseif templateState == "building" then
+		templateState = "failed"
+	end
 end
 
 -- Start the build without waiting for it. The server calls this as soon as this module
@@ -446,6 +498,10 @@ function CarModel.build(): Model
 			end
 		end
 		shell.Parent = model
+		-- An attribute arrives with the Model itself, ahead of its hundred parts, so a
+		-- client that catches the car mid-replication knows to wait for a shell rather
+		-- than deciding there is not one (Drift/Render, `resolve`).
+		model:SetAttribute(CarModel.SHELL_NAME, true)
 	end
 
 	model:PivotTo(CFrame.identity)
