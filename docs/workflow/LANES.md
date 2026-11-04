@@ -12,7 +12,8 @@ A **lane** is a worker's own copy of the game: a git worktree of this repo, its 
 The port base is in `PROJECT.md` and in `default.project.json`.
 
 - **Each place finds its own Lync server** through its `workspace.__lync_port` attribute.
-- **Idle lanes sit on a detached `origin/main`**, so every idle place shows the merged game. A worker switches its lane to its `agent/<task-slug>` branch; refresh puts it back (CONDUCTOR.md "Refresh").
+- **The Main place is the user's.** They playtest there, and agents don't, unless the user asks (TESTING.md). Code is checked in a lane before it reaches `main` (CONDUCTOR.md "Checking in a lane").
+- **Idle lanes sit on a detached `origin/main`**, so every idle place shows the merged game. A worker switches its lane to its `agent/<task-slug>` branch; refresh puts it back (CONDUCTOR.md "Refresh"). A lane is **idle** when it's clean, on a detached HEAD, and holds nothing that isn't in `origin/main` (`git -C <lane> merge-base --is-ancestor HEAD origin/main` succeeds): a merge being checked there isn't pushed yet, so it's in use.
 - **Workers work only in their lane.** `repo\` belongs to the conductor.
 - **Lane links use relative paths**, so lanes survive the project folder moving or its drive changing letter. If git ever reports a lane missing after a move, run `git worktree repair` from `repo\`.
 - **`list_roblox_studios` shows only the places open on this PC.** Match a lane to its place by name.
@@ -57,7 +58,7 @@ Before assigning a lane, prove it syncs: write `src/Workspace/LaneProbe.luau` in
 
 ## Hand-built content
 
-Place files aren't in git, so anything built by hand in Studio (parts, models, UI) lives only in a place file. Lync leaves it alone as long as no file in `src\` has the same name in the same folder (CODING.md "Source and sync"). Build it in the Main place only. After it changes, re-copy `<CODE>-Main.rbxl` over each idle lane's place and set that lane's `__lync_port` and test profile again (steps 2 and 3 above). Take a copy in `backups\` before risky edits.
+Place files aren't in git, so anything built by hand in Studio (parts, models, UI) lives only in a place file. Lync leaves it alone as long as no file in `src\` has the same name in the same folder (CODING.md "Source and sync"). Build it in the Main place only, and since Main is the user's, only when they've asked for it, and not while they're in a playtest (`get_studio_state`). After it changes, re-copy `<CODE>-Main.rbxl` over each idle lane's place and set that lane's `__lync_port` and test profile again (steps 2 and 3 above). Take a copy in `backups\` before risky edits.
 
 ## Remove a lane
 

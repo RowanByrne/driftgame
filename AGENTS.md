@@ -65,6 +65,7 @@ Then stop.
 **Studio**
 - Studio is reached through the Roblox Studio MCP, registered in your agent as `Roblox_Studio` (WORKSTATION.md). Without it, say so and work without Studio. Read TESTING.md before using its tools.
 - Use only the place you were given (match its name in `list_roblox_studios`, which lists only this PC's open places), and never touch the hands-off places listed in PROJECT.md. Mark every playtest you start quiet, and never leave one running.
+- **The Main place is the user's:** they playtest there. Check your work in a lane's place, never in Main, and don't change Main unless they ask (TESTING.md). Code reaches `main` only after it's checked in a lane (CONDUCTOR.md "Checking in a lane").
 - Prove behaviour with numbers: positions, sizes, counts, debug state, logs. Screenshot only to answer "does this look right?", at most 3 per task, and leave the final look to the user.
 
 **Art**

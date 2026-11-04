@@ -41,7 +41,7 @@ Decide what we're making before any code.
 Get the project running end to end, so everything built after it stands on code that lasts.
 
 - **Produces:** the project from the template (`NEW-PROJECT.md`): GitHub repo, `PROJECT.md` filled in, places and lanes. The foundation kit in `src/` (`CODING.md`): Services and Controllers loaders, a remotes registry, DataService with memory mode in Studio, the debug bridges, the Studio test kit (test profile, quiet playtests), the analytics helper with the standard events (`ANALYTICS.md`). A placeholder world, built by code or by hand (`WORLD-BUILDING.md`). First versions of `ARCHITECTURE.md` and `CONTRACTS.md`.
-- **Gate (the agent's checklist, then tell the user):** every lane probes (`LANES.md`); a playtest in the Main place joins with no console errors or warnings; player data saves and loads through DataService; a quiet playtest is silent; the standard analytics events from a playtest show in the helper's Studio log with the right fields.
+- **Gate (the agent's checklist, then tell the user):** every lane probes (`LANES.md`); a playtest of `main`, in an idle lane, joins with no console errors or warnings; player data saves and loads through DataService; a quiet playtest is silent; the standard analytics events from a playtest show in the helper's Studio log with the right fields.
 
 ## 3. Core loop
 

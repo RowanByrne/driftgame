@@ -18,7 +18,7 @@ This game's details, loaded into every agent session: keep it short, and put des
 
 ## Places
 
-Main is `places\{{CODE}}-Main.rbxl`, served from `repo\` on the port base: always merged `main`, and the user's test place. Lane N is `{{CODE}}-LaneN.rbxl`, served from `lanes\laneN` on base + N (docs/workflow/LANES.md). Other places agents may use, such as an art workshop, and what they may do there:
+Main is `places\{{CODE}}-Main.rbxl`, served from `repo\` on the port base: always merged `main`, and the user's test place: agents check their work in lanes, not here (docs/workflow/TESTING.md). Lane N is `{{CODE}}-LaneN.rbxl`, served from `lanes\laneN` on base + N (docs/workflow/LANES.md). Other places agents may use, such as an art workshop, and what they may do there:
 
 | Place file | Served from | Port | Use |
 |---|---|---|---|
