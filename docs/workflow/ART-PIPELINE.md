@@ -17,21 +17,42 @@ A topic is named for its role, like `hud-currency`, `shop-buttons` or `boat-mode
 
 ## Images
 
-1. **Brief.** What it's for, where it shows, its size and aspect at each screen size, transparent or not, and the style (`ART-DIRECTION.md`).
-2. **Generate candidates** with the image tool in `MODELS.md`. Today that's `powershell -ExecutionPolicy Bypass -File tools\imagegen.ps1 -Prompt "..." -Out ..\art\generated\<topic>\<name>-01.png [-Transparent] [-Reference a.png,b.png]`, which prints the size, alpha and SHA-256. Make 2 to 4 per brief. Log each in the topic's manifest: file, exact prompt, references used, hash, status `candidate`. Thumbnail concepts made in Rocco keep that record in a `.json` beside each image instead, until one is picked (RELEASING.md "Thumbnails").
-3. **Show the user** the candidates side by side, in place on the real screen or model when possible. The user picks. **Never upload art the user hasn't picked.** Record the pick, and the user's words, in the manifest.
+1. **Brief.** What it's for, where it shows, its size and aspect at each screen size, transparent or not, and the style (`ART-DIRECTION.md`). UI art takes its sizes from the measured programmer art and its layers from the plan, both in `UI-INVENTORY.md` "Art slots" (UI.md "4. Assets").
+2. **Generate candidates** with the image tool in `MODELS.md`. Today that's `powershell -ExecutionPolicy Bypass -File tools\imagegen.ps1 -Prompt "..." -Out ..\art\generated\<topic>\<name>-01.png [-Transparent] [-Reference a.png,b.png]`, which prints the size, alpha and SHA-256. Make 2 to 4 per brief, each from its own variation of the prompt (material, medium or composition): four copies of one prompt don't count. Log each in the topic's manifest: file, exact prompt, references used, hash, status `candidate`. Thumbnail concepts made in Rocco keep that record in a `.json` beside each image instead, until one is picked (RELEASING.md "Thumbnails").
+   - **Check the image tool is current** before each round. Codex's image generation doesn't say which model it runs (a PNG's C2PA data says only `gpt-image`), so compare the Codex app's version with OpenAI's newest image release, and ask the user to update Codex if it's behind. Note both in the manifest.
+   - **Measure every candidate** with `tools\ui\measure-png.ps1 <folder> -Aspect <slot aspect>`. The image tool ignores the aspect it's asked for, so drop any candidate outside the 20% limit (UI.md "4. Assets") before showing it.
+3. **Show the user** the candidates side by side, in place on the real screen or model when possible. For UI art, `tools\ui\contact-sheet.ps1` draws each candidate into its slot at native size over a real screenshot of the game, then magnified; a whole screen's art is picked on one combined sheet (UI.md "1. Style"). The user picks. **Never upload art the user hasn't picked.** Record the pick, and the user's words, in the manifest.
 4. **Approve.** Copy the picked file **unchanged** into `assets/<topic>/`: never re-save, recompress or crop it on the way. Its status becomes `approved`; the others become `rejected` and stay in `..\art\generated\`.
-5. **Upload.** Uploading is the agent's job. Use the Studio MCP `upload_image` (it takes http URLs: serve the folder from a local http server), then load the image in Studio and check it shows and its decoded size matches. Record the asset id and decoded size in the manifest.
-6. **Wire it in.** Put the id in the game's asset registry module, one place in code (`ARCHITECTURE.md`), never scattered through scripts. Check it renders in a playtest.
+   - **A sheet of pieces** (related layers or icons generated together) is the master. Either upload it whole and show each piece by its rect, or cut it with `tools\ui\cut-sheet.ps1`, which copies pixels along the transparent gaps and changes nothing else. Keep the cuts beside the master and log each one, with the command that made it, in the manifest.
+   - **Leave the empty canvas in.** Transparent margins aren't trimmed from the file; the game skips them with `ImageRectOffset` and `ImageRectSize` (step 5).
+5. **Upload.** Uploading is the agent's job. Use the Studio MCP `upload_image`, which takes http URLs: serve the folder with `tools\ui\serve-assets.ps1 -Root assets\<topic> -Minutes 10` in the background, and request `/__stop` when done. Then measure what Roblox decoded, which isn't the file you uploaded: it scales an image down so its longest side is about 1024 px. `tools\ui\DecodeRects.luau`, run in the Edit datamodel, gives each id's decoded size and visible rect (alpha 8 or more, with a 1 px margin), per cell for an atlas. Every rect and aspect the game uses comes from the decoded image, never the source file. Record the asset id, decoded size and rect in the manifest.
+6. **Wire it in.** Put the id in the game's asset registry module, one place in code (`ARCHITECTURE.md`), never scattered through scripts. A UI art entry lists its role's variants, each with its image, rect, aspect and any anchors (UI.md "Lay out from the art"). Check it renders in a fresh playtest, on screen: `IsLoaded` is true and `ContentProvider:GetAssetFetchStatus` returns `Success`. An image off screen can stay unloaded.
 7. **Commit** the master, the manifest and the registry change together.
 
 **Rules**
 - **Record prompts exactly**, word for word.
 - **Never invent an asset id** or report a placeholder as final art.
 - **An unchanged master keeps its id.** New pixels mean a new upload and a manifest update. Give a new version a new file name (`-v2`) instead of overwriting one that older notes point to.
+- **Reuse first.** Before generating, check the approved masters: one whose aspect passes the 20% limit wherever it's used is reused, with its existing id.
+- **Never edit a pick's pixels.** Fix a flaw by generating again, or with an edit prompt and the pick attached ("Reproduce exactly the attached image, but remove the chevron").
 - **Chat attachments and temporary files aren't a handoff.** Copy anything the user supplies into `..\art\` or `assets/` first, and record where it came from.
 - **Original art only.** References guide the style; never copy or crop pixels from them.
 - **If the image tool can't run on this PC, say so.** Don't substitute another source.
+
+### Prompts
+
+- **Lead with the medium,** and ban the generic look outright: "Avoid the polished game-item look: no shiny gold trims, no rows of rivets, no glossy 3D, no airbrushed gradients." Without that, directions drift to the same shiny style.
+- **Prompt a layer as a layer.** Name it, and list what it must leave out: "ONLY the hollow ring: no fill, no icon, no glow". For a layer that's tinted in game, add "neutral grayscale only: white highlights, mid-grey body, no colour".
+- **A set goes on one sheet** ("four items on one transparent canvas, one per quadrant, same hand and line weight"), then is cut apart (step 4). Separate prompts give separate hands.
+- **A variant is a new drawing:** "a new portrait-shaped variant of the attached approved master, NOT a crop or stretch", with the master attached.
+- **Match an existing set:** "by the same artist as the attached icons; match their medium, hand, line weight and palette exactly".
+- **Draw items from the game's models.** Attach a sheet of the real models, name the one to draw, and spell out what must survive: counts, colours, shapes.
+- **Art that text sits on** keeps its weathering at the edges: "all edge weathering within the outer 120 px; interior quiet".
+- **If transparency keeps failing** (holes, a half-transparent centre), ask for an opaque version instead of fixing the alpha by hand.
+
+### Icons drawn in code
+
+Flat glyph icons are drawn, not generated. Each is an SVG on the same fixed grid, with one line weight and one silhouette style. `tools\ui\svg-icons-to-atlas.ps1` renders them white at 256 px, packs them into one atlas with each icon's rect, and makes a sheet of them at their real sizes (36 and 24 px) and magnified, which is what the user picks from. After the upload it writes the id and generates the Luau icon registry. The game tints them with `ImageColor3`.
 
 ## Roblox's limits
 

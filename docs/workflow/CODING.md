@@ -19,8 +19,8 @@ src/ServerScriptService/Services/    one module per service, auto-loaded
 src/ServerScriptService/<Feature>/   helper modules a service owns
 src/StarterPlayerScripts/Client.luau client loader
 src/StarterPlayerScripts/Controllers/ one module per controller, auto-loaded
-src/StarterPlayerScripts/<Feature>/  helper modules a controller owns
-src/StarterPlayerScripts/UI/         UI helpers: Theme, Create
+src/StarterPlayerScripts/<Feature>/  helper modules a controller owns, its screens' views and their fixtures
+src/StarterPlayerScripts/UI/         UI helpers: Theme, Create, Layers, Artwork; Dev/ for Studio-only UI tools
 ```
 
 - **Loaders** require every direct ModuleScript child of `Services/` (server) or `Controllers/` (client), call `Init()` on all of them (highest `Priority` first; no yielding; create remotes here), then `Start()` on each in its own thread.
@@ -40,7 +40,8 @@ Built in the Foundation phase (WORKFLOW.md), before any gameplay. Record each pi
 | `DataService` | Player profiles with the saving rules below |
 | `PlayerData` | The client's read-only mirror of its profile: `Get`, `Observe(key, fn)`, `Changed`, `WaitUntilReady` |
 | `Sounds` | Sounds played by name; ids filled in one registry, and an empty id is a silent no-op |
-| UI kit | `UI/Theme` (colours, fonts, panels, labels, buttons) and `UI/Create`; programmer-art UI is built on these (WORKFLOW.md) |
+| UI kit | `UI/Theme` (colours, fonts, panels, labels, buttons) and `UI/Create`; programmer-art UI is built on these (WORKFLOW.md). `UI/Layers` for every ScreenGui's `DisplayOrder`. `UI/Artwork` puts generated art on frames, from the UI phase on (UI.md) |
+| UI preview | Studio only: opens any screen with any of its fixtures, with the layout drag mode (UI.md "Programmer art", TESTING.md "Checking UI") |
 | Notifications | One toast and banner API, callable from client and server |
 | Analytics | The analytics module and standard events (ANALYTICS.md) |
 | Live config | The config wrapper: reads Roblox configs, with a default in code for every key (CONFIGS.md) |
@@ -62,6 +63,11 @@ Built in the Foundation phase (WORKFLOW.md), before any gameplay. Record each pi
 | Quiet playtests | `ReplicatedFirst/QuietPlay.luau` | `QuietPlay.isQuiet()`. `Sounds` and music check it before playing |
 | Photo mode | `StarterPlayerScripts/Controllers/PhotoController.luau` | `Frame(target, opts)` returns the target's predicted screen bounds; `Restore()` |
 | Automated tests | `ServerScriptService/Tests/<Name>Tests.luau` | `run(...)` returns `{ passed, checks }`, each check `{ name, ok, detail }` |
+| UI layers | `StarterPlayerScripts/UI/Layers.luau` | Named `DisplayOrder` values, in bands: input catchers 0–9, HUD 10–29, temporary cards 30–33, menus, dialog backdrops and dialogs 34–39, tooltips, rewards and notices 40–59, cutscenes 60–89, debug tools and the loading screen 1000 and up |
+| Screen views | `StarterPlayerScripts/<Feature>/<Screen>View.luau`, with `<Screen>View.fixtures.luau` beside it | `new(parent)` builds the screen and returns a view: `setData(snapshot)` redraws it from a plain table, `show()`, `hide()`, `describe()` (its pieces' rects, states and art variants, for the UI checks), `setLayoutOffset(name, offset)` (for the drag mode) and `destroy()`. Its buttons fire `view.ActionRequested` with `(action, ...)`; the view never acts on them. The fixtures module is a table of `name = snapshot`, marked as sample data |
+| UI artwork | `StarterPlayerScripts/UI/Artwork.luau` | `apply(frame, role)` puts the role's closest variant from the asset registry under `frame`, below its content and taking no input, and refits it on every resize: stretched within the 20% limit, fitted beyond it. It sets the frame's `ArtworkRole`, `ArtworkVariant`, `ArtworkDistortion` and `ArtworkWithinLimit` attributes, shows a plain fill until the image has loaded, replaces only its own art when applied again, and disconnects when the frame goes. `heightFor(role, width, minHeight)` returns the smallest height at which a variant fits within the limit |
+| UI preview | `StarterPlayerScripts/Controllers/UIPreviewController.luau`, doing nothing outside Studio | Finds every `<Screen>View` with fixtures beside it. Its panel opens from the admin console's `uipreview` command: pick a screen and fixture; switch Move, Snap and the drag level (widgets or clusters); Reset and Export. Through the debug bridge: `Open(screen, fixture)`, `Close()`, `Describe()`, `Drag(on, level)` (`"items"` or `"groups"`), `Snap(on)`, `ExportLayout()` and `ResetLayout()` |
+| Layout drag | `StarterPlayerScripts/UI/Dev/LayoutDrag.luau`, copied unchanged from `tools/ui/LayoutDrag.luau` | Its header has the API. A view tags each widget's top frame `LayoutItem = "<name>"`, a cluster's pieces `LayoutGroup = "<name>"`, and fixed areas, like Roblox's chat window, `LayoutReserve = "<name>"`; it adds each offset it's given to its own layout |
 
 DataService can wrap a profile library, such as ProfileStore (loleris, 2024, the successor to his ProfileService), as long as it keeps this API and the saving rules below. Record the choice in `ARCHITECTURE.md` "Vendored libraries".
 
