@@ -102,9 +102,10 @@ The user follows you in Rocco, above their note box, not in your window: what yo
 
 ## Watching the board
 
-Between jobs, the conductor watches the Workboard, so what the user sends is picked up without them having to prompt you. `rocco.ps1 wait` returns as soon as something waits on you, listed as `list -Pending` lists it. Run it after every report, and handle what it returns as "What waits on you" says. Then run it again.
+Between jobs, the conductor watches the Workboard, so what the user sends is picked up without them having to prompt you. `rocco.ps1 wait` returns as soon as something waits on you, listed as `list -Pending` lists it. Run it after every report, and handle what it returns as "What waits on you" says. Then run it again: **every time it returns, start it again** once you've handled what it listed. A wait that returned with work isn't watching any more, and that's the one most easily forgotten.
 
-- **How it runs depends on your agent.** Claude Code runs it as a background command and is woken when it returns. An agent without background commands runs it with `-Timeout 540`, and runs it again when it says nothing's new.
+- **How it runs depends on your agent.** Claude Code runs it as a background command (`run_in_background`), with no `-Timeout`, and is woken when it returns: a timeout only wakes you for nothing. An agent without background commands runs it with `-Timeout 540`, and runs it again when it says nothing's new.
+- **Rocco checks it** for a Claude Code conductor it opened: at the end of each turn, a hook sends you back if something still waits on you, or if no `wait` is running.
 - **Rocco shows it:** the status line above the note box says the conductor is listening while `wait` runs, and working (on its latest step) while your agent runs anything else.
 - **No conductor running** when the user hands something over (a note, an answer, an approved plan): Rocco opens your agent in its own window, minimized in the taskbar, as the conductor, on what's waiting. So keep one conductor per game: the session Rocco opened, or the one the user started.
 
