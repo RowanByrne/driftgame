@@ -9,7 +9,6 @@ Every task in progress and the files it owns, so parallel sessions and workers n
 
 | Branch | Lane | Files owned | Since |
 |---|---|---|---|
-| `agent/test-hill` | lane1 | `src/ServerScriptService/Playground/Layout.luau`, `src/ServerScriptService/Services/PlaygroundService.luau`, `src/ReplicatedStorage/Shared/Config/Playground.luau`, `src/StarterPlayerScripts/Drift/TestHud.luau` (new), `src/ServerScriptService/Services/RoadService.luau`, `src/ServerScriptService/Tests/PlaygroundTests.luau`, `docs/game/WORLD.md`, `docs/game/UI-INVENTORY.md` | 2026-11-06 (T-065, T-067) |
 
 ## Notes between sessions
 
