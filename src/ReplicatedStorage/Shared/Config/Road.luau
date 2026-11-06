@@ -493,8 +493,9 @@ return {
 	--   Link           flat or nearly, short, and it LEVELS the road and hands on a gentle
 	--                  climb. The breather, and the piece that stops a descent being one
 	--                  long ramp
-	--   Banked30       a 30-degree direction change with 30 degrees of bank through it,
-	--                  losing height. The showcase: the bank is what holds the car
+	--   Banked30       a 30-degree direction change with bank through it, losing height.
+	--                  The showcase: the bank is what holds the car. SHIPS AT 10 DEGREES of
+	--                  bank, not the spec's 30 -- see the piece itself for why
 	--   HairpinStack   two 180-degree hairpins back to back, opposite hands, dropping hard.
 	--                  How a mountain road actually loses height
 	--   Corkscrew      a flat entry and then the floor leaves: a chicane that drops away and
@@ -898,7 +899,21 @@ return {
 			Height = { Drop = 14, EndGrade = 0 }, -- loses 14 studs and arrives LEVEL. A
 			-- vertical curve that is level at both ends is steepest in the middle at 1.5x
 			-- its average, so 14 over 209 studs peaks at 10.0% -- 5.7 degrees
-			Bank = { Degrees = 5, Shape = "crest" }, -- in and out again over the piece
+			-- TEN, AND THE USER CHOSE IT KNOWING THE COST (2026-11-06). The spec asks for 30
+			-- and 30 is now safe to BUILD (T-073 tilted the car's collision box) but is not
+			-- safe to DRIVE: with gravity acting along the ground (T-065) the car slides down
+			-- the bank, and once it is against the barrier it cannot get off -- the slide IS
+			-- slip, and past 90 degrees of slip the grip force is a brake. Measured over 50
+			-- pieces, time the test autopilot spent stuck: 5 deg 0.5 s, 8 deg 11.9 s,
+			-- 10 deg 40.2 s, 15 deg 113.8 s. NOTHING THAT STOPPED IT WAS ROAD.
+			--
+			-- THE AUTOPILOT IS THE WORST CASE, not the player: it aims at the centre line and
+			-- does not fight a wall, where a driver carries more speed in and steers out. So
+			-- 40 seconds in 50 pieces is the floor of how this feels, not the ceiling.
+			--
+			-- The real fix is a car that can unstick itself from a wall, which is its own
+			-- task. Get that and this goes to 30 as the spec asks.
+			Bank = { Degrees = 10, Shape = "crest" }, -- in and out again over the piece
 		},
 
 		-- THE HAIRPIN STACK IS HOW A MOUNTAIN ROAD LOSES HEIGHT: two 180-degree hairpins
