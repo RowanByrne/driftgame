@@ -204,14 +204,31 @@ still the reference's, converted, except the two marked **ours**.
 | `Marks.Width` | 1.2 studs | `MarkWidth` | The gap between the two attachments. A little under the tyre's 1.6 |
 | `Smoke.RateMin`, `Smoke.RateMax` | 8, 60 /s | `SmokeRateMin/Max` | `ParticleEmitter.Rate`, lerped by `slip / Gates.MaxSlipDegrees` |
 
-**The spec named one number for the look and the instances need fifteen,** so the rest are ours and
-are in `Config/Fx.luau` with a line each: `Marks.Lift` (0.05 studs, which stops a mark z-fighting
-the road it is drawn on), `Marks.Transparency`, `Marks.FadeAt`, `Marks.LightInfluence`,
-`Marks.TextureLength`, and the whole of the `Smoke` block beyond its rate — lifetime, start and end
-size, transparency, speed, spread, the upward acceleration, drag, rotation and lighting.
-`Surfaces.<name>.MarkColour` and `.SmokeColour` are the per-surface look, and `Built` is the list of
-surfaces a car is actually given instances for. **These are a first pass at a look and nothing
-more: the look is the user's call.**
+Added in round two, and all of them ours — see the sections below for the measurements behind each:
+
+| Number | Start | What it does |
+|---|---|---|
+| `Marks.Bands` | 0.74, 0.60, 0.46, 0.32 | `Trail.Transparency` per band, lightest first. One trail per band per wheel |
+| `Marks.BandHysteresis` | 0.04 | How far past a boundary the density must get before the trail is swapped |
+| `Marks.RefSpeed` | 70 studs/s | The speed at which the speed term is exactly 1 |
+| `Marks.SpeedExponent` | 0.5 | Slower is darker. 30 studs/s is 1.91× the density of 110 |
+| `Marks.AngleExponent` | 1.6 | How fast darkness grows with the angle. **Was 0.8** — see below |
+| `Marks.MinSpeedForDensity` | 12 studs/s | The floor under the division, so a stopped car is not a black stripe |
+| `Marks.HeatGain` | 1.6 | What a fully heated tyre multiplies the density by |
+| `Marks.MinSegment` | 0.5 studs | `Trail.MinLength`. **Was 0** — see "the mark came out as a ladder" |
+| `Marks.Lift` | 0.25 studs | **Was 0.05**, and that was half the vanishing-mark bug |
+| `Heat.FullSlipSpeed` | 60 studs/s | Sideways drag that counts as heating at full rate |
+| `Heat.RiseSeconds` / `FallSeconds` | 2.5 / 4 s | Cold to hot at full rate, and hot to cold at rest |
+| `Heat.IdleSlipSpeed` | 3 studs/s | Below this the tyre cools whatever the gates say |
+| `Stylized.*` | see the file | The second smoke layer: rate, size, lifetime, speed, spread, drag, tilt, colour |
+| `Surfaces.<n>.PuffColour` | near white | The stylized layer's colour, per surface |
+
+**The spec named one number for the look and the instances need thirty,** so the rest are ours and
+are in `Config/Fx.luau` with a line each: `Marks.FadeAt`, `Marks.LightInfluence`,
+`Marks.TextureLength`, and the whole of the `Smoke` and `Stylized` blocks beyond their rates —
+lifetime, start and end size, transparency, speed, spread, the upward acceleration, drag, rotation
+and lighting. `Surfaces.<name>` carries the three colours. **These are a first pass at a look and
+nothing more: the look is the user's call.**
 
 ### What it is made of in Roblox
 
@@ -222,29 +239,195 @@ more: the look is the user's call.**
 | `TrailRenderer` | `Trail` between two `Attachment`s at the wheel's contact patch | Lifetime, width and colour all map directly |
 | `ParticleSystem` | `ParticleEmitter` on one `Attachment` at the contact patch | `Rate` maps to `rateOverTime` |
 
-**The budget:** four wheels × (one `Trail` + one `ParticleEmitter` + two `Attachment`s) = 16
-instances per car, **plus two `Sound`s** — one engine, one squeal per built surface — made once when
-the rig is built and never again. Nothing is created or destroyed
-while driving; emitters are switched with `Trail.Enabled` and `ParticleEmitter.Enabled`. **A frame
-that allocates is the thing to measure and the thing to fail on.** Measured: 16 before a 60-second
-drive and 16 after, and the car's whole descendant count 56 either side.
+**The budget**, and it is a formula and not a number, because the bands and the surfaces both
+multiply it:
+
+```
+per car = 4 wheels × (2 Attachments + surfaces × (#Marks.Bands Trails + 2 ParticleEmitters))
+```
+
+At one surface and four bands that is **32**, plus two `Sound`s — one engine, one squeal per built
+surface. **It was 16** before the second round added the stylized smoke layer and the band ladder
+(`T-062`). Everything is made once when the rig is caught and never again; nothing is created or
+destroyed while driving, and emitters are switched with `Trail.Enabled` and
+`ParticleEmitter.Enabled`. **A frame that allocates is the thing to measure and the thing to fail
+on.** Measured over a 60-second drive: 32 before and 32 after, the car's whole descendant count 74
+either side, with all four bands used and the hottest tyre reaching 0.86.
 
 **They hang off the car's `Body`, not off the wheels, and that is not a detail.** `Drift/Render`
 spins each wheel about its own axle every frame (`CFrame.Angles(wheelSpin, 0, 0)`), so an
 attachment parented to a wheel and offset down to the contact patch would **orbit the axle** and
 draw a circle rather than a line. The `Body` part's CFrame *is* the car's pose, so the four contact
-patches are four fixed local offsets on it, read straight off the rig's own wheel offsets. The only
-error this costs is the body's cosmetic lean (`s.bodyRoll`, a couple of degrees), which moves a
-patch by hundredths of a stud — less than the mark is wide, and arguably the honest place for it.
+patches are four fixed local offsets on it, read straight off the rig's own wheel offsets.
+
+**And the body LEANS, which is what buried the outside mark.** See "The vanishing outside mark"
+below: `Render` rolls the body about the centre of mass, the roll swings each patch through an arc
+far larger than the clearance they are drawn at, and the fix is to cancel it.
 
 There is **no folder**: the eight attachments are direct children of `Body` (an `Attachment` has to
-be parented to a `BasePart` to have a position), and each wheel's `Trail` and `ParticleEmitter` hang
-off its first attachment. A folder would be a seventeenth instance for nothing.
+be parented to a `BasePart` to have a position), each wheel's `Trail`s and its diffuse emitter hang
+off its first attachment, and its stylized emitter off the second. A folder would be one more
+instance for nothing.
 
 **A trail must be cut when the car jumps.** A spawn, a respawn or a `DebugTeleport` moves the body
 hundreds or thousands of studs in one frame, and a `Trail` that is still enabled across that draws
 one straight black line across the world. `Wheels:Cut()` puts everything out, and `DriftController`
-calls it on all three paths before the car is put down.
+calls it on all three paths before the car is put down. **It clears the tyre heat too** — a car that
+has just been put down has cold tyres — which has a side effect worth knowing: on a road that is
+respawning the car often, the heat never gets a chance to build.
+
+## Round two: what the user asked for after driving it
+
+The user drove the first build on 2026-11-06 and sent back three things. All three are built.
+
+### 1. The vanishing outside mark, which was the body's lean
+
+*"When you start to drift in one direction, the outside tyre stops showing the tyre mark. Almost
+like it's being drawn below the road surface."* **It was being drawn below the road surface**, and
+the guess was right about the symptom and wrong about the cause: it was not depth-fighting, and it
+was not the trail switching off. It was the car leaning.
+
+`Drift/Render` rolls the `Body` part about the car's centre of mass by `s.bodyRoll`, up to
+`Config.Drift.BodyRollMax` (10°), so that the car leans out of a slide. The effects hang off that
+part, 3.4 studs out from the centre of mass and 3.06 studs below it, so **the roll swings each
+contact patch through an arc**: one side rises, the other sinks, and which side sinks flips with the
+direction of the drift. That is exactly "the outside tyre".
+
+**Measured, before the fix,** in a 40.3° slide at 49.9 studs/s with only **2.99°** of roll on the
+body: the two left attachments sat **0.133 and 0.071 studs below** the road and the two right ones
+**0.159 and 0.222 above** it. The trails were `Enabled` the whole time. `Marks.Lift` was 0.05. At
+the full 10° the excursion reaches **0.637 studs up and 0.544 down** — more than ten times the
+clearance.
+
+**The fix is to cancel the roll, not to pay for it.** The body's transform about the centre of mass
+is `C(com) · R(roll) · C(−com)`; each attachment is written the local position that transform maps
+back onto the flat contact patch, which is `R(−roll)` about the same point — two scalars of
+trigonometry a frame, shared across all eight, and no `CFrame`. The wheels themselves are drawn flat
+by `Render` for the same reason, so this makes the marks agree with the wheels that leave them.
+Round-tripped across the whole roll range in the tests, the residual is **2.4 × 10⁻⁷ studs**, which
+is a `Vector3` being a float32 and nothing else.
+
+**Measured after the fix,** at the worst lean a 60-second drive produced (4.96°): all eight
+attachments within **0.0003 studs of each other**, where before they spanned 0.35.
+
+**Half the bug was the clearance, though,** and that half is `Marks.Lift`, now 0.25 instead of 0.05.
+With the lean cancelled, what is left is the car's own ride height moving as the model lands it on
+the road each step, plus a little pitch over a grade — a range of about 0.4 studs. Over a 60-second
+drive at 0.25: **7 frames out of 14 400 samples dipped below the road, by at most 0.031 studs**, and
+the worst float was 0.69. The error is pushed **upward deliberately**: a mark below the road
+vanishes, which is the bug, and a mark above it still draws. **The cost is that a mark can float up
+to about seven tenths of a stud over a grade, and whether that reads is the user's eye.** The
+alternative is a raycast per wheel per frame, which would place every mark exactly and allocate a
+`RaycastResult` a wheel a frame to do it.
+
+### 2. A second, stylized smoke layer
+
+*"Add another layer on top of what we already have which is more STYLIZED. It should be easy to
+trace back this new smoke to the specific wheel that it is coming from. It should also get more
+intense the longer that specific wheel is drifting."*
+
+**The diffuse layer is untouched** — the user approved it and it stays exactly as it was. `Stylized`
+is a second `ParticleEmitter` per wheel, on top of it, and every number in it is chosen so a puff
+can be traced to one tyre: **small** (0.9 studs born, 4.2 died, against the diffuse layer's 2.5 and
+11) so four of them stay four of them; **tight** (a 7° cone against 18°) so it stays over its own
+contact patch; **fast and draggy** (9–15 studs/s, drag 4.5) so it is flicked off the tyre and stops
+near it; **short-lived** (0.30–0.55 s against 0.8–1.6) so the shape stays by the car; **opaque and
+faintly self-lit** (0.18 transparency, 0.35 light emission) so it reads against the cloud behind it;
+and **tilted 35° backward**, which is why it lives on the wheel's *second* attachment — the tilt is
+that attachment's own `Orientation`, and the diffuse layer must not be tilted with it. A rotation
+does not move a `Trail`, which reads the two attachments' positions, so the mark is untouched.
+
+**Its rate, and only its rate, moves,** and that is deliberate: `Size`, `Transparency`, `Lifetime`
+and `Speed` are each a `NumberSequence` or a `NumberRange`, which are objects, and writing one every
+frame is the allocation this feature exists not to make.
+
+### 3. Tyre heat, which drives both the puff and the darkness
+
+The user's own link: *"the longer a drift goes, the hotter the tyres, and the more smoke is
+produced — that tyre mark would be darker."* So there is one number per wheel, `heat`, 0..1, and it
+is the only state this module keeps between frames.
+
+It rises on **slip speed** — `speed × |sin(slip)|`, the speed the contact patch is being dragged
+sideways across the road, which is what a real tyre heats and wears on — and falls when the wheel
+stops working. **It takes the gates *and* the slip speed, and that is measured:** heating on the
+gates alone left a wheel stuck hot, because a car that has caught a slide and rolled to a crawl
+keeps a few degrees of residual slip, so its rear gates stayed open at a slip speed of 0.1 studs/s —
+the heat could not rise (nothing was happening) and could not fall (the gate said it was sliding),
+and it sat at **0.56 four seconds after the drift had ended**, idling in a cloud of its own stylized
+smoke. `Heat.IdleSlipSpeed` is the floor that fixes it.
+
+**Measured live, through one slide and out the other side** — the rears and the fronts, independently:
+
+| | rear left heat / puff | front left heat / puff |
+|---|---|---|
+| start of the slide | 0.02 / 0.7 per s | 0.00 / 0 |
+| +1 s | 0.08 / 3.4 | 0.00 / 0 |
+| +2 s | 0.20 / 8.3 | 0.00 / 0 |
+| the slide passes 30° | 0.30 / 12.7 | **0.08 / 3.6** — the fronts' gate opens |
+| +1 s | 0.43 / 18.3 | 0.22 / 9.2 |
+| the slide comes back under 30° | 0.52 / 21.8 | 0.14 / 6.1 — the fronts cool |
+| +1 s | **0.57 / 23.9** still climbing | **0.02 / 0.7** nearly cold |
+
+That last pair is the whole of "per wheel": the rears are at 0.57 and building while the fronts are
+at 0.02 and cooling, in the same frame, on the same car.
+
+### 4. How dark a mark is: rubber per stud of road
+
+*"See if we can add an intensity variable… especially if the drift continues as the car's speed
+lowers, meaning more rubber is deposited per foot."*
+
+That last clause is the design. Darkness is **rubber laid per stud of road**, not per second:
+
+```
+speedTerm = (RefSpeed / max(speed, MinSpeedForDensity)) ^ SpeedExponent     slower is denser
+angleTerm = |sin(slip)| ^ AngleExponent                                     sideways is more rubber
+density   = speedTerm × angleTerm × (1 … HeatGain, by that wheel's heat)
+```
+
+It is a **feel curve, not physics**, and it is written as two independent exponents on purpose so
+either half can be tuned without algebra on the other. Measured:
+
+| | density |
+|---|---|
+| 45° of slip at **30** studs/s | **0.877** |
+| 45° at 70 | 0.574 |
+| 45° at **110** | **0.458** |
+| 10° / 45° / 90° at 70 studs/s | 0.061 / 0.574 / 1.000 |
+| 80° at 110, then the same angle at 30 | 0.778 → **1.000** |
+| 30° at 70, cold then fully heated | 0.574 → 0.918, exactly `HeatGain` |
+
+A mark laid at 30 studs/s is **1.91×** the density of the same slide at 110, which is
+`SpeedExponent` doing exactly what it says.
+
+**`AngleExponent` was 0.8 and is now 1.6, and the test that caught it is in the file.** At 0.8 a
+perfectly ordinary 45° slide at 70 studs/s already read 0.758 and sat in the darkest band, so three
+quarters of the ladder were only reachable by a slide nobody drives. At 1.6 the four bands start at
+**1°, 25°, 40.5° and 57°** at `RefSpeed`, which is the range the car is actually driven in.
+
+#### Why it is a ladder of trails and not a number
+
+**`Trail.Transparency` applies to the whole live ribbon, not to the segment being laid.** Turn it
+down and the five seconds of mark already on the road behind you darken with it, which is not what
+rubber does. So each wheel carries **one trail per band**, all strung between the same two
+attachments, and only the band matching this frame's density is enabled. Each band's ribbon persists
+at its own fixed darkness and the line through a corner genuinely darkens where the car was working
+hardest. Four bands, lightest first, and the count is a config list — two would read as on/off, six
+is past what an eye can separate on asphalt.
+
+`Marks.BandHysteresis` keeps it from swapping on a boundary: every swap ends one ribbon and starts
+another, and a density jittering on a boundary would draw a dotted line. Measured over a real drift,
+the band swapped **3 times in 476 marking frames**.
+
+#### And the mark came out as a ladder, which was `MinLength`
+
+The first build set `Trail.MinLength = 0`, which lays a segment every frame however short one is.
+Sampled every frame through a real drift, **the contact patch advances 0.104 to 1.261 studs, mean
+0.675 — against a ribbon 1.2 studs wide.** Very nearly every quad in the mark is wider than it is
+long, and at the slow end twelve times wider; the mark reads as a ladder of rungs with road showing
+between them. The other two suspects were ruled out in the same sample: **the wheel left the ground
+0 times in 481 frames** and the trail switched on or off **once**. `Marks.MinSegment` is 0.5 studs,
+just under that mean, so a drift at speed lays the same segments it always did and a crawling car
+merges several frames into one honest quad.
 
 ## UI
 
@@ -274,9 +457,9 @@ In `CONTRACTS.md`. **What `T-062` built, for the conductor to record at merge:**
 | Entry | Surface |
 |---|---|
 | `Shared/Config/Fx` | `Config.Fx`: `Marks`, `Smoke`, `Gates`, `Surfaces`, `Built`, `Default`, `Names`, and `Engine` and `Skid` which nothing reads until `T-064`. A plain table with no write guard, like `Config.Road` |
-| `Drift/Wheels` | `new()`, `Attach(rig) -> boolean`, `Update(state, input, dt)`, `Cut()`, `Clear()`, `SetEnabled(on) -> boolean`, `SetMarkSeconds(s)`, `DebugState(state, input)`, `CountInstances() -> number`, and the pure `Wheels.evaluate(state, handbrake, front, down) -> (emit, rate, slipPast, throttleOk, handbrakeOk)` and `Wheels.surfaceOf(state, index, down) -> string?`. **`Update` takes the INPUT as well as the state**, unlike the `update(state, dt)` this spec first guessed at: the handbrake is a `Drift/Model` *input* and is not on the state, and there is nowhere else honest to read it |
-| `DriftController` | `DebugWheels() -> { enabled, attached, instances, liveInstances, surfaces, slipDeg, throttle, handbrake, speed, airborne, wheels: { { name, front, down, surface, thresholdDeg, slipPast, throttleOk, handbrakeOk, emit, emitting, rate } } }` and `DebugWheelFx(on: boolean?) -> boolean`. Studio only, through the client debug bridge |
-| Instance names on a rig | `Config.Fx.Names`: `FxA_<Wheel>_<L\|R>` (8 `Attachment`s, direct children of `Body`), `FxMark_<Wheel>_<surface>` (4 `Trail`s) and `FxSmoke_<Wheel>_<surface>` (4 `ParticleEmitter`s), each parented to that wheel's `_L` attachment |
+| `Drift/Wheels` | `new()`, `Attach(rig) -> boolean`, `Update(state, input, dt)`, `Cut()`, `Clear()`, `SetEnabled(on) -> boolean`, `SetMarkSeconds(s)`, `DebugState(state, input)`, `CountInstances() -> number`, and the pure `Wheels.evaluate(state, handbrake, front, down) -> (emit, rate, slipPast, throttleOk, handbrakeOk)` and `Wheels.surfaceOf(state, index, down) -> string?`. **`Update` takes the INPUT as well as the state**, unlike the `update(state, dt)` this spec first guessed at: the handbrake is a `Drift/Model` *input* and is not on the state, and there is nowhere else honest to read it. **Round two added five more pure functions:** `slipSpeed(state)`, `heatStep(heat, sliding, slipSpeed, dt)`, `density(speed, slip, heat)`, `bandFor(density)` / `bandWith(density, previous)`, `stylizedRate(heat)`, and the roll pair `patchLocal(patch, com, cosR, sinR)` / `applyRoll(p, com, cosR, sinR)`. **`Cut()` now clears the tyre heat as well as the emitters** |
+| `DriftController` | `DebugWheels() -> { enabled, attached, instances, liveInstances, bands, surfaces, rollDeg, slipDeg, throttle, handbrake, speed, slipSpeed, airborne, wheels: { { name, front, down, surface, thresholdDeg, slipPast, throttleOk, handbrakeOk, emit, emitting, heat, density, band, bandOn, rate, stylizedRate, leanOffsetY, patchResidualY } } }` and `DebugWheelFx(on: boolean?) -> boolean`. Studio only, through the client debug bridge. **`band` is the density's band and `bandOn` is the trail actually enabled** — they differ whenever a gate is shut, which is how a playtest tells "too faint" from "not marking at all" |
+| Instance names on a rig | `Config.Fx.Names`: `FxA_<Wheel>_<L\|R>` (8 `Attachment`s, direct children of `Body`), `FxMark_<Wheel>_<surface>_<band>` (4 x `#Marks.Bands` `Trail`s), `FxSmoke_<Wheel>_<surface>` (4 diffuse `ParticleEmitter`s) and `FxPuff_<Wheel>_<surface>` (4 stylized ones). The trails and the diffuse emitter hang off that wheel's `_L` attachment; the stylized emitter off its `_R` one, which carries the backward tilt |
 
 **What `T-064` added, for the conductor to record at merge:**
 
@@ -364,7 +547,12 @@ feel.**
 | Throttle gate | Coast sideways at zero throttle: slip above the threshold, no trail, no smoke. **Done in `FxTests`, and NOT reachable live** — the throttle is never an input in this model (see "How it plays"). 60° of slip at zero throttle marks nothing; it marks at exactly `MinThrottle` and not a hundredth below |
 | Handbrake | Handbrake from a standstill (nothing) and from 40 studs/s (all four, smoking). **Done (`T-062`):** live, nothing at 0.00 studs/s; all four emitting at 36.7 studs/s with the car dead straight (`slipPast` false) and off nothing but the brake |
 | Smoke rate | `ParticleEmitter.Rate` at 10°, 45° and 90° of slip against the configured lerp. **Done:** 10.89, 21.00 and 34.00 /s against the same three computed from the config, to within 1e-6, and 8.00 .. 60.00 at the two ends |
-| It allocates nothing — sounds included | Instance count on the rig before a 60-second drive and after: **identical**. The number that would fail this is the one worth having. **Done:** 16 → 16, and the car's whole descendant count 56 → 56, over 60 s of a drive that was sliding past 5° on 2 884 of its frames; and 16 → 16 over 1 000 synthetic frames with 272 gate flips in `FxTests`. **With the sounds (`T-064`):** the same drive, 60 s with 13 shifts and 4 730 drifting samples, left the two `Sound`s at 2 → 2, the `Body`'s descendants at **18 → 18** and the whole car's at **58 → 58**; and 2 → 2 over 3 120 synthetic frames in `FxTests` |
+| It allocates nothing — sounds included | Instance count on the rig before a 60-second drive and after: **identical**. The number that would fail this is the one worth having. **Round one:** 16 → 16, car descendants 56 → 56. **With the sounds (`T-064`):** 2 → 2 Sounds, Body descendants 18 → 18, whole car 58 → 58 over 3 120 synthetic frames. **Round two, with the bands and the stylized layer (`T-062`):** **32 → 32** and the whole car **74 → 74** over a 60-second drive that used all four bands and reached a tyre heat of 0.86; and 32 → 32 over 1 000 synthetic frames in `FxTests`, with **never more than one band's trail enabled on a wheel at once** |
+| The lean, which was the bug | Each trail attachment's height above the road under it, through a real drift. **Before:** at 2.99° of body roll, the two left ones 0.133 and 0.071 studs **below** the road and the two right ones 0.159 and 0.222 **above** it; at the full `BodyRollMax` the excursion is 0.637 up and 0.544 down against 0.05 studs of clearance. **After:** at the worst lean a 60-second drive produced (4.96°), all eight within **0.0003 studs of each other**; 7 frames in 14 400 samples below the road by at most 0.031 studs, worst float 0.69. The cancelling round-trips to **2.4 × 10⁻⁷ studs** across the whole roll range in `FxTests` |
+| Mark density | At a fixed 45° of slip: **30 → 0.877, 70 → 0.574, 110 → 0.458 studs/s**, so a slow mark is 1.91× a fast one. At a fixed 70 studs/s: **10° → 0.061, 45° → 0.574, 90° → 1.000**. The user's case, 80° at 110 then at 30: **0.778 → 1.000**. Heat lifts it by exactly `HeatGain`. All four bands reachable between 1° and 90° at `RefSpeed`, starting at 1°, 25°, 40.5° and 57° |
+| Band stability | A density jittering half a hysteresis either side of a boundary swaps **0 times in 200 frames**; a real crossing still moves. Live, through a real drift: **3 swaps in 476 marking frames** |
+| Tyre heat, per wheel | Live through one slide: the rear left went **0.02 → 0.57** (stylized rate 0.7 → 23.9 per second) while the front left only started once the slide passed its 30° threshold, reached 0.22, and was back to **0.02 and cooling** in the same frame the rears read 0.57 and climbing. In `FxTests`: full in 2.50 s at full slip speed, 5.02 s at half it, cold again in 4.02 s, and **cold in 4.02 s even with the gates held open** at a crawl |
+| The mark came out as a ladder | Sampled every frame through a real drift: the contact patch advances **0.104 to 1.261 studs, mean 0.675, against a 1.2-stud-wide ribbon**, so nearly every quad is wider than it is long. The two other suspects were ruled out in the same sample — the wheel left the ground **0 times in 481 frames** and the trail switched on or off **once**. `Marks.MinSegment` is the fix. **Not re-photographed: the look is the user's to judge** |
 | Frame cost | Frame time over a 60-second drive, effects on and off, on this PC. A cost worth naming is a cost worth a `SETTINGS.md` switch. **Measured and inconclusive, and the reason is worth writing down:** Studio throttles rendering to exactly 30 fps when its window is not focused, which an agent's window never is. Interleaved in 5-second blocks inside one drive, 900 frames each way, the medians were 33.3028 ms with the effects on and 33.2936 ms with them off — **9 microseconds apart, both pinned at the cap.** All that proves is that the effects do not push a 30 fps frame over its budget. **A real headroom number needs the user's own focused window,** and `DriftController:DebugWheelFx(false)` is the switch to take it with |
 
 `DebugState()` on each of the three modules, reporting what it is doing and why — the gear and
@@ -396,9 +584,7 @@ gate is wrong rather than "no smoke".
 Added by `T-062`, from building it:
 
 - **The look of the marks and the smoke.** The user's call, and the numbers to change are all in
-  `Config/Fx.luau` under `Marks`, `Smoke` and `Surfaces`. What is there now is a first pass: a
-  near-black mark at 0.45 transparency fading out over the last 40% of its five seconds, and a
-  near-white puff that grows from 2.5 to 11 studs, rises and drags out.
+  `Config/Fx.luau` under `Marks`, `Smoke`, `Stylized` and `Surfaces`.
 - **Whether the smoke should be full at 90° rather than 180°.** The reference lerps the rate by
   `slip / π`, which is what is built — so a car fully sideways at 90° is only at 34 of 60. The
   squeal's own `MaxSlipDegrees` is 90. One number, `Gates.MaxSlipDegrees`.
@@ -406,3 +592,24 @@ Added by `T-062`, from building it:
   the handbrake, which is what the reference does. Measured: a car creeping at 0.3 studs/s with
   14° of slip still has its rear trails enabled. It lays a dot, not a line, so it costs nothing to
   leave — but a `Gates.MinMarkSpeed` is a one-line addition if the user ever sees it.
+
+Added by `T-062` round two, and these are the ones to drive and judge:
+
+- **The ladder fix is reasoned, not photographed.** `Marks.MinSegment = 0.5` is the right shape by
+  measurement — the quads were 0.675 studs long against a 1.2-stud ribbon — but the screenshot
+  budget went on finding the problem rather than confirming the cure. At speed it changes nothing
+  (the mean advance already exceeds it); at a crawl it merges frames instead of laying slivers. **If
+  the mark still comes out as rungs, raise it; if a slow mark looks chunky, lower it.**
+- **Whether a mark floating up to 0.7 studs over a grade reads wrong.** That is `Marks.Lift` at
+  0.25, deliberately biased upward because a mark below the road vanishes and one above it does
+  not. Dropping it trades float for the occasional dropout. The exact fix is a raycast per wheel per
+  frame, which costs a `RaycastResult` a wheel a frame.
+- **Four bands, and where they land.** The ladder starts at 1°, 25°, 40.5° and 57° at 70 studs/s.
+  More bands is a smoother ramp at four instances a car each; fewer reads as on/off.
+- **Whether the stylized layer is too much, or not enough.** It is zero at a cold tyre and 42 a
+  second at a hot one, and nothing but the rate moves. If it should also *grow* with heat, that is a
+  `NumberSequence` a frame and would have to be done as a ladder, the same way the marks are.
+- **Whether the tyre heat should survive a respawn.** It does not: `Wheels:Cut()` clears it, on the
+  reasoning that a car just put down has cold tyres. On a road that is respawning the car often, the
+  heat never builds — which is what a 60-second drive full of respawns measured, at a hottest tyre
+  of 0.00.

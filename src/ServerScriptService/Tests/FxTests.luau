@@ -5,10 +5,11 @@
 -- Run it from the server debug bridge:
 --   game.ServerStorage.DebugBridge:Invoke("DebugFxTests", "run")
 --
--- MOST OF IT IS PURE. `Drift/Wheels.evaluate` is the four gates with no instance in it,
--- so every threshold in this feature can be measured without a car, a place or a
--- playtest. Two checks are not pure and say so: the one that builds a stand-in rig and
--- counts the sixteen instances, and the one that drives a thousand frames through it and
+-- MOST OF IT IS PURE. The four gates, the rubber density, the tyre heat, the band ladder
+-- and the cancelling of the body's lean are all plain functions with no instance in them,
+-- so every threshold and every curve in this feature can be measured without a car, a
+-- place or a playtest. Two checks are not pure and say so: the one that builds a stand-in
+-- rig and counts its instances, and the one that drives a thousand frames through it and
 -- counts them again.
 --
 -- Since T-064 it covers the SOUNDS too -- the gearbox, the pitch lerp and the squeal's
@@ -76,6 +77,7 @@ local function stateWith(opts)
 	s.u = opts.speed or 0
 	s.v = 0
 	s.throttle = opts.throttle or 0
+	s.bodyRoll = math.rad(opts.rollDeg or 0)
 	s.airborne = opts.airborne == true
 	s.grounded = not s.airborne
 	local down = opts.down
@@ -163,26 +165,39 @@ function Tests.run(opts)
 	do
 		local builtOk, missing = true, {}
 		for _, surface in F.Built do
-			if not F.Surfaces[surface] then
+			local look = F.Surfaces[surface]
+			-- A built surface needs all three colours: the mark, the diffuse smoke and the
+			-- stylized puff on top of it.
+			if not look or not look.MarkColour or not look.SmokeColour or not look.PuffColour then
 				builtOk = false
 				table.insert(missing, surface)
 			end
 		end
 		check(
-			"every built surface has a look",
+			"every built surface has a mark, a smoke and a puff colour",
 			builtOk,
-			`built: {table.concat(F.Built, ", ")}{if builtOk then "" else "; no look for " .. table.concat(missing, ", ")}`
+			`built: {table.concat(F.Built, ", ")}{if builtOk then "" else "; incomplete look for " .. table.concat(missing, ", ")}`
 		)
-		-- The sixteen-instance budget IS this number. A second built surface is 24.
+		-- THE INSTANCE BUDGET IS THIS FORMULA, and it is the surfaces times the bands.
+		-- 4 wheels x (2 Attachments + surfaces x (bands Trails + 2 ParticleEmitters)).
 		check(
-			"one built surface, which is the sixteen-instance budget",
+			"one built surface, and the budget it comes to",
 			#F.Built == 1,
-			`{#F.Built} surface(s) -> {#CarModel.WHEEL_NAMES * (2 + #F.Built * 2)} instances per car`
+			`{#F.Built} surface(s) x {#F.Marks.Bands} bands -> `
+				.. `{#CarModel.WHEEL_NAMES * (2 + #F.Built * (#F.Marks.Bands + 2))} instances per car`
 		)
 		check(
 			"a mark is narrower than the tyre that leaves it",
 			F.Marks.Width < Config.Drift.WheelWidth,
 			`mark {F.Marks.Width} studs, tyre {Config.Drift.WheelWidth} studs`
+		)
+		-- A segment shorter than this comes out as a sliver wider than it is long, and a
+		-- run of those is the LADDER the mark used to be drawn as. Zero brings it back.
+		check(
+			"a mark segment is long enough not to be a sliver",
+			F.Marks.MinSegment > 0 and F.Marks.MinSegment < F.Marks.Width,
+			`MinSegment {F.Marks.MinSegment} studs against a {F.Marks.Width}-stud-wide ribbon; `
+				.. `measured advance through a drift was 0.104 .. 1.261 studs a frame, mean 0.675`
 		)
 		check(
 			"the fronts' threshold is well clear of the floating-point floor",
@@ -359,13 +374,280 @@ function Tests.run(opts)
 	end
 
 	----------------------------------------------------------------------------
-	-- 7. IT ALLOCATES NOTHING. Not pure: it builds a stand-in car.
+	-- 7. THE LEAN, which is the bug the user found. Pure.
+	--
+	-- `Drift/Render` rolls the Body about the centre of mass, the attachments are children
+	-- of the Body, and `Marks.Lift` is five hundredths of a stud. The roll was putting the
+	-- outside patch most of a stud out of place and the mark with it.
+	----------------------------------------------------------------------------
+	do
+		local com = Config.Drift.CenterOfMass
+		-- The patch the real car uses, at the outside rear corner.
+		local offsets = CarModel.wheelOffsets()
+		local radius = Config.Drift.WheelDiameter * 0.5
+		local patch = offsets.WheelRR - Vector3.new(0, radius - F.Marks.Lift, 0)
+			+ Vector3.new(F.Marks.Width * 0.5, 0, 0)
+		local left = Vector3.new(-patch.X, patch.Y, patch.Z)
+
+		-- What the OLD code did: the flat patch, rolled forward by the body.
+		local maxRollDeg = Config.Drift.BodyRollMax
+		local r = math.rad(maxRollDeg)
+		local c, s = math.cos(r), math.sin(r)
+		local wasRight = Wheels.applyRoll(patch, com, c, s).Y - patch.Y
+		local wasLeft = Wheels.applyRoll(left, com, c, s).Y - left.Y
+		check(
+			"the body's lean really did move the contact patches further than Marks.Lift",
+			math.min(math.abs(wasRight), math.abs(wasLeft)) > F.Marks.Lift,
+			string.format(
+				"at the full %g deg of BodyRollMax: outside %+0.3f studs, inside %+0.3f studs, against %g of lift",
+				maxRollDeg, wasRight, wasLeft, F.Marks.Lift
+			)
+		)
+
+		-- And what it does now: the written position, rolled forward, lands back on the
+		-- flat patch. Swept across the whole roll range and both sides.
+		local worst, worstAt = 0, 0
+		for deg = -maxRollDeg, maxRollDeg, 0.25 do
+			local rr = math.rad(deg)
+			local cc, ss = math.cos(rr), math.sin(rr)
+			for _, p in { patch, left } do
+				local back = Wheels.applyRoll(Wheels.patchLocal(p, com, cc, ss), com, cc, ss)
+				local err = (back - p).Magnitude
+				if err > worst then
+					worst, worstAt = err, deg
+				end
+			end
+		end
+		-- A QUARTER OF A MICRON IS EXACT. The tolerance is not 1e-9 because `Vector3` is
+		-- single-precision: the round trip is algebraically exact and what is left is the
+		-- float, measured at 2.4e-7 studs across the whole sweep.
+		check(
+			"cancelling the lean is exact across the whole roll range",
+			worst < 1e-5,
+			string.format("worst residual %.2e studs, at %+g deg of roll -- a Vector3 is a float32",
+				worst, worstAt)
+		)
+	end
+
+	----------------------------------------------------------------------------
+	-- 8. MARK DENSITY: rubber laid per stud of road. Pure.
+	--
+	-- The user's own reasoning, and the check that matters is the last one: a slide held
+	-- as the car slows lays more rubber per foot, so it gets DARKER, not fainter.
+	----------------------------------------------------------------------------
+	do
+		local slip = math.rad(45)
+		local d30 = Wheels.density(30, slip, 0)
+		local d70 = Wheels.density(70, slip, 0)
+		local d110 = Wheels.density(110, slip, 0)
+		check(
+			"at a fixed angle, slower is darker: 30 > 70 > 110 studs/s",
+			d30 > d70 and d70 > d110,
+			string.format("45 deg of slip -- 30: %.3f, 70: %.3f, 110: %.3f (30 is %.2fx 110)",
+				d30, d70, d110, d110 > 0 and d30 / d110 or 0)
+		)
+
+		local a10 = Wheels.density(70, math.rad(10), 0)
+		local a45 = Wheels.density(70, math.rad(45), 0)
+		local a90 = Wheels.density(70, math.rad(90), 0)
+		check(
+			"at a fixed speed, more sideways is darker: 10 < 45 < 90 deg",
+			a10 < a45 and a45 < a90,
+			string.format("70 studs/s -- 10 deg: %.3f, 45 deg: %.3f, 90 deg: %.3f", a10, a45, a90)
+		)
+
+		-- The case the user described in full: a long drift that is slowing down.
+		local fastAndSideways = Wheels.density(110, math.rad(80), 0)
+		local slowAndSideways = Wheels.density(30, math.rad(80), 0)
+		check(
+			"slow and sideways is the darkest of the two ends of one drift",
+			slowAndSideways > fastAndSideways,
+			string.format("80 deg at 110 studs/s: %.3f; the same angle at 30: %.3f",
+				fastAndSideways, slowAndSideways)
+		)
+
+		-- Heat lifts it, and the lift is `HeatGain`.
+		local cold = Wheels.density(70, math.rad(30), 0)
+		local hot = Wheels.density(70, math.rad(30), 1)
+		check(
+			"a hot tyre lays more rubber than a cold one, by HeatGain",
+			hot > cold and math.abs(hot / cold - F.Marks.HeatGain) < 1e-6,
+			string.format("cold %.4f, hot %.4f, ratio %.4f against HeatGain %g",
+				cold, hot, hot / cold, F.Marks.HeatGain)
+		)
+
+		-- A car going straight lays nothing, whatever its speed or its heat.
+		check(
+			"a straight car has zero density at any speed and any heat",
+			Wheels.density(110, 0, 1) < 1e-9 and Wheels.density(10, 0, 1) < 1e-9,
+			string.format("%.2e and %.2e", Wheels.density(110, 0, 1), Wheels.density(10, 0, 1))
+		)
+		check(
+			"density never leaves 0..1",
+			Wheels.density(1, math.rad(90), 1) <= 1 and Wheels.density(1000, math.rad(1), 0) >= 0,
+			string.format("worst case %.3f", Wheels.density(1, math.rad(90), 1))
+		)
+	end
+
+	----------------------------------------------------------------------------
+	-- 9. HEAT, and the bands it feeds. Pure.
+	----------------------------------------------------------------------------
+	do
+		local H = F.Heat
+		-- Cold to hot at full slip speed, in about RiseSeconds.
+		local heat, t, dt = 0, 0, 1 / 60
+		while heat < 1 and t < H.RiseSeconds * 3 do
+			heat = Wheels.heatStep(heat, true, H.FullSlipSpeed, dt)
+			t += dt
+		end
+		check(
+			"a wheel heats to full in about Heat.RiseSeconds at full slip speed",
+			math.abs(t - H.RiseSeconds) < 0.1,
+			string.format("%.2f s against a configured %g", t, H.RiseSeconds)
+		)
+
+		-- Half the slip speed, about twice as long: the rise is scaled by how hard it is
+		-- sliding, not by a stopwatch.
+		local half, th = 0, 0
+		while half < 1 and th < H.RiseSeconds * 6 do
+			half = Wheels.heatStep(half, true, H.FullSlipSpeed * 0.5, dt)
+			th += dt
+		end
+		check(
+			"half the slip speed takes about twice as long to heat",
+			math.abs(th - H.RiseSeconds * 2) < 0.15,
+			string.format("%.2f s against %.2f expected", th, H.RiseSeconds * 2)
+		)
+
+		-- And it cools in FallSeconds once the wheel stops sliding.
+		local cool, tc = 1, 0
+		while cool > 0 and tc < H.FallSeconds * 3 do
+			cool = Wheels.heatStep(cool, false, 0, dt)
+			tc += dt
+		end
+		check(
+			"and cools to nothing in about Heat.FallSeconds",
+			math.abs(tc - H.FallSeconds) < 0.1 and cool == 0,
+			string.format("%.2f s against a configured %g, ending at %.3f", tc, H.FallSeconds, cool)
+		)
+		check(
+			"heat is clamped at both ends",
+			Wheels.heatStep(1, true, 1000, 10) == 1 and Wheels.heatStep(0, false, 0, 10) == 0,
+			"1 stays 1 under ten seconds of slide, 0 stays 0 under ten of rest"
+		)
+
+		-- A WHEEL WHOSE GATE IS OPEN BUT WHICH IS NOT WORKING MUST STILL COOL. This is
+		-- the stuck-hot case, measured live: a car that has caught a slide and rolled to a
+		-- crawl keeps a few degrees of residual slip, so its rear gates stay open at a
+		-- slip speed of about 0.1 studs/s and the heat sat at 0.56 four seconds after the
+		-- drift had ended.
+		local stuck, ts = 1, 0
+		while stuck > 0 and ts < H.FallSeconds * 3 do
+			stuck = Wheels.heatStep(stuck, true, H.IdleSlipSpeed * 0.1, dt) -- gate OPEN
+			ts += dt
+		end
+		check(
+			"a wheel sliding at a crawl cools, however open its gates are",
+			stuck == 0 and math.abs(ts - H.FallSeconds) < 0.1,
+			string.format("gates open at %.1f studs/s of drag: cold in %.2f s", H.IdleSlipSpeed * 0.1, ts)
+		)
+		check(
+			"and the idle floor is far below the slip speed of a real slide",
+			H.IdleSlipSpeed < H.FullSlipSpeed * 0.1,
+			`idle floor {H.IdleSlipSpeed} studs/s against a full-rate {H.FullSlipSpeed}`
+		)
+
+		-- The stylized layer is driven by that heat, and starts at nothing.
+		check(
+			"the stylized layer starts at nothing and tops out at RateMax",
+			math.abs(Wheels.stylizedRate(0) - F.Stylized.RateMin) < 1e-9
+				and math.abs(Wheels.stylizedRate(1) - F.Stylized.RateMax) < 1e-9
+				and Wheels.stylizedRate(0.5) > Wheels.stylizedRate(0.2),
+			string.format("cold %.1f/s, half %.1f/s, hot %.1f/s",
+				Wheels.stylizedRate(0), Wheels.stylizedRate(0.5), Wheels.stylizedRate(1))
+		)
+
+		-- The bands are a ladder, and the ladder is monotone in the density.
+		local n = #F.Marks.Bands
+		local lastBand, monotone = 0, true
+		for i = 0, 100 do
+			local b = Wheels.bandFor(i / 100)
+			if b < lastBand then
+				monotone = false
+			end
+			lastBand = b
+		end
+		check(
+			`the {n} bands rise with the density and never fall back`,
+			monotone and Wheels.bandFor(0) == 1 and Wheels.bandFor(1) == n,
+			`density 0 -> band 1, density 1 -> band {n}`
+		)
+		local darkening = true
+		for i = 2, n do
+			darkening = darkening and F.Marks.Bands[i] < F.Marks.Bands[i - 1]
+		end
+		check(
+			"and each band is darker than the one before it",
+			darkening,
+			`transparencies: {table.concat(F.Marks.Bands, ", ")}`
+		)
+
+		-- AND THE LADDER HAS TO FIT THE ANGLES THE CAR IS ACTUALLY DRIVEN AT. This is the
+		-- check that caught `AngleExponent` at 0.8, where an ordinary 45-degree slide at
+		-- 70 studs/s already sat in the darkest band and three quarters of the ladder were
+		-- unreachable in normal play.
+		local startsAt, lines = {}, {}
+		for deg = 1, 90, 0.5 do
+			local b = Wheels.bandFor(Wheels.density(F.Marks.RefSpeed, math.rad(deg), 0))
+			if startsAt[b] == nil then
+				startsAt[b] = deg
+			end
+		end
+		local spread = true
+		for b = 1, n do
+			spread = spread and startsAt[b] ~= nil
+			table.insert(lines, `band {b} from {startsAt[b] or "never"} deg`)
+		end
+		check(
+			`all {n} bands are reachable between 1 and 90 degrees at RefSpeed`,
+			spread and (startsAt[n] or 0) > 40,
+			`at {F.Marks.RefSpeed} studs/s, cold: {table.concat(lines, ", ")}`
+		)
+
+		-- THE HYSTERESIS. A density sitting exactly on a boundary must not swap trails
+		-- every frame: every swap ends one ribbon and starts another, which is a dotted
+		-- line down the road.
+		local boundary = 1 / n
+		local band, swaps = Wheels.bandFor(boundary), 0
+		for i = 1, 200 do
+			local jitter = boundary + (if i % 2 == 0 then 1 else -1) * F.Marks.BandHysteresis * 0.5
+			local next = Wheels.bandWith(jitter, band)
+			if next ~= band then
+				swaps += 1
+			end
+			band = next
+		end
+		check(
+			"a density jittering on a band boundary does not swap trails",
+			swaps == 0,
+			`{swaps} swaps over 200 frames of jitter half a hysteresis wide`
+		)
+		-- But a real move across the boundary still moves.
+		check(
+			"and a real move across the boundary still moves",
+			Wheels.bandWith(boundary + F.Marks.BandHysteresis * 2, 1) == 2,
+			`band {Wheels.bandWith(boundary + F.Marks.BandHysteresis * 2, 1)} after a clear crossing`
+		)
+	end
+
+	----------------------------------------------------------------------------
+	-- 10. IT ALLOCATES NOTHING. Not pure: it builds a stand-in car.
 	----------------------------------------------------------------------------
 	if opts.skipInstances ~= true then
 		local rig, car = standInRig()
 		local w = Wheels.new()
 		local attached = w:Attach(rig)
-		local want = #CarModel.WHEEL_NAMES * (2 + #F.Built * 2)
+		local want = #CarModel.WHEEL_NAMES * (2 + #F.Built * (#F.Marks.Bands + 2))
 		local before = w:CountInstances()
 		local bodyBefore = #rig.body:GetDescendants()
 		check(
@@ -378,11 +660,30 @@ function Tests.run(opts)
 		w:Attach(rig)
 		check("attaching again builds nothing", w:CountInstances() == want, `{w:CountInstances()} instances`)
 
-		-- Now drive it. The slip angle sweeps the whole range and back, the throttle and
-		-- the handbrake are toggled, and wheels leave the ground -- so every gate flips
-		-- many times over the thousand frames.
-		local flips = 0
-		local lastOn = false
+		-- Exactly one trail per wheel may ever be enabled: the bands share two attachments
+		-- and would overdraw each other if two were ever on at once.
+		local function litTrails(): (number, number)
+			local lit, maxPerWheel = 0, 0
+			for _, wheel in w.wheels do
+				local here = 0
+				for _, fx in wheel.fx do
+					for _, trail in fx.trails do
+						if trail.Enabled then
+							here += 1
+						end
+					end
+				end
+				lit += here
+				maxPerWheel = math.max(maxPerWheel, here)
+			end
+			return lit, maxPerWheel
+		end
+
+		-- Now drive it. The slip angle sweeps the whole range and back, the speed sweeps
+		-- with it, the throttle and the handbrake are toggled, and wheels leave the ground
+		-- -- so every gate flips and every band is reached over the thousand frames.
+		local flips, lastOn = 0, false
+		local bandsSeen, worstPerWheel = {}, 0
 		for frame = 1, FRAMES do
 			local t = frame / FRAMES
 			local deg = 180 * math.abs(math.sin(t * math.pi * 7))
@@ -391,13 +692,18 @@ function Tests.run(opts)
 				speed = 20 + 100 * math.abs(math.cos(t * math.pi * 3)),
 				throttle = if frame % 7 == 0 then 0 else 1,
 				airborne = frame % 97 == 0,
+				rollDeg = Config.Drift.BodyRollMax * math.sin(t * math.pi * 5),
 			})
 			w:Update(s, { handbrake = frame % 53 == 0 }, 1 / 60)
-			local on = w.wheels[1].fx[1].on
+			local band = w.wheels[1].fx[1].band
+			bandsSeen[band] = true
+			local on = band > 0
 			if on ~= lastOn then
 				flips += 1
 				lastOn = on
 			end
+			local _, perWheel = litTrails()
+			worstPerWheel = math.max(worstPerWheel, perWheel)
 		end
 		local after = w:CountInstances()
 		local bodyAfter = #rig.body:GetDescendants()
@@ -407,31 +713,85 @@ function Tests.run(opts)
 			`before {before}, after {after}; under the body {bodyBefore} -> {bodyAfter}; {flips} gate flips in those frames`
 		)
 		check("and the drive actually worked the gates", flips > 10, `{flips} flips on one wheel`)
+		check(
+			"never more than one band's trail enabled on a wheel",
+			worstPerWheel <= 1,
+			`worst was {worstPerWheel} at once`
+		)
+		local reached = {}
+		for band in bandsSeen do
+			if band > 0 then
+				table.insert(reached, band)
+			end
+		end
+		table.sort(reached)
+		check(
+			"and the drive reached more than one band",
+			#reached > 1,
+			`bands reached: {table.concat(reached, ", ")} of {#F.Marks.Bands}`
+		)
+
+		-- The heat is per wheel, and the fronts and the rears do not share it: through a
+		-- small slide only the rears are sliding, so only the rears heat up.
+		w:Cut()
+		local small = stateWith({ slipDeg = 15, speed = 70, throttle = 1 })
+		for _ = 1, 120 do
+			w:Update(small, { handbrake = false }, 1 / 60)
+		end
+		local frontHeat, rearHeat = 0, 0
+		for _, wheel in w.wheels do
+			if wheel.front then
+				frontHeat = math.max(frontHeat, wheel.heat)
+			else
+				rearHeat = math.max(rearHeat, wheel.heat)
+			end
+		end
+		check(
+			"heat is per wheel: through a small slide the rears heat and the fronts do not",
+			rearHeat > 0.1 and frontHeat == 0,
+			string.format("after 2 s at 15 deg -- rears %.3f, fronts %.3f", rearHeat, frontHeat)
+		)
+
+		-- And it decays once the wheel stops sliding.
+		local straight = stateWith({ slipDeg = 0, speed = 70, throttle = 1 })
+		local hot = rearHeat
+		for _ = 1, 120 do
+			w:Update(straight, { handbrake = false }, 1 / 60)
+		end
+		local cooled = 0
+		for _, wheel in w.wheels do
+			cooled = math.max(cooled, wheel.heat)
+		end
+		check(
+			"and it decays when that wheel stops sliding",
+			cooled < hot,
+			string.format("%.3f after the slide, %.3f two seconds later", hot, cooled)
+		)
 
 		-- Cut and the switch both turn everything off without touching an instance count.
 		local lit = stateWith({ slipDeg = 90, speed = 80, throttle = 1 })
 		w:Update(lit, { handbrake = false }, 1 / 60)
-		local anyOn = false
-		for _, wheel in w.wheels do
-			for _, fx in wheel.fx do
-				anyOn = anyOn or fx.trail.Enabled
-			end
-		end
+		local anyOn = litTrails() > 0
 		w:Cut()
-		local anyAfterCut = false
+		local anyAfterCut, coldAfterCut = litTrails() > 0, true
 		for _, wheel in w.wheels do
+			coldAfterCut = coldAfterCut and wheel.heat == 0
 			for _, fx in wheel.fx do
-				anyAfterCut = anyAfterCut or fx.trail.Enabled or fx.emitter.Enabled
+				anyAfterCut = anyAfterCut or fx.diffuse.Enabled or fx.stylized.Enabled
 			end
 		end
-		check("Cut puts everything out", anyOn and not anyAfterCut, `lit {anyOn}, after Cut {anyAfterCut}`)
+		check(
+			"Cut puts everything out, and puts the tyres back cold",
+			anyOn and not anyAfterCut and coldAfterCut,
+			`lit {anyOn}, after Cut {anyAfterCut}, all cold {coldAfterCut}`
+		)
 
 		w:SetEnabled(false)
 		w:Update(lit, { handbrake = true }, 1 / 60)
-		local anyWhileOff = false
+		local anyWhileOff = litTrails() > 0
 		for _, wheel in w.wheels do
 			for _, fx in wheel.fx do
-				anyWhileOff = anyWhileOff or fx.trail.Enabled or fx.emitter.Enabled
+				anyWhileOff = anyWhileOff or fx.diffuse.Enabled or fx.stylized.Enabled
 			end
 		end
 		check(
@@ -439,6 +799,7 @@ function Tests.run(opts)
 			not anyWhileOff and w:CountInstances() == want,
 			`emitting {anyWhileOff}, instances {w:CountInstances()}`
 		)
+		w:SetEnabled(true)
 
 		w:Clear()
 		check("Clear takes all of them away", w:CountInstances() == 0, `{#rig.body:GetDescendants()} left on the body`)
@@ -446,7 +807,7 @@ function Tests.run(opts)
 	end
 
 	----------------------------------------------------------------------------
-	-- 8. THE GEARBOX, pure. A geometric series and nothing else.
+	-- 11. THE GEARBOX, pure. A geometric series and nothing else.
 	----------------------------------------------------------------------------
 	do
 		local E = F.Engine
@@ -533,7 +894,7 @@ function Tests.run(opts)
 	end
 
 	----------------------------------------------------------------------------
-	-- 9. THE SQUEAL'S GATE, pure. Volume is the slip angle and four ways to be silent.
+	-- 12. THE SQUEAL'S GATE, pure. Volume is the slip angle and four ways to be silent.
 	----------------------------------------------------------------------------
 	do
 		local S = F.Skid
@@ -591,7 +952,7 @@ function Tests.run(opts)
 	end
 
 	----------------------------------------------------------------------------
-	-- 10. THE SOUNDS ON A RIG. Not pure: it builds a stand-in car, IN SERVERSTORAGE
+	-- 13. THE SOUNDS ON A RIG. Not pure: it builds a stand-in car, IN SERVERSTORAGE
 	-- so that a `Sound` this test plays can never replicate to a client and be heard.
 	----------------------------------------------------------------------------
 	if opts.skipInstances ~= true then
