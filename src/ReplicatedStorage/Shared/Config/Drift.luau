@@ -235,6 +235,73 @@ local Drift = {
 	WallScrub = 0.5, -- share of speed kept after hitting something
 	WallPush = 0.2, -- studs the car is held off the surface it hit
 
+	-- ---------------------------------------------------------------- pinned against a wall
+	-- OURS, and the whole of it is OFF AT `UnstickSpeed = 0`, which gives back exactly the
+	-- model the user approved on 2026-11-03 (T-074, features/drift-model.md "Pinned
+	-- against a wall"). It adds no force and moves the car nowhere: while the car counts
+	-- as pinned the grip is simply not applied, and nothing else changes.
+	--
+	-- WHAT IT IS FOR, as a measurement. Let `t` be the angle between the car's nose and
+	-- the wall it is touching. Along that wall the drivetrain pushes
+	-- `MaxAcceleration * cos(t)` and the grip pulls back `f(t) * sin(t)` -- the grip's
+	-- pull is sideways in the CAR's frame, and with the nose into a wall "sideways" is
+	-- along the wall and backwards. They cross at about 27 degrees of nose angle, and past
+	-- it the car stops dead at 0.07 studs/s and never moves again. Measured on a banked
+	-- plane with a barrier: identical at 10 degrees of bank and at 30, so the bank is not
+	-- the cause -- it is only what keeps feeding the car back into the wall. And it is not
+	-- the past-90-degree brake either: that was the suspicion and the numbers refused it.
+	--
+	-- The cost of the trap, before this: the test autopilot over 50 generated pieces spent
+	-- 0.5 s stuck at 5 degrees of bank, 11.9 at 8, 40.2 at 10 and 113.8 at 15, and at 30
+	-- it never finished the road at all (8 pieces of 50 in 400 s). That is why the
+	-- showcase corner shipped at 10 degrees instead of the spec's 30.
+	-- A car counts as PINNED when it has been slower than `UnstickSpeed` for
+	-- `UnstickSeconds` and has touched a wall inside the last `UnstickSeconds`. While it
+	-- is, the grip is not applied and the wall scrub is not charged. Nothing else changes,
+	-- and nothing is ever added.
+	--
+	-- "TOUCHED A WALL INSIDE THE WINDOW", NOT "IS TOUCHING ONE", and the difference is the
+	-- whole of whether this works. Measured on the real road: a car held against a barrier
+	-- for 40 seconds reported a wall on 387 steps out of 4 824 -- one in twelve -- because
+	-- `WallPush` holds it a fifth of a stud clear and gravity has to carry it back across
+	-- that gap before the next Blockcast can reach anything. The first version of this
+	-- asked for unbroken contact and never fired once.
+	UnstickSpeed = 5, -- studs/s. Slower than this, with a wall about, the car is PINNED.
+	-- ZERO TURNS THE WHOLE THING OFF and gives back the approved
+	-- model exactly.
+	-- FIVE, AND IT IS THE NUMBER THAT MATTERS: the pin's own
+	-- equilibrium is 0.07 studs/s, so a car that is really stuck is
+	-- far under this, and 5 is what `RoadTests` has always called
+	-- stopped. MEASURED, 50 pieces at 10 degrees of bank: at 5 the
+	-- car drives all 50 and is stuck 1.4 s; AT 15 IT DRIVES 37 AND IS
+	-- STUCK 13.2. Fifteen is a hairpin's speed, not a pinned car's,
+	-- so it takes the grip away where the car needs it to rotate and
+	-- the car cannot make the tight corners at all. The honest
+	-- reading is that this must only ever fire on a car that has
+	-- genuinely stopped
+	UnstickSeconds = 0.2, -- s, and it is BOTH clocks, which do two different jobs:
+	--   as a DWELL, how long the car must have been that slow. A car
+	--   that merely DIPS under the speed in a corner keeps its grip,
+	--   and that matters -- without the dwell the 50-piece drive fell
+	--   from 50 pieces to 37, because the grip is what rotates a car
+	--   round a tight corner;
+	--   as a WINDOW, how recently it must have touched a wall. It has
+	--   to be at least as long as the gaps between touches (above) or
+	--   nothing ever fires.
+	-- TWO TENTHS, AND LONGER IS WORSE. Six seeds of 50 pieces at 10
+	-- degrees of bank, seconds the autopilot spent stopped: at 0.2
+	-- every seed is better than or equal to the unstick being off; at
+	-- 0.5 seed 1 falls from 214 s to 0.7 but SEED 8080 CLIMBS FROM 40
+	-- TO 173. Too generous and the grip comes off a car that is merely
+	-- slow near a barrier, which is a hairpin
+
+	UnstickRelease = 45, -- studs/s. The pin also ends once the car is going this fast
+	-- again, even if it is still scraping the wall. Without it a car
+	-- that escapes along a banked barrier keeps the grip off for the
+	-- rest of the corner, because gravity never lets it leave the
+	-- wall. 45 is under half what the road makes the car do on a
+	-- straight, so a driving car always has its grip back
+
 	-- ---------------------------------------------------------------- network
 	StateSendRate = 20, -- Hz, CarState to the server
 	RemoteCarSmoothing = 0.08, -- s, how fast another player's car eases to its reported pose

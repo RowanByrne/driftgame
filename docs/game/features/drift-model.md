@@ -10,6 +10,10 @@ Tuning is numbers in `Shared/Config/Drift.luau`, not code. One open tuning quest
 approval and is in "Open questions": only the bottom fifth of the finger's travel is usable before
 the car spins rather than drifts.
 
+**Two changes have been made since that gate, and both are switches that give it back exactly:**
+`GravityOnGround` ("Gravity", `T-065`) and `UnstickSpeed` ("Pinned against a wall", `T-074`). Each
+has a check whose only job is to prove the flat road is untouched.
+
 **This spec was rewritten on 2026-11-03 and supersedes the model that was on `main`.** Two
 hand-built models have now been driven and neither felt right (`DECISIONS.md`, 2026-11-03): the
 first steered the car directly, the second put the finger on the car's rear and made the slide a
@@ -231,6 +235,78 @@ Four things about it, and the last two are the ones that are easy to get wrong:
   which is exactly what a velocity held in the surface's plane needs: measured, the along-slope
   deceleration is `g·sin(t)` to three decimals, every step. The vertical part survives only on the
   one step the car leaves the ground, which is the step it should.
+
+### Pinned against a wall (`T-074`)
+
+**The second change to this model since the user approved the feel, and like the first it is a
+switch.** `UnstickSpeed = 0` is the approved model exactly — measured, not asserted: the same corner
+with it on and off is bit-identical, and the whole 50-piece road drive at `0` reproduces every
+number the drive produced before this existed.
+
+**The trap, which is arithmetic rather than a bug in anything.** Let `t` be the angle between the
+car's nose and a wall it is touching. Along that wall:
+
+```
+the drivetrain pushes   MaxAcceleration * cos(t)      = 14.3 cos(t)
+the grip pulls back     f(t) * sin(t)                 = (14.3 + 14.3·t + 14.3·t²) sin(t)
+```
+
+The grip's pull is `carRight × sign(b)` — sideways **in the car's frame** — so with the nose into a
+wall and the travel along it, "sideways" *is* along the wall and backwards. The wall deletes the
+into-the-wall half of both and what is left is a brake against a push. **They cross at about 27° of
+nose angle**, and past it the car stops at 0.07 studs/s and never moves again: the reference's
+per-axis clamp holds it at exactly what one step of drivetrain adds. Above about 45° the `WallScrub`
+takes over as well — a car whose own engine is the biggest thing pointing into the wall is charged a
+crash on every step, keeping half of what little it has, 120 times a second.
+
+Three things the measurement settled that guessing had not:
+
+- **It is not the past-90° brake.** A car nose-*on* to a wall scrapes along it at 120 studs/s on a
+  30° bank quite happily. The trap bites from 27° of nose, where the grip is still an ordinary
+  sideways pull and nothing in it is a brake by intent.
+- **It is not the bank.** The equilibrium is 0.07 studs/s at 10° of bank and at 30° alike. The
+  bank's only job is to keep feeding the car back into the wall so the nose-in state lasts.
+- **A player can get out and the test autopilot cannot.** Point the nose within ~15° of the wall and
+  the engine pulls the car out to 50 studs/s. That window is about 25° wide and the car gives no
+  feedback at all while it is stopped, which is why this is fixed rather than left to the driver.
+
+**What the fix is: withholding, never pushing.** While the car counts as pinned, the grip is not
+applied and the wall scrub is not charged. Nothing is added to the velocity, the car is moved
+nowhere, and `vel -= n·into` and the sweep's position clamp are untouched — **a wall is still a
+wall**, measured at 0.000 studs of penetration through an escape from every nose angle.
+
+**Pinned means *held*, not *touching*.** The first version asked for unbroken contact and never
+fired once: on the real road a car held against a barrier for 40 s reported a wall on **387 steps
+out of 4 824** — one in twelve — because `WallPush` holds it a fifth of a stud clear and gravity has
+to carry it back across that gap before the next Blockcast reaches anything. So it is two clocks,
+both in `UnstickSeconds` and both load-bearing: a **dwell** (that slow for that long — without it a
+car that merely *dips* under the speed in a corner loses the grip that rotates it, and the 50-piece
+drive falls from 50 pieces to 37) and a **window** (a wall touched inside it — without which nothing
+fires at all, because of the gaps).
+
+| Number | Start | Source | What it does |
+|---|---|---|---|
+| `UnstickSpeed` | 5 studs/s | ours | Slower than this, with a wall about, the car is pinned. **0 turns the whole thing off.** The pin's own equilibrium is 0.07 studs/s, so a genuinely stuck car is far under this |
+| `UnstickSeconds` | 0.2 s | ours | Both clocks: how long that slow, and how recently a wall. Long enough to bridge the gaps between touches, and no longer |
+| `UnstickRelease` | 45 studs/s | ours | The pin also ends at this speed, even if the car is still scraping. The guard against a car that never loses contact keeping its grip off at speed |
+
+**Both numbers fail the same way when they are too big, and that is measured.** Make either one
+generous and the grip comes off a car that is merely *slow near a barrier* — which is a hairpin,
+where the grip is what rotates the car. Over 50 generated pieces at 10° of bank: `UnstickSpeed` at 5
+drives all 50 and is stopped 1.4 s, **at 15 it drives 37 and is stopped 13.2 s**; `UnstickSeconds`
+at 0.2 is better than or equal to the unstick being off on every seed tried, **at 0.5 one seed falls
+from 214 s stopped to 0.7 and another climbs from 40 to 173.** This may only ever fire on a car that
+has genuinely stopped, right next to the thing that stopped it.
+
+**What it does and does not buy, honestly.** In isolation it is decisive: a car nose-in to a barrier
+goes from *never moving again* to **off the wall inside 4 s from every angle but a right one**. On
+the real road, where the test autopilot drives, it is a clear gain on the seeds where the pin is
+what stopped the car (8080: 40.2 s → 1.4 s stopped, all 50 pieces either way; 99991: 105 s →
+90.5 s) and no change at all on the seeds where something else did (seed 1: 213.9 s either way,
+41 pieces either way). **A 400-second autopilot drive is
+chaotic and one seed's stopped-time is noise** — the same change reads 1.4 s and 213.9 s on two
+seeds — so the numbers above are chosen on the distribution and on the mechanism, never on one run.
+Getting the rest of the way is a respawn backstop and a better test driver, not more model.
 
 ### The car
 
@@ -510,6 +586,11 @@ server bridge. The checks that must still pass, and the new ones the port needs:
 | **A hill pulls** | A coast with the engine and the grip off, down a slope and up it: speed at each end against `v² = v0² + 2g·Δh`, with Δh read off the surface |
 | **A drift downhill scrubs less** | The same finger for the same time, flat and downhill: the speed each lost |
 | **A bank holds you** | A steady finger round a banked circle with the term on and off: how far round the band it got, and its radius at a fixed time |
+| **The wall trap is real** | With `UnstickSpeed = 0`, a car nose-in to a barrier at 30, 60, 120 and 150° on a 10° and a 30° bank: still under 1 stud/s after 8 s, every time, and never flagged pinned |
+| **Pinned, the car drives itself off** | The same eight starts with the unstick on: past 20 studs/s within 4 s, with no steering and nothing pushing it |
+| **It does not fire when it should not** | 12 s leaning on a barrier at the bottom of a 30° bank at speed: touching the wall throughout, pinned on zero steps |
+| **A pinned car is still stopped by a wall** | Seven nose angles, the whole escape: the deepest the box ever gets past the barrier's face |
+| **The unstick cannot touch the flat road** | The same corner with `UnstickSpeed` at 5 and at 0, bit-identical. The second check that protects the approved feel |
 
 - **Playtest:** drive it. The user decides whether it feels right; that is the gate. Nothing above
   is a feel judgement — those checks only catch a model that has stopped working.
@@ -570,6 +651,19 @@ one before being chased down:
 
 ## Open questions
 
+- **The car cannot climb a bank steeper than 24°, and that is a number in this spec rather than a
+  bug** (`T-074`). `MaxAcceleration` is 14.3 studs/s² and gravity along a surface leaning `t` is
+  `35·sin(t)`; the two cross at **`asin(14.3/35) = 24.1°`**, and the drivetrain's own falloff with
+  speed means the real ceiling is lower. Above it a car that has lost its speed on a bank can only
+  drive *along* the bottom of it — the grip can still haul it up at speed, but nothing can from a
+  crawl. Measured over 50 generated pieces at the showcase corner on seed 8080, pieces reached and
+  seconds stopped with the unstick on: 5° 50 / 0.4 s, 10° 50 / 1.4 s, 15° 41 / 54.6 s, 20° **25** /
+  0.4 s, 25° **8** / 6.1 s, 30° **8** / 4.1 s. Past 20° the car stops being *stuck* and starts
+  being merely unable to get anywhere: at 30° it crawls the bottom of the bank at a mean of 7
+  studs/s. **The unstick ends the pin; it does not make a steep bank drivable.**
+  `road-elevation.md` asks for 30° of bank and this is why it cannot have it. The answer is
+  `MaxAcceleration`, or a bank the car can climb, and both are the user's call rather than a
+  worker's.
 - **`DownforcePerSpeed` is a guess** (above). It is the only number here that is not read off the
   reference. Measured, 0.2 is a fair starting point and the car is neither glued nor floaty on the
   road — because on the road it changes nothing at all (above). It only shortens a jump, and the

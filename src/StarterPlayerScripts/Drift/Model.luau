@@ -110,6 +110,11 @@ export type State = {
 	-- the travel, which is opposite lock for free
 	wheelSpin: number, -- radians, for drawing only
 	wallHit: boolean,
+	sinceWall: number, -- seconds since the car last touched a wall. TIME SINCE, not time
+	-- in: contact is intermittent even when the car is held (T-074)
+	crawlSeconds: number, -- seconds the car has been slower than `UnstickSpeed`
+	pinned: boolean, -- held against a wall and crawling, so the grip and the wall scrub are
+	-- both let go this step. Never true at `UnstickSpeed = 0`
 	fell: boolean,
 	time: number, -- seconds of simulation since the state was made
 }
@@ -192,6 +197,9 @@ function Model.new(spawnCFrame: CFrame): State
 		wheelSteer = 0,
 		wheelSpin = 0,
 		wallHit = false,
+		sinceWall = math.huge,
+		crawlSeconds = 0,
+		pinned = false,
 		fell = false,
 		time = 0,
 	}
@@ -247,6 +255,80 @@ function Model.step(s: State, input: Input, dt: number, world: World): State
 	s.slip = b
 	s.drifting = math.abs(b) >= math.rad(C.MinSlipAngleForDrift)
 
+	---------------------------------------------------------------- pinned against a wall
+	-- OURS, NOT THE REFERENCE'S, and `UnstickSpeed = 0` turns the whole of it off and
+	-- gives back exactly the model the user approved (T-074). It adds no force and moves
+	-- the car nowhere: all it ever does is WITHHOLD the grip, and only while the car is
+	-- held against a wall and crawling.
+	--
+	-- WHY A CAR AGAINST A WALL CANNOT DRIVE AWAY, measured rather than guessed. Take the
+	-- angle `t` between the car's nose and the wall it is touching. Along that wall:
+	--
+	--   the drivetrain pushes    MaxAcceleration * cos(t)
+	--   the grip pulls BACK      f(t) * sin(t)       (f is the quadratic in the slip angle)
+	--
+	-- The grip's pull is `carRight * sign(b)`, which is sideways IN THE CAR'S FRAME -- so
+	-- with the nose into a wall and the travel along it, "sideways" is ALONG THE WALL AND
+	-- BACKWARDS. The wall deletes the into-the-wall half of both, and what is left is a
+	-- brake against a push. They cross at about 27 degrees of nose angle: past it the
+	-- brake wins, and the car stops dead at 0.07 studs/s and stays there for ever. The
+	-- reference's per-axis clamp holds it exactly at what one step of drivetrain adds.
+	--
+	-- IT IS NOT THE PAST-90-DEGREE BRAKE. That was the suspicion; the measurement says
+	-- otherwise. A car nose-ON to a wall scrapes along it at 120 studs/s on a 30-degree
+	-- bank quite happily, and the trap bites from 27 degrees of nose, where the grip is
+	-- still a sideways pull and nothing in it is braking by intent. Nor is it the bank:
+	-- the equilibrium is 0.07 studs/s at 10 degrees of bank and at 30 alike. The bank's
+	-- only job is to keep feeding the car back into the wall so the nose-in state lasts.
+	--
+	-- SO THE FIX IS TO STOP THE GRIP, not to push the car. A player gets out of this by
+	-- pointing the nose along the wall and letting the engine pull them out -- measured,
+	-- that works and reaches 50 studs/s -- but the window is about 25 degrees wide out of
+	-- 360 and the car gives no feedback at all while it is stopped. With the grip let go,
+	-- the drivetrain's along-the-wall share is unopposed at any nose angle but a right
+	-- one, and the car drives itself out the same way.
+	--
+	-- WHAT PINNED MEANS, AND WHY IT IS NOT "TOUCHING A WALL". The first version of this
+	-- asked for UNBROKEN wall contact and it never fired once on the real road: measured
+	-- over a 50-piece drive, the car spent 4 824 steps stuck against a barrier and only
+	-- 387 of them reporting a hit -- CONTACT IS ONE STEP IN TWELVE. `WallPush` holds the
+	-- car a fifth of a stud off what it hit, so gravity has to carry it back across that
+	-- gap before the next Blockcast can reach anything, and a clock that resets on a step
+	-- without a wall is reset about ten times a second. A car held against a barrier does
+	-- not touch it continuously; it rattles against it.
+	--
+	-- So it is TWO CLOCKS, both measured in `UnstickSeconds`, and they do two different
+	-- jobs. Dropping either one was tried and both cost a measurement:
+	--
+	--   `crawlSeconds`  a DWELL: the car has been slower than `UnstickSpeed` for this
+	--                   long. Without it a car that merely DIPS under the speed in a
+	--                   corner loses its grip for the dip, and the grip is what rotates
+	--                   it: the 50-piece drive fell from 50 pieces to 37.
+	--   `sinceWall`     a WINDOW: a wall was touched inside this long. Without it being a
+	--                   window -- the first version asked for contact on the step -- it
+	--                   never fires at all, because of the gaps above.
+	--
+	-- WHAT KEEPS IT OUT OF NORMAL DRIVING: leaning on a barrier at speed is above
+	-- `UnstickSpeed` and never qualifies; a car that is merely slow, in a hairpin, has
+	-- touched nothing and never qualifies either -- it takes both. Between `UnstickSpeed`
+	-- and `UnstickRelease` the flag HOLDS whatever it was, which is the hysteresis that
+	-- lets an escaping car keep accelerating; it ends when the walls go quiet or the car
+	-- is doing `UnstickRelease` again. On the flat road, where the car never meets a wall
+	-- at a crawl, the flag is never set and the step is the step the user drove.
+	local groundSpeed = math.sqrt(vel.X * vel.X + vel.Z * vel.Z)
+	if groundSpeed < C.UnstickSpeed then
+		s.crawlSeconds += dt
+	else
+		s.crawlSeconds = 0
+	end
+	if C.UnstickSpeed <= 0 then
+		s.pinned = false
+	elseif s.crawlSeconds >= C.UnstickSeconds and s.sinceWall <= C.UnstickSeconds then
+		s.pinned = true
+	elseif s.sinceWall > C.UnstickSeconds or groundSpeed >= C.UnstickRelease then
+		s.pinned = false
+	end
+
 	---------------------------------------------------------------- grip closes it again
 	-- A quadratic in the slip angle, capped, times the surface. The angle it is read at is
 	-- capped at square-on, so the curve stops growing there and the ceiling is a real
@@ -257,7 +339,9 @@ function Model.step(s: State, input: Input, dt: number, world: World): State
 	-- how a spun car stops, and nothing else in the model slows it down.
 	s.gripAccel = 0
 	s.braking = false
-	if s.grounded and s.surfaceGrip > 0 then
+	-- `not s.pinned` is the whole of T-074's change to the model, and it is the only line
+	-- in this block that is not the reference's. At `UnstickSpeed = 0` it is never true.
+	if s.grounded and s.surfaceGrip > 0 and not s.pinned then
 		local bc = math.min(math.abs(b), math.pi * 0.5)
 		local f = math.min(C.ConstantFriction + C.SlipFriction * bc + C.SlipSqFriction * bc * bc, C.MaxFriction)
 		f *= s.surfaceGrip * C.FrictionMultiplier
@@ -387,11 +471,21 @@ function Model.step(s: State, input: Input, dt: number, world: World): State
 			-- surface: a ram keeps `WallScrub` of what is left, a graze keeps all of it. A
 			-- flat scrub on every step a wall is touched brings a car driving along one to
 			-- a standstill in a fifth of a second, which is a car glued to the wall.
+			--
+			-- AND IT IS SUSPENDED WHILE THE CAR IS PINNED (T-074), which is the second
+			-- half of that change and the same statement as the first: withhold, never
+			-- push. A car whose nose is well into a wall has its own drivetrain as the
+			-- biggest thing pointing into it, so `-into/speed` is near 1 on EVERY step and
+			-- the car keeps half of what little it has, 120 times a second. Measured with
+			-- only the grip let go: at 60 degrees of nose the car still sat at 0.1 studs/s
+			-- for ever, and the scrub was the whole of what held it. The wall is still a
+			-- wall -- `vel -= n * into` is untouched, so the car is still stopped at the
+			-- surface -- it simply stops being charged a crash a step for leaning on it.
 			local into = vel:Dot(n)
 			if into < 0 then
 				local speed = vel.Magnitude
 				vel -= n * into -- slide along it instead of stopping dead
-				if speed > EPS then
+				if speed > EPS and not s.pinned then
 					vel *= lerp(1, C.WallScrub, clamp(-into / speed, 0, 1))
 				end
 			end
@@ -426,6 +520,15 @@ function Model.step(s: State, input: Input, dt: number, world: World): State
 			end
 			s.wallHit = true
 		end
+	end
+
+	-- HOW LONG SINCE A WALL (T-074), read at the top of the NEXT step. Time since, not time
+	-- in: contact on the real road is one step in twelve even when the car is held hard
+	-- against a barrier, so "how long since one" is the only honest question.
+	if s.wallHit then
+		s.sinceWall = 0
+	else
+		s.sinceWall += dt
 	end
 
 	---------------------------------------------------------------- the ground
