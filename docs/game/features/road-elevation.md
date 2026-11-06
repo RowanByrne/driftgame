@@ -130,6 +130,54 @@ is 0.025 ms a frame at 60 fps.
   none went through, worst gap 7.05 studs, and where the flat box let the body touch a barrier for 3
   steps on a bank the tilted one never did.
 
+### The faint bands across the road are geometry, and they cost segments or nothing (`T-066`)
+
+The user saw thin lines running across the road wherever it has grade or bank, and asked how we
+would fix it. **The honest answer is that there is nothing free to fix, and the builder is already
+at the floor.** The measurement, seed 8080 × 20 pieces, 703 seams between slabs:
+
+| Where | Worst | p90 | Median |
+|---|---|---|---|
+| Along the **centre line** | **0.0044 studs** | — | — |
+| At either **kerb** | **0.2967 studs** | 0.1976 | 0.0804 |
+| On a **barrier's** top, over its own 2 studs of width | **0.0183 studs** | — | — |
+
+Two more seeds, same shape: 1234 reads 0.0028 / **0.2174**, and 20260704 reads 0.0214 / **0.4187**.
+
+**It is a wedge, not a step.** Zero in the middle and growing with the distance out from it: two
+neighbouring top faces cross *along the centre line*, and each is proud of the other on one half of
+the road. That is why the bands in the user's screenshot fade out towards the middle, and why only
+one half of each one catches the light — the other half's riser faces away from the camera.
+
+**It is not a sagitta, so the obvious fix is not one.** A slab's top face already passes exactly
+through *both* of its end nodes, so a secant box and a tangent box are the same box and along the
+centre line the road is continuous to four decimal places. What a flat face cannot do is match the
+road's **cross** direction at both of its ends at once: the surface of a graded curve is not
+developable, and no flat quadrilateral lies in it. Each box ends up tilted across by the cross-slope
+at its own middle, `sin(bank) + tan(grade) × sin(yaw − the seam's yaw) × cos(bank)`, and half the
+road's width times the difference between two neighbours **is** the riser — predicted from the nodes
+alone that is 0.2975 against the 0.2967 measured, and 1.2% out summed over all 703 seams.
+
+**And the total is conserved, which is the whole answer.** Summed along a piece those differences
+telescope into the piece's own turn times its grade, and that total does not depend on how the boxes
+are oriented — only on how many of them there are. Driving every seam to zero with one roll per box
+was tried and it works, at a price the road cannot pay: **5° to 19° of bank the road never asked
+for**, leaving a piece 2° to 10° out at its join, which is a four-stud step in place of a
+quarter-stud one. Spreading the total evenly over the seams — what the builder already does — is the
+smallest the worst seam can be.
+
+So the levers are, and none of them is free:
+
+| | Cost |
+|---|---|
+| Cut profiled pieces more finely | **Linear.** ×2 segments halves the step and takes a window from ~1 130 parts to ~2 320; ×6 reaches 0.05 studs at ~7 100. `MaxProfileSegments` is 64 and a hairpin stack is already there |
+| Keep grade off the **curves** — descend on straights and links | **Free in parts**, and it removes the defect entirely: the riser is zero on a level corner and zero on a graded straight. It costs the touge road its descending corners, which is the user's call |
+| Leave it | Free. Worst 0.30 studs, median zero, and it does not touch the driving |
+
+Three checks in `RoadTests` (`1h`) hold the floor: the centre line is continuous, the kerb step
+matches the prediction from the nodes, and the barriers do not have the problem. `RoadTests:seams`
+reports the numbers on any seed.
+
 ## Why (the spec as the user approved it)
 
 The endless road **was dead flat** and said so in its own config: *"`SurfaceY = 0`, world Y of the
