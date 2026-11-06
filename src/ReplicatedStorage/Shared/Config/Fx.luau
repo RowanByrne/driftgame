@@ -59,26 +59,26 @@ return {
 		TextureLength = 0, -- 0 is a solid ribbon. A repeating texture would need an
 		-- uploaded asset, and this feature uploads nothing
 
-		MinSegment = 0.5, -- studs the contact patch must travel before the trail lays
-		-- another segment (`Trail.MinLength`). MEASURED, and it is what
-		-- stopped the mark coming out as a LADDER of short rungs with
-		-- road showing between them.
+		MinSegment = 0, -- studs the contact patch must travel before the trail lays
+		-- another segment (`Trail.MinLength`). BACK TO ZERO, and the
+		-- round it spent at 0.5 is worth writing down because it was the
+		-- wrong diagnosis and it made the fault worse.
 		--
-		-- It was 0, which lays a segment every frame however short. A
-		-- mark is `Width` studs wide -- 1.2 -- and sampled every frame
-		-- through a real drift the contact patch advances 0.104 to 1.261
-		-- studs, mean 0.675: so very nearly every quad in the ribbon is
-		-- WIDER THAN IT IS LONG, and at the slow end twelve times wider.
-		-- The other two suspects were ruled out in the same sample: the
-		-- wheel left the ground 0 times in 481 frames and the trail
-		-- switched on or off once, so it was neither the ground gate nor
-		-- a band swapping.
+		-- The mark was breaking up, and 0.5 was a guess at why: a ribbon
+		-- 1.2 studs wide advancing a measured 0.104 to 1.261 studs a
+		-- frame lays quads wider than they are long, so making each one
+		-- longer looked like the cure. It was not. THE BREAKS ARE BAND
+		-- CHATTER (see `SwapOverlap`): measured over 1 081 grounded
+		-- frames, the rear wheels changed band 58 times and the fronts
+		-- 30, and most of those swaps were 0 OR 1 STUD APART. Every swap
+		-- starts an empty trail, and `MinLength` then makes that empty
+		-- trail wait half a stud before it draws anything -- so 0.5
+		-- turned a chain of hairline joins into the long clean dashes the
+		-- user photographed.
 		--
-		-- Half a stud is just under that mean, so a drift at speed lays
-		-- the same segments it always did and a crawling car merges
-		-- several frames into one honest quad instead of a stack of
-		-- slivers. Raise it and a slow mark gets chunky; drop it to zero
-		-- and the ladder comes back.
+		-- With the chatter fixed at its source there is nothing for this
+		-- to help, and at zero a fresh ribbon starts drawing on its very
+		-- next frame. Raise it again only with a screenshot in hand.
 		LightInfluence = 1, -- 1 takes the world's light, which is what makes a mark sit
 		-- IN the road rather than glow on top of it. 0 would keep it
 		-- the same near-black in shade and in sun
@@ -93,15 +93,35 @@ return {
 		-- enabled. Each band's ribbon then persists at its own fixed darkness, and the
 		-- line through a corner genuinely gets darker where the car was working hardest.
 		--
-		-- Lightest first. More bands is a smoother ramp and four more instances a car
-		-- each; two would read as on/off, six is past what an eye can separate on asphalt.
-		Bands = { 0.74, 0.60, 0.46, 0.32 }, -- `Trail.Transparency` per band
-		BandHysteresis = 0.04, -- how far past a band's boundary the density has to get
-		-- before the trail is actually swapped. WITHOUT IT a density
-		-- sitting on a boundary swaps every other frame, and every swap
-		-- ends one ribbon and starts another -- a dotted line down the
-		-- road instead of a mark. In units of density, so 0.04 is four
-		-- per cent of the whole ladder
+		-- EVERY SWAP BETWEEN BANDS IS A HOLE IN THE MARK unless something covers it,
+		-- because the incoming trail has no points yet and draws nothing until the contact
+		-- patch has moved. The three numbers below are all about making swaps rare and
+		-- then covering the ones that are left. **A continuous mark at three darknesses
+		-- beats a dashed one at four** -- the user asked for darkness as a feel, not as a
+		-- scale.
+		--
+		-- Lightest first. THREE, down from four: measured, four bands put the boundaries
+		-- close enough together that an ordinary drift crossed them constantly.
+		Bands = { 0.70, 0.52, 0.34 }, -- `Trail.Transparency` per band
+
+		BandHysteresis = 0.1, -- how far past a band's boundary the density has to get
+		-- before the trail is swapped at all. MEASURED and raised from
+		-- 0.04: at four bands and 0.04 the rear wheels still changed band
+		-- 58 times in 1 081 frames, most of them 0 or 1 stud apart. At
+		-- three bands a band is 0.333 of the ladder wide, so 0.1 is
+		-- nearly a third of a band of dead zone either side of a
+		-- boundary -- a density has to mean it
+
+		SwapOverlap = 0.12, -- s the OUTGOING band's trail keeps drawing after the incoming
+		-- one starts. THIS IS THE ONE THAT ACTUALLY CLOSES THE HOLE:
+		-- however rare swaps are, a swap is a hole by construction, and
+		-- the only way to not have one is for the two ribbons to overlap
+		-- rather than abut. At 70 studs/s this is about 8 studs of
+		-- double-drawn mark, which reads as a short splice a shade darker
+		-- than either band -- a join instead of a gap. It is NOT applied
+		-- when a wheel stops marking altogether: there, the mark should
+		-- end where the drift ended, and the gate's own hysteresis
+		-- (`Gates.StopSlipDegrees`) is what stops that flickering
 
 		-- The intensity the bands are chosen by: RUBBER LAID PER STUD OF ROAD, 0..1.
 		-- The user's own framing, and the whole of why there is a `/speed` in it:
@@ -260,6 +280,15 @@ return {
 		-- `Config.Drift.MinSlipAngleForDrift`, so it changes nothing a player can see and
 		-- it is not a second drift threshold.
 		MinSlipDegrees = 0.5,
+
+		StopSlipDegrees = 0.25, -- the same floor, but for a wheel that is ALREADY marking.
+		-- A gate with one threshold chatters on anything that sits on
+		-- it, and chatter in this gate is a hole in the mark: measured,
+		-- a car running at 44 studs/s with its slip angle hovering on
+		-- 0.5 degrees switched its rear marks on and off repeatedly at a
+		-- density of 0.00. Start at `MinSlipDegrees`, keep going down to
+		-- this, stop below it. A car genuinely running straight reads
+		-- about 0.09 degrees, well under both, so nothing latches on
 
 		MinThrottle = 0.2, -- 0..1. A car coasting sideways leaves nothing. `s.throttle` is
 		-- eased in over `Config.Drift.FullThrottleSeconds` and is never an
