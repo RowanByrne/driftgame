@@ -43,6 +43,7 @@ legacy `Global` `ZIndexBehavior`, where a child does not draw above its parent: 
 | Screen | Source | Opens from | Data and inputs | States | Relied on by | Status |
 |---|---|---|---|---|---|---|
 | **Start button** (`PlayerGui.DriftRun`) | `StarterPlayerScripts/Drift/RoadHud.luau`, a LocalScript | Always on screen, from the moment the client loads, in every world | **Shows:** which state the run is in, which piece the **server** has you on, and how many are driving. All of it comes down `RoadRun` from the server; nothing here is a client's own number. **Takes:** one press, which sends one boolean | **Not in a run** — green, `START ENDLESS RUN`, "not in a run". **A run is going but not yours** — green, "a run is going (N driving) -- press to join". **In a run** — red, `END RUN`, "on the road -- piece N, alone / N other drivers" | `features/endless-run.md`; `RunTests` and agent playtests read `PlayerScripts.RoadHudBridge` | Programmer art |
+| **Testing buttons** (`PlayerGui.DriftTest`) | `StarterPlayerScripts/Drift/TestHud.luau`, a LocalScript | Always on screen, bottom left, in every world | **Shows:** whether this place has a test hill and whether the guardrails are up — both the **server's** answers, down `TestTools`. **Takes:** two presses, each of which sends one of two strings (`"lift"`, `"rails"`) and nothing else — never a position | **No hill here** — grey, `NO HILL HERE`. **Rails up** — magenta, `GUARDRAILS: ON`. **Rails down** — red, `GUARDRAILS: OFF`. Header always reads `TEST ONLY -- NOT SHIPPING` | `features/test-hill.md`; `PlaygroundTests` and agent playtests read `PlayerScripts.TestHudBridge` | Programmer art, **not shipping** |
 
 For any screen whose layouts differ, a short section on how, in this form:
 
@@ -60,6 +61,21 @@ side. Measured at 1525 x 663 in `DR-Lane3`: `AbsolutePosition` (652.5, 8), `Abso
 - **Phone landscape:** the same. Nothing else is at the top middle; the readout is top left and the
   tuner's and readout's buttons are top right.
 - **Phone portrait:** the same.
+
+### Testing buttons
+
+**The same at every layout, for the same reason and in the one corner nothing else uses.** Two
+200 x 40 px buttons and a 16 px label, stacked in the bottom left with 16 px of margin: the readout
+is top left, the tuner and the DBG button top right, the start button top middle, the handbrake
+bottom right and the steering slider bottom middle. 200 px fits inside the narrowest layout this
+game supports (390 px) with room either side.
+
+- **`DisplayOrder = 16`,** above the drag pad's 5 and below the tuner's 20. Without it a thumb on a
+  button is also a thumb steering the car.
+- **`IgnoreGuiInset = true`,** unlike the start button: the bottom left is nowhere near Roblox's own
+  chrome.
+- **It is deliberately ugly.** A magenta nothing else in the game uses, and a header that says
+  `TEST ONLY -- NOT SHIPPING`. The one thing that must never happen is this going out with the game.
 
 ## Components
 

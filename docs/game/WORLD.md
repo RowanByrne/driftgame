@@ -33,12 +33,15 @@ The real map is designed once the drift feel is agreed (`ROADMAP.md`). This doc 
 | The district | Streets and alleys to pick a line through | 15 buildings on a 3 by 5 grid, 32 to 140 studs tall, alternating near-black and near-white. The gaps between them are the streets: 44 to 110 studs wide | — | about 4 s to its near edge, 10 s to its far corner | Built (code) |
 | The bowl | Holding one slide, and the ground-follow case | A 150-stud constant-radius band, 60 wide, banked 8 degrees, inner edge flush with the plate, with an 80-wide apron outside it falling back to the plate: 259 studs from the middle to the outside | — | about 6 s | Built (code) |
 | The ramp | The airborne case | 9 studs of climb over 110, eased in at the bottom and steepest at the top, with a 16-stud lip carrying straight on at that slope to 11.9 studs | — | about 6 s | Built (code) |
+| **The test hill** | Feeling a climb and a descent without starting a run | **Twenty pieces of the real endless road**, built permanently off the plate's southern edge: ten climbing at 7 degrees to **259 studs**, then ten descending at 5 and landing level with the plate. 5 136 studs of road, about 2 700 parts, on a plate of its own (`features/test-hill.md`) | — | about 12 s to `HillBase` | Built (code) |
 
 **There is no course and no order.** The player spawns in the middle of the yard facing the district with 360 studs of clear plate ahead — reaching top speed takes 90 — and drives wherever they like. The district's widest street, 110 studs, runs straight at the spawn; the narrowest alleys are 44 and punish a wide exit. The circle and the ramp sit off to either side of the yard, both within about 600 studs.
 
 ## Getting around
 
 By car, everywhere: the plate is one continuous flat drivable surface, so running wide costs a quarter-stud kerb and nothing else. Buildings and pillars are walls — untagged, so the drift model's ground ray misses them and driving into one is a collision, never a climb. The bowl is entered from any side: the band's inner edge is flush with the plate and its rim stands 8.4 studs proud, and the apron outside it climbs to that rim at 1 in 9.6, so there is no edge anywhere on it taller than the quarter-stud kerb. That matters since `T-026`: a raised surface's vertical faces are walls to the car whether or not they are road, so a rim the car cannot drive up is a rim it cannot cross. A car or character that drives off the plate's edge falls; `PlaygroundService` puts it back at `Spawn` once it is below Y = -40.
+
+**The test hill is entered from the south edge** and nowhere else: a short ramp off the plate at `HillBase`, then twenty pieces of road with barriers down both sides, ending back at plate level on the hill's own ground. The **LIFT TO HILL TOP** button puts the car at the crest without driving up, and the **GUARDRAILS** button stands every wall on the hill *and* on the endless road down so the hill can be left on purpose (`features/test-hill.md`). Fall off low down and the pad catches you; fall off near the top, 259 studs up, and the client's own fall test (`FallBelowSurface`, 150) puts you back at `Spawn` before you land.
 
 ## Landmarks and wayfinding
 
@@ -60,8 +63,12 @@ Every spot comes from `PlaygroundService:GetSpot(name)`, which returns a CFrame 
 | `TightAlley` | The district | `PlaygroundService:GetSpot("TightAlley")` | " |
 | `CircleCentre` | The banked circle | `PlaygroundService:GetSpot("CircleCentre")` | " |
 | `RampBase` | The ramp | `PlaygroundService:GetSpot("RampBase")` | " |
+| `HillBase` | The test hill | `PlaygroundService:GetSpot("HillBase")` | " |
+| `HillTop` | The test hill | `PlaygroundService:GetSpot("HillTop")` | the **LIFT TO HILL TOP** button (`Drift/TestHud`) |
 
 A ray straight down from every one of them hits a part tagged `DriftSurface` within 5 studs, asserted by `PlaygroundTests`.
+
+**`HillTop` is the only spot on a graded surface**, and it is read off the road piece it sits on rather than from a coordinate, so it carries that piece's grade and bank. `PlaygroundService:HillTopCFrame()` is the same pose moved down the spot's **own** up to `RideHeight`, which is what the lift button puts a car at; moving it down the world's up would be a stud out sideways on a 7-degree climb. Spot markers are laid in the spot's own frame for the same reason (which fixed `RampBase` too).
 
 ## Scale
 
@@ -69,7 +76,8 @@ A ray straight down from every one of them hits a part tagged `DriftSurface` wit
 - **Open yard:** x -800 to 200, z -380 to 360 — **1000 by 740 studs** of flat plate. Clear of everything for **200 studs** round the spawn (the nearest obstacle is a pillar at 253).
 - **Streets:** six of them, **narrowest 44 studs, widest 110**. Buildings are 92 by 56 studs at the smallest and 104 by 100 at the largest, and 32 to 140 tall.
 - **Reach:** the furthest thing in the world is the district's far corner, **895 studs** from the spawn — about 10 seconds at top speed. The bowl is 550 to its middle and 809 to its far outside edge, the ramp 497 to its base.
-- **World:** 2000 by 2000 studs. Streaming is **off** (`ARCHITECTURE.md`). Measured budget: **325 parts**, against a limit of 1,500 asserted in `PlaygroundTests`.
+- **World:** 2000 by 2000 studs, **plus the test hill's own plate off its southern edge** — 1 474 by 1 738 studs, sized at build time to the hill's footprint plus 180, overlapping the main plate so there is no seam to drop through. Streaming is **off** (`ARCHITECTURE.md`). Measured budget: **326 parts** for the playground proper against a limit of 1,500, and the hill against its own `HillPartBudget` of 3,400; both asserted in `PlaygroundTests`.
+- **The hill's eastern limit is `CarService:WorldAt`, not the ground.** That answers "which world is this position in" by which world's spawn is nearer, and the line between the playground's and a track's falls at about x = +1 010 in layout coordinates — the plate's own eastern edge, which is where the two worlds meet. A hill reaching past it would have a car falling off its eastern side respawn on the kart track. `Layout.Hill.x` is set so the pad stops at x = 957, and `PlaygroundTests` measures every corner of it.
 
 ### Surface fidelity
 
@@ -137,3 +145,4 @@ Three things to know:
 | playground-v3 | 2026-11-04 | `T-026`: an apron added round the banked circle so the bowl can be driven on to instead of only out of; the ramp's profile changed from eased-in-and-out to steepest-at-the-top so it jumps; the cone cluster in the ramp's mouth moved. 229 parts to 325 |
 | road-v1 | 2026-11-04 | `T-044` step 1: the endless road, a third world at (0, 0, -20 000). Two piece types — a 220-stud `Straight` and a mirrored 220-radius 90-degree `Corner` — 35 studs wide, flat, with barriers down both edges. Off by default; a run starts on `RoadService:Generate(seed)` |
 | road-v2 | 2026-11-04 | `T-050` added the sweeper (radius 400, 45°), the hairpin (radius 70, 180°, gated to piece 8) and the chicane (radius 140, 40° each way), each number measured by driving it. `T-052` widened the road to 50 studs on the user's call and made the lookahead a standing plan sliced across ticks: the worst single generator call went from 1 422 ms to 8.31 ms, and the road stopped trapping itself |
+| playground-v4 | 2026-11-06 | `T-065`: the **test hill** — twenty real road pieces, ten climbing at 7 degrees to 259 studs and ten descending at 5 to exactly plate level — built permanently off the southern edge on a plate of its own, with a lift button to its top and a switch that stands the guardrails down (`features/test-hill.md`) |
