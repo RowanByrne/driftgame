@@ -61,15 +61,23 @@
 --   Workspace.Showroom
 --     Playground        exactly what `PlaygroundService:Build()` makes, where it makes it
 --     Gallery           one of every variant in `Pieces.order()`, in a grid
---       Floor           a plain pad under the grid, so the pieces are not in the void
+--       Floor           one pad a cell, each flush under its own piece
 --       <VariantId>     one per piece: its parts, a flat sign and a billboard label
 --
 -- Each piece is placed from its own start socket, then MOVED BODILY so its real measured
--- bounding box is centred on its cell. The cell is the widest piece's longest side plus
--- `GALLERY_GAP`, so the clear distance between any two neighbours is at least that gap,
--- and the whole grid is pushed clear of the playground's plate by `GALLERY_MARGIN`. Both
--- are measured from the parts, never assumed, so a change to the piece set re-lays the
--- grid by itself.
+-- bounding box is centred on its cell -- IN X AND Z ONLY. The cell is the widest piece's
+-- longest side plus `GALLERY_GAP`, so the clear distance between any two neighbours is at
+-- least that gap, and the whole grid is pushed clear of the playground's plate by
+-- `GALLERY_MARGIN`. All of it is measured from the parts, never assumed, so a change to
+-- the piece set re-lays the grid by itself: nine pieces made a 3 x 3 and the sixteen of
+-- the touge set make a 4 x 4 without a line of this changing.
+--
+-- HEIGHT IS NOT CENTRED, and that is deliberate. The touge pieces descend and bank, and a
+-- `HairpinStack` loses 40 studs over its length; every variant is placed from a socket at
+-- y = 0, so centring the boxes vertically would stand them all at different heights and
+-- hide the one thing that distinguishes them. Instead every piece STARTS at road level and
+-- falls away from it, and each cell's floor pad drops to meet the bottom of the piece
+-- over it, so a piece that descends stands on a plinth that reads as the step it is.
 --
 -- Every label reads the variant's own id, twice: a `SurfaceGui` lying flat on the ground
 -- at the front of each cell, which is what reads when flying over, and a `BillboardGui`
@@ -93,14 +101,19 @@ local MARK = "Showroom" -- the attribute that says "this folder is mine"
 
 local GALLERY_GAP = 200 -- studs of clear ground between one piece's box and the next
 local GALLERY_MARGIN = 400 -- studs between the playground's plate and the grid
-local GALLERY_COLUMNS = 3
-local SIGN_DEPTH = 90 -- studs; the flat name sign at the front of each cell
+local GALLERY_COLUMNS = 4 -- the MOST columns; the grid is squared off under that
+-- BOTH LABELS ARE HALF WHAT THEY WERE (T-068). The user drove the gallery and called them
+-- too big, so every number here is halved and nothing else about them changed. The sign's
+-- letters are `SIGN_DEPTH` studs tall by construction (`makeSign`), so halving the slab
+-- halves the lettering with it.
+local SIGN_DEPTH = 45 -- studs; the flat name sign at the front of each cell
+local SIGN_WIDTH = 210 -- studs at most; a narrow cell still clips it to fit
 local SIGN_RISE = 0.25 -- studs the sign's top sits above the road surface
 -- The close-up billboard. Studs, all of it, including its own size: see `makeBillboard`.
-local LABEL_HEIGHT = 26 -- studs it floats above the road surface
-local LABEL_SIZE = 10 -- studs tall
-local LABEL_WIDTH = 40 -- studs wide
-local LABEL_RANGE = 420 -- studs past which it stops drawing, so a pulled-back view has none
+local LABEL_HEIGHT = 13 -- studs it floats above the piece
+local LABEL_SIZE = 5 -- studs tall
+local LABEL_WIDTH = 20 -- studs wide
+local LABEL_RANGE = 210 -- studs past which it stops drawing, so a pulled-back view has none
 
 --------------------------------------------------------------------------------
 -- Little helpers
@@ -372,7 +385,9 @@ local function buildGallery(parent: Instance, groundCentre: Vector3)
 	-- Pass two: a square grid of cells, each big enough for the widest piece plus the gap,
 	-- laid out just past the playground's plate so neither is ever in the other's way.
 	local cell = widest + GALLERY_GAP + SIGN_DEPTH
-	local columns = math.min(GALLERY_COLUMNS, #entries)
+	-- As square a grid as the set allows, up to `GALLERY_COLUMNS` wide: nine pieces make a
+	-- 3 x 3 and sixteen make a 4 x 4, rather than a six-row corridor nobody wants to fly.
+	local columns = math.clamp(math.ceil(math.sqrt(#entries)), 1, math.min(GALLERY_COLUMNS, #entries))
 	local rows = math.ceil(#entries / columns)
 	local gridX = columns * cell
 	local gridZ = rows * cell
@@ -399,27 +414,40 @@ local function buildGallery(parent: Instance, groundCentre: Vector3)
 		entry.box = boxOf(entry.folder)
 		entry.cell = cellCentre
 
+		-- The sign stays at ROAD LEVEL, never at the piece's own middle: every variant is
+		-- placed from a socket at y = 0, so a piece that descends starts level with the
+		-- sign and falls away from it, which is the right way round -- the label is beside
+		-- the end you read it from.
 		makeSign(
 			entry.id,
 			Vector3.new(cellCentre.X, surfaceY + SIGN_RISE - 0.5, cellCentre.Z + cell * 0.5 - SIGN_DEPTH * 0.5 - 10),
-			math.min(cell - 40, 420),
+			math.min(cell - 40, SIGN_WIDTH),
 			entry.folder
 		)
-		makeBillboard(entry.id, Vector3.new(entry.box.centre.X, surfaceY, entry.box.centre.Z), entry.folder)
+		-- And the billboard rides the piece's own TOP, not road level, so it clears a
+		-- banked piece's raised edge and still hangs over one that has dropped 40 studs.
+		makeBillboard(entry.id, Vector3.new(entry.box.centre.X, entry.box.max.Y, entry.box.centre.Z), entry.folder)
 	end
 
-	-- A plain pad under the whole grid, so the pieces are standing on something rather
-	-- than floating in the void. Untagged on purpose: it is scenery, never drift surface.
-	local floor = Instance.new("Part")
-	floor.Name = "Floor"
-	floor.Size = Vector3.new(gridX, 4, gridZ)
-	floor.CFrame = CFrame.new(centre.X, surfaceY - Config.Road.Thickness - 2, centre.Z)
-	floor.Anchored = true
-	floor.CanCollide = true
-	floor.CastShadow = false
-	floor.Material = Enum.Material.SmoothPlastic
-	floor.Color = Color3.fromRGB(46, 48, 54)
-	floor.Parent = gallery
+	-- ONE PAD A CELL, NOT ONE PAD FOR THE GRID (T-068). The touge pieces descend -- a
+	-- `HairpinStack` loses 40 studs over its length -- so a single slab at road level
+	-- would have them sinking through it. Each cell gets its own, with its top flush
+	-- under that piece's lowest point, which puts the flat pieces on one continuous floor
+	-- as before and stands each descending piece on a plinth of its own that reads as the
+	-- step it is. Untagged on purpose: scenery, never drift surface.
+	local floors = folderIn("Floor", gallery)
+	for _, entry in entries do
+		local pad = Instance.new("Part")
+		pad.Name = `Floor_{entry.id}`
+		pad.Size = Vector3.new(cell, 20, cell)
+		pad.CFrame = CFrame.new(entry.cell.X, entry.box.min.Y - 10, entry.cell.Z)
+		pad.Anchored = true
+		pad.CanCollide = true
+		pad.CastShadow = false
+		pad.Material = Enum.Material.SmoothPlastic
+		pad.Color = Color3.fromRGB(46, 48, 54)
+		pad.Parent = floors
+	end
 
 	return gallery, entries, { cell = cell, columns = columns, rows = rows, centre = centre, size = Vector3.new(gridX, 0, gridZ) }
 end
@@ -503,6 +531,10 @@ function Showroom.build()
 			maxX = math.round(entry.box.max.X * 100) / 100,
 			minZ = math.round(entry.box.min.Z * 100) / 100,
 			maxZ = math.round(entry.box.max.Z * 100) / 100,
+			-- What the piece does vertically: flat ones are a 12-stud slab and nothing
+			-- more, a descending one reaches as far below road level as it drops.
+			minY = math.round(entry.box.min.Y * 100) / 100,
+			maxY = math.round(entry.box.max.Y * 100) / 100,
 		})
 	end
 
