@@ -208,14 +208,16 @@ Added in round two, and all of them ours — see the sections below for the meas
 
 | Number | Start | What it does |
 |---|---|---|
-| `Marks.Bands` | 0.74, 0.60, 0.46, 0.32 | `Trail.Transparency` per band, lightest first. One trail per band per wheel |
-| `Marks.BandHysteresis` | 0.04 | How far past a boundary the density must get before the trail is swapped |
+| `Marks.Bands` | 0.70, 0.52, 0.34 | `Trail.Transparency` per band, lightest first. One trail per band per wheel. **Was four bands** — three that never break beat four that do |
+| `Marks.BandHysteresis` | 0.1 | How far past a boundary the density must get before the trail is swapped. **Was 0.04**, which still left 58 swaps in 1 081 frames |
 | `Marks.RefSpeed` | 70 studs/s | The speed at which the speed term is exactly 1 |
 | `Marks.SpeedExponent` | 0.5 | Slower is darker. 30 studs/s is 1.91× the density of 110 |
 | `Marks.AngleExponent` | 1.6 | How fast darkness grows with the angle. **Was 0.8** — see below |
 | `Marks.MinSpeedForDensity` | 12 studs/s | The floor under the division, so a stopped car is not a black stripe |
 | `Marks.HeatGain` | 1.6 | What a fully heated tyre multiplies the density by |
-| `Marks.MinSegment` | 0.5 studs | `Trail.MinLength`. **Was 0** — see "the mark came out as a ladder" |
+| `Marks.MinSegment` | 0 studs | `Trail.MinLength`. **Was 0.5 for one round and that was the wrong fix** — see "the mark came out in dashes" |
+| `Marks.SwapOverlap` | 0.12 s | How long the outgoing band keeps drawing after the incoming one starts, so a band change is a splice and not a hole |
+| `Gates.StopSlipDegrees` | 0.25 | The slip gate's lower threshold once a wheel is already marking, so it cannot chatter |
 | `Marks.Lift` | 0.25 studs | **Was 0.05**, and that was half the vanishing-mark bug |
 | `Heat.FullSlipSpeed` | 60 studs/s | Sideways drag that counts as heating at full rate |
 | `Heat.RiseSeconds` / `FallSeconds` | 2.5 / 4 s | Cold to hot at full rate, and hot to cold at rest |
@@ -246,13 +248,14 @@ multiply it:
 per car = 4 wheels × (2 Attachments + surfaces × (#Marks.Bands Trails + 2 ParticleEmitters))
 ```
 
-At one surface and four bands that is **32**, plus two `Sound`s — one engine, one squeal per built
-surface. **It was 16** before the second round added the stylized smoke layer and the band ladder
-(`T-062`). Everything is made once when the rig is caught and never again; nothing is created or
-destroyed while driving, and emitters are switched with `Trail.Enabled` and
-`ParticleEmitter.Enabled`. **A frame that allocates is the thing to measure and the thing to fail
-on.** Measured over a 60-second drive: 32 before and 32 after, the car's whole descendant count 74
-either side, with all four bands used and the hottest tyre reaching 0.86.
+At one surface and three bands that is **28**, plus two `Sound`s — one engine, one squeal per built
+surface. It was 16 before the stylized smoke layer and the band ladder, 32 while the ladder had
+four bands, and 28 since it was cut to three (`T-062`). Everything is made once when the rig is
+caught and never again; nothing is created or destroyed while driving, and emitters are switched
+with `Trail.Enabled` and `ParticleEmitter.Enabled`. **A frame that allocates is the thing to measure
+and the thing to fail on.** Measured over a 60-second drive: **28 before and 28 after**, the car's
+whole descendant count **70 either side**, with all three bands used, 135 band swaps, and **0 frames
+in which a marking wheel was drawing nothing**.
 
 **They hang off the car's `Body`, not off the wheels, and that is not a detail.** `Drift/Render`
 spins each wheel about its own axle every frame (`CFrame.Angles(wheelSpin, 0, 0)`), so an
@@ -418,16 +421,47 @@ is past what an eye can separate on asphalt.
 another, and a density jittering on a boundary would draw a dotted line. Measured over a real drift,
 the band swapped **3 times in 476 marking frames**.
 
-#### And the mark came out as a ladder, which was `MinLength`
+#### The mark came out in dashes, and `MinLength` was the wrong answer
 
-The first build set `Trail.MinLength = 0`, which lays a segment every frame however short one is.
-Sampled every frame through a real drift, **the contact patch advances 0.104 to 1.261 studs, mean
-0.675 — against a ribbon 1.2 studs wide.** Very nearly every quad in the mark is wider than it is
-long, and at the slow end twelve times wider; the mark reads as a ladder of rungs with road showing
-between them. The other two suspects were ruled out in the same sample: **the wheel left the ground
-0 times in 481 frames** and the trail switched on or off **once**. `Marks.MinSegment` is 0.5 studs,
-just under that mean, so a drift at speed lays the same segments it always did and a crawling car
-merges several frames into one honest quad.
+**Round two got this wrong and round three measured it.** The mark was breaking up; the quads in a
+ribbon 1.2 studs wide advance a measured 0.104 to 1.261 studs a frame, so `Trail.MinLength = 0.5`
+looked like the cure — make each quad longer than it is wide. It was not the cause, and setting it
+made the fault *worse*: the user's next screenshot had the two outer marks broken into long clean
+rectangular dashes.
+
+**The cause is band chatter, and a band swap is a hole by construction.** The incoming trail has no
+points, so it draws nothing at all until the contact patch has moved; switch the outgoing one off
+in the same frame and that distance is clean road. Measured over **1 081 grounded frames** of a
+drift that slowed across the ladder:
+
+| | swaps | spacing |
+|---|---|---|
+| Rear wheels | **58** | most **0 or 1 stud** apart |
+| Front wheels | **30** | most **0 or 1 stud** apart |
+
+Each of those was a hairline hole; `MinLength = 0.5` then made every one of those fresh trails wait
+half a stud before drawing anything, which is what turned hairlines into the dashes in the photo.
+
+A third source turned up in the same sample and is worth its own line: **the slip gate had no
+hysteresis.** A car at 44 studs/s with its slip angle sitting on `MinSlipDegrees` switched its rear
+marks on and off repeatedly at a density of 0.00 — a gate that chatters is a hole just as surely as
+a swap is.
+
+#### What closed it
+
+Four numbers, in the order they matter:
+
+| | |
+|---|---|
+| **`Marks.SwapOverlap` = 0.12 s** | **The one that actually closes the hole.** The outgoing band's trail keeps drawing after the incoming one starts, so the two ribbons *overlap* instead of abutting. A swap becomes a splice a shade darker than either band. At 70 studs/s that is about 8 studs of double-drawn mark. It is deliberately **not** applied when a wheel stops marking altogether: a mark should end where the drift ended |
+| **`Gates.StopSlipDegrees` = 0.25** | The slip gate is sticky once a wheel is marking: start at `MinSlipDegrees`, keep going down to this, stop below. A car genuinely running straight reads about 0.09°, well under both |
+| **`Marks.Bands` cut 4 → 3, `BandHysteresis` 0.04 → 0.1** | Make swaps rare in the first place. **A continuous mark at three darknesses beats a dashed one at four** — the user asked for darkness as a feel, not a scale. At three bands a band is a third of the ladder wide, so 0.1 is nearly a third of a band of dead zone either side of a boundary |
+| **`Marks.MinSegment` back to 0** | With the chatter fixed at its source there is nothing for it to help, and at zero a fresh ribbon draws on its very next frame |
+
+**Measured after, over 1 438 grounded frames of the same drift:** the rears crossed all three bands
+with **20 swaps and 125 splice frames**, and **0 frames in which a marking wheel was drawing
+nothing** — on any of the four wheels. Over a 60-second drive: **10 150 wheel-frames marking, 0
+blank**, 135 band swaps, all three bands used.
 
 ## UI
 
@@ -458,7 +492,7 @@ In `CONTRACTS.md`. **What `T-062` built, for the conductor to record at merge:**
 |---|---|
 | `Shared/Config/Fx` | `Config.Fx`: `Marks`, `Smoke`, `Gates`, `Surfaces`, `Built`, `Default`, `Names`, and `Engine` and `Skid` which nothing reads until `T-064`. A plain table with no write guard, like `Config.Road` |
 | `Drift/Wheels` | `new()`, `Attach(rig) -> boolean`, `Update(state, input, dt)`, `Cut()`, `Clear()`, `SetEnabled(on) -> boolean`, `SetMarkSeconds(s)`, `DebugState(state, input)`, `CountInstances() -> number`, and the pure `Wheels.evaluate(state, handbrake, front, down) -> (emit, rate, slipPast, throttleOk, handbrakeOk)` and `Wheels.surfaceOf(state, index, down) -> string?`. **`Update` takes the INPUT as well as the state**, unlike the `update(state, dt)` this spec first guessed at: the handbrake is a `Drift/Model` *input* and is not on the state, and there is nowhere else honest to read it. **Round two added five more pure functions:** `slipSpeed(state)`, `heatStep(heat, sliding, slipSpeed, dt)`, `density(speed, slip, heat)`, `bandFor(density)` / `bandWith(density, previous)`, `stylizedRate(heat)`, and the roll pair `patchLocal(patch, com, cosR, sinR)` / `applyRoll(p, com, cosR, sinR)`. **`Cut()` now clears the tyre heat as well as the emitters** |
-| `DriftController` | `DebugWheels() -> { enabled, attached, instances, liveInstances, bands, surfaces, rollDeg, slipDeg, throttle, handbrake, speed, slipSpeed, airborne, wheels: { { name, front, down, surface, thresholdDeg, slipPast, throttleOk, handbrakeOk, emit, emitting, heat, density, band, bandOn, rate, stylizedRate, leanOffsetY, patchResidualY } } }` and `DebugWheelFx(on: boolean?) -> boolean`. Studio only, through the client debug bridge. **`band` is the density's band and `bandOn` is the trail actually enabled** — they differ whenever a gate is shut, which is how a playtest tells "too faint" from "not marking at all" |
+| `DriftController` | `DebugWheels() -> { enabled, attached, instances, liveInstances, bands, surfaces, rollDeg, slipDeg, throttle, handbrake, speed, slipSpeed, airborne, wheels: { { name, front, down, surface, thresholdDeg, slipPast, throttleOk, handbrakeOk, emit, emitting, heat, density, band, bandOn, fading, lit, swaps, rate, stylizedRate, leanOffsetY, patchResidualY } } }` and `DebugWheelFx(on: boolean?) -> boolean`. Studio only, through the client debug bridge. **`band` is the density's band and `bandOn` is the band being laid** — they differ whenever a gate is shut, which is how a playtest tells "too faint" from "not marking at all". **`lit` is how many of that wheel's trails are drawing**: 1 normally, 2 across a swap splice, and **0 while marking is the gap the user photographed** — it is the number the "zero gaps" bar is measured with. `fading` is the band still drawing from before the last swap, and `swaps` counts band changes since the rig was built |
 | Instance names on a rig | `Config.Fx.Names`: `FxA_<Wheel>_<L\|R>` (8 `Attachment`s, direct children of `Body`), `FxMark_<Wheel>_<surface>_<band>` (4 x `#Marks.Bands` `Trail`s), `FxSmoke_<Wheel>_<surface>` (4 diffuse `ParticleEmitter`s) and `FxPuff_<Wheel>_<surface>` (4 stylized ones). The trails and the diffuse emitter hang off that wheel's `_L` attachment; the stylized emitter off its `_R` one, which carries the backward tilt |
 
 **What `T-064` added, for the conductor to record at merge:**
@@ -547,12 +581,13 @@ feel.**
 | Throttle gate | Coast sideways at zero throttle: slip above the threshold, no trail, no smoke. **Done in `FxTests`, and NOT reachable live** — the throttle is never an input in this model (see "How it plays"). 60° of slip at zero throttle marks nothing; it marks at exactly `MinThrottle` and not a hundredth below |
 | Handbrake | Handbrake from a standstill (nothing) and from 40 studs/s (all four, smoking). **Done (`T-062`):** live, nothing at 0.00 studs/s; all four emitting at 36.7 studs/s with the car dead straight (`slipPast` false) and off nothing but the brake |
 | Smoke rate | `ParticleEmitter.Rate` at 10°, 45° and 90° of slip against the configured lerp. **Done:** 10.89, 21.00 and 34.00 /s against the same three computed from the config, to within 1e-6, and 8.00 .. 60.00 at the two ends |
-| It allocates nothing — sounds included | Instance count on the rig before a 60-second drive and after: **identical**. The number that would fail this is the one worth having. **Round one:** 16 → 16, car descendants 56 → 56. **With the sounds (`T-064`):** 2 → 2 Sounds, Body descendants 18 → 18, whole car 58 → 58 over 3 120 synthetic frames. **Round two, with the bands and the stylized layer (`T-062`):** **32 → 32** and the whole car **74 → 74** over a 60-second drive that used all four bands and reached a tyre heat of 0.86; and 32 → 32 over 1 000 synthetic frames in `FxTests`, with **never more than one band's trail enabled on a wheel at once** |
+| It allocates nothing — sounds included | Instance count on the rig before a 60-second drive and after: **identical**. The number that would fail this is the one worth having. **Round one:** 16 → 16, car descendants 56 → 56. **With the sounds (`T-064`):** 2 → 2 Sounds, Body descendants 18 → 18, whole car 58 → 58 over 3 120 synthetic frames. **Round two:** 32 → 32, whole car 74 → 74. **Round three, at three bands:** **28 → 28** and the whole car **70 → 70** over a 60-second drive with 135 band swaps, all three bands used and 0 airborne frames; and 28 → 28 over 1 000 synthetic frames in `FxTests`, with **never more than two of a wheel's trails drawing, which is one splice** |
 | The lean, which was the bug | Each trail attachment's height above the road under it, through a real drift. **Before:** at 2.99° of body roll, the two left ones 0.133 and 0.071 studs **below** the road and the two right ones 0.159 and 0.222 **above** it; at the full `BodyRollMax` the excursion is 0.637 up and 0.544 down against 0.05 studs of clearance. **After:** at the worst lean a 60-second drive produced (4.96°), all eight within **0.0003 studs of each other**; 7 frames in 14 400 samples below the road by at most 0.031 studs, worst float 0.69. The cancelling round-trips to **2.4 × 10⁻⁷ studs** across the whole roll range in `FxTests` |
 | Mark density | At a fixed 45° of slip: **30 → 0.877, 70 → 0.574, 110 → 0.458 studs/s**, so a slow mark is 1.91× a fast one. At a fixed 70 studs/s: **10° → 0.061, 45° → 0.574, 90° → 1.000**. The user's case, 80° at 110 then at 30: **0.778 → 1.000**. Heat lifts it by exactly `HeatGain`. All four bands reachable between 1° and 90° at `RefSpeed`, starting at 1°, 25°, 40.5° and 57° |
 | Band stability | A density jittering half a hysteresis either side of a boundary swaps **0 times in 200 frames**; a real crossing still moves. Live, through a real drift: **3 swaps in 476 marking frames** |
 | Tyre heat, per wheel | Live through one slide: the rear left went **0.02 → 0.57** (stylized rate 0.7 → 23.9 per second) while the front left only started once the slide passed its 30° threshold, reached 0.22, and was back to **0.02 and cooling** in the same frame the rears read 0.57 and climbing. In `FxTests`: full in 2.50 s at full slip speed, 5.02 s at half it, cold again in 4.02 s, and **cold in 4.02 s even with the gates held open** at a crawl |
-| The mark came out as a ladder | Sampled every frame through a real drift: the contact patch advances **0.104 to 1.261 studs, mean 0.675, against a 1.2-stud-wide ribbon**, so nearly every quad is wider than it is long. The two other suspects were ruled out in the same sample — the wheel left the ground **0 times in 481 frames** and the trail switched on or off **once**. `Marks.MinSegment` is the fix. **Not re-photographed: the look is the user's to judge** |
+| The mark broke into dashes | **Round three, and the round-two diagnosis was wrong.** Measured over 1 081 grounded frames of a drift that slowed across the ladder: the rear wheels changed band **58 times** and the fronts **30**, and most of those swaps were **0 or 1 stud apart** — a swap is a hole by construction, because the incoming trail has no points. `Marks.MinSegment = 0.5`, added in round two to cure what looked like the same symptom, then made every fresh trail wait half a stud before drawing, which turned hairline joins into long clean dashes. A third source in the same sample: the slip gate had no hysteresis and chattered at a density of 0.00 with the slip sitting on half a degree |
+| And zero gaps after it | The bar was zero and the measure is frames in which a wheel is marking but nothing is drawn. **Over 1 438 grounded frames of the same drift: 0 blank frames on all four wheels**, with the rears crossing all three bands over 20 swaps and 125 splice frames. **Over a 60-second drive: 10 150 wheel-frames marking, 0 blank.** Photographed from the user's own angle: the marks are continuous ribbons through the band change, where their screenshot had rectangles with clean road between them |
 | Frame cost | Frame time over a 60-second drive, effects on and off, on this PC. A cost worth naming is a cost worth a `SETTINGS.md` switch. **Measured and inconclusive, and the reason is worth writing down:** Studio throttles rendering to exactly 30 fps when its window is not focused, which an agent's window never is. Interleaved in 5-second blocks inside one drive, 900 frames each way, the medians were 33.3028 ms with the effects on and 33.2936 ms with them off — **9 microseconds apart, both pinned at the cap.** All that proves is that the effects do not push a 30 fps frame over its budget. **A real headroom number needs the user's own focused window,** and `DriftController:DebugWheelFx(false)` is the switch to take it with |
 
 `DebugState()` on each of the three modules, reporting what it is doing and why — the gear and
@@ -595,17 +630,21 @@ Added by `T-062`, from building it:
 
 Added by `T-062` round two, and these are the ones to drive and judge:
 
-- **The ladder fix is reasoned, not photographed.** `Marks.MinSegment = 0.5` is the right shape by
-  measurement — the quads were 0.675 studs long against a 1.2-stud ribbon — but the screenshot
-  budget went on finding the problem rather than confirming the cure. At speed it changes nothing
-  (the mean advance already exceeds it); at a crawl it merges frames instead of laying slivers. **If
-  the mark still comes out as rungs, raise it; if a slow mark looks chunky, lower it.**
+- ~~**The ladder fix is reasoned, not photographed.**~~ **Closed, and it was wrong.** The user
+  photographed it and `Marks.MinSegment = 0.5` had made the breaks worse, not better. Round three
+  measured the real cause (band chatter) and put `MinSegment` back to 0. **The lesson is worth
+  keeping: a look fix that cannot be photographed should not be shipped as a fix, only as a
+  guess.**
 - **Whether a mark floating up to 0.7 studs over a grade reads wrong.** That is `Marks.Lift` at
   0.25, deliberately biased upward because a mark below the road vanishes and one above it does
   not. Dropping it trades float for the occasional dropout. The exact fix is a raycast per wheel per
   frame, which costs a `RaycastResult` a wheel a frame.
-- **Four bands, and where they land.** The ladder starts at 1°, 25°, 40.5° and 57° at 70 studs/s.
-  More bands is a smoother ramp at four instances a car each; fewer reads as on/off.
+- **Three bands now, and where they land.** The ladder starts at **1°, 30.5° and 51°** at 70
+  studs/s. It was four until round three cut it: **every band boundary is a swap waiting to
+  happen**, and a continuous mark at three darknesses beats a dashed one at four. Each extra band
+  is four more instances a car *and* a new place for the mark to break; two would read as on/off.
+  **If the darkness steps are too obvious, the answer is a fourth band plus a longer
+  `SwapOverlap`, not a fourth band on its own.**
 - **Whether the stylized layer is too much, or not enough.** It is zero at a cold tyre and 42 a
   second at a hot one, and nothing but the rate moves. If it should also *grow* with heat, that is a
   `NumberSequence` a frame and would have to be done as a ladder, the same way the marks are.
@@ -613,3 +652,15 @@ Added by `T-062` round two, and these are the ones to drive and judge:
   reasoning that a car just put down has cold tyres. On a road that is respawning the car often, the
   heat never builds — which is what a 60-second drive full of respawns measured, at a hottest tyre
   of 0.00.
+
+Added by `T-062` round three:
+
+- **Whether the splice reads as a splice.** A band change now draws both ribbons for 0.12 s, which
+  at 70 studs/s is about eight studs of mark a shade darker than either band. It is a join rather
+  than a hole, and it is deliberately on the dark side — but if a drift that walks up the ladder
+  shows a visible dark pip at each step, `Marks.SwapOverlap` is the number, and shorter is subtler.
+- **Whether the mark should keep its darkness at all.** Every bit of machinery in `Marks` —
+  the bands, the hysteresis, the splice — exists because `Trail.Transparency` applies to the whole
+  live ribbon and a mark has to keep the darkness it was laid at. **One trail per wheel at a single
+  darkness would have none of these failure modes.** It is worth asking once, now that the user has
+  seen both: is the darkness ramp earning the complexity?

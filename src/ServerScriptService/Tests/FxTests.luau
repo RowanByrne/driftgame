@@ -191,13 +191,16 @@ function Tests.run(opts)
 			F.Marks.Width < Config.Drift.WheelWidth,
 			`mark {F.Marks.Width} studs, tyre {Config.Drift.WheelWidth} studs`
 		)
-		-- A segment shorter than this comes out as a sliver wider than it is long, and a
-		-- run of those is the LADDER the mark used to be drawn as. Zero brings it back.
+		-- `MinSegment` MUST STAY SMALL, and this check is here because it was 0.5 for a
+		-- round and that is what turned a chain of hairline band joins into the long
+		-- dashes the user photographed: a trail that will not draw until the patch has
+		-- moved half a stud starts every fresh ribbon half a stud late. Measured, the
+		-- patch advances as little as 0.104 studs in a frame through a real drift, so
+		-- anything at or above that drops segments at speed.
 		check(
-			"a mark segment is long enough not to be a sliver",
-			F.Marks.MinSegment > 0 and F.Marks.MinSegment < F.Marks.Width,
-			`MinSegment {F.Marks.MinSegment} studs against a {F.Marks.Width}-stud-wide ribbon; `
-				.. `measured advance through a drift was 0.104 .. 1.261 studs a frame, mean 0.675`
+			"a fresh ribbon starts drawing straight away",
+			F.Marks.MinSegment < 0.1,
+			`MinSegment {F.Marks.MinSegment} studs; the patch advances as little as 0.104 studs a frame`
 		)
 		check(
 			"the fronts' threshold is well clear of the floating-point floor",
@@ -638,6 +641,46 @@ function Tests.run(opts)
 			Wheels.bandWith(boundary + F.Marks.BandHysteresis * 2, 1) == 2,
 			`band {Wheels.bandWith(boundary + F.Marks.BandHysteresis * 2, 1)} after a clear crossing`
 		)
+
+		-- THE SLIP GATE IS STICKY TOO, and for the same reason: a gate that chatters is a
+		-- hole in the mark. Measured live before it was: a car at 44 studs/s with its slip
+		-- hovering on half a degree switched its rear marks on and off at a density of
+		-- 0.00, and every one of those is a break.
+		local between = (F.Gates.MinSlipDegrees + F.Gates.StopSlipDegrees) * 0.5
+		local cold = Wheels.evaluate(stateWith({ slipDeg = between, speed = 44, throttle = 1 }), false, false, true, false)
+		local warm = Wheels.evaluate(stateWith({ slipDeg = between, speed = 44, throttle = 1 }), false, false, true, true)
+		check(
+			"the slip gate is sticky: between the two thresholds it holds whatever it was",
+			not cold and warm,
+			string.format("%.3f deg is between start %g and stop %g: not marking -> %s, already marking -> %s",
+				between, F.Gates.MinSlipDegrees, F.Gates.StopSlipDegrees, tostring(cold), tostring(warm))
+		)
+		check(
+			"and the stop threshold really is the lower of the two",
+			F.Gates.StopSlipDegrees < F.Gates.MinSlipDegrees and F.Gates.StopSlipDegrees > 0,
+			`start {F.Gates.MinSlipDegrees} deg, stop {F.Gates.StopSlipDegrees} deg`
+		)
+
+		-- And it does not chatter when the slip sits on the start threshold.
+		local marking, chatters = false, 0
+		for i = 1, 300 do
+			local jitter = F.Gates.MinSlipDegrees + (if i % 2 == 0 then 0.08 else -0.08)
+			local now = Wheels.evaluate(stateWith({ slipDeg = jitter, speed = 44, throttle = 1 }), false, false, true, marking)
+			if now ~= marking then
+				chatters += 1
+			end
+			marking = now
+		end
+		check(
+			"a slip angle jittering on the gate does not chatter the mark on and off",
+			chatters <= 1,
+			`{chatters} changes over 300 frames of jitter either side of {F.Gates.MinSlipDegrees} deg`
+		)
+		check(
+			"a car running dead straight still marks nothing, sticky gate or not",
+			not Wheels.evaluate(stateWith({ slipDeg = 0.09, speed = 110, throttle = 1 }), false, false, true, true),
+			`0.09 deg -- what a straight car actually reads -- against a stop threshold of {F.Gates.StopSlipDegrees}`
+		)
 	end
 
 	----------------------------------------------------------------------------
@@ -713,10 +756,13 @@ function Tests.run(opts)
 			`before {before}, after {after}; under the body {bodyBefore} -> {bodyAfter}; {flips} gate flips in those frames`
 		)
 		check("and the drive actually worked the gates", flips > 10, `{flips} flips on one wheel`)
+		-- TWO, NOT ONE, and the second one is the point: a band swap keeps the outgoing
+		-- ribbon drawing for `Marks.SwapOverlap` so the join overlaps instead of leaving a
+		-- hole. Three would mean a splice was left behind by another swap.
 		check(
-			"never more than one band's trail enabled on a wheel",
-			worstPerWheel <= 1,
-			`worst was {worstPerWheel} at once`
+			"never more than two of a wheel's trails drawing, which is one splice",
+			worstPerWheel <= 2,
+			`worst was {worstPerWheel} at once, against {#F.Marks.Bands} bands`
 		)
 		local reached = {}
 		for band in bandsSeen do
@@ -730,6 +776,77 @@ function Tests.run(opts)
 			#reached > 1,
 			`bands reached: {table.concat(reached, ", ")} of {#F.Marks.Bands}`
 		)
+
+		-- THE SPLICE, which is the whole of round three. A band change must never leave a
+		-- frame in which a marking wheel is drawing nothing: the incoming trail has no
+		-- points yet, so the outgoing one has to keep going until it does.
+		do
+			w:Cut()
+			local dt = 1 / 60
+			-- Settle in a light band.
+			local light = stateWith({ slipDeg = 12, speed = 110, throttle = 1 })
+			for _ = 1, 30 do
+				w:Update(light, { handbrake = false }, dt)
+			end
+			-- A REAR wheel: the fronts need 30 degrees before they mark at all, so a light
+			-- slide would never give one a band to swap away from. `w.wheels` is in
+			-- whatever order the rig handed over, so it is found rather than indexed.
+			local rear
+			for _, wheel in w.wheels do
+				if not wheel.front then
+					rear = wheel
+				end
+			end
+			local fx = rear.fx[1]
+			local startBand, startSwaps = fx.band, fx.swaps
+			-- Now a hard, slow slide, which is several bands darker.
+			local dark = stateWith({ slipDeg = 75, speed = 20, throttle = 1 })
+			local blankFrames, maxLit, sawSplice = 0, 0, false
+			for _ = 1, 60 do
+				w:Update(dark, { handbrake = false }, dt)
+				local lit = 0
+				for _, t in fx.trails do
+					if t.Enabled then
+						lit += 1
+					end
+				end
+				maxLit = math.max(maxLit, lit)
+				if lit == 2 then
+					sawSplice = true
+				end
+				if lit == 0 then
+					blankFrames += 1
+				end
+			end
+			check(
+				"a band change never leaves a marking wheel drawing nothing",
+				blankFrames == 0 and startBand > 0 and fx.band ~= startBand and fx.swaps > startSwaps,
+				`{rear.name}: band {startBand} -> {fx.band} over {fx.swaps - startSwaps} swap(s), `
+					.. `{blankFrames} blank frames, most trails lit at once {maxLit}`
+			)
+			check(
+				"and the two ribbons overlap across it",
+				sawSplice and maxLit == 2,
+				`the outgoing band kept drawing for {F.Marks.SwapOverlap} s`
+			)
+			-- And the splice ends: it must not leave a second trail on for ever.
+			local idle = stateWith({ slipDeg = 75, speed = 20, throttle = 1 })
+			for _ = 1, math.ceil(F.Marks.SwapOverlap / dt) + 10 do
+				w:Update(idle, { handbrake = false }, dt)
+			end
+			local settled = 0
+			for _, t in fx.trails do
+				if t.Enabled then
+					settled += 1
+				end
+			end
+			check(
+				"the splice closes again once the overlap is spent",
+				settled == 1 and fx.fading == 0,
+				`{settled} trail(s) drawing after the overlap, fading band {fx.fading}`
+			)
+			w:Cut()
+		end
 
 		-- The heat is per wheel, and the fronts and the rears do not share it: through a
 		-- small slide only the rears are sliding, so only the rears heat up.
