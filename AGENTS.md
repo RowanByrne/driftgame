@@ -47,6 +47,9 @@ Then stop.
 - **Lead with results, not process.** Don't narrate steps, or restate the request or the plan.
 - **Leave out details** (file lists, measurements, reasoning) unless they change what the user should do, or the user asks.
 - **Ask one question at a time,** and only when the work needs the answer.
+- **They read you in Rocco, which shows Markdown,** not in a terminal. Short paragraphs, `-` bullets for lists, **bold** for the few words that matter, and a `###` heading only in a long message. Never ALL CAPS, for emphasis or headings.
+- **Plain words about the game:** what they'll see and do in it, not the code. No commit hashes, file paths, code names or test tallies, unless they change what the user should do or they ask. A task's id is fine: Rocco shows its name.
+- **A card shows its worker's whole session,** word for word, so don't write the work up twice. Workers report as WORKER.md says.
 
 ## Rules
 

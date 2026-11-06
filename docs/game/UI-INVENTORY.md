@@ -85,6 +85,14 @@ game supports (390 px) with room either side.
 |---|---|---|---|---|---|
 | | | | | | |
 
+## Art slots
+
+> Each piece that gets art: its size and aspect in each layout, measured on the approved programmer art, and its layers, back to front (UI.md "Layers for animation"). The art is made to these numbers. Coverage targets and measured coverage go under "HUD by state".
+
+| Component: variant | Desktop | Phone landscape | Phone portrait | Layers, back to front | What animates |
+|---|---|---|---|---|---|
+| | | | | | |
+
 ## Element map
 
 > Each programmer-art element and the component and variant it becomes.

@@ -68,8 +68,10 @@ Rocco's Workboard (`tools\rocco.bat`) is where the user hands over work and foll
 | `[answer]` | Answered a Stuck task's question | Carry on with their answer (to the worker, if one asked), and `set -Status working` |
 | `C-… [answer]` | Answered a question you asked them ("Talking to the user") | Carry on with it, then `clear C-…` |
 | `C-… [message]` | Wrote to you, or replied to one of your messages | `show C-…` if it's cut short, act on it, then `clear C-…` |
-| `[reopen]` | Tested it: not right yet | Their words are the last `you` line in `show`. Fix it as a task again |
-| `[followup]` | Added to a task while it ran | Fold it in, or pass it to the worker; then `clear` |
+| `[reopen]` | Tested it: not right yet | Their words are the last `you` line in `show`. Fix it as a task again: with the worker that built it, if it's still there (below) |
+| `[followup]` | Added to a task while it ran | Fold it in, or pass it to the worker (below); then `clear` |
+
+**Passing the user's words to a worker:** send them to the worker that has the task, word for word (with Claude Code, `SendMessage` to its agent), so it carries on with what it already knows: no new worker reading everything again. The user types into the card as into a session, and its session shows the worker's reply. Start a new worker only when that one is gone.
 | `[merge]` | Approved a feature they tested in a lane | Merge its branch ("A round", step 4), then `clear` |
 | `[cancel]` | Deleted a task while it ran, or before its branch merged (its status is `removed`) | Stop its worker, if one is on it (a worker hears it from `set` too). In its lane, commit what it left to its branch, so nothing is lost, then put the lane back on main: `git -C <lane> switch --detach origin/main`. Don't merge the branch, and leave it there in case they change their mind. Take its row out of `docs/CLAIMS.md` and push. What's already in `main` stays; if they want it out, they'll say. Then `clear` |
 
