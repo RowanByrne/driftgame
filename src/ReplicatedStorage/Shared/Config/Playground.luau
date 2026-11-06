@@ -24,10 +24,18 @@ return {
 	-- three parts apiece plus its centre-line dashes. So the hill costs about 130 parts a
 	-- piece where the endless road's flat window costs about 36.
 	--
+	-- AND THEN THE SEAMS WERE TRIANGULATED (T-066) AND IT WENT UP BY THREE FIFTHS. Where a
+	-- piece has grade and turn at once, two neighbouring boxes' top faces crossed and each
+	-- stood proud of the other at the kerb; `Config.Road.TriangulateSegments` replaces each
+	-- of those seams with two wedges that meet exactly. Measured on this hill: 2 723 parts
+	-- before, 4 843 after, and the worst step at the kerb fell from 0.336 studs per stud to
+	-- 0.169 -- inside the limit the CENTRE line is held to, where before it needed a looser
+	-- one of its own.
+	--
 	-- It is a TESTING feature and it is permanent in every place, so the number is written
 	-- down and asserted rather than left to grow: if a piece set change takes the hill past
 	-- this, that is a thing to know about.
-	HillPartBudget = 3400,
+	HillPartBudget = 5500,
 
 	-- Placeholder colours only (ART-DIRECTION.md: no art is generated for this world).
 	-- They are chosen for *value* contrast against the plate, not for looks: the old

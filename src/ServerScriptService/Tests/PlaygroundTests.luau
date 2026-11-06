@@ -52,10 +52,13 @@ local SPOT_NAMES = {
 -- is the same rule, written out for the hill so a change that made it a staircase shows up
 -- as "the hill" and not as a number nobody can place.
 local HILL_FLAT = 1e-3 -- studs the hill's exit may miss the plate's kerb height by
--- And at the KERB, where a graded curve's seams stand proud of each other by up to about
--- 0.30 studs however finely it is cut (`Shared/Road/Builder`, T-066) -- which is the
--- road's own property and not this hill's.
-local HILL_KERB_STEP = 0.6
+-- THE KERB IS HELD TO THE SAME LIMIT AS THE CENTRE LINE, and that is a result rather than
+-- an assumption. Where a piece has grade and turn at once, two neighbouring boxes' top
+-- faces cross and each stands proud of the other at the kerb; before the seams were
+-- triangulated (`Config.Road.TriangulateSegments`, T-066) this hill's worst kerb step was
+-- 0.336 studs per stud and needed a looser limit of its own. With the triangles in it is
+-- 0.169, under the 0.25 everything else in this world is held to.
+local HILL_KERB_STEP = MAX_STEP
 
 local Tests = {}
 
@@ -650,14 +653,9 @@ function Tests.run()
 		-- 15. The surface, walked. Down the centre line and along both kerbs, where a
 		--     graded curve's boxes twist worst (`Shared/Road/Builder`, "the same thing
 		--     happens in the vertical").
-		--     THE KERBS GET A LOOSER LIMIT THAN THE CENTRE LINE, and the reason is the
-		--     road's, not the hill's: where a piece has GRADE and TURN at once, two
-		--     neighbouring top faces cross along the centre line and each stands proud of
-		--     the other at the edge. `Road/Builder` says so in as many words and measured
-		--     the worst riser on a generated road at 0.30 studs; there is no secant trick
-		--     for it, because the surface of a graded curve is not developable. Down the
-		--     middle the road is continuous to four decimal places, which is why that walk
-		--     keeps the world's own `MAX_STEP`.
+		--     BOTH KERBS AS WELL AS THE CENTRE LINE, because the kerb is where a graded
+		--     curve's seams go wrong and the middle of it is where they do not
+		--     (`Shared/Road/Builder`, "the same thing happens in the vertical").
 		local lateral = Config.Road.Width * 0.5 - 4
 		local walks = {
 			{ id = "Hill", lateral = 0, limit = MAX_STEP },

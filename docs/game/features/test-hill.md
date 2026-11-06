@@ -86,8 +86,10 @@ studs) and the descent on corners and sweepers (314 to 346).
 | 19 | `CornerR` | -5.0 | 14.3 |
 | 20 | `Banked30R` | -3.8 | **0.25 — the plate's own kerb height** |
 
-All nine piece kinds appear; six of them in the climb. 5 136 studs of road, about 2 700 parts, no
-two pieces overlapping.
+All nine piece kinds appear; six of them in the climb. 5 136 studs of road, **4 843 parts**, no two
+pieces overlapping. (It was 2 723 before `Config.Road.TriangulateSegments` landed on main — the
+same change took the worst step at the kerb from 0.336 studs per stud to 0.169, which is how the
+hill's kerbs came to be held to the same limit as its centre line.)
 
 **Which end is pinned, and why that way round.** The **exit** is, exactly: `PlaygroundService`
 places the whole hill once at zero simply to read what it comes to (-5.90 studs), then places it
@@ -215,13 +217,13 @@ of `RoadTests`', with its numbers — on the real model against the real Workspa
 | | Climb (pieces 1-10) | Descent (pieces 11-20) |
 |---|---|---|
 | Entered | on piece 1 at 90 studs/s | at the lift's own CFrame, **standing start** |
-| Got to | **all ten, and on into the descent** (piece 13 in 55 s) | **all ten**, and off the end on to the pad |
-| Speed | **3.9 to 103.8 studs/s, mean 58.5** | **0.2 to 101.7, mean 54.2** |
+| Got to | **all ten, and on into the descent** (piece 13 in 55 s) | **all ten**, and off the end on to the pad at Y 2.39 |
+| Speed | **3.1 to 105.1 studs/s, mean 58.8** | **2.4 to 101.1, mean 53.7** (pieces 11-19) |
 | Steps off the road | **0** | **0** |
 | Airborne | 0 | 0 |
 
 For comparison, `Config/Road.luau`'s own table: the autopilot's mean on a **flat** generated road
-is 59 studs/s, and on a road of 8-degree descents it falls to 36. This hill reads 58.5 up and 54.2
+is 59 studs/s, and on a road of 8-degree descents it falls to 36. This hill reads 58.8 up and 53.7
 down, so neither half costs the car anything like the 8-degree row does — which is what choosing
 7 and 5 was for.
 
@@ -229,19 +231,29 @@ down, so neither half costs the car anything like the 8-degree row does — whic
 approach ramp, reaching 100 studs/s at the ramp and piece 13 in 55 seconds.
 
 **Where it is hard, and it is one place:** piece 5, the second climbing hairpin. 70 studs of radius
-and 180 degrees of it, on a 7-degree climb, took the autopilot down to **3.9 studs/s** — it very
+and 180 degrees of it, on a 7-degree climb, took the autopilot down to **3.1 studs/s** — it very
 nearly stopped — and it was drifting 60% of the piece. It got through every time. A hairpin on a
 climb is the slowest thing in the set and that is the piece to watch if the climb ever wants
 re-tuning.
 
-**Per piece, on the climb** (speed min..max, mean):
+**Per piece, on the climb** (speed min..max, mean studs/s):
 
 ```
- 1 Link           90.0.. 96.3  93.5     6 HairpinL       3.9.. 62.5  31.0
- 2 Straight       66.8.. 97.7  78.9     7 Link          66.3.. 76.5  70.8
- 3 HairpinR       22.5.. 67.4  39.6     8 SweeperR      76.5.. 93.2  83.3
- 4 ChicaneR       30.9.. 62.6  48.3     9 Link          93.2..101.4  97.4
- 5 HairpinL        3.9.. 62.5  31.0    10 CornerL       69.1..103.8  83.3
+ 1 Link           90.0.. 96.3  93.5     6 ChicaneR      37.7.. 65.7  51.7
+ 2 Straight       66.8.. 97.7  78.9     7 Link          65.8.. 76.6  70.7
+ 3 HairpinR       22.3.. 67.4  39.5     8 SweeperR      76.6.. 94.9  84.9
+ 4 ChicaneR       31.2.. 62.7  48.4     9 Link          94.9..102.8  98.9
+ 5 HairpinL        3.1.. 62.6  31.0    10 CornerL       70.2..105.1  86.5
+```
+
+**And on the descent:**
+
+```
+11 CorkscrewL      2.4.. 81.2  37.6    16 SweeperR      46.2.. 81.0  66.8
+12 CornerL        66.0.. 93.1  77.0    17 HairpinL      23.9.. 67.4  46.3
+13 HairpinStackR   3.5.. 68.0  34.7    18 SweeperR      45.6..100.7  76.4
+14 CorkscrewR     35.5.. 84.4  62.8    19 CornerR       64.6..101.1  88.9
+15 CornerL        16.1.. 83.6  50.0    20 Banked30R      ..  97.5  -- and off the end
 ```
 
 **A standing start at the crest takes about 2.4 seconds to roll away**, because the crest is still
