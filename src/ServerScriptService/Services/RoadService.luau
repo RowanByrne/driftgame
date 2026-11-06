@@ -35,6 +35,7 @@
 -- The sequence itself is `Shared/Road/Generator`, which is pure and has no idea any of
 -- this exists.
 
+local CollectionService = game:GetService("CollectionService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
@@ -105,11 +106,44 @@ local function root(): Folder
 	return folder
 end
 
+-- THE GUARDRAIL SWITCH (T-067). The user asked to be able to drive off the side of the
+-- road on purpose, so the walls can be stood down and put back.
+--
+-- IT TOUCHES THE WALLS AND NOTHING ELSE, and that distinction is the whole of the care
+-- needed here. `Builder.build` hands back the slabs and the barriers in two separate
+-- lists; the slabs are what the car's ground rays find (they are tagged `DriftSurface`)
+-- and the barriers are deliberately untagged, which is what makes a barrier a wall rather
+-- than a kerb (`Shared/Road/Builder`). Touching a slab's `CanQuery` would take the ROAD
+-- out from under the car, not the fence.
+--
+-- `CanQuery` IS THE ONE THAT MATTERS, not `CanCollide`. The car is kinematic -- Roblox
+-- physics never moves it -- and what stops it at a wall is a `Blockcast` through
+-- `RaycastParams` (`Drift/World`), which obeys `CanQuery` and knows nothing about
+-- `CanCollide`. Both are set anyway, so the player's character cannot walk through a wall
+-- that is still there either.
+local railsOn = true
+
+local function applyRails(entry: any)
+	for _, wall in entry.barriers do
+		wall.CanCollide = railsOn
+		wall.CanQuery = railsOn
+		-- Not destroyed and not hidden: left visible enough to see where they were, so
+		-- the user can tell "the rails are off" from "this piece has no rails".
+		wall.Transparency = if railsOn then 0 else 0.85
+	end
+end
+
 local function buildPiece(piece: any)
 	if built[piece.n] then
 		return
 	end
-	built[piece.n] = Builder.build(piece, root())
+	local entry = Builder.build(piece, root())
+	built[piece.n] = entry
+	-- A piece built while the rails are down comes up with them down: the window builds
+	-- new road under a driver who already asked for them off.
+	if not railsOn then
+		applyRails(entry)
+	end
 end
 
 local function destroyPiece(n: number)
@@ -589,6 +623,56 @@ function RoadService:HasRoad(): boolean
 	return RoadService.Running and generator ~= nil
 end
 
+-- The guardrail switch, for the testing HUD (`Drift/TestHud`, T-067). The road's own
+-- walls; the test hill's are `PlaygroundService`'s, and the one button asks both.
+--
+-- THE CLOSING BARRIER IS NOT A GUARDRAIL and is deliberately left alone: it is the wall
+-- that stops a driver reversing into road that is about to be destroyed
+-- (features/track-generation.md), not a fence along the edge, and standing it down would
+-- be a way to fall out of a run rather than a way to leave the road sideways.
+function RoadService:SetBarriers(on: boolean): boolean
+	railsOn = on == true
+	for _, entry in built do
+		applyRails(entry)
+	end
+	return railsOn
+end
+
+function RoadService:BarriersOn(): boolean
+	return railsOn
+end
+
+-- Studio only: what the switch actually did, part by part, so a test can say the SLABS
+-- were not touched rather than only that the walls were.
+function RoadService:DebugBarrierReport()
+	assert(RunService:IsStudio(), "DebugBarrierReport is Studio only")
+	local walls, wallsQueryable, wallsSolid = 0, 0, 0
+	local slabs, slabsQueryable, slabsSolid, slabsTagged = 0, 0, 0, 0
+	for _, entry in built do
+		for _, wall in entry.barriers do
+			walls += 1
+			wallsQueryable += if wall.CanQuery then 1 else 0
+			wallsSolid += if wall.CanCollide then 1 else 0
+		end
+		for _, slab in entry.road do
+			slabs += 1
+			slabsQueryable += if slab.CanQuery then 1 else 0
+			slabsSolid += if slab.CanCollide then 1 else 0
+			slabsTagged += if CollectionService:HasTag(slab, Config.Drift.SurfaceTag) then 1 else 0
+		end
+	end
+	return {
+		on = railsOn,
+		walls = walls,
+		wallsQueryable = wallsQueryable,
+		wallsSolid = wallsSolid,
+		slabs = slabs,
+		slabsQueryable = slabsQueryable,
+		slabsSolid = slabsSolid,
+		slabsTagged = slabsTagged,
+	}
+end
+
 -- Where a car starts: on the centre line of piece 1, a little way in, facing the way the
 -- road goes. This is where the FIRST player of a run lands; a player joining a run already
 -- under way lands on `JoinCFrame` instead, because piece 1 has long been destroyed.
@@ -746,6 +830,7 @@ function RoadService:DebugState()
 			asksRefused = self.asksRefused or 0,
 			started = self.started or 0,
 			ended = self.ended or 0,
+			barriersOn = railsOn,
 		}
 	end
 	local report = generator:report()
@@ -770,6 +855,7 @@ function RoadService:DebugState()
 	report.asksRefused = self.asksRefused or 0
 	report.started = self.started or 0
 	report.ended = self.ended or 0
+	report.barriersOn = railsOn
 	report.safeStart = self:SafeStart(nil)
 	return report
 end

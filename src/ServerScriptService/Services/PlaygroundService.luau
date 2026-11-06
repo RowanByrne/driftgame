@@ -28,9 +28,17 @@ local RunService = game:GetService("RunService")
 local ServerScriptService = game:GetService("ServerScriptService")
 
 local Config = require(ReplicatedStorage.Shared.Config)
+local Net = require(ReplicatedStorage.Shared.Net)
 local Build = require(ServerScriptService.Playground.Build)
 local Layout = require(ServerScriptService.Playground.Layout)
 local Path = require(ServerScriptService.Playground.Path)
+-- THE TEST HILL IS MADE OF REAL ROAD PIECES (T-065), which is the only reason this world
+-- knows anything about the road at all. `Road/Pieces` is pure maths and `Road/Builder`
+-- turns one placed piece into parts; neither knows about the generator, the window or a
+-- run, so using them here costs nothing and borrows nothing from `RoadService`. A hill
+-- built out of hand-made ramps would not test what the user asked to test.
+local RoadBuilder = require(ReplicatedStorage.Shared.Road.Builder)
+local RoadPieces = require(ReplicatedStorage.Shared.Road.Pieces)
 
 local SAMPLE_SPACING = 1 -- studs between the centre-line samples tests walk
 
@@ -50,8 +58,27 @@ local palette = tuning.Palette
 local features: { [string]: any } = {} -- id -> { segments, folder, samples }
 local cones: { { part: BasePart, home: CFrame } } = {}
 local partCount = 0
+local hillPartCount = 0
 local offset = Vector3.zero -- where this world is built; see the header
 local trackPresent = false
+
+-- The test hill, in LAYOUT coordinates (everything here is built about the origin and
+-- shifted once at the end; see the header). `pieces` are `Road/Pieces.Placed`, `built`
+-- the `Road/Builder.Built` entries they became.
+local hill = {
+	pieces = {} :: { any },
+	built = {} :: { any },
+	entryY = 0, -- the road's top at its first socket, in world Y
+	exitY = 0, -- and at its last: the plate's own kerb height, by construction
+	topY = 0,
+	approachRise = 0,
+	approachLength = 0,
+	pad = nil :: any,
+	bounds = nil :: any,
+}
+-- Whether the guardrails are up, for the hill AND for the road: one switch, because the
+-- user asked for one button (`Drift/TestHud`, T-067).
+local railsOn = true
 
 -- TrackService, if this place has one loaded. Looked up rather than required at the top,
 -- because a lane place may have no track at all and the two services must not depend on
@@ -223,6 +250,205 @@ local function buildRamp(parent: Instance)
 	}
 end
 
+-- THE GUARDRAIL SWITCH, the hill's half (T-067). `RoadService` has the identical thing
+-- for the endless road and the one button asks both.
+--
+-- IT TOUCHES THE WALLS AND NOTHING ELSE. `Road/Builder` hands back the slabs and the
+-- barriers in two separate lists; the slabs are what the car's ground rays find (they are
+-- tagged `DriftSurface`) and the barriers are deliberately untagged, which is what makes
+-- a barrier a wall and not a kerb. Touching a slab here would take the ROAD out from
+-- under the car rather than the fence beside it.
+--
+-- `CanQuery` IS THE ONE THAT MATTERS, not `CanCollide`: the car is kinematic, and what
+-- stops it at a wall is a `Blockcast` through `RaycastParams` (`Drift/World`), which obeys
+-- `CanQuery` and knows nothing about `CanCollide`. Both are set, so a player's character
+-- cannot walk through a wall that is still standing either.
+local function applyHillRails()
+	for _, entry in hill.built do
+		for _, wall in entry.barriers do
+			wall.CanCollide = railsOn
+			wall.CanQuery = railsOn
+			wall.Transparency = if railsOn then 0 else 0.85
+		end
+	end
+end
+
+--------------------------------------------------------------------------------
+-- The test hill (features/test-hill.md, T-065)
+--------------------------------------------------------------------------------
+-- A permanent stretch of the REAL endless road, built here so the user can feel a climb
+-- and a descent without starting a run: ten pieces up, ten back down, and a ground of its
+-- own under all of it.
+--
+-- WHY IT IS NOT A RAMP. The thing being judged is how the car behaves on graded road, and
+-- the graded road is `Road/Pieces` and `Road/Builder`. A hand-built slope would have a
+-- different profile, a different segment length and different seams, and would therefore
+-- answer a different question.
+--
+-- THE ROAD CLIMBS AT 7 DEGREES AND DESCENDS AT 5, AND THAT ASYMMETRY IS THE PIECE SET'S,
+-- not a choice made here. `Link` is the only piece in the set that climbs and it hands on
+-- +7 degrees; `Corkscrew` is the only one that sets a descent and it hands on -5. Every
+-- other piece CARRIES the grade it arrived at (`Config.Road.Pieces`, "the road's height is
+-- a state machine"). So ten pieces up gain more than ten pieces down lose, and the two
+-- halves are balanced by choosing the pieces' LENGTHS rather than their grades.
+--
+-- WHICH END IS PINNED. The exit is, exactly: the last piece's surface lands on
+-- `Layout.Surface.height`, the quarter-stud kerb every drivable thing in this world sits
+-- at, so the car drives off the end of the hill on to the ground at the same height as
+-- the plate. The entry is then however much higher the twenty pieces come down -- a few
+-- studs -- and a short ramp carries the plate up to it. It is that way round because a
+-- ramp at the entry is taken at 20 studs/s and a ramp at the exit would be taken at 150.
+
+-- Place the whole hill from one starting height. Pure: no instances, no Workspace.
+local function placeHill(y0: number): { any }
+	local spec = Layout.Hill
+	local socket = { x = spec.x, z = spec.z, yaw = math.rad(spec.heading), y = y0, pitch = 0, roll = 0 }
+	local placed = {}
+	for i, id in spec.pieces do
+		local variant = RoadPieces.get(id)
+		if not variant then
+			error(`PlaygroundService: the hill asks for road piece '{id}', which Config.Road.Pieces has not got`)
+		end
+		placed[i] = RoadPieces.place(variant, socket, i)
+		socket = placed[i].finish
+	end
+	return placed
+end
+
+-- Fine samples down the whole hill, for `DebugWalk`: a point on the surface and the
+-- surface's own right at every stud, so the tests can walk its kerbs as well as its line.
+local function hillSamples(placed: { any }): { any }
+	local out = {}
+	for _, piece in placed do
+		local n = math.max(2, math.ceil(piece.length / SAMPLE_SPACING))
+		-- `i` starts at 1, not 0: t = 0 of this piece is t = 1 of the last one, and a
+		-- repeated sample is a free zero in the step measurement.
+		local from = if #out == 0 then 0 else 1
+		for i = from, n do
+			local cf = RoadPieces.poseAt(piece, i / n, Config.Road.SurfaceY)
+			table.insert(out, { pos = cf.Position, right = cf.RightVector })
+		end
+	end
+	return out
+end
+
+local function buildHill(parent: Instance)
+	local spec = Layout.Hill
+	table.clear(hill.pieces)
+	table.clear(hill.built)
+	hillPartCount = 0
+
+	-- TWO PASSES, AND THE FIRST ONE BUILDS NOTHING. A piece's height change depends on the
+	-- grade it arrived at and not at all on the absolute height, so the whole hill can be
+	-- placed once at zero simply to read what it comes to, and then placed again at the
+	-- height that lands its exit on the plate. Doing it this way means the balance is a
+	-- fact about the pieces rather than a number somebody has to keep up to date.
+	local trial = placeHill(0)
+	local net = trial[#trial].finish.y
+	local y0 = Layout.Surface.height - Config.Road.SurfaceY - net
+	if net >= 0 then
+		-- The descent does not get back down. Build it anyway, entry on the plate, so the
+		-- world still exists and `PlaygroundTests` can say exactly what is wrong.
+		warn(
+			`[Playground] the test hill ends {string.format("%.1f", net)} studs ABOVE where it starts: `
+				.. `its descent has to lose at least as much as its climb gains (Layout.Hill)`
+		)
+		y0 = Layout.Surface.height - Config.Road.SurfaceY
+	end
+
+	local placed = placeHill(y0)
+	hill.pieces = placed
+	hill.entryY = Config.Road.SurfaceY + y0
+	hill.exitY = Config.Road.SurfaceY + placed[#placed].finish.y
+	hill.topY = -math.huge
+	for _, piece in placed do
+		hill.topY = math.max(hill.topY, Config.Road.SurfaceY + piece.finish.y)
+	end
+
+	local folder = newFolder(spec.id, parent)
+
+	-- The ground under the hill, FIRST, so everything else is built over it. The hill is
+	-- 5 000 studs of road and the playground's plate is 2 000 across with a world already
+	-- on it, so the hill cannot stand on it: it gets a plate of its own, sized to its own
+	-- footprint and meeting the playground's at its southern edge. That is also what
+	-- catches a car that drives off the side -- which is the whole point of the guardrail
+	-- switch -- instead of dropping it into the void.
+	local minX, maxX = math.huge, -math.huge
+	local minZ, maxZ = math.huge, -math.huge
+	for _, piece in placed do
+		minX = math.min(minX, piece.minX)
+		maxX = math.max(maxX, piece.maxX)
+		minZ = math.min(minZ, piece.minZ)
+		maxZ = math.max(maxZ, piece.maxZ)
+	end
+	hill.bounds = { minX = minX, maxX = maxX, minZ = minZ, maxZ = maxZ }
+	local m = spec.pad.margin
+	local plateEdge = -Layout.Plate.size * 0.5
+	local padMinX, padMaxX = minX - m, maxX + m
+	local padMinZ = minZ - m
+	-- It never reaches further north than the playground's own plate, which it overlaps by
+	-- `spec.pad.meet` studs so no ground ray can find the seam between them. Both tops are
+	-- at Y = 0, so an overlap is two coplanar faces and not a step.
+	local padMaxZ = math.min(maxZ + m, plateEdge + spec.pad.meet)
+	local padThickness = Layout.Plate.thickness
+	Build.surface(
+		"HillPad",
+		Vector3.new(padMaxX - padMinX, padThickness, padMaxZ - padMinZ),
+		CFrame.new((padMinX + padMaxX) * 0.5, -padThickness * 0.5, (padMinZ + padMaxZ) * 0.5),
+		palette[spec.pad.colour],
+		folder
+	)
+	hillPartCount += 1
+	hill.pad = { minX = padMinX, maxX = padMaxX, minZ = padMinZ, maxZ = padMaxZ }
+
+	-- The approach: the plate climbing to wherever the road's first socket ended up. Its
+	-- length comes out of the rise, so it is the same grade whatever the pieces come to.
+	local rise = hill.entryY - Layout.Surface.height
+	local length = math.max(spec.approach.minLength, rise / math.tan(math.rad(spec.approach.grade)))
+	local f = RoadPieces.forward(math.rad(spec.heading))
+	local foot = Vector3.new(spec.x, 0, spec.z) - f * length
+	local cursor = Path.cursor(foot.X, foot.Z, spec.heading)
+	local startCursor = Path.clone(cursor)
+	local heightAt = Build.heightProfile({ shape = "ramp", to = rise }, 0)
+	local flat = Build.bankProfile(nil, 1)
+	local approach = Build.ribbon(Path.straight(cursor, length, spec.approach.segments), {
+		name = "HillApproach",
+		width = Config.Road.Width,
+		-- Thick enough that its high end is still buried in the plate it rises out of.
+		thickness = math.max(spec.approach.minThickness, rise + 6),
+		colour = Config.Road.Colours.Road,
+		baseY = Layout.Surface.height,
+		heightAt = heightAt,
+		bankAt = flat,
+		parent = folder,
+	})
+	hillPartCount += #approach
+	hill.approachRise = rise
+	hill.approachLength = length
+	features.HillApproach = {
+		id = "HillApproach",
+		segments = #approach,
+		folder = folder,
+		samples = denseStraight(startCursor, length, heightAt, Layout.Surface.height),
+	}
+	hill.foot = foot
+
+	-- And the road itself, piece by piece, exactly as a run builds it.
+	for _, piece in placed do
+		local entry = RoadBuilder.build(piece, folder)
+		table.insert(hill.built, entry)
+		hillPartCount += entry.parts
+	end
+	applyHillRails()
+
+	features.Hill = {
+		id = "Hill",
+		segments = #placed,
+		folder = folder,
+		samples = hillSamples(placed),
+	}
+end
+
 local function buildSpots()
 	local spots: { [string]: CFrame } = {}
 	local lift = Vector3.new(0, Layout.Spot.height, 0)
@@ -245,6 +471,21 @@ local function buildSpots()
 	local a, b = ramp.samples[i].pos, ramp.samples[i + 1].pos
 	spots[Layout.Ramp.spot.name] = CFrame.lookAt(a + lift, Vector3.new(b.X, a.Y + lift.Y, b.Z))
 
+	-- The hill's two: where you line up for it, and the top of it.
+	if #hill.pieces > 0 then
+		local spec = Layout.Hill
+		-- `HillBase` is on the flat, a little short of the approach ramp, so the marker
+		-- disc that shows it lies on the plate and not on the slope.
+		local back = RoadPieces.forward(math.rad(spec.heading)) * 16
+		spots.HillBase = CFrame.new(hill.foot.X - back.X, Layout.Spot.height, hill.foot.Z - back.Z)
+			* CFrame.Angles(0, math.rad(spec.heading), 0)
+		-- `HillTop` is the first inch of the FIRST DESCENDING PIECE, which is the same
+		-- point as the end of the climb and already faces down the hill. Read off the
+		-- piece, so it follows the road's own grade and bank rather than a guess.
+		local top = hill.pieces[spec.climbPieces + 1] or hill.pieces[#hill.pieces]
+		spots.HillTop = RoadPieces.poseAt(top, 0.01, Config.Road.SurfaceY + Layout.Spot.height)
+	end
+
 	PlaygroundService.Spots = spots
 end
 
@@ -252,21 +493,35 @@ end
 -- in the driving line blocks the view, which is what made the old course unreadable.
 local function buildSpotMarkers(parent: Instance)
 	local folder = newFolder("SpotMarkers", parent)
+	-- THE HILL'S TWO MARKERS GO UNDER THE HILL, because the hill is a world of its own
+	-- off the plate's southern edge and `DebugBounds` -- which is how `PlaygroundTests`
+	-- asks "is everything on the plate?" -- skips whatever is under it. A disc 259 studs
+	-- up at the top of the hill is not a thing that belongs on the plate.
+	local hillFolder = parent:FindFirstChild(Layout.Hill.id)
+	local hillSpots = { HillBase = true, HillTop = true }
 	local d = Layout.Spot.markerDiameter
 	for name, cf in PlaygroundService.Spots do
-		local at = cf.Position - Vector3.new(0, Layout.Spot.height, 0) + Vector3.new(0, 0.4, 0)
+		-- IN THE SPOT'S OWN FRAME, not the world's. A spot on a slope -- `RampBase`, and
+		-- now `HillTop` on a 7-degree climb -- has a tilted up, and a disc laid flat
+		-- across 26 studs of 7-degree road is buried at one end and in the air at the
+		-- other. Dropping down the spot's own up and turning the cylinder in the spot's
+		-- own frame lays it ON the surface wherever the surface is pointing.
 		local part = Build.part(
 			`Spot_{name}`,
 			Vector3.new(Layout.Spot.markerThickness, d, d),
-			CFrame.new(at) * CFrame.Angles(0, 0, math.rad(90)),
+			cf * CFrame.new(0, -Layout.Spot.height + 0.4, 0) * CFrame.Angles(0, 0, math.rad(90)),
 			palette.SpotMarker,
-			folder
+			if hillSpots[name] and hillFolder then hillFolder else folder
 		)
 		part.Shape = Enum.PartType.Cylinder
 		part.CanCollide = false -- a marker is to see, never to hit
 		part.CanQuery = false
 		part.Transparency = 0.4
-		partCount += 1
+		if hillSpots[name] and hillFolder then
+			hillPartCount += 1
+		else
+			partCount += 1
+		end
 	end
 end
 
@@ -535,6 +790,7 @@ function PlaygroundService:Build()
 	table.clear(features)
 	table.clear(cones)
 	partCount = 0
+	hillPartCount = 0
 
 	local root = Instance.new("Folder")
 	root.Name = "Playground"
@@ -545,6 +801,8 @@ function PlaygroundService:Build()
 	buildPillars(root)
 	buildCircle(root)
 	buildRamp(root)
+	-- The test hill before the spots, because two of them are read off its pieces.
+	buildHill(root)
 	buildSpots()
 	buildSpotMarkers(root)
 	buildSpawnLocation(root)
@@ -578,10 +836,30 @@ function PlaygroundService:Init()
 	trackPresent = track ~= nil and type(track.HasTrack) == "function" and track:HasTrack() == true
 	offset = if trackPresent then Config.Drift.PlaygroundOffsetFromTrack else Vector3.zero
 	PlaygroundService.SkippedForTrack = false
+
+	-- The testing HUD's remote, made before anything can ask for it (T-065, T-067).
+	-- ONLY WHILE THE GAME IS RUNNING. This service's `Init` is also called in EDIT mode,
+	-- by the showroom tool (`Tools/Showroom`, T-059), and a remote made there would be a
+	-- real instance in the saved place rather than a thing the server put up at startup.
+	if RunService:IsRunning() then
+		self.tools = Net.event("TestTools")
+	end
+	self.toolAsks = 0
+	self.toolsRefused = 0
+	self.lifts = 0
+	self.railSwitches = 0
+	self.toolLimits = {} -- userId -> { window, count, lastAt }
+
 	self:Build()
 end
 
 function PlaygroundService:Start()
+	if self.tools then
+		self.tools.OnServerEvent:Connect(function(player, what)
+			self:_onTool(player, what)
+		end)
+	end
+
 	task.spawn(function()
 		while true do
 			task.wait(tuning.FallCheckSeconds)
@@ -594,6 +872,157 @@ function PlaygroundService:Start()
 			resetCones()
 		end
 	end)
+end
+
+--------------------------------------------------------------------------------
+-- The testing tools (features/test-hill.md, T-065 and T-067)
+--------------------------------------------------------------------------------
+-- Two buttons in `Drift/TestHud`, one remote, and a trust boundary drawn in exactly the
+-- place `features/endless-run.md` "Server and client" draws it:
+--
+--   THE CLIENT SENDS ONE OF THREE THINGS and nothing on the wire is read as anything
+--   else -- `"lift"`, `"rails"`, or nil for "what is the state?". It may NOT send a
+--   position, a piece, a height or a boolean. Where the top of the hill is, is the
+--   server's own number, read off the pieces it placed; a client that could name where
+--   to put its car would be a client with a teleport.
+--
+-- The two guards are the same two numbers the start button borrows, for the same reason:
+-- a press is a car being put somewhere, so a respawn's cooldown is the right shape for
+-- it, and neither wants a number of its own until something asks for one.
+local TOOL_RATE_LIMIT = "CarSwitchRateLimit" -- asks a second per UserId
+local TOOL_COOLDOWN = "RespawnCooldown" -- seconds between two presses that land
+
+local function roadService(): any?
+	local services = script.Parent
+	local module = services and services:FindFirstChild("RoadService")
+	if not module or not module:IsA("ModuleScript") then
+		return nil
+	end
+	local ok, road = pcall(require, module)
+	if ok and type(road) == "table" then
+		return road
+	end
+	return nil
+end
+
+local function carService(): any?
+	local services = script.Parent
+	local module = services and services:FindFirstChild("CarService")
+	if not module or not module:IsA("ModuleScript") then
+		return nil
+	end
+	local ok, cars = pcall(require, module)
+	if ok and type(cars) == "table" then
+		return cars
+	end
+	return nil
+end
+
+-- Where the lift puts a car: the top of the hill, facing down it, `RideHeight` above the
+-- road's own surface and lying with the road's own grade. `HillTop` is a spot three studs
+-- up, so this is that spot moved down ITS OWN up -- not the world's, which on a 7-degree
+-- climb would be a stud out sideways.
+function PlaygroundService:HillTopCFrame(): CFrame?
+	local cf = PlaygroundService.Spots.HillTop
+	if not cf then
+		return nil
+	end
+	return cf * CFrame.new(0, Config.Drift.RideHeight - Layout.Spot.height, 0)
+end
+
+function PlaygroundService:HasHill(): boolean
+	return #hill.pieces > 0 and PlaygroundService.Root ~= nil
+end
+
+function PlaygroundService:BarriersOn(): boolean
+	return railsOn
+end
+
+-- The one switch, for the hill AND for the endless road: the user asked for one button
+-- and "the barriers" means all of them. The road may not be up, which is not an error.
+function PlaygroundService:SetBarriers(on: boolean): boolean
+	railsOn = on == true
+	applyHillRails()
+	local road = roadService()
+	if road and type(road.SetBarriers) == "function" then
+		pcall(road.SetBarriers, road, railsOn)
+	end
+	return railsOn
+end
+
+function PlaygroundService:ToolState()
+	return { hill = self:HasHill(), rails = railsOn }
+end
+
+function PlaygroundService:_tellTools(player: Player)
+	if self.tools then
+		self.tools:FireClient(player, self:ToolState())
+	end
+end
+
+function PlaygroundService:_onTool(player: Player, what: any)
+	self.toolAsks += 1
+	local now = os.clock()
+	local limit = self.toolLimits[player.UserId]
+	if not limit then
+		limit = { window = now, count = 0, lastAt = -math.huge }
+		self.toolLimits[player.UserId] = limit
+	end
+	if now - limit.window >= 1 then
+		limit.window = now
+		limit.count = 0
+	end
+	limit.count += 1
+	if limit.count > Config.Drift[TOOL_RATE_LIMIT] then
+		self.toolsRefused += 1
+		self:_tellTools(player)
+		return
+	end
+
+	if what == nil then
+		self:_tellTools(player) -- a question, answered, changing nothing
+		return
+	end
+	-- ANYTHING THAT IS NOT ONE OF THE TWO WORDS IS REFUSED, counted, and answered with
+	-- the state the server really has. A CFrame, a Vector3, a table naming a place, a
+	-- number: all of them land here.
+	if what ~= "lift" and what ~= "rails" then
+		self.toolsRefused += 1
+		self:_tellTools(player)
+		return
+	end
+	if now - limit.lastAt < Config.Drift[TOOL_COOLDOWN] then
+		self.toolsRefused += 1
+		self:_tellTools(player)
+		return
+	end
+
+	local acted = false
+	if what == "rails" then
+		self:SetBarriers(not railsOn)
+		self.railSwitches += 1
+		acted = true
+	else
+		-- THE SERVER MOVES THE CAR, and it moves it to a CFrame it worked out itself.
+		local to = self:HillTopCFrame()
+		local cars = carService()
+		local road = roadService()
+		-- Not while they are on the endless road: the roster would still have them on it
+		-- and the window would follow a car that had left.
+		local inRun = road ~= nil and type(road.InRun) == "function" and road:InRun(player) == true
+		if to and cars and type(cars.Place) == "function" and not inRun then
+			acted = cars:Place(player, to) ~= nil
+			if acted then
+				self.lifts += 1
+			end
+		end
+	end
+	if acted then
+		limit.lastAt = now
+	else
+		self.toolsRefused += 1
+	end
+	self:_tellTools(player)
 end
 
 --------------------------------------------------------------------------------
@@ -626,6 +1055,13 @@ function PlaygroundService:DebugState()
 	return {
 		built = PlaygroundService.Root ~= nil and PlaygroundService.Root.Parent ~= nil,
 		partCount = partCount,
+		hillPartCount = hillPartCount,
+		hill = PlaygroundService:DebugHill(),
+		rails = railsOn,
+		toolAsks = self.toolAsks or 0,
+		toolsRefused = self.toolsRefused or 0,
+		lifts = self.lifts or 0,
+		railSwitches = self.railSwitches or 0,
 		coneCount = #cones,
 		buildingCount = #Layout.Buildings + #Layout.Blocks,
 		pillarCount = #Layout.Pillars,
@@ -642,12 +1078,180 @@ end
 
 -- This world's footprint, plate and all, so a caller can ask which world a position is
 -- in without knowing anything about the layout. The plate is the widest thing here, so
--- it is the whole of it.
+-- it is the whole of it -- EXCEPT for the test hill, which stands on a plate of its own
+-- off the southern edge and reaches 259 studs into the air (T-065). Both are in here, so
+-- a car on the hill is a car in this world.
 function PlaygroundService:Bounds(): { min: Vector3, max: Vector3 }
 	local half = Layout.Plate.size * 0.5
+	local minX, maxX = -half, half
+	local minZ, maxZ = -half, half
+	local maxY = 200
+	if hill.pad then
+		minX = math.min(minX, hill.pad.minX)
+		maxX = math.max(maxX, hill.pad.maxX)
+		minZ = math.min(minZ, hill.pad.minZ)
+		maxZ = math.max(maxZ, hill.pad.maxZ)
+		maxY = math.max(maxY, hill.topY + 100)
+	end
 	return {
-		min = offset + Vector3.new(-half, -Layout.Plate.thickness, -half),
-		max = offset + Vector3.new(half, 200, half),
+		min = offset + Vector3.new(minX, -Layout.Plate.thickness, minZ),
+		max = offset + Vector3.new(maxX, maxY, maxZ),
+	}
+end
+
+-- The hill: its profile piece by piece, where it starts and ends, how high it gets, and
+-- the ground it stands on. Heights are world Y and need no offset; X and Z are layout
+-- coordinates and `offset` is what makes them world ones.
+function PlaygroundService:DebugHill()
+	local pieces = {}
+	for i, piece in hill.pieces do
+		local dy = piece.finish.y - piece.start.y
+		local maxPitch, maxBank = 0, 0
+		for _, node in piece.nodes do
+			maxPitch = math.max(maxPitch, math.abs(node.pitch))
+			maxBank = math.max(maxBank, math.abs(node.bank))
+		end
+		pieces[i] = {
+			n = i,
+			id = piece.id,
+			kind = piece.kind,
+			length = math.round(piece.length * 10) / 10,
+			startY = math.round((Config.Road.SurfaceY + piece.start.y) * 1000) / 1000,
+			endY = math.round((Config.Road.SurfaceY + piece.finish.y) * 1000) / 1000,
+			dy = math.round(dy * 1000) / 1000,
+			meanGrade = math.round(math.deg(math.atan(dy / piece.length)) * 100) / 100,
+			maxGrade = math.round(math.deg(maxPitch) * 100) / 100,
+			maxBank = math.round(math.deg(maxBank) * 100) / 100,
+			segments = #piece.nodes - 1,
+			parts = if hill.built[i] then hill.built[i].parts else 0,
+		}
+	end
+	local length = 0
+	for _, piece in hill.pieces do
+		length += piece.length
+	end
+	return {
+		pieces = pieces,
+		count = #hill.pieces,
+		climbPieces = Layout.Hill.climbPieces,
+		entryY = math.round(hill.entryY * 1000) / 1000,
+		exitY = math.round(hill.exitY * 1000) / 1000,
+		topY = math.round(hill.topY * 1000) / 1000,
+		plateY = Layout.Surface.height,
+		lengthStuds = math.round(length),
+		parts = hillPartCount,
+		approachRise = math.round(hill.approachRise * 1000) / 1000,
+		approachLength = math.round(hill.approachLength * 10) / 10,
+		bounds = hill.bounds,
+		pad = hill.pad,
+		offset = offset,
+		rails = railsOn,
+	}
+end
+
+-- Studio only: the hill's centre line as a list of world points, so a test autopilot has
+-- something to aim at. `Road/Generator` gives the endless road's drives an `ahead`; the
+-- hill has no generator, so this is the line and the caller walks it.
+--
+-- Each point carries the piece it is on, which is what turns "the car was doing 92" into
+-- "the car was doing 92 on piece 7, which climbs".
+function PlaygroundService:DebugHillLine(spacing: number?)
+	assert(RunService:IsStudio(), "DebugHillLine is Studio only")
+	local step = math.max(spacing or 8, 1)
+	local out = {}
+	for _, piece in hill.pieces do
+		local n = math.max(2, math.ceil(piece.length / step))
+		local from = if #out == 0 then 0 else 1
+		for i = from, n do
+			local cf = RoadPieces.poseAt(piece, i / n, Config.Road.SurfaceY)
+			table.insert(out, { pos = cf.Position + offset, n = piece.n, id = piece.id })
+		end
+	end
+	return out
+end
+
+-- Studio only: whether the switch touched the walls and nothing else. The slab columns
+-- are the ones that matter -- a slab that stopped being queryable would be a car falling
+-- through the road.
+function PlaygroundService:DebugBarrierReport()
+	assert(RunService:IsStudio(), "DebugBarrierReport is Studio only")
+	local walls, wallsQueryable, wallsSolid = 0, 0, 0
+	local slabs, slabsQueryable, slabsSolid, slabsTagged = 0, 0, 0, 0
+	for _, entry in hill.built do
+		for _, wall in entry.barriers do
+			walls += 1
+			wallsQueryable += if wall.CanQuery then 1 else 0
+			wallsSolid += if wall.CanCollide then 1 else 0
+		end
+		for _, slab in entry.road do
+			slabs += 1
+			slabsQueryable += if slab.CanQuery then 1 else 0
+			slabsSolid += if slab.CanCollide then 1 else 0
+			slabsTagged += if CollectionService:HasTag(slab, Config.Drift.SurfaceTag) then 1 else 0
+		end
+	end
+	return {
+		on = railsOn,
+		walls = walls,
+		wallsQueryable = wallsQueryable,
+		wallsSolid = wallsSolid,
+		slabs = slabs,
+		slabsQueryable = slabsQueryable,
+		slabsSolid = slabsSolid,
+		slabsTagged = slabsTagged,
+	}
+end
+
+-- Studio only: press a testing button for a player with no client involved, through the
+-- exact path the remote takes -- rate limit, cooldown, type check and all -- so a test
+-- exercises what a tap really does rather than the method behind it. `what` nil is the
+-- question, and anything that is not "lift" or "rails" is a forgery.
+function PlaygroundService:DebugTool(what: any, userId: number?)
+	assert(RunService:IsStudio(), "DebugTool is Studio only")
+	for _, player in Players:GetPlayers() do
+		if userId == nil or player.UserId == userId then
+			self:_onTool(player, what)
+			return self:ToolState()
+		end
+	end
+	return nil
+end
+
+-- Studio only: the two guards exist to stop a client hammering the buttons, and a test
+-- that waits half a second between presses is only measuring the wait.
+function PlaygroundService:DebugClearToolLimits()
+	assert(RunService:IsStudio(), "DebugClearToolLimits is Studio only")
+	self.toolLimits = {}
+end
+
+-- The hill's own footprint and the pad under it, in world space, for the tests.
+function PlaygroundService:DebugHillBounds()
+	local folder = PlaygroundService.Root and PlaygroundService.Root:FindFirstChild(Layout.Hill.id)
+	if not folder then
+		return nil
+	end
+	local minV = Vector3.new(math.huge, math.huge, math.huge)
+	local maxV = Vector3.new(-math.huge, -math.huge, -math.huge)
+	-- THE ROAD'S OWN BOX, SEPARATELY FROM THE APPROACH'S, because the two stand on
+	-- different ground on purpose: every piece of road is over the hill's pad, and the
+	-- approach ramp is the thing that crosses on to the playground's own plate.
+	local roadMin = Vector3.new(math.huge, math.huge, math.huge)
+	local roadMax = Vector3.new(-math.huge, -math.huge, -math.huge)
+	local pad = folder:FindFirstChild("HillPad")
+	for _, part in folder:GetDescendants() do
+		if part:IsA("BasePart") and part ~= pad then
+			local lo, hi = part.Position - part.Size * 0.5, part.Position + part.Size * 0.5
+			minV, maxV = minV:Min(lo), maxV:Max(hi)
+			if part.Parent and part.Parent.Name:match("^Piece_") then
+				roadMin, roadMax = roadMin:Min(lo), roadMax:Max(hi)
+			end
+		end
+	end
+	return {
+		min = minV,
+		max = maxV,
+		road = { min = roadMin, max = roadMax },
+		pad = if pad then { min = pad.Position - pad.Size * 0.5, max = pad.Position + pad.Size * 0.5 } else nil,
 	}
 end
 
@@ -715,10 +1319,18 @@ function PlaygroundService:DebugWalk(featureId: string, lateral: number?, every:
 end
 
 -- The world-space box every built part sits in, so a test can check it is on the plate.
+-- THE TEST HILL IS NOT IN IT, and that is the point of the exclusion rather than a
+-- loophole: the hill stands off the southern edge on a plate of its own and is measured
+-- by `DebugHillBounds` against THAT (T-065). Everything this one answers for still has to
+-- be on the 2 000-stud square.
 function PlaygroundService:DebugBounds()
 	local minV = Vector3.new(math.huge, math.huge, math.huge)
 	local maxV = Vector3.new(-math.huge, -math.huge, -math.huge)
+	local hillFolder = PlaygroundService.Root:FindFirstChild(Layout.Hill.id)
 	for _, part in PlaygroundService.Root:GetDescendants() do
+		if hillFolder and part:IsDescendantOf(hillFolder) then
+			continue
+		end
 		if part:IsA("BasePart") and part.Name ~= "Plate" then
 			minV = minV:Min(part.Position - part.Size * 0.5)
 			maxV = maxV:Max(part.Position + part.Size * 0.5)

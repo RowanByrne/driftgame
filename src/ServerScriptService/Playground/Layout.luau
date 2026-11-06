@@ -169,6 +169,124 @@ Layout.Ramp = {
 	spot = { name = "RampBase", at = 0.03 },
 }
 
+-- THE TEST HILL: twenty pieces of the REAL endless road, ten up and ten down, built
+-- permanently so the user can judge a climb and a descent without starting a run
+-- (features/test-hill.md, T-065). It is the one feature in this world that is not made of
+-- ribbons: `Shared/Road/Pieces` places it and `Shared/Road/Builder` turns it into parts,
+-- exactly as a run does, because a hand-built slope would answer a different question.
+--
+-- WHERE IT IS: off the SOUTH edge of the plate (-Z), pushed as far towards +X as it fits,
+-- which is the side the hand-placed track is on (`Config.Drift.PlaygroundOffsetFromTrack`
+-- is -2024 on X, so the track is +X of this world). It cannot literally be beside the
+-- track -- the track exists only in `DR-Main` and git never sees it -- so this is the
+-- corner of the playground nearest to where one would be. It has a PLATE OF ITS OWN
+-- (`pad`) because 5 136 studs of road does not fit on a 2 000-stud square that already
+-- has a district, a bowl and a ramp on it.
+--
+-- WHY THESE TWENTY PIECES. Two facts about the piece set decide almost everything:
+--
+--   * `Link` is the ONLY piece that climbs, and it hands on +7 degrees. `Corkscrew` is
+--     the only one that sets a descent, and it hands on -5. Everything else CARRIES the
+--     grade it arrived at (`Config.Road.Pieces`, "the road's height is a state machine").
+--     So the climb is at 7 degrees and the descent at 5, and ten pieces up gain MORE than
+--     ten pieces down lose unless the descent is built of longer pieces. It is: the climb
+--     leans on hairpins and chicanes (196 to 220 studs) and the descent on corners and
+--     sweepers (314 to 346).
+--   * The exit has to arrive LEVEL as well as low, and only `Banked30` and `HairpinStack`
+--     end level (`EndGrade = 0`). Hence `Banked30R` last -- which also puts the one banked
+--     piece in the set where the user will certainly drive it.
+--
+-- Measured, placed from this list (the heights are studs above the plate):
+--
+--   piece            grade      top at the end
+--    1 Link          +3.5 deg       14.7   (blending from level to +7)
+--    2 Straight      +7.0           41.8
+--    3 HairpinR      +7.0           68.8
+--    4 ChicaneR      +7.0           92.8
+--    5 HairpinL      +7.0          119.8
+--    6 ChicaneR      +7.0          143.8
+--    7 Link          +7.0          161.0
+--    8 SweeperR      +7.0          199.5
+--    9 Link          +7.0          216.7
+--   10 CornerL       +7.0          259.1   <- THE TOP, where the lift button puts you
+--   11 CorkscrewL    -4.9          239.2   (8.8 deg at its steepest: the floor leaving)
+--   12 CornerL       -5.0          208.9
+--   13 HairpinStackR -5.2          168.9   (the switchback, 40 studs in one piece)
+--   14 CorkscrewR    -4.9          148.9
+--   15 CornerL       -5.0          118.7
+--   16 SweeperR      -5.0           91.2
+--   17 HairpinL      -5.0           72.0
+--   18 SweeperR      -5.0           44.5
+--   19 CornerR       -5.0           14.3
+--   20 Banked30R     -3.8            0.25  <- the plate's own kerb height, exactly
+--
+-- All nine piece kinds appear, six of them in the climb. No two pieces overlap. It is
+-- 5 136 studs of road, about 2 700 parts, and it tops out 259 studs above the plate.
+--
+-- THE START HEIGHT IS NOT WRITTEN DOWN, and that is deliberate: `PlaygroundService` places
+-- the whole hill once at zero simply to read what it comes to, then places it again at the
+-- height that lands its LAST piece on `Surface.height`. So the exit is pinned to the plate
+-- by construction and the entry floats to wherever it must be -- 6.1 studs, today -- with
+-- a short ramp under it. Change a piece in this list and the hill still meets the ground.
+Layout.Hill = {
+	id = "Hill",
+	-- The first socket, and which way it points. Heading 0 faces -Z: straight off the
+	-- plate's southern edge, away from everything.
+	--
+	-- `x` IS AS FAR TOWARDS THE TRACK AS IT CAN SAFELY GO, and the limit is not the
+	-- geometry, it is `CarService:WorldAt`. That decides which world a position is in by
+	-- which world's SPAWN is nearer, and the line between the playground's spawn and a
+	-- track's falls at about x = +1 010 in these coordinates -- the plate's own eastern
+	-- edge, which is where the two worlds meet, so that is right. A hill that crossed it
+	-- would have a car falling off its eastern side respawn on the kart track. At 190 the
+	-- pad reaches x = 957 and the whole hill is on the playground's side with about 50
+	-- studs to spare at its worst point.
+	x = 190,
+	z = -1030,
+	heading = 0,
+	climbPieces = 10, -- the first N are the climb; piece N+1 is where the lift puts you
+	pieces = {
+		"Link",
+		"Straight",
+		"HairpinR",
+		"ChicaneR",
+		"HairpinL",
+		"ChicaneR",
+		"Link",
+		"SweeperR",
+		"Link",
+		"CornerL",
+		"CorkscrewL",
+		"CornerL",
+		"HairpinStackR",
+		"CorkscrewR",
+		"CornerL",
+		"SweeperR",
+		"HairpinL",
+		"SweeperR",
+		"CornerR",
+		"Banked30R",
+	},
+	-- The ramp off the plate up to the road's first socket. Its LENGTH comes out of the
+	-- rise, so it is the same grade whatever the pieces come to; `minLength` stops a small
+	-- rise becoming a lip. A smoothstep is steepest in the middle at 1.5x its average, so
+	-- `grade` 5 peaks at 7.5 -- about what the hill itself climbs at.
+	approach = {
+		grade = 5, -- degrees, mean
+		minLength = 80, -- studs
+		minThickness = 10,
+		segments = 24,
+	},
+	-- The hill's own ground. Sized to the hill's own footprint at build time, so it is
+	-- never bigger than it has to be, and it meets the playground's plate at its southern
+	-- edge rather than leaving a seam to drop through.
+	pad = {
+		margin = 180, -- studs of ground outside the road, for running off and landing on
+		meet = 2, -- studs it overlaps the playground's own plate by
+		colour = "HillPad",
+	},
+}
+
 -- Named spots that are simply a place on the plate. The two that sit on a feature
 -- (CircleCentre, RampBase) are declared with the feature instead.
 Layout.Spots = {
