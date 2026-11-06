@@ -9,6 +9,8 @@ Every task in progress and the files it owns, so parallel sessions and workers n
 
 | Branch | Lane | Files owned | Since |
 |---|---|---|---|
+| `agent/wheel-fx-2` | lane2 | `src/StarterPlayerScripts/Drift/Wheels.luau`, `src/ReplicatedStorage/Shared/Config/Fx.luau`, `src/ServerScriptService/Tests/FxTests.luau`, `docs/game/features/car-fx.md` | 2026-11-06 (T-062) |
+| `agent/unstick` | lane1 | `src/StarterPlayerScripts/Drift/Model.luau`, `src/ReplicatedStorage/Shared/Config/Drift.luau`, `src/ServerScriptService/Tests/DriftTests.luau`, `docs/game/features/drift-model.md` | 2026-11-06 (T-074) |
 
 ## Notes between sessions
 
