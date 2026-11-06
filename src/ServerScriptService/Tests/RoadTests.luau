@@ -42,10 +42,11 @@ local PROFILE_RUN = 200 -- pieces the profiled checks generate. Shorter than `LO
 local WALL_NORMAL_Y = 0.7
 local WALL_DEGREES = math.deg(math.acos(WALL_NORMAL_Y)) -- 45.57
 local DRIVE_PIECES = 50 -- pieces the real model is driven down
--- Seconds the autopilot may spend stuck across that drive. NOT zero, and the long reason
--- is beside the check that uses it: the banked corner costs 40.2 s of it and the user
--- chose that knowingly (T-068).
-local STUCK_BUDGET = 60
+-- Seconds the autopilot may spend stuck across that drive. It was 60 because the banked
+-- corner used to cost 40.2 s of it; `T-074` gave a pinned car the ability to drive itself
+-- off a wall and the same drive now costs 1.35 s, so 60 was guarding nothing. Five, and
+-- the measurement is beside the check that uses it.
+local STUCK_BUDGET = 5
 local DRIVE_SECONDS = 400 -- the drive gives up after this much simulated time
 local DRIVE_FPS = 60
 local SEEDS = { 1, 7, 1234, 20260704, 99991 }
@@ -2951,24 +2952,27 @@ function Tests:run(opts)
 			driveReport
 		)
 
-		-- BEING STUCK IS ITS OWN CHECK NOW, AND IT HAS A BUDGET RATHER THAN A ZERO (T-068).
-		-- This used to be `stuckSeconds < 1` and it was true for as long as the road was
-		-- flat. The banked corner ships at 10 degrees -- the user's call on 2026-11-06,
-		-- made knowing this number -- and with gravity acting along the ground the car
-		-- slides down the bank into the barrier and the autopilot cannot get it off:
-		-- 50 pieces, seed 8080, it spends 40.2 s stuck. Nothing that stops it is road;
-		-- it reaches all 50 pieces, never leaves the road and is never airborne, which is
-		-- why those three stay at zero above.
+		-- BEING STUCK IS ITS OWN CHECK, AND THE CAR THAT CAN UNSTICK ITSELF ARRIVED
+		-- (T-068, then T-074). This used to read `< 60` with a long note saying the banked
+		-- corner costs 40.2 s of stuck time and nothing could be done about it short of a
+		-- smaller bank. `T-074` did the thing that note asked for -- a pinned car drives
+		-- itself off the wall -- and the same 50 pieces on the same seed 8080, at the same
+		-- 10 degrees of bank the user chose on 2026-11-06, now costs **1.35 s**. The old
+		-- budget was forty times the number it was guarding, which is not a guard.
 		--
-		-- SIXTY, so it still fails if this gets worse. The measured ladder is 0.5 s at 5
-		-- degrees of bank, 11.9 at 8, 40.2 at 10 and 113.8 at 15, so 60 is clear of the
-		-- shipped number and nowhere near the next one up. A real driver carries more
-		-- speed in and steers out of a wall; the autopilot does neither, so this is the
-		-- worst case and not what the game feels like.
+		-- FIVE, measured. Seed 8080 is bit-reproducible here: six runs back to back gave
+		-- 1.35 s, 33 630 steps and 50 of 50 pieces every time, so the headroom is for a
+		-- change in the road or the model, not for noise.
 		--
-		-- THE WAY BACK TO ZERO IS NOT A SMALLER BANK. It is a car that can unstick itself
-		-- from a wall, which is its own task; with that, this goes back to being tight and
-		-- the bank goes to the 30 the spec asks for.
+		-- AND IT ONLY GUARDS THE SEED IT DRIVES, WHICH IS WORTH KNOWING BEFORE ANYONE
+		-- POINTS `driveSeed` SOMEWHERE ELSE. Across five seeds, same build, 50 pieces:
+		--   1234 0.32 s (50/50), 20260704 0.33 s (50/50), 8080 1.35 s (50/50),
+		--   7 1.73 s (16/50), 1 **213.88 s** (41/50)
+		-- Four of the five sit under two seconds; seed 1 lays a road the autopilot cannot
+		-- get round at all. That is a fixture failing, not the game -- a real driver
+		-- carries speed in and steers out -- but it is why this budget is not a number
+		-- every seed would pass, and why raising it to cover seed 1 would be pointless.
+		-- If `driveSeed` ever moves, re-measure this with it.
 		check(
 			`stuck for under {STUCK_BUDGET} s across the drive`,
 			r.stuckSeconds < STUCK_BUDGET,

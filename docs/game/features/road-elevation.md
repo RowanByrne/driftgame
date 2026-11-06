@@ -9,9 +9,11 @@ to 20° and 30° (`T-073`), and **the four touge pieces are in the shipped set**
 **What the user should drive, and the one number that is theirs:** the road descends on balance —
 **−880 studs over 200 pieces**, 1.75% — in a band about 1 200 studs deep that climbs as well as
 falls. That is answer *(a)* to "does the road descend for ever" below, and whether it is the right
-answer is theirs. The other thing for them is the **banked 30**: it ships at 5° of bank because
-more than that pins the test autopilot against a barrier, and a human may well drive straight out
-of what stops it.
+answer is theirs. The other thing for them is the **banked 30**: it ships at **10°** of bank (the
+user's call, 2026-11-06), and what stops it going further is **the engine**, not the geometry —
+`MaxAcceleration` is 14.3 studs/s² against `Gravity × sin(bank)`, so the car cannot climb out of a
+bank steeper than about 24°. A bigger bank needs a stronger engine, which is a feel number the user
+owns.
 
 ## What is built, and what the limits turned out to be
 
@@ -321,7 +323,7 @@ out. Nothing here is a flat piece with a grade added.
 | | plan shape | height | bank | gate |
 |---|---|---|---|---|
 | `Link` | 140-stud straight | `EndGrade = 7°`, no drop: the grade blends **linearly** from whatever arrived, so the piece itself gains about 8 studs from level and *falls* when it arrives descending | none | `minPieces 0`, weight 3 |
-| `Banked30` | 400 radius, 30° (209 studs) | `Drop = 14, EndGrade = 0` — arrives level, 5.7° at its steepest | `5°, crest` — in and out again, level at both sockets | `minPieces 3` |
+| `Banked30` | 400 radius, 30° (209 studs) | `Drop = 14, EndGrade = 0` — arrives level, 5.7° at its steepest | `10°, crest` — in and out again, level at both sockets | `minPieces 3` |
 | `HairpinStack` | 70 radius, 180° **each way** (440 studs, 280 across) | `Drop = 40, EndGrade = 0`, 7.8° at its steepest — which is the join between the two hairpins | none | `minPieces 14` |
 | `Corkscrew` | 150 radius, 45° each way (236 studs, 88 across) | `Drop = 20, EndGrade = −5°` — **the only piece that hands on a descent** | none | `minPieces 10` |
 
@@ -331,7 +333,10 @@ are followers. The corkscrew starts descents, the link ends them and starts clim
 and the hairpin stack end level. That is what makes a band rather than a ramp.
 
 **Driven, the whole set, 50 generated pieces** (`RoadTests` section 11, seed 8080) — 50 of 50
-reached, mean 49 studs/s, top **108**, 0 steps off the road, 0 airborne, longest stop **0.45 s**:
+reached, mean 49 studs/s, top **108**, 0 steps off the road, 0 airborne, longest stop **0.45 s**
+(**re-measured after the bank went to 10° and `T-074` landed:** still 50 of 50 and still 0 off the
+road and 0 airborne, mean 46, top 108, longest stop **1.35 s**; the per-piece rows below are from
+the 5° run and have not been re-taken):
 
 | on this piece | speed on it | drifting it | steps on a barrier |
 |---|---|---|---|
@@ -348,36 +353,36 @@ about 13% slower, which is what a mountain road should be. **The top speed is 10
 fall-test number came from a long unbroken descent, and this set does not have one — the longest
 run of pieces that keeps descending is 13, and the link catches it.
 
-### The banked 30 is the showcase and it ships at 5°, which is the one disappointment
+### The banked 30 ships at 10°, and what holds it there is the ENGINE
 
 `MaxBank` is 30 and 30° is *geometrically* safe — `T-073`'s audit read the road as a wall 0 times
-in 18 865 sweeps at that bank. **It is not drivable, and nothing in that audit said it would be.**
+in 18 865 sweeps at that bank. It is still not drivable, but **the reason written here used to be
+the wrong one** and sent readers after the wrong fix.
 
-Gravity acts along the surface now, so on a bank it pulls the car down the slope at
-`Gravity × sin(bank)`, and the speed at which the corner's own `v²/r` pays for that is
-`sqrt(radius × Gravity × tan(bank))` — 37 studs/s at 5°, 61 at 15°, 90 at 30°. Below it the car
-slides down into the barrier at the low edge, the slide **is** slip, past 90° of slip the model's
-grip force is a brake, and it never builds the speed it would need to come off the wall. And this
-set delivers the car to that corner at anything from 0 to 99 studs/s, because what is either side
-of it is a hairpin stack. Measured, the same seed and 50 pieces, only `Bank.Degrees` changing:
+**It is not the collision box and it is not the car getting pinned.** `T-073` tilted the box onto
+the surface, and `T-074` gave a pinned car the ability to drive itself off a wall — after which the
+same 50-piece drive at 10° of bank reads **1.35 s** of stopped time where it used to read 40.2 s.
+The pinning is fixed and the bank still cannot go up.
 
-| bank | pieces reached | mean speed | barrier steps on it | longest stop |
-|---|---|---|---|---|
-| 0° | 50 | 49 | 4 | 0.4 s |
-| **5°** | **50** | **49** | **21** | **0.5 s** |
-| 8° | 50 | 41 | 158 | 11.9 s |
-| 10° | 50 | 36 | 387 | 40.2 s |
-| 12° | 37 | 32 | 253 | 21.7 s |
-| 15° | 37 | 28 | 247 | 113.8 s |
+**It is that the car has not got the power to climb the bank.** Gravity acts along the surface, so
+a bank pulls the car down the slope at `Gravity × sin(bank)` — 17.5 studs/s² at 30° — and the car's
+whole drive is `MaxAcceleration = 14.3` studs/s² (`Cars/Archetypes`, the fallback archetype). The
+ceiling is therefore
 
-It is monotone, and it is not the drop (level at 15° stopped the car for 20 s) and not the radius
-(550 measured worse than 400, 340 worse again). **Traced, 0 of 351 sweeps that stopped the car on
-this set were stopped by road** — every one was a barrier. So what the table measures is the test
-autopilot failing to get a pinned car off a wall; the fixture was given a floor under its steering
-for exactly this (`RoadTests`, `STEER_FLOOR`) and it was not enough. **10–15° is where the piece
-starts to look like a touge corner, and the only thing in the way is a car that cannot unstick
-itself.** That wants its own fix — an unstick, or a respawn that notices — rather than a smaller
-bank, and the number is one line in the config.
+> `asin(MaxAcceleration / Gravity)` = `asin(14.3 / 35)` ≈ **24°**
+
+and lower in practice, because the drivetrain falls off with speed (`1 − (u/TopSpeed)²`) so the full
+14.3 is only ever on offer from a standstill. Measured on the same seed, 50 pieces, only
+`Bank.Degrees` changing — **pieces completed out of 50**: 10° → **50**, 20° → 25, 25° → 8,
+30° → 8. The cliff sits just below the 24° the arithmetic predicts, which is what makes the
+explanation the right one.
+
+**So a bigger bank needs a stronger engine, and that is a feel number the user owns** — nobody has
+touched `MaxAcceleration`, and raising it changes how the car accelerates everywhere, not just on
+this corner. The bank itself is one line in `Config/Road`; the thing in its way is not.
+
+**It ships at 10°**, the user's call on 2026-11-06 (`DECISIONS.md`), against the `5°` the first
+measurement had settled on.
 
 ### One bug in the piece maths, fixed
 
