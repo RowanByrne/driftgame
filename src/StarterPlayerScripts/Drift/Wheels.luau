@@ -5,8 +5,8 @@
 -- A port of the reference game's wheel effects, written from a description of how they
 -- work, with three things of our own on top of it that the user asked for after driving
 -- it (T-062, round 2): the lean no longer buries the outside mark, there is a second
--- stylized smoke layer that builds per wheel, and a mark's darkness is how much rubber
--- went down per stud of road.
+-- stylized smoke layer that builds per wheel. A third, a darkness that followed how much
+-- rubber went down per stud of road, was built, driven and taken out again (round 4).
 --
 -- ------------------------------------------------------------------ the four gates
 --
@@ -50,44 +50,33 @@
 -- themselves are drawn flat by `Render` for exactly the same reason, so this makes the
 -- marks agree with the wheels that leave them.
 --
--- ------------------------------------------------------- how dark a mark is, and bands
+-- ------------------------------------- ONE SHADE OF LINE, and the ramp that is not here
 --
--- `Trail.Transparency` applies to the WHOLE live ribbon and not to the segment being laid,
--- so turning it down darkens the five seconds of mark already on the road behind you.
--- Rubber does not change its mind, so instead each wheel carries ONE TRAIL PER BAND, all
--- strung between the same two attachments, and only the band matching this frame's density
--- is enabled. Each band's ribbon persists at its own fixed darkness and the line through a
--- corner genuinely darkens where the car was working hardest.
+-- A mark is one `Trail` per wheel per surface at ONE fixed darkness, `Marks.Transparency`.
+-- There is no darkness ramp, and there is a reason it is worth knowing that there was one.
 --
--- The density is the user's own: rubber laid per STUD OF ROAD, not per second. *"If the
--- drift continues as the car's speed lowers, more rubber is deposited per foot."*
+-- A progressive ramp WAS built, driven and removed at the user's call (T-062, rounds two
+-- and three; the whole story is in features/car-fx.md "The darkness ramp that was built
+-- and removed"). It worked out how much rubber a wheel was laying per stud of road and
+-- picked a darkness from it. The reason it could never be a single number is this:
 --
--- ------------------------------------------------------- A SWAP IS A HOLE (round three)
+--   `Trail.Transparency` APPLIES TO THE WHOLE LIVE RIBBON, not to the segment being laid.
+--   Turn it down and the five seconds of mark already on the road behind you darken with
+--   it, which is not what rubber does.
 --
--- And that ladder of trails is why the user's marks came out in dashes. **Every change of
--- band leaves a hole in the mark**, because the incoming trail has no points yet and draws
--- nothing at all until the contact patch has moved; switch the outgoing one off in the
--- same frame and that distance is clean road.
+-- So the ramp had to be a LADDER OF TRAILS, one per darkness, switching between them -- and
+-- every switch is a hole in the mark, because the incoming trail has no points yet and
+-- draws nothing until the contact patch has moved. That cost a swap overlap, a hysteresis,
+-- a sticky gate and two rounds, and the user's verdict on the result was *"didn't quite
+-- work with the progressive shading -- roll that back so it's just one shade of line."*
 --
--- MEASURED over 1 081 grounded frames of a drift that slowed across the ladder: the rear
--- wheels changed band **58 times** and the fronts **30**, and most of those swaps were
--- **0 or 1 stud apart** -- the band was chattering frame to frame as the density wandered.
--- Worse, round two had set `Trail.MinLength` to half a stud to cure a different-looking
--- fault, which makes every one of those fresh trails wait half a stud before it draws
--- anything: a chain of hairline joins became the long clean dashes in the screenshot.
+-- IF SOMEBODY WANTS THE RAMP BACK, the ladder is the only shape that can carry it and the
+-- holes are inherent to the ladder. Read the spec first.
 --
--- Three things fix it, and all three are numbers:
---   `Marks.SwapOverlap`      the outgoing band keeps drawing for a moment after the
---                            incoming one starts, so the two ribbons OVERLAP. A swap is
---                            then a splice a shade darker than either band, not a hole.
---                            This is the one that actually closes it.
---   `Marks.BandHysteresis`   raised, and `Marks.Bands` cut from four to three, so swaps
---                            are rare in the first place. A continuous mark at three
---                            darknesses beats a dashed one at four.
---   `Gates.StopSlipDegrees`  the slip gate is sticky once a wheel is marking. Without it
---                            a car at 44 studs/s with its slip sitting on half a degree
---                            switched its marks on and off at a density of 0.00.
--- And `Marks.MinSegment` is back to 0, so a fresh ribbon draws on its very next frame.
+-- `Gates.StopSlipDegrees` and `Marks.MinSegment = 0` SURVIVE the rollback and are not part
+-- of that story: a car sitting on the slip threshold flicking its marks on and off is
+-- wrong whether or not there are bands, and a trail that will not draw until the patch has
+-- moved half a stud starts every mark late.
 --
 -- ------------------------------------------------------- the two smoke layers
 --
@@ -99,9 +88,10 @@
 --
 -- ------------------------------------------------------- what this must never do
 --
--- NOTHING IS CREATED OR DESTROYED WHILE DRIVING. 28 instances per car at one surface and
--- three bands -- 4 wheels x (2 Attachments + 3 Trails + 2 ParticleEmitters) -- built once
--- when the rig is caught and switched with `Enabled` for ever after. There is no
+-- NOTHING IS CREATED OR DESTROYED WHILE DRIVING. 20 instances per car at one surface --
+-- 4 wheels x (2 Attachments + 1 Trail + 2 ParticleEmitters) -- built once when the rig is
+-- caught and switched with `Enabled` for ever after. It was 28 with the band ladder and 32
+-- when that ladder had four rungs; taking the ramp out took eight of them with it. There is no
 -- `Instance.new`, no table, no `NumberSequence` and no `NumberRange` anywhere in `Update`:
 -- a frame that allocates is the thing to fail on, and `FxTests` counts the instances
 -- before and after a thousand frames because of it.
@@ -122,21 +112,14 @@ local DriftModel = require(script.Parent.Model)
 local Wheels = {}
 Wheels.__index = Wheels
 
--- One surface's instances on one wheel. `band`, `diffuseRate` and `stylizedRate` are what
--- was last WRITTEN, so a frame that changes nothing writes nothing. `band` is an index
--- into `trails`, or 0 for "nothing is marking".
+-- One surface's instances on one wheel. `on`, `diffuseRate` and `stylizedRate` are what was
+-- last WRITTEN, so a frame that changes nothing writes nothing.
 type SurfaceFx = {
 	surface: string,
-	trails: { Trail }, -- one per `Marks.Bands`, lightest first
+	trail: Trail,
 	diffuse: ParticleEmitter,
 	stylized: ParticleEmitter,
-	band: number,
-	-- The band still drawing from BEFORE the last swap, and how long it has left. Two
-	-- ribbons overlap for `Marks.SwapOverlap` seconds so the join is a splice and not a
-	-- hole -- see "a swap is a hole" in the header. 0 means nothing is lingering.
-	fading: number,
-	fadeLeft: number,
-	swaps: number, -- band-to-band changes since the rig was built; the readout and the tests
+	on: boolean,
 	diffuseRate: number,
 	stylizedRate: number,
 }
@@ -184,7 +167,7 @@ end
 -- used for the slip gate's hysteresis: a gate with one threshold chatters on anything that
 -- sits on it, and chatter in this gate is a hole in the mark. Measured: a car at 44
 -- studs/s with its slip hovering on half a degree switched its rear marks on and off
--- repeatedly at a density of 0.00.
+-- repeatedly while nothing about the slide had changed.
 function Wheels.evaluate(
 	state: DriftModel.State,
 	handbrake: boolean,
@@ -229,13 +212,13 @@ function Wheels.surfaceOf(state: DriftModel.State, _index: number, down: boolean
 end
 
 --------------------------------------------------------------------------------
--- Heat, density and the band, all pure
+-- Tyre heat, pure. It drives the STYLIZED SMOKE and nothing else now: the mark's darkness
+-- used to read it too, through a rubber-per-stud curve that the user had taken out.
 --------------------------------------------------------------------------------
 
 -- The speed the contact patch is being dragged SIDEWAYS across the road, in studs/s.
--- `speed * |sin(slip)|`. This is the number a real tyre heats and wears on, and it is what
--- both the heat and the rubber density are built from: a car fully sideways at walking
--- pace is shearing far less rubber than the same angle at 90 studs/s.
+-- `speed * |sin(slip)|`. This is the number a real tyre heats and wears on: a car fully
+-- sideways at walking pace is shearing far less rubber than the same angle at 90 studs/s.
 function Wheels.slipSpeed(state: DriftModel.State): number
 	return DriftModel.speed(state) * math.abs(math.sin(state.slip))
 end
@@ -261,52 +244,6 @@ function Wheels.heatStep(heat: number, sliding: boolean, slipSpeed: number, dt: 
 		heat -= dt / math.max(H.FallSeconds, 1e-4)
 	end
 	return math.clamp(heat, 0, 1)
-end
-
--- HOW MUCH RUBBER WENT DOWN PER STUD OF ROAD, 0..1 -- which is how dark the mark is.
---
--- The `/speed` is the whole point and it is the user's own reasoning: the same slide laid
--- over less ground is a darker line, so a drift that is still going as the car slows gets
--- darker rather than fainter. `MinSpeedForDensity` is the floor under that division, so a
--- car that has nearly stopped does not divide its way to a black stripe.
---
--- `heat` lifts it on top, up to `Marks.HeatGain`: a tyre that has been working for three
--- seconds lays more rubber than one that has just stepped out.
-function Wheels.density(speed: number, slip: number, heat: number): number
-	local M = Config.Fx.Marks
-	local speedTerm = (M.RefSpeed / math.max(speed, M.MinSpeedForDensity)) ^ M.SpeedExponent
-	local angleTerm = math.abs(math.sin(slip)) ^ M.AngleExponent
-	return math.clamp(speedTerm * angleTerm * lerp(1, M.HeatGain, math.clamp(heat, 0, 1)), 0, 1)
-end
-
--- Which band a density falls in: 1 is the lightest mark, `#Marks.Bands` the darkest. The
--- bands are even slices of 0..1, so the ladder is read straight off the number.
-function Wheels.bandFor(density: number): number
-	local bands = Config.Fx.Marks.Bands
-	local n = #bands
-	if n == 0 then
-		return 0
-	end
-	return math.clamp(math.floor(density * n) + 1, 1, n)
-end
-
--- The same, but refusing to leave the band it is already in until the density is clear of
--- the boundary by `Marks.BandHysteresis`. WITHOUT THIS a density sitting on a boundary
--- swaps trails every other frame, and every swap ends one ribbon and starts another --
--- which is a dotted line down the road instead of a mark. `previous` of 0 means the wheel
--- was not marking, and then there is nothing to be sticky about.
-function Wheels.bandWith(density: number, previous: number): number
-	local n = #Config.Fx.Marks.Bands
-	local raw = Wheels.bandFor(density)
-	if previous < 1 or previous > n or raw == previous then
-		return raw
-	end
-	-- The boundary the two bands share, as a density.
-	local boundary = (if raw > previous then previous else raw) / n
-	if math.abs(density - boundary) < Config.Fx.Marks.BandHysteresis then
-		return previous
-	end
-	return raw
 end
 
 -- The stylized layer's rate for one wheel, from that wheel's own heat. `RateMin` is zero
@@ -363,18 +300,22 @@ end
 
 -- One band's trail. Every band is identical but for its transparency, and they all hang
 -- between the same two attachments: only one is ever enabled, so they cannot overdraw.
-local function makeTrail(name: string, surface: string, band: number, a: Attachment, b: Attachment): Trail
+-- ONE trail per wheel per surface, at ONE darkness. There used to be a ladder of them --
+-- see the header -- and taking it out is most of this function.
+local function makeTrail(name: string, surface: string, a: Attachment, b: Attachment): Trail
 	local F = Config.Fx
 	local look = F.Surfaces[surface] or F.Surfaces[F.Default]
-	local flat = F.Marks.Bands[band]
+	local flat = F.Marks.Transparency
 	local trail = Instance.new("Trail")
-	trail.Name = string.format(F.Names.Trail, name, surface, band)
+	trail.Name = string.format(F.Names.Trail, name, surface)
 	trail.Attachment0 = a
 	trail.Attachment1 = b
 	trail.Lifetime = F.Marks.Seconds
 	trail.Color = ColorSequence.new(look.MarkColour)
-	-- Flat at this band's darkness, then the last of its life spent fading out -- which is
-	-- what stops a mark ending in a hard edge the moment its lifetime is up.
+	-- Flat for most of its life, then the last of it spent fading out -- which is what
+	-- stops a mark ending in a hard edge the moment its lifetime is up. THIS IS THE ONLY
+	-- transparency a mark ever has: it is a property of the whole live ribbon, which is
+	-- exactly why a darkness that varies along the mark needed a ladder of trails.
 	trail.Transparency = NumberSequence.new({
 		NumberSequenceKeypoint.new(0, flat),
 		NumberSequenceKeypoint.new(F.Marks.FadeAt, flat),
@@ -384,9 +325,7 @@ local function makeTrail(name: string, surface: string, band: number, a: Attachm
 	trail.LightEmission = 0
 	trail.LightInfluence = F.Marks.LightInfluence
 	trail.FaceCamera = false
-	-- NOT ZERO. A ribbon 1.2 studs wide that advances 0.675 studs in a frame is a stack of
-	-- quads wider than they are long, and the mark comes out as a ladder of rungs with
-	-- road showing between them (measured; see `Marks.MinSegment`).
+	-- ZERO, so a mark starts drawing on its very first frame (see `Marks.MinSegment`).
 	trail.MinLength = F.Marks.MinSegment
 	trail.Enabled = false
 	trail.Parent = a
@@ -429,9 +368,7 @@ end
 function Wheels.Clear(self: Wheels)
 	for _, w in self.wheels do
 		for _, fx in w.fx do
-			for _, trail in fx.trails do
-				trail:Destroy()
-			end
+			fx.trail:Destroy()
 			fx.diffuse:Destroy()
 			fx.stylized:Destroy()
 		end
@@ -497,19 +434,12 @@ function Wheels.Attach(self: Wheels, rig: any): boolean
 		local fx: { SurfaceFx } = {}
 		for _, surface in F.Built do
 			local look = F.Surfaces[surface] or F.Surfaces[F.Default]
-			local trails: { Trail } = {}
-			for bandIndex = 1, #F.Marks.Bands do
-				table.insert(trails, makeTrail(name, surface, bandIndex, a, b))
-			end
 			table.insert(fx, {
 				surface = surface,
-				trails = trails,
+				trail = makeTrail(name, surface, a, b),
 				diffuse = makeEmitter(string.format(F.Names.Emitter, name, surface), look.SmokeColour, F.Smoke, a),
 				stylized = makeEmitter(string.format(F.Names.Stylized, name, surface), look.PuffColour, F.Stylized, b),
-				band = 0,
-				fading = 0,
-				fadeLeft = 0,
-				swaps = 0,
+				on = false,
 				diffuseRate = 0,
 				stylizedRate = 0,
 			})
@@ -533,7 +463,7 @@ function Wheels.Attach(self: Wheels, rig: any): boolean
 		return false
 	end
 	self.body = body
-	self.built = #self.wheels * (2 + #F.Built * (#F.Marks.Bands + 2))
+	self.built = #self.wheels * (2 + #F.Built * 3) -- 2 attachments + 1 trail + 2 emitters
 	return true
 end
 
@@ -544,57 +474,16 @@ end
 -- Put one wheel's instances where this frame says they should be. `band` is 0 for nothing
 -- marking; the diffuse and stylized rates are written only when they have moved.
 -- Put one band's trail out, unless it is the one that is now being laid.
-local function douse(fx: SurfaceFx, index: number)
-	if index > 0 and index ~= fx.band then
-		fx.trails[index].Enabled = false
+-- One wheel's instances, this frame. With one darkness there is nothing to choose between:
+-- the trail and the two emitters go on and off together, and only the rates move.
+local function write(fx: SurfaceFx, on: boolean, diffuseRate: number, stylizedRate: number)
+	if fx.on ~= on then
+		fx.on = on
+		fx.trail.Enabled = on
+		fx.diffuse.Enabled = on
+		fx.stylized.Enabled = on
 	end
-end
-
-local function write(fx: SurfaceFx, band: number, dt: number, diffuseRate: number, stylizedRate: number)
-	if fx.band ~= band then
-		local wasOn, on = fx.band > 0, band > 0
-
-		-- A SWAP IS A HOLE UNLESS THE OLD RIBBON COVERS IT. The incoming trail has no
-		-- points, so it draws nothing until the contact patch has moved; if the outgoing
-		-- one is switched off in the same frame, that distance is clean road. So between
-		-- two MARKING bands the old trail keeps drawing for `Marks.SwapOverlap` and the
-		-- two ribbons overlap. Stopping altogether is not overlapped: a mark should end
-		-- where the drift ended, and `Gates.StopSlipDegrees` is what stops that flickering.
-		if wasOn and on then
-			douse(fx, fx.fading) -- only ever one lingering ribbon
-			fx.fading = fx.band
-			fx.fadeLeft = Config.Fx.Marks.SwapOverlap
-			fx.swaps += 1
-		elseif wasOn then
-			douse(fx, fx.fading)
-			fx.fading, fx.fadeLeft = 0, 0
-			fx.trails[fx.band].Enabled = false
-		end
-
-		if on then
-			fx.trails[band].Enabled = true
-		end
-		if wasOn ~= on then
-			-- Only when the wheel starts or stops marking. A band change is a change of
-			-- trail and nothing else: the smoke does not blink with it.
-			fx.diffuse.Enabled = on
-			fx.stylized.Enabled = on
-		end
-		fx.band = band
-		-- Swapping back to the band that was lingering just keeps it: it is already on.
-		if fx.fading == band then
-			fx.fading, fx.fadeLeft = 0, 0
-		end
-	end
-
-	if fx.fading > 0 then
-		fx.fadeLeft -= dt
-		if fx.fadeLeft <= 0 then
-			douse(fx, fx.fading)
-			fx.fading, fx.fadeLeft = 0, 0
-		end
-	end
-	if band > 0 then
+	if on then
 		if fx.diffuseRate ~= diffuseRate then
 			fx.diffuseRate = diffuseRate
 			fx.diffuse.Rate = diffuseRate
@@ -614,9 +503,7 @@ function Wheels.Cut(self: Wheels)
 	for _, w in self.wheels do
 		w.heat = 0
 		for _, fx in w.fx do
-			-- A whole overlap's worth of `dt`, so any lingering ribbon goes out with the
-			-- rest of them. Nothing may still be drawing across a teleport.
-			write(fx, 0, math.huge, fx.diffuseRate, fx.stylizedRate)
+			write(fx, false, fx.diffuseRate, fx.stylizedRate)
 		end
 	end
 end
@@ -634,7 +521,6 @@ function Wheels.Update(self: Wheels, state: DriftModel.State?, input: any, dt: n
 	end
 	local step = math.max(dt or 0, 0)
 	local handbrake = input ~= nil and input.handbrake == true
-	local speed = DriftModel.speed(state)
 	local slipSpeed = Wheels.slipSpeed(state)
 
 	-- Cancel the body's lean, once for all eight attachments: two trig calls a frame.
@@ -657,19 +543,14 @@ function Wheels.Update(self: Wheels, state: DriftModel.State?, input: any, dt: n
 		-- gate that chatters is a hole in the mark, and this one was chattering.
 		local wasMarking = false
 		for _, fx in w.fx do
-			wasMarking = wasMarking or fx.band > 0
+			wasMarking = wasMarking or fx.on
 		end
 		local emit, diffuseRate = Wheels.evaluate(state, handbrake, w.front, down, wasMarking)
 		w.heat = Wheels.heatStep(w.heat, emit, slipSpeed, step)
 		local surface = Wheels.surfaceOf(state, w.index, down)
-		local density = Wheels.density(speed, state.slip, w.heat)
 		local stylizedRate = Wheels.stylizedRate(w.heat)
 		for _, fx in w.fx do
-			local band = 0
-			if emit and fx.surface == surface then
-				band = Wheels.bandWith(density, fx.band)
-			end
-			write(fx, band, step, diffuseRate, stylizedRate)
+			write(fx, emit and fx.surface == surface, diffuseRate, stylizedRate)
 		end
 	end
 end
@@ -694,15 +575,13 @@ end
 function Wheels.SetMarkSeconds(self: Wheels, seconds: number)
 	for _, w in self.wheels do
 		for _, fx in w.fx do
-			for _, trail in fx.trails do
-				trail.Lifetime = seconds
-			end
+			fx.trail.Lifetime = seconds
 		end
 	end
 end
 
 -- What every wheel is doing and WHY, so a playtest can say which gate is wrong rather
--- than "no smoke", and so the heat and the density can be watched building over a slide.
+-- than "no smoke", and so the heat can be watched building over a slide.
 -- Allocates, and is called by tests and by hand -- never by `Update`.
 function Wheels.DebugState(self: Wheels, state: DriftModel.State?, input: any)
 	local F = Config.Fx
@@ -710,7 +589,6 @@ function Wheels.DebugState(self: Wheels, state: DriftModel.State?, input: any)
 		enabled = self.enabled,
 		attached = self.body ~= nil,
 		instances = self.built,
-		bands = #F.Marks.Bands,
 		surfaces = F.Built,
 		rollDeg = if state then math.deg(state.bodyRoll) else nil,
 		slipDeg = if state then math.deg(state.slip) else nil,
@@ -725,30 +603,22 @@ function Wheels.DebugState(self: Wheels, state: DriftModel.State?, input: any)
 		return out
 	end
 	local handbrake = out.handbrake
-	local speed = DriftModel.speed(state)
 	local com = Config.Drift.CenterOfMass
 	local cosR, sinR = math.cos(state.bodyRoll), math.sin(state.bodyRoll)
 	for _, w in self.wheels do
 		local down = state.wheelsDown[w.index] == true
 		local emit, diffuseRate, slipPast, throttleOk, handbrakeOk =
 			Wheels.evaluate(state, handbrake, w.front, down)
-		local density = Wheels.density(speed, state.slip, w.heat)
-		-- `bandOn` is the band being LAID; `lit` is how many of this wheel's trails are
-		-- drawing at all, which is 2 for the moment a swap is being spliced across and 1
-		-- the rest of the time. `swaps` is the count the dashes were traced to.
-		local emitting, bandOn, lit, swaps, fading = false, 0, 0, 0, 0
+		-- `lit` is how many of this wheel's trails are actually drawing. It is 1 while the
+		-- wheel marks and 0 otherwise -- and **0 WHILE `emitting` IS TRUE IS A GAP IN THE
+		-- MARK**, which is the number the band ladder was removed over. Keep it.
+		local emitting, lit = false, 0
 		for _, fx in w.fx do
-			swaps += fx.swaps
-			if fx.fading > 0 then
-				fading = fx.fading
+			if fx.on then
+				emitting = true
 			end
-			if fx.band > 0 then
-				emitting, bandOn = true, fx.band
-			end
-			for _, trail in fx.trails do
-				if trail.Enabled then
-					lit += 1
-				end
+			if fx.trail.Enabled then
+				lit += 1
 			end
 		end
 		table.insert(out.wheels, {
@@ -763,12 +633,8 @@ function Wheels.DebugState(self: Wheels, state: DriftModel.State?, input: any)
 			emit = emit,
 			emitting = emitting, -- what the instances are actually set to
 			heat = w.heat,
-			density = density,
-			band = Wheels.bandFor(density),
-			bandOn = bandOn, -- the band being laid, 0 for none
-			fading = fading, -- the band still drawing from before the last swap, 0 for none
-			lit = lit, -- trails drawing on this wheel: 1 normally, 2 across a splice
-			swaps = swaps, -- band-to-band changes since the rig was built
+			lit = lit, -- trails drawing: 1 while marking, 0 otherwise. 0 while `emitting`
+			-- is a gap, and there is no longer anything that can cause one
 			rate = diffuseRate,
 			stylizedRate = Wheels.stylizedRate(w.heat),
 			-- How far the lean had to be pushed back on this wheel this frame, in studs.
@@ -791,10 +657,9 @@ function Wheels.CountInstances(self: Wheels): number
 	for _, w in self.wheels do
 		n += (if w.a.Parent then 1 else 0) + (if w.b.Parent then 1 else 0)
 		for _, fx in w.fx do
-			for _, trail in fx.trails do
-				n += if trail.Parent then 1 else 0
-			end
-			n += (if fx.diffuse.Parent then 1 else 0) + (if fx.stylized.Parent then 1 else 0)
+			n += (if fx.trail.Parent then 1 else 0)
+				+ (if fx.diffuse.Parent then 1 else 0)
+				+ (if fx.stylized.Parent then 1 else 0)
 		end
 	end
 	return n
