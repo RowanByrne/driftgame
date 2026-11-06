@@ -207,6 +207,72 @@ line — on a plate a shade darker than the playground's so the join between the
 
 ## Testing
 
+### Driven, both ways
+
+The number the user actually wants: **the car gets up it.** Driven by the test autopilot — a copy
+of `RoadTests`', with its numbers — on the real model against the real Workspace, in `DR-Lane1`.
+
+| | Climb (pieces 1-10) | Descent (pieces 11-20) |
+|---|---|---|
+| Entered | on piece 1 at 90 studs/s | at the lift's own CFrame, **standing start** |
+| Got to | **all ten, and on into the descent** (piece 13 in 55 s) | **all ten**, and off the end on to the pad |
+| Speed | **3.9 to 103.8 studs/s, mean 58.5** | **0.2 to 101.7, mean 54.2** |
+| Steps off the road | **0** | **0** |
+| Airborne | 0 | 0 |
+
+For comparison, `Config/Road.luau`'s own table: the autopilot's mean on a **flat** generated road
+is 59 studs/s, and on a road of 8-degree descents it falls to 36. This hill reads 58.5 up and 54.2
+down, so neither half costs the car anything like the 8-degree row does — which is what choosing
+7 and 5 was for.
+
+**It also makes it up from a standing start on the plate**: 250 studs of flat run-up before the
+approach ramp, reaching 100 studs/s at the ramp and piece 13 in 55 seconds.
+
+**Where it is hard, and it is one place:** piece 5, the second climbing hairpin. 70 studs of radius
+and 180 degrees of it, on a 7-degree climb, took the autopilot down to **3.9 studs/s** — it very
+nearly stopped — and it was drifting 60% of the piece. It got through every time. A hairpin on a
+climb is the slowest thing in the set and that is the piece to watch if the climb ever wants
+re-tuning.
+
+**Per piece, on the climb** (speed min..max, mean):
+
+```
+ 1 Link           90.0.. 96.3  93.5     6 HairpinL       3.9.. 62.5  31.0
+ 2 Straight       66.8.. 97.7  78.9     7 Link          66.3.. 76.5  70.8
+ 3 HairpinR       22.5.. 67.4  39.6     8 SweeperR      76.5.. 93.2  83.3
+ 4 ChicaneR       30.9.. 62.6  48.3     9 Link          93.2..101.4  97.4
+ 5 HairpinL        3.9.. 62.5  31.0    10 CornerL       69.1..103.8  83.3
+```
+
+**A standing start at the crest takes about 2.4 seconds to roll away**, because the crest is still
+pointing up at 7 degrees — that is what a crest is. After that the corkscrew's floor leaves and the
+car is at 81 studs/s within the piece.
+
+### By hand, in a playtest
+
+Measured in `DR-Lane1`, with a **real mouse click** on each button:
+
+- **LIFT:** the car went from (115, 2.40, -76) in the playground to the crest, and `steer` stayed
+  **0** with the drag pad's pointer `nil` through the press. Lifted again with the rails down and
+  again with them up: both times the car sat at (685, 261.77, -2224) — the lift's own CFrame —
+  `grounded` true, **all four wheels down**, `surfaceGrip` **1.00**.
+- **GUARDRAILS:** the button went `GUARDRAILS: ON` -> `OFF`, the server put all **1 652** hill
+  walls to `CanQuery = false` and `CanCollide = false`, and all **826 slabs** stayed queryable,
+  solid and tagged. Pressed again: 1 652 of 1 652 walls back. `steer` **0** through both presses.
+- **Neither button steers:** at each button's own pixels the topmost Active GuiObject is
+  `DriftTest.LiftToTop` / `DriftTest.Guardrails`, with `DriftControls.DragArea` beneath it.
+- **Ten forged requests down the real remote from a real client** — a CFrame, a Vector3, both
+  booleans, a number, `"LIFT"`, a table naming a world and a place, a list, an Instance and a NaN —
+  moved the car **0 studs** beyond the 43 it was already rolling, raised no error, and were all
+  refused and counted (20 refusals, 3 lifts, 2 rail switches over the whole session).
+
+### The suites
+
+All of them, in one playtest on the rebased branch: `PlaygroundTests` **76/76**, `RoadTests`
+**53/53** (87 s), `RunTests` **17/17**, `CollisionTests` 50, `DriftTests` 50, `FxTests` 92,
+`GarageTests` 24, `JitterTests` 11, `TrajectoryTests` 13. No errors or warnings in the console
+beyond `RoadTests`' own two deliberate "the road boxed itself in" lines.
+
 `ServerScriptService/Tests/PlaygroundTests.luau`, run from the server debug bridge **in a
 playtest**:
 
@@ -229,7 +295,8 @@ the lift aims at the crest; and ten forged tool requests do nothing.
 | Method | What for |
 |---|---|
 | `PlaygroundService:DebugHill()` | The whole profile: every piece's length, start and end height, grade and part count, plus the entry, the exit, the top and the pad |
-| `PlaygroundService:DebugHillBounds()` | The hill's footprint and its pad, in world space |
+| `PlaygroundService:DebugHillBounds()` | The hill's footprint, its ROAD's footprint on its own and its pad, in world space |
+| `PlaygroundService:DebugHillLine(spacing?)` | The hill's centre line as world points, each carrying the piece it is on: what a test autopilot aims at, since the hill has no generator to ask |
 | `PlaygroundService:DebugBarrierReport()` | Walls and slabs counted by `CanQuery`, `CanCollide` and tag, so "the switch did not touch the road" is a number |
 | `PlaygroundService:DebugTool(what, userId?)` | Press a testing button for a player with no client, through the real handler — rate limit, cooldown, type check and all |
 | `PlaygroundService:DebugClearToolLimits()` | Stand the two guards down, so a test that is not measuring them is not measuring a wait |

@@ -493,6 +493,12 @@ end
 -- in the driving line blocks the view, which is what made the old course unreadable.
 local function buildSpotMarkers(parent: Instance)
 	local folder = newFolder("SpotMarkers", parent)
+	-- THE HILL'S TWO MARKERS GO UNDER THE HILL, because the hill is a world of its own
+	-- off the plate's southern edge and `DebugBounds` -- which is how `PlaygroundTests`
+	-- asks "is everything on the plate?" -- skips whatever is under it. A disc 259 studs
+	-- up at the top of the hill is not a thing that belongs on the plate.
+	local hillFolder = parent:FindFirstChild(Layout.Hill.id)
+	local hillSpots = { HillBase = true, HillTop = true }
 	local d = Layout.Spot.markerDiameter
 	for name, cf in PlaygroundService.Spots do
 		-- IN THE SPOT'S OWN FRAME, not the world's. A spot on a slope -- `RampBase`, and
@@ -505,13 +511,17 @@ local function buildSpotMarkers(parent: Instance)
 			Vector3.new(Layout.Spot.markerThickness, d, d),
 			cf * CFrame.new(0, -Layout.Spot.height + 0.4, 0) * CFrame.Angles(0, 0, math.rad(90)),
 			palette.SpotMarker,
-			folder
+			if hillSpots[name] and hillFolder then hillFolder else folder
 		)
 		part.Shape = Enum.PartType.Cylinder
 		part.CanCollide = false -- a marker is to see, never to hit
 		part.CanQuery = false
 		part.Transparency = 0.4
-		partCount += 1
+		if hillSpots[name] and hillFolder then
+			hillPartCount += 1
+		else
+			partCount += 1
+		end
 	end
 end
 
@@ -1139,6 +1149,27 @@ function PlaygroundService:DebugHill()
 	}
 end
 
+-- Studio only: the hill's centre line as a list of world points, so a test autopilot has
+-- something to aim at. `Road/Generator` gives the endless road's drives an `ahead`; the
+-- hill has no generator, so this is the line and the caller walks it.
+--
+-- Each point carries the piece it is on, which is what turns "the car was doing 92" into
+-- "the car was doing 92 on piece 7, which climbs".
+function PlaygroundService:DebugHillLine(spacing: number?)
+	assert(RunService:IsStudio(), "DebugHillLine is Studio only")
+	local step = math.max(spacing or 8, 1)
+	local out = {}
+	for _, piece in hill.pieces do
+		local n = math.max(2, math.ceil(piece.length / step))
+		local from = if #out == 0 then 0 else 1
+		for i = from, n do
+			local cf = RoadPieces.poseAt(piece, i / n, Config.Road.SurfaceY)
+			table.insert(out, { pos = cf.Position + offset, n = piece.n, id = piece.id })
+		end
+	end
+	return out
+end
+
 -- Studio only: whether the switch touched the walls and nothing else. The slab columns
 -- are the ones that matter -- a slab that stopped being queryable would be a car falling
 -- through the road.
@@ -1201,16 +1232,25 @@ function PlaygroundService:DebugHillBounds()
 	end
 	local minV = Vector3.new(math.huge, math.huge, math.huge)
 	local maxV = Vector3.new(-math.huge, -math.huge, -math.huge)
+	-- THE ROAD'S OWN BOX, SEPARATELY FROM THE APPROACH'S, because the two stand on
+	-- different ground on purpose: every piece of road is over the hill's pad, and the
+	-- approach ramp is the thing that crosses on to the playground's own plate.
+	local roadMin = Vector3.new(math.huge, math.huge, math.huge)
+	local roadMax = Vector3.new(-math.huge, -math.huge, -math.huge)
 	local pad = folder:FindFirstChild("HillPad")
 	for _, part in folder:GetDescendants() do
 		if part:IsA("BasePart") and part ~= pad then
-			minV = minV:Min(part.Position - part.Size * 0.5)
-			maxV = maxV:Max(part.Position + part.Size * 0.5)
+			local lo, hi = part.Position - part.Size * 0.5, part.Position + part.Size * 0.5
+			minV, maxV = minV:Min(lo), maxV:Max(hi)
+			if part.Parent and part.Parent.Name:match("^Piece_") then
+				roadMin, roadMax = roadMin:Min(lo), roadMax:Max(hi)
+			end
 		end
 	end
 	return {
 		min = minV,
 		max = maxV,
+		road = { min = roadMin, max = roadMax },
 		pad = if pad then { min = pad.Position - pad.Size * 0.5, max = pad.Position + pad.Size * 0.5 } else nil,
 	}
 end

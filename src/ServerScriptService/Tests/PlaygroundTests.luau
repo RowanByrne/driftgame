@@ -596,14 +596,22 @@ function Tests.run()
 		-- to cover it and meet the playground's.
 		local bounds = PlaygroundService:DebugHillBounds()
 		if bounds and bounds.pad then
+			-- EVERY PIECE OF ROAD IS OVER THE PAD. The approach ramp is not asked the
+			-- same question: crossing on to the playground's own plate is its whole job.
+			local road = bounds.road
 			check(
-				"the hill stands on its own plate, all of it",
-				bounds.min.X >= bounds.pad.min.X
-					and bounds.max.X <= bounds.pad.max.X
-					and bounds.min.Z >= bounds.pad.min.Z
-					and bounds.max.Z <= bounds.pad.max.Z,
-				`hill x {math.round(bounds.min.X)}..{math.round(bounds.max.X)} z {math.round(bounds.min.Z)}..{math.round(bounds.max.Z)},`
+				"every piece of the hill's road stands on the hill's own plate",
+				road.min.X >= bounds.pad.min.X
+					and road.max.X <= bounds.pad.max.X
+					and road.min.Z >= bounds.pad.min.Z
+					and road.max.Z <= bounds.pad.max.Z,
+				`road x {math.round(road.min.X)}..{math.round(road.max.X)} z {math.round(road.min.Z)}..{math.round(road.max.Z)},`
 					.. ` pad x {math.round(bounds.pad.min.X)}..{math.round(bounds.pad.max.X)} z {math.round(bounds.pad.min.Z)}..{math.round(bounds.pad.max.Z)}`
+			)
+			check(
+				"the approach is the only part of it that reaches the playground's plate",
+				bounds.max.Z > bounds.pad.max.Z and road.max.Z <= bounds.pad.max.Z,
+				`the hill reaches Z {math.round(bounds.max.Z)}, its road only {math.round(road.max.Z)}, the pad ends at {math.round(bounds.pad.max.Z)}`
 			)
 			local plateSouth = offset.Z - Layout.Plate.size * 0.5
 			check(
