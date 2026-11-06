@@ -42,6 +42,10 @@ local PROFILE_RUN = 200 -- pieces the profiled checks generate. Shorter than `LO
 local WALL_NORMAL_Y = 0.7
 local WALL_DEGREES = math.deg(math.acos(WALL_NORMAL_Y)) -- 45.57
 local DRIVE_PIECES = 50 -- pieces the real model is driven down
+-- Seconds the autopilot may spend stuck across that drive. NOT zero, and the long reason
+-- is beside the check that uses it: the banked corner costs 40.2 s of it and the user
+-- chose that knowingly (T-068).
+local STUCK_BUDGET = 60
 local DRIVE_SECONDS = 400 -- the drive gives up after this much simulated time
 local DRIVE_FPS = 60
 local SEEDS = { 1, 7, 1234, 20260704, 99991 }
@@ -2696,8 +2700,32 @@ function Tests:run(opts)
 		driveReport = r.detail
 		check(`a car drives {DRIVE_PIECES} generated pieces`, r.reached >= DRIVE_PIECES, driveReport)
 		check(
-			"never airborne, never stuck, never off the road",
-			r.airSteps == 0 and r.stuckSeconds < 1 and r.offRoadSteps == 0 and r.backwardsSteps == 0,
+			"never airborne, never off the road, never backwards",
+			r.airSteps == 0 and r.offRoadSteps == 0 and r.backwardsSteps == 0,
+			driveReport
+		)
+
+		-- BEING STUCK IS ITS OWN CHECK NOW, AND IT HAS A BUDGET RATHER THAN A ZERO (T-068).
+		-- This used to be `stuckSeconds < 1` and it was true for as long as the road was
+		-- flat. The banked corner ships at 10 degrees -- the user's call on 2026-11-06,
+		-- made knowing this number -- and with gravity acting along the ground the car
+		-- slides down the bank into the barrier and the autopilot cannot get it off:
+		-- 50 pieces, seed 8080, it spends 40.2 s stuck. Nothing that stops it is road;
+		-- it reaches all 50 pieces, never leaves the road and is never airborne, which is
+		-- why those three stay at zero above.
+		--
+		-- SIXTY, so it still fails if this gets worse. The measured ladder is 0.5 s at 5
+		-- degrees of bank, 11.9 at 8, 40.2 at 10 and 113.8 at 15, so 60 is clear of the
+		-- shipped number and nowhere near the next one up. A real driver carries more
+		-- speed in and steers out of a wall; the autopilot does neither, so this is the
+		-- worst case and not what the game feels like.
+		--
+		-- THE WAY BACK TO ZERO IS NOT A SMALLER BANK. It is a car that can unstick itself
+		-- from a wall, which is its own task; with that, this goes back to being tight and
+		-- the bank goes to the 30 the spec asks for.
+		check(
+			`stuck for under {STUCK_BUDGET} s across the drive`,
+			r.stuckSeconds < STUCK_BUDGET,
 			driveReport
 		)
 
