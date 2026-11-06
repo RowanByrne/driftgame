@@ -406,25 +406,6 @@ local SEAM_TOLERANCE = 0.025
 -- hairpin stack's apex kink costs today and nowhere near a wall's 6-stud height
 local SEAM_BARRIER_LID = 1.5
 
-local function wrapAngle(d: number): number
-	while d > math.pi do
-		d -= 2 * math.pi
-	end
-	while d < -math.pi do
-		d += 2 * math.pi
-	end
-	return d
-end
-
--- How far the top face of the box spanning `a`..`b` rises per stud out from the centre
--- line, measured in the road's own cross direction at a seam whose heading is `yawK`.
--- Pure maths off the nodes: it never looks at a Part, which is what makes it a prediction.
-local function crossSlope(a, b, yawK: number): number
-	local yaw = a.yaw + wrapAngle(b.yaw - a.yaw) * 0.5
-	local pitch, bank = (a.pitch + b.pitch) * 0.5, (a.bank + b.bank) * 0.5
-	return math.sin(bank) + math.tan(pitch) * math.sin(wrapAngle(yaw - yawK)) * math.cos(bank)
-end
-
 -- THE STEP, WALKED WITH RAYS DOWN THE REAL ROAD, which is the only honest way to ask now
 -- that a segment may be one box or four wedges and the wedges' sides lean with the bank.
 --
