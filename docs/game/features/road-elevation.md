@@ -132,53 +132,74 @@ is 0.025 ms a frame at 60 fps.
   none went through, worst gap 7.05 studs, and where the flat box let the body touch a barrier for 3
   steps on a bank the tilted one never did.
 
-### The faint bands across the road are geometry, and they cost segments or nothing (`T-066`)
+### The road is not all boxes any more: a segment that needs it is two triangles (`T-066`)
 
-The user saw thin lines running across the road wherever it has grade or bank, and asked how we
-would fix it. **The honest answer is that there is nothing free to fix, and the builder is already
-at the floor.** The measurement, seed 8080 × 20 pieces, 703 seams between slabs:
+The user saw thin lines running across the road wherever it had grade or bank, and they were real:
+a **0.2967-stud step at the kerb**, 0.0044 on the centre line, so each seam was a shallow wedge that
+one slab stood proud of the next by. The first answer to this was *"it cannot be fixed for free"* —
+and that answer was correct about **boxes** and wrong about the question. **The user's call:** *"not
+use perfect boxes… you can use alternating shapes to match things up and link it together
+perfectly."*
 
-| Where | Worst | p90 | Median |
-|---|---|---|---|
-| Along the **centre line** | **0.0044 studs** | — | — |
-| At either **kerb** | **0.2967 studs** | 0.1976 | 0.0804 |
-| On a **barrier's** top, over its own 2 studs of width | **0.0183 studs** | — | — |
+**Why no box can work.** A segment of road is a quadrilateral — the cross line at one node and the
+cross line at the next. Where the road both turns and tilts, those four corners are **not
+coplanar**: the surface of a graded curve is not developable and no flat quadrilateral lies in it.
+It is not a sagitta, either — a slab's top face already passed through both of its end nodes, so
+along the centre line the road was continuous. And the total was conserved: summed along a piece the
+step telescopes into that piece's turn times its grade, *whatever* the boxes are doing. Rolling each
+box to drive the seams to zero works and costs 5° to 19° of bank the road never asked for.
 
-Two more seeds, same shape: 1234 reads 0.0028 / **0.2174**, and 20260704 reads 0.0214 / **0.4187**.
+**Why a triangle always can.** Three points define a plane. Split the quad along a diagonal and both
+halves lie exactly in the surface; each keeps the **whole cross line** at its end as an edge, so the
+next segment shares that edge exactly. The diagonal alternates segment to segment. The step is not
+reduced — it stops existing.
 
-**It is a wedge, not a step.** Zero in the middle and growing with the distance out from it: two
-neighbouring top faces cross *along the centre line*, and each is proud of the other on one half of
-the road. That is why the bands in the user's screenshot fade out towards the middle, and why only
-one half of each one catches the light — the other half's riser faces away from the camera.
+| Measured, seed 8080 × 20 pieces, 703 seams, 355 015 rays down the road at 0.05-stud steps | boxes | triangles |
+|---|---|---|
+| worst jump between neighbouring samples, **at the kerb** | **0.2993** | **0.0103** |
+| the same, on the centre line | 0.0089 | 0.0112 |
+| on a barrier's top (unchanged — still boxes) | 1.3320 | 1.3320 |
 
-**It is not a sagitta, so the obvious fix is not one.** A slab's top face already passes exactly
-through *both* of its end nodes, so a secant box and a tangent box are the same box and along the
-centre line the road is continuous to four decimal places. What a flat face cannot do is match the
-road's **cross** direction at both of its ends at once: the surface of a graded curve is not
-developable, and no flat quadrilateral lies in it. Each box ends up tilted across by the cross-slope
-at its own middle, `sin(bank) + tan(grade) × sin(yaw − the seam's yaw) × cos(bank)`, and half the
-road's width times the difference between two neighbours **is** the riser — predicted from the nodes
-alone that is 0.2975 against the 0.2967 measured, and 1.2% out summed over all 703 seams.
+0.0103 studs is the road's own slope between two samples: a 20° grade alone contributes 0.018. There
+is no step left to find.
 
-**And the total is conserved, which is the whole answer.** Summed along a piece those differences
-telescope into the piece's own turn times its grade, and that total does not depend on how the boxes
-are oriented — only on how many of them there are. Driving every seam to zero with one roll per box
-was tried and it works, at a price the road cannot pay: **5° to 19° of bank the road never asked
-for**, leaving a piece 2° to 10° out at its join, which is a four-stud step in place of a
-quarter-stud one. Spreading the total evenly over the seams — what the builder already does — is the
-smallest the worst seam can be.
+**What it costs.** Roblox has no triangle: a `WedgePart` is a prism whose cross-section is a *right*
+triangle, so an arbitrary triangle is two wedges (split by the altitude) and a quad is four. That is
+paid only where it is needed — a straight, a level corner and every flat piece have a coplanar quad
+and keep their single box.
 
-So the levers are, and none of them is free:
+| | boxes | triangles |
+|---|---|---|
+| road parts over 20 pieces | 723 | 2 301 (**×3.18**) |
+| of which boxes kept | 723 | 197 |
+| **parts in a window** (11 pieces, all in) | **1 126** | **1 678 (×1.49)** |
 
-| | Cost |
-|---|---|
-| Cut profiled pieces more finely | **Linear.** ×2 segments halves the step and takes a window from ~1 130 parts to ~2 320; ×6 reaches 0.05 studs at ~7 100. `MaxProfileSegments` is 64 and a hairpin stack is already there |
-| Keep grade off the **curves** — descend on straights and links | **Free in parts**, and it removes the defect entirely: the riser is zero on a level corner and zero on a graded straight. It costs the touge road its descending corners, which is the user's call |
-| Leave it | Free. Worst 0.30 studs, median zero, and it does not touch the driving |
+The window is what matters and it is up by half, not by four, because the barriers and the marks are
+two-thirds of the parts and are untouched.
 
-Three checks in `RoadTests` (`1h`) hold the floor: the centre line is continuous, the kerb step
-matches the prediction from the nodes, and the barriers do not have the problem. `RoadTests:seams`
-reports the numbers on any seed.
+**Three things it changed that are worth knowing.**
+
+- **The drivable surface moved, by design and not much.** The triangles pass exactly through every
+  node's cross line where the boxes only passed through the centre; a ray down now lands **0.092
+  studs** off `Pieces.poseAt` at worst (slack 0.30), against 0.0498 before. A 50-piece pinned-seed
+  drive still reaches 50 of 50, 0 airborne and 0 off the road.
+- **A seam is now a crease, and a crease has an angle.** Where two triangles meet, the surface
+  normal turns — median **1.6°**, p90 5.5, max **7.8**. That is the road's own twist times its
+  width, so cutting pieces into more segments does *not* reduce it; only splitting the road down its
+  length as well would, at 8 wedges a segment instead of 4 (a window of about 2 900). It has not
+  been done because a shading change has no vertical face to catch the light, which is exactly why
+  the step could be seen and this cannot.
+- **The centre line is laid on the road that was built**, not on the profile, and each dash is
+  lifted to clear its own highest corner. Without that, 144 of 888 dash corners sat under the road.
+  With it, 12 — against 13 on the box road.
+
+**It is a switch.** `Config.Road.TriangulateSegments`; turn it off and every segment is a box again,
+exactly as it was. `RoadTests` runs the seam sweep both ways and prints the pair.
+
+**One change outside the road.** `Drift/World`'s overlap resolver decided "am I standing on this
+floor?" from `part.CFrame.UpVector`, which is a near-horizontal vector on a wedge — so the car was
+shoved sideways into the barrier and a 50-piece drive got 2 pieces in at 5 studs/s. It asks a
+`surfaceAxis(part)` helper now, which is `UpVector` for a box and `RightVector` for a wedge.
 
 ## Why (the spec as the user approved it)
 

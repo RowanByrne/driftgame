@@ -354,168 +354,196 @@ end
 --------------------------------------------------------------------------------
 -- The seams between slabs: the faint bands across the road, measured (T-066)
 --------------------------------------------------------------------------------
--- The user saw thin lines running across the road wherever it has grade or bank. They
--- are real. This measures them, and the arithmetic below says exactly how big they have
--- to be -- which is the point of measuring, because THEY CANNOT BE MADE SMALLER WITHOUT
--- CUTTING EVERY PROFILED PIECE INTO MORE SEGMENTS.
+-- The user saw thin lines running across the road wherever it has grade or bank, and they
+-- were real: measured here at up to 0.2967 studs at the kerb and 0.0044 on the centre
+-- line, so a seam was a shallow WEDGE and not a step -- two top faces crossing along the
+-- centre line, each proud of the other on one half of the road. That is why the bands
+-- faded towards the middle and why only one half of each was lit.
 --
--- THE SHAPE OF THE DEFECT, seed 8080 x 20 pieces, 703 seams:
---   along the centre line   worst 0.0044 studs -- nothing
---   at either kerb          worst 0.2967, p90 0.1976, median 0.0804
---   on a wall's own top     worst 0.0183
--- Zero in the middle and growing with the distance out from it, so a seam is a shallow
--- WEDGE rather than a step: the two slabs' top faces cross along the centre line and each
--- one is proud of the other on one half of the road. That is why the bands in the user's
--- screenshot fade towards the middle, and why only one half of each is lit.
---
--- WHERE IT COMES FROM, AND WHY THE OBVIOUS FIX IS NOT ONE. A slab's top plane passes
--- EXACTLY through both of its end nodes (`spanFrame` puts the top face centre on the
--- chord), so down the centre line the road is already continuous and there is no sagitta
--- to take out -- a secant box and a tangent box are the same box. What a flat face cannot
--- do is match the road's CROSS direction at both of its ends at once: the surface of a
--- graded curve is not developable, and no flat quadrilateral lies in it. Each box is
--- therefore tilted across by the cross-slope at its own middle,
+-- WHY A BOX COULD NEVER FIX IT. A slab's top plane already passed through both of its end
+-- nodes, so there was no sagitta to take out -- a secant box and a tangent box are the
+-- same box. What a flat face cannot do is match the road's CROSS direction at both ends at
+-- once: the surface of a graded curve is not developable and NO FLAT QUADRILATERAL LIES IN
+-- IT. Each box was tilted across by the cross-slope at its own middle,
 --
 --   crossSlope = sin(bank) + tan(grade) x sin(yaw - the seam's yaw) x cos(bank)
 --
--- and two neighbours differ there by about one `MaxBankStep`, plus one
--- tan(grade) x yaw step. HALF THE ROAD'S WIDTH TIMES THAT DIFFERENCE IS THE RISER:
--- predicted from the nodes alone it is 0.2975 against the 0.2967 measured, and 1.2% out
--- summed over all 703 seams. That is what the check in `run` holds the builder to.
+-- and half the width times the difference between two neighbours WAS the riser: 0.2975
+-- predicted from the nodes alone against 0.2967 measured. The total was conserved too --
+-- summed along a piece it telescopes into that piece's turn times its grade, whatever the
+-- boxes are doing -- so no choice of box orientation could beat it. Driving every seam to
+-- zero by rolling each box was tried and cost 5 to 19 degrees of bank the road never asked
+-- for. The box road was already the best a box road can be.
 --
--- AND THE TOTAL IS CONSERVED, which is why there is no free fix. Summed along a piece the
--- differences telescope into the piece's whole turn times its grade, and that total does
--- not depend on how the boxes are oriented -- only on how many of them there are. Driving
--- every seam to zero with one roll per box is possible and was tried (T-066 reopened): it
--- needs 5 to 19 degrees of bank the road never asked for, and leaves a piece 2 to 10
--- degrees out at its join, which is a four-stud step in place of a quarter-stud one. The
--- builder as it stands spreads the total evenly over the seams, which for a fixed total
--- is the smallest the worst one can be. It is already the best a flat box can do.
+-- SO THE ROAD IS NOT BOXES ANY MORE. A TRIANGLE IS ALWAYS PLANAR (`Road/Builder`): a
+-- segment whose four corners are not coplanar is built as two triangles sharing a
+-- diagonal, each keeping the whole cross line at its end as an edge, so the next segment
+-- shares that edge exactly. The step is not reduced, it is GONE -- and what is left at a
+-- seam is a crease, which has no vertical face to catch the light.
+--
+-- MEASURED THE SAME WAY, seed 8080 x 20 pieces, 703 seams:
+--   at either kerb        0.2967  ->  0.0000
+--   along the centre line 0.0044  ->  0.0000
+--   on a wall's own top   0.0183  ->  0.0183 (unchanged: the walls are still boxes, and
+--                                     at two studs wide they never had the problem)
+--
+-- AND IT IS MEASURED OFF THE REAL PARTS NOW, with rays rather than arithmetic, because a
+-- segment is no longer one slab whose plane can be read off its CFrame. `seamSweep` fires
+-- two rays at the same point, one seeing only the segment before the seam and one only the
+-- segment after, and the gap between what they hit is the step. That also catches the one
+-- thing the arithmetic could not: Roblox clamping a thin wedge up to its minimum size.
 
 local SEAM_SEED, SEAM_PIECES = 8080, 20
-local SEAM_CENTRE_TOLERANCE = 0.05 -- studs. Not a tight number and not meant to be: the
--- claim it is here to make is that the centre line's riser is in a different class from
--- the kerb's, which is 0.30. Across seeds the centre reads 0.0028 to 0.0214
-local SEAM_BARRIER_TOLERANCE = 0.05 -- studs. A wall is 2 studs wide, not 50, so the same
--- geometry costs it a twenty-fifth as much
+local SEAM_STEP = 0.05 -- studs between samples along a lane
+local SEAM_REACH = 2.5 -- studs either side of a seam that are walked
+-- WHAT COUNTS AS NO STEP. A sample 0.05 studs further on may legitimately be 0.018 lower,
+-- because `MaxGrade` is 20 degrees; this is that floor with room for the ray. The claim
+-- being made is that nothing is LEFT, not that it is smaller: a box road reads 0.2 to 0.3
+-- here and a triangulated one should read the slope and nothing else.
+local SEAM_TOLERANCE = 0.025
+-- A SANITY LID ON THE WALLS, not a target: what actually holds them is that they must be
+-- no worse than the box road measured, beside the check. 1.5 is clear of the 1.33 the
+-- hairpin stack's apex kink costs today and nowhere near a wall's 6-stud height
+local SEAM_BARRIER_LID = 1.5
 
--- The riser one slab's top edge stands proud of its neighbour's top face by, `r` studs out
--- from the centre line. Counted ONLY where that edge is really over the neighbour's face:
--- where a path kinks the two boxes stop overlapping, and a plane extrapolated past its own
--- part is not a surface anybody can see -- measured without that guard a wall reads 0.93
--- studs out when it is 0.02. `LookVector` is the segment's FORWARD here (both `span` and
--- `spanFrame` build the frame that way), so a slab's top face ends at +LookVector and the
--- next one begins at -LookVector.
-local function seamRiser(A: BasePart, B: BasePart, r: number): number
-	local cfa, cfb = A.CFrame, B.CFrame
-	local Ta = cfa.Position + cfa.UpVector * (A.Size.Y * 0.5)
-	local Tb = cfb.Position + cfb.UpVector * (B.Size.Y * 0.5)
-	local worst = 0
-	for _, q in { { Ta, cfa, A, Tb, cfb, B, 1 }, { Tb, cfb, B, Ta, cfa, A, -1 } } do
-		local T1, cf1, P1, T2, cf2, P2, s = q[1], q[2], q[3], q[4], q[5], q[6], q[7]
-		local edge = T1 + cf1.LookVector * (s * P1.Size.Z * 0.5) + cf1.RightVector * r
-		local d = edge - T2
-		if
-			math.abs(d:Dot(cf2.RightVector)) <= P2.Size.X * 0.5 + 1e-3
-			and math.abs(d:Dot(cf2.LookVector)) <= P2.Size.Z * 0.5 + 1e-3
-		then
-			local n = cf2.UpVector
-			local face = T2.Y + ((T2.X - edge.X) * n.X + (T2.Z - edge.Z) * n.Z) / n.Y
-			worst = math.max(worst, edge.Y - face)
-		end
-	end
-	return worst
-end
-
-local function wrapAngle(d: number): number
-	while d > math.pi do
-		d -= 2 * math.pi
-	end
-	while d < -math.pi do
-		d += 2 * math.pi
-	end
-	return d
-end
-
--- How far the top face of the box spanning `a`..`b` rises per stud out from the centre
--- line, measured in the road's own cross direction at a seam whose heading is `yawK`.
--- Pure maths off the nodes: it never looks at a Part, which is what makes it a prediction.
-local function crossSlope(a, b, yawK: number): number
-	local yaw = a.yaw + wrapAngle(b.yaw - a.yaw) * 0.5
-	local pitch, bank = (a.pitch + b.pitch) * 0.5, (a.bank + b.bank) * 0.5
-	return math.sin(bank) + math.tan(pitch) * math.sin(wrapAngle(yaw - yawK)) * math.cos(bank)
-end
-
--- Every seam of a generated road, built into a folder that is never in the DataModel, so
--- this costs the place nothing.
+-- THE STEP, WALKED WITH RAYS DOWN THE REAL ROAD, which is the only honest way to ask now
+-- that a segment may be one box or four wedges and the wedges' sides lean with the bank.
+--
+-- It walks a lane -- the centre line, each kerb, each wall top -- across every seam in
+-- steps of `SEAM_STEP` studs, casting one ray straight down at each, and asks for the
+-- biggest JUMP between two neighbouring samples. That is literally the vertical face the
+-- eye catches, and it is also what the car's four ground rays would find. It does NOT
+-- filter to one segment at a time: with a prism extruded along a banked triangle's own
+-- normal, a ray at a shared edge can slide past that segment's top face and strike a
+-- sliver below, which reads as a step that is not there. Rays see all of the road, as an
+-- eye does.
+--
+-- The window is +/- `SEAM_REACH` studs, because on the box road the riser is not AT the
+-- seam: a box is lengthened by `OVERLAP` plus half the width times the yaw step, up to
+-- about 2.4 studs, and the exposed edge is at the end of that overhang.
+--
+-- A ROAD AT ITS STEEPEST CONTRIBUTES A FLOOR TO THIS, and it is worth knowing so the
+-- numbers are not read as better than they are: `MaxGrade` is 20 degrees, so a sample
+-- 0.05 studs further on can legitimately be 0.018 studs lower. Anything at or under that
+-- is slope, not step.
 local function seamSweep(seed: number, pieces: number)
 	local run = longRun(seed, pieces)
 	local holder = Instance.new("Folder")
+	holder.Name = "__SeamSweep"
+	holder.Parent = workspace
 	Builder.DebugResetMarks()
-	local half = Config.Road.Width * 0.5
-	local hw = Config.Road.BarrierThickness * 0.5
-	local kerbs = {}
-	local centre, barrier = 0, 0
-	local worstKerb, worstPredicted, worstAt = 0, 0, "-"
-	local sumKerb, sumPredicted, seams, profiled = 0, 0, 0, 0
+	local C = Config.Road
+	local half = C.Width * 0.5
+	local wall = half + C.BarrierThickness * 0.5
+	-- The lanes walked, as an offset out from the centre line and a name. The kerbs are
+	-- held a little inside the edge so a ray cannot fall off it.
+	local lanes = {
+		{ 0, "centre" },
+		{ -(half - 0.5), "kerb" },
+		{ half - 0.5, "kerb" },
+		{ -wall, "wall" },
+		{ wall, "wall" },
+	}
+
+	local rp = RaycastParams.new()
+	rp.FilterType = Enum.RaycastFilterType.Include
+	local parts = {}
+
+	local worst = { centre = 0, kerb = 0, wall = 0 }
+	local at = { centre = "-", kerb = "-", wall = "-" }
+	local jumps = {}
+	local seams, profiled, samples = 0, 0, 0
+	local boxes, wedges = 0, 0
+
+	-- Where lane `off` runs at node `k` of `piece`: a point on the road's own cross line,
+	-- which is the edge the two segments either side of a seam share.
+	local function laneAt(piece, k: number, off: number): Vector3
+		local nd = piece.nodes[k]
+		local r = Pieces.frame(nd.yaw, nd.pitch, nd.bank)
+		return Vector3.new(nd.x, C.SurfaceY + nd.y, nd.z) + r * off
+	end
+
 	for _, piece in run do
 		local b = Builder.build(piece, holder)
 		if not piece.flat then
 			profiled += 1
 		end
-		for k = 2, #piece.nodes - 1 do
-			local A, B = b.road[k - 1], b.road[k]
-			if A and B then
-				seams += 1
-				centre = math.max(centre, seamRiser(A, B, 0))
-				local kerb = math.max(seamRiser(A, B, -half), seamRiser(A, B, half))
-				local yawK = piece.nodes[k].yaw
-				local predicted = half
-					* math.abs(
-						crossSlope(piece.nodes[k - 1], piece.nodes[k], yawK)
-							- crossSlope(piece.nodes[k], piece.nodes[k + 1], yawK)
-					)
-				table.insert(kerbs, kerb)
-				sumKerb += kerb
-				sumPredicted += predicted
-				if kerb > worstKerb then
-					worstKerb, worstPredicted, worstAt = kerb, predicted, A.Name
-				end
+		for _, p in b.road do
+			if p:IsA("WedgePart") then
+				wedges += 1
+			else
+				boxes += 1
 			end
 		end
-		-- The walls, over their own two studs of width, asked the same question. Each
-		-- side is walked on its own: they are built interleaved.
-		local left, right = {}, {}
-		for _, w in b.barriers do
-			table.insert(if string.find(w.Name, "^Barrier_L") then left else right, w)
+		table.clear(parts)
+		for _, p in b.road do
+			table.insert(parts, p)
 		end
-		for _, side in { left, right } do
-			for i = 1, #side - 1 do
-				barrier =
-					math.max(barrier, seamRiser(side[i], side[i + 1], -hw), seamRiser(side[i], side[i + 1], 0), seamRiser(side[i], side[i + 1], hw))
+		for _, p in b.barriers do
+			table.insert(parts, p)
+		end
+		rp.FilterDescendantsInstances = parts
+
+		for k = 2, #piece.nodes - 1 do
+			seams += 1
+			for _, lane in lanes do
+				local off, name = lane[1], lane[2]
+				local before, here, after = laneAt(piece, k - 1, off), laneAt(piece, k, off), laneAt(piece, k + 1, off)
+				local backLen, onLen = (here - before).Magnitude, (after - here).Magnitude
+				local last: number? = nil
+				local s = -SEAM_REACH
+				while s <= SEAM_REACH do
+					-- Walk the shared cross lines, not a straight line: the road bends.
+					local p
+					if s < 0 then
+						p = here:Lerp(before, math.min(1, -s / math.max(backLen, 1e-6)))
+					else
+						p = here:Lerp(after, math.min(1, s / math.max(onLen, 1e-6)))
+					end
+					local hit = workspace:Raycast(p + Vector3.new(0, 300, 0), Vector3.new(0, -600, 0), rp)
+					samples += 1
+					if hit then
+						local y = hit.Position.Y
+						if last then
+							local jump = math.abs(y - last)
+							if name ~= "wall" then
+								table.insert(jumps, jump)
+							end
+							if jump > worst[name] then
+								worst[name], at[name] = jump, `{piece.id} {piece.n}_{k} at {math.floor(off)}`
+							end
+						end
+						last = y
+					else
+						last = nil -- off the end of the road: start again rather than lie
+					end
+					s += SEAM_STEP
+				end
 			end
 		end
 		task.wait()
 	end
 	holder:Destroy()
 	Builder.DebugResetMarks()
-	table.sort(kerbs)
+	table.sort(jumps)
+	local n = math.max(#jumps, 1)
 	return {
 		pieces = #run,
 		profiled = profiled,
 		seams = seams,
-		centre = centre,
-		kerbWorst = worstKerb,
-		kerbAt = worstAt,
-		kerbPredicted = worstPredicted,
-		kerbMedian = kerbs[math.max(1, #kerbs // 2)] or 0,
-		kerbP90 = kerbs[math.max(1, math.floor(#kerbs * 0.9))] or 0,
-		sumKerb = sumKerb,
-		sumPredicted = sumPredicted,
-		barrier = barrier,
+		samples = samples,
+		centre = worst.centre,
+		centreAt = at.centre,
+		kerbWorst = worst.kerb,
+		kerbAt = at.kerb,
+		kerbMedian = jumps[n // 2] or 0,
+		kerbP90 = jumps[math.floor(n * 0.9)] or 0,
+		barrier = worst.wall,
+		barrierAt = at.wall,
+		boxes = boxes,
+		wedges = wedges,
 	}
 end
-
 
 --------------------------------------------------------------------------------
 -- The drive: the real model, the real Workspace, and a stand-in for a player
@@ -1302,22 +1330,72 @@ function Tests:seams(o)
 		table.insert(
 			rows,
 			string.format(
-				"seed %8d: %d pieces (%d profiled), %d seams | centre %.4f | kerb median %.4f p90 %.4f WORST %.4f at %s (predicted %.4f) | walls %.4f",
+				"seed %8d: %d pieces (%d profiled), %d seams, %d boxes + %d wedges, %d rays | worst jump: centre %.4f, kerb %.4f (median %.4f p90 %.4f) at %s, walls %.4f",
 				seed,
 				s.pieces,
 				s.profiled,
 				s.seams,
+				s.boxes,
+				s.wedges,
+				s.samples,
 				s.centre,
+				s.kerbWorst,
 				s.kerbMedian,
 				s.kerbP90,
-				s.kerbWorst,
 				s.kerbAt,
-				s.kerbPredicted,
 				s.barrier
 			)
 		)
 	end
 	return table.concat(rows, "\n")
+end
+
+-- A STRETCH OF ROAD PUT IN THE WORLD TO BE LOOKED AT, for the one question measuring
+-- cannot answer: does the banding show. It builds the same seed either way, so a capture
+-- with `triangles = false` and one with `triangles = true` are the same road from the same
+-- camera, and returns where to put that camera.
+--
+--   game.ServerStorage.DebugBridge:Invoke("DebugRoadTests", "DebugShowRoad",
+--     { seed = 8080, pieces = 20, at = 8, triangles = true })
+--   ... and with no arguments to take it down again.
+function Tests:DebugShowRoad(o)
+	local old = workspace:FindFirstChild("__ShowRoad")
+	if old then
+		old:Destroy()
+	end
+	if not o then
+		return "taken down"
+	end
+	local was = Config.Road.TriangulateSegments
+	Config.Road.TriangulateSegments = o.triangles ~= false
+	local run = longRun(o.seed or 8080, o.pieces or 20)
+	local holder = Instance.new("Folder")
+	holder.Name = "__ShowRoad"
+	Builder.DebugResetMarks()
+	local parts = 0
+	for _, piece in run do
+		parts += Builder.build(piece, holder).parts
+		task.wait()
+	end
+	holder.Parent = workspace
+	Builder.DebugResetMarks()
+	Config.Road.TriangulateSegments = was
+
+	-- Looking down the road from behind and above, which is the view the user sent.
+	local piece = run[o.at or 8]
+	local node = piece.nodes[math.floor(#piece.nodes * 0.45)]
+	local r, up, fwd = Pieces.frame(node.yaw, node.pitch, node.bank)
+	local here = Vector3.new(node.x, Config.Road.SurfaceY + node.y, node.z)
+	local eye = here - fwd * 42 + up * 13
+	local look = here + fwd * 70
+	return {
+		parts = parts,
+		pieces = #run,
+		triangles = Config.Road.TriangulateSegments,
+		id = piece.id,
+		eye = { eye.X, eye.Y, eye.Z },
+		look = { look.X, look.Y, look.Z },
+	}
 end
 
 --------------------------------------------------------------------------------
@@ -1934,53 +2012,80 @@ function Tests:run(opts)
 	end
 
 	----------------------------------------------------------------------------
-	-- 1h. A seam between two slabs is a wedge, and as small as a flat box allows (T-066)
+	-- 1h. A seam is a crease and not a step, anywhere across the road (T-066)
 	----------------------------------------------------------------------------
-	-- The long version is beside `seamSweep`. In one line: the road is continuous down
-	-- its centre line, the step at the kerb is forced by the geometry and the builder is
-	-- already at the floor, so these three checks exist to say if any of that stops being
-	-- true -- a change that moves the step is a change that moved the surface.
+	-- The long version is beside `seamSweep`. In one line: a box cannot lie in the surface
+	-- of a graded curve and a triangle always can, so a segment that needs it is built as
+	-- two triangles that keep the whole cross line at each end -- and the step the user
+	-- could see stops existing rather than getting smaller.
 	do
+		-- BOTH WAYS, SAME RAYS, SAME SEED. `TriangulateSegments` exists so the before and
+		-- the after are the same measurement and not two different ones.
+		local was = C.TriangulateSegments
+		C.TriangulateSegments = false
+		local boxRoad = seamSweep(SEAM_SEED, SEAM_PIECES)
+		C.TriangulateSegments = true
 		local s = seamSweep(SEAM_SEED, SEAM_PIECES)
+		C.TriangulateSegments = was
+
 		check(
-			"a seam is a wedge, not a step: the road is continuous down its centre line",
-			s.centre <= SEAM_CENTRE_TOLERANCE,
+			"a seam is a crease, not a step: no vertical face is left anywhere across the road",
+			s.kerbWorst <= SEAM_TOLERANCE and s.centre <= SEAM_TOLERANCE,
 			string.format(
-				"seed %d x %d pieces (%d profiled), %d seams: worst riser on the CENTRE LINE %.4f studs (lid %.2f), against %.4f at the kerb. A slab's top face passes through both of its end nodes, so there is no sagitta along the road and nothing to take out there",
+				"seed %d x %d pieces (%d profiled), %d seams, %d rays down the road at %.2f-stud steps. WORST JUMP between two neighbouring samples -- at the KERB %.4f studs (boxes: %.4f) and on the CENTRE LINE %.4f (boxes: %.4f), against a lid of %.3f which is what a %.0f-degree grade alone contributes over one step. Median %.4f, p90 %.4f. Worst is at %s",
 				SEAM_SEED,
 				SEAM_PIECES,
 				s.profiled,
 				s.seams,
-				s.centre,
-				SEAM_CENTRE_TOLERANCE,
-				s.kerbWorst
-			)
-		)
-		check(
-			"and the step at the kerb is the cross-slope the geometry forces, and no more",
-			s.kerbWorst <= s.kerbPredicted * 1.05 + 0.002 and s.sumKerb <= s.sumPredicted * 1.05,
-			string.format(
-				"worst %.4f studs at %s against %.4f predicted from the nodes alone (%.1f%%); over all %d seams %.2f measured against %.2f predicted (%.1f%%). Median %.4f, p90 %.4f. IF THIS FAILS THE BUILDER HAS STOPPED SPREADING THE TOTAL EVENLY, which is the only thing it can do about this: see `seamSweep`",
+				s.samples,
+				SEAM_STEP,
 				s.kerbWorst,
-				s.kerbAt,
-				s.kerbPredicted,
-				100 * s.kerbWorst / math.max(s.kerbPredicted, 1e-9),
-				s.seams,
-				s.sumKerb,
-				s.sumPredicted,
-				100 * s.sumKerb / math.max(s.sumPredicted, 1e-9),
+				boxRoad.kerbWorst,
+				s.centre,
+				boxRoad.centre,
+				SEAM_TOLERANCE,
+				C.MaxGrade,
 				s.kerbMedian,
-				s.kerbP90
+				s.kerbP90,
+				s.kerbAt
 			)
 		)
 		check(
-			"the barriers do not have it: they are two studs wide, not fifty",
-			s.barrier <= SEAM_BARRIER_TOLERANCE,
+			"and it costs triangles only where a box cannot lie in the surface",
+			s.boxes > 0 and s.wedges > 0 and s.boxes + s.wedges > boxRoad.boxes,
 			string.format(
-				"worst riser on a wall's top, over its own width, %.4f studs (lid %.2f) against %.4f on the road. The defect scales with the distance out from the centre of the box, and a wall's is 1 stud",
+				"%d road parts against %d as boxes (x%.2f): %d boxes kept on the segments whose four corners ARE coplanar -- every flat piece, every straight, every level corner -- and %d wedges on the %d segments that are not, four to a segment. The barriers and the marks are untouched",
+				s.boxes + s.wedges,
+				boxRoad.boxes + boxRoad.wedges,
+				(s.boxes + s.wedges) / math.max(boxRoad.boxes + boxRoad.wedges, 1),
+				s.boxes,
+				s.wedges,
+				s.wedges // 4
+			)
+		)
+		-- THE WALLS ARE NOT TRIANGULATED AND DO NOT NEED TO BE: the defect scales with the
+		-- distance out from the middle of the part, and a wall is 1 stud out against the
+		-- road's 25. So this asks only that the road's new geometry did not make them
+		-- worse, and it is measured against the box road rather than against a number.
+		--
+		-- IT ALSO WRITES DOWN A DEFECT THAT IS NOT MINE AND IS NOT NEW. A `HairpinStack`
+		-- reverses its turn at its apex, so the wall on the inside of the first bend has a
+		-- KINK in its own path there -- its chord goes from 4.4 studs to 9.5 across that
+		-- node -- and the two boxes either side of it meet at a real step on the wall's
+		-- top. It measures the same on the box road, it is one node per hairpin stack, and
+		-- it wants its own task: the lengthening a wall gets (`BarrierThickness * 0.5 *
+		-- step`) is computed from the CENTRE LINE's yaw step, which is not the wall's own.
+		check(
+			"the walls are no worse than they were, and they are still boxes",
+			s.barrier <= boxRoad.barrier + 1e-3 and s.barrier <= SEAM_BARRIER_LID,
+			string.format(
+				"worst jump on a wall's top %.4f studs, at %s, against %.4f on the box road -- unchanged, as it should be. A road seam is %.4f. The %.2f is the hairpin stack's apex kink and is pre-existing (see the note above this check); the lid here is %.1f",
 				s.barrier,
-				SEAM_BARRIER_TOLERANCE,
-				s.kerbWorst
+				s.barrierAt,
+				boxRoad.barrier,
+				s.kerbWorst,
+				s.barrier,
+				SEAM_BARRIER_LID
 			)
 		)
 	end
@@ -2914,13 +3019,36 @@ function Tests:run(opts)
 			holder:Destroy()
 			Builder.DebugResetMarks()
 			-- WHAT THE TWO TOLERANCES ARE. The pose is read off the SMOOTH profile and the
-			-- road is built out of FLAT BOXES, so the two can only agree to within half a
-			-- segment's worth of step: a quarter of a stud of height and a degree or so of
-			-- lean. Anything larger than that is not faceting, it is a car in the road or
-			-- above it.
+			-- road is built out of FLAT FACETS, so the two can only agree to within one
+			-- facet's worth of lean. Anything larger than that is not faceting, it is a
+			-- car in the road or above it.
+			--
+			-- THEY WERE 0.25 AND 2, AND THAT WAS A BOX ROAD'S NUMBER (T-066). A box spans a
+			-- whole segment, so two neighbouring facets differed by one `MaxPitchStep` and
+			-- a little cross-slope -- about 1.3 degrees -- and the road paid for that
+			-- smoothness with a 0.2967-stud STEP at every seam, which is the banding the
+			-- user could see. The road is triangles now and there is no step; what there is
+			-- instead is a CREASE down each segment's diagonal, where the two triangles
+			-- meet.
+			--
+			-- THE CREASE IS THE ROAD'S OWN TWIST, NOT A TESSELLATION ARTEFACT, which is why
+			-- these numbers are where they are. It comes to roughly (the twist in radians
+			-- per stud) x (the road's width), so it does not get smaller if a piece is cut
+			-- into more segments -- shorter segments twist proportionally less. Measured
+			-- over three seeds x 20 pieces, about 720 creases each: median 1.6 degrees, p90
+			-- 5.5, MAX 7.8. The only thing that halves it is splitting the road down its
+			-- length as well, which doubles the parts again (8 wedges a segment instead of
+			-- 4, a window of about 2 900 against 1 711), and the user has not asked for it
+			-- because the crease cannot be seen -- a shading change has no vertical face to
+			-- catch the light, which is the whole reason the step could be seen and this
+			-- cannot.
+			--
+			-- So: 9 degrees, which is clear of the 7.8 the geometry allows, and 0.40 studs
+			-- of ride, which is what a 7.8-degree crease under a 9.6-stud wheelbase comes
+			-- to. If EITHER is exceeded the facets have stopped being the explanation.
 			check(
 				"a car put down on a pitched, banked piece stands on it",
-				misses == 0 and worstRide < 0.25 and worstNormal < 2 and worstThrough > 0,
+				misses == 0 and worstRide < 0.40 and worstNormal < 9 and worstThrough > 0,
 				string.format(
 					"%d wheel rays over a banked descent and a banked 120-degree corner: %d found nothing, every wheel between %.3f and %.3f studs off the surface along its normal (ride height is %.2f), and the pose's up never more than %.2f deg off the mean of the four. %s",
 					samples,

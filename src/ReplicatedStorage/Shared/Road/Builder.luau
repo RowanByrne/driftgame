@@ -26,19 +26,20 @@
 -- reads from the ground as a bite out of the edge. Each box is lengthened by exactly
 -- that, so the outer corners meet and the inner ones overlap instead.
 --
--- THE SAME THING HAPPENS IN THE VERTICAL AND IT HAS NO SUCH TRICK (T-066 reopened). Where
--- the road has grade AND turn, two neighbouring top faces cross along the centre line and
--- each stands proud of the other on one half of the road: a shallow wedge at every seam,
--- zero in the middle and worst at the kerb, which is the faint banding the user can see.
--- The riser is (half the width) x the change in the boxes' cross-slope, 0.30 studs at its
--- worst on a generated road. IT IS NOT A SAGITTA AND THERE IS NO SECANT TO TAKE IT OUT:
--- `spanFrame` already puts the top face through BOTH end nodes, so down the centre line
--- the road is continuous to four decimal places. It is that the surface of a graded curve
--- is not developable -- no flat quadrilateral lies in it -- and the total along a piece is
--- its turn times its grade WHATEVER the boxes are doing, so the only lever is how many
--- boxes there are. Spreading the total evenly over the seams, which is what this already
--- does, is the smallest the worst one can be. The whole measurement, and the roll that
--- driving the seams to zero would cost the road, is in `RoadTests` beside `seamSweep`.
+-- THE SAME THING HAPPENS IN THE VERTICAL, AND THAT ONE IS WHY THE ROAD IS NOT ALL BOXES
+-- ANY MORE (T-066). Where the road has grade AND turn, two neighbouring top faces crossed
+-- along the centre line and each stood proud of the other on one half of the road: a
+-- shallow wedge at every seam, worst at the kerb at 0.2967 studs, which is the banding the
+-- user could see. It was NOT a sagitta -- `spanFrame` already puts the top face through
+-- both end nodes -- and it could not be tuned out: the surface of a graded curve is not
+-- developable, no flat quadrilateral lies in it, and the total along a piece is its turn
+-- times its grade whatever the boxes are doing.
+--
+-- So a segment whose four corners are not coplanar is built as TWO TRIANGLES instead, and
+-- a triangle always is planar. Each keeps the whole cross line at its end as an edge, the
+-- next segment shares that edge exactly, and the step is gone rather than smaller: 0.2967
+-- -> 0.0103, which is the road's own slope between two samples. The long version, the cost
+-- and the alternatives are at "TRIANGLES" below and in `RoadTests` beside `seamSweep`.
 --
 -- THERE ARE TWO LOOPS IN HERE AND THAT IS DELIBERATE (T-066). A flat piece is built the
 -- way it has always been built -- a box per pair of points, square to the world, placed
@@ -65,9 +66,10 @@ local function newPart(
 	cf: CFrame,
 	colour: Color3,
 	material: Enum.Material,
-	parent: Instance
+	parent: Instance,
+	className: string?
 ): Part
-	local part = Instance.new("Part")
+	local part = Instance.new(className or "Part") :: Part
 	part.Name = name
 	part.Size = size
 	part.CFrame = cf
@@ -156,6 +158,189 @@ local function spanFrame(
 	return newPart(name, Vector3.new(width, height, len + OVERLAP + extra), cf, colour, material, parent)
 end
 
+--------------------------------------------------------------------------------
+-- TRIANGLES, because a box cannot lie in this surface (T-066, the user's call)
+--------------------------------------------------------------------------------
+-- A segment of road is a quadrilateral: the cross line at one node and the cross line at
+-- the next. WHERE THE ROAD BOTH TURNS AND TILTS THOSE FOUR CORNERS ARE NOT COPLANAR --
+-- the surface of a graded curve is not developable -- so no flat-topped box lies in it,
+-- and two neighbouring boxes meet at a step instead of sharing an edge. That was measured
+-- at up to 0.2967 studs at the kerb, and proved irreducible for boxes: see `seamSweep` in
+-- `RoadTests`.
+--
+-- A TRIANGLE IS ALWAYS PLANAR, which is the whole of the answer. Split the quad along a
+-- diagonal and both halves lie exactly in the surface; each one keeps the WHOLE cross line
+-- at its end as an edge, so the next segment shares that edge exactly and the step is not
+-- made smaller, it is GONE. The diagonal alternates segment to segment so a long strip
+-- stays symmetric and no one edge accumulates the error.
+--
+-- WHAT IT COSTS. Roblox has no triangle: a `WedgePart` is a prism whose cross section is a
+-- RIGHT triangle (measured, not assumed -- rays down a wedge of size (4,2,6) rise linearly
+-- with z and are constant across x). So an arbitrary triangle is two wedges, split by the
+-- altitude from the vertex opposite the longest side, and a quad is four. That is only
+-- paid where it is needed: a straight, a level corner and every flat piece have a planar
+-- quad, a box is exact there, and the box is what they keep. Measured on a window of the
+-- generated road, 195 of 336 slabs need it and the window goes 1 126 -> 1 711 parts.
+--
+-- The wedges of one triangle are extruded along THAT triangle's normal, so under a crease
+-- the two prisms open a sliver below the surface -- 0.07 studs at the full 12 of thickness.
+-- It is buried, and nothing ever sees the underside of the road.
+
+-- Studs of non-planarity below which a quad IS flat and a box is exact. Tiny on purpose:
+-- the cost of being wrong is a visible step and the cost of being over-careful is three
+-- extra parts on twelve segments in a window.
+local PLANAR_EPSILON = 1e-6
+
+-- Studs every triangle is grown by, out from its own centroid and IN ITS OWN PLANE, so
+-- its plane is untouched and only its outline moves. This is `OVERLAP`'s job done for
+-- triangles, and it is needed for the same reason plus one more.
+--
+-- Two triangles that abut exactly along an edge are watertight on paper and not in
+-- floating point: a sample landing on the edge can fall a hair outside BOTH, and because
+-- each prism is extruded along its own triangle's normal -- which leans with the bank --
+-- the ray then slides down a leaning side wall instead of stopping on a top face.
+-- Measured, that put a one-sample notch 0.33 studs deep at the seams of a banked corner,
+-- which is a hairline to the eye and a pothole to the car's ground rays.
+--
+-- GROWING COSTS ALMOST NOTHING HERE, and that is the point: neighbouring triangles now
+-- share a whole cross line, so they differ only by the crease about it, and 0.15 studs of
+-- overlap past that line buys back a step of 0.15 x the change in grade -- thousandths of
+-- a stud, against the 0.2967 the box road had. The kerb edge grows by the same 0.15 and
+-- disappears under the barrier, whose inner face is at exactly half the width.
+local TRIANGLE_GROW = 0.15
+local MAX_OVERSHOOT = 0.2 -- studs a half-triangle may reach past its parent's apex when
+-- it is grown over the altitude: see `triangleSlab`
+
+-- How far `d` stands off the plane of `a`, `b`, `c`, measured STRAIGHT DOWN, which is what
+-- an eye would see. Zero means a box lies in the quad exactly.
+local function outOfPlane(a: Vector3, b: Vector3, c: Vector3, d: Vector3): number
+	local n = (b - a):Cross(c - a)
+	if n.Magnitude < 1e-9 then
+		return 0
+	end
+	n = n.Unit
+	if math.abs(n.Y) < 1e-9 then
+		return 0
+	end
+	return math.abs((d - a):Dot(n) / n.Y)
+end
+
+-- One `WedgePart` filling a RIGHT triangle, as a slab `thickness` deep below it.
+--
+-- A wedge of size (X, Y, Z) is the prism whose face at local +X is the right triangle with
+-- its corner at (-Y/2, +Z/2), one leg Y up the local +Y and the other Z down the local -Z.
+-- So the triangle's own normal is the wedge's X axis and the slab hangs along -X.
+--
+-- `q` is the right-angle corner, `d1`/`d2` the two perpendicular leg directions with
+-- lengths `l1`/`l2`, and `n` the surface normal. Which leg becomes Y and which becomes Z
+-- is forced by the handedness of `CFrame.fromMatrix`, and that is the one test below.
+local function rightWedge(
+	name: string,
+	q: Vector3,
+	d1: Vector3,
+	l1: number,
+	d2: Vector3,
+	l2: number,
+	n: Vector3,
+	thickness: number,
+	colour: Color3,
+	material: Enum.Material,
+	parent: Instance
+): Part?
+	if l1 < 1e-4 or l2 < 1e-4 then
+		return nil -- a sliver Roblox would clamp to its minimum size and so distort
+	end
+	local u, pdir, ly, lz
+	if d1:Cross(d2):Dot(n) > 0 then
+		u, pdir, ly, lz = d2, d1, l2, l1
+	else
+		u, pdir, ly, lz = d1, d2, l1, l2
+	end
+	local centre = q + u * (ly * 0.5) + pdir * (lz * 0.5) - n * (thickness * 0.5)
+	return newPart(name, Vector3.new(thickness, ly, lz), CFrame.fromMatrix(centre, n, u), colour, material, parent, "WedgePart")
+end
+
+-- One triangle of road, as the two right triangles the altitude cuts it into. The altitude
+-- is dropped from the vertex opposite the LONGEST side, which is what guarantees its foot
+-- lands strictly inside that side and both halves are real triangles.
+local function triangleSlab(
+	name: string,
+	p1: Vector3,
+	p2: Vector3,
+	p3: Vector3,
+	thickness: number,
+	colour: Color3,
+	material: Enum.Material,
+	parent: Instance,
+	out: { Part }
+)
+	-- Grown out from the centroid, in plane, before anything else is worked out.
+	local centroid = (p1 + p2 + p3) / 3
+	local function grow(p: Vector3): Vector3
+		local d = p - centroid
+		return if d.Magnitude < 1e-6 then p else p + d.Unit * TRIANGLE_GROW
+	end
+	p1, p2, p3 = grow(p1), grow(p2), grow(p3)
+
+	local U, V, W = p1, p2, p3
+	local l12, l23, l31 = (p2 - p1).Magnitude, (p3 - p2).Magnitude, (p1 - p3).Magnitude
+	if l23 >= l12 and l23 >= l31 then
+		U, V, W = p2, p3, p1
+	elseif l31 >= l12 and l31 >= l23 then
+		U, V, W = p3, p1, p2
+	end
+	local edge = V - U
+	local len = edge.Magnitude
+	if len < 1e-4 then
+		return
+	end
+	local eu = edge / len
+	local along = (W - U):Dot(eu)
+	local foot = U + eu * along
+	local rise = W - foot
+	local height = rise.Magnitude
+	if height < 1e-4 then
+		return -- three points in a line: no triangle to build
+	end
+	local ru = rise / height
+	local n = eu:Cross(ru)
+	if n.Y < 0 then
+		n = -n
+	end
+	-- THE TWO HALVES MEET ALONG THE ALTITUDE, AND AN EXACT ABUTMENT IS A HAIRLINE for the
+	-- same reason a seam is: measured, it left a 0.12-stud notch one sample wide in the
+	-- middle of a triangle. So each half is pushed past the altitude into the other.
+	--
+	-- The push is a SCALE ABOUT THE HALF'S OWN FAR CORNER, not a shift. Shifting the right
+	-- angle along the long side was tried and is wrong: it moves the half off the parent's
+	-- apex and opens a gap there instead, which measured 0.72 studs -- worse than the step
+	-- it was meant to cure. Scaling about `U` (or `V`) keeps that corner and the whole of
+	-- the original half inside, keeps the right angle a right angle, and stays in the
+	-- triangle's own plane, so the surface does not move at all.
+	--
+	-- AND THE SCALE IS CAPPED BY WHAT IT COSTS AT THE OTHER END. Growing past the altitude
+	-- by `g` grows past the apex by `g / along * height`, and that overshoot lands on a
+	-- neighbour -- where it is harmless but not free, costing the overshoot times the
+	-- crease between them. Held to 0.2 studs, that is thousandths. A sliver half -- the
+	-- altitude of these triangles lands near one end, so one half is always thin -- ends
+	-- up with a hundredth of a stud of overlap, which is still a thousand times the float
+	-- error it is there to cover.
+	local function cappedGrow(leg: number): number
+		return math.min(TRIANGLE_GROW, MAX_OVERSHOOT * leg / math.max(height, 1e-6))
+	end
+	local ga, gb = cappedGrow(along), cappedGrow(len - along)
+	local ka = (along + ga) / math.max(along, 1e-6)
+	local kb = (len - along + gb) / math.max(len - along, 1e-6)
+	local a = rightWedge(`{name}a`, foot + eu * ga, -eu, along * ka, ru, height * ka, n, thickness, colour, material, parent)
+	local b = rightWedge(`{name}b`, foot - eu * gb, eu, (len - along) * kb, ru, height * kb, n, thickness, colour, material, parent)
+	if a then
+		table.insert(out, a)
+	end
+	if b then
+		table.insert(out, b)
+	end
+end
+
 -- Where the run's arc length had got to at the end of the last piece built. The window
 -- builds pieces in order (`RoadService.buildPiece`), so carrying one number is enough;
 -- anything else -- a piece built out of order, or piece 1 of a new run -- falls back to
@@ -170,7 +355,50 @@ end
 
 -- The centre line of one piece: dashes at a fixed interval along the WHOLE run, clipped
 -- at both ends of the piece rather than skipped (see the header). Returns the parts.
-local function centreLine(piece: Pieces.Placed, startDistance: number, parent: Instance): { Part }
+-- The height of a triangulated segment's surface over `x, z`, or nil if that point is not
+-- over either of its triangles. Plain barycentric coordinates in plan, with a whisker of
+-- slack so a point exactly on the shared diagonal belongs to one of them rather than to
+-- neither.
+-- Which segment of `piece` the arc length `dist` falls on.
+local function segmentAt(piece: Pieces.Placed, dist: number): number
+	local cum = piece.cum
+	for i = 1, #cum - 1 do
+		if dist <= cum[i + 1] then
+			return i
+		end
+	end
+	return math.max(#cum - 1, 1)
+end
+
+local function triangleHeightAt(tris, x: number, z: number): number?
+	for _, t in tris do
+		local a, b, c = t[1], t[2], t[3]
+		local d = (b.Z - c.Z) * (a.X - c.X) + (c.X - b.X) * (a.Z - c.Z)
+		if math.abs(d) > 1e-9 then
+			local l1 = ((b.Z - c.Z) * (x - c.X) + (c.X - b.X) * (z - c.Z)) / d
+			local l2 = ((c.Z - a.Z) * (x - c.X) + (a.X - c.X) * (z - c.Z)) / d
+			local l3 = 1 - l1 - l2
+			if l1 >= -1e-3 and l2 >= -1e-3 and l3 >= -1e-3 then
+				return a.Y * l1 + b.Y * l2 + c.Y * l3
+			end
+		end
+	end
+	return nil
+end
+
+-- A MARK IS LAID ON THE SURFACE THAT WAS BUILT, not on the one the profile describes, and
+-- once a segment is triangles those are not the same thing (T-066). `Pieces.poseAt` gives
+-- the smooth profile; the triangles pass exactly through every node's cross line and cut
+-- the corner in between, so the two differ by up to a tenth of a stud. Measured with the
+-- marks laid on the profile: 144 of 888 dash corners were UNDER the road, worst 0.1188
+-- studs, which is a dash with a bite out of it. Lifting every mark by that much instead
+-- would have left the worst of them standing 0.28 studs proud -- as big as the step this
+-- whole change removes -- so each mark is put where the road actually is.
+--
+-- `tris` is per segment and is absent for a segment built as a box, which is right: a box
+-- is only used where the quad IS flat, and there the built surface and the profile are
+-- the same surface.
+local function centreLine(piece: Pieces.Placed, startDistance: number, tris, parent: Instance): { Part }
 	local C = Config.Road
 	local interval, dash = C.MarkInterval, C.MarkDashLength
 	local marks: { Part } = {}
@@ -190,7 +418,47 @@ local function centreLine(piece: Pieces.Placed, startDistance: number, parent: I
 		local len = b - a
 		if len > C.MarkMinLength then
 			local mid = (a + b) * 0.5
-			local cf = Pieces.poseAt(piece, mid / piece.length, topY - C.MarkThickness * 0.5)
+			local t = mid / piece.length
+			-- How far the road that was BUILT is above the road the profile describes,
+			-- here, measured along the surface's own up so it can be added to the lift.
+			-- LIFTED TO CLEAR ITS OWN HIGHEST CORNER, not its middle. Correcting only the
+			-- middle was tried and made things worse -- 144 buried dash corners became 226
+			-- -- because a dash is up to a few studs long and straddles the crease where
+			-- two triangles meet: the middle sits on the road and a corner goes under it.
+			--
+			-- THE SEARCH IS LIMITED TO THE SEGMENT THE DASH IS ON AND ITS TWO NEIGHBOURS,
+			-- which is as far as a dash can reach. Searching the whole piece is wrong: a
+			-- hairpin stack passes over itself, so two triangles can cover the same ground
+			-- in PLAN at different heights, and the first match is then wrong by metres.
+			local lift = 0
+			if tris then
+				local seg = segmentAt(piece, mid)
+				local near = {}
+				for s = seg - 1, seg + 1 do
+					local pair = tris[s]
+					if pair then
+						table.insert(near, pair[1])
+						table.insert(near, pair[2])
+					end
+				end
+				local on = Pieces.poseAt(piece, t, C.SurfaceY)
+				local up = on.UpVector
+				if near[1] and up.Y > 1e-3 then
+					local p0, right, fwd = on.Position, on.RightVector, -on.LookVector
+					local worst = 0
+					for _, c in { Vector2.new(-1, -1), Vector2.new(1, -1), Vector2.new(-1, 1), Vector2.new(1, 1) } do
+						-- A corner of the dash, ON the profile's own plane, so the plane's
+						-- height there is just the corner's own Y.
+						local q = p0 + right * (c.X * C.MarkWidth * 0.5) + fwd * (c.Y * len * 0.5)
+						local built = triangleHeightAt(near, q.X, q.Z)
+						if built then
+							worst = math.max(worst, built - q.Y)
+						end
+					end
+					lift = worst / up.Y
+				end
+			end
+			local cf = Pieces.poseAt(piece, t, topY - C.MarkThickness * 0.5 + lift)
 			local part = newPart(
 				`Mark_{piece.n}_{k}`,
 				Vector3.new(C.MarkWidth, C.MarkThickness, len),
@@ -232,6 +500,7 @@ function Builder.build(piece: Pieces.Placed, parent: Instance): Built
 
 	local road: { Part } = {}
 	local barriers: { Part } = {}
+	local tris: { { { Vector3 } } } = {} -- the two triangles of each segment, for the marks
 
 	local halfWidth = C.Width * 0.5
 	local barrierOffset = halfWidth + C.BarrierThickness * 0.5
@@ -316,21 +585,47 @@ function Builder.build(piece: Pieces.Placed, parent: Instance): Built
 			local pa = Vector3.new(a.x, C.SurfaceY + a.y, a.z)
 			local pb = Vector3.new(b.x, C.SurfaceY + b.y, b.z)
 
-			local slab = spanFrame(
-				`Road_{piece.n}_{i}`,
-				pa,
-				pb,
-				ua,
-				ub,
-				C.Width,
-				C.Thickness,
-				C.Thickness * 0.5,
-				halfWidth * step,
-				C.Colours.Road,
-				C.RoadMaterial,
-				folder
-			)
-			if slab then
+			-- THE SEGMENT'S FOUR CORNERS, which are the road and not an approximation of
+			-- it: each cross line is shared whole with the neighbour that ends on it.
+			local am, ap = pa - ra * halfWidth, pa + ra * halfWidth
+			local bm, bp = pb - rb * halfWidth, pb + rb * halfWidth
+
+			local made: { Part } = {}
+			if not C.TriangulateSegments or outOfPlane(am, ap, bp, bm) <= PLANAR_EPSILON then
+				-- Flat quad: one box lies in it exactly, and a box is a third of the parts.
+				local slab = spanFrame(
+					`Road_{piece.n}_{i}`,
+					pa,
+					pb,
+					ua,
+					ub,
+					C.Width,
+					C.Thickness,
+					C.Thickness * 0.5,
+					halfWidth * step,
+					C.Colours.Road,
+					C.RoadMaterial,
+					folder
+				)
+				if slab then
+					table.insert(made, slab)
+				end
+			else
+				-- Not flat, so no box lies in it. Two triangles do, and the diagonal
+				-- alternates so a strip of them stays symmetric.
+				local t1, t2
+				if i % 2 == 1 then
+					t1, t2 = { am, ap, bp }, { am, bp, bm }
+				else
+					t1, t2 = { am, ap, bm }, { ap, bp, bm }
+				end
+				triangleSlab(`Road_{piece.n}_{i}_1`, t1[1], t1[2], t1[3], C.Thickness, C.Colours.Road, C.RoadMaterial, folder, made)
+				triangleSlab(`Road_{piece.n}_{i}_2`, t2[1], t2[2], t2[3], C.Thickness, C.Colours.Road, C.RoadMaterial, folder, made)
+				-- Kept UNGROWN and kept PER SEGMENT, so the centre line is laid on the
+				-- surface itself rather than on the overlap that stops it hairlining.
+				tris[i] = { t1, t2 }
+			end
+			for _, slab in made do
 				CollectionService:AddTag(slab, surfaceTag)
 				slab:SetAttribute(surfaceAttr, C.SurfaceTarmac)
 				table.insert(road, slab)
@@ -361,7 +656,7 @@ function Builder.build(piece: Pieces.Placed, parent: Instance): Built
 	-- The centre line last, so the slabs it sits on already exist.
 	local startDistance = if piece.n == markPhase.n + 1 then markPhase.distance else 0
 	markPhase.n, markPhase.distance = piece.n, startDistance + piece.length
-	local marks = centreLine(piece, startDistance, folder)
+	local marks = centreLine(piece, startDistance, if next(tris) then tris else nil, folder)
 
 	folder.Parent = parent
 	return {
