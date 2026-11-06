@@ -518,9 +518,18 @@ function PlaygroundService:Build()
 	-- playgrounds in one space is a place nobody can drive in -- so a playtest takes it
 	-- down. Play runs on a COPY of the datamodel, so this never touches what is saved:
 	-- stop the playtest and the showroom is still there to look at.
-	local showroom = workspace:FindFirstChild("Showroom")
-	if showroom then
-		showroom:Destroy()
+	--
+	-- ONLY WHILE THE GAME IS RUNNING, and that guard is not a nicety -- without it this
+	-- destroys the showroom AS THE SHOWROOM IS BEING BUILT (T-068). `Showroom.build()`
+	-- parents its own `Workspace.Showroom` folder and only then calls `Init()` to get a
+	-- playground to put inside it, so an unguarded destroy here eats the folder the tool
+	-- is halfway through filling, and `build()` returns with nothing to show and no error.
+	-- In edit mode there is no playtest to protect, so there is nothing to do.
+	if RunService:IsRunning() then
+		local showroom = workspace:FindFirstChild("Showroom")
+		if showroom then
+			showroom:Destroy()
+		end
 	end
 
 	table.clear(features)
