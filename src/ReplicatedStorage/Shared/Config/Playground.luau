@@ -16,7 +16,18 @@ return {
 	ConeResetClearance = 30, -- but never while something is this close to it
 
 	-- Budgets, asserted by PlaygroundTests
-	PartBudget = 1500,
+	PartBudget = 1500, -- the playground proper: plate, buildings, pillars, bowl, ramp, cones
+	-- THE TEST HILL IS BUDGETED SEPARATELY, and it is bigger than everything else here put
+	-- together (T-065). It is twenty-odd real road pieces, and a road piece that has a
+	-- GRADE is cut into one box per `Config.Road.MaxPitchStep` of swing rather than being
+	-- one long box: a flat straight is 1 segment and a straight on a 7-degree climb is 30,
+	-- three parts apiece plus its centre-line dashes. So the hill costs about 130 parts a
+	-- piece where the endless road's flat window costs about 36.
+	--
+	-- It is a TESTING feature and it is permanent in every place, so the number is written
+	-- down and asserted rather than left to grow: if a piece set change takes the hill past
+	-- this, that is a thing to know about.
+	HillPartBudget = 3400,
 
 	-- Placeholder colours only (ART-DIRECTION.md: no art is generated for this world).
 	-- They are chosen for *value* contrast against the plate, not for looks: the old
@@ -30,6 +41,9 @@ return {
 		Pillar = Color3.fromRGB(24, 26, 32),
 		Circle = Color3.fromRGB(52, 58, 70),
 		Ramp = Color3.fromRGB(208, 160, 52),
+		-- The test hill's own ground. A shade off the plate's, on purpose: it is a
+		-- different world's floor and the line where the two meet should be visible.
+		HillPad = Color3.fromRGB(88, 96, 106),
 		SpotMarker = Color3.fromRGB(240, 196, 48),
 		Cone = Color3.fromRGB(226, 94, 32),
 		ConeStripe = Color3.fromRGB(236, 236, 236),

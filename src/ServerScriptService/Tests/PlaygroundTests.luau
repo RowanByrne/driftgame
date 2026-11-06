@@ -8,6 +8,7 @@
 --   game.ServerStorage.DebugBridge:Invoke("DebugPlaygroundTests", "run")
 
 local CollectionService = game:GetService("CollectionService")
+local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local ServerScriptService = game:GetService("ServerScriptService")
@@ -15,6 +16,7 @@ local ServerScriptService = game:GetService("ServerScriptService")
 assert(RunService:IsStudio(), "PlaygroundTests is Studio only")
 
 local Config = require(ReplicatedStorage.Shared.Config)
+local RoadPieces = require(ReplicatedStorage.Shared.Road.Pieces)
 local Layout = require(ServerScriptService.Playground.Layout)
 local PlaygroundService = require(ServerScriptService.Services.PlaygroundService)
 
@@ -41,7 +43,19 @@ local SPOT_NAMES = {
 	"PillarRun",
 	"CircleCentre",
 	"RampBase",
+	"HillBase",
+	"HillTop",
 }
+
+-- The hill climbs at 7 degrees and its steepest piece touches about 8.8, so a stud of
+-- travel moves the surface about 0.155 studs. MAX_STEP (0.25) covers that with room; this
+-- is the same rule, written out for the hill so a change that made it a staircase shows up
+-- as "the hill" and not as a number nobody can place.
+local HILL_FLAT = 1e-3 -- studs the hill's exit may miss the plate's kerb height by
+-- And at the KERB, where a graded curve's seams stand proud of each other by up to about
+-- 0.30 studs however finely it is cut (`Shared/Road/Builder`, T-066) -- which is the
+-- road's own property and not this hill's.
+local HILL_KERB_STEP = 0.6
 
 local Tests = {}
 
@@ -192,17 +206,29 @@ function Tests.run()
 		return loose == state.coneCount and loose > 0
 	end)(), `{state.coneCount} cones`)
 
-	-- 4. Part budget.
-	local live = 0
+	-- 4. Part budget. The hill is counted separately against its own: it is bigger than
+	--    everything else in this world put together, and lumping the two would hide a
+	--    change in either (Config.Playground, `HillPartBudget`).
+	local hillFolder = root:FindFirstChild(Layout.Hill.id)
+	local live, liveHill = 0, 0
 	for _, d in root:GetDescendants() do
 		if d:IsA("BasePart") then
-			live += 1
+			if hillFolder and d:IsDescendantOf(hillFolder) then
+				liveHill += 1
+			else
+				live += 1
+			end
 		end
 	end
 	check(
 		`part count under {tuning.PartBudget}`,
 		live < tuning.PartBudget,
-		`{live} parts under Workspace.Playground (DebugState says {state.partCount})`
+		`{live} parts under Workspace.Playground outside the hill (DebugState says {state.partCount})`
+	)
+	check(
+		`the hill's part count under {tuning.HillPartBudget}`,
+		liveHill < tuning.HillPartBudget,
+		`{liveHill} parts under Workspace.Playground.{Layout.Hill.id} (DebugState says {state.hillPartCount})`
 	)
 
 	-- 5. Smoothness: walk the ideal line of each elevated feature and read the surface
@@ -427,6 +453,280 @@ function Tests.run()
 		furthest <= FEATURE_REACH,
 		`furthest is {furthestId} at {math.round(furthest)} studs`
 	)
+
+	----------------------------------------------------------------------------
+	-- 14. The test hill (features/test-hill.md, T-065 and T-067)
+	----------------------------------------------------------------------------
+	local hill = state.hill
+	check(
+		"the hill is built, every piece of it",
+		hill ~= nil and hill.count == #Layout.Hill.pieces and hillFolder ~= nil,
+		`{tostring(hill and hill.count)} pieces placed of {#Layout.Hill.pieces} in the layout, folder {tostring(hillFolder ~= nil)}`
+	)
+
+	if hill and hill.count == #Layout.Hill.pieces then
+		-- THE PROFILE. Ten pieces that only ever go up, then ten that only ever come down,
+		-- and the last of them level with the plate. This is the whole feature in four
+		-- checks, and the heights are the server's own, read off the placed pieces.
+		local climbing, descending, topAt, topY = 0, 0, 0, -math.huge
+		local steepest, steepestOn = 0, "?"
+		for _, p in hill.pieces do
+			if p.n <= hill.climbPieces then
+				climbing += if p.dy > 0 then 1 else 0
+			else
+				descending += if p.dy < 0 then 1 else 0
+			end
+			if p.endY > topY then
+				topY, topAt = p.endY, p.n
+			end
+			if p.maxGrade > steepest then
+				steepest, steepestOn = p.maxGrade, `{p.n} {p.id}`
+			end
+		end
+		check(
+			`all {hill.climbPieces} climbing pieces climb`,
+			climbing == hill.climbPieces,
+			`{climbing} of {hill.climbPieces} gained height`
+		)
+		check(
+			`all {hill.count - hill.climbPieces} descending pieces descend`,
+			descending == hill.count - hill.climbPieces,
+			`{descending} of {hill.count - hill.climbPieces} lost height`
+		)
+		check(
+			"the top of the hill is the end of the climb",
+			topAt == hill.climbPieces and math.abs(topY - hill.topY) < HILL_FLAT,
+			`highest at piece {topAt} ({topY} studs); the climb is {hill.climbPieces} pieces long`
+		)
+		check(
+			"the hill comes back to the plate",
+			math.abs(hill.exitY - hill.plateY) < HILL_FLAT,
+			`the last piece ends at Y {hill.exitY}, the plate's kerb is at {hill.plateY}`
+		)
+		check(
+			"the hill's entry is a ramp off the plate, not a step",
+			hill.approachRise > 0 and hill.approachLength >= Layout.Hill.approach.minLength
+				and math.abs((hill.plateY + hill.approachRise) - hill.entryY) < HILL_FLAT,
+			`entry at Y {hill.entryY}, approach rises {hill.approachRise} studs over {hill.approachLength}`
+				.. ` ({math.round(math.deg(math.atan(hill.approachRise / math.max(hill.approachLength, 1e-6))) * 100) / 100} deg mean)`
+		)
+		check(
+			`nothing on the hill is steeper than Config.Road.MaxGrade ({Config.Road.MaxGrade} deg)`,
+			steepest <= Config.Road.MaxGrade + 1e-6,
+			`steepest is {steepest} deg, on piece {steepestOn}`
+		)
+
+		-- It does not cross itself. The generator asks this of every piece it lays; a
+		-- hand-written list gets no such check unless it is made here.
+		local placed = {}
+		local socket = {
+			x = Layout.Hill.x,
+			z = Layout.Hill.z,
+			yaw = math.rad(Layout.Hill.heading),
+			y = 0,
+			pitch = 0,
+			roll = 0,
+		}
+		for i, id in Layout.Hill.pieces do
+			local variant = RoadPieces.get(id)
+			if not variant then
+				break
+			end
+			placed[i] = RoadPieces.place(variant, socket, i)
+			socket = placed[i].finish
+		end
+		local crossings = {}
+		for i = 1, #placed do
+			for j = i + 2, #placed do
+				if RoadPieces.overlap(placed[i], placed[j]) then
+					table.insert(crossings, `{i}:{placed[i].id} / {j}:{placed[j].id}`)
+				end
+			end
+		end
+		check(
+			"no two pieces of the hill overlap",
+			#placed == #Layout.Hill.pieces and #crossings == 0,
+			`{#placed} placed, {#crossings} overlapping{if #crossings > 0 then ": " .. table.concat(crossings, ", ") else ""}`
+		)
+
+		-- THE SLABS ARE TAGGED AND THE WALLS ARE NOT, which is what makes a barrier a wall
+		-- and the road a road (`Shared/Road/Builder`). If this ever flips, a car drives
+		-- through the fence or falls through the floor.
+		local rails = PlaygroundService:DebugBarrierReport()
+		check(
+			"the hill's road is tagged and its barriers are not",
+			rails.slabs > 0 and rails.slabsTagged == rails.slabs and rails.walls > 0,
+			`{rails.slabsTagged} of {rails.slabs} slabs tagged, {rails.walls} walls`
+		)
+		local untaggedWalls = 0
+		for _, part in hillFolder:GetDescendants() do
+			if part:IsA("BasePart") and part.Name:match("^Barrier_") and CollectionService:HasTag(part, SURFACE_TAG) then
+				untaggedWalls += 1
+			end
+		end
+		check("no hill barrier is tagged DriftSurface", untaggedWalls == 0, `{untaggedWalls} tagged walls`)
+
+		-- THE SWITCH. Off, then on, with the slabs counted both times: the one way this
+		-- could go wrong is by taking the ROAD away instead of the fence.
+		local before = PlaygroundService:DebugBarrierReport()
+		PlaygroundService:SetBarriers(false)
+		local off = PlaygroundService:DebugBarrierReport()
+		PlaygroundService:SetBarriers(true)
+		local on = PlaygroundService:DebugBarrierReport()
+		check(
+			"the guardrail switch stands the walls down",
+			off.wallsQueryable == 0 and off.wallsSolid == 0 and off.walls == before.walls,
+			`{off.walls} walls, {off.wallsQueryable} still queryable, {off.wallsSolid} still solid`
+		)
+		check(
+			"and does not touch the road under them",
+			off.slabs == before.slabs
+				and off.slabsQueryable == before.slabs
+				and off.slabsSolid == before.slabs
+				and off.slabsTagged == before.slabs,
+			`{off.slabs} slabs: {off.slabsQueryable} queryable, {off.slabsSolid} solid, {off.slabsTagged} tagged`
+		)
+		check(
+			"and puts them back",
+			on.wallsQueryable == on.walls and on.wallsSolid == on.walls and PlaygroundService:BarriersOn(),
+			`{on.wallsQueryable} of {on.walls} queryable again`
+		)
+
+		-- The ground under it. The hill stands on a plate of its own, and that plate has
+		-- to cover it and meet the playground's.
+		local bounds = PlaygroundService:DebugHillBounds()
+		if bounds and bounds.pad then
+			check(
+				"the hill stands on its own plate, all of it",
+				bounds.min.X >= bounds.pad.min.X
+					and bounds.max.X <= bounds.pad.max.X
+					and bounds.min.Z >= bounds.pad.min.Z
+					and bounds.max.Z <= bounds.pad.max.Z,
+				`hill x {math.round(bounds.min.X)}..{math.round(bounds.max.X)} z {math.round(bounds.min.Z)}..{math.round(bounds.max.Z)},`
+					.. ` pad x {math.round(bounds.pad.min.X)}..{math.round(bounds.pad.max.X)} z {math.round(bounds.pad.min.Z)}..{math.round(bounds.pad.max.Z)}`
+			)
+			local plateSouth = offset.Z - Layout.Plate.size * 0.5
+			check(
+				"the hill's plate meets the playground's",
+				bounds.pad.max.Z >= plateSouth,
+				`the pad reaches Z {math.round(bounds.pad.max.Z)}, the plate's south edge is {math.round(plateSouth)}`
+			)
+			-- AND IT STAYS ON THE PLAYGROUND'S SIDE OF THE WORLD. `CarService:WorldAt`
+			-- answers by whichever world's spawn is nearer, so a hill that reached past
+			-- the halfway line would have a car falling off it respawn on the kart track.
+			local worlds = require(ServerScriptService.Services.CarService):Worlds()
+			local spawn = worlds.playground
+			local other = worlds.track
+			if spawn and other then
+				local worst, worstAt = -math.huge, Vector3.zero
+				for _, x in { bounds.pad.min.X, bounds.pad.max.X } do
+					for _, z in { bounds.pad.min.Z, bounds.pad.max.Z } do
+						local here = Vector3.new(x, 0, z)
+						local d = (here - Vector3.new(spawn.Position.X, 0, spawn.Position.Z)).Magnitude
+							- (here - Vector3.new(other.Position.X, 0, other.Position.Z)).Magnitude
+						if d > worst then
+							worst, worstAt = d, here
+						end
+					end
+				end
+				check(
+					"every corner of the hill's plate is nearer the playground than the track",
+					worst < 0,
+					`worst corner {worstAt} is {math.round(-worst)} studs nearer the playground`
+				)
+			end
+		else
+			check("the hill stands on its own plate", false, "no HillPad part")
+		end
+
+		-- 15. The surface, walked. Down the centre line and along both kerbs, where a
+		--     graded curve's boxes twist worst (`Shared/Road/Builder`, "the same thing
+		--     happens in the vertical").
+		--     THE KERBS GET A LOOSER LIMIT THAN THE CENTRE LINE, and the reason is the
+		--     road's, not the hill's: where a piece has GRADE and TURN at once, two
+		--     neighbouring top faces cross along the centre line and each stands proud of
+		--     the other at the edge. `Road/Builder` says so in as many words and measured
+		--     the worst riser on a generated road at 0.30 studs; there is no secant trick
+		--     for it, because the surface of a graded curve is not developable. Down the
+		--     middle the road is continuous to four decimal places, which is why that walk
+		--     keeps the world's own `MAX_STEP`.
+		local lateral = Config.Road.Width * 0.5 - 4
+		local walks = {
+			{ id = "Hill", lateral = 0, limit = MAX_STEP },
+			{ id = "Hill", lateral = lateral, limit = HILL_KERB_STEP },
+			{ id = "Hill", lateral = -lateral, limit = HILL_KERB_STEP },
+			{ id = "HillApproach", lateral = 0, limit = MAX_STEP },
+			{ id = "HillApproach", lateral = lateral, limit = MAX_STEP },
+		}
+		for _, walk in walks do
+			local w = PlaygroundService:DebugWalk(walk.id, walk.lateral)
+			check(
+				`{walk.id} ray walk at {walk.lateral} studs out: no holes`,
+				w.misses == 0 and w.untagged == 0,
+				`{w.samples} samples, {w.misses} missed, {w.untagged} hit something untagged`
+			)
+			check(
+				`{walk.id} ray walk at {walk.lateral} studs out: reads as a road`,
+				w.maxStepStuds <= walk.limit,
+				`largest height change between samples {w.maxStepStuds} studs per {w.spacingStuds} stud (limit {walk.limit}),`
+					.. ` mean {w.meanStepStuds}, height {w.minY} to {w.maxY}`
+			)
+		end
+
+		-- 16. The lift, and what a client may ask for. Every one of these goes through the
+		--     real remote handler (`DebugTool`), not past it.
+		-- IT AIMS AT THE CREST, which is where the climb ends and the first descending
+		-- piece begins. The road there still points UP at the grade it climbed at -- that
+		-- is what a crest is -- and the piece the car is put on is the one that takes it
+		-- down. So the two things to assert are the height and the piece, not the pitch.
+		local top = PlaygroundService:HillTopCFrame()
+		local climbEnd = hill.pieces[hill.climbPieces]
+		local firstDown = hill.pieces[hill.climbPieces + 1]
+		check(
+			"the lift aims at the top of the hill, on the piece that goes down it",
+			top ~= nil
+				and climbEnd ~= nil
+				and firstDown ~= nil
+				and math.abs((top.Position.Y - Config.Drift.RideHeight) - climbEnd.endY) < 2.0
+				and firstDown.dy < 0,
+			if top
+				then `lift to {math.round(top.Position.X)}, {math.round(top.Position.Y * 100) / 100}, {math.round(top.Position.Z)};`
+					.. ` the climb ends at Y {climbEnd and climbEnd.endY}, and piece {hill.climbPieces + 1}`
+					.. ` ({firstDown and firstDown.id}) loses {firstDown and -firstDown.dy} studs`
+				else "no HillTop"
+		)
+
+		local player = Players:GetPlayers()[1]
+		if not player then
+			check("a forged lift request does nothing", false, "there is nobody in the place: this check needs a player")
+		else
+			PlaygroundService:DebugClearToolLimits()
+			local refusedBefore = state.toolsRefused or 0
+			local liftsBefore = state.lifts or 0
+			local forgeries = {
+				CFrame.new(0, 5000, 0),
+				Vector3.new(0, 5000, 0),
+				true,
+				7,
+				"liftme",
+				{ world = "track", x = 0, y = 5000, z = 0 },
+				{ "lift" },
+				workspace,
+				Enum.Material.Asphalt,
+				0 / 0,
+			}
+			for _, forged in forgeries do
+				PlaygroundService:DebugTool(forged)
+				PlaygroundService:DebugClearToolLimits()
+			end
+			local after = PlaygroundService:DebugState()
+			check(
+				`{#forgeries} forged tool requests do nothing and are counted`,
+				(after.lifts or 0) == liftsBefore and (after.toolsRefused or 0) >= refusedBefore + #forgeries,
+				`{(after.toolsRefused or 0) - refusedBefore} refused, {(after.lifts or 0) - liftsBefore} lifts happened`
+			)
+		end
+	end
 
 	local passed = true
 	for _, c in checks do
