@@ -70,10 +70,13 @@ Rocco's Workboard (`tools\rocco.bat`) is where the user hands over work and foll
 | `C-… [message]` | Wrote to you, or replied to one of your messages | `show C-…` if it's cut short, act on it, then `clear C-…` |
 | `[reopen]` | Tested it: not right yet | Their words are the last `you` line in `show`. Fix it as a task again: with the worker that built it, if it's still there (below) |
 | `[followup]` | Added to a task while it ran | Fold it in, or pass it to the worker (below); then `clear` |
-
-**Passing the user's words to a worker:** send them to the worker that has the task, word for word (with Claude Code, `SendMessage` to its agent), so it carries on with what it already knows: no new worker reading everything again. The user types into the card as into a session, and its session shows the worker's reply. Start a new worker only when that one is gone.
 | `[merge]` | Approved a feature they tested in a lane | Merge its branch ("A round", step 4), then `clear` |
 | `[cancel]` | Deleted a task while it ran, or before its branch merged (its status is `removed`) | Stop its worker, if one is on it (a worker hears it from `set` too). In its lane, commit what it left to its branch, so nothing is lost, then put the lane back on main: `git -C <lane> switch --detach origin/main`. Don't merge the branch, and leave it there in case they change their mind. Take its row out of `docs/CLAIMS.md` and push. What's already in `main` stays; if they want it out, they'll say. Then `clear` |
+| `[lane]` | Nothing: a task you parked for a lane (below), and that lane is free now | Start it there: `set T-012 -Status working -Lane 2 ...`, as `list` says |
+
+**Passing the user's words to a worker:** send them to the worker that has the task, word for word (with Claude Code, `SendMessage` to its agent), so it carries on with what it already knows: no new worker reading everything again. The user types into the card as into a session, and its session shows the worker's reply. Start a new worker only when that one is gone.
+
+**Every lane busy:** park the task with `set T-012 -ForLane` (or `new -ForLane`), never with words alone in `-Waiting`. It stays in Up next, its card tells the user whether a lane is free, and `wait` hands it back as `[lane]` the moment one is: nothing depends on you remembering it.
 
 **Taking a note on** (`[plan]`):
 1. **First, before anything else:** `set T-034 -Title "..." -Status working -Step "..."`, so the card leaves Up next the moment you start, whether you do it or a worker will (spawning adds its lane). The title is a few words that name it, like "Keep the baseplate in playtests": the card shows one line (50 characters at most), and the user's own words stay under it. A note that has to wait for something else: `set T-034 -Title "..." -Waiting "After the trade window"` instead.
