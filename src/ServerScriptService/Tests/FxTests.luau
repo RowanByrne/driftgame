@@ -5,12 +5,11 @@
 -- Run it from the server debug bridge:
 --   game.ServerStorage.DebugBridge:Invoke("DebugFxTests", "run")
 --
--- MOST OF IT IS PURE. The four gates, the rubber density, the tyre heat, the band ladder
--- and the cancelling of the body's lean are all plain functions with no instance in them,
--- so every threshold and every curve in this feature can be measured without a car, a
--- place or a playtest. Two checks are not pure and say so: the one that builds a stand-in
--- rig and counts its instances, and the one that drives a thousand frames through it and
--- counts them again.
+-- MOST OF IT IS PURE. The four gates, the tyre heat and the cancelling of the body's lean
+-- are all plain functions with no instance in them, so every threshold and every curve in
+-- this feature can be measured without a car, a place or a playtest. Two checks are not
+-- pure and say so: the one that builds a stand-in rig and counts its instances, and the
+-- one that drives a thousand frames through it and counts them again.
 --
 -- Since T-064 it covers the SOUNDS too -- the gearbox, the pitch lerp and the squeal's
 -- gate -- and the line between what a test can check and what only an ear can is worth
@@ -178,13 +177,22 @@ function Tests.run(opts)
 			builtOk,
 			`built: {table.concat(F.Built, ", ")}{if builtOk then "" else "; incomplete look for " .. table.concat(missing, ", ")}`
 		)
-		-- THE INSTANCE BUDGET IS THIS FORMULA, and it is the surfaces times the bands.
-		-- 4 wheels x (2 Attachments + surfaces x (bands Trails + 2 ParticleEmitters)).
+		-- THE INSTANCE BUDGET IS THIS FORMULA, and the surfaces are all that is left in it
+		-- since the darkness ladder came out:
+		-- 4 wheels x (2 Attachments + surfaces x (1 Trail + 2 ParticleEmitters)).
 		check(
 			"one built surface, and the budget it comes to",
 			#F.Built == 1,
-			`{#F.Built} surface(s) x {#F.Marks.Bands} bands -> `
-				.. `{#CarModel.WHEEL_NAMES * (2 + #F.Built * (#F.Marks.Bands + 2))} instances per car`
+			`{#F.Built} surface(s) -> {#CarModel.WHEEL_NAMES * (2 + #F.Built * 3)} instances per car`
+		)
+		-- ONE DARKNESS, which is the whole of the rollback. A ladder would be a table.
+		check(
+			"a mark has exactly one darkness",
+			type(F.Marks.Transparency) == "number"
+				and F.Marks.Transparency > 0
+				and F.Marks.Transparency < 1
+				and F.Marks.Bands == nil,
+			`Marks.Transparency {F.Marks.Transparency}, and no Bands table`
 		)
 		check(
 			"a mark is narrower than the tyre that leaves it",
@@ -433,67 +441,7 @@ function Tests.run(opts)
 	end
 
 	----------------------------------------------------------------------------
-	-- 8. MARK DENSITY: rubber laid per stud of road. Pure.
-	--
-	-- The user's own reasoning, and the check that matters is the last one: a slide held
-	-- as the car slows lays more rubber per foot, so it gets DARKER, not fainter.
-	----------------------------------------------------------------------------
-	do
-		local slip = math.rad(45)
-		local d30 = Wheels.density(30, slip, 0)
-		local d70 = Wheels.density(70, slip, 0)
-		local d110 = Wheels.density(110, slip, 0)
-		check(
-			"at a fixed angle, slower is darker: 30 > 70 > 110 studs/s",
-			d30 > d70 and d70 > d110,
-			string.format("45 deg of slip -- 30: %.3f, 70: %.3f, 110: %.3f (30 is %.2fx 110)",
-				d30, d70, d110, d110 > 0 and d30 / d110 or 0)
-		)
-
-		local a10 = Wheels.density(70, math.rad(10), 0)
-		local a45 = Wheels.density(70, math.rad(45), 0)
-		local a90 = Wheels.density(70, math.rad(90), 0)
-		check(
-			"at a fixed speed, more sideways is darker: 10 < 45 < 90 deg",
-			a10 < a45 and a45 < a90,
-			string.format("70 studs/s -- 10 deg: %.3f, 45 deg: %.3f, 90 deg: %.3f", a10, a45, a90)
-		)
-
-		-- The case the user described in full: a long drift that is slowing down.
-		local fastAndSideways = Wheels.density(110, math.rad(80), 0)
-		local slowAndSideways = Wheels.density(30, math.rad(80), 0)
-		check(
-			"slow and sideways is the darkest of the two ends of one drift",
-			slowAndSideways > fastAndSideways,
-			string.format("80 deg at 110 studs/s: %.3f; the same angle at 30: %.3f",
-				fastAndSideways, slowAndSideways)
-		)
-
-		-- Heat lifts it, and the lift is `HeatGain`.
-		local cold = Wheels.density(70, math.rad(30), 0)
-		local hot = Wheels.density(70, math.rad(30), 1)
-		check(
-			"a hot tyre lays more rubber than a cold one, by HeatGain",
-			hot > cold and math.abs(hot / cold - F.Marks.HeatGain) < 1e-6,
-			string.format("cold %.4f, hot %.4f, ratio %.4f against HeatGain %g",
-				cold, hot, hot / cold, F.Marks.HeatGain)
-		)
-
-		-- A car going straight lays nothing, whatever its speed or its heat.
-		check(
-			"a straight car has zero density at any speed and any heat",
-			Wheels.density(110, 0, 1) < 1e-9 and Wheels.density(10, 0, 1) < 1e-9,
-			string.format("%.2e and %.2e", Wheels.density(110, 0, 1), Wheels.density(10, 0, 1))
-		)
-		check(
-			"density never leaves 0..1",
-			Wheels.density(1, math.rad(90), 1) <= 1 and Wheels.density(1000, math.rad(1), 0) >= 0,
-			string.format("worst case %.3f", Wheels.density(1, math.rad(90), 1))
-		)
-	end
-
-	----------------------------------------------------------------------------
-	-- 9. HEAT, and the bands it feeds. Pure.
+	-- 8. TYRE HEAT, which drives the stylized smoke. Pure.
 	----------------------------------------------------------------------------
 	do
 		local H = F.Heat
@@ -570,82 +518,11 @@ function Tests.run(opts)
 				Wheels.stylizedRate(0), Wheels.stylizedRate(0.5), Wheels.stylizedRate(1))
 		)
 
-		-- The bands are a ladder, and the ladder is monotone in the density.
-		local n = #F.Marks.Bands
-		local lastBand, monotone = 0, true
-		for i = 0, 100 do
-			local b = Wheels.bandFor(i / 100)
-			if b < lastBand then
-				monotone = false
-			end
-			lastBand = b
-		end
-		check(
-			`the {n} bands rise with the density and never fall back`,
-			monotone and Wheels.bandFor(0) == 1 and Wheels.bandFor(1) == n,
-			`density 0 -> band 1, density 1 -> band {n}`
-		)
-		local darkening = true
-		for i = 2, n do
-			darkening = darkening and F.Marks.Bands[i] < F.Marks.Bands[i - 1]
-		end
-		check(
-			"and each band is darker than the one before it",
-			darkening,
-			`transparencies: {table.concat(F.Marks.Bands, ", ")}`
-		)
 
-		-- AND THE LADDER HAS TO FIT THE ANGLES THE CAR IS ACTUALLY DRIVEN AT. This is the
-		-- check that caught `AngleExponent` at 0.8, where an ordinary 45-degree slide at
-		-- 70 studs/s already sat in the darkest band and three quarters of the ladder were
-		-- unreachable in normal play.
-		local startsAt, lines = {}, {}
-		for deg = 1, 90, 0.5 do
-			local b = Wheels.bandFor(Wheels.density(F.Marks.RefSpeed, math.rad(deg), 0))
-			if startsAt[b] == nil then
-				startsAt[b] = deg
-			end
-		end
-		local spread = true
-		for b = 1, n do
-			spread = spread and startsAt[b] ~= nil
-			table.insert(lines, `band {b} from {startsAt[b] or "never"} deg`)
-		end
-		check(
-			`all {n} bands are reachable between 1 and 90 degrees at RefSpeed`,
-			spread and (startsAt[n] or 0) > 40,
-			`at {F.Marks.RefSpeed} studs/s, cold: {table.concat(lines, ", ")}`
-		)
-
-		-- THE HYSTERESIS. A density sitting exactly on a boundary must not swap trails
-		-- every frame: every swap ends one ribbon and starts another, which is a dotted
-		-- line down the road.
-		local boundary = 1 / n
-		local band, swaps = Wheels.bandFor(boundary), 0
-		for i = 1, 200 do
-			local jitter = boundary + (if i % 2 == 0 then 1 else -1) * F.Marks.BandHysteresis * 0.5
-			local next = Wheels.bandWith(jitter, band)
-			if next ~= band then
-				swaps += 1
-			end
-			band = next
-		end
-		check(
-			"a density jittering on a band boundary does not swap trails",
-			swaps == 0,
-			`{swaps} swaps over 200 frames of jitter half a hysteresis wide`
-		)
-		-- But a real move across the boundary still moves.
-		check(
-			"and a real move across the boundary still moves",
-			Wheels.bandWith(boundary + F.Marks.BandHysteresis * 2, 1) == 2,
-			`band {Wheels.bandWith(boundary + F.Marks.BandHysteresis * 2, 1)} after a clear crossing`
-		)
-
-		-- THE SLIP GATE IS STICKY TOO, and for the same reason: a gate that chatters is a
-		-- hole in the mark. Measured live before it was: a car at 44 studs/s with its slip
-		-- hovering on half a degree switched its rear marks on and off at a density of
-		-- 0.00, and every one of those is a break.
+		-- THE SLIP GATE IS STICKY, and it survives the darkness rollback: a gate that
+		-- chatters is a hole in the mark whether or not a darkness ramp exists. Measured
+		-- live before it was there: a car at 44 studs/s with its slip hovering on half a
+		-- degree switched its rear marks on and off, and every one of those is a break.
 		local between = (F.Gates.MinSlipDegrees + F.Gates.StopSlipDegrees) * 0.5
 		local cold = Wheels.evaluate(stateWith({ slipDeg = between, speed = 44, throttle = 1 }), false, false, true, false)
 		local warm = Wheels.evaluate(stateWith({ slipDeg = between, speed = 44, throttle = 1 }), false, false, true, true)
@@ -684,13 +561,13 @@ function Tests.run(opts)
 	end
 
 	----------------------------------------------------------------------------
-	-- 10. IT ALLOCATES NOTHING. Not pure: it builds a stand-in car.
+	-- 9. IT ALLOCATES NOTHING. Not pure: it builds a stand-in car.
 	----------------------------------------------------------------------------
 	if opts.skipInstances ~= true then
 		local rig, car = standInRig()
 		local w = Wheels.new()
 		local attached = w:Attach(rig)
-		local want = #CarModel.WHEEL_NAMES * (2 + #F.Built * (#F.Marks.Bands + 2))
+		local want = #CarModel.WHEEL_NAMES * (2 + #F.Built * 3)
 		local before = w:CountInstances()
 		local bodyBefore = #rig.body:GetDescendants()
 		check(
@@ -703,17 +580,13 @@ function Tests.run(opts)
 		w:Attach(rig)
 		check("attaching again builds nothing", w:CountInstances() == want, `{w:CountInstances()} instances`)
 
-		-- Exactly one trail per wheel may ever be enabled: the bands share two attachments
-		-- and would overdraw each other if two were ever on at once.
 		local function litTrails(): (number, number)
 			local lit, maxPerWheel = 0, 0
 			for _, wheel in w.wheels do
 				local here = 0
 				for _, fx in wheel.fx do
-					for _, trail in fx.trails do
-						if trail.Enabled then
-							here += 1
-						end
+					if fx.trail.Enabled then
+						here += 1
 					end
 				end
 				lit += here
@@ -724,9 +597,12 @@ function Tests.run(opts)
 
 		-- Now drive it. The slip angle sweeps the whole range and back, the speed sweeps
 		-- with it, the throttle and the handbrake are toggled, and wheels leave the ground
-		-- -- so every gate flips and every band is reached over the thousand frames.
-		local flips, lastOn = 0, false
-		local bandsSeen, worstPerWheel = {}, 0
+		-- -- so every gate flips many times over the thousand frames.
+		--
+		-- `blank` is the number that mattered when there was a darkness ladder and still
+		-- matters now: a frame in which a wheel is MARKING but nothing is drawn is a hole
+		-- in the mark. With one trail per wheel there is nothing left that can cause one.
+		local flips, lastOn, worstPerWheel, blank = 0, false, 0, 0
 		for frame = 1, FRAMES do
 			local t = frame / FRAMES
 			local deg = 180 * math.abs(math.sin(t * math.pi * 7))
@@ -738,15 +614,20 @@ function Tests.run(opts)
 				rollDeg = Config.Drift.BodyRollMax * math.sin(t * math.pi * 5),
 			})
 			w:Update(s, { handbrake = frame % 53 == 0 }, 1 / 60)
-			local band = w.wheels[1].fx[1].band
-			bandsSeen[band] = true
-			local on = band > 0
+			local on = w.wheels[1].fx[1].on
 			if on ~= lastOn then
 				flips += 1
 				lastOn = on
 			end
 			local _, perWheel = litTrails()
 			worstPerWheel = math.max(worstPerWheel, perWheel)
+			for _, wheel in w.wheels do
+				for _, fx in wheel.fx do
+					if fx.on and not fx.trail.Enabled then
+						blank += 1
+					end
+				end
+			end
 		end
 		local after = w:CountInstances()
 		local bodyAfter = #rig.body:GetDescendants()
@@ -755,98 +636,21 @@ function Tests.run(opts)
 			after == before and bodyAfter == bodyBefore,
 			`before {before}, after {after}; under the body {bodyBefore} -> {bodyAfter}; {flips} gate flips in those frames`
 		)
-		check("and the drive actually worked the gates", flips > 10, `{flips} flips on one wheel`)
-		-- TWO, NOT ONE, and the second one is the point: a band swap keeps the outgoing
-		-- ribbon drawing for `Marks.SwapOverlap` so the join overlaps instead of leaving a
-		-- hole. Three would mean a splice was left behind by another swap.
+		-- ONE TRAIL PER WHEEL, EVER. The darkness ladder used to put several between the
+		-- same two attachments and switch between them, which is where the breaks in the
+		-- user's marks came from; with one there is nothing to switch.
 		check(
-			"never more than two of a wheel's trails drawing, which is one splice",
-			worstPerWheel <= 2,
-			`worst was {worstPerWheel} at once, against {#F.Marks.Bands} bands`
+			"never more than one of a wheel's trails drawing",
+			worstPerWheel <= 1,
+			`worst was {worstPerWheel} at once`
 		)
-		local reached = {}
-		for band in bandsSeen do
-			if band > 0 then
-				table.insert(reached, band)
-			end
-		end
-		table.sort(reached)
+		-- AND THE BAR THE LADDER WAS REMOVED OVER: never a frame in which a wheel is
+		-- marking and nothing is drawn.
 		check(
-			"and the drive reached more than one band",
-			#reached > 1,
-			`bands reached: {table.concat(reached, ", ")} of {#F.Marks.Bands}`
+			"and never a frame where a marking wheel draws nothing",
+			blank == 0,
+			`{blank} blank frames over {FRAMES} frames x {#CarModel.WHEEL_NAMES} wheels`
 		)
-
-		-- THE SPLICE, which is the whole of round three. A band change must never leave a
-		-- frame in which a marking wheel is drawing nothing: the incoming trail has no
-		-- points yet, so the outgoing one has to keep going until it does.
-		do
-			w:Cut()
-			local dt = 1 / 60
-			-- Settle in a light band.
-			local light = stateWith({ slipDeg = 12, speed = 110, throttle = 1 })
-			for _ = 1, 30 do
-				w:Update(light, { handbrake = false }, dt)
-			end
-			-- A REAR wheel: the fronts need 30 degrees before they mark at all, so a light
-			-- slide would never give one a band to swap away from. `w.wheels` is in
-			-- whatever order the rig handed over, so it is found rather than indexed.
-			local rear
-			for _, wheel in w.wheels do
-				if not wheel.front then
-					rear = wheel
-				end
-			end
-			local fx = rear.fx[1]
-			local startBand, startSwaps = fx.band, fx.swaps
-			-- Now a hard, slow slide, which is several bands darker.
-			local dark = stateWith({ slipDeg = 75, speed = 20, throttle = 1 })
-			local blankFrames, maxLit, sawSplice = 0, 0, false
-			for _ = 1, 60 do
-				w:Update(dark, { handbrake = false }, dt)
-				local lit = 0
-				for _, t in fx.trails do
-					if t.Enabled then
-						lit += 1
-					end
-				end
-				maxLit = math.max(maxLit, lit)
-				if lit == 2 then
-					sawSplice = true
-				end
-				if lit == 0 then
-					blankFrames += 1
-				end
-			end
-			check(
-				"a band change never leaves a marking wheel drawing nothing",
-				blankFrames == 0 and startBand > 0 and fx.band ~= startBand and fx.swaps > startSwaps,
-				`{rear.name}: band {startBand} -> {fx.band} over {fx.swaps - startSwaps} swap(s), `
-					.. `{blankFrames} blank frames, most trails lit at once {maxLit}`
-			)
-			check(
-				"and the two ribbons overlap across it",
-				sawSplice and maxLit == 2,
-				`the outgoing band kept drawing for {F.Marks.SwapOverlap} s`
-			)
-			-- And the splice ends: it must not leave a second trail on for ever.
-			local idle = stateWith({ slipDeg = 75, speed = 20, throttle = 1 })
-			for _ = 1, math.ceil(F.Marks.SwapOverlap / dt) + 10 do
-				w:Update(idle, { handbrake = false }, dt)
-			end
-			local settled = 0
-			for _, t in fx.trails do
-				if t.Enabled then
-					settled += 1
-				end
-			end
-			check(
-				"the splice closes again once the overlap is spent",
-				settled == 1 and fx.fading == 0,
-				`{settled} trail(s) drawing after the overlap, fading band {fx.fading}`
-			)
-			w:Cut()
-		end
 
 		-- The heat is per wheel, and the fronts and the rears do not share it: through a
 		-- small slide only the rears are sliding, so only the rears heat up.

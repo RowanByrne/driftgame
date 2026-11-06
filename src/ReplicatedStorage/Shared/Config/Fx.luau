@@ -83,82 +83,30 @@ return {
 		-- IN the road rather than glow on top of it. 0 would keep it
 		-- the same near-black in shade and in sun
 
-		-- HOW DARK A MARK IS, AND WHY IT IS A LADDER AND NOT A NUMBER.
+		-- HOW DARK A MARK IS. ONE NUMBER, FOR EVERY MARK, AT EVERY SPEED AND ANGLE.
 		--
-		-- `Trail.Transparency` applies to the WHOLE live ribbon, not to the segment being
-		-- laid: turn it down and the five seconds of mark already on the road darken with
-		-- it. A mark has to keep the darkness it was laid at -- rubber on a road does not
-		-- change its mind -- so each wheel carries one trail per band, all strung between
-		-- the same two attachments, and only the band matching this frame's intensity is
-		-- enabled. Each band's ribbon then persists at its own fixed darkness, and the
-		-- line through a corner genuinely gets darker where the car was working hardest.
+		-- `Trail.Transparency` applies to the WHOLE live ribbon and not to the segment
+		-- being laid, so a darkness that varies along a mark cannot be a number at all: it
+		-- has to be a LADDER OF TRAILS, one per darkness, switched between. That ramp was
+		-- built, driven and removed at the user's call (features/car-fx.md "The darkness
+		-- ramp that was built and removed"), because every switch between trails is a hole
+		-- in the mark and the holes are inherent to the shape.
 		--
-		-- EVERY SWAP BETWEEN BANDS IS A HOLE IN THE MARK unless something covers it,
-		-- because the incoming trail has no points yet and draws nothing until the contact
-		-- patch has moved. The three numbers below are all about making swaps rare and
-		-- then covering the ones that are left. **A continuous mark at three darknesses
-		-- beats a dashed one at four** -- the user asked for darkness as a feel, not as a
-		-- scale.
-		--
-		-- Lightest first. THREE, down from four: measured, four bands put the boundaries
-		-- close enough together that an ordinary drift crossed them constantly.
-		Bands = { 0.70, 0.52, 0.34 }, -- `Trail.Transparency` per band
-
-		BandHysteresis = 0.1, -- how far past a band's boundary the density has to get
-		-- before the trail is swapped at all. MEASURED and raised from
-		-- 0.04: at four bands and 0.04 the rear wheels still changed band
-		-- 58 times in 1 081 frames, most of them 0 or 1 stud apart. At
-		-- three bands a band is 0.333 of the ladder wide, so 0.1 is
-		-- nearly a third of a band of dead zone either side of a
-		-- boundary -- a density has to mean it
-
-		SwapOverlap = 0.12, -- s the OUTGOING band's trail keeps drawing after the incoming
-		-- one starts. THIS IS THE ONE THAT ACTUALLY CLOSES THE HOLE:
-		-- however rare swaps are, a swap is a hole by construction, and
-		-- the only way to not have one is for the two ribbons to overlap
-		-- rather than abut. At 70 studs/s this is about 8 studs of
-		-- double-drawn mark, which reads as a short splice a shade darker
-		-- than either band -- a join instead of a gap. It is NOT applied
-		-- when a wheel stops marking altogether: there, the mark should
-		-- end where the drift ended, and the gate's own hysteresis
-		-- (`Gates.StopSlipDegrees`) is what stops that flickering
-
-		-- The intensity the bands are chosen by: RUBBER LAID PER STUD OF ROAD, 0..1.
-		-- The user's own framing, and the whole of why there is a `/speed` in it:
-		-- *"if the drift continues as the car's speed lowers, more rubber is deposited
-		-- per foot"*. Same slide, less ground covered, darker line.
-		--
-		--   speedTerm = (RefSpeed / speed) ^ SpeedExponent      slower is denser
-		--   angleTerm = |sin(slip)| ^ AngleExponent             more sideways is more rubber
-		--   intensity = speedTerm * angleTerm * (1 .. HeatGain by the wheel's heat)
-		--
-		-- IT IS A FEEL CURVE AND NOT PHYSICS, and it is written as two independent
-		-- exponents on purpose so either half can be tuned without algebra on the other.
-		RefSpeed = 70, -- studs/s. The speed at which `speedTerm` is exactly 1
-		SpeedExponent = 0.5, -- > 0 makes a slow slide darker than a fast one. At 0.5 a
-		-- mark laid at 30 studs/s is 1.91x the density of the same
-		-- slide at 110. ZERO takes speed out of it entirely
-		AngleExponent = 1.6, -- how fast darkness grows with the slip angle. MEASURED, and
-		-- changed from the 0.8 it was first written at: at 0.8 a
-		-- perfectly ordinary 45-degree slide at 70 studs/s already read
-		-- 0.758 and sat in the darkest band, so three quarters of the
-		-- ladder were only reachable by a slide nobody drives. At 1.6
-		-- the four bands land at about 10, 30, 45 and 70 degrees at
-		-- that speed, which is the range the car is actually driven in
-		MinSpeedForDensity = 12, -- studs/s. The floor under `speed` in the division, so a
-		-- car that has nearly stopped does not divide its way to a
-		-- black stripe. Below this the density stops growing
-		HeatGain = 1.6, -- what a fully heated tyre multiplies the density by. This is the
-		-- user's link between the two: *"the longer a drift goes, the
-		-- hotter the tyres, and the more smoke -- that tyre mark would be
-		-- darker"*. Same `heat` the stylized smoke is driven by
+		-- 0.52 IS THE MIDDLE RUNG OF THE LADDER THAT WAS THERE (0.70, 0.52, 0.34), which
+		-- is the honest place to land: an ordinary drift spent most of its time in the
+		-- middle of that ladder, so this reads about as the marks did before, without the
+		-- light end going faint or the dark end going to paint. **It is one number and the
+		-- whole look of a mark is in it** -- lower is darker.
+		Transparency = 0.52,
 	},
 
 	-- ------------------------------------------------------------------ tyre heat
 	-- PER WHEEL, 0..1, and the one piece of state this module keeps between frames.
 	-- It rises while that wheel is actually sliding, faster the harder it is sliding, and
-	-- falls when it stops. Two things read it: the stylized smoke's rate, and the mark's
-	-- density (`Marks.HeatGain`).
+	-- falls when it stops. ONE thing reads it now: the stylized smoke's rate. The mark's
+	-- darkness used to as well, through a rubber-per-stud curve, and that ramp is gone
+	-- (features/car-fx.md "The darkness ramp that was built and removed"). THE HEAT IS
+	-- NOT GONE WITH IT, because the smoke the user approved is built on it.
 	--
 	-- "How hard it is sliding" is the SLIP SPEED -- `speed * |sin(slip)|`, the speed the
 	-- contact patch is being dragged sideways across the road. That is the number a real
@@ -326,13 +274,14 @@ return {
 	},
 
 	-- The surfaces a car is actually built effects for, in order. THE INSTANCE BUDGET IS
-	-- THIS LIST AND `Marks.Bands`:
+	-- THIS LIST:
 	--
-	--   per car = 4 wheels x (2 Attachments + surfaces x (#Bands Trails + 2 Emitters))
+	--   per car = 4 wheels x (2 Attachments + surfaces x (1 Trail + 2 Emitters))
 	--
-	-- At one surface and four bands that is 4 x (2 + 6) = 32, built once when the rig is
-	-- caught and never again. It was 16 before the bands and the stylized layer (T-062).
-	-- A second surface adds 24, which is why `dirt` is not in here until there is dirt.
+	-- At one surface that is 4 x 5 = 20, built once when the rig is caught and never
+	-- again. It was 16 before the stylized smoke layer, 32 with a four-rung darkness
+	-- ladder, 28 with a three-rung one, and 20 again now the ladder is gone (T-062).
+	-- A second surface adds 12, which is why `dirt` is not in here until there is dirt.
 	Built = { "tarmac" },
 	Default = "tarmac", -- what a wheel on the ground is told it is standing on, until
 	-- `Hit` can say
@@ -346,8 +295,7 @@ return {
 	-- seventeenth instance for nothing.
 	Names = {
 		Attachment = "FxA_%s_%s", -- wheel name, then "L" or "R" (the two ends of the mark)
-		Trail = "FxMark_%s_%s_%d", -- wheel name, surface, then the band's index in
-		-- `Marks.Bands`, 1 being the lightest
+		Trail = "FxMark_%s_%s", -- wheel name, then surface. ONE per wheel per surface
 		Emitter = "FxSmoke_%s_%s", -- wheel name, then surface. The DIFFUSE layer
 		Stylized = "FxPuff_%s_%s", -- wheel name, then surface. The STYLIZED layer
 		Engine = "FxEngine", -- the one engine `Sound`, on the body (T-064)
