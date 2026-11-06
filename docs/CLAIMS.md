@@ -9,7 +9,6 @@ Every task in progress and the files it owns, so parallel sessions and workers n
 
 | Branch | Lane | Files owned | Since |
 |---|---|---|---|
-| `agent/road-seams` | lane3 | `src/ReplicatedStorage/Shared/Road/Builder.luau`, `src/ReplicatedStorage/Shared/Config/Road.luau`, `src/ServerScriptService/Tests/RoadTests.luau`, `docs/game/features/road-elevation.md` | 2026-11-06 (T-066) |
 
 ## Notes between sessions
 
