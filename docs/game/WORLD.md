@@ -108,11 +108,19 @@ What it leaves behind, all of it under one folder and all of it anchored:
 | Under `Workspace.Showroom` | What it is |
 |---|---|
 | `Playground` | exactly what `PlaygroundService:Build()` makes, where it makes it: 325 parts |
-| `Gallery` | one of every variant in `Pieces.order()`, in a grid: 9 pieces, 634 parts |
+| `Gallery` | one of every variant in `Pieces.order()`, in a grid: 16 pieces, 2,091 parts |
 
-The gallery sits past the playground's plate -- 527 studs clear of it -- in a grid of cells as wide as the widest piece plus a gap, so no two pieces are closer than 317 studs and the whole layout re-measures itself when the piece set changes. `build()` is `clear()` followed by a fresh build, so seeing a code change is one line and there is never a second showroom.
+The gallery sits past the playground's plate -- 400 studs clear of it -- in as square a grid as the set allows, of cells as wide as the widest piece plus a gap. All of it is measured from the built parts, so the layout re-lays itself when the piece set changes: the nine flat pieces made a 3 x 3 and the sixteen of the touge set make a 4 x 4, with no two pieces closer than 245 studs.
 
-**The labels are two, and they take turns.** Each piece has its variant id on a sign lying flat in front of it, in 90-stud letters, and on a small billboard 26 studs above it. The sign is the one that reads from the air; the billboard is only for when the camera is down among the pieces, where a sign lying on the ground is edge-on. Both are sized in **studs**, so both shrink with distance like the thing they name, and the billboard stops drawing past 420 studs so a pulled-back view has none of them in it at all. Measured at camera heights of 300, 800 and 1 500 studs over the grid: no two labels overlap on screen at any of them, no billboard draws at any of them, and the signs read between 5 and 47 pixels tall. The first version sized the billboard in *pixels*, which does not shrink with distance: nine labels 110 pixels tall, a sixth of the screen each, overlapping in 27 to 36 of the 36 pairs and hiding every piece.
+**The touge pieces drop, and the floor drops with them.** Every variant is placed from a socket at road level and the grid centres it in X and Z only, never in height, so a piece that descends starts level with its neighbours and falls away from them -- which is the one thing worth seeing about it. They reach as far below road level as they descend: 12 studs of slab for the flat nine and the `Link`, 27 for a `Banked30`, 32 for a `Corkscrew`, 52 for a `HairpinStack`. So each cell has a floor pad of its own, flush under the bottom of the piece over it, and a descending piece stands on a plinth rather than sinking through one slab laid at road level.
+
+`build()` is `clear()` followed by a fresh build, so seeing a code change is one line and there is never a second showroom.
+
+**The labels are two, and they take turns.** Each piece has its variant id on a sign lying flat in front of it, in 45-stud letters, and on a small billboard 13 studs above it. The sign is the one that reads from the air; the billboard is only for when the camera is down among the pieces, where a sign lying on the ground is edge-on. Both are sized in **studs**, so both shrink with distance like the thing they name, and the billboard stops drawing past 210 studs so a pulled-back view has none of them in it at all.
+
+**Both were halved on the user's call** (2026-11-06), and the numbers either side of it, measured from cameras 300, 800 and 1 500 studs over the sixteen-piece grid at 1525 x 663 and 70 degrees. Sign height on screen went from 3-235 pixels to 2-114 at 300 studs up, 5-39 to 3-19 at 800, and 5-17 to 3-8 at 1 500; the billboard went from 111 x 28 pixels to 55 x 14 in the close-up it exists for. No two labels overlap at any of the three heights and no billboard draws at any of them -- where at the old size the signs did overlap, in two pairs, from 300 studs up. The far rows at 1 500 studs are a few pixels tall and are not meant to be read from there: fly lower.
+
+The version before that sized the billboard in *pixels*, which does not shrink with distance: nine labels 110 pixels tall, a sixth of the screen each, overlapping in 27 to 36 of the 36 pairs and hiding every piece.
 
 Three things to know:
 
