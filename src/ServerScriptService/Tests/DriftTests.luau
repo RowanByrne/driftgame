@@ -230,6 +230,108 @@ local function bankedCone(radius: number, bankDeg: number): (Model.World, (Vecto
 	return world, normalAt
 end
 
+-- A BANKED PLANE WITH A BARRIER DOWN THE BOTTOM OF IT (T-074), which is the pin as
+-- maths: everything the real road does to a car on a banked corner, and nothing else.
+-- The surface is `y = x * tan(bankDeg)`, so downhill is toward -X; the barrier is a
+-- vertical plane at `x = -wallAt` with its face pointing +X. A car dropped on it with no
+-- steering slides down the bank and arrives at the barrier, exactly as it does on the
+-- road, and what it does next is the whole question.
+--
+-- `sweep` and `penetration` are the real ones' CONTRACT, written out for one plane: the
+-- sweep answers how far the car may get and what stopped it, held `WallPush` clear, and
+-- the box's reach is the car's own, turned by its yaw. `limitFor` is the smallest X the
+-- car's centre may have at that yaw, and the checks use it to say how far off the wall
+-- the car got.
+local function bankedBarrier(bankDeg: number, wallAt: number)
+	local C = Config.Drift
+	local m = math.tan(math.rad(bankDeg))
+	local up = Vector3.new(-m, 1, 0).Unit
+	local face = Vector3.new(1, 0, 0)
+	local hw, hl = C.BodyWidth * 0.5, C.BodyLength * 0.5
+	local function limitFor(yaw: number): number
+		return -wallAt + hw * math.abs(math.cos(yaw)) + hl * math.abs(math.sin(yaw))
+	end
+	local world: Model.World = {
+		probe = function(pos: Vector3): Model.Hit?
+			return { y = m * pos.X, normal = up, grip = C.GripTarmac, score = C.ScoreTarmac }
+		end,
+		sweep = function(from: Vector3, to: Vector3, yaw: number): (Vector3?, Vector3?)
+			local delta = to - from
+			local flat = Vector3.new(delta.X, 0, delta.Z)
+			local travel = flat.Magnitude
+			if travel < 1e-4 then
+				return nil, nil
+			end
+			local limit = limitFor(yaw)
+			if to.X >= limit then
+				return nil, nil
+			end
+			if from.X < limit then
+				return from, face
+			end
+			local hit = travel * ((from.X - limit) / (from.X - to.X))
+			return from + (flat / travel) * math.max(hit - C.WallPush, 0), face
+		end,
+		penetration = function(pos: Vector3, yaw: number): (Vector3?, number)
+			local limit = limitFor(yaw)
+			if pos.X < limit then
+				return face, limit - pos.X
+			end
+			return nil, 0
+		end,
+	}
+	return world, up, limitFor
+end
+
+-- The unstick's three numbers, set for one measurement and put back however it ends.
+-- All three are MODEL keys, present raw, so writing them is just a write.
+local function withUnstick(speed: number, seconds: number, release: number, fn)
+	local C = Config.Drift
+	local a, b, c = C.UnstickSpeed, C.UnstickSeconds, C.UnstickRelease
+	C.UnstickSpeed, C.UnstickSeconds, C.UnstickRelease = speed, seconds, release
+	local ok, result = pcall(fn)
+	C.UnstickSpeed, C.UnstickSeconds, C.UnstickRelease = a, b, c
+	if not ok then
+		error(result, 0)
+	end
+	return result
+end
+
+-- Put the car against the barrier with its nose `noseDeg` INTO it, barely moving, hold
+-- the finger wherever the caller says, and report what it managed. `away` is the first
+-- moment it is doing more than `AWAY_SPEED`, which is the question: did it get going.
+local AWAY_SPEED = 20 -- studs/s. Comfortably above the 15 the road's own drive calls slow
+local function fromTheWall(bankDeg: number, noseDeg: number, steer: number, seconds: number)
+	local C = Config.Drift
+	local world, up, limitFor = bankedBarrier(bankDeg, 40)
+	local yaw = math.rad(noseDeg)
+	local x = limitFor(yaw) + 0.05
+	local runner = Sim.newRunner(CFrame.new(x, math.tan(math.rad(bankDeg)) * x + C.RideHeight, 0) * CFrame.Angles(0, yaw, 0))
+	runner.state.up = up
+	runner.state.velocity = Vector3.new(0, 0, -2)
+	runner.state.time = 10 -- past the throttle's ease-in
+	local t, away, pinnedSteps = 0, nil, 0
+	while t < seconds - 1e-9 do
+		Sim.advance(runner, 1 / 60, { steer = steer }, world, function(s)
+			if s.pinned then
+				pinnedSteps += 1
+			end
+		end)
+		t += 1 / 60
+		if not away and Model.speed(runner.state) > AWAY_SPEED then
+			away = t
+		end
+	end
+	local s = runner.state
+	return {
+		away = away,
+		speed = Model.speed(s),
+		travelled = math.abs(s.position.Z),
+		pinnedSteps = pinnedSteps,
+		state = s,
+	}
+end
+
 -- `GravityOnGround` is a MODEL key, present raw in `Config.Drift`, so it can be written
 -- directly (a CAR key would error -- that is what the metatable is for). Restored however
 -- the body ends, so one failing check cannot leave the switch flipped for the next one.
@@ -1526,6 +1628,156 @@ function DriftTests.run()
 		)
 	)
 
+	------------------------------------------------------------------ pinned against a wall (T-074)
+	-- The trap first, so that what the fix fixes is written down as a number rather than
+	-- asserted. A car nose-in to a barrier at the bottom of a bank, barely moving, with
+	-- the unstick OFF: it does not go anywhere, ever, and the reason is arithmetic. Along
+	-- the wall the drivetrain pushes `MaxAcceleration * cos(t)` and the grip pulls back
+	-- `f(t) * sin(t)`; they cross at about 27 degrees of nose angle and past it the brake
+	-- wins. THE BANK IS NOT THE CAUSE -- the same angles stop the car at 10 degrees of
+	-- bank and at 30 -- it is only what keeps the car fed back into the wall.
+	local NOSE_IN = { 30, 60, 120, 150 } -- degrees of nose into the wall. 90 is left out:
+	-- square-on, the drivetrain has NO along-the-wall share at
+	-- all, so nothing in the model can move the car and only
+	-- the finger can. It is one angle out of 360 and a step of
+	-- steering leaves it
+	local trapped, trapRows = true, {}
+	withUnstick(0, 0.2, 25, function()
+		for _, bank in { 10, 30 } do
+			for _, nose in NOSE_IN do
+				local r = fromTheWall(bank, nose, 0, 8)
+				trapped = trapped and r.away == nil and r.speed < 1 and r.pinnedSteps == 0
+				table.insert(trapRows, string.format("%d deg bank, %d deg of nose: %.2f studs/s after 8 s", bank, nose, r.speed))
+			end
+		end
+	end)
+	check(
+		checks,
+		"with the unstick off, a car nose-in to a wall is stuck for good",
+		trapped,
+		`UnstickSpeed = 0, no steering, 8 s each: {table.concat(trapRows, "; ")} -- and never once flagged pinned`
+	)
+
+	-- And with it on, the same car drives itself out of every one of them. Nothing pushes
+	-- it: the grip and the wall scrub are withheld while it is pinned, and what moves it
+	-- is its own drivetrain's share along the wall.
+	local freed, freeRows, worstAway = true, {}, 0
+	withUnstick(C.UnstickSpeed, C.UnstickSeconds, C.UnstickRelease, function()
+		for _, bank in { 10, 30 } do
+			for _, nose in NOSE_IN do
+				local r = fromTheWall(bank, nose, 0, 8)
+				freed = freed and r.away ~= nil
+				worstAway = math.max(worstAway, r.away or math.huge)
+				table.insert(
+					freeRows,
+					string.format("%d/%d: away at %s, %.0f studs/s and %.0f studs on", bank, nose, if r.away then string.format("%.2f s", r.away) else "NEVER", r.speed, r.travelled)
+				)
+			end
+		end
+	end)
+	check(
+		checks,
+		"pinned against a wall, the car drives itself off it",
+		freed and worstAway < 4,
+		`bank/nose, no steering, past {AWAY_SPEED} studs/s: {table.concat(freeRows, "; ")}`
+	)
+
+	-- IT MUST NOT FIRE WHEN IT SHOULD NOT, and this is the half of it the user will feel:
+	-- a car LEANING on a barrier at speed, which is a thing to do on purpose. It is held
+	-- against the wall for the whole run by the bank, and it is never once pinned, because
+	-- it is never slower than `UnstickSpeed`.
+	local lean = withUnstick(C.UnstickSpeed, C.UnstickSeconds, C.UnstickRelease, function()
+		local world, up, limitFor = bankedBarrier(30, 40)
+		local runner = Sim.newRunner(CFrame.new(0, C.RideHeight, 0))
+		runner.state.up = up
+		runner.state.velocity = Vector3.new(0, 0, -110)
+		runner.state.time = 10
+		local t, pinnedSteps, wallSteps, slowest = 0, 0, 0, math.huge
+		while t < 12 - 1e-9 do
+			Sim.advance(runner, 1 / 60, { steer = 0 }, world, function(s)
+				if s.pinned then
+					pinnedSteps += 1
+				end
+				if s.wallHit then
+					wallSteps += 1
+				end
+				slowest = math.min(slowest, Model.speed(s))
+			end)
+			t += 1 / 60
+		end
+		return { pinnedSteps = pinnedSteps, wallSteps = wallSteps, slowest = slowest, speed = Model.speed(runner.state) }
+	end)
+	check(
+		checks,
+		"leaning on a barrier at speed never counts as pinned",
+		lean.pinnedSteps == 0 and lean.wallSteps > 0,
+		string.format(
+			"12 s down a 30-degree bank into the barrier at the bottom of it: %d steps touching the wall, %d pinned, and the car never went slower than %.0f studs/s (it finished at %.0f)",
+			lean.wallSteps,
+			lean.pinnedSteps,
+			lean.slowest,
+			lean.speed
+		)
+	)
+
+	-- AND THE WALL IS STILL A WALL while the car is pinned. The scrub is withheld, the
+	-- stop is not: the car's box never crosses the barrier's face, at any nose angle, at
+	-- any point of the escape. `limitFor` is the smallest X a car at that yaw may have.
+	local worstThrough = 0
+	withUnstick(C.UnstickSpeed, C.UnstickSeconds, C.UnstickRelease, function()
+		local world, up, limitFor = bankedBarrier(30, 40)
+		for _, nose in { 0, 30, 60, 90, 120, 150, 180 } do
+			local yaw = math.rad(nose)
+			local x = limitFor(yaw) + 0.05
+			local runner = Sim.newRunner(CFrame.new(x, math.tan(math.rad(30)) * x + C.RideHeight, 0) * CFrame.Angles(0, yaw, 0))
+			runner.state.up = up
+			runner.state.velocity = Vector3.new(0, 0, -2)
+			runner.state.time = 10
+			local t = 0
+			while t < 8 - 1e-9 do
+				Sim.advance(runner, 1 / 60, { steer = 0 }, world, function(s)
+					worstThrough = math.max(worstThrough, limitFor(s.yaw) - s.position.X)
+				end)
+				t += 1 / 60
+			end
+		end
+	end)
+	check(
+		checks,
+		"a pinned car is still stopped by the wall",
+		worstThrough < 0.01,
+		string.format(
+			"7 nose angles, 8 s of escaping each: the deepest the car's box ever got past the barrier's face was %.5f studs",
+			worstThrough
+		)
+	)
+
+	-- THE FLAT ROAD IS UNTOUCHED, and it is the same proof `GravityOnGround` gets: the
+	-- same drive with the switch on and off, step for step. On the flat the car never
+	-- meets a wall, so `pinned` can never be set and the step is the step the user
+	-- approved on 2026-11-03.
+	local flatOn = withUnstick(C.UnstickSpeed, C.UnstickSeconds, C.UnstickRelease, function()
+		return (Sim.drive(CORNER, CORNER_SECONDS, driveOpts))
+	end)
+	local flatOff = withUnstick(0, C.UnstickSeconds, C.UnstickRelease, function()
+		return (Sim.drive(CORNER, CORNER_SECONDS, driveOpts))
+	end)
+	local flatWorst = 0
+	for i = 1, math.min(#flatOn, #flatOff) do
+		flatWorst = math.max(flatWorst, (flatOn[i] - flatOff[i]).Magnitude)
+	end
+	check(
+		checks,
+		"the unstick cannot touch the flat road",
+		#flatOn == #flatOff and flatWorst == 0,
+		string.format(
+			"the same %d-point corner with UnstickSpeed at %s and at 0: worst difference %.1g studs",
+			#flatOn,
+			tostring(C.UnstickSpeed),
+			flatWorst
+		)
+	)
+
 	------------------------------------------------------------------ what it costs (T-065)
 	-- One subtraction, one dot product and one compare in the step, and the compare skips
 	-- the write on flat ground. This is the model's own loop, not a frame: 60 seconds of
@@ -1831,6 +2083,36 @@ function DriftTests:useCar(key: string): string
 	end
 	return `{key}: {#told} player(s) moved{if refused > 0 then `, {refused} refused` else ""}; `
 		.. `live cars wearing [{table.concat(bodies, ", ")}]`
+end
+
+-- Studio only, and no part of `run()`: set the unstick's three numbers in the LIVE VM, so
+-- a drive down the road can be measured at one setting and then another without a
+-- playtest restart (T-074). They are model keys, so writing them is just a write.
+--
+--   game.ServerStorage.DebugBridge:Invoke("DebugDriftTests", "unstick", { Speed = 0 })
+--   ... "unstick", { Speed = 5, Seconds = 0.2, Release = 45 }
+--
+-- `{ Speed = 0 }` is the off switch, and it is how "this changed nothing on the flat
+-- road" is measured: the same drive, the same seed, with and without.
+function DriftTests:unstick(o): string
+	o = o or {}
+	local C = Config.Drift
+	if o.Speed ~= nil then
+		C.UnstickSpeed = o.Speed
+	end
+	if o.Seconds ~= nil then
+		C.UnstickSeconds = o.Seconds
+	end
+	if o.Release ~= nil then
+		C.UnstickRelease = o.Release
+	end
+	return string.format(
+		"UnstickSpeed = %s, UnstickSeconds = %s, UnstickRelease = %s%s",
+		tostring(C.UnstickSpeed),
+		tostring(C.UnstickSeconds),
+		tostring(C.UnstickRelease),
+		if C.UnstickSpeed <= 0 then "  (OFF: the approved model, exactly)" else ""
+	)
 end
 
 return DriftTests
