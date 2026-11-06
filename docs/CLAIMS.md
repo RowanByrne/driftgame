@@ -9,6 +9,7 @@ Every task in progress and the files it owns, so parallel sessions and workers n
 
 | Branch | Lane | Files owned | Since |
 |---|---|---|---|
+| `agent/wheel-fx-4` | lane2 | `src/StarterPlayerScripts/Drift/Wheels.luau`, `src/ReplicatedStorage/Shared/Config/Fx.luau`, `src/ServerScriptService/Tests/FxTests.luau`, `docs/game/features/car-fx.md` | 2026-11-06 (T-062) |
 | `agent/road-triangles` | lane3 | `src/ReplicatedStorage/Shared/Road/Builder.luau`, `src/ReplicatedStorage/Shared/Config/Road.luau`, `src/ServerScriptService/Tests/RoadTests.luau`, `docs/game/features/road-elevation.md` | 2026-11-06 (T-066) |
 | `agent/test-hill` | lane1 | `src/ServerScriptService/Playground/Layout.luau`, `src/ServerScriptService/Services/PlaygroundService.luau`, `src/ReplicatedStorage/Shared/Config/Playground.luau`, `src/StarterPlayerScripts/Drift/TestHud.luau` (new), `src/ServerScriptService/Services/RoadService.luau`, `src/ServerScriptService/Tests/PlaygroundTests.luau`, `docs/game/WORLD.md`, `docs/game/UI-INVENTORY.md` | 2026-11-06 (T-065, T-067) |
 
