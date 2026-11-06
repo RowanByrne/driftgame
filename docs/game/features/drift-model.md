@@ -278,13 +278,16 @@ wall**, measured at 0.000 studs of penetration through an escape from every nose
 **Pinned means *held*, not *touching*.** The first version asked for unbroken contact and never
 fired once: on the real road a car held against a barrier for 40 s reported a wall on **387 steps
 out of 4 824** — one in twelve — because `WallPush` holds it a fifth of a stud clear and gravity has
-to carry it back across that gap before the next Blockcast reaches anything. So it is a *window*:
-slower than `UnstickSpeed`, and a wall touched inside the last `UnstickSeconds`.
+to carry it back across that gap before the next Blockcast reaches anything. So it is two clocks,
+both in `UnstickSeconds` and both load-bearing: a **dwell** (that slow for that long — without it a
+car that merely *dips* under the speed in a corner loses the grip that rotates it, and the 50-piece
+drive falls from 50 pieces to 37) and a **window** (a wall touched inside it — without which nothing
+fires at all, because of the gaps).
 
 | Number | Start | Source | What it does |
 |---|---|---|---|
 | `UnstickSpeed` | 5 studs/s | ours | Slower than this, with a wall about, the car is pinned. **0 turns the whole thing off.** The pin's own equilibrium is 0.07 studs/s, so a genuinely stuck car is far under this |
-| `UnstickSeconds` | 0.2 s | ours | How long after touching a wall the car still counts as held by it. Long enough to bridge the gaps between touches, and no longer |
+| `UnstickSeconds` | 0.2 s | ours | Both clocks: how long that slow, and how recently a wall. Long enough to bridge the gaps between touches, and no longer |
 | `UnstickRelease` | 45 studs/s | ours | The pin also ends at this speed, even if the car is still scraping. The guard against a car that never loses contact keeping its grip off at speed |
 
 **Both numbers fail the same way when they are too big, and that is measured.** Make either one
@@ -298,8 +301,9 @@ has genuinely stopped, right next to the thing that stopped it.
 **What it does and does not buy, honestly.** In isolation it is decisive: a car nose-in to a barrier
 goes from *never moving again* to **off the wall inside 4 s from every angle but a right one**. On
 the real road, where the test autopilot drives, it is a clear gain on the seeds where the pin is
-what stopped the car (8080: 40.2 s → 10.5 s stopped; 99991: 105 s → 68.6 s) and no change at all on
-the seeds where something else did (seed 1: 213.9 s either way). **A 400-second autopilot drive is
+what stopped the car (8080: 40.2 s → 1.4 s stopped, all 50 pieces either way; 99991: 105 s →
+90.5 s) and no change at all on the seeds where something else did (seed 1: 213.9 s either way,
+41 pieces either way). **A 400-second autopilot drive is
 chaotic and one seed's stopped-time is noise** — the same change reads 1.4 s and 213.9 s on two
 seeds — so the numbers above are chosen on the distribution and on the mechanism, never on one run.
 Getting the rest of the way is a respawn backstop and a better test driver, not more model.

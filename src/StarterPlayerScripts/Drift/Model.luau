@@ -112,6 +112,7 @@ export type State = {
 	wallHit: boolean,
 	sinceWall: number, -- seconds since the car last touched a wall. TIME SINCE, not time
 	-- in: contact is intermittent even when the car is held (T-074)
+	crawlSeconds: number, -- seconds the car has been slower than `UnstickSpeed`
 	pinned: boolean, -- held against a wall and crawling, so the grip and the wall scrub are
 	-- both let go this step. Never true at `UnstickSpeed = 0`
 	fell: boolean,
@@ -197,6 +198,7 @@ function Model.new(spawnCFrame: CFrame): State
 		wheelSpin = 0,
 		wallHit = false,
 		sinceWall = math.huge,
+		crawlSeconds = 0,
 		pinned = false,
 		fell = false,
 		time = 0,
@@ -295,11 +297,16 @@ function Model.step(s: State, input: Input, dt: number, world: World): State
 	-- without a wall is reset about ten times a second. A car held against a barrier does
 	-- not touch it continuously; it rattles against it.
 	--
-	-- So the test is "slower than `UnstickSpeed`, and a wall touched inside the last
-	-- `UnstickSeconds`" -- a WINDOW, not a dwell: how long after touching a wall the car
-	-- still counts as being held by it. It has to be at least as long as the gaps between
-	-- touches, and no longer: measured, longer keeps the grip off a car that is merely
-	-- slow near a barrier, which is a hairpin, which is where the grip is what rotates it.
+	-- So it is TWO CLOCKS, both measured in `UnstickSeconds`, and they do two different
+	-- jobs. Dropping either one was tried and both cost a measurement:
+	--
+	--   `crawlSeconds`  a DWELL: the car has been slower than `UnstickSpeed` for this
+	--                   long. Without it a car that merely DIPS under the speed in a
+	--                   corner loses its grip for the dip, and the grip is what rotates
+	--                   it: the 50-piece drive fell from 50 pieces to 37.
+	--   `sinceWall`     a WINDOW: a wall was touched inside this long. Without it being a
+	--                   window -- the first version asked for contact on the step -- it
+	--                   never fires at all, because of the gaps above.
 	--
 	-- WHAT KEEPS IT OUT OF NORMAL DRIVING: leaning on a barrier at speed is above
 	-- `UnstickSpeed` and never qualifies; a car that is merely slow, in a hairpin, has
@@ -309,9 +316,14 @@ function Model.step(s: State, input: Input, dt: number, world: World): State
 	-- is doing `UnstickRelease` again. On the flat road, where the car never meets a wall
 	-- at a crawl, the flag is never set and the step is the step the user drove.
 	local groundSpeed = math.sqrt(vel.X * vel.X + vel.Z * vel.Z)
+	if groundSpeed < C.UnstickSpeed then
+		s.crawlSeconds += dt
+	else
+		s.crawlSeconds = 0
+	end
 	if C.UnstickSpeed <= 0 then
 		s.pinned = false
-	elseif groundSpeed < C.UnstickSpeed and s.sinceWall <= C.UnstickSeconds then
+	elseif s.crawlSeconds >= C.UnstickSeconds and s.sinceWall <= C.UnstickSeconds then
 		s.pinned = true
 	elseif s.sinceWall > C.UnstickSeconds or groundSpeed >= C.UnstickRelease then
 		s.pinned = false

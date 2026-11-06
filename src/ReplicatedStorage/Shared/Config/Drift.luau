@@ -255,9 +255,10 @@ local Drift = {
 	-- 0.5 s stuck at 5 degrees of bank, 11.9 at 8, 40.2 at 10 and 113.8 at 15, and at 30
 	-- it never finished the road at all (8 pieces of 50 in 400 s). That is why the
 	-- showcase corner shipped at 10 degrees instead of the spec's 30.
-	-- A car counts as PINNED when it is slower than `UnstickSpeed` and has touched a wall
-	-- inside the last `UnstickSeconds`. While it is, the grip is not applied and the wall
-	-- scrub is not charged. Nothing else changes, and nothing is ever added.
+	-- A car counts as PINNED when it has been slower than `UnstickSpeed` for
+	-- `UnstickSeconds` and has touched a wall inside the last `UnstickSeconds`. While it
+	-- is, the grip is not applied and the wall scrub is not charged. Nothing else changes,
+	-- and nothing is ever added.
 	--
 	-- "TOUCHED A WALL INSIDE THE WINDOW", NOT "IS TOUCHING ONE", and the difference is the
 	-- whole of whether this works. Measured on the real road: a car held against a barrier
@@ -278,19 +279,21 @@ local Drift = {
 	-- the car cannot make the tight corners at all. The honest
 	-- reading is that this must only ever fire on a car that has
 	-- genuinely stopped
-	UnstickSeconds = 0.2, -- s. HOW LONG AFTER TOUCHING A WALL THE CAR STILL COUNTS AS HELD
-	-- BY IT -- a window, not a dwell, because contact on a held car
-	-- is one step in twelve (above) and anything shorter than the
-	-- gaps never fires at all.
-	-- TWO TENTHS, AND LONGER IS WORSE, which is not what the gaps
-	-- alone would suggest. Six seeds of 50 pieces at 10 degrees of
-	-- bank, seconds the autopilot spent stopped: at 0.2 every seed
-	-- is better than or equal to the unstick being off; at 0.5 seed
-	-- 1 falls from 214 s to 0.7 but SEED 8080 CLIMBS FROM 40 TO 173.
-	-- The reason is the same one `UnstickSpeed` has: a long window
-	-- keeps the grip off a car that is merely slow near a barrier,
-	-- and a slow car near a barrier is a hairpin, where the grip is
-	-- what rotates it. Bridge the contact gaps and no more
+	UnstickSeconds = 0.2, -- s, and it is BOTH clocks, which do two different jobs:
+	--   as a DWELL, how long the car must have been that slow. A car
+	--   that merely DIPS under the speed in a corner keeps its grip,
+	--   and that matters -- without the dwell the 50-piece drive fell
+	--   from 50 pieces to 37, because the grip is what rotates a car
+	--   round a tight corner;
+	--   as a WINDOW, how recently it must have touched a wall. It has
+	--   to be at least as long as the gaps between touches (above) or
+	--   nothing ever fires.
+	-- TWO TENTHS, AND LONGER IS WORSE. Six seeds of 50 pieces at 10
+	-- degrees of bank, seconds the autopilot spent stopped: at 0.2
+	-- every seed is better than or equal to the unstick being off; at
+	-- 0.5 seed 1 falls from 214 s to 0.7 but SEED 8080 CLIMBS FROM 40
+	-- TO 173. Too generous and the grip comes off a car that is merely
+	-- slow near a barrier, which is a hairpin
 
 	UnstickRelease = 45, -- studs/s. The pin also ends once the car is going this fast
 	-- again, even if it is still scraping the wall. Without it a car
