@@ -26,6 +26,20 @@
 -- reads from the ground as a bite out of the edge. Each box is lengthened by exactly
 -- that, so the outer corners meet and the inner ones overlap instead.
 --
+-- THE SAME THING HAPPENS IN THE VERTICAL AND IT HAS NO SUCH TRICK (T-066 reopened). Where
+-- the road has grade AND turn, two neighbouring top faces cross along the centre line and
+-- each stands proud of the other on one half of the road: a shallow wedge at every seam,
+-- zero in the middle and worst at the kerb, which is the faint banding the user can see.
+-- The riser is (half the width) x the change in the boxes' cross-slope, 0.30 studs at its
+-- worst on a generated road. IT IS NOT A SAGITTA AND THERE IS NO SECANT TO TAKE IT OUT:
+-- `spanFrame` already puts the top face through BOTH end nodes, so down the centre line
+-- the road is continuous to four decimal places. It is that the surface of a graded curve
+-- is not developable -- no flat quadrilateral lies in it -- and the total along a piece is
+-- its turn times its grade WHATEVER the boxes are doing, so the only lever is how many
+-- boxes there are. Spreading the total evenly over the seams, which is what this already
+-- does, is the smallest the worst one can be. The whole measurement, and the roll that
+-- driving the seams to zero would cost the road, is in `RoadTests` beside `seamSweep`.
+--
 -- THERE ARE TWO LOOPS IN HERE AND THAT IS DELIBERATE (T-066). A flat piece is built the
 -- way it has always been built -- a box per pair of points, square to the world, placed
 -- by `span` -- and a piece with a height or a bank is built from the two end FRAMES of

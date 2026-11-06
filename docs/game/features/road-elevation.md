@@ -9,9 +9,11 @@ to 20° and 30° (`T-073`), and **the four touge pieces are in the shipped set**
 **What the user should drive, and the one number that is theirs:** the road descends on balance —
 **−880 studs over 200 pieces**, 1.75% — in a band about 1 200 studs deep that climbs as well as
 falls. That is answer *(a)* to "does the road descend for ever" below, and whether it is the right
-answer is theirs. The other thing for them is the **banked 30**: it ships at 5° of bank because
-more than that pins the test autopilot against a barrier, and a human may well drive straight out
-of what stops it.
+answer is theirs. The other thing for them is the **banked 30**: it ships at **10°** of bank (the
+user's call, 2026-11-06), and what stops it going further is **the engine**, not the geometry —
+`MaxAcceleration` is 14.3 studs/s² against `Gravity × sin(bank)`, so the car cannot climb out of a
+bank steeper than about 24°. A bigger bank needs a stronger engine, which is a feel number the user
+owns.
 
 ## What is built, and what the limits turned out to be
 
@@ -129,6 +131,54 @@ is 0.025 ms a frame at 60 fps.
   tilted box: 120 rams at 179 studs/s into barriers on a flat, a 20°-banked and a 30°-banked road —
   none went through, worst gap 7.05 studs, and where the flat box let the body touch a barrier for 3
   steps on a bank the tilted one never did.
+
+### The faint bands across the road are geometry, and they cost segments or nothing (`T-066`)
+
+The user saw thin lines running across the road wherever it has grade or bank, and asked how we
+would fix it. **The honest answer is that there is nothing free to fix, and the builder is already
+at the floor.** The measurement, seed 8080 × 20 pieces, 703 seams between slabs:
+
+| Where | Worst | p90 | Median |
+|---|---|---|---|
+| Along the **centre line** | **0.0044 studs** | — | — |
+| At either **kerb** | **0.2967 studs** | 0.1976 | 0.0804 |
+| On a **barrier's** top, over its own 2 studs of width | **0.0183 studs** | — | — |
+
+Two more seeds, same shape: 1234 reads 0.0028 / **0.2174**, and 20260704 reads 0.0214 / **0.4187**.
+
+**It is a wedge, not a step.** Zero in the middle and growing with the distance out from it: two
+neighbouring top faces cross *along the centre line*, and each is proud of the other on one half of
+the road. That is why the bands in the user's screenshot fade out towards the middle, and why only
+one half of each one catches the light — the other half's riser faces away from the camera.
+
+**It is not a sagitta, so the obvious fix is not one.** A slab's top face already passes exactly
+through *both* of its end nodes, so a secant box and a tangent box are the same box and along the
+centre line the road is continuous to four decimal places. What a flat face cannot do is match the
+road's **cross** direction at both of its ends at once: the surface of a graded curve is not
+developable, and no flat quadrilateral lies in it. Each box ends up tilted across by the cross-slope
+at its own middle, `sin(bank) + tan(grade) × sin(yaw − the seam's yaw) × cos(bank)`, and half the
+road's width times the difference between two neighbours **is** the riser — predicted from the nodes
+alone that is 0.2975 against the 0.2967 measured, and 1.2% out summed over all 703 seams.
+
+**And the total is conserved, which is the whole answer.** Summed along a piece those differences
+telescope into the piece's own turn times its grade, and that total does not depend on how the boxes
+are oriented — only on how many of them there are. Driving every seam to zero with one roll per box
+was tried and it works, at a price the road cannot pay: **5° to 19° of bank the road never asked
+for**, leaving a piece 2° to 10° out at its join, which is a four-stud step in place of a
+quarter-stud one. Spreading the total evenly over the seams — what the builder already does — is the
+smallest the worst seam can be.
+
+So the levers are, and none of them is free:
+
+| | Cost |
+|---|---|
+| Cut profiled pieces more finely | **Linear.** ×2 segments halves the step and takes a window from ~1 130 parts to ~2 320; ×6 reaches 0.05 studs at ~7 100. `MaxProfileSegments` is 64 and a hairpin stack is already there |
+| Keep grade off the **curves** — descend on straights and links | **Free in parts**, and it removes the defect entirely: the riser is zero on a level corner and zero on a graded straight. It costs the touge road its descending corners, which is the user's call |
+| Leave it | Free. Worst 0.30 studs, median zero, and it does not touch the driving |
+
+Three checks in `RoadTests` (`1h`) hold the floor: the centre line is continuous, the kerb step
+matches the prediction from the nodes, and the barriers do not have the problem. `RoadTests:seams`
+reports the numbers on any seed.
 
 ## Why (the spec as the user approved it)
 
@@ -273,7 +323,7 @@ out. Nothing here is a flat piece with a grade added.
 | | plan shape | height | bank | gate |
 |---|---|---|---|---|
 | `Link` | 140-stud straight | `EndGrade = 7°`, no drop: the grade blends **linearly** from whatever arrived, so the piece itself gains about 8 studs from level and *falls* when it arrives descending | none | `minPieces 0`, weight 3 |
-| `Banked30` | 400 radius, 30° (209 studs) | `Drop = 14, EndGrade = 0` — arrives level, 5.7° at its steepest | `5°, crest` — in and out again, level at both sockets | `minPieces 3` |
+| `Banked30` | 400 radius, 30° (209 studs) | `Drop = 14, EndGrade = 0` — arrives level, 5.7° at its steepest | `10°, crest` — in and out again, level at both sockets | `minPieces 3` |
 | `HairpinStack` | 70 radius, 180° **each way** (440 studs, 280 across) | `Drop = 40, EndGrade = 0`, 7.8° at its steepest — which is the join between the two hairpins | none | `minPieces 14` |
 | `Corkscrew` | 150 radius, 45° each way (236 studs, 88 across) | `Drop = 20, EndGrade = −5°` — **the only piece that hands on a descent** | none | `minPieces 10` |
 
@@ -283,7 +333,10 @@ are followers. The corkscrew starts descents, the link ends them and starts clim
 and the hairpin stack end level. That is what makes a band rather than a ramp.
 
 **Driven, the whole set, 50 generated pieces** (`RoadTests` section 11, seed 8080) — 50 of 50
-reached, mean 49 studs/s, top **108**, 0 steps off the road, 0 airborne, longest stop **0.45 s**:
+reached, mean 49 studs/s, top **108**, 0 steps off the road, 0 airborne, longest stop **0.45 s**
+(**re-measured after the bank went to 10° and `T-074` landed:** still 50 of 50 and still 0 off the
+road and 0 airborne, mean 46, top 108, longest stop **1.35 s**; the per-piece rows below are from
+the 5° run and have not been re-taken):
 
 | on this piece | speed on it | drifting it | steps on a barrier |
 |---|---|---|---|
@@ -300,36 +353,36 @@ about 13% slower, which is what a mountain road should be. **The top speed is 10
 fall-test number came from a long unbroken descent, and this set does not have one — the longest
 run of pieces that keeps descending is 13, and the link catches it.
 
-### The banked 30 is the showcase and it ships at 5°, which is the one disappointment
+### The banked 30 ships at 10°, and what holds it there is the ENGINE
 
 `MaxBank` is 30 and 30° is *geometrically* safe — `T-073`'s audit read the road as a wall 0 times
-in 18 865 sweeps at that bank. **It is not drivable, and nothing in that audit said it would be.**
+in 18 865 sweeps at that bank. It is still not drivable, but **the reason written here used to be
+the wrong one** and sent readers after the wrong fix.
 
-Gravity acts along the surface now, so on a bank it pulls the car down the slope at
-`Gravity × sin(bank)`, and the speed at which the corner's own `v²/r` pays for that is
-`sqrt(radius × Gravity × tan(bank))` — 37 studs/s at 5°, 61 at 15°, 90 at 30°. Below it the car
-slides down into the barrier at the low edge, the slide **is** slip, past 90° of slip the model's
-grip force is a brake, and it never builds the speed it would need to come off the wall. And this
-set delivers the car to that corner at anything from 0 to 99 studs/s, because what is either side
-of it is a hairpin stack. Measured, the same seed and 50 pieces, only `Bank.Degrees` changing:
+**It is not the collision box and it is not the car getting pinned.** `T-073` tilted the box onto
+the surface, and `T-074` gave a pinned car the ability to drive itself off a wall — after which the
+same 50-piece drive at 10° of bank reads **1.35 s** of stopped time where it used to read 40.2 s.
+The pinning is fixed and the bank still cannot go up.
 
-| bank | pieces reached | mean speed | barrier steps on it | longest stop |
-|---|---|---|---|---|
-| 0° | 50 | 49 | 4 | 0.4 s |
-| **5°** | **50** | **49** | **21** | **0.5 s** |
-| 8° | 50 | 41 | 158 | 11.9 s |
-| 10° | 50 | 36 | 387 | 40.2 s |
-| 12° | 37 | 32 | 253 | 21.7 s |
-| 15° | 37 | 28 | 247 | 113.8 s |
+**It is that the car has not got the power to climb the bank.** Gravity acts along the surface, so
+a bank pulls the car down the slope at `Gravity × sin(bank)` — 17.5 studs/s² at 30° — and the car's
+whole drive is `MaxAcceleration = 14.3` studs/s² (`Cars/Archetypes`, the fallback archetype). The
+ceiling is therefore
 
-It is monotone, and it is not the drop (level at 15° stopped the car for 20 s) and not the radius
-(550 measured worse than 400, 340 worse again). **Traced, 0 of 351 sweeps that stopped the car on
-this set were stopped by road** — every one was a barrier. So what the table measures is the test
-autopilot failing to get a pinned car off a wall; the fixture was given a floor under its steering
-for exactly this (`RoadTests`, `STEER_FLOOR`) and it was not enough. **10–15° is where the piece
-starts to look like a touge corner, and the only thing in the way is a car that cannot unstick
-itself.** That wants its own fix — an unstick, or a respawn that notices — rather than a smaller
-bank, and the number is one line in the config.
+> `asin(MaxAcceleration / Gravity)` = `asin(14.3 / 35)` ≈ **24°**
+
+and lower in practice, because the drivetrain falls off with speed (`1 − (u/TopSpeed)²`) so the full
+14.3 is only ever on offer from a standstill. Measured on the same seed, 50 pieces, only
+`Bank.Degrees` changing — **pieces completed out of 50**: 10° → **50**, 20° → 25, 25° → 8,
+30° → 8. The cliff sits just below the 24° the arithmetic predicts, which is what makes the
+explanation the right one.
+
+**So a bigger bank needs a stronger engine, and that is a feel number the user owns** — nobody has
+touched `MaxAcceleration`, and raising it changes how the car accelerates everywhere, not just on
+this corner. The bank itself is one line in `Config/Road`; the thing in its way is not.
+
+**It ships at 10°**, the user's call on 2026-11-06 (`DECISIONS.md`), against the `5°` the first
+measurement had settled on.
 
 ### One bug in the piece maths, fixed
 
