@@ -228,6 +228,25 @@ return {
 	-- which takes the hairpin from 17 segments to 27 and costs about thirty parts.
 	MaxArcDeviation = 0.1, -- studs the built curve may fall inside the true arc
 
+	-- WHETHER A SEGMENT THAT NEEDS IT IS BUILT AS TRIANGLES (T-066). Where the road both
+	-- turns and tilts, its four corners are NOT coplanar -- the surface of a graded curve
+	-- is not developable -- so no flat-topped box lies in it and two neighbouring boxes
+	-- meet at a step. Measured, that step was up to 0.2967 studs at the kerb, which is the
+	-- faint banding the user could see across the road; and it was proved irreducible for
+	-- boxes, because the total along a piece is its turn times its grade whatever the
+	-- boxes are doing. A triangle is always planar, so a segment whose corners are not
+	-- coplanar is built as two of them and the step stops existing.
+	--
+	-- IT IS A SWITCH BECAUSE THE BEFORE AND AFTER HAVE TO BE MEASURED THE SAME WAY, and
+	-- because a geometry change this deep should have a way back that is not a revert.
+	-- Turn it off and every segment is a box again, exactly as it was. `RoadTests` runs
+	-- the seam sweep both ways and prints the pair.
+	--
+	-- It costs only where it is needed: a straight, a level corner and every flat piece
+	-- have a coplanar quad and keep their single box. On a window of the generated road
+	-- that is 141 of 336 slabs left alone, and the window goes 1 126 -> 1 711 parts.
+	TriangulateSegments = true,
+
 	-- --------------------------------------------------------------------- the barriers
 	-- Low walls down both edges, solid, programmer-grey. NOT scenery and NOT tagged:
 	-- the ground rays filter to an INCLUDE list of `DriftSurface` parts, so a barrier is

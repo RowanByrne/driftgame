@@ -263,11 +263,29 @@ end
 -- Where the top face of a box-shaped floor is, at one horizontal point: the height a car
 -- standing on it sits at. Extrapolated beyond the part's own edges, which is what makes it
 -- the right question to ask beside a part as well as on top of one.
+-- WHICH WAY IS UP OUT OF A GROUND PART, and how far its top face is from its middle.
+--
+-- For a box that is `UpVector` and half the Y size, which is what it always was. NOT for a
+-- WedgePart: `Road/Builder` builds a segment of road as triangles wherever a box cannot
+-- lie in the surface (T-066), and a wedge's triangular faces are its +/-X ones, so the
+-- road is its `RightVector` face and its thickness is X. Reading `UpVector` off one of
+-- those gives a near-horizontal vector, and everything downstream then decides the car is
+-- INSIDE the road rather than standing on it. Measured before this existed: the car was
+-- shoved sideways into the barrier and the 50-piece drive got 2 pieces in at 5 studs/s.
+--
+-- The branch is explicit rather than "whichever axis is most vertical" so that nothing
+-- about a BOX changes by even a bit.
+local function surfaceAxis(part: BasePart): (Vector3, number)
+	if part:IsA("WedgePart") then
+		return part.CFrame.RightVector, part.Size.X * 0.5
+	end
+	return part.CFrame.UpVector, part.Size.Y * 0.5
+end
+
 local function topOf(part: BasePart, at: Vector2): number
-	local cf = part.CFrame
-	local up = cf.UpVector
-	local c = cf.Position
-	return c.Y + (part.Size.Y * 0.5 - (at.X - c.X) * up.X - (at.Y - c.Z) * up.Z) / up.Y
+	local up, half = surfaceAxis(part)
+	local c = part.CFrame.Position
+	return c.Y + (half - (at.X - c.X) * up.X - (at.Y - c.Z) * up.Z) / up.Y
 end
 
 -- The shortest shove that gets the car's footprint out of a circle, in world XZ.
@@ -603,7 +621,7 @@ function World.live(ignore: { Instance }): Live
 			-- "inside" the plate it is driving off, and the way out of a plate is half a
 			-- plate sideways. On level ground this is the plain `low >= topOf` it always
 			-- was, to the bit.
-			local n = part.CFrame.UpVector
+			local n = (surfaceAxis(part))
 			if n.Y > GROUND_NORMAL_Y and (pos.Y - topOf(part, centre)) * n.Y >= bh - EPSILON then
 				continue
 			end
