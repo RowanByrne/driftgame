@@ -280,10 +280,16 @@ Measured in `DR-Lane1`, with a **real mouse click** on each button:
 
 ### The suites
 
-All of them, in one playtest on the rebased branch: `PlaygroundTests` **76/76**, `RoadTests`
-**53/53** (87 s), `RunTests` **17/17**, `CollisionTests` 50, `DriftTests` 50, `FxTests` 92,
-`GarageTests` 24, `JitterTests` 11, `TrajectoryTests` 13. No errors or warnings in the console
-beyond `RoadTests`' own two deliberate "the road boxed itself in" lines.
+All of them, in one playtest on the rebased branch: `PlaygroundTests` **76/76** (and again after
+`RoadTests`, in case its fixtures left `Config.Road` dirty), `RoadTests` **53/53** (173 s),
+`RunTests` **17/17**, `CollisionTests` 50, `DriftTests` 50, `FxTests` 78, `GarageTests` 24,
+`JitterTests` 11, `TrajectoryTests` 13. No errors or warnings in the console beyond `RoadTests`'
+own two deliberate "the road boxed itself in" lines.
+
+**`RoadTests` has to be run on its own**, and that is worth knowing rather than re-learning: run
+as the eighth suite in one long-lived thread it died with "exhausted allowed execution time", and
+run alone in a fresh thread after a playtest restart it passed in 173 seconds. Nothing in this
+task changed it; the triangles made it about twice as slow as it was (87 s before).
 
 `ServerScriptService/Tests/PlaygroundTests.luau`, run from the server debug bridge **in a
 playtest**:
