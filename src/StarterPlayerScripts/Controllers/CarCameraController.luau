@@ -789,6 +789,7 @@ function CarCameraController:DebugProbe(opts)
 
 	local rig = CarCameraController.newRig(view)
 	local maxPosStep, maxLookStep, maxRollDeg, maxRollStepDeg = 0, 0, 0, 0
+	local maxRenderedRollDeg = 0
 	local prevRollDeg = 0
 	local prevPos, prevLook = rig.position, rig.lookPoint
 	local steps = math.floor(seconds * fps)
@@ -810,7 +811,17 @@ function CarCameraController:DebugProbe(opts)
 				speed = speed,
 			}
 			local cf = CarCameraController._advance(rig, view, dt)
-			local rollDeg = math.deg(math.asin(math.clamp(cf.RightVector.Y, -1, 1)))
+			-- THE ROLL IS `rig.roll`, the one and only roll state: what the camera was
+			-- told to apply (T-086). Reading it off the rendered CFrame instead would
+			-- add the speed shake's roll kick (`ShakeRotation.Z`), which is applied to
+			-- that same CFrame, so `CamRollMax = 0` would report a non-zero "roll".
+			local rollDeg = math.deg(rig.roll)
+			-- Roll AND shake together, off the rendered CFrame: the number to use for
+			-- "how much is the horizon actually moving", not "how big is the roll".
+			maxRenderedRollDeg = math.max(
+				maxRenderedRollDeg,
+				math.abs(math.deg(math.asin(math.clamp(cf.RightVector.Y, -1, 1))))
+			)
 			if math.abs(rollDeg) > math.abs(maxRollDeg) then
 				maxRollDeg = rollDeg -- SIGNED, so the probe says which way it leans
 			end
@@ -843,11 +854,15 @@ function CarCameraController:DebugProbe(opts)
 		distance = toCar.Magnitude,
 		height = toCar.Y,
 		flatDistance = Vector3.new(toCar.X, 0, toCar.Z).Magnitude,
-		maxRollDeg = maxRollDeg, -- the furthest the horizon leaned (T-072). Zero with
-		-- `CamRollMax` at zero, which is what it measured before
-		-- the roll came back
-		maxRollStepDeg = maxRollStepDeg, -- the worst single frame of it: the proof that
-		-- the roll is a lean and not a flick
+		maxRollDeg = maxRollDeg, -- the furthest the camera was told to roll (T-072,
+		-- T-086), SIGNED so it says which way it leans. Exactly 0 with `CamRollMax` at
+		-- zero: it is `rig.roll`, the roll alone, with no shake in it
+		maxRollStepDeg = maxRollStepDeg, -- the worst single frame of that roll: the proof
+		-- that the roll is a lean and not a flick. Also exactly 0 at `CamRollMax = 0`
+		maxRenderedRollDeg = maxRenderedRollDeg, -- the roll AND the speed shake's roll
+		-- kick together, read off the rendered CFrame (T-086): what the horizon actually
+		-- did. Use it for "how much is the picture moving", never for "how big is the
+		-- roll". Below `ShakeSpeedStart` there is no shake and it matches |maxRollDeg|
 		rollDeg = math.deg(rig.roll), -- where it settled, for a slip held steady
 		leanStuds = leanStuds(rig),
 		leanSideways = lean:Dot(sRight), -- + is out to the car's right
@@ -1114,8 +1129,11 @@ function CarCameraController:DebugRecord(seconds: number)
 		maxPosStep = 0, -- studs the camera moved between two frames, car's own motion included
 		maxLookStep = 0,
 		maxTurnDeg = 0, -- degrees the view direction turned between two frames
-		maxRollDeg = 0, -- the furthest the horizon leaned (T-072). It was 0 before the
-		-- roll came back, and `CamRollMax` at zero puts it back to 0
+		maxRollDeg = 0, -- the furthest the camera was told to roll (T-072, T-086): the
+		-- live rig's own `roll`, with no shake in it, so `CamRollMax` at zero reads 0
+		maxRenderedRollDeg = 0, -- the roll AND the speed shake's roll kick together, off
+		-- the rendered CFrame (T-086): what the horizon actually did. The number for
+		-- "how much is the picture moving", not for "how big is the roll"
 		maxScreenOffsetPx = 0,
 		maxScreenOffsetFrac = 0, -- of half the screen's smaller side: 1 is the edge
 		offScreenFrames = 0,
@@ -1169,7 +1187,11 @@ function CarCameraController:DebugRecord(seconds: number)
 			lastCamStep = camStep
 		end
 		prevPos, prevLook, prevDir = pos, look, dir
-		out.maxRollDeg = math.max(out.maxRollDeg, math.abs(math.deg(math.asin(math.clamp(cf.RightVector.Y, -1, 1)))))
+		-- The roll off the live rig, which is the only roll state; the CFrame figure
+		-- beside it is roll plus the shake's roll kick (T-086).
+		out.maxRollDeg = math.max(out.maxRollDeg, math.abs(math.deg(self.rig.roll)))
+		out.maxRenderedRollDeg =
+			math.max(out.maxRenderedRollDeg, math.abs(math.deg(math.asin(math.clamp(cf.RightVector.Y, -1, 1)))))
 		out.minFov = math.min(out.minFov, cam.FieldOfView)
 		out.maxFov = math.max(out.maxFov, cam.FieldOfView)
 

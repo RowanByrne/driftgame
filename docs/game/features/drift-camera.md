@@ -181,6 +181,11 @@ At the shipped `ShakeRotation = (0.15, 0.15, 0.10)°` and `ShakePosition = (0.07
 
 **Exactly linear in speed**, as the reference's is, and exactly nothing at a standstill.
 
+**None of it is in `maxRollDeg`** (`T-086`): that figure is the roll alone, the angle the camera was
+told to apply. The shake appears in **`maxRenderedRollDeg`**, which is roll and shake on the same
+rendered CFrame — at 60° of slip at top speed the two read **4.000°** and **4.062°**, and the 0.062°
+between them is the shake's roll kick.
+
 **Is that enough, and is it too much?** For scale, the car is about **210 px** tall on that screen,
 so the worst frame of the buzz is **one and a half per cent of the car**. The ladder either side was
 measured: `0.10` gives 2.2 px worst and 0.44 mean, which is under what is felt; `0.20` gives 4.5 and
@@ -285,6 +290,15 @@ and there is a new probe, **`CarCameraController:DebugShakeProbe(opts)`** — `{
 seconds, fps, viewportY, config }` — which reports what the shake does to the picture in
 degrees of arc and in screen pixels.
 
+`T-086` changes no behaviour and adds one debug member. **`maxRollDeg`, in both `DebugProbe`
+and `DebugRecord`, is now the roll the camera was *told* to apply** (`rig.roll`), not the
+angle read off the rendered CFrame: that angle also carries the speed shake's roll kick, so
+with `CamRollMax = 0` the old field reported about **0.085°** of "roll" that was entirely
+shake. The CFrame figure is kept beside it as **`maxRenderedRollDeg`** (absolute, roll
+*and* shake together) — the number for "how much is the horizon actually moving", never for
+"how big is the roll". `maxRollStepDeg` follows the roll too, and is exactly 0 when
+`CamRollMax` is.
+
 ## Analytics
 
 None.
@@ -307,7 +321,7 @@ None, unless the speed vignette is built, which is one flat gradient and no asse
 |---|---|
 | **Zeroing it all gives today's camera back** | Every new number at zero: the camera's position and look-at over a recorded drive are **identical** to the current build, step for step. This is the check that protects what the user approved. **`T-071`: passed.** With the old values in the new config file, a 20-second recorded drive sampled every 120 frames matched the previous build to all nine decimals printed, and the summed components over all 1200 frames matched exactly. **`T-072`: passed the same way** — with `CamRollMax`, `ShakeRotation` and `ShakePosition` at zero, the same 20-second drive matched the build before them on camera position, look point and FOV to every digit printed, and the summed components over all 1200 frames matched exactly. **And with the style ON**, `rig.position`, `rig.lookPoint` and the FOV sum are *still* identical to the baseline: only the rendered CFrame differs, which is the proof that neither effect can move where the camera sits |
 | What the FOV really does | FOV sampled over a 60-second drive against speed: what it reaches at 40, 80 and 110 studs/s, and how far behind its own target it runs. **Do this before changing the number. `T-071`: done** — see "What the FOV was really doing", and the answer changed the plan |
-| The roll stays small | Peak roll over a full-lock drift, and the slip it took to get there. Against the predecessor's 45° at 20° of slip, which is the thing being avoided. **`T-072`: passed.** The camera reaches its **4.00°** stop and the horizon tilts **3.92°**, and it takes **45°** of slip to get there — at 20°, where the predecessor was at full tilt, this leans **1.78°**. The worst single frame of roll on a hard 20-second drive is **0.147°** at 60 FPS, a twenty-fifth of the lean: it is a lean and not a flick. `CamRollMax = 0` measures **0.000000000°** at 90° of slip |
+| The roll stays small | Peak roll over a full-lock drift, and the slip it took to get there. Against the predecessor's 45° at 20° of slip, which is the thing being avoided. **`T-072`: passed.** The camera reaches its **4.00°** stop and the horizon tilts **3.92°**, and it takes **45°** of slip to get there — at 20°, where the predecessor was at full tilt, this leans **1.78°**. The worst single frame of roll on a hard 20-second drive is **0.147°** at 60 FPS, a twenty-fifth of the lean: it is a lean and not a flick. `CamRollMax = 0` measures **0.000000000°** at 90° of slip. **`T-086`: `maxRollDeg` now measures the roll and nothing else** — at `CamRollMax = 0` it is **exactly 0**, where it used to read about -0.085° of shake mistaken for roll; `maxRenderedRollDeg` keeps the horizon figure (4.062° against the roll's 4.000° at 60° of slip at top speed, below `ShakeSpeedStart` 3.941° against 4.000°, the difference there being the camera's pitch, not shake) |
 | The lean | Where the camera settles behind a steady drift, at the old blend and the new one. It compounds, so the relationship is not linear and the number alone does not tell you. **`T-071`: done**, at 0.05, 0.08, 0.12, 0.18, 0.25 and 0.4, at 30°, 60° and 90° of slip, settled and one second in |
 | The shake is speed-scaled | Kick size at a standstill, at half speed and at top speed. **`T-072`: passed.** **0.0000° / 0.086° / 0.172°**, exactly linear, and the picture moves 0.00 / 2.04 / 3.27 px in its worst frame — see "What the shake really is" for the whole ladder in screen pixels |
 | **Frame rate does not change the camera** | The recorded drive at 30, 60 and 120 FPS puts the camera in the same place. This already held and must keep holding — it is why the targets are stepped. **`T-071`: still holds** with the new numbers. A 20-second drive ends within **0.0011 studs** across 30 → 120 FPS, and a sustained 60° drift settles **7.1412 / 7.1413 / 7.1412 studs** above the car at 30 / 60 / 120 — a spread of 0.0001, against the 16.2-vs-10.1 this rule exists to prevent. **`T-072`: still holds with the roll and the shake on.** Ten seconds into the recorded drive the camera sits **48.0810 / 48.0805 / 48.0818 studs** from the car at 30 / 60 / 120 (a spread of 0.0013) at **16.93° / 16.93° / 16.90°** of elevation, and the roll reads **2.583° / 2.574° / 2.581°**. The shake's kicks are chosen on their own clock, so all three frame rates get the same ones at the same moments |
