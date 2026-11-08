@@ -1069,7 +1069,9 @@ return {
 	-- every `DriftSurface` tag arriving or leaving makes `Drift/World.live` rebuild its
 	-- whole ground-ray include list, 0.6 ms a time, 256 times for one piece. Measured with
 	-- the same 403-part piece replicated twice, once tagged and once with the tags
-	-- stripped: 159.6 ms of one client frame against 10.6 ms.
+	-- stripped: 159.6 ms of one client frame against 10.6 ms. FIXED IN T-088: that rebuild is
+	-- now coalesced to one a burst, and the worst client frame over twelve piece changes
+	-- fell from 947 ms to 19.5 ms, with nothing over 33 ms.
 	Profile = false,
 	ProfileKeep = 400, -- pieces of history kept; the oldest is dropped
 
