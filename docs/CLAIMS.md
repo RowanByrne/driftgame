@@ -10,7 +10,6 @@ Every task in progress and the files it owns, so parallel sessions and workers n
 | Branch | Lane | Files owned | Since |
 |---|---|---|---|
 | `agent/road-hitch` | lane4 | `src/ServerScriptService/Services/RoadService.luau`, `src/ReplicatedStorage/Shared/Road/*`, `src/ReplicatedStorage/Shared/Config/Road.luau`, `src/ServerScriptService/Tests/RoadTests.luau` | 2026-11-08 |
-| `agent/roll-measure` | lane1 | `src/StarterPlayerScripts/Controllers/CarCameraController.luau` | 2026-11-08 |
 | `agent/squeal-always-on` | lane2 | `src/ReplicatedStorage/Shared/Config/Fx.luau`, `src/StarterPlayerScripts/Drift/SkidSound.luau`, `src/ServerScriptService/Tests/FxTests.luau`, `docs/game/features/car-fx.md` | 2026-11-08 |
 
 ## Notes between sessions
