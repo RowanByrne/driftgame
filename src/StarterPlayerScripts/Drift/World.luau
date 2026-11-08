@@ -361,6 +361,10 @@ end
 export type Live = Model.World & {
 	usingTag: boolean,
 	surfaceCount: number,
+	-- How many times the ground-ray include list has actually been rebuilt. It exists so
+	-- that "one rebuild a piece, not five hundred" (T-088, below) is a number a test can
+	-- read rather than a claim; nothing in the game reads it.
+	refreshes: number,
 	carBox: Vector3,
 	-- The pose `sweep` and `penetration` ask about: the car's box, tilted on to the
 	-- surface under it. Exposed so a test can rebuild the same box rather than guess at it.
@@ -383,10 +387,11 @@ function World.live(ignore: { Instance }): Live
 	-- going through a wall off what they can see of it.
 	local carBox = Vector3.new(C.BodyWidth, C.BodyHeight * 0.6, C.BodyLength)
 
-	local self: any = { usingTag = false, surfaceCount = 0, carBox = carBox }
+	local self: any = { usingTag = false, surfaceCount = 0, carBox = carBox, refreshes = 0 }
 
 	local function refresh()
 		local tagged = CollectionService:GetTagged(C.SurfaceTag)
+		self.refreshes += 1
 		self.surfaceCount = #tagged
 		-- The ONLY thing hidden from the sweep and the overlap is the cars themselves. The
 		-- road used to be hidden from both -- a Blockcast reports only its nearest hit, so
@@ -412,10 +417,56 @@ function World.live(ignore: { Instance }): Live
 		overlapParams.FilterDescendantsInstances = ignore
 	end
 
+	-- ONE REBUILD PER BURST OF TAGS, NOT ONE PER TAG (T-088). `refresh` above is not a
+	-- cheap function: it is a `GetTagged` over every tagged part in the place plus a whole
+	-- `FilterDescendantsInstances` assignment, measured at 0.243 ms with 3 196 tags in the
+	-- world and 0.600 ms with 5 599. The two CollectionService signals below fire
+	-- SYNCHRONOUSLY, once per tagged descendant, inside the single `.Parent` write that
+	-- replicates a road piece and inside the `Destroy()` that retires one -- and a piece is
+	-- up to 403 parts carrying 256 tagged slabs. Wired straight to `refresh`, as they were,
+	-- one piece changing cost about 512 rebuilds of the same list, and the bill grew with
+	-- the road: measured on the client, every piece the window moved spiked a frame to
+	-- 43-322 ms against an 8.4 ms median, and the SAME piece replicated with its tags
+	-- stripped spiked 10.6 ms instead of 159.6 ms (T-085). That was the whole of the freeze
+	-- the user felt in a run.
+	--
+	-- So a tag arriving or leaving only sets a flag. The list is rebuilt once, at the first
+	-- moment either of the two things that can read it happens:
+	--
+	--   `ensure()` at the top of `probe`, which is the ONLY place `groundParams` is read.
+	--     This is what makes the coalescing safe rather than merely fast: the include list
+	--     is rebuilt before the question is asked, in the same call, so it is never stale
+	--     when the car asks. `sweepParams` and `overlapParams` depend only on `ignore`,
+	--     which never changes, so nothing else needs the guard.
+	--   a `task.defer`, so `usingTag` and `surfaceCount` -- which `DriftController` reports
+	--     and which nothing calls `probe` to read -- are as fresh as they were before, even
+	--     on a frame where the model never runs.
+	--
+	-- THE FIRST ONE IS STILL SYNCHRONOUS, below, so a car that spawns into an
+	-- already-tagged world has a correct filter on its very first step.
+	local dirty = false
+	local dead = false
+
+	local function ensure()
+		if not dirty or dead then
+			return
+		end
+		dirty = false
+		refresh()
+	end
+
+	local function touched()
+		if dirty then
+			return
+		end
+		dirty = true
+		task.defer(ensure)
+	end
+
 	refresh()
 
-	local added = CollectionService:GetInstanceAddedSignal(C.SurfaceTag):Connect(refresh)
-	local removed = CollectionService:GetInstanceRemovedSignal(C.SurfaceTag):Connect(refresh)
+	local added = CollectionService:GetInstanceAddedSignal(C.SurfaceTag):Connect(touched)
+	local removed = CollectionService:GetInstanceRemovedSignal(C.SurfaceTag):Connect(touched)
 
 	local up = Vector3.yAxis * C.GroundRayUp
 	local down = Vector3.yAxis * -C.GroundRayLength
@@ -438,6 +489,7 @@ function World.live(ignore: { Instance }): Live
 	end
 
 	function self.probe(pos: Vector3): Model.Hit?
+		ensure() -- the include list, if any tag has moved since it was last built
 		local from = pos + up
 		local bottom = from.Y + down.Y
 		for _ = 1, MAX_PROBE_LOOKS do
@@ -643,7 +695,12 @@ function World.live(ignore: { Instance }): Live
 		return Vector3.new(out.X, 0, out.Y), bestDepth
 	end
 
+	-- TORN DOWN MEANS TORN DOWN: a `task.defer` queued by the last tag to arrive can only
+	-- run after this, so `dead` is what stops it rebuilding a filter for a world nobody
+	-- holds any more.
 	function self.destroy()
+		dead = true
+		dirty = false
 		added:Disconnect()
 		removed:Disconnect()
 	end
