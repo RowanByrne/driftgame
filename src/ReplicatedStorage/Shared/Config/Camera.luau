@@ -168,15 +168,36 @@ local Camera = {
 	-- A twenty-fifth of the whole lean in a frame: it arrives, and it is
 	-- never caught moving
 	-- THE SPEED SHAKE (T-072), the reference's own (`CameraShake.cs`). A new random kick
-	-- is chosen every `ShakePeriod`, scaled by speed as a share of the CAR's top speed
-	-- (`Config.Drift.TopSpeed`, so a faster car does not shake harder for the same speed),
-	-- and the camera eases back toward zero between kicks at `ShakeRestoreRate`. The
+	-- is chosen every `ShakePeriod`, sized from speed as a share of the CAR's top speed
+	-- (`Config.Drift.TopSpeed`, so a faster car does not shake harder for the same speed)
+	-- -- a DEAD ZONE AND THEN A RAMP since T-082, not a straight line: see
+	-- `ShakeSpeedStart` below for where it starts and how to move it. The camera eases
+	-- back toward zero between kicks at `ShakeRestoreRate`. The
 	-- result is a camera that gets BUSY at speed rather than violent -- the biggest "this
 	-- feels fast" lever there is after the FOV.
 	-- IT IS APPLIED TO THE RENDERED CAMERA ONLY and never written where a target can read
 	-- it, so it cannot move where the camera sits; and the kicks are chosen on their own
 	-- clock from a seeded sequence, so 30, 60 and 120 FPS get the SAME kicks at the SAME
 	-- moments and decay by the same exact exponential between them.
+	ShakeSpeedStart = 0.75, -- share of the car's top speed below which there is NO shake at
+	-- all. OURS (T-082). WHY IT EXISTS: the shake used to be plain
+	-- `speed / TopSpeed`, so it was already visible pulling out of a
+	-- standstill -- a quarter of top speed, 45 studs/s, moved the
+	-- picture 1.2 px in its worst frame -- and the user said it
+	-- arrives too early. It is meant to say "this is flat out", not
+	-- "the car is moving". IN REAL TERMS, at a 179 stud/s top speed,
+	-- 0.75 is 134 studs/s: below that the camera is dead still, and
+	-- over the last quarter of the speed range the kick ramps from
+	-- nothing to its full size. THE SIZE AT TOP SPEED IS UNCHANGED by
+	-- this number -- `ShakeRotation` and `ShakePosition` still say
+	-- how big the shake gets, this only says where it starts.
+	-- THIS IS THE ONE NUMBER TO MOVE if the shake should come in
+	-- earlier or later: lower starts it sooner and spreads it over
+	-- more of the range (0.5 starts it at 90 studs/s), higher makes
+	-- it a top-end flourish (0.9 is 161 studs/s and the ramp is
+	-- steep). 0 REPRODUCES THE OLD LINEAR BEHAVIOUR EXACTLY,
+	-- measured, which is the test that says the remap is only a
+	-- remap; 1 or more means shake only at the very top speed
 	ShakePeriod = 0.05, -- s. EXACT (`_shakePeriod`). Twenty kicks a second
 	ShakeRotation = Vector3.new(0.15, 0.15, 0.1), -- DEGREES of pitch, yaw and roll at top
 	-- speed. OURS (T-072). The rotation is what is
@@ -195,10 +216,15 @@ local Camera = {
 	-- which is under what is felt; 0.20 is 4.5 and
 	-- 0.88; 0.30 is 6.7 and 1.3, which is a shimmer
 	-- rather than a buzz.
-	-- IT IS LINEAR IN SPEED, measured: the kick is
-	-- 0.043 deg at a quarter of top speed, 0.086 at
-	-- half, 0.129 at three quarters and 0.172 at the
-	-- top, and exactly nothing at a standstill
+	-- WHERE IT IS SPENT changed in T-082: the kick
+	-- used to be linear in speed (0.043 deg at a
+	-- quarter of top speed, 0.086 at half, 0.129 at
+	-- three quarters, 0.172 at the top) and is now
+	-- exactly nothing below `ShakeSpeedStart` and
+	-- linear from there to the same 0.172 at the top.
+	-- At 0.75: nothing at all up to 134 studs/s, then
+	-- 0.069 deg at 85% of top speed and the full
+	-- 0.172 at the top
 	ShakePosition = Vector3.new(0.07, 0.07, 0), -- STUDS, in the camera's own axes, at top
 	-- speed. OURS (T-072). At a 46-stud radius
 	-- 0.07 studs is 0.09 deg of arc, about a pixel,
