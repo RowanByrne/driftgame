@@ -48,9 +48,12 @@
 --      this is the predecessor's formula at a ninth of its gain, and the gain is the
 --      whole difference between a lean and the thing that was rejected.
 --   6. THE SPEED SHAKE, the reference's own (`CameraShake.cs`): a new random rotation and
---      position kick every `ShakePeriod`, scaled by speed as a share of the car's top
---      speed, decaying toward zero between kicks at `ShakeRestoreRate`. Busy at speed,
---      invisible at a standstill.
+--      position kick every `ShakePeriod`, decaying toward zero between kicks at
+--      `ShakeRestoreRate`. Its size is read off speed as a share of the car's top speed,
+--      but NOT in a straight line any more (T-082): nothing at all below
+--      `ShakeSpeedStart` of the top, then the full scale over what is left, so it is a
+--      flat-out effect rather than something felt while pulling away. Busy at speed,
+--      invisible anywhere below it.
 --
 -- BOTH ARE APPLIED TO THE RENDERED CAMERA, downstream of the fixed-step targets, exactly
 -- as the pan is -- `rig.position` and `rig.lookPoint` never see either of them, so neither
@@ -390,9 +393,25 @@ end
 
 -- A new kick, scaled by speed as a share of the CAR's top speed -- the reference scales by
 -- its own car's max speed, so a faster car does not shake harder at the same speed.
+--
+-- A DEAD ZONE THEN A RAMP (T-082), not a straight line: nothing at all below
+-- `ShakeSpeedStart` of top speed, then the full scale from there to the top. The shake's
+-- SIZE AT TOP SPEED IS UNCHANGED by this -- `t` is still exactly 1 at and above the top --
+-- and `ShakeSpeedStart = 0` collapses the remap back to today's plain `speed / top`, which
+-- is the behaviour this replaced. `ShakeSpeedStart >= 1` would be a divide by zero, so it
+-- is read as "only at the very top": every speed below it gets nothing.
 local function kickShake(rig, speed: number)
 	local top = Config.Drift.TopSpeed
-	local t = if top and top > EPS then math.clamp(speed / top, 0, 1) else 0
+	local start = math.clamp(Cam.ShakeSpeedStart or 0, 0, 1)
+	local span = 1 - start
+	local t = 0
+	if top and top > EPS then
+		if span > EPS then
+			t = math.clamp((speed / top - start) / span, 0, 1)
+		else
+			t = if speed >= top then 1 else 0
+		end
+	end
 	local rng = rig.shakeRng
 	local rot = Cam.ShakeRotation * t
 	local pos = Cam.ShakePosition * t
