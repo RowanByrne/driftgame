@@ -20,7 +20,7 @@ This game's details, loaded into every agent session: keep it short, and put des
 
 Main is `places\DR-Main.rbxl`, served from `repo\` on the port base: always merged `main`, and the user's test place: agents check their work in lanes, not here (docs/workflow/TESTING.md). Lane N is `DR-LaneN.rbxl`, served from `lanes\laneN` on base + N (docs/workflow/LANES.md). Other places agents may use, such as an art workshop, and what they may do there:
 
-**`DR-Main.rbxl` holds hand-built content that git never sees** (AGENTS.md "Hand-built content"): the kart circuit the user added as `workspace.Track`, scaled 2x and lifted onto the baseplate, which `TrackService` adopts at runtime. No lane has it, so anything that needs a real track is checked in Main by the user or built as a stand-in in a lane.
+**No place holds a track.** `DR-Main.rbxl` once held the kart circuit the user built by hand as `workspace.Track`, scaled 2x and lifted onto the baseplate, which `TrackService` adopts at runtime. That place was never saved, so on 2026-11-08 Main was back to the plain baseplate and the circuit is gone (AGENTS.md "Hand-built content": a place file isn't in git, so hand-built content survives only if it's saved). Until the user rebuilds it, anything that needs a real track uses a stand-in built in a lane. `DR-Lane4.rbxl` does hold a saved `workspace.Showroom`, from 2026-11-06.
 
 | Place file | Served from | Port | Use |
 |---|---|---|---|
