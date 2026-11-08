@@ -9,7 +9,7 @@ Every task in progress and the files it owns, so parallel sessions and workers n
 
 | Branch | Lane | Files owned | Since |
 |---|---|---|---|
-| `agent/road-hitch` | lane4 | `src/ServerScriptService/Services/RoadService.luau`, `src/ReplicatedStorage/Shared/Road/*`, `src/ReplicatedStorage/Shared/Config/Road.luau`, `src/ServerScriptService/Tests/RoadTests.luau` | 2026-11-08 |
+| `agent/world-refresh` | lane4 | `src/StarterPlayerScripts/Drift/World.luau` | 2026-11-08 |
 
 ## Notes between sessions
 
