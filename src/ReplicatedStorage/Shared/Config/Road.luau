@@ -1048,6 +1048,31 @@ return {
 	BarrierTransparency = 0.45, -- the closing barrier. The spec calls it invisible; while it
 	-- is a prototype it is visible enough to be driven at on purpose
 
+	-- ------------------------------------------------------------------ the profile switch
+	-- OFF, AND IT SHIPS OFF (T-085). When true, `RoadService` keeps a ring of per-piece
+	-- stage timings -- generation, instancing, the parent into Workspace, the destroy --
+	-- and `RoadService:DebugProfile()` hands them back. It costs four `os.clock()` calls
+	-- and one table insert per piece when it is on, and one `if` when it is off; nothing
+	-- here ever prints.
+	--
+	-- It exists because "the road hitches" is not a measurement and the stages fail in
+	-- different ways: generation is a depth-first search that can run long, instancing is
+	-- a few hundred `Instance.new`s, and the parent is ONE write -- which turned out to be
+	-- the cheap one. Turn it on through the debug bridge (`DebugProfile(true)`), drive,
+	-- and read `DebugProfile()`.
+	--
+	-- WHAT IT MEASURED THE FIRST TIME, on seed 8080 driven fifty pieces: per piece of up
+	-- to 403 parts, the SERVER spends about 2.2 ms making the instances, 0.2 ms tagging
+	-- them, 1.9 ms parenting the whole folder into the Workspace and 2.7 ms destroying a
+	-- retired one, and the generator's worst single call is 2.6 ms. None of that is a
+	-- hitch. The hitch the user felt is on the CLIENT and is not the road's work at all:
+	-- every `DriftSurface` tag arriving or leaving makes `Drift/World.live` rebuild its
+	-- whole ground-ray include list, 0.6 ms a time, 256 times for one piece. Measured with
+	-- the same 403-part piece replicated twice, once tagged and once with the tags
+	-- stripped: 159.6 ms of one client frame against 10.6 ms.
+	Profile = false,
+	ProfileKeep = 400, -- pieces of history kept; the oldest is dropped
+
 	-- Programmer art, and nothing else: grey asphalt, plain grey walls, a white centre
 	-- line. A look is its own task, after the system works; the markings are here because
 	-- speed has to be readable, not because the road has been art-directed.

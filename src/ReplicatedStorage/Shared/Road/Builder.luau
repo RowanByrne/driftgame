@@ -483,6 +483,14 @@ export type Built = {
 	barriers: { Part },
 	marks: { Part },
 	parts: number,
+	-- Only filled when `Config.Road.Profile` is on (T-085). Milliseconds, and they add up
+	-- to the whole of `Builder.build`: `makeMs` is every `Instance.new` and every property
+	-- written while the piece is still OUTSIDE the DataModel, `tagMs` is the
+	-- `CollectionService:AddTag` calls alone, and `parentMs` is the single `.Parent` write
+	-- that puts the finished subtree into the Workspace.
+	makeMs: number?,
+	tagMs: number?,
+	parentMs: number?,
 }
 
 -- Build one piece. `parent` is the road's folder; the piece gets a folder of its own named
@@ -491,6 +499,11 @@ function Builder.build(piece: Pieces.Placed, parent: Instance): Built
 	local C = Config.Road
 	local surfaceTag = Config.Drift.SurfaceTag
 	local surfaceAttr = Config.Drift.SurfaceAttribute
+
+	-- The profile, off by default and one boolean read when it is (`Config.Road.Profile`).
+	local profiling = C.Profile == true
+	local startedAt = if profiling then os.clock() else 0
+	local tagSeconds = 0
 
 	local folder = Instance.new("Folder")
 	folder.Name = `Piece_{piece.n}`
@@ -526,7 +539,11 @@ function Builder.build(piece: Pieces.Placed, parent: Instance): Built
 				folder
 			)
 			if slab then
+				local tagAt = if profiling then os.clock() else 0
 				CollectionService:AddTag(slab, surfaceTag)
+				if profiling then
+					tagSeconds += os.clock() - tagAt
+				end
 				slab:SetAttribute(surfaceAttr, C.SurfaceTarmac)
 				table.insert(road, slab)
 			end
@@ -626,7 +643,11 @@ function Builder.build(piece: Pieces.Placed, parent: Instance): Built
 				tris[i] = { t1, t2 }
 			end
 			for _, slab in made do
+				local tagAt = if profiling then os.clock() else 0
 				CollectionService:AddTag(slab, surfaceTag)
+				if profiling then
+					tagSeconds += os.clock() - tagAt
+				end
 				slab:SetAttribute(surfaceAttr, C.SurfaceTarmac)
 				table.insert(road, slab)
 			end
@@ -658,7 +679,10 @@ function Builder.build(piece: Pieces.Placed, parent: Instance): Built
 	markPhase.n, markPhase.distance = piece.n, startDistance + piece.length
 	local marks = centreLine(piece, startDistance, if next(tris) then tris else nil, folder)
 
+	local madeAt = if profiling then os.clock() else 0
 	folder.Parent = parent
+	local parentedAt = if profiling then os.clock() else 0
+
 	return {
 		n = piece.n,
 		folder = folder,
@@ -666,6 +690,9 @@ function Builder.build(piece: Pieces.Placed, parent: Instance): Built
 		barriers = barriers,
 		marks = marks,
 		parts = #road + #barriers + #marks,
+		makeMs = if profiling then (madeAt - startedAt - tagSeconds) * 1000 else nil,
+		tagMs = if profiling then tagSeconds * 1000 else nil,
+		parentMs = if profiling then (parentedAt - madeAt) * 1000 else nil,
 	}
 end
 
