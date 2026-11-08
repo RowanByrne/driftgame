@@ -7,12 +7,25 @@
 -- volume LERPED rather than switched -- which is the difference between a drift that
 -- fades up and one that clicks on.
 --
---   volume = lerp(MinVolume, 1, |slip| / MaxSlipDegrees)   while the car is drifting
---          = 0                                             when it is not, when it is
---                                                          airborne, or under MinSpeed
+--   volume = 0                                     no state, airborne, or under MinSpeed
+--          = RollVolume                            grounded and moving, NOT drifting
+--          = lerp(MinVolume, MaxVolume,            drifting
+--                 |slip| / MaxSlipDegrees)
 --
 -- and that number is then lerped toward at `VolumeLerpSpeed` per second and scaled by
 -- `Skid.Volume`, the master the mix sets (AUDIO.md "Mix": the squeal sits on top).
+--
+-- THE CLIP NEVER STOPS WHILE THE CAR IS ROLLING (T-083). It is started the first frame
+-- the wheels are on a surface above `MinSpeed` and left running: a straight car hisses at
+-- `RollVolume`, and the drift is that hiss SWELLING, not a second sound arriving. Started
+-- at the top of every drift instead, a 3-second clip replays its own loop seam at the top
+-- of every drift, and the seam becomes something the player hears coming. Left running,
+-- it lands wherever it lands.
+--
+-- There is a STEP at the drift threshold, from `RollVolume` up to `MinVolume`, and it is
+-- deliberate -- the reference has the same one. `VolumeLerpSpeed` carries it like any
+-- other change in target, so it swells rather than clicks; `FxTests` measures the largest
+-- single-frame move across it.
 --
 -- ONLY THE SURFACE THE WHEELS ARE ACTUALLY ON IS PLAYING; the others are stopped. The
 -- game has one surface today (tarmac) and `dirt` specced but unbuilt, so this is one clip
@@ -79,8 +92,12 @@ end
 --------------------------------------------------------------------------------
 
 -- The volume this state ASKS for, before any lerp: the thing a test can check against the
--- config without a car, a place or a playtest. Four ways to be silent, and the first three
--- are the spec's: not drifting, airborne, too slow. The fourth is having no state at all.
+-- config without a car, a place or a playtest.
+--
+-- THREE WAYS TO BE SILENT AND THEY ARE THE ONLY ONES: airborne, under `MinSpeed`, or
+-- having no state at all. NOT DRIFTING IS NO LONGER ONE OF THEM -- a car rolling straight
+-- hisses at `RollVolume` (T-083), and setting `RollVolume` to 0 puts the old silence back
+-- without touching this function.
 --
 -- `state.drifting` is `|slip| >= Config.Drift.MinSlipAngleForDrift`, which is 5 degrees:
 -- the squeal and the drift start together on purpose, and this module does not own a
@@ -90,17 +107,21 @@ function SkidSound.volumeFor(state: DriftModel.State?): number
 		return 0
 	end
 	local S = Config.Fx.Skid
-	if state.airborne or not state.drifting then
+	if state.airborne then
 		return 0
 	end
 	if DriftModel.speed(state) < S.MinSpeed then
 		return 0
 	end
+	if not state.drifting then
+		return S.RollVolume
+	end
 	local t = math.clamp(math.abs(state.slip) / math.rad(S.MaxSlipDegrees), 0, 1)
-	return lerp(S.MinVolume, 1, t)
+	return lerp(S.MinVolume, S.MaxVolume, t)
 end
 
--- Which surface the car is squealing on: the first wheel that is down, through
+-- Which surface the car is running on -- squealing or merely rolling: the first wheel
+-- that is down, through
 -- `Drift/Wheels.surfaceOf`, so there is exactly one rule in the game for what a wheel is
 -- standing on. `nil` when the car is airborne or has no wheel on anything.
 function SkidSound.surfaceOf(state: DriftModel.State?): string?
@@ -198,6 +219,14 @@ function SkidSound.Update(self: SkidSound, state: DriftModel.State?, _input: any
 		self.surface = nil
 	end
 
+	-- IS THE CLIP RUNNING AT ALL? Not "is it loud": a car rolling straight is running at
+	-- `RollVolume`, which is the whole of T-083. It runs whenever the wheels are on a
+	-- surface and the car is moving, and it stops for exactly two things -- wheels in the
+	-- air (`surfaceOf` is `nil`) and under `MinSpeed`. Drifting does not come into it, so
+	-- a drift starts and ends without the clip restarting and without its loop seam being
+	-- re-heard.
+	local rolling = self.surface ~= nil and state ~= nil and DriftModel.speed(state) >= S.MinSpeed
+
 	-- LERPED AND NOT SWITCHED. `clamp` stops a long frame overshooting its target.
 	local before = self.volume
 	self.volume += (self.target - self.volume) * math.clamp(step * S.VolumeLerpSpeed, 0, 1)
@@ -208,7 +237,7 @@ function SkidSound.Update(self: SkidSound, state: DriftModel.State?, _input: any
 
 	local master = if QUIET then 0 else S.Volume
 	for _, entry in self.sounds do
-		local on = entry.surface == self.surface
+		local on = rolling and entry.surface == self.surface
 		-- The one on this surface plays and the rest are stopped. `Play` and `Stop` are
 		-- not allocations and this is written only when it changes, so a drive from one
 		-- end of the road to the other writes nothing here at all.
