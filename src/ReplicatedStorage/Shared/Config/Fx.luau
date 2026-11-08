@@ -349,42 +349,76 @@ return {
 	-- than switched (features/car-fx.md "Skid sound").
 	--
 	-- THE CLIP NEVER STOPS WHILE THE CAR IS ROLLING (T-083), which is the reference's own
-	-- shape: it idles at `RollVolume` going straight and swells to `MaxVolume` sideways.
-	-- A clip that is started at the top of every drift re-plays its own loop seam at the
-	-- top of every drift, and a 3-second clip's seam becomes a thing the player can hear
-	-- coming. Left running, the seam lands wherever it lands, under whatever the car is
-	-- doing, and stops being a moment.
+	-- shape. A clip that is started at the top of every drift re-plays its own loop seam at
+	-- the top of every drift, and a 3-second clip's seam becomes a thing the player can
+	-- hear coming. Left running -- at volume 0 when nothing is sliding -- the seam lands
+	-- wherever it lands, under whatever the car is doing, and stops being a moment.
+	--
+	-- THE VOLUME IS THE LATERAL SLIDE SPEED, not the slip angle (T-083 round two, the
+	-- user's call on 2026-11-08: "it's volume should be based off how hard it's actually
+	-- sliding"). `speed * sin(|slip|)` is how fast the contact patch is scrubbing ACROSS
+	-- the road, which is one number that is both "how fast" and "how sideways", and it is
+	-- what a real tyre's noise follows. By the angle alone, a car pivoting at walking pace
+	-- screamed exactly as loudly as one sliding at 170 studs/s.
 	Skid = {
 		MinSpeed = 3.6, -- studs/s. Below this, silence -- and the clip stops, along with
 		-- airborne. Those are still the only two ways it is not running
-		RollVolume = 0.12, -- the volume of a car that is grounded and above `MinSpeed` but
-		-- NOT drifting: the quiet rubber-on-road hiss the squeal grows
-		-- out of. The reference has the same floor and for the same
-		-- reason -- there is no silence to click out of.
+		RollVolume = 0, -- the volume of a car that is grounded and above `MinSpeed` but
+		-- NOT drifting. ZERO: no tyre sliding, no sound at all.
 		--
-		-- SET IT TO 0 AND THE OLD BEHAVIOUR IS BACK EXACTLY: silent
-		-- until a drift, the squeal doing all the work. That has to
-		-- stay true, and `FxTests` checks it, so this is a number the
-		-- user can turn off by ear without touching a line of logic.
+		-- IT WAS 0.12 FOR ONE ROUND AND THE USER REJECTED IT (2026-11-08):
+		-- "the permanent squeel doesn't work for me ... if no tires are
+		-- drifting, no squeal should be heard". The argument for it was
+		-- that a hiss the squeal grows out of has no silence to click
+		-- out of; what it actually gave was a permanent noise under
+		-- ordinary driving, which is worse.
 		--
-		-- IT DOES NOT SCALE WITH SPEED, and nor does the reference's: a
-		-- car creeping at 4 studs/s hisses exactly as loudly as one at
-		-- 179 (features/car-fx.md "Open questions")
-		MinVolume = 0.25, -- the volume a drift that has just begun plays at. There is a
-		-- STEP UP from `RollVolume` to this at the drift threshold, on
-		-- purpose and as the reference has it; `VolumeLerpSpeed` carries
-		-- it, so it is a swell and not a click
-		MaxVolume = 0.55, -- the volume at `MaxSlipDegrees`, the top of the squeal.
-		-- MEASURED FROM THE REFERENCE, which only reaches about half at a
-		-- full 90-degree drift -- and that gap is most of why ours was
-		-- harsh, because ours went to 1. Raise it toward 1 for a louder
-		-- top end; 1 is exactly the old ceiling
-		MaxSlipDegrees = 90, -- the angle the squeal is full at
+		-- THE KEY STAYS, because 0 costs nothing and this is how the
+		-- always-on version comes back if the user changes their mind:
+		-- raise it and a straight car hisses again, with no line of
+		-- logic touched. `FxTests` checks both directions.
+		--
+		-- NOTE THE CLIP STILL RUNS while the car rolls, at volume 0: that
+		-- is what keeps the loop seam from being re-heard at the top of
+		-- every drift. Silence here is a volume, not a stop.
+		MinVolume = 0.08, -- the volume a drift that has just begun plays at, when the
+		-- lateral slide is still near nothing. QUIET ON PURPOSE: the
+		-- drift threshold is 5 degrees, which a car crosses on any brisk
+		-- corner, so this is the volume of the most common sound in the
+		-- game. It was 0.25 and the user called the result too loud
+		MaxVolume = 0.40, -- the volume at `SlideSpeedForMax`, the top of the squeal. It was
+		-- 0.55 (and 1 before that); through the 0.85 master the peak is
+		-- now 0.340 against 0.468, a cut of about 2.8 dB at the loudest
+		-- moment and far more than that in ordinary driving, because the
+		-- slide-speed curve no longer puts a slow pivot at the top. Raise
+		-- it for a louder top end; 1 is the original ceiling
+		SlideSpeedForMax = 90, -- studs/s of LATERAL slide -- `speed * sin(|slip|)` -- that
+		-- the squeal is full at. Replaces the old `MaxSlipDegrees`, which
+		-- was 90 degrees and took no notice of speed at all.
+		--
+		-- IN REAL TERMS, against a 179 studs/s top speed: 90 studs/s
+		-- sideways is a car at top speed with 30 degrees of slip, or one
+		-- at 127 studs/s with 45 degrees, or one at 90 studs/s fully
+		-- sideways at 90. A committed drift at speed reaches it; a pivot
+		-- in a car park never does -- a 90-degree spin at 10 studs/s is
+		-- at 0.11 of the way up, which is the whole point of the change.
+		--
+		-- OURS, AND A GUESS AT THE SCALE: the reference's own curve is by
+		-- angle, so there is no number to port. Lower it for a squeal
+		-- that maxes out earlier, raise it for one that keeps growing
+		-- into the big slides
 		VolumeLerpSpeed = 1, -- /s. Fading in and out instead of clicking on
 
-		-- The master the mix sets, on top of the `MinVolume`..`MaxVolume` lerp above: the
-		-- squeal is the loudest thing in a drift, and it is still under 1 so it has
-		-- somewhere to go the day anything else is in the mix (AUDIO.md "Mix").
+		-- The master the mix sets, on top of the `MinVolume`..`MaxVolume` lerp above
+		-- (AUDIO.md "Mix"). UNCHANGED at 0.85, so the whole of the round's quietening is
+		-- in the two volumes above and is readable there. It is still under 1 so it has
+		-- somewhere to go the day anything else is in the mix.
+		--
+		-- WORTH THE USER'S EAR: 0.85 x `MaxVolume` is 0.340 at the loudest slide the game
+		-- has, and the engine bed plays flat at `Engine.Volume` 0.45. So the squeal now
+		-- sits UNDER the engine even at its peak, where the mix note says it sits on top.
+		-- If the drift stops reading over the engine, the fix is the engine coming down,
+		-- not this going back up.
 		Volume = 0.85,
 		-- One id per surface. ONLY THE SURFACES IN `Built` GET A SOUND, so this is one
 		-- `Sound` today and a table that already has room for the second. A surface with
