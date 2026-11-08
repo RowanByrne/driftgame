@@ -57,29 +57,46 @@ to decide which band:
 `FullThrottleSeconds` and never an input (`Config/Drift.luau`). Speed is all the information there
 is, and speed is all this needs.
 
-### Skid sound: one loop per surface, always on, volume by slip angle
+### Skid sound: one loop per surface, volume by how hard the tyres are sliding
 
 One looping clip **per surface type**, all of them live at once, each one's volume lerped rather
 than switched.
 
-**The clip never stops while the car is rolling** (`T-083`, the user's call on 2026-11-08). It is
-started the first frame the wheels are on a surface above `MinSpeed` and left running: a straight
-car hisses quietly, and a drift is that hiss *swelling*, not a second sound arriving. Started at
-the top of every drift instead — which is what it did — a 3-second clip replays its own loop seam
-at the top of every drift, and the seam becomes a thing the player hears coming.
+**The volume is the lateral slide speed** (`T-083` round two, the user's call on 2026-11-08: *"it's
+volume should be based off how hard it's actually sliding and/or drifting"*). That is
+`speed × |sin(slip)|` — how fast the contact patch is scrubbing **across** the road, in studs/s.
+One quantity that is both *how fast* and *how sideways*, and what a real tyre's noise follows. It
+was the slip angle alone, so a car pivoting at walking pace squealed exactly as loudly as one
+sliding at 170 studs/s; that is the complaint, and this is the fix.
 
-- Volume is **0** with no state, in the air, or under `MinSpeed`. Those are the only three ways to
-  be silent, and they are also the only two things that *stop* the clip (airborne, too slow).
-- **`RollVolume`** (0.12) while the car is grounded and moving but not drifting: the rubber-on-road
-  hiss. `RollVolume = 0` puts the old behaviour back exactly — silent until a drift — and `FxTests`
-  checks that it does.
-- **`lerp(MinVolume, MaxVolume, slip / MaxSlipDegrees)`** while it is drifting: 0.25 at the drift
-  threshold up to **`MaxVolume` 0.55** at 90°. The ceiling was a hard-coded 1 and that is most of
-  why the squeal was harsh — the reference's own curve only reaches about half at a full drift.
-- **There is a step up at the drift threshold**, `RollVolume` to `MinVolume`, deliberate and the
-  reference's own shape. `VolumeLerpSpeed` (1/s) carries it like any other change of target, so it
-  swells rather than clicks: measured, the largest single-frame move across it is a small fraction
-  of the step.
+**Nothing is heard until a tyre slides.** `RollVolume` is **0**: grounded, moving and not drifting
+is silent. It was 0.12 for one round — an always-on hiss the squeal grew out of — and the user
+rejected it the same day (*"the permanent squeel doesn't work for me"*).
+
+**The clip still never stops while the car is rolling.** It is started the first frame the wheels
+are on a surface above `MinSpeed` and left running *at volume 0*. Started at the top of every drift
+instead — which is what it did before `T-083` — a 3-second clip replays its own loop seam at the top
+of every drift, and the seam becomes a thing the player hears coming. **Silence here is a volume,
+not a stop:** both things are true at once.
+
+- Volume is **0** with no state, in the air, under `MinSpeed`, or not drifting. Those are the four
+  ways to be silent; only the middle two also *stop* the clip.
+- **`lerp(MinVolume, MaxVolume, clamp01(slide / SlideSpeedForMax))`** while it is drifting: **0.08**
+  at a slide of nothing, up to **0.40** at **90 studs/s** of lateral slide. Against the 179 studs/s
+  top speed, 90 studs/s sideways is top speed at 30° of slip, 127 studs/s at 45°, or 90 studs/s
+  fully sideways.
+- **The whole point, measured.** At 90° of slip: 10 studs/s gives 0.116, 40 gives 0.222, 90 and
+  above give 0.400. The old curve gave 0.550 at every one of them.
+- **It falls away again past 90°**, because a car travelling almost straight backwards under itself
+  is barely scrubbing sideways (170° at 60 studs/s is a slide of 10.4, the same as 10° at 60). That
+  is the formula being honest, not a bug; if it reads wrong it is a second term, not a tweak.
+- **There is a step up at the drift threshold**, `RollVolume` (0) to the bottom of the curve: at
+  60 studs/s that is 0 → 0.0986. `VolumeLerpSpeed` (1/s) carries it like any other change of
+  target, so it swells rather than clicks: **measured, the largest single-frame move across it is
+  0.00164 at 60 fps**, against a step of 0.0986.
+- **Quieter overall.** Peak through the 0.85 master is **0.340**, against 0.468 before — about
+  2.8 dB at the loudest moment, and far more in ordinary driving because a slow or shallow slide no
+  longer sits at the top of the curve (a 15° slide at 40 studs/s: 0.099 against 0.255, about 8 dB).
 - Only the clip whose surface the wheels are actually on is *playing*; the others are stopped. We
   have one surface in the game today (tarmac) and `dirt` specced but unbuilt, so this is one clip
   now and a table that already has room for the second.
@@ -196,12 +213,12 @@ are in the last column where they differ.
 | Number | Start | Was called | What it does |
 |---|---|---|---|
 | `MinSpeed` | 3.6 studs/s | `MinSkidSpeed` | Below this, silence — and the clip stops |
-| `RollVolume` | 0.12 | — | **Ours, and new (`T-083`).** The hiss of a car grounded and moving but not drifting. **0 restores the old silent-until-a-drift behaviour exactly** |
-| `MinVolume` | 0.25 | `MinSkidVolume` | The volume a drift that has just begun plays at. There is a step up from `RollVolume` to this at the drift threshold, on purpose |
-| `MaxVolume` | 0.55 | — | **New (`T-083`).** The volume at `MaxSlipDegrees`, replacing a hard-coded 1. The reference's curve only reaches about half at a full 90° drift; **1 restores the old ceiling** |
-| `MaxSlipDegrees` | 90 | — | The angle the squeal is full at |
+| `RollVolume` | **0** | — | **Ours (`T-083`).** The volume of a car grounded and moving but not drifting. **0 is silence: no tyre sliding, no sound.** It was 0.12 for one round and the user rejected the permanent hiss on 2026-11-08. **The key stays** — raise it and the always-on version is back with no line of logic touched, and `FxTests` checks both directions |
+| `MinVolume` | **0.08** | `MinSkidVolume` | The volume a drift that has just begun plays at, when the lateral slide is still near nothing. It was 0.25; the drift threshold is 5°, which any brisk corner crosses, so this is the volume of the most common sound in the game |
+| `MaxVolume` | **0.40** | — | **New (`T-083`).** The volume at `SlideSpeedForMax`. It was 0.55, and a hard-coded 1 before that; **1 restores the original ceiling** |
+| `SlideSpeedForMax` | **90 studs/s** | — | **Ours, and new (`T-083` round two).** The *lateral* slide speed — `speed × sin(|slip|)` — the squeal is full at. **Replaces `MaxSlipDegrees`, which took no notice of speed at all.** Against a 179 studs/s top speed: top speed at 30° of slip, 127 studs/s at 45°, or 90 studs/s fully sideways. The reference's own curve is by angle, so there is no number to port — this is a guess at the scale |
 | `VolumeLerpSpeed` | 1 /s | `SkidVolumeLerpSpeed` | Fade in and out |
-| `Volume` | 0.85 | — | **Ours, and new.** The master the mix sets, on top of the `MinVolume`..`MaxVolume` lerp: the squeal is the loudest thing in a drift and still has somewhere to go (`AUDIO.md` "Mix") |
+| `Volume` | 0.85 | — | **Ours, and new.** The master the mix sets, on top of the `MinVolume`..`MaxVolume` lerp (`AUDIO.md` "Mix"). Unchanged, so the whole of the quietening is readable in the two volumes above. **Note 0.85 × 0.40 = 0.340 and the engine bed plays flat at 0.45:** the squeal now sits *under* the engine even at its peak, which is the user's ear to settle |
 | `SoundIds.tarmac` | `rbxassetid://124978127809544` | — | The user's pick, by id. **One id per surface, and a surface with no id gets no sound and no error:** `dirt` is specced and has no clip, because a clip is a pick the user makes by ear and not a default an agent chooses |
 | `RollOffMin`, `RollOffMax` | 12, 150 studs | — | **Ours, and new.** Tighter than the engine's: a squeal is made at the road |
 
@@ -559,8 +576,9 @@ is the doc to read and to keep. In short — pillars *weighty, clean, never hars
 the engine under it, everything else under both; realistic and not cartoon.
 
 The mix is two numbers and they are in `Config/Fx.luau`: `Engine.Volume` 0.45 and `Skid.Volume`
-0.85, the latter a master over the `RollVolume`/`MinVolume`..`MaxVolume` curve. Both are a first
-pass and both are an ear's call.
+0.85, the latter a master over the `MinVolume`..`MaxVolume` slide-speed curve. Both are a first
+pass and both are an ear's call — and as of `T-083` round two the squeal's peak (0.340) is *below*
+the engine (0.45), which is the one place the built numbers argue with the direction above.
 
 ## Testing
 
@@ -573,11 +591,11 @@ feel.**
 | The gearbox | Drive 0 → top speed and record every shift's speed. They must match the computed series within `GearOverlap`, and no two shifts within `MinTimeInGear`. **Done (`T-064`):** the five tops are 13.57, 33.93, 64.47, 110.28 and 179.00 studs/s, which is the series to 1e-6 and `TopSpeed` exactly. Live on `DR-Lane2`'s plate, a straight run to 162 studs/s shifted at **23.63, 44.02, 74.53 and 120.34**, each **+10.05 to +10.09** past its band edge — the overlap, to a hundredth. And slammed from a standstill to top speed in one frame, the box still walks up one gear every 0.517 s against a 0.5 s debounce |
 | Pitch is continuous | The largest single-frame change in `PlaybackSpeed` over a full-speed run, which must be bounded by `PitchLerpSpeed × dt`. **Done:** 0.01322 live over the straight run and 0.01379 over a 60-second drive, against a bound of 0.05 at Studio's unfocused 30 fps; 0.01905 against 0.02500 in the synthetic 60 fps run. **What makes a shift a shift, measured:** the pitch target drops 2.20 → 1.44 at the 1-2 and 1.01, 1.17 and 1.28 at the three above it, and the lerp walks the sound down each gap instead of stepping |
 | Airborne | Off a crest or a fall: pitch at `MaxPitch`, skid volume 0, no trail emitting. **Done:** off the playground ramp, 135 airborne frames, peak 17.3 studs up — the pitch target was `MaxPitch` on **every one of them** and the pitch climbed 1.89 → 2.10 across the 1.3 s of air (the lerp, not a snap), with the squeal at **0.00000000** and its clip stopped throughout |
-| The squeal tracks the angle | Volume at 10°, 45° and 90° of slip against the configured lerp, and 0 when airborne, under `MinSkidSpeed` or with no state. **Done (`T-064`, re-measured for `T-083`):** 10° → 0.2833, 45° → 0.4000, 90° → 0.5500, each **exactly** the configured lerp, worst gap 0.00e+00; it stays at 0.5500 at 120° and 180°. Silent airborne at 90°, silent at 3.59 studs/s and not at 3.60, silent with no state. The `T-064` live figures (10.04° → 0.3337, 45.07° → 0.6256, 89.70° → 0.9975, worst gap 1.11e-16 over 1 921 samples) were against the old ceiling of 1 and are the record of that curve, not this one |
-| The roll hiss and the step into a drift (`T-083`) | 0°, 2° and 4.9° all read **0.1200** = `RollVolume`; 4.99° → 0.1200 and 5.00° → 0.2667, a step of **0.1467** at the model's own `MinSlipAngleForDrift`. **It does not click:** the largest single-frame volume move crossing it is **0.00244 at 60 fps** and 0.00489 at 30, against 0.00486 before this change — when the clip started from silence the first frame moved it *twice as far* |
-| `RollVolume = 0` and `MaxVolume = 1` restore the old curve | **Done, and checked in `FxTests` so it stays true:** 0/2/4.9/5/10/30/60/90/120° → 0, 0, 0, 0.2917, 0.3333, 0.5000, 0.7500, 1.0000, 1.0000 — the pre-`T-083` numbers exactly, worst gap 0.00e+00 |
+| The squeal tracks the **slide speed**, not the angle (`T-083` round two) | Volume at several angles **crossed with several speeds**, against the configured lerp of `speed × sin(slip)`, and 0 when airborne, under `MinSpeed`, with no state, or not drifting. **Done:** 10° at 20/60/140 studs/s → 0.0923 / 0.1170 / 0.1664 and 45° at the same three → 0.1303 / 0.2308 / 0.4000, each **exactly** the configured lerp, worst gap 0.00e+00. **The one that is the whole point:** 90° of slip at 10 studs/s → **0.1156** and at 140 → **0.4000**, where the old angle-only curve gave **0.5500 for both**. Live on `DR-Lane2`, a drift entered at 52 studs/s peaked at a target of **0.2232** at 57° of slip and 40.3 studs/s of slide, then *fell* to 0.1509 as the slip grew to 82° and the speed bled to 20 — the old curve would have been climbing to 0.52 there. Past 90° it comes back down (170° at 60 studs/s is a slide of 10.4, the same as 10° at 60). Silent airborne at 90° and 179 studs/s, silent at 3.59 studs/s and not at 3.60, silent with no state |
+| Not drifting is silent, and the clip still runs (`T-083` round two) | `RollVolume` is 0, so 0° and 4.9° read **0.0000 at 10, 60 and 179 studs/s**, while the clip's running flag stays **true** throughout. The step at the drift threshold is now 4.99° → 0.0000 and 5.00° → **0.0986** at 60 studs/s. **It does not click:** the largest single-frame volume move crossing it is **0.00164 at 60 fps**, against a step of 0.0986. Live, catching a drift fades the volume to 0.0058 and still falling while the car accelerates away to 53 studs/s — where the always-on build held a flat 0.1020 through the master |
+| `RollVolume` is still the one switch for the always-on hiss | **Done, and checked in `FxTests` so it stays true in both directions:** with it set to 0.12 the module reads 0.1200 at 0° and at 4.9°/179 studs/s and still 0 under `MinSpeed`, with no line of logic touched; the test restores it to 0 |
 | The clip is started once and left running (`T-083`) | **Done, both ways.** On a stand-in body with the master forced to 0: 8 s of straight → 60° of slip → straight gave **1 `Play()` and 0 `Stop()`s**, and the clip stopped only when the car went airborne and when it dropped under `MinSpeed`. Live in `DR-Lane2`, a 14 s quiet playtest sampled four times a second across a drift (slip 0° → −101° → caught → held at −30° → straight) kept the logic's running flag **true for the whole drift**: the only two transitions in the run were the car spinning itself to 2.71 studs/s, under `MinSpeed`, and coming back 0.26 s later |
-| A quiet playtest is silent | **Done, and this is the one to re-check whenever a sound is added.** With the `__agent_play` marker set, the two `Sound`s on the car are at **volume 0.0000 and were never started** — of the five `Sound`s anywhere in the datamodel the only non-zero volumes were Roblox's own CoreGui clips, none of them playing. The logic runs anyway, so a silent playtest still measures the whole state machine. The other branch is proved the same way and just as silently: a fresh require with the marker cleared, on a body in `ServerStorage`, gives engine volume 0.4500 playing and squeal 0.6375 = 0.85 × 0.75 at 60° of slip (that 0.75 was the pre-`T-083` curve; the same check today reads 0.85 × 0.45 = 0.3825) |
+| A quiet playtest is silent | **Done, and this is the one to re-check whenever a sound is added.** With the `__agent_play` marker set, the two `Sound`s on the car are at **volume 0.0000 and were never started** — of the five `Sound`s anywhere in the datamodel the only non-zero volumes were Roblox's own CoreGui clips, none of them playing. The logic runs anyway, so a silent playtest still measures the whole state machine. The other branch is proved the same way and just as silently: a fresh require with the marker cleared, on a body in `ServerStorage`, gives engine volume 0.4500 playing and squeal 0.6375 = 0.85 × 0.75 at 60° of slip (that 0.75 was the first `T-064` curve; the same state today — 60° at 60 studs/s, a slide of 52 — reads 0.85 × 0.2648 = 0.2250). **Re-checked after round two:** across a live drift every `Sound` on the car stayed at an instance volume of **0.0000** while the logic's volume ran up to 0.147 |
 | The front/rear threshold | Hold a slide at 20° and at 60°: at 20° the two rear trails emit and the two fronts do not; at 60° all four do. **Done (`T-062`):** live in `DR-Lane2` at 18.8° only `WheelRL` and `WheelRR` emitted, at 59.5° all four; and the pure sweep puts the fronts' switch-on at 30.5° against a configured 30 + 0.5 and the rears' at 0.50° |
 | Throttle gate | Coast sideways at zero throttle: slip above the threshold, no trail, no smoke. **Done in `FxTests`, and NOT reachable live** — the throttle is never an input in this model (see "How it plays"). 60° of slip at zero throttle marks nothing; it marks at exactly `MinThrottle` and not a hundredth below |
 | Handbrake | Handbrake from a standstill (nothing) and from 40 studs/s (all four, smoking). **Done (`T-062`):** live, nothing at 0.00 studs/s; all four emitting at 36.7 studs/s with the car dead straight (`slipPast` false) and off nothing but the brake |
@@ -609,12 +627,22 @@ gate is wrong rather than "no smoke".
 - **Whether `PitchLerpSpeed = 1 /s` is right.** It is the reference's, and it means the 0.76-pitch
   fall at the 1-2 shift takes about a second: the shift *slides* rather than snapping. Measured live
   and correct; whether it is slow is an ear's call.
-- **The roll hiss does not scale with speed** (`T-083`). `RollVolume` is one number: a car creeping
-  at 4 studs/s hisses exactly as loudly as one at 179. **The reference's does not scale either** — it
-  is a flat per-clip minimum there too — so this is a faithful port and not an oversight. If the
-  user dislikes it, the obvious refinement is a speed ramp on `RollVolume` (a lerp from near 0 at
-  `MinSpeed` to 0.12 somewhere in the speed range), which is a few lines in `volumeFor` and two more
-  config numbers. **Drive it first.**
+- ~~**The roll hiss does not scale with speed.**~~ **Closed 2026-11-08, and the answer was to
+  remove it.** The user drove the always-on hiss and rejected it outright: *"the permanent squeel
+  doesn't work for me ... if no tires are drifting, no squeal should be heard."* `RollVolume` is 0.
+  The key is kept, so the hiss is one number away if it is ever wanted, but the lesson is the
+  general one — a floor that is faithful to the reference is still wrong if it is a noise the player
+  cannot get away from. **What replaced it** is the volume following the *lateral slide speed*
+  rather than the slip angle, so the squeal is quiet until a tyre is really scrubbing.
+- **Is 90 studs/s the right `SlideSpeedForMax`?** Ours, and a guess at the scale: there is no number
+  to port, because the reference's curve is by angle. At 90 the squeal is full at top speed with 30°
+  of slip, which a committed drift reaches often — lower it and it tops out earlier, raise it and it
+  keeps growing into the biggest slides. **One number, and only an ear can settle it.**
+- **Whether 0.08 and 0.40 are now too quiet.** The peak through the master is 0.340 against 0.468
+  before, and the ordinary-driving case is down by about 8 dB. `Engine.Volume` is a flat 0.45, so
+  the squeal is now *under* the engine at every moment, where `AUDIO.md` "Mix" says it sits on top.
+  **If the drift stops reading over the engine, bring the engine down rather than the squeal back
+  up.**
 - **Remote cars** (above): derived slip, or silent this round.
 - **The backfire,** which needs an exhaust position per body. **The user decided against it for now**
   (`AUDIO.md`); the spec stays here so it need not be read off the reference twice.
@@ -628,8 +656,10 @@ Added by `T-062`, from building it:
 - **The look of the marks and the smoke.** The user's call, and the numbers to change are all in
   `Config/Fx.luau` under `Marks`, `Smoke`, `Stylized` and `Surfaces`.
 - **Whether the smoke should be full at 90° rather than 180°.** The reference lerps the rate by
-  `slip / π`, which is what is built — so a car fully sideways at 90° is only at 34 of 60. The
-  squeal's own `MaxSlipDegrees` is 90. One number, `Gates.MaxSlipDegrees`.
+  `slip / π`, which is what is built — so a car fully sideways at 90° is only at 34 of 60. One
+  number, `Gates.MaxSlipDegrees`. **The squeal no longer has an angle to compare it with:** since
+  `T-083` round two its volume is the lateral slide speed, so the smoke is the one effect in this
+  feature still driven by the angle alone, and the same complaint could be made of it.
 - **Whether a crawling car should mark at all.** There is no minimum speed on the marks, only on
   the handbrake, which is what the reference does. Measured: a car creeping at 0.3 studs/s with
   14° of slip still has its rear trails enabled. It lays a dot, not a line, so it costs nothing to

@@ -1,31 +1,50 @@
 --!strict
--- SkidSound: one looping clip per surface, volume by slip angle
--- (docs/game/features/car-fx.md "Skid sound: one loop per surface, volume by slip angle").
+-- SkidSound: one looping clip per surface, volume by LATERAL SLIDE SPEED
+-- (docs/game/features/car-fx.md "Skid sound").
 --
--- The squeal tells the player the back is out before the camera does, and HOW FAR out.
--- One `Sound` per surface in `Config.Fx.Built`, all of them alive at once, each one's
--- volume LERPED rather than switched -- which is the difference between a drift that
--- fades up and one that clicks on.
+-- The squeal tells the player the back is out before the camera does, and HOW HARD it is
+-- going. One `Sound` per surface in `Config.Fx.Built`, all of them alive at once, each
+-- one's volume LERPED rather than switched -- which is the difference between a drift
+-- that fades up and one that clicks on.
+--
+--   slide  = speed * |sin(slip)|                   studs/s ACROSS the road: how fast the
+--                                                  contact patch is actually scrubbing
 --
 --   volume = 0                                     no state, airborne, or under MinSpeed
---          = RollVolume                            grounded and moving, NOT drifting
+--          = RollVolume (0 today)                  grounded and moving, NOT drifting
 --          = lerp(MinVolume, MaxVolume,            drifting
---                 |slip| / MaxSlipDegrees)
+--                 clamp01(slide / SlideSpeedForMax))
 --
 -- and that number is then lerped toward at `VolumeLerpSpeed` per second and scaled by
--- `Skid.Volume`, the master the mix sets (AUDIO.md "Mix": the squeal sits on top).
+-- `Skid.Volume`, the master the mix sets (AUDIO.md "Mix").
+--
+-- WHY THE SLIDE SPEED AND NOT THE ANGLE (T-083 round two, the user's call on 2026-11-08).
+-- By the angle alone, a car pivoting at walking pace at 90 degrees squealed exactly as
+-- loudly as one sliding at 170 studs/s, because the angle was the only thing in the sum.
+-- `speed * sin(|slip|)` is one quantity that is both "how fast" and "how sideways", and
+-- it is what a real tyre's noise follows. In a state the model actually produced it is
+-- `|v|` exactly -- the lateral velocity -- since `slip` is `atan2(-v, u)`; it is written
+-- out of `speed` and `slip` here because those are the two numbers every other gate in
+-- this feature reads, and because that is what `FxTests` can set independently.
+--
+-- IT FALLS AWAY AGAIN PAST 90 DEGREES, and that is the formula being honest rather than a
+-- bug: at 170 degrees of slip the car is travelling almost straight backwards under
+-- itself, so the patch is barely moving sideways at all even though the model is braking
+-- hard (Model.luau header, "past 90 degrees the grip points against the travel"). If that
+-- reads wrong to the user's ear, it is a second term and not a tweak.
 --
 -- THE CLIP NEVER STOPS WHILE THE CAR IS ROLLING (T-083). It is started the first frame
--- the wheels are on a surface above `MinSpeed` and left running: a straight car hisses at
--- `RollVolume`, and the drift is that hiss SWELLING, not a second sound arriving. Started
--- at the top of every drift instead, a 3-second clip replays its own loop seam at the top
--- of every drift, and the seam becomes something the player hears coming. Left running,
--- it lands wherever it lands.
+-- the wheels are on a surface above `MinSpeed` and left running -- at volume 0 while
+-- nothing is sliding. Started at the top of every drift instead, a 3-second clip replays
+-- its own loop seam at the top of every drift, and the seam becomes something the player
+-- hears coming. Left running, it lands wherever it lands. SILENCE HERE IS A VOLUME, NOT A
+-- STOP, which is how both things are true at once: nothing is heard until a tyre slides,
+-- and no drift ever restarts the clip.
 --
--- There is a STEP at the drift threshold, from `RollVolume` up to `MinVolume`, and it is
--- deliberate -- the reference has the same one. `VolumeLerpSpeed` carries it like any
--- other change in target, so it swells rather than clicks; `FxTests` measures the largest
--- single-frame move across it.
+-- There is a STEP at the drift threshold, from `RollVolume` up to `MinVolume`, which at
+-- today's numbers is 0 -> 0.08. `VolumeLerpSpeed` carries it like any other change in
+-- target, so it swells rather than clicks; `FxTests` measures the largest single-frame
+-- move across it.
 --
 -- ONLY THE SURFACE THE WHEELS ARE ACTUALLY ON IS PLAYING; the others are stopped. The
 -- game has one surface today (tarmac) and `dirt` specced but unbuilt, so this is one clip
@@ -94,10 +113,11 @@ end
 -- The volume this state ASKS for, before any lerp: the thing a test can check against the
 -- config without a car, a place or a playtest.
 --
--- THREE WAYS TO BE SILENT AND THEY ARE THE ONLY ONES: airborne, under `MinSpeed`, or
--- having no state at all. NOT DRIFTING IS NO LONGER ONE OF THEM -- a car rolling straight
--- hisses at `RollVolume` (T-083), and setting `RollVolume` to 0 puts the old silence back
--- without touching this function.
+-- FOUR WAYS TO BE SILENT AND THEY ARE THE ONLY ONES: no state at all, airborne, under
+-- `MinSpeed`, or not drifting. The fourth is `RollVolume`, which is 0 today -- the user
+-- drove the always-on hiss and rejected it (2026-11-08). Raise `RollVolume` and a car
+-- rolling straight hisses again, with nothing here touched; that is the only reason the
+-- `not state.drifting` branch is a lookup and not a `return 0`.
 --
 -- `state.drifting` is `|slip| >= Config.Drift.MinSlipAngleForDrift`, which is 5 degrees:
 -- the squeal and the drift start together on purpose, and this module does not own a
@@ -116,8 +136,21 @@ function SkidSound.volumeFor(state: DriftModel.State?): number
 	if not state.drifting then
 		return S.RollVolume
 	end
-	local t = math.clamp(math.abs(state.slip) / math.rad(S.MaxSlipDegrees), 0, 1)
+	local t = math.clamp(SkidSound.slideSpeed(state) / S.SlideSpeedForMax, 0, 1)
 	return lerp(S.MinVolume, S.MaxVolume, t)
+end
+
+-- HOW FAST THE CONTACT PATCH IS MOVING ACROSS THE ROAD, studs/s: the component of the
+-- car's ground speed at right angles to where it is pointing. `|sin|` and not `sin(|..|)`
+-- so a slip that ever came back outside -pi..pi is still a magnitude and never negative.
+--
+-- It is the ONE number the volume is made of, so a playtest can read it next to the
+-- volume and see them move together (`DebugState`).
+function SkidSound.slideSpeed(state: DriftModel.State?): number
+	if not state then
+		return 0
+	end
+	return DriftModel.speed(state) * math.abs(math.sin(state.slip))
 end
 
 -- Which surface the car is running on -- squealing or merely rolling: the first wheel
@@ -219,11 +252,11 @@ function SkidSound.Update(self: SkidSound, state: DriftModel.State?, _input: any
 		self.surface = nil
 	end
 
-	-- IS THE CLIP RUNNING AT ALL? Not "is it loud": a car rolling straight is running at
-	-- `RollVolume`, which is the whole of T-083. It runs whenever the wheels are on a
-	-- surface and the car is moving, and it stops for exactly two things -- wheels in the
-	-- air (`surfaceOf` is `nil`) and under `MinSpeed`. Drifting does not come into it, so
-	-- a drift starts and ends without the clip restarting and without its loop seam being
+	-- IS THE CLIP RUNNING AT ALL? Not "is it heard": a car rolling straight is running at
+	-- volume 0, which is the whole of T-083. It runs whenever the wheels are on a surface
+	-- and the car is moving, and it stops for exactly two things -- wheels in the air
+	-- (`surfaceOf` is `nil`) and under `MinSpeed`. Drifting does not come into it, so a
+	-- drift starts and ends without the clip restarting and without its loop seam being
 	-- re-heard.
 	local rolling = self.surface ~= nil and state ~= nil and DriftModel.speed(state) >= S.MinSpeed
 
@@ -305,8 +338,9 @@ function SkidSound.CountInstances(self: SkidSound): number
 end
 
 -- What the squeal is doing and WHY, so a playtest can say "it is silent because the slip
--- is 3 degrees and the drift threshold is 5" rather than "no squeal". Allocates, and is
--- called by tests and by hand -- never by `Update`.
+-- is 3 degrees and the drift threshold is 5", or "it is quiet because the car is only
+-- scrubbing 8 studs/s sideways", rather than "no squeal". Allocates, and is called by
+-- tests and by hand -- never by `Update`.
 function SkidSound.DebugState(self: SkidSound, state: DriftModel.State?)
 	local S = Config.Fx.Skid
 	local sounds = {}
@@ -334,6 +368,11 @@ function SkidSound.DebugState(self: SkidSound, state: DriftModel.State?)
 		drifting = if state then state.drifting else nil,
 		airborne = if state then state.airborne else nil,
 		speed = if state then DriftModel.speed(state) else nil,
+		-- WHAT THE VOLUME IS MADE OF, studs/s across the road, and the number it is full
+		-- at: `volume` is the lerp of `slide / slideFull` and nothing else while drifting.
+		slide = if state then SkidSound.slideSpeed(state) else nil,
+		slideFull = S.SlideSpeedForMax,
+		rollVolume = S.RollVolume, -- 0: not drifting is silent, and the clip still runs
 		minSpeed = S.MinSpeed,
 		sounds = sounds,
 	}

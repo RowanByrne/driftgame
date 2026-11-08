@@ -51,6 +51,11 @@ the game, so approving that plan set the direction.
 off loses information but not the game — the drift is already readable from the car, the camera and
 the tyre marks.
 
+**That is the intent, and the numbers no longer match it** (T-083, 2026-11-08). The user called the
+squeal too loud twice, so its peak is now 0.85 × 0.40 = **0.340**, while the engine bed plays flat at
+**0.45**. The squeal is under the engine at every moment. It is left that way deliberately rather
+than quietly put back: **if the drift stops reading over the engine, the engine comes down.**
+
 Player volume controls wait for a settings screen (`SETTINGS.md`, the UI phase).
 
 ## Sounds
@@ -65,7 +70,7 @@ were not picked are in `..\art\generated\sfx-car\`, outside git.
 | Sound | Plays when | Registry name | Asset id | Source and license | Status |
 |---|---|---|---|---|---|
 | Engine loop | Always, while a car exists. Pitched 0.7x to 2.2x across five faked gears by road speed (`features/car-fx.md`) | `engine` | `5015124019` | Creator Store, "Car idle" by 6ifqi. Free in any experience, nothing uploaded. Measured loading in `DR-Lane2`: 4.638 s | In game (`Drift/EngineSound`, T-064) |
-| Tyre squeal, tarmac | **Whenever the car is grounded and above `MinSpeed`** (T-083): it idles at `RollVolume` and swells with the slip angle to `MaxVolume`. It is never restarted, so its loop seam is never re-heard | `skid-tarmac` | `124978127809544` | Creator Store, "tyre_slide" by knightracers. Free in any experience, nothing uploaded. Measured loading in `DR-Lane2`: 2.996 s. **Kept over three longer candidates by the user on 2026-11-08** (`DECISIONS.md`) | In game (`Drift/SkidSound`, T-064, T-083) |
+| Tyre squeal, tarmac | **Only while a tyre is actually sliding** (T-083): silent unless the car is grounded, above `MinSpeed` and drifting, then its volume is the **lateral slide speed** — `speed × sin(slip)`, how fast the contact patch is scrubbing across the road — lerped from `MinVolume` 0.08 to `MaxVolume` 0.40 across 90 studs/s of it. A slow pivot is quiet; a fast slide is loud. The clip is still never restarted (it runs at volume 0 between drifts), so its loop seam is never re-heard | `skid-tarmac` | `124978127809544` | Creator Store, "tyre_slide" by knightracers. Free in any experience, nothing uploaded. Measured loading in `DR-Lane2`: 2.996 s. **Kept over three longer candidates by the user on 2026-11-08** (`DECISIONS.md`) | In game (`Drift/SkidSound`, T-064, T-083) |
 | Backfire pop | — | — | — | — | **Not having one.** The user's call, 2026-11-04: the only candidate on the store that was not named after a real manufacturer ran 0.9 s, about twice as long as a pop wants, and several in a row would smear. The backfire stays specced in `features/car-fx.md` and unbuilt |
 
 ## Credits
