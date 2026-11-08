@@ -18,8 +18,10 @@
 --   WHAT IS MEASURED HERE  the gear tops against the geometric series, the shift speeds
 --                          and their spacing, that no single frame moves the pitch more
 --                          than the lerp allows, the squeal's volume against the
---                          configured lerp at every angle and its four ways to be silent,
---                          and that a drive creates and destroys no instance.
+--                          configured lerp at every angle, its roll-hiss floor, the step
+--                          into a drift and its three ways to be silent, that the clip is
+--                          started once and left running (T-083), and that a drive creates
+--                          and destroys no instance.
 --   WHAT IS NOT            whether any of it SOUNDS right: whether the clip loops cleanly
 --                          when it is stretched, whether 0.7 and 2.2 are the right floor
 --                          and ceiling, whether the squeal sits over the engine. That is
@@ -815,7 +817,9 @@ function Tests.run(opts)
 	end
 
 	----------------------------------------------------------------------------
-	-- 12. THE SQUEAL'S GATE, pure. Volume is the slip angle and four ways to be silent.
+	-- 12. THE SQUEAL'S GATE, pure. A floor the car rolls on, a step into the drift, and a
+	-- ceiling (T-083). THREE ways to be silent and no more: airborne, under `MinSpeed`,
+	-- no state.
 	----------------------------------------------------------------------------
 	do
 		local S = F.Skid
@@ -828,7 +832,7 @@ function Tests.run(opts)
 		for _, deg in { 10, 45, 90 } do
 			local got = vol({ slipDeg = deg, speed = 60, throttle = 1 })
 			local t = math.clamp(deg / S.MaxSlipDegrees, 0, 1)
-			local wanted = S.MinVolume + (1 - S.MinVolume) * t
+			local wanted = S.MinVolume + (S.MaxVolume - S.MinVolume) * t
 			worst = math.max(worst, math.abs(got - wanted))
 			table.insert(shown, `{deg} deg -> {string.format("%.4f", got)} (want {string.format("%.4f", wanted)})`)
 		end
@@ -838,18 +842,65 @@ function Tests.run(opts)
 			`{table.concat(shown, "; ")}; worst gap {string.format("%.2e", worst)}`
 		)
 		check(
-			"past the full angle it stays at 1, it does not keep climbing",
-			math.abs(vol({ slipDeg = 180, speed = 60, throttle = 1 }) - 1) < 1e-9,
-			`180 deg -> {string.format("%.4f", vol({ slipDeg = 180, speed = 60, throttle = 1 }))}`
+			`past the full angle it stays at MaxVolume ({S.MaxVolume}), it does not keep climbing`,
+			math.abs(vol({ slipDeg = 180, speed = 60, throttle = 1 }) - S.MaxVolume) < 1e-9,
+			`90 deg -> {string.format("%.4f", vol({ slipDeg = 90, speed = 60, throttle = 1 }))}, `
+				.. `120 deg -> {string.format("%.4f", vol({ slipDeg = 120, speed = 60, throttle = 1 }))}, `
+				.. `180 deg -> {string.format("%.4f", vol({ slipDeg = 180, speed = 60, throttle = 1 }))}`
 		)
 
-		local notDrifting = Config.Drift.MinSlipAngleForDrift - 0.01
+		-- THE FLOOR. A car rolling straight is not silent any more: it hisses, and the
+		-- clip it hisses with is the one that will squeal, never restarted (T-083).
+		local floorShown = {}
+		local floorOk = true
+		for _, deg in { 0, 2, 4.9 } do
+			local got = vol({ slipDeg = deg, speed = 60, throttle = 1 })
+			floorOk = floorOk and math.abs(got - S.RollVolume) < 1e-9
+			table.insert(floorShown, `{deg} deg -> {string.format("%.4f", got)}`)
+		end
 		check(
-			"silent when the car is not drifting, and loud a hundredth of a degree later",
-			vol({ slipDeg = notDrifting, speed = 60, throttle = 1 }) == 0
-				and vol({ slipDeg = Config.Drift.MinSlipAngleForDrift, speed = 60, throttle = 1 }) > 0,
-			`{string.format("%.2f", notDrifting)} deg silent, {Config.Drift.MinSlipAngleForDrift} deg not `
-				.. "(the model's own drift threshold, not a second one)"
+			`rolling straight hisses at RollVolume ({S.RollVolume}) rather than being silent`,
+			floorOk,
+			`{table.concat(floorShown, ", ")}; want {string.format("%.4f", S.RollVolume)} at every one`
+		)
+
+		-- THE STEP. `RollVolume` up to `MinVolume` at the drift threshold, deliberate and
+		-- the reference's own shape. `VolumeLerpSpeed` carries it -- the measured
+		-- single-frame move across it is in section 13.
+		local notDrifting = Config.Drift.MinSlipAngleForDrift - 0.01
+		local below = vol({ slipDeg = notDrifting, speed = 60, throttle = 1 })
+		local above = vol({ slipDeg = Config.Drift.MinSlipAngleForDrift, speed = 60, throttle = 1 })
+		check(
+			"there is a step up at the drift threshold, from the roll hiss to MinVolume",
+			math.abs(below - S.RollVolume) < 1e-9 and above > below and above >= S.MinVolume,
+			`{string.format("%.2f", notDrifting)} deg -> {string.format("%.4f", below)}, `
+				.. `{Config.Drift.MinSlipAngleForDrift} deg -> {string.format("%.4f", above)} `
+				.. `(a step of {string.format("%.4f", above - below)}; the model's own drift `
+				.. "threshold, not a second one)"
+		)
+
+		-- RollVolume = 0 AND MaxVolume = 1 PUT THE OLD CURVE BACK, EXACTLY. This is the
+		-- promise `Config/Fx.luau` makes about those two numbers, so it is checked and not
+		-- asserted. The table is mutated and restored in four lines with nothing between
+		-- them that can throw.
+		local keptRoll, keptMax = S.RollVolume, S.MaxVolume
+		S.RollVolume, S.MaxVolume = 0, 1
+		local oldCurve = {}
+		for _, deg in { 0, 2, 4.9, 5, 10, 30, 60, 90, 120 } do
+			table.insert(oldCurve, vol({ slipDeg = deg, speed = 60, throttle = 1 }))
+		end
+		S.RollVolume, S.MaxVolume = keptRoll, keptMax
+		local wantOld = { 0, 0, 0, 0.25 + 0.75 * (5 / 90), 0.25 + 0.75 * (10 / 90), 0.5, 0.75, 1, 1 }
+		local oldWorst, oldShown = 0, {}
+		for i, got in oldCurve do
+			oldWorst = math.max(oldWorst, math.abs(got - wantOld[i]))
+			table.insert(oldShown, string.format("%.4f", got))
+		end
+		check(
+			"RollVolume = 0 with MaxVolume = 1 reproduces the pre-T-083 curve exactly",
+			oldWorst < 1e-9 and S.RollVolume == keptRoll and S.MaxVolume == keptMax,
+			`0/2/4.9/5/10/30/60/90/120 deg -> {table.concat(oldShown, ", ")}; worst gap `
+				.. `{string.format("%.2e", oldWorst)} (config restored to {S.RollVolume}/{S.MaxVolume})`
 		)
 		check(
 			"silent in the air, whatever the angle",
@@ -1053,18 +1104,66 @@ function Tests.run(opts)
 				table.insert(climbed, string.format("%.1f s -> %.4f", frame * DT, skid.volume))
 			end
 		end
-		local wanted45 = S.MinVolume + (1 - S.MinVolume) * (45 / S.MaxSlipDegrees)
+		local wanted45 = S.MinVolume + (S.MaxVolume - S.MinVolume) * (45 / S.MaxSlipDegrees)
 		check(
 			"a held 45-degree slide fades the squeal up to its target rather than snapping to it",
 			skid.volume < wanted45 and math.abs(skid.volume - wanted45) < 1e-3 and climbed[1] ~= nil,
 			`{table.concat(climbed, ", ")} against a target of {string.format("%.4f", wanted45)} `
 				.. `at {S.VolumeLerpSpeed}/s`
 		)
+		-- CATCHING IT NOW FALLS TO THE ROLL HISS, NOT TO SILENCE, and the clip stays
+		-- running through the whole of it (T-083).
 		local caught = stateWith({ slipDeg = 0, speed = 60, throttle = 1 })
+		local stayedPlaying = true
 		for _ = 1, 600 do
 			skid:Update(caught, nil, DT)
+			stayedPlaying = stayedPlaying and skid.sounds[1].playing
 		end
-		check("catching it fades the squeal back down to nothing", skid.volume < 1e-3, string.format("%.6f", skid.volume))
+		check(
+			"catching it fades the squeal down to the roll hiss, and never stops the clip",
+			math.abs(skid.volume - S.RollVolume) < 1e-3 and stayedPlaying,
+			`{string.format("%.6f", skid.volume)} against RollVolume {S.RollVolume}; the clip `
+				.. `stayed running: {stayedPlaying}`
+		)
+
+		--------------------------------------------------------------------
+		-- THE STEP AT THE DRIFT THRESHOLD, measured a frame at a time: the
+		-- thing that must not click. The lerp carries it, so the biggest
+		-- single-frame move is a fraction of the step itself.
+		--------------------------------------------------------------------
+		local justDrifting = stateWith({ slipDeg = Config.Drift.MinSlipAngleForDrift, speed = 60, throttle = 1 })
+		skid:ResetMeasure()
+		local crossedFrom = skid.volume
+		for _ = 1, 120 do
+			skid:Update(justDrifting, nil, DT)
+		end
+		local stepAcross = skid:ResetMeasure()
+		local stepSize = SkidSound.volumeFor(justDrifting) - S.RollVolume
+		check(
+			"crossing the drift threshold is a swell, not a click",
+			stepAcross < stepSize and stepAcross < 0.02,
+			`largest single-frame volume move {string.format("%.5f", stepAcross)} at {math.floor(1 / DT)} fps, `
+				.. `crossing a step of {string.format("%.4f", stepSize)} `
+				.. `({string.format("%.4f", crossedFrom)} -> {string.format("%.4f", SkidSound.volumeFor(justDrifting))})`
+		)
+
+		-- AND THE ONLY TWO THINGS THAT STOP IT. A drift beginning or ending is not one of
+		-- them, which is the whole of T-083; the clip is started once and left running.
+		local rollingOn = skid.sounds[1].playing
+		skid:Update(stateWith({ slipDeg = 0, speed = S.MinSpeed - 0.01, throttle = 1 }), nil, DT)
+		local slowOff = not skid.sounds[1].playing
+		skid:Update(stateWith({ slipDeg = 0, speed = 60, throttle = 1 }), nil, DT)
+		local backOn = skid.sounds[1].playing
+		skid:Update(stateWith({ slipDeg = 45, speed = 60, throttle = 1, airborne = true }), nil, DT)
+		local airOff = not skid.sounds[1].playing
+		skid:Update(stateWith({ slipDeg = 45, speed = 60, throttle = 1 }), nil, DT)
+		local drifting = skid.sounds[1].playing
+		check(
+			"the clip runs whenever the car is rolling, and stops only in the air or under MinSpeed",
+			rollingOn and slowOff and backOn and airOff and drifting,
+			`straight {rollingOn}, under {S.MinSpeed} studs/s {not slowOff}, rolling again {backOn}, `
+				.. `airborne {not airOff}, drifting {drifting}`
+		)
 
 		----------------------------------------------------------------------
 		-- Cut, the switch, and the thing that matters: IT ALLOCATES NOTHING.
