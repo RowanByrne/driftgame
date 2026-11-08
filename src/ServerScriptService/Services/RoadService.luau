@@ -133,6 +133,37 @@ local function applyRails(entry: any)
 	end
 end
 
+--------------------------------------------------------------------------------
+-- The profile (T-085), off unless `Config.Road.Profile` says otherwise
+--------------------------------------------------------------------------------
+-- WHY IT IS HERE AT ALL. "The road hitches when a piece appears" names a symptom and
+-- three suspects -- the generator's search, the few hundred `Instance.new`s a piece is,
+-- and the single `.Parent` write that puts them in the Workspace -- and the only way to
+-- tell them apart is to time them separately on the frame they happen. So each stage is
+-- timed into a ring, with the clock reading it was taken at, and `DebugProfile()` hands
+-- the ring back for a test or a bridge call to total up.
+--
+-- IT COSTS NOTHING WHEN IT IS OFF: one `== true` per piece built and per piece destroyed.
+-- Nothing in here prints, ever.
+local profile = {
+	pieces = {} :: { any }, -- one per piece built
+	destroys = {} :: { any }, -- one per piece destroyed
+	windows = {} :: { any }, -- one per `window()` call that did any work
+	builtEver = 0, -- pieces this VM has built, so a window call can say how many were its
+}
+
+local function profiling(): boolean
+	return Config.Road.Profile == true
+end
+
+local function keep(list: { any }, entry: any)
+	table.insert(list, entry)
+	local limit = Config.Road.ProfileKeep or 400
+	while #list > limit do
+		table.remove(list, 1)
+	end
+end
+
 local function buildPiece(piece: any)
 	if built[piece.n] then
 		return
@@ -144,6 +175,23 @@ local function buildPiece(piece: any)
 	if not railsOn then
 		applyRails(entry)
 	end
+	profile.builtEver += 1
+	if profiling() then
+		keep(profile.pieces, {
+			n = piece.n,
+			kind = piece.kind,
+			id = piece.id,
+			parts = entry.parts,
+			road = #entry.road,
+			barriers = #entry.barriers,
+			marks = #entry.marks,
+			segments = #piece.quads,
+			makeMs = entry.makeMs or 0,
+			tagMs = entry.tagMs or 0,
+			parentMs = entry.parentMs or 0,
+			at = os.clock(),
+		})
+	end
 end
 
 local function destroyPiece(n: number)
@@ -151,8 +199,17 @@ local function destroyPiece(n: number)
 	if not entry then
 		return
 	end
+	local at = if profiling() then os.clock() else 0
 	entry.folder:Destroy()
 	built[n] = nil
+	if profiling() then
+		keep(profile.destroys, {
+			n = n,
+			parts = entry.parts,
+			destroyMs = (os.clock() - at) * 1000,
+			at = at,
+		})
+	end
 end
 
 -- Build ahead, destroy behind. Everything the window does is here, in one place, so there
@@ -165,9 +222,15 @@ end
 -- barrier behind it cannot be pushed back by turning round.
 local function window(centre: number)
 	local C = Config.Road
+	local on = profiling()
+	local startedAt = if on then os.clock() else 0
 	windowCentre = math.max(windowCentre, centre)
 	centre = windowCentre
-	for _, piece in generator:extendTo(centre + C.AheadPieces) do
+	local genAt = if on then os.clock() else 0
+	local added = generator:extendTo(centre + C.AheadPieces)
+	local genMs = if on then (os.clock() - genAt) * 1000 else 0
+	local before = profile.builtEver
+	for _, piece in added do
 		buildPiece(piece)
 	end
 	-- A piece the generator already had but that has no parts (a Generate that was
@@ -186,6 +249,19 @@ local function window(centre: number)
 	for n in built do
 		if n < generator.first then
 			destroyPiece(n)
+		end
+	end
+	if on then
+		local wholeMs = (os.clock() - startedAt) * 1000
+		if wholeMs > 0.05 or #added > 0 then
+			keep(profile.windows, {
+				centre = centre,
+				genMs = genMs,
+				wholeMs = wholeMs,
+				addedPieces = #added,
+				builtPieces = profile.builtEver - before,
+				at = startedAt,
+			})
 		end
 	end
 end
@@ -913,6 +989,64 @@ function RoadService:DebugTick()
 	assert(RunService:IsStudio(), "DebugTick is Studio only")
 	tick()
 	return self:DebugState()
+end
+
+-- Studio only: the stage timings (T-085). `on` nil reads the switch, true or false sets
+-- it; setting it either way empties the ring, so a measurement never contains the frames
+-- before it was asked for. `Config.Road.Profile` is the one switch, so `Road/Builder`
+-- sees the same answer.
+function RoadService:DebugProfile(on: boolean?)
+	assert(RunService:IsStudio(), "DebugProfile is Studio only")
+	if on ~= nil then
+		Config.Road.Profile = on == true
+		table.clear(profile.pieces)
+		table.clear(profile.destroys)
+		table.clear(profile.windows)
+	end
+	-- Totalled here rather than in the caller so that every report of this is the same
+	-- report. `worst` is the single longest piece, stages and all.
+	local sum = { makeMs = 0, tagMs = 0, parentMs = 0, parts = 0 }
+	local worst, worstMs = nil, -1
+	for _, p in profile.pieces do
+		local whole = p.makeMs + p.tagMs + p.parentMs
+		sum.makeMs += p.makeMs
+		sum.tagMs += p.tagMs
+		sum.parentMs += p.parentMs
+		sum.parts += p.parts
+		if whole > worstMs then
+			worst, worstMs = p, whole
+		end
+	end
+	local genMs, worstGen = 0, 0
+	for _, w in profile.windows do
+		genMs += w.genMs
+		worstGen = math.max(worstGen, w.genMs)
+	end
+	local destroyMs, worstDestroy = 0, 0
+	for _, d in profile.destroys do
+		destroyMs += d.destroyMs
+		worstDestroy = math.max(worstDestroy, d.destroyMs)
+	end
+	return {
+		on = Config.Road.Profile == true,
+		pieces = profile.pieces,
+		destroys = profile.destroys,
+		windows = profile.windows,
+		totals = {
+			built = #profile.pieces,
+			destroyed = #profile.destroys,
+			parts = sum.parts,
+			makeMs = sum.makeMs,
+			tagMs = sum.tagMs,
+			parentMs = sum.parentMs,
+			genMs = genMs,
+			destroyMs = destroyMs,
+			worstPieceMs = if worstMs >= 0 then worstMs else 0,
+			worstPieceN = worst and worst.n,
+			worstGenMs = worstGen,
+			worstDestroyMs = worstDestroy,
+		},
+	}
 end
 
 function RoadService:DebugLeave(userId: number)
