@@ -711,6 +711,41 @@ function CarCameraController:DebugState()
 	}
 end
 
+-- A key the probes' `config` overrode that HAD NO VALUE before: `saved[key] = nil` would
+-- leave no entry at all, the restore loop would never iterate it, and the override would
+-- stay on `Config.Camera` for the whole Studio session, because the module is cached. So
+-- an absent original is stored as this unique table and turned back into `nil` on the way
+-- out. It is never a value a config key could hold, so it can never be mistaken for one.
+local WAS_NIL = {}
+
+-- Take a table of Camera overrides for one probe run; returns what `restoreConfig` needs.
+local function applyConfig(config)
+	local saved = {}
+	if config then
+		for key, value in config do
+			local was = Cam[key]
+			if was == nil then
+				was = WAS_NIL
+			end
+			saved[key] = was
+			Cam[key] = value
+		end
+	end
+	return saved
+end
+
+-- Put every original back, the absent ones included. ALWAYS run this, even when the
+-- measurement errored: a probe that leaves an override on poisons every later reader.
+local function restoreConfig(saved)
+	for key, value in saved do
+		if value == WAS_NIL then
+			Cam[key] = nil
+		else
+			Cam[key] = value
+		end
+	end
+end
+
 -- Settle a throwaway rig against a car held at a fixed slip angle, and report what the
 -- camera does there. This is how the curves are measured: no car, no Workspace and no
 -- waiting.
@@ -750,13 +785,7 @@ function CarCameraController:DebugProbe(opts)
 	-- Any other camera number, for the length of this run only (T-072): `config =
 	-- { CamRollMax = 0, ShakeRotation = Vector3.zero }` is how the zeroed camera is
 	-- measured beside the shipped one without editing a file between the two.
-	local saved = {}
-	if opts.config then
-		for key, value in opts.config do
-			saved[key] = Cam[key]
-			Cam[key] = value
-		end
-	end
+	local saved = applyConfig(opts.config)
 
 	local rig = CarCameraController.newRig(view)
 	local maxPosStep, maxLookStep, maxRollDeg, maxRollStepDeg = 0, 0, 0, 0
@@ -798,9 +827,7 @@ function CarCameraController:DebugProbe(opts)
 	end)
 
 	Cam.CamVelocityBlend = was
-	for key, value in saved do
-		Cam[key] = value
-	end
+	restoreConfig(saved)
 	if not ok then
 		return { error = tostring(err) }
 	end
@@ -854,20 +881,14 @@ function CarCameraController:DebugShakeProbe(opts)
 	local viewportY = opts.viewportY or 1080
 	local yaw = math.rad(15)
 
-	local saved = {}
-	if opts.config then
-		for key, value in opts.config do
-			saved[key] = Cam[key]
-			Cam[key] = value
-		end
-	end
+	local saved = applyConfig(opts.config)
 
 	local fwd = DriftModel.axes(yaw)
 	local function viewAt(position)
 		return { position = position, yaw = yaw, velocity = fwd * speed, slip = 0, speed = speed }
 	end
 	local view = viewAt(Vector3.new(0, C.RideHeight, 0))
-	local rig = CarCameraController.newRig(view)
+	local rig
 
 	-- The picture's own movement, with the camera's geometry taken out: the angle from the
 	-- look axis to a point fixed to the car, which is what the player watches.
@@ -882,28 +903,35 @@ function CarCameraController:DebugShakeProbe(opts)
 	local maxAimDeg = 0
 	local prevAim = nil
 	local frames = math.floor(seconds * fps)
-	for i = 1, frames do
-		view = viewAt(view.position + view.velocity * dt)
-		local cf = CarCameraController._advance(rig, view, dt)
-		maxKickDeg = math.max(maxKickDeg, math.deg(rig.shakeRot.Magnitude))
-		maxKickStuds = math.max(maxKickStuds, rig.shakePos.Magnitude)
-		-- The car's own point, against the camera: the shake is the only thing moving it,
-		-- because a car driven straight sits still on screen once the camera has settled.
-		local aim = aimDeg(cf, view.position)
-		if i > fps then -- past the settling
-			maxAimDeg = math.max(maxAimDeg, aim.Magnitude)
-			if prevAim then
-				local stepDeg = (aim - prevAim).Magnitude
-				maxAimStepDeg = math.max(maxAimStepDeg, stepDeg)
-				meanAimStepDeg += stepDeg
-				n += 1
+	-- Wrapped, like DebugProbe's loop, so an error still reaches the restore below and
+	-- comes back as `{ error = ... }` rather than a half-measured table (T-084).
+	local ok, err = pcall(function()
+		rig = CarCameraController.newRig(view)
+		for i = 1, frames do
+			view = viewAt(view.position + view.velocity * dt)
+			local cf = CarCameraController._advance(rig, view, dt)
+			maxKickDeg = math.max(maxKickDeg, math.deg(rig.shakeRot.Magnitude))
+			maxKickStuds = math.max(maxKickStuds, rig.shakePos.Magnitude)
+			-- The car's own point, against the camera: the shake is the only thing moving
+			-- it, because a car driven straight sits still on screen once the camera has
+			-- settled.
+			local aim = aimDeg(cf, view.position)
+			if i > fps then -- past the settling
+				maxAimDeg = math.max(maxAimDeg, aim.Magnitude)
+				if prevAim then
+					local stepDeg = (aim - prevAim).Magnitude
+					maxAimStepDeg = math.max(maxAimStepDeg, stepDeg)
+					meanAimStepDeg += stepDeg
+					n += 1
+				end
 			end
+			prevAim = aim
 		end
-		prevAim = aim
-	end
+	end)
 
-	for key, value in saved do
-		Cam[key] = value
+	restoreConfig(saved)
+	if not ok then
+		return { error = tostring(err) }
 	end
 
 	local pxPerDeg = viewportY / math.max(rig.fov, 1)
