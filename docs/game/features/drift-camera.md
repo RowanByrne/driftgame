@@ -236,7 +236,8 @@ and the shake's four), and proved the same way that zeroing them gives that buil
 | `CamRollAtAngle` | **45°** | Slip at which the roll saturates. The predecessor's was 20 |
 | `CamRollRate` | **6 /s** | How fast the roll follows: a 167 ms time constant. The predecessor's was 20, which is most of why it felt like a flick |
 | `ShakePeriod` | **0.05 s** | How often a new kick is chosen. EXACT, the reference's own |
-| `ShakeRotation` | **(0.15, 0.15, 0.10)°** | The rotation kick at top speed, linear in speed. 3.3 px of picture in the worst frame, 0.65 in the average one |
+| `ShakeSpeedStart` | **0.75** | Share of top speed below which there is NO shake at all (`T-082`). The user said the shake arrived too early: it is meant to say "flat out", not "the car is moving". At a 179 studs/s top speed that is 134 studs/s. **The size at top speed is unchanged by it** -- lower starts it sooner, and 0 is the old straight line |
+| `ShakeRotation` | **(0.15, 0.15, 0.10)°** | The rotation kick at top speed. Nothing below `ShakeSpeedStart`, then linear from there to the top. 3.3 px of picture in the worst frame at the top, 0.65 in the average one |
 | `ShakePosition` | **(0.07, 0.07, 0) studs** | The position kick, in the camera's own axes. About a pixel; the Z is zero because a dolly along the look axis is a 0.2% scale change and nothing else |
 | `ShakeRestoreRate` | **14 /s** | How fast a kick settles back to zero: to half of itself before the next one arrives |
 
