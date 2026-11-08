@@ -9,6 +9,7 @@ Every task in progress and the files it owns, so parallel sessions and workers n
 
 | Branch | Lane | Files owned | Since |
 |---|---|---|---|
+| `agent/squeal-always-on` | lane2 | `src/ReplicatedStorage/Shared/Config/Fx.luau`, `src/StarterPlayerScripts/Drift/SkidSound.luau`, `src/ServerScriptService/Tests/FxTests.luau`, `docs/game/features/car-fx.md` | 2026-11-08 |
 
 ## Notes between sessions
 
