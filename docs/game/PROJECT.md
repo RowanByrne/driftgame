@@ -13,7 +13,7 @@ This game's details, loaded into every agent session: keep it short, and put des
 | GitHub | `{{GITHUB_REPO}}` |
 | Roblox | Experience (universe) `{{UNIVERSE_ID}}`, start place `{{PLACE_ID}}`, owned by `{{OWNER}}` |
 | Update log | No |
-| Lanes | 2 (lane1 to lane2) |
+| Lanes | None yet |
 | Lync port base | `34870` |
 
 ## Places
@@ -32,7 +32,7 @@ Each PC that works on this game, and how many lanes it opens: `lane1` up to that
 
 | PC (`$env:COMPUTERNAME`) | What it is | Lanes it opens |
 |---|---|---|
-| `MONSOONPC` | 62 GB, 32 threads (AMD Ryzen 9 9950X3D 16-Core Processor) | 2 |
+| None yet | | |
 
 ## Game-only rules
 
