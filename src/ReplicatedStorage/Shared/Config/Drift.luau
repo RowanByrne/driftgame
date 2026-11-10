@@ -207,12 +207,19 @@ local Drift = {
 		MaxTilt = 30, -- deg. The most the floor solve will tip the car on its supports. A car
 		-- whose supports are all on one side of its centre of mass tips this far
 		-- and slides off whatever it is hanging from
-		FloorTouch = 0.05, -- studs. A floor point this close to its ground is touching it
+		FloorTouch = 0.08, -- studs. A floor point this close to its ground is touching it. The
+		-- height eases on to a sliding edge and trails it by up to 0.065 at 30
+		-- degrees of tip (measured), so 0.05 dropped contacts it was resting on
 		EdgeDrop = 0.5, -- studs. Two floor points this far off each other's plane have an edge
 		-- between them, and it is found by halving the gap
-		EdgeSteps = 8, -- halvings: a floor segment 7 studs long pins the edge to 0.03, so a
-		-- car tipped 30 degrees on it rests within 0.02 of it -- under
-		-- `FloorTouch`. At 5 it rode up to 0.12 clear of the edge in steps
+		ReuseMove = 0.1, -- studs. The floor solve looks under the car again only once it has
+		-- moved this far since the last look (T-095 perf): a look is about 30
+		-- ground rays, and a car resting on an edge does not need one a step
+		ReuseTurn = 0.005, -- rad (about 0.3 deg), the same for turning and tipping
+		EdgeSteps = 8, -- halvings, ONLY where the world has no sideways ray (`World.edge`):
+		-- the live world finds a step's face in one ray. A floor segment 7 studs
+		-- long is pinned to 0.03 this way, so a car tipped 30 degrees rests
+		-- within 0.02 of the edge -- under `FloorTouch`
 		SearchStep = 8, -- deg. The rest solve's first step, halved down to `SearchFinest`
 		SearchFinest = 0.05, -- deg
 		-- THE FLOOR, when a car's own is not known: `Drift/Render` reads the real one off

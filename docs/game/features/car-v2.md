@@ -43,7 +43,7 @@ Get the game ready for the car being modelled in `features/car-model.md`: a car 
 | `HangHold` | 0.25 studs | once running, the floor solve lets go as soon as the pose the wheels alone would give is within this of what the floor and the tyres' travel allow, which on a road is at once |
 | `TipAccel` | 6 rad/s² | how fast the car may start to tip toward resting on its floor: off a ramp lip at speed it turns under a degree, rolled off a ledge slowly it settles in a fraction of a second |
 | `MaxTilt` | 30 deg | the most the floor solve tips the car; a car with all its supports to one side of its centre of mass tips this far and slides off |
-| `FloorTouch` | 0.05 studs | a floor point this close to its ground is touching (sparks, T-097) |
+| `FloorTouch` | 0.08 studs | a floor point this close to its ground is touching (sparks, T-097); the height trails a sliding edge by up to 0.065 at 30° of tip |
 | `EdgeDrop` / `EdgeSteps` | 0.5 studs / 8 | two floor points this far off each other's plane have an edge between them, found by halving the gap 8 times (to 0.03 studs on a 7-stud segment) |
 | `FloorClearance`, `FloorWidth`, `FloorLength` | 0.5 studs, 1, 1.05 | the stand-in floor box, until a drawn car hands the model its own |
 | `LiftRange` | 1 stud | each wheel's lift either way of zero over `CarState` |

@@ -80,6 +80,9 @@ export type World = {
 	probe: (pos: Vector3) -> Hit?,
 	sweep: ((from: Vector3, to: Vector3, yaw: number) -> (Vector3?, Vector3?))?,
 	penetration: ((pos: Vector3, yaw: number) -> (Vector3?, number))?,
+	-- Where a step's face is between two points, by one sideways ray (Drift/Suspension's
+	-- floor solve). Optional: without it the solve halves the gap with ground rays instead.
+	edge: ((from: Vector3, to: Vector3) -> Vector3?)?,
 }
 
 export type State = {
@@ -129,6 +132,7 @@ export type State = {
 	floor: { Suspension.FloorPoint }?, -- the car's floor points; nil is the config's box
 	floorContacts: { Suspension.Contact }, -- floor points resting on something this step
 	floorTouching: number, -- how many
+	supportCache: any?, -- the floor solve's last look at what is under the car, and from where
 }
 
 local function lerp(a: number, b: number, t: number): number
@@ -649,11 +653,32 @@ function Model.step(s: State, input: Input, dt: number, world: World): State
 	-- the wheels' pose is always safe, so there it lets go at once.
 	-- And while it is in, a wheel is its whole tread, not the one ray under its middle: a
 	-- tyre rolling over the edge rides round the corner (`Suspension.treads`).
+	--
+	-- WHAT IS UNDER IT IS ASKED AGAIN ONLY WHEN THE CAR HAS MOVED (T-095, measured). A fresh
+	-- look is some thirty ground rays, and at 30 microseconds a ray in a built place that
+	-- was 5 ms a step -- a car resting on an edge froze the game, because a frame that
+	-- cannot keep up hands the next one more steps to catch up on. The world does not move,
+	-- so while the car has moved less than `ReuseMove` and turned and tipped less than
+	-- `ReuseTurn` since the last look, the supports it found (in the car's own frame) are
+	-- reused as they are.
 	local contactHits: { Hit? } = wheelHits
+	local sup = nil
 	if hang or s.hanging then
-		contactHits = Suspension.treads(world, s.yaw, target, s.up)
+		local cache = s.supportCache
+		if
+			cache
+			and cache.floor == s.floor
+			and (target - cache.at).Magnitude < P.ReuseMove
+			and math.abs(s.yaw - cache.yaw) < P.ReuseTurn
+			and (s.up - cache.up).Magnitude < P.ReuseTurn
+		then
+			contactHits, sup = cache.hits, cache.sup
+		else
+			contactHits = Suspension.treads(world, s.yaw, target, s.up)
+			sup = Suspension.gather(world, s.yaw, target, s.up, contactHits, s.floor)
+			s.supportCache = { at = target, yaw = s.yaw, up = s.up, floor = s.floor, hits = contactHits, sup = sup }
+		end
 	end
-	local sup = if hang or s.hanging then Suspension.gather(world, s.yaw, target, s.up, contactHits, s.floor) else nil
 	if sup and not hang then
 		local _, leastY, floorY = Suspension.need(sup, s.yaw, s.up)
 		local settles = groundY ~= nil and groundY + C.RideHeight >= leastY - P.HangHold
@@ -665,6 +690,9 @@ function Model.step(s: State, input: Input, dt: number, world: World): State
 		sup = nil -- nothing under any of it: it falls, as it always has
 	end
 	s.hanging = sup ~= nil
+	if not sup then
+		s.supportCache = nil
+	end
 
 	local follow = 1 - math.exp(-dt / math.max(C.GroundFollow, EPS))
 	if sup then
