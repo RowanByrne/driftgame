@@ -50,6 +50,7 @@
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
+local Archetypes = require(ReplicatedStorage.Shared.Cars.Archetypes)
 local Config = require(ReplicatedStorage.Shared.Config)
 
 local Suspension = {}
@@ -328,6 +329,33 @@ local function segmentsOf(floor: { FloorPoint }): { { FloorPoint } }
 end
 Suspension.segments = segmentsOf
 
+-- HOW MUCH LOWER THIS CAR'S BODY SITS THAN STOCK (T-109), in studs: a car whose wheels sit
+-- further into their travel at rest (`SuspensionRest`, which a Suspension part moves) has
+-- its body that much nearer the road, and its floor with it. Zero on every stock car.
+function Suspension.rideDrop(): number
+	return S().Rest - Archetypes.Base.SuspensionRest
+end
+
+-- The floor, lowered with the body. The same table back when nothing is lowered, and one
+-- copy per floor and drop otherwise, so the segment cache keeps working.
+local lowered: { [any]: { drop: number, list: { FloorPoint } } } = setmetatable({}, { __mode = "k" }) :: any
+
+local function floorAt(points: { FloorPoint }, drop: number): { FloorPoint }
+	if drop == 0 then
+		return points
+	end
+	local cached = lowered[points]
+	if cached and cached.drop == drop then
+		return cached.list
+	end
+	local list = {}
+	for _, point in points do
+		table.insert(list, { name = point.name, at = point.at - Vector3.new(0, drop, 0) })
+	end
+	lowered[points] = { drop = drop, list = list }
+	return list
+end
+
 --------------------------------------------------------------------------------
 -- The floor solve, for Drift/Model
 --------------------------------------------------------------------------------
@@ -346,23 +374,58 @@ local function add(sup: Supports, p: Vector3, g: number, hard: boolean, name: st
 	end
 end
 
+-- The ground a hit's own plane puts at a world point.
+local function planeAt(hit: any, hx: number, hz: number, x: number, z: number): number
+	local n = hit.normal
+	if n.Y < EPS then
+		return hit.y
+	end
+	return hit.y - (n.X * (x - hx) + n.Z * (z - hz)) / n.Y
+end
+
+-- WHERE AN EDGE IS, in ONE ray (T-095 perf). The ground rays say there is a step between
+-- a low point and a high one; a ray cast sideways from over the low ground toward the high
+-- point, a hair under the high surface, stops exactly on the step's face. That is one query
+-- where halving the gap took `EdgeSteps` of them, and it is exact rather than quantised.
+-- Returns how far along from `low` to `high` the face is, 0..1, or nil when the world has
+-- no sideways ray (a made-up test world) or the ray finds no face (a slope, not a step), and
+-- the caller halves instead.
+local EDGE_DIP = 0.05 -- studs under the high surface the sideways ray runs
+
+local function edgeAlong(world: any, low: Vector3, high: Vector3, highY: number): number?
+	local cast = world.edge
+	if not cast then
+		return nil
+	end
+	local from = Vector3.new(low.X, highY - EDGE_DIP, low.Z)
+	local to = Vector3.new(high.X, highY - EDGE_DIP, high.Z)
+	local span = (to - from).Magnitude
+	if span < EPS then
+		return nil
+	end
+	local at = cast(from, to)
+	if not at then
+		return nil
+	end
+	return math.clamp((Vector3.new(at.X, from.Y, at.Z) - from).Magnitude / span, 0, 1)
+end
+
 -- Each wheel's ground as its whole tread meets it: where its contact would have to be for
 -- no part of the tread to be inside anything, so a wheel rolling over an edge rides round
 -- the corner as a circle does instead of dropping through it the moment the ray under its
--- middle is past. The tread is asked at five places round its lower half (`TREAD`, in
--- degrees off the bottom, + forward) and at its two sides; wherever two neighbours stand on
--- different levels the edge between them is found by halving `EdgeSteps` times, and the
--- tread either side of it held over the higher ground -- a hair more lift than it needs,
--- never less. Each answer is measured in the world, along the car's own tilt, so a car
+-- middle is past. The tread is asked at three places round its lower half (`TREAD`, in
+-- degrees off the bottom, + forward); wherever two neighbours stand on different levels the
+-- edge between them is found by one sideways ray (`edgeAlong`) -- or by halving
+-- `EdgeSteps` times where the world has none -- and the tread either side of it held over
+-- the higher ground: a hair more lift than it needs, never less. Each answer is measured in the world, along the car's own tilt, so a car
 -- tipped on its floor still gets its tyres right. Only while the floor solve runs, and into
 -- a NEW table, so the model's own hits are left alone.
-local TREAD = { -70, -35, 0, 35, 70 }
+local TREAD = { -60, 0, 60 }
 
 function Suspension.treads(world: any, yaw: number, pos: Vector3, up: Vector3): { any }
 	local C = Config.Drift
 	local P = S()
 	local r = C.WheelDiameter * 0.5
-	local halfWidth = C.WheelWidth * 0.5
 	local fwd, right, u = basis(yaw, up)
 	local out = table.create(4)
 	for i = 1, 4 do
@@ -400,34 +463,39 @@ function Suspension.treads(world: any, yaw: number, pos: Vector3, up: Vector3): 
 			else
 				continue
 			end
-			for _ = 1, P.EdgeSteps do
-				local m = (lo + hi) * 0.5
-				local mh = world.probe(pointAt(m, 0))
-				if mh and math.abs(mh.y - high.y) <= P.EdgeDrop * 0.5 then
-					hi = m
-				else
-					lo = m
+			local lowAt, highAt = pointAt(lo, 0), pointAt(hi, 0)
+			local t = edgeAlong(world, lowAt, highAt, high.y)
+			if t then
+				-- The face is `t` of the way across the chord: find the angle on the tread
+				-- over it by halving in maths alone, no more rays.
+				local face = lowAt:Lerp(highAt, t)
+				local dir = Vector3.new(highAt.X - lowAt.X, 0, highAt.Z - lowAt.Z)
+				for _ = 1, 12 do
+					local m = (lo + hi) * 0.5
+					local q = pointAt(m, 0)
+					if Vector3.new(q.X - face.X, 0, q.Z - face.Z):Dot(dir) >= 0 then
+						hi = m
+					else
+						lo = m
+					end
+				end
+			else
+				for _ = 1, P.EdgeSteps do
+					local m = (lo + hi) * 0.5
+					local mh = world.probe(pointAt(m, 0))
+					if mh and math.abs(mh.y - high.y) <= P.EdgeDrop * 0.5 then
+						hi = m
+					else
+						lo = m
+					end
 				end
 			end
 			offer(high, pointAt(lo, 0))
 			offer(high, pointAt(hi, 0))
 		end
-		for _, side in { 1, -1 } do
-			local at = pointAt(0, side * halfWidth)
-			offer(world.probe(at), at)
-		end
 		out[i] = best
 	end
 	return out
-end
-
--- The ground a hit's own plane puts at a world point.
-local function planeAt(hit: any, hx: number, hz: number, x: number, z: number): number
-	local n = hit.normal
-	if n.Y < EPS then
-		return hit.y
-	end
-	return hit.y - (n.X * (x - hx) + n.Z * (z - hz)) / n.Y
 end
 
 -- Everything that could hold the car up this step: the wheels that found ground (at ride
@@ -450,7 +518,7 @@ function Suspension.gather(
 		end
 	end
 
-	local points = floor or Suspension.defaultFloor()
+	local points = floorAt(floor or Suspension.defaultFloor(), Suspension.rideDrop())
 	local fwd, right, u = basis(yaw, up)
 	local hits: { [FloorPoint]: any } = {}
 	local worldAt: { [FloorPoint]: Vector3 } = {}
@@ -491,16 +559,28 @@ function Suspension.gather(
 		end
 		local hHit = hits[high]
 		local hw = worldAt[high]
+		local lw = worldAt[low]
 		local lo, hi = 0, 1
-		for _ = 1, P.EdgeSteps do
-			local m = (lo + hi) * 0.5
-			local local_ = high.at:Lerp(low.at, m)
-			local at = pos + offsetOf(fwd, right, u, local_)
-			local hit = world.probe(at)
-			if hit and math.abs(hit.y - planeAt(hHit, hw.X, hw.Z, at.X, at.Z)) <= drop * 0.5 then
-				lo = m
-			else
-				hi = m
+		local t = edgeAlong(world, lw, hw, planeAt(hHit, hw.X, hw.Z, lw.X, lw.Z))
+		if t then
+			-- `t` is measured from the low end. The support goes `ReuseMove` (and a hair)
+			-- further out over the drop than the face: the model reuses what it found until
+			-- the car has moved that far, and the edge must not be under the car's floor
+			-- anywhere it could be in the meantime. It costs the floor riding at most that
+			-- far times the tip high -- 0.06 at 30 degrees, inside `FloorTouch`.
+			local len = (high.at - low.at).Magnitude
+			hi = math.clamp(1 - t + (P.ReuseMove + 0.01) / math.max(len, EPS), 0, 1)
+		else
+			for _ = 1, P.EdgeSteps do
+				local m = (lo + hi) * 0.5
+				local local_ = high.at:Lerp(low.at, m)
+				local at = pos + offsetOf(fwd, right, u, local_)
+				local hit = world.probe(at)
+				if hit and math.abs(hit.y - planeAt(hHit, hw.X, hw.Z, at.X, at.Z)) <= drop * 0.5 then
+					lo = m
+				else
+					hi = m
+				end
 			end
 		end
 		local edgeLocal = high.at:Lerp(low.at, hi)
@@ -747,6 +827,8 @@ function Suspension.step(s: any, hits: { any }, dt: number, vyBefore: number)
 		pT = math.clamp(pT, -tilt, tilt)
 		qT = math.clamp(qT, -tilt, tilt)
 	end
+	-- And sitting lower or higher than stock, whatever the wheels are doing (T-109).
+	zT -= Suspension.rideDrop()
 
 	-- Taking the load: a change in the car's vertical speed while it is on the ground --
 	-- a landing, the foot of a ramp, a crest -- throws the body against its springs.

@@ -538,6 +538,19 @@ function World.live(ignore: { Instance }): Live
 		return n.Unit
 	end
 
+	-- WHERE A STEP'S FACE IS, for the floor solve (`Drift/Suspension`, T-095): one ray cast
+	-- sideways at the height just under a ledge's top, from over the drop toward the ledge,
+	-- against the same surfaces the ground rays see. Its hit is the face; a hit on anything
+	-- facing up or down is a slope or a floor, not a step, and answers nothing.
+	function self.edge(from: Vector3, to: Vector3): Vector3?
+		ensure()
+		local result = workspace:Raycast(from, to - from, groundParams)
+		if not result or math.abs(result.Normal.Y) > GROUND_NORMAL_Y then
+			return nil
+		end
+		return result.Position
+	end
+
 	function self.carFrame(pos: Vector3, yaw: number): CFrame
 		return carPose(pos, yaw, surfaceUp(pos))
 	end

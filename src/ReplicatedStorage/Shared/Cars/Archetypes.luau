@@ -73,6 +73,12 @@ export type Car = {
 	BodyRollRate: number?,
 	WheelSteerMax: number?,
 	WheelSteerRate: number?,
+
+	-- the suspension (T-109), drawn: nothing the drift line reads
+	SuspensionTravel: number?,
+	SuspensionRest: number?,
+	SuspensionStiffness: number?,
+	SuspensionDamping: number?,
 }
 
 local Archetypes = {}
@@ -137,6 +143,19 @@ Archetypes.Base = {
 	BodyRollRate = 10, -- per second. FALLBACK
 	WheelSteerMax = 30, -- deg. EXACT. Cosmetic opposite lock
 	WheelSteerRate = 4, -- per second. EXACT
+
+	-- THE SUSPENSION, per car (T-109; `Drift/Suspension`, features/car-v2.md "Rules and
+	-- numbers"). They were `Config.Drift.Suspension`'s and are read through it still
+	-- (its metatable answers these four from the car), so a Suspension part can move them
+	-- through the build layer like any other car number. The values are the ones the user
+	-- has seen since T-095; every archetype shares them. LOOKS ONLY: the springs are
+	-- drawn, and the floor solve reads Travel and Rest only on a ledge.
+	SuspensionTravel = 0.6, -- studs a wheel moves, fully hanging to fully up
+	SuspensionRest = 0.25, -- studs up from hanging a wheel sits at on the flat. MORE IS
+	-- LOWER: the wheel sits further into its travel and the body is
+	-- drawn that much nearer the road than at this value
+	SuspensionStiffness = 300, -- 1/s^2. How hard the body springs back on its wheels
+	SuspensionDamping = 22, -- 1/s. And how fast that dies away
 }
 
 -- The order the panel cycles them in, and the order they are reported in.
