@@ -115,6 +115,51 @@ The five simulation parts (`Body`, `WheelFL`…`WheelRR`, at `wheelOffsets()`) a
 
 The gray model's own parts and pivots, for reference while the new model is made, are in `..\art\source\car-ae86\pivots-gray2.json`: doors and their glass, hood and prop rod, hatch and struts, pop-up pods, steering wheel, needles, pedals, levers, wipers and lamps.
 
+## Customization
+
+> The garage's parts and paint (`features/car-customization.md`, T-101). The catalog, a built car, the one remote, and the attributes every client draws a car from. **Nothing here changes how a car drives yet:** `Customization.resolve` says what a build implies, and applying it is T-106.
+
+**The catalog** (`Shared/Customization/Catalog.luau`, data only; frozen once loaded). Seven categories in menu order: `Engine`, `Suspension`, `Wheels`, `BodyKit`, `Underglow`, `Interior` hold one part each; `Paint` is four choices. Each part category is `{ id, label, kind, keys, parts }`: `kind` is `performance` (perf only), `both` or `looks` (look only), `keys` the tuner car keys its parts may move — **each key owned by one category**, so one build can move a key by at most `MaxDelta` (0.15). Each part is `{ id, name, category, perf?, look?, price, unlock }`:
+
+- `id` unique across the catalog and never reused (the store keeps it); the stock part's id ends `_stock` and is listed first.
+- `perf` = `{ [car key] = fraction }` on the tuner's car keys (`Shared/Cars/Garage` "the sliders"), each non-zero and within ±`MaxDelta`.
+- `look`, by category (`LookFields`): Suspension `{ rideHeight (studs, -0.5..0.5, drawn only), stiffness (× the v2 suspension's Stiffness, 0.7..1.5) }`; Wheels `{ rim, tyre }` (model names); BodyKit and Interior `{ slots = { [slot] = piece name } }`; Underglow `{ colour: Color3, mode: "off" | "steady" | "pulse" }`. Stock carries no perf and no look.
+- `price` (0) and `unlock` (`"free"`): present and unused until meta progression is decided.
+- **Slots** a look may fill, as rig groups the drawing steps add to the car (`kind = fixed`, on the body): `KitFront`, `KitRear`, `KitSkirts`, `KitSpoiler`, `KitFlares`; `InteriorCage`, `InteriorSeat`, `InteriorWheel`, `InteriorAudio`.
+- **Paint:** `colours` (`stock` plus a palette, each with `colour: Color3`), `finishes` (`stock`, `gloss`, `matte`, `metallic`, each with `material` and `reflectance`), `wraps` (`none` plus generic patterns, never a real brand). Fields `body` and `second` choose from `colours`, `finish` from `finishes`, `wrap` from `wraps`. `stock` means "the body's own", so the stock car recolours nothing.
+
+**A built car:** `{ base: string, parts: { [categoryId] = partId }, paint = { body, second, finish, wrap } }`, every part category and paint field present. `base` is the archetype the server had the player in at their last fit (`CarService:CarKey`). Saved in **`DriftGarageDev_v1 / garage_<userId>`** as a new optional key `build` beside `cars`: `{ version = 1, at, cars, build? }`. Absent (every garage saved before T-101, and every player who never fitted anything) reads as the stock car; a stored build is passed through `Customization.sanitize`, so an unknown part or colour becomes stock and the rest is kept. **Still the dev store, not the save system** (`features/car-tuner.md` "The store").
+
+**Remote:**
+
+| Name | Type | Direction | Owner | Payload and checks |
+|---|---|---|---|---|
+| `CustomizeFit` | RemoteEvent | Both ways | `CustomizationService` | **Client → server:** `(category: string, choice)`: a part category with `choice` = a part id string of **that** category, or `"Paint"` with `choice` = a table of 1-4 of `body` / `second` / `finish` / `wrap`, each a known option for that field and nothing else in it. **`()` is a question** ("what is my car built as?"). Only those two values are read. Server checks, in order: rate limit `Limits.FitsPerSecond` (8) asks a second per UserId, questions included, the rest **dropped unanswered** and counted in `flooded`; the store has answered for that player (else refused `loading`, so a fit is never laid over a build that has not loaded); `Customization.fit` against the catalog: ids are strings of at most `Limits.MaxIdLength` (64), unknown categories, unknown or wrong-category parts, wrong types, NaN, empty or over-full paint tables and a half-good paint are all refused whole. Accepted: `base` set from `CarService`, the build stored with `GarageService:SetBuild` (written on its next flush), published on the car. **Server → client:** `{ ok: boolean, reason: string?, category: string?, build }`, after every ask that is not dropped and when the store answers on join; `build` is always the whole build the server believes, so a refused preview goes straight back to it. `category` is echoed only when it names a real category. Reasons: `bad category`, `unknown category`, `bad part`, `unknown part`, `wrong category`, `bad paint`, `unknown paint field`, `unknown paint`, `loading` |
+
+**Attributes on a player's car** (the Model in `Workspace.Cars` whose `UserId` attribute is that player's; CarService sets `UserId` before parenting the car), set by `CustomizationService` when the car appears, when the store answers and after every accepted fit. Strings, read by every client through `Customization.read(car)`:
+
+| Attribute | Value |
+|---|---|
+| `Fit_Base` | the build's `base` |
+| `Fit_Engine`, `Fit_Suspension`, `Fit_Wheels`, `Fit_BodyKit`, `Fit_Underglow`, `Fit_Interior` | that category's part id (the stock id when stock) |
+| `Fit_PaintBody`, `Fit_PaintSecond`, `Fit_PaintFinish`, `Fit_PaintWrap` | paint option ids |
+| `Fitted` (number) | goes up by one each time the server rewrites the set, **after** the rest: a client watches this one and then reads them all |
+
+`Fit_` is not `Part_`: `Part_<Name>` is `CarParts`' moving-part state ("The car rig").
+
+**Service APIs:**
+
+| Module | Member | Signature | What it does |
+|---|---|---|---|
+| `Shared/Customization` | `Catalog` / `CategoryOrder` / `PartCategories` / `MaxDelta` / `Limits` / `Paint` | tables | The data, the seven tab ids, the six part-category ids, the bound, the wire limits, the paint lists |
+| `Shared/Customization` | `category` / `part` / `stockPart` / `partsIn` / `paintOptions` / `paintOption` / `paintColour` | `(id) -> Category?` / `(id) -> Part?` / `(categoryId) -> string?` / `(categoryId) -> { Part }` / `(listOrField) -> { Option }` / `(field, id) -> Option?` / `(id) -> Color3?` | Lookups. `partsIn("Paint")` lists every paint option tagged with its `list` |
+| `Shared/Customization` | `stock` / `copy` / `equal` / `validate` / `sanitize` / `fit` | `(base?) -> Build` / `(Build) -> Build` / `(a, b) -> boolean` / `(any) -> (boolean, reason?)` / `(any, base?) -> Build` / `(Build, category, choice) -> (Build?, reason?)` | Pure. `validate` is strict, `sanitize` never refuses (unknown becomes stock), `fit` is one wire ask applied to a copy |
+| `Shared/Customization` | `deltas` / `resolve` / `toTune` / `looks` | `(Build) -> { [carKey]: fraction }` / `(Build) -> { [carKey]: number }` / `(Build) -> { [sliderId]: number }` / `(Build) -> { [categoryId]: look }` | What a build implies, **never applied here**. `resolve` gives all eight tuner car keys: an unmoved key is the archetype's own number exactly (stock = today's car to the bit), a moved one `own × (1 + fraction)` through `Garage.clamp`. `toTune` is the same as a tuner tune of only the moved keys, the shape `Garage.toCarFields` / `Cars.setTuning` take |
+| `Shared/Customization` | `attributes` / `attributeNames` / `read` / `problems` | `(Build) -> { [name]: string }` / `() -> { string }` / `(Instance) -> Build` / `() -> { string }` | The car attributes above, written and read back; `problems` is everything wrong with the catalog data (empty is the rule, `CustomizationTests` asserts it) |
+| `CustomizationService` | `Build` / `Publish` | `(userId) -> Build` / `(car, Build) -> ()` | The build the server believes (stock on the player's archetype when there is none); write it onto a car |
+| `CustomizationService` | `DebugState` / `DebugFit` / `DebugClearLimits` | `() -> { asks, questions, fits, refused, flooded, reasons, published, players }` / `(userId, category, choice) -> (boolean, reason?)` / `(userId?) -> ()` | Studio only. `DebugFit` goes in at the real handler, guards and all |
+| `GarageService` | `BuildReady` / `GetBuild` / `SetBuild` / `BuildLoaded` | `(userId) -> boolean` / `(userId) -> Build?` / `(userId, Build) -> boolean` / Signal `(userId, player)` | The build held beside the tuned cars: whether the store has answered, the build (nil = never built), record one (sanitized, marks the garage dirty), and the signal fired when the store answers on join |
+
 ## Service APIs
 
 > Signals and methods that one service or controller exposes for others, with their signatures. Internal methods don't belong here.
