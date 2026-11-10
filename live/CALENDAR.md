@@ -18,8 +18,7 @@ One card per update, soonest first, in the form in docs/workflow/RELEASING.md "G
 
 - **When:** 2026-11-11
 - **Kind:** Timed release
-- **Game page event:** Not yet
-
+- **Game page event:** Queued (T-113)
 
 ## Past
 
