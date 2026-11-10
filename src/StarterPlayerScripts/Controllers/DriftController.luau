@@ -42,6 +42,7 @@ local EngineSound = require(DriftFolder.EngineSound)
 local RemoteCars = require(DriftFolder.RemoteCars)
 local Render = require(DriftFolder.Render)
 local Sim = require(DriftFolder.Sim)
+local Scrape = require(DriftFolder.Scrape)
 local SkidSound = require(DriftFolder.SkidSound)
 local Trajectory = require(DriftFolder.Trajectory)
 local Suspension = require(DriftFolder.Suspension)
@@ -153,6 +154,9 @@ function DriftController:Init()
 	-- (ReplicatedFirst/QuietPlay, docs/workflow/TESTING.md).
 	self.engineSound = EngineSound.new()
 	self.skidSound = SkidSound.new()
+	-- Sparks and the scrape off the floor resting on something (T-097): looks only, read
+	-- off the model's floor contacts. Its spark parts sit in the camera, not in the car.
+	self.scrape = Scrape.new()
 	self._carSpawn = Net.event("CarSpawn")
 	self._carRespawn = Net.event("CarRespawn")
 	self._carState = Net.unreliable("CarState")
@@ -319,11 +323,13 @@ function DriftController:_attach(car: Model, spawnCFrame: CFrame)
 	self.wheels:Cut()
 	self.engineSound:Cut()
 	self.skidSound:Cut()
+	self.scrape:Cut()
 	if self:_ensureRig() then
 		Render.apply(self.rig, self.runner.state)
 		self.wheels:Attach(self.rig)
 		self.engineSound:Attach(self.rig)
 		self.skidSound:Attach(self.rig)
+		self.scrape:Attach(self.rig)
 	end
 end
 
@@ -411,6 +417,7 @@ function DriftController:_placeAt(cf: CFrame)
 	self.wheels:Cut()
 	self.engineSound:Cut()
 	self.skidSound:Cut()
+	self.scrape:Cut()
 	if self:_ensureRig() then
 		Render.apply(self.rig, self.runner.state)
 	end
@@ -429,6 +436,9 @@ function DriftController:_frame(dt: number)
 		end
 		if self.skidSound then
 			self.skidSound:Update(nil, nil, dt)
+		end
+		if self.scrape then
+			self.scrape:Update(nil, dt)
 		end
 		if self.hud then
 			self.hud:Update(nil, nil)
@@ -472,6 +482,7 @@ function DriftController:_frame(dt: number)
 		-- same reason (T-064).
 		self.engineSound:Attach(self.rig)
 		self.skidSound:Attach(self.rig)
+		self.scrape:Attach(self.rig)
 	end
 	-- Marks and smoke, from this frame's state and this frame's input: the handbrake is an
 	-- input and not model state, so both go in (Drift/Wheels).
@@ -479,6 +490,7 @@ function DriftController:_frame(dt: number)
 	-- The engine note, from the road speed alone, and the squeal, from the slip angle.
 	self.engineSound:Update(state, input, dt)
 	self.skidSound:Update(state, input, dt)
+	self.scrape:Update(state, dt)
 	self.remoteCars:Update(dt)
 
 	-- Where the car would go if the finger stayed exactly where it is: the real model run
@@ -536,6 +548,7 @@ function DriftController:_frameHeld(dt: number)
 	self.wheels:Update(nil, nil, dt)
 	self.engineSound:Update(nil, nil, dt)
 	self.skidSound:Update(nil, nil, dt)
+	self.scrape:Update(nil, dt)
 	self.remoteCars:Update(dt)
 	if self.trajectory then
 		self.trajectory:Update(nil, nil, dt)
@@ -592,6 +605,7 @@ function DriftController:Park(cf: CFrame)
 	self.wheels:Cut()
 	self.engineSound:Cut()
 	self.skidSound:Cut()
+	self.scrape:Cut()
 	if self:_ensureRig() then
 		Render.apply(self.rig, self.runner.state, 0)
 	end
@@ -793,6 +807,7 @@ function DriftController:DebugTeleport(cf: CFrame)
 	self.wheels:Cut()
 	self.engineSound:Cut()
 	self.skidSound:Cut()
+	self.scrape:Cut()
 	if self:_ensureRig() then
 		Render.apply(self.rig, self.runner.state)
 	end
@@ -901,6 +916,14 @@ function DriftController:DebugSoundFx(on: boolean?): boolean
 	local want = if on == nil then not self.engineSound.enabled else on == true
 	self.skidSound:SetEnabled(want)
 	return self.engineSound:SetEnabled(want)
+end
+
+-- What the floor's sparks and scrape are doing, and where (T-097).
+function DriftController:DebugScrape()
+	if not self.scrape then
+		return { attached = false }
+	end
+	return self.scrape:DebugState()
 end
 
 function DriftController:DebugToggleReadout(): boolean

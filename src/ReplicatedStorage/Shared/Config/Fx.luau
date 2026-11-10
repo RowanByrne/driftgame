@@ -12,6 +12,7 @@
 --   `Marks` and `Smoke` and `Surfaces`  Drift/Wheels   (T-062, built)
 --   `Engine`                            Drift/EngineSound (T-064, built)
 --   `Skid`                              Drift/SkidSound   (T-064, built)
+--   `Scrape`                            Drift/Scrape      (T-097, built)
 -- Every number of this feature is in this one file, sound and look alike.
 --
 -- Angles are DEGREES in this table and radians nowhere in it, the same way `Config.Drift`
@@ -300,6 +301,9 @@ return {
 		Stylized = "FxPuff_%s_%s", -- wheel name, then surface. The STYLIZED layer
 		Engine = "FxEngine", -- the one engine `Sound`, on the body (T-064)
 		Skid = "FxSkid_%s", -- surface. One `Sound` per surface in `Built`, on the body
+		Spark = "FxSpark_%d", -- slot. One anchored part per spark slot, NOT in the car (T-097)
+		SparkFolder = "FxSparks", -- the folder the spark parts sit in
+		Scrape = "FxScrape", -- the one scrape `Sound`, on the body (T-097)
 	},
 
 	-- ------------------------------------------------------------------ engine (T-064)
@@ -429,6 +433,42 @@ return {
 			-- knightracers, 3.00 s. By id, nothing uploaded
 		},
 		RollOffMin = 12, -- studs. Tighter than the engine's: a squeal is made at the road
+		RollOffMax = 150, -- studs
+	},
+	-- ------------------------------------------------------------ floor scraping (T-097)
+	-- Sparks and a scrape while the car's floor rests on something (features/car-v2.md
+	-- "Floor scraping"). LOOKS ONLY: read off the model's `floorContacts`, never written
+	-- back. Programmer art until the art phase.
+	Scrape = {
+		MaxPoints = 6, -- spark slots per car: one anchored part + one emitter each, built
+		-- once. More touching points than this light the fastest ones
+		MergeDistance = 0.5, -- studs. Contacts closer than this are ONE point: a floor
+		-- point is listed once per segment it touches
+		MinSpeed = 0.5, -- studs/s. A point sliding slower than this throws no sparks and
+		-- makes no sound: a car resting still on a kerb is silent
+		SpeedForMax = 40, -- studs/s of sliding at which the sparks and the scrape are full
+		Lift = 0.1, -- studs above the ground the spark part sits
+		RateMin = 30, -- sparks/s per point just above `MinSpeed`
+		RateMax = 160, -- sparks/s per point at `SpeedForMax`
+		Sparks = {
+			Colour = Color3.fromRGB(255, 190, 90),
+			LightEmission = 1,
+			Size = 0.12, -- studs, start; shrinks to nothing over its life
+			Lifetime = { 0.15, 0.35 }, -- s
+			Speed = { 8, 18 }, -- studs/s
+			SpreadAngle = 35, -- degrees about "back and up from the slide"
+			Gravity = 60, -- studs/s^2 down
+			Drag = 2,
+		},
+		MinVolume = 0.25, -- the scrape just above `MinSpeed`
+		MaxVolume = 0.8, -- at `SpeedForMax`
+		VolumeLerpSpeed = 12, -- /s. Fast: a floor hitting the kerb is not a fade-in
+		Volume = 0.85, -- the master (AUDIO.md "Mix")
+		-- PLACEHOLDER, not the user's pick: Creator Store candidates are in
+		-- assets/car-sfx/MANIFEST.md. Nil or "" gives no sound and no error
+		SoundId = "rbxassetid://9125686089", -- "Metal Scrape Dragging Car Hood Across
+		-- Asphalt 1", Pro Sound Effects, 3.8 s
+		RollOffMin = 12, -- studs
 		RollOffMax = 150, -- studs
 	},
 }
