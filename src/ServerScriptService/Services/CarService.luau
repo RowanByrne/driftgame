@@ -40,17 +40,33 @@
 -- The client may still predict the switch locally -- that is the point of a client-side
 -- model, and it is why the feel changes on the very next step -- but the server's answer
 -- is what settles it.
+--
+-- WHO IS IN THE CAR IS THIS SERVICE'S TOO (T-096, features/car-v2.md). Characters are back:
+-- each player has an avatar, and it starts in the driver's seat. Getting out and back in
+-- are requests (`CarExit`, `CarEnter`), checked here against speed, distance and whose car
+-- it is, and the answer is what moves the avatar. The seated avatar is held by NOTHING --
+-- no Seat, no weld, no joint (DECISIONS.md, 2026-11-03) -- its root is anchored here and
+-- every client writes it each frame into the car it has just drawn (`Drift/Driver`). The
+-- car's `Driver` attribute says who is in it. A parked car is put where the server last
+-- agreed it was, and stays there: no `CarState` moves it until its driver is back in.
 
 local CollectionService = game:GetService("CollectionService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local ServerScriptService = game:GetService("ServerScriptService")
+local StarterPlayer = game:GetService("StarterPlayer")
 
 local CarModel = require(ReplicatedStorage.Shared.CarModel)
+local CarParts = require(ReplicatedStorage.Shared.CarParts)
 local Cars = require(ReplicatedStorage.Shared.Cars)
 local Config = require(ReplicatedStorage.Shared.Config)
 local Net = require(ReplicatedStorage.Shared.Net)
+
+-- The seat and exit points, from the same module every client places the driver with, so
+-- the server and the clients cannot disagree about where the seat is. Pure: points and
+-- offsets, nothing that needs a client.
+local Driver = require(StarterPlayer.StarterPlayerScripts:WaitForChild("Drift"):WaitForChild("Driver"))
 
 local CarService = {}
 
@@ -129,6 +145,16 @@ function CarService:Init()
 	self.switchesRefused = 0
 	self.switchInFlightKept = 0
 	self.dressing = false -- one car dressed at a time: dressing flips the active car
+	-- Getting in and out (T-096). `entry` is per car and goes with it; `entryRate` is keyed
+	-- by UserId and kept, so rejoining does not reset the limit.
+	self.entry = {} -- userId -> { driving, busy, gen, parked: CFrame? }
+	self.entryRate = {} -- userId -> { window, count }
+	self.exits = 0
+	self.enters = 0
+	self.exitsRefused = 0
+	self.entersRefused = 0
+	self.refusals = {} -- reason -> count
+	self.parkedDropped = 0 -- CarState packets for a car whose driver is out
 
 	-- IT HAS TO BE A FOLDER, and asking by name alone is not enough. A place file can
 	-- carry anything called `Cars` -- `DR-Lane2` had a stray ModuleScript of that name,
@@ -154,12 +180,19 @@ function CarService:Init()
 	self.carSwitch = Net.event("CarSwitch")
 	self.carState = Net.unreliable("CarState")
 	self.carStateOther = Net.unreliable("CarStateOther")
+	self.carEnter = Net.event("CarEnter")
+	self.carExit = Net.event("CarExit")
 end
 
 function CarService:Start()
-	if Config.Drift.HideCharacter then
-		-- The player is the car. No character means no Humanoid to fight the simulation,
-		-- no default touch thumbstick over our own, and nothing physical in the world.
+	if Config.CarEntry.Characters then
+		-- Characters are back (T-096): the avatar sits in the car, anchored and placed by
+		-- code, and walks with Roblox's own controls when it gets out. `Config.Drift.
+		-- HideCharacter` no longer decides this.
+		Players.CharacterAutoLoads = true
+	else
+		-- The old way: the player is the car. No character means no Humanoid to fight the
+		-- simulation, no default touch thumbstick over our own, nothing physical.
 		Players.CharacterAutoLoads = false
 		for _, player in Players:GetPlayers() do
 			if player.Character then
@@ -168,16 +201,21 @@ function CarService:Start()
 		end
 	end
 
-	Players.PlayerAdded:Connect(function(player)
+	local function join(player: Player)
+		player.CharacterAdded:Connect(function(character)
+			self:_onCharacter(player, character)
+		end)
 		self:Spawn(player)
-	end)
+		if player.Character then
+			self:_onCharacter(player, player.Character)
+		end
+	end
+	Players.PlayerAdded:Connect(join)
 	Players.PlayerRemoving:Connect(function(player)
 		self:Despawn(player)
 	end)
 	for _, player in Players:GetPlayers() do
-		task.spawn(function()
-			self:Spawn(player)
-		end)
+		task.spawn(join, player)
 	end
 
 	self.carState.OnServerEvent:Connect(function(player, cf, velocity, drifting)
@@ -189,6 +227,13 @@ function CarService:Start()
 	end)
 	self.carSwitch.OnServerEvent:Connect(function(player, key)
 		self:_onSwitch(player, key)
+	end)
+	-- Getting out and in (T-096). One value each, and nothing else on the wire is read.
+	self.carExit.OnServerEvent:Connect(function(player, cf)
+		self:_onExit(player, cf)
+	end)
+	self.carEnter.OnServerEvent:Connect(function(player, car)
+		self:_onEnter(player, car)
 	end)
 end
 
@@ -561,6 +606,10 @@ function CarService:Spawn(player: Player): Model?
 
 	self.cars[player.UserId] = car
 	self:_expect(player.UserId, spawnCFrame.Position)
+	-- A new car has its driver in it: the avatar, if it has arrived, goes in the seat now,
+	-- and one that arrives later is put there by `_onCharacter`.
+	self.entry[player.UserId] = { driving = true, busy = false, gen = 0, parked = nil }
+	self:_seatCharacter(player)
 	self.carSpawn:FireClient(player, car, spawnCFrame)
 	-- And which car it is. A client that is not listening yet asks the same question back
 	-- when it starts (`_onSwitch` with no key), so neither end has to win that race.
@@ -633,6 +682,11 @@ function CarService:Respawn(player: Player, to: CFrame?): CFrame?
 	seen = self:_expect(player.UserId, cf.Position)
 	seen.respawnedAt = os.clock()
 	self.respawns += 1
+	-- A car put somewhere is a car with its driver in it (T-096). A player who was out --
+	-- a run started or ended, a Studio hop -- is sat back in first and told so, BEFORE the
+	-- respawn's answer, so their client is driving again when it hears where the car is. A
+	-- player already in has the server's copy of their avatar moved with the car.
+	self:_seatNow(player, true)
 	self.carRespawn:FireClient(player, cf)
 	return cf
 end
@@ -667,6 +721,7 @@ function CarService:Despawn(player: Player)
 	self.cars[player.UserId] = nil
 	self.seen[player.UserId] = nil
 	self.carKeys[player.UserId] = nil
+	self.entry[player.UserId] = nil
 end
 
 function CarService:_drop(seen)
@@ -685,6 +740,14 @@ function CarService:_onState(player: Player, cf, velocity, drifting)
 	if not seen or not seen.expect then
 		-- The server has not put a car anywhere for this player, so there is nothing to
 		-- check the packet against.
+		self:_drop(seen)
+		return
+	end
+	local entry = self.entry[player.UserId]
+	if entry and (not entry.driving or entry.busy) then
+		-- Parked, or on the way in or out (T-096). Nobody is driving this car, so nothing
+		-- may move it: a packet now is either in flight from before the press or a lie.
+		self.parkedDropped += 1
 		self:_drop(seen)
 		return
 	end
@@ -749,6 +812,10 @@ function CarService:_onState(player: Player, cf, velocity, drifting)
 
 	if reaches(seen.expect) then
 		seen.expect = CarService.track(cf.Position, now)
+		-- The whole pose and the speed, for getting out: where a car is parked when the
+		-- press itself cannot be believed, and whether it was slow enough (T-096).
+		seen.lastCF = cf
+		seen.lastVelocity = velocity
 	elseif seen.was and reaches(seen.was) then
 		-- Sent before the respawn, arrived after it. Honest, so it is passed on, but it
 		-- does not move where the server expects the car: that stays the respawn position
@@ -772,6 +839,354 @@ function CarService:_onState(player: Player, cf, velocity, drifting)
 			self.carStateOther:FireClient(other, player.UserId, cf, velocity, drifting)
 		end
 	end
+end
+
+--------------------------------------------------------------------------------
+-- Getting in and out (T-096, features/car-v2.md)
+--------------------------------------------------------------------------------
+-- The avatar is the server's to move between the seat and the road, and these are the
+-- only places that do it. In the seat, its root is anchored and the server's copy is put
+-- in the server's copy of the car; every client then writes it each frame into the car IT
+-- draws (`Drift/Driver`). Out, the root is unanchored and the avatar is the player's to
+-- walk.
+--
+-- The door, where a car has one (a v2 rig's `DoorR`), is opened and shut through
+-- `Shared/CarParts` here on the server, so its attributes reach every client and everyone
+-- sees it swing. Today's cars have no rig and no door: the steps happen in the same order
+-- with `NoDoorSeconds` between them.
+--
+-- A sequence is numbered (`gen`). Anything that sits the player down outright -- a respawn,
+-- a new avatar, a new car -- bumps it, and a sequence that wakes to find its number gone
+-- stops where it is rather than finishing a move nobody wants any more.
+
+local DRIVER = Config.CarEntry.DriverAttribute
+
+-- Requests a second, getting in and out together, keyed by UserId.
+function CarService:_entryRateOk(player: Player): boolean
+	local now = os.clock()
+	local rate = self.entryRate[player.UserId]
+	if not rate then
+		rate = { window = now, count = 0 }
+		self.entryRate[player.UserId] = rate
+	end
+	if now - rate.window >= 1 then
+		rate.window = now
+		rate.count = 0
+	end
+	rate.count += 1
+	return rate.count <= Config.CarEntry.RateLimit
+end
+
+function CarService:_refuse(player: Player, remote: RemoteEvent, reason: string): (boolean, string)
+	self.refusals[reason] = (self.refusals[reason] or 0) + 1
+	if remote == self.carExit then
+		self.exitsRefused += 1
+	else
+		self.entersRefused += 1
+	end
+	remote:FireClient(player, false, nil, reason)
+	return false, reason
+end
+
+-- A CFrame a car can be parked at: finite, with a rotation that is a rotation.
+local function sane(cf: any): boolean
+	if typeof(cf) ~= "CFrame" then
+		return false
+	end
+	local p = cf.Position
+	if p.X ~= p.X or p.Y ~= p.Y or p.Z ~= p.Z or p.Magnitude > 1e7 then
+		return false
+	end
+	local x, y = cf.XVector.Magnitude, cf.YVector.Magnitude
+	return math.abs(x - 1) < 1e-3 and math.abs(y - 1) < 1e-3
+end
+
+-- Open or shut the driver's door, and how long that takes. No rig, no door.
+function CarService:_door(car: Model, open: boolean): number
+	local name = Config.CarEntry.DoorName
+	if CarParts.isRig(car) then
+		local desc = CarParts.describe(car)
+		if desc and desc.byName[name] then
+			local ok, seconds = pcall(if open then CarParts.open else CarParts.close, car, name)
+			if ok and type(seconds) == "number" then
+				return seconds
+			end
+		end
+	end
+	return Config.CarEntry.NoDoorSeconds
+end
+
+-- The server's copy of the avatar into the server's copy of the car, and the car told who
+-- is in it. False with no car or no avatar yet.
+function CarService:_seatCharacter(player: Player): boolean
+	if not Config.CarEntry.Characters then
+		return false
+	end
+	local car = self.cars[player.UserId]
+	local root = Driver.rootOf(player.Character)
+	if not car or not car.Parent or not root then
+		return false
+	end
+	root.Anchored = true
+	local body = car:FindFirstChild(CarModel.BODY_NAME)
+	local bodyCF = if body and body:IsA("BasePart") then body.CFrame else car:GetPivot()
+	root.CFrame = Driver.seatRoot(bodyCF, car)
+	car:SetAttribute(DRIVER, player.UserId)
+	return true
+end
+
+-- The avatar out on the road beside a car parked at `parkCF`, and the seat empty.
+function CarService:_standCharacter(player: Player, parkCF: CFrame)
+	local car = self.cars[player.UserId]
+	if car then
+		car:SetAttribute(DRIVER, nil)
+	end
+	local character = player.Character
+	local root = Driver.rootOf(character)
+	if root then
+		root.CFrame = Driver.exitRoot(parkCF, car, character)
+		root.Anchored = false
+		pcall(function()
+			root:SetNetworkOwner(player)
+		end)
+	end
+end
+
+-- Sit the player in their car NOW, whatever they were doing: a respawn, a run starting, a
+-- new avatar. A player who was out is told over `CarEnter`, so their client drives again;
+-- one already in is only re-seated, which moves the server's copy of the avatar with the
+-- car. Any getting-in or getting-out still going is called off.
+function CarService:_seatNow(player: Player, tell: boolean)
+	local entry = self.entry[player.UserId]
+	local car = self.cars[player.UserId]
+	if not entry or not car then
+		return
+	end
+	local wasOut = not entry.driving or entry.busy
+	if wasOut then
+		entry.gen += 1
+		entry.busy = false
+		entry.driving = true
+		entry.parked = nil
+		if CarParts.isRig(car) and CarParts.describe(car) then
+			pcall(CarParts.set, car, Config.CarEntry.DoorName, 0)
+		end
+		-- The car has not moved since it was parked, but the clock has: the check on the
+		-- first packet starts from now, not from when the player got out.
+		local seen = self.seen[player.UserId]
+		if seen then
+			seen.expect = CarService.track(car:GetPivot().Position, os.clock())
+			seen.lastVelocity = Vector3.zero
+		end
+	end
+	self:_seatCharacter(player)
+	if wasOut and tell then
+		self.carEnter:FireClient(player, true, car:GetPivot())
+	end
+end
+
+-- A new avatar: into the seat. Always -- the player spawns in the car (features/car-v2.md
+-- "How it plays"), and an avatar that died walking comes back driving.
+function CarService:_onCharacter(player: Player, character: Model)
+	task.spawn(function()
+		character:WaitForChild("HumanoidRootPart", 10)
+		local deadline = os.clock() + 10
+		while character.Parent == nil and os.clock() < deadline do
+			task.wait()
+		end
+		-- After the engine has put it at a spawn point, so this is the last word.
+		task.wait()
+		if player.Character ~= character or not self.cars[player.UserId] then
+			return -- replaced already, or no car yet: `Spawn` seats it when the car is made
+		end
+		self:_seatNow(player, true)
+	end)
+end
+
+-- GET OUT. `cf` is where the client stopped its car when the button went down. It is
+-- believed only if it follows from where the server last agreed the car was -- the same
+-- check every `CarState` passes -- and otherwise the car is parked at that agreed place.
+-- Refused: no car, not driving (out already, or mid-move), faster than `ExitSpeed`, or
+-- asking too often. Accepted: the car is parked and the client told at once; then the
+-- door opens, the avatar stands beside it, and the door shuts.
+function CarService:_onExit(player: Player, cf: any): (boolean, string?)
+	if not self:_entryRateOk(player) then
+		return self:_refuse(player, self.carExit, "rate")
+	end
+	local userId = player.UserId
+	local car = self.cars[userId]
+	local seen = self.seen[userId]
+	local entry = self.entry[userId]
+	if not car or not car.Parent or not seen or not seen.expect or not entry then
+		return self:_refuse(player, self.carExit, "no car")
+	end
+	if not entry.driving or entry.busy then
+		return self:_refuse(player, self.carExit, "not driving")
+	end
+	local E = Config.CarEntry
+	local v = seen.lastVelocity or Vector3.zero
+	if Vector3.new(v.X, 0, v.Z).Magnitude > E.ExitSpeed * E.ExitSpeedTolerance then
+		return self:_refuse(player, self.carExit, "too fast")
+	end
+
+	local now = os.clock()
+	local park: CFrame
+	if sane(cf) and CarService.fits(seen.expect, cf.Position, now, self:_numbers(userId)) then
+		park = cf
+	else
+		park = seen.lastCF or car:GetPivot()
+	end
+
+	entry.driving = false
+	entry.busy = true
+	entry.gen += 1
+	entry.parked = park
+	car:PivotTo(park)
+	seen.expect = CarService.track(park.Position, now)
+	seen.was, seen.graceUntil = nil, nil
+	seen.lastCF, seen.lastVelocity = park, Vector3.zero
+	self.exits += 1
+	self.carExit:FireClient(player, true, park)
+
+	local gen = entry.gen
+	task.spawn(function()
+		local opening = self:_door(car, true)
+		if opening > 0 then
+			task.wait(opening)
+		end
+		if self.entry[userId] ~= entry or entry.gen ~= gen then
+			return
+		end
+		self:_standCharacter(player, park)
+		local shutting = self:_door(car, false)
+		if shutting > 0 then
+			task.wait(shutting)
+		end
+		if self.entry[userId] == entry and entry.gen == gen then
+			entry.busy = false
+		end
+	end)
+	return true, nil
+end
+
+-- GET IN. `car` is the car the player asks to get into, and it has to be THEIRS: another
+-- player's car, a car that is not in `Workspace.Cars`, or anything that is not a car is
+-- refused. So is a request from further than `PromptDistance` (plus `EnterDistanceSlack`)
+-- from the driver's door, one while still driving or mid-move, and one too soon after the
+-- last. Accepted: the door opens, the avatar sits, the door shuts, and only then is the
+-- client told to drive, from where the car is parked.
+function CarService:_onEnter(player: Player, car: any): (boolean, string?)
+	if not self:_entryRateOk(player) then
+		return self:_refuse(player, self.carEnter, "rate")
+	end
+	local userId = player.UserId
+	local own = self.cars[userId]
+	local entry = self.entry[userId]
+	if typeof(car) ~= "Instance" or not car:IsA("Model") or car.Parent ~= self.folder then
+		return self:_refuse(player, self.carEnter, "no car")
+	end
+	if car ~= own or car:GetAttribute("UserId") ~= userId then
+		return self:_refuse(player, self.carEnter, "not owner")
+	end
+	if not entry or entry.driving or entry.busy then
+		return self:_refuse(player, self.carEnter, "not out")
+	end
+	local root = Driver.rootOf(player.Character)
+	if not root then
+		return self:_refuse(player, self.carEnter, "no character")
+	end
+	local E = Config.CarEntry
+	local park = entry.parked or car:GetPivot()
+	local door = Driver.doorPoint(park, car)
+	if (root.Position - door).Magnitude > E.PromptDistance + E.EnterDistanceSlack then
+		return self:_refuse(player, self.carEnter, "too far")
+	end
+
+	entry.busy = true
+	entry.gen += 1
+	self.enters += 1
+	local gen = entry.gen
+	task.spawn(function()
+		local opening = self:_door(car, true)
+		if opening > 0 then
+			task.wait(opening)
+		end
+		if self.entry[userId] ~= entry or entry.gen ~= gen then
+			return
+		end
+		self:_seatCharacter(player)
+		local shutting = self:_door(car, false)
+		if shutting > 0 then
+			task.wait(shutting)
+		end
+		if self.entry[userId] ~= entry or entry.gen ~= gen then
+			return
+		end
+		entry.driving = true
+		entry.busy = false
+		entry.parked = nil
+		local seen = self.seen[userId]
+		if seen then
+			seen.expect = CarService.track(park.Position, os.clock())
+			seen.was, seen.graceUntil = nil, nil
+			seen.lastCF, seen.lastVelocity = park, Vector3.zero
+		end
+		self.carEnter:FireClient(player, true, park)
+	end)
+	return true, nil
+end
+
+-- Studio only: the two requests, through the real handlers, with no client. `userId` nil
+-- takes the first player.
+local function playerFor(userId: number?): Player?
+	for _, player in Players:GetPlayers() do
+		if userId == nil or player.UserId == userId then
+			return player
+		end
+	end
+	return nil
+end
+
+function CarService:DebugExit(cf: CFrame?, userId: number?)
+	local player = playerFor(userId)
+	if not player then
+		return { ok = false, reason = "no player" }
+	end
+	local ok, reason = self:_onExit(player, cf)
+	return { ok = ok, reason = reason }
+end
+
+function CarService:DebugEnter(car: Instance?, userId: number?)
+	local player = playerFor(userId)
+	if not player then
+		return { ok = false, reason = "no player" }
+	end
+	local ok, reason = self:_onEnter(player, car or self.cars[player.UserId])
+	return { ok = ok, reason = reason }
+end
+
+function CarService:DebugClearEntryLimits()
+	table.clear(self.entryRate)
+	return true
+end
+
+-- Who is where, for one player: the server's side of getting in and out.
+function CarService:EntryState(userId: number)
+	local entry = self.entry[userId]
+	local car = self.cars[userId]
+	local player = Players:GetPlayerByUserId(userId)
+	local root = player and Driver.rootOf(player.Character)
+	return {
+		hasCar = car ~= nil,
+		driving = entry ~= nil and entry.driving or false,
+		busy = entry ~= nil and entry.busy or false,
+		driver = car and car:GetAttribute(DRIVER) or nil,
+		parked = entry and entry.parked and entry.parked.Position or nil,
+		carAt = car and car:GetPivot().Position or nil,
+		rootAnchored = root and root.Anchored or nil,
+		rootAt = root and root.Position or nil,
+		door = car and Driver.doorPoint(entry and entry.parked or car:GetPivot(), car) or nil,
+	}
 end
 
 function CarService:DebugState()
@@ -802,6 +1217,11 @@ function CarService:DebugState()
 			maxReportedSpeed = (numbers and numbers.TopSpeed or 0) * Config.Drift.StateSpeedTolerance,
 			body = car:GetAttribute("Body"),
 			switchGrace = seen and seen.carWas ~= nil and math.max((seen.carGraceUntil or 0) - os.clock(), 0) or 0,
+			-- Who is in it (T-096): the `Driver` attribute, whether the server has them
+			-- driving, and mid-way in or out.
+			driver = car:GetAttribute(DRIVER),
+			driving = self.entry[userId] ~= nil and self.entry[userId].driving or false,
+			entryBusy = self.entry[userId] ~= nil and self.entry[userId].busy or false,
 		})
 		for _, problem in CarModel.physicsOffenders(car) do
 			table.insert(offenders, problem)
@@ -829,6 +1249,12 @@ function CarService:DebugState()
 		switchInFlightKept = self.switchInFlightKept,
 		charactersOff = not Players.CharacterAutoLoads,
 		physicsOffenders = offenders,
+		exits = self.exits,
+		enters = self.enters,
+		exitsRefused = self.exitsRefused,
+		entersRefused = self.entersRefused,
+		refusals = table.clone(self.refusals),
+		parkedDropped = self.parkedDropped,
 	}
 end
 

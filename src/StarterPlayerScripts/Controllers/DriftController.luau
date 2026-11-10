@@ -19,6 +19,13 @@
 -- drawn only by `Render.apply`; the moment it has nothing to write through, the car stops
 -- dead while everything else -- the simulation, the camera, the packets -- carries on
 -- without it, and the player is left looking at empty world (`_ensureRig`, T-016).
+--
+-- THE DRIVER IS DRAWN HERE TOO (T-096, features/car-v2.md). The avatar in the seat is held
+-- by nothing -- no Seat, no weld -- so its anchored root is written straight after the car,
+-- from the body that was just drawn (`Drift/Driver`), and can never lag it. While the
+-- player is out of the car the simulation is HELD: nothing steps, nothing is sent, and the
+-- car is drawn where the server parked it, which is what lets its door swing for everyone
+-- to see. `CarEntryController` decides when; this module only holds, parks and drives.
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -29,6 +36,7 @@ local Net = require(ReplicatedStorage.Shared.Net)
 
 local DriftFolder = script.Parent.Parent:WaitForChild("Drift")
 local DebugHud = require(DriftFolder.DebugHud)
+local Driver = require(DriftFolder.Driver)
 local DriftModel = require(DriftFolder.Model)
 local EngineSound = require(DriftFolder.EngineSound)
 local RemoteCars = require(DriftFolder.RemoteCars)
@@ -123,6 +131,10 @@ function DriftController:Init()
 	self.rigWarned = false
 	self.awaitingRespawn = false
 	self.askedAt = 0
+	-- Held: the player is getting out, out, or getting back in. Nothing steps and nothing
+	-- is sent; the car is drawn where it stands (T-096).
+	self.held = false
+	self.worldRebuilds = 0
 	-- The tyre marks and the smoke (T-062, features/car-fx.md). The object is free until a
 	-- rig exists: it holds no instance and does no work without one, and its sixteen are
 	-- built once, when the rig is caught, and never again. The car's SOUNDS sit beside it
@@ -151,14 +163,15 @@ function DriftController:Start()
 		carsFolder.Name = "Cars"
 		carsFolder.Parent = workspace
 	end
-	self.world = World.live({ carsFolder })
+	self.carsFolder = carsFolder
 	self.remoteCars = RemoteCars.new(carsFolder, nil)
 
 	-- The projected line (T-032). A dev tool: the object is free -- it creates no instance
 	-- and does no work until it is switched on -- so it is always here, and
 	-- `Config.Drift.TrajectoryLine` only decides whether it starts on. F6 toggles it.
 	self.trajectory = Trajectory.new()
-	self.trajectory:SetWorld(self.world)
+	self:_rebuildWorld()
+	self:_watchCharacters()
 	self.trajectory:BindToggle()
 	self.trajectory:SetEnabled(Config.Drift.TrajectoryLine)
 
@@ -212,6 +225,73 @@ function DriftController:Start()
 	end)
 end
 
+-- WHAT THE CAR'S RAYS MUST NEVER SEE: the cars, and since T-096 every avatar. The sweep
+-- and the overlap hit anything solid that is not in this list, and a seated driver sits
+-- INSIDE the car's box -- left in, the car is pushed out of its own driver on the first
+-- step. A player walking about is not a wall either: running people over is out of scope
+-- (features/car-v2.md "Left out"), and nothing in a car is physics to bump them with.
+--
+-- `World.live` copies the list into its filters once, so a character arriving or leaving
+-- means a new world. Coalesced: one rebuild per frame's worth of changes.
+function DriftController:_worldIgnore(): { Instance }
+	local list: { Instance } = { self.carsFolder }
+	for _, player in Players:GetPlayers() do
+		if player.Character then
+			table.insert(list, player.Character)
+		end
+	end
+	for _, stand in Driver.debugCharacters do
+		table.insert(list, stand)
+	end
+	return list
+end
+
+function DriftController:_rebuildWorld()
+	self.worldDirty = false
+	local old = self.world
+	self.world = World.live(self:_worldIgnore())
+	self.worldRebuilds += 1
+	if self.trajectory then
+		self.trajectory:SetWorld(self.world)
+	end
+	if old and old.destroy then
+		old.destroy()
+	end
+end
+
+function DriftController:_worldChanged()
+	if self.worldDirty then
+		return
+	end
+	self.worldDirty = true
+	task.defer(function()
+		if self.worldDirty then
+			self:_rebuildWorld()
+		end
+	end)
+end
+
+function DriftController:_watchCharacters()
+	local function watch(player: Player)
+		player.CharacterAdded:Connect(function()
+			self:_worldChanged()
+		end)
+		player.CharacterRemoving:Connect(function()
+			self:_worldChanged()
+		end)
+		if player.Character then
+			self:_worldChanged()
+		end
+	end
+	Players.PlayerAdded:Connect(watch)
+	Players.PlayerRemoving:Connect(function()
+		self:_worldChanged()
+	end)
+	for _, player in Players:GetPlayers() do
+		watch(player)
+	end
+end
+
 function DriftController:_attach(car: Model, spawnCFrame: CFrame)
 	if typeof(spawnCFrame) ~= "CFrame" or not car or not car:IsA("Model") then
 		warn("[DriftController] CarSpawn arrived without a car and a CFrame")
@@ -222,6 +302,7 @@ function DriftController:_attach(car: Model, spawnCFrame: CFrame)
 		return -- already driving it; the folder and the remote both found the same car
 	end
 	self.car = car
+	self.held = false -- a car the server has just handed out has its driver in it
 	self.rig = nil
 	self.rigAttempts = 0
 	self.rigFirstParts = -1
@@ -353,6 +434,11 @@ function DriftController:_frame(dt: number)
 		return
 	end
 
+	if self.held then
+		self:_frameHeld(dt)
+		return
+	end
+
 	-- The model wants one number and a handbrake, and that is exactly what the input
 	-- controller answers now (T-013): `steer` is the car's rate of turn as a share of
 	-- `MaxSteeringSpeed`, and the handbrake only stops the car once a run is over. There
@@ -371,6 +457,8 @@ function DriftController:_frame(dt: number)
 	-- up to 1.49 studs at top speed -- and a varying lag is a judder.
 	if self:_ensureRig() then
 		Render.apply(self.rig, state, self.runner.accumulator)
+		-- The driver, from the body just drawn: the same frame, the same pose (T-096).
+		self:_placeDriver()
 		-- The wheel effects hang off the rig's own body, so they are attached here and
 		-- nowhere else: the rig is the one thing that knows the car's parts have arrived,
 		-- and `Attach` does nothing at all once it has built for a body (T-062).
@@ -420,6 +508,97 @@ function DriftController:_frame(dt: number)
 			surfaceTag = self.world.usingTag,
 		})
 	end
+end
+
+-- A held frame: the player is getting out, is out, or is getting back in. The car is drawn
+-- where it stands every frame all the same -- its door is moving (`Shared/CarParts`
+-- attributes, set by the server) and only drawing shows it -- and the driver is placed in
+-- it while the server still has them in the seat. No step, no fall test, no packet: the
+-- car is parked, and the server drops a `CarState` for a parked car anyway.
+function DriftController:_frameHeld(dt: number)
+	local state = self.runner.state
+	if self:_ensureRig() then
+		Render.apply(self.rig, state, 0)
+		self:_placeDriver()
+	end
+	-- The engine and the squeal fade to nothing; the marks and the smoke stop.
+	self.wheels:Update(nil, nil, dt)
+	self.engineSound:Update(nil, nil, dt)
+	self.skidSound:Update(nil, nil, dt)
+	self.remoteCars:Update(dt)
+	if self.trajectory then
+		self.trajectory:Update(nil, nil, dt)
+	end
+	if self.hud then
+		self.hud:Update(state, { steps = 0, frameSeconds = dt, steerInput = 0, handbrake = false,
+			device = CarInputController:Device(), surfaceTag = self.world.usingTag })
+	end
+end
+
+function DriftController:_placeDriver()
+	local body = self.rig and self.rig.body
+	if body and self.car then
+		Driver.placeIn(self.car, body.CFrame)
+	end
+end
+
+-- ---------------------------------------------------------------- getting in and out
+--
+-- `CarEntryController` calls these; the server's answers are what it calls them on.
+
+-- Is the simulation running (the player is driving), rather than held?
+function DriftController:IsDriving(): boolean
+	return self.runner ~= nil and not self.held
+end
+
+-- Stop the car where it is, now, and say where that is: the press of Get out. Nothing
+-- steps until `Resume` (refused) or `Park` (accepted).
+function DriftController:Hold(): CFrame?
+	if not self.runner then
+		return nil
+	end
+	self.held = true
+	return DriftModel.cframe(self.runner.state)
+end
+
+-- Refused: drive on from exactly where it was held, at the speed it had.
+function DriftController:Resume()
+	if not self.runner then
+		return
+	end
+	self.held = false
+	self.runner.accumulator = 0
+	self.sendClock = 0
+end
+
+-- Accepted: the car is parked where the server says, at rest, and stays held.
+function DriftController:Park(cf: CFrame)
+	if typeof(cf) ~= "CFrame" or not self.runner then
+		return
+	end
+	self.held = true
+	self.runner = Sim.newRunner(cf)
+	self.wheels:Cut()
+	self.engineSound:Cut()
+	self.skidSound:Cut()
+	if self:_ensureRig() then
+		Render.apply(self.rig, self.runner.state, 0)
+	end
+end
+
+-- Back in: drive off from where the server parked the car, from rest.
+function DriftController:Drive(cf: CFrame?)
+	if not self.runner then
+		return
+	end
+	if typeof(cf) == "CFrame" then
+		self.runner = Sim.newRunner(cf)
+		self.spawnCFrame = cf
+	end
+	self.held = false
+	self.awaitingRespawn = false
+	self.runner.accumulator = 0
+	self.sendClock = 0
 end
 
 function DriftController:_send(state)
@@ -483,6 +662,9 @@ function DriftController:DebugState()
 		respawns = self.respawns,
 		respawnsAsked = self.respawnsAsked,
 		awaitingRespawn = self.awaitingRespawn,
+		-- Out of the car, or on the way in or out: nothing steps, nothing is sent (T-096).
+		held = self.held,
+		worldRebuilds = self.worldRebuilds,
 		-- The one number T-016 is about: how far the car the player SEES is from the car
 		-- the simulation says is there. It is a frame of lag at most -- under a stud at
 		-- any speed -- and anything more means the drawing has stopped.

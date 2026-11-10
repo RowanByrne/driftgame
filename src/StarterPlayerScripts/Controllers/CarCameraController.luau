@@ -96,6 +96,7 @@
 -- Every number is in Config.Camera; none is in here (T-071: they moved out of
 -- Config.Drift, name for name, because the camera is a look and not the model).
 
+local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
@@ -600,6 +601,42 @@ end
 
 function CarCameraController:Init()
 	self.rig = CarCameraController.newRig()
+	-- Out of the car the camera is Roblox's own, following the avatar (T-096): this one
+	-- lets go entirely and takes the camera back when the player is in the seat again.
+	self.driving = true
+	self.handovers = 0
+end
+
+-- Whose camera it is. The drift camera's while driving; Roblox's (`Custom`, on the avatar's
+-- Humanoid) while walking. Coming back, the rig is re-seeded behind the car rather than
+-- swung there from wherever the walking camera was.
+function CarCameraController:SetDriving(on: boolean)
+	on = on == true
+	if self.driving ~= on then
+		self.handovers += 1
+	end
+	self.driving = on
+	self:_claim(workspace.CurrentCamera)
+end
+
+function CarCameraController:_claim(cam: Camera?)
+	if not cam then
+		return
+	end
+	self.camera = cam
+	if self.driving then
+		cam.CameraType = Enum.CameraType.Scriptable
+		cam.CameraSubject = nil
+		self.rig.ready = false
+	else
+		local character = Players.LocalPlayer.Character
+		local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+		cam.CameraType = Enum.CameraType.Custom
+		if humanoid then
+			cam.CameraSubject = humanoid
+		end
+		cam.FieldOfView = Config.CarEntry.WalkFieldOfView
+	end
 end
 
 function CarCameraController:Start()
@@ -608,9 +645,7 @@ function CarCameraController:Start()
 		warn("[CarCameraController] there is no CurrentCamera")
 		return
 	end
-	camera.CameraType = Enum.CameraType.Scriptable
-	camera.CameraSubject = nil
-	self.camera = camera
+	self:_claim(camera)
 
 	-- Required HERE and not at the top of the file: this is the client's own lifecycle,
 	-- and JitterTests requires this module on the SERVER to settle a rig of its own. A
@@ -620,13 +655,7 @@ function CarCameraController:Start()
 
 	-- A new camera arrives on respawn and on some Studio actions; take it over again.
 	workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(function()
-		local cam = workspace.CurrentCamera
-		if cam then
-			cam.CameraType = Enum.CameraType.Scriptable
-			cam.CameraSubject = nil
-			self.camera = cam
-			self.rig.ready = false
-		end
+		self:_claim(workspace.CurrentCamera)
 	end)
 
 	RunService:BindToRenderStep(STEP_NAME, Enum.RenderPriority.Camera.Value, function(dt)
@@ -636,8 +665,12 @@ end
 
 function CarCameraController:_frame(dt: number)
 	local camera = self.camera
-	if not camera then
+	if not camera or not self.driving then
 		return
+	end
+	-- An avatar spawning hands the camera to its Humanoid; while driving, it is ours.
+	if camera.CameraType ~= Enum.CameraType.Scriptable then
+		self:_claim(camera)
 	end
 	local view = viewFrom(DriftController:CurrentState(), DriftController:SubStep())
 	if not view then
@@ -667,6 +700,8 @@ function CarCameraController:DebugState()
 	local cf = self.camera and self.camera.CFrame or nil
 	return {
 		hasCamera = self.camera ~= nil,
+		driving = self.driving, -- false while the player walks: the camera is Roblox's (T-096)
+		handovers = self.handovers,
 		cameraType = self.camera and self.camera.CameraType.Name or "none",
 		ready = rig.ready,
 		released = rig.released,

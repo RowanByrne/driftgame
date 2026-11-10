@@ -7,19 +7,18 @@
 -- module holds only where that origin is in the world, and the numbers a test asserts.
 
 return {
-	-- WHERE IT IS. The centre of the turntable, on the garage floor (floor top is Y = 0,
-	-- like every other world). -X is empty: the playground never goes further west than
-	-- x -3 024 (with a track in the place) and nothing else in the game lives on -X at all
-	-- (WORLD.md "The three worlds"). 8 000 studs out leaves well over 4 000 studs of empty
-	-- space between the room's furthest backdrop part and the playground's plate, and
-	-- `CarService:WorldAt` still answers "the playground" for a car here, so a car that
-	-- somehow fell out would come back on the playground's spawn.
-	Origin = Vector3.new(-8000, 0, 0),
-	-- Which way the room faces, in degrees about Y. At 0 the roller door is on the room's
-	-- -X wall and the car comes in heading +X.
-	Yaw = 0,
+	-- WHERE IT IS. The centre of the turntable, on the garage floor. In the playground's open
+	-- yard near its west edge, where the user moved it by hand in DR-Lane4 on 2026-11-10
+	-- ("i remove the outside and move the garage to the main area of the playground").
+	-- X, Z and the turn are theirs. Y is a quarter stud, not the 0.871 the drag left it at:
+	-- every drivable feature sits a quarter stud proud of the plate (Playground/Layout), so
+	-- the car meets a kerb it can take rather than a 0.87 step.
+	Origin = Vector3.new(-717, 0.25, 0),
+	-- Which way the room faces, in degrees about Y. At 180 the roller door is on the room's
+	-- +X side in the world, facing the yard, and a car comes in heading -X.
+	Yaw = 180,
 
-	-- Asserted by GarageRoomTests: the whole room, inside and the street outside.
+	-- Asserted by GarageRoomTests: the whole room and the street before its door.
 	PartBudget = 700,
 
 	-- The largest step the car meets between the floor and the turntable's deck, studs.

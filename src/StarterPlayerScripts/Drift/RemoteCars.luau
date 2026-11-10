@@ -19,6 +19,7 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Config = require(ReplicatedStorage.Shared.Config)
+local Driver = require(script.Parent.Driver)
 local Render = require(script.Parent.Render)
 
 local RemoteCars = {}
@@ -236,6 +237,15 @@ function RemoteCars:Update(dt: number)
 			entry.drawn = true
 		end
 		Render.place(entry.rig, entry.cf, 0, entry.wheelSpin)
+		-- Their driver, in the car exactly as it was just drawn (T-096): anchored by the
+		-- server and written here, so it never lags the car it sits in.
+		local body = entry.rig.body
+		if body then
+			local root, target = Driver.placeIn(entry.car, body.CFrame)
+			entry.driverRoot, entry.driverTarget = root, target
+		else
+			entry.driverRoot, entry.driverTarget = nil, nil
+		end
 	end
 end
 
@@ -265,6 +275,12 @@ function RemoteCars:DebugState()
 			attempts = entry.rigAttempts,
 			firstParts = entry.firstParts,
 			liveAfter = entry.liveAfter,
+			-- Who is in the seat (T-096), and how far their root is from where this frame
+			-- put it: 0 unless something else moved it since.
+			driver = Driver.driverOf(entry.car),
+			driverGap = if entry.driverRoot and entry.driverTarget
+				then (entry.driverRoot.Position - entry.driverTarget.Position).Magnitude
+				else -1,
 		})
 	end
 	return list
