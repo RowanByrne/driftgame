@@ -157,6 +157,33 @@ function CarInputController:Start()
 	self:_bindCarEvents()
 end
 
+-- ---------------------------------------------------------------- in or out of the car
+--
+-- OUT OF THE CAR NONE OF THIS IS LISTENING (T-096). The drag pad covers the whole screen and
+-- eats every touch and click, and the keys steer -- A, D, Space and S are walking and
+-- jumping now -- so getting out switches the context and the pad off, and the finger is
+-- lifted so nothing is left steering a car nobody is in. The brake latch is kept: it is
+-- the player's, and the car is held anyway.
+function CarInputController:SetDriving(on: boolean)
+	on = on == true
+	self.driving = on
+	if self._context then
+		self._context.Enabled = on
+	end
+	if self._drag then
+		self._drag:_lift()
+		self._drag.gui.Enabled = on
+	end
+	-- The walking camera turns on the right button too; none of that is the drift
+	-- camera's to catch up on when the player is back in.
+	self._pan.held = false
+	self._pan.dx, self._pan.dy = 0, 0
+end
+
+function CarInputController:IsDriving(): boolean
+	return self.driving ~= false
+end
+
 -- ---------------------------------------------------------------- the brake toggle
 
 function CarInputController:_setBrake(on: boolean): boolean
@@ -344,6 +371,9 @@ function CarInputController:DebugState()
 		actions = if self._context then #self._context:GetChildren() else 0,
 		rawSteer = if self._actions and self._actions.Steer then tostring(self._actions.Steer:GetState()) else "none",
 		overridden = self._override ~= nil,
+		driving = self:IsDriving(), -- false while the player is out of the car (T-096)
+		contextEnabled = if self._context then self._context.Enabled else false,
+		padEnabled = if self._drag then self._drag.gui.Enabled else false,
 		pan = {
 			held = self._pan.held,
 			pendingX = self._pan.dx, -- not yet taken by the camera
