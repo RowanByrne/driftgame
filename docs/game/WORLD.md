@@ -100,6 +100,29 @@ The limit asserted in `PlaygroundTests` is 0.25 studs per stud travelled, so the
 
 **Two things a banked box gets wrong, and how they are fixed.** A part can bank but it cannot twist, and two neighbours on a curve share their centre point while turning by the yaw step, so their *outer* corners pull apart into a wedge — from the ground that reads as a bite out of the rim. Each box is now lengthened by exactly (half the width) times (the yaw step), which closes it. Separately, a raised edge on a thin ribbon shows daylight under it: the circle and the ramp are 14-stud-thick prisms and the plate is 24 thick, so every underside is buried. Both were checked by eye from the ground, not only by ray.
 
+## Garage
+
+The garage interior (`features/car-customization.md`, `T-102`): a grey-box street-tuning garage built by code at `Init` by `GarageRoomService`, to the picked concept `assets/garage-concept/garage-01.png`. One room, `Workspace.GarageRoom`; rebuilding it replaces it, never doubles it.
+
+- **Where:** `Config.GarageRoom.Origin` = **(-8000, 0, 0)**, the turntable's centre on the floor, floor top at Y = 0. Nothing else in the game lives on -X. Measured: the room and its backdrop span x -8215 to -7973, z -380 to 380; the nearest other part in a lane is the playground's plate, **6 973 studs** away, and in a place with a track (playground at x -3024) it would be about 4 950. `CarService:WorldAt` calls a car here "the playground".
+- **Size:** inside, 52 by 44 studs with an 18-stud roof (about 15 by 12 m). The roller door is in the -X wall, 18 wide and 12 high, its slats rolled up to 8.2. Outside it a 40-stud street runs along Z on a ridge, closed at both ends, with a guardrail on the far side and the dusk town 20 studs below. **363 parts**, budget 700 (`Config.GarageRoom.PartBudget`).
+- **Driving surfaces:** the floor, the street, the turntable's deck and its 16-wedge bevel are tagged `DriftSurface`; everything else is a wall or untouchable paint. The deck's top is **0.2 studs** above the floor, ramped by a 1.7-stud bevel, inside the playground's quarter-stud kerb.
+- **The turntable:** `GarageRoomService:Turntable()`, a Model whose PrimaryPart is `Deck` (radius 10), pivoted at the deck's top centre; `SetTurntableAngle(radians)` spins it in place. The bevel round it does not spin.
+
+**Named points.** `GarageRoomService:GetPoint(name)` returns a world CFrame; they are also Parts under `Workspace.GarageRoom.Points`, invisible and unqueryable. Car points sit **on** the surface, facing the way the car faces: raise a car by its ride height to stand it there. Camera points are a camera's pose, looking at the car on the turntable.
+
+| Point | What it is |
+|---|---|
+| `TurntableTop` | The deck's centre, on its top, facing +X (the way the car came in) |
+| `CarEntry` | On the street 23 studs outside the door, facing in |
+| `CarExit` | On the street 13 studs outside the door, facing out |
+| `CamWide` | High in the front-right corner, the concept's angle: the door on the left |
+| `CamWheels` | Low by the front-right wheel |
+| `CamUnderside` | On the floor at the car's side, looking under the sill |
+| `CamCabin` | Over the driver's door, looking in through the side window |
+
+`GarageRoomTests` asserts every point exists and that the car points stand on ground, and walks the drive in from `CarEntry` to `TurntableTop`: ground all the way, a largest step of 0.059 studs per half stud, and a car-sized box sweeps through the door without touching anything. In a playtest the car, put down at `CarEntry`, drove itself through the door, over the deck at 0.2 and into the shelves on the far side with no errors.
+
 ## Looking at it in Studio: the showroom
 
 Every one of the three worlds is built by code at runtime, so in Studio's **edit mode** the place is empty and there is nothing to fly around. `src/ServerScriptService/Tools/Showroom.luau` is the answer to that: an edit-mode tool that builds the playground and one of every road piece into the open place's Workspace, where they can be flown around, clicked and looked at while the code that makes them is still being written. Nothing in the game requires it and it is never reached at runtime.
