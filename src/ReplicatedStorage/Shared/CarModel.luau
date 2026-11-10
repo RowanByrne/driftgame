@@ -10,6 +10,13 @@
 --             active when a car is BUILT, so a car brings its own shape with it. Nothing
 --             to download. See "when a switch lands", below, for what F4 does and does
 --             not move.
+--   `liftback` THE GAME'S OWN CAR, and the default (T-111): the 1980s liftback modelled
+--             for this game (docs/game/features/car-model.md), 168 mesh pieces read out of
+--             the place it was imported into and written down in `Shared/Cars/Liftback`.
+--             A v2 RIG (CONTRACTS.md "The car rig"): its doors, hood, hatch, pop-up lights,
+--             wheels on their hubs, needles and pedals are groups that `CarParts` moves,
+--             assembled by `Shared/Cars/MeshRig`. Drawn for the `liftback` archetype, which
+--             has the approved car's numbers to the bit.
 --   `ae86`    the car the user added to the Main place, read out of it and written down in
 --             `Shared/Cars/AE86`. 98 parts of shell and wheels, scaled onto the config.
 --             NOT APPROVED TO PUBLISH (`assets/car-ae86/MANIFEST.md`) -- it is still here
@@ -42,6 +49,7 @@ local RunService = game:GetService("RunService")
 
 local Bodies = require(ReplicatedStorage.Shared.Cars.Bodies)
 local Cars = require(ReplicatedStorage.Shared.Cars)
+local MeshRig = require(ReplicatedStorage.Shared.Cars.MeshRig)
 local Config = require(ReplicatedStorage.Shared.Config)
 
 local CarModel = {}
@@ -54,7 +62,9 @@ CarModel.SHELL_NAME = "Shell"
 -- four PARTS bodies -- one per archetype, assembled out of boxes and wedges by code --
 -- are in `Shared/Cars/Bodies` and need none of the machinery below: no asset, no
 -- download, no yield (T-028).
-CarModel.BODIES = { ae86 = "AE86" }
+-- A module whose data has `groups` and `pieces` is a rigged mesh car (`Cars/MeshRig`);
+-- otherwise it is the old shape, a `Body` and four `Wheel*` groups (`Cars/AE86`).
+CarModel.BODIES = { ae86 = "AE86", liftback = "Liftback" }
 
 -- `CarBody = "auto"` means "whatever body the ACTIVE archetype owns", which is what ties
 -- the shape to the car being driven. Any other value overrides it for every car, which is
@@ -97,9 +107,9 @@ function CarModel.isFrontWheel(name: string): boolean
 	return name == "WheelFL" or name == "WheelFR"
 end
 
--- Which body the next car gets. `"auto"` resolves to the active archetype's own body, and
--- falls back to the block if that archetype has no art yet -- so a fifth archetype with
--- no body is a block car rather than an error.
+-- Which body the next car gets. `"auto"` resolves to the active archetype's own body -- a
+-- parts body or a mesh body of the same name -- and falls back to the block if that
+-- archetype has no art yet, so an archetype with no body is a block car, not an error.
 function CarModel.bodyName(): string
 	local name = bodyOverride
 	if not name then
@@ -108,7 +118,7 @@ function CarModel.bodyName(): string
 	end
 	if name == CarModel.AUTO then
 		local key = Cars.activeKey()
-		return if Bodies.exists(key) then key else "block"
+		return if Bodies.exists(key) or CarModel.BODIES[key] then key else "block"
 	end
 	return name :: string
 end
@@ -372,26 +382,35 @@ local function shellGroup(
 	return group, built, failed
 end
 
-local template: Model? = nil
-local templateFor: string? = nil
-local templateState = "none" -- none | building | ready | failed
+-- One template per mesh body, built once and cloned per car: a test that asks for another
+-- body does not throw away the one every car is wearing.
+type Template = { state: string, model: Model? } -- state: building | ready | failed
+local templates: { [string]: Template } = {}
 
--- Build the shell once. Yields: every mesh goes through `CreateMeshPartAsync`.
-local function buildShell(name: string)
+-- Build the shell once. Yields: every mesh goes through `CreateMeshPartAsync`. Returns
+-- nil, having said why, when there is no shell to be had.
+local function buildShell(name: string): Model?
 	local moduleName = CarModel.BODIES[name]
 	local cars = ReplicatedStorage.Shared:FindFirstChild("Cars")
 	local module = if moduleName and cars then cars:FindFirstChild(moduleName) else nil
 	if not module or not module:IsA("ModuleScript") then
 		warn(`[CarModel] no body '{name}' in Shared/Cars; the car is a block`)
-		templateState = "failed"
-		return
+		return nil
 	end
 
 	local okRequire, data = pcall(require, module)
 	if not okRequire then
 		warn(`[CarModel] body '{name}' would not load: {data}; the car is a block`)
-		templateState = "failed"
-		return
+		return nil
+	end
+
+	-- A rigged mesh car: its groups and its pieces, assembled through `Cars/Rig` (T-111).
+	if data.groups and data.pieces then
+		local shell, built, failed = MeshRig.build(data)
+		if failed > 0 then
+			warn(`[CarModel] body '{name}': {failed} of {built + failed} meshes would not load`)
+		end
+		return shell
 	end
 
 	local meshes = fetchMeshes(data)
@@ -432,39 +451,37 @@ local function buildShell(name: string)
 	end
 	if built == 0 then
 		shell:Destroy()
-		templateState = "failed"
-		return
+		return nil
 	end
-
-	template = shell
-	templateState = "ready"
+	return shell
 end
 
 -- Anything that goes wrong in there has to end the wait, not outlive it: a thread that
 -- dies half way leaves `build()` waiting the whole timeout for a shell that is never
 -- coming, and every car after it too.
 local function buildTemplate(name: string)
-	templateState = "building"
-	templateFor = name
-	local ok, err = pcall(buildShell, name)
+	local entry: Template = { state = "building", model = nil }
+	templates[name] = entry
+	local ok, res = pcall(buildShell, name)
 	if not ok then
-		warn(`[CarModel] body '{name}' would not build: {err}; the car is a block`)
-		templateState = "failed"
-	elseif templateState == "building" then
-		templateState = "failed"
+		warn(`[CarModel] body '{name}' would not build: {res}; the car is a block`)
+	end
+	if ok and res then
+		entry.model = res
+		entry.state = "ready"
+	else
+		entry.state = "failed"
 	end
 end
 
 -- Start the build without waiting for it. The server calls this as soon as this module
 -- loads, so the template is there before the first player is.
 function CarModel.preload()
-	if templateState == "none" or templateFor ~= CarModel.bodyName() then
-		local name = CarModel.bodyName()
-		-- A parts body has nothing to fetch and nothing to wait for: it is built fresh
-		-- every time, in microseconds.
-		if name ~= "block" and not Bodies.exists(name) then
-			task.spawn(buildTemplate, name)
-		end
+	local name = CarModel.bodyName()
+	-- A parts body has nothing to fetch and nothing to wait for: it is built fresh every
+	-- time, in microseconds.
+	if name ~= "block" and not Bodies.exists(name) and not templates[name] then
+		task.spawn(buildTemplate, name)
 	end
 end
 
@@ -478,29 +495,26 @@ function CarModel.shell(): Model?
 	-- A PARTS BODY IS NOT CACHED, on purpose. It is twenty-odd `Instance.new` calls, which
 	-- is microseconds, and it is built against the ACTIVE car's geometry -- so a cache
 	-- would be a body drawn for the last archetype the first time two archetypes have
-	-- different wheelbases. The mesh path below keeps its template because that one costs
-	-- 82 downloads.
+	-- different wheelbases. The mesh bodies below keep a template each because those cost
+	-- 82 and 168 downloads.
 	if Bodies.exists(name) then
 		return Bodies.build(name)
 	end
-	if templateFor ~= name then
-		templateState = "none"
-		template = nil
-	end
-	if templateState == "none" then
+	if not templates[name] then
 		task.spawn(buildTemplate, name)
 	end
+	local entry = templates[name]
 	local deadline = os.clock() + SHELL_TIMEOUT
-	while templateState == "building" and os.clock() < deadline do
+	while entry.state == "building" and os.clock() < deadline do
 		task.wait()
 	end
-	if templateState ~= "ready" or not template then
-		if templateState == "building" then
+	if entry.state ~= "ready" or not entry.model then
+		if entry.state == "building" then
 			warn(`[CarModel] body '{name}' took longer than {SHELL_TIMEOUT}s; this car is a block`)
 		end
 		return nil
 	end
-	return (template :: Model):Clone()
+	return (entry.model :: Model):Clone()
 end
 
 -- ---------------------------------------------------------------------- the car

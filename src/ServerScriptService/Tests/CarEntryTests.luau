@@ -163,7 +163,9 @@ local function pure(checks)
 				and shut < 1e-3,
 			`opening {opening}s, halfway {midway}, open {open}, shut {shut} after {shutting}s`
 		)
+		CarModel.setBody("block") -- the default car is a rig since T-111
 		local plain = CarModel.build()
+		CarModel.setBody(nil)
 		local none = CarService:_door(plain, true)
 		check(checks, "a car with no rig has no door to wait for", none == E.NoDoorSeconds, `{none}s`)
 		plain:Destroy()
