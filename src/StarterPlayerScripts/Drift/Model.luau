@@ -626,23 +626,27 @@ function Model.step(s: State, input: Input, dt: number, world: World): State
 	local P = C.Suspension
 	local hang = false
 	if carrying > 0 and groundY and groundSpeed < P.HangSpeed then
+		-- TWO WHEELS OR MORE, an axle or a side or worse. A car with one corner out of
+		-- travel still stands on the other three, as it always has; and one ray in a
+		-- thousand finding nothing at the edge of a road is not a ledge (measured: three
+		-- such single misses in RoadTests' drive, and each one changed the line).
 		local y0 = groundY + C.RideHeight
 		local f0, r0, u0 = Suspension.basis(s.yaw, normal)
+		local out = 0
 		for i = 1, #WHEELS do
 			local hit = wheelHits[i]
-			if not hit then
-				hang = true -- nothing under this wheel at all
-				break
-			end
 			local p = Suspension.wheelContact(i)
-			if hit.y < y0 + r0.Y * p.X + u0.Y * p.Y - f0.Y * p.Z - (P.Rest + P.HangSlack) then
-				hang = true
-				break
+			if not hit or hit.y < y0 + r0.Y * p.X + u0.Y * p.Y - f0.Y * p.Z - (P.Rest + P.HangSlack) then
+				out += 1 -- nothing under it at all, or its ground beyond its reach
 			end
 		end
+		hang = out >= 2
 	end
-	-- Once in, it stays in for as long as the floor is near something: a car whose four
-	-- wheels have all gone over the drop can still have its nose over the ledge.
+	-- Once in, it stays in until handing the car back is safe: the pose the wheels alone
+	-- would settle it at keeps the floor off its ground and no tyre past the top of its
+	-- travel (to `HangHold`), or the floor is clear of everything. A car whose four wheels
+	-- have all gone over the drop can still have its nose over the ledge, and on a road
+	-- the wheels' pose is always safe, so there it lets go at once.
 	-- And while it is in, a wheel is its whole tread, not the one ray under its middle: a
 	-- tyre rolling over the edge rides round the corner (`Suspension.treads`).
 	local contactHits: { Hit? } = wheelHits
@@ -651,8 +655,9 @@ function Model.step(s: State, input: Input, dt: number, world: World): State
 	end
 	local sup = if hang or s.hanging then Suspension.gather(world, s.yaw, target, s.up, contactHits, s.floor) else nil
 	if sup and not hang then
-		local _, _, nearY = Suspension.need(sup, s.yaw, s.up)
-		if sup.nHard == 0 or nearY < target.Y - C.AirborneMargin then
+		local _, leastY, floorY = Suspension.need(sup, s.yaw, s.up)
+		local settles = groundY ~= nil and groundY + C.RideHeight >= leastY - P.HangHold
+		if settles or sup.nHard == 0 or floorY < target.Y - C.AirborneMargin then
 			sup = nil -- clear of everything: it falls, as it always has
 		end
 	end

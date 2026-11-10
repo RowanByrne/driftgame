@@ -186,9 +186,16 @@ local Drift = {
 		-- dips it about a quarter of a stud. 0 turns it off
 		MaxBodyTilt = 4, -- deg the body may pitch or roll on its springs off the car's frame
 		ReachSlack = 0.05, -- studs past full hang a wheel still counts as touching (drawn)
-		HangSlack = 0.25, -- studs past full hang before a wheel counts as out of travel and
-		-- the floor solve runs. A wheel 0.5 studs short of its ground. Over a
-		-- step it takes a 1-stud drop under one axle to reach it; a kerb never does
+		HangSlack = 0.75, -- studs past full hang before a wheel counts as out of travel and
+		-- the floor solve runs (two wheels at least): a whole stud short of its ground. Over a
+		-- step it takes a 2-stud drop under one axle; a kerb never does, and
+		-- nor does the road. MEASURED: the touge pieces twist a car's four
+		-- wheels up to 0.66 off one plane at a crawl, and at 0.25 that ran the
+		-- floor solve on the road and cost RoadTests' drive 9 pieces
+		HangHold = 0.25, -- studs. Once running, the floor solve lets go when the pose the
+		-- wheels alone would give the car is no more than this below what the
+		-- floor and the tyres' travel allow -- always true on a road. Holding on
+		-- while the floor was merely NEAR the road never let a car go at all
 		HangSpeed = 15, -- studs/s. The floor solve only starts below this ground speed. Faster
 		-- than it a car is over an edge and gone before it could tip, and flies
 		-- the line the approved model always flew -- the playground's ramp is
