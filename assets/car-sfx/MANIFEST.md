@@ -14,9 +14,9 @@ drag) rather than by ear, since an agent's playtests are silent. **The user pick
 
 | | Store id | Name | By | Length | License | Status |
 |---|---|---|---|---|---|---|
-| A | `9125686089` | Metal Scrape Dragging Car Hood Across Asphalt 1 | Pro Sound Effects (Roblox audio partner) | 3.8 s | Creator Store, free in any experience | candidate, placeholder in `Config.Fx.Scrape.SoundId` |
-| B | `9125686374` | Metal Scrape Dragging Car Hood Across Asphalt 4 | Pro Sound Effects | 4.5 s | Creator Store, free in any experience | candidate |
-| C | `9120371395` | Vehicle Door Curb Scrapes Gritty Drag Car 1 | Pro Sound Effects | 1.4 s | Creator Store, free in any experience | candidate: shorter and lighter, a kerb scuff rather than a grind |
+| A | `9125686089` | Metal Scrape Dragging Car Hood Across Asphalt 1 | Pro Sound Effects (Roblox audio partner) | 3.8 s | Creator Store, free in any experience | **picked** by the user 2026-11-10 ("A: 9125686089"), in `Config.Fx.Scrape.SoundId` |
+| B | `9125686374` | Metal Scrape Dragging Car Hood Across Asphalt 4 | Pro Sound Effects | 4.5 s | Creator Store, free in any experience | rejected |
+| C | `9120371395` | Vehicle Door Curb Scrapes Gritty Drag Car 1 | Pro Sound Effects | 1.4 s | Creator Store, free in any experience | rejected: shorter and lighter, a kerb scuff rather than a grind |
 
 Found 2026-11-10 with `search_asset` ("car scrape", "metal scrape loop", "metal grind drag
 asphalt"). Left out: `136913781328946` "metal_box_scrape_rough_loop1" and `134321442344840`

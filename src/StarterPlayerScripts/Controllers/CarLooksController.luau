@@ -8,8 +8,12 @@
 -- whenever its parts change under it (a car's hundred parts arriving after its Model, or the
 -- server re-dressing it in another body). The drawing itself is `Drift/CarLooks`.
 --
--- Wraps go in `PlayerGui.CarLooks`, the underglow in `Workspace.CarLooks`; both are this
--- client's own and neither is inside a car.
+-- Wraps go in `PlayerGui.CarLooks`; the underglow and the body kits and interiors
+-- (`Drift/CarKits`, T-105) in `Workspace.CarLooks`. All are this client's own and none is
+-- inside a car.
+--
+-- The kits follow whatever `CarLooks` last drew on a car (`states[car].build`), so a garage
+-- preview drawn through `Garage/Preview` shows its kit too, and its revert takes it off.
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -19,6 +23,7 @@ local Customization = require(ReplicatedStorage.Shared.Customization)
 
 local DriftFolder = script.Parent.Parent:WaitForChild("Drift")
 local CarLooks = require(DriftFolder.CarLooks)
+local CarKits = require(DriftFolder.CarKits)
 
 local CarLooksController = {}
 
@@ -29,6 +34,7 @@ local FOLDER_NAME = "CarLooks"
 
 function CarLooksController:Init()
 	self.states = {} -- car -> CarLooks.State
+	self.kits = {} -- car -> CarKits.State
 	self.connections = {} -- car -> { RBXScriptConnection }
 	self.pending = {} -- car -> true while a redraw is queued
 end
@@ -76,6 +82,8 @@ function CarLooksController:Start()
 	-- After the cars are drawn (DriftController, Input + 1) and the camera has followed them.
 	RunService:BindToRenderStep(STEP_NAME, Enum.RenderPriority.Camera.Value + 2, function()
 		CarLooks.step(self.states, workspace:GetServerTimeNow())
+		self:_followKits()
+		CarKits.step(self.kits)
 	end)
 end
 
@@ -85,6 +93,7 @@ function CarLooksController:_track(car: Instance)
 	end
 	local gui, glow = self:_parents()
 	self.states[car] = CarLooks.new(car, gui, glow)
+	self.kits[car] = CarKits.new(car, glow)
 	local function schedule()
 		self:_schedule(car)
 	end
@@ -107,6 +116,10 @@ function CarLooksController:_untrack(car: Instance)
 	if state then
 		CarLooks.clear(state)
 	end
+	if self.kits[car] then
+		CarKits.clear(self.kits[car])
+	end
+	self.kits[car] = nil
 	for _, c in self.connections[car] or {} do
 		c:Disconnect()
 	end
@@ -135,6 +148,37 @@ function CarLooksController:_draw(car: Instance)
 	if not ok then
 		warn(`[CarLooksController] could not draw {car:GetFullName()}: {err}`)
 	end
+	self:_drawKits(car)
+end
+
+-- The car's colour as drawn, for kit shapes painted with the body.
+local function bodyColour(state): Color3?
+	local first = state.roles and state.roles.body and state.roles.body[1]
+	return first and first.Color or nil
+end
+
+-- The kits and interior for whatever `CarLooks` last drew on the car.
+function CarLooksController:_drawKits(car: Instance)
+	local state, kit = self.states[car], self.kits[car]
+	if not state or not kit then
+		return
+	end
+	kit.parent = self.glowFolder
+	local ok, err = pcall(CarKits.apply, kit, state.build, bodyColour(state))
+	if not ok then
+		warn(`[CarLooksController] could not draw the kits on {car:GetFullName()}: {err}`)
+	end
+end
+
+-- A preview (`Garage/Preview`) draws through `CarLooks.apply` straight onto the state, so the
+-- kits catch up here, once, whenever the build drawn is not the one they were drawn for.
+function CarLooksController:_followKits()
+	for car, state in self.states do
+		local kit = self.kits[car]
+		if kit and kit.build ~= state.build then
+			self:_drawKits(car)
+		end
+	end
 end
 
 -- ---------------------------------------------------------------------- Studio only
@@ -148,6 +192,7 @@ function CarLooksController:DebugState()
 		local d = CarLooks.describe(state)
 		d.userId = car:GetAttribute("UserId")
 		d.fitted = car:GetAttribute(Customization.ATTR_COUNTER)
+		d.kits = self.kits[car] and CarKits.describe(self.kits[car])
 		out[car.Name .. "_" .. tostring(d.userId)] = d
 	end
 	return out
