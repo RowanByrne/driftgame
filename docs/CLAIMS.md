@@ -9,7 +9,6 @@ Every task in progress and the files it owns, so parallel sessions and workers n
 
 | Branch | Lane | Files owned | Since |
 |---|---|---|---|
-| `agent/suspension` | lane1 | `src/StarterPlayerScripts/Controllers/DriftController.luau`, `src/ServerScriptService/Services/CarService.luau`, `src/StarterPlayerScripts/Drift/RemoteCars.luau`, `src/StarterPlayerScripts/Drift/Model.luau`, `src/StarterPlayerScripts/Drift/World.luau`, `src/StarterPlayerScripts/Drift/Render.luau`, `src/StarterPlayerScripts/Drift/Wheels.luau`, `src/ReplicatedStorage/Shared/Config/Drift.luau`, `src/StarterPlayerScripts/Drift/Suspension.luau` (new), `src/ServerScriptService/Tests/DriftTests.luau`, `src/ServerScriptService/Tests/SuspensionTests.luau` (new), `docs/game/CONTRACTS.md` (`CarState` row only), `docs/game/features/car-v2.md` ("Rules and numbers" only) | 2026-11-10 (T-095) |
 
 ## Notes between sessions
 
