@@ -9,6 +9,7 @@ Every task in progress and the files it owns, so parallel sessions and workers n
 
 | Branch | Lane | Files owned | Since |
 |---|---|---|---|
+| `agent/suspension-perf` | lane1 | `src/StarterPlayerScripts/Drift/Model.luau`, `src/StarterPlayerScripts/Drift/World.luau`, `src/StarterPlayerScripts/Drift/Suspension.luau`, `src/ReplicatedStorage/Shared/Config/Drift.luau`, `src/StarterPlayerScripts/Drift/Scrape.luau`, `src/ReplicatedStorage/Shared/Config/Fx.luau`, `src/ServerScriptService/Tests/SuspensionTests.luau`, `src/ServerScriptService/Tests/ScrapeTests.luau` | 2026-11-10 (T-095 reopen) |
 
 ## Notes between sessions
 
