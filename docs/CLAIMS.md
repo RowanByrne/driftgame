@@ -9,7 +9,6 @@ Every task in progress and the files it owns, so parallel sessions and workers n
 
 | Branch | Lane | Files owned | Since |
 |---|---|---|---|
-| `agent/ride-height` | lane1 | `src/ReplicatedStorage/Shared/Customization/*`, `src/ReplicatedStorage/Shared/Cars/*`, `src/StarterPlayerScripts/Drift/Suspension.luau`, `src/ReplicatedStorage/Shared/Config/Drift.luau`, `src/ServerScriptService/Tests/SuspensionTests.luau`, `src/ServerScriptService/Tests/PartsFeelTests.luau`, `src/ServerScriptService/Tests/CustomizationTests.luau`, `docs/game/features/car-customization.md` | 2026-11-10 (T-109) |
 
 ## Notes between sessions
 
