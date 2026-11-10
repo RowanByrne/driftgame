@@ -658,25 +658,28 @@ function Model.step(s: State, input: Input, dt: number, world: World): State
 	-- look is some thirty ground rays, and at 30 microseconds a ray in a built place that
 	-- was 5 ms a step -- a car resting on an edge froze the game, because a frame that
 	-- cannot keep up hands the next one more steps to catch up on. The world does not move,
-	-- so while the car has moved less than `ReuseMove` and turned and tipped less than
-	-- `ReuseTurn` since the last look, the supports it found (in the car's own frame) are
-	-- reused as they are.
+	-- so the supports it found (in the car's own frame) are reused for as long as no part
+	-- of the floor has moved `ReuseMove` since -- a turn or a tip counts as its swing at
+	-- `ReuseRadius`, the floor's far corners -- and, once it has, until the look is
+	-- `RefreshEvery` old, so long as nothing has moved `ReuseMax`. THAT SECOND RULE IS
+	-- T-110's: a car sitting on an edge with the finger held turns 2 rad/s in place, swings
+	-- its corners 0.13 studs a step, and took a fresh look every step at 120 Hz.
 	local contactHits: { Hit? } = wheelHits
 	local sup = nil
 	if hang or s.hanging then
 		local cache = s.supportCache
-		if
-			cache
-			and cache.floor == s.floor
-			and (target - cache.at).Magnitude < P.ReuseMove
-			and math.abs(s.yaw - cache.yaw) < P.ReuseTurn
-			and (s.up - cache.up).Magnitude < P.ReuseTurn
-		then
+		local moved = math.huge
+		if cache and cache.floor == s.floor then
+			moved = (target - cache.at).Magnitude
+				+ P.ReuseRadius * (math.abs(s.yaw - cache.yaw) + (s.up - cache.up).Magnitude)
+		end
+		if moved < P.ReuseMove or (moved < P.ReuseMax and s.time - cache.time < P.RefreshEvery) then
 			contactHits, sup = cache.hits, cache.sup
 		else
 			contactHits = Suspension.treads(world, s.yaw, target, s.up)
 			sup = Suspension.gather(world, s.yaw, target, s.up, contactHits, s.floor)
-			s.supportCache = { at = target, yaw = s.yaw, up = s.up, floor = s.floor, hits = contactHits, sup = sup }
+			s.supportCache =
+				{ at = target, yaw = s.yaw, up = s.up, floor = s.floor, hits = contactHits, sup = sup, time = s.time }
 		end
 	end
 	if sup and not hang then
@@ -690,9 +693,6 @@ function Model.step(s: State, input: Input, dt: number, world: World): State
 		sup = nil -- nothing under any of it: it falls, as it always has
 	end
 	s.hanging = sup ~= nil
-	if not sup then
-		s.supportCache = nil
-	end
 
 	local follow = 1 - math.exp(-dt / math.max(C.GroundFollow, EPS))
 	if sup then

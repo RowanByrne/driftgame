@@ -220,7 +220,14 @@ local Drift = {
 		ReuseMove = 0.1, -- studs. The floor solve looks under the car again only once it has
 		-- moved this far since the last look (T-095 perf): a look is about 30
 		-- ground rays, and a car resting on an edge does not need one a step
-		ReuseTurn = 0.005, -- rad (about 0.3 deg), the same for turning and tipping
+		ReuseRadius = 8, -- studs: a turn or a tip counts as its swing this far out, about
+		-- where the floor's far corners are
+		ReuseMax = 0.6, -- studs. Past this much movement the look is always fresh...
+		RefreshEvery = 1 / 30, -- s ...and short of it, at most this often (T-110: a car
+		-- sitting on an edge turning in place on a held finger looked 120
+		-- times a second). Between looks the floor may be up to `ReuseMax`
+		-- out of date; on the floor solve a car is never fast, and every look
+		-- puts it right
 		EdgeSteps = 8, -- halvings, ONLY where the world has no sideways ray (`World.edge`):
 		-- the live world finds a step's face in one ray. A floor segment 7 studs
 		-- long is pinned to 0.03 this way, so a car tipped 30 degrees rests
