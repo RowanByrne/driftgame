@@ -9,7 +9,6 @@ Every task in progress and the files it owns, so parallel sessions and workers n
 
 | Branch | Lane | Files owned | Since |
 |---|---|---|---|
-| `agent/floor-sparks` | lane1 | `src/StarterPlayerScripts/Drift/Scrape.luau` (new), `src/ReplicatedStorage/Shared/Config/Fx.luau`, `src/StarterPlayerScripts/Controllers/DriftController.luau`, `src/ServerScriptService/Tests/ScrapeTests.luau` (new), `assets/car-sfx/*` (new) | 2026-11-10 (T-097) |
 | `agent/car-kits` | lane3 | `src/StarterPlayerScripts/Drift/CarKits.luau` (new), `src/ReplicatedStorage/Shared/Config/CarKits.luau` (new), `src/StarterPlayerScripts/Controllers/CarLooksController.luau`, `src/ServerScriptService/Tests/CarKitsTests.luau` (new), `src/ReplicatedStorage/Shared/Customization/Catalog.luau` (look fields of BodyKit and Interior only), `docs/game/CONTRACTS.md` (Customization section, kit slot rows only) | 2026-11-10 (T-105) |
 | `agent/parts-feel` | lane4 | `src/ReplicatedStorage/Shared/Cars/*`, `src/ReplicatedStorage/Shared/Customization/init.luau`, `src/ReplicatedStorage/Shared/Customization/Catalog.luau` (perf fields only), `src/ServerScriptService/Services/CustomizationService.luau`, `src/ServerScriptService/Services/CarService.luau`, `src/ServerScriptService/Tests/CustomizationTests.luau`, `src/ServerScriptService/Tests/PartsFeelTests.luau` (new), `docs/game/features/car-customization.md` ("Rules and numbers" only) | 2026-11-10 (T-106) |
 
