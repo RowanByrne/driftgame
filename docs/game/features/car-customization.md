@@ -75,7 +75,7 @@ None yet. Customization is the obvious place for it later (REVENUE.md), so the c
 
 ## Art and sound
 
-- **The garage interior:** concept candidates in `..\art\generated\garage-concept\`, for the user to pick; then built as a grey-box room to it, then the real art later.
+- **The garage interior:** built to the picked concept, `assets/garage-concept/garage-01.png` (the dusk street garage, 2026-11-10): grey-box first, the real art later.
 - **Parts:** programmer art. Fit and paint sounds: Creator Store candidates later.
 
 ## Testing

@@ -4,10 +4,10 @@ Concept art for the garage interior (`docs/game/features/car-customization.md`, 
 
 | File (`..\art\generated\garage-concept\`) | Size | SHA-256 | Status |
 |---|---|---|---|
-| `garage-01.png` | 1672x941 | `9EF0692617BE28B6559782F9362F4D18F1D1CF04F9661EB1BF21CB01AD7A3E61` | candidate |
-| `garage-02.png` | 1672x941 | `652DE91C3A0B17C39302AAC07240107720E66EE53A934F27D5BA424C86BCABCE` | candidate |
-| `garage-03.png` | 1672x941 | `5C70726EF9B54F11CF4945A0062BF534D8692197573094BDD877B3F614C62486` | candidate |
-| `garage-04.png` | 1672x941 | `C7AD55297EC22A65068C8425C35007E2838005899F3222311EB2503B3016DB3B` | candidate |
+| `garage-01.png` | 1672x941 | `9EF0692617BE28B6559782F9362F4D18F1D1CF04F9661EB1BF21CB01AD7A3E61` | **approved**, copied unchanged to `assets/garage-concept/garage-01.png` |
+| `garage-02.png` | 1672x941 | `652DE91C3A0B17C39302AAC07240107720E66EE53A934F27D5BA424C86BCABCE` | rejected |
+| `garage-03.png` | 1672x941 | `5C70726EF9B54F11CF4945A0062BF534D8692197573094BDD877B3F614C62486` | rejected |
+| `garage-04.png` | 1672x941 | `C7AD55297EC22A65068C8425C35007E2838005899F3222311EB2503B3016DB3B` | rejected |
 
 ## Prompts
 
@@ -25,4 +25,4 @@ Concept art for the garage interior (`docs/game/features/car-customization.md`, 
 
 ## The pick
 
-Not yet: shown to the user 2026-11-10.
+**garage-01, the dusk street garage**, picked by the user on 2026-11-10 from the four, answering "Which garage interior should the room be built from?" with "1: Dusk street garage". The room is built to it.
