@@ -61,6 +61,7 @@ local CarModel = require(ReplicatedStorage.Shared.CarModel)
 local CarParts = require(ReplicatedStorage.Shared.CarParts)
 local Cars = require(ReplicatedStorage.Shared.Cars)
 local Config = require(ReplicatedStorage.Shared.Config)
+local Customization = require(ReplicatedStorage.Shared.Customization)
 local Net = require(ReplicatedStorage.Shared.Net)
 local Signal = require(ReplicatedStorage.Shared.Signal)
 
@@ -138,6 +139,8 @@ function CarService:Init()
 	self.cars = {} -- userId -> Model
 	self.seen = {} -- userId -> { expect: Track, was: Track?, graceUntil, window, count, dropped, ... }
 	self.carKeys = {} -- userId -> the archetype key the SERVER says that player is in
+	self.builds = {} -- userId -> their fitted build (CustomizationService), for the bounds (T-106)
+	self.buildSets = 0
 	self.dropped = 0
 	self.respawns = 0
 	self.respawnsRefused = 0
@@ -220,6 +223,7 @@ function CarService:Start()
 	Players.PlayerAdded:Connect(join)
 	Players.PlayerRemoving:Connect(function(player)
 		self:Despawn(player)
+		self.builds[player.UserId] = nil
 	end)
 	for _, player in Players:GetPlayers() do
 		task.spawn(join, player)
@@ -453,8 +457,50 @@ end
 -- That car's numbers, resolved: what every bound on their `CarState` is a share of. A
 -- fresh table per packet on purpose -- `Cars.tune` during a tuning session moves the
 -- server's bounds with the client's feel, and a cached copy would not.
+--
+-- WITH THEIR FITTED PARTS (T-106). The player's build is laid over the car they are in NOW
+-- (`Customization.carFields(build, key)`: the parts go with the player into whichever car
+-- they switch to), exactly as the driving client lays it (`Shared/Cars/BuildFeel`), so an
+-- Engine part's extra top speed is extra speed the server takes. The tuning layer still
+-- sits on top, as it does on the client; and the dev tuner's server-wide `TopSpeed`
+-- ceiling (`GarageService`) can only ever RAISE a bound, never pull a built car below its
+-- own build's top speed.
+function CarService:_numbersFor(userId: number, key: string): { [string]: any }?
+	local build = self.builds[userId]
+	if not build then
+		return Cars.resolve(key)
+	end
+	local fields = Customization.carFields(build, key)
+	local numbers = Cars.resolve(key, fields)
+	if numbers and fields.TopSpeed and fields.TopSpeed > numbers.TopSpeed then
+		numbers.TopSpeed = fields.TopSpeed
+	end
+	return numbers
+end
+
 function CarService:_numbers(userId: number): { [string]: any }?
-	return Cars.resolve(self.carKeys[userId] or Cars.Default)
+	return self:_numbersFor(userId, self.carKeys[userId] or Cars.Default)
+end
+
+-- THE PLAYER'S FITTED BUILD, for their bounds (T-106). `CustomizationService` calls this
+-- whenever a build is loaded, fitted or published on a car; nil is the stock car. A build
+-- that lowers their top speed opens `CarSwitchGrace`, as a car switch does: a packet
+-- already on the wire was honest under the build they had.
+function CarService:SetBuild(userId: number, build: Customization.Build?)
+	local before = self:_numbers(userId)
+	self.builds[userId] = if build then Customization.copy(build) else nil
+	self.buildSets += 1
+	local seen = self.seen[userId]
+	local after = self:_numbers(userId)
+	if seen and before and after and after.TopSpeed < before.TopSpeed then
+		seen.carWas = before
+		seen.carGraceUntil = os.clock() + Config.Drift.CarSwitchGrace
+	end
+end
+
+function CarService:BuildOf(userId: number): Customization.Build?
+	local build = self.builds[userId]
+	return if build then Customization.copy(build) else nil
 end
 
 -- Build or dress a car as `key`, with `key` active for the length of the call.
@@ -520,7 +566,7 @@ function CarService:SetCar(player: Player, key: string): boolean
 	if seen then
 		-- The car they were in, kept the way a respawn keeps the place they were: a packet
 		-- already on the wire was honest under it.
-		seen.carWas = Cars.resolve(was)
+		seen.carWas = self:_numbersFor(player.UserId, was)
 		seen.carGraceUntil = os.clock() + Config.Drift.CarSwitchGrace
 	end
 	self.carKeys[player.UserId] = key
@@ -1318,7 +1364,7 @@ function CarService:DebugState()
 	for userId, car in self.cars do
 		local seen = self.seen[userId]
 		local key = self.carKeys[userId] or Cars.Default
-		local numbers = Cars.resolve(key)
+		local numbers = self:_numbersFor(userId, key)
 		table.insert(cars, {
 			userId = userId,
 			name = car.Name,
@@ -1371,6 +1417,7 @@ function CarService:DebugState()
 		switches = self.switches,
 		switchesRefused = self.switchesRefused,
 		switchInFlightKept = self.switchInFlightKept,
+		buildSets = self.buildSets, -- fitted builds handed over for the bounds (T-106)
 		charactersOff = not Players.CharacterAutoLoads,
 		physicsOffenders = offenders,
 		exits = self.exits,
