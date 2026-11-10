@@ -225,8 +225,8 @@ function CarService:Start()
 		task.spawn(join, player)
 	end
 
-	self.carState.OnServerEvent:Connect(function(player, cf, velocity, drifting)
-		self:_onState(player, cf, velocity, drifting)
+	self.carState.OnServerEvent:Connect(function(player, cf, velocity, drifting, lift)
+		self:_onState(player, cf, velocity, drifting, lift)
 	end)
 	self.carRespawn.OnServerEvent:Connect(function(player)
 		-- No payload: there is nothing for the client to say. It asks, the server picks.
@@ -741,9 +741,21 @@ function CarService:_drop(seen)
 	end
 end
 
-function CarService:_onState(player: Player, cf, velocity, drifting)
+-- The four wheels' suspension lift, packed one byte each (`Drift/Suspension.pack`, T-095):
+-- looks only, so nothing is checked against it but its shape. Nil is an older client.
+function CarService.liftOk(lift: any): boolean
+	return lift == nil
+		or (type(lift) == "number" and lift == lift and lift >= 0 and lift < 4294967296 and lift % 1 == 0)
+end
+
+function CarService:_onState(player: Player, cf, velocity, drifting, lift)
 	local seen = self.seen[player.UserId]
-	if typeof(cf) ~= "CFrame" or typeof(velocity) ~= "Vector3" or type(drifting) ~= "boolean" then
+	if
+		typeof(cf) ~= "CFrame"
+		or typeof(velocity) ~= "Vector3"
+		or type(drifting) ~= "boolean"
+		or not CarService.liftOk(lift)
+	then
 		self:_drop(seen)
 		return
 	end
@@ -846,7 +858,7 @@ function CarService:_onState(player: Player, cf, velocity, drifting)
 
 	for _, other in Players:GetPlayers() do
 		if other ~= player then
-			self.carStateOther:FireClient(other, player.UserId, cf, velocity, drifting)
+			self.carStateOther:FireClient(other, player.UserId, cf, velocity, drifting, lift)
 		end
 	end
 end

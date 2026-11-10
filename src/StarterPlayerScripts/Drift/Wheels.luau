@@ -108,6 +108,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local CarModel = require(ReplicatedStorage.Shared.CarModel)
 local Config = require(ReplicatedStorage.Shared.Config)
 local DriftModel = require(script.Parent.Model)
+local Suspension = require(script.Parent.Suspension)
 
 local Wheels = {}
 Wheels.__index = Wheels
@@ -526,8 +527,32 @@ function Wheels.Update(self: Wheels, state: DriftModel.State?, input: any, dt: n
 	-- Cancel the body's lean, once for all eight attachments: two trig calls a frame.
 	-- Written only when the lean has actually moved, which it has not while the car is
 	-- standing still or running dead straight.
+	--
+	-- AND THE SUSPENSION'S, when there is any (T-095). The body rides a sprung offset on the
+	-- car's frame and each wheel its own lift, so a patch is put where its wheel actually
+	-- meets the ground -- the flat patch, up by that wheel's lift -- and taken back through
+	-- the body's whole transform, offset and lean together. On flat ground both are exactly
+	-- zero and this is skipped, so the marks there are what they always were.
 	local roll = state.bodyRoll
-	if roll ~= self.roll then
+	local lifts = (state :: any).wheelLift
+	local sprung = not Suspension.bodyAtRest(state)
+	if not sprung and lifts then
+		for i = 1, #lifts do
+			if lifts[i] ~= 0 then
+				sprung = true
+				break
+			end
+		end
+	end
+	if sprung then
+		self.roll = math.huge -- so the plain path writes again once the springs are still
+		local bodyLocal = Suspension.bodyLocal(state)
+		for _, w in self.wheels do
+			local up = Vector3.new(0, if lifts then lifts[w.index] or 0 else 0, 0)
+			w.a.Position = bodyLocal:PointToObjectSpace(w.patchA + up)
+			w.b.Position = bodyLocal:PointToObjectSpace(w.patchB + up)
+		end
+	elseif roll ~= self.roll then
 		self.roll = roll
 		local com = Config.Drift.CenterOfMass
 		local cosR, sinR = math.cos(roll), math.sin(roll)

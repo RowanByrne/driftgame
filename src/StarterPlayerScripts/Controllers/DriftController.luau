@@ -44,6 +44,7 @@ local Render = require(DriftFolder.Render)
 local Sim = require(DriftFolder.Sim)
 local SkidSound = require(DriftFolder.SkidSound)
 local Trajectory = require(DriftFolder.Trajectory)
+local Suspension = require(DriftFolder.Suspension)
 local Wheels = require(DriftFolder.Wheels)
 local World = require(DriftFolder.World)
 
@@ -193,9 +194,9 @@ function DriftController:Start()
 		self:_placeAt(cf)
 	end)
 
-	self._carStateOther.OnClientEvent:Connect(function(userId, cf, velocity, drifting)
+	self._carStateOther.OnClientEvent:Connect(function(userId, cf, velocity, drifting, lift)
 		if type(userId) == "number" and typeof(cf) == "CFrame" then
-			self.remoteCars:OnState(userId, cf, velocity, drifting)
+			self.remoteCars:OnState(userId, cf, velocity, drifting, lift)
 		end
 	end)
 
@@ -631,7 +632,8 @@ end
 function DriftController:_send(state)
 	-- `drifting` is read off the car, not off the input: rotating is drifting, and there
 	-- is no drift input left to report (Config.Drift.MinSlipAngleForDrift).
-	self._carState:FireServer(DriftModel.cframe(state), state.velocity, state.drifting)
+	-- And the four wheels' suspension, one byte each, so others see them move (T-095).
+	self._carState:FireServer(DriftModel.cframe(state), state.velocity, state.drifting, Suspension.pack(state.wheelLift))
 end
 
 -- The camera asks for this every frame (docs/game/ARCHITECTURE.md "Studio tools").
@@ -692,6 +694,9 @@ function DriftController:DebugState()
 		-- Out of the car, or on the way in or out: nothing steps, nothing is sent (T-096).
 		held = self.held,
 		worldRebuilds = self.worldRebuilds,
+		-- Each wheel's travel and lift, the body on its springs, and which floor points
+		-- rest on something with where and how fast they slide (T-095, Drift/Suspension).
+		suspension = Suspension.DebugState(s),
 		-- The one number T-016 is about: how far the car the player SEES is from the car
 		-- the simulation says is there. It is a frame of lag at most -- under a stud at
 		-- any speed -- and anything more means the drawing has stopped.

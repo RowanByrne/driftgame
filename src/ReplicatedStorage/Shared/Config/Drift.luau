@@ -166,6 +166,66 @@ local Drift = {
 	SurfaceAttribute = "Surface", -- attribute on a tagged part naming its surface
 	SurfaceDirt = "dirt", -- the value that means dirt; anything else tagged is tarmac
 
+	-- ---------------------------------------------------------------- suspension and the floor
+	-- OURS, T-095 (features/car-v2.md "Rules and numbers", `Drift/Suspension`). Two layers:
+	-- the drawn springs (each wheel's travel, the body's sprung offset), which nothing in the
+	-- model reads; and the floor solve, which the model runs ONLY when a wheel has run out
+	-- of travel or the floor is already resting on something. On flat ground and every road
+	-- all four wheels are within their travel and neither layer touches the line.
+	-- A WHEEL'S TRAVEL is measured up from fully hanging: 0 hangs, `Travel` is fully up.
+	Suspension = {
+		Travel = 0.6, -- studs a wheel moves, fully hanging to fully up
+		Rest = 0.25, -- studs up from hanging a wheel sits at on flat ground. Where the wheels
+		-- have always been drawn: a wheel at Rest is a wheel drawn where it was
+		Stiffness = 300, -- 1/s^2. How hard the body's offset springs back (about 2.8 Hz)
+		Damping = 22, -- 1/s. And how fast that dies away: 0.64 of critical, so a landing
+		-- settles in about a third of a second and overshoots once, a little
+		DropTime = 0.15, -- s a wheel takes to fall the whole of its travel with nothing under it
+		LandingSquash = 0.15, -- share of a change in the car's vertical speed, on the ground,
+		-- the body takes as a jolt into its springs: a landing at 30 studs/s
+		-- dips it about a quarter of a stud. 0 turns it off
+		MaxBodyTilt = 4, -- deg the body may pitch or roll on its springs off the car's frame
+		ReachSlack = 0.05, -- studs past full hang a wheel still counts as touching (drawn)
+		HangSlack = 0.75, -- studs past full hang before a wheel counts as out of travel and
+		-- the floor solve runs (two wheels at least): a whole stud short of its ground. Over a
+		-- step it takes a 2-stud drop under one axle; a kerb never does, and
+		-- nor does the road. MEASURED: the touge pieces twist a car's four
+		-- wheels up to 0.66 off one plane at a crawl, and at 0.25 that ran the
+		-- floor solve on the road and cost RoadTests' drive 9 pieces
+		HangHold = 0.25, -- studs. Once running, the floor solve lets go when the pose the
+		-- wheels alone would give the car is no more than this below what the
+		-- floor and the tyres' travel allow -- always true on a road. Holding on
+		-- while the floor was merely NEAR the road never let a car go at all
+		HangSpeed = 15, -- studs/s. The floor solve only starts below this ground speed. Faster
+		-- than it a car is over an edge and gone before it could tip, and flies
+		-- the line the approved model always flew -- the playground's ramp is
+		-- launched from at 20 and up, and its jumps are unchanged
+		TipAccel = 6, -- rad/s^2. How fast the car may START to tip toward where it would rest
+		-- on its floor: gravity's share for a car pivoting on one axle. Off a
+		-- ramp lip at speed the wheels are gone before it has turned a degree;
+		-- rolled off a ledge at walking pace it settles in a fraction of a second
+		MaxTilt = 30, -- deg. The most the floor solve will tip the car on its supports. A car
+		-- whose supports are all on one side of its centre of mass tips this far
+		-- and slides off whatever it is hanging from
+		FloorTouch = 0.05, -- studs. A floor point this close to its ground is touching it
+		EdgeDrop = 0.5, -- studs. Two floor points this far off each other's plane have an edge
+		-- between them, and it is found by halving the gap
+		EdgeSteps = 8, -- halvings: a floor segment 7 studs long pins the edge to 0.03, so a
+		-- car tipped 30 degrees on it rests within 0.02 of it -- under
+		-- `FloorTouch`. At 5 it rode up to 0.12 clear of the edge in steps
+		SearchStep = 8, -- deg. The rest solve's first step, halved down to `SearchFinest`
+		SearchFinest = 0.05, -- deg
+		-- THE FLOOR, when a car's own is not known: `Drift/Render` reads the real one off
+		-- the drawn body (its lower parts' boxes), or a v2 rig's `Floor*` points, the moment
+		-- a car is drawn. These only stand in for it -- tests, and the first frame.
+		FloorClearance = 0.5, -- studs above the road at ride height
+		FloorWidth = 1, -- share of the active car's `BodyWidth`
+		FloorLength = 1.05, -- share of its `BodyLength`
+		FloorInset = 0.1, -- studs the read-off floor's corners are pulled in from the body's
+		FloorCover = 0.3, -- studs of slack when asking which part a floor point is under
+		LiftRange = 1, -- studs either way of zero a wheel's lift can be sent over `CarState`
+	},
+
 	-- ---------------------------------------------------------------- a hand-placed track
 	-- The playground is built by code and is in git; a TRACK is a model someone placed in
 	-- the place file by hand, which git never sees (AGENTS.md "Hand-built content"). A
@@ -381,7 +441,6 @@ local Drift = {
 	-- time, ignored below this
 
 	-- ---------------------------------------------------------------- the prototype's UI
-	HideCharacter = true, -- the player is the car: no Roblox character is spawned
 	DebugReadout = true, -- build the debug readout at all
 	DebugReadoutOpen = false, -- but CLOSED from the start: the numbers are a measuring
 	-- instrument, not part of the game, and the user driving
