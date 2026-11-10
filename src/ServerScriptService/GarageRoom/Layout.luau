@@ -46,8 +46,9 @@ Layout.Turntable = {
 -- The painted bay round the turntable: a rectangle of orange line.
 Layout.Bay = { halfX = 14, halfZ = 13, line = 0.6 }
 
--- Outside the door: a street running along Z, a guardrail on its far side, and the dusk
--- town beyond it.
+-- Before the door: a street running along Z. The guardrail, the town and the dusk sky that
+-- stood beyond it were taken out when the room moved into the yard (2026-11-10); `rail*` and
+-- `Backdrop` other than its `seed` are no longer built.
 Layout.Street = {
 	nearX = -27, -- meets the garage floor here
 	farX = -67,

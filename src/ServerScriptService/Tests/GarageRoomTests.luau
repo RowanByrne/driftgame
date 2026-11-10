@@ -21,7 +21,10 @@ local Layout = require(ServerScriptService.GarageRoom.Layout)
 local GarageRoomService = require(ServerScriptService.Services.GarageRoomService)
 
 local SAMPLE = 0.5 -- studs between the samples of the walk from the street to the deck
-local MIN_CLEARANCE = 500 -- studs of empty space round the room, at the least
+-- Studs of empty space round the room, at the least. The room stands in the playground's
+-- yard now (Config.GarageRoom), so the ground it stands on -- any part whose top is at or
+-- below the garage floor -- is not counted; anything else must keep this far off.
+local MIN_CLEARANCE = 4
 -- The car, as a box to sweep through the door: wider and taller than the AE86's shell
 -- (6.8 wide, about 4.5 tall at ride height), lifted off the floor by its ground clearance.
 local CAR_BOX = Vector3.new(7.4, 4.2, 1)
@@ -276,8 +279,11 @@ function GarageRoomTests:run()
 		if skipped then
 			continue
 		end
-		others += 1
 		local a, b = aabb(d)
+		if b.Y <= Config.GarageRoom.Origin.Y + 0.01 then
+			continue -- the ground the room stands on
+		end
+		others += 1
 		local g = gap(roomMin, roomMax, a, b)
 		if g < nearest then
 			nearest, nearestName = g, d:GetFullName()
