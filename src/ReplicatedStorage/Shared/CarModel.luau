@@ -2,7 +2,7 @@
 -- CarModel: the car, built by code, shared so the server and client agree on it
 -- (docs/game/features/drift-model.md "Art and sound").
 --
--- There are six bodies and the simulation cannot tell them apart:
+-- There are seven bodies and the simulation cannot tell them apart:
 --
 --   the four  `balanced`, `gripper`, `slider`, `bruiser`: OUR OWN art, assembled out of
 --             boxes and wedges by code from a table each (`Shared/Cars/Bodies`, T-028).
@@ -18,8 +18,14 @@
 --   `block`   the original: a box and four cylinders. Still here because a place whose
 --             meshes will not load still has to run, and because the tests need something
 --             that cannot fail to build.
+--   `standin` the car v2 stand-in (`Shared/Cars/StandIn`, T-094): programmer-art boxes on
+--             the gray model's RIG -- a group for every door, glass, hood, hatch, strut,
+--             pod, hub, wheel, caliper, needle, pedal, lever, wiper and lamp, each on its
+--             real hinge (`Shared/Cars/Rig`, CONTRACTS.md "The car rig"). `Shared/CarParts`
+--             moves them and `Drift/Render` draws them. Selected by name only, never by
+--             "auto": it is for building car v2 on, until the real meshes pass their gate.
 --
--- EITHER WAY the car's shape to the rest of the game is identical: a BasePart named `Body`
+-- WHICHEVER IT IS, the car's shape to the rest of the game is identical: a BasePart named `Body`
 -- and four named `WheelFL`/`FR`/`RL`/`RR`, at exactly `wheelOffsets()`. The simulation's
 -- ground rays, `Render`, the camera and the tests all go through those five parts and
 -- never look at the shell. With a shell present the five are simply made invisible and a
@@ -43,6 +49,7 @@ local RunService = game:GetService("RunService")
 local Bodies = require(ReplicatedStorage.Shared.Cars.Bodies)
 local Cars = require(ReplicatedStorage.Shared.Cars)
 local Config = require(ReplicatedStorage.Shared.Config)
+local StandIn = require(ReplicatedStorage.Shared.Cars.StandIn)
 
 local CarModel = {}
 
@@ -60,6 +67,9 @@ CarModel.BODIES = { ae86 = "AE86" }
 -- the shape to the car being driven. Any other value overrides it for every car, which is
 -- how the AE86 is still driven on any archetype's numbers.
 CarModel.AUTO = "auto"
+
+-- The car v2 stand-in, built by code on the gray model's rig (`Shared/Cars/StandIn`).
+CarModel.STANDIN = StandIn.NAME
 
 -- Which one a car is built with. `Config.Drift.CarBody` decides it; this is the fallback
 -- if that key is ever absent.
@@ -462,7 +472,7 @@ function CarModel.preload()
 		local name = CarModel.bodyName()
 		-- A parts body has nothing to fetch and nothing to wait for: it is built fresh
 		-- every time, in microseconds.
-		if name ~= "block" and not Bodies.exists(name) then
+		if name ~= "block" and name ~= CarModel.STANDIN and not Bodies.exists(name) then
 			task.spawn(buildTemplate, name)
 		end
 	end
@@ -482,6 +492,10 @@ function CarModel.shell(): Model?
 	-- 82 downloads.
 	if Bodies.exists(name) then
 		return Bodies.build(name)
+	end
+	-- The stand-in is built fresh too, for the same reasons: no assets, and microseconds.
+	if name == CarModel.STANDIN then
+		return StandIn.build()
 	end
 	if templateFor ~= name then
 		templateState = "none"

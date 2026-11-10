@@ -30,11 +30,21 @@
 --     moment the tail is out. The model has no steering angle to draw: the player's finger
 --     is the car's rate of turn, so this is read off the slip angle instead.
 --
+-- A CAR V2 RIG (`Shared/Cars/Rig`, the shell carries a `Rig` attribute) has a group for
+-- every moving part, each with its pivot on its real hinge. `Shared/CarParts` says where
+-- each group is relative to the car -- a door open, the hood up, a wheel on its hub -- and
+-- this writes every one of them each frame from the body's frame, so an opened door rides
+-- with the car exactly as the body does. The hubs, and the wheels and calipers on them,
+-- ride the car's ROAD frame like the wheels always have: the body leans, they do not. Each
+-- wheel takes a vertical lift (`setWheelLift`, default 0) that moves its hub, for the
+-- suspension to drive. The five simulation parts are written exactly as before.
+--
 -- `DriftModel` is the simulation (Drift/Model); `Model` is Roblox's class.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local CarModel = require(ReplicatedStorage.Shared.CarModel)
+local CarParts = require(ReplicatedStorage.Shared.CarParts)
 local Config = require(ReplicatedStorage.Shared.Config)
 local DriftModel = require(script.Parent.Model)
 
@@ -44,12 +54,20 @@ type ShellPart = { part: BasePart, offset: CFrame }
 type Shell = { group: Model, parts: { ShellPart } }
 type Wheel = { part: BasePart, offset: Vector3, front: boolean, shell: Shell? }
 
+type RigGroup = { name: string, shell: Shell, road: boolean }
+
 export type Rig = {
 	car: Model,
 	body: BasePart?,
 	bodyShell: Shell?,
 	wheels: { Wheel },
 	complete: boolean,
+	-- a v2 rig only: every group but the body, in the order `CarParts` places them
+	desc: CarParts.Desc?,
+	groups: { RigGroup }?,
+	frames: { [string]: CFrame },
+	lift: { [string]: number }, -- studs up, per wheel name; nothing drives it yet
+	inputs: CarParts.Inputs,
 }
 
 -- The shell group that shadows a named simulation part, with every part's place in it,
@@ -110,6 +128,11 @@ local function resolve(rig: Rig)
 	rig.body = if body and body:IsA("BasePart") then body else nil
 	rig.bodyShell = shellOf(car, CarModel.BODY_NAME)
 
+	-- A v2 rig draws its wheels through its own groups (on their hubs), not through the
+	-- `Wheel*` groups an older body shadows the simulation's wheels with.
+	local shellModel = car:FindFirstChild(CarModel.SHELL_NAME)
+	local isRig = shellModel ~= nil and CarParts.isRig(shellModel)
+
 	local wheels: { Wheel } = {}
 	for name, offset in CarModel.wheelOffsets() do
 		local part = car:FindFirstChild(name)
@@ -118,14 +141,38 @@ local function resolve(rig: Rig)
 				part = part,
 				offset = offset,
 				front = CarModel.isFrontWheel(name),
-				shell = shellOf(car, name),
+				shell = if isRig then nil else shellOf(car, name),
 			})
 		end
 	end
 	rig.wheels = wheels
 
+	rig.desc, rig.groups = nil, nil
+	if isRig then
+		local desc = CarParts.describe(shellModel :: Instance)
+		if desc then
+			local list: { RigGroup } = {}
+			local all = true
+			for _, g in desc.order do
+				if g.kind ~= "body" then
+					local s = shellOf(car, g.name)
+					if not s then
+						all = false -- still arriving
+						break
+					end
+					table.insert(list, { name = g.name, shell = s, road = g.road })
+				end
+			end
+			if all then
+				rig.desc, rig.groups = desc, list
+			end
+		end
+	end
+
 	local whole = rig.body ~= nil and #wheels == 4
-	if whole and car:GetAttribute(CarModel.SHELL_NAME) then
+	if whole and isRig then
+		whole = rig.bodyShell ~= nil and rig.groups ~= nil
+	elseif whole and car:GetAttribute(CarModel.SHELL_NAME) then
 		whole = rig.bodyShell ~= nil
 		for _, wheel in wheels do
 			whole = whole and wheel.shell ~= nil
@@ -135,9 +182,44 @@ local function resolve(rig: Rig)
 end
 
 function Render.rig(car: Model): Rig
-	local rig: Rig = { car = car, body = nil, bodyShell = nil, wheels = {}, complete = false }
+	local rig: Rig = {
+		car = car,
+		body = nil,
+		bodyShell = nil,
+		wheels = {},
+		complete = false,
+		desc = nil,
+		groups = nil,
+		frames = {},
+		lift = {},
+		inputs = {},
+	}
 	resolve(rig)
 	return rig
+end
+
+-- A wheel's vertical offset, in studs up from where the car puts it (0, the default). It
+-- moves that wheel's hub, and the wheel and caliper on it, and the simulation's own wheel
+-- part with them. Nothing drives it yet: the suspension step will.
+function Render.setWheelLift(rig: Rig, wheel: string, studs: number)
+	rig.lift[wheel] = if studs ~= 0 then studs else nil
+end
+
+function Render.wheelLift(rig: Rig, wheel: string): number
+	return rig.lift[wheel] or 0
+end
+
+-- A v2 rig's group by name, for the tests and anything that reads a part back.
+function Render.group(rig: Rig, name: string): Shell?
+	if name == CarModel.BODY_NAME then
+		return rig.bodyShell
+	end
+	for _, entry in rig.groups or {} do
+		if entry.name == name then
+			return entry.shell
+		end
+	end
+	return nil
 end
 
 -- Place the car from a pose. `wheelAngle` is where the front wheels are DRAWN, in radians,
@@ -164,13 +246,26 @@ function Render.place(rig: Rig, cf: CFrame, wheelAngle: number, wheelSpin: numbe
 	placeShell(rig.bodyShell, bodyCF)
 
 	for _, wheel in rig.wheels do
-		local base = cf * CFrame.new(wheel.offset)
+		local lift = rig.lift[wheel.part.Name]
+		local base = cf * CFrame.new(if lift then wheel.offset + Vector3.new(0, lift, 0) else wheel.offset)
 		if wheel.front then
 			base *= CFrame.Angles(0, wheelAngle, 0)
 		end
 		local wheelCF = base * CFrame.Angles(wheelSpin, 0, 0)
 		wheel.part.CFrame = wheelCF
 		placeShell(wheel.shell, wheelCF)
+	end
+
+	-- A v2 rig: every group where `CarParts` says it is, from the body (or, for the hubs
+	-- and what is on them, from the unleaned car), written absolutely like everything else.
+	local groups, desc = rig.groups, rig.desc
+	if groups and desc then
+		local inputs = rig.inputs
+		inputs.steer, inputs.spin, inputs.lift = wheelAngle, wheelSpin, rig.lift
+		local frames = CarParts.frames(rig.car, desc, nil, inputs, rig.frames)
+		for _, entry in groups do
+			placeShell(entry.shell, (if entry.road then cf else bodyCF) * frames[entry.name])
+		end
 	end
 end
 
