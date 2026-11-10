@@ -7,8 +7,9 @@
 -- cannot disagree about what a part is or what it does.
 --
 -- PURE. Nothing here touches the car, the store or the wire, and nothing here APPLIES a
--- part's numbers to the car: `resolve` and `toTune` say what a build implies, and the step
--- that makes the car drive like it (T-106) is somebody else's.
+-- part's numbers to the car: `resolve`, `toTune`, `carFields` and `layer` say what a build
+-- implies. Applying it is `Cars.setBuild` on the driving client (`Shared/Cars/BuildFeel`)
+-- and `CarService:SetBuild` for the server's bounds (T-106).
 --
 -- A BUILD:
 --   { base = <archetype key>, parts = { [categoryId] = partId }, paint = { body, second,
@@ -410,7 +411,7 @@ end
 -- number }`. A key no part moves is the archetype's own number exactly; a moved one is
 -- `own × (1 + fraction)`, clamped into the tuner's range and snapped to its step
 -- (`Garage.clamp`), so it is a number the tuner, the store and the server all understand.
--- SAYS, NEVER APPLIES: putting these on the car is T-106's.
+-- SAYS, NEVER APPLIES: `carFields` and `layer` are the shapes that go on the car.
 function Customization.resolve(build: Build): { [string]: number }
 	local base = if knownBase(build.base) then build.base else Archetypes.Default
 	local deltas = Customization.deltas(build)
@@ -436,6 +437,33 @@ function Customization.toTune(build: Build): { [string]: number }
 	for _, slider in Garage.Sliders do
 		if numbers[slider.key] ~= rawValue(base, slider.key) then
 			out[slider.id] = numbers[slider.key]
+		end
+	end
+	return out
+end
+
+-- WHAT A BUILD DOES TO A CAR, as the car fields `Cars` takes (T-106): `toTune` through
+-- `Garage.toCarFields`, only the keys a part moved, so the stock car is an empty table and
+-- today's car exactly.
+--
+-- `onKey` is the archetype the parts are on NOW. A build's `base` is the car the player was
+-- in at their last fit; the rule (features/car-customization.md "Rules and numbers") is
+-- that the parts go with the player into whichever car they are in, each moving THAT car's
+-- own numbers by the same fractions. nil uses the build's own base.
+function Customization.carFields(build: Build, onKey: string?): { [string]: number }
+	local base = if knownBase(onKey) then onKey :: string else build.base
+	return Garage.toCarFields(Customization.toTune({ base = base, parts = build.parts, paint = build.paint }))
+end
+
+-- The same for every archetype at once, `{ [archetype key] = car fields }`: the shape
+-- `Cars.setBuild` takes, so a car switch on the client lands on the right numbers with
+-- nothing to recompute. Archetypes the build moves nothing on are left out.
+function Customization.layer(build: Build): { [string]: { [string]: number } }
+	local out = {}
+	for _, key in Archetypes.Order do
+		local fields = Customization.carFields(build, key)
+		if next(fields) ~= nil then
+			out[key] = fields
 		end
 	end
 	return out

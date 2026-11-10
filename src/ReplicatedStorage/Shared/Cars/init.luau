@@ -8,13 +8,19 @@
 -- `Drift/Model` reads the ACTIVE car's rate of turn, and not one line of the model had to
 -- change to make that true.
 --
--- There are three layers, nearest first:
+-- There are four layers, nearest first:
 --
 --   tuned       a runtime override, for a test or a tuning session (`tune`/`untune`,
 --               `setTuning` for the whole layer at once). THE TUNER IS BUILT ON IT
 --               (`Shared/Cars/Garage`, `Drift/TunerUI`, T-040): a saved car is one of the
 --               four archetypes plus a tune layer, which is why a slider moves the car on
 --               the next simulation step and why the car keeps its own body while it does
+--   the build   what the player's fitted performance parts move (T-106,
+--               features/car-customization.md "Rules and numbers"): per archetype, so the
+--               parts follow the player into whichever car they switch to. Set whole with
+--               `setBuild` (`Shared/Cars/BuildFeel` keeps it equal to the driver's own car).
+--               UNDER the tuner on purpose: the build is the car the tuner starts from, and
+--               a slider the tuner has moved wins for that number
 --   the car     the active archetype's sparse overrides
 --   Base        the approved car, every field (`Archetypes.Base`)
 --
@@ -63,19 +69,29 @@ end
 
 local activeKey: string = Archetypes.Default
 local tuned: { [string]: any } = {}
+local built: { [string]: { [string]: number } } = {} -- archetype key -> car fields a build moves
 local resolved: { [string]: any } = {}
 
--- One car's numbers, every field, the three layers applied in order. The ACTIVE car's
+-- One car's numbers, every field, the four layers applied in order. The ACTIVE car's
 -- copy is cached (`resolved`) because the model reads it twenty times a step; any other
 -- car's is built on the spot, which is what the server does per player and what the stat
 -- panel does for a car nobody is driving.
-local function layers(key: string): { [string]: any }
+--
+-- `buildFields` replaces this VM's own build layer for the one call: the server has no
+-- build of its own (it holds every player at once) and passes each player's
+-- (`CarService:_numbers`).
+local function layers(key: string, buildFields: { [string]: any }?): { [string]: any }
 	local out = {}
 	for field, value in Archetypes.Base do
 		out[field] = value
 	end
 	for field, value in Archetypes.Cars[key] or {} do
 		out[field] = value
+	end
+	for field, value in buildFields or built[key] or {} do
+		if FIELDS[field] then
+			out[field] = value
+		end
 	end
 	for field, value in tuned do
 		out[field] = value
@@ -113,11 +129,14 @@ end
 -- cannot reach back into a copy somebody is holding. Tuning DOES apply -- `tune` is a
 -- layer over whichever car is being asked about, not over one of them -- so a tuning
 -- session moves the server's bounds with the client's feel.
-function Cars.resolve(key: string): { [string]: any }?
+--
+-- `buildFields` is one player's build on this car (`Customization.carFields`), in place of
+-- this VM's own build layer: how the server asks about a player's built car.
+function Cars.resolve(key: string, buildFields: { [string]: any }?): { [string]: any }?
 	if not Cars.exists(key) then
 		return nil
 	end
-	return layers(key) -- a copy, never the cached table the model reads
+	return layers(key, buildFields) -- a copy, never the cached table the model reads
 end
 
 -- Switch car. Takes effect on the very next simulation step: the model reads
@@ -266,6 +285,59 @@ function Cars.withTuning(overrides: { [string]: any }, fn: () -> ...any): ...any
 	for key in overrides do
 		Cars.untune(key)
 	end
+	if not results[1] then
+		error(results[2], 2)
+	end
+	return table.unpack(results, 2, results.n)
+end
+
+-- ---------------------------------------------------------------------- the build
+
+-- Replace the WHOLE build layer: `{ [archetype key] = { [car field] = number } }`, the
+-- shape `Customization.layer(build)` makes, or nil for none (the stock car). One rebuild,
+-- like `setTuning`, so the model never reads half a build; nothing is written until every
+-- key has been checked. Takes effect on the next simulation step.
+function Cars.setBuild(layer: { [string]: { [string]: any } }?)
+	local next_: { [string]: { [string]: number } } = {}
+	for carKey, fields in layer or {} do
+		if not Archetypes.Cars[carKey] or type(fields) ~= "table" then
+			error(`Cars.setBuild: '{tostring(carKey)}' is not a car`, 2)
+		end
+		local copy = {}
+		for field, value in fields do
+			if not FIELDS[field] then
+				error(`Cars.setBuild: '{tostring(field)}' is not a car number`, 2)
+			end
+			if type(value) ~= "number" or value ~= value or math.abs(value) == math.huge then
+				error(`Cars.setBuild: {field} is not a finite number`, 2)
+			end
+			copy[field] = value
+		end
+		if next(copy) ~= nil then
+			next_[carKey] = copy
+		end
+	end
+	built = next_
+	rebuild()
+end
+
+-- The build layer as a copy: `{ [archetype key] = { [car field] = number } }`, empty for a
+-- stock car.
+function Cars.build(): { [string]: { [string]: number } }
+	local out = {}
+	for carKey, fields in built do
+		out[carKey] = table.clone(fields)
+	end
+	return out
+end
+
+-- Run `fn` with a build layer in place, and put the one that was there back however it
+-- ends. For the tests.
+function Cars.withBuild(layer: { [string]: { [string]: any } }?, fn: () -> ...any): ...any
+	local was = Cars.build()
+	Cars.setBuild(layer)
+	local results = table.pack(pcall(fn))
+	Cars.setBuild(was)
 	if not results[1] then
 		error(results[2], 2)
 	end

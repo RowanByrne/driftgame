@@ -8,9 +8,12 @@
 -- `GarageService` (which owns the dev store and writes it behind the player), publishes it
 -- on the player's car as attributes so every client can draw it, and answers.
 --
--- WHAT IT DOES NOT DO, deliberately: draw anything (T-104, T-105), open a menu (T-103), or
--- move the car's numbers (T-106). `Customization.resolve` says what a build implies; the
--- step that applies it is somebody else's.
+-- WHAT IT DOES NOT DO, deliberately: draw anything (T-104, T-105) or open a menu (T-103).
+--
+-- THE FEEL (T-106): every time a real player's build is loaded or fitted, or published on
+-- a car, it is handed to `CarService:SetBuild`, so the server's speed bounds take the
+-- build's numbers. The driving client applies the same build to its own simulation from
+-- the car's attributes (`Shared/Cars/BuildFeel`); nothing here simulates anything.
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -20,6 +23,7 @@ local Workspace = game:GetService("Workspace")
 local Customization = require(ReplicatedStorage.Shared.Customization)
 local Net = require(ReplicatedStorage.Shared.Net)
 
+local CarService = require(ServerScriptService.Services.CarService)
 local GarageService = require(ServerScriptService.Services.GarageService)
 
 local CustomizationService = {}
@@ -106,7 +110,16 @@ function CustomizationService:Publish(car: Instance, build)
 	self.published += 1
 end
 
+-- Hand a real player's build to CarService for their speed bounds (T-106). Stand-ins from
+-- the tests are not players and are left out, so nothing of theirs outlives a test.
+function CustomizationService:_applyFeel(userId: number)
+	if Players:GetPlayerByUserId(userId) then
+		CarService:SetBuild(userId, self:Build(userId))
+	end
+end
+
 function CustomizationService:_publishFor(userId: number): boolean
+	self:_applyFeel(userId)
 	local car = self:_carOf(userId)
 	if not car then
 		return false
@@ -121,6 +134,7 @@ function CustomizationService:_carAdded(car: Instance)
 		return
 	end
 	-- Before the store has answered this is the stock car; `BuildLoaded` publishes again.
+	self:_applyFeel(userId)
 	self:Publish(car, self:Build(userId))
 end
 
