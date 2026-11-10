@@ -169,6 +169,53 @@ Garage.Sliders = {
 		unit = "per second",
 		decimals = 2,
 	},
+	-- THE SUSPENSION (T-109). Looks, not feel: the drift line never reads them. Here so a
+	-- Suspension part can move them through the same build layer, and so they can be
+	-- dialled in this tool while it is being tuned.
+	{
+		id = "ride",
+		label = "Ride",
+		key = "SuspensionRest",
+		feel = "how far into its travel each wheel sits: more is lower",
+		min = 0.1,
+		max = 0.4, -- under `travel`'s floor, so a wheel always has room to drop
+		step = 0.005,
+		unit = "studs",
+		decimals = 3,
+	},
+	{
+		id = "travel",
+		label = "Travel",
+		key = "SuspensionTravel",
+		feel = "how far a wheel moves, hanging to fully up",
+		min = 0.45,
+		max = 1,
+		step = 0.01,
+		unit = "studs",
+		decimals = 2,
+	},
+	{
+		id = "springs",
+		label = "Springs",
+		key = "SuspensionStiffness",
+		feel = "how hard the body springs back on its wheels",
+		min = 100,
+		max = 600,
+		step = 5,
+		unit = "1/s²",
+		decimals = 0,
+	},
+	{
+		id = "damping",
+		label = "Damping",
+		key = "SuspensionDamping",
+		feel = "how fast the body stops bouncing",
+		min = 8,
+		max = 45,
+		step = 0.5,
+		unit = "1/s",
+		decimals = 1,
+	},
 }
 
 Garage.Order = {}

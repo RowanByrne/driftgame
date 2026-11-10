@@ -173,13 +173,14 @@ local Drift = {
 	-- of travel or the floor is already resting on something. On flat ground and every road
 	-- all four wheels are within their travel and neither layer touches the line.
 	-- A WHEEL'S TRAVEL is measured up from fully hanging: 0 hangs, `Travel` is fully up.
+	--
+	-- TRAVEL, REST, STIFFNESS AND DAMPING ARE THE CAR'S (T-109): `Suspension.Travel` and the
+	-- rest still answer here, but through the metatable below, from the active car's
+	-- `SuspensionTravel` / `SuspensionRest` / `SuspensionStiffness` / `SuspensionDamping`
+	-- (`Cars/Archetypes`), so a Suspension part moves them with the rest of a build. Stock is
+	-- 0.6, 0.25, 300 and 22: a wheel at Rest is drawn where it always was, the springs ring
+	-- at about 2.8 Hz and settle a landing in a third of a second.
 	Suspension = {
-		Travel = 0.6, -- studs a wheel moves, fully hanging to fully up
-		Rest = 0.25, -- studs up from hanging a wheel sits at on flat ground. Where the wheels
-		-- have always been drawn: a wheel at Rest is a wheel drawn where it was
-		Stiffness = 300, -- 1/s^2. How hard the body's offset springs back (about 2.8 Hz)
-		Damping = 22, -- 1/s. And how fast that dies away: 0.64 of critical, so a landing
-		-- settles in about a third of a second and overshoots once, a little
 		DropTime = 0.15, -- s a wheel takes to fall the whole of its travel with nothing under it
 		LandingSquash = 0.15, -- share of a change in the car's vertical speed, on the ground,
 		-- the body takes as a jolt into its springs: a landing at 30 studs/s
@@ -601,6 +602,20 @@ local Drift = {
 -- the one failure this split exists to prevent, so it is an error with the answer in it
 -- rather than something to notice later. Model keys are all present raw, so writing one
 -- (`DriftTests` does) never reaches this at all.
+-- The suspension's four car numbers, answered from the car (T-109, above).
+local SUSPENSION_CAR = {
+	Travel = "SuspensionTravel",
+	Rest = "SuspensionRest",
+	Stiffness = "SuspensionStiffness",
+	Damping = "SuspensionDamping",
+}
+setmetatable(Drift.Suspension, {
+	__index = function(_, key: string): any
+		local carKey = SUSPENSION_CAR[key]
+		return if carKey then Cars.value(carKey) else nil
+	end,
+})
+
 setmetatable(Drift, {
 	__index = function(_, key: string): any
 		return Cars.value(key)

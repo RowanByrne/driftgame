@@ -50,6 +50,7 @@
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
+local Archetypes = require(ReplicatedStorage.Shared.Cars.Archetypes)
 local Config = require(ReplicatedStorage.Shared.Config)
 
 local Suspension = {}
@@ -328,6 +329,33 @@ local function segmentsOf(floor: { FloorPoint }): { { FloorPoint } }
 end
 Suspension.segments = segmentsOf
 
+-- HOW MUCH LOWER THIS CAR'S BODY SITS THAN STOCK (T-109), in studs: a car whose wheels sit
+-- further into their travel at rest (`SuspensionRest`, which a Suspension part moves) has
+-- its body that much nearer the road, and its floor with it. Zero on every stock car.
+function Suspension.rideDrop(): number
+	return S().Rest - Archetypes.Base.SuspensionRest
+end
+
+-- The floor, lowered with the body. The same table back when nothing is lowered, and one
+-- copy per floor and drop otherwise, so the segment cache keeps working.
+local lowered: { [any]: { drop: number, list: { FloorPoint } } } = setmetatable({}, { __mode = "k" }) :: any
+
+local function floorAt(points: { FloorPoint }, drop: number): { FloorPoint }
+	if drop == 0 then
+		return points
+	end
+	local cached = lowered[points]
+	if cached and cached.drop == drop then
+		return cached.list
+	end
+	local list = {}
+	for _, point in points do
+		table.insert(list, { name = point.name, at = point.at - Vector3.new(0, drop, 0) })
+	end
+	lowered[points] = { drop = drop, list = list }
+	return list
+end
+
 --------------------------------------------------------------------------------
 -- The floor solve, for Drift/Model
 --------------------------------------------------------------------------------
@@ -490,7 +518,7 @@ function Suspension.gather(
 		end
 	end
 
-	local points = floor or Suspension.defaultFloor()
+	local points = floorAt(floor or Suspension.defaultFloor(), Suspension.rideDrop())
 	local fwd, right, u = basis(yaw, up)
 	local hits: { [FloorPoint]: any } = {}
 	local worldAt: { [FloorPoint]: Vector3 } = {}
@@ -799,6 +827,8 @@ function Suspension.step(s: any, hits: { any }, dt: number, vyBefore: number)
 		pT = math.clamp(pT, -tilt, tilt)
 		qT = math.clamp(qT, -tilt, tilt)
 	end
+	-- And sitting lower or higher than stock, whatever the wheels are doing (T-109).
+	zT -= Suspension.rideDrop()
 
 	-- Taking the load: a change in the car's vertical speed while it is on the ground --
 	-- a landing, the foot of a ramp, a crest -- throws the body against its springs.
