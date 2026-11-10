@@ -175,13 +175,13 @@ Garage.Sliders = {
 	{
 		id = "ride",
 		label = "Ride",
-		key = "SuspensionRest",
-		feel = "how far into its travel each wheel sits: more is lower",
-		min = 0.1,
-		max = 0.4, -- under `travel`'s floor, so a wheel always has room to drop
-		step = 0.005,
+		key = "SuspensionRide",
+		feel = "how high the body sits on its wheels: 1 is stock, less is lower",
+		min = 0.5, -- half a stud lower: `Drift/Suspension` still keeps the floor clear
+		max = 1.5,
+		step = 0.01,
 		unit = "studs",
-		decimals = 3,
+		decimals = 2,
 	},
 	{
 		id = "travel",

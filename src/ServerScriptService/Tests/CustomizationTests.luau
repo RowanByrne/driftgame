@@ -21,6 +21,7 @@ assert(RunService:IsStudio(), "CustomizationTests only runs in Studio")
 local Archetypes = require(ReplicatedStorage.Shared.Cars.Archetypes)
 local Cars = require(ReplicatedStorage.Shared.Cars)
 local Customization = require(ReplicatedStorage.Shared.Customization)
+local Catalog = require(ReplicatedStorage.Shared.Customization.Catalog)
 local Garage = require(ReplicatedStorage.Shared.Cars.Garage)
 
 local CustomizationService = require(ServerScriptService.Services.CustomizationService)
@@ -227,7 +228,9 @@ function CustomizationTests:run()
 				for key, fraction in part.perf or {} do
 					n += 1
 					worst = math.max(worst, math.abs(fraction))
-					if math.abs(fraction) > Customization.MaxDelta + 1e-12 or owner[key] ~= id then
+					-- Ride height alone may move further (`Catalog.KeyMaxDelta`, the user's call).
+					local limit = Catalog.KeyMaxDelta[key] or Customization.MaxDelta
+					if math.abs(fraction) > limit + 1e-12 or owner[key] ~= id then
 						table.insert(outside, `{part.id}.{key} = {fraction}`)
 					end
 				end
@@ -236,7 +239,7 @@ function CustomizationTests:run()
 		pass(
 			check(
 				checks,
-				"every performance number is inside ±15%, on a key only its category owns",
+				"every performance number is inside ±15% (ride height ±45%), on a key only its category owns",
 				#outside == 0 and n > 0,
 				if #outside == 0
 					then `{n} numbers, the largest {math.round(worst * 100)}%; {keys} keys, one owner each`

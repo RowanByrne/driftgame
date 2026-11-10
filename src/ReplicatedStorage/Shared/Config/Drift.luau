@@ -174,9 +174,10 @@ local Drift = {
 	-- all four wheels are within their travel and neither layer touches the line.
 	-- A WHEEL'S TRAVEL is measured up from fully hanging: 0 hangs, `Travel` is fully up.
 	--
-	-- TRAVEL, REST, STIFFNESS AND DAMPING ARE THE CAR'S (T-109): `Suspension.Travel` and the
-	-- rest still answer here, but through the metatable below, from the active car's
-	-- `SuspensionTravel` / `SuspensionRest` / `SuspensionStiffness` / `SuspensionDamping`
+	-- TRAVEL, REST, STIFFNESS, DAMPING AND RIDE ARE THE CAR'S (T-109): `Suspension.Travel` and
+	-- the rest still answer here, but through the metatable below, from the active car's
+	-- `SuspensionTravel` / `SuspensionRest` / `SuspensionStiffness` / `SuspensionDamping` /
+	-- `SuspensionRide`
 	-- (`Cars/Archetypes`), so a Suspension part moves them with the rest of a build. Stock is
 	-- 0.6, 0.25, 300 and 22: a wheel at Rest is drawn where it always was, the springs ring
 	-- at about 2.8 Hz and settle a landing in a third of a second.
@@ -213,6 +214,9 @@ local Drift = {
 		-- degrees of tip (measured), so 0.05 dropped contacts it was resting on
 		EdgeDrop = 0.5, -- studs. Two floor points this far off each other's plane have an edge
 		-- between them, and it is found by halving the gap
+		MinClearance = 0.12, -- studs. However low a Suspension part sets a car
+		-- (`SuspensionRide`), its floor is never drawn nearer flat road than
+		-- this: a lowered gripper's splitter stops here rather than scrape
 		ReuseMove = 0.1, -- studs. The floor solve looks under the car again only once it has
 		-- moved this far since the last look (T-095 perf): a look is about 30
 		-- ground rays, and a car resting on an edge does not need one a step
@@ -606,6 +610,7 @@ local Drift = {
 local SUSPENSION_CAR = {
 	Travel = "SuspensionTravel",
 	Rest = "SuspensionRest",
+	Ride = "SuspensionRide",
 	Stiffness = "SuspensionStiffness",
 	Damping = "SuspensionDamping",
 }

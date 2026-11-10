@@ -47,12 +47,12 @@ Something going wrong: a part the server won't accept (not in the catalog, or a 
 The shapes, the remote and the attributes are in `CONTRACTS.md` "Customization"; this is what they hold.
 
 - **The catalog** (`Shared/Customization/Catalog.luau`): six part categories of stock plus four placeholder parts each, and paint as four choices: 9 colours plus `stock`, 3 finishes plus `stock`, 4 generic wraps plus `none`. **Every name, look and number is a placeholder** for the menus and the drawing to work on; the user names and picks the real ones.
-- **Which numbers each category may move**, one owner per key so a whole build stays inside ±15% on every key:
+- **Which numbers each category may move**, one owner per key so a whole build stays inside ±15% on every key -- except ride height, ±0.45 studs (`Catalog.KeyMaxDelta`; the user, 2026-11-10: "Let it move more"):
 
 | Category | Car keys (tuner slider) | The parts, today |
 |---|---|---|
 | Engine | `MaxAcceleration` (Power), `TopSpeed` | +5/+3%, +10/+5%, +15/+10%, and long gears −8/+15% |
-| Suspension | `MaxSteeringSpeed`, `MaxFriction`, `SlipSqFriction`, `DownforcePerSpeed` | lowering springs, two coilovers, lifted: 5-10% moves, plus ride height (−0.4 to +0.3 studs, drawn only) and stiffness (0.85 to 1.4 ×) |
+| Suspension | `MaxSteeringSpeed`, `MaxFriction`, `SlipSqFriction`, `DownforcePerSpeed`; the springs `SuspensionRide` (Ride), `SuspensionTravel`, `SuspensionStiffness` (Springs), `SuspensionDamping` | lowering springs, two coilovers, lifted: 5-10% feel moves, springs and travel within ±15%, and ride height −0.2 / −0.25 / −0.3 / +0.35 studs (T-109; drawn only, and never nearer flat road than `Suspension.MinClearance`) |
 | Wheels & tyres | `ConstantFriction` (Grip), `SlipFriction` (Catch) | mesh rims (looks only), deep dish +3% grip, semi-slicks +12/+10%, drift tyres −8/−5% |
 | Body kits, Underglow, Interior, Paint | none | looks only |
 

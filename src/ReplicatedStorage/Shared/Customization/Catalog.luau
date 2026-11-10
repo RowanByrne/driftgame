@@ -34,6 +34,13 @@ Catalog.Version = 1
 -- than this, because each key belongs to exactly one category (`Categories[].keys`) and a
 -- build holds one part per category.
 Catalog.MaxDelta = 0.15
+-- THE EXCEPTIONS to `MaxDelta`, by car key (the user, 2026-11-10: "Let it move more").
+-- Ride height is a look -- nothing in the drift line reads it -- and 15% of it could not be
+-- seen. `SuspensionRide` is 1 on every car, so a fraction is studs: -0.25 sits a quarter
+-- of a stud lower.
+Catalog.KeyMaxDelta = {
+	SuspensionRide = 0.45,
+} :: { [string]: number }
 
 -- What the server takes off the wire. Here rather than in `Config.Drift` because they are
 -- the catalog's own rules, and the client reads the same numbers.
@@ -113,7 +120,7 @@ Catalog.Categories = {
 			"SlipSqFriction",
 			"DownforcePerSpeed",
 			-- the springs themselves (T-109): looks, drawn by `Drift/Suspension`
-			"SuspensionRest",
+			"SuspensionRide",
 			"SuspensionTravel",
 			"SuspensionStiffness",
 			"SuspensionDamping",
@@ -123,7 +130,7 @@ Catalog.Categories = {
 			{
 				id = "susp_lowering",
 				name = "Lowering springs",
-				perf = { MaxFriction = 0.05, SuspensionRest = 0.12, SuspensionStiffness = 0.1 },
+				perf = { MaxFriction = 0.05, SuspensionRide = -0.2, SuspensionStiffness = 0.1 },
 				look = { rideHeight = -0.2, stiffness = 1.15 },
 			},
 			{
@@ -133,7 +140,7 @@ Catalog.Categories = {
 					MaxFriction = 0.08,
 					MaxSteeringSpeed = 0.05,
 					DownforcePerSpeed = 0.1,
-					SuspensionRest = 0.1,
+					SuspensionRide = -0.25,
 					SuspensionStiffness = 0.15,
 					SuspensionDamping = 0.1,
 				},
@@ -145,7 +152,7 @@ Catalog.Categories = {
 				perf = {
 					MaxSteeringSpeed = 0.1,
 					SlipSqFriction = -0.1,
-					SuspensionRest = 0.15,
+					SuspensionRide = -0.3,
 					SuspensionStiffness = 0.12,
 					SuspensionTravel = -0.1,
 				},
@@ -157,7 +164,7 @@ Catalog.Categories = {
 				perf = {
 					MaxFriction = -0.05,
 					DownforcePerSpeed = -0.1,
-					SuspensionRest = -0.15,
+					SuspensionRide = 0.35,
 					SuspensionStiffness = -0.1,
 					SuspensionTravel = 0.1,
 				},
