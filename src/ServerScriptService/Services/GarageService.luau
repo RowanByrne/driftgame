@@ -34,6 +34,11 @@
 --    module the client draws its sliders from, so there is one definition of what a tuned
 --    car may be.
 -- 3. Keeps the server's speed bound ahead of a tuned car -- see "the ceiling".
+-- 4. Keeps each player's BUILT car (`features/car-customization.md`, T-101) in the same
+--    key, beside the tuned cars: `build = { base, parts, paint }`, checked through
+--    `Shared/Customization`. `CustomizationService` owns the wire and the car's
+--    attributes; this file only holds the build, loads it and writes it. Still the dev
+--    store, still not the save system: a build moves with the tuned cars when that arrives.
 
 local DataStoreService = game:GetService("DataStoreService")
 local Players = game:GetService("Players")
@@ -43,8 +48,10 @@ local ServerScriptService = game:GetService("ServerScriptService")
 
 local Cars = require(ReplicatedStorage.Shared.Cars)
 local Config = require(ReplicatedStorage.Shared.Config)
+local Customization = require(ReplicatedStorage.Shared.Customization)
 local Garage = require(ReplicatedStorage.Shared.Cars.Garage)
 local Net = require(ReplicatedStorage.Shared.Net)
+local Signal = require(ReplicatedStorage.Shared.Signal)
 
 local GarageService = {}
 
@@ -139,6 +146,12 @@ function GarageService:Init()
 	self.deletes = 0
 	self.tuneUpdates = 0
 	self.tunesRefused = 0
+	-- userId -> the player's built car, sanitized; nil until they have one (from the store
+	-- or a fit), which reads as the stock car and writes nothing new to the store
+	self.builds = {}
+	-- (userId, player) when the store has answered for a player, so the build is known.
+	-- `CustomizationService` publishes it on the car and tells the client.
+	self.BuildLoaded = Signal.new()
 
 	self.garageData = Net.event("GarageData") -- both ways: the client asks, the server tells
 	self.garageSave = Net.event("GarageSave")
@@ -213,22 +226,30 @@ function GarageService:_join(player: Player)
 				live[name] = car
 			end
 		end
+		-- The build the same way: one already set this session wins (in practice nothing
+		-- is, since `CustomizationService` refuses a fit until this has answered).
+		if self.builds[userId] == nil and type(raw) == "table" and raw.build ~= nil then
+			self.builds[userId] = Customization.sanitize(raw.build)
+		end
 		self.loaded[userId] = true
 		if player.Parent then
 			self:_tell(player)
 		end
+		self.BuildLoaded:Fire(userId, player)
 	end)
 end
 
 function GarageService:_leave(player: Player)
 	local userId = player.UserId
 	local garage = self.garages[userId]
+	local build = self.builds[userId]
 	if garage and self.dirty[userId] then
 		task.spawn(function()
-			self:_write(userId, garage)
+			self:_write(userId, garage, build)
 		end)
 	end
 	self.garages[userId] = nil
+	self.builds[userId] = nil
 	self.tunes[userId] = nil
 	self.loaded[userId] = nil
 	self.limits[userId] = nil
@@ -238,9 +259,13 @@ end
 -- ---------------------------------------------------------------- writing
 
 -- Write one garage, with retries and a backoff. Returns whether it landed. THE CALLER
--- KEEPS ITS COPY EITHER WAY -- nothing here ever clears `self.garages`.
-function GarageService:_write(userId: number, garage): boolean
-	local payload = { version = Garage.Version, cars = garage, at = os.time() }
+-- KEEPS ITS COPY EITHER WAY -- nothing here ever clears `self.garages`. `build` is the
+-- player's built car, `self.builds[userId]` when not given; nil writes no build at all.
+function GarageService:_write(userId: number, garage, build): boolean
+	if build == nil then
+		build = self.builds[userId]
+	end
+	local payload = { version = Garage.Version, cars = garage, build = build, at = os.time() }
 	local wait = Config.Drift.GarageRetryBackoff
 	for attempt = 1, Config.Drift.GarageWriteRetries do
 		local ok, err = self.store:Set(KEY_PREFIX .. userId, payload)
@@ -374,6 +399,34 @@ function GarageService:_onDelete(player: Player, name: any)
 	self:_tell(player)
 end
 
+-- ---------------------------------------------------------------- the built car
+--
+-- Held here because this file owns the store; everything else about a build -- the wire,
+-- the checks, the car's attributes -- is `CustomizationService`'s.
+
+-- Has the store answered for this player, so their build is known?
+function GarageService:BuildReady(userId: number): boolean
+	return self.loaded[userId] == true and self.garages[userId] ~= nil
+end
+
+-- The player's build as the store and this session know it, or nil for "never built
+-- anything": the caller reads that as stock.
+function GarageService:GetBuild(userId: number)
+	local build = self.builds[userId]
+	return if build then Customization.copy(build) else nil
+end
+
+-- Record a build and mark the garage dirty, so the next flush writes it. Sanitized on the
+-- way in: this store never holds something `Shared/Customization` would not.
+function GarageService:SetBuild(userId: number, build): boolean
+	if self.garages[userId] == nil then
+		return false -- not here, or already gone
+	end
+	self.builds[userId] = Customization.sanitize(build)
+	self.dirty[userId] = true
+	return true
+end
+
 -- ---------------------------------------------------------------- the ceiling
 --
 -- THE ONE THING A TUNED CAR BREAKS, AND HOW IT IS ANSWERED.
@@ -503,6 +556,7 @@ function GarageService:DebugState()
 			loaded = self.loaded[userId] == true,
 			dirty = self.dirty[userId] == true,
 			tune = self.tunes[userId],
+			build = self.builds[userId],
 			carKey = self:_carKeyOf(userId),
 			effectiveTopSpeed = self:_effectiveTopSpeed(userId),
 		})
@@ -556,6 +610,7 @@ function GarageService:DebugForget(userId: number): boolean
 	end
 	local had = self.garages[userId] ~= nil
 	self.garages[userId] = nil
+	self.builds[userId] = nil
 	self.tunes[userId] = nil
 	self.loaded[userId] = nil
 	self:_applyCeiling()

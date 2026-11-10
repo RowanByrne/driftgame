@@ -1,6 +1,6 @@
 # Feature: Garage and car customization
 
-**Status:** approved 2026-11-10 (T-100), building: T-101 catalog, T-102 room, T-103 menus, T-104 paint and wheels, T-105 kits, T-106 feel. **Owner task:** see `docs/CLAIMS.md`.
+**Status:** approved 2026-11-10 (T-100), building: T-101 catalog (built: the catalog, fitting and saving, no drawing), T-102 room, T-103 menus, T-104 paint and wheels, T-105 kits, T-106 feel. **Owner task:** see `docs/CLAIMS.md`.
 
 ## Goal
 
@@ -42,6 +42,24 @@ Something going wrong: a part the server won't accept (not in the catalog, or a 
 
 **A built car is saved** as `{ base, parts = { [category] = partId }, paint = {...} }` next to the tuner's saved cars, in the same small dev store (GarageService); it moves into the real save system when that's built.
 
+### What the first step built (T-101)
+
+The shapes, the remote and the attributes are in `CONTRACTS.md` "Customization"; this is what they hold.
+
+- **The catalog** (`Shared/Customization/Catalog.luau`): six part categories of stock plus four placeholder parts each, and paint as four choices: 9 colours plus `stock`, 3 finishes plus `stock`, 4 generic wraps plus `none`. **Every name, look and number is a placeholder** for the menus and the drawing to work on; the user names and picks the real ones.
+- **Which numbers each category may move**, one owner per key so a whole build stays inside ±15% on every key:
+
+| Category | Car keys (tuner slider) | The parts, today |
+|---|---|---|
+| Engine | `MaxAcceleration` (Power), `TopSpeed` | +5/+3%, +10/+5%, +15/+10%, and long gears −8/+15% |
+| Suspension | `MaxSteeringSpeed`, `MaxFriction`, `SlipSqFriction`, `DownforcePerSpeed` | lowering springs, two coilovers, lifted: 5-10% moves, plus ride height (−0.4 to +0.3 studs, drawn only) and stiffness (0.85 to 1.4 ×) |
+| Wheels & tyres | `ConstantFriction` (Grip), `SlipFriction` (Catch) | mesh rims (looks only), deep dish +3% grip, semi-slicks +12/+10%, drift tyres −8/−5% |
+| Body kits, Underglow, Interior, Paint | none | looks only |
+
+- **Stock is today's car to the bit:** a stock build resolves to each archetype's own numbers, unclamped and unsnapped. A moved number is `own × (1 + fraction)`, snapped to the tuner slider's step, and on all four archetypes every combination of the three performance categories (125 builds each) stays inside every slider's range before any clamping.
+- **Fitting:** one ask per part or paint change, checked against the catalog only. The server refuses a fit until the player's saved build has loaded, so a quick fit can never overwrite a saved build that hadn't arrived yet. A refusal answers with the whole build the server believes, so the menu can go straight back to it.
+- **Who applies what, later:** `Customization.resolve(build)` gives the eight numbers and `toTune(build)` the same as a tuner tune; nothing puts them on the car yet (T-106). Two things for that step: the server's speed bound has to use the build's top speed (an Engine part adds up to 15%, which today eats into `StateSpeedTolerance`'s slack rather than past it), and `base` is the car the player was in at their last fit, so a build on a player who has since switched car needs a rule.
+
 ## UI
 
 Programmer UI, as the user asked: plain frames and text, built to the layout below, styled in the UI phase.
@@ -58,7 +76,7 @@ Programmer UI, as the user asked: plain frames and text, built to the layout bel
 
 ## Contracts
 
-In `CONTRACTS.md`, in the first step's commit: the catalog's shape, the saved car's shape, remotes `CustomizeFit` (ask) and its answer, the car attributes that carry what's fitted, and the rig's kit slots (from `car-v2.md`'s rig).
+In `CONTRACTS.md` "Customization" (T-101): the catalog's shape, the saved car's shape (a `build` key beside `cars` in the dev store), the remote `CustomizeFit` (ask, and its answer on the same remote), the car attributes that carry what's fitted (`Fit_*` and `Fitted`), and the kit and interior slot names the drawing steps add to the rig.
 
 ## Analytics
 
@@ -80,7 +98,28 @@ None yet. Customization is the obvious place for it later (REVENUE.md), so the c
 
 ## Testing
 
-- The catalog: every part valid, every performance part's numbers inside the tuner's ranges, stock equals today's car exactly.
+`ServerScriptService/Tests/CustomizationTests.luau` (`DebugCustomizationTests`), with a fake store and stand-in players. **18 checks, all passing, 2026-11-10 (`DR-Lane3`):**
+
+| Check | What it reported |
+|---|---|
+| Seven categories, stock plus 3-5 parts | 5 parts in each of six; paint 10 colours / 4 finishes / 5 wraps |
+| Every part valid, every field present | 0 problems; 30 parts, all price 0, unlock `"free"` |
+| Performance inside ±15%, one owner per key | 21 numbers, the largest 15%; 8 keys |
+| **No build leaves the tuner's ranges** | 500 builds × 8 keys on the four cars, all inside before clamping; the tightest 3.5% of a range from its edge |
+| **Stock is today's car exactly** | 32 numbers on 4 cars, every one `==` the archetype; no tune, delta or look |
+| A part moves only its own numbers | 88 numbers; race build on balanced: power 14.3 → 16.4, top speed 179 → 197 |
+| **Bad asks refused** | 26 of 26 by the catalog and 26 of 26 through the real handler, build and store untouched |
+| A flood | 8 of 40 taken |
+| A fit before the store answers | refused `loading`, nothing written |
+| **Fit, save, forget, rejoin** | a build in all seven categories came back equal, with a tuned car beside it kept |
+| Old and damaged saves | a garage with no build loads as stock with its cars; unknown parts and colours become stock, the rest kept |
+| **The car carries the build** | 11 `Fit_*` attributes plus `Fitted`, read back equal; a refit moves `Fitted` 1 → 2 |
+
+**In a quiet playtest:** a client fired `CustomizeFit` itself: the question, an engine part and a paint were answered `ok` and reached its car's attributes (`Fitted` 1 → 3), and an engine ask naming a wheel part was refused `wrong category`. The player was then forgotten and re-joined through `GarageService`: the build came back and was republished on the car. A car switch kept the attributes. GarageTests 24, DriftTests 50, PlaygroundTests 76, RigTests 11 and GarageRoomTests 14 all still pass, and the console was clean of game code.
+
+Still to test, in later steps:
+
+- The catalog: every part valid, every performance part's numbers inside the tuner's ranges, stock equals today's car exactly (done, above).
 - Fit each part in each category in a lane: the car shows it, the server saves it, rejoin keeps it, other players see it.
 - The drift tests pass unchanged with the stock car.
 
