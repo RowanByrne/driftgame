@@ -39,6 +39,15 @@
 -- wheel takes a vertical lift (`setWheelLift`, default 0) that moves its hub, for the
 -- suspension to drive. The five simulation parts are written exactly as before.
 --
+-- THE SUSPENSION (T-095, Drift/Suspension). `apply` draws the model's own: every wheel at
+-- its lift -- on a rig through its hub, on today's cars through the wheel's own part and
+-- `Wheel*` group, the same `rig.lift` either way -- and the body at its sprung offset on the
+-- car's frame, under the lean. A car standing on flat ground has every lift and the offset
+-- at exactly zero, so it is drawn to the bit where it always was. And it hands the model
+-- the car's FLOOR: a rig's own `Floor*` points, or else the underside of the body that is
+-- actually drawn, read off its lower parts' boxes (`Suspension.floorFromBoxes`), or the
+-- block car's box -- so the floor that rests on a ledge is the one you can see.
+--
 -- `DriftModel` is the simulation (Drift/Model); `Model` is Roblox's class.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -47,6 +56,7 @@ local CarModel = require(ReplicatedStorage.Shared.CarModel)
 local CarParts = require(ReplicatedStorage.Shared.CarParts)
 local Config = require(ReplicatedStorage.Shared.Config)
 local DriftModel = require(script.Parent.Model)
+local Suspension = require(script.Parent.Suspension)
 
 local Render = {}
 
@@ -66,8 +76,9 @@ export type Rig = {
 	desc: CarParts.Desc?,
 	groups: { RigGroup }?,
 	frames: { [string]: CFrame },
-	lift: { [string]: number }, -- studs up, per wheel name; nothing drives it yet
+	lift: { [string]: number }, -- studs up, per wheel name: the suspension's (`apply`)
 	inputs: CarParts.Inputs,
+	floor: { Suspension.FloorPoint }?, -- the floor the model rests this car on (T-095)
 }
 
 -- The shell group that shadows a named simulation part, with every part's place in it,
@@ -111,6 +122,27 @@ local function placeShell(shell: Shell?, cf: CFrame)
 	for _, entry in shell.parts do
 		entry.part.CFrame = cf * entry.offset
 	end
+end
+
+-- The floor the model rests this car on (T-095): the rig's own `Floor*` points if it has
+-- any, else the underside of the body that is drawn -- its shell's lower parts, or the
+-- block car's box. Nil leaves the model on the config's stand-in box.
+local function floorOf(rig: Rig): { Suspension.FloorPoint }?
+	if rig.desc then
+		local points = Suspension.floorFromRig(rig.desc.floor)
+		if points then
+			return points
+		end
+	end
+	local boxes = {}
+	if rig.bodyShell then
+		for _, entry in rig.bodyShell.parts do
+			table.insert(boxes, { cf = entry.offset, size = entry.part.Size })
+		end
+	elseif rig.body then
+		table.insert(boxes, { cf = CFrame.identity, size = rig.body.Size })
+	end
+	return Suspension.floorFromBoxes(boxes)
 end
 
 -- Find the parts, and say whether they are all there yet.
@@ -179,6 +211,9 @@ local function resolve(rig: Rig)
 		end
 	end
 	rig.complete = whole
+	if whole then
+		rig.floor = floorOf(rig)
+	end
 end
 
 function Render.rig(car: Model): Rig
@@ -193,6 +228,7 @@ function Render.rig(car: Model): Rig
 		frames = {},
 		lift = {},
 		inputs = {},
+		floor = nil,
 	}
 	resolve(rig)
 	return rig
@@ -200,7 +236,9 @@ end
 
 -- A wheel's vertical offset, in studs up from where the car puts it (0, the default). It
 -- moves that wheel's hub, and the wheel and caliper on it, and the simulation's own wheel
--- part with them. Nothing drives it yet: the suspension step will.
+-- part with them -- or, on a car with no rig, the wheel part and its `Wheel*` group. `apply`
+-- sets all four from the model's suspension; another player's car takes them off the wire
+-- (`Suspension.unpack`).
 function Render.setWheelLift(rig: Rig, wheel: string, studs: number)
 	rig.lift[wheel] = if studs ~= 0 then studs else nil
 end
@@ -226,19 +264,30 @@ end
 -- Roblox's sense: positive points them to the car's left. Another player's car is drawn
 -- through this too: their CFrame arrives over the wire, their wheels and their lean do not,
 -- so both are zero for them.
-function Render.place(rig: Rig, cf: CFrame, wheelAngle: number, wheelSpin: number, bodyRoll: number?)
+--
+-- `offset` is the body's sprung place on the car's frame (`Suspension.bodyLocal` without
+-- the lean): the body rides it, under the lean, and the wheels do not -- they ride the
+-- car's frame at their own lifts. Nil, or the identity, is the body where it always was.
+function Render.place(
+	rig: Rig,
+	cf: CFrame,
+	wheelAngle: number,
+	wheelSpin: number,
+	bodyRoll: number?,
+	offset: CFrame?
+)
 	if not rig.complete then
 		resolve(rig)
 	end
 
-	local bodyCF = cf
+	local bodyCF = if offset then cf * offset else cf
 	local roll = bodyRoll or 0
 	if roll ~= 0 then
 		-- Leaning about the centre of mass rather than about the car's origin, which
 		-- is the difference between a car rolling on its springs and a box pivoting
 		-- on the road.
 		local com = Config.Drift.CenterOfMass
-		bodyCF = cf * CFrame.new(com) * CFrame.Angles(0, 0, roll) * CFrame.new(-com)
+		bodyCF = bodyCF * CFrame.new(com) * CFrame.Angles(0, 0, roll) * CFrame.new(-com)
 	end
 	if rig.body then
 		rig.body.CFrame = bodyCF
@@ -333,9 +382,27 @@ end
 -- (Sim's accumulator; see the header). `rem` nil or 0 draws the car at the step itself,
 -- which is what it did before T-025 and what a one-off placement -- a spawn, a respawn,
 -- a teleport -- still wants.
+--
+-- The suspension comes with it (T-095): each wheel at the lift the model's step left it at,
+-- the body at its sprung offset, and the car's floor handed back to the model for the next
+-- step (`floorOf`; the model reads it only when a wheel has run out of travel).
 function Render.apply(rig: Rig, state: DriftModel.State, rem: number?)
 	local cf, wheelAngle, wheelSpin, bodyRoll = Render.pose(state, rem)
-	Render.place(rig, cf, wheelAngle, wheelSpin, bodyRoll)
+	local lifts = state.wheelLift
+	if lifts then
+		for i, name in CarModel.WHEEL_NAMES do
+			Render.setWheelLift(rig, name, lifts[i] or 0)
+		end
+	end
+	if rig.floor and state.floor ~= rig.floor then
+		state.floor = rig.floor
+	end
+	local body = state.body
+	local offset: CFrame? = nil
+	if body and not Suspension.bodyAtRest(state) then
+		offset = CFrame.new(0, body.z, 0) * CFrame.Angles(body.p, 0, 0) * CFrame.Angles(0, 0, body.q)
+	end
+	Render.place(rig, cf, wheelAngle, wheelSpin, bodyRoll, offset)
 end
 
 return Render

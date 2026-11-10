@@ -40,6 +40,7 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Config = require(ReplicatedStorage.Shared.Config)
+local Suspension = require(script.Parent.Suspension)
 
 local Model = {}
 
@@ -117,6 +118,17 @@ export type State = {
 	-- both let go this step. Never true at `UnstickSpeed = 0`
 	fell: boolean,
 	time: number, -- seconds of simulation since the state was made
+
+	-- THE SUSPENSION AND THE FLOOR (T-095, Drift/Suspension). The first three are drawn and
+	-- nothing above reads them; the floor ones are the simulation's only while `hanging`.
+	travel: { number }, -- each wheel's travel, FL FR RL RR: 0 hanging .. `Travel` fully up
+	wheelLift: { number }, -- studs each wheel is drawn up off the car's frame
+	body: Suspension.Body, -- the body's sprung offset on the car's frame
+	hanging: boolean, -- a wheel ran out of travel or the floor was down: the floor solve ran
+	tiltRate: Vector2, -- rad/s the floor solve is tipping the car at (pitch, roll)
+	floor: { Suspension.FloorPoint }?, -- the car's floor points; nil is the config's box
+	floorContacts: { Suspension.Contact }, -- floor points resting on something this step
+	floorTouching: number, -- how many
 }
 
 local function lerp(a: number, b: number, t: number): number
@@ -202,6 +214,14 @@ function Model.new(spawnCFrame: CFrame): State
 		pinned = false,
 		fell = false,
 		time = 0,
+		travel = table.create(#WHEELS, Config.Drift.Suspension.Rest),
+		wheelLift = table.create(#WHEELS, 0),
+		body = Suspension.newBody(),
+		hanging = false,
+		tiltRate = Vector2.zero,
+		floor = nil,
+		floorContacts = Suspension.EMPTY_CONTACTS,
+		floorTouching = 0,
 	}
 end
 
@@ -224,6 +244,7 @@ function Model.step(s: State, input: Input, dt: number, world: World): State
 	local steer = clamp(input.steer or 0, -1, 1)
 	local handbrake = input.handbrake == true
 	s.steer = steer
+	local vyBefore = s.vy -- the drawn springs feel a change in it (Drift/Suspension)
 
 	---------------------------------------------------------------- the throttle
 	-- Not an input. The car drives itself and eases in, so a first-time player is never
@@ -585,8 +606,93 @@ function Model.step(s: State, input: Input, dt: number, world: World): State
 		s.fallFrom = groundY
 	end
 
+	---------------------------------------------------------------- out of travel: the floor
+	-- OURS (T-095, Drift/Suspension, features/car-v2.md). Everything above put the car on
+	-- the wheels that carry it, level with their mean and tilted to their normals. That is
+	-- the car the user approved, and on flat ground and every road it is the whole story:
+	-- all four wheels are within their travel of that pose. THIS BLOCK ONLY RUNS WHEN ONE
+	-- IS NOT -- its ground is further below it than a wheel can hang (`Rest` and
+	-- `HangSlack`), or there is no ground under it at all -- or when it ran last step and the
+	-- floor is still near something. Then the car is a rigid body on point supports: the
+	-- wheels that touch and its floor, which goes down on to whatever edge it is over. A
+	-- rear axle rolled off a ledge drops, the floor lands on the edge, and the car grinds
+	-- across it until it is clear and falls.
+	local P = C.Suspension
+	local hang = false
+	if carrying > 0 and groundY then
+		local y0 = groundY + C.RideHeight
+		local f0, r0, u0 = Suspension.basis(s.yaw, normal)
+		for i = 1, #WHEELS do
+			local hit = wheelHits[i]
+			if not hit then
+				hang = true -- nothing under this wheel at all
+				break
+			end
+			local p = Suspension.wheelContact(i)
+			if hit.y < y0 + r0.Y * p.X + u0.Y * p.Y - f0.Y * p.Z - (P.Rest + P.HangSlack) then
+				hang = true
+				break
+			end
+		end
+	end
+	-- Once in, it stays in for as long as the floor is near something: a car whose four
+	-- wheels have all gone over the drop can still have its nose over the ledge.
+	local sup = if hang or s.hanging then Suspension.gather(world, s.yaw, target, s.up, wheelHits, s.floor) else nil
+	if sup and not hang then
+		local _, nearY = Suspension.need(sup, s.yaw, s.up)
+		if sup.nHard == 0 or nearY < target.Y - C.AirborneMargin then
+			sup = nil -- clear of everything: it falls, as it always has
+		end
+	end
+	if sup and sup.n == 0 then
+		sup = nil -- nothing under any of it: it falls, as it always has
+	end
+	s.hanging = sup ~= nil
+
 	local follow = 1 - math.exp(-dt / math.max(C.GroundFollow, EPS))
-	if groundY and target.Y - (groundY + C.RideHeight) <= C.AirborneMargin then
+	if sup then
+		-- Where the car would come to rest on what is under it, and the tilt moving toward
+		-- that no faster than gravity could start to turn it (`TipAccel`). In the air as on
+		-- the ground: a car tipping off an edge keeps tipping as it goes.
+		local a0, b0 = Suspension.tiltOf(s.yaw, s.up)
+		local aR, bR = Suspension.rest(sup, s.yaw, a0, b0)
+		local a, ra = Suspension.approach(a0, aR, s.tiltRate.X, dt)
+		local b, rb = Suspension.approach(b0, bR, s.tiltRate.Y, dt)
+		local upH = Suspension.upOf(s.yaw, a, b)
+		s.tiltRate = Vector2.new(ra, rb)
+		s.up = upH
+		local restY = Suspension.need(sup, s.yaw, upH)
+		if target.Y - restY <= C.AirborneMargin then
+			s.airborne = false
+			target = Vector3.new(target.X, lerp(target.Y, restY, follow), target.Z)
+			-- The same rule as on a road: the vertical speed is what the car's own plane
+			-- makes of its travel, and nothing else.
+			local flatSpeed = math.sqrt(vel.X * vel.X + vel.Z * vel.Z)
+			local climb = 0
+			if upH.Y > GROUND_NORMAL_Y then
+				climb = clamp(-(upH.X * vel.X + upH.Z * vel.Z) / upH.Y, -flatSpeed, flatSpeed)
+			end
+			vel = Vector3.new(vel.X, clamp(climb, -C.TopSpeed, C.TopSpeed), vel.Z)
+		else
+			s.airborne = true
+			if target.Y < restY then
+				target = Vector3.new(target.X, restY, target.Z)
+				s.airborne = false
+				vel = Vector3.new(vel.X, 0, vel.Z)
+			end
+		end
+		-- The floor is HARD: whatever the height eased to, no floor point is below its
+		-- ground. A wheel may be pushed up into its travel; the floor has none.
+		local _, hardY = Suspension.need(sup, s.yaw, s.up)
+		if target.Y < hardY then
+			target = Vector3.new(target.X, hardY, target.Z)
+			if vel.Y < 0 then
+				vel = Vector3.new(vel.X, 0, vel.Z)
+			end
+			s.airborne = false
+		end
+	elseif groundY and target.Y - (groundY + C.RideHeight) <= C.AirborneMargin then
+		s.tiltRate = Vector2.zero
 		s.airborne = false
 		-- The height eases on to the surface, and that easing is ALL it does. The car's
 		-- vertical speed is the speed the SURFACE is climbing under it -- the velocity's
@@ -615,6 +721,7 @@ function Model.step(s: State, input: Input, dt: number, world: World): State
 		vel = Vector3.new(vel.X, clamp(climb, -C.TopSpeed, C.TopSpeed), vel.Z)
 		s.up = s.up:Lerp(normal, follow)
 	else
+		s.tiltRate = Vector2.zero
 		s.airborne = true
 		s.up = s.up:Lerp(Vector3.yAxis, 1 - math.exp(-dt / math.max(C.AirLevel, EPS)))
 		if groundY and target.Y < groundY + C.RideHeight then
@@ -625,6 +732,32 @@ function Model.step(s: State, input: Input, dt: number, world: World): State
 	end
 	s.up = if s.up.Magnitude > EPS then s.up.Unit else Vector3.yAxis
 	s.grounded = not s.airborne
+
+	if sup then
+		-- Resting on the floor, a wheel is down only if it really reaches its ground: the
+		-- rear pair hanging off a ledge drives nothing and grips nothing.
+		local f1, r1, u1 = Suspension.basis(s.yaw, s.up)
+		sumGrip, sumScore = 0, 0
+		for i = 1, #WHEELS do
+			local hit = wheelHits[i]
+			local down = false
+			if hit and s.grounded then
+				local p = Suspension.wheelContact(i)
+				local h = target.Y + r1.Y * p.X + u1.Y * p.Y - f1.Y * p.Z
+				down = hit.y >= h - (P.Rest + P.HangSlack)
+			end
+			found[i] = down
+			if down and hit then
+				sumGrip += hit.grip
+				sumScore += hit.score
+			end
+		end
+		s.floorContacts = Suspension.contacts(sup, s.yaw, target, s.up, vel, s.r)
+		s.floorTouching = #s.floorContacts
+	elseif s.floorTouching > 0 then
+		s.floorContacts = Suspension.EMPTY_CONTACTS
+		s.floorTouching = 0
+	end
 
 	for i = 1, #WHEELS do
 		found[i] = found[i] and s.grounded
@@ -654,6 +787,10 @@ function Model.step(s: State, input: Input, dt: number, world: World): State
 	s.bodyRoll = lerp(s.bodyRoll, rollTo, clamp(C.BodyRollRate * dt, 0, 1))
 	local steerTo = clamp(b, -math.rad(C.WheelSteerMax), math.rad(C.WheelSteerMax))
 	s.wheelSteer = lerp(s.wheelSteer, steerTo, clamp(C.WheelSteerRate * dt, 0, 1))
+
+	-- Cosmetic too, and last: each wheel on its spring and the body's sprung offset, from the
+	-- same four rays and the pose just settled (Drift/Suspension). Nothing above reads it.
+	Suspension.step(s, wheelHits, dt, vyBefore)
 
 	return s
 end
