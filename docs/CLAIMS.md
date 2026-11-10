@@ -1,4 +1,4 @@
-# Claims
+﻿# Claims
 
 Every task in progress and the files it owns, so parallel sessions and workers never edit the same file (docs/workflow/CONDUCTOR.md "Claims").
 
@@ -9,6 +9,7 @@ Every task in progress and the files it owns, so parallel sessions and workers n
 
 | Branch | Lane | Files owned | Since |
 |---|---|---|---|
+| `agent/car-rig` | lane1 | `docs/game/CONTRACTS.md` (car section only), `src/ReplicatedStorage/Shared/CarModel.luau`, `src/ReplicatedStorage/Shared/Cars/*`, `src/ReplicatedStorage/Shared/CarParts.luau` (new), `src/StarterPlayerScripts/Drift/Render.luau`, `src/StarterPlayerScripts/Drift/RemoteCars.luau`, `src/ServerScriptService/Tests/RigTests.luau` (new) | 2026-11-10 (T-094) |
 
 ## Notes between sessions
 

@@ -1,6 +1,6 @@
 # Feature: Car v2
 
-**Status:** specced, waiting on the user's OK (T-092). **Owner task:** none yet.
+**Status:** approved 2026-11-10 (T-093), building: T-094 rig, T-095 suspension, T-096 get in and out, T-097 sparks. **Owner task:** see `docs/CLAIMS.md`.
 
 ## Goal
 
