@@ -265,7 +265,8 @@ Catalog.Paint = {
 	finishes = {
 		{ id = "stock", name = "Stock" },
 		{ id = "gloss", name = "Gloss", material = "SmoothPlastic", reflectance = 0.15 },
-		{ id = "matte", name = "Matte", material = "SmoothPlastic", reflectance = 0 },
+		-- Plastic, not SmoothPlastic: the faint grain is what reads as matte next to gloss
+		{ id = "matte", name = "Matte", material = "Plastic", reflectance = 0 },
 		{ id = "metallic", name = "Metallic", material = "Metal", reflectance = 0.25 },
 	},
 	wraps = {
