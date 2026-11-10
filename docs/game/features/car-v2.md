@@ -28,16 +28,27 @@ Get the game ready for the car being modelled in `features/car-model.md`: a car 
 
 **The rig.** A car is a `Body` and its parts, each with its pivot on its real hinge, named as `pivots-gray2.json` names them: the doors, door glass, hood and prop rod, hatch and struts, pop-up pods, four wheels (each a suspension hub that moves up and down, a wheel that spins, a caliper that doesn't spin), steering wheel, needles, pedals, wipers, and the lights. Plus points the code reads: the driver's seat, where you get out, and the floor's contact points. One module turns any part to an angle or opens it over time, and knows the orders that matter (the hood lifts before the prop rod swings).
 
-**Suspension**, per wheel, all faked from the ground rays the model already casts:
+**Suspension**, per wheel, all faked from the ground rays the model already casts (`Drift/Suspension`, T-095). Every number is in `Config.Drift.Suspension`:
 
-| Number | Start | What it is |
+| Number | Value | What it is |
 |---|---|---|
 | `Travel` | 0.6 studs | how far a wheel moves, up from fully hanging to fully compressed |
-| `Rest` | 0.25 studs | how far up from hanging a wheel sits on flat ground |
-| `Stiffness` / `Damping` | tuned in a lane | how springy the wheels and body look |
-| `DropTime` | 0.15 s | how fast a wheel falls to the bottom of its travel in the air |
+| `Rest` | 0.25 studs | how far up from hanging a wheel sits on flat ground: where the wheels were always drawn |
+| `Stiffness` / `Damping` | 300 / 22 | how springy the body looks on its wheels: about 2.8 Hz at 0.64 of critical, so a landing settles in about a third of a second |
+| `DropTime` | 0.15 s | how fast a wheel falls the whole of its travel with nothing under it |
+| `LandingSquash` | 0.15 | share of a change in vertical speed on the ground the body takes as a jolt: a 30 studs/s landing dips it about a quarter of a stud |
+| `MaxBodyTilt` | 4 deg | the most the body pitches or rolls on its springs off the car's frame |
+| `HangSlack` | 0.25 studs | how far past full hang a wheel's ground must be before the floor solve runs: a 1-stud drop under one axle; a kerb never |
+| `TipAccel` | 6 rad/s² | how fast the car may start to tip toward resting on its floor: off a ramp lip at speed it turns under a degree, rolled off a ledge slowly it settles in a fraction of a second |
+| `MaxTilt` | 30 deg | the most the floor solve tips the car; a car with all its supports to one side of its centre of mass tips this far and slides off |
+| `FloorTouch` | 0.05 studs | a floor point this close to its ground is touching (sparks, T-097) |
+| `EdgeDrop` / `EdgeSteps` | 0.5 studs / 5 | two floor points this far off each other's plane have an edge between them, found by halving the gap 5 times |
+| `FloorClearance`, `FloorWidth`, `FloorLength` | 0.5 studs, 1, 1.05 | the stand-in floor box, until a drawn car hands the model its own |
+| `LiftRange` | 1 stud | each wheel's lift either way of zero over `CarState` |
 
-**The body's height and tilt** come from whatever is holding the car up: the wheels that touch, and, when the wheels can't, the floor's contact points (a box under the car, corners and middle). A wheel that has run out of travel hangs; the corner over it drops until the floor touches. On flat ground and on every road the car drives today, all four wheels are on the ground and the line is the same as now: the drift tests must pass unchanged.
+**Each wheel** touches when its ground is within its hang of where it sits; then its travel is whatever puts it on the ground, pushed up at once and dropped no faster than `DropTime`. With nothing under it, it falls to the bottom of its travel and hangs. **The body** sits on the car's frame plus a sprung offset (heave, pitch, roll) toward the plane the touching wheels are on, jolted by landings and the foot of a ramp, and stopped where a wheel would pass the top of its travel. All of this is drawn: nothing in the model reads it, and on flat ground every wheel is at `Rest` and the offset is zero.
+
+**The body's height and tilt** come from whatever is holding the car up: the wheels that touch, and, when the wheels can't, the floor's contact points. **On flat ground and on every road the car drives today the model is unchanged**: all four wheels are within their travel of the pose it always computed, and the drift tests pass with the same numbers. **When a wheel runs out of travel** (its ground more than `Rest` + `HangSlack` below it, or nothing under it at all), and for as long after as the floor is near something, the car is a rigid body on point supports: each touching wheel at ride height, the floor's points, and every place an edge crosses the floor's outline. It rests at the tilt that puts its centre of mass lowest, tipping toward it no faster than `TipAccel`; the floor is hard (never below its ground) and a wheel is not (it can be pushed up into its travel). A wheel hanging off the edge drives and grips nothing. Rolled rear first off a ledge, the rear drops, the floor lands on the edge and grinds along it; once the edge is past the centre of mass the car tips to `MaxTilt` and slides off, and it falls when its floor is clear. **The floor's points** are a v2 rig's `Floor*` points, or else nine points (`FloorFL` … `FloorRR`, `FloorMC` in the middle) read off the drawn body's lower parts, or the block car's box.
 
 **Floor scraping:** while a floor point touches, sparks come off it and a scrape sound plays, louder the faster it slides. It does not slow the car (see "Open questions").
 
