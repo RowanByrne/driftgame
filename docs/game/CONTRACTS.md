@@ -11,7 +11,7 @@ Everything code relies on across modules and tasks: data, remotes, tags, attribu
 | Store | Kind (standard or ordered) | Key | What it holds |
 |---|---|---|---|
 | `<CODE>_Player_v1` | standard | `u{UserId}` | Player profiles |
-| `DriftGarageDev_v1` | standard | `garage_{UserId}` | **A dev tool's store, not the player profile** (`T-040`). Cars tuned with the slider menu. Deliberately throwaway and deliberately NOT `DataService`, which is still unbuilt: it exists so a tuning session survives, and it is replaced the day real saving arrives |
+| `DriftGarageDev_v1` | standard | `garage_{UserId}` | **A dev tool's store, not the player profile** (`T-040`). Cars tuned with the slider menu. Deliberately throwaway and deliberately NOT `DataService`, which is still unbuilt: it exists so a tuning session survives, and it is replaced the day real saving arrives Value: `{ version = 1, at, cars, build? }`; `build` is the customized car (T-101, "Customization" below) |
 
 ### Profile
 
@@ -66,6 +66,7 @@ Everything code relies on across modules and tasks: data, remotes, tags, attribu
 | attr `__agent_play` | Workspace (Studio only) | Agents, before each playtest | The quiet-playtest module (docs/workflow/TESTING.md) |
 | attr `__studio_audio` | Workspace (Studio only) | Agents, for deliberate audio tests | The quiet-playtest module (docs/workflow/TESTING.md) |
 | attr `Shell` | A car model | `Shared/CarModel.build`, when the car gets a body shell | `Drift/Render`, to know a shell is coming. A Model replicates before its parts, so a client that catches the car mid-replication must not decide there is no shell (T-016) |
+| attr `UserId` | A car model in `Workspace.Cars` | `CarService`, before the car is parented | Whose car it is: `CustomizationService` publishes that player's build on it (T-101) |
 | attr `N` | A `Shell` group (`Body`, `WheelFL`…`WheelRR`, and every group of a v2 rig, "The car rig") | `Shared/CarModel` | `Drift/Render`: how many parts to wait for before the group counts as arrived |
 | attr `L` | Every shell part | `Shared/CarModel` | `Drift/Render`: the part's CFrame inside its group. Render writes `groupCF * L` **absolutely** every frame — **never a pivot**. `Model:PivotTo` applies a *delta*, and the server re-asserts part CFrames, so each re-assertion was paid twice and the shell walked 2500 studs off the car inside a minute while its pivot tracked perfectly (T-020) |
 | attr `Rig`, `G` | A car v2 `Shell` | `Shared/Cars/Rig.assemble` | `Rig = 2` marks the shell as a v2 rig ("The car rig"); it arrives with the shell, before its groups. `G` is how many rig groups to wait for, `Body` included. `Shared/CarParts.describe` and `Drift/Render` read both; a shell without `Rig` is drawn the old way, a `Body` and four `Wheel*` groups |
