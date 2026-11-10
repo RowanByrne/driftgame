@@ -73,6 +73,19 @@ local function rigIsLive(rig, car: Model?): boolean
 	if not shellStands(rig.bodyShell, car) then
 		return false
 	end
+	-- A car v2 rig (Shared/Cars/Rig) draws its wheels and opening parts through groups of
+	-- its own, which `Render.place` writes from the body's frame each frame -- so a remote
+	-- car's doors, hood and wheels ride with it exactly as the body does, and open wherever
+	-- `Shared/CarParts` says. They are replaced with the shell, so one standing is enough:
+	-- the first that has a part (a hub may have none).
+	for _, entry in rig.groups or {} do
+		if #entry.shell.parts > 0 then
+			if not shellStands(entry.shell, car) then
+				return false
+			end
+			break
+		end
+	end
 	return true
 end
 
