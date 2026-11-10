@@ -13,6 +13,14 @@ What's coming and when: updates, live events and timed releases (docs/workflow/R
 
 One card per update, soonest first, in the form in docs/workflow/RELEASING.md "Game page events". Rocco reads and writes them: keep each card's marker line and field names.
 
+<!-- update: new-cars -->
+### new cars
+
+- **When:** 2026-11-11
+- **Kind:** Timed release
+- **Game page event:** Not yet
+
+
 ## Past
 
 > Cards move here once over, most recent first.
