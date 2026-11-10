@@ -16,3 +16,5 @@ Every task in progress and the files it owns, so parallel sessions and workers n
 
 > A short note for another session or PC that can't be said in a commit, such as "lane 3 has unpushed work, ask before refreshing it". Date it, say who it's for, and remove it once it's been seen.
 
+
+- **2026-11-10, for the next conductor session:** paused for the user's usage limit. `agent/suspension` (T-095, lane 1) and `agent/garage-menus` (T-103, lane 2) were stopped mid-task and pushed as they stood: read each card's last step before merging, and don't merge either untested. Waiting behind them: T-097 sparks (after T-095), T-105 kits and T-106 parts changing the feel (after T-095 and T-101). The other session's car-model notes (`assets/car-ae86/MANIFEST.md`, `docs/game/DECISIONS.md` 2026-11-09/10 car-model lines, `docs/game/features/car-model.md`) are still uncommitted in `repo\`: ask the user before committing them.
