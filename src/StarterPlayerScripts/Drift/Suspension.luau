@@ -70,7 +70,7 @@ export type Contact = {
 	edge: boolean, -- an edge crossing rather than a floor point itself
 }
 
-export type Body = { z: number, p: number, q: number, vz: number, vp: number, vq: number }
+export type Body = { z: number, p: number, q: number, vz: number, vp: number, vq: number, kick: number }
 
 export type Supports = {
 	n: number,
@@ -285,6 +285,8 @@ local function ringOf(floor: { FloorPoint }): { FloorPoint }
 	return hull
 end
 
+Suspension.outline = ringOf
+
 --------------------------------------------------------------------------------
 -- The floor solve, for Drift/Model
 --------------------------------------------------------------------------------
@@ -301,6 +303,81 @@ local function add(sup: Supports, p: Vector3, g: number, hard: boolean, name: st
 	if hard then
 		sup.nHard += 1
 	end
+end
+
+-- Each wheel's ground as its whole tread meets it: where its contact would have to be for
+-- no part of the tread to be inside anything, so a wheel rolling over an edge rides round
+-- the corner as a circle does instead of dropping through it the moment the ray under its
+-- middle is past. The tread is asked at five places round its lower half (`TREAD`, in
+-- degrees off the bottom, + forward) and at its two sides; wherever two neighbours stand on
+-- different levels the edge between them is found by halving `EdgeSteps` times, and the
+-- tread either side of it held over the higher ground -- a hair more lift than it needs,
+-- never less. Each answer is measured in the world, along the car's own tilt, so a car
+-- tipped on its floor still gets its tyres right. Only while the floor solve runs, and into
+-- a NEW table, so the model's own hits are left alone.
+local TREAD = { -70, -35, 0, 35, 70 }
+
+function Suspension.treads(world: any, yaw: number, pos: Vector3, up: Vector3): { any }
+	local C = Config.Drift
+	local P = S()
+	local r = C.WheelDiameter * 0.5
+	local halfWidth = C.WheelWidth * 0.5
+	local fwd, right, u = basis(yaw, up)
+	local out = table.create(4)
+	for i = 1, 4 do
+		local p = Suspension.wheelContact(i)
+		local contactY = (pos + offsetOf(fwd, right, u, p)).Y
+		local best: any = nil
+		-- A point `deg` round the tread (0 is the bottom, + forward), `w` across.
+		local function pointAt(deg: number, w: number): Vector3
+			local a = math.rad(deg)
+			return pos + offsetOf(fwd, right, u, p + Vector3.new(w, r - r * math.cos(a), -r * math.sin(a)))
+		end
+		-- What ground `hit` asks of the contact, held under the tread at `at`.
+		local function offer(hit: any, at: Vector3)
+			if hit then
+				local y = contactY + (hit.y - at.Y)
+				if not best or y > best.y then
+					best = { y = y, normal = hit.normal, grip = hit.grip, score = hit.score }
+				end
+			end
+		end
+		local hits = table.create(#TREAD)
+		local ats = table.create(#TREAD)
+		for k, deg in TREAD do
+			ats[k] = pointAt(deg, 0)
+			hits[k] = world.probe(ats[k])
+			offer(hits[k], ats[k])
+		end
+		for k = 1, #TREAD - 1 do
+			local ha, hb = hits[k], hits[k + 1]
+			local high, lo, hi
+			if ha and (not hb or ha.y - hb.y > P.EdgeDrop) then
+				high, lo, hi = ha, TREAD[k + 1], TREAD[k] -- `hi` is on the high side
+			elseif hb and (not ha or hb.y - ha.y > P.EdgeDrop) then
+				high, lo, hi = hb, TREAD[k], TREAD[k + 1]
+			else
+				continue
+			end
+			for _ = 1, P.EdgeSteps do
+				local m = (lo + hi) * 0.5
+				local mh = world.probe(pointAt(m, 0))
+				if mh and math.abs(mh.y - high.y) <= P.EdgeDrop * 0.5 then
+					hi = m
+				else
+					lo = m
+				end
+			end
+			offer(high, pointAt(lo, 0))
+			offer(high, pointAt(hi, 0))
+		end
+		for _, side in { 1, -1 } do
+			local at = pointAt(0, side * halfWidth)
+			offer(world.probe(at), at)
+		end
+		out[i] = best
+	end
+	return out
 end
 
 -- The ground a hit's own plane puts at a world point.
@@ -396,21 +473,29 @@ function Suspension.gather(
 end
 
 -- The height the car's origin must be at, standing on `up`, for every support to clear its
--- ground; and the same for the hard ones alone. `-math.huge` when there are none.
-function Suspension.need(sup: Supports, yaw: number, up: Vector3): (number, number)
+-- ground; and the least it may be at all -- no floor point below its ground, and no wheel
+-- pushed past the top of its travel; and what the floor alone asks. `-math.huge` when
+-- there are none.
+function Suspension.need(sup: Supports, yaw: number, up: Vector3): (number, number, number)
 	local fwd, right, u = basis(yaw, up)
 	local rx, uy, fy = right.Y, u.Y, fwd.Y
-	local all, hard = -math.huge, -math.huge
+	local P = S()
+	local give = P.Travel - P.Rest
+	local all, hard, floor = -math.huge, -math.huge, -math.huge
 	for k = 1, sup.n do
 		local y = sup.g[k] - (rx * sup.x[k] + uy * sup.y[k] - fy * sup.z[k])
 		if y > all then
 			all = y
 		end
-		if sup.hard[k] and y > hard then
-			hard = y
+		local least = if sup.hard[k] then y else y - give
+		if least > hard then
+			hard = least
+		end
+		if sup.hard[k] and y > floor then
+			floor = y
 		end
 	end
-	return all, hard
+	return all, hard, floor
 end
 
 -- How high the centre of mass is for a tilt, with the car standing on its supports.
@@ -536,7 +621,7 @@ end
 --------------------------------------------------------------------------------
 
 function Suspension.newBody(): Body
-	return { z = 0, p = 0, q = 0, vz = 0, vp = 0, vq = 0 }
+	return { z = 0, p = 0, q = 0, vz = 0, vp = 0, vq = 0, kick = 0 }
 end
 
 local function spring(x: number, v: number, target: number, dt: number): (number, number)
@@ -625,10 +710,20 @@ function Suspension.step(s: any, hits: { any }, dt: number, vyBefore: number)
 
 	-- Taking the load: a change in the car's vertical speed while it is on the ground --
 	-- a landing, the foot of a ramp, a crest -- throws the body against its springs.
-	if not s.airborne then
+	--
+	-- The model calls a car landed while it is still settling the last of the way down on to
+	-- its wheels, so a jolt that arrives before any wheel touches is held until one does:
+	-- the body takes the load when the tyres do.
+	if holdBody then
+		body.kick = 0
+	else
 		local dvy = s.velocity.Y - vyBefore
 		if dvy ~= 0 then
-			body.vz -= dvy * P.LandingSquash
+			body.kick -= dvy * P.LandingSquash
+		end
+		if count > 0 and body.kick ~= 0 then
+			body.vz += body.kick
+			body.kick = 0
 		end
 	end
 

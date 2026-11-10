@@ -617,9 +617,15 @@ function Model.step(s: State, input: Input, dt: number, world: World): State
 	-- wheels that touch and its floor, which goes down on to whatever edge it is over. A
 	-- rear axle rolled off a ledge drops, the floor lands on the edge, and the car grinds
 	-- across it until it is clear and falls.
+	--
+	-- AND ONLY SLOWER THAN `HangSpeed`. A car that is going somewhere is over the edge and
+	-- gone long before it could tip on to its floor -- off the ramp's lip at 20 studs/s the
+	-- front axle is out over the drop for half a second -- and the line it flies is the one
+	-- the user drove, so the model above keeps it. Once the floor solve has started it keeps
+	-- going, at any speed, until the floor is clear.
 	local P = C.Suspension
 	local hang = false
-	if carrying > 0 and groundY then
+	if carrying > 0 and groundY and groundSpeed < P.HangSpeed then
 		local y0 = groundY + C.RideHeight
 		local f0, r0, u0 = Suspension.basis(s.yaw, normal)
 		for i = 1, #WHEELS do
@@ -637,9 +643,15 @@ function Model.step(s: State, input: Input, dt: number, world: World): State
 	end
 	-- Once in, it stays in for as long as the floor is near something: a car whose four
 	-- wheels have all gone over the drop can still have its nose over the ledge.
-	local sup = if hang or s.hanging then Suspension.gather(world, s.yaw, target, s.up, wheelHits, s.floor) else nil
+	-- And while it is in, a wheel is its whole tread, not the one ray under its middle: a
+	-- tyre rolling over the edge rides round the corner (`Suspension.treads`).
+	local contactHits: { Hit? } = wheelHits
+	if hang or s.hanging then
+		contactHits = Suspension.treads(world, s.yaw, target, s.up)
+	end
+	local sup = if hang or s.hanging then Suspension.gather(world, s.yaw, target, s.up, contactHits, s.floor) else nil
 	if sup and not hang then
-		local _, nearY = Suspension.need(sup, s.yaw, s.up)
+		local _, _, nearY = Suspension.need(sup, s.yaw, s.up)
 		if sup.nHard == 0 or nearY < target.Y - C.AirborneMargin then
 			sup = nil -- clear of everything: it falls, as it always has
 		end
@@ -682,7 +694,7 @@ function Model.step(s: State, input: Input, dt: number, world: World): State
 			end
 		end
 		-- The floor is HARD: whatever the height eased to, no floor point is below its
-		-- ground. A wheel may be pushed up into its travel; the floor has none.
+		-- ground. A wheel may be pushed up into its travel, and no further; the floor has none.
 		local _, hardY = Suspension.need(sup, s.yaw, s.up)
 		if target.Y < hardY then
 			target = Vector3.new(target.X, hardY, target.Z)
@@ -739,7 +751,7 @@ function Model.step(s: State, input: Input, dt: number, world: World): State
 		local f1, r1, u1 = Suspension.basis(s.yaw, s.up)
 		sumGrip, sumScore = 0, 0
 		for i = 1, #WHEELS do
-			local hit = wheelHits[i]
+			local hit = contactHits[i]
 			local down = false
 			if hit and s.grounded then
 				local p = Suspension.wheelContact(i)
@@ -790,7 +802,7 @@ function Model.step(s: State, input: Input, dt: number, world: World): State
 
 	-- Cosmetic too, and last: each wheel on its spring and the body's sprung offset, from the
 	-- same four rays and the pose just settled (Drift/Suspension). Nothing above reads it.
-	Suspension.step(s, wheelHits, dt, vyBefore)
+	Suspension.step(s, if sup then contactHits else wheelHits, dt, vyBefore)
 
 	return s
 end

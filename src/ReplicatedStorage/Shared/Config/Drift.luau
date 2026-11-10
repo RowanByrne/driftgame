@@ -189,6 +189,10 @@ local Drift = {
 		HangSlack = 0.25, -- studs past full hang before a wheel counts as out of travel and
 		-- the floor solve runs. A wheel 0.5 studs short of its ground. Over a
 		-- step it takes a 1-stud drop under one axle to reach it; a kerb never does
+		HangSpeed = 15, -- studs/s. The floor solve only starts below this ground speed. Faster
+		-- than it a car is over an edge and gone before it could tip, and flies
+		-- the line the approved model always flew -- the playground's ramp is
+		-- launched from at 20 and up, and its jumps are unchanged
 		TipAccel = 6, -- rad/s^2. How fast the car may START to tip toward where it would rest
 		-- on its floor: gravity's share for a car pivoting on one axle. Off a
 		-- ramp lip at speed the wheels are gone before it has turned a degree;
