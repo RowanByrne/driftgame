@@ -47,7 +47,9 @@ local STEP_NAME = "CarEntry"
 -- leaving: Get out pressed; the car is held, waiting for the server and then the door.
 -- walking: out; Roblox's controls and camera.
 -- entering: Get in pressed; waiting for the door, the seat and the door again.
-local MODES = { driving = true, leaving = true, walking = true, entering = true }
+-- garage: parked on the garage's turntable, in the seat, the menus open (T-103). No Get
+-- out: the button, `F` and Y are all off, and the server refuses it anyway.
+local MODES = { driving = true, leaving = true, walking = true, entering = true, garage = true }
 
 local function flatSpeed(state): number
 	if not state then
@@ -286,6 +288,34 @@ function CarEntryController:_becomeWalking()
 	self.mode = "walking"
 	CarInputController:SetDriving(false)
 	CarCameraController:SetDriving(false)
+end
+
+-- Into the garage (`GarageController`, on the server's word): the car is held on the
+-- turntable, the finger lets go of it, and Get out is off until the car drives out.
+function CarEntryController:EnterGarage()
+	self.mode = "garage"
+	self.exitAccepted = false
+	self.parkCF = nil
+	CarInputController:SetDriving(false)
+end
+
+-- Out of the garage: drive off from `cf`, where the server released the car. With no `cf`
+-- (the visit was called off by a respawn) the mode goes back to driving and the server's
+-- own `CarEnter` answer that follows puts the car where it put it.
+function CarEntryController:LeaveGarage(cf: CFrame?)
+	if self.mode ~= "garage" then
+		return
+	end
+	if cf then
+		self:_becomeDriving(cf)
+	else
+		self.mode = "driving"
+		CarInputController:SetDriving(true)
+	end
+end
+
+function CarEntryController:InGarage(): boolean
+	return self.mode == "garage"
 end
 
 function CarEntryController:_becomeDriving(cf: CFrame?)

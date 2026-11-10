@@ -62,6 +62,7 @@ local CarParts = require(ReplicatedStorage.Shared.CarParts)
 local Cars = require(ReplicatedStorage.Shared.Cars)
 local Config = require(ReplicatedStorage.Shared.Config)
 local Net = require(ReplicatedStorage.Shared.Net)
+local Signal = require(ReplicatedStorage.Shared.Signal)
 
 -- The seat and exit points, from the same module every client places the driver with, so
 -- the server and the clients cannot disagree about where the seat is. Pure: points and
@@ -155,6 +156,12 @@ function CarService:Init()
 	self.entersRefused = 0
 	self.refusals = {} -- reason -> count
 	self.parkedDropped = 0 -- CarState packets for a car whose driver is out
+	-- Fired with `(player, why)` whenever this service puts a player's car somewhere of its
+	-- own accord -- a respawn, a `Place`, a new car, the car going -- so anything holding the
+	-- car (the garage visit, T-103) lets go rather than fight it.
+	self.CarMoved = Signal.new()
+	self.holds = 0
+	self.releases = 0
 
 	-- IT HAS TO BE A FOLDER, and asking by name alone is not enough. A place file can
 	-- carry anything called `Cars` -- `DR-Lane2` had a stray ModuleScript of that name,
@@ -587,6 +594,7 @@ function CarService:Spawn(player: Player): Model?
 	local key = self:CarKey(player)
 	self:Despawn(player)
 	self.carKeys[player.UserId] = key
+	self.CarMoved:Fire(player, "spawn")
 
 	local spawnCFrame = self:SpawnCFrame()
 	local car = self:_withCar(key, CarModel.build)
@@ -682,6 +690,8 @@ function CarService:Respawn(player: Player, to: CFrame?): CFrame?
 	seen = self:_expect(player.UserId, cf.Position)
 	seen.respawnedAt = os.clock()
 	self.respawns += 1
+	-- Whatever was holding the car (the garage) lets go first: this move is the last word.
+	self.CarMoved:Fire(player, "respawn")
 	-- A car put somewhere is a car with its driver in it (T-096). A player who was out --
 	-- a run started or ended, a Studio hop -- is sat back in first and told so, BEFORE the
 	-- respawn's answer, so their client is driving again when it hears where the car is. A
@@ -968,6 +978,7 @@ function CarService:_seatNow(player: Player, tell: boolean)
 		entry.busy = false
 		entry.driving = true
 		entry.parked = nil
+		entry.hold = nil
 		if CarParts.isRig(car) and CarParts.describe(car) then
 			pcall(CarParts.set, car, Config.CarEntry.DoorName, 0)
 		end
@@ -1189,6 +1200,105 @@ function CarService:EntryState(userId: number)
 	}
 end
 
+--------------------------------------------------------------------------------
+-- Held by the server (T-103, the garage visit)
+--------------------------------------------------------------------------------
+-- The server parking a car where IT chose, with the driver still in the seat: the garage's
+-- turntable. Nothing the client sends moves a held car -- every `CarState` is dropped, as
+-- for a parked one -- and neither getting out nor getting in is open (`_onExit` refuses
+-- "not driving", `_onEnter` "not out"). `MoveHeld` is how the holder turns it, and
+-- `Release` hands it back to its driver at a pose the holder chose. A respawn, a `Place`
+-- or a new car calls the hold off (`CarMoved`): the holder hears it and lets go.
+
+-- Hold `player`'s car at `cf`, a pose the server chose (never one off the wire). `tag` says
+-- who holds it. False with a reason: no car, not driving (out, mid-move, or held already).
+function CarService:Hold(player: Player, cf: CFrame, tag: string): (boolean, string?)
+	if not sane(cf) then
+		return false, "bad pose"
+	end
+	local userId = player.UserId
+	local car = self.cars[userId]
+	local seen = self.seen[userId]
+	local entry = self.entry[userId]
+	if not car or not car.Parent or not seen or not entry then
+		return false, "no car"
+	end
+	if not entry.driving or entry.busy then
+		return false, "not driving"
+	end
+	entry.driving = false
+	entry.busy = true
+	entry.gen += 1
+	entry.hold = tag
+	entry.parked = cf
+	car:PivotTo(cf)
+	seen.expect = CarService.track(cf.Position, os.clock())
+	seen.was, seen.graceUntil = nil, nil
+	seen.lastCF, seen.lastVelocity = cf, Vector3.zero
+	self:_seatCharacter(player)
+	self.holds += 1
+	return true, nil
+end
+
+-- Who holds this player's car, or nil.
+function CarService:HeldBy(player: Player): string?
+	local entry = self.entry[player.UserId]
+	return entry and entry.hold or nil
+end
+
+-- Move a held car (the turntable turning it). The avatar goes with it. `tellOthers` passes
+-- the pose on to the other players as a `CarStateOther`, at rest, so they see it turn.
+function CarService:MoveHeld(player: Player, cf: CFrame, tellOthers: boolean?): boolean
+	local userId = player.UserId
+	local entry = self.entry[userId]
+	local car = self.cars[userId]
+	if not entry or not entry.hold or not car or not sane(cf) then
+		return false
+	end
+	entry.parked = cf
+	car:PivotTo(cf)
+	local seen = self.seen[userId]
+	if seen then
+		seen.expect = CarService.track(cf.Position, os.clock())
+		seen.lastCF = cf
+	end
+	self:_seatCharacter(player)
+	if tellOthers then
+		for _, other in Players:GetPlayers() do
+			if other ~= player then
+				self.carStateOther:FireClient(other, userId, cf, Vector3.zero, false)
+			end
+		end
+	end
+	return true
+end
+
+-- Hand a held car back to its driver at `cf`, at rest: the server agrees the car is there,
+-- and the next `CarState` is checked from it. Returns the pose, or nil if it was not held.
+function CarService:Release(player: Player, cf: CFrame): CFrame?
+	local userId = player.UserId
+	local entry = self.entry[userId]
+	local car = self.cars[userId]
+	if not entry or not entry.hold or not car or not sane(cf) then
+		return nil
+	end
+	entry.hold = nil
+	entry.parked = nil
+	entry.gen += 1
+	entry.busy = false
+	entry.driving = true
+	car:PivotTo(cf)
+	local seen = self.seen[userId]
+	if seen then
+		seen.expect = CarService.track(cf.Position, os.clock())
+		seen.was, seen.graceUntil = nil, nil
+		seen.lastCF, seen.lastVelocity = cf, Vector3.zero
+	end
+	self:_seatCharacter(player)
+	self.releases += 1
+	return cf
+end
+
 function CarService:DebugState()
 	local cars = {}
 	local offenders = {}
@@ -1222,6 +1332,8 @@ function CarService:DebugState()
 			driver = car:GetAttribute(DRIVER),
 			driving = self.entry[userId] ~= nil and self.entry[userId].driving or false,
 			entryBusy = self.entry[userId] ~= nil and self.entry[userId].busy or false,
+			-- Who holds the car, if the server does (T-103): "garage" on the turntable.
+			heldBy = self.entry[userId] ~= nil and self.entry[userId].hold or nil,
 		})
 		for _, problem in CarModel.physicsOffenders(car) do
 			table.insert(offenders, problem)
