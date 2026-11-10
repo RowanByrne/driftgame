@@ -98,6 +98,14 @@ CarKits.Bodies = {
 		deck = Vector3.new(0.5, 0.74, 0.84),
 		cabin = { min = Vector3.new(0.14, 0.36, 0.37), max = Vector3.new(0.86, 0.86, 0.67) },
 	},
+	-- the game's own car (`Shared/Cars/Liftback`, T-111): its `Body` group's box x ±3.55,
+	-- y -1.81..3.38, z -8.45..9.34. A hatch: the spoiler stands on the hatch's bottom
+	-- edge, y 1.2 at z 8.8; cabin from the dash (z -2.0) to behind the seats (3.6), the
+	-- floor (y -0.5) to the roof's underside (3.0)
+	liftback = {
+		deck = Vector3.new(0.5, 0.58, 0.95),
+		cabin = { min = Vector3.new(0.13, 0.25, 0.36), max = Vector3.new(0.87, 0.9, 0.68) },
+	},
 }
 CarKits.Bodies.Default = CarKits.Bodies.balanced
 
