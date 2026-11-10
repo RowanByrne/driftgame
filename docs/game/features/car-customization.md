@@ -1,6 +1,6 @@
 # Feature: Garage and car customization
 
-**Status:** specced, waiting on the user's OK (T-098). **Owner task:** none yet.
+**Status:** approved 2026-11-10 (T-100), building: T-101 catalog, T-102 room, T-103 menus, T-104 paint and wheels, T-105 kits, T-106 feel. **Owner task:** see `docs/CLAIMS.md`.
 
 ## Goal
 
