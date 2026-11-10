@@ -77,6 +77,7 @@ export type Car = {
 	-- the suspension (T-109), drawn: nothing the drift line reads
 	SuspensionTravel: number?,
 	SuspensionRest: number?,
+	SuspensionRide: number?,
 	SuspensionStiffness: number?,
 	SuspensionDamping: number?,
 }
@@ -151,9 +152,12 @@ Archetypes.Base = {
 	-- has seen since T-095; every archetype shares them. LOOKS ONLY: the springs are
 	-- drawn, and the floor solve reads Travel and Rest only on a ledge.
 	SuspensionTravel = 0.6, -- studs a wheel moves, fully hanging to fully up
-	SuspensionRest = 0.25, -- studs up from hanging a wheel sits at on the flat. MORE IS
-	-- LOWER: the wheel sits further into its travel and the body is
-	-- drawn that much nearer the road than at this value
+	SuspensionRest = 0.25, -- studs up from hanging a wheel sits at on the flat
+	SuspensionRide = 1, -- HOW HIGH THE BODY SITS on its wheels, in studs from a mark one stud
+	-- under stock: 1 is stock, 0.8 sits 0.2 lower, 1.35 sits 0.35 higher.
+	-- The wheels stay on the road and keep their travel; the body (and
+	-- its floor) is drawn that much nearer or further. The one number a
+	-- Suspension part may move by more than 15% (`Catalog.KeyMaxDelta`)
 	SuspensionStiffness = 300, -- 1/s^2. How hard the body springs back on its wheels
 	SuspensionDamping = 22, -- 1/s. And how fast that dies away
 }

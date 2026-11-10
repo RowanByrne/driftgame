@@ -401,7 +401,8 @@ function Customization.deltas(build: Build): { [string]: number }
 		if fraction == 0 then
 			out[key] = nil
 		else
-			out[key] = math.clamp(fraction, -Catalog.MaxDelta, Catalog.MaxDelta)
+			local limit = Catalog.KeyMaxDelta[key] or Catalog.MaxDelta
+			out[key] = math.clamp(fraction, -limit, limit)
 		end
 	end
 	return out
@@ -589,8 +590,8 @@ function Customization.problems(): { string }
 						bad(`{where}: moves {tostring(key)}, which {category.id} does not own`)
 					elseif not Garage.finite(fraction) or fraction == 0 then
 						bad(`{where}: {key} is not a non-zero number`)
-					elseif math.abs(fraction) > Catalog.MaxDelta + 1e-9 then
-						bad(`{where}: {key} moves {fraction}, past ±{Catalog.MaxDelta}`)
+					elseif math.abs(fraction) > (Catalog.KeyMaxDelta[key] or Catalog.MaxDelta) + 1e-9 then
+						bad(`{where}: {key} moves {fraction}, past ±{Catalog.KeyMaxDelta[key] or Catalog.MaxDelta}`)
 					end
 				end
 			end

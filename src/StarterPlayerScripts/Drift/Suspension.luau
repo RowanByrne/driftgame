@@ -329,11 +329,28 @@ local function segmentsOf(floor: { FloorPoint }): { { FloorPoint } }
 end
 Suspension.segments = segmentsOf
 
--- HOW MUCH LOWER THIS CAR'S BODY SITS THAN STOCK (T-109), in studs: a car whose wheels sit
--- further into their travel at rest (`SuspensionRest`, which a Suspension part moves) has
--- its body that much nearer the road, and its floor with it. Zero on every stock car.
-function Suspension.rideDrop(): number
-	return S().Rest - Archetypes.Base.SuspensionRest
+-- HOW MUCH LOWER THIS CAR'S BODY SITS THAN STOCK, in studs (T-109): the car's
+-- `SuspensionRide` under stock's, which a Suspension part moves. The body and its floor are
+-- drawn that much nearer the road; the wheels stay on it and keep their travel. Zero on
+-- every stock car. Never so low that the floor is within `MinClearance` of flat road: a
+-- lowered car does not scrape where a stock one does not, whatever the part says.
+local clearances: { [any]: number } = setmetatable({}, { __mode = "k" }) :: any
+
+function Suspension.rideDrop(floor: { FloorPoint }?): number
+	local drop = Archetypes.Base.SuspensionRide - S().Ride
+	if drop <= 0 then
+		return drop
+	end
+	local points = floor or Suspension.defaultFloor()
+	local clear = clearances[points]
+	if not clear then
+		clear = math.huge
+		for _, point in points do
+			clear = math.min(clear, point.at.Y + Config.Drift.RideHeight)
+		end
+		clearances[points] = clear
+	end
+	return math.min(drop, math.max(clear - S().MinClearance, 0))
 end
 
 -- The floor, lowered with the body. The same table back when nothing is lowered, and one
@@ -518,7 +535,8 @@ function Suspension.gather(
 		end
 	end
 
-	local points = floorAt(floor or Suspension.defaultFloor(), Suspension.rideDrop())
+	local base = floor or Suspension.defaultFloor()
+	local points = floorAt(base, Suspension.rideDrop(base))
 	local fwd, right, u = basis(yaw, up)
 	local hits: { [FloorPoint]: any } = {}
 	local worldAt: { [FloorPoint]: Vector3 } = {}
@@ -827,8 +845,11 @@ function Suspension.step(s: any, hits: { any }, dt: number, vyBefore: number)
 		pT = math.clamp(pT, -tilt, tilt)
 		qT = math.clamp(qT, -tilt, tilt)
 	end
-	-- And sitting lower or higher than stock, whatever the wheels are doing (T-109).
-	zT -= Suspension.rideDrop()
+	-- And sitting lower or higher than stock, whatever the wheels are doing (T-109). Only
+	-- the BODY: the wheels below take `zDyn`, the body's offset without it, so they stay on
+	-- the road with the travel they always had.
+	local drop = Suspension.rideDrop(s.floor)
+	zT -= drop
 
 	-- Taking the load: a change in the car's vertical speed while it is on the ground --
 	-- a landing, the foot of a ramp, a crest -- throws the body against its springs.
@@ -864,14 +885,14 @@ function Suspension.step(s: any, hits: { any }, dt: number, vyBefore: number)
 			lowest = math.max(lowest, g + rest - full - c)
 		end
 	end
-	if body.z < lowest then
-		body.z = lowest
+	if body.z + drop < lowest then
+		body.z = lowest - drop
 		if body.vz < 0 then
 			body.vz = 0
 		end
 	end
-	if math.abs(body.z) < 1e-7 and math.abs(body.vz) < 1e-7 then
-		body.z, body.vz = 0, 0
+	if math.abs(body.z + drop) < 1e-7 and math.abs(body.vz) < 1e-7 then
+		body.z, body.vz = -drop, 0
 	end
 	if math.abs(body.p) < 1e-9 and math.abs(body.vp) < 1e-9 then
 		body.p, body.vp = 0, 0
@@ -886,7 +907,7 @@ function Suspension.step(s: any, hits: { any }, dt: number, vyBefore: number)
 	for i = 1, 4 do
 		local touching = if i == 1 then t1 elseif i == 2 then t2 elseif i == 3 then t3 else t4
 		local g = if i == 1 then g1 elseif i == 2 then g2 elseif i == 3 then g3 else g4
-		local c = body.z + body.p * FRONT[i] * halfBase + body.q * SIDE[i] * halfTrack
+		local c = body.z + drop + body.p * FRONT[i] * halfBase + body.q * SIDE[i] * halfTrack
 		local t = travel[i]
 		if touching then
 			local want = math.clamp(rest + g - c, 0, full)
