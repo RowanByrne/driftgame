@@ -9,7 +9,6 @@ Every task in progress and the files it owns, so parallel sessions and workers n
 
 | Branch | Lane | Files owned | Since |
 |---|---|---|---|
-| `agent/new-car` | lane3 | `src/ReplicatedStorage/Shared/CarModel.luau`, `src/ReplicatedStorage/Shared/Cars/*`, `src/ReplicatedStorage/Shared/Config/CarLooks.luau`, `src/ReplicatedStorage/Shared/Config/CarKits.luau`, `src/ServerScriptService/Tests/NewCarTests.luau` (new), `docs/game/CONTRACTS.md` (car rig and car body rows only), `docs/game/features/car-model.md`, `assets/car-ae86/*` | 2026-11-10 (T-111) |
 
 ## Notes between sessions
 
