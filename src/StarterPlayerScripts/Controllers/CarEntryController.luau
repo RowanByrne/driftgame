@@ -308,6 +308,7 @@ function CarEntryController:RequestExit(): (boolean, string?)
 	if flatSpeed(DriftController:CurrentState()) >= Config.CarEntry.ExitSpeed then
 		return false, "too fast"
 	end
+	local state = DriftController:CurrentState()
 	local cf = DriftController:Hold()
 	if not cf then
 		return false, "no car"
@@ -316,7 +317,17 @@ function CarEntryController:RequestExit(): (boolean, string?)
 	self.exitAccepted = false
 	self.askedAt = os.clock()
 	self.counts.exitsAsked += 1
-	self._carExit:FireServer(cf)
+	-- The server judges the speed by the last pose it agreed to, which can be up to a
+	-- packet old -- and a car that has just stopped dead against a wall was doing 40 in
+	-- it. So the held pose goes first, as an ordinary `CarState`, and the request a packet
+	-- later: what the server checks is the car as it is when the button went down.
+	DriftController:_send(state)
+	local wanted = self.counts.exitsAsked
+	task.delay(1 / math.max(Config.Drift.StateSendRate, 1), function()
+		if self.mode == "leaving" and self.counts.exitsAsked == wanted then
+			self._carExit:FireServer(cf)
+		end
+	end)
 	return true, nil
 end
 
