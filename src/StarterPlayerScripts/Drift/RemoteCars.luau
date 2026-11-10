@@ -21,6 +21,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Config = require(ReplicatedStorage.Shared.Config)
 local Driver = require(script.Parent.Driver)
 local Render = require(script.Parent.Render)
+local Suspension = require(script.Parent.Suspension)
 
 local RemoteCars = {}
 RemoteCars.__index = RemoteCars
@@ -179,6 +180,7 @@ function RemoteCars:_find(userId: number)
 				rig = Render.rig(child),
 				cf = child:GetPivot(),
 				wheelSpin = 0,
+				lift = table.create(4, 0), -- each wheel's suspension lift, off the wire (T-095)
 				drifting = false,
 				drawn = false, -- nothing has been written through this rig yet
 				bornAt = os.clock(),
@@ -198,7 +200,9 @@ function RemoteCars:_find(userId: number)
 	return nil
 end
 
-function RemoteCars:OnState(userId: number, cf: CFrame, velocity: Vector3, drifting: boolean)
+-- `lift` is the four wheels' suspension, packed (`Suspension.pack`); nil, or anything that
+-- is not a packed number, draws the wheels where they always were.
+function RemoteCars:OnState(userId: number, cf: CFrame, velocity: Vector3, drifting: boolean, lift: number?)
 	local entry = self:_find(userId)
 	if not entry then
 		return
@@ -206,6 +210,7 @@ function RemoteCars:OnState(userId: number, cf: CFrame, velocity: Vector3, drift
 	entry.target = cf
 	entry.velocity = velocity
 	entry.drifting = drifting == true
+	Suspension.unpack(lift, entry.lift)
 end
 
 function RemoteCars:Update(dt: number)
@@ -235,6 +240,9 @@ function RemoteCars:Update(dt: number)
 			-- eased toward it from a pose nobody ever saw.
 			entry.cf = entry.target
 			entry.drawn = true
+		end
+		for i, name in Suspension.WHEEL_NAMES do
+			Render.setWheelLift(entry.rig, name, entry.lift[i])
 		end
 		Render.place(entry.rig, entry.cf, 0, entry.wheelSpin)
 		-- Their driver, in the car exactly as it was just drawn (T-096): anchored by the

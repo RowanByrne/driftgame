@@ -65,10 +65,22 @@ local Tests = {}
 local function excludeParams()
 	local params = RaycastParams.new()
 	params.FilterType = Enum.RaycastFilterType.Exclude
-	params.FilterDescendantsInstances = {
+	local skip: { Instance } = {
 		PlaygroundService.Root.Cones,
 		PlaygroundService.Root.SpotMarkers,
 	}
+	-- Characters are back (T-096), and a player's avatar standing by its car at the spawn
+	-- is not the ground: nor is a car. Neither is part of the world being checked.
+	for _, player in game:GetService("Players"):GetPlayers() do
+		if player.Character then
+			table.insert(skip, player.Character)
+		end
+	end
+	local cars = workspace:FindFirstChild("Cars")
+	if cars then
+		table.insert(skip, cars)
+	end
+	params.FilterDescendantsInstances = skip
 	return params
 end
 

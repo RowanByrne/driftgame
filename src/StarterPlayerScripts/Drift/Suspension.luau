@@ -287,6 +287,47 @@ end
 
 Suspension.outline = ringOf
 
+-- The floor's segments: every pair of its points with no third point on the line between
+-- them -- on the nine-point box, its rows, its columns and the short diagonals. A floor is
+-- not flat (a body's middle is lower than its bumpers), so an edge is looked for along all
+-- of them and not only round the outline: the outline alone would hold the car up by its
+-- bumpers' height across a middle that hangs lower. Cached per floor table.
+local segments: { [any]: { { FloorPoint } } } = setmetatable({}, { __mode = "k" }) :: any
+
+local function segmentsOf(floor: { FloorPoint }): { { FloorPoint } }
+	local cached = segments[floor]
+	if cached then
+		return cached
+	end
+	local out = {}
+	for i = 1, #floor do
+		for j = i + 1, #floor do
+			local a, b = floor[i].at, floor[j].at
+			local ab = Vector2.new(b.X - a.X, b.Z - a.Z)
+			local len = ab.Magnitude
+			local blocked = len < EPS
+			for k = 1, #floor do
+				if blocked then
+					break
+				end
+				if k ~= i and k ~= j then
+					local c = floor[k].at
+					local ac = Vector2.new(c.X - a.X, c.Z - a.Z)
+					local t = ac:Dot(ab) / (len * len)
+					local off = math.abs(ac.X * ab.Y - ac.Y * ab.X) / len
+					blocked = t > 0 and t < 1 and off < 0.05
+				end
+			end
+			if not blocked then
+				table.insert(out, { floor[i], floor[j] })
+			end
+		end
+	end
+	segments[floor] = out
+	return out
+end
+Suspension.segments = segmentsOf
+
 --------------------------------------------------------------------------------
 -- The floor solve, for Drift/Model
 --------------------------------------------------------------------------------
@@ -423,12 +464,11 @@ function Suspension.gather(
 		end
 	end
 
-	-- Where an edge crosses the outline. Two neighbours on one surface agree with each
+	-- Where an edge crosses the floor. Two neighbours on one surface agree with each
 	-- other's plane; two that do not have a step between them, or a drop.
-	local ring = ringOf(points)
 	local drop = P.EdgeDrop
-	for k = 1, #ring do
-		local a, b = ring[k], ring[k % #ring + 1]
+	for _, pair in segmentsOf(points) do
+		local a, b = pair[1], pair[2]
 		local ha, hb = hits[a], hits[b]
 		local high: FloorPoint, low: FloorPoint
 		if ha and hb then

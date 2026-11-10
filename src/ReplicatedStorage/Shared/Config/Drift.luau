@@ -203,7 +203,9 @@ local Drift = {
 		FloorTouch = 0.05, -- studs. A floor point this close to its ground is touching it
 		EdgeDrop = 0.5, -- studs. Two floor points this far off each other's plane have an edge
 		-- between them, and it is found by halving the gap
-		EdgeSteps = 5, -- halvings: an outline segment 7 studs long pins the edge to 0.22
+		EdgeSteps = 8, -- halvings: a floor segment 7 studs long pins the edge to 0.03, so a
+		-- car tipped 30 degrees on it rests within 0.02 of it -- under
+		-- `FloorTouch`. At 5 it rode up to 0.12 clear of the edge in steps
 		SearchStep = 8, -- deg. The rest solve's first step, halved down to `SearchFinest`
 		SearchFinest = 0.05, -- deg
 		-- THE FLOOR, when a car's own is not known: `Drift/Render` reads the real one off

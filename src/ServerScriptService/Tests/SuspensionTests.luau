@@ -346,8 +346,8 @@ local function runAll()
 		return s
 	end
 
-	-- The floor's lowest point over the ledge: its points, and its outline walked every
-	-- tenth of a stud. (The drawn body itself is measured on the built ledge below.)
+	-- The floor's lowest point over the ledge: its points, and every segment between them
+	-- walked every tenth of a stud. (The drawn body is measured on the built ledge below.)
 	local function floorLow(s: Model.State, floor, edgeZ: number): number
 		local fwd, right, up = Suspension.basis(s.yaw, s.up)
 		local pts = floor or Suspension.defaultFloor()
@@ -361,9 +361,8 @@ local function runAll()
 		for _, a in pts do
 			at(a.at)
 		end
-		local ring = Suspension.outline(pts)
-		for k = 1, #ring do
-			local a, b = ring[k].at, ring[k % #ring + 1].at
+		for _, pair in Suspension.segments(pts) do
+			local a, b = pair[1].at, pair[2].at
 			local n = math.ceil((b - a).Magnitude / 0.1)
 			for j = 1, n - 1 do
 				at(a:Lerp(b, j / n))
@@ -481,6 +480,7 @@ local function runAll()
 		local touchedNames = {}
 		local rows = {}
 		local hangSteps = 0
+		local unheld = 0
 		local sparks = 0
 		local radius = C.WheelDiameter * 0.5
 
@@ -537,6 +537,15 @@ local function runAll()
 			maxPitch = math.max(maxPitch, math.deg(a))
 			if s.hanging then
 				hangSteps += 1
+				-- Resting on the floor solve with nothing under it: no floor point down and no
+				-- wheel down. The floor must hold whatever the wheels do not.
+				local any = s.floorTouching > 0
+				for k = 1, 4 do
+					any = any or s.wheelsDown[k]
+				end
+				if not s.airborne and not any then
+					unheld += 1
+				end
 			end
 			for _, c in s.floorContacts do
 				touchedNames[c.name] = true
@@ -580,11 +589,12 @@ local function runAll()
 		check(
 			checks,
 			"the built ledge: the rear drops, the floor rests on the edge and grinds, and no drawn part of the car goes below the ledge's top",
-			firstTouch ~= nil and maxPitch > 3 and worstBody >= -1e-3 and worstFloor >= -1e-3 and worstWheel >= -0.05 and fellAt ~= nil,
+			firstTouch ~= nil and maxPitch > 3 and worstBody >= -1e-3 and worstFloor >= -1e-3 and worstWheel >= -0.05 and fellAt ~= nil and unheld == 0,
 			string.format(
-				"%s body, floor of %d points read off it: first touch with the middle %.2f studs short of the edge; pitch up to %.1f deg; the floor left the ledge with the middle %.2f studs past it; floor points that touched: %s (%d contact-steps for sparks). Lowest over the ledge's top: the floor %+.4f, the drawn body %+.4f (%s), the wheels' tread %+.4f (%s)",
+				"%s body, floor of %d points read off it: %d steps resting on the floor solve with nothing touching; first touch with the middle %.2f studs short of the edge; pitch up to %.1f deg; the floor left the ledge with the middle %.2f studs past it; floor points that touched: %s (%d contact-steps for sparks). Lowest over the ledge's top: the floor %+.4f, the drawn body %+.4f (%s), the wheels' tread %+.4f (%s)",
 				car:GetAttribute("Body") or "?",
 				if floor then #floor else 0,
+				unheld,
 				firstTouch or 0,
 				maxPitch,
 				fellAt or 0,
