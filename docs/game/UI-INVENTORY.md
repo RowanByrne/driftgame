@@ -44,6 +44,8 @@ legacy `Global` `ZIndexBehavior`, where a child does not draw above its parent: 
 |---|---|---|---|---|---|---|
 | **Start button** (`PlayerGui.DriftRun`) | `StarterPlayerScripts/Drift/RoadHud.luau`, a LocalScript | Always on screen, from the moment the client loads, in every world | **Shows:** which state the run is in, which piece the **server** has you on, and how many are driving. All of it comes down `RoadRun` from the server; nothing here is a client's own number. **Takes:** one press, which sends one boolean | **Not in a run** — green, `START ENDLESS RUN`, "not in a run". **A run is going but not yours** — green, "a run is going (N driving) -- press to join". **In a run** — red, `END RUN`, "on the road -- piece N, alone / N other drivers" | `features/endless-run.md`; `RunTests` and agent playtests read `PlayerScripts.RoadHudBridge` | Programmer art |
 | **Testing buttons** (`PlayerGui.DriftTest`) | `StarterPlayerScripts/Drift/TestHud.luau`, a LocalScript | Always on screen, bottom left, in every world | **Shows:** whether this place has a test hill and whether the guardrails are up — both the **server's** answers, down `TestTools`. **Takes:** two presses, each of which sends one of two strings (`"lift"`, `"rails"`) and nothing else — never a position | **No hill here** — grey, `NO HILL HERE`. **Rails up** — magenta, `GUARDRAILS: ON`. **Rails down** — red, `GUARDRAILS: OFF`. Header always reads `TEST ONLY -- NOT SHIPPING` | `features/test-hill.md`; `PlaygroundTests` and agent playtests read `PlayerScripts.TestHudBridge` | Programmer art, **not shipping** |
+| **Garage button** (`PlayerGui.GarageHud`) | `Controllers/GarageController.luau` | On screen while driving (not walking, not in the garage) | **Takes:** one press, which sends `GarageVisit(true)`; `G` and gamepad DPad down do the same. **Shows:** nothing else | **Driving** -- shown. **Walking, getting in or out, in the garage** -- hidden | `features/car-customization.md`; `GarageController:DebugState().hudVisible` | Programmer art (T-103) |
+| **Garage menus** (`PlayerGui.GarageMenu`) | `Garage/GarageMenuView.luau` (view), `Garage/MenuModel.luau` (its data), `Garage/GarageMenuView.fixtures.luau`; driven by `Controllers/GarageController.luau` | The server taking the car into the garage: through the door, or the Garage button | **Shows:** seven category tabs; the part list (name, FITTED, before/after bars for what a performance part changes, from `Customization.resolve`); on Paint, colour grids for body and second colour and pickers for finish and wrap; a status line. **Takes:** a tab, a row or swatch (a preview on the car, this client only), Fit (`CustomizeFit`), Back, Drive out (`GarageVisit(false)`). Gamepad: selection on the rows, B Back, X Fit, Y Drive out, L1/R1 tabs; keyboard Backspace, Return, Q/E | **Nothing picked** -- Fit and Back disabled. **Previewing** -- the row outlined, status "Previewing ...". **Asking** -- Fit reads `Fitting...`, `State = Pending`. **Fitted** -- green status. **Refused** -- red status with the server's reason, the car back to what is fitted. **Body kits, Interior** -- listed and fitted, nothing drawn yet (T-105) | `features/car-customization.md`; `GarageController:DebugState().view` (the view's `describe()`), the `State`, `Fitted` and `Layout` attributes | Programmer art (T-103) |
 
 For any screen whose layouts differ, a short section on how, in this form:
 
@@ -76,6 +78,30 @@ game supports (390 px) with room either side.
   chrome.
 - **It is deliberately ugly.** A magenta nothing else in the game uses, and a header that says
   `TEST ONLY -- NOT SHIPPING`. The one thing that must never happen is this going out with the game.
+
+### Garage button
+
+One 96 x 48 button, bottom right, in the GET OUT button's row and 12 px to its left: 136 px in from the right edge and 136 up. It was first stacked above GET OUT, and on a 375-tall phone that put it over the tuner's button in the top right, so it moved into the row. `DisplayOrder = 13`, above the drag pad. Measured in the simulator at actual resolution (T-103), overlapping nothing on screen but the drag pad itself: iPhone 7 landscape (667 x 375) at (435, 133), iPhone 13 Pro landscape (750 x 390) at (518, 148), HD 720 at (1048, 478), each 12 px left of GET OUT.
+
+### Garage menus
+
+**Chosen from the measured safe area, live on resize** (`GarageMenuView.layoutFor`): narrower than tall is **portrait**; 520 px tall or less is **compact** (a phone on its side); anything else **desktop**. All three use the same pieces; the placement is in one function (`_layout`). The safe area is Roblox's (`ScreenInsets = CoreUISafeInsets`), because the tabs are at the top. While the menus are up the steering pad is off (`CarInputController:SetDriving(false)`), Roblox's touch controls are off (`GuiService.TouchControlsEnabled = false`, put back on the way out), and the start, testing, tuner and debug screens are switched off and put back as they were.
+
+- **Desktop:** the tabs across the top (56 tall, each tab 48), the list down the left (380 wide), Back and Fit under it, Drive out bottom right.
+- **Compact:** the tabs across the top, scrolling sideways to keep the open one in view; the list down the left (320 wide) and the whole height; Back, Fit and Drive out stacked in the bottom-right corner (148 x 52 each), Drive out lowest. The car shows between them.
+- **Portrait:** the tabs on top, the car in the top half, the list in the bottom half, Back, Fit and Drive out in one row under it.
+
+Measured in the simulator at actual resolution (T-103), on the Suspension list with a part picked (four bars a row): no piece off the safe area, no two pieces overlapping, no button under 44 px, no essential text under 16 px (the swatches' small FIT mark is 14, `TextAux`), every text fitting.
+
+| Size | Safe area | Layout | List height | Share of the screen covered |
+|---|---|---|---|---|
+| iPhone 7 landscape, 667 x 375 | 667 x 317 | compact | 141 | 49% |
+| iPhone 13 Pro landscape, 750 x 390 | 750 x 332 | compact | 156 | 47% |
+| iPhone 13 Pro portrait, 390 x 763 | 390 x 705 | portrait | 197 | 46% |
+| HD 720, 1280 x 720 | 1280 x 662 | desktop | 426 | 31% |
+| HD 1080, 1920 x 1080 | 1920 x 1022 | desktop | 786 | 22% |
+
+The coverage is a menu's, with nothing to drive behind it; the HUD targets do not apply. Not checked: a real phone, a real controller (gamepad focus was not driven), and the screen at the user's text size.
 
 ## Components
 
