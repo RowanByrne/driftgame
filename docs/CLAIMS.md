@@ -9,10 +9,10 @@ Every task in progress and the files it owns, so parallel sessions and workers n
 
 | Branch | Lane | Files owned | Since |
 |---|---|---|---|
-| `agent/garage-menus` | lane2 | `src/StarterPlayerScripts/Controllers/GarageController.luau` (new), `src/StarterPlayerScripts/Garage/*` (new), `src/ServerScriptService/Services/GarageVisitService.luau` (new), `src/ReplicatedStorage/Shared/Config/GarageMenu.luau` (new), `src/ServerScriptService/Tests/GarageVisitTests.luau` (new), `src/ServerScriptService/Services/CarService.luau`, `src/StarterPlayerScripts/Controllers/DriftController.luau`, `src/StarterPlayerScripts/Controllers/CarCameraController.luau`, `src/StarterPlayerScripts/Controllers/CarEntryController.luau`, `docs/game/CONTRACTS.md` (new rows for the garage visit only), `docs/game/UI-INVENTORY.md` | 2026-11-10 (T-103) |
-| `agent/suspension` | lane1 | `src/StarterPlayerScripts/Drift/Model.luau`, `src/StarterPlayerScripts/Drift/World.luau`, `src/StarterPlayerScripts/Drift/Render.luau`, `src/StarterPlayerScripts/Drift/Wheels.luau`, `src/ReplicatedStorage/Shared/Config/Drift.luau`, `src/StarterPlayerScripts/Drift/Suspension.luau` (new), `src/ServerScriptService/Tests/DriftTests.luau`, `src/ServerScriptService/Tests/SuspensionTests.luau` (new), `docs/game/CONTRACTS.md` (`CarState` row only), `docs/game/features/car-v2.md` ("Rules and numbers" only) | 2026-11-10 (T-095) |
+| `agent/suspension` | lane1 | `src/StarterPlayerScripts/Controllers/DriftController.luau`, `src/ServerScriptService/Services/CarService.luau`, `src/StarterPlayerScripts/Drift/RemoteCars.luau`, `src/StarterPlayerScripts/Drift/Model.luau`, `src/StarterPlayerScripts/Drift/World.luau`, `src/StarterPlayerScripts/Drift/Render.luau`, `src/StarterPlayerScripts/Drift/Wheels.luau`, `src/ReplicatedStorage/Shared/Config/Drift.luau`, `src/StarterPlayerScripts/Drift/Suspension.luau` (new), `src/ServerScriptService/Tests/DriftTests.luau`, `src/ServerScriptService/Tests/SuspensionTests.luau` (new), `docs/game/CONTRACTS.md` (`CarState` row only), `docs/game/features/car-v2.md` ("Rules and numbers" only) | 2026-11-10 (T-095) |
 
 ## Notes between sessions
 
 > A short note for another session or PC that can't be said in a commit, such as "lane 3 has unpushed work, ask before refreshing it". Date it, say who it's for, and remove it once it's been seen.
+
 

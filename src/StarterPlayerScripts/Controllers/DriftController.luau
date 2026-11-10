@@ -134,6 +134,9 @@ function DriftController:Init()
 	-- Held: the player is getting out, out, or getting back in. Nothing steps and nothing
 	-- is sent; the car is drawn where it stands (T-096).
 	self.held = false
+	-- While held, where the car is drawn, if something other than "where it stopped" says:
+	-- the garage's turntable turning it (T-103). A function, asked once a frame.
+	self.heldPose = nil
 	self.worldRebuilds = 0
 	-- The tyre marks and the smoke (T-062, features/car-fx.md). The object is free until a
 	-- rig exists: it holds no instance and does no work without one, and its sixteen are
@@ -303,6 +306,7 @@ function DriftController:_attach(car: Model, spawnCFrame: CFrame)
 	end
 	self.car = car
 	self.held = false -- a car the server has just handed out has its driver in it
+	self.heldPose = nil
 	self.rig = nil
 	self.rigAttempts = 0
 	self.rigFirstParts = -1
@@ -517,6 +521,12 @@ end
 -- car is parked, and the server drops a `CarState` for a parked car anyway.
 function DriftController:_frameHeld(dt: number)
 	local state = self.runner.state
+	if self.heldPose then
+		local ok, cf = pcall(self.heldPose)
+		if ok and typeof(cf) == "CFrame" then
+			DriftController._pose(state, cf)
+		end
+	end
 	if self:_ensureRig() then
 		Render.apply(self.rig, state, 0)
 		self:_placeDriver()
@@ -586,8 +596,25 @@ function DriftController:Park(cf: CFrame)
 	end
 end
 
+-- Put a held state at a pose, at rest: its position and its heading, as `Model.new` reads
+-- them. Nothing else in the state moves, so the car is drawn standing.
+function DriftController._pose(state, cf: CFrame)
+	local _, yaw = cf:ToEulerAnglesYXZ()
+	state.position = cf.Position
+	state.yaw = yaw
+	state.velocity = Vector3.zero
+end
+
+-- While held, draw the car where `fn()` says each frame (nil goes back to where it stands).
+-- The garage's turntable (T-103): the server turns the car, and this client draws it on the
+-- deck it can see, so the two never part on screen.
+function DriftController:SetHeldPose(fn: (() -> CFrame?)?)
+	self.heldPose = fn
+end
+
 -- Back in: drive off from where the server parked the car, from rest.
 function DriftController:Drive(cf: CFrame?)
+	self.heldPose = nil
 	if not self.runner then
 		return
 	end

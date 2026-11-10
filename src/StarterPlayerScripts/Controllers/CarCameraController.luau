@@ -605,6 +605,20 @@ function CarCameraController:Init()
 	-- lets go entirely and takes the camera back when the player is in the seat again.
 	self.driving = true
 	self.handovers = 0
+	-- Another view holding the camera (the garage, T-103): a function asked once a frame
+	-- for `(cframe, fieldOfView)`. While it is set, the drift rig is not run at all.
+	self.view = nil
+	self.viewName = nil
+end
+
+-- Hand the camera to `fn` (nil hands it back to the drift camera, re-seeded behind the
+-- car rather than swung there from wherever the other view left it). `name` is for the
+-- debug state only.
+function CarCameraController:SetView(fn: ((dt: number) -> (CFrame?, number?))?, name: string?)
+	self.view = fn
+	self.viewName = if fn then name or "view" else nil
+	self.rig.ready = false
+	self:_claim(workspace.CurrentCamera)
 end
 
 -- Whose camera it is. The drift camera's while driving; Roblox's (`Custom`, on the avatar's
@@ -624,7 +638,10 @@ function CarCameraController:_claim(cam: Camera?)
 		return
 	end
 	self.camera = cam
-	if self.driving then
+	if self.view then
+		cam.CameraType = Enum.CameraType.Scriptable
+		cam.CameraSubject = nil
+	elseif self.driving then
 		cam.CameraType = Enum.CameraType.Scriptable
 		cam.CameraSubject = nil
 		self.rig.ready = false
@@ -665,6 +682,19 @@ end
 
 function CarCameraController:_frame(dt: number)
 	local camera = self.camera
+	if camera and self.view then
+		if camera.CameraType ~= Enum.CameraType.Scriptable then
+			self:_claim(camera)
+		end
+		local ok, cf, fov = pcall(self.view, dt)
+		if ok and typeof(cf) == "CFrame" then
+			camera.CFrame = cf
+			if type(fov) == "number" then
+				camera.FieldOfView = fov
+			end
+		end
+		return
+	end
 	if not camera or not self.driving then
 		return
 	end
@@ -701,6 +731,7 @@ function CarCameraController:DebugState()
 	return {
 		hasCamera = self.camera ~= nil,
 		driving = self.driving, -- false while the player walks: the camera is Roblox's (T-096)
+		view = self.viewName, -- another view holding the camera: "garage" (T-103)
 		handovers = self.handovers,
 		cameraType = self.camera and self.camera.CameraType.Name or "none",
 		ready = rig.ready,
