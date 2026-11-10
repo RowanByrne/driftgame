@@ -9,7 +9,6 @@ Every task in progress and the files it owns, so parallel sessions and workers n
 
 | Branch | Lane | Files owned | Since |
 |---|---|---|---|
-| `agent/parts-feel` | lane4 | `src/StarterPlayerScripts/Controllers/PartsFeelController.luau` (new), `src/ReplicatedStorage/Shared/Cars/*`, `src/ReplicatedStorage/Shared/Customization/init.luau`, `src/ReplicatedStorage/Shared/Customization/Catalog.luau` (perf fields only), `src/ServerScriptService/Services/CustomizationService.luau`, `src/ServerScriptService/Services/CarService.luau`, `src/ServerScriptService/Tests/CustomizationTests.luau`, `src/ServerScriptService/Tests/PartsFeelTests.luau` (new), `docs/game/features/car-customization.md` ("Rules and numbers" only) | 2026-11-10 (T-106) |
 
 ## Notes between sessions
 
