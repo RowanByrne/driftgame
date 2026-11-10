@@ -20,7 +20,7 @@ Get the game ready for the car being modelled in `features/car-model.md`: a car 
 - Other players getting into your car, passengers, stealing cars, more than one car per player.
 - Collisions between the character and other cars beyond Roblox's normal ones; running over players.
 - Damage, and any change to grip, speed or score from the floor scraping (see "Open questions").
-- The real textured car: this builds and tests on a **stand-in** with the gray model's parts and pivots (`..\art\source\car-ae86\pivots-gray2.json`), and the real meshes slot into the same rig when they pass their gate.
+- The real textured car: no stand-in is built (the user, 2026-11-10: "we are going to import a brand new model. just setup architecture for it and move on"). The rig is architecture (`Shared/Cars/Rig`, `Shared/CarParts`, CONTRACTS.md "The car rig"), and the new model goes in through `Rig.assemble` when it is imported. Until then suspension and getting in and out are built and tested on today's cars, with fallback seat, exit and floor points.
 
 ## Rules and numbers
 
@@ -71,7 +71,7 @@ None new. The avatar is the player's own. The car's own risk is unchanged (`asse
 
 ## Art and sound
 
-- The stand-in car: programmer art, boxes at the gray model's pivots and sizes.
+- No stand-in car: the new model is imported later, into the rig.
 - Sparks: programmer art. Scrape sound: a Creator Store candidate for the user to pick (AUDIO-PIPELINE.md).
 - Door open and close sounds: Creator Store candidates, same way.
 - The seated avatar's pose: Roblox's sit pose, with hands toward the wheel if it's cheap; a proper driving pose later.
@@ -87,5 +87,5 @@ None new. The avatar is the player's own. The car's own risk is unchanged (`asse
 ## Open questions
 
 - **Should scraping slow the car?** Proposed: no, it's looks only for now, so the feel stays.
-- **The wheel size:** the model's wheels are 2.6 across, the game's are 2.3 (`features/car-model.md`). The stand-in uses 2.6; the user's call when the real car goes in.
+- **The wheel size:** the model's wheels are 2.6 across, the game's are 2.3 (`features/car-model.md`). Wheels bigger than `WheelDiameter` spin about 12% too fast until it changes; the user's call when the real car goes in.
 - **Spawn on foot instead?** Proposed: spawn in the car, as today.

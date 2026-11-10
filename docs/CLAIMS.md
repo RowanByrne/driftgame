@@ -9,7 +9,9 @@ Every task in progress and the files it owns, so parallel sessions and workers n
 
 | Branch | Lane | Files owned | Since |
 |---|---|---|---|
-| `agent/car-rig` | lane1 | `docs/game/CONTRACTS.md` (car section only), `src/ReplicatedStorage/Shared/CarModel.luau`, `src/ReplicatedStorage/Shared/Cars/*`, `src/ReplicatedStorage/Shared/CarParts.luau` (new), `src/StarterPlayerScripts/Drift/Render.luau`, `src/StarterPlayerScripts/Drift/RemoteCars.luau`, `src/ServerScriptService/Tests/RigTests.luau` (new) | 2026-11-10 (T-094) |
+| `agent/suspension` | lane1 | `src/StarterPlayerScripts/Drift/Model.luau`, `src/StarterPlayerScripts/Drift/World.luau`, `src/StarterPlayerScripts/Drift/Render.luau`, `src/StarterPlayerScripts/Drift/Wheels.luau`, `src/ReplicatedStorage/Shared/Config/Drift.luau`, `src/StarterPlayerScripts/Drift/Suspension.luau` (new), `src/ServerScriptService/Tests/DriftTests.luau`, `src/ServerScriptService/Tests/SuspensionTests.luau` (new), `docs/game/CONTRACTS.md` (`CarState` row only), `docs/game/features/car-v2.md` ("Rules and numbers" only) | 2026-11-10 (T-095) |
+| `agent/car-entry` | lane2 | `src/ServerScriptService/Services/CarService.luau`, `src/StarterPlayerScripts/Controllers/DriftController.luau`, `src/StarterPlayerScripts/Controllers/CarCameraController.luau`, `src/StarterPlayerScripts/Controllers/CarInputController.luau`, `src/StarterPlayerScripts/Drift/RemoteCars.luau`, `src/StarterPlayerScripts/Controllers/CarEntryController.luau` (new), `src/StarterPlayerScripts/Drift/Driver.luau` (new), `src/ReplicatedStorage/Shared/Config/CarEntry.luau` (new), `src/ServerScriptService/Tests/CarEntryTests.luau` (new), `docs/game/CONTRACTS.md` (new rows for the entry remotes and driver attribute only) | 2026-11-10 (T-096) |
+| `agent/parts-catalog` | lane3 | `src/ReplicatedStorage/Shared/Customization/*` (new), `src/ServerScriptService/Services/CustomizationService.luau` (new), `src/ServerScriptService/Services/GarageService.luau`, `src/ServerScriptService/Tests/CustomizationTests.luau` (new), `docs/game/CONTRACTS.md` (new "Customization" section only), `docs/game/features/car-customization.md` | 2026-11-10 (T-101) |
 
 ## Notes between sessions
 
