@@ -72,7 +72,7 @@ A ray straight down from every one of them hits a part tagged `DriftSurface` wit
 
 ## Scale
 
-- **Player:** the car, not a character: top speed 90 studs/s, wheelbase 6 studs (`features/drift-model.md`).
+- **Player:** the car, not a character: top speed 90 studs/s, wheelbase 9.6 studs (`features/drift-model.md` "The car").
 - **Open yard:** x -800 to 200, z -380 to 360 — **1000 by 740 studs** of flat plate. Clear of everything for **200 studs** round the spawn (the nearest obstacle is a pillar at 253).
 - **Streets:** six of them, **narrowest 44 studs, widest 110**. Buildings are 92 by 56 studs at the smallest and 104 by 100 at the largest, and 32 to 140 tall.
 - **Reach:** the furthest thing in the world is the district's far corner, **895 studs** from the spawn — about 10 seconds at top speed. The bowl is 550 to its middle and 809 to its far outside edge, the ramp 497 to its base.
