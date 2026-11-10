@@ -162,7 +162,10 @@ function Build.room(at: CFrame, parent: Instance)
 		)
 	end
 	upright("Hub", 0.05, 2.4, Vector3.new(0, tt.deckTop + 0.025, 0), palette.Orange, "paint", turntable)
-	turntable.WorldPivot = at * CFrame.new(0, tt.deckTop, 0)
+	-- The pivot is the deck's, because the model has a PrimaryPart: `WorldPivot` is ignored
+	-- then, and the deck's own frame is a cylinder's (its axis along X), so turning that
+	-- about its Y tipped the deck over (T-103). Set on the deck, upright, at its top centre.
+	deck.PivotOffset = deck.CFrame:ToObjectSpace(at * CFrame.new(0, tt.deckTop, 0))
 	turntable.Parent = model
 
 	------------------------------------------------------------------------- shell
