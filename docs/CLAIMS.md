@@ -9,6 +9,7 @@ Every task in progress and the files it owns, so parallel sessions and workers n
 
 | Branch | Lane | Files owned | Since |
 |---|---|---|---|
+| `agent/driver-pose` | lane3 | `src/StarterPlayerScripts/Drift/Driver.luau`, `src/StarterPlayerScripts/Drift/DriverPose.luau` (new), `src/StarterPlayerScripts/Controllers/CarEntryController.luau`, `src/StarterPlayerScripts/Drift/RemoteCars.luau`, `src/ReplicatedStorage/Shared/Config/CarEntry.luau`, `src/ServerScriptService/Tests/CarEntryTests.luau`, `docs/game/features/car-v2.md` (T-116) | 2026-11-11 |
 
 ## Notes between sessions
 
