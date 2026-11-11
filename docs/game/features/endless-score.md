@@ -1,6 +1,6 @@
 # Feature: Score in the endless run
 
-**Status:** specced, waiting for the user's OK (`T-117`). **Owner task:** none yet.
+**Status:** being built (`T-119`). Step 1, the score engine, and step 2, the panel and summary, are built. **Owner task:** `T-119`.
 
 ## Goal
 
@@ -62,12 +62,12 @@ The score is a whole number on screen; the engine keeps it as a float.
 
 ## UI
 
-One new screen, `Drift/ScoreHud`, added to `UI-INVENTORY.md`. Programmer art (UI.md):
+One new screen, `Drift/ScoreHudView` (`PlayerGui.ScoreHud`), in `UI-INVENTORY.md`. Programmer art (UI.md):
 
 - **Top centre, under the run button:** the score in large digits, `x3` beside it, and a bar
   under both for the rung's progress. Hidden outside a run.
 - **Run summary:** `RUN SCORE 48,210` and `BEST 61,004` in place of the live score, for
-  `SummarySeconds` after END RUN.
+  `SummarySeconds` after END RUN. A run that beats the session's best says `NEW BEST`, in gold.
 - Not `Active`, so it never takes a press from the steering pad, and below the run button's
   `DisplayOrder` 15.
 
@@ -114,7 +114,16 @@ None, placeholder UI only.
   least x3 on a held drift and drains on a straight, and END RUN shows the summary
   and hides the panel.
 
+## Measured
+
+Step 1 (`T-120`), `ScoreTests` 16 of 16, and a live run in DR-Lane1:
+
+- **On stand-in states** (35° at 150 studs/s, held): x2 at 1.0 s, x3 at 2.0 s, x5 at 4.0 s, x9 at 11.3 s. From x9 a straight drains to x1 in 17.4 s.
+- **On the real car** (finger held at 0.15 from 100 studs/s, flat ground): it settles at about 25° and 84 studs/s and **tops out at x4**, 405 points in 12 s — the decay (`0.15 × rung`) catches the fill there. The same drive at 30 and 120 FPS scores the same to 4 decimals.
+- **Live:** the score rose only while sliding, reached x2, drained on a straight, froze at END RUN (the summary view for 5 s, then hidden), and the next run started at 0 with the best kept.
+
 ## Open questions
 
+- **A steady drift on the real car tops out at about x4** with the guessed rates ("Measured"); x9 needs far more slip and speed than the car holds. Raising `ProgressRate` or lowering `MultiplierDecay` opens the ladder.
 - Whether the `fallback` numbers (`MaxMultiplier`, the ladder's rates) feel right.
   They were not in the decompile; the user tunes them by driving.
