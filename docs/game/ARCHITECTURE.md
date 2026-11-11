@@ -29,6 +29,7 @@ The car is **not** driven by Roblox's physics (`DECISIONS.md`, 2026-11-03). Its 
 | Controller | What it does | Main entry points (signatures in `CONTRACTS.md`) |
 |---|---|---|
 | `DriftController` | The drift model: the fixed-step simulation that moves the local player's car | `DebugState()`, `DebugDrive(inputs, seconds)` |
+| `ScoreController` | The endless run's score, on the client: steps `Drift/Score` on every simulation step while the server says this player is in a run (`features/endless-score.md`) | `View()`, `DebugState()` |
 | `CarInputController` | Steering, drift and brake input across keyboard, touch and gamepad | `DebugState()` |
 | `CarCameraController` | The reference game's in-game camera: it looks at the car from a fixed radius, swings that place round as the car turns, and leans it toward the travel as the slip opens. **A touch of roll and a speed shake since `T-072`** -- both applied to the rendered camera only, downstream of the stepped targets, so neither can reach the feedback loop. Still no zoom and no position smoothing: those were the predecessor camera the user rejected. Its targets run on their own fixed step (`CamTargetStep`), interpolated between, so every frame rate puts the camera in the same place | `Release()`, `Follow()`, `DebugState()`, `DebugProbe(opts)`, `DebugShakeProbe(opts)`, `DebugRecord(seconds)` |
 

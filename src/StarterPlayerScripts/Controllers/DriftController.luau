@@ -161,6 +161,19 @@ function DriftController:Init()
 	self._carRespawn = Net.event("CarRespawn")
 	self._carState = Net.unreliable("CarState")
 	self._carStateOther = Net.unreliable("CarStateOther")
+	-- Whoever wants every simulation step, as it happens (`OnStep`): the score (T-119).
+	-- Plain functions called in order, not a Signal -- a Signal spawns a thread per handler,
+	-- and this fires 120 times a second.
+	self.stepListeners = {}
+	self._onStep = function(state)
+		local step = Config.Drift.FixedStep
+		for _, fn in self.stepListeners do
+			fn(step, state)
+		end
+	end
+	-- One line for the debug readout from somebody else: the score's (T-119). A function,
+	-- asked only while the readout is drawn.
+	self.readoutScore = nil
 end
 
 function DriftController:Start()
@@ -459,7 +472,7 @@ function DriftController:_frame(dt: number)
 	-- `MaxSteeringSpeed`, and the handbrake only stops the car once a run is over. There
 	-- is no drift input left -- rotating is drifting.
 	local input = CarInputController:Get()
-	local steps = Sim.advance(self.runner, dt, input, self.world)
+	local steps = Sim.advance(self.runner, dt, input, self.world, self._onStep)
 	local state = self.runner.state
 
 	if state.fell then
@@ -523,6 +536,7 @@ function DriftController:_frame(dt: number)
 			handbrake = input.handbrake,
 			device = CarInputController:Device(),
 			surfaceTag = self.world.usingTag,
+			score = if self.readoutScore then self.readoutScore() else nil,
 		})
 	end
 end
@@ -661,6 +675,25 @@ end
 -- the two agree about where the car is (T-025).
 function DriftController:SubStep(): number
 	return self.runner and self.runner.accumulator or 0
+end
+
+-- Call `fn(dt, state)` after every simulation step the player's car takes: never while it
+-- is held (out of the car, T-096) or absent, because neither steps. `dt` is
+-- `FixedStep`. Returns the way to stop. For the score (T-119), which must see the steps
+-- themselves, not frames, to come out the same at every frame rate.
+function DriftController:OnStep(fn: (number, any) -> ()): () -> ()
+	table.insert(self.stepListeners, fn)
+	return function()
+		local i = table.find(self.stepListeners, fn)
+		if i then
+			table.remove(self.stepListeners, i)
+		end
+	end
+end
+
+-- The debug readout's score line: `fn()` returns `{ score, multiplier, progress, inRun }`.
+function DriftController:SetReadoutScore(fn: (() -> any)?)
+	self.readoutScore = fn
 end
 
 function DriftController:Car(): Model?

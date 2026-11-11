@@ -438,26 +438,15 @@ local Drift = {
 	KeySensitivity = 0.75, -- FALLBACK. What a keyboard key or a stick at full deflection
 	-- is worth, as a share of full travel
 
-	-- ---------------------------------------------------------------- score
-	-- Owned by the score task. Points only while the car is drifting and making forward
-	-- progress; the multiplier climbs while it is sideways and bleeds while it is not,
-	-- faster the higher it already is, so the ladder gets harder every rung.
-	ScoreRate = 0.2864789, -- points per radian of slip per stud travelled. EXACT (the
-	-- reference's constant is per metre; this is it converted)
-	MaxMultiplier = 9, -- FALLBACK. The top of the ladder
-	ProgressRate = 0.06, -- FALLBACK. How fast drifting fills the next rung
-	MultiplierDecay = 0.15, -- per second per rung, on the ground. FALLBACK (its 3 x 0.05)
-	MaxProgressUp = 1, -- per second. FALLBACK. Ceiling on how fast the bar fills
-	MaxProgressDown = 0.75, -- per second. FALLBACK. And empties
-	MinProgress = -0.25, -- FALLBACK. How far below empty before a rung is lost
+	-- ---------------------------------------------------------------- score: the surface
+	-- The score's own numbers -- its rate and the multiplier ladder -- are `Config.Score`
+	-- (T-119). What stays here is the SURFACE's share, which the ground rays read with the
+	-- grip and the model hands over as `state.surfaceScore`.
 	ScoreTarmac = 1, -- FALLBACK. Score multiplier by surface, averaged over four wheels
 	ScoreDirt = 0.5, -- FALLBACK
 	ScoreUnspecified = 0.1, -- FALLBACK. Anything solid that is not a tagged surface, for
 	-- the score as well as for the grip: a slide in the gutter is
 	-- worth almost nothing
-	ReverseDriftBonus = 400, -- FALLBACK. A drift held past 90 deg: floor(ln(t+1) * this)
-	AirTimeBonusMin = 10, -- FALLBACK. Airborne and forward: an exponential in the air
-	-- time, ignored below this
 
 	-- ---------------------------------------------------------------- the prototype's UI
 	DebugReadout = true, -- build the debug readout at all

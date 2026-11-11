@@ -69,6 +69,7 @@ local ROWS = {
 	"step",
 	"input",
 	"where",
+	"score",
 }
 
 -- The stat panel's own rows, in order. `bars` is the hand-written three; `real1`..`real4`
@@ -533,6 +534,19 @@ function DebugHud:Update(state: DriftModel.State?, extra)
 		state.position.Z,
 		state.vy
 	)
+	-- The endless run's score (T-119): what it is, the rung and its bar, in numbers. The
+	-- score panel shows the same to a player; this is for tuning the ladder.
+	local sc = extra and extra.score
+	if sc and sc.inRun then
+		L.score.Text = ("score  %9.0f  x%d  bar %+5.2f  %s"):format(
+			sc.score,
+			sc.multiplier,
+			sc.progress,
+			if sc.scoring then "SCORING" else "-------"
+		)
+	else
+		L.score.Text = "score  not in a run"
+	end
 end
 
 function DebugHud:Destroy()

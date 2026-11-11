@@ -449,8 +449,9 @@ Both are their own task if the user wants them.
 
 ## Score
 
-> **Specced, not built, and that is deliberate.** This was the fourth step of the plan and the user
-> deleted it on 2026-11-03 (`DECISIONS.md`). Nothing below exists in the code. It is kept because
+> **Built for the endless run only, as `T-119`** (`endless-score.md`): basic scoring, no bonuses, the
+> numbers in `Config.Score` (the surface's share stays in `Config.Drift`). Originally the fourth step of
+> this plan, deleted by the user on 2026-11-03 (`DECISIONS.md`). It is kept because
 > the maths was read off the reference and is worth not having to read again — build it from here
 > if and when a run is worth scoring.
 
