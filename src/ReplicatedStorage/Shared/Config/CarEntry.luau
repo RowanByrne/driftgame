@@ -78,6 +78,39 @@ return {
 	SitAnimationR6 = "rbxassetid://178130996",
 	SitFadeSeconds = 0.15,
 
+	-- THE DRIVING POSE (T-116, Drift/DriverPose) ------------------------------------------
+	-- The sit pose keeps the legs and the body; the hands go on the steering wheel's rim,
+	-- elbows down and in, solved on every client for every seated driver. Roblox's sit holds
+	-- the elbows 4 studs across, and in the liftback the right one came 0.28 out through the
+	-- driver's door (3.56 out against a door skin of 3.28 to 3.40; measured in DR-Lane3).
+	DriverPose = true, -- off: the plain sit pose, arms and all
+	-- The grips: this many degrees either side of the top of the wheel (60 is ten to two),
+	-- on a circle this far from the column (the liftback's rim runs 0.65 to 0.80 out), and
+	-- this far along the column toward the driver.
+	GripAngle = 60,
+	GripRadius = 0.73,
+	GripLift = 0,
+	-- A wheel turned far enough puts a grip out of reach: past this share of the arm's
+	-- length, that hand slides round the rim, in steps of this many degrees, to the nearest
+	-- place it can hold.
+	GripReach = 0.98,
+	GripSlideStep = 5,
+	-- Directions in the avatar's root frame (right +X, up +Y, back +Z), given for the RIGHT
+	-- arm; the left arm takes their mirror. Where each elbow bends toward, and which way the
+	-- outside of each upper arm and forearm faces. An R15 upper arm hangs off its shoulder
+	-- joint by half its width, so its outside turned up keeps it inside the door; facing out,
+	-- as the sit pose has it, it reaches 1 stud past the shoulder.
+	PoseElbowPole = Vector3.new(-0.3, -1, 0.3),
+	PoseUpperArmOutside = Vector3.new(0, 1, 0),
+	PoseForearmOutside = Vector3.new(1, 0, 0),
+	-- A car with no rig, or no `SteeringWheel`: a wheel this far from the seat (hips) point,
+	-- in the car's frame, on this column axis. The liftback's own, so the hands are where
+	-- they would be in it.
+	FallbackWheel = Vector3.new(0, 1.453, -1.375),
+	FallbackWheelAxis = Vector3.new(0, 0.3746, 0.9272),
+	-- Seconds the pose takes to come on as the avatar sits and to let go as it stands.
+	PoseFadeSeconds = 0.15,
+
 	-- THE BUTTON -------------------------------------------------------------------------
 	-- Bottom right, stacked above the STOP button (Drift/DragControl: 96 x 96, 28 in from the
 	-- corner), so the left of the screen and the middle stay the steering finger's. Above

@@ -12,6 +12,10 @@
 -- time. The player's own client follows along, exactly as it does when the button is
 -- pressed: the answers go to it either way.
 --
+-- Between them, the driving pose (T-116): stand-in avatars, R15 and R6, posed in the
+-- liftback and in a car with no rig, their hands measured against the wheel's rim and their
+-- arms against the driver's door.
+--
 -- What only a client can measure -- the avatar's gap from the seat of the car AS DRAWN on
 -- every frame, and the remote view -- is `CarEntryController:DebugCycles` and
 -- `DebugRemoteDriver`, on the client bridge.
@@ -431,9 +435,152 @@ local function live(checks, player: Player)
 	end
 end
 
+-- ---------------------------------------------------------------- the driving pose (T-116)
+--
+-- Stand-in avatars, R15 and R6, made here from a plain HumanoidDescription, sat in the
+-- liftback and in a car with no rig, posed once by `DriverPose.poseNow`. No sit animation
+-- plays on the server, so the legs hang straight: only the arms are judged. What the drawn
+-- avatar does on every frame, with the sit pose under it, is
+-- `CarEntryController:DebugPose` and `DebugRemoteDriver` on the client bridge.
+
+-- The liftback's driver's door, outer skin, at its narrowest between the sill and the
+-- belt line: 3.28 to 3.40 out (read off its meshes in DR-Lane3, T-116).
+local DOOR_SKIN = 3.28
+
+local function standIn(rigType: Enum.HumanoidRigType, at: CFrame): Model
+	local model = Players:CreateHumanoidModelFromDescription(Instance.new("HumanoidDescription"), rigType)
+	model.Name = "PoseTest_" .. rigType.Name
+	local root = Driver.rootOf(model)
+	root.Anchored = true
+	model:PivotTo(at)
+	root.CFrame = at
+	model.Parent = workspace
+	return model
+end
+
+-- Pose it a few frames running (an AnimationConstraint rig moves its parts in the physics
+-- step), then measure: each hand's grip from its target, and how far out the arms reach.
+local function poseAndMeasure(DriverPose, model: Model, car: Model, bodyCF: CFrame)
+	local targets, gaps
+	for _ = 1, 3 do
+		targets, gaps = DriverPose.poseNow(model, car)
+		RunService.Heartbeat:Wait()
+	end
+	targets, gaps = DriverPose.poseNow(model, car)
+	RunService.Heartbeat:Wait()
+	local out = { worst = if targets and next(targets) then 0 else math.huge, maxOut = 0, part = "" }
+	for name, target in targets or {} do
+		local limb = model:FindFirstChild(name .. "Hand") or model:FindFirstChild(name .. " Arm")
+		local grip = limb and limb:FindFirstChild(name .. "GripAttachment")
+		if grip then
+			out.worst = math.max(out.worst, (grip.WorldPosition - target).Magnitude)
+		else
+			out.worst = math.huge
+		end
+	end
+	for _, d in model:GetChildren() do
+		if d:IsA("BasePart") and (string.find(d.Name, "Arm") or string.find(d.Name, "Hand")) then
+			local half = d.Size * 0.5
+			for _, sx in { -1, 1 } do
+				for _, sy in { -1, 1 } do
+					for _, sz in { -1, 1 } do
+						local x = bodyCF:PointToObjectSpace(d.CFrame:PointToWorldSpace(half * Vector3.new(sx, sy, sz))).X
+						if x > out.maxOut then
+							out.maxOut, out.part = x, d.Name
+						end
+					end
+				end
+			end
+		end
+	end
+	out.targets, out.gaps = targets, gaps
+	return out
+end
+
+local function posing(checks)
+	local E = Config.CarEntry
+	local DriverPose = require(StarterPlayer.StarterPlayerScripts.Drift:WaitForChild("DriverPose"))
+
+	local car = CarModel.build() -- the liftback, a rig with a steering wheel
+	local desc = CarParts.isRig(car) and CarParts.describe(car)
+	local wheel = desc and desc.byName.SteeringWheel
+	check(checks, "the default car has a SteeringWheel hinge for the hands", wheel ~= nil, `rig {desc ~= nil}`)
+	if not wheel then
+		car:Destroy()
+		return
+	end
+	local bodyCF = CFrame.new(0, 300, 400)
+	local seatRoot = Driver.seatRoot(bodyCF, car)
+
+	for _, rigType in { Enum.HumanoidRigType.R15, Enum.HumanoidRigType.R6 } do
+		local model = standIn(rigType, seatRoot)
+		local m = poseAndMeasure(DriverPose, model, car, bodyCF)
+		-- R6 has no elbow: a straight arm only points, so its hand is near the rim, not on it.
+		local tol = if rigType == Enum.HumanoidRigType.R15 then 0.01 else 0.15
+		check(
+			checks,
+			`{rigType.Name}: hands on the wheel's rim`,
+			m.worst <= tol,
+			string.format("worst grip %.3f from its target (allowed %.2f)", m.worst, tol)
+		)
+		check(
+			checks,
+			`{rigType.Name}: no arm reaches out through the driver's door`,
+			m.maxOut < DOOR_SKIN,
+			string.format("%s reaches %.3f out, the door skin is %.2f", m.part, m.maxOut, DOOR_SKIN)
+		)
+
+		if rigType == Enum.HumanoidRigType.R15 then
+			-- The wheel turned: the hands follow it round, and stay on the rim.
+			local onRim, worst = true, 0
+			for _, deg in { 45, 90, -90 } do
+				CarParts.setAngle(car, "SteeringWheel", deg)
+				local t = poseAndMeasure(DriverPose, model, car, bodyCF)
+				worst = math.max(worst, t.worst)
+				local pivot = bodyCF:PointToWorldSpace(wheel.pivot.Position)
+				local axis = bodyCF:VectorToWorldSpace(wheel.axis)
+				for _, target in t.targets do
+					local off = target - pivot
+					local radial = (off - axis * off:Dot(axis)).Magnitude
+					onRim = onRim and math.abs(radial - E.GripRadius) < 1e-3
+				end
+			end
+			car:SetAttribute(CarParts.ATTR .. "SteeringWheel", nil)
+			car:SetAttribute(CarParts.ATTR_AT .. "SteeringWheel", nil)
+			check(
+				checks,
+				"R15: with the wheel turned 45, 90 and -90 degrees the hands stay on the rim",
+				onRim and worst <= 0.01,
+				string.format("targets on the rim %s, worst grip %.3f", tostring(onRim), worst)
+			)
+		end
+		model:Destroy()
+	end
+	car:Destroy()
+
+	-- A car with no rig: a stand-in wheel where the liftback's is from the seat.
+	CarModel.setBody("block")
+	local plain = CarModel.build()
+	CarModel.setBody(nil)
+	if not CarParts.isRig(plain) then
+		local _, _, fromRig = DriverPose.wheel(plain)
+		local model = standIn(Enum.HumanoidRigType.R15, Driver.seatRoot(bodyCF, plain))
+		local m = poseAndMeasure(DriverPose, model, plain, bodyCF)
+		check(
+			checks,
+			"a car with no rig: the hands on the stand-in wheel",
+			not fromRig and m.worst <= 0.01,
+			string.format("from a rig %s, worst grip %.3f", tostring(fromRig), m.worst)
+		)
+		model:Destroy()
+	end
+	plain:Destroy()
+end
+
 function CarEntryTests.run()
 	local checks = {}
 	pure(checks)
+	posing(checks)
 	local player = Players:GetPlayers()[1]
 	if player then
 		live(checks, player)

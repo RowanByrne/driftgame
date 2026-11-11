@@ -31,6 +31,7 @@ local Net = require(ReplicatedStorage.Shared.Net)
 
 local DriftFolder = script.Parent.Parent:WaitForChild("Drift")
 local Driver = require(DriftFolder.Driver)
+local DriverPose = require(DriftFolder.DriverPose)
 local DriftModel = require(DriftFolder.Model)
 
 local CarCameraController = require(script.Parent.CarCameraController)
@@ -114,6 +115,14 @@ function CarEntryController:Start()
 
 	RunService:BindToRenderStep(STEP_NAME, Enum.RenderPriority.Camera.Value + 1, function(dt)
 		self:_frame(dt)
+	end)
+
+	-- Every seated driver's hands on their wheel, ours and everyone else's (T-116).
+	task.spawn(function()
+		local folder = workspace:WaitForChild("Cars", 30)
+		if folder then
+			DriverPose.start(folder)
+		end
 	end)
 end
 
@@ -419,6 +428,7 @@ function CarEntryController:DebugState()
 		modes = MODES[self.mode] == true,
 		seated = self.seated,
 		sitting = self.sitter:IsSitting(),
+		posing = DriverPose.isPosing(player.Character), -- hands on the wheel (T-116)
 		driver = Driver.driverOf(car),
 		simDriving = DriftController:IsDriving(),
 		buttonVisible = self.button.Visible,
@@ -440,6 +450,96 @@ function CarEntryController:DebugState()
 		lastRefusal = self.lastRefusal,
 		device = UserInputService.PreferredInput.Name,
 	}
+end
+
+-- ---------------------------------------------------------------- debug: the pose (T-116)
+
+-- How far out of the car each part of a seated avatar reaches: the largest |x| of any corner
+-- of its box in the car body's frame, with which side (+1 the driver's door), and, for
+-- each posed hand, its grip's distance from its target on the rim.
+local function measureAvatar(character: Model, bodyCF: CFrame)
+	local out = { parts = {}, maxOut = 0, maxOutPart = nil, maxAccessory = 0, gaps = {} }
+	for _, d in character:GetDescendants() do
+		if d:IsA("BasePart") then
+			local half = d.Size * 0.5
+			local most = 0
+			for _, sx in { -1, 1 } do
+				for _, sy in { -1, 1 } do
+					for _, sz in { -1, 1 } do
+						local corner = d.CFrame:PointToWorldSpace(Vector3.new(sx * half.X, sy * half.Y, sz * half.Z))
+						most = math.max(most, math.abs(bodyCF:PointToObjectSpace(corner).X))
+					end
+				end
+			end
+			if d:FindFirstAncestorOfClass("Accessory") then
+				out.maxAccessory = math.max(out.maxAccessory, most)
+			else
+				out.parts[d.Name] = math.floor(most * 1000 + 0.5) / 1000
+				if most > out.maxOut then
+					out.maxOut, out.maxOutPart = most, d.Name
+				end
+			end
+		end
+	end
+	local targets = DriverPose.worldTargets(character)
+	for name, target in targets or {} do
+		local hand = character:FindFirstChild(name .. "Hand") or character:FindFirstChild(name .. " Arm")
+		local grip = hand and hand:FindFirstChild(name .. "GripAttachment")
+		if grip then
+			out.gaps[name] = (grip.WorldPosition - target).Magnitude
+		end
+	end
+	return out
+end
+
+local function frames(n: number)
+	for _ = 1, n do
+		RunService.RenderStepped:Wait()
+	end
+end
+
+-- Studio only: our own seated avatar, measured as drawn, with the steering wheel at each
+-- angle in `degrees` (default 0, 90, -90, 0). The wheel is turned on this client only and
+-- put back after.
+function CarEntryController:DebugPose(degrees: { number }?)
+	local player = Players.LocalPlayer
+	local car = DriftController:Car()
+	local body = car and car:FindFirstChild("Body")
+	local character = player.Character
+	if not body or not character then
+		return { ok = false, reason = "no car or avatar" }
+	end
+	local CarParts = require(ReplicatedStorage.Shared.CarParts)
+	local desc = CarParts.isRig(car) and CarParts.describe(car)
+	local hasWheel = desc and desc.byName.SteeringWheel ~= nil
+	local out = { seated = self.seated, posing = DriverPose.isPosing(character), hasWheel = hasWheel, angles = {} }
+	for _, deg in degrees or { 0, 90, -90, 0 } do
+		if hasWheel then
+			CarParts.setAngle(car, "SteeringWheel", deg)
+		end
+		frames(4)
+		local m = measureAvatar(character, body.CFrame)
+		m.degrees = deg
+		table.insert(out.angles, m)
+	end
+	if hasWheel then
+		car:SetAttribute(CarParts.ATTR .. "SteeringWheel", nil)
+		car:SetAttribute(CarParts.ATTR_AT .. "SteeringWheel", nil)
+	end
+	out.posers = DriverPose.debugState()
+	return out
+end
+
+-- Studio only: a CarEntry config value changed in the running game's own copy, for tuning
+-- the pose by eye. Returns the old value.
+function CarEntryController:DebugSetConfig(key: string, value: any)
+	local old = Config.CarEntry[key]
+	Config.CarEntry[key] = value
+	return old
+end
+
+function CarEntryController:DebugPoseState()
+	return DriverPose.debugState()
 end
 
 -- Studio only: Get in exactly as the prompt's `Triggered` does.
@@ -481,6 +581,7 @@ function CarEntryController:DebugCycles(n: number?, drive: number?, steer: numbe
 		maxExitGap = 0, -- avatar's feet from the exit point the moment it is out
 		cameraOk = true,
 		inputOk = true,
+		posedAfterExit = 0, -- cycles where the driving pose still had the avatar once out
 	}
 
 	-- The measurement: after DriftController, RemoteCars and this controller have run.
@@ -560,6 +661,9 @@ function CarEntryController:DebugCycles(n: number?, drive: number?, steer: numbe
 
 		-- Stand about a moment with the car parked, then walk to the door.
 		task.wait(0.5)
+		if DriverPose.isPosing(player.Character) then
+			out.posedAfterExit += 1
+		end
 		local humanoid = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
 		if humanoid then
 			humanoid:MoveTo(self.promptPart.Position)
@@ -607,11 +711,16 @@ end
 -- that car's `Driver` set to the stand-in; then `CarStateOther`-shaped poses are fed in at
 -- 20 Hz along a curve and the avatar's gap from the seat of the car AS DRAWN is measured
 -- every frame. Everything it made is destroyed after.
-function CarEntryController:DebugRemoteDriver(seconds: number?)
+--
+-- `model`, if given, is the avatar to copy for the stand-in instead of ours (an R6 one, say,
+-- made by the server). The stand-in sits as the owner's sit animation would have it, and its
+-- driving pose (T-116) is measured every drawn frame as well: how far out of the car any
+-- part of it reaches, and its hands' gaps from their grips.
+function CarEntryController:DebugRemoteDriver(seconds: number?, model: Model?)
 	seconds = seconds or 3
 	local player = Players.LocalPlayer
 	local car = DriftController:Car()
-	local character = player.Character
+	local character = model or player.Character
 	local remote = DriftController.remoteCars
 	if not car or not character or not remote then
 		return { ok = false, reason = "no car, avatar or remote cars" }
@@ -622,9 +731,10 @@ function CarEntryController:DebugRemoteDriver(seconds: number?)
 	carCopy.Name = "Car_" .. fakeId
 	carCopy:SetAttribute("UserId", fakeId)
 	carCopy:SetAttribute(Config.CarEntry.DriverAttribute, fakeId)
+	local wasArchivable = character.Archivable
 	character.Archivable = true
 	local stand = character:Clone()
-	character.Archivable = false
+	character.Archivable = wasArchivable
 	for _, d in stand:GetDescendants() do
 		if d:IsA("LuaSourceContainer") then
 			d:Destroy()
@@ -639,12 +749,24 @@ function CarEntryController:DebugRemoteDriver(seconds: number?)
 	end
 	standRoot.Anchored = true
 	stand.Parent = workspace
+	local standSitter = Driver.newSitter()
+	standSitter:Sit(stand)
 	Driver.debugCharacters[fakeId] = stand
 	DriftController:_worldChanged() -- the stand-in is an avatar: out of the car's rays
 	carCopy.Parent = folder
 
 	local start = (self.parkCF or car:GetPivot()) * CFrame.new(30, 0, 0)
-	local out = { frames = 0, maxGap = 0, maxReportedGap = 0, packets = 0, drawnFrames = 0 }
+	local out = {
+		frames = 0,
+		maxGap = 0,
+		maxReportedGap = 0,
+		packets = 0,
+		drawnFrames = 0,
+		posedFrames = 0,
+		poseMaxOut = 0,
+		poseMaxOutPart = nil,
+		poseMaxHandGap = 0,
+	}
 	local t0 = os.clock()
 	local lastSend = -1
 	local conn = RunService.RenderStepped:Connect(function()
@@ -656,6 +778,21 @@ function CarEntryController:DebugRemoteDriver(seconds: number?)
 		out.drawnFrames += 1
 		local gap = (standRoot.Position - Driver.seatRoot(body.CFrame, carCopy).Position).Magnitude
 		out.maxGap = math.max(out.maxGap, gap)
+		-- How far out of the car it reaches once settled, and its hands once the pose is
+		-- fully on (with `DriverPose` off, that is the plain sit pose's reach).
+		if os.clock() - t0 > 0.5 then
+			local m = measureAvatar(stand, body.CFrame)
+			if m.maxOut > out.poseMaxOut then
+				out.poseMaxOut, out.poseMaxOutPart = m.maxOut, m.maxOutPart
+			end
+			local posers = DriverPose.posers
+			if posers[stand] and posers[stand].weight >= 1 then
+				out.posedFrames += 1
+				for _, g in m.gaps do
+					out.poseMaxHandGap = math.max(out.poseMaxHandGap, g)
+				end
+			end
+		end
 	end)
 	while os.clock() - t0 < seconds do
 		local t = os.clock() - t0
@@ -682,6 +819,7 @@ function CarEntryController:DebugRemoteDriver(seconds: number?)
 	out.listedDriver = listed and listed.driver or nil
 	out.listedDriverGap = listed and listed.driverGap or nil
 	Driver.debugCharacters[fakeId] = nil
+	standSitter:Stand()
 	carCopy:Destroy()
 	stand:Destroy()
 	DriftController:_worldChanged()

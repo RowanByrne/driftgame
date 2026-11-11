@@ -131,7 +131,8 @@ end
 -- client plays replicates to everyone, so other players see the pose with no remote. The
 -- avatar's `Animate.sit` is used when it has one, so a player with a custom sit keeps it.
 -- `Action` priority so it holds over whatever the Animate script thinks an anchored
--- humanoid is doing.
+-- humanoid is doing. Its arms are then replaced, on every client, by `DriverPose`: hands
+-- on the steering wheel (T-116).
 
 local Sitter = {}
 Sitter.__index = Sitter
