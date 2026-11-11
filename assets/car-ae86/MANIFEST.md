@@ -147,6 +147,123 @@ is an approved reference for the build; the rejected rows stay rejected.
 | `15-wheel.png` | Wheel | 2172 x 724 | `4E86468D62BC8837269C051EC7E0724D487840B69020AB696FD73A6766061106` | rejected: drew the whole car, the wheel tiny |
 | `15-wheel-v2.png` | Wheel, front and cut section | 1774 x 887 | `049AC0F2F0693C2FFDF4021846E0A87E14175E58CC87D282AF97F1C9DA6DF9DA` | candidate |
 
+The engine alone, six straight-on views on white, made on 2026-11-10 at the user's request
+("6 axis views of the engine, removed from the car, just floating on white backdrop") with
+`09-engine-bay-v2.png` attached. **Not yet approved**: the rows marked candidate are the best
+try of each view, for the user to accept or send back. No gearbox: the bay view shows none.
+Left is the exhaust side, right the intake side, as the engine sits in the car.
+
+| File | View | Size | SHA-256 | Status |
+|---|---|---|---|---|
+| `16-engine-front.png` | Engine, belt end | 1254 x 1254 | `6A61E375C4FCC7A69689F3689CDA566808031F5B3DD2BB8873DFEE7F991FD1F0` | rejected: the top tipped toward the viewer |
+| `16-engine-front-v2.png` | Engine, belt end | 1254 x 1254 | `69FD049BDE7EF48C1CBDDA802D62F6965ED5D1E1A62E191DD1CD9CC461C94E8E` | rejected: exhaust outlet too high |
+| `16-engine-front-v3.png` | Engine, belt end | 1254 x 1254 | `0D2B4DC396E13279BC82EBE177F57675090CDBD3C2C0702D435B7F7377EA221F` | candidate |
+| `17-engine-rear.png` | Engine, flywheel end | 1254 x 1254 | `77FAF2AFBC12AE36849F69F84FA9955A5A9667BB0689805D58CAB66B3FE0F414` | rejected: the top tipped toward the viewer |
+| `17-engine-rear-v2.png` | Engine, flywheel end | 1254 x 1254 | `9A2E9418EF351F0F0CE1BE083B35ED37B3A22390E6F7686218D31FAF9CDEC24C` | candidate |
+| `18-engine-left.png` | Engine, exhaust side | 1536 x 1024 | `5C4C662716A21AB70EE1E855332A5CFF589822B686FE55385D353638E22DA6A1` | rejected: pulleys and timing cover drawn face-on |
+| `18-engine-left-v2.png` | Engine, exhaust side | 1536 x 1024 | `91D6A7AEDB1FC748C612B4AD971D33EDA1470027C25C5A12C9504ADE617C9D78` | candidate |
+| `19-engine-right.png` | Engine, intake side | 1536 x 1024 | `CB4AF2D7227F61D0A54D77B7141F64996421A13FEC283B2236A135DF298CC108` | rejected: a mirrored top view |
+| `19-engine-right-v2.png` | Engine, intake side | 1536 x 1024 | `5FA13B3C24BAF95A7690E89CC6853AF152646145C82299CC981DA5ECA7962A55` | rejected: intake standing far above the engine |
+| `19-engine-right-v3.png` | Engine, intake side | 1536 x 1024 | `7ECC54C3CBE374BC56BAF072B5B950CD485E417554C47FFD15BFA645C75BC581` | candidate |
+| `20-engine-top.png` | Engine from above | 1536 x 1024 | `7B8C038402DA49CA2617555CFD67D9D263A50F5EA6938C2D8F2C5B4B23160DED` | rejected: front pulleys drawn face-on |
+| `20-engine-top-v2.png` | Engine from above | 1536 x 1024 | `54934AF30464808C036E33BB01903D4C94C9DC2632F24A990A66DED8FA94AD65` | candidate |
+| `21-engine-underside.png` | Engine from below | 1536 x 1024 | `FAB3AA8841949C674DD2F2AD318D92184EBF624E7D844E185C342A3382541AD6` | candidate |
+
+Checked against the real engine on 2026-11-10: the layout is right, but the views draw coil
+units where the distributor's leads go, twin bulges on the timing cover, the alternator, the
+starter and the oil filter in the wrong places, no fan, a tubular manifold with no heat shield,
+separate intake pipes for the plenum, and a level sump. The engine model follows the real
+engine there (`docs/game/features/car-model.md` "The engine on its own"). Its source is
+`..\art\source\car-ae86\engine\` (`engine.py`, `build.py`, `engine.blend`), with a preview in
+`..\art\generated\car-ae86\engine\engine-preview.png`. The user approved the engine model on
+ 2026-11-10 and it is fitted in the car at nine tenths of its size; it also stays saved alone.
+
+Known differences between the engine views: the front and rear are drawn about 1.3 times
+larger than the four long views; the manifolds reach further out in the top and underside
+views than in the end views; the image tool's version was not checked against the newest
+release before this round (ART-PIPELINE.md asks for that).
+
 Known differences between views, for the build to settle rather than copy: the spoke count
 on the side views (six to eight; the wheel sheet's eight is the one to build), and the
 instrument sheet shows four dials where the dashboard view shows a simpler cluster.
+
+## Our own model: gray model (2026-11-09)
+
+Stage 3, built from the approved references above. **Rejected by the user, 2026-11-09:**
+"nevermind not even close", after the three rounds below. Kept for the record only.
+
+- **Tool:** Blender 5.2.3 LTS (Steam), driven by a Python build script run headless
+  (`blender -b --factory-startup --python main.py -- <render dir> <blend>`). The Blender MCP
+  failed to connect this session, so the script stands in for it; it builds the whole car in
+  about 3 seconds, renders included.
+- **Source, outside git:** `..\art\source\car-ae86\car-ae86-gray.blend`, the build script in
+  `..\art\source\car-ae86\build\` (`main.py` and its modules), and `pivots.json`: each moving
+  part's pivot, axis and open angle.
+- **Renders:** `..\art\generated\car-ae86\gray\`, one per reference view (same file names as
+  `views\`), plus `all-open.png`. Each reference beside its render:
+  `compare-1-exterior.png`, `compare-2-open.png`, `compare-3-interior.png`.
+- **Matching the concept:** `build\profile.py` measures the concept views' outlines in studs;
+  `build\score.py` scores the model's outline against them per view and writes overlays to
+  `..\art\generated\car-ae86\gray\score\` (`rN-<view>.png`: red is concept only, blue model
+  only). First build 86.5%; rounds 1 to 3: 89.8%, 91.2%, 90.9%. `rounds.png` sets the first
+  build's overlays above round 3's. The user, 2026-11-09, on the first build: "the shape is
+  quite wrong in many places".
+- **Size:** about 11,700 triangles in 47 meshes. Units are studs: X the car's right, Y forward,
+  Z up, origin on the ground midway between the axles.
+- **Clip check**, run by every build: no part at full open touches anything it didn't touch
+  closed.
+
+## Our own model: gray model, second build (2026-11-09)
+
+Stage 3 again, from the approved references only; nothing from the build above was used.
+**Waiting for the user's verdict.** `docs/game/features/car-model.md` "The gray model" has the
+detail.
+
+- **Tool:** Blender 5.2.3 LTS, driven live through the Blender MCP.
+- **Source, outside git:** `..\art\source\car-ae86\car-ae86-gray2.blend`; the modelling code in
+  `..\art\source\car-ae86\gray2\` (`final.py` rebuilds, checks, renders and saves);
+  `..\art\source\car-ae86\pivots-gray2.json`: each moving part's pivot, axis and travel.
+- **Renders:** `..\art\generated\car-ae86\gray2\`, one per reference view in colour
+  (`<view>.png`) and in clay (`<view>-gray.png`): `fr`, `rl`, `fr07`, `side`, `front`, `rear`,
+  `top`, `under`, `door`, `hatch`, `hood`, `bay`, `dash`, `inttop`, plus `fr-all-open.png` and
+  `rl-gray-all-open.png`. Each reference beside its render: `compare-1-exterior`,
+  `compare-2-open`, `compare-3-ortho`, `compare-4-inside`, each in colour and `-gray`.
+- **Matching the concept:** by eye, reference beside render, no outline score. Four passes,
+  then a revision the same day after the user's "needs changes" (exterior details; inside and
+  open views), which used every reference view, the four not looked at before included
+  (`04-right`, `10-hood-open`, `14-instruments`, `15-wheel-v2`). A third round the same day took the
+  user's notes on that version: the hood to the real car's profile (flat to the headlights, then
+  nosing down; the user's photographs of the real car were looked at, not copied or stored), flat
+  fender tops, the body line along the side, sealed seams, every light a part of its own, no
+  licence plates. A fourth round on 2026-11-10 took the user's notes on the open model: the
+  body line as an indent above the split from the tail lamp to the front wheel's flare, wheel
+  flares at the reference's size, a readable fuel flap, the exhaust joined up, and the boot to
+  the hatch-open view (spare-wheel well, wheel-housing trim, tail lamp backs, strut mounts). A fifth
+  round the same day: simpler flares, round wheels (48 sides), all four calipers as parts of
+  their own, solid headlight wells, and the gaps beside the dashboard closed.
+- **Size:** 24,382 triangles in 72 meshes, 25 of them lamp lenses; the largest, the body, is 3,600. Each wheel is 1,482. Units are studs: X
+  the car's left, -Y forward, Z up, origin on the ground midway between the axles.
+- **Clip check**, run by every build: at full travel nothing touches anything it didn't touch
+  closed.
+- **Back-face check**, run by every build: sight lines from all round the car, underneath, close
+  up and from the seats, shut and open, that land on the back of a face (Roblox draws only the
+  front). About 70 in 300,000 are left, down from about 2,100.
+
+## The export
+
+Made on 2026-11-10, after the gray model was approved, by `..\art\source\car-ae86\gray2\export.py`
+(`features/car-model.md` "Surfaces and export").
+
+| File | What it is |
+|---|---|
+| `car-ae86.fbx` | The whole car, shut: 168 meshes, 24,380 triangles, each a part cut by surface and named `<Part>_<Surface>`. One unit is one stud; flat faces, triangles. Studio's importer brings it in facing +Z; turned half a turn about Y it is the game's car frame (X the car's right, Y up, -Z forward). The 16 `Paint` and `Second` pieces carry wrap UVs |
+| `car-ae86.json` | The data that goes with it: the 72 parts (pivot, axis, travel, what each rides on, what lamp it is), the 168 pieces (part and surface), the 34 surfaces in use (starting colour, material, shine, see-through, `Paint` tag), and the seat, exit and floor points |
+| `car-ae86.meshes.json` | The 168 pieces as Roblox mesh assets: each one's asset id and where its centre sits in the game's car frame. Read off the model the user imported on 2026-11-10 |
+
+- **Checked:** the file read back in on its own gives the same 168 names, triangle counts and
+  positions.
+- **Imported** by the user with Studio's 3D importer, as one model, into the Lane 3 place on
+  2026-11-10. Measured there: 168 pieces, 7.53 wide (mirrors included), 5.78 high, 17.83 long
+  (tail pipe included). The meshes were uploaded to the user's account by that import; the
+  ids are in `car-ae86.meshes.json`. **Roblox ownership:** they are the importing account's, and
+  nothing has been set about who may use them (ART-PIPELINE.md "Ownership and permissions").
