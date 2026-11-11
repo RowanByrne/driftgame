@@ -16,11 +16,10 @@ climbs a multiplier ladder, and a run ends with a total to beat.
    more sideways and the faster you are. Their rate is multiplied by the current rung.
 3. **Hold it.** Drifting fills the bar; a full bar is the next rung, up to **x9**. Driving straight
    drains the bar, and below empty you drop a rung. The higher the rung, the faster it drains.
-4. **Bonuses** pop over the score as they land: a **reverse drift** (past 90°, held) and **air
-   time** (a jump off the road's crests). Each is added at the current multiplier.
-5. **Hit a wall** and you lose one rung (the bar empties). **Fall off the road** and the
-   multiplier goes back to x1. The score already earned is never taken away.
-6. Press **END RUN**. The panel shows the run's final score, and your best this session, for a
+4. **Basic scoring only** (the user, on the plan: *"don't do the wall hit yet. for now just basic
+   scoring."*). Hitting a wall or falling off costs nothing of its own; the ladder simply drains
+   while you are not drifting. The score already earned is never taken away.
+5. Press **END RUN**. The panel shows the run's final score, and your best this session, for a
    few seconds, then hides. The next run starts at 0.
 
 ## Left out
@@ -29,6 +28,8 @@ climbs a multiplier ladder, and a run ends with a total to beat.
   score, and saved player data. They are the next step if the user wants them.
 - **Analytics.** The run's events (start, end, score) come with saving, when the server first
   hears a score.
+- **Penalties and bonuses.** No cost for a wall hit or a fall, and no reverse-drift or air-time
+  bonus (`drift-model.md` "Score" has their maths). Added later, one at a time, if wanted.
 - **Score anywhere but the endless run.** The track and the playground stay unscored.
 - **Any reward for score.** No currency, unlocks or progression (`PITCH.md`: meta progression is
   undecided).
@@ -51,13 +52,10 @@ progress <= MinProgress -> multiplier -= 1 (to 1), progress += 1 - MinProgress
 
 Scored only while slip ≥ `MinSlipAngleForDrift` and the car makes forward progress.
 
-Ours, not the reference's, each a config number:
+The reference's bonus numbers (`ReverseDriftBonus`, `AirTimeBonusMin`) are not used yet. Ours:
 
 | Number | Start | What it does |
 |---|---|---|
-| `WallRungsLost` | 1 | Rungs lost when the car's wall sweep stops it. The bar empties too |
-| `WallGraceSeconds` | 0.5 | A scrape held against a wall costs one hit, not one a frame |
-| `FallResetsMultiplier` | true | A fall (a respawn on the road) puts the multiplier back to x1 |
 | `SummarySeconds` | 5 | How long the final score shows after END RUN |
 
 The score is a whole number on screen; the engine keeps it as a float.
@@ -68,7 +66,6 @@ One new screen, `Drift/ScoreHud`, added to `UI-INVENTORY.md`. Programmer art (UI
 
 - **Top centre, under the run button:** the score in large digits, `x3` beside it, and a bar
   under both for the rung's progress. Hidden outside a run.
-- **Bonus pop:** `REVERSE DRIFT +1,240` over the score, fading in a second.
 - **Run summary:** `RUN SCORE 48,210` and `BEST 61,004` in place of the live score, for
   `SummarySeconds` after END RUN.
 - Not `Active`, so it never takes a press from the steering pad, and below the run button's
@@ -76,7 +73,7 @@ One new screen, `Drift/ScoreHud`, added to `UI-INVENTORY.md`. Programmer art (UI
 
 ## Server and client
 
-**All on the client this time.** The car is driven on the client, so the slip, speed and walls
+**All on the client this time.** The car is driven on the client, so the slip and speed
 are there already, and nothing is saved or shared, so there is nothing for the server to trust
 yet. When saving or leaderboards come, the server will receive the score at run end and bound it
 (points a second against the run's time).
@@ -87,8 +84,8 @@ state line says which); the score listens to that.
 ## Contracts
 
 - New config `Config.Score`.
-- New client module `Drift/Score`: `new()`, `Step(dt, state)`, `OnWall()`, `OnFall()`,
-  `Reset()`, `Get() -> { score, multiplier, progress, best }`, and a `Bonus` signal.
+- New client module `Drift/Score`: `new()`, `Step(dt, state)`, `Reset()`,
+  `Get() -> { score, multiplier, progress, best }`.
 - No remotes, data keys or attributes.
 
 ## Analytics
@@ -110,14 +107,14 @@ None, placeholder UI only.
 ## Testing
 
 - **Unit tests** (`ScoreTests`): the ladder climbs under a steady drift and drains on a straight;
-  it never passes x9 or drops under x1; a wall costs one rung once per `WallGraceSeconds`; a fall
-  resets to x1 and keeps the score; a reverse drift held for t seconds pays `floor(ln(t+1) × 400)`.
+  it never passes x9 or drops under x1; nothing scores below `MinSlipAngleForDrift` or going
+  backward; `Reset()` zeroes the run and keeps the best.
 - **Playtest in a lane:** a run started on a fixed seed, driven by the Studio drive helpers. Read
   `Score:Get()` each second: the score rises only while sliding, the multiplier climbs to at
-  least x3 on a held drift, a deliberate wall hit drops one rung, and END RUN shows the summary
+  least x3 on a held drift and drains on a straight, and END RUN shows the summary
   and hides the panel.
 
 ## Open questions
 
-- Whether the `fallback` numbers (`MaxMultiplier`, the ladder's rates, the bonuses) feel right.
+- Whether the `fallback` numbers (`MaxMultiplier`, the ladder's rates) feel right.
   They were not in the decompile; the user tunes them by driving.
