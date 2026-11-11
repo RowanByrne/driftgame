@@ -135,8 +135,9 @@ neither wants a number of its own until something asks for one.
 **`CanQuery` is the one that matters, not `CanCollide`.** The car is kinematic — Roblox physics
 never moves it — and what stops it at a wall is a `Blockcast` through `RaycastParams`
 (`Drift/World`), which obeys `CanQuery`. Both are set, so a player's character cannot walk through
-a standing wall either. The walls are left visible at `Transparency = 0.85` so "the rails are off"
-reads differently from "this piece has no rails".
+a standing wall either. The hill's walls are left visible at `Transparency = 0.85` so "the rails are off"
+reads differently from "this piece has no rails". **The road's walls are hidden outright** (`Transparency = 1`,
+`T-118`): the user wanted them fully gone in the endless run, not faint.
 
 **It touches the walls and nothing else.** `Road/Builder` hands back the slabs and the barriers in
 two separate lists; the slabs are what the ground rays find (tagged `DriftSurface`) and the

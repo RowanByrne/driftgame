@@ -127,9 +127,9 @@ local function applyRails(entry: any)
 	for _, wall in entry.barriers do
 		wall.CanCollide = railsOn
 		wall.CanQuery = railsOn
-		-- Not destroyed and not hidden: left visible enough to see where they were, so
-		-- the user can tell "the rails are off" from "this piece has no rails".
-		wall.Transparency = if railsOn then 0 else 0.85
+		-- Not destroyed: hidden outright, so the road reads as open (the user, T-118:
+		-- "fully hide them, not partial transparency"). The closing barrier is not one of these.
+		wall.Transparency = if railsOn then 0 else 1
 	end
 end
 
