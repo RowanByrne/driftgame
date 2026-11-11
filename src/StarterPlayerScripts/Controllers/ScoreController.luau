@@ -16,14 +16,20 @@
 -- answer first says `inRun`, and that is when the score goes back to 0; it ends when an
 -- answer first says it is not, and the score freezes there as the run's result. A press
 -- the server refuses moves nothing.
+--
+-- THE PANEL IS `Drift/ScoreHudView`, fed from `View()` once a frame: the live run, then the
+-- run's result for `Config.Score.SummarySeconds` after END RUN, then nothing.
 
+local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
 
 local Config = require(ReplicatedStorage.Shared.Config)
 local Net = require(ReplicatedStorage.Shared.Net)
 
 local DriftFolder = script.Parent.Parent:WaitForChild("Drift")
 local Score = require(DriftFolder.Score)
+local ScoreHudView = require(DriftFolder.ScoreHudView)
 
 local DriftController = require(script.Parent.DriftController)
 
@@ -59,6 +65,11 @@ function ScoreController:Start()
 		return r
 	end)
 
+	self.view = ScoreHudView.new(Players.LocalPlayer:WaitForChild("PlayerGui"))
+	RunService.RenderStepped:Connect(function()
+		self.view:setData(self.fixture or self:Snapshot())
+	end)
+
 	local roadRun = Net.event("RoadRun")
 	roadRun.OnClientEvent:Connect(function(answer)
 		if type(answer) ~= "table" then
@@ -81,8 +92,12 @@ function ScoreController:_setInRun(inRun: boolean)
 		self.lastRun = nil
 		self.endedAt = nil
 	else
+		-- Read before anything folds this run into the best: `score.best` is still the best
+		-- of the runs BEFORE this one, which is what "a new best" is measured against.
+		local previousBest = self.score.best
 		self.lastRun = self.score:Get()
 		self.lastRun.runSeconds = self.runSeconds
+		self.lastRun.newBest = self.lastRun.score >= 1 and self.lastRun.score > previousBest
 		self.endedAt = os.clock()
 	end
 	self.inRun = inRun
@@ -99,6 +114,46 @@ function ScoreController:View()
 		return { mode = "summary", reading = self.lastRun }
 	end
 	return { mode = "hidden" }
+end
+
+-- `View()` as the panel's snapshot (`ScoreHudView:setData`).
+function ScoreController:Snapshot()
+	local v = self:View()
+	local r = v.reading
+	if v.mode == "run" then
+		return {
+			mode = "run",
+			score = r.score,
+			multiplier = r.multiplier,
+			progress = r.progress,
+			maxMultiplier = Config.Score.MaxMultiplier,
+		}
+	elseif v.mode == "summary" then
+		return { mode = "summary", score = r.score, best = r.best, newBest = r.newBest == true }
+	end
+	return { mode = "hidden" }
+end
+
+-- The panel's pieces as drawn: rects, texts, whether anything in it could take a touch.
+function ScoreController:DebugView()
+	return self.view and self.view:describe() or nil
+end
+
+-- Studio only: draw the panel from a fixture (`Drift/ScoreHudView.fixtures`) for measuring,
+-- or `nil` to hand it back to the live score.
+function ScoreController:DebugFixture(name: string?)
+	if not RunService:IsStudio() then
+		return nil
+	end
+	if name == nil then
+		self.fixture = nil
+		return self:DebugView()
+	end
+	local fixtures = require(DriftFolder:WaitForChild("ScoreHudView.fixtures"))
+	self.fixture = fixtures[name]
+	assert(self.fixture, `no fixture '{name}'`)
+	self.view:setData(self.fixture)
+	return self:DebugView()
 end
 
 -- The live score, for tests and agent playtests:

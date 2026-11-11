@@ -1,6 +1,6 @@
 # Feature: Score in the endless run
 
-**Status:** being built (`T-119`). Step 1, the score engine, is done; step 2, the panel. **Owner task:** `T-119`.
+**Status:** being built (`T-119`). Step 1, the score engine, and step 2, the panel and summary, are built. **Owner task:** `T-119`.
 
 ## Goal
 
@@ -62,12 +62,12 @@ The score is a whole number on screen; the engine keeps it as a float.
 
 ## UI
 
-One new screen, `Drift/ScoreHud`, added to `UI-INVENTORY.md`. Programmer art (UI.md):
+One new screen, `Drift/ScoreHudView` (`PlayerGui.ScoreHud`), in `UI-INVENTORY.md`. Programmer art (UI.md):
 
 - **Top centre, under the run button:** the score in large digits, `x3` beside it, and a bar
   under both for the rung's progress. Hidden outside a run.
 - **Run summary:** `RUN SCORE 48,210` and `BEST 61,004` in place of the live score, for
-  `SummarySeconds` after END RUN.
+  `SummarySeconds` after END RUN. A run that beats the session's best says `NEW BEST`, in gold.
 - Not `Active`, so it never takes a press from the steering pad, and below the run button's
   `DisplayOrder` 15.
 
