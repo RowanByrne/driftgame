@@ -67,6 +67,23 @@ Get the game ready for the car being modelled in `features/car-model.md`: a car 
 - **Out of the car:** the character walks with Roblox's own movement. The parked car is still anchored and stays where the server last agreed it was; the client stops sending `CarState` for it.
 - **Suspension and scraping are drawn**, on every client, from the pose; only what the model needs (the floor holding the car up) is in the simulation.
 
+## The driver's pose
+
+T-116. The user chose a driving pose (hands on the wheel, elbows tucked in) over shrinking the avatar, moving the seat inward or hiding the arms, after Roblox's sit pose put the right elbow through the liftback's driver's door.
+
+- **What it is:** Roblox's sit animation keeps the legs and body; each hand's grip goes onto the steering wheel's rim at ten to two (`GripAngle`), elbows down and in. The hands are on the `SteeringWheel` hinge's rim and turn with it; a wheel turned past an arm's reach has that hand slide round the rim to the nearest place it can hold. A car with no rig, or no wheel, gets a stand-in wheel where the liftback's is from the seat (`FallbackWheel`).
+- **How:** `Drift/DriverPose`, on every client, for every seated driver (its own and everyone else's), with nothing uploaded and nothing sent over the wire. A two-bone solve per arm is written into the shoulder, elbow and wrist joints' `Transform` each frame after the Animator, on `Motor6D` and `AnimationConstraint` joints alike. Roblox's `IKControl` was tried first and left the hand 0.15 to 0.45 studs off its target on an `AnimationConstraint` avatar, even at the hand's own rest place with every joint limit off. An R6 avatar has no elbow, so its straight arms are pointed at the grips. Each upper arm's outside is turned up (`PoseUpperArmOutside`): an R15 or R6 upper arm hangs half its width outboard of its shoulder joint, and facing out it reaches 1 stud past the shoulder, through the door.
+- **On and off:** the pose fades in and out over `PoseFadeSeconds` as the server anchors or frees the avatar, and then the avatar is let go: nothing stays on it.
+- **Numbers** are in `Config.CarEntry` ("The driving pose"). `DriverPose = false` puts the plain sit pose back.
+
+Measured in DR-Lane3 (the liftback's driver's door skin is 3.28 to 3.40 out from the centre line, 3.28 at the belt line):
+
+| Avatar | Plain sit, furthest out | Driving pose, furthest out | Hand to grip |
+|---|---|---|---|
+| The user's R15 (`AnimationConstraint` joints) | 3.565 (right forearm) | 2.950 (2.970 with the wheel turned) | 0.000 at rest and turned ±30 to ±180° |
+| A default R15 | 3.542 | 2.913 | 0.000 |
+| A default R6 | 3.450 (right arm) | 3.054 | 0.050 (a straight arm) |
+
 ## Contracts
 
 All in `CONTRACTS.md`, in the first step's commit:
@@ -87,7 +104,7 @@ None new. The avatar is the player's own. The car's own risk is unchanged (`asse
 - No stand-in car: the new model is imported later, into the rig.
 - Sparks: programmer art. Scrape sound: a Creator Store candidate for the user to pick (AUDIO-PIPELINE.md).
 - Door open and close sounds: Creator Store candidates, same way.
-- The seated avatar's pose: Roblox's sit pose, with hands toward the wheel if it's cheap; a proper driving pose later.
+- The seated avatar's pose: Roblox's sit pose with the hands on the wheel, solved in code ("The driver's pose"); no animation to upload.
 
 ## Testing
 
@@ -95,6 +112,7 @@ None new. The avatar is the player's own. The car's own risk is unchanged (`asse
 - **Suspension:** each wheel's height logged over a kerb, a crest and a jump: hangs at the bottom in the air, back to `Rest` within half a second on flat ground.
 - **Ledge:** a test ledge in a lane; drive the rear off slowly: the body's tilt, the floor point touching, sparks on, and nothing of the car below the ledge's top.
 - **Get in and out:** 10 times each, with a second player watching: the avatar always in the seat, the car never moving while parked, no errors.
+- **The driver's pose:** `CarEntryTests` poses R15 and R6 stand-ins in the liftback and a car with no rig (hands on the rim, wheel turned, no arm past the door). On a client, `CarEntryController:DebugPose(degrees)` measures our own seated avatar with the wheel turned, `DebugRemoteDriver(seconds, model)` a stand-in remote driver of any avatar, and `DebugCycles` counts any pose left on after getting out.
 - **Debug:** `DebugState()` reports each wheel's travel, which floor points touch, and who is in the car.
 
 ## Open questions
