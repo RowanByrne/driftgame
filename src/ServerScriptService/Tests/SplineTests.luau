@@ -352,7 +352,11 @@ function parts.accuracy(check)
 	check("the curve is integrated accurately", worst < 1e-3, `worst {string.format("%.2e", worst)} studs from a 0.25-stud integration over {math.floor(sp.length)} studs`)
 end
 
-function Tests.run(which: { string }?)
+function Tests.run(which: { string }?, ...)
+	-- The DebugBridge calls a member as a method, so the module itself comes first.
+	if which == Tests then
+		which = ...
+	end
 	local checks = {}
 	local function check(name: string, ok: boolean, detail: string?)
 		table.insert(checks, { name = name, ok = ok, detail = detail })

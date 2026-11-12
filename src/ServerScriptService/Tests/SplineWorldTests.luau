@@ -115,7 +115,11 @@ local function drive(Sim, spline, world, locate, seconds: number, startS: number
 	return r
 end
 
-function Tests.run(which: { string }?)
+function Tests.run(which: { string }?, ...)
+	-- The DebugBridge calls a member as a method, so the module itself comes first.
+	if which == Tests then
+		which = ...
+	end
 	local checks = {}
 	local function check(name: string, ok: boolean, detail: string?)
 		table.insert(checks, { name = name, ok = ok, detail = detail })
