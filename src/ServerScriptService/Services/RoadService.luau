@@ -45,6 +45,7 @@ local Builder = require(ReplicatedStorage.Shared.Road.Builder)
 local Generator = require(ReplicatedStorage.Shared.Road.Generator)
 local Net = require(ReplicatedStorage.Shared.Net)
 local Pieces = require(ReplicatedStorage.Shared.Road.Pieces)
+local SplineSequence = require(ReplicatedStorage.Shared.Road.SplineSequence)
 
 local RoadService = {}
 -- Below PlaygroundService (100) and TrackService: this one builds nothing until asked,
@@ -72,6 +73,20 @@ local RUN_RATE_LIMIT = "CarSwitchRateLimit" -- asks a second per UserId
 local RUN_COOLDOWN = "RespawnCooldown" -- seconds between two presses that land
 
 local generator = nil :: any
+
+-- WHICH ROAD A RUN LAYS (features/spline-road.md, T-136): `"pieces"`, the road as it has
+-- always been, or `"spline"`, one continuous curve that the server lays as sections and
+-- builds NO PARTS for -- each client draws it and drives on its maths. The default is
+-- `Config.Road.Mode`; `SetMode` changes it between runs (the Studio TEST ONLY panel).
+local mode = nil :: string?
+local function splineRun(): boolean
+	return generator ~= nil and generator.spline ~= nil
+end
+
+-- What the clients on a spline road have been sent: sections 1..sentLast, the closing
+-- barrier at `sentClosing`. A runner who joins later is sent everything at once.
+local sentLast = 0
+local sentClosing = nil :: number?
 local built: { [number]: any } = {} -- n -> Builder.Built
 local closing: Part? = nil
 local leader = Vector3.zero -- where the window is centred: the furthest car down the road
@@ -230,6 +245,12 @@ local function window(centre: number)
 	local added = generator:extendTo(centre + C.AheadPieces)
 	local genMs = if on then (os.clock() - genAt) * 1000 else 0
 	local before = profile.builtEver
+	if splineRun() then
+		-- NO PARTS: the new sections go to the runners, who draw them (T-136)
+		generator:trimBefore(centre - C.BehindPieces)
+		RoadService:_sendNewSections()
+		return
+	end
 	for _, piece in added do
 		buildPiece(piece)
 	end
@@ -270,6 +291,15 @@ end
 -- only moves forward: turning round must not open the way back up.
 local function moveClosingBarrier()
 	local C = Config.Road
+	if splineRun() then
+		-- a plane across the road at the start of that piece, on every runner's client
+		local s = generator:startOf(windowCentre - C.BarrierBehind) or generator:startOf(generator.first)
+		if s and s ~= sentClosing then
+			sentClosing = s
+			RoadService:_tellRunners({ kind = "closing", s = s })
+		end
+		return
+	end
 	if not closing or not closing.Parent then
 		return
 	end
@@ -404,6 +434,9 @@ function RoadService:Init()
 	-- No road is built here, and none ever is until a player presses start. The ONE thing
 	-- that has to exist before any controller asks for it is the remote.
 	self.roadRun = Net.event("RoadRun")
+	-- The spline road's sections, closing barrier and rails, server to client (T-136).
+	self.roadSpline = Net.event("RoadSpline")
+	mode = if Config.Road.Mode == "spline" then "spline" else "pieces"
 	self.asks = 0
 	self.asksRefused = 0
 	self.started = 0
@@ -479,6 +512,14 @@ function RoadService:StartRun(player: Player): CFrame?
 		warn("[Road] a run was asked for with no CarService to move a car")
 		return nil
 	end
+	-- Not from the Studio spline test road: that one has its own roster and its own road
+	local test = script.Parent:FindFirstChild("SplineTestService")
+	if test then
+		local ok, svc = pcall(require, test)
+		if ok and type(svc) == "table" and type(svc.InTest) == "function" and svc:InTest(player) then
+			return nil
+		end
+	end
 
 	-- Where they are now, so ending the run can put them back there. Measured, not
 	-- remembered from a config: a player who drove from the track to the playground ends
@@ -512,6 +553,11 @@ function RoadService:StartRun(player: Player): CFrame?
 	-- they are standing in instead of onto the road.
 	runners[player.UserId] = { from = from, since = os.clock(), n = 1, t = 0, told = nil }
 	runnerCount += 1
+	-- The whole spline road so far, BEFORE the car is put on it: the client must have the
+	-- ground before it lands on it (T-136).
+	if splineRun() then
+		self:_sendAll(player)
+	end
 
 	local ok, placed = pcall(cars.Place, cars, player, cf)
 	if not ok or not placed then
@@ -551,6 +597,9 @@ function RoadService:EndRun(player: Player): CFrame?
 	runners[player.UserId] = nil
 	runnerCount -= 1
 	self.ended += 1
+	if splineRun() and self.roadSpline then
+		self.roadSpline:FireClient(player, { kind = "stop" })
+	end
 
 	if cf and cars and type(cars.Place) == "function" then
 		pcall(cars.Place, cars, player, cf)
@@ -650,14 +699,29 @@ end
 -- makes a run reproducible, a ghost possible and a score checkable later.
 function RoadService:Generate(seed: number?): CFrame
 	self:Stop()
-	generator = Generator.new(seed or (DateTime.now().UnixTimestampMillis % 2 ^ 31))
+	local chosen = seed or (DateTime.now().UnixTimestampMillis % 2 ^ 31)
+	if mode == "spline" then
+		local o = Config.Road.Offset
+		generator = SplineSequence.new(chosen, {
+			x = o.X,
+			y = Config.Road.SurfaceY,
+			z = o.Z,
+			yaw = math.rad(Config.Road.StartHeading),
+		})
+	else
+		generator = Generator.new(chosen)
+	end
 	RoadService.Running = true
 	leaderN = 1
 	windowCentre = 1
 	lastProgress = nil
+	sentLast = 0
+	sentClosing = nil
 
 	local folder = root()
-	closing = Builder.closingBarrier(folder)
+	if not splineRun() then
+		closing = Builder.closingBarrier(folder)
+	end
 	window(1)
 	moveClosingBarrier()
 	local spawn = self:SpawnCFrame()
@@ -674,6 +738,11 @@ end
 -- the last runner has already left.
 function RoadService:Stop()
 	RoadService.Running = false
+	if splineRun() then
+		self:_tellRunners({ kind = "stop" })
+	end
+	sentLast = 0
+	sentClosing = nil
 	table.clear(runners)
 	runnerCount = 0
 	for n in built do
@@ -695,6 +764,65 @@ function RoadService:Stop()
 	windowCentre = 1
 end
 
+-- WHICH ROAD THE NEXT RUN LAYS: "pieces" or "spline". Only between runs -- a road being
+-- driven is never swapped out from under anyone. Returns the mode now in force.
+function RoadService:Mode(): string
+	return mode or "pieces"
+end
+
+function RoadService:SetMode(want: string): string
+	if (want == "pieces" or want == "spline") and not self:HasRoad() then
+		mode = want
+	end
+	return self:Mode()
+end
+
+-- The spline road to the clients (T-136). Only runners are sent it: they are the only ones
+-- driving it, and a client draws a road only round its own car.
+function RoadService:_tellRunners(message: any)
+	if not self.roadSpline then
+		return
+	end
+	for userId in runners do
+		local player = Players:GetPlayerByUserId(userId)
+		if player then
+			self.roadSpline:FireClient(player, message)
+		end
+	end
+end
+
+function RoadService:_sendNewSections()
+	local sections = generator.gen.sections
+	if #sections <= sentLast then
+		return
+	end
+	local fresh = {}
+	for n = sentLast + 1, #sections do
+		table.insert(fresh, sections[n])
+	end
+	local from = sentLast + 1
+	sentLast = #sections
+	self:_tellRunners({ kind = "more", from = from, sections = fresh })
+end
+
+-- Everything so far, for one runner arriving: the origin and every section from the first,
+-- because the curve is integrated from its start and a client cannot draw the middle of it
+-- without the beginning. A section is a few numbers; an hour of road is tens of kilobytes.
+function RoadService:_sendAll(player: Player)
+	if not self.roadSpline or not splineRun() then
+		return
+	end
+	local o = generator.spline.origin
+	self.roadSpline:FireClient(player, {
+		kind = "start",
+		seed = generator.seed,
+		origin = { x = o.x, y = o.y, z = o.z, yaw = o.yaw },
+		sections = generator.gen.sections,
+		closing = sentClosing,
+		rails = railsOn,
+	})
+end
+
 function RoadService:HasRoad(): boolean
 	return RoadService.Running and generator ~= nil
 end
@@ -710,6 +838,9 @@ function RoadService:SetBarriers(on: boolean): boolean
 	railsOn = on == true
 	for _, entry in built do
 		applyRails(entry)
+	end
+	if splineRun() then
+		self:_tellRunners({ kind = "rails", on = railsOn })
 	end
 	return railsOn
 end
@@ -767,6 +898,9 @@ end
 -- The same pose for piece 1 (a spawn), for the piece a joiner lands on, and for the piece
 -- a fall puts a car back on -- the spec's `safeStart`.
 function RoadService:_poseOn(piece: any): CFrame
+	if splineRun() then
+		return generator:poseOn(piece, math.min(20, piece.length * 0.5), Config.Drift.RideHeight)
+	end
 	local t = math.clamp(20 / math.max(piece.length, 1), 0, 0.5)
 	return Pieces.poseAt(piece, t, Config.Road.SurfaceY + Config.Drift.RideHeight)
 end

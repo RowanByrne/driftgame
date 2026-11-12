@@ -278,6 +278,7 @@ function DriftController:_rebuildWorld()
 	if self.spline then
 		local sw = SplineWorld.new(self.spline, live)
 		sw.setRails(self.splineRails ~= false)
+		sw.setClosing(self.splineClosing)
 		self.world = sw
 	else
 		self.world = live
@@ -301,6 +302,7 @@ function DriftController:UseSpline(spline: any?)
 		self.splineView = nil
 	end
 	self.spline = spline
+	self.splineClosing = nil
 	if spline then
 		self.splineView = SplineRoadView.new(spline)
 		self.splineView:SetRails(self.splineRails ~= false)
@@ -317,6 +319,19 @@ function DriftController:SetSplineRails(on: boolean)
 	end
 	if self.splineView then
 		self.splineView:SetRails(self.splineRails)
+	end
+end
+
+-- The closing barrier across the spline road behind the run's window, or nil for none
+-- (T-136). It never switches off with the guardrails.
+function DriftController:SetSplineClosing(s: number?)
+	self.splineClosing = s
+	local w: any = self.world
+	if w and w.setClosing then
+		w.setClosing(s)
+	end
+	if self.splineView then
+		self.splineView:SetClosing(s)
 	end
 end
 

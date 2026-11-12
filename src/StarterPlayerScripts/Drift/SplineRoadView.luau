@@ -40,6 +40,10 @@ export type View = typeof(setmetatable(
 		worstMs: number,
 		triangles: number,
 		lastError: string?,
+		closing: BasePart?,
+		closingS: number?,
+		short: { [number]: number }, -- chunk -> the road's length when it was built short
+		rebuilt: number,
 	},
 	SplineRoadView
 ))
@@ -63,6 +67,10 @@ function SplineRoadView.new(spline: Spline.Spline, parent: Instance?): View
 		worstMs = 0,
 		triangles = 0,
 		lastError = nil,
+		closing = nil,
+		closingS = nil,
+		short = {},
+		rebuilt = 0,
 	}, SplineRoadView)
 end
 
@@ -80,6 +88,47 @@ function SplineRoadView.SetRails(self: View, on: boolean)
 	for _, chunk in self.chunks do
 		setBarriers(chunk, on)
 	end
+end
+
+-- THE CLOSING BARRIER (T-136): a wall across the road at `s`, the piece road's colour and
+-- see-through, drawn here because the server builds nothing. It never switches off with the
+-- guardrails; `Drift/SplineWorld` is what makes it solid.
+function SplineRoadView.SetClosing(self: View, s: number?)
+	self.closingS = s
+	if not s then
+		if self.closing then
+			self.closing:Destroy()
+			self.closing = nil
+		end
+		return
+	end
+	local R = Config.Road
+	local part = self.closing
+	if not part then
+		local p = Instance.new("Part")
+		p.Name = "ClosingBarrier"
+		p.Anchored = true
+		p.CanCollide = false
+		p.CanQuery = false
+		p.CanTouch = false
+		p.CastShadow = false
+		p.Material = R.BarrierMaterial
+		p.Color = R.Colours.Closing
+		p.Transparency = R.BarrierTransparency
+		p.Parent = self.folder
+		self.closing = p
+		part = p
+	end
+	local spline = self.spline
+	local x, y, z = spline:surfaceXYZ(s, 0)
+	local height = R.BarrierHeight + R.Thickness
+	local wide = R.Width + 2 * R.BarrierThickness
+	-- tall enough to cover the banked road edge to edge
+	local bankRise = R.Width * 0.5 * math.abs(math.tan(spline:bankAt(s)))
+	local p = part :: BasePart
+	p.Size = Vector3.new(wide, height + 2 * bankRise, 1)
+	-- the slab `Drift/SplineWorld` makes solid: 1 stud deep, its front face at `s`
+	p.CFrame = CFrame.new(x, y + (R.BarrierHeight - R.Thickness) * 0.5, z) * CFrame.Angles(0, spline:yawAt(s), 0) * CFrame.new(0, 0, 0.5)
 end
 
 local function removeChunk(chunk: Instance)
@@ -121,6 +170,12 @@ function SplineRoadView._build(self: View, i: number)
 	end
 	setBarriers(chunk, self.rails)
 	self.chunks[i] = chunk
+	-- built up to where the road ended at the time: rebuild it once more road arrives
+	if s1 < (i + 1) * L - 1e-6 then
+		self.short[i] = s1
+	else
+		self.short[i] = nil
+	end
 end
 
 -- Keep the chunks round `s` (the car's distance along the road) and no others.
@@ -138,7 +193,20 @@ function SplineRoadView.Update(self: View, s: number?)
 		if i < lo or i > hi then
 			removeChunk(chunk)
 			self.chunks[i] = nil
+			self.short[i] = nil
 			self.removed += 1
+		end
+	end
+	-- a chunk drawn to the old end of a road that has since grown: take it down to redraw
+	if not self.building then
+		for i, builtTo in self.short do
+			if self.spline.length > builtTo + 1e-6 and self.chunks[i] then
+				removeChunk(self.chunks[i])
+				self.chunks[i] = nil
+				self.short[i] = nil
+				self.rebuilt += 1
+				break
+			end
 		end
 	end
 	if self.building then
@@ -181,6 +249,7 @@ function SplineRoadView.Destroy(self: View)
 		removeChunk(chunk)
 		self.chunks[i] = nil
 	end
+	self.closing = nil
 	self.folder:Destroy()
 end
 
@@ -208,6 +277,9 @@ function SplineRoadView.DebugState(self: View)
 		rails = self.rails,
 		forceFallback = self.forceFallback,
 		lastError = self.lastError,
+		closingS = self.closingS,
+		rebuilt = self.rebuilt,
+		length = self.spline.length,
 	}
 end
 
