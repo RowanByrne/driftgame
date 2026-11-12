@@ -15,6 +15,8 @@
 --   THE SNOW PEAK: a cone at a fixed bearing, only its half facing the camera, in rings:
 --   foot, shoulder, snow line, summit. The faces below the snow line are rock, above it snow.
 --
+--   THE VALLEY FLOOR (`floor`): square plates under the near layer, far below the cliffs.
+--
 -- A triangle longer than `MaxEdge` on any side is halved across that side until none is,
 -- because a part may be at most 2 048 studs on a side.
 
@@ -173,6 +175,33 @@ function Horizon.layout(config: any): Layout
 		table.insert(layers, peak)
 	end
 	return { layers = layers, triangles = count }
+end
+
+export type Plate = { centre: Vector3, size: Vector3, colour: Color3 }
+
+-- The valley floor's plates, relative to the near layer's centre at the road's start height.
+function Horizon.floor(config: any): { Plate }
+	local F = config.Floor
+	local plates: { Plate } = {}
+	if not F then
+		return plates
+	end
+	local rng = Random.new(config.Seed + 1)
+	local n: number = F.Tiles
+	local side = F.Size / n
+	for i = 0, n - 1 do
+		for j = 0, n - 1 do
+			local x = -F.Size / 2 + (i + 0.5) * side
+			local z = -F.Size / 2 + (j + 0.5) * side
+			table.insert(plates, {
+				-- its top at `-Depth`
+				centre = Vector3.new(x, -F.Depth - F.Thickness / 2, z),
+				size = Vector3.new(side, F.Thickness, side),
+				colour = shade(F.Colour, rng:NextNumber(-F.Shade, F.Shade)),
+			})
+		end
+	end
+	return plates
 end
 
 -- Where a layer's centre is after `dt` seconds of catching up `cam` (both flat, Y = 0):

@@ -80,7 +80,7 @@ return {
 			Radius = 3200,
 			Segments = 28,
 			Height = { 120, 250 },
-			Base = -500,
+			Base = -540, -- below the valley floor, so its feet sink into it
 			Depth = 0.18,
 			AngleJitter = 0.3,
 			RadiusJitter = 0.05,
@@ -131,5 +131,22 @@ return {
 		Rock = rgb(88, 98, 120),
 		Snow = rgb(248, 250, 255),
 		Shade = 0.07,
+	},
+
+	-- ------------------------------------------------------------ the valley floor
+	-- Flat ground far below the cliffs, so looking over the edge shows ground through the
+	-- haze. Square plates welded to the near layer, so the floor moves with those ridges and
+	-- its edges stay hidden behind them: the near ridges' feet (`Base` -560) sink into it, and
+	-- it reaches well past them on every side (unit test). `Depth` studs below the road's
+	-- start, which is 340 below the lowest the road can go, and the horizon's rise with the
+	-- road (`FollowHeight`) carries it too. `Tiles` x `Tiles` plates, since a part is at most
+	-- 2 048 studs on a side; each a touch lighter or darker, by up to `Shade`.
+	Floor = {
+		Depth = 500,
+		Size = 5400, -- studs across
+		Tiles = 3,
+		Thickness = 4,
+		Colour = rgb(30, 56, 38), -- dark green
+		Shade = 0.04,
 	},
 }

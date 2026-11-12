@@ -4,7 +4,7 @@
 --
 -- `Shared/Horizon` gives the shapes as triangles; this draws each as two wedge parts
 -- (`Road/Builder.triangleSlab`) and keeps every layer round the camera, each frame, after
--- the camera has moved. Nothing here collides, is touched or is hit by a query, and nothing
+-- the camera has moved, and a valley floor far below the cliffs. Nothing here collides, is touched or is hit by a query, and nothing
 -- casts a shadow: it is backdrop only.
 --
 -- ONE ANCHOR A LAYER: each layer's parts are welded to one anchored, invisible part, and
@@ -52,6 +52,7 @@ export type View = typeof(setmetatable(
 		camY: number, -- the camera's height, eased
 		lift: number, -- how far the horizon stands above the road's start now
 		layers: { LayerState },
+		floor: { BasePart },
 		triangles: number,
 		parts: number,
 		building: boolean,
@@ -111,6 +112,7 @@ function HorizonView.new(originY: number, parent: Instance?): View
 		camY = cameraAt().Y,
 		lift = 0,
 		layers = layers,
+		floor = {},
 		triangles = layout.triangles,
 		parts = 0,
 		building = true,
@@ -130,10 +132,50 @@ function HorizonView.new(originY: number, parent: Instance?): View
 	return self
 end
 
+local function backdrop(p: BasePart)
+	p.CanCollide = false
+	p.CanQuery = false
+	p.CanTouch = false
+	p.CastShadow = false
+end
+
+-- The valley floor (step 2): plates welded to the near layer's anchor, so the floor moves
+-- with those ridges and its edges stay behind them.
+function HorizonView._buildFloor(self: View)
+	local H = Config.Horizon
+	local near = self.layers[1]
+	if not near then
+		return
+	end
+	local sub = Instance.new("Folder")
+	sub.Name = "Floor"
+	for i, plate in Horizon.floor(H) do
+		local p = Instance.new("Part")
+		p.Name = `Floor_{i}`
+		p.Size = plate.size
+		p.CFrame = CFrame.new(near.anchor.Position + plate.centre)
+		p.Color = plate.colour
+		p.Material = H.Material
+		p.TopSurface = Enum.SurfaceType.Smooth
+		p.BottomSurface = Enum.SurfaceType.Smooth
+		backdrop(p)
+		p.Anchored = false
+		local weld = Instance.new("WeldConstraint")
+		weld.Part0 = near.anchor
+		weld.Part1 = p
+		weld.Parent = p
+		p.Parent = sub
+		table.insert(self.floor, p)
+		self.parts += 1
+	end
+	sub.Parent = self.folder
+end
+
 function HorizonView._build(self: View, layout: Horizon.Layout)
 	local H = Config.Horizon
 	local perFrame: number = H.BuildPerFrame
 	local made = 0
+	self:_buildFloor()
 	for i, layer in layout.layers do
 		local state = self.layers[i]
 		local sub = Instance.new("Folder")
@@ -148,10 +190,7 @@ function HorizonView._build(self: View, layout: Horizon.Layout)
 			local lift = Vector3.yAxis * self.originY
 			Builder.triangleSlab(`{layer.name}_{t}`, tri.a + lift, tri.b + lift, tri.c + lift, H.Thickness, tri.colour, H.Material, sub, out :: any)
 			for _, p in out do
-				p.CanCollide = false
-				p.CanQuery = false
-				p.CanTouch = false
-				p.CastShadow = false
+				backdrop(p)
 				-- onto the anchor wherever it is now, then welded to it
 				p.CFrame = (p.CFrame - lift) + state.anchor.Position
 				p.Anchored = false
@@ -229,6 +268,8 @@ function HorizonView.DebugState(self: View): { [string]: any }
 		originY = self.originY,
 		lift = self.lift,
 		layers = layers,
+		floorParts = #self.floor,
+		floorTop = if self.floor[1] then self.floor[1].Position.Y + self.floor[1].Size.Y / 2 else nil,
 		buildMs = self.buildMs,
 		lastMs = self.lastMs,
 		worstMs = self.worstMs,
