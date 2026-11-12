@@ -212,9 +212,34 @@ degrees with the slide. Catch it and all of it settles.
 **Step 1 (`T-071`) was the closer camera, the reshaped FOV and the wider swing; step 2
 (`T-072`) is the buzz and the lean.** All of it is built.
 
+## Zoom
+
+The user (`T-152`): *"allow me to smoothly zoom in and out with the camera"*, then *"via scroll
+wheel"*.
+
+- **The mouse wheel moves the camera nearer or farther** along its current offset from the car:
+  distance and height scale together, so the framing keeps its shape, and the camera still looks at
+  the same point ahead of the car.
+- **Smooth:** each notch moves a target by `PlayerZoomStep` (×1.12, multiplied, so a notch is the same
+  size of step at any distance), and the camera eases to it at `PlayerZoomRate` (10/s, about 0.3 s to
+  arrive). A burst of notches eases to the sum; nothing jumps.
+- **Limits:** `PlayerZoomMin` 0.6× (27.6 studs) to `PlayerZoomMax` 1.8× (82.8 studs) of the 46-stud
+  distance. **The default is 1×, exactly the approved camera:** at 1 the zoom code does not run.
+- **Kept for the session,** across respawns and runs, not saved.
+- **It is not the predecessor's drift zoom.** It never moves on its own. Like the pan it scales the
+  *rendered* camera, downstream of the stepped targets, so the follow, lean, roll and shake are
+  unchanged and the frame-rate rule still holds.
+- **While driving, the wheel does nothing else:** it is sunk above Roblox's own camera, so the
+  avatar camera's zoom does not move underneath it. It is heard even though the steering pad covers
+  the whole screen (the pad marks every notch as already handled, so the zoom listens regardless),
+  except over a scrolling list, which keeps its scroll. Out of the car and in the garage the wheel
+  is passed through to whatever else wants it.
+- **Mouse wheel only.** Touch pinch and gamepad zoom are left out for now.
+
 ## Left out
 
-- **Anything the player can change.** All of this is one look, tuned once. A camera settings screen
+- **Anything the player can change**, apart from the wheel's zoom above. All of this is one look,
+  tuned once. A camera settings screen
   (shake on/off, roll on/off, a distance slider) belongs in `SETTINGS.md` and the UI phase — though
   the reference does carry a camera-mode switch, and these numbers are already shaped to be
   switched off.
@@ -245,6 +270,9 @@ and the shake's four), and proved the same way that zeroing them gives that buil
 | `ShakeRotation` | **(0.15, 0.15, 0.10)°** | The rotation kick at top speed. Nothing below `ShakeSpeedStart`, then linear from there to the top. 3.3 px of picture in the worst frame at the top, 0.65 in the average one |
 | `ShakePosition` | **(0.07, 0.07, 0) studs** | The position kick, in the camera's own axes. About a pixel; the Z is zero because a dolly along the look axis is a 0.2% scale change and nothing else |
 | `ShakeRestoreRate` | **14 /s** | How fast a kick settles back to zero: to half of itself before the next one arrives |
+| `PlayerZoomMin`, `PlayerZoomMax` | **0.6×, 1.8×** | The wheel's zoom limits, as multiples of the distance (`T-152`). 1 is the default and today's camera |
+| `PlayerZoomStep` | **×1.12** | One wheel notch |
+| `PlayerZoomRate` | **10 /s** | How fast the camera eases to the zoom a notch asked for |
 
 **Every one of them must be settable to zero and give exactly today's camera back.** That is the
 test that protects the approved feel, and it is how the roll ships without reopening an argument.

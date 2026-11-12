@@ -93,12 +93,23 @@
 -- is eased too, lightly: "smoothened slightly ... a bit cinematic" is the brief, and this
 -- camera is already calm, so a heavy filter here reads as lag rather than as cinema.
 --
+-- THE WHEEL'S ZOOM (T-152) is the player's hand too, and it is NOT the zoom the 2026-11-03
+-- note above keeps out: that was the predecessor's automatic drift zoom. This one never moves
+-- on its own. Each wheel notch multiplies a target distance (`PlayerZoomStep`), clamped to
+-- `PlayerZoomMin`..`PlayerZoomMax`, and the camera eases to it at `PlayerZoomRate`. It scales
+-- the RENDERED camera's offset from the car, after the pan, so like the pan it is downstream
+-- of every target and the feedback loop never sees it. Zoom 1 is the default and skips it
+-- entirely. It lives on the rig and `_seed` keeps it, so it lasts the session. While driving
+-- the wheel is sunk above Roblox's own camera, which would otherwise zoom the avatar's view.
+--
 -- Every number is in Config.Camera; none is in here (T-071: they moved out of
 -- Config.Drift, name for name, because the camera is a look and not the model).
 
+local ContextActionService = game:GetService("ContextActionService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
 
 local CarModel = require(ReplicatedStorage.Shared.CarModel)
 local Config = require(ReplicatedStorage.Shared.Config)
@@ -125,6 +136,7 @@ local CarCameraController = {}
 CarCameraController.Priority = 5 -- after DriftController, so a state exists to follow
 
 local STEP_NAME = "DriftCamera"
+local ZOOM_ACTION = "DriftCameraZoom"
 local EPS = 1e-4
 
 -- The shake's random sequence is seeded (T-072), so the same drive shakes the same way
@@ -244,6 +256,12 @@ function CarCameraController.newRig(view: View?)
 		-- same kicks. Nobody can tell a fixed seed from a random one at twenty kicks a
 		-- second, and a test can.
 		shakeRng = Random.new(SHAKE_SEED),
+		-- The player's zoom (T-152), a multiplier on the distance: what the wheel asked for
+		-- (`zoomTarget`) and where the camera has eased to (`zoom`). The same rule as the pan
+		-- and the style: applied to the RENDERED camera and NOTHING ABOVE THIS LINE READS IT.
+		-- NOT reset by `_seed`, so it lasts the session, across respawns and runs.
+		zoom = 1,
+		zoomTarget = 1,
 	}
 	if view then
 		CarCameraController._seed(rig, view)
@@ -273,6 +291,10 @@ function CarCameraController._seed(rig, view: View)
 	rig.roll = 0
 	rig.shakeRot, rig.shakePos, rig.shakeTimer = Vector3.zero, Vector3.zero, 0
 	rig.shakeRng = Random.new(SHAKE_SEED)
+	-- The zoom is the player's and lasts the session (T-152): kept, and arrived at, so a
+	-- respawn starts at the distance they chose rather than easing out to it.
+	rig.zoomTarget = math.clamp(rig.zoomTarget or 1, Cam.PlayerZoomMin, Cam.PlayerZoomMax)
+	rig.zoom = rig.zoomTarget
 	rig.ready = true
 end
 
@@ -343,6 +365,40 @@ local function applyPan(rig, carPos: Vector3)
 	elevation = math.clamp(elevation + rig.panPitch, floor, ceiling)
 	dir = CFrame.Angles(0, rig.panYaw, 0) * dir
 	rig.position = carPos + dir * (radius * math.cos(elevation)) + Vector3.yAxis * (radius * math.sin(elevation))
+end
+
+-- ---------------------------------------------------------------- the zoom (T-152)
+--
+-- The player's own wheel, and the same design as the pan: a multiplier on the RENDERED
+-- camera's offset from the car, stored where no target reads it. Distance and height scale
+-- together, so the framing keeps its shape; the look point is untouched, so the car stays
+-- where it was on screen. Zoom 1 skips it entirely: the approved camera, bit for bit.
+
+-- Move the zoom's target by `notches` of the wheel: + is nearer (wheel forward), - is
+-- farther. Multiplied, so a notch is the same size of step at any distance.
+function CarCameraController.zoomBy(rig, notches: number)
+	local step = math.max(Cam.PlayerZoomStep, 1 + EPS)
+	local target = (rig.zoomTarget or 1) * step ^ -notches
+	rig.zoomTarget = math.clamp(target, Cam.PlayerZoomMin, Cam.PlayerZoomMax)
+end
+
+-- Ease the zoom toward its target, in log space so zooming in and out feel the same.
+local function stepZoom(rig, dt: number)
+	local target = rig.zoomTarget
+	if rig.zoom == target then
+		return
+	end
+	local logZoom = math.log(rig.zoom)
+	local logTarget = math.log(target)
+	logZoom += (logTarget - logZoom) * ease(dt, Cam.PlayerZoomRate)
+	rig.zoom = if math.abs(logTarget - logZoom) < 1e-5 then target else math.exp(logZoom)
+end
+
+local function applyZoom(rig, carPos: Vector3)
+	if rig.zoom == 1 then
+		return
+	end
+	rig.position = carPos + (rig.position - carPos) * rig.zoom
 end
 
 -- -------------------------------------------------------- the roll and the shake (T-072)
@@ -540,6 +596,10 @@ function CarCameraController._advance(rig, view: View, dt: number, pan): CFrame
 	-- above cannot see it and the camera is unchanged whenever nobody is panning.
 	stepPan(rig, dt, pan)
 	applyPan(rig, view.position)
+	-- The wheel's zoom (T-152), after the pan and on the same terms: the rendered camera
+	-- only. The pan keeps the radius, so the order does not matter for the distance.
+	stepZoom(rig, dt)
+	applyZoom(rig, view.position)
 
 	-- The FOV has no feedback in it, so it is eased once a frame.
 	local wantFov = Cam.CamFovBase + Cam.CamFovPerSpeed * view.speed
@@ -678,6 +738,59 @@ function CarCameraController:Start()
 	RunService:BindToRenderStep(STEP_NAME, Enum.RenderPriority.Camera.Value, function(dt)
 		self:_frame(dt)
 	end)
+
+	-- The wheel's zoom (T-152), in two halves, because of the steering pad.
+	--
+	-- HEARD on UserInputService, gameProcessed or not: the steering pad (`DriftControls
+	-- .DragArea`) is an Active frame over the whole screen, so every wheel notch arrives
+	-- already "processed" and a ContextActionService action never fires at all. A notch
+	-- over a ScrollingFrame is left to the list, so a menu that scrolls still scrolls.
+	--
+	-- SUNK on ContextActionService, ABOVE Roblox's own camera (which binds the wheel there
+	-- at the default priority), for any notch that is not over the pad: while this camera
+	-- is driving, the avatar camera's zoom must not move underneath it. The sink zooms
+	-- nothing itself, so a notch is only ever counted once, by the listener above.
+	--
+	-- Out of the car, or with another view holding the camera (the garage), both pass the
+	-- wheel straight through. Mouse wheel only: no pinch, no gamepad.
+	UserInputService.InputChanged:Connect(function(input)
+		if input.UserInputType ~= Enum.UserInputType.MouseWheel or not self:_zoomLive() then
+			return
+		end
+		local z = input.Position.Z
+		if z == 0 or self:_overScroller(input.Position) then
+			return
+		end
+		self:Zoom(math.clamp(z, -3, 3))
+	end)
+	ContextActionService:BindActionAtPriority(ZOOM_ACTION, function()
+		return if self:_zoomLive() then Enum.ContextActionResult.Sink else Enum.ContextActionResult.Pass
+	end, false, Enum.ContextActionPriority.High.Value, Enum.UserInputType.MouseWheel)
+end
+
+-- Whether the wheel is the drift camera's right now: driving, and no other view has it.
+function CarCameraController:_zoomLive(): boolean
+	return self.driving == true and self.view == nil
+end
+
+-- Whether a notch at this screen point belongs to a scrolling list instead.
+function CarCameraController:_overScroller(at: Vector3): boolean
+	local gui = Players.LocalPlayer:FindFirstChildOfClass("PlayerGui")
+	if not gui then
+		return false
+	end
+	for _, object in gui:GetGuiObjectsAtPosition(at.X, at.Y) do
+		if object:IsA("ScrollingFrame") and object.ScrollingEnabled then
+			return true
+		end
+	end
+	return false
+end
+
+-- Zoom by `notches` of the wheel: + nearer, - farther (T-152). What the wheel calls, and
+-- what a test calls through the DebugBridge.
+function CarCameraController:Zoom(notches: number)
+	CarCameraController.zoomBy(self.rig, notches)
 end
 
 function CarCameraController:_frame(dt: number)
@@ -766,6 +879,9 @@ function CarCameraController:DebugState()
 		panTargetYawDeg = math.deg(rig.panTargetYaw),
 		panTargetPitchDeg = math.deg(rig.panTargetPitch),
 		panIdle = rig.panIdle,
+		-- The wheel's zoom (T-152): where it has eased to and what the wheel asked for.
+		zoom = rig.zoom,
+		zoomTarget = rig.zoomTarget,
 		elevationDeg = if carPos
 			then math.deg(
 				math.atan2(
