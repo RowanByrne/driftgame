@@ -240,6 +240,14 @@ return {
 		-- this, stop below it. A car genuinely running straight reads
 		-- about 0.09 degrees, well under both, so nothing latches on
 
+		MinMarkSpeed = 15, -- studs/s. A wheel STARTS marking only at or above this (T-151).
+		-- Pulling away from rest with a finger held, the slip angle is an
+		-- `atan2` of a velocity of a stud or two a second, and it swings
+		-- several degrees either way: measured in DR-Lane3, rears marking
+		-- from 0.1 studs/s, chattering on and off up to ~14 studs/s. A wheel
+		-- ALREADY marking ignores this and keeps going down to
+		-- `StopSlipDegrees`, so a drift that slows to a crawl keeps its mark
+
 		MinThrottle = 0.2, -- 0..1. A car coasting sideways leaves nothing. `s.throttle` is
 		-- eased in over `Config.Drift.FullThrottleSeconds` and is never an
 		-- input, so this is a gate on how hard the car is driving and not
