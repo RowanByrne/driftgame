@@ -15,9 +15,11 @@
 --               very low poly, programmer colours
 --   Edge_*      a hedge: a green box per cross-section, at the grass's outer edge
 --   KRail*_*    a K-rail run drawn as a METAL CRASH BARRIER (T-149): a W-beam guardrail,
---               its beam two ridges (`KRailTop_*`, `KRailLow_*`) and the groove between
---               (`KRailGroove_*`), a piece per stretch of the run, pitched along the grade
---               and cut finer round a bend; round posts (`KRailPost_*`) every `KRailPostEvery`
+--               its beam two rounded ridges (`KRailTop_*`, `KRailLow_*`) and the groove
+--               between (`KRailGroove_*`), a piece per stretch of the run, pitched along the
+--               grade and cut finer round a bend; square posts (`KRailPost_*`) every
+--               `KRailPostEvery` on spacer blocks (`KRailSpacer_*`), bolt heads at each
+--               splice (`KRailBolt_*`), a striped hazard panel at each end (`KRailEnd_*`)
 --   Mark        a flat box per dash of the centre line, `MarkLift` above the surface
 --
 -- Only the surface is a mesh because a client may hold only eight EditableMeshes at once and
@@ -54,6 +56,21 @@ local meshesOf: { [Model]: { EditableMesh } } = setmetatable({}, { __mode = "k" 
 -- colour new chunks are drawn with.
 local hazeOf: { [EditableMesh]: { haze: number, mid: number } } = setmetatable({}, { __mode = "k" }) :: any
 local hazeColour: Color3? = nil -- nil: `Config.Spline.Terrain.HazeColour`
+
+-- THE HAZARD PANEL's diagonal stripes (T-149), as one gradient stepping sharply between its
+-- two colours: no image to upload, and a gradient rotates without spilling past its frame.
+local hazardStripes = (function(): ColorSequence
+	local yellow, black = Config.Spline.Terrain.KRailHazardColours[1], Config.Spline.Terrain.KRailHazardColours[2]
+	local bands = 9 -- a ColorSequence holds 20 keypoints at most: two a step, and the ends
+	local keys = { ColorSequenceKeypoint.new(0, yellow) }
+	for i = 1, bands - 1 do
+		local t = i / bands
+		table.insert(keys, ColorSequenceKeypoint.new(t - 0.002, if i % 2 == 1 then yellow else black))
+		table.insert(keys, ColorSequenceKeypoint.new(t, if i % 2 == 1 then black else yellow))
+	end
+	table.insert(keys, ColorSequenceKeypoint.new(1, yellow))
+	return ColorSequence.new(keys)
+end)()
 
 export type Options = {
 	tolerance: number?,
@@ -416,32 +433,86 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 				plain(name, Vector3.new(thick, height + sink, len + 0.2), CFrame.lookAt(mid, mid + chord, Vector3.yAxis), colour, material)
 			end
 		end
-		-- THE GUARDRAIL's pieces (T-149), placed from the tarmac's edge on `side`: a piece of
-		-- beam `u .. u + thick` out from the edge and `y0 .. y1` above it, pitched along the
-		-- road between `a` and `b`; and an upright round post at `s`
+		-- THE GUARDRAIL's pieces (T-149), placed from the tarmac's edge on `side`, `u` out from
+		-- it and `y` above the ground there. The W-beam's profile, from the road: two rounded
+		-- ridges (flattened cylinders) `KRailRidge` deep, the groove between them set back; a
+		-- spacer block behind the groove, and a square post behind that
 		local railMaterial = Enum.Material.Metal
-		local function beam(name: string, a: number, b: number, side: number, u: number, thick: number, y0: number, y1: number)
-			local off = side * (half + u + thick * 0.5)
+		local ridgeH = T.KRailBeam * 0.45 -- each ridge's height; the groove shows between them
+		local grooveU = T.KRailRidge * 0.45 -- the groove's face, set back from the ridges'
+		local backU = T.KRailRidge -- the beam's back
+		-- a piece of beam between `a` and `b`, pitched along the road: a cylinder runs along
+		-- the chord (its axis is its X), a box stands upright across the road
+		local function beam(name: string, a: number, b: number, side: number, u: number, y: number, h: number, depth: number, round: boolean)
+			local off = side * (half + u)
 			local ax, _, az = spline:terrainXYZ(a, off)
 			local bx, _, bz = spline:terrainXYZ(b, off)
-			local lift = (y0 + y1) * 0.5
-			local pa = Vector3.new(ax, spline:terrainY(a, side * half) + lift, az)
-			local pb = Vector3.new(bx, spline:terrainY(b, side * half) + lift, bz)
+			local pa = Vector3.new(ax, spline:terrainY(a, side * half) + y, az)
+			local pb = Vector3.new(bx, spline:terrainY(b, side * half) + y, bz)
 			local chord = pb - pa
 			local len = chord.Magnitude
 			if len > 1e-3 then
 				local mid = (pa + pb) * 0.5
-				plain(name, Vector3.new(thick, y1 - y0, len + 0.1), CFrame.lookAt(mid, mid + chord, Vector3.yAxis), T.KRailColour, railMaterial)
+				local cf = CFrame.lookAt(mid, mid + chord, Vector3.yAxis)
+				if round then
+					local part = plain(name, Vector3.new(len + 0.1, h, depth), cf * CFrame.Angles(0, math.pi * 0.5, 0), T.KRailColour, railMaterial)
+					part.Shape = Enum.PartType.Cylinder
+				else
+					plain(name, Vector3.new(depth, h, len + 0.1), cf, T.KRailColour, railMaterial)
+				end
 			end
 		end
-		local function post(name: string, s: number, side: number)
-			local d = T.KRailPostSize
-			local x, _, z = spline:terrainXYZ(s, side * (half + T.KRailRidge + 0.1 + d * 0.5))
+		-- upright at `s`, looking along the road (level), `u` out and `y` up
+		local function uprightAt(s: number, side: number, u: number, y: number): CFrame
+			local x, _, z = spline:terrainXYZ(s, side * (half + u))
+			local x0, _, z0 = spline:terrainXYZ(s - 0.5, 0)
+			local x1, _, z1 = spline:terrainXYZ(s + 0.5, 0)
+			local pos = Vector3.new(x, spline:terrainY(s, side * half) + y, z)
+			return CFrame.lookAt(pos, pos + Vector3.new(x1 - x0, 0, z1 - z0), Vector3.yAxis)
+		end
+		-- a square post and its spacer block, and at a splice the bolt heads in the groove
+		local function post(id: string, s: number, side: number, splice: boolean)
+			local d, sp = T.KRailPostSize, T.KRailSpacer
 			local sink, top = 1, T.KRailHeight - 0.15
-			local y = spline:terrainY(s, side * half) + (top - sink) * 0.5
-			-- a cylinder's axis is its X: stood upright
-			local part = plain(name, Vector3.new(top + sink, d, d), CFrame.new(x, y, z) * CFrame.Angles(0, 0, math.pi * 0.5), T.KRailColour, railMaterial)
-			part.Shape = Enum.PartType.Cylinder
+			plain(`KRailPost_{id}`, Vector3.new(d, top + sink, d), uprightAt(s, side, backU + sp + d * 0.5, (top - sink) * 0.5), T.KRailColour, railMaterial)
+			plain(`KRailSpacer_{id}`, Vector3.new(backU + sp - grooveU, T.KRailBeam * 0.6, d * 0.8), uprightAt(s, side, (grooveU + backU + sp) * 0.5, T.KRailHeight - T.KRailBeam * 0.5), T.KRailColour, railMaterial)
+			if splice then
+				local n = T.KRailSpliceBolts
+				for i = 1, n do
+					local along = (i - (n + 1) * 0.5) * 0.5
+					local cf = uprightAt(s, side, grooveU - 0.03, T.KRailHeight - T.KRailBeam * 0.5) * CFrame.new(0, 0, -along)
+					-- a cylinder's axis is its X: across the road, a round head facing it
+					local bolt = plain(`KRailBolt_{id}_{i}`, Vector3.new(0.08, 0.16, 0.16), cf, T.KRailBoltColour, Enum.Material.Metal)
+					bolt.Shape = Enum.PartType.Cylinder
+				end
+			end
+		end
+		-- the hazard panel at an end of a run: upright across the road over the beam's end,
+		-- its striped face looking away from the run (`outward` 1: on along the road, -1: back)
+		local function hazardPanel(name: string, s: number, side: number, outward: number)
+			local w, y0, y1 = 1.5, 0.5, T.KRailHeight + 0.1
+			local cf = uprightAt(s, side, w * 0.5 - 0.05, (y0 + y1) * 0.5)
+			if outward < 0 then
+				cf *= CFrame.Angles(0, math.pi, 0)
+			end
+			local part = plain(name, Vector3.new(w, y1 - y0, 0.12), cf, T.KRailColour, railMaterial)
+			local gui = Instance.new("SurfaceGui")
+			gui.Face = Enum.NormalId.Front
+			gui.SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud
+			gui.PixelsPerStud = 40
+			gui.LightInfluence = 1
+			local frame = Instance.new("Frame")
+			frame.AnchorPoint = Vector2.new(0.5, 0.5)
+			frame.Position = UDim2.fromScale(0.5, 0.5)
+			frame.Size = UDim2.new(1, -10, 1, -10) -- a galvanized rim round the stripes
+			frame.BorderSizePixel = 0
+			frame.BackgroundColor3 = Color3.new(1, 1, 1)
+			local gradient = Instance.new("UIGradient")
+			gradient.Color = hazardStripes
+			gradient.Rotation = 55
+			gradient.Parent = frame
+			frame.Parent = gui
+			gui.Parent = part
 		end
 		-- HEDGES: a green box per cut at the grass's outer edge (rock and cliff are faces in
 		-- the mesh, above)
@@ -456,15 +527,18 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 			end
 			-- K-RAILS, drawn as a metal crash barrier (T-149): the beam's face on the tarmac's
 			-- edge, where the car's wall begins (`Drift/SplineWorld`), its top at
-			-- `KRailHeight`; the posts behind it, inside that wall
+			-- `KRailHeight`; spacers and posts behind it, inside that wall; a hazard panel at
+			-- each end of the run
+			local H, B = T.KRailHeight, T.KRailBeam
 			local runs = spline:kRailsIn(s0, s1, side)
 			for r = 1, #runs, 2 do
 				local ra, rb = runs[r], runs[r + 1]
 				local id = `{tag}_{math.floor(ra)}`
 				-- the beam: a piece per stretch, as long as `KRailStep` on a straight and
 				-- short enough round a bend that its chord keeps to the curve
-				local a = math.max(ra, s0)
-				local stop = math.min(rb, s1)
+				-- (its ends stop short of the hazard panels' faces, so no piece pokes through)
+				local a = math.max(ra + 0.15, s0)
+				local stop = math.min(rb - 0.15, s1)
 				local n = 0
 				while stop - a > 0.05 do
 					local k = math.abs(spline:curvatureAt(a))
@@ -475,14 +549,14 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 						b = stop -- no sliver at the end
 					end
 					n += 1
-					beam(`KRailTop_{id}_{n}`, a, b, side, 0, T.KRailRidge, T.KRailHeight - T.KRailBeam / 3, T.KRailHeight)
-					beam(`KRailGroove_{id}_{n}`, a, b, side, T.KRailRidge - 0.05, 0.15, T.KRailHeight - T.KRailBeam * 2 / 3, T.KRailHeight - T.KRailBeam / 3)
-					beam(`KRailLow_{id}_{n}`, a, b, side, 0, T.KRailRidge, T.KRailHeight - T.KRailBeam, T.KRailHeight - T.KRailBeam * 2 / 3)
+					beam(`KRailTop_{id}_{n}`, a, b, side, backU * 0.5, H - ridgeH * 0.5, ridgeH, backU, true)
+					beam(`KRailGroove_{id}_{n}`, a, b, side, (grooveU + backU) * 0.5, H - B * 0.5, B - ridgeH, backU - grooveU, false)
+					beam(`KRailLow_{id}_{n}`, a, b, side, backU * 0.5, H - B + ridgeH * 0.5, ridgeH, backU, true)
 					a = b
 				end
 				-- the posts: on a pattern from the run's own start, so a run drawn across two
-				-- chunks has the same posts in both, and one at its very end
-				local every, inset = T.KRailPostEvery, T.KRailPostSize
+				-- chunks has the same posts in both, and one near its very end
+				local every, inset = T.KRailPostEvery, 1
 				local j = math.max(0, math.ceil((s0 - ra - inset) / every))
 				while true do
 					local p = ra + inset + j * every
@@ -494,12 +568,19 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 						break
 					end
 					if p >= s0 then
-						post(`KRailPost_{id}_{j}`, p, side)
+						post(`{id}_{j}`, p, side, j > 0 and not last and j % T.KRailSpliceEvery == 0)
 					end
 					if last then
 						break
 					end
 					j += 1
+				end
+				-- the hazard panels, each drawn by the chunk it stands in
+				if ra >= s0 and ra < s1 then
+					hazardPanel(`KRailEnd_{id}_A`, ra, side, -1)
+				end
+				if rb >= s0 and rb < s1 then
+					hazardPanel(`KRailEnd_{id}_B`, rb, side, 1)
 				end
 			end
 		end

@@ -117,22 +117,26 @@ local Spline = {
 		UphillStretch = { 900, 2600 }, -- studs between two swaps
 		UphillHedgeChance = 0.2, -- per section: hedge instead of rock on the uphill side
 		DownhillHedgeChance = 0.15, -- per section: hedge instead of cliff on the downhill side
-		-- K-RAILS: drawn as METAL CRASH BARRIERS (T-149): a W-beam steel guardrail on round
-		-- posts, as on Japan's mountain roads; the `KRail` names stay, since the generator
-		-- and the car's collision read them. To the car it is a wall `KRailThickness` thick
-		-- and `KRailHeight` high, inner face exactly on the tarmac's edge; the drawn rail's
-		-- face is on that edge and its top at `KRailHeight`, its posts inside the wall.
-		KRailHeight = 3, -- studs: the car's wall, and the drawn rail's top
-		KRailThickness = 2, -- studs: the car's wall (the drawn rail and posts are thinner)
+		-- K-RAILS: drawn as METAL CRASH BARRIERS (T-149): a W-beam steel guardrail held off
+		-- square posts on spacer blocks, a striped hazard panel at each end of a run; the
+		-- `KRail` names stay, since the generator and the car's collision read them. To the
+		-- car it is a wall `KRailThickness` thick and `KRailHeight` high, inner face exactly on
+		-- the tarmac's edge; the drawn beam's face is on that edge and its top at
+		-- `KRailHeight`, its spacers and posts inside the wall.
+		KRailHeight = 3, -- studs: the car's wall, and the drawn beam's top
+		KRailThickness = 2, -- studs: the car's wall (the drawn barrier is thinner)
 		KRailRun = { 60, 300 }, -- studs
 		KRailBendChance = 0.5, -- on the outside of a bend whose outside is a cliff
 		KRailOtherChance = 0.08, -- per section, on either side, anywhere else
-		-- The drawing only (`Road/SplineMesh`): the beam's W profile is two ridges with a
-		-- groove between, `KRailBeam` tall in all, its top at `KRailHeight`.
+		-- The drawing only (`Road/SplineMesh`): the beam's W profile is two rounded ridges
+		-- with a groove between, `KRailBeam` tall in all, its top at `KRailHeight`.
 		KRailBeam = 1.2, -- studs, the beam's height
-		KRailRidge = 0.3, -- studs, how far each ridge stands out from the groove
+		KRailRidge = 0.35, -- studs, how far each rounded ridge stands out from the groove
 		KRailPostEvery = 7, -- studs between posts
-		KRailPostSize = 0.45, -- studs, a round post's diameter
+		KRailPostSize = 0.4, -- studs, a square post's side
+		KRailSpacer = 0.4, -- studs, the block holding the beam off a post
+		KRailSpliceEvery = 2, -- posts between two splices of the beam, each with its bolts
+		KRailSpliceBolts = 2, -- bolt heads drawn at a splice (0: none)
 		KRailStep = 12, -- studs, the longest straight piece of beam (bends cut it finer)
 		-- Programmer colours (the look is set with the next feature)
 		GrassColour = Color3.fromRGB(86, 140, 62),
@@ -145,6 +149,8 @@ local Spline = {
 		-- swap in the line below for that
 		KRailColour = Color3.fromRGB(176, 182, 186),
 		-- KRailColour = Color3.fromRGB(236, 236, 232), -- painted white
+		KRailBoltColour = Color3.fromRGB(58, 60, 62),
+		KRailHazardColours = { Color3.fromRGB(246, 196, 24), Color3.fromRGB(24, 24, 24) }, -- the end panel's stripes
 	},
 
 	-- --------------------------------------------------------------- the mesh (step 3)

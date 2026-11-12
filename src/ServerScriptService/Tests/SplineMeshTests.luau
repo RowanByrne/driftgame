@@ -210,9 +210,15 @@ function Tests.run()
 
 		-- 4d. The K-rails, drawn as metal crash barriers (T-149), stand where the car's wall
 		-- is (`Drift/SplineWorld`): the beam's face on the tarmac's edge, its top at
-		-- `KRailHeight`, its posts inside the wall, and its pieces running on without a step.
+		-- `KRailHeight`, its posts and spacers inside the wall, its pieces running on without
+		-- a step, and a striped hazard panel at both ends of every run.
 		local T = Config.Spline.Terrain
 		local beams, worstFace, worstTop, posts, postsOut, railSteps, railJoints = 0, 0, 0, 0, 0, 0, 0
+		local spacers, bolts, ends, striped = 0, 0, 0, 0
+		local function insideWall(p: BasePart, depth: number): boolean
+			local s, d = spline:project(p.Position.X, p.Position.Z)
+			return s ~= nil and math.abs(d) - depth / 2 >= half - 1e-3 and math.abs(d) + depth / 2 <= half + T.KRailThickness + 1e-3
+		end
 		for _, model in models do
 			local byName = {}
 			for _, p in model:GetChildren() do
@@ -221,34 +227,42 @@ function Tests.run()
 			for name, p in byName do
 				local id, n = string.match(name, "^KRailTop_(.+)_(%d+)$")
 				if id then
+					-- a rounded ridge: a cylinder along the road (its X), Y up, Z across
 					beams += 1
-					-- the face nearer the road, at the piece's middle
-					local best, bestS, bestD, topY = math.huge, nil, nil, 0
-					for _, sx in { -1, 1 } do
-						local q = p.CFrame * Vector3.new(sx * p.Size.X / 2, p.Size.Y / 2, 0)
+					local best, bestS, bestD = math.huge, nil, nil
+					for _, sz in { -1, 1 } do
+						local q = p.CFrame * Vector3.new(0, 0, sz * p.Size.Z / 2)
 						local s, d = spline:project(q.X, q.Z)
 						if s and math.abs(d) < best then
-							best, bestS, bestD, topY = math.abs(d), s, d, q.Y
+							best, bestS, bestD = math.abs(d), s, d
 						end
 					end
 					if bestS then
 						worstFace = math.max(worstFace, math.abs(best - half))
+						local top = p.CFrame * Vector3.new(0, p.Size.Y / 2, 0)
 						local edgeY = spline:terrainY(bestS, (if bestD < 0 then -1 else 1) * half)
-						worstTop = math.max(worstTop, math.abs(topY - edgeY - T.KRailHeight))
+						worstTop = math.max(worstTop, math.abs(top.Y - edgeY - T.KRailHeight))
 					end
 					local nextP = byName[`KRailTop_{id}_{tonumber(n) + 1}`]
 					if nextP then
-						local aEnd = p.CFrame * Vector3.new(0, p.Size.Y / 2, -p.Size.Z / 2 + 0.05)
-						local bStart = nextP.CFrame * Vector3.new(0, nextP.Size.Y / 2, nextP.Size.Z / 2 - 0.05)
+						local aEnd = p.CFrame * Vector3.new(p.Size.X / 2 - 0.05, p.Size.Y / 2, 0)
+						local bStart = nextP.CFrame * Vector3.new(-nextP.Size.X / 2 + 0.05, nextP.Size.Y / 2, 0)
 						railJoints += 1
 						railSteps += if (aEnd - bStart).Magnitude > 0.1 then 1 else 0
 					end
 				elseif string.match(name, "^KRailPost_") then
 					posts += 1
-					local s, d = spline:project(p.Position.X, p.Position.Z)
-					if not s or math.abs(d) - T.KRailPostSize / 2 < half or math.abs(d) + T.KRailPostSize / 2 > half + T.KRailThickness then
-						postsOut += 1
-					end
+					postsOut += if insideWall(p, p.Size.X) then 0 else 1
+				elseif string.match(name, "^KRailSpacer_") then
+					spacers += 1
+					postsOut += if insideWall(p, p.Size.X) then 0 else 1
+				elseif string.match(name, "^KRailBolt_") then
+					bolts += 1
+				elseif string.match(name, "^KRailEnd_") then
+					ends += 1
+					local gui = p:FindFirstChildOfClass("SurfaceGui")
+					local frame = gui and gui:FindFirstChildOfClass("Frame")
+					striped += if frame and frame:FindFirstChildOfClass("UIGradient") then 1 else 0
 				end
 			end
 		end
@@ -261,9 +275,10 @@ function Tests.run()
 			end
 		end
 		check("the crash barriers stand where the car's wall is", beams > 0 and worstFace < 0.1 and worstTop < 0.1 and postsOut == 0,
-			`{beams} beam pieces on {math.floor(railLen)} studs of rail: face worst {fmt(worstFace, 3)} studs off the tarmac's edge, top worst {fmt(worstTop, 3)} off {T.KRailHeight}; {posts} posts, {postsOut} outside the wall`)
+			`{beams} beam pieces on {math.floor(railLen)} studs of rail: face worst {fmt(worstFace, 3)} studs off the tarmac's edge, top worst {fmt(worstTop, 3)} off {T.KRailHeight}; {posts} posts and {spacers} spacers, {postsOut} outside the wall`)
 		check("the crash barriers' beams run on without a step", railJoints > 0 and railSteps == 0, `{railJoints} joints, {railSteps} with a gap over 0.1 studs`)
-		check("a post every ~" .. T.KRailPostEvery .. " studs", posts >= railLen / T.KRailPostEvery and posts <= railLen / T.KRailPostEvery + 2 * railRuns, `{posts} posts on {math.floor(railLen)} studs in {railRuns} runs`)
+		check("a post on a spacer every ~" .. T.KRailPostEvery .. " studs", posts >= railLen / T.KRailPostEvery and posts <= railLen / T.KRailPostEvery + 2 * railRuns and spacers == posts, `{posts} posts, {spacers} spacers, {bolts} bolt heads on {math.floor(railLen)} studs in {railRuns} runs`)
+		check("a striped hazard panel at both ends of every run", ends == 2 * railRuns and striped == ends, `{ends} panels ({striped} striped) for {railRuns} runs`)
 
 		-- 5. Nothing drawn can be touched, collided with or queried.
 		local solid = 0

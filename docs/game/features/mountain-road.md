@@ -28,13 +28,17 @@ the drop. Running wide is no longer stopped by a wall; it costs you grip, then t
    - **Hedge:** a low green wall. A wall, as the rock face.
    - **Cliff drop:** the grass ends at an edge and the ground falls away. Go over and it is a fall,
      and the run puts you back on the road as it does today.
-4. **K-rails**, drawn as **metal crash barriers** (a W-beam steel guardrail on round posts, as on
-   Japan's mountain roads), stand at the tarmac's edge in places, mostly on the outside of bends
+4. **K-rails**, drawn as **metal crash barriers** (a rounded W-beam steel guardrail held off square
+   posts on spacer blocks, bolted at its splices, a yellow-and-black striped hazard panel at
+   each end of a run), stand at the tarmac's edge in places, mostly on the outside of bends
    above a cliff. They stop you like a wall, before the grass. They were first drawn as concrete
    jersey barriers; on 2026-11-12 the user said "the K rails you made are not what I meant, my
    bad. These concrete barriers arn't what i was looking for - i meant the metal crash
    barriers", so T-149 redrew them. Only the look changed: where they go and how they stop the
-   car did not. The code keeps the `KRail` names.
+   car did not. The code keeps the `KRail` names. The user then sent reference photos (T-155,
+   2026-11-12): "model the metal barriers like these things please. with the begining and end
+   having this type of hazard end piece thing on it", so the beam was rounded and the spacers,
+   bolts and end panels added.
 5. Everything else is the run as it is: the score, the closing barrier behind you, joining
    another player's road, respawn after a fall.
 
@@ -72,7 +76,7 @@ does), so nothing steps.
 | Rock face | Rises 25 to 60 studs at 50 to 70 degrees | Height is looks; to the car it is a wall |
 | Hedge | 6 studs high, 4 thick | |
 | Cliff | The ground ends; the face drops 80 studs into haze | Past the lip, nothing to stand on |
-| K-rail (metal crash barrier) | 3 studs high, 2 thick, at the tarmac's edge | Runs of 60 to 300 studs. To the car a wall that size; drawn as a 1.2-stud W-beam, top at 3 studs, face on the tarmac's edge, round posts every 7 studs behind it inside the wall |
+| K-rail (metal crash barrier) | 3 studs high, 2 thick, at the tarmac's edge | Runs of 60 to 300 studs. To the car a wall that size; drawn as a 1.2-stud rounded W-beam, top at 3 studs, face on the tarmac's edge; square posts every 7 studs on spacer blocks behind it, inside the wall; a striped hazard panel at each end |
 
 ### Where each edge goes
 
@@ -115,11 +119,14 @@ The road stays purely visual: the car still reads everything from the curve (`Sp
 - **Measured (T-142):** the rock and cliff faces fit in the chunk mesh. A chunk is about 1 700
   triangles (940 before the faces), the window round the car about 8 600; a chunk builds in 7 ms
   on average, 13 at worst.
-- **Crash barriers (T-149):** the beam is three boxes per piece (two ridges and the groove
-  between), a piece up to 12 studs on a straight and cut finer round a bend; a round post every 7
-  studs. Measured on seed 31337, 8 000 studs: 322 parts for 675 studs of rail (116 as K-rails),
-  135 at most in one chunk (50 before). From the grass side the car stops at the wall's back
-  face, about a stud behind the posts.
+- **Crash barriers (T-149):** the beam is three parts per piece (two flattened cylinders for
+  the rounded ridges, a box for the groove between), a piece up to 12 studs on a straight and cut
+  finer round a bend; a square post and its spacer block every 7 studs; two bolt heads at every
+  second post (a splice; `KRailSpliceBolts = 0` drops them); a hazard panel at each end, its
+  stripes one `UIGradient` on a `SurfaceGui`, no image. Measured on seed 31337, 8 000 studs: 522
+  parts for 675 studs of rail (116 as concrete K-rails, 322 as the first plain guardrail), 213 at
+  most in one chunk (50, then 135); about 377 plain parts in the window round the car. From the
+  grass side the car stops at the wall's back face, about 0.9 studs behind the posts.
   A device that cannot make a mesh still draws the tarmac only.
 - **Nothing drawn collides.** As now.
 
