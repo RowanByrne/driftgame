@@ -33,6 +33,8 @@ Drift is a car game about clean drifts. The player slides a low-poly car through
 | The mountain horizon | Three layers of low-poly ridges and a snow peak round the endless run, always on the horizon, and a valley floor below the cliffs. **Specced** (`T-148`) | `features/horizon.md` |
 | Drift score and the multiplier ladder | Points from slip × speed × surface, and a 1–9 ladder. **Specced, deliberately not built** (`DECISIONS.md`) | `features/drift-model.md` "Score" |
 
+| Admin console | F2 opens Cmdr for admins, with commands for cars, runs, locations, scores, sky and diagnostics; player targets come first. **Built and approved** (`T-159`) | `features/admin-console.md` |
+
 ## Progression
 
 > How the player grows: levels, unlocks and gates. How long each should take is in `PACING.md`.

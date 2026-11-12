@@ -1,4 +1,4 @@
-﻿# Claims
+# Claims
 
 Every task in progress and the files it owns, so parallel sessions and workers never edit the same file (docs/workflow/CONDUCTOR.md "Claims").
 
@@ -9,7 +9,6 @@ Every task in progress and the files it owns, so parallel sessions and workers n
 
 | Branch | Lane | Files owned | Since |
 |---|---|---|---|
-| `agent/cmdr` (T-159) | lane2 | Cmdr vendored (new folder), `src/ServerScriptService/Services/CmdrService.luau` (new), `src/StarterPlayerScripts/Controllers/CmdrController.luau` (new), the commands folder (new), `src/ReplicatedStorage/Shared/Config/Admin.luau` (new), `docs/game/ARCHITECTURE.md` ("Vendored libraries" row only), `docs/game/features/admin-console.md` (new) | 2026-11-12 |
 
 ## Notes between sessions
 

@@ -293,3 +293,27 @@ The five simulation parts (`Body`, `WheelFL`…`WheelRR`, at `wheelOffsets()`) a
 > Settings made in Studio, not in git, and set the same way in every place: the Main place, every lane, and the published game (docs/workflow/LANES.md "Add a lane").
 
 - `Workspace.StreamingEnabled`: **off** (`ARCHITECTURE.md` "World and streaming"): the playground is small, and streaming surfaces in under a fast car would be felt as the ground failing a ray.
+
+## Admin console (T-159)
+
+Cmdr owns its remotes outside `Shared/Net`, under `ReplicatedStorage.CmdrClient`, moved there from `ServerStorage.Cmdr` by `CmdrService`.
+
+| Name | Type | Direction | Payload and checks |
+|---|---|---|---|
+| `CmdrFunction` | RemoteFunction | Client to server | `(text: string, options: { Data: any }?) -> string`; text at most 10,000 characters. Every server command passes `CmdrService` permission and per-user rate checks: everyone in Studio; live game owner, owning-group rank 255, or `Config.Admin.UserIds`; 8 commands/second and 120/minute. Typed command arguments have command-specific range checks |
+| `CmdrEvent` | RemoteEvent | Server to client | Cmdr events including `AddLine`, `Message`, and `DriftAction(action, ...)`. Actions: `getOut`, `getIn`, `speed(studsPerSecond?)`, `scoreSet(points, multiplier?)`, `scoreReset`. `Ops.sendAction` sends only after the server command passes its checks; each target's `CmdrController:Act` performs the action, including on a non-admin target |
+
+`Player.CmdrAdmin` (boolean), set by `CmdrService`, controls whether the client shows the console. It grants no server permission. Commands take player targets first; see `features/admin-console.md` for the complete syntax.
+
+| API | Signature and purpose |
+|---|---|
+| `CmdrService.allowed` | `(userId, ctx) -> (boolean, why)`: pure permission rule |
+| `CmdrService.rate` | `(entry, now, perSecond, perMinute) -> (boolean, entry)`: pure rate rule |
+| `CmdrService:Allowed` | `(player) -> (boolean, why)`: live permission check |
+| `CmdrService:DebugState` | `() -> { commands, names, counts, log, admins }` |
+| `CmdrService:DebugRun` | `(text, userId?) -> reply`: Studio-only server command through the same permission/rate hook |
+| `CmdrService:DebugClearLimits` | `() -> true`: Studio-only rate reset |
+| `CmdrController:Run` | `(text) -> reply`: same dispatcher as typing a command |
+| `CmdrController:Act` | `(action, ...) -> reply`: this client's car/score action |
+| `CmdrController.onlyMe` | `(players?) -> boolean`: omitted, empty, or only the local player |
+| `CmdrController:Show`, `Hide`, `DebugState` | Console visibility and debug state, including the most recent targeted action |

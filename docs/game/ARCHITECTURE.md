@@ -22,6 +22,8 @@ The car is **not** driven by Roblox's physics (`DECISIONS.md`, 2026-11-03). Its 
 | `RoadService` | The endless road: generates it from numbers, keeps a rolling window of about 14 pieces round the car, moves a closing barrier up behind it, and owns progress -- **and the run**: who is on the road, which world each of them came from, and where a fall puts them back. **Off until somebody presses the start button** -- nothing builds at `Init` (`features/track-generation.md`, `features/endless-run.md`) | `Generate(seed?)`, `Stop()`, `HasRoad()`, `StartRun(player)`, `EndRun(player)`, `InRun(player)`, `RunState(player?)`, `SpawnCFrame()`, `JoinCFrame()`, `SafeStart(position?)`, `PieceAt(position)`, `Progress(position)`, `Bounds()`, `DebugState()` |
 | `GarageService` | The player's tuned cars: validates a save against `Shared/Cars/Garage`, keeps them in a **throwaway dev store** (not `DataService`, which is still unbuilt), and widens the server's speed bound to cover a tuned car rather than dropping its packets | `Get(player)`, `Save(player, name, car)`, `Delete(player, name)`, `SetTune(player, car?)`, `DebugState()` |
 
+| `CmdrService` | Registers the admin console commands and types; checks server permissions and per-user rate limits | `Allowed(player)`, `DebugState()`, `DebugRun(text, userId?)`, `DebugClearLimits()` |
+
 ## Controllers (client)
 
 > Every module in `src/StarterPlayerScripts/Controllers/`, one line each.
@@ -35,6 +37,8 @@ The car is **not** driven by Roblox's physics (`DECISIONS.md`, 2026-11-03). Its 
 | `SkyController` | The sky and the day-night cycle (`features/day-night.md`, `T-144`): works the moment out from the server's clock, asks `Shared/DayNight` for its look and sets this client's Lighting, atmosphere, clouds and colour grading, and the cliffs' haze in the road mesh (`SplineMesh.setHaze`). Nothing is sent; the server sets no lighting | `DebugState()`, `DebugLook(t)`, `DebugKeyTimes()`, `DebugHold(t)`, `DebugSpeed(k, t?)`, `DebugResume()` |
 | `RoadGroundController` | Solid ground for the local avatar while it is out of the car on the spline road (`T-154`, `features/mountain-road.md` "Walking on the road"): a patch of invisible anchored tiles over tarmac and grass, walls at rock faces, hedges, crash barriers and the closing barrier, nothing past a cliff's lip. Client-only `Workspace.RoadGround`, never tagged `DriftSurface`, and gone whenever the car is driven | `DebugState()`, `DebugPoint(s, d)` |
 | `HeadlightsController` | Every car's headlights on this client, from dusk to dawn by `SkyController:LightsOn()` (`T-146`): a SpotLight per lamp in `Workspace.Headlights`, the rig's pop-up pods opened through `CarParts`, the headlight and tail-lamp lenses made Neon. Off in the garage room | `DebugState()` |
+
+| `CmdrController` | F2 admin console, command dispatch, and targeted client car/score actions | `Run(text)`, `Act(action, ...)`, `onlyMe(players?)`, `Show()`, `Hide()`, `DebugState()` |
 
 ## Shared modules
 
