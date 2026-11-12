@@ -81,7 +81,10 @@ Recorded voices need the speaker's written OK, kept with the manifest.
 
    That's in PowerShell from `repo\`; from a lane it's `..\..\..\_tools\rocco\rocco.ps1`. See Rocco's README (`..\..\_tools\rocco\README.md`, "Commands"). Without Rocco, list the files for the user to play. **Never use a sound the user hasn't picked.** Record the pick, and the user's words, in the manifest.
 4. **Approve.** Copy the picked file **unchanged** into `assets/audio/<topic>/`; a master over 5 MB stays in `..\art\source\<topic>\`. Its status becomes `approved`; the others become `rejected`. A Creator Store pick has no file: record its id.
-5. **Upload**, as the owner in PROJECT.md, through Studio's Asset Manager (several at a time), the Creator Dashboard, or Open Cloud's Assets API:
+5. **Upload.** Uploading is the agent's job: never ask the user to upload a file. Use the Studio MCP's `open_cloud_invoke`, which runs as the user signed in to Studio and needs no API key:
+   - **The call:** `POST /assets/v1/assets`, scopes `asset:read` and `asset:write`, the file as `fileContent`, and `request` as `{ assetType: "Audio", displayName, description, creationContext: { creator: { userId } } }` (`groupId` for a group). It returns an operation: ask `GET /assets/v1/operations/{id}` until `done`; the asset id is in its `response`.
+   - **The creator:** the owner in PROJECT.md. Until that's filled in, the user signed in to Studio (`StudioService:GetUserId()` in the Edit datamodel), and record who uploaded it (ART-PIPELINE.md "Ownership and permissions").
+   - **When it's refused:** make the same call to `https://apis.roblox.com` with `ROBLOX_API_KEY` (RELEASING.md "Roblox Open Cloud"). If that's refused too, or there's no key, ask the user only for the missing permission (WORKSTATION.md "Setting up a PC", step 2), then upload it yourself.
    - **Files:** .ogg, .mp3, .wav or .flac, under 20 MB and 7 minutes, 48 kHz or lower.
    - **Limit:** uploads are free, up to 2,000 per 30 days on an ID-verified account (100 without).
    - **Moderation:** every upload is checked, copyright included. Only the uploader hears it until it passes.
