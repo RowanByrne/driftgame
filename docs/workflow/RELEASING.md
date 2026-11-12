@@ -86,6 +86,7 @@ These APIs are experimental or beta at Roblox, so they change. When a call is re
 | A new event | `POST /virtual-events/v3/universes/{universeId}/game-events`: `title`, `subtitle`, `description`, `startTime` and `endTime` (UTC), `visibility: "private"`, `categories` (`[{ category, rank }]`, from `newContent`, `contentUpdate`, `newFeature`, `itemDrop`, `newSeason`, `festival`, `challenge`, `activity` and others), and `thumbnails` (`[{ mediaId, rank }]`, image asset ids) | Events: write |
 | A change to one | `PATCH /virtual-events/v3/game-events/{eventId}`, with only the fields that change | Events: write |
 | An image | The Assets API (`/assets/v1/assets`), as an image asset; its asset id is the event's `mediaId` | Assets: write |
+| A sound, or an image `upload_image` couldn't upload | The Assets API, as in AUDIO-PIPELINE.md "Making a sound", step 5 | Assets: read and write |
 | Game page thumbnails | `POST /legacy-game-internationalization/v1/game-thumbnails/games/{universeId}/language-codes/en/image` (multipart field `Files`), then `.../images/order` | Legacy universe: manage |
 | How thumbnails do | `POST /analytics-query-api/v1/universes/{universeId}/metrics`: `metric` (`ThumbnailImpressions`, `ThumbnailQualifiedPlays`, `ThumbnailQualifiedPTR`), `granularity` `OneDay`, `startTime`, `endTime`, `breakdown: ["ThumbnailAsset"]`. A big query comes back pending: ask its `path` until `done` | Analytics: read |
 

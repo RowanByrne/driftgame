@@ -69,11 +69,14 @@ Rocco's Workboard (`tools\rocco.bat`) is where the user hands over work and foll
 | `C-… [answer]` | Answered a question you asked them ("Talking to the user") | Carry on with it, then `clear C-…` |
 | `C-… [message]` | Wrote to you, or replied to one of your messages | `show C-…` if it's cut short, act on it, then `clear C-…` |
 | `[reopen]` | Tested it: not right yet | Their words are the last `you` line in `show`. Fix it as a task again: with the worker that built it, if it's still there (below) |
-| `[followup]` | Added to a task while it ran | Fold it in, or pass it to the worker (below); then `clear` |
-
-**Passing the user's words to a worker:** send them to the worker that has the task, word for word (with Claude Code, `SendMessage` to its agent), so it carries on with what it already knows: no new worker reading everything again. The user types into the card as into a session, and its session shows the worker's reply. Start a new worker only when that one is gone.
+| `[followup]` | Added to a task while it ran | Fold it in, or pass it to the worker (below); then `clear`. A question about it ("are you stuck?"): answer on its card with `reply T-012 -Text "..."`, which leaves the card where it is. Never `set -Status ready` to answer: ready means built and checked |
 | `[merge]` | Approved a feature they tested in a lane | Merge its branch ("A round", step 4), then `clear` |
 | `[cancel]` | Deleted a task while it ran, or before its branch merged (its status is `removed`) | Stop its worker, if one is on it (a worker hears it from `set` too). In its lane, commit what it left to its branch, so nothing is lost, then put the lane back on main: `git -C <lane> switch --detach origin/main`. Don't merge the branch, and leave it there in case they change their mind. Take its row out of `docs/CLAIMS.md` and push. What's already in `main` stays; if they want it out, they'll say. Then `clear` |
+| `[lane]` | Nothing: a task you parked for a lane (below), and that lane is free now | Start it there: `set T-012 -Status working -Lane 2 ...`, as `list` says |
+
+**Passing the user's words to a worker:** send them to the worker that has the task, word for word (with Claude Code, `SendMessage` to its agent), so it carries on with what it already knows: no new worker reading everything again. The user types into the card as into a session, and its session shows the worker's reply. Start a new worker only when that one is gone.
+
+**Every lane busy:** park the task with `set T-012 -ForLane` (or `new -ForLane`), never with words alone in `-Waiting`. It stays in Up next, its card tells the user whether a lane is free, and `wait` hands it back as `[lane]` the moment one is: nothing depends on you remembering it.
 
 **Taking a note on** (`[plan]`):
 1. **First, before anything else:** `set T-034 -Title "..." -Status working -Step "..."`, so the card leaves Up next the moment you start, whether you do it or a worker will (spawning adds its lane). The title is a few words that name it, like "Keep the baseplate in playtests": the card shows one line (50 characters at most), and the user's own words stay under it. A note that has to wait for something else: `set T-034 -Title "..." -Waiting "After the trade window"` instead.
@@ -99,9 +102,10 @@ The user follows you in Rocco, above their note box, not in your window: what yo
 
 ## Watching the board
 
-Between jobs, the conductor watches the Workboard, so what the user sends is picked up without them having to prompt you. `rocco.ps1 wait` returns as soon as something waits on you, listed as `list -Pending` lists it. Run it after every report, and handle what it returns as "What waits on you" says. Then run it again.
+Between jobs, the conductor watches the Workboard, so what the user sends is picked up without them having to prompt you. `rocco.ps1 wait` returns as soon as something waits on you, listed as `list -Pending` lists it. Run it after every report, and handle what it returns as "What waits on you" says. Then run it again: **every time it returns, start it again** once you've handled what it listed. A wait that returned with work isn't watching any more, and that's the one most easily forgotten.
 
-- **How it runs depends on your agent.** Claude Code runs it as a background command and is woken when it returns. An agent without background commands runs it with `-Timeout 540`, and runs it again when it says nothing's new.
+- **How it runs depends on your agent.** Claude Code runs it as a background command (`run_in_background`), with no `-Timeout`, and is woken when it returns: a timeout only wakes you for nothing. An agent without background commands runs it with `-Timeout 540`, and runs it again when it says nothing's new.
+- **Rocco checks it** for a Claude Code conductor it opened: at the end of each turn, a hook sends you back if something still waits on you, or if no `wait` is running.
 - **Rocco shows it:** the status line above the note box says the conductor is listening while `wait` runs, and working (on its latest step) while your agent runs anything else.
 - **No conductor running** when the user hands something over (a note, an answer, an approved plan): Rocco opens your agent in its own window, minimized in the taskbar, as the conductor, on what's waiting. So keep one conductor per game: the session Rocco opened, or the one the user started.
 

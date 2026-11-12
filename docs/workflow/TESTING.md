@@ -12,7 +12,7 @@ How agents test in Studio. The rule behind all of it: **prove it by measuring**,
 
 ## Every playtest
 
-1. **Check Studio has your changes** before a playtest whose results you'll report. A playtest started before Lync synced your last edit tests the old code, and its numbers and screenshots prove nothing. `powershell -ExecutionPolicy Bypass -File tools\ui\source-gate.ps1 -Root . -Out $env:TEMP\SourceGate.luau` hashes the files changed since the last commit (or the ones you name with `-Files`) and writes a check; send that file as `execute_luau` code in the Edit datamodel. `ok = true` means every one of them in Studio matches the disk and compiles. Say in your report what it checked.
+1. **Check Studio has your changes** before a playtest whose results you'll report. A playtest started before Lync synced your last edit tests the old code, and its numbers and screenshots prove nothing. `powershell -ExecutionPolicy Bypass -File tools\ui\source-gate.ps1 -Root . -Out "$env:TEMP\SourceGate-$(Split-Path -Leaf (Get-Location)).luau"` hashes the files changed since the last commit (or the ones you name with `-Files`) and writes a check; send that file as `execute_luau` code in the Edit datamodel. `ok = true` means every one of them in Studio matches the disk and compiles. Say in your report what it checked. **The file name carries the checkout's folder** (`SourceGate-lane2.luau`) on purpose: lanes run at the same time, and a fixed name means two workers overwrite each other's check and one of them gates the wrong lane.
 2. **Mark it quiet.** In the Edit datamodel run `workspace:SetAttribute("__agent_play", DateTime.now().UnixTimestamp)`, then start the playtest straight away. A playtest that starts within 60 s of the marker is silent; any other (the user pressing Play) has sound. Forget it and the user hears your test.
 3. **Exercise the change.**
 4. **Read the console** (`get_console_output`) for errors and warnings.
@@ -67,6 +67,7 @@ UI is proved by measuring at real screen sizes, then a few screenshots against t
 - **Stale modules.** `execute_luau`'s `require` cache outlives Lync edits. To check a pure module's current source, clone its folder into `ServerStorage`, require the clone, then destroy it.
 - **Camera changes get reverted.** A camera-type change made while an `execute_luau` call is running is reverted. Schedule it with `task.delay` and return straight away.
 - **Playtest won't start.** If `start_stop_play` hangs on "Start play hasn't finished yet", start from the Edit datamodel with `StudioTestService:ExecutePlayModeAsync` inside `task.spawn`, and return straight away.
+- **A call that blocks drops the connection.** An `execute_luau` that doesn't return within a few seconds fails with "Target is not reachable", and the next call works again — so a test suite that takes a minute never reports. Run the slow thing in a `task.spawn` that writes its result into a `StringValue`, return straight away, then poll that value with short calls.
 - **UI coordinates:**
   - A ScreenGui with `IgnoreGuiInset` reports `AbsolutePosition` 58 px higher than one without, the height of Roblox's top bar. Compare positions only within one coordinate space.
   - `user_mouse_input` takes coordinates without the top bar: subtract 58 from a screen y measured in an `IgnoreGuiInset` gui.
