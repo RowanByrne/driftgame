@@ -537,6 +537,7 @@ function DriftController:_frame(dt: number)
 			device = CarInputController:Device(),
 			surfaceTag = self.world.usingTag,
 			score = if self.readoutScore then self.readoutScore() else nil,
+			engine = if self.engineSound then self.engineSound.engine else nil,
 		})
 	end
 end
@@ -929,10 +930,10 @@ function DriftController:DebugSound()
 	}
 end
 
--- The largest single-frame change in each sound's lerped value since this was last
--- called, and the counters reset. The "pitch is continuous" check: `engine` must stay
--- under `(MaxPitch - MinPitch) * PitchLerpSpeed * dt` and a jump means the lerp is not
--- doing its job.
+-- The largest single-frame change in each sound's value since this was last called, and
+-- the counters reset. The "pitch is continuous" check: `engine` follows the fake engine's
+-- rpm (`Drift/Engine`), which chases its target at `RevUpRate`/`RevDownRate`, so outside
+-- the limiter it stays under `(MaxPitch - MinPitch) * max(rate) * dt`.
 function DriftController:DebugSoundMeasure()
 	return {
 		engine = self.engineSound and self.engineSound:ResetMeasure() or 0,

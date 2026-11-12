@@ -1,6 +1,8 @@
 # Feature: An engine that sounds like it's drifting
 
-**Status:** specced, waiting for the user's OK (`T-122`). **Owner task:** none yet.
+**Status:** building (`T-123`, approved 2026-11-11). Step 2, the fake engine (`T-125`), is built
+and heard through today's single clip; step 1, the loops (`T-124`), waits on the user's pick; step
+3, the layered sound, follows it. **Owner task:** `T-123`, lane 1, `feature/drift-engine`.
 
 ## Goal
 
@@ -62,16 +64,21 @@ A small rpm model on top of today's gearbox, fed by the drift model's state each
 | What | How |
 |---|---|
 | Wheel speed | Road speed, plus a spin term while drifting: `SpinGain × speed × sin(slip)` |
-| RPM | Wheel speed through the current gear's ratio, from `IdleRpm` to `RedlineRpm` |
-| Gear | Today's geometric gearbox, but **held while drifting** (`drifting` locks the gear) |
+| RPM | Wheel speed through the current gear's ratio: `ShiftRpm` at the gear's top, never under `IdleRpm`, clamped at `RedlineRpm` |
+| Gear | Today's geometric gearbox, up at a gear's top and down `GearOverlap` under its bottom, but **held while drifting** and through the hook-up |
+| Drift floor | **A ratchet**: in a drift the rpm takes the spin when it is higher and otherwise climbs at `DriftClimbRpm`, and never falls. Measured on the real car: without it a 35° drift bleeding 15 studs/s sagged 900 rpm |
+| Engine's drift | Starts at `DriftEnterDeg` (10°) and `DriftMinSpeed`, not the model's 5°, so a straight's small corrections never flare; lasts while the model says drifting |
 | Entry flare | When a drift starts, rpm jumps by `EntryFlareRpm`, then settles over `FlareSeconds` |
 | Feathering | rpm wobbles by up to `FeatherRpm`, following how fast the slip angle is changing |
 | Limiter | At `RedlineRpm`, rpm is cut and recovers at `LimiterHz` (the stutter) |
 | Hook-up | Leaving a drift, the spin term eases away over `HookUpSeconds` |
-| Load | 1 on throttle (the eased throttle, while accelerating or drifting), 0 lifting or braking |
+| Load | 1 on throttle (the model's eased throttle), 0 under STOP, past 90° of slip, through a flick (sideways one way then the other inside `TransitionWindowSeconds`), for `ShiftLiftSeconds` at an upshift, and in a limiter cut |
 | Downshift blip | Each downshift adds a short `BlipRpm` spike |
 
-Starting values are set by ear in the lane and written into `Config.Fx.Engine`.
+Starting values are set by ear in the lane and written into `Config.Fx.Engine`. Until the loops
+land, the rpm drives today's single clip: pitch `MinPitch` at idle to `MaxPitch` at the redline,
+volume down to `OffLoadVolume` off throttle. The F3 readout shows rpm, gear, throttle, DRIFT and
+LIMITER.
 
 ### The sound (`Drift/EngineSound`, rebuilt)
 
