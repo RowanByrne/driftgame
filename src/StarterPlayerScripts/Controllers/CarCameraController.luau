@@ -102,6 +102,16 @@
 -- entirely. It lives on the rig and `_seed` keeps it, so it lasts the session. While driving
 -- the wheel is sunk above Roblox's own camera, which would otherwise zoom the avatar's view.
 --
+-- THE HILL PITCH (T-156) tips the rendered view about the car by a share of the road's grade
+-- (`HillPitchUp` climbing, `HillPitchDown` descending), eased at `HillPitchRate`, so a climb
+-- does not hide the road ahead. It reads the car's ground normal, never the camera's motion;
+-- it runs before the pan and zoom and nothing upstream reads it. Its other half,
+-- `HillLookFollow`, IS in the targets: it carries part 1's eased look height up a steady
+-- climb with the road, because that easing alone left the look point 8 studs under a
+-- climbing car and the view pitched DOWN on hills. On flat ground, or with the shares at
+-- zero, neither runs: the camera above, bit for bit. "Offsets ignore the car's pitch"
+-- below still holds for the offsets themselves.
+--
 -- Every number is in Config.Camera; none is in here (T-071: they moved out of
 -- Config.Drift, name for name, because the camera is a look and not the model).
 
@@ -160,6 +170,8 @@ export type View = {
 	velocity: Vector3, -- world studs/s
 	slip: number, -- radians, signed: + means the car is travelling out to its LEFT
 	speed: number, -- horizontal, studs/s
+	up: Vector3?, -- the car's smoothed ground normal (`state.up`), for the hill pitch (T-156).
+	-- nil is flat ground, which is what every made-up car in the probes and tests is
 }
 
 -- ---------------------------------------------------------------- the maths
@@ -206,6 +218,7 @@ local function lerpView(a: View, b: View, t: number): View
 		velocity = a.velocity:Lerp(b.velocity, t),
 		slip = lerpAngle(a.slip, b.slip, t),
 		speed = a.speed + (b.speed - a.speed) * t,
+		up = if a.up and b.up then a.up:Lerp(b.up, t) else b.up,
 	}
 end
 
@@ -262,6 +275,10 @@ function CarCameraController.newRig(view: View?)
 		-- NOT reset by `_seed`, so it lasts the session, across respawns and runs.
 		zoom = 1,
 		zoomTarget = 1,
+		-- The hill pitch (T-156): radians the whole view is tipped about the car to follow
+		-- the road's grade, + is nose up. The same rule again: the RENDERED camera only.
+		hillPitch = 0,
+		hillGrade = 0, -- radians, the grade it was last measured against, for the debug state
 	}
 	if view then
 		CarCameraController._seed(rig, view)
@@ -289,6 +306,7 @@ function CarCameraController._seed(rig, view: View)
 	rig.panTargetYaw, rig.panTargetPitch = 0, 0
 	rig.panHeld, rig.panIdle = false, 0
 	rig.roll = 0
+	rig.hillPitch, rig.hillGrade = 0, 0
 	rig.shakeRot, rig.shakePos, rig.shakeTimer = Vector3.zero, Vector3.zero, 0
 	rig.shakeRng = Random.new(SHAKE_SEED)
 	-- The zoom is the player's and lasts the session (T-152): kept, and arrived at, so a
@@ -399,6 +417,87 @@ local function applyZoom(rig, carPos: Vector3)
 		return
 	end
 	rig.position = carPos + (rig.position - carPos) * rig.zoom
+end
+
+-- ---------------------------------------------------------------- the hill pitch (T-156)
+--
+-- "the camera keeps it's pitch the same as if it's flat. can u have it adjust slightly to
+-- pitch up according to the strength of hte hill". On a climb the whole view -- camera and
+-- look point together -- is tipped about the car, nose up, by a share of the road's grade:
+-- the camera drops a little behind the car and the view pitches up by exactly that angle,
+-- so the road ahead stays in the picture. Downhill the same the other way, by a smaller
+-- share, so the camera does not stare at the tarmac.
+--
+-- THE GRADE IS THE ROAD'S, read off the car's smoothed ground normal (`view.up`, the
+-- model's `state.up`), measured along the way the car is TRAVELLING -- not off the camera's
+-- own motion, which would feed it its own swing, and not along the view, which in a slide
+-- looks across the road and would read a banked corner as a hill (measured: 2 degrees of
+-- false grade swerving across a flat-but-banked stretch). At a crawl the travel means
+-- nothing, so the heading is blended in by speed. Eased on top at `HillPitchRate`.
+-- It is applied to the RENDERED camera before the pan and zoom, which then work on the
+-- tipped camera exactly as they did on the level one, and nothing above reads it. With
+-- every `HillPitch*` share at zero, or on flat ground, none of this runs.
+
+-- The flat direction the camera looks along, before the pan: the one the grade is read in.
+local function viewFlat(rig, view: View): Vector3
+	local d = rig.lookPoint - rig.position
+	local flat = Vector3.new(d.X, 0, d.Z)
+	if flat.Magnitude > EPS then
+		return flat.Unit
+	end
+	return (DriftModel.axes(view.yaw))
+end
+
+-- The way the car is going, flat: its travel, with the heading weighted in as if it were
+-- `HILL_HEADING_SPEED` studs/s of travel, so a standing car reads along its nose and a
+-- moving one along its path, with no switch between the two.
+local HILL_HEADING_SPEED = 8
+
+local function travelFlat(view: View): Vector3
+	local fwd = DriftModel.axes(view.yaw)
+	local v = Vector3.new(view.velocity.X, 0, view.velocity.Z) + fwd * HILL_HEADING_SPEED
+	return safeUnit(v, fwd)
+end
+
+-- The road's grade along the car's travel, in radians: + is climbing.
+local function hillGrade(up: Vector3?, along: Vector3): number
+	if not up or up.Y < 0.3 then
+		return 0 -- flat, or a normal no road has: leave the camera level
+	end
+	return math.atan2(-(up.X * along.X + up.Z * along.Z), up.Y)
+end
+
+local function stepHill(rig, dt: number, view: View)
+	-- Flat ground short-circuits before any arithmetic, so the camera there is bit for bit
+	-- the one without this.
+	local grade = if view.up == nil or view.up == Vector3.yAxis then 0 else hillGrade(view.up, travelFlat(view))
+	rig.hillGrade = grade
+	local share = if grade > 0 then Cam.HillPitchUp or 0 else Cam.HillPitchDown or 0
+	local lid = math.rad(math.max(Cam.HillPitchMax or 0, 0))
+	local want = math.clamp(grade * share, -lid, lid)
+	if want == 0 and rig.hillPitch == 0 then
+		return -- level ground, or zeroed: the camera is bit for bit the level one
+	end
+	rig.hillPitch += (want - rig.hillPitch) * ease(dt, Cam.HillPitchRate or 0)
+	if want == 0 and math.abs(rig.hillPitch) < 1e-6 then
+		rig.hillPitch = 0 -- land exactly, so back on the flat it stops for ever
+	end
+end
+
+-- Tip the camera and its look point about the car, about the horizontal axis square to
+-- the view: + raises what is ahead. A rigid turn, so the radius is kept and the view's
+-- pitch changes by exactly `hillPitch`.
+local function applyHill(rig, carPos: Vector3, flat: Vector3)
+	if rig.hillPitch == 0 then
+		return
+	end
+	local axis = flat:Cross(Vector3.yAxis)
+	if axis.Magnitude < EPS then
+		return
+	end
+	local turn = CFrame.fromAxisAngle(axis.Unit, rig.hillPitch)
+	rig.position = carPos + turn * (rig.position - carPos)
+	rig.lookPoint = carPos + turn * (rig.lookPoint - carPos)
 end
 
 -- -------------------------------------------------------- the roll and the shake (T-072)
@@ -516,11 +615,19 @@ local function stepTargets(rig, view: View, dt: number)
 	-- (1) The look-at: ahead of the nose, with only its HEIGHT eased. A car cresting a
 	-- jump keeps the horizon still while the camera itself follows the car up.
 	local wantLook = carPoint(view, Cam.CamLookAt)
-	rig.lookTarget = Vector3.new(
-		wantLook.X,
-		rig.lookTarget.Y + (wantLook.Y - rig.lookTarget.Y) * ease(dt, Cam.CamHeightRate),
-		wantLook.Z
-	)
+	-- ON A HILL (T-156) the eased height is first carried up (or down) with the road: by the
+	-- climb the car's grade and speed make, `HillLookFollow` of it. Without this a steady
+	-- climb leaves the look point `climb / CamHeightRate` studs BELOW the car -- 8 studs at 90
+	-- studs/s up 5 degrees, measured as the view pitched 3.7 degrees further DOWN than on the
+	-- flat, which is what the user saw. The grade is the road's (the smoothed normal), not
+	-- the car's own vertical speed, so a bump or a jump is still eased exactly as before; on
+	-- flat ground `climb` is 0 and this is the line it always was.
+	local baseY = rig.lookTarget.Y
+	local follow = Cam.HillLookFollow or 0
+	if follow ~= 0 and view.up and view.up ~= Vector3.yAxis then
+		baseY += view.speed * math.tan(hillGrade(view.up, travelFlat(view))) * follow * dt
+	end
+	rig.lookTarget = Vector3.new(wantLook.X, baseY + (wantLook.Y - baseY) * ease(dt, Cam.CamHeightRate), wantLook.Z)
 
 	-- (2) The resting place: `|CamOffset|` from the car, in a direction that follows the
 	-- car round at `CamAngleRate`. The length is always the offset's own length, so easing
@@ -592,6 +699,13 @@ function CarCameraController._advance(rig, view: View, dt: number, pan): CFrame
 	rig.position = rig.prevTarget:Lerp(rig.target, alpha)
 	rig.lookPoint = rig.prevLookTarget:Lerp(rig.lookTarget, alpha)
 
+	-- The hill pitch (T-156), first of the rendered layers: the view tips with the road's
+	-- grade, and the pan and zoom then work on the tipped camera.
+	stepHill(rig, dt, view)
+	if rig.hillPitch ~= 0 then
+		applyHill(rig, view.position, viewFlat(rig, view))
+	end
+
 	-- The player's own hand, LAST: downstream of every target, so the fixed-step feedback
 	-- above cannot see it and the camera is unchanged whenever nobody is panning.
 	stepPan(rig, dt, pan)
@@ -656,6 +770,7 @@ local function viewFrom(state, rem: number): View?
 		velocity = state.velocity,
 		slip = state.slip,
 		speed = DriftModel.speed(state),
+		up = state.up,
 	}
 end
 
@@ -882,6 +997,12 @@ function CarCameraController:DebugState()
 		-- The wheel's zoom (T-152): where it has eased to and what the wheel asked for.
 		zoom = rig.zoom,
 		zoomTarget = rig.zoomTarget,
+		-- The hill pitch (T-156): the road's grade along the view (+ climbing), and how far
+		-- the view has been tipped to follow it (+ nose up).
+		hillGradeDeg = math.deg(rig.hillGrade or 0),
+		hillPitchDeg = math.deg(rig.hillPitch or 0),
+		-- The rendered camera's own pitch, off the real CFrame: + looking up.
+		pitchDeg = if cf then math.deg(math.asin(math.clamp(cf.LookVector.Y, -1, 1))) else nil,
 		elevationDeg = if carPos
 			then math.deg(
 				math.atan2(
