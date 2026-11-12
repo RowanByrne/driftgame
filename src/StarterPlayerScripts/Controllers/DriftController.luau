@@ -50,6 +50,7 @@ local Wheels = require(DriftFolder.Wheels)
 local World = require(DriftFolder.World)
 local SplineWorld = require(DriftFolder.SplineWorld)
 local SplineRoadView = require(DriftFolder.SplineRoadView)
+local HorizonView = require(DriftFolder.HorizonView)
 
 local CarInputController = require(script.Parent.CarInputController)
 
@@ -300,10 +301,16 @@ function DriftController:UseSpline(spline: any?)
 		self.splineView:Destroy()
 		self.splineView = nil
 	end
+	if self.horizon then
+		self.horizon:Destroy()
+		self.horizon = nil
+	end
 	self.spline = spline
 	self.splineClosing = nil
 	if spline then
 		self.splineView = SplineRoadView.new(spline)
+		-- the mountains round the run, at the height of the road's start (T-150)
+		self.horizon = HorizonView.new(spline.origin.y)
 	end
 	self:_rebuildWorld()
 end
@@ -319,6 +326,20 @@ function DriftController:SetSplineClosing(s: number?)
 	if self.splineView then
 		self.splineView:SetClosing(s)
 	end
+end
+
+-- The mountains round the run: each layer's distance behind the camera, and their cost.
+function DriftController:DebugHorizon(resetCost: boolean?)
+	local h = self.horizon
+	if not h then
+		return { on = false }
+	end
+	if resetCost then
+		h:DebugResetCost()
+	end
+	local out = h:DebugState()
+	out.on = true
+	return out
 end
 
 -- The drawn road's chunks, and a way to draw them as a device with no meshes would.
