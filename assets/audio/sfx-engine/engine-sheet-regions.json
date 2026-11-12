@@ -1,0 +1,74 @@
+[
+ {
+  "rpm": 900,
+  "load": "on",
+  "start": 0.25,
+  "length": 2.0
+ },
+ {
+  "rpm": 900,
+  "load": "off",
+  "start": 2.85,
+  "length": 2.0
+ },
+ {
+  "rpm": 1370,
+  "load": "on",
+  "start": 5.45,
+  "length": 2.014604
+ },
+ {
+  "rpm": 1370,
+  "load": "off",
+  "start": 8.05,
+  "length": 2.014604
+ },
+ {
+  "rpm": 2090,
+  "load": "on",
+  "start": 10.65,
+  "length": 2.009562
+ },
+ {
+  "rpm": 2090,
+  "load": "off",
+  "start": 13.25,
+  "length": 2.009562
+ },
+ {
+  "rpm": 3190,
+  "load": "on",
+  "start": 15.85,
+  "length": 1.993729
+ },
+ {
+  "rpm": 3190,
+  "load": "off",
+  "start": 18.45,
+  "length": 1.993729
+ },
+ {
+  "rpm": 4860,
+  "load": "on",
+  "start": 21.05,
+  "length": 2.0
+ },
+ {
+  "rpm": 4860,
+  "load": "off",
+  "start": 23.65,
+  "length": 2.0
+ },
+ {
+  "rpm": 7400,
+  "load": "on",
+  "start": 26.25,
+  "length": 1.994604
+ },
+ {
+  "rpm": 7400,
+  "load": "off",
+  "start": 28.85,
+  "length": 1.994604
+ }
+]
