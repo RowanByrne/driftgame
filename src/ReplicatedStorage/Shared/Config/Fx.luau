@@ -333,8 +333,20 @@ return {
 		-- says 5, and a straight's corrections cross 5 all the time)
 		DriftMinSpeed = 15, -- studs/s. Slower than this a slide is not a drift to the engine
 		SpinGain = 0.6, -- the rear wheels run `1 + SpinGain * sin(slip)` times the road
-		DriftClimbRpm = 300, -- rpm/s the drift's floor climbs (it is a ratchet: it never
-		-- falls). A long drift finds the limiter, about 3 to 6 s in
+		DriftClimbRpm = 300, -- rpm/s the drift's floor climbs (it is a ratchet: it only
+		-- falls when the ceiling below comes down on it)
+		-- THE CEILING (T-147, the user: the limiter "should only really happen in an
+		-- intense drift when all 4 tires are going"). An ordinary drift's revs stop here,
+		-- feathering and the entry flare at most `FeatherRpm` over it
+		DriftCeilingRpm = 6500,
+		IntenseFromDeg = 40, -- deg of slip where the ceiling starts to rise. A held 25-35
+		-- degree drift stays at DriftCeilingRpm
+		IntenseFullDeg = 60, -- deg where it reaches IntenseCeilingRpm. The limiter is
+		-- reachable from about 45 degrees. As the angle closes the
+		-- ceiling falls and the revs leave the top
+		IntenseCeilingRpm = 9000, -- the ceiling at IntenseFullDeg: far enough past the
+		-- redline that the limiter stutters at its full LimiterHz
+		-- (from about 8 300 up; any lower and the cuts come slower)
 		EntryFlareRpm = 900, -- the clutch kick at a drift's start
 		FlareSeconds = 0.35, -- about how long it takes to settle
 		FeatherRpm = 350, -- rpm either way from feathering

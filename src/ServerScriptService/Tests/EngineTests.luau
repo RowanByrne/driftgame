@@ -8,7 +8,8 @@
 -- or `require(...).run()` directly.
 --
 -- WHAT IS MEASURED: the revs stay up through a slowing drift; the gear never changes while
--- drifting; the entry flare; feathering moves the revs; the limiter cuts at `RedlineRpm`,
+-- drifting; the entry flare; feathering moves the revs; an ordinary drift stays under the
+-- limiter and only an intense one finds it, and leaves it as the angle closes; the limiter cuts at `RedlineRpm`,
 -- recovers and stutters near `LimiterHz`; hook-up brings the revs back to the road's; a
 -- downshift blips; load is 0 under STOP, past 90 degrees and through a flick; an upshift
 -- drops the revs; a straight's small slip wobble never counts as a drift.
@@ -220,7 +221,7 @@ function Tests.run()
 	end
 
 	----------------------------------------------------------------------------
-	-- 6. A long drift finds the limiter: it cuts at the redline and recovers
+	-- 6. An intense drift finds the limiter: it cuts at the redline and recovers
 	----------------------------------------------------------------------------
 	do
 		local e = cruising(80)
@@ -230,7 +231,7 @@ function Tests.run()
 		local lowestInCut = math.huge
 		local loadInCut = math.huge
 		drive(e, 14, function()
-			return { speed = 80, slipDeg = 40 }
+			return { speed = 80, slipDeg = 55 }
 		end, function(eng, t)
 			if eng.cut and not wasCut then
 				table.insert(cutStarts, t)
@@ -249,7 +250,7 @@ function Tests.run()
 			hz = (#cutStarts - 1) / (cutStarts[#cutStarts] - cutStarts[1])
 		end
 		check(
-			"a held drift reaches the redline and the limiter cuts, more than once",
+			"an intense drift (55 degrees) reaches the redline and the limiter cuts, more than once",
 			#cutStarts >= 3 and e.maxRpm <= E.RedlineRpm + 1e-6,
 			`{#cutStarts} cuts, first at {if cutStarts[1] then string.format("%.2f", cutStarts[1]) else "never"} s; `
 				.. `highest {f0(e.maxRpm)} rpm (redline {E.RedlineRpm})`
@@ -263,6 +264,67 @@ function Tests.run()
 			"the load drops during a cut: the stutter is heard as the note cutting out",
 			loadInCut < 0.6,
 			`lowest load in a cut {string.format("%.2f", loadInCut)}`
+		)
+	end
+
+	----------------------------------------------------------------------------
+	-- 6b. An ordinary drift stays under the limiter (T-147)
+	----------------------------------------------------------------------------
+	do
+		-- Held at 30 degrees for 8 s bleeding speed, and wobbling 25-35 from a fast entry.
+		local function ordinary(entry, at)
+			local e = cruising(entry)
+			local highest = 0
+			drive(e, 8, at, function(eng)
+				if eng.inDrift then
+					highest = math.max(highest, eng.rpm)
+				end
+			end)
+			return e.cuts, highest
+		end
+		local heldCuts, heldTop = ordinary(80, function(t)
+			return { speed = 80 - 15 * t / 8, slipDeg = 30 }
+		end)
+		local wobbleCuts, wobbleTop = ordinary(100, function(t)
+			return { speed = 100 - 20 * t / 8, slipDeg = 30 + 5 * math.sin(t * 3) }
+		end)
+		local under = E.RedlineRpm - E.LimiterDropRpm
+		check(
+			`an ordinary drift (30 degrees held, or 25-35 wobbling) never cuts and stays under {under} rpm`,
+			heldCuts == 0 and wobbleCuts == 0 and heldTop < under and wobbleTop < under,
+			`held: {heldCuts} cuts, top {f0(heldTop)} rpm; wobbling: {wobbleCuts} cuts, top {f0(wobbleTop)} rpm `
+				.. `(DriftCeilingRpm {E.DriftCeilingRpm})`
+		)
+	end
+
+	----------------------------------------------------------------------------
+	-- 6c. Straightening out leaves the limiter while the car still slides (T-147)
+	----------------------------------------------------------------------------
+	do
+		local e = cruising(100)
+		-- 3 s at 55 degrees, on the limiter; then the angle closes to 0 over 1 s.
+		drive(e, 3, function(t)
+			return { speed = 100 - 30 * t / 3, slipDeg = 55 }
+		end)
+		local cutsIn = e.cuts
+		local lastCutAt, offTopAt, slipAtOff = 0, nil, nil
+		drive(e, 1.5, function(t)
+			return { speed = 70, slipDeg = 55 * math.max(1 - t, 0) }
+		end, function(eng, t)
+			if eng.cut then
+				lastCutAt = t
+			end
+			if not offTopAt and not eng.cut and eng.rpm < E.RedlineRpm - E.LimiterDropRpm then
+				offTopAt = t
+				slipAtOff = 55 * math.max(1 - t, 0)
+			end
+		end)
+		check(
+			"straightening out from the limiter, the cuts stop within 0.3 s and the revs leave the top while still sideways",
+			cutsIn > 0 and lastCutAt <= 0.3 and offTopAt ~= nil and (slipAtOff or 0) >= E.IntenseFromDeg * 0.5,
+			`{cutsIn} cuts before; the last cut {string.format("%.2f", lastCutAt)} s after the angle began to close; `
+				.. `under {f0(E.RedlineRpm - E.LimiterDropRpm)} rpm at {if offTopAt then string.format("%.2f", offTopAt) else "never"} s, `
+				.. `{if slipAtOff then f0(slipAtOff) else "-"} degrees still on`
 		)
 	end
 

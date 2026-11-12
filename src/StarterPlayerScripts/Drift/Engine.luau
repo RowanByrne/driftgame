@@ -16,8 +16,12 @@
 --   * WHEEL SPIN. While drifting, the driven wheels turn faster than the road by
 --     `SpinGain * |sin(slip)|` of it. The rpm in a drift also NEVER FALLS: its floor is a
 --     ratchet that takes the spin when the spin is higher and otherwise creeps up by
---     `DriftClimbRpm` a second -- so a slowing drift keeps its revs, and a long one finds
---     the limiter. Only feathering moves it down, and only for a moment.
+--     `DriftClimbRpm` a second -- so a slowing drift keeps its revs. Only feathering moves
+--     it down, and only for a moment.
+--   * THE CEILING (T-147). An ordinary drift tops out at `DriftCeilingRpm`, clearly under
+--     the limiter. Only an intense one -- the slip angle past `IntenseFromDeg`, all of it
+--     by `IntenseFullDeg` -- lifts the ceiling past the redline and finds the limiter. The
+--     ceiling also caps the ratchet, so as the angle closes the revs come down off the top.
 --   * ENTRY FLARE. A drift starting kicks the rpm up by `EntryFlareRpm`, settling over
 --     `FlareSeconds` (the clutch kick).
 --   * FEATHERING. The slip angle opening means more throttle, closing means less: the rpm
@@ -155,6 +159,16 @@ function Engine.roadRpm(tops: { number }, gear: number, speed: number): number
 	local E = Config.Fx.Engine
 	local top = tops[math.clamp(gear, 1, E.GearCount)]
 	return math.max(E.IdleRpm, E.ShiftRpm * math.max(speed, 0) / math.max(top, EPS))
+end
+
+-- How intense a drift is, 0 .. 1, from its slip angle (radians, absolute): 0 up to
+-- `IntenseFromDeg`, 1 from `IntenseFullDeg`, linear between. The drift model is one body
+-- with no tyres of its own, so the angle stands in for "all four tyres going".
+function Engine.intensity(absSlip: number): number
+	local E = Config.Fx.Engine
+	local from = math.rad(E.IntenseFromDeg)
+	local span = math.max(math.rad(E.IntenseFullDeg) - from, EPS)
+	return math.clamp((absSlip - from) / span, 0, 1)
 end
 
 --------------------------------------------------------------------------------
@@ -345,6 +359,7 @@ function Engine.step(self: Engine, feed: Feed, dt: number)
 	self.feather = chase(self.feather, featherWant, E.FeatherResponse, dt)
 
 	local target: number
+	local driftCap: number? = nil
 	if feed.airborne then
 		-- Wheels off the ground, foot in: the engine free-revs into the limiter.
 		target = E.RedlineRpm + E.LimiterDropRpm
@@ -354,10 +369,21 @@ function Engine.step(self: Engine, feed: Feed, dt: number)
 		-- takes the spin whenever the spin is higher and otherwise climbs at
 		-- `DriftClimbRpm`, so a drift that bleeds speed keeps its revs (measured on the
 		-- real car: without the ratchet a 35-degree drift losing 15 studs/s sagged 900 rpm).
+		--
+		-- THE CEILING (T-147). Only an intense drift -- a big angle, all four tyres going --
+		-- may reach the limiter. An ordinary one tops out at `DriftCeilingRpm`, with its
+		-- feathering and flare at most `FeatherRpm` over that. The ceiling rises with the
+		-- slip angle from `IntenseFromDeg` to `IntenseFullDeg`, to `IntenseCeilingRpm`, and
+		-- it caps the ratchet too: as the car straightens out, the ceiling falls with the
+		-- angle and pulls the floor down with it, so the revs leave the limiter while the
+		-- car is still sliding instead of only when the drift ends.
+		local intensity = Engine.intensity(absSlip)
+		local ceiling = lerp(E.DriftCeilingRpm, E.IntenseCeilingRpm, intensity)
 		local spin = road * (1 + E.SpinGain * math.sin(absSlip))
-		self.driftFloor = math.max(self.driftFloor + E.DriftClimbRpm * dt, spin)
+		self.driftFloor = math.min(math.max(self.driftFloor + E.DriftClimbRpm * dt, spin), ceiling)
 		target = self.driftFloor + self.feather
-		self.excess = math.max(target - road, 0)
+		driftCap = ceiling + E.FeatherRpm
+		self.excess = math.max(math.min(target, driftCap) - road, 0)
 	else
 		-- Hook-up: whatever the drift left above the road's rpm eases away.
 		self.excess = chase(self.excess, 0, 1 / math.max(E.HookUpSeconds, EPS) * 3, dt)
@@ -367,6 +393,10 @@ function Engine.step(self: Engine, feed: Feed, dt: number)
 	self.flare = chase(self.flare, 0, 1 / math.max(E.FlareSeconds, EPS) * 3, dt)
 	self.blip = chase(self.blip, 0, 1 / math.max(E.BlipSeconds, EPS) * 3, dt)
 	target += self.flare + self.blip
+	if driftCap then
+		-- The flare and the feathering ride on the floor but not through the ceiling.
+		target = math.min(target, driftCap)
+	end
 
 	-- Lifting off (STOP, the grip braking): the revs fall towards the road's, with no spin.
 	local lifting = feed.handbrake or feed.braking or self.liftFor > 0
