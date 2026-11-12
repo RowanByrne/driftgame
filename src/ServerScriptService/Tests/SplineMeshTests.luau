@@ -1,0 +1,206 @@
+--!nonstrict
+-- SplineMeshTests: the spline road's meshes (features/spline-road.md "The mesh, purely
+-- visual", T-135). Builds real MeshParts from EditableMeshes in the place, measures them and
+-- takes them away. Studio only; run it in a task:
+--   game.ServerStorage.DebugBridge:Invoke("DebugSplineMeshTests", "run")
+--
+-- What it cannot check: whether the road LOOKS right. That is the user's, by driving it.
+
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+
+assert(RunService:IsStudio(), "SplineMeshTests is Studio only")
+
+local Config = require(ReplicatedStorage.Shared.Config)
+local SplineGen = require(ReplicatedStorage.Shared.Road.SplineGen)
+local SplineMesh = require(ReplicatedStorage.Shared.Road.SplineMesh)
+
+local Tests = {}
+
+local SEED = 31337
+local LENGTH = 8000
+
+local function fmt(x: number, p: number?): string
+	return string.format("%." .. tostring(p or 3) .. "f", x)
+end
+
+function Tests.run()
+	local checks = {}
+	local function check(name: string, ok: boolean, detail: string?)
+		table.insert(checks, { name = name, ok = ok, detail = detail })
+	end
+	local M = Config.Spline.Mesh
+	local half = Config.Road.Width * 0.5
+	local gen = SplineGen.new(SEED)
+	gen:extendTo(LENGTH)
+	local spline = gen.spline
+	local folder = Instance.new("Folder")
+	folder.Name = "__SplineMeshTest"
+	folder.Parent = workspace
+
+	local ok, err = pcall(function()
+		-- 1. The whole road, chunk by chunk, as the client draws it.
+		local L = M.ChunkLength
+		local chunks = math.ceil(spline.length / L)
+		local tris, verts, worstMs, sumMs, failed, sections, plainParts = 0, 0, 0, 0, 0, 0, 0
+		local models = {}
+		for i = 0, chunks - 1 do
+			local s0, s1 = i * L, math.min((i + 1) * L, spline.length)
+			local model, info = SplineMesh.build(spline, s0, s1, folder)
+			if not model then
+				failed += 1
+				check("chunk " .. i .. " built", false, tostring(info))
+			else
+				models[i] = model
+				tris += info.triangles
+				verts += info.vertices
+				sections += info.sections
+				plainParts += info.parts
+				worstMs = math.max(worstMs, info.ms)
+				sumMs += info.ms
+			end
+			if i % 4 == 3 then
+				task.wait()
+			end
+		end
+		local built = chunks - failed
+		check(
+			"the whole road draws as meshes",
+			failed == 0,
+			`{built} chunks of {L} studs for {math.floor(spline.length)} studs of road: {tris} triangles, {verts} vertices, {sections} cross-sections ({fmt(spline.length / math.max(1, sections - built), 1)} studs apart on average), {plainParts} barrier and dash parts`
+		)
+		check("a chunk is quick to build", worstMs < 25, `mean {fmt(sumMs / math.max(1, built), 2)} ms, worst {fmt(worstMs, 2)} ms (one chunk is built per frame at most)`)
+		local window = math.ceil((M.Ahead + M.Behind) / L) + 1
+		check(
+			"the window fits the client's eight EditableMeshes",
+			window + 1 <= 8,
+			`the window round the car is {window} chunks, so {window} meshes alive and one being built (a client may hold 8): about {math.floor(tris / math.max(1, built) * window)} triangles and {math.floor(plainParts / math.max(1, built) * window)} plain parts`
+		)
+
+		-- 2. Every vertex of the road surface is on the curve's surface.
+		local worstV, n = 0, 0
+		for _, model in models do
+			local road = model:FindFirstChild("Road")
+			if road then
+				-- read the mesh back through the part: the vertices the GPU gets
+
+				local content = road.MeshContent
+				local obj = content and content.Object
+				if obj and obj:IsA("EditableMesh") then
+					for _, v in obj:GetVertices() do
+						local p = road.CFrame:PointToWorldSpace(obj:GetPosition(v))
+						local s, d = spline:project(p.X, p.Z, half + 5)
+						if s and d then
+							local y = spline:heightAt(s) + d * math.tan(spline:bankAt(s))
+							worstV = math.max(worstV, math.abs(p.Y - y))
+							n += 1
+						end
+					end
+				end
+			end
+		end
+		check("every road vertex is on the surface the car stands on", n > 0 and worstV < 0.01, `{n} vertices read back through their parts: worst {fmt(worstV, 4)} studs off (a Vector3 20 000 studs out is good to ~0.002)`)
+
+		-- 3. Between the cuts, the drawn surface stays within the tolerance of the true one.
+		local worstSag = 0
+		for i = 0, 5 do
+			local cuts = SplineMesh.sections(spline, i * L, (i + 1) * L)
+			for k = 1, #cuts - 1 do
+				local a, b = cuts[k], cuts[k + 1]
+				for _, d in { -half, -half / 2, 0, half / 2, half } do
+					local ax, ay, az = spline:surfaceXYZ(a, d)
+					local bx, by, bz = spline:surfaceXYZ(b, d)
+					local mx, my, mz = spline:surfaceXYZ((a + b) / 2, d)
+					local dx, dy, dz = mx - (ax + bx) / 2, my - (ay + by) / 2, mz - (az + bz) / 2
+					worstSag = math.max(worstSag, math.sqrt(dx * dx + dy * dy + dz * dz))
+				end
+			end
+		end
+		check("the drawn surface stays within tolerance of the true one", worstSag <= M.Tolerance * 1.5, `worst {fmt(worstSag, 4)} studs between cross-sections, at five points across (tolerance {M.Tolerance}, checked at three while cutting)`)
+
+		-- 4. Chunks meet without a seam: the last cut of one is the first of the next.
+		local worstSeam = 0
+		for i = 0, chunks - 2 do
+			local a, b = models[i], models[i + 1]
+			if a and b then
+				local ar, br = a.Road.MeshContent.Object, b.Road.MeshContent.Object
+				-- the vertices of each at the boundary s, read back through their parts
+				local sB = (i + 1) * L
+				local function atBoundary(part, em)
+					local pts = {}
+					for _, v in em:GetVertices() do
+						local p = part.CFrame:PointToWorldSpace(em:GetPosition(v))
+						local s = spline:project(p.X, p.Z, half + 5)
+						if s and math.abs(s - sB) < 0.01 then
+							table.insert(pts, p)
+						end
+					end
+					return pts
+				end
+				local pa, pb = atBoundary(a.Road, ar), atBoundary(b.Road, br)
+				for _, p in pa do
+					local best = math.huge
+					for _, q in pb do
+						best = math.min(best, (p - q).Magnitude)
+					end
+					worstSeam = math.max(worstSeam, best)
+				end
+			end
+		end
+		check("chunks meet with no seam", worstSeam < 0.01, `worst gap between neighbouring chunks' shared edge: {fmt(worstSeam, 4)} studs`)
+
+		-- 4b. The barrier tops run on without a step from one box to the next (a level box
+		-- per cut drew a staircase on every slope, seen in the lane).
+		local worstStep, pairs = 0, 0
+		for _, model in models do
+			for _, side in { "L", "R" } do
+				local k = 1
+				while true do
+					local a = model:FindFirstChild(`Barrier_{side}_{k}`)
+					local b = model:FindFirstChild(`Barrier_{side}_{k + 1}`)
+					if not a or not b then
+						break
+					end
+					-- the top edge's end of one box, and the start of the next
+					local aEnd = a.CFrame * Vector3.new(0, a.Size.Y / 2, -a.Size.Z / 2 + 0.1)
+					local bStart = b.CFrame * Vector3.new(0, b.Size.Y / 2, b.Size.Z / 2 - 0.1)
+					worstStep = math.max(worstStep, math.abs(aEnd.Y - bStart.Y))
+					pairs += 1
+					k += 1
+				end
+			end
+		end
+		check("barrier tops run on without steps", pairs > 0 and worstStep < 0.1, `{pairs} joints: worst step {fmt(worstStep, 3)} studs`)
+
+		-- 5. Nothing drawn can be touched, collided with or queried.
+		local solid = 0
+		for _, d in folder:GetDescendants() do
+			if d:IsA("BasePart") and (d.CanCollide or d.CanQuery or d.CanTouch) then
+				solid += 1
+			end
+		end
+		check("nothing drawn is solid", solid == 0, `{solid} parts with CanCollide, CanQuery or CanTouch on`)
+
+		-- 6. A device that cannot make a mesh says so, and the caller draws parts.
+		local m, why = SplineMesh.build(spline, 0, L, folder, { forceFail = true })
+		check("a device that cannot make a mesh says so", m == nil and type(why) == "string", `answered nil: "{tostring(why)}"`)
+
+		for _, model in models do
+			SplineMesh.destroy(model)
+		end
+	end)
+	if not ok then
+		check("the suite ran", false, tostring(err))
+	end
+	folder:Destroy()
+
+	local passed = 0
+	for _, c in checks do
+		if c.ok then
+			passed += 1
+		end
+	end
+	return { passed = passed, total = #checks, checks = checks }
+end
+
+return Tests

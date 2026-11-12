@@ -1,6 +1,6 @@
 # Feature: The spline road
 
-**Status:** in progress: steps 1 and 2 of 4 built (`T-133` the curve maths, `T-134` collision). **Owner task:** `T-132`,
+**Status:** in progress: steps 1 to 3 of 4 built (`T-133` the curve maths, `T-134` collision, `T-135` the mesh). **Owner task:** `T-132`,
 branch `feature/spline-road`, lane 1. Built behind a switch, and merged only when the user has
 driven it there.
 
@@ -154,6 +154,30 @@ to it. The button again takes you back.
 - **Fallback:** if `EditableMesh` can't be created on a client (memory budget, or a device that
   refuses it), each triangle is drawn as two wedge parts, also never collided with.
 
+
+**Built in step 3** (`T-135`): `Road/SplineMesh` draws a chunk, `Drift/SplineRoadView` keeps the
+chunks round the car (`DriftController:UseSpline` makes one). Numbers in `Config.Spline.Mesh`.
+What changed from the plan, and why:
+
+- **Only the surface is a mesh.** A MeshPart made from an `EditableMesh` is drawn from it for as
+  long as it exists: free the mesh data and the road vanished (seen in the lane). And a client may
+  hold only **eight** EditableMeshes at once, whatever their size (measured: 8 empty, 8 of 2 000
+  vertices, 8 of 20 000; the ninth comes back nil with "reaching memory budget limits"). So each
+  chunk spends its one mesh on what only a mesh can draw, the surface that curves, banks and
+  twists, and the barriers and the centre line are plain parts like the piece road's: an upright
+  box per cross-section either side, **pitched along the grade** so its top runs on without
+  steps, and a flat box per dash.
+- **Chunks are 480 studs,** so the window (1 600 ahead, 300 behind) is five meshes, plus one being
+  built: six of the eight.
+- **Detail follows the surface, not just curvature:** a cross-section goes as far on as it can
+  while the true surface halfway along stays within 0.05 studs of the straight line, at the centre
+  and both kerbs; 12 studs on a straight, down to 1 where it needs. **Four strips across,** because
+  where the bank rolls on a grade through a bend the surface twists and a full-width triangle
+  cannot follow it.
+- **No road parts on the server at all.** The test road's server-built stand-in is gone; each
+  client draws its own.
+- **Fallback:** a chunk this device cannot make a mesh for is drawn as non-solid parts
+  (`Road/SplineParts`), and the view counts how often.
 ### The server
 
 The server owns the seed, generates the same curve, and checks the car's reported position against
@@ -226,6 +250,17 @@ None new. The mesh uses today's road colours and materials.
   | The autopilot down 2 450 studs on each | Maths: all of it in 33.6 s, 0 steps off the road, 0 airborne. Parts: all of it in 32.9 s, 0 off, 0 airborne. The first 2.5 s are the same drive to 0.000 studs |
   | Barriers off | The car leaves the road and falls (177 studs off, 136 below after 3 s); on, the barrier holds it |
   | Closing barrier | A car driven back at it stops with its middle 7.6 studs in front (half the car is 7) |
+- **The mesh** (`ServerScriptService/Tests/SplineMeshTests.luau`, 9 checks): the whole 8 210-stud
+  test road as 18 chunks, 9 728 triangles and 2 775 barrier and dash parts; a chunk builds in
+  3.0 ms on average, 5.5 at worst; every one of 6 166 road vertices, read back through its part,
+  is within **0.0003 studs** of the surface the car stands on; between cross-sections the drawn
+  surface is within 0.049 of the true one; neighbouring chunks share their edge to 0.002 studs;
+  barrier tops step by 0.03 at most; nothing drawn is solid; a device that cannot make a mesh
+  says so.
+- **The mesh in a playtest** (`DR-Lane1`): 4 chunks drawn as meshes on arriving, 0 fallbacks, 4
+  EditableMeshes still free; teleported 3 000 studs on, 5 old chunks taken down and 5 built, 3
+  free; with the fallback forced, 5 chunks drawn as 3 605 parts and the car still 0.003 studs off
+  the surface. Looked at once: a smooth curved road with its dashes and barriers.
 - **In a playtest** (`DR-Lane1`, the test road): the car lands on the curve with its ride height
   0.005 studs off; every ground probe is answered by the maths (14 696 of 14 696); hands-off it
   grinds along a barrier and never leaves the road; guardrails off, it went off the edge, fell,
