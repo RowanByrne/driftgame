@@ -75,6 +75,10 @@ The user approves at up to four gates: the reference, the gray model, the textur
    **Gate: the user approves the reference.**
 2. **All-angle references, for complex assets only.** For something complex, like a creature, generate a reference for every view: front, back, left, right, top and bottom. Skip this for something simple, like a chopstick.
 3. **Build** the shape in Blender. Rig it if it will be animated.
+   - **Curved where the thing is curved, simple where it's angular.** A surface that is one curve on the reference, or on the original the asset is made from, follows that curve and is shaded smooth, with only its real creases left hard. Flat planes forced onto a large curved surface to look low poly read as mistakes, whatever the style: spend the triangles there. Simple, angular geometry is right for parts that are angular to begin with, like a skirt, a trim strip or a block.
+   - **Parts fold into each other at every seam.** Where two parts meet, each turns inward at its edge and the two meet or overlap a little. A small overlap is fine; a small gap never is, because it shows the inside of the model or the sky behind it. Close a gap by adding the fold behind the join, not by dragging the visible edge of a part the user has already approved.
+   - **A seam that opens,** like a hood or a lid, only has to look right closed. When a part is also seen closed from the inside, like a car door from the cabin, build it thick, with the same folded seam on the inside.
+   - **Check against the original.** When the asset is made from a more detailed model, compare each surface and seam with it from the same angle before the gate.
 
    **Gate: the user approves the gray model**, untextured, shown from the reference angles.
 4. **Surfaces.** Decide for this asset: Roblox materials, generated textures, or a mix, following `ART-DIRECTION.md` "Surfaces", and ask the user when it isn't clear. Materials are assigned and go straight to the gate; textured parts go through the steps below.
