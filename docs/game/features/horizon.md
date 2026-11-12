@@ -1,6 +1,6 @@
 # Feature: The mountain horizon
 
-**Status:** building (`T-150`): step 1, the ridges and the snow peak, in the lane (`T-153`). **Owner task:** `T-150`, lane 2.
+**Status:** building (`T-150`): step 1, the ridges and the snow peak (`T-153`), and step 2, the valley floor (`T-157`), in the lane. **Owner task:** `T-150`, lane 2.
 
 ## Goal
 
@@ -122,8 +122,21 @@ No art assets: geometry in code, colours in config.
   road's start (eased over 2 s): all of it would pin them in the frame, none would swing them
   4 degrees on a 160-stud climb. So climbing still sinks them a little.
 - Nothing collides, is touched, is hit by a ray or casts a shadow (measured: 0 of 478).
-- **Looking over a cliff** shows the near ridges' lower faces through the haze, down to 560
-  below the road's start: step 2's valley floor covers that.
+- **Looking over a cliff** showed the near ridges' lower faces through the haze, down to 560
+  below the road's start, until step 2's valley floor.
+
+## As built (step 2, `T-157`)
+
+- **The valley floor:** nine dark green plates, 1 800 studs square each (a part is at most
+  2 048), 5 400 across in all, their top 500 below the road's start. Numbers in
+  `Config.Horizon.Floor`.
+- **Welded to the near layer,** so it moves with those ridges: its edges stay hidden behind
+  them, and it costs nothing more a frame. The near and middle ridges' feet sink into it.
+- **It rises with the road** like the ridges, and stays below every cliff's face: at most 380
+  below the road's start against cliffs drawn down to 240 (unit test).
+- Measured in the lane: every downward sight line from the camera, all the way round, from
+  straight down to 12 degrees down, lands on it (1 440 of 1 440); shallower ones meet the
+  near ridges. At noon it reads mostly as haze from the road; the look is the user's.
 
 ## Open questions
 

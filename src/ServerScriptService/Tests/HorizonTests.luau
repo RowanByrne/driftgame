@@ -132,6 +132,46 @@ function Tests.run()
 	local farAngle = math.atan2(tallestFar, H.Layers[#H.Layers].Radius * (1 - H.Layers[#H.Layers].RadiusJitter))
 	check("peak: stands above the far ridges", summitAngle > farAngle, string.format("%.1f vs %.1f degrees", math.deg(summitAngle), math.deg(farAngle)))
 
+	-- the valley floor: parts that fit, below every cliff, under the near ridges' feet, and
+	-- reaching past where those ridges rise out of it on every side
+	local F = H.Floor
+	local plates = Horizon.floor(H)
+	local biggest = 0
+	for _, plate in plates do
+		biggest = math.max(biggest, plate.size.X, plate.size.Y, plate.size.Z)
+	end
+	check("floor: plates fit a part", #plates == F.Tiles * F.Tiles and biggest <= 2048, string.format("%d plates, %.0f studs", #plates, biggest))
+	-- the highest the floor stands against the lowest a cliff's face goes: the road at its
+	-- lowest, the horizon risen with a camera at the road's highest
+	local floorHigh = -F.Depth + H.FollowHeight * Config.Spline.MaxHeight
+	local cliffLow = Config.Spline.MinHeight - Config.Spline.Terrain.CliffDrop
+	check("floor: below every cliff's face", floorHigh < cliffLow, string.format("floor at most %.0f, cliffs down to %.0f", floorHigh, cliffLow))
+	local feetSink = true
+	for _, L in H.Layers do
+		local layerFeetBelow = L.Base < -F.Depth
+		-- the far layer stands beyond the floor, behind the nearer ones
+		if L.Radius * (1 - L.Depth) < F.Size / 2 * math.sqrt(2) and not layerFeetBelow then
+			feetSink = false
+		end
+	end
+	check("floor: the ridges over it have their feet below it", feetSink)
+	local nearL = H.Layers[1]
+	local rise = 0
+	for _, tri in layout.layers[1].triangles do
+		local pts = { tri.a, tri.b, tri.c }
+		for k = 1, 3 do
+			local p, q = pts[k], pts[k % 3 + 1]
+			if (p.Y + F.Depth) * (q.Y + F.Depth) < 0 then
+				rise = math.max(rise, flatDistance(p:Lerp(q, (-F.Depth - p.Y) / (q.Y - p.Y))))
+			end
+		end
+	end
+	check(
+		"floor: reaches past where the near ridges rise out of it",
+		F.Size / 2 > rise + nearL.MaxLag,
+		string.format("half %.0f, ridges rise by %.0f (+%d lag)", F.Size / 2, rise, nearL.MaxLag)
+	)
+
 	-- following the camera: eased, capped, and the peak exact
 	local cam = Vector3.new(0, 0, -100)
 	local c = Vector3.zero
