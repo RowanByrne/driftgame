@@ -10,6 +10,7 @@ Every task in progress and the files it owns, so parallel sessions and workers n
 | Branch | Lane | Files owned | Since |
 |---|---|---|---|
 | `agent/engine-rev-top` (T-147) | lane2 | `src/StarterPlayerScripts/Drift/Engine.luau`, `src/ReplicatedStorage/Shared/Config/Fx.luau` (`Engine` block only), `src/ServerScriptService/Tests/EngineTests.luau`, `docs/game/features/engine-sound.md` | 2026-11-12 |
+| `agent/metal-guardrails` (T-149) | lane4 | `src/ReplicatedStorage/Shared/Road/SplineMesh.luau`, `src/ReplicatedStorage/Shared/Config/Spline.luau` (`KRail*` lines only), `src/ServerScriptService/Tests/SplineMeshTests.luau`, `docs/game/features/mountain-road.md` | 2026-11-12 |
 
 ## Notes between sessions
 
