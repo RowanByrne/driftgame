@@ -49,6 +49,7 @@ local Suspension = require(DriftFolder.Suspension)
 local Wheels = require(DriftFolder.Wheels)
 local World = require(DriftFolder.World)
 local SplineWorld = require(DriftFolder.SplineWorld)
+local SplineRoadView = require(DriftFolder.SplineRoadView)
 
 local CarInputController = require(script.Parent.CarInputController)
 
@@ -292,8 +293,18 @@ end
 
 -- Drive on a spline road (a `Road/Spline`), or nil to go back to the parts world. The road
 -- is the client's own copy, replayed from the server's sections.
+-- The road is drawn here too, as meshes round the car (`Drift/SplineRoadView`, T-135): the
+-- server makes no road parts.
 function DriftController:UseSpline(spline: any?)
+	if self.splineView then
+		self.splineView:Destroy()
+		self.splineView = nil
+	end
 	self.spline = spline
+	if spline then
+		self.splineView = SplineRoadView.new(spline)
+		self.splineView:SetRails(self.splineRails ~= false)
+	end
 	self:_rebuildWorld()
 end
 
@@ -304,6 +315,21 @@ function DriftController:SetSplineRails(on: boolean)
 	if w and w.setRails then
 		w.setRails(self.splineRails)
 	end
+	if self.splineView then
+		self.splineView:SetRails(self.splineRails)
+	end
+end
+
+-- The drawn road's chunks, and a way to draw them as a device with no meshes would.
+function DriftController:DebugSplineView(forceFallback: boolean?)
+	local view = self.splineView
+	if not view then
+		return { on = false }
+	end
+	if forceFallback ~= nil then
+		view.forceFallback = forceFallback
+	end
+	return view:DebugState()
 end
 
 function DriftController:_worldChanged()
@@ -500,6 +526,17 @@ function DriftController:_frame(dt: number)
 	local input = CarInputController:Get()
 	local steps = Sim.advance(self.runner, dt, input, self.world, self._onStep)
 	local state = self.runner.state
+
+	-- The spline road is drawn round where the car is along it (T-135). `locate` also puts
+	-- the world's lookup hint back on the car after anything else has asked it elsewhere.
+	if self.splineView then
+		local w: any = self.world
+		local along = if w and w.locate then w.locate(state.position) else nil
+		-- off the road altogether (falling, far out): keep what is drawn
+		if along then
+			self.splineView:Update(along)
+		end
+	end
 
 	if state.fell then
 		self:_askForRespawn()

@@ -10,8 +10,8 @@
 --   * THE SERVER CHOOSES IT AND THE CLIENT REPLAYS IT, exactly as the real thing will: the
 --     client is sent the generator's sections and builds its own copy of the curve, which
 --     its car then drives on through `Drift/SplineWorld`. The car never touches a part.
---   * WHAT YOU SEE IS A STAND-IN until step 3's mesh: the same road laid as parts that
---     nothing can collide with or query (`Road/SplineParts`).
+--   * WHAT YOU SEE IS DRAWN BY THE CLIENT, as meshes round its car (`Drift/SplineRoadView`,
+--     T-135). The server makes no road parts at all.
 --   * A FALL PUTS YOU BACK ON IT (`SafeStart`), as a fall on the piece road does, through
 --     the one question `CarService:Respawn` asks first.
 --
@@ -21,12 +21,10 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
-local Workspace = game:GetService("Workspace")
 
 local Config = require(ReplicatedStorage.Shared.Config)
 local Net = require(ReplicatedStorage.Shared.Net)
 local SplineGen = require(ReplicatedStorage.Shared.Road.SplineGen)
-local SplineParts = require(ReplicatedStorage.Shared.Road.SplineParts)
 
 local SplineTestService = {}
 SplineTestService.Priority = 0
@@ -47,7 +45,6 @@ function SplineTestService:Init()
 	self.drivers = {} -- [userId] = true
 	self.lastToggle = {} -- [userId] = os.clock()
 	self.gen = nil
-	self.folder = nil
 	self.builds = 0
 	self.refused = 0
 	if not self.enabled then
@@ -102,23 +99,14 @@ function SplineTestService:_build()
 	local o = C.TestOrigin
 	local gen = SplineGen.new(seed, { x = o.X, y = o.Y, z = o.Z, yaw = math.rad(Config.Road.StartHeading) })
 	gen:extendTo(C.TestLength)
-	local folder = Instance.new("Folder")
-	folder.Name = "SplineTestRoad"
-	folder:SetAttribute("Seed", seed)
-	folder.Parent = Workspace
-	SplineParts.build(gen.spline, 0, gen.spline.length, folder, { step = C.TestStandInStep, queryable = false, yieldEvery = 60 })
+	-- NO ROAD PARTS ON THE SERVER (T-135): each client draws its own copy as meshes.
 	self.gen = gen
-	self.folder = folder
 end
 
 function SplineTestService:_tearDownIfEmpty()
 	if next(self.drivers) ~= nil then
 		return
 	end
-	if self.folder then
-		self.folder:Destroy()
-	end
-	self.folder = nil
 	self.gen = nil
 end
 
@@ -205,7 +193,8 @@ function SplineTestService:DebugState()
 		seed = self.gen and self.gen.seed or nil,
 		length = self.gen and self.gen.spline.length or 0,
 		sections = self.gen and #self.gen.sections or 0,
-		parts = self.folder and #self.folder:GetDescendants() or 0,
+		-- road parts the server made: none, ever (the clients draw the road)
+		parts = 0,
 		drivers = n,
 		refused = self.refused,
 	}

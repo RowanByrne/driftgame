@@ -87,12 +87,31 @@ local Spline = {
 	RecentBends = 6, -- how many bends back the chooser counts
 	SwitchbackChance = 0.45, -- how often a bend is followed straight away by one the other way
 
+	-- --------------------------------------------------------------- the mesh (step 3)
+	-- What each device draws (`Road/SplineMesh`, `Drift/SplineRoadView`). Purely visual.
+	Mesh = {
+		-- How far the drawn surface may stand off the true one between two cross-sections,
+		-- at the centre and at both kerbs. Cuts go as far apart as this allows.
+		Tolerance = 0.05, -- studs
+		MaxStep = 12, -- studs between cross-sections on a straight
+		MinStep = 1, -- and never closer than this, however tight the bend
+		-- Strips across the road. Where the bank rolls on a grade through a bend the surface
+		-- twists, and one full-width triangle cannot follow it (6.5 degrees off, measured).
+		Across = 4,
+		-- studs of road per chunk. A chunk holds one EditableMesh while it is drawn, and a
+		-- client may hold only eight (measured), so the window round the car is kept to five
+		-- or six chunks: (Ahead + Behind) / ChunkLength + 1, plus the one being built
+		ChunkLength = 480,
+		Ahead = 1600, -- studs of road drawn in front of the car
+		Behind = 300, -- and kept behind it
+		FallbackStep = 4, -- studs between cross-sections when a device draws parts instead
+	},
+
 	-- --------------------------------------------------------------- the Studio test road
 	-- `SplineTestService` (Studio only): a spline road to drive before the run lays one.
 	-- Far out on +X, clear of the track, the playground, the garage and the piece road.
 	TestOrigin = Vector3.new(30000, 0, -20000),
 	TestLength = 8000, -- studs
-	TestStandInStep = 6, -- studs between the stand-in's cross-sections (it is only to look at)
 }
 
 return Spline
