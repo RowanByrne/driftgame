@@ -195,6 +195,31 @@ function Tests.run()
 	local phase, f = lc:phaseAt(240 + 10)
 	check("a longer day moves the sunset with it", lc.length == L + 120 and phase == "sunset" and math.abs(f - 0.5) < 1e-6, `{lc.length} s, {phase} {fmt(f)}`)
 
+	-- 9. The headlights: on from dusk to dawn, switched once each way per cycle.
+	local H = C.Headlights
+	local onAt = d + s * H.On.f -- On is in the sunset
+	local offAt = d + s + n + C.Sunrise * H.Off.f -- Off is in the sunrise
+	local ons, offs, prev = 0, 0, cycle:lightsAt(0)
+	for i = 1, math.floor(L / stepT) do
+		local now = cycle:lightsAt(i * stepT)
+		if now and not prev then
+			ons += 1
+		elseif prev and not now then
+			offs += 1
+		end
+		prev = now
+	end
+	check(
+		"the headlights are off at noon and on at midnight",
+		not cycle:lightsAt(d * 0.5) and cycle:lightsAt(d + s + n * 0.5),
+		`switch on at {fmt(onAt, 1)} s, off at {fmt(offAt, 1)} s`
+	)
+	check(
+		"they come on in the sunset and go off in the sunrise, at their moments",
+		not cycle:lightsAt(onAt - 0.01) and cycle:lightsAt(onAt + 0.01) and cycle:lightsAt(offAt - 0.01) and not cycle:lightsAt(offAt + 0.01)
+	)
+	check("they switch once each way a cycle", ons == 1 and offs == 1, `{ons} on, {offs} off`)
+
 	local passed = 0
 	for _, c in checks do
 		if c.ok then

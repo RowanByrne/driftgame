@@ -58,6 +58,35 @@ return {
 	-- every frame.
 	HazeStep = 2 / 255,
 
+	-- ---------------------------------------------------------------- headlights (step 2)
+	-- `Controllers/HeadlightsController`. Every car's, on every client, switched by the same
+	-- clock, so everyone sees the same cars lit. Nothing goes inside a car (DECISIONS.md
+	-- 2026-11-03): the beams are SpotLights in parts of this client's own, in
+	-- `Workspace.Headlights`, moved to each car's nose every frame, as the underglow is.
+	Headlights = {
+		On = { Phase = "sunset", f = 0.6 }, -- the sun just under the horizon
+		Off = { Phase = "sunrise", f = 0.5 }, -- the sun on it
+		Fade = 0.6, -- s for a beam to come up to full, or go out
+		-- One beam per lamp, in the car's body frame (front -Z, right +X, studs from the body
+		-- part's centre): just ahead of the liftback's lenses, measured in the lane.
+		Lamps = { Vector3.new(-1.99, 0.3, -8.6), Vector3.new(1.99, 0.3, -8.6) },
+		Tilt = 6, -- degrees the beams point down from level, onto the road ahead
+		Brightness = 3,
+		Range = 60, -- studs; Roblox's most for a SpotLight
+		Angle = 70, -- degrees across the beam
+		Colour = Color3.fromRGB(255, 240, 210),
+		Shadows = false, -- a shadow-casting light per car costs too much on a phone
+		-- The pop-up pods (a car rig's groups by these names) open when the lights come on.
+		Pods = { "PodL", "PodR" },
+		-- Lenses that glow while the lights are on, by part name, and the colour they glow.
+		Glow = {
+			HeadlightL_LensHead = Color3.fromRGB(255, 246, 225),
+			HeadlightR_LensHead = Color3.fromRGB(255, 246, 225),
+			TailLampL_LensRed = Color3.fromRGB(255, 40, 30),
+			TailLampR_LensRed = Color3.fromRGB(255, 40, 30),
+		},
+	},
+
 	-- NIGHT READABLE: the road at midnight must stay easy to read. It is judged from the
 	-- night shot in the lane, not a number: a playtest cannot read a frame's pixels (measured:
 	-- `CaptureService` captures cannot be opened as an `EditableImage`). What keeps it lit
