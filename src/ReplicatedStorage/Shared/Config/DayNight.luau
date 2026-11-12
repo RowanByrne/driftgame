@@ -82,15 +82,18 @@ return {
 		-- cones of light"), so the far light is ONE STRIP: a SurfaceLight lights from its whole
 		-- face, so the road under it is lit evenly, with no cone and no gap, out to ~160 studs.
 		Beams = {
-			-- one per lamp, just ahead of the liftback's lenses (measured in the lane), almost
-			-- level so they reach the road at their full 60
-			{ At = Vector3.new(-1.99, 0.3, -8.6), Tilt = 2, Brightness = 3, Angle = 60 },
-			{ At = Vector3.new(1.99, 0.3, -8.6), Tilt = 2, Brightness = 3, Angle = 60 },
-			-- the throw, two strips laid over each other: a wide one out to 105 studs and a
-			-- narrow one out to 165, so the light is brightest and widest near and thins and
-			-- dims as it goes. Hung high with a wide angle, so their edges are soft.
-			{ At = Vector3.new(0, 12, -70), Tilt = 0, Strip = Vector2.new(28, 70), Range = 20, Brightness = 0.6, Angle = 160 },
-			{ At = Vector3.new(0, 12, -100), Tilt = 0, Strip = Vector2.new(16, 130), Range = 20, Brightness = 0.5, Angle = 160 },
+			-- one per lamp, just ahead of the liftback's lenses (measured in the lane), tipped
+			-- down a little so the near road is lit too
+			{ At = Vector3.new(-1.99, 0.3, -8.6), Tilt = 3, Brightness = 2, Angle = 70 },
+			{ At = Vector3.new(1.99, 0.3, -8.6), Tilt = 3, Brightness = 2, Angle = 70 },
+			-- the throw, two strips laid over each other: a wide one out to 100 studs and a
+			-- narrow one out to 160, so the light is brightest and widest near and thins as it
+			-- goes. THEIR RANGE IS THEIR SOFTNESS: a light stops dead at its Range, so a strip
+			-- whose Range only just reaches the road draws a hard line where it stops (the user:
+			-- "still clear delineations between beams", with Range 20). At 55 the light runs out
+			-- gradually past each strip's edge instead.
+			{ At = Vector3.new(0, 12, -65), Tilt = 0, Strip = Vector2.new(22, 70), Range = 55, Brightness = 0.5, Angle = 150 },
+			{ At = Vector3.new(0, 12, -105), Tilt = 0, Strip = Vector2.new(12, 110), Range = 55, Brightness = 0.45, Angle = 150 },
 		},
 		Range = 60, -- studs; Roblox's most for a SpotLight
 		Angle = 70, -- degrees across the beam
@@ -128,14 +131,14 @@ return {
 			Ambient = rgb(52, 50, 56),
 			OutdoorAmbient = rgb(136, 130, 136),
 			SunColour = rgb(255, 214, 180),
-			AtmosphereDensity = 0.3,
+			AtmosphereDensity = 0.26,
 			AtmosphereOffset = 0.2,
 			AtmosphereColour = rgb(218, 214, 214),
 			AtmosphereDecay = rgb(130, 124, 140),
 			AtmosphereGlare = 0.6,
-			AtmosphereHaze = 1.4,
-			CloudCover = 0.55,
-			CloudDensity = 0.6,
+			AtmosphereHaze = 0.5,
+			CloudCover = 0.5,
+			CloudDensity = 0.85,
 			CloudColour = rgb(255, 236, 222),
 			Tint = rgb(255, 246, 240),
 			Contrast = 0.07,
@@ -155,14 +158,14 @@ return {
 			Ambient = rgb(40, 44, 52),
 			OutdoorAmbient = rgb(120, 128, 140),
 			SunColour = rgb(255, 250, 240),
-			AtmosphereDensity = 0.28,
+			AtmosphereDensity = 0.25,
 			AtmosphereOffset = 0.25,
 			AtmosphereColour = rgb(198, 214, 232),
 			AtmosphereDecay = rgb(104, 128, 160),
 			AtmosphereGlare = 0,
-			AtmosphereHaze = 1,
-			CloudCover = 0.55,
-			CloudDensity = 0.6,
+			AtmosphereHaze = 0.3,
+			CloudCover = 0.5,
+			CloudDensity = 0.9,
 			CloudColour = rgb(255, 255, 255),
 			Tint = rgb(255, 255, 255),
 			Contrast = 0.05,
@@ -182,14 +185,14 @@ return {
 			Ambient = rgb(44, 44, 50),
 			OutdoorAmbient = rgb(128, 124, 120),
 			SunColour = rgb(255, 236, 205),
-			AtmosphereDensity = 0.29,
+			AtmosphereDensity = 0.26,
 			AtmosphereOffset = 0.25,
 			AtmosphereColour = rgb(214, 212, 206),
 			AtmosphereDecay = rgb(140, 120, 110),
 			AtmosphereGlare = 0.3,
-			AtmosphereHaze = 1.4,
-			CloudCover = 0.55,
-			CloudDensity = 0.6,
+			AtmosphereHaze = 0.5,
+			CloudCover = 0.5,
+			CloudDensity = 0.88,
 			CloudColour = rgb(255, 246, 232),
 			Tint = rgb(255, 246, 232),
 			Contrast = 0.06,
@@ -216,7 +219,7 @@ return {
 			AtmosphereGlare = 1,
 			AtmosphereHaze = 1.6,
 			CloudCover = 0.55,
-			CloudDensity = 0.6,
+			CloudDensity = 0.8,
 			CloudColour = rgb(255, 214, 170),
 			Tint = rgb(255, 232, 206),
 			Contrast = 0.1,
@@ -243,7 +246,7 @@ return {
 			AtmosphereGlare = 1.5,
 			AtmosphereHaze = 1.6,
 			CloudCover = 0.55,
-			CloudDensity = 0.6,
+			CloudDensity = 0.8,
 			CloudColour = rgb(255, 190, 160),
 			Tint = rgb(255, 236, 220),
 			Contrast = 0.08,
@@ -270,7 +273,7 @@ return {
 			AtmosphereGlare = 0.6,
 			AtmosphereHaze = 1.2,
 			CloudCover = 0.5,
-			CloudDensity = 0.6,
+			CloudDensity = 0.75,
 			CloudColour = rgb(190, 140, 170),
 			Tint = rgb(226, 214, 240),
 			Contrast = 0.1,
@@ -297,7 +300,7 @@ return {
 			AtmosphereGlare = 0,
 			AtmosphereHaze = 0.4,
 			CloudCover = 0.45,
-			CloudDensity = 0.5,
+			CloudDensity = 0.7,
 			CloudColour = rgb(80, 92, 130),
 			Tint = rgb(200, 214, 255),
 			Contrast = 0.08,
@@ -324,7 +327,7 @@ return {
 			AtmosphereGlare = 0.4,
 			AtmosphereHaze = 1.2,
 			CloudCover = 0.5,
-			CloudDensity = 0.6,
+			CloudDensity = 0.75,
 			CloudColour = rgb(170, 160, 190),
 			Tint = rgb(224, 226, 245),
 			Contrast = 0.08,
@@ -351,7 +354,7 @@ return {
 			AtmosphereGlare = 1.4,
 			AtmosphereHaze = 1.5,
 			CloudCover = 0.55,
-			CloudDensity = 0.6,
+			CloudDensity = 0.8,
 			CloudColour = rgb(255, 196, 180),
 			Tint = rgb(255, 236, 232),
 			Contrast = 0.1,

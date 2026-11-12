@@ -129,10 +129,19 @@ ambience sounds are left out.
   (a SurfaceLight lights from its whole face: no cone, no gap): a wide one to 105 studs and a
   narrow one to 165, so the light is brightest near and thins and fades as it goes. Spotlights
   hung down the road were tried first and made a chain of separate pools (the user: "quite off
-  with the repeating cones of light"). The pop-up pods open and
+  with the repeating cones of light").
+  The strips' Range is 55: a light stops dead at its Range, and with only 20 it drew a hard line
+  where it stopped (the user: "still clear delineations between beams"). The pop-up pods open and
   the headlight and tail-lamp lenses glow Neon while they're on.
 - Off in the garage room (inside its bounding box), pods down.
 - Cost: no measurable frame time (5.6 ms average with them on and off).
+
+## Clouds (`T-163`)
+
+The user, on the first build: "why are the clouds all blurry like that?" Roblox's clouds are soft
+by design (and softer at low graphics quality); the daytime haze washed them out further. Tuned,
+not replaced: daytime `AtmosphereHaze` 1-1.4 down to 0.3-0.5, `CloudDensity` 0.6 up to 0.85-0.9 by
+day and 0.7-0.8 at the sunsets and night, whose haze was kept.
 
 ## Open questions
 
