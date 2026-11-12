@@ -48,6 +48,10 @@
 -- `CamRollMax = 0` gives the level horizon back exactly. `CamZoom*` and `CamSmoothTime`
 -- stay gone.
 --
+-- T-152 ADDED A PLAYER ZOOM ON THE MOUSE WHEEL (`PlayerZoom*`), which is not the drift zoom
+-- above: it never moves on its own, it is applied to the rendered camera like the pan, and
+-- at its default of 1 the camera is exactly the approved one.
+--
 -- Offsets are in the CAR's own axes, Roblox sense: +x right, +y up, +z BEHIND the car (the
 -- spec quotes the reference's Unity figures, where behind is -z). Angles are DEGREES
 -- wherever a name says Angle, Pitch or Elevation, because degrees are what the tuning
@@ -261,6 +265,23 @@ local Camera = {
 	-- offset: the camera may never sit below this above the car,
 	-- or it is under the road
 	CamPanElevationMax = 80, -- deg. OURS. Nor past this, or it is straight down the roof
+	-- THE PLAYER'S ZOOM (T-152): the mouse wheel moves the camera nearer or farther along
+	-- its current offset from the car, distance and height together, so the framing keeps
+	-- its shape. NOT THE PREDECESSOR'S DRIFT ZOOM (see the header): nothing automatic, only
+	-- the player's hand, and like the pan it is applied to the RENDERED camera, downstream
+	-- of the stepped targets, so it can never join the feedback loop. A multiplier on the
+	-- distance: 1 IS EXACTLY TODAY'S CAMERA, and someone who never scrolls never leaves it.
+	-- The prefix is `PlayerZoom`, never `CamZoom`, so the predecessor's names stay gone.
+	PlayerZoomMin = 0.6, -- x the distance at its nearest. OURS (T-152). 27.6 studs at 22 deg,
+	-- 10.3 up: the whole car and some road ahead, well clear of the roof
+	PlayerZoomMax = 1.8, -- x at its farthest. OURS (T-152). 82.8 studs, 31 up: the car is
+	-- small but the road around it reads
+	PlayerZoomStep = 1.12, -- x per wheel notch, multiplied (so in and out are the same size
+	-- of step at any distance). OURS (T-152). Nine notches from nearest
+	-- to today, five from today to farthest
+	PlayerZoomRate = 10, -- per second. OURS (T-152). How fast the camera eases to the zoom a
+	-- notch asked for: a 100 ms time constant, about 0.3 s to arrive. A
+	-- notch never jumps the camera; a burst of notches eases to the sum
 	CamTargetStep = 1 / 60, -- s. OURS, and NOT `FixedStep`. The camera's targets feed back
 	-- into themselves (the swung target is what the next frame's resting
 	-- direction is measured from), so where they settle depends on how
