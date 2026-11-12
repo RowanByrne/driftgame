@@ -92,7 +92,7 @@ Where each kind of thing is listed in code, so nothing gets scattered.
 
 | Library | Version | Source | Local patches |
 |---|---|---|---|
-| | | | |
+| Cmdr, at `src/ServerStorage/Cmdr` (the admin console, `features/admin-console.md`) | v1.13.1 | `github.com/evaera/Cmdr` | `CmdrClient/DefaultEventHandlers.luau`: looks up `TextChatService.TextChannels.RBXSystem` when an announcement arrives instead of waiting for it on require, which hung the client forever on a place still on LegacyChatService; with no channel, an announcement goes to the console window. `LICENSE` added beside it (MIT) |
 
 ## World and streaming
 
