@@ -1,6 +1,6 @@
 # Feature: Sky and the day-night cycle
 
-**Status:** building. Plan approved 2026-11-12 (`T-144`); step 1, the cycle and its looks, is `T-145`. **Owner task:** `T-144`.
+**Status:** building. Plan approved 2026-11-12 (`T-144`); step 1, the cycle and its looks, is `T-145`; step 2, the headlights, `T-146`. **Owner task:** `T-144`.
 
 ## Goal
 
@@ -56,8 +56,9 @@ All numbers in a new `Shared/Config/DayNight.luau`.
   blind. It is judged by eye, in the lane: a playtest cannot read a frame's pixels (measured:
   a `CaptureService` capture cannot be opened as an `EditableImage`), so there is no number to
   hold it to. The night's `OutdoorAmbient`, moon `Brightness` and `Exposure` are what keep it lit.
-- **Headlights** are lights in the car's headlight parts (a spotlight down the road), on from dusk
-  to dawn. The garage room keeps its own lighting.
+- **Headlights** are a spotlight down the road from each headlight, on from dusk to dawn. They
+  are not inside the car (DECISIONS.md 2026-11-03: the car holds no Light), but ride its nose.
+  The garage room keeps its own lighting.
 - **It runs everywhere,** not only in the endless run, since Roblox has one sky per server. The
   garage room is lit by its own lamps and is unaffected.
 
@@ -116,6 +117,17 @@ ambience sounds are left out.
 - The cliffs' haze is a colour id in each road chunk's mesh, rewritten in place when it has
   moved 2/255.
 - Cost: the sky's step is 0.17 ms at worst, with the cycle run 70 times as fast.
+
+## As built (step 2, `T-146`)
+
+- Headlights come on 60% into the sunset (132 s, the sun just under the horizon) and go off
+  halfway through the sunrise (270 s), fading over 0.6 s. Every client switches every car at
+  the same moment.
+- Nothing goes inside the car: two SpotLights per car (range 60, 70 degrees, tilted 6 degrees
+  down) in parts of the client's own, moved to the nose each frame. The pop-up pods open and
+  the headlight and tail-lamp lenses glow Neon while they're on.
+- Off in the garage room (inside its bounding box), pods down.
+- Cost: no measurable frame time (5.6 ms average with them on and off).
 
 ## Open questions
 
