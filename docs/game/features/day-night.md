@@ -1,6 +1,6 @@
 # Feature: Sky and the day-night cycle
 
-**Status:** specced, waiting for the user's OK on the plan (`T-143`). **Owner task:** none yet.
+**Status:** building. Plan approved 2026-11-12 (`T-144`); step 1, the cycle and its looks, is `T-145`. **Owner task:** `T-144`.
 
 ## Goal
 
@@ -52,8 +52,10 @@ All numbers in a new `Shared/Config/DayNight.luau`.
 - **The cliffs' haze follows the sky.** The foot of each cliff fades into the atmosphere's colour
   at that moment, so it doesn't glow pale at night (today it is a fixed colour in the road mesh,
   `Config.Spline` `HazeColour`).
-- **Night is readable:** the measured brightness of the road at midnight stays above a floor the
-  build sets in a lane, so the drift is never driven blind.
+- **Night is readable:** the road at midnight stays easy to read, so the drift is never driven
+  blind. It is judged by eye, in the lane: a playtest cannot read a frame's pixels (measured:
+  a `CaptureService` capture cannot be opened as an `EditableImage`), so there is no number to
+  hold it to. The night's `OutdoorAmbient`, moon `Brightness` and `Exposure` are what keep it lit.
 - **Headlights** are lights in the car's headlight parts (a spotlight down the road), on from dusk
   to dawn. The garage room keeps its own lighting.
 - **It runs everywhere,** not only in the endless run, since Roblox has one sky per server. The
@@ -98,6 +100,22 @@ ambience sounds are left out.
   effects on.
 - **Review shots:** noon, sunset, night and sunrise from the same spot on the road, at most 3 per
   round, for the user to judge the look.
+
+## As built (step 1, `T-145`)
+
+- `Shared/DayNight` is the maths, pure; `Controllers/SkyController` sets the client's Lighting
+  from it 30 times a second; every number is in `Config.DayNight`.
+- Nine keyframes: morning, noon, afternoon, golden hour, sunset, dusk, night, dawn, sunrise.
+  A keyframe sits at a fraction of its phase, so a phase's length can change alone.
+- The clock runs a monotone cubic through the keyframes' clocks: 0.093 h/s across the day,
+  0.04 h/s through the sunset and sunrise (17:36 to 18:24, 5:36 to 6:24), and the sun's speed
+  never jumps (unit test).
+- Roblox's sun is on the horizon at 6:00 and 18:00 (measured in the lane, latitude 41.7).
+- The sky is Roblox's own `Sky` (stars and moon), an `Atmosphere`, Terrain `Clouds`, and a
+  colour grade, bloom and sun rays of the controller's own. `GlobalShadows` is turned on.
+- The cliffs' haze is a colour id in each road chunk's mesh, rewritten in place when it has
+  moved 2/255.
+- Cost: the sky's step is 0.17 ms at worst, with the cycle run 70 times as fast.
 
 ## Open questions
 
