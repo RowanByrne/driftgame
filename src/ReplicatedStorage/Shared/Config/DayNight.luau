@@ -68,22 +68,29 @@ return {
 		Off = { Phase = "sunrise", f = 0.5 }, -- the sun on it
 		Fade = 0.6, -- s for a beam to come up to full, or go out
 		-- The beams, in the car's body frame (front -Z, right +X, studs from the body part's
-		-- centre). A SpotLight reaches 60 studs at most (Roblox's limit), so the light is carried
-		-- down the road by RELAYS: beams hung ahead of the car, each lighting the next 60 studs,
-		-- dimmer the farther out, as a real beam fades. Together they reach about 160 studs
-		-- (the user: "headlights need to shine farther. like 2x or 3x farther").
-		--   At          where the beam starts
+		-- centre; the road is about 2.4 under it).
+		--   At          where the beam starts (a strip: its centre)
 		--   Tilt        degrees it points down from level
 		--   Brightness  at full
 		--   Angle       degrees across the beam
+		--   Strip       (across, along) studs: instead of a SpotLight from a point, a SurfaceLight
+		--               from the underside of a flat strip this size hung over the road
+		--   Range       studs; `Range` below if not given
+		-- THE THROW: a SpotLight reaches 60 studs at most (Roblox's limit) and the user wanted
+		-- 2-3x that ("headlights need to shine farther"). Spotlights hung down the road made a
+		-- chain of separate pools, each with a hard cone edge ("quite off with the repeating
+		-- cones of light"), so the far light is ONE STRIP: a SurfaceLight lights from its whole
+		-- face, so the road under it is lit evenly, with no cone and no gap, out to ~160 studs.
 		Beams = {
 			-- one per lamp, just ahead of the liftback's lenses (measured in the lane), almost
 			-- level so they reach the road at their full 60
 			{ At = Vector3.new(-1.99, 0.3, -8.6), Tilt = 2, Brightness = 3, Angle = 60 },
 			{ At = Vector3.new(1.99, 0.3, -8.6), Tilt = 2, Brightness = 3, Angle = 60 },
-			-- the relays, on the car's centre line
-			{ At = Vector3.new(0, 7, -55), Tilt = 10, Brightness = 2.2, Angle = 80 },
-			{ At = Vector3.new(0, 8, -105), Tilt = 10, Brightness = 1.5, Angle = 80 },
+			-- the throw, two strips laid over each other: a wide one out to 105 studs and a
+			-- narrow one out to 165, so the light is brightest and widest near and thins and
+			-- dims as it goes. Hung high with a wide angle, so their edges are soft.
+			{ At = Vector3.new(0, 12, -70), Tilt = 0, Strip = Vector2.new(28, 70), Range = 20, Brightness = 0.6, Angle = 160 },
+			{ At = Vector3.new(0, 12, -100), Tilt = 0, Strip = Vector2.new(16, 130), Range = 20, Brightness = 0.5, Angle = 160 },
 		},
 		Range = 60, -- studs; Roblox's most for a SpotLight
 		Angle = 70, -- degrees across the beam

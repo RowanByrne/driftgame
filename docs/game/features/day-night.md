@@ -125,8 +125,11 @@ ambience sounds are left out.
   the same moment.
 - Nothing goes inside the car: SpotLights in parts of the client's own, moved with the car each
   frame. A SpotLight reaches 60 studs at most, and the user wanted 2-3x that, so besides one
-  beam per lamp there are two relays hung 55 and 105 studs ahead, lighting the road out to about
-  160 studs, dimmer the farther out. The pop-up pods open and
+  beam per lamp the throw is two flat strips hung high over the road ahead, lit from underneath
+  (a SurfaceLight lights from its whole face: no cone, no gap): a wide one to 105 studs and a
+  narrow one to 165, so the light is brightest near and thins and fades as it goes. Spotlights
+  hung down the road were tried first and made a chain of separate pools (the user: "quite off
+  with the repeating cones of light"). The pop-up pods open and
   the headlight and tail-lamp lenses glow Neon while they're on.
 - Off in the garage room (inside its bounding box), pods down.
 - Cost: no measurable frame time (5.6 ms average with them on and off).
