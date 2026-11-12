@@ -14,8 +14,10 @@
 --               dropping from the grass's lip into haze. Faces are flat-shaded on purpose:
 --               very low poly, programmer colours
 --   Edge_*      a hedge: a green box per cross-section, at the grass's outer edge
---   KRail_*     a K-rail segment every `KRailSegment` studs of its run, white and grey in
---               turn, on a lower, wider foot (`KRailFoot_*`)
+--   KRail*_*    a K-rail run drawn as a METAL CRASH BARRIER (T-149): a W-beam guardrail,
+--               its beam two ridges (`KRailTop_*`, `KRailLow_*`) and the groove between
+--               (`KRailGroove_*`), a piece per stretch of the run, pitched along the grade
+--               and cut finer round a bend; round posts (`KRailPost_*`) every `KRailPostEvery`
 --   Mark        a flat box per dash of the centre line, `MarkLift` above the surface
 --
 -- Only the surface is a mesh because a client may hold only eight EditableMeshes at once and
@@ -378,7 +380,7 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 		roadPart.Parent = model
 		local parts = 0
 
-		local function plain(name: string, size: Vector3, cf: CFrame, colour: Color3, material: Enum.Material)
+		local function plain(name: string, size: Vector3, cf: CFrame, colour: Color3, material: Enum.Material): Part
 			local part = Instance.new("Part")
 			part.Name = name
 			part.Anchored = true
@@ -394,6 +396,7 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 			part.CFrame = cf
 			part.Parent = model
 			parts += 1
+			return part
 		end
 
 		-- an upright box along the road between two cuts, its foot on the ground at lateral
@@ -413,6 +416,33 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 				plain(name, Vector3.new(thick, height + sink, len + 0.2), CFrame.lookAt(mid, mid + chord, Vector3.yAxis), colour, material)
 			end
 		end
+		-- THE GUARDRAIL's pieces (T-149), placed from the tarmac's edge on `side`: a piece of
+		-- beam `u .. u + thick` out from the edge and `y0 .. y1` above it, pitched along the
+		-- road between `a` and `b`; and an upright round post at `s`
+		local railMaterial = Enum.Material.Metal
+		local function beam(name: string, a: number, b: number, side: number, u: number, thick: number, y0: number, y1: number)
+			local off = side * (half + u + thick * 0.5)
+			local ax, _, az = spline:terrainXYZ(a, off)
+			local bx, _, bz = spline:terrainXYZ(b, off)
+			local lift = (y0 + y1) * 0.5
+			local pa = Vector3.new(ax, spline:terrainY(a, side * half) + lift, az)
+			local pb = Vector3.new(bx, spline:terrainY(b, side * half) + lift, bz)
+			local chord = pb - pa
+			local len = chord.Magnitude
+			if len > 1e-3 then
+				local mid = (pa + pb) * 0.5
+				plain(name, Vector3.new(thick, y1 - y0, len + 0.1), CFrame.lookAt(mid, mid + chord, Vector3.yAxis), T.KRailColour, railMaterial)
+			end
+		end
+		local function post(name: string, s: number, side: number)
+			local d = T.KRailPostSize
+			local x, _, z = spline:terrainXYZ(s, side * (half + T.KRailRidge + 0.1 + d * 0.5))
+			local sink, top = 1, T.KRailHeight - 0.15
+			local y = spline:terrainY(s, side * half) + (top - sink) * 0.5
+			-- a cylinder's axis is its X: stood upright
+			local part = plain(name, Vector3.new(top + sink, d, d), CFrame.new(x, y, z) * CFrame.Angles(0, 0, math.pi * 0.5), T.KRailColour, railMaterial)
+			part.Shape = Enum.PartType.Cylinder
+		end
 		-- HEDGES: a green box per cut at the grass's outer edge (rock and cliff are faces in
 		-- the mesh, above)
 		for _, side in { -1, 1 } do
@@ -424,22 +454,52 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 					wall(`Edge_{tag}_{k}`, a, b, side, wa, wb, T.HedgeThickness, T.HedgeHeight, R.Thickness, T.HedgeColour, Enum.Material.Grass)
 				end
 			end
-			-- K-RAILS: segments on a pattern from each run's own start, so a run drawn across
-			-- two chunks is the same segments in both; each clipped to this chunk
-			local seg = T.KRailSegment
+			-- K-RAILS, drawn as a metal crash barrier (T-149): the beam's face on the tarmac's
+			-- edge, where the car's wall begins (`Drift/SplineWorld`), its top at
+			-- `KRailHeight`; the posts behind it, inside that wall
 			local runs = spline:kRailsIn(s0, s1, side)
 			for r = 1, #runs, 2 do
 				local ra, rb = runs[r], runs[r + 1]
-				local i = math.max(0, math.floor((s0 - ra) / seg))
-				while ra + i * seg < math.min(rb, s1) do
-					local a = math.max(ra + i * seg, s0)
-					local b = math.min(ra + (i + 1) * seg - T.KRailGap, rb, s1)
-					if b - a > 0.05 then
-						local colour = if i % 2 == 0 then T.KRailColour else T.KRailColourAlt
-						wall(`KRail_{tag}_{math.floor(ra)}_{i}`, a, b, side, half, half, T.KRailThickness, T.KRailHeight, 1, colour, Enum.Material.Concrete)
-						wall(`KRailFoot_{tag}_{math.floor(ra)}_{i}`, a, b, side, half - 0.3, half - 0.3, T.KRailThickness + 0.6, 0.8, 1, colour, Enum.Material.Concrete)
+				local id = `{tag}_{math.floor(ra)}`
+				-- the beam: a piece per stretch, as long as `KRailStep` on a straight and
+				-- short enough round a bend that its chord keeps to the curve
+				local a = math.max(ra, s0)
+				local stop = math.min(rb, s1)
+				local n = 0
+				while stop - a > 0.05 do
+					local k = math.abs(spline:curvatureAt(a))
+					local kEdge = k / math.max(0.2, 1 - k * half) -- the tighter, inside edge
+					local step = if kEdge > 1e-6 then math.clamp(math.sqrt(8 * 0.06 / kEdge), 2, T.KRailStep) else T.KRailStep
+					local b = math.min(a + step, stop)
+					if stop - b < 1 then
+						b = stop -- no sliver at the end
 					end
-					i += 1
+					n += 1
+					beam(`KRailTop_{id}_{n}`, a, b, side, 0, T.KRailRidge, T.KRailHeight - T.KRailBeam / 3, T.KRailHeight)
+					beam(`KRailGroove_{id}_{n}`, a, b, side, T.KRailRidge - 0.05, 0.15, T.KRailHeight - T.KRailBeam * 2 / 3, T.KRailHeight - T.KRailBeam / 3)
+					beam(`KRailLow_{id}_{n}`, a, b, side, 0, T.KRailRidge, T.KRailHeight - T.KRailBeam, T.KRailHeight - T.KRailBeam * 2 / 3)
+					a = b
+				end
+				-- the posts: on a pattern from the run's own start, so a run drawn across two
+				-- chunks has the same posts in both, and one at its very end
+				local every, inset = T.KRailPostEvery, T.KRailPostSize
+				local j = math.max(0, math.ceil((s0 - ra - inset) / every))
+				while true do
+					local p = ra + inset + j * every
+					local last = false
+					if p > rb - inset - every * 0.3 then
+						p, last = rb - inset, true
+					end
+					if p >= s1 then
+						break
+					end
+					if p >= s0 then
+						post(`KRailPost_{id}_{j}`, p, side)
+					end
+					if last then
+						break
+					end
+					j += 1
 				end
 			end
 		end

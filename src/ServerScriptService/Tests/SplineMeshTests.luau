@@ -208,6 +208,63 @@ function Tests.run()
 		end
 		check("rock and cliff faces never fold past a bend's centre", faces > 0 and worstReach <= 0.9 + 1e-3, `{faces} face profiles every 5 studs; on the inside of bends the furthest point is {fmt(worstReach * 100, 1)}% of the way to the centre (limit 90%)`)
 
+		-- 4d. The K-rails, drawn as metal crash barriers (T-149), stand where the car's wall
+		-- is (`Drift/SplineWorld`): the beam's face on the tarmac's edge, its top at
+		-- `KRailHeight`, its posts inside the wall, and its pieces running on without a step.
+		local T = Config.Spline.Terrain
+		local beams, worstFace, worstTop, posts, postsOut, railSteps, railJoints = 0, 0, 0, 0, 0, 0, 0
+		for _, model in models do
+			local byName = {}
+			for _, p in model:GetChildren() do
+				byName[p.Name] = p
+			end
+			for name, p in byName do
+				local id, n = string.match(name, "^KRailTop_(.+)_(%d+)$")
+				if id then
+					beams += 1
+					-- the face nearer the road, at the piece's middle
+					local best, bestS, bestD, topY = math.huge, nil, nil, 0
+					for _, sx in { -1, 1 } do
+						local q = p.CFrame * Vector3.new(sx * p.Size.X / 2, p.Size.Y / 2, 0)
+						local s, d = spline:project(q.X, q.Z)
+						if s and math.abs(d) < best then
+							best, bestS, bestD, topY = math.abs(d), s, d, q.Y
+						end
+					end
+					if bestS then
+						worstFace = math.max(worstFace, math.abs(best - half))
+						local edgeY = spline:terrainY(bestS, (if bestD < 0 then -1 else 1) * half)
+						worstTop = math.max(worstTop, math.abs(topY - edgeY - T.KRailHeight))
+					end
+					local nextP = byName[`KRailTop_{id}_{tonumber(n) + 1}`]
+					if nextP then
+						local aEnd = p.CFrame * Vector3.new(0, p.Size.Y / 2, -p.Size.Z / 2 + 0.05)
+						local bStart = nextP.CFrame * Vector3.new(0, nextP.Size.Y / 2, nextP.Size.Z / 2 - 0.05)
+						railJoints += 1
+						railSteps += if (aEnd - bStart).Magnitude > 0.1 then 1 else 0
+					end
+				elseif string.match(name, "^KRailPost_") then
+					posts += 1
+					local s, d = spline:project(p.Position.X, p.Position.Z)
+					if not s or math.abs(d) - T.KRailPostSize / 2 < half or math.abs(d) + T.KRailPostSize / 2 > half + T.KRailThickness then
+						postsOut += 1
+					end
+				end
+			end
+		end
+		local railLen, railRuns = 0, 0
+		for _, side in { -1, 1 } do
+			local runs = spline:kRailsIn(0, spline.length, side)
+			for r = 1, #runs, 2 do
+				railLen += runs[r + 1] - runs[r]
+				railRuns += 1
+			end
+		end
+		check("the crash barriers stand where the car's wall is", beams > 0 and worstFace < 0.1 and worstTop < 0.1 and postsOut == 0,
+			`{beams} beam pieces on {math.floor(railLen)} studs of rail: face worst {fmt(worstFace, 3)} studs off the tarmac's edge, top worst {fmt(worstTop, 3)} off {T.KRailHeight}; {posts} posts, {postsOut} outside the wall`)
+		check("the crash barriers' beams run on without a step", railJoints > 0 and railSteps == 0, `{railJoints} joints, {railSteps} with a gap over 0.1 studs`)
+		check("a post every ~" .. T.KRailPostEvery .. " studs", posts >= railLen / T.KRailPostEvery and posts <= railLen / T.KRailPostEvery + 2 * railRuns, `{posts} posts on {math.floor(railLen)} studs in {railRuns} runs`)
+
 		-- 5. Nothing drawn can be touched, collided with or queried.
 		local solid = 0
 		for _, d in folder:GetDescendants() do

@@ -28,8 +28,13 @@ the drop. Running wide is no longer stopped by a wall; it costs you grip, then t
    - **Hedge:** a low green wall. A wall, as the rock face.
    - **Cliff drop:** the grass ends at an edge and the ground falls away. Go over and it is a fall,
      and the run puts you back on the road as it does today.
-4. **K-rails** (concrete jersey barriers) stand at the tarmac's edge in places, mostly on the
-   outside of bends above a cliff. They stop you like a wall, before the grass.
+4. **K-rails**, drawn as **metal crash barriers** (a W-beam steel guardrail on round posts, as on
+   Japan's mountain roads), stand at the tarmac's edge in places, mostly on the outside of bends
+   above a cliff. They stop you like a wall, before the grass. They were first drawn as concrete
+   jersey barriers; on 2026-11-12 the user said "the K rails you made are not what I meant, my
+   bad. These concrete barriers arn't what i was looking for - i meant the metal crash
+   barriers", so T-149 redrew them. Only the look changed: where they go and how they stop the
+   car did not. The code keeps the `KRail` names.
 5. Everything else is the run as it is: the score, the closing barrier behind you, joining
    another player's road, respawn after a fall.
 
@@ -39,8 +44,9 @@ the drop. Running wide is no longer stopped by a wall; it costs you grip, then t
   time of day. The drop fades into a light haze for now. That is the next feature, with the
   setting's art direction and references.
 - **Final art.** Programmer colours and very low poly shapes: green grass, a green box hedge,
-  faceted grey rock, a grey cliff face, white-and-grey K-rails.
-- **Road dressing:** kerbs, road signs, mirrors, painted edge lines, guardrails other than K-rails.
+  faceted grey rock, a grey cliff face, galvanized grey crash barriers (white is a one-line
+  swap in `Config.Spline`'s `KRailColour`).
+- **Road dressing:** kerbs, road signs, mirrors, painted edge lines, crash barriers anywhere but the K-rail runs.
 - **A cost for a wall hit or a fall** in the score: still none (`endless-score.md`).
 - **Obstacles, shortcuts, set pieces and changing stretches** (`T-137`, `T-138`): later, on top of
   this.
@@ -66,7 +72,7 @@ does), so nothing steps.
 | Rock face | Rises 25 to 60 studs at 50 to 70 degrees | Height is looks; to the car it is a wall |
 | Hedge | 6 studs high, 4 thick | |
 | Cliff | The ground ends; the face drops 80 studs into haze | Past the lip, nothing to stand on |
-| K-rail | 3 studs high, 2 thick, at the tarmac's edge | Runs of 60 to 300 studs |
+| K-rail (metal crash barrier) | 3 studs high, 2 thick, at the tarmac's edge | Runs of 60 to 300 studs. To the car a wall that size; drawn as a 1.2-stud W-beam, top at 3 studs, face on the tarmac's edge, round posts every 7 studs behind it inside the wall |
 
 ### Where each edge goes
 
@@ -108,7 +114,12 @@ The road stays purely visual: the car still reads everything from the curve (`Sp
   grade as the barriers were.
 - **Measured (T-142):** the rock and cliff faces fit in the chunk mesh. A chunk is about 1 700
   triangles (940 before the faces), the window round the car about 8 600; a chunk builds in 7 ms
-  on average, 13 at worst. K-rails are 12-stud segments, white and grey in turn, on a wider foot.
+  on average, 13 at worst.
+- **Crash barriers (T-149):** the beam is three boxes per piece (two ridges and the groove
+  between), a piece up to 12 studs on a straight and cut finer round a bend; a round post every 7
+  studs. Measured on seed 31337, 8 000 studs: 322 parts for 675 studs of rail (116 as K-rails),
+  135 at most in one chunk (50 before). From the grass side the car stops at the wall's back
+  face, about a stud behind the posts.
   A device that cannot make a mesh still draws the tarmac only.
 - **Nothing drawn collides.** As now.
 
