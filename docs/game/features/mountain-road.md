@@ -157,7 +157,8 @@ maths), so an avatar out of the car (`car-v2.md`) had nothing under it.
   0.6 (a jump does not clear it), at a K-rail 0.5 (a running jump does, onto grass at 0.000), at
   the closing barrier 0.6; walking off a cliff's lip, in freefall 2.5 studs past it (the root's middle, read every 0.1 s
   at walking pace, so most of that is the step between reads). About 70 to 145
-  parts. Back in the car, 604 frames driving with no tile in the world, and the car drove on as
+  parts; a rebuild costs about 1.4 ms (1.9 at worst), about four times a second at a walk. Back
+  in the car, 604 and 785 frames driving with no tile in the world, and the car drove on as
   before (grounded, ride error -0.02, no wall stops).
 
 ## UI
