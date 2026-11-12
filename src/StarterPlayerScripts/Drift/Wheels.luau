@@ -184,6 +184,12 @@ function Wheels.evaluate(
 	local threshold = if front then math.rad(F.Gates.MaxSteerDegrees) else 0
 	local floor = if marking then F.Gates.StopSlipDegrees else F.Gates.MinSlipDegrees
 	local slipPast = (slip - threshold) > math.rad(floor)
+	-- And a wheel only STARTS marking above `Gates.MinMarkSpeed`: pulling away from rest
+	-- the slip angle is noise on a velocity of a stud a second, and it laid marks (T-151).
+	-- A wheel already marking is not held to it, so the hysteresis above is unchanged.
+	if not marking and DriftModel.speed(state) < F.Gates.MinMarkSpeed then
+		slipPast = false
+	end
 
 	-- Gate 3, and gate 4 beside it. The handbrake is an OR over the whole thing, not just
 	-- over the throttle: it marks and smokes on a car going dead straight.

@@ -558,6 +558,13 @@ function Tests.run(opts)
 			chatters <= 1,
 			`{chatters} changes over 300 frames of jitter either side of {F.Gates.MinSlipDegrees} deg`
 		)
+		-- T-151: pulling away from rest lays nothing, but a slide already marking keeps on.
+		local launch = stateWith({ slipDeg = 8, speed = F.Gates.MinMarkSpeed - 0.5, throttle = 1 })
+		check(
+			"pulling away from rest does not start a mark, but a mark already down carries on",
+			not Wheels.evaluate(launch, false, false, true, false) and Wheels.evaluate(launch, false, false, true, true),
+			`8 deg at {F.Gates.MinMarkSpeed - 0.5} studs/s, under MinMarkSpeed {F.Gates.MinMarkSpeed}`
+		)
 		check(
 			"a car running dead straight still marks nothing, sticky gate or not",
 			not Wheels.evaluate(stateWith({ slipDeg = 0.09, speed = 110, throttle = 1 }), false, false, true, true),
