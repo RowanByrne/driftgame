@@ -2,11 +2,12 @@
 -- TestHud: the two testing buttons, bottom left
 -- (docs/game/features/test-hill.md, docs/workflow/UI.md "Programmer art").
 --
--- IT IS A TESTING HUD AND IT SAYS SO. The user asked for two things they could not do
+-- IT IS A TESTING HUD AND IT SAYS SO. The user asked for things they could not do
 -- while judging the downhill work: get to the top of a hill without driving up it, and
--- turn the guardrails off so they can leave the road on purpose. Neither is a game
--- feature and neither ships, so the panel is labelled `TEST ONLY`, it is a colour
--- nothing else in the game uses, and it is deliberately ugly.
+-- (until T-140) turn the guardrails off. The road has no guardrails any more
+-- (features/mountain-road.md), so that button is gone. Nothing here is a game feature
+-- and none of it ships, so the panel is labelled `TEST ONLY`, it is a colour nothing
+-- else in the game uses, and it is deliberately ugly.
 --
 -- ONE SCREEN, NOT TWO. Both buttons are the same kind of thing -- "do this to the world
 -- so I can look at it" -- and a second `ScreenGui` would be a second `DisplayOrder` to
@@ -14,7 +15,7 @@
 --
 -- WHAT THE CLIENT MAY SAY IS ONE OF THREE STRINGS, and that is the whole of the trust
 -- boundary (features/endless-run.md "Server and client", which settles this exact
--- question). It sends `"lift"`, `"rails"`, or nil for "what is the state?". IT NEVER
+-- question). It sends `"lift"`, or nil for "what is the state?". IT NEVER
 -- SENDS A POSITION: where the top of the hill is, is the server's own number, read off
 -- the pieces `PlaygroundService` placed. A client that could name where to put its car
 -- would be a client with a teleport.
@@ -44,7 +45,7 @@ local tools = Net.event("TestTools")
 --------------------------------------------------------------------------------
 
 local TEST = Color3.fromRGB(176, 42, 148) -- a magenta nothing else in the game uses
-local LIVE = Color3.fromRGB(150, 54, 48) -- rails off: the world is not as it ships
+local LIVE = Color3.fromRGB(150, 54, 48) -- the world is not as it ships
 local INK = Color3.fromRGB(240, 242, 248)
 local DIM = Color3.fromRGB(222, 196, 226)
 
@@ -102,15 +103,14 @@ local function newButton(name: string, text: string, y: number): TextButton
 	return button
 end
 
-local lift = newButton("LiftToTop", "LIFT TO HILL TOP", EDGE + HEIGHT + GAP)
-local rails = newButton("Guardrails", "GUARDRAILS: ON", EDGE)
+local lift = newButton("LiftToTop", "LIFT TO HILL TOP", EDGE)
 
 -- What this panel is, said in words. A colour is not a warning anyone can read out loud,
 -- and the one thing that must never happen is this going out with the game.
 local header = Instance.new("TextLabel")
 header.Name = "TestOnly"
 header.AnchorPoint = Vector2.new(0, 1)
-header.Position = UDim2.new(0, EDGE, 1, -(EDGE + (HEIGHT + GAP) * 2))
+header.Position = UDim2.new(0, EDGE, 1, -(EDGE + (HEIGHT + GAP) * 1))
 header.Size = UDim2.fromOffset(WIDTH, HEADER)
 header.BackgroundTransparency = 1
 header.Text = "TEST ONLY -- NOT SHIPPING"
@@ -131,13 +131,11 @@ header.Parent = gui
 
 -- The last thing the SERVER said, and the only thing the buttons read. Never written by a
 -- press: a press is a request, and the answer is what moves this.
-local state = { hill = false, rails = true }
+local state = { hill = false }
 local asked = 0 -- presses sent, for the tests
 local told = 0 -- answers taken
 
 local function paint()
-	rails.Text = if state.rails then "GUARDRAILS: ON" else "GUARDRAILS: OFF"
-	rails.BackgroundColor3 = if state.rails then TEST else LIVE
 	lift.Text = if state.hill then "LIFT TO HILL TOP" else "NO HILL HERE"
 	lift.BackgroundColor3 = if state.hill then TEST else Color3.fromRGB(86, 86, 94)
 end
@@ -150,22 +148,18 @@ end
 lift.Activated:Connect(function()
 	ask("lift")
 end)
-rails.Activated:Connect(function()
-	ask("rails")
-end)
 
 tools.OnClientEvent:Connect(function(answer)
 	if type(answer) ~= "table" then
 		return
 	end
 	told += 1
-	state = { hill = answer.hill == true, rails = answer.rails == true }
+	state = { hill = answer.hill == true }
 	paint()
 end)
 
 paint()
--- The question, asked once, so a client that joined after somebody else turned the rails
--- off shows OFF and not ON.
+-- The question, asked once, so the button shows whether there is a hill here.
 ask(nil)
 
 --------------------------------------------------------------------------------
@@ -174,29 +168,29 @@ ask(nil)
 -- A third button: lay a spline road far from everything and drive it, before the run
 -- uses one (`SplineTestService`, features/spline-road.md). The server chooses the road
 -- and sends its sections; this replays them into the client's own copy of the curve and
--- hands it to `DriftController`, whose car then stands on the maths. The guardrail button
--- switches its side barriers too, as it does the piece road's.
+-- hands it to `DriftController`, whose car then stands on the maths.
 local splineOn = false
 local splineButton: TextButton? = nil
 local runModeButton: TextButton? = nil
-local runMode = "pieces"
+local runMode = "spline"
 if RunService:IsStudio() then
 	local DriftController = require(Players.LocalPlayer:WaitForChild("PlayerScripts"):WaitForChild("Controllers"):WaitForChild("DriftController"))
 	local SplineGen = require(ReplicatedStorage.Shared.Road.SplineGen)
 	local splineRemote = Net.event("SplineTest")
-	local button = newButton("SplineRoad", "SPLINE TEST ROAD", EDGE + (HEIGHT + GAP) * 2)
+	local button = newButton("SplineRoad", "SPLINE TEST ROAD", EDGE + (HEIGHT + GAP) * 1)
 	splineButton = button
-	-- WHICH ROAD THE NEXT ENDLESS RUN LAYS (T-136): pieces, as shipped, or the spline road.
-	-- Refused while a run is going; the start button then lays whichever this says.
-	local modeButton = newButton("RunRoad", "RUN ROAD: PIECES", EDGE + (HEIGHT + GAP) * 3)
+	-- WHICH ROAD THE NEXT ENDLESS RUN LAYS (T-136): the spline road, as shipped since
+	-- T-140, or the old piece road. Refused while a run is going; the start button then
+	-- lays whichever this says.
+	local modeButton = newButton("RunRoad", "RUN ROAD: SPLINE", EDGE + (HEIGHT + GAP) * 2)
 	runModeButton = modeButton
-	header.Position = UDim2.new(0, EDGE, 1, -(EDGE + (HEIGHT + GAP) * 4))
+	header.Position = UDim2.new(0, EDGE, 1, -(EDGE + (HEIGHT + GAP) * 3))
 
 	local function paintSpline()
 		button.Text = if splineOn then "LEAVE SPLINE ROAD" else "SPLINE TEST ROAD"
 		button.BackgroundColor3 = if splineOn then LIVE else TEST
 		modeButton.Text = if runMode == "spline" then "RUN ROAD: SPLINE" else "RUN ROAD: PIECES"
-		modeButton.BackgroundColor3 = if runMode == "spline" then LIVE else TEST
+		modeButton.BackgroundColor3 = if runMode == "spline" then TEST else LIVE
 	end
 
 	modeButton.Activated:Connect(function()
@@ -219,7 +213,6 @@ if RunService:IsStudio() then
 			local ok, spline = pcall(SplineGen.replay, answer.sections, { x = o.x, y = o.y, z = o.z, yaw = o.yaw })
 			if ok then
 				splineOn = true
-				DriftController:SetSplineRails(state.rails)
 				DriftController:UseSpline(spline)
 			else
 				warn(`[TestHud] the spline road's sections would not replay: {spline}`)
@@ -229,13 +222,6 @@ if RunService:IsStudio() then
 			DriftController:UseSpline(nil)
 		end
 		paintSpline()
-	end)
-
-	-- the guardrail button reaches the spline road's barriers too
-	tools.OnClientEvent:Connect(function(answer)
-		if type(answer) == "table" then
-			DriftController:SetSplineRails(answer.rails == true)
-		end
 	end)
 
 	paintSpline()
@@ -248,7 +234,7 @@ end
 
 -- Studio only, and the same shape as `Drift/RoadHud`'s: the client loader's own
 -- `DebugBridge` resolves loaded Controllers, and this is a LocalScript, so it carries its
--- own. `Invoke("DebugState")`, `Invoke("DebugPress", "lift" | "rails")`.
+-- own. `Invoke("DebugState")`, `Invoke("DebugPress", "lift" | "spline" | "mode")`.
 if RunService:IsStudio() then
 	local bridge = Instance.new("BindableFunction")
 	bridge.Name = "TestHudBridge"
@@ -256,16 +242,12 @@ if RunService:IsStudio() then
 		if member == "DebugState" then
 			return {
 				hill = state.hill,
-				rails = state.rails,
 				asked = asked,
 				told = told,
 				liftText = lift.Text,
-				railsText = rails.Text,
-				visible = gui.Enabled and lift.Visible and rails.Visible,
+				visible = gui.Enabled and lift.Visible,
 				liftPosition = lift.AbsolutePosition,
 				liftSize = lift.AbsoluteSize,
-				railsPosition = rails.AbsolutePosition,
-				railsSize = rails.AbsoluteSize,
 				displayOrder = gui.DisplayOrder,
 				zIndexBehavior = gui.ZIndexBehavior.Name,
 				splineOn = splineOn,

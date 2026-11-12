@@ -7,12 +7,13 @@
 -- `DriftController`, whose car then stands on its maths and whose view draws it. The client
 -- chooses nothing: it replays what it is sent, in order.
 --
---   start    the origin and every section so far, the closing barrier, the guardrails:
---            sent once, when this player joins the run, before the car is put on the road
+--   start    the origin and every section so far, and the closing barrier: sent once,
+--            when this player joins the run, before the car is put on the road
 --   more     the sections after the last one sent, as the window grows
 --   closing  where the closing barrier now stands, in studs along the road
---   rails    the guardrails, switched on or off
 --   stop     the run is over for this player
+--
+-- Each section carries its mountainside with it (T-140): runoff, edges and K-rails.
 --
 -- A message out of order (a `more` that does not follow on) is not guessed at: it is
 -- counted and the road stops growing on this client, which shows as the end of the drawn
@@ -28,22 +29,38 @@ local DriftController = require(script.Parent.DriftController)
 local SplineRoadController = {}
 
 local spline: any = nil
-local stats = { starts = 0, sections = 0, outOfOrder = 0, stops = 0, closings = 0, rails = 0, bad = 0 }
+local stats = { starts = 0, sections = 0, outOfOrder = 0, stops = 0, closings = 0, bad = 0 }
 
+local function numbers(list: any, group: number): boolean
+	if type(list) ~= "table" or #list < group or #list % group ~= 0 then
+		return false
+	end
+	for _, v in list do
+		if type(v) ~= "number" or v ~= v or v == math.huge or v == -math.huge then
+			return false
+		end
+	end
+	return true
+end
+
+-- The shape of a section. What the numbers mean -- in order, inside the section, a known
+-- edge -- `Spline.append` checks, and a section it refuses is refused whole.
 local function validSection(sec: any): boolean
 	if type(sec) ~= "table" or type(sec.len) ~= "number" or sec.len <= 0 then
 		return false
 	end
 	for _, key in { "k", "g", "b" } do
-		local knots = sec[key]
-		if type(knots) ~= "table" or #knots < 2 or #knots % 2 ~= 0 then
+		if not numbers(sec[key], 2) then
 			return false
 		end
-		for _, v in knots do
-			if type(v) ~= "number" or v ~= v then
-				return false
-			end
+	end
+	for _, key in { "rl", "rr", "el", "er" } do
+		if sec[key] ~= nil and not numbers(sec[key], 2) then
+			return false
 		end
+	end
+	if sec.kr ~= nil and not numbers(sec.kr, 3) then
+		return false
 	end
 	return true
 end
@@ -75,7 +92,6 @@ function SplineRoadController:_on(message: any)
 		spline = built
 		stats.starts += 1
 		stats.sections = #message.sections
-		DriftController:SetSplineRails(message.rails ~= false)
 		DriftController:UseSpline(spline)
 		DriftController:SetSplineClosing(if type(message.closing) == "number" then message.closing else nil)
 	elseif kind == "more" then
@@ -91,7 +107,12 @@ function SplineRoadController:_on(message: any)
 				stats.bad += 1
 				return
 			end
-			spline:append(sec)
+			local ok, err = pcall(spline.append, spline, sec)
+			if not ok then
+				stats.bad += 1
+				warn(`[SplineRoad] a section would not lay: {err}`)
+				return
+			end
 			stats.sections += 1
 		end
 	elseif kind == "closing" then
@@ -99,9 +120,6 @@ function SplineRoadController:_on(message: any)
 			stats.closings += 1
 			DriftController:SetSplineClosing(message.s)
 		end
-	elseif kind == "rails" then
-		stats.rails += 1
-		DriftController:SetSplineRails(message.on == true)
 	elseif kind == "stop" then
 		stats.stops += 1
 		spline = nil

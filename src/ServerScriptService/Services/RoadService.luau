@@ -434,7 +434,8 @@ function RoadService:Init()
 	-- No road is built here, and none ever is until a player presses start. The ONE thing
 	-- that has to exist before any controller asks for it is the remote.
 	self.roadRun = Net.event("RoadRun")
-	-- The spline road's sections, closing barrier and rails, server to client (T-136).
+	-- The spline road's sections (with their mountainside, T-140) and closing barrier,
+	-- server to client (T-136).
 	self.roadSpline = Net.event("RoadSpline")
 	mode = if Config.Road.Mode == "spline" then "spline" else "pieces"
 	self.asks = 0
@@ -767,7 +768,7 @@ end
 -- WHICH ROAD THE NEXT RUN LAYS: "pieces" or "spline". Only between runs -- a road being
 -- driven is never swapped out from under anyone. Returns the mode now in force.
 function RoadService:Mode(): string
-	return mode or "pieces"
+	return mode or (if Config.Road.Mode == "pieces" then "pieces" else "spline")
 end
 
 function RoadService:SetMode(want: string): string
@@ -819,7 +820,6 @@ function RoadService:_sendAll(player: Player)
 		origin = { x = o.x, y = o.y, z = o.z, yaw = o.yaw },
 		sections = generator.gen.sections,
 		closing = sentClosing,
-		rails = railsOn,
 	})
 end
 
@@ -835,12 +835,10 @@ end
 -- (features/track-generation.md), not a fence along the edge, and standing it down would
 -- be a way to fall out of a run rather than a way to leave the road sideways.
 function RoadService:SetBarriers(on: boolean): boolean
+	-- The piece road's walls only: the spline road has no side barriers (T-140).
 	railsOn = on == true
 	for _, entry in built do
 		applyRails(entry)
-	end
-	if splineRun() then
-		self:_tellRunners({ kind = "rails", on = railsOn })
 	end
 	return railsOn
 end

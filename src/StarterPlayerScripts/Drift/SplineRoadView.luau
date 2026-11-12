@@ -8,10 +8,8 @@
 -- at a time, nearest the car first, so a frame never pays for more than one.
 --
 -- A DEVICE THAT CANNOT MAKE A MESH still sees the road: the chunk is drawn as parts instead
--- (`Road/SplineParts`, nothing queryable), and `fallbacks` counts how often. Either way the
--- car drives on the maths, not on anything drawn here.
---
--- The side barriers vanish when the guardrails are off, as the piece road's do.
+-- (`Road/SplineParts`, nothing queryable, tarmac only), and `fallbacks` counts how often.
+-- Either way the car drives on the maths, not on anything drawn here.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
@@ -30,7 +28,6 @@ export type View = typeof(setmetatable(
 		folder: Folder,
 		chunks: { [number]: Instance },
 		building: number?,
-		rails: boolean,
 		forceFallback: boolean,
 		dead: boolean,
 		built: number,
@@ -57,7 +54,6 @@ function SplineRoadView.new(spline: Spline.Spline, parent: Instance?): View
 		folder = folder,
 		chunks = {},
 		building = nil,
-		rails = true,
 		forceFallback = false,
 		dead = false,
 		built = 0,
@@ -74,25 +70,9 @@ function SplineRoadView.new(spline: Spline.Spline, parent: Instance?): View
 	}, SplineRoadView)
 end
 
-local function setBarriers(chunk: Instance, on: boolean)
-	local t = if on then 0 else 1
-	for _, d in chunk:GetDescendants() do
-		if d:IsA("BasePart") and (d.Name == "Barriers" or string.sub(d.Name, 1, 8) == "Barrier_") then
-			d.Transparency = t
-		end
-	end
-end
-
-function SplineRoadView.SetRails(self: View, on: boolean)
-	self.rails = on
-	for _, chunk in self.chunks do
-		setBarriers(chunk, on)
-	end
-end
-
--- THE CLOSING BARRIER (T-136): a wall across the road at `s`, the piece road's colour and
--- see-through, drawn here because the server builds nothing. It never switches off with the
--- guardrails; `Drift/SplineWorld` is what makes it solid.
+-- THE CLOSING BARRIER (T-136): a wall across the road and its runoff at `s`, the piece
+-- road's colour and see-through, drawn here because the server builds nothing.
+-- `Drift/SplineWorld` is what makes it solid.
 function SplineRoadView.SetClosing(self: View, s: number?)
 	self.closingS = s
 	if not s then
@@ -122,9 +102,10 @@ function SplineRoadView.SetClosing(self: View, s: number?)
 	local spline = self.spline
 	local x, y, z = spline:surfaceXYZ(s, 0)
 	local height = R.BarrierHeight + R.Thickness
-	local wide = R.Width + 2 * R.BarrierThickness
+	local wider = math.max(spline:runoffAt(s, -1), spline:runoffAt(s, 1)) + Config.Spline.Terrain.EdgeDepth
+	local wide = R.Width + 2 * wider
 	-- tall enough to cover the banked road edge to edge
-	local bankRise = R.Width * 0.5 * math.abs(math.tan(spline:bankAt(s)))
+	local bankRise = wide * 0.5 * math.abs(math.tan(spline:bankAt(s)))
 	local p = part :: BasePart
 	p.Size = Vector3.new(wide, height + 2 * bankRise, 1)
 	-- the slab `Drift/SplineWorld` makes solid: 1 stud deep, its front face at `s`
@@ -155,7 +136,7 @@ function SplineRoadView._build(self: View, i: number)
 		self.lastError = info
 		local folder = Instance.new("Folder")
 		folder.Name = `Chunk_{math.floor(s0)}_parts`
-		SplineParts.build(self.spline, s0, s1, folder, { step = Config.Spline.Mesh.FallbackStep, queryable = false })
+		SplineParts.build(self.spline, s0, s1, folder, { step = Config.Spline.Mesh.FallbackStep, queryable = false, barriers = false })
 		folder:SetAttribute("Fallback", true)
 		folder.Parent = self.folder
 		chunk = folder
@@ -168,7 +149,6 @@ function SplineRoadView._build(self: View, i: number)
 		removeChunk(chunk)
 		return
 	end
-	setBarriers(chunk, self.rails)
 	self.chunks[i] = chunk
 	-- built up to where the road ended at the time: rebuild it once more road arrives
 	if s1 < (i + 1) * L - 1e-6 then
@@ -274,7 +254,6 @@ function SplineRoadView.DebugState(self: View)
 		lastMs = self.lastMs,
 		worstMs = self.worstMs,
 		trianglesBuilt = self.triangles,
-		rails = self.rails,
 		forceFallback = self.forceFallback,
 		lastError = self.lastError,
 		closingS = self.closingS,

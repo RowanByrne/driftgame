@@ -8,9 +8,12 @@
 --
 -- A chunk is ONE MeshPart and some plain parts, in the piece road's materials and colours:
 --
---   Road        the surface, kerb to kerb: the mesh, because it curves, banks and twists
---   Barrier_*   an upright box per cross-section either side, standing on the kerb and
---               carried down `Thickness` so a crest never shows daylight under it
+--   Road        the surface: the tarmac and the grass runoff either side of it, coloured
+--               by vertex: the mesh, because it curves, banks and twists
+--   Edge_*      the mountainside's edge per cross-section either side: a tall grey box for
+--               a rock face, a green one for a hedge, nothing for a cliff (T-140, rough:
+--               the proper faces are the feature's next step)
+--   KRail_*     a low concrete box per cross-section where a K-rail stands
 --   Mark        a flat box per dash of the centre line, `MarkLift` above the surface
 --
 -- Only the surface is a mesh because a client may hold only eight EditableMeshes at once and
@@ -98,8 +101,9 @@ type Builder = {
 }
 
 
--- A quad strip between two rows of vertex ids, each with its normal id.
-local function strip(b: Builder, rowA: { number }, normA: { number }, rowB: { number }, normB: { number }, flip: boolean)
+-- A quad strip between two rows of vertex ids, each with its normal id. `colours`, when
+-- given, is a colour id per strip (between vertex i and i + 1), painted on both triangles.
+local function strip(b: Builder, rowA: { number }, normA: { number }, rowB: { number }, normB: { number }, flip: boolean, colours: { number }?)
 	local em = b.em
 	for i = 1, #rowA - 1 do
 		local a0, a1, b0, b1 = rowA[i], rowA[i + 1], rowB[i], rowB[i + 1]
@@ -115,6 +119,11 @@ local function strip(b: Builder, rowA: { number }, normA: { number }, rowB: { nu
 			f2 = em:AddTriangle(a1, b1, b0)
 			em:SetFaceNormals(f1, { na0, na1, nb0 })
 			em:SetFaceNormals(f2, { na1, nb1, nb0 })
+		end
+		if colours then
+			local c = colours[i]
+			em:SetFaceColors(f1, { c, c, c })
+			em:SetFaceColors(f2, { c, c, c })
 		end
 		b.triangles += 2
 	end
@@ -192,19 +201,38 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 		-- a mesh can draw -- the surface, which curves, banks and twists -- and the barriers and
 		-- the centre line are plain parts, as the piece road's are: upright boxes and flat
 		-- dashes, which a box draws exactly.
-		-- the surface: `across` strips, a row of vertices per cross-section
+		-- the surface: the left runoff in `RUNOFF_STRIPS` strips, the tarmac in `across`,
+		-- the right runoff in `RUNOFF_STRIPS`; a row of vertices per cross-section. The
+		-- runoff's width changes along the road, so each row places its own grass vertices
+		local RUNOFF_STRIPS = 2
+		local tarmacColour = road.em:AddColor(R.Colours.Road, 1)
+		local grassColour = road.em:AddColor(Config.Spline.Terrain.GrassColour, 1)
+		local colours = {}
+		for j = 1, RUNOFF_STRIPS * 2 + across do
+			colours[j] = if j <= RUNOFF_STRIPS or j > RUNOFF_STRIPS + across then grassColour else tarmacColour
+		end
 		local prevRow, prevNorm = nil, nil
 		for _, s in cuts do
 			local row, norm = {}, {}
+			local wL, wR = spline:runoffAt(s, -1), spline:runoffAt(s, 1)
+			local ds = {}
+			for j = 0, RUNOFF_STRIPS - 1 do
+				table.insert(ds, -half - wL * (1 - j / RUNOFF_STRIPS))
+			end
 			for j = 0, across do
-				local d = -half + (2 * half) * j / across
-				local x, y, z = spline:surfaceXYZ(s, d)
-				row[j + 1] = road.em:AddVertex(Vector3.new(x - centre.X, y - centre.Y, z - centre.Z))
-				norm[j + 1] = road.em:AddNormal(spline:normalAt(s, d))
+				table.insert(ds, -half + (2 * half) * j / across)
+			end
+			for j = 1, RUNOFF_STRIPS do
+				table.insert(ds, half + wR * j / RUNOFF_STRIPS)
+			end
+			for j, d in ds do
+				local x, y, z = spline:terrainXYZ(s, d)
+				row[j] = road.em:AddVertex(Vector3.new(x - centre.X, y - centre.Y, z - centre.Z))
+				norm[j] = road.em:AddNormal(spline:terrainNormal(s, d))
 				road.vertices += 1
 			end
 			if prevRow then
-				strip(road, prevRow, prevNorm, row, norm, false)
+				strip(road, prevRow, prevNorm, row, norm, false, colours)
 			end
 			prevRow, prevNorm = row, norm
 		end
@@ -213,7 +241,8 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 		model.Name = `Chunk_{math.floor(s0)}`
 		model:SetAttribute("S0", s0)
 		model:SetAttribute("S1", s1)
-		local roadPart = toPart(road, "Road", R.Colours.Road, R.RoadMaterial)
+		-- white, so the vertex colours are what show
+		local roadPart = toPart(road, "Road", Color3.new(1, 1, 1), R.RoadMaterial)
 		roadPart.Parent = model
 		local parts = 0
 
@@ -235,33 +264,40 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 			parts += 1
 		end
 
-		-- the barriers: a box per cut either side, on the same cuts as the surface, inner
-		-- face at exactly half the width. UPRIGHT ACROSS THE ROAD but PITCHED ALONG IT, so its
-		-- top follows the grade instead of stepping (a level box per cut drew a staircase on
-		-- every slope, seen in the lane); carried down `Thickness` so a crest never shows
-		-- daylight under it
+		-- an upright box along the road between two cuts, its foot on the ground at lateral
+		-- `inner .. inner + thick` (signed by side) as the old barriers were: UPRIGHT ACROSS
+		-- THE ROAD but PITCHED ALONG IT, so its top follows the grade instead of stepping;
+		-- carried down `sink` so a crest never shows daylight under it
+		local function wall(name: string, a: number, b: number, side: number, innerA: number, innerB: number, thick: number, height: number, sink: number, colour: Color3, material: Enum.Material)
+			local offA, offB = side * (innerA + thick * 0.5), side * (innerB + thick * 0.5)
+			local ax, _, az = spline:terrainXYZ(a, offA)
+			local bx, _, bz = spline:terrainXYZ(b, offB)
+			local pa = Vector3.new(ax, spline:terrainY(a, side * innerA), az)
+			local pb = Vector3.new(bx, spline:terrainY(b, side * innerB), bz)
+			local chord = pb - pa
+			local len = chord.Magnitude
+			if len > 1e-3 then
+				local mid = (pa + pb) * 0.5 + Vector3.yAxis * ((height - sink) * 0.5)
+				plain(name, Vector3.new(thick, height + sink, len + 0.2), CFrame.lookAt(mid, mid + chord, Vector3.yAxis), colour, material)
+			end
+		end
+		-- THE MOUNTAINSIDE, rough (T-140): the edge each side and any K-rails, a box per cut
+		local T = Config.Spline.Terrain
 		for _, side in { -1, 1 } do
+			local tag = if side < 0 then "L" else "R"
 			for k = 1, #cuts - 1 do
 				local a, b = cuts[k], cuts[k + 1]
-				local off = side * (half + R.BarrierThickness * 0.5)
-				local ax, _, az = spline:surfaceXYZ(a, off)
-				local bx, _, bz = spline:surfaceXYZ(b, off)
-				local ea = spline:heightAt(a) + side * half * math.tan(spline:bankAt(a))
-				local eb = spline:heightAt(b) + side * half * math.tan(spline:bankAt(b))
-				local pa = Vector3.new(ax, ea, az)
-				local pb = Vector3.new(bx, eb, bz)
-				local chord = pb - pa
-				local len = chord.Magnitude
-				if len > 1e-3 then
-					local height = R.BarrierHeight + R.Thickness
-					local mid = (pa + pb) * 0.5 + Vector3.yAxis * ((R.BarrierHeight - R.Thickness) * 0.5)
-					plain(
-						`Barrier_{if side < 0 then "L" else "R"}_{k}`,
-						Vector3.new(R.BarrierThickness, height, len + 0.2),
-						CFrame.lookAt(mid, mid + chord, Vector3.yAxis),
-						R.Colours.Barrier,
-						R.BarrierMaterial
-					)
+				local kind = spline:edgeAt((a + b) * 0.5, side)
+				if kind ~= Spline.CLIFF then
+					local wa, wb = half + spline:runoffAt(a, side), half + spline:runoffAt(b, side)
+					if kind == Spline.ROCK then
+						wall(`Edge_{tag}_{k}`, a, b, side, wa, wb, T.HedgeThickness, T.RockHeight[1], R.Thickness, T.RockColour, Enum.Material.Slate)
+					else
+						wall(`Edge_{tag}_{k}`, a, b, side, wa, wb, T.HedgeThickness, T.HedgeHeight, R.Thickness, T.HedgeColour, Enum.Material.Grass)
+					end
+				end
+				if spline:kRailAt((a + b) * 0.5, side) then
+					wall(`KRail_{tag}_{k}`, a, b, side, half, half, T.KRailThickness, T.KRailHeight, 1, T.KRailColour, Enum.Material.Concrete)
 				end
 			end
 		end

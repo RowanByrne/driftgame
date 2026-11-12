@@ -21,6 +21,7 @@ local StarterPlayer = game:GetService("StarterPlayer")
 assert(RunService:IsStudio(), "SplineWorldTests is Studio only")
 
 local Config = require(ReplicatedStorage.Shared.Config)
+local Spline = require(ReplicatedStorage.Shared.Road.Spline)
 local SplineGen = require(ReplicatedStorage.Shared.Road.SplineGen)
 local SplineParts = require(ReplicatedStorage.Shared.Road.SplineParts)
 
@@ -133,7 +134,16 @@ function Tests.run(which: { string }?, ...)
 
 	local gen = SplineGen.new(SEED)
 	gen:extendTo(LENGTH + 200)
-	local spline = gen.spline
+	-- THE YARDSTICK IS A BARE ROAD: the same curve with its mountainside taken off, so its
+	-- only walls are hedges at the tarmac's edge, exactly where the parts' barriers stand
+	-- (a section with no mountainside gets that, `Road/Spline`). The mountainside itself is
+	-- tested on the real road (`mountain`, below).
+	local bare = {}
+	for i, sec in gen.sections do
+		bare[i] = { len = sec.len, k = sec.k, g = sec.g, b = sec.b, tag = sec.tag }
+	end
+	local spline = SplineGen.replay(bare)
+	local mountain = gen.spline
 
 	local old = workspace:FindFirstChild("__SplineYardstick")
 	if old then
@@ -347,38 +357,144 @@ function Tests.run(which: { string }?, ...)
 			check("the maths costs no more than the rays", perStepA <= perStepB * 1.2, `a whole model step on the maths {fmt(perStepA, 0)} microseconds, on the parts {fmt(perStepB, 0)} (autopilot included in both)`)
 		end
 
-		-- 5. Barriers off: the car leaves the road and falls.
-		if want("rails") then
-			local s = 900
-			local function offTheSide(world)
-				local yaw = spline:yawAt(s)
-				-- heading straight out of the right side, at 50 studs/s
-				local outYaw = yaw - math.pi / 2
-				local x, y, z = spline:surfaceXYZ(s, half - 6)
+		-- 5. The mountainside (T-140): grass, rock, hedge, K-rail and cliff, each driven at.
+		if want("mountain") then
+			local T = Config.Spline.Terrain
+			local mw = SplineWorld.new(mountain, nil)
+			-- A place where `side` ends in `kind` for 80 studs either way, on a gentle stretch,
+			-- with or without a K-rail.
+			local function find(kind: number, side: number, rail: boolean): number?
+				for s = 300, LENGTH - 300, 7 do
+					local good = true
+					for u = s - 80, s + 80, 10 do
+						if mountain:edgeAt(u, side) ~= kind or math.abs(mountain:curvatureAt(u)) > 1 / 300 or (mountain:kRailAt(u, side) ~= nil) ~= rail then
+							good = false
+							break
+						end
+					end
+					if good then
+						return s
+					end
+				end
+				return nil
+			end
+			-- Head straight out of `side` from the middle of the road at 50 studs/s for 3 s.
+			local function offTheSide(s: number, side: number)
+				local yaw = mountain:yawAt(s)
+				local outYaw = yaw - side * math.pi / 2
+				local x, y, z = mountain:surfaceXYZ(s, side * 5)
 				local runner = Sim.newRunner(CFrame.new(x, y + D.RideHeight, z) * CFrame.Angles(0, outYaw, 0))
 				runner.state.velocity = Vector3.new(-math.sin(outYaw), 0, -math.cos(outYaw)) * 50
 				runner.state.time = 10
+				local before = table.clone(mw.stats)
 				for _ = 1, 3 * DRIVE_FPS do
-					Sim.advance(runner, 1 / DRIVE_FPS, { steer = 0, handbrake = false }, world)
+					Sim.advance(runner, 1 / DRIVE_FPS, { steer = 0, handbrake = false }, mw)
 				end
 				local p = runner.state.position
-				local _, d = spline:projectFrom(p.X, p.Z, s)
-				return d or math.huge, y - p.Y, runner.state
+				local sEnd, d = mountain:projectFrom(p.X, p.Z, s)
+				local after = mw.stats
+				return {
+					d = (d or math.huge) * side,
+					drop = y - p.Y,
+					airborne = runner.state.airborne,
+					walls = after.wallStops - before.wallStops,
+					rails = after.kRailStops - before.kRailStops,
+					grass = after.grass - before.grass,
+					overCliff = after.overCliff - before.overCliff,
+					-- where the edge is where the car ended up, not where it started
+					edge = half + mountain:runoffAt(sEnd or s, side),
+				}
 			end
-			sw.setRails(true)
-			local dOn, dropOn = offTheSide(sw)
-			sw.setRails(false)
-			local dOff, dropOff, stOff = offTheSide(sw)
-			sw.setRails(true)
-			check("rails on: the barrier holds the car", dOn <= half and dropOn < 1, `after 3 s driving at it: {fmt(dOn, 2)} studs from the centre (barrier at {half}), {fmt(dropOn, 2)} below the road`)
-			check("rails off: the car leaves the road and falls", dOff > half and dropOff > 20 and stOff.airborne, `after 3 s: {fmt(dOff, 1)} from the centre, {fmt(dropOff, 1)} studs below the road, airborne {tostring(stOff.airborne)}`)
+			local tried = 0
+			for _, case in { { Spline.ROCK, "rock face" }, { Spline.HEDGE, "hedge" } } do
+				local s, side = find(case[1], 1, false), 1
+				if not s then
+					s, side = find(case[1], -1, false), -1
+				end
+				if s then
+					tried += 1
+					local r = offTheSide(s, side)
+					-- the car drives nose first at it, so its middle stops half a car short: its
+					-- box leans with the grass, so give it a stud either way
+					local nose = r.d + D.BodyLength * 0.5
+					check(
+						`a {case[2]} stops the car at the grass's edge`,
+						nose <= r.edge + 1 and nose > r.edge - 1.5 and not r.airborne and r.walls > 0 and r.grass > 0,
+						`after 3 s driving at it: the car's nose {fmt(nose, 2)} studs out (edge at {fmt(r.edge, 2)}), on the ground {tostring(not r.airborne)}, {fmt(-r.drop, 2)} above the road's centre, {r.walls} wall stops, {r.grass} wheel contacts on grass`
+					)
+				else
+					check(`a {case[2]} found to drive at`, false, `none on this road, seed {SEED}`)
+				end
+			end
+			do
+				local s, side = find(Spline.CLIFF, 1, false), 1
+				if not s then
+					s, side = find(Spline.CLIFF, -1, false), -1
+				end
+				if s then
+					local r = offTheSide(s, side)
+					check("over a cliff the car falls", r.d > r.edge and r.drop > 20 and r.airborne and r.overCliff > 0, `after 3 s: {fmt(r.d, 1)} studs out (lip at {fmt(r.edge, 1)}), {fmt(r.drop, 1)} studs below the road, airborne {tostring(r.airborne)}, {r.overCliff} probes past the lip`)
+				else
+					check("a cliff found to drive off", false, `none on this road, seed {SEED}`)
+				end
+			end
+			do
+				local s, side, kind = nil, 1, Spline.CLIFF
+				for _, k in { Spline.CLIFF, Spline.ROCK, Spline.HEDGE } do
+					for _, sd in { 1, -1 } do
+						if not s then
+							s = find(k, sd, true)
+							side, kind = sd, k
+						end
+					end
+				end
+				if s then
+					local r = offTheSide(s, side)
+					local nose = r.d + D.BodyLength * 0.5
+					check("a K-rail stops the car at the tarmac's edge", nose <= half + 0.5 and nose > half - 1.5 and r.rails > 0, `after 3 s: the car's nose {fmt(nose, 2)} studs out (K-rail's face at {half}), {r.rails} K-rail stops`)
+					-- and from behind: a car on the grass beyond it, driven back at it
+					local yaw = mountain:yawAt(s)
+					local inYaw = yaw + side * math.pi / 2
+					local w = mountain:runoffAt(s, side)
+					if w > D.BodyWidth + 4 then
+						local x, y, z = mountain:terrainXYZ(s, side * (half + T.KRailThickness + w * 0.5 + 2))
+						local runner = Sim.newRunner(CFrame.new(x, y + D.RideHeight, z) * CFrame.Angles(0, inYaw, 0))
+						runner.state.velocity = Vector3.new(-math.sin(inYaw), 0, -math.cos(inYaw)) * 30
+						runner.state.time = 10
+						for _ = 1, 2 * DRIVE_FPS do
+							Sim.advance(runner, 1 / DRIVE_FPS, { steer = 0, handbrake = false }, mw)
+						end
+						local p = runner.state.position
+						local _, d = mountain:projectFrom(p.X, p.Z, s)
+						d = (d or 0) * side
+						check("and from the grass side too", d >= half + T.KRailThickness - 0.01, `driven back at it from the grass: stopped {fmt(d, 2)} studs out (its back face at {half + T.KRailThickness})`)
+					end
+				else
+					check("a K-rail found to drive at", false, `none on this road, seed {SEED}`)
+				end
+			end
+			-- The ground: grass grips and scores as grass
+			do
+				local s = 500
+				local side = 1
+				local w = mountain:runoffAt(s, side)
+				local x, y, z = mountain:terrainXYZ(s, side * (half + w * 0.5))
+				local hit = mw.probe(Vector3.new(x, y + D.RideHeight, z))
+				local tx, ty, tz = mountain:terrainXYZ(s, 3)
+				local road = mw.probe(Vector3.new(tx, ty + D.RideHeight, tz))
+				check(
+					"the grass grips and scores as grass, the tarmac as tarmac",
+					hit ~= nil and hit.grip == D.GripGrass and hit.score == D.ScoreGrass and math.abs(hit.y - y) < 1e-3 and road ~= nil and road.grip == D.GripTarmac,
+					`grass: grip {hit and hit.grip or "none"}, score {hit and hit.score or "none"}, height off by {hit and fmt(hit.y - y, 6) or "-"}; tarmac grip {road and road.grip or "none"}`
+				)
+			end
+			mw.destroy()
 		end
 
 		-- 6. The closing barrier behind the car never switches off.
 		if want("closing") then
 			local sc = 400
 			sw.setClosing(sc)
-			sw.setRails(false)
 			local yaw = spline:yawAt(sc + 30)
 			local x, y, z = spline:surfaceXYZ(sc + 30, 0)
 			-- reversing toward it: facing back down the road
@@ -412,8 +528,7 @@ function Tests.run(which: { string }?, ...)
 				end
 			end
 			sw.setClosing(nil)
-			sw.setRails(true)
-			check("the closing barrier stops a car going back, rails off or on", least >= sc + D.BodyLength * 0.5 - 0.5, `driven back at it for 3 s: the car's middle got to {fmt(least - sc, 2)} studs in front of it (half the car is {fmt(D.BodyLength * 0.5, 2)})`)
+			check("the closing barrier stops a car going back", least >= sc + D.BodyLength * 0.5 - 0.5, `driven back at it for 3 s: the car's middle got to {fmt(least - sc, 2)} studs in front of it (half the car is {fmt(D.BodyLength * 0.5, 2)})`)
 			check("and holds a car left behind it, rather than pushing it through", most <= sc - 1 - D.BodyLength * 0.5 + 0.5, `driven forward at its back for 3 s: the car's middle got to {fmt(sc - most, 2)} studs behind its front face (the slab is 1 deep, half the car {fmt(D.BodyLength * 0.5, 2)})`)
 		end
 

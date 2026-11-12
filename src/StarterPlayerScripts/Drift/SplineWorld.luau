@@ -1,6 +1,7 @@
 --!strict
 -- SplineWorld: the drift model's world questions answered from the spline road's own maths
--- (features/spline-road.md "Collision, from the curve", T-134).
+-- (features/spline-road.md "Collision, from the curve", T-134; features/mountain-road.md
+-- "Driving on it, from the maths", T-140).
 --
 -- The model asks four things of a world (`Model.World`): the ground under a point, how far
 -- the car may move before a wall, which way is out of a wall it is in, and where a step's
@@ -8,13 +9,19 @@
 -- visual -- nothing collides with it, nothing can query it -- and every answer here is the
 -- curve's arithmetic:
 --
---   probe        the surface's height and normal at the point's (s, d) -- `Spline.ground`.
---                Nothing past the road's edge, so a car that leaves it falls
---   sweep        the barrier line is |d| = Width / 2 either side of the centre; the car's
---                footprint is six points (its corners and the middle of each long side),
---                and the step is cut where the first of them would cross it
---   penetration  the deepest point already past the line, and the way back in
+--   probe        the ground at the point's (s, d): the tarmac (`GripTarmac`), the grass
+--                runoff either side (`GripGrass`, `ScoreGrass`), and NOTHING past a
+--                cliff's lip, so a car that goes over falls
+--   sweep        the walls: a rock face or a hedge at the runoff's outer edge, and a K-rail
+--                on the tarmac's edge where one stands. The car's footprint is six points
+--                (its corners and the middle of each long side), and the step is cut where
+--                the first of them would cross a wall. A cliff is not a wall
+--   penetration  the deepest point already past a wall, and the way back out
 --   edge         nothing: the road has no steps
+--
+-- THERE ARE NO SIDE BARRIERS ANY MORE (T-140): running wide costs grip on the grass, then
+-- the edge decides. The closing barrier behind the window stays, across the tarmac and both
+-- runoffs, so nobody drives round it on the grass.
 --
 -- WRAPPED ROUND ANOTHER WORLD, not instead of it: the live world (`World.live`) still
 -- answers wherever the spline does not -- the playground, the track, the garage -- and its
@@ -24,10 +31,6 @@
 -- IT KEEPS ITS OWN `s`, the car's distance along the road, and starts every lookup from
 -- it: two or three Newton steps, a few microseconds (`Road/Spline`). Only when that fails
 -- -- a respawn, a teleport, the first step -- does it search the road's grid.
---
--- THE TWO BARRIERS: the side barriers switch off (`setRails`), exactly as the piece road's
--- do (the TEST ONLY guardrail button); the closing barrier behind the window never does
--- (`setClosing`), as on the piece road.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -41,16 +44,22 @@ local SplineWorld = {}
 -- the car is held a hair clear of the line rather than exactly on it.
 local PENETRATION_MARGIN = 0.05
 
--- How far either side of the road's edge a point may be and still be asked about. A point
--- further out than this is not near the road at all.
+-- How far past the widest runoff a point may be and still be asked about. A point further
+-- out than this is not near the road at all.
 local REACH_PAST_EDGE = 30
+
+-- How a wall stop is counted.
+local KIND_SIDE, KIND_KRAIL, KIND_CLOSING = 1, 2, 3
 
 export type Stats = {
 	probes: number,
 	hits: number,
+	grass: number, -- probes that found grass
+	overCliff: number, -- probes past a cliff's lip: nothing under them
 	searches: number, -- lookups that fell back to the grid
 	sweeps: number,
-	wallStops: number,
+	wallStops: number, -- a rock face or a hedge
+	kRailStops: number,
 	closingStops: number,
 	pushes: number,
 }
@@ -59,10 +68,8 @@ export type SplineWorld = Model.World & {
 	spline: Spline.Spline,
 	base: Model.World?,
 	hint: number?,
-	rails: boolean,
 	closing: number?,
 	stats: Stats,
-	setRails: (on: boolean) -> (),
 	setClosing: (s: number?) -> (),
 	locate: (pos: Vector3) -> (number?, number?),
 	destroy: () -> (),
@@ -71,21 +78,33 @@ export type SplineWorld = Model.World & {
 function SplineWorld.new(spline: Spline.Spline, base: Model.World?): SplineWorld
 	local C = Config.Drift
 	local R = Config.Road
+	local T = Config.Spline.Terrain
 	local half = R.Width * 0.5
-	local reach = half + REACH_PAST_EDGE
+	local reach = half + T.RunoffMax + REACH_PAST_EDGE
 	local rayTop = C.GroundRayUp
 	local rayBottom = C.GroundRayUp - C.GroundRayLength
 	-- the car's box, as `Drift/World` has it: its body, not its track
 	local bw, bl = C.BodyWidth * 0.5, C.BodyLength * 0.5
 	local bh = C.BodyHeight * 0.6 * 0.5
+	local railT = T.KRailThickness
 
 	local self: any = {
 		spline = spline,
 		base = base,
 		hint = nil,
-		rails = true,
 		closing = nil,
-		stats = { probes = 0, hits = 0, searches = 0, sweeps = 0, wallStops = 0, closingStops = 0, pushes = 0 },
+		stats = {
+			probes = 0,
+			hits = 0,
+			grass = 0,
+			overCliff = 0,
+			searches = 0,
+			sweeps = 0,
+			wallStops = 0,
+			kRailStops = 0,
+			closingStops = 0,
+			pushes = 0,
+		},
 	}
 	local stats: Stats = self.stats
 
@@ -114,10 +133,6 @@ function SplineWorld.new(spline: Spline.Spline, base: Model.World?): SplineWorld
 		return s, d
 	end
 
-	function self.setRails(on: boolean)
-		self.rails = on == true
-	end
-
 	function self.setClosing(s: number?)
 		self.closing = s
 	end
@@ -126,15 +141,24 @@ function SplineWorld.new(spline: Spline.Spline, base: Model.World?): SplineWorld
 	function self.probe(pos: Vector3): Model.Hit?
 		stats.probes += 1
 		local s, d = locate(pos.X, pos.Z, self.hint)
-		if s and d and math.abs(d) <= half then
-			self.hint = s
-			local y = spline:heightAt(s) + d * math.tan(spline:bankAt(s))
-			-- the same window a ground ray has: from GroundRayUp above the point down
-			-- GroundRayLength. A car far under the road does not find it over its head.
-			local dy = y - pos.Y
-			if dy <= rayTop and dy >= rayBottom then
-				stats.hits += 1
-				return { y = y, normal = spline:normalAt(s, d), grip = C.GripTarmac, score = C.ScoreTarmac }
+		if s and d then
+			local kind = spline:groundKind(s, d)
+			if kind == nil then
+				stats.overCliff += 1
+			else
+				self.hint = s
+				local y = spline:terrainY(s, d)
+				-- the same window a ground ray has: from GroundRayUp above the point down
+				-- GroundRayLength. A car far under the road does not find it over its head.
+				local dy = y - pos.Y
+				if dy <= rayTop and dy >= rayBottom then
+					stats.hits += 1
+					if kind == Spline.TARMAC then
+						return { y = y, normal = spline:normalAt(s, d), grip = C.GripTarmac, score = C.ScoreTarmac }
+					end
+					stats.grass += 1
+					return { y = y, normal = spline:terrainNormal(s, d), grip = C.GripGrass, score = C.ScoreGrass }
+				end
 			end
 		end
 		if base then
@@ -145,20 +169,20 @@ function SplineWorld.new(spline: Spline.Spline, base: Model.World?): SplineWorld
 
 	------------------------------------------------------------------ the walls
 	-- THE CAR'S BOX IS TILTED ON TO THE SURFACE, as `Drift/World` tilts it (T-073), so its
-	-- shadow on the ground is what meets a barrier: on a 10-degree bank its top corner leans
+	-- shadow on the ground is what meets a wall: on a 10-degree bank its top corner leans
 	-- out past its wheels by `bh x sin(10)`. Same two numbers `World.penetration` uses, from
-	-- the spline's own normal; flat in the air, as there.
-	local function reach(pos: Vector3, yaw: number): (number, number)
+	-- the ground's own normal; flat in the air, as there.
+	local function boxReach(pos: Vector3, yaw: number): (number, number)
 		local flatFwd, flatRight = Model.axes(yaw)
 		local s, d = locate(pos.X, pos.Z, self.hint)
-		if not s or not d or math.abs(d) > half then
+		if not s or not d or not spline:groundKind(s, d) then
 			return bw, bl
 		end
-		local y = spline:heightAt(s) + d * math.tan(spline:bankAt(s))
+		local y = spline:terrainY(s, d)
 		if pos.Y - (y + C.RideHeight) > C.AirborneMargin then
 			return bw, bl
 		end
-		local up = spline:normalAt(s, d)
+		local up = spline:terrainNormal(s, d)
 		local right = flatFwd:Cross(up)
 		if right.Magnitude < 1e-4 then
 			return bw, bl
@@ -174,7 +198,7 @@ function SplineWorld.new(spline: Spline.Spline, base: Model.World?): SplineWorld
 	local SIDES = { { 1, 1 }, { 1, 0 }, { 1, -1 }, { -1, 1 }, { -1, 0 }, { -1, -1 } }
 	local function footprint(pos: Vector3, yaw: number, out: { number })
 		local fwd, right = Model.axes(yaw)
-		local hw, hl = reach(pos, yaw)
+		local hw, hl = boxReach(pos, yaw)
 		for i, p in SIDES do
 			local ox = right.X * hw * p[1] + fwd.X * hl * p[2]
 			local oz = right.Z * hw * p[1] + fwd.Z * hl * p[2]
@@ -183,27 +207,64 @@ function SplineWorld.new(spline: Spline.Spline, base: Model.World?): SplineWorld
 		end
 	end
 
-	-- Is a barrier standing at this height? A car well above the road (a jump) or well
-	-- under it (falling) is not beside a wall.
-	local function wallAt(s: number, d: number, carY: number): boolean
-		local edgeY = spline:heightAt(s) + d * math.tan(spline:bankAt(s))
-		return carY - bh < edgeY + R.BarrierHeight and carY + bh > edgeY - R.Thickness
+	-- Is a wall `height` tall, standing on the ground at (s, d), beside a car at `carY`? A
+	-- car well above it (a jump) or well under it (falling past a cliff) is not.
+	local function standsBeside(s: number, d: number, height: number, carY: number): boolean
+		local footY = spline:terrainY(s, d)
+		return carY - bh < footY + height and carY + bh > footY - R.Thickness
 	end
 
-	-- How far a footprint point is inside each constraint (positive is clear), and the
-	-- wall's normal. Side barriers: |d| <= half. Closing barrier: ahead of its plane.
-	local function sideMargin(s: number, d: number): (number, Vector3)
+	-- THE SIDE WALL at (s, d): a rock face or a hedge on d's side, at the runoff's outer
+	-- edge. Its line is |d| = half + runoff(s); how far a point is inside it (positive is
+	-- clear) and the way back toward the road. The runoff narrows and widens along the
+	-- road, so the wall line leans: its normal carries that lean, which is what lets a car
+	-- grind along a narrowing runoff rather than stick in it.
+	local function sideWall(s: number, d: number): (number, Vector3)
+		local side = if d >= 0 then 1 else -1
+		local edge = half + spline:runoffAt(s, side)
 		local yaw = spline:yawAt(s)
 		local rx, rz = math.cos(yaw), -math.sin(yaw)
-		local sign = if d >= 0 then 1 else -1
-		return half - math.abs(d), Vector3.new(-sign * rx, 0, -sign * rz)
+		local fx, fz = -math.sin(yaw), -math.cos(yaw)
+		local lean = (spline:runoffAt(s + 0.5, side) - spline:runoffAt(s - 0.5, side)) / math.max(0.2, 1 + spline:curvatureAt(s) * d)
+		local n = Vector3.new(-side * rx + lean * fx, 0, -side * rz + lean * fz).Unit
+		return edge - math.abs(d), n
+	end
+
+	local function sideWallStands(s: number, d: number, carY: number): boolean
+		local side = if d >= 0 then 1 else -1
+		local kind = spline:edgeAt(s, side)
+		if kind == Spline.CLIFF then
+			return false
+		end
+		local height = if kind == Spline.ROCK then T.RockHeight[1] else T.HedgeHeight
+		return standsBeside(s, side * (half + spline:runoffAt(s, side)), height, carY)
+	end
+
+	-- A K-RAIL is a slab on the tarmac's edge, `railT` thick: solid from both sides, as the
+	-- closing barrier is. Is one standing at (s, d) for a car at `carY`?
+	local function kRailStands(s: number, d: number, carY: number): (number?, number?)
+		local side = if d >= 0 then 1 else -1
+		local a, b = spline:kRailAt(s, side)
+		if not a then
+			return nil, nil
+		end
+		if not standsBeside(s, side * half, T.KRailHeight, carY) then
+			return nil, nil
+		end
+		return a, b
+	end
+
+	local function lateralNormal(s: number, side: number): Vector3
+		local yaw = spline:yawAt(s)
+		return Vector3.new(side * math.cos(yaw), 0, side * -math.sin(yaw))
 	end
 
 	-- THE CLOSING BARRIER IS A SLAB, `CLOSING_DEPTH` studs thick, its front face at `closing`:
 	-- solid from both sides, as the piece road's box is. A car in front of it cannot reverse
 	-- through it, and a car left behind it (the slower of two players: the barrier follows
 	-- whoever is furthest) is stopped at its back face rather than being pushed through to
-	-- the front. Measured from the front face, positive ahead.
+	-- the front. Measured from the front face, positive ahead. It reaches across the tarmac
+	-- and the runoff either side, to the edges.
 	local CLOSING_DEPTH = 1
 	local function closingMargin(x: number, z: number): (number?, Vector3?)
 		local sc = self.closing
@@ -214,9 +275,10 @@ function SplineWorld.new(spline: Spline.Spline, base: Model.World?): SplineWorld
 		local yaw = spline:yawAt(sc)
 		local fx, fz = -math.sin(yaw), -math.cos(yaw)
 		local ex, ez = x - cx, z - cz
-		-- only across the road and its barriers: the plane is not infinite
+		-- only across the road and its runoff: the plane is not infinite
 		local lateral = ex * math.cos(yaw) - ez * math.sin(yaw)
-		if math.abs(lateral) > half + R.BarrierThickness + 1 then
+		local side = if lateral >= 0 then 1 else -1
+		if math.abs(lateral) > half + spline:runoffAt(sc, side) + T.EdgeDepth + 1 then
 			return nil, nil
 		end
 		return ex * fx + ez * fz, Vector3.new(fx, 0, fz)
@@ -226,13 +288,13 @@ function SplineWorld.new(spline: Spline.Spline, base: Model.World?): SplineWorld
 	local toPts: { number } = table.create(12, 0)
 
 	-- The first moment, as a share of the step, at which any footprint point crosses a
-	-- constraint, and that constraint's normal.
-	local function firstContact(from: Vector3, to: Vector3, yaw: number): (number?, Vector3?)
+	-- wall, that wall's normal, and what kind of wall it was.
+	local function firstContact(from: Vector3, to: Vector3, yaw: number): (number?, Vector3?, number)
 		footprint(from, yaw, fromPts)
 		footprint(to, yaw, toPts)
 		local hint = self.hint
-		local best, bestN = math.huge, nil :: Vector3?
-		local function consider(m0: number, m1: number, n: Vector3)
+		local best, bestN, bestKind = math.huge, nil :: Vector3?, 0
+		local function consider(m0: number, m1: number, n: Vector3, kind: number)
 			if m1 >= 0 then
 				return
 			end
@@ -246,21 +308,29 @@ function SplineWorld.new(spline: Spline.Spline, base: Model.World?): SplineWorld
 				t = m0 / (m0 - m1)
 			end
 			if t < best then
-				best, bestN = t, n
+				best, bestN, bestKind = t, n, kind
 			end
 		end
 		for i = 1, 6 do
 			local x0, z0 = fromPts[i * 2 - 1], fromPts[i * 2]
 			local x1, z1 = toPts[i * 2 - 1], toPts[i * 2]
-			if self.rails then
-				local s0, d0 = locate(x0, z0, hint)
-				local s1, d1 = locate(x1, z1, s0 or hint)
-				if s0 and d0 and s1 and d1 and wallAt(s1, d1, to.Y) then
-					local m0 = sideMargin(s0, d0)
-					local m1, n = sideMargin(s1, d1)
-					-- the same side of the road at both ends, or it is not one wall
-					if (d0 >= 0) == (d1 >= 0) then
-						consider(m0, m1, n)
+			local s0, d0 = locate(x0, z0, hint)
+			local s1, d1 = locate(x1, z1, s0 or hint)
+			-- the same side of the road at both ends, or it is not one wall
+			if s0 and d0 and s1 and d1 and (d0 >= 0) == (d1 >= 0) then
+				local side = if d1 >= 0 then 1 else -1
+				if sideWallStands(s1, d1, to.Y) then
+					local m0 = sideWall(s0, d0)
+					local m1, n = sideWall(s1, d1)
+					consider(m0, m1, n, KIND_SIDE)
+				end
+				-- a K-rail standing at both ends: whichever face the point started on
+				if kRailStands(s1, d1, to.Y) and spline:kRailAt(s0, side) then
+					local a0, a1 = math.abs(d0), math.abs(d1)
+					if a0 < half + railT * 0.5 then
+						consider(half - a0, half - a1, lateralNormal(s1, -side), KIND_KRAIL)
+					else
+						consider(a0 - half - railT, a1 - half - railT, lateralNormal(s1, side), KIND_KRAIL)
 					end
 				end
 			end
@@ -268,17 +338,17 @@ function SplineWorld.new(spline: Spline.Spline, base: Model.World?): SplineWorld
 			local c1, cn = closingMargin(x1, z1)
 			if c0 and c1 and cn then
 				if c0 > -CLOSING_DEPTH * 0.5 then
-					consider(c0, c1, cn) -- in front of it (or in its front half)
+					consider(c0, c1, cn, KIND_CLOSING) -- in front of it (or in its front half)
 				else
 					-- behind it: its back face is the wall, facing back down the road
-					consider(-CLOSING_DEPTH - c0, -CLOSING_DEPTH - c1, -cn)
+					consider(-CLOSING_DEPTH - c0, -CLOSING_DEPTH - c1, -cn, KIND_CLOSING)
 				end
 			end
 		end
 		if bestN then
-			return best, bestN
+			return best, bestN, bestKind
 		end
-		return nil, nil
+		return nil, nil, 0
 	end
 
 	function self.sweep(from: Vector3, to: Vector3, yaw: number): (Vector3?, Vector3?)
@@ -288,12 +358,14 @@ function SplineWorld.new(spline: Spline.Spline, base: Model.World?): SplineWorld
 		local travel = flat.Magnitude
 		local safe: Vector3?, normal: Vector3? = nil, nil
 		if travel > 1e-4 then
-			local t, n = firstContact(from, Vector3.new(to.X, from.Y, to.Z), yaw)
+			local t, n, kind = firstContact(from, Vector3.new(to.X, from.Y, to.Z), yaw)
 			if t and n then
 				local allowed = math.max(t * travel - C.WallPush, 0)
 				safe, normal = from + (flat / travel) * allowed, n
-				if self.closing and n:Dot(Vector3.new(-math.sin(spline:yawAt(self.closing)), 0, -math.cos(spline:yawAt(self.closing)))) > 0.999 then
+				if kind == KIND_CLOSING then
 					stats.closingStops += 1
+				elseif kind == KIND_KRAIL then
+					stats.kRailStops += 1
 				else
 					stats.wallStops += 1
 				end
@@ -315,16 +387,41 @@ function SplineWorld.new(spline: Spline.Spline, base: Model.World?): SplineWorld
 		footprint(pos, yaw, toPts)
 		local worst, worstN = 0, nil :: Vector3?
 		local hint = self.hint
+		local function take(depth: number, n: Vector3)
+			if depth > worst then
+				worst, worstN = depth, n
+			end
+		end
 		for i = 1, 6 do
 			local x, z = toPts[i * 2 - 1], toPts[i * 2]
-			if self.rails then
-				local s, d = locate(x, z, hint)
-				if s and d and wallAt(s, d, pos.Y) then
-					local m, n = sideMargin(s, d)
-					local depth = PENETRATION_MARGIN - m
-					if depth > worst then
-						worst, worstN = depth, n
+			local s, d = locate(x, z, hint)
+			if s and d then
+				local side = if d >= 0 then 1 else -1
+				if sideWallStands(s, d, pos.Y) then
+					local m, n = sideWall(s, d)
+					take(PENETRATION_MARGIN - m, n)
+				end
+				-- inside a K-rail: out of whichever of its four faces is nearest
+				local a, b = kRailStands(s, d, pos.Y)
+				local ad = math.abs(d)
+				if a and b and ad > half - PENETRATION_MARGIN and ad < half + railT + PENETRATION_MARGIN then
+					local stretch = math.max(0.2, 1 + spline:curvatureAt(s) * d)
+					local yawS = spline:yawAt(s)
+					local fwd = Vector3.new(-math.sin(yawS), 0, -math.cos(yawS))
+					local depth, dir = ad - half + PENETRATION_MARGIN, lateralNormal(s, -side)
+					local out = half + railT - ad + PENETRATION_MARGIN
+					if out < depth then
+						depth, dir = out, lateralNormal(s, side)
 					end
+					local back = (s - a) * stretch + PENETRATION_MARGIN
+					if back < depth then
+						depth, dir = back, -fwd
+					end
+					local ahead = (b - s) * stretch + PENETRATION_MARGIN
+					if ahead < depth then
+						depth, dir = ahead, fwd
+					end
+					take(depth, dir)
 				end
 			end
 			local c, cn = closingMargin(x, z)
@@ -332,12 +429,10 @@ function SplineWorld.new(spline: Spline.Spline, base: Model.World?): SplineWorld
 			if c and cn and c < PENETRATION_MARGIN and c > -CLOSING_DEPTH - PENETRATION_MARGIN then
 				local forward = PENETRATION_MARGIN - c
 				local back = c + CLOSING_DEPTH + PENETRATION_MARGIN
-				local depth, dir = forward, cn
 				if back < forward then
-					depth, dir = back, -cn
-				end
-				if depth > worst then
-					worst, worstN = depth, dir
+					take(back, -cn)
+				else
+					take(forward, cn)
 				end
 			end
 		end

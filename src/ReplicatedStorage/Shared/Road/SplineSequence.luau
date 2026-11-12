@@ -184,10 +184,10 @@ function SplineSequence.pieceAtS(self: Sequence, s: number): Piece?
 end
 
 -- Which piece a point is on, how far along it (0..1) and how far off the centre line,
--- unsigned. nil off the road altogether -- further from the centre line than the road and
--- its barriers and a margin, or not over live road at all.
+-- unsigned. nil off the road altogether -- further from the centre line than the road, the
+-- widest runoff and a margin (T-140), or not over live road at all.
 function SplineSequence.locate(self: Sequence, position: Vector3): (number?, number, number)
-	local reach = Config.Road.Width * 0.5 + Config.Road.BarrierThickness + 40
+	local reach = Config.Road.Width * 0.5 + Config.Spline.Terrain.RunoffMax + 30
 	local s, d = self.spline:project(position.X, position.Z, reach)
 	if not s or not d then
 		return nil, 0, math.huge

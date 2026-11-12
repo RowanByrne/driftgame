@@ -1,6 +1,6 @@
 # Feature: The test hill, the lift and the guardrail switch
 
-**Status:** **built** (`T-065` and `T-067`). **Owner task:** `T-065`, branch `agent/test-hill`.
+**Status:** **built** (`T-065` and `T-067`). **Owner task:** `T-065`, branch `agent/test-hill`. **The guardrail button is gone** (`T-140`, `features/mountain-road.md`): the run's road has no side barriers any more. The server switch (`SetBarriers`, `TestTools "rails"`) is still there for the hill and the old piece road, with nothing on screen calling it.
 
 Three things that exist for one reason: **let the user feel a hill.** The road descends now
 (`features/road-elevation.md`) and nobody could judge it, because the only way on to a graded road

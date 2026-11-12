@@ -8,8 +8,9 @@
 -- parabola, and nothing ever steps. `Road/Spline` is that maths; `Road/SplineGen` chooses
 -- the knots from a seed.
 --
--- THE ROAD'S CROSS-SECTION IS NOT HERE: width, barriers and colours are still
--- `Config.Road`'s, so the two roads stay the same road to look at.
+-- THE TARMAC'S WIDTH AND COLOURS are still `Config.Road`'s. What lies either side of it --
+-- the grass runoff, the rock face, hedge or cliff it ends in, the K-rails -- is `Terrain`
+-- below (features/mountain-road.md, T-140). The road has no side barriers any more.
 
 local Spline = {
 	-- --------------------------------------------------------------- sampling the curve
@@ -60,8 +61,9 @@ local Spline = {
 
 	-- --------------------------------------------------------------- no crossing
 	-- Two stretches of road that are not neighbours along the curve must keep their centre
-	-- lines this far apart in plan: a whole road's width, both barriers, and a gap.
-	ClearanceGap = 20, -- studs between the outer faces of the two barriers
+	-- lines this far apart in plan: the tarmac, the widest runoff and an edge either side,
+	-- and a gap (`SplineGen.limits`).
+	ClearanceGap = 20, -- studs between the outer faces of the two stretches' edges
 	-- The road keeps a general direction and may wander this far off it either way. A
 	-- hairpin can still swing it right round, but it can never spiral into itself.
 	HeadingLimit = 115, -- degrees either side of `Config.Road.StartHeading`
@@ -86,6 +88,47 @@ local Spline = {
 	},
 	RecentBends = 6, -- how many bends back the chooser counts
 	SwitchbackChance = 0.45, -- how often a bend is followed straight away by one the other way
+
+	-- --------------------------------------------------------------- the mountainside
+	-- What lies either side of the tarmac (features/mountain-road.md, T-140). Each side, at
+	-- every s: tarmac to `Config.Road.Width / 2`, then grass runoff, then an EDGE. Chosen by
+	-- the server with the curve (`SplineGen`), sent with each section, replayed by clients.
+	Terrain = {
+		-- THE RUNOFF: a strip of grass each side, its width eased (smoothstep) between knots
+		-- so nothing steps. Grass grips and scores as `Config.Drift.GripGrass` / `ScoreGrass`.
+		RunoffMin = 12, -- studs, about 2 car widths
+		RunoffMax = 40, -- studs, about 5
+		RunoffKnotEvery = { 120, 220 }, -- studs between two widths chosen
+		StartRunoff = 24, -- studs, both sides, on the straight a run begins with
+		-- On the inside of a bend the grass never reaches past this share of the way to the
+		-- bend's centre, so the inside of a hairpin keeps a strip, not a spike.
+		InsideShare = 0.6,
+		-- THE EDGES. A rock face and a hedge are walls at the runoff's outer edge; a cliff is
+		-- where the ground ends.
+		RockHeight = { 25, 60 }, -- studs. A look; to the car it is a wall
+		RockSlope = { 50, 70 }, -- degrees
+		HedgeHeight = 6, -- studs
+		HedgeThickness = 4, -- studs
+		CliffDrop = 80, -- studs the face is drawn down into haze
+		-- How far past the runoff an edge reaches, for keeping two stretches of road apart.
+		EdgeDepth = 4, -- studs: a hedge's thickness, and the foot of a rock face
+		-- WHICH SIDE IS UPHILL is kept for a long stretch, then swaps through a straight with
+		-- hedge both sides (the road crossing a ridge). Never in a bend.
+		UphillStretch = { 900, 2600 }, -- studs between two swaps
+		UphillHedgeChance = 0.2, -- per section: hedge instead of rock on the uphill side
+		DownhillHedgeChance = 0.15, -- per section: hedge instead of cliff on the downhill side
+		-- K-RAILS: concrete jersey barriers on the tarmac's edge, inner face exactly on it.
+		KRailHeight = 3, -- studs
+		KRailThickness = 2, -- studs
+		KRailRun = { 60, 300 }, -- studs
+		KRailBendChance = 0.5, -- on the outside of a bend whose outside is a cliff
+		KRailOtherChance = 0.08, -- per section, on either side, anywhere else
+		-- Programmer colours (the look is set with the next feature)
+		GrassColour = Color3.fromRGB(86, 140, 62),
+		HedgeColour = Color3.fromRGB(44, 92, 40),
+		RockColour = Color3.fromRGB(112, 108, 102),
+		KRailColour = Color3.fromRGB(200, 200, 194),
+	},
 
 	-- --------------------------------------------------------------- the mesh (step 3)
 	-- What each device draws (`Road/SplineMesh`, `Drift/SplineRoadView`). Purely visual.

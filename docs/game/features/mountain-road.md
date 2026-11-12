@@ -1,6 +1,6 @@
 # Feature: The mountain road
 
-**Status:** specced, waiting for the user's OK on the plan (`T-139`). **Owner task:** none yet.
+**Status:** building (`T-140`, lane 1, branch `feature/mountain-road`): step 1, grass, edges and K-rails to drive on (`T-141`), with a rough drawing; step 2 draws them properly. **Owner task:** `T-140`.
 
 ## Goal
 
