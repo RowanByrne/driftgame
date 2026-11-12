@@ -28,6 +28,7 @@ Drift is a car game about clean drifts. The player slides a low-poly car through
 | The car tuner | Eight sliders named for what the driver feels, live on the next simulation step, and a garage of saved cars. **Built — a dev tool, not a player feature** | `features/car-tuner.md` |
 | Track pieces and the endless road | Socket-to-socket pieces chosen against repetition, with a lookahead so the road cannot trap itself. **Specced, not built** | `features/track-generation.md` |
 | The spline road | The endless road as one continuous curve: bends of any radius, smooth crests and banking, a mesh to see and the curve's maths to drive on. **In progress** (`T-132`) | `features/spline-road.md` |
+| The mountain road | The spline road's setting: grass runoff, then a rock face, a hedge or a cliff drop, and K-rails in places; no side barriers. Japan's mountain roads first. **Specced** (`T-139`) | `features/mountain-road.md` |
 | Drift score and the multiplier ladder | Points from slip × speed × surface, and a 1–9 ladder. **Specced, deliberately not built** (`DECISIONS.md`) | `features/drift-model.md` "Score" |
 
 ## Progression

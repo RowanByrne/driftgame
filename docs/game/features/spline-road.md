@@ -306,6 +306,6 @@ None new. The mesh uses today's road colours and materials.
 
 ## Open questions
 
-- **The swap.** Whether the spline road replaces the piece road once it's driven, or both stay.
+- **The swap:** decided 2026-11-12. The spline run is the game's direction (DECISIONS.md); `features/mountain-road.md` makes it the default and takes its side barriers away.
 - **Shape mix.** How twisty the generator should be is tuning (`MinRadius`, the heading-change
   ranges). The first pass aims at today's road's mix of straights and corners.
