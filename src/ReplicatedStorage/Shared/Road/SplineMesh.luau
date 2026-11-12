@@ -47,6 +47,12 @@ local SplineMesh = {}
 
 local meshesOf: { [Model]: { EditableMesh } } = setmetatable({}, { __mode = "k" }) :: any
 
+-- THE CLIFFS' HAZE follows the sky (features/day-night.md, T-144): the colour ids each live
+-- mesh drew its haze with, so `setHaze` can recolour every drawn chunk in place, and the
+-- colour new chunks are drawn with.
+local hazeOf: { [EditableMesh]: { haze: number, mid: number } } = setmetatable({}, { __mode = "k" }) :: any
+local hazeColour: Color3? = nil -- nil: `Config.Spline.Terrain.HazeColour`
+
 export type Options = {
 	tolerance: number?,
 	maxStep: number?,
@@ -315,10 +321,12 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 		end
 		local T = Config.Spline.Terrain
 		local faceColours = {}
-		for name, c in { rock = T.RockColour, scrub = T.ScrubColour, cliff = T.CliffColour, haze = T.HazeColour } do
+		local haze = hazeColour or T.HazeColour
+		for name, c in { rock = T.RockColour, scrub = T.ScrubColour, cliff = T.CliffColour, haze = haze } do
 			faceColours[name] = em:AddColor(c, 1)
 		end
-		local cliffMid = em:AddColor(T.CliffColour:Lerp(T.HazeColour, 0.5), 1)
+		local cliffMid = em:AddColor(T.CliffColour:Lerp(haze, 0.5), 1)
+		hazeOf[em] = { haze = faceColours.haze, mid = cliffMid }
 		for _, side in { -1, 1 } do
 			-- one row of vertices per cut and kind, made the first time a face needs it
 			local rows: { [number]: { pts: { Vector3 }, ids: { number }, kind: number } } = {}
@@ -469,6 +477,7 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 		return { model = model, stats = stats, meshes = { road.em } }
 	end)
 	if not ok then
+		hazeOf[road.em] = nil
 		road.em:Destroy() -- never leak one of the eight
 		return nil, tostring(built)
 	end
@@ -479,6 +488,32 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 	return result.model, result.stats
 end
 
+-- Colour the foot of every cliff, in every chunk drawn and every chunk drawn from now on
+-- (`Controllers/SkyController`). Each mesh is rewritten, so call it when the colour has
+-- moved, not every frame. Returns how many meshes it recoloured.
+function SplineMesh.setHaze(colour: Color3): number
+	hazeColour = colour
+	local cliff = Config.Spline.Terrain.CliffColour
+	local count = 0
+	for em, ids in hazeOf do
+		local ok = pcall(function()
+			em:SetColor(ids.haze, colour)
+			em:SetColor(ids.mid, cliff:Lerp(colour, 0.5))
+		end)
+		if ok then
+			count += 1
+		else
+			hazeOf[em] = nil -- destroyed
+		end
+	end
+	return count
+end
+
+-- The haze colour new chunks are drawn with.
+function SplineMesh.haze(): Color3
+	return hazeColour or Config.Spline.Terrain.HazeColour
+end
+
 -- Take a chunk down, with the mesh data its parts are drawn from.
 function SplineMesh.destroy(model: Model)
 	local meshes = meshesOf[model]
@@ -486,6 +521,7 @@ function SplineMesh.destroy(model: Model)
 	model:Destroy()
 	if meshes then
 		for _, em in meshes do
+			hazeOf[em] = nil
 			em:Destroy()
 		end
 	end
