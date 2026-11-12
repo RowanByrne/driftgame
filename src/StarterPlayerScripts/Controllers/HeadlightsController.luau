@@ -6,10 +6,9 @@
 -- server's clock, so every client switches every car at the same moment and nothing is sent.
 --
 -- WHAT, per car in `Workspace.Cars`, this player's and everyone else's:
---   * the beams: a SpotLight per lamp, and a SurfaceLight under a long flat strip hung over
---     the road ahead to throw the light past a SpotLight's 60 studs, evenly
---     (`Config.DayNight.Headlights.Beams`), each in an invisible part of this client's own in
---     `Workspace.Headlights`, moved with the car every frame after the cars are drawn. NOTHING GOES INSIDE THE CAR (DECISIONS.md
+--   * the beams: a SpotLight per lamp (`Config.DayNight.Headlights.Lamps`), each in an
+--     invisible part of this client's own in `Workspace.Headlights`, moved to the car's nose
+--     every frame after the cars are drawn. NOTHING GOES INSIDE THE CAR (DECISIONS.md
 --     2026-11-03): the car is the server's and holds no Light.
 --   * the pop-up pods of a car rig (`PodL`, `PodR`) open through `CarParts.open`, which
 --     writes the part's state on this client's copy of the car (CONTRACTS.md "The car rig").
@@ -37,7 +36,7 @@ type Lens = { part: BasePart, material: Enum.Material, colour: Color3, glow: Col
 type State = {
 	car: Model,
 	beams: { BasePart },
-	spots: { Light },
+	spots: { SpotLight },
 	level: number, -- 0 out .. 1 full
 	on: boolean, -- what this car is switched to
 	lenses: { Lens }?, -- while glowing: what each lens was
@@ -90,12 +89,11 @@ local function body(car: Model): BasePart?
 	return if b and b:IsA("BasePart") then b else nil
 end
 
-local function makeBeam(car: Model, i: number): (BasePart, Light)
+local function makeBeam(car: Model, i: number): (BasePart, SpotLight)
 	local h = H()
-	local spec = h.Beams[i]
 	local part = Instance.new("Part")
 	part.Name = `Headlight{i}_{car.Name}`
-	part.Size = if spec.Strip then Vector3.new(spec.Strip.X, 0.2, spec.Strip.Y) else Vector3.new(0.2, 0.2, 0.2)
+	part.Size = Vector3.new(0.2, 0.2, 0.2)
 	part.Transparency = 1
 	part.Anchored = true
 	part.CanCollide = false
@@ -103,19 +101,10 @@ local function makeBeam(car: Model, i: number): (BasePart, Light)
 	part.CanTouch = false
 	part.CastShadow = false
 	part.Locked = true
-	local spot: SpotLight | SurfaceLight
-	if spec.Strip then
-		local surface = Instance.new("SurfaceLight")
-		surface.Face = Enum.NormalId.Bottom
-		surface.Angle = spec.Angle
-		spot = surface
-	else
-		local beam = Instance.new("SpotLight")
-		beam.Face = Enum.NormalId.Front
-		beam.Angle = spec.Angle
-		spot = beam
-	end
-	spot.Range = spec.Range or h.Range
+	local spot = Instance.new("SpotLight")
+	spot.Face = Enum.NormalId.Front
+	spot.Range = h.Range
+	spot.Angle = h.Angle
 	spot.Color = h.Colour
 	spot.Shadows = h.Shadows
 	spot.Brightness = 0
@@ -228,6 +217,7 @@ local movingFrames: { CFrame } = {}
 local function step(dt: number)
 	local h = H()
 	local night = SkyController:LightsOn()
+	local tilt = CFrame.Angles(-math.rad(h.Tilt), 0, 0)
 	local rate = if h.Fade > 0 then dt / h.Fade else 1
 	table.clear(movingParts)
 	table.clear(movingFrames)
@@ -250,15 +240,15 @@ local function step(dt: number)
 			end
 			continue
 		end
-		for i, beam in h.Beams do
+		for i, offset in h.Lamps do
 			if not state.beams[i] then
 				state.beams[i], state.spots[i] = makeBeam(car, i)
 			end
 			local spot = state.spots[i]
 			spot.Enabled = true
-			spot.Brightness = beam.Brightness * state.level
+			spot.Brightness = h.Brightness * state.level
 			table.insert(movingParts, state.beams[i])
-			table.insert(movingFrames, b.CFrame * CFrame.new(beam.At) * CFrame.Angles(-math.rad(beam.Tilt), 0, 0))
+			table.insert(movingFrames, b.CFrame * CFrame.new(offset) * tilt)
 		end
 	end
 	if #movingParts > 0 then

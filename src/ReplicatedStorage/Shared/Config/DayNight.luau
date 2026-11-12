@@ -67,34 +67,11 @@ return {
 		On = { Phase = "sunset", f = 0.6 }, -- the sun just under the horizon
 		Off = { Phase = "sunrise", f = 0.5 }, -- the sun on it
 		Fade = 0.6, -- s for a beam to come up to full, or go out
-		-- The beams, in the car's body frame (front -Z, right +X, studs from the body part's
-		-- centre; the road is about 2.4 under it).
-		--   At          where the beam starts (a strip: its centre)
-		--   Tilt        degrees it points down from level
-		--   Brightness  at full
-		--   Angle       degrees across the beam
-		--   Strip       (across, along) studs: instead of a SpotLight from a point, a SurfaceLight
-		--               from the underside of a flat strip this size hung over the road
-		--   Range       studs; `Range` below if not given
-		-- THE THROW: a SpotLight reaches 60 studs at most (Roblox's limit) and the user wanted
-		-- 2-3x that ("headlights need to shine farther"). Spotlights hung down the road made a
-		-- chain of separate pools, each with a hard cone edge ("quite off with the repeating
-		-- cones of light"), so the far light is ONE STRIP: a SurfaceLight lights from its whole
-		-- face, so the road under it is lit evenly, with no cone and no gap, out to ~160 studs.
-		Beams = {
-			-- one per lamp, just ahead of the liftback's lenses (measured in the lane), tipped
-			-- down a little so the near road is lit too
-			{ At = Vector3.new(-1.99, 0.3, -8.6), Tilt = 3, Brightness = 2, Angle = 70 },
-			{ At = Vector3.new(1.99, 0.3, -8.6), Tilt = 3, Brightness = 2, Angle = 70 },
-			-- the throw, two strips laid over each other: a wide one out to 100 studs and a
-			-- narrow one out to 160, so the light is brightest and widest near and thins as it
-			-- goes. THEIR RANGE IS THEIR SOFTNESS: a light stops dead at its Range, so a strip
-			-- whose Range only just reaches the road draws a hard line where it stops (the user:
-			-- "still clear delineations between beams", with Range 20). At 55 the light runs out
-			-- gradually past each strip's edge instead.
-			{ At = Vector3.new(0, 12, -65), Tilt = 0, Strip = Vector2.new(22, 70), Range = 55, Brightness = 0.5, Angle = 150 },
-			{ At = Vector3.new(0, 12, -105), Tilt = 0, Strip = Vector2.new(12, 110), Range = 55, Brightness = 0.45, Angle = 150 },
-		},
+		-- One beam per lamp, in the car's body frame (front -Z, right +X, studs from the body
+		-- part's centre): just ahead of the liftback's lenses, measured in the lane.
+		Lamps = { Vector3.new(-1.99, 0.3, -8.6), Vector3.new(1.99, 0.3, -8.6) },
+		Tilt = 6, -- degrees the beams point down from level, onto the road ahead
+		Brightness = 3,
 		Range = 60, -- studs; Roblox's most for a SpotLight
 		Angle = 70, -- degrees across the beam
 		Colour = Color3.fromRGB(255, 240, 210),
