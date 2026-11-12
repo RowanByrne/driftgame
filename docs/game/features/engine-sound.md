@@ -1,8 +1,9 @@
 # Feature: An engine that sounds like it's drifting
 
-**Status:** building (`T-123`, approved 2026-11-11). Step 2, the fake engine (`T-125`), is built
-and heard through today's single clip; step 1, the loops (`T-124`), waits on the user's pick; step
-3, the layered sound, follows it. **Owner task:** `T-123`, lane 1, `feature/drift-engine`.
+**Status:** built, for the user to hear (`T-123`, approved 2026-11-11). Step 1, our own
+synthesized loops (`T-124`), was picked and approved 2026-11-11; step 2, the fake engine (`T-125`),
+drives them; step 3, the layered sound (`T-129`), plays them from the uploaded sheet
+`132857262391195` since 2026-11-12. Roblox moderation was still reviewing it on upload. **Owner task:** `T-123`, lane 1, `feature/drift-engine`.
 
 ## Goal
 

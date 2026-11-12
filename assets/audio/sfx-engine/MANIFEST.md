@@ -8,7 +8,7 @@ crossfaded in the game by `Drift/EngineSound` from the fake engine's rpm and loa
 
 | File | What | SHA-256 | Status | Asset id |
 |---|---|---|---|---|
-| `engine-sheet.ogg` | All twelve loops in one 31.2 s mono file, 48 kHz Ogg Vorbis. Each loop sits in a 2.6 s slot, padded with a quarter second of itself on each side; the game plays each one's slice through `PlaybackRegion` and `LoopRegion` | `c75b153cdc74423dbe157050b05095d153a0910e6020cb0a7f559eb08956df7d` | **approved** by the user 2026-11-11 ("Use this set"); waiting on upload | (not uploaded) |
+| `engine-sheet.ogg` | All twelve loops in one 31.2 s mono file, 48 kHz Ogg Vorbis. Each loop sits in a 2.6 s slot, padded with a quarter second of itself on each side; the game plays each one's slice through `PlaybackRegion` and `LoopRegion` | `c75b153cdc74423dbe157050b05095d153a0910e6020cb0a7f559eb08956df7d` | **approved** by the user 2026-11-11 ("Use this set"); **uploaded** 2026-11-12 as Audio under user Byrned_FPS (3383554889) | `132857262391195` |
 | `engine-sheet-regions.json` | Each loop's rev point, load and region in the sheet, in seconds. Copied into `Config.Fx.Engine.Layers.Loops` | `e481915ac085ee3b374d1d42eb8f65ea7e425ec30e2a74e3648d7e82b7ddb2c5` | the master's record | |
 
 Rev points 900, 1370, 2090, 3190, 4860 and 7400 rpm, about 1.52x apart; each loop is a whole

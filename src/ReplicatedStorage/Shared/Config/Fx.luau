@@ -362,10 +362,10 @@ return {
 		-- slice is padded with a quarter second of itself either side in the file, so the
 		-- codec's smear at a region's edge is engine, not silence.
 		--
-		-- `SoundId = nil` KEEPS THE ONE CLIP above: the game works the same until the sheet
-		-- is uploaded. Built by `..\art\generated\sfx-engine\set-v1\build_set.py`.
+		-- `SoundId = nil` FALLS BACK TO THE ONE CLIP above (it was the game's sound until the sheet
+		-- was uploaded). Built by `..\art\generated\sfx-engine\set-v1\build_set.py`.
 		Layers = {
-			SoundId = nil :: string?, -- "rbxassetid://..." once the sheet is uploaded
+			SoundId = "rbxassetid://132857262391195" :: string?, -- engine-sheet.ogg, uploaded 2026-11-12
 			Volume = 0.84, -- the loops are normalised to an RMS of 0.16 and "Car idle" is
 			-- 0.29: 0.45 x 0.29 / 0.16 keeps the engine bed where it was
 			-- in the mix (AUDIO.md "Mix")
