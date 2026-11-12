@@ -1,6 +1,6 @@
 # Feature: The mountain road
 
-**Status:** building (`T-140`, lane 1, branch `feature/mountain-road`): step 1, grass, edges and K-rails to drive on (`T-141`), with a rough drawing; step 2 draws them properly. **Owner task:** `T-140`.
+**Status:** building (`T-140`, lane 1, branch `feature/mountain-road`). Step 1, grass, edges and K-rails to drive on (`T-141`), and step 2, drawing them (`T-142`), are built and waiting for the user's drive. **Owner task:** `T-140`.
 
 ## Goal
 
@@ -106,6 +106,10 @@ The road stays purely visual: the car still reads everything from the curve (`Sp
   too if the triangle budget holds, else as cheap non-colliding parts; the build measures which.
 - **Hedges and K-rails are plain parts,** one box per stretch of cross-section, pitched along the
   grade as the barriers were.
+- **Measured (T-142):** the rock and cliff faces fit in the chunk mesh. A chunk is about 1 700
+  triangles (940 before the faces), the window round the car about 8 600; a chunk builds in 7 ms
+  on average, 13 at worst. K-rails are 12-stud segments, white and grey in turn, on a wider foot.
+  A device that cannot make a mesh still draws the tarmac only.
 - **Nothing drawn collides.** As now.
 
 ## UI

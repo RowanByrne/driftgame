@@ -123,11 +123,17 @@ local Spline = {
 		KRailRun = { 60, 300 }, -- studs
 		KRailBendChance = 0.5, -- on the outside of a bend whose outside is a cliff
 		KRailOtherChance = 0.08, -- per section, on either side, anywhere else
+		KRailSegment = 12, -- studs: one jersey barrier, drawn white and grey in turn
+		KRailGap = 0.4, -- studs between two segments
 		-- Programmer colours (the look is set with the next feature)
 		GrassColour = Color3.fromRGB(86, 140, 62),
 		HedgeColour = Color3.fromRGB(44, 92, 40),
 		RockColour = Color3.fromRGB(112, 108, 102),
-		KRailColour = Color3.fromRGB(200, 200, 194),
+		ScrubColour = Color3.fromRGB(78, 104, 58), -- the ledge on top of a rock face
+		CliffColour = Color3.fromRGB(104, 96, 88),
+		HazeColour = Color3.fromRGB(196, 210, 222), -- the foot of a cliff fades into this
+		KRailColour = Color3.fromRGB(214, 214, 208),
+		KRailColourAlt = Color3.fromRGB(150, 152, 150),
 	},
 
 	-- --------------------------------------------------------------- the mesh (step 3)

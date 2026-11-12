@@ -8,12 +8,14 @@
 --
 -- A chunk is ONE MeshPart and some plain parts, in the piece road's materials and colours:
 --
---   Road        the surface: the tarmac and the grass runoff either side of it, coloured
---               by vertex: the mesh, because it curves, banks and twists
---   Edge_*      the mountainside's edge per cross-section either side: a tall grey box for
---               a rock face, a green one for a hedge, nothing for a cliff (T-140, rough:
---               the proper faces are the feature's next step)
---   KRail_*     a low concrete box per cross-section where a K-rail stands
+--   Road        ONE MESH, coloured by vertex (T-140): the tarmac, the grass runoff either
+--               side, and the faces of the mountainside -- a rock face rising from the
+--               grass, faceted, its height and lean changing along the road; a cliff face
+--               dropping from the grass's lip into haze. Faces are flat-shaded on purpose:
+--               very low poly, programmer colours
+--   Edge_*      a hedge: a green box per cross-section, at the grass's outer edge
+--   KRail_*     a K-rail segment every `KRailSegment` studs of its run, white and grey in
+--               turn, on a lower, wider foot (`KRailFoot_*`)
 --   Mark        a flat box per dash of the centre line, `MarkLift` above the surface
 --
 -- Only the surface is a mesh because a client may hold only eight EditableMeshes at once and
@@ -88,6 +90,57 @@ function SplineMesh.sections(spline: Spline.Spline, s0: number, s1: number, opts
 		end
 		s = math.min(s + step, s1)
 		table.insert(out, s)
+	end
+	return out
+end
+
+-- THE PROFILE OF AN EDGE'S FACE at `s` on `side`: the points of its cross-section, world
+-- space, from the grass's outer edge outward. The same on every device, from `s` alone.
+--
+--   ROCK   the foot on the grass, a jagged middle, the top at `RockHeight` leaning back at
+--          `RockSlope`, then a ledge of scrub. Height, lean and jag wander along the road on
+--          slow sines, so the face is never a wall of one height. On the inside of a bend the
+--          face is drawn steeper rather than reach past the bend's centre
+--   CLIFF  the lip, then a face dropping `CliffDrop` and stepping out a little as it goes
+local function wave(s: number, a: number, b: number): number
+	-- two slow sines with no common period: 0..1, smooth, the same everywhere
+	return 0.5 + 0.3 * math.sin(s / a) + 0.2 * math.sin(s / b + 1.7)
+end
+
+function SplineMesh.profile(spline: Spline.Spline, s: number, side: number, kind: number): { Vector3 }
+	local T = Config.Spline.Terrain
+	local w = Config.Road.Width * 0.5 + spline:runoffAt(s, side)
+	local x, z = spline:planAt(s)
+	local yaw = spline:yawAt(s)
+	local rx, rz = math.cos(yaw), -math.sin(yaw)
+	local y0 = spline:terrainY(s, side * w)
+	local pts: { { number } } -- {out, up}
+	if kind == Spline.ROCK then
+		local h = T.RockHeight[1] + (T.RockHeight[2] - T.RockHeight[1]) * wave(s + side * 311, 61, 23)
+		local lean = math.rad(T.RockSlope[1] + (T.RockSlope[2] - T.RockSlope[1]) * wave(s - side * 173, 43, 17))
+		local run = h / math.tan(lean)
+		local jag = 2.5 * (wave(s * 3.1, 7, 3) - 0.5)
+		pts = { { 0, 0 }, { run * 0.4 + jag, h * 0.45 }, { run, h }, { run + 14, h + 4 } }
+		-- the inside of a bend: never past 90% of the way to its centre
+		local k = spline:curvatureAt(s)
+		if k ~= 0 and (k > 0) == (side < 0) then
+			local room = 0.9 / math.abs(k) - w
+			local reach = pts[4][1]
+			if room < reach then
+				local scale = math.max(room, 0.5) / reach
+				for _, p in pts do
+					p[1] *= scale
+				end
+			end
+		end
+	else
+		local drop = T.CliffDrop
+		pts = { { 0, 0 }, { 1.5, -drop * 0.08 }, { 4, -drop * 0.45 }, { 7, -drop } }
+	end
+	local out = {}
+	for i, p in pts do
+		local d = side * (w + p[1])
+		out[i] = Vector3.new(x + d * rx, y0 + p[2], z + d * rz)
 	end
 	return out
 end
@@ -237,6 +290,77 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 			prevRow, prevNorm = row, norm
 		end
 
+		-- THE FACES OF THE MOUNTAINSIDE, in the same mesh: a client may hold only eight
+		-- EditableMeshes and the road's window uses six, so the faces cannot have meshes of
+		-- their own. Between each pair of cuts, on each side whose edge is a rock face or a
+		-- cliff, a few quads of the profile `SplineMesh.profile` gives, flat-shaded.
+		local em = road.em
+		-- FLAT-SHADED BUT SHARED: a face's normal and colour are set per face, so the
+		-- vertices of a row are shared by every face that touches them (a third of the
+		-- vertices, and a third of the cost, of a vertex per corner)
+		local function tri(a: number, b: number, c: number, pa: Vector3, pb: Vector3, pc: Vector3, colour: number, facing: Vector3)
+			local n = (pb - pa):Cross(pc - pa)
+			if n.Magnitude < 1e-9 then
+				return
+			end
+			if n:Dot(facing) < 0 then
+				b, c = c, b
+				n = -n
+			end
+			local f = em:AddTriangle(a, b, c)
+			local nid = em:AddNormal(n.Unit)
+			em:SetFaceNormals(f, { nid, nid, nid })
+			em:SetFaceColors(f, { colour, colour, colour })
+			road.triangles += 1
+		end
+		local T = Config.Spline.Terrain
+		local faceColours = {}
+		for name, c in { rock = T.RockColour, scrub = T.ScrubColour, cliff = T.CliffColour, haze = T.HazeColour } do
+			faceColours[name] = em:AddColor(c, 1)
+		end
+		local cliffMid = em:AddColor(T.CliffColour:Lerp(T.HazeColour, 0.5), 1)
+		for _, side in { -1, 1 } do
+			-- one row of vertices per cut and kind, made the first time a face needs it
+			local rows: { [number]: { pts: { Vector3 }, ids: { number }, kind: number } } = {}
+			local function rowAt(k: number, kind: number)
+				local row = rows[k]
+				if row and row.kind == kind then
+					return row
+				end
+				local pts = SplineMesh.profile(spline, cuts[k], side, kind)
+				local ids = table.create(#pts)
+				for i, p in pts do
+					ids[i] = em:AddVertex(p - centre)
+				end
+				road.vertices += #pts
+				row = { pts = pts, ids = ids, kind = kind }
+				rows[k] = row
+				return row
+			end
+			for k = 1, #cuts - 1 do
+				local a, b = cuts[k], cuts[k + 1]
+				local kind = spline:edgeAt((a + b) * 0.5, side)
+				if kind == Spline.ROCK or kind == Spline.CLIFF then
+					local ra, rb = rowAt(k, kind), rowAt(k + 1, kind)
+					-- a rock face faces the road; a cliff face faces out, over the drop
+					local yaw = spline:yawAt((a + b) * 0.5)
+					local outward = Vector3.new(side * math.cos(yaw), 0, -side * math.sin(yaw))
+					local facing = if kind == Spline.ROCK then -outward + Vector3.yAxis * 0.3 else outward
+					local pa, pb, ia, ib = ra.pts, rb.pts, ra.ids, rb.ids
+					for i = 1, #pa - 1 do
+						local colour
+						if kind == Spline.ROCK then
+							colour = if i == #pa - 1 then faceColours.scrub else faceColours.rock
+						else
+							colour = if i == 1 then faceColours.cliff elseif i == #pa - 1 then faceColours.haze else cliffMid
+						end
+						tri(ia[i], ia[i + 1], ib[i], pa[i], pa[i + 1], pb[i], colour, facing)
+						tri(ia[i + 1], ib[i + 1], ib[i], pa[i + 1], pb[i + 1], pb[i], colour, facing)
+					end
+				end
+			end
+		end
+
 		local model = Instance.new("Model")
 		model.Name = `Chunk_{math.floor(s0)}`
 		model:SetAttribute("S0", s0)
@@ -281,23 +405,33 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 				plain(name, Vector3.new(thick, height + sink, len + 0.2), CFrame.lookAt(mid, mid + chord, Vector3.yAxis), colour, material)
 			end
 		end
-		-- THE MOUNTAINSIDE, rough (T-140): the edge each side and any K-rails, a box per cut
-		local T = Config.Spline.Terrain
+		-- HEDGES: a green box per cut at the grass's outer edge (rock and cliff are faces in
+		-- the mesh, above)
 		for _, side in { -1, 1 } do
 			local tag = if side < 0 then "L" else "R"
 			for k = 1, #cuts - 1 do
 				local a, b = cuts[k], cuts[k + 1]
-				local kind = spline:edgeAt((a + b) * 0.5, side)
-				if kind ~= Spline.CLIFF then
+				if spline:edgeAt((a + b) * 0.5, side) == Spline.HEDGE then
 					local wa, wb = half + spline:runoffAt(a, side), half + spline:runoffAt(b, side)
-					if kind == Spline.ROCK then
-						wall(`Edge_{tag}_{k}`, a, b, side, wa, wb, T.HedgeThickness, T.RockHeight[1], R.Thickness, T.RockColour, Enum.Material.Slate)
-					else
-						wall(`Edge_{tag}_{k}`, a, b, side, wa, wb, T.HedgeThickness, T.HedgeHeight, R.Thickness, T.HedgeColour, Enum.Material.Grass)
-					end
+					wall(`Edge_{tag}_{k}`, a, b, side, wa, wb, T.HedgeThickness, T.HedgeHeight, R.Thickness, T.HedgeColour, Enum.Material.Grass)
 				end
-				if spline:kRailAt((a + b) * 0.5, side) then
-					wall(`KRail_{tag}_{k}`, a, b, side, half, half, T.KRailThickness, T.KRailHeight, 1, T.KRailColour, Enum.Material.Concrete)
+			end
+			-- K-RAILS: segments on a pattern from each run's own start, so a run drawn across
+			-- two chunks is the same segments in both; each clipped to this chunk
+			local seg = T.KRailSegment
+			local runs = spline:kRailsIn(s0, s1, side)
+			for r = 1, #runs, 2 do
+				local ra, rb = runs[r], runs[r + 1]
+				local i = math.max(0, math.floor((s0 - ra) / seg))
+				while ra + i * seg < math.min(rb, s1) do
+					local a = math.max(ra + i * seg, s0)
+					local b = math.min(ra + (i + 1) * seg - T.KRailGap, rb, s1)
+					if b - a > 0.05 then
+						local colour = if i % 2 == 0 then T.KRailColour else T.KRailColourAlt
+						wall(`KRail_{tag}_{math.floor(ra)}_{i}`, a, b, side, half, half, T.KRailThickness, T.KRailHeight, 1, colour, Enum.Material.Concrete)
+						wall(`KRailFoot_{tag}_{math.floor(ra)}_{i}`, a, b, side, half - 0.3, half - 0.3, T.KRailThickness + 0.6, 0.8, 1, colour, Enum.Material.Concrete)
+					end
+					i += 1
 				end
 			end
 		end

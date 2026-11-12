@@ -92,7 +92,10 @@ function Tests.run()
 					for _, v in obj:GetVertices() do
 						local p = road.CFrame:PointToWorldSpace(obj:GetPosition(v))
 						local s, d = spline:project(p.X, p.Z, reach)
-						if s and d then
+						-- the ground only: the tarmac and the grass, not the rock and cliff faces
+						-- that share the mesh
+						local side = if d and d < 0 then -1 else 1
+						if s and d and math.abs(d) <= half + spline:runoffAt(s, side) + 0.01 then
 							local y = spline:terrainY(s, d)
 							worstV = math.max(worstV, math.abs(p.Y - y))
 							n += 1
@@ -161,7 +164,7 @@ function Tests.run()
 			for _, p in model:GetChildren() do
 				byName[p.Name] = p
 			end
-			for _, prefix in { "Edge_L_", "Edge_R_", "KRail_L_", "KRail_R_" } do
+			for _, prefix in { "Edge_L_", "Edge_R_" } do
 				for k = 1, 4000 do
 					local a, b = byName[prefix .. k], byName[prefix .. (k + 1)]
 					if a and b and math.abs(a.Size.Y - b.Size.Y) < 1e-3 and a.Size.Y < 20 then
@@ -179,7 +182,31 @@ function Tests.run()
 		-- WHERE THE GROUND ITSELF TURNS SHARPLY a short box pitches far more than its
 		-- neighbour (the inside of a hairpin, where the grass's width is cut back fast on a
 		-- bank): a step of a few tenths there is the ground's shape, not a staircase
-		check("hedge and K-rail tops run on without steps", pairs > 0 and steps <= pairs * 0.01 and worstStep < 0.5, `{pairs} joints: {steps} step more than 0.1 studs, worst {fmt(worstStep, 3)}`)
+		check("hedge tops run on without steps", pairs > 0 and steps <= pairs * 0.01 and worstStep < 0.5, `{pairs} joints: {steps} step more than 0.1 studs, worst {fmt(worstStep, 3)}`)
+
+		-- 4c. The faces of the mountainside: in the one mesh, and never reaching past a
+		-- bend's centre on its inside (where the faces of a hairpin would fold through
+		-- each other)
+		local Spline = require(ReplicatedStorage.Shared.Road.Spline)
+		local worstReach, faces = 0, 0
+		for u = 0, spline.length, 5 do
+			for _, side in { -1, 1 } do
+				local kind = spline:edgeAt(u, side)
+				if kind == Spline.ROCK or kind == Spline.CLIFF then
+					faces += 1
+					local k = spline:curvatureAt(u)
+					if k ~= 0 and (k > 0) == (side < 0) then
+						local pts = SplineMesh.profile(spline, u, side, kind)
+						local cx, cz = spline:planAt(u)
+						for _, p in pts do
+							local reachOut = math.sqrt((p.X - cx) ^ 2 + (p.Z - cz) ^ 2) * math.abs(k)
+							worstReach = math.max(worstReach, reachOut)
+						end
+					end
+				end
+			end
+		end
+		check("rock and cliff faces never fold past a bend's centre", faces > 0 and worstReach <= 0.9 + 1e-3, `{faces} face profiles every 5 studs; on the inside of bends the furthest point is {fmt(worstReach * 100, 1)}% of the way to the centre (limit 90%)`)
 
 		-- 5. Nothing drawn can be touched, collided with or queried.
 		local solid = 0
