@@ -341,6 +341,10 @@ local function triangleSlab(
 	end
 end
 
+-- One triangle of road as wedge slabs, for anything else that lays road out of triangles:
+-- the spline road's parts copy and its fallback (`Road/SplineParts`, T-134).
+Builder.triangleSlab = triangleSlab
+
 -- Where the run's arc length had got to at the end of the last piece built. The window
 -- builds pieces in order (`RoadService.buildPiece`), so carrying one number is enough;
 -- anything else -- a piece built out of order, or piece 1 of a new run -- falls back to

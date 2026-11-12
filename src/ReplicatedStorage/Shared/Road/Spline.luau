@@ -451,9 +451,16 @@ function Spline.projectFrom(self: Spline, x: number, z: number, sHint: number): 
 	if s < first or s > self.length then
 		return nil, nil
 	end
+	-- NOT CONVERGED IS NOT FOUND. A hint hundreds of studs out walks the clamped steps and
+	-- runs out of them part way; the lateral at wherever it stopped is meaningless, and
+	-- answering with it put the ground 21 studs out (measured). The caller searches instead.
 	local cx, cz = self:planAt(s)
 	local yaw = self:yawAt(s)
-	return s, (x - cx) * math.cos(yaw) - (z - cz) * math.sin(yaw)
+	local ex, ez = x - cx, z - cz
+	if math.abs(ex * -math.sin(yaw) + ez * -math.cos(yaw)) > 1e-3 then
+		return nil, nil
+	end
+	return s, ex * math.cos(yaw) - ez * math.sin(yaw)
 end
 
 -- With no hint: the nearest filed point in the cells round (x, z), then Newton from it.
