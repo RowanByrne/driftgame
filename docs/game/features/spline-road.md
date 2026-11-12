@@ -1,6 +1,6 @@
 # Feature: The spline road
 
-**Status:** in progress: step 1 of 4 built (`T-133`, the curve maths). **Owner task:** `T-132`,
+**Status:** in progress: steps 1 and 2 of 4 built (`T-133` the curve maths, `T-134` collision). **Owner task:** `T-132`,
 branch `feature/spline-road`, lane 1. Built behind a switch, and merged only when the user has
 driven it there.
 
@@ -120,6 +120,28 @@ From there, everything is arithmetic:
 - **Cost:** a handful of cubic evaluations a step, against today's raycasts. Measured in the lane
   and written into this spec.
 
+**Built in step 2** (`T-134`): `Drift/SplineWorld`, which `DriftController:UseSpline` switches the
+car to. As planned, with three things learned building it:
+
+- **The car's box tilts with the road,** as `Drift/World` tilts it (`T-073`): on a bank its top
+  corner leans out past its wheels, so what meets the barrier is the box's shadow, not a flat
+  footprint. Without it the spline stopped the car up to 0.2 studs later than the parts did on a
+  10-degree bank. The footprint is six points, the corners and the middle of each long side,
+  because on the inside of a hairpin the barrier bulges in toward the car's middle.
+- **A lookup that does not converge is not an answer.** From a hint hundreds of studs out (a
+  respawn, a teleport) Newton runs out of steps; it now says so, and the world searches the
+  road's grid instead. Before that it put the ground 21 studs out.
+- **The closing barrier** is a plane across the road at its `s` (`setClosing`), and it never
+  switches off. The side barriers switch with the guardrail button (`setRails`).
+- **Measured cost:** a whole model step (autopilot included) **86 microseconds on the maths
+  against 495 on a parts copy** of the same road.
+
+**A spline road to drive in Studio** until the run lays one (step 4): the TEST ONLY panel's
+**SPLINE TEST ROAD** button (`SplineTestService`, Studio only). The server lays an 8 000-stud road
+far out on +X, sends the client its sections, and puts the car on it; what you see is the same road
+as parts nothing can touch (`Road/SplineParts`), standing in for step 3's mesh. A fall goes back on
+to it. The button again takes you back.
+
 ### The mesh, purely visual
 
 - **Built on each client, from the seed.** The server makes no road parts at all. Each client draws
@@ -189,8 +211,26 @@ None new. The mesh uses today's road colours and materials.
   | Same seed, same road; a client's replay of the sections | Identical knots; the replay is the same road to **0** studs |
   | Nearest point | From a hint: to 5e-12 studs; with no hint: 0 of 3 000 missed; against a brute-force scan every 0.02 studs: within 0.006 (the scan's own step) |
   | Ground height and normal | Height to 1e-12 studs; normal within 0.04 degrees of finite differences; nothing found 400 studs off the road |
-- **Collision against the old road:** the same drive on the spline world and on a part-built copy
-  of the same curve gives the same ground height and wall stops, within a tolerance.
+- **Collision against the old road** (`ServerScriptService/Tests/SplineWorldTests.luau`, 14
+  checks, about 3 s; it lays 2 600 studs of the road as 7 800 parts and takes them away again).
+  The yardstick is the game's own collision: `World.live`'s rays and sweeps on a parts copy of the
+  same curve, cut every 2 studs the way the piece road cuts its triangles. Measured in step 2:
+
+  | Check | Measured |
+  |---|---|
+  | Ground height, 3 000 points across the road | **0.06 studs** worst (the parts' own triangles; the piece road allows itself 0.3) |
+  | Ground normal | Mean **0.63 degrees**; worst 6.5 where the bank rolls on a grade through a bend and the surface twists, which a full-width triangle cannot follow |
+  | A 4-stud step into a barrier, 300 of them at 10..80 degrees | Stops within **0.13 studs** across the wall; 2 grazes the parts' sweep missed and its own overlap then caught; 0 disagreements |
+  | Barrier normal | Within 2 degrees (the parts are chords) |
+  | A car 0.2..0.9 studs inside a barrier, 183 of them | Pushed out as far to **0.06 studs** |
+  | The autopilot down 2 450 studs on each | Maths: all of it in 33.6 s, 0 steps off the road, 0 airborne. Parts: all of it in 32.9 s, 0 off, 0 airborne. The first 2.5 s are the same drive to 0.000 studs |
+  | Barriers off | The car leaves the road and falls (177 studs off, 136 below after 3 s); on, the barrier holds it |
+  | Closing barrier | A car driven back at it stops with its middle 7.6 studs in front (half the car is 7) |
+- **In a playtest** (`DR-Lane1`, the test road): the car lands on the curve with its ride height
+  0.005 studs off; every ground probe is answered by the maths (14 696 of 14 696); hands-off it
+  grinds along a barrier and never leaves the road; guardrails off, it went off the edge, fell,
+  asked for a respawn and was put back on the centre line further along; leaving puts it back in
+  the playground and removes the road. No errors in the console.
 - **In the lane:** a 10-minute scripted run with barriers on and off. Measure frame time, the cost
   of a collision step, mesh triangles and memory, chunk build time, and that no road part ever
   exists on the server. Then the user drives it there.

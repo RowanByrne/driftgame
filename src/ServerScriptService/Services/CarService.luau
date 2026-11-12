@@ -717,6 +717,17 @@ function CarService:Respawn(player: Player, to: CFrame?): CFrame?
 	-- allowed to end (features/endless-run.md "What a fall does").
 	local believed = self:BelievedPosition(player.UserId)
 	local cf = to
+	-- THE STUDIO SPLINE TEST ROAD (T-134) asks the same roster question: a fall there goes
+	-- back on to it. `SplineTestService` exists and answers only in Studio.
+	if not cf then
+		local test = service("SplineTestService")
+		if test and type(test.InTest) == "function" and test:InTest(player) then
+			local ok, onTest = pcall(test.SafeStart, test, believed)
+			if ok and typeof(onTest) == "CFrame" then
+				cf = onTest
+			end
+		end
+	end
 	if not cf then
 		local road = liveRoad()
 		if road and type(road.InRun) == "function" and type(road.SafeStart) == "function" then

@@ -48,6 +48,7 @@ local Trajectory = require(DriftFolder.Trajectory)
 local Suspension = require(DriftFolder.Suspension)
 local Wheels = require(DriftFolder.Wheels)
 local World = require(DriftFolder.World)
+local SplineWorld = require(DriftFolder.SplineWorld)
 
 local CarInputController = require(script.Parent.CarInputController)
 
@@ -270,13 +271,38 @@ end
 function DriftController:_rebuildWorld()
 	self.worldDirty = false
 	local old = self.world
-	self.world = World.live(self:_worldIgnore())
+	local live = World.live(self:_worldIgnore())
+	-- ON THE SPLINE ROAD the curve's maths answers first and the live world everywhere else
+	-- (features/spline-road.md, T-134). Off it, exactly the world it always was.
+	if self.spline then
+		local sw = SplineWorld.new(self.spline, live)
+		sw.setRails(self.splineRails ~= false)
+		self.world = sw
+	else
+		self.world = live
+	end
 	self.worldRebuilds += 1
 	if self.trajectory then
 		self.trajectory:SetWorld(self.world)
 	end
 	if old and old.destroy then
 		old.destroy()
+	end
+end
+
+-- Drive on a spline road (a `Road/Spline`), or nil to go back to the parts world. The road
+-- is the client's own copy, replayed from the server's sections.
+function DriftController:UseSpline(spline: any?)
+	self.spline = spline
+	self:_rebuildWorld()
+end
+
+-- The side barriers of the spline road, which switch off with the guardrail button.
+function DriftController:SetSplineRails(on: boolean)
+	self.splineRails = on == true
+	local w: any = self.world
+	if w and w.setRails then
+		w.setRails(self.splineRails)
 	end
 end
 
@@ -754,6 +780,35 @@ function DriftController:DebugState()
 		surfaceParts = self.world and self.world.surfaceCount or 0,
 		remoteCars = self.remoteCars and #self.remoteCars:DebugState() or 0,
 	}
+end
+
+-- Where the car is on the spline road, if it is on one (features/spline-road.md, T-134):
+-- its distance along the curve, its distance off the centre line, how far its ride height
+-- is off the surface, and what the spline world has answered so far.
+function DriftController:DebugSpline()
+	local spline = self.spline
+	local w: any = self.world
+	local s = self:CurrentState()
+	if not spline then
+		return { on = false }
+	end
+	local out: { [string]: any } = { on = true, length = spline.length, rails = w and w.rails, closing = w and w.closing }
+	if w and w.stats then
+		out.stats = table.clone(w.stats)
+	end
+	if s then
+		local along, across = spline:project(s.position.X, s.position.Z, Config.Road.Width * 0.5 + 400)
+		out.s, out.d = along, across
+		if along and across then
+			local y = spline:heightAt(along) + across * math.tan(spline:bankAt(along))
+			out.surfaceY = y
+			out.rideError = s.position.Y - (y + Config.Drift.RideHeight)
+			out.bankDeg = math.deg(spline:bankAt(along))
+			out.gradeDeg = math.deg(math.atan(spline:gradeAt(along)))
+			out.radius = if spline:curvatureAt(along) ~= 0 then 1 / spline:curvatureAt(along) else math.huge
+		end
+	end
+	return out
 end
 
 -- How far the drawn car is from where the simulation says it is, in studs, or -1 when
