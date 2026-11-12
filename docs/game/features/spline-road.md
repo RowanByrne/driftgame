@@ -1,7 +1,8 @@
 # Feature: The spline road
 
-**Status:** specced, waiting for the user's OK (`T-131`). **Owner task:** none yet. Built in a lane
-of its own, behind a switch, and merged only when the user has driven it there.
+**Status:** in progress: step 1 of 4 built (`T-133`, the curve maths). **Owner task:** `T-132`,
+branch `feature/spline-road`, lane 1. Built behind a switch, and merged only when the user has
+driven it there.
 
 ## Goal
 
@@ -38,15 +39,66 @@ and switching the barriers off still lets you drive off the edge and fall.
 
 ### The curve
 
-- **The generator lays control points, not pieces.** Each new point follows from the last by a
-  heading change, a climb and a bank, drawn within limits: no bend tighter than `MinRadius`, the
-  same `MaxGrade`, `MaxBank`, `MaxSurfaceTilt` and `MaxBankStep` the piece road obeys
-  (`Config.Road`), and the same bias against repeating itself.
-- **The road is a smooth spline through them** (a centripetal Catmull-Rom, or a cubic B-spline if
-  the curvature limits need it). Position, heading, grade and bank are continuous all along it.
-- **Seeded and deterministic,** as now. One seed is one road, on the server and on every client.
-- **It can't cross itself.** The look-ahead search the piece road uses becomes a check of the
-  curve's swept width against what's already laid, `LookAhead` points deep.
+**Built in step 1** (`T-133`): `Shared/Road/Spline` (the curve), `Shared/Road/SplineGen` (the
+generator), every number in `Shared/Config/Spline.luau`. Width, barriers and colours stay
+`Config.Road`'s.
+
+**Not control points, and that is the one change from the plan.** A Catmull-Rom or B-spline
+through control points has no arc length of its own, so "how far along am I" would need a table
+and a search, and its curvature is whatever falls out between the points, so `MinRadius` could
+only be checked, not kept. Instead the curve is described by **what it does along its own length**:
+three tracks of knots `(s, value)`, where `s` is plan arc length from the road's start.
+
+| Track | Between knots | So |
+|---|---|---|
+| Curvature (1/radius, + is left) | Straight line | Every bend eases in and out (a clothoid, as real roads are set out); the heading is its exact integral and has no kinks; `MinRadius` holds by construction |
+| Grade (dy/ds) | Straight line | Height is a piecewise parabola: crests and dips with no creases |
+| Bank (+ raises the right edge) | Smoothstep | The bank and its rate are both continuous, so the kerb never creases where a bank starts or stops (a straight-line bank put a 2.9-degree crease at the kerb, measured) |
+
+- **`s` is the parameter itself,** so the car's own `s` is its progress, and the ground under a
+  point is two or three Newton steps from last step's `s`: measured **3.3 microseconds** a query.
+- **The surface** is ruled along plan cross-sections: the point `d` studs right of the centre line
+  is `centre(s) + d x planRight(s) + (0, d x tan(bank), 0)`. That one formula is what the mesh is
+  drawn from and what the car stands on.
+- **The plan position** has no closed form for a clothoid, so it is integrated once (Simpson) and
+  kept every 4 studs; a query between samples integrates the last few studs itself. Measured
+  against an integration 16 times finer: 0.00006 studs out over 3 300 studs.
+- **Single precision is the floor, not the maths.** The road starts 20 000 studs out, where a
+  `Vector3` holds a position to about 0.002 studs. The maths is exact to 1e-11 in double precision;
+  anything that checks it uses `surfaceXYZ`, not `surface`.
+
+**The limits** sit inside the piece road's lids (`Config.Road`), at what the piece road actually
+drives rather than its ceilings, and the tests check both:
+
+| Limit | Value | The piece road's lid |
+|---|---|---|
+| Tightest bend | 70 studs, its hairpin | — |
+| Easing | 1/(70 x 45) per stud: 45 studs from straight into a hairpin | — |
+| Grade | 8 degrees, changing at most 0.0015 a stud | `MaxGrade` 20; `MaxPitchStep` 1.15 per 13-stud chord |
+| Height | Within -160..+160 studs of the start; the grade turns back before an edge | — |
+| Bank | 10 degrees (the touge decision, 2026-11-06), full at radius 160 or less, 30% of bends flat | `MaxBank` 30; `MaxBankStep` 1.5 per chord, matched exactly |
+| Lean | Measured worst 15.4 degrees at the kerb, normal Y 0.964 | `MaxSurfaceTilt` 35; a wall below 0.7 |
+
+**The generator lays sections, not pieces.** Each is a bend (one of four kinds, a radius, a
+direction, a turn) or a straight, with its grade and bank, easing in from the curvature the road
+already had. Hairpin 70-95 studs turning 120-195 degrees, tight, medium, and sweepers out to 900,
+chosen with **the piece road's bias** against whatever was used recently. Hairpins wait until 1 500
+studs in.
+
+- **It can't cross itself.** Every point of a new section keeps **74 studs** (road, both barriers
+  and a 20-stud gap) from every point of road that is not its neighbour along the curve, including
+  road laid long ago. Neighbours are points under 94 studs apart along the road: on the tightest
+  bend, those are already 74 apart in a straight line.
+- **It can't trap itself** without the piece road's deep look-ahead: a section is accepted only if
+  the road could straighten up after it and run 260 studs clear. If no random section passes in
+  14 tries, that escape is laid, and it was checked when the section before was accepted.
+- **A general direction.** The heading stays within 115 degrees of the start heading, so a hairpin
+  can swing the road right round but it never spirals.
+- **Seeded and deterministic, and the server chooses.** One seed is one road. But a client does
+  not re-run the choices: it gets the server's sections (a few knots each) and replays them. A
+  choice is a comparison, and a last-digit difference in `math.sin` between a phone and the
+  server could tip one the other way and give that phone a different road. Replaying the sections
+  gives the same road to 0 studs (measured), and the client still builds everything itself.
 - **Progress is distance along the curve** (arc length), not piece number. The window, "forward
   on new road", the closing barrier and the respawn point all read it.
 
@@ -94,8 +146,8 @@ None new. The run button and the score panel are unchanged.
 
 - **Server:** the seed, the curve, progress, respawn, the closing barrier. No road instances.
 - **Client:** the same curve from the same seed; the collision world; the meshes.
-- **The seed reaches clients** on the run's existing state (`RoadRun`), as an attribute the server
-  sets; a client never chooses it.
+- **The road reaches clients as the server's sections** ("The curve" above), not as a seed:
+  a few knots per section, on the run's state. A client never chooses anything. Step 4 builds it.
 
 ## Contracts
 
@@ -124,10 +176,19 @@ None new. The mesh uses today's road colours and materials.
 
 ## Testing
 
-- **Unit tests** (`SplineTests`): the same seed gives the same curve on the server and on a client;
-  position, heading, grade and bank are continuous (no jump between samples); no bend under
-  `MinRadius`; every limit holds over 50 km of road on five seeds; it never crosses itself; the
-  nearest point is within 0.01 studs of a brute-force search.
+- **Unit tests** (`ServerScriptService/Tests/SplineTests.luau`, pure, 27 checks in under 3 s):
+  `game.ServerStorage.DebugBridge:Invoke("DebugSplineTests", "run")`. Measured in step 1:
+
+  | Check | Measured |
+  |---|---|
+  | Every limit, 5 seeds x 20 000 studs (100 km), off the knots and sampled every stud | Tightest radius 70.2; easing, grade rate and bank rate exactly at their limits; grade 8.00; bank 10.00; height -158.7..159.9; worst lean 15.4 degrees |
+  | Continuous | 1 stud of road is 1 stud of plan to 8e-6; no heading change over a stud above the tightest bend's |
+  | Never crosses itself, brute force over every pair of points 4 studs apart (62 million pairs) | Closest non-neighbouring road **88.7 studs**, against 74 required |
+  | Never boxed in, 20 seeds x 30 000 studs | **0 stalls**, 0 escapes needed in 2 341 sections; mean 0.16 ms a section, worst 0.77 ms |
+  | Bends of every radius | 70..900 studs: 260 hairpins, 432 tight, 539 medium, 411 sweepers, 679 straights |
+  | Same seed, same road; a client's replay of the sections | Identical knots; the replay is the same road to **0** studs |
+  | Nearest point | From a hint: to 5e-12 studs; with no hint: 0 of 3 000 missed; against a brute-force scan every 0.02 studs: within 0.006 (the scan's own step) |
+  | Ground height and normal | Height to 1e-12 studs; normal within 0.04 degrees of finite differences; nothing found 400 studs off the road |
 - **Collision against the old road:** the same drive on the spline world and on a part-built copy
   of the same curve gives the same ground height and wall stops, within a tolerance.
 - **In the lane:** a 10-minute scripted run with barriers on and off. Measure frame time, the cost

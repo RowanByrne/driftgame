@@ -46,6 +46,7 @@ The car is **not** driven by Roblox's physics (`DECISIONS.md`, 2026-11-03). Its 
 | `CarModel` | The car's shape and dimensions, built by code, shared so the server and client agree |
 | `Cars` | Which archetype is active, how a key resolves, the live tune layer, the grip curve and the stat panel's data (`features/car-archetypes.md`) |
 | `Road/Pieces`, `Road/Generator`, `Road/Builder` | The endless road as pure maths -- what a piece is, the rotate-and-translate join, the sequence with its bias and lookahead -- and the builder that turns a placed piece into anchored parts |
+| `Road/Spline`, `Road/SplineGen` | The spline road (`T-132`, in progress) as pure maths: one continuous curve from curvature, grade and bank knots along arc length, the ground and normal under any point, and the seeded generator that lays it in sections with no crossing and no traps. `Config.Spline` holds its numbers |
 | `Cars/Garage` | The tuner's eight sliders **and every rule about what a tuned car may be**. Shared so the client draws from it and the server validates against it (`features/car-tuner.md`) |
 
 Loaders: `ServerScriptService/Main.luau` loads `Services/`, `StarterPlayerScripts/Client.luau` loads `Controllers/`. Both call `Init()` on every module in `Priority` order (highest first, nothing yields), then `Start()` on each in its own thread. A module that fails to load is warned about and skipped.
