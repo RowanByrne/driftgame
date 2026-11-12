@@ -3,9 +3,16 @@ local Players = game:GetService("Players")
 return {
 	Name = "unstuck",
 	Aliases = { "flip" },
-	Description = "Rights your car where it is: stopped, level, facing the way it faced, a little above the ground.",
+	Description = "Rights players' cars where they are: stopped, level, a little above the ground. Yours keeps the heading your screen shows. Anyone else's faces along the road if they're in a run, otherwise -Z (the server doesn't know which way their car points).",
 	Group = "Teleport",
-	Args = {},
+	Args = {
+		{
+			Type = "players",
+			Name = "players",
+			Description = "Who: names, me, all, others. Leave it out for yourself.",
+			Optional = true,
+		},
+	},
 	-- Where this client's simulation has the car, which is where the player sees it stuck.
 	Data = function()
 		local scripts = Players.LocalPlayer:FindFirstChild("PlayerScripts")

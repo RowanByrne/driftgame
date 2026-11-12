@@ -1,6 +1,6 @@
 return {
 	Name = "seed",
-	Description = "Shows the road's seed. With a seed, restarts your run on the road that seed lays (only when nobody else is on the road).",
+	Description = "Shows the road's seed. With a seed, lays the road again from that seed and puts everyone who was on it back at its start (with no road up, starts a run for you on it).",
 	Group = "Run",
 	Args = {
 		{

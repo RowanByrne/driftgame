@@ -1,41 +1,34 @@
 local Players = game:GetService("Players")
 
-local function controller(name: string)
-	return require(Players.LocalPlayer.PlayerScripts.Controllers[name])
+local function cmdr()
+	return require(Players.LocalPlayer.PlayerScripts.Controllers.CmdrController)
 end
 
+-- Runs on the caller's own client when it targets only them; otherwise the server sends it
+-- to each target's client (`speedServer`, `CmdrController:Act`).
 return {
 	Name = "speed",
-	Description = "Shows your car's speed, or sets it (studs/s) along the way the nose points, straight out of any slide. The car's own model takes it from there.",
+	Description = "Shows your car's speed, or sets players' speed (studs/s) along the way each nose points, straight out of any slide. Each car's model takes it from there.",
 	Group = "Car",
 	Args = {
 		{
+			Type = "players",
+			Name = "players",
+			Description = "Who: names, me, all, others. Leave it out for yourself.",
+			Optional = true,
+		},
+		{
 			Type = "number",
 			Name = "speed",
-			Description = "Studs a second. Leave it out to see the current speed.",
+			Description = "Studs a second, -1000 to 1000. Leave it out to see your own speed.",
 			Optional = true,
 		},
 	},
-	ClientRun = function(_context, speed: number?): string
-		local drift = controller("DriftController")
-		local state = drift:CurrentState()
-		if not state then
-			return "No car."
+	ClientRun = function(_context, players, speed): string?
+		local console = cmdr()
+		if console.onlyMe(players) then
+			return console:Act("speed", speed)
 		end
-		local Model = require(Players.LocalPlayer.PlayerScripts.Drift.Model)
-		if speed == nil then
-			return `Speed {string.format("%.1f", Model.speed(state))} studs/s.`
-		end
-		if not drift:IsDriving() then
-			return "Not driving: get in first."
-		end
-		if speed ~= speed or math.abs(speed) > 1000 then
-			return "Speed is -1000 to 1000 studs/s."
-		end
-		-- The state CurrentState() hands out is the simulation's own: velocity is the one
-		-- thing the model moves, and every other speed is read off it each step.
-		local forward = Model.axes(state.yaw)
-		state.velocity = forward * speed + Vector3.yAxis * state.velocity.Y
-		return `Speed set to {speed} studs/s.`
+		return nil
 	end,
 }

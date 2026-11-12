@@ -1,8 +1,13 @@
 return {
 	Name = "car",
-	Description = "Switches you into another car archetype, as the car button does. With no car named, lists them and says which you're in.",
+	Description = "Switches players into another car archetype, as the car button does. With no car named, lists the cars and says which each player is in.",
 	Group = "Car",
 	Args = {
+		{
+			Type = "players",
+			Name = "players",
+			Description = "Who: names, me, all, others.",
+		},
 		{
 			Type = "car",
 			Name = "car",

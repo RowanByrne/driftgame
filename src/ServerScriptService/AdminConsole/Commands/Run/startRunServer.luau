@@ -1,25 +1,27 @@
 local Ops = require(script.Parent.Parent.Parent.Ops)
 
-return function(context, seed: number?): string
-	local player = context.Executor
+return function(context, players: { Player }?, seed: number?): string
 	local road = Ops.need("RoadService")
-	if road:InRun(player) then
-		return `You're already in a run (seed {tostring(Ops.seed())}). end-run first, or seed <n> to restart on another road.`
-	end
 	local generated = false
 	if seed ~= nil then
 		if road:HasRoad() then
-			return `A road is already up (seed {tostring(Ops.seed())}) with {road:RunnerCount()} driver(s) on it. start-run with no seed joins it.`
+			return `A road is already up (seed {tostring(Ops.seed())}) with {road:RunnerCount()} driver(s) on it. Leave the seed out to join it, or seed <n> to restart it.`
 		end
 		road:Generate(seed)
 		generated = true
 	end
-	local cf = Ops.startRun(player)
-	if not cf then
-		if generated and road:RunnerCount() == 0 then
-			road:Stop()
+	local reply = Ops.forEach(context, players, function(player)
+		if road:InRun(player) then
+			return `Already in a run (seed {tostring(Ops.seed())}).`
 		end
-		return "The run didn't start (no car yet, or you're on the Studio spline test road)."
+		local cf = Ops.startRun(player)
+		if not cf then
+			return "The run didn't start (no car yet, or on the Studio spline test road)."
+		end
+		return `Run started on seed {tostring(Ops.seed())}, {Ops.placed(cf)}.`
+	end)
+	if generated and road:RunnerCount() == 0 then
+		road:Stop()
 	end
-	return `Run started on seed {tostring(Ops.seed())}, {Ops.placed(cf)}.`
+	return reply
 end

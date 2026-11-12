@@ -3,11 +3,12 @@
 -- requires this on the server and again on every client, so it reads only shared modules.
 --
 --   car        an archetype key (`Shared/Cars`)
---   place      where `tp` goes: a world, the garage, or a playground spot by name
+--   place      where `tp` goes: a world, the garage, a playground spot, or a player by name
 --   timeOfDay  a keyframe of the day-night cycle by name ("noon", "golden-hour"),
 --              "midnight", or an hour on the clock, 0 to 24
 --   roadMode   "pieces" or "spline"
 
+local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Cars = require(ReplicatedStorage.Shared.Cars)
@@ -65,13 +66,20 @@ return function(registry)
 
 	registry:RegisterType("roadMode", Util.MakeEnumType("road mode", { "pieces", "spline" }))
 
-	local findPlace = Util.MakeFuzzyFinder(PLACES)
+	-- The places, then every player in the server by name: `tp me Alex` goes to Alex.
+	local function findPlace(text: string, first: boolean?)
+		local names = table.clone(PLACES)
+		for _, player in Players:GetPlayers() do
+			table.insert(names, player.Name)
+		end
+		return Util.MakeFuzzyFinder(names)(text, first)
+	end
 	registry:RegisterType("place", {
 		Transform = function(text: string)
 			return text
 		end,
 		Validate = function(text: string)
-			return #text > 0, "Name a place: road, playground, track, garage, hill, or a playground spot."
+			return #text > 0, "Name a place: road, playground, track, garage, hill, a playground spot, or a player."
 		end,
 		Autocomplete = function(text: string)
 			return findPlace(text)

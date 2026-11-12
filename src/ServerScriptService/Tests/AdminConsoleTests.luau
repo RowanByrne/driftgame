@@ -95,6 +95,43 @@ function Tests.run()
 	end
 	check("rate: 20 a minute holds over 100 s of one a second", passed <= 40 and passed >= 20, tostring(passed))
 
+	-- Who a command acts on (`AdminConsole/Ops`), with the playtest's player as the caller
+	local Ops = require(ServerScriptService.AdminConsole.Ops)
+	local me = game:GetService("Players"):GetPlayers()[1]
+	if me then
+		local sent = {}
+		local context = {
+			Executor = me,
+			SendEvent = function(_, player, event, action, ...)
+				table.insert(sent, { player = player, event = event, action = action, args = { ... } })
+			end,
+		}
+		local list = Ops.targets(context, nil)
+		check("targets: left out is the caller", #list == 1 and list[1] == me)
+		list = Ops.targets(context, {})
+		check("targets: an empty list is the caller", #list == 1 and list[1] == me)
+		list = Ops.targets(context, { me, "junk" :: any, workspace :: any })
+		check("targets: anything that isn't a player is dropped", #list == 1 and list[1] == me, tostring(#list))
+		local reply = Ops.forEach(context, { me }, function(p)
+			return "done " .. p.Name
+		end)
+		check("forEach: the caller alone gets the bare reply", reply == "done " .. me.Name, reply)
+		reply = Ops.forEach(context, { me, me }, function()
+			return "ok"
+		end)
+		check("forEach: several targets get a line each", reply == `{me.Name}: ok\n{me.Name}: ok`, reply)
+		reply = Ops.forEach(context, { me, me }, function()
+			error("boom", 0)
+		end)
+		check("forEach: one target failing is reported, not thrown", string.find(reply, "failed: boom", 1, true) ~= nil, reply)
+		reply = Ops.sendAction(context, { me }, "scoreSet", 5, 2)
+		check(
+			"sendAction: one DriftAction per target, with its arguments",
+			#sent == 1 and sent[1].player == me and sent[1].event == "DriftAction" and sent[1].action == "scoreSet" and sent[1].args[1] == 5 and sent[1].args[2] == 2,
+			reply
+		)
+	end
+
 	-- The live registry, when a playtest has loaded Cmdr
 	if CmdrService.Cmdr then
 		local bad = {}
@@ -107,6 +144,8 @@ function Tests.run()
 		end
 		check("registry: every command has a group and a description", #bad == 0, table.concat(bad, ", "))
 		check("registry: the game's commands are registered", CmdrService.Cmdr.Registry:GetCommand("tp") ~= nil, `{count} commands`)
+		local tp = CmdrService.Cmdr.Registry:GetCommand("tp")
+		check("registry: tp takes players first", tp and tp.Args[1].Type == "players" and tp.Args[2].Type == "place", tp and tp.Args[1].Type)
 		check("registry: the skipped built-ins are absent", CmdrService.Cmdr.Registry:GetCommand("fetch") == nil and CmdrService.Cmdr.Registry:GetCommand("blink") == nil and CmdrService.Cmdr.Registry:GetCommand("thru") == nil)
 	end
 

@@ -1,13 +1,13 @@
 local Ops = require(script.Parent.Parent.Parent.Ops)
 
-return function(context): string
-	local player = context.Executor
+return function(context, target: Player?): string
+	local player = target or context.Executor
 	local cars = Ops.need("CarService")
 	local at = cars:BelievedPosition(player.UserId)
 	if not at then
-		return "The server hasn't placed your car yet."
+		return `The server hasn't placed {player.Name}'s car yet.`
 	end
-	local parts = { `At {Ops.v3(at)}, in the {tostring(cars:WorldAt(at))}` }
+	local parts = { `{player.Name}: at {Ops.v3(at)}, in the {tostring(cars:WorldAt(at))}` }
 	local road = Ops.service("RoadService")
 	local piece = road and road:PieceAt(at)
 	if piece then

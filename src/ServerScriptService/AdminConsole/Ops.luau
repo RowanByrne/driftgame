@@ -33,6 +33,56 @@ function Ops.need(name: string): any
 	return svc
 end
 
+-- WHO A COMMAND ACTS ON. A command's first argument is its targets (Cmdr's `players` type:
+-- names, `me`, `all`, `others`); left out, it is the caller. Players who left between typing
+-- and running are dropped.
+function Ops.targets(context, players: { Player }?): { Player }
+	local list = {}
+	if players == nil or #players == 0 then
+		list = { context.Executor }
+	else
+		for _, player in players do
+			if typeof(player) == "Instance" and player:IsA("Player") and player.Parent then
+				table.insert(list, player)
+			end
+		end
+	end
+	return list
+end
+
+-- Run `fn(player) -> reply` for each target. One target who is the caller: the reply as it is.
+-- Anyone else: a line per player, "Name: reply".
+function Ops.forEach(context, players: { Player }?, fn: (Player) -> string): string
+	local list = Ops.targets(context, players)
+	if #list == 0 then
+		return "Nobody to act on."
+	end
+	if #list == 1 and list[1] == context.Executor then
+		return fn(list[1])
+	end
+	local lines = {}
+	for _, player in list do
+		local ok, reply = pcall(fn, player)
+		table.insert(lines, `{player.Name}: {if ok then reply else "failed: " .. tostring(reply)}`)
+	end
+	return table.concat(lines, "\n")
+end
+
+-- Ask each target's own client to do something only it can (its car's speed, getting out,
+-- its score): Cmdr's `CmdrEvent`, handled by `CmdrController:Act`. Only ever sent from a
+-- command that has already passed the server's hook.
+function Ops.sendAction(context, players: { Player }?, action: string, ...: any): string
+	local names = {}
+	for _, player in Ops.targets(context, players) do
+		context:SendEvent(player, "DriftAction", action, ...)
+		table.insert(names, player.Name)
+	end
+	if #names == 0 then
+		return "Nobody to act on."
+	end
+	return `Sent {action} to {table.concat(names, ", ")}.`
+end
+
 function Ops.v3(v: Vector3?): string
 	if typeof(v) ~= "Vector3" then
 		return "?"

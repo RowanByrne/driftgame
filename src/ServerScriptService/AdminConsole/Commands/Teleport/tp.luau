@@ -1,12 +1,17 @@
 return {
 	Name = "tp",
-	Description = "Teleports your car: road (joins the run, or back on it), road <studs> (that far along the spline road; Studio only), playground, track, garage (drives you in), hill (the test hill's top), or any playground spot by name.",
+	Description = "Teleports players' cars: road (joins the run, or back on it), road <studs> (that far along the spline road; Studio only), playground, track, garage (drives in), hill (the test hill's top), any playground spot by name, or another player (beside their car, on their road if they're in a run). Leaving the road ends that player's run first.",
 	Group = "Teleport",
 	Args = {
 		{
+			Type = "players",
+			Name = "players",
+			Description = "Who to move: names, me, all, others.",
+		},
+		{
 			Type = "place",
 			Name = "place",
-			Description = "road, playground, track, garage, hill, or a playground spot (Spawn, Boulevard, RampBase...)",
+			Description = "road, playground, track, garage, hill, a playground spot (Spawn, Boulevard, RampBase...), or a player's name",
 		},
 		{
 			Type = "number",
