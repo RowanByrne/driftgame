@@ -68,6 +68,8 @@ Rocco's Workboard (`tools\rocco.bat`) is where the user hands over work and foll
 | `[answer]` | Answered a Stuck task's question | Carry on with their answer (to the worker, if one asked), and `set -Status working` |
 | `C-… [answer]` | Answered a question you asked them ("Talking to the user") | Carry on with it, then `clear C-…` |
 | `C-… [message]` | Wrote to you, or replied to one of your messages | `show C-…` if it's cut short, act on it, then `clear C-…` |
+| `C-… [message]` from Rocco itself (`show` says so) | Clicked Fix lanes: a lane with work in it went down (its place closed in Studio, or its Lync stopped), and Rocco is opening it again | Check that lane's place is open and syncing (`rocco.ps1 lanes` opens what isn't), have its worker redo what failed while it was down, then `clear C-…` |
+| `[stop]`, `[resume]`, `[restart]`, `[assign]` | Stepped in on a task from its card: Pause, Resume, Start again, or a lane or worker picked for it | Do what `show T-012` says for it: stop its worker and keep its branch; hand it out again; stop its worker and start a fresh one from what it left; or move it. Then `clear` |
 | `[reopen]` | Tested it: not right yet | Their words are the last `you` line in `show`. Fix it as a task again: with the worker that built it, if it's still there (below) |
 | `[followup]` | Added to a task while it ran | Fold it in, or pass it to the worker (below); then `clear`. A question about it ("are you stuck?"): answer on its card with `reply T-012 -Text "..."`, which leaves the card where it is. Never `set -Status ready` to answer: ready means built and checked |
 | `[merge]` | Approved a feature they tested in a lane | Merge its branch ("A round", step 4), then `clear` |
