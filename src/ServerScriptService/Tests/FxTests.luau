@@ -983,7 +983,7 @@ function Tests.run(opts)
 		local skid = SkidSound.new()
 		local engineOk = engine:Attach(rig)
 		local skidOk = skid:Attach(rig)
-		local wantSounds = 1 + #F.Built -- one engine, one squeal per built surface
+		local wantSounds = EngineSound.expectedInstances() + #F.Built -- the engine (1, or 12 layered), one squeal per built surface
 		local soundsBefore = engine:CountInstances() + skid:CountInstances()
 		check(
 			`a rig gets exactly {wantSounds} sounds, once`,
