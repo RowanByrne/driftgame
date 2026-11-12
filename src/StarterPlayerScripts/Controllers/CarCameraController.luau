@@ -105,9 +105,12 @@
 -- THE HILL PITCH (T-156) tips the rendered view about the car by a share of the road's grade
 -- (`HillPitchUp` climbing, `HillPitchDown` descending), eased at `HillPitchRate`, so a climb
 -- does not hide the road ahead. It reads the car's ground normal, never the camera's motion;
--- it runs before the pan and zoom and nothing upstream reads it. On flat ground, or with the
--- shares at zero, it does not run: the camera above, bit for bit. "Offsets ignore the car's
--- pitch" below still holds for the TARGETS; this is a separate, rendered-only layer.
+-- it runs before the pan and zoom and nothing upstream reads it. Its other half,
+-- `HillLookFollow`, IS in the targets: it carries part 1's eased look height up a steady
+-- climb with the road, because that easing alone left the look point 8 studs under a
+-- climbing car and the view pitched DOWN on hills. On flat ground, or with the shares at
+-- zero, neither runs: the camera above, bit for bit. "Offsets ignore the car's pitch"
+-- below still holds for the offsets themselves.
 --
 -- Every number is in Config.Camera; none is in here (T-071: they moved out of
 -- Config.Drift, name for name, because the camera is a look and not the model).
@@ -426,8 +429,11 @@ end
 -- share, so the camera does not stare at the tarmac.
 --
 -- THE GRADE IS THE ROAD'S, read off the car's smoothed ground normal (`view.up`, the
--- model's `state.up`), measured along the direction the camera looks -- not off the
--- camera's own motion, which would feed it its own swing. Eased on top at `HillPitchRate`.
+-- model's `state.up`), measured along the way the car is TRAVELLING -- not off the camera's
+-- own motion, which would feed it its own swing, and not along the view, which in a slide
+-- looks across the road and would read a banked corner as a hill (measured: 2 degrees of
+-- false grade swerving across a flat-but-banked stretch). At a crawl the travel means
+-- nothing, so the heading is blended in by speed. Eased on top at `HillPitchRate`.
 -- It is applied to the RENDERED camera before the pan and zoom, which then work on the
 -- tipped camera exactly as they did on the level one, and nothing above reads it. With
 -- every `HillPitch*` share at zero, or on flat ground, none of this runs.
@@ -442,16 +448,29 @@ local function viewFlat(rig, view: View): Vector3
 	return (DriftModel.axes(view.yaw))
 end
 
--- The road's grade ahead of the camera, in radians: + is climbing.
-local function hillGrade(up: Vector3?, flat: Vector3): number
+-- The way the car is going, flat: its travel, with the heading weighted in as if it were
+-- `HILL_HEADING_SPEED` studs/s of travel, so a standing car reads along its nose and a
+-- moving one along its path, with no switch between the two.
+local HILL_HEADING_SPEED = 8
+
+local function travelFlat(view: View): Vector3
+	local fwd = DriftModel.axes(view.yaw)
+	local v = Vector3.new(view.velocity.X, 0, view.velocity.Z) + fwd * HILL_HEADING_SPEED
+	return safeUnit(v, fwd)
+end
+
+-- The road's grade along the car's travel, in radians: + is climbing.
+local function hillGrade(up: Vector3?, along: Vector3): number
 	if not up or up.Y < 0.3 then
 		return 0 -- flat, or a normal no road has: leave the camera level
 	end
-	return math.atan2(-(up.X * flat.X + up.Z * flat.Z), up.Y)
+	return math.atan2(-(up.X * along.X + up.Z * along.Z), up.Y)
 end
 
-local function stepHill(rig, dt: number, view: View, flat: Vector3)
-	local grade = hillGrade(view.up, flat)
+local function stepHill(rig, dt: number, view: View)
+	-- Flat ground short-circuits before any arithmetic, so the camera there is bit for bit
+	-- the one without this.
+	local grade = if view.up == nil or view.up == Vector3.yAxis then 0 else hillGrade(view.up, travelFlat(view))
 	rig.hillGrade = grade
 	local share = if grade > 0 then Cam.HillPitchUp or 0 else Cam.HillPitchDown or 0
 	local lid = math.rad(math.max(Cam.HillPitchMax or 0, 0))
@@ -596,11 +615,19 @@ local function stepTargets(rig, view: View, dt: number)
 	-- (1) The look-at: ahead of the nose, with only its HEIGHT eased. A car cresting a
 	-- jump keeps the horizon still while the camera itself follows the car up.
 	local wantLook = carPoint(view, Cam.CamLookAt)
-	rig.lookTarget = Vector3.new(
-		wantLook.X,
-		rig.lookTarget.Y + (wantLook.Y - rig.lookTarget.Y) * ease(dt, Cam.CamHeightRate),
-		wantLook.Z
-	)
+	-- ON A HILL (T-156) the eased height is first carried up (or down) with the road: by the
+	-- climb the car's grade and speed make, `HillLookFollow` of it. Without this a steady
+	-- climb leaves the look point `climb / CamHeightRate` studs BELOW the car -- 8 studs at 90
+	-- studs/s up 5 degrees, measured as the view pitched 3.7 degrees further DOWN than on the
+	-- flat, which is what the user saw. The grade is the road's (the smoothed normal), not
+	-- the car's own vertical speed, so a bump or a jump is still eased exactly as before; on
+	-- flat ground `climb` is 0 and this is the line it always was.
+	local baseY = rig.lookTarget.Y
+	local follow = Cam.HillLookFollow or 0
+	if follow ~= 0 and view.up and view.up ~= Vector3.yAxis then
+		baseY += view.speed * math.tan(hillGrade(view.up, travelFlat(view))) * follow * dt
+	end
+	rig.lookTarget = Vector3.new(wantLook.X, baseY + (wantLook.Y - baseY) * ease(dt, Cam.CamHeightRate), wantLook.Z)
 
 	-- (2) The resting place: `|CamOffset|` from the car, in a direction that follows the
 	-- car round at `CamAngleRate`. The length is always the offset's own length, so easing
@@ -674,9 +701,10 @@ function CarCameraController._advance(rig, view: View, dt: number, pan): CFrame
 
 	-- The hill pitch (T-156), first of the rendered layers: the view tips with the road's
 	-- grade, and the pan and zoom then work on the tipped camera.
-	local flat = viewFlat(rig, view)
-	stepHill(rig, dt, view, flat)
-	applyHill(rig, view.position, flat)
+	stepHill(rig, dt, view)
+	if rig.hillPitch ~= 0 then
+		applyHill(rig, view.position, viewFlat(rig, view))
+	end
 
 	-- The player's own hand, LAST: downstream of every target, so the fixed-step feedback
 	-- above cannot see it and the camera is unchanged whenever nobody is panning.
