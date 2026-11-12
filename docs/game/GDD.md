@@ -30,6 +30,7 @@ Drift is a car game about clean drifts. The player slides a low-poly car through
 | The spline road | The endless road as one continuous curve: bends of any radius, smooth crests and banking, a mesh to see and the curve's maths to drive on. **In progress** (`T-132`) | `features/spline-road.md` |
 | The mountain road | The spline road's setting: grass runoff, then a rock face, a hedge or a cliff drop, and K-rails in places; no side barriers. Japan's mountain roads first. **Specced** (`T-139`) | `features/mountain-road.md` |
 | Sky and the day-night cycle | Roblox's own sky over the road, a 2-minute day and 2-minute night with 20-second sunrises and sunsets, the same for every player; headlights at night. **Specced** (`T-143`) | `features/day-night.md` |
+| The mountain horizon | Three layers of low-poly ridges and a snow peak round the endless run, always on the horizon, and a valley floor below the cliffs. **Specced** (`T-148`) | `features/horizon.md` |
 | Drift score and the multiplier ladder | Points from slip × speed × surface, and a 1–9 ladder. **Specced, deliberately not built** (`DECISIONS.md`) | `features/drift-model.md` "Score" |
 
 ## Progression
