@@ -9,8 +9,8 @@ Every task in progress and the files it owns, so parallel sessions and workers n
 
 | Branch | Lane | Files owned | Since |
 |---|---|---|---|
-| `agent/metal-guardrails` (T-149) | lane4 | `src/ReplicatedStorage/Shared/Road/SplineMesh.luau`, `src/ReplicatedStorage/Shared/Config/Spline.luau` (`KRail*` lines only), `src/ServerScriptService/Tests/SplineMeshTests.luau`, `docs/game/features/mountain-road.md` | 2026-11-12 |
-| `agent/camera-zoom` (T-152) | lane3 | `src/StarterPlayerScripts/Drift/Camera.luau` and `src/StarterPlayerScripts/Controllers/CarCameraController.luau` (whichever holds the camera), `src/ReplicatedStorage/Shared/Config/Camera.luau`, `docs/game/features/drift-camera.md` | 2026-11-12 |
+| `agent/stand-on-road` (T-154) | lane3 | `src/StarterPlayerScripts/Controllers/RoadGroundController.luau` (new), `src/StarterPlayerScripts/Controllers/SplineRoadController.luau`, `docs/game/features/mountain-road.md` | 2026-11-12 |
+| `agent/camera-hill-pitch` (T-156) | lane4 | `src/StarterPlayerScripts/Controllers/CarCameraController.luau`, `src/ReplicatedStorage/Shared/Config/Camera.luau`, `docs/game/features/drift-camera.md` | 2026-11-12 |
 
 ## Notes between sessions
 
