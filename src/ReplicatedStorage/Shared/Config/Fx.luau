@@ -10,7 +10,8 @@
 --
 -- WHAT READS WHAT:
 --   `Marks` and `Smoke` and `Surfaces`  Drift/Wheels   (T-062, built)
---   `Engine`                            Drift/EngineSound (T-064, built)
+--   `Engine`                            Drift/Engine (the fake rpm, T-125) and
+--                                       Drift/EngineSound (T-064, built)
 --   `Skid`                              Drift/SkidSound   (T-064, built)
 --   `Scrape`                            Drift/Scrape      (T-097, built)
 -- Every number of this feature is in this one file, sound and look alike.
@@ -306,20 +307,58 @@ return {
 		Scrape = "FxScrape", -- the one scrape `Sound`, on the body (T-097)
 	},
 
-	-- ------------------------------------------------------------------ engine (T-064)
-	-- One looping clip, pitched by a gearbox that does not exist: there is no engine model
-	-- and no RPM anywhere in this game (features/car-fx.md "Engine sound").
+	-- ------------------------------------------------------------------ engine (T-064, T-125)
+	-- A FAKE ENGINE the sound follows (`Drift/Engine`, features/engine-sound.md). The drive
+	-- never reads any of it: there is still no engine in the physics.
 	Engine = {
 		GearCount = 5, -- how many bands the speed range is cut into
 		GearLengthMultiplier = 1.5, -- each gear is this much longer than the one before.
 		-- At 5 gears the divisor is 13.1875, so a 179 studs/s
 		-- car shifts at about 13.6, 34, 64 and 110
-		GearOverlap = 10, -- studs/s. Half-width of the band two gears share (the
-		-- reference's 3 m/s). A car sitting on a shift point must not
-		-- machine-gun between two gears
+		GearOverlap = 10, -- studs/s. How far under a gear's bottom the speed must fall
+		-- before it shifts DOWN. Up is at the gear's top exactly
 		MinTimeInGear = 0.5, -- s since the last shift before another is allowed
-		PitchLerpSpeed = 1, -- /s the pitch chases its target. NEVER SNAPPED: the lerp
-		-- across the gap is the whole reason a shift sounds like one
+
+		-- The rpm (`Drift/Engine`). STARTING VALUES, set to be argued with by ear.
+		IdleRpm = 900,
+		ShiftRpm = 6800, -- rpm at a gear's top: where it upshifts. x1.5 gears drop it to
+		-- about 4 500 in the next
+		RedlineRpm = 7400, -- the limiter
+		RevUpRate = 8, -- /s the rpm chases a higher target (exponential)
+		RevDownRate = 6, -- /s it chases a lower one. A shift is this
+		LoadResponse = 12, -- /s the load (0 off throttle .. 1 on) chases its target
+
+		-- The drift. Wheel spin, a held gear, revs that do not fall.
+		DriftEnterDeg = 10, -- deg of slip before the ENGINE calls it a drift (the model
+		-- says 5, and a straight's corrections cross 5 all the time)
+		DriftMinSpeed = 15, -- studs/s. Slower than this a slide is not a drift to the engine
+		SpinGain = 0.6, -- the rear wheels run `1 + SpinGain * sin(slip)` times the road
+		DriftClimbRpm = 300, -- rpm/s the drift's floor climbs (it is a ratchet: it never
+		-- falls). A long drift finds the limiter, about 3 to 6 s in
+		EntryFlareRpm = 900, -- the clutch kick at a drift's start
+		FlareSeconds = 0.35, -- about how long it takes to settle
+		FeatherRpm = 350, -- rpm either way from feathering
+		FeatherSlipRate = 1.0, -- rad/s of slip change that is full feathering
+		FeatherResponse = 8, -- /s the feathering is smoothed at
+		HookUpSeconds = 0.6, -- leaving a drift: the extra revs ease away over about this,
+		-- and the gear stays held until it is up
+		TransitionSlipDeg = 12, -- deg of slip each side for a flick to count as one
+		TransitionLiftSeconds = 0.25, -- off throttle through a flick
+		TransitionWindowSeconds = 1.0, -- s from sideways one way to sideways the other for
+		-- it to count as a flick rather than two corners
+		ShiftLiftSeconds = 0.12, -- off throttle for an upshift
+
+		-- The limiter: the stutter at the top of a long drift.
+		LimiterHz = 10, -- cuts a second
+		LimiterDropRpm = 450, -- how far a cut lets the rpm fall
+		LimiterFallRate = 30, -- /s it falls at during a cut
+		BlipRpm = 700, -- a downshift's blip
+		BlipSeconds = 0.15,
+		-- THE ONE CLIP, until the layered loops (T-123 step 3): its pitch is the rpm's share
+		-- of IdleRpm .. RedlineRpm, lerped MinPitch .. MaxPitch, with NO smoothing of its own
+		-- -- the rpm has inertia already. The notes below are from when the pitch was road
+		-- speed through the gearbox (T-064); the sweep argument still holds.
+		OffLoadVolume = 0.7, -- share of `Volume` off throttle. A lift is heard as quieter
 		-- OURS, BOTH OF THEM. The reference's live on its car config and are not in the
 		-- decompile. What CAN be argued from numbers rather than from an ear:
 		--   * the sweep. 0.7 -> 2.2 is a ratio of 3.14, which is about what a real gear

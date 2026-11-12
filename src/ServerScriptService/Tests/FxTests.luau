@@ -11,7 +11,7 @@
 -- pure and say so: the one that builds a stand-in rig and counts its instances, and the
 -- one that drives a thousand frames through it and counts them again.
 --
--- Since T-064 it covers the SOUNDS too -- the gearbox, the pitch lerp and the squeal's
+-- Since T-064 it covers the SOUNDS too -- the gearbox, the engine note and the squeal's
 -- gate -- and the line between what a test can check and what only an ear can is worth
 -- stating plainly:
 --
@@ -43,6 +43,7 @@ local CarModel = require(ReplicatedStorage.Shared.CarModel)
 local Config = require(ReplicatedStorage.Shared.Config)
 
 local DriftFolder = StarterPlayer.StarterPlayerScripts:WaitForChild("Drift")
+local Engine = require(DriftFolder.Engine)
 local EngineSound = require(DriftFolder.EngineSound)
 local Model = require(DriftFolder.Model)
 local SkidSound = require(DriftFolder.SkidSound)
@@ -793,10 +794,10 @@ function Tests.run(opts)
 			"one gear per call, up and down"
 		)
 		check(
-			"pitch runs the full sweep inside every gear",
-			math.abs(EngineSound.pitchFor(tops, 1, 0) - E.MinPitch) < 1e-9
-				and math.abs(EngineSound.pitchFor(tops, E.GearCount, top) - E.MaxPitch) < 1e-9,
-			`{E.MinPitch} at the bottom of 1st, {E.MaxPitch} at the top of {E.GearCount}th`
+			"the clip's pitch runs MinPitch at idle to MaxPitch at the redline",
+			math.abs(EngineSound.pitchForShare(0) - E.MinPitch) < 1e-9
+				and math.abs(EngineSound.pitchForShare(1) - E.MaxPitch) < 1e-9,
+			`{E.MinPitch} at {E.IdleRpm} rpm, {E.MaxPitch} at {E.RedlineRpm} rpm`
 		)
 
 		-- THE SHIFT ITSELF: how far the pitch TARGET falls at each upshift, which is what
@@ -804,8 +805,13 @@ function Tests.run(opts)
 		-- shows up as a number rather than as "it stopped sounding like a shift".
 		local drops = {}
 		for i = 1, E.GearCount - 1 do
-			local at = tops[i] + E.GearOverlap
-			drops[i] = EngineSound.pitchFor(tops, i, at) - EngineSound.pitchFor(tops, i + 1, at)
+			-- The rpm the speed makes in each gear (Drift/Engine), as the clip's pitch.
+			local at = tops[i]
+			local function pitchAt(g)
+				local share = (Engine.roadRpm(tops, g, at) - E.IdleRpm) / (E.RedlineRpm - E.IdleRpm)
+				return EngineSound.pitchForShare(share)
+			end
+			drops[i] = pitchAt(i) - pitchAt(i + 1)
 		end
 		local smallest = math.huge
 		for _, d in drops do
@@ -1013,7 +1019,7 @@ function Tests.run(opts)
 		local top = Config.Drift.TopSpeed
 		local tops = EngineSound.gearTops(top, {})
 		local shiftAt, shiftTime = {}, {}
-		local lastShifts, elapsed = engine.shifts, 0
+		local lastShifts, elapsed = engine.engine.upshifts, 0
 		local maxPitchStep = 0
 		local pitchWas = engine.pitch
 
@@ -1024,9 +1030,9 @@ function Tests.run(opts)
 			local s = stateWith({ slipDeg = 0, speed = speed, throttle = 1 })
 			engine:Update(s, nil, DT)
 			skid:Update(s, nil, DT)
-			if engine.shifts ~= lastShifts then
-				lastShifts = engine.shifts
-				table.insert(shiftAt, engine.lastShiftSpeed)
+			if engine.engine.upshifts ~= lastShifts then
+				lastShifts = engine.engine.upshifts
+				table.insert(shiftAt, speed)
 				table.insert(shiftTime, elapsed)
 			end
 			maxPitchStep = math.max(maxPitchStep, math.abs(engine.pitch - pitchWas))
@@ -1076,12 +1082,12 @@ function Tests.run(opts)
 			e2:Attach(rig)
 			local flat = stateWith({ slipDeg = 0, speed = top, throttle = 1 })
 			local at, clock = {}, 0
-			local was = e2.shifts
+			local was = e2.engine.shifts
 			for _ = 1, 600 do
 				clock += DT
 				e2:Update(flat, nil, DT)
-				if e2.shifts ~= was then
-					was = e2.shifts
+				if e2.engine.shifts ~= was then
+					was = e2.engine.shifts
 					table.insert(at, clock)
 				end
 			end
@@ -1095,22 +1101,24 @@ function Tests.run(opts)
 			end
 			check(
 				"slammed from a standstill to top speed, the box still walks up one gear per debounce",
-				#at == E.GearCount - 1 and tightest >= E.MinTimeInGear - 1e-6 and e2.gear == E.GearCount,
+				#at == E.GearCount - 1 and tightest >= E.MinTimeInGear - 1e-6 and e2.engine.gear == E.GearCount,
 				`{#at} shifts at {table.concat(shown, ", ")} s; tightest {string.format("%.3f", tightest)} s `
-					.. `against {E.MinTimeInGear} s; ends in gear {e2.gear}`
+					.. `against {E.MinTimeInGear} s; ends in gear {e2.engine.gear}`
 			)
 			e2:Clear()
 		end
 
 		----------------------------------------------------------------------
-		-- Pitch is continuous: the lerp, not a snap.
+		-- Pitch is continuous: the rpm's inertia, not a snap. On a plain run (no
+		-- limiter) no frame moves the rpm more than its chase rate allows across the range.
 		----------------------------------------------------------------------
-		local bound = (E.MaxPitch - E.MinPitch) * E.PitchLerpSpeed * DT
+		local rate = math.max(E.RevUpRate, E.RevDownRate)
+		local bound = (E.MaxPitch - E.MinPitch) * rate * DT
 		check(
-			"the largest single-frame pitch change over the whole run is inside the lerp's bound",
+			"the largest single-frame pitch change over the whole run is inside the rpm's chase bound",
 			maxPitchStep <= bound + 1e-9,
 			`largest {string.format("%.5f", maxPitchStep)}, bound {string.format("%.5f", bound)} `
-				.. `= ({E.MaxPitch} - {E.MinPitch}) x {E.PitchLerpSpeed}/s x {string.format("%.4f", DT)} s`
+				.. `= ({E.MaxPitch} - {E.MinPitch}) x {rate}/s x {string.format("%.4f", DT)} s`
 		)
 		check(
 			"and the module's own measure agrees with the one taken here",
@@ -1119,18 +1127,25 @@ function Tests.run(opts)
 		)
 
 		----------------------------------------------------------------------
-		-- Airborne: the engine free-revs and the squeal cuts dead.
+		-- Airborne: the engine free-revs into the limiter and the squeal cuts dead.
 		----------------------------------------------------------------------
 		local air = stateWith({ slipDeg = 90, speed = 120, throttle = 1, airborne = true })
-		for _ = 1, 600 do -- ten seconds: the lerp is exponential and never arrives exactly
+		local cutsBefore = engine.engine.cuts
+		local lowest = math.huge
+		for frame = 1, 600 do
 			engine:Update(air, nil, DT)
 			skid:Update(air, nil, DT)
+			if frame > 120 then
+				lowest = math.min(lowest, engine.pitch)
+			end
 		end
+		local floorShare = (E.RedlineRpm - E.LimiterDropRpm - E.IdleRpm) / (E.RedlineRpm - E.IdleRpm)
+		local floorPitch = EngineSound.pitchForShare(floorShare)
 		check(
-			"airborne pitches to the ceiling and the squeal goes to nothing",
-			math.abs(engine.target - E.MaxPitch) < 1e-9 and math.abs(engine.pitch - E.MaxPitch) < 1e-3 and skid.volume < 1e-3,
-			`target {E.MaxPitch}, pitch {string.format("%.5f", engine.pitch)}, `
-				.. `skid {string.format("%.6f", skid.volume)} at 90 deg of slip in the air`
+			"airborne revs into the limiter and stays in its band, and the squeal goes to nothing",
+			engine.engine.cuts > cutsBefore and lowest >= floorPitch - 0.02 and skid.volume < 1e-3,
+			`{engine.engine.cuts - cutsBefore} cuts; lowest pitch after 2 s {string.format("%.3f", lowest)} `
+				.. `(limiter floor {string.format("%.3f", floorPitch)}), skid {string.format("%.6f", skid.volume)}`
 		)
 
 		----------------------------------------------------------------------
@@ -1221,9 +1236,9 @@ function Tests.run(opts)
 			`wanted {wasWanted} -> {skid.sounds[1].playing}; the instance {wasPlaying} -> `
 				.. `{skid.sounds[1].sound.IsPlaying} (quiet playtest: {skid:DebugState(nil).quiet})`
 		)
-		engine.gear = E.GearCount
+		engine.engine.gear = E.GearCount
 		engine:Cut()
-		check("Cut puts the gearbox back into first", engine.gear == 1, `gear {engine.gear}`)
+		check("Cut puts the gearbox back into first", engine.engine.gear == 1, `gear {engine.engine.gear}`)
 
 		engine:SetEnabled(false)
 		skid:SetEnabled(false)
@@ -1233,10 +1248,10 @@ function Tests.run(opts)
 		end
 		check(
 			"SetEnabled(false) is a real switch, and destroys nothing",
-			engine.target == E.MinPitch
+			engine.volume == 0
 				and skid.volume < 1e-3
 				and engine:CountInstances() + skid:CountInstances() == wantSounds,
-			`engine target {engine.target}, skid {string.format("%.6f", skid.volume)}, `
+			`engine volume {engine.volume}, skid {string.format("%.6f", skid.volume)}, `
 				.. `{engine:CountInstances() + skid:CountInstances()} sounds`
 		)
 		engine:SetEnabled(true)

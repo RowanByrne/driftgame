@@ -65,6 +65,7 @@ local ROWS = {
 	"slip",
 	"grip",
 	"drive",
+	"engine",
 	"ground",
 	"step",
 	"input",
@@ -503,6 +504,21 @@ function DebugHud:Update(state: DriftModel.State?, extra)
 		state.u,
 		state.v
 	)
+
+	-- The fake engine the sound follows (T-125). Sound only: the drive above never reads it.
+	local eng = extra and extra.engine
+	if eng then
+		L.engine.Text = ("engine %5.0f rpm  gear %d  throttle %4.2f  %s  %s"):format(
+			eng.rpm,
+			eng.gear,
+			eng.load,
+			if eng.inDrift then "DRIFT" else "-----",
+			if eng.cut then "LIMITER" else ""
+		)
+		L.engine.TextColor3 = if eng.cut then BRAKING elseif eng.inDrift then DRIFTING else INK
+	else
+		L.engine.Text = ""
+	end
 
 	local wheels = ""
 	for i, down in state.wheelsDown do
