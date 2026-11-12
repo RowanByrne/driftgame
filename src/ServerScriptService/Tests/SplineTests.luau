@@ -87,6 +87,12 @@ function parts.limits(check)
 		end
 	end
 	local tiltDeg = math.deg(math.acos(worst.minNy))
+	local R = Config.Road
+	check(
+		"the spline's limits sit inside the piece road's lids",
+		C.MaxGrade <= R.MaxGrade and C.MaxBank <= R.MaxBank and C.MaxBankRate <= R.MaxBankStep / R.MaxSegmentChord + 1e-12 and math.deg(math.atan(C.MaxGradeRate * R.MaxSegmentChord)) <= R.MaxPitchStep + 1e-3,
+		`grade {C.MaxGrade} of {R.MaxGrade} deg, bank {C.MaxBank} of {R.MaxBank} deg, bank rate {fmt(C.MaxBankRate, 4)} of {fmt(R.MaxBankStep / R.MaxSegmentChord, 4)} deg/stud, grade change {fmt(math.deg(math.atan(C.MaxGradeRate * R.MaxSegmentChord)), 3)} of {R.MaxPitchStep} deg per chord`
+	)
 	check("every road reached its length", short == 0, `{short} of {#SEEDS} seeds stalled short of {LIMIT_LENGTH} studs`)
 	check("no bend tighter than MinRadius", worst.k <= kMax + 1e-12, `tightest radius {fmt(1 / worst.k, 1)} studs, limit {C.MinRadius}`)
 	check("turn eases no faster than MaxCurvatureRate", worst.kRate <= C.MaxCurvatureRate * (1 + 1e-9), `worst {fmt(worst.kRate * 1e6, 2)}e-6 per stud, limit {fmt(C.MaxCurvatureRate * 1e6, 2)}e-6`)
@@ -272,6 +278,39 @@ function parts.project(check)
 	check("ground height is the surface's height", worstY < 1e-4, `worst {string.format("%.1e", worstY)} studs`)
 	check("ground normal is the surface's normal", worstN < 0.05, `worst {fmt(worstN, 4)} deg against finite differences`)
 	check("ground with no hint finds it too", misses == 0, `{misses} of 3000 missed`)
+	-- against a brute-force search: points scattered anywhere within the barriers, not built
+	-- from a known (s, d), and the nearest centre-line point found by scanning every 0.02 studs
+	local worstBrute = 0
+	for _ = 1, 300 do
+		local s = 200 + rng:NextNumber() * (sp.length - 400)
+		local d = (rng:NextNumber() * 2 - 1) * W / 2
+		local cx, _, cz = sp:surfaceXYZ(s, 0)
+		local yaw = sp:yawAt(s)
+		-- step off the cross-section too, so the point is not on one by construction
+		local jitter = (rng:NextNumber() * 2 - 1) * 6
+		local px = cx + d * math.cos(yaw) - jitter * math.sin(yaw)
+		local pz = cz - d * math.sin(yaw) - jitter * math.cos(yaw)
+		local sFound, dFound = sp:ground(px, pz, s + 20)
+		local best, bestS = math.huge, s
+		local t = s - 60
+		while t <= s + 60 do
+			local x, z = sp:planAt(t)
+			local dd = (x - px) ^ 2 + (z - pz) ^ 2
+			if dd < best then
+				best, bestS = dd, t
+			end
+			t += 0.02
+		end
+		if sFound and dFound then
+			local x, z = sp:planAt(sFound)
+			local mine = math.sqrt((x - px) ^ 2 + (z - pz) ^ 2)
+			worstBrute = math.max(worstBrute, mine - math.sqrt(best), math.abs(math.abs(dFound) - math.sqrt(best)))
+		else
+			worstBrute = math.huge
+		end
+	end
+	check("the nearest point agrees with a brute-force search", worstBrute < 0.01, `300 scattered points: worst {string.format("%.1e", worstBrute)} studs from scanning the centre line every 0.02 studs`)
+
 	-- off the road: nothing
 	local x, z = sp:planAt(3000)
 	local yaw = sp:yawAt(3000)
