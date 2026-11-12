@@ -169,6 +169,65 @@ paint()
 ask(nil)
 
 --------------------------------------------------------------------------------
+-- The spline test road (Studio only, T-134)
+--------------------------------------------------------------------------------
+-- A third button: lay a spline road far from everything and drive it, before the run
+-- uses one (`SplineTestService`, features/spline-road.md). The server chooses the road
+-- and sends its sections; this replays them into the client's own copy of the curve and
+-- hands it to `DriftController`, whose car then stands on the maths. The guardrail button
+-- switches its side barriers too, as it does the piece road's.
+local splineOn = false
+local splineButton: TextButton? = nil
+if RunService:IsStudio() then
+	local DriftController = require(Players.LocalPlayer:WaitForChild("PlayerScripts"):WaitForChild("Controllers"):WaitForChild("DriftController"))
+	local SplineGen = require(ReplicatedStorage.Shared.Road.SplineGen)
+	local splineRemote = Net.event("SplineTest")
+	local button = newButton("SplineRoad", "SPLINE TEST ROAD", EDGE + (HEIGHT + GAP) * 2)
+	splineButton = button
+	header.Position = UDim2.new(0, EDGE, 1, -(EDGE + (HEIGHT + GAP) * 3))
+
+	local function paintSpline()
+		button.Text = if splineOn then "LEAVE SPLINE ROAD" else "SPLINE TEST ROAD"
+		button.BackgroundColor3 = if splineOn then LIVE else TEST
+	end
+
+	button.Activated:Connect(function()
+		splineRemote:FireServer("toggle")
+	end)
+
+	splineRemote.OnClientEvent:Connect(function(answer)
+		if type(answer) ~= "table" then
+			return
+		end
+		local o = answer.origin
+		if answer.on == true and type(answer.sections) == "table" and type(o) == "table" then
+			local ok, spline = pcall(SplineGen.replay, answer.sections, { x = o.x, y = o.y, z = o.z, yaw = o.yaw })
+			if ok then
+				splineOn = true
+				DriftController:SetSplineRails(state.rails)
+				DriftController:UseSpline(spline)
+			else
+				warn(`[TestHud] the spline road's sections would not replay: {spline}`)
+			end
+		else
+			splineOn = false
+			DriftController:UseSpline(nil)
+		end
+		paintSpline()
+	end)
+
+	-- the guardrail button reaches the spline road's barriers too
+	tools.OnClientEvent:Connect(function(answer)
+		if type(answer) == "table" then
+			DriftController:SetSplineRails(answer.rails == true)
+		end
+	end)
+
+	paintSpline()
+	splineRemote:FireServer(nil)
+end
+
+--------------------------------------------------------------------------------
 -- The bridge
 --------------------------------------------------------------------------------
 
@@ -194,10 +253,16 @@ if RunService:IsStudio() then
 				railsSize = rails.AbsoluteSize,
 				displayOrder = gui.DisplayOrder,
 				zIndexBehavior = gui.ZIndexBehavior.Name,
+				splineOn = splineOn,
+				splineText = splineButton and splineButton.Text or nil,
 			}
 		elseif member == "DebugPress" then
 			-- Through the real handler, not past it: what a tap does.
 			local what = ...
+			if what == "spline" and splineButton then
+				Net.event("SplineTest"):FireServer("toggle")
+				return { wanted = what }
+			end
 			ask(what)
 			return { asked = asked, wanted = what }
 		end

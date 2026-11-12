@@ -86,6 +86,13 @@ local Spline = {
 	},
 	RecentBends = 6, -- how many bends back the chooser counts
 	SwitchbackChance = 0.45, -- how often a bend is followed straight away by one the other way
+
+	-- --------------------------------------------------------------- the Studio test road
+	-- `SplineTestService` (Studio only): a spline road to drive before the run lays one.
+	-- Far out on +X, clear of the track, the playground, the garage and the piece road.
+	TestOrigin = Vector3.new(30000, 0, -20000),
+	TestLength = 8000, -- studs
+	TestStandInStep = 6, -- studs between the stand-in's cross-sections (it is only to look at)
 }
 
 return Spline
