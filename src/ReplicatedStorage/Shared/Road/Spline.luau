@@ -28,6 +28,18 @@
 --
 -- Angles follow `Road/Pieces`: yaw 0 faces -Z, positive turns left,
 -- forward(yaw) = (-sin yaw, -cos yaw) and planRight(yaw) = (cos yaw, -sin yaw).
+--
+-- THE MOUNTAINSIDE (features/mountain-road.md, T-140). Either side of the tarmac, at every
+-- `s`: grass runoff, then an EDGE -- a rock face, a hedge or a cliff -- and here and there a
+-- K-rail on the tarmac's edge. Each is a few more knots per section, replayed like the rest:
+--
+--   runoff     studs of grass past the tarmac, one eased track per side. On the inside of
+--              a bend it is cut to `InsideShare` of the way to the bend's centre
+--   edge       which edge, as spans `(sEnd, kind)` per side: ROCK, HEDGE or CLIFF
+--   K-rails    runs `(s0, s1)` per side
+--
+-- A section that carries none of these (a test's hand-made road) gets no runoff and a hedge
+-- on both sides: a wall exactly where the old barriers stood.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -47,7 +59,25 @@ export type Section = {
 	g: { number }, -- grade
 	b: { number }, -- bank
 	tag: string?, -- what the generator meant it as ("Hairpin", "Straight", ...); unread by the maths
+	-- the mountainside, each optional (T-140):
+	rl: { number }?, -- left runoff width knots {ds, w, ...}, the last at `len`
+	rr: { number }?, -- right
+	el: { number }?, -- left edge spans {dsEnd, kind, ...}, the last ending at `len`
+	er: { number }?, -- right
+	kr: { number }?, -- K-rail runs {ds0, ds1, side, ...}, side -1 left, 1 right
 }
+
+-- The edge kinds, as they go over the wire.
+Spline.ROCK = 1
+Spline.HEDGE = 2
+Spline.CLIFF = 3
+
+-- What is under a point, from `Spline.groundKind`.
+Spline.TARMAC = 0
+Spline.GRASS = 1
+
+type Spans = { e: { number }, t: { number } } -- span ends, increasing, and each span's kind
+type Runs = { a: { number }, b: { number } } -- run starts (increasing) and ends
 
 type Track = {
 	s: { number }, -- knot positions, increasing
@@ -75,6 +105,12 @@ export type Spline = typeof(setmetatable(
 		cell: number,
 		hash: { [number]: { number } }, -- flat {s, x, z, s, x, z, ...} per cell
 		lastCheck: number, -- the last s filed in the hash
+		runL: Track?, -- runoff widths, made on the first section
+		runR: Track?,
+		edgeL: Spans,
+		edgeR: Spans,
+		railL: Runs,
+		railR: Runs,
 	},
 	Spline
 ))
@@ -186,6 +222,12 @@ function Spline.new(origin: Origin?): Spline
 		cell = C.HashCell,
 		hash = {},
 		lastCheck = -math.huge,
+		runL = nil,
+		runR = nil,
+		edgeL = { e = {}, t = {} },
+		edgeR = { e = {}, t = {} },
+		railL = { a = {}, b = {} },
+		railR = { a = {}, b = {} },
 	}, Spline)
 	return self
 end
@@ -318,15 +360,94 @@ local function appendTrack(t: Track, carry: { number }?, s0: number, knots: { nu
 	end
 end
 
+local function appendSpans(sp: Spans, s0: number, len: number, spans: { number }?)
+	if not spans then
+		table.insert(sp.e, s0 + len)
+		table.insert(sp.t, Spline.HEDGE)
+		return
+	end
+	for j = 1, #spans, 2 do
+		table.insert(sp.e, s0 + spans[j])
+		table.insert(sp.t, spans[j + 1])
+	end
+end
+
+local function appendRuns(sp: Spline, s0: number, runs: { number }?)
+	if not runs then
+		return
+	end
+	for j = 1, #runs, 3 do
+		local list = if runs[j + 2] < 0 then sp.railL else sp.railR
+		local a, b = s0 + runs[j], s0 + runs[j + 1]
+		local n = #list.a
+		list.a[n + 1], list.b[n + 1] = a, b
+	end
+end
+
+-- Is a section's mountainside well formed? Its knots inside it, its spans ending at its
+-- end, its edge kinds known, its runs inside it, in order and apart. Anything else is
+-- refused before any of it is laid, so a half-appended section never exists.
+local function checkTerrain(self: Spline, sec: Section)
+	local len = sec.len
+	for _, knots in { sec.rl, sec.rr } do
+		if knots then
+			assert(#knots >= 2 and #knots % 2 == 0 and math.abs(knots[#knots - 1] - len) < 1e-6, "Spline: runoff knots must end at the section's end")
+			local last = 0
+			for j = 1, #knots, 2 do
+				assert(knots[j] > last - 1e-9 and knots[j + 1] >= 0, "Spline: runoff knots in order, never negative")
+				last = knots[j]
+			end
+		end
+	end
+	for _, spans in { sec.el, sec.er } do
+		if spans then
+			assert(#spans >= 2 and #spans % 2 == 0 and math.abs(spans[#spans - 1] - len) < 1e-6, "Spline: edge spans must end at the section's end")
+			local last = 0
+			for j = 1, #spans, 2 do
+				local kind = spans[j + 1]
+				assert(spans[j] > last and (kind == Spline.ROCK or kind == Spline.HEDGE or kind == Spline.CLIFF), "Spline: edge spans in order, of a known kind")
+				last = spans[j]
+			end
+		end
+	end
+	local kr = sec.kr
+	if kr then
+		assert(#kr % 3 == 0, "Spline: K-rail runs come in threes")
+		local lastEnd = { [-1] = -math.huge, [1] = -math.huge }
+		local railEnd = { [-1] = self.railL.b[#self.railL.b], [1] = self.railR.b[#self.railR.b] }
+		for j = 1, #kr, 3 do
+			local a, b, side = kr[j], kr[j + 1], kr[j + 2]
+			assert(side == -1 or side == 1, "Spline: a K-rail run's side is -1 or 1")
+			assert(a >= 0 and b > a and b <= len + 1e-6, "Spline: a K-rail run must lie inside its section")
+			assert(a >= lastEnd[side] and (railEnd[side] == nil or self.length + a >= railEnd[side] - 1e-6), "Spline: K-rail runs on a side in order and apart")
+			lastEnd[side] = b
+		end
+	end
+end
+
 function Spline.append(self: Spline, sec: Section)
 	local s0 = self.length
 	local s1 = s0 + sec.len
 	for _, knots in { sec.k, sec.g, sec.b } do
 		assert(#knots >= 2 and math.abs(knots[#knots - 1] - sec.len) < 1e-6, "Spline: every track must end on a knot at the section's end")
 	end
+	checkTerrain(self, sec)
 	appendTrack(self.curv, self.yawK, s0, sec.k)
 	appendTrack(self.grade, self.yK, s0, sec.g)
 	appendTrack(self.bank, nil, s0, sec.b)
+	-- the mountainside. A runoff track starts at whatever the first section asks for
+	if not self.runL then
+		self.runL = newTrack(if sec.rl then sec.rl[2] else 0, true)
+	end
+	if not self.runR then
+		self.runR = newTrack(if sec.rr then sec.rr[2] else 0, true)
+	end
+	local runL, runR = self.runL :: Track, self.runR :: Track
+	appendTrack(runL, nil, s0, sec.rl or { sec.len, runL.v[#runL.v] })
+	appendTrack(runR, nil, s0, sec.rr or { sec.len, runR.v[#runR.v] })
+	appendSpans(self.edgeL, s0, sec.len, sec.el)
+	appendSpans(self.edgeR, s0, sec.len, sec.er)
+	appendRuns(self, s0, sec.kr)
 	self.length = s1
 	self.sections += 1
 	local step = self.step
@@ -405,6 +526,167 @@ function Spline.frame(self: Spline, s: number, lift: number?): CFrame
 	local right = fwd:Cross(up).Unit
 	local pos = Vector3.new(x, self:heightAt(s), z) + up * (lift or 0)
 	return CFrame.fromMatrix(pos, right, right:Cross(fwd))
+end
+
+--------------------------------------------------------------------------------
+-- The mountainside: runoff, edges, K-rails, and the ground past the tarmac (T-140)
+--------------------------------------------------------------------------------
+
+-- Studs of grass past the tarmac on `side` (-1 left, 1 right) at `s`, as chosen.
+function Spline.runoffRaw(self: Spline, s: number, side: number): number
+	local t = if side < 0 then self.runL else self.runR
+	if not t then
+		return 0
+	end
+	return (valueAt(t, s))
+end
+
+-- The same, cut on the inside of a bend to `InsideShare` of the way to the bend's centre.
+-- k > 0 turns left, so its inside is the left (-1).
+function Spline.runoffAt(self: Spline, s: number, side: number): number
+	local w = self:runoffRaw(s, side)
+	local k = self:curvatureAt(s)
+	if k ~= 0 and (k > 0) == (side < 0) then
+		local limit = Config.Spline.Terrain.InsideShare / math.abs(k) - Config.Road.Width * 0.5
+		if w > limit then
+			w = math.max(limit, 0)
+		end
+	end
+	return w
+end
+
+-- Which edge ends `side` at `s`: ROCK, HEDGE or CLIFF.
+function Spline.edgeAt(self: Spline, s: number, side: number): number
+	local sp = if side < 0 then self.edgeL else self.edgeR
+	local e = sp.e
+	local n = #e
+	if n == 0 then
+		return Spline.HEDGE
+	end
+	if s >= e[n] then
+		return sp.t[n]
+	end
+	local lo, hi = 1, n
+	while lo < hi do
+		local mid = (lo + hi) // 2
+		if e[mid] >= s then
+			hi = mid
+		else
+			lo = mid + 1
+		end
+	end
+	return sp.t[lo]
+end
+
+-- The K-rail run standing on `side` at `s`, as its start and end, or nil.
+function Spline.kRailAt(self: Spline, s: number, side: number): (number?, number?)
+	local r = if side < 0 then self.railL else self.railR
+	local a = r.a
+	local n = #a
+	if n == 0 or s < a[1] then
+		return nil, nil
+	end
+	local lo, hi = 1, n
+	while lo < hi do
+		local mid = (lo + hi + 1) // 2
+		if a[mid] <= s then
+			lo = mid
+		else
+			hi = mid - 1
+		end
+	end
+	if s <= r.b[lo] then
+		return a[lo], r.b[lo]
+	end
+	return nil, nil
+end
+
+-- Every K-rail run on `side` that overlaps [s0, s1], as a flat {a, b, a, b, ...}.
+function Spline.kRailsIn(self: Spline, s0: number, s1: number, side: number): { number }
+	local r = if side < 0 then self.railL else self.railR
+	local out = {}
+	for i = 1, #r.a do
+		if r.a[i] > s1 then
+			break
+		end
+		if r.b[i] >= s0 then
+			table.insert(out, r.a[i])
+			table.insert(out, r.b[i])
+		end
+	end
+	return out
+end
+
+-- The ground's height at (s, d), across the whole cross-section. On the tarmac it is the
+-- road's own surface. Past it the grass FOLLOWS THE BANK AND EASES FLAT: its slope across
+-- starts at the road's (tan bank) and falls away to nothing at the runoff's outer edge, so
+-- a banked road's grass never lips up into a ramp. Past the runoff it holds that height:
+-- the foot of a hedge or a rock face. (Past a cliff's lip there is nothing; that is
+-- `groundKind`'s answer, not this one's.)
+function Spline.terrainY(self: Spline, s: number, d: number): number
+	local half = Config.Road.Width * 0.5
+	local tb = math.tan(self:bankAt(s))
+	local a = math.abs(d)
+	if a <= half then
+		return self:heightAt(s) + d * tb
+	end
+	local side = if d < 0 then -1 else 1
+	local w = self:runoffAt(s, side)
+	local e = a - half
+	local off
+	if e >= w then
+		off = w * 0.5
+	else
+		off = e - e * e / (2 * w)
+	end
+	return self:heightAt(s) + side * tb * (half + off)
+end
+
+function Spline.terrainXYZ(self: Spline, s: number, d: number): (number, number, number)
+	local x, z = self:planAt(s)
+	local yaw = self:yawAt(s)
+	return x + d * math.cos(yaw), self:terrainY(s, d), z - d * math.sin(yaw)
+end
+
+-- The ground's normal at (s, d). On the tarmac, the exact one (`normalAt`); past it, from
+-- the ground half a stud either side of the point, along and across.
+function Spline.terrainNormal(self: Spline, s: number, d: number): Vector3
+	if math.abs(d) <= Config.Road.Width * 0.5 then
+		return self:normalAt(s, d)
+	end
+	local e = 0.5
+	local ax, ay, az = self:terrainXYZ(s - e, d)
+	local bx, by, bz = self:terrainXYZ(s + e, d)
+	local cx, cy, cz = self:terrainXYZ(s, d - e)
+	local dx, dy, dz = self:terrainXYZ(s, d + e)
+	local along = Vector3.new(bx - ax, by - ay, bz - az)
+	local across = Vector3.new(dx - cx, dy - cy, dz - cz)
+	local n = across:Cross(along)
+	if n.Magnitude < 1e-9 then
+		return Vector3.yAxis
+	end
+	if n.Y < 0 then
+		n = -n
+	end
+	return n.Unit
+end
+
+-- What is underfoot at (s, d): TARMAC, GRASS, or nil past a cliff's lip, where there is
+-- nothing. Past a rock face or a hedge the grass carries on under it.
+function Spline.groundKind(self: Spline, s: number, d: number): number?
+	local half = Config.Road.Width * 0.5
+	local a = math.abs(d)
+	if a <= half then
+		return Spline.TARMAC
+	end
+	local side = if d < 0 then -1 else 1
+	if a - half <= self:runoffAt(s, side) then
+		return Spline.GRASS
+	end
+	if self:edgeAt(s, side) == Spline.CLIFF then
+		return nil
+	end
+	return Spline.GRASS
 end
 
 --------------------------------------------------------------------------------

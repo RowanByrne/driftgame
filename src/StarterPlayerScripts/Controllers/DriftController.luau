@@ -277,7 +277,6 @@ function DriftController:_rebuildWorld()
 	-- (features/spline-road.md, T-134). Off it, exactly the world it always was.
 	if self.spline then
 		local sw = SplineWorld.new(self.spline, live)
-		sw.setRails(self.splineRails ~= false)
 		sw.setClosing(self.splineClosing)
 		self.world = sw
 	else
@@ -305,25 +304,12 @@ function DriftController:UseSpline(spline: any?)
 	self.splineClosing = nil
 	if spline then
 		self.splineView = SplineRoadView.new(spline)
-		self.splineView:SetRails(self.splineRails ~= false)
 	end
 	self:_rebuildWorld()
 end
 
--- The side barriers of the spline road, which switch off with the guardrail button.
-function DriftController:SetSplineRails(on: boolean)
-	self.splineRails = on == true
-	local w: any = self.world
-	if w and w.setRails then
-		w.setRails(self.splineRails)
-	end
-	if self.splineView then
-		self.splineView:SetRails(self.splineRails)
-	end
-end
-
 -- The closing barrier across the spline road behind the run's window, or nil for none
--- (T-136). It never switches off with the guardrails.
+-- (T-136). The road has no other barrier (T-140).
 function DriftController:SetSplineClosing(s: number?)
 	self.splineClosing = s
 	local w: any = self.world
@@ -844,7 +830,7 @@ function DriftController:DebugSpline()
 	if not spline then
 		return { on = false }
 	end
-	local out: { [string]: any } = { on = true, length = spline.length, rails = w and w.rails, closing = w and w.closing }
+	local out: { [string]: any } = { on = true, length = spline.length, closing = w and w.closing }
 	if w and w.stats then
 		out.stats = table.clone(w.stats)
 	end
@@ -852,8 +838,14 @@ function DriftController:DebugSpline()
 		local along, across = spline:project(s.position.X, s.position.Z, Config.Road.Width * 0.5 + 400)
 		out.s, out.d = along, across
 		if along and across then
-			local y = spline:heightAt(along) + across * math.tan(spline:bankAt(along))
+			local y = spline:terrainY(along, across)
 			out.surfaceY = y
+			-- the mountainside where the car is (T-140): what is under it, and each side
+			local kind = spline:groundKind(along, across)
+			out.ground = if kind == 0 then "tarmac" elseif kind == 1 then "grass" else "nothing"
+			local names = { "rock", "hedge", "cliff" }
+			out.left = { runoff = spline:runoffAt(along, -1), edge = names[spline:edgeAt(along, -1)], kRail = spline:kRailAt(along, -1) ~= nil }
+			out.right = { runoff = spline:runoffAt(along, 1), edge = names[spline:edgeAt(along, 1)], kRail = spline:kRailAt(along, 1) ~= nil }
 			out.rideError = s.position.Y - (y + Config.Drift.RideHeight)
 			out.bankDeg = math.deg(spline:bankAt(along))
 			out.gradeDeg = math.deg(math.atan(spline:gradeAt(along)))

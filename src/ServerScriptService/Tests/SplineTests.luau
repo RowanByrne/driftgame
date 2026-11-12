@@ -352,6 +352,233 @@ function parts.accuracy(check)
 	check("the curve is integrated accurately", worst < 1e-3, `worst {string.format("%.2e", worst)} studs from a 0.25-stud integration over {math.floor(sp.length)} studs`)
 end
 
+-- 7. The mountainside (features/mountain-road.md, T-140): what each section chose, the
+-- cross-section it makes, and a client's replay of it.
+function parts.terrain(check)
+	local T = Config.Spline.Terrain
+	local half = Config.Road.Width * 0.5
+	local names = { "rock", "hedge", "cliff" }
+
+	-- What the generator chose, over long roads
+	local missing, badWidth, worstRate, mixes, swaps, badSwaps, sameSides = 0, 0, 0, {}, 0, 0, 0
+	local rails, railsOnBendCliff, badRails, bendsOverCliff = 0, 0, 0, 0
+	local insideWorst, insideN = -math.huge, 0
+	local stretches = {}
+	for _, seed in SEEDS do
+		local gen = road(seed, LIMIT_LENGTH)
+		local sp = gen.spline
+		local upPrev, runFrom, s = nil, 0, 0
+		local straightHedged = false -- a straight hedged both sides since the side was last known
+		for _, sec in gen.sections do
+			if not (sec.rl and sec.rr and sec.el and sec.er) then
+				missing += 1
+			else
+				for _, knots in { sec.rl, sec.rr } do
+					local prevV, prevS = nil, 0
+					for j = 1, #knots, 2 do
+						local w = knots[j + 1]
+						if w < T.RunoffMin - 1e-9 or w > T.RunoffMax + 1e-9 then
+							badWidth += 1
+						end
+						if prevV then
+							worstRate = math.max(worstRate, math.abs(w - prevV) / (knots[j] - prevS))
+						end
+						prevV, prevS = w, knots[j]
+					end
+				end
+				local l, r = sec.el[2], sec.er[2]
+				local key = `{names[l]}/{names[r]}`
+				mixes[key] = (mixes[key] or 0) + 1
+				-- one side the mountain, the other the drop: never rock both sides, never a
+				-- cliff both sides
+				if (l == Spline.ROCK and r == Spline.ROCK) or (l == Spline.CLIFF and r == Spline.CLIFF) then
+					sameSides += 1
+				end
+				-- which side the mountain is on, where this section says
+				local up = if l == Spline.ROCK or r == Spline.CLIFF then -1 elseif r == Spline.ROCK or l == Spline.CLIFF then 1 else nil
+				-- a hedge both sides happens by chance too (a hedge either side): only a change of
+				-- side must come through one, and through a straight
+				if l == Spline.HEDGE and r == Spline.HEDGE and (sec.tag == "Straight" or sec.tag == "Escape") then
+					straightHedged = true
+				end
+				if up and upPrev and up ~= upPrev then
+					swaps += 1
+					if not straightHedged then
+						badSwaps += 1
+					end
+					table.insert(stretches, s - runFrom)
+					runFrom = s
+				end
+				if up then
+					upPrev = up
+					straightHedged = false
+				end
+				local bend = sec.tag ~= "Straight" and sec.tag ~= "Escape" and sec.tag ~= "Start"
+				local kEnd = sec.k[#sec.k]
+				local outside = if kEnd > 0 then 1 else -1
+				local outsideKind = if outside < 0 then l else r
+				if bend and outsideKind == Spline.CLIFF and sec.len >= T.KRailRun[1] then
+					bendsOverCliff += 1
+				end
+				if sec.kr then
+					for j = 1, #sec.kr, 3 do
+						rails += 1
+						local len = sec.kr[j + 1] - sec.kr[j]
+						if len < T.KRailRun[1] - 1e-6 or len > T.KRailRun[2] + 1e-6 then
+							badRails += 1
+						end
+						if bend and sec.kr[j + 2] == outside and outsideKind == Spline.CLIFF then
+							railsOnBendCliff += 1
+						end
+					end
+				end
+			end
+			s += sec.len
+		end
+		-- the inside of every bend keeps its grass short of the bend's centre
+		for u = 0, sp.length, 3 do
+			local k = sp:curvatureAt(u)
+			if math.abs(k) > 1 / 400 then
+				local inside = if k > 0 then -1 else 1
+				local reach = (half + sp:runoffAt(u, inside)) * math.abs(k)
+				insideWorst = math.max(insideWorst, reach)
+				insideN += 1
+			end
+		end
+	end
+	local mixList = {}
+	for k, n in mixes do
+		table.insert(mixList, `{k} {n}`)
+	end
+	table.sort(mixList)
+	table.sort(stretches)
+	local median = stretches[math.max(1, #stretches // 2)] or 0
+	check("every section carries its mountainside", missing == 0, `{missing} sections without runoff or edges`)
+	check("runoff 12 to 40 studs, and it never changes fast", badWidth == 0 and worstRate <= 0.25 + 1e-9, `{badWidth} widths outside {T.RunoffMin}..{T.RunoffMax}; steepest change {fmt(worstRate, 3)} stud per stud between knots (limit 0.25)`)
+	check("the mountain on one side, the drop on the other", sameSides == 0, `{sameSides} sections with rock or cliff both sides. Left/right mix: {table.concat(mixList, ", ")}`)
+	check("the mountain changes sides only through a straight, hedged both sides", badSwaps == 0 and swaps > 0, `{swaps} changes of side, {badSwaps} not through a straight hedged both sides; the mountain stayed on one side for {fmt(median, 0)} studs (median, {#stretches} swaps measured)`)
+	check(
+		"K-rails 60 to 300 studs, on most bends above a cliff",
+		badRails == 0 and rails > 0 and railsOnBendCliff >= bendsOverCliff * 0.3,
+		`{rails} runs, {badRails} the wrong length; {railsOnBendCliff} of {bendsOverCliff} bends with a cliff outside have one (about half wanted)`
+	)
+	check("the inside of a bend keeps its grass short of the bend's centre", insideWorst <= T.InsideShare + 1e-6, `furthest the inside edge reaches: {fmt(insideWorst * 100, 1)}% of the way to the centre (limit {T.InsideShare * 100}%), {insideN} points on bends`)
+
+	-- The cross-section at a point
+	local gen = road(31337, 8000)
+	local sp = gen.spline
+	local rng = Random.new(11)
+	local wrongKind, worstJoin, worstSlope, worstFlat, n = 0, 0, 0, 0, 0
+	local cliffNil, cliffTried, wallGrass, wallTried = 0, 0, 0, 0
+	for _ = 1, 3000 do
+		local s = 50 + rng:NextNumber() * (sp.length - 100)
+		local side = if rng:NextNumber() < 0.5 then -1 else 1
+		local w = sp:runoffAt(s, side)
+		local edge = sp:edgeAt(s, side)
+		-- tarmac, grass, and past the edge
+		local dT = side * rng:NextNumber() * half
+		local dG = side * (half + 0.01 + rng:NextNumber() * math.max(0, w - 0.02))
+		local dP = side * (half + w + 0.5 + rng:NextNumber() * 10)
+		if sp:groundKind(s, dT) ~= Spline.TARMAC or (w > 0.05 and sp:groundKind(s, dG) ~= Spline.GRASS) then
+			wrongKind += 1
+		end
+		if edge == Spline.CLIFF then
+			cliffTried += 1
+			if sp:groundKind(s, dP) == nil then
+				cliffNil += 1
+			end
+		else
+			wallTried += 1
+			if sp:groundKind(s, dP) == Spline.GRASS then
+				wallGrass += 1
+			end
+		end
+		-- the grass meets the tarmac without a step or a crease, and is flat at its edge
+		local yRoad = sp:heightAt(s) + side * half * math.tan(sp:bankAt(s))
+		worstJoin = math.max(worstJoin, math.abs(sp:terrainY(s, side * half) - yRoad), math.abs(sp:terrainY(s, side * (half + 1e-4)) - yRoad))
+		if w > 2 then
+			local e = 1e-3
+			local inner = (sp:terrainY(s, side * (half + e)) - sp:terrainY(s, side * half)) / e
+			worstSlope = math.max(worstSlope, math.abs(inner - side * math.tan(sp:bankAt(s))))
+			local outer = (sp:terrainY(s, side * (half + w)) - sp:terrainY(s, side * (half + w - e))) / e
+			worstFlat = math.max(worstFlat, math.abs(outer))
+		end
+		n += 1
+	end
+	check("tarmac, then grass, at the right offsets", wrongKind == 0, `{wrongKind} of {n} points read the wrong surface`)
+	check("past a cliff's lip there is nothing", cliffTried > 0 and cliffNil == cliffTried, `{cliffNil} of {cliffTried} points past a cliff found nothing under them`)
+	check("past a rock face or a hedge the ground carries on", wallTried > 0 and wallGrass == wallTried, `{wallGrass} of {wallTried}`)
+	check("the grass meets the tarmac with no step", worstJoin < 1e-3, `worst {string.format("%.1e", worstJoin)} studs`)
+	check("the grass leaves the road at its bank and eases flat", worstSlope < 0.01 and worstFlat < 0.01, `slope at the tarmac's edge off the bank's by {fmt(worstSlope, 4)}; at the grass's outer edge {fmt(worstFlat, 4)} (flat is 0)`)
+
+	-- A client's replay has the same mountainside, exactly
+	local copy = SplineGen.replay(gen.sections)
+	local differ = 0
+	for _ = 1, 2000 do
+		local s = rng:NextNumber() * sp.length
+		for _, side in { -1, 1 } do
+			local a0, a1 = sp:kRailAt(s, side)
+			local b0, b1 = copy:kRailAt(s, side)
+			if sp:runoffAt(s, side) ~= copy:runoffAt(s, side) or sp:edgeAt(s, side) ~= copy:edgeAt(s, side) or a0 ~= b0 or a1 ~= b1 or sp:terrainY(s, side * 40) ~= copy:terrainY(s, side * 40) then
+				differ += 1
+			end
+		end
+	end
+	check("a client's replay has the same grass, edges and K-rails", differ == 0, `{differ} of 4000 side samples differ`)
+
+	-- A malformed section is refused whole
+	local refused = 0
+	local bad = {
+		{ len = 100, k = { 100, 0 }, g = { 100, 0 }, b = { 100, 0 }, el = { 100, 9 } },
+		{ len = 100, k = { 100, 0 }, g = { 100, 0 }, b = { 100, 0 }, rl = { 100, -5 } },
+		{ len = 100, k = { 100, 0 }, g = { 100, 0 }, b = { 100, 0 }, er = { 50, 1 } },
+		{ len = 100, k = { 100, 0 }, g = { 100, 0 }, b = { 100, 0 }, kr = { 20, 140, 1 } },
+		{ len = 100, k = { 100, 0 }, g = { 100, 0 }, b = { 100, 0 }, kr = { 20, 40, 0 } },
+	}
+	for _, sec in bad do
+		local fresh = SplineGen.replay(table.move(gen.sections, 1, 3, 1, {}))
+		local before = fresh.length
+		local ok = pcall(fresh.append, fresh, sec)
+		if not ok and fresh.length == before then
+			refused += 1
+		end
+	end
+	check("a malformed mountainside is refused before any of it is laid", refused == #bad, `{refused} of {#bad} refused`)
+end
+
+-- 8. How much less twisty the wider clearance makes the road (the spec asks the build to
+-- say). The same seeds, laid with the old clearance (74 studs, barriers) and the new.
+function parts.twist(check)
+	local old = Config.Road.Width + 2 * Config.Road.BarrierThickness + Config.Spline.ClearanceGap
+	local function measure(clear: number?)
+		local hairpins, turn, length, rejected, tries, escapes = 0, 0, 0, 0, 0, 0
+		for i = 1, HEALTH_SEEDS do
+			local gen = SplineGen.new(1000 + i * 37, nil, clear)
+			gen:extendTo(HEALTH_LENGTH)
+			local sp = gen.spline
+			hairpins += gen.stats.kinds.Hairpin or 0
+			rejected += gen.stats.rejectedCrowded
+			tries += gen.stats.tries
+			escapes += gen.stats.escapes
+			length += sp.length
+			-- total turning: the integral of |curvature|, sampled every 2 studs
+			for u = 0, sp.length, 2 do
+				turn += math.abs(sp:curvatureAt(u)) * 2
+			end
+		end
+		local km = length / 1000
+		return { hairpins = hairpins / km, turn = math.deg(turn) / km, rejected = rejected / tries, escapes = escapes / km }
+	end
+	local a = measure(old)
+	local b = measure(nil)
+	local newClear = SplineGen.limits()
+	check(
+		"how much less twisty (measured, not a limit)",
+		b.turn >= a.turn * 0.75,
+		`clearance {old} -> {newClear} studs. Turning per 1000 studs {fmt(a.turn, 0)} -> {fmt(b.turn, 0)} degrees ({fmt((b.turn / a.turn - 1) * 100, 1)}%); hairpins per 1000 studs {fmt(a.hairpins, 2)} -> {fmt(b.hairpins, 2)}; candidates too close to old road {fmt(a.rejected * 100, 1)}% -> {fmt(b.rejected * 100, 1)}%; escapes per 1000 studs {fmt(a.escapes, 2)} -> {fmt(b.escapes, 2)}`
+	)
+end
+
 function Tests.run(which: { string }?, ...)
 	-- The DebugBridge calls a member as a method, so the module itself comes first.
 	if which == Tests then
@@ -361,7 +588,7 @@ function Tests.run(which: { string }?, ...)
 	local function check(name: string, ok: boolean, detail: string?)
 		table.insert(checks, { name = name, ok = ok, detail = detail })
 	end
-	local order = { "limits", "crossing", "replay", "health", "project", "accuracy" }
+	local order = { "limits", "crossing", "replay", "health", "project", "accuracy", "terrain", "twist" }
 	for _, name in which or order do
 		local ok, err = pcall(parts[name], check)
 		if not ok then

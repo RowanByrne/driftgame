@@ -1042,10 +1042,11 @@ return {
 
 	-- ------------------------------------------------------------------------ the service
 	-- WHICH ROAD A RUN LAYS: "pieces", this file's road, or "spline", one continuous curve
-	-- drawn by each client and driven on its maths (features/spline-road.md, T-136). Stays
-	-- "pieces" until the user has driven the spline road and said it replaces it. In Studio
-	-- the TEST ONLY panel switches it between runs (`RoadService:SetMode`).
-	Mode = "pieces",
+	-- drawn by each client and driven on its maths (features/spline-road.md, T-136). The
+	-- spline road is the run's road (features/mountain-road.md, T-140); the piece road stays
+	-- behind this switch until a cleanup task takes it out. In Studio the TEST ONLY panel
+	-- switches it between runs (`RoadService:SetMode`).
+	Mode = "spline",
 	TickSeconds = 0.1, -- how often the service reads where the cars are and moves the window
 	SurfaceTarmac = "tarmac", -- the `Surface` attribute every road part carries. Anything
 	-- that is not `Config.Drift.SurfaceDirt` reads as tarmac, but it

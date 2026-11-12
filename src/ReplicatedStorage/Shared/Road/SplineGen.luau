@@ -18,6 +18,13 @@
 --   * NO TRAPS: a section is accepted only if the road could straighten up after it and
 --     run `EscapeLength` clear. If nothing random passes, that escape IS the next section,
 --     and it was checked when the section before it was accepted.
+--
+-- THE MOUNTAINSIDE (features/mountain-road.md, T-140) is chosen for each section once its
+-- curve is accepted, from a random stream of its own so it never changes which curves are
+-- tried: the runoff either side, the edge each side ends in, and any K-rails. The mountain
+-- stays on one side (`uphill`) for `UphillStretch` studs, then swaps through a straight
+-- with hedge both sides. Clearance (`limits`) is wide enough for the widest runoff and an
+-- edge either side, whatever is chosen.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -50,6 +57,10 @@ export type Gen = typeof(setmetatable(
 		lastDir: number,
 		lastWasBend: boolean,
 		trend: number,
+		trng: Random, -- the mountainside's own stream
+		uphill: number, -- the side the mountain is on: -1 left, 1 right
+		toSwap: number, -- studs of road until the mountain may change sides
+		runoff: { [number]: number }, -- the last runoff width chosen, by side
 		clearance: number,
 		separation: number,
 		stats: Stats,
@@ -69,18 +80,21 @@ end
 -- must be before that applies at all. On the tightest bend allowed, two points `sep`
 -- apart along it are already `clear` apart in a straight line, so anything closer along
 -- the road is a neighbour, not a crossing.
-function SplineGen.limits(): (number, number)
+-- `clearOverride` is for the tests' before-and-after measure only (the old road kept 74).
+function SplineGen.limits(clearOverride: number?): (number, number)
 	local C = Config.Spline
 	local R = Config.Road
-	local clear = R.Width + 2 * R.BarrierThickness + C.ClearanceGap
+	local T = C.Terrain
+	-- the tarmac, the widest runoff and an edge either side, and a gap (T-140)
+	local clear = clearOverride or (R.Width + 2 * (T.RunoffMax + T.EdgeDepth) + C.ClearanceGap)
 	local rmin = C.MinRadius
 	local ratio = math.min(1, clear / (2 * rmin))
 	local sep = 2 * rmin * math.asin(ratio) + 2 * C.CheckStep
 	return clear, sep
 end
 
-function SplineGen.new(seed: number, origin: Spline.Origin?): Gen
-	local clear, sep = SplineGen.limits()
+function SplineGen.new(seed: number, origin: Spline.Origin?, clearOverride: number?): Gen
+	local clear, sep = SplineGen.limits(clearOverride)
 	local spline = Spline.new(origin)
 	local self = setmetatable({
 		spline = spline,
@@ -91,6 +105,10 @@ function SplineGen.new(seed: number, origin: Spline.Origin?): Gen
 		lastDir = 0,
 		lastWasBend = false,
 		trend = spline.origin.yaw,
+		trng = Random.new((seed * 7 + 1013) % 2 ^ 31),
+		uphill = 1,
+		toSwap = 0,
+		runoff = { [-1] = Config.Spline.Terrain.StartRunoff, [1] = Config.Spline.Terrain.StartRunoff },
 		clearance = clear,
 		separation = sep,
 		stats = {
@@ -106,9 +124,100 @@ function SplineGen.new(seed: number, origin: Spline.Origin?): Gen
 			totalMs = 0,
 		},
 	}, SplineGen)
+	local T = Config.Spline.Terrain
+	self.uphill = if self.trng:NextNumber() < 0.5 then -1 else 1
+	self.toSwap = T.UphillStretch[1] + (T.UphillStretch[2] - T.UphillStretch[1]) * self.trng:NextNumber()
 	local L = Config.Spline.StartStraight
-	self:_commit({ len = L, k = { L, 0 }, g = { L, 0 }, b = { L, 0 }, tag = "Start" })
+	local start: Spline.Section = { len = L, k = { L, 0 }, g = { L, 0 }, b = { L, 0 }, tag = "Start" }
+	self:_terrain(start)
+	self:_commit(start)
 	return self
+end
+
+--------------------------------------------------------------------------------
+-- The mountainside (T-140)
+--------------------------------------------------------------------------------
+
+-- Choose a section's runoff, edges and K-rails, and write them into it.
+function SplineGen._terrain(self: Gen, sec: Spline.Section)
+	local T = Config.Spline.Terrain
+	local r = self.trng
+	local len = sec.len
+	local tag = sec.tag
+	local bend = tag ~= "Straight" and tag ~= "Escape" and tag ~= "Start"
+	local function between(range: { number }): number
+		return range[1] + (range[2] - range[1]) * r:NextNumber()
+	end
+
+	-- THE RUNOFF: a width every `RunoffKnotEvery` studs, each side on its own, never
+	-- changing faster than a quarter of a stud per stud, so the grass's edge never runs at
+	-- the car faster than about 14 degrees (smoothstep's steepest is 1.5 times that)
+	local function runoff(side: number): { number }
+		if tag == "Start" then
+			self.runoff[side] = T.StartRunoff
+			return { len, T.StartRunoff }
+		end
+		local out = {}
+		local prev, prevAt = self.runoff[side], 0
+		local function knot(at: number)
+			local w = between({ T.RunoffMin, T.RunoffMax })
+			local most = 0.25 * (at - prevAt)
+			w = math.clamp(w, prev - most, prev + most)
+			table.insert(out, at)
+			table.insert(out, w)
+			prev, prevAt = w, at
+		end
+		local lo = T.RunoffKnotEvery[1]
+		local at = between(T.RunoffKnotEvery)
+		while at < len - lo * 0.5 do
+			knot(at)
+			at += between(T.RunoffKnotEvery)
+		end
+		knot(len)
+		self.runoff[side] = prev
+		return out
+	end
+	sec.rl = runoff(-1)
+	sec.rr = runoff(1)
+
+	-- THE EDGES: the mountain on one side, the drop on the other. Through a straight once
+	-- the stretch is over, hedge both sides and the mountain changes sides.
+	local up = self.uphill
+	local upKind, downKind
+	if not bend and tag ~= "Start" and self.toSwap <= 0 then
+		upKind, downKind = Spline.HEDGE, Spline.HEDGE
+		self.uphill = -up
+		self.toSwap = between(T.UphillStretch)
+	else
+		upKind = if r:NextNumber() < T.UphillHedgeChance then Spline.HEDGE else Spline.ROCK
+		downKind = if r:NextNumber() < T.DownhillHedgeChance then Spline.HEDGE else Spline.CLIFF
+	end
+	self.toSwap -= len
+	local kinds = { [up] = upKind, [-up] = downKind }
+	sec.el = { len, kinds[-1] }
+	sec.er = { len, kinds[1] }
+
+	-- K-RAILS: on the outside of a bend above a cliff about half the time, the body of the
+	-- bend; now and then a stretch anywhere else
+	local runMin, runMax = T.KRailRun[1], T.KRailRun[2]
+	local kr: { number } = {}
+	if bend then
+		local kEnd = sec.k[#sec.k]
+		local outside = if kEnd > 0 then 1 else -1 -- a left turn's outside is the right
+		if kinds[outside] == Spline.CLIFF and len >= runMin and r:NextNumber() < T.KRailBendChance then
+			local run = math.clamp(len * 0.8, runMin, math.min(runMax, len))
+			local a = (len - run) * 0.5
+			kr = { a, a + run, outside }
+		end
+	elseif len >= runMin and r:NextNumber() < T.KRailOtherChance then
+		local side = if r:NextNumber() < 0.5 then -1 else 1
+		local run = between({ runMin, math.min(runMax, len) })
+		local a = (len - run) * r:NextNumber()
+		kr = { a, a + run, side }
+	end
+	if #kr > 0 then
+		sec.kr = kr
+	end
 end
 
 -- A client's copy: the same road from the same sections, with no choosing.
@@ -204,8 +313,11 @@ local function yawAfter(yaw0: number, k0: number, knots: { number }): number
 end
 
 -- Walk a run of curvature knots from a plan state, calling `emit(sLocal, x, z)` every
--- `every` studs. Simpson steps of `SampleStep`, the same accuracy as the spline itself.
-local function walk(x: number, z: number, yaw0: number, k0: number, knots: { number }, every: number, emit: (number, number, number) -> boolean?): boolean
+-- `every` studs, the first at `first`. Simpson steps of `SampleStep`, the same accuracy as
+-- the spline itself, and a step always ends exactly on an emit, so the points emitted are
+-- exactly the points the road's own grid will hold once it is laid (T-140: a check that
+-- sampled 4 studs off them passed a hairpin it later failed, and the road boxed itself in).
+local function walk(x: number, z: number, yaw0: number, k0: number, knots: { number }, every: number, first: number, emit: (number, number, number) -> boolean?): boolean
 	local step = Config.Spline.SampleStep
 	local j = 1
 	local sA, kA, yawA = 0, k0, yaw0
@@ -219,7 +331,7 @@ local function walk(x: number, z: number, yaw0: number, k0: number, knots: { num
 	end
 	local total = knots[#knots - 1]
 	local s = 0
-	local nextEmit = every
+	local nextEmit = first
 	while s < total - 1e-9 do
 		-- advance the interval so that s lies in [sA, knots[j]]
 		while s >= knots[j] - 1e-9 and j + 2 <= #knots do
@@ -227,7 +339,7 @@ local function walk(x: number, z: number, yaw0: number, k0: number, knots: { num
 			sA, kA = knots[j], knots[j + 1]
 			j += 2
 		end
-		local s1 = math.min(s + step, knots[j], total)
+		local s1 = math.min(s + step, knots[j], total, nextEmit)
 		local y0, ym, y1 = yawAt(s), yawAt((s + s1) * 0.5), yawAt(s1)
 		local h = (s1 - s) / 6
 		x += h * (-math.sin(y0) - 4 * math.sin(ym) - math.sin(y1))
@@ -334,7 +446,11 @@ function SplineGen._clear(self: Gen, knots: { number }): boolean
 	local clear, sep = self.clearance, self.separation
 	local c2 = clear * clear
 	local own: { number } = {}
-	return walk(x0, z0, yaw0, k0, knots, Config.Spline.CheckStep, function(u, x, z)
+	-- on the grid's own spacing from the road's start (`Spline` files a point every
+	-- `CheckStep` of s), so a section's points here are the ones it will be filed with
+	local cs = Config.Spline.CheckStep
+	local first = cs * (math.floor(s0 / cs + 1e-9) + 1) - s0
+	return walk(x0, z0, yaw0, k0, knots, cs, first, function(u, x, z)
 		local s = s0 + u
 		if sp:crowded(x, z, s, clear, sep) then
 			return false
@@ -481,6 +597,7 @@ function SplineGen.step(self: Gen): Spline.Section?
 		}
 	end
 	local chosen = sec :: Spline.Section
+	self:_terrain(chosen)
 	self:_commit(chosen)
 	local bend = chosen.tag ~= "Straight" and chosen.tag ~= "Escape" and chosen.tag ~= "Start"
 	if bend then

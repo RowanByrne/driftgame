@@ -31,6 +31,8 @@ function Tests.run()
 	end
 	local M = Config.Spline.Mesh
 	local half = Config.Road.Width * 0.5
+	-- the surface reaches past the tarmac now, across the grass (T-140)
+	local reach = half + Config.Spline.Terrain.RunoffMax + 5
 	local gen = SplineGen.new(SEED)
 	gen:extendTo(LENGTH)
 	local spline = gen.spline
@@ -89,9 +91,9 @@ function Tests.run()
 				if obj and obj:IsA("EditableMesh") then
 					for _, v in obj:GetVertices() do
 						local p = road.CFrame:PointToWorldSpace(obj:GetPosition(v))
-						local s, d = spline:project(p.X, p.Z, half + 5)
+						local s, d = spline:project(p.X, p.Z, reach)
 						if s and d then
-							local y = spline:heightAt(s) + d * math.tan(spline:bankAt(s))
+							local y = spline:terrainY(s, d)
 							worstV = math.max(worstV, math.abs(p.Y - y))
 							n += 1
 						end
@@ -99,7 +101,7 @@ function Tests.run()
 				end
 			end
 		end
-		check("every road vertex is on the surface the car stands on", n > 0 and worstV < 0.01, `{n} vertices read back through their parts: worst {fmt(worstV, 4)} studs off (a Vector3 20 000 studs out is good to ~0.002)`)
+		check("every surface vertex, tarmac and grass, is on the ground the car stands on", n > 0 and worstV < 0.01, `{n} vertices read back through their parts: worst {fmt(worstV, 4)} studs off (a Vector3 20 000 studs out is good to ~0.002)`)
 
 		-- 3. Between the cuts, the drawn surface stays within the tolerance of the true one.
 		local worstSag = 0
@@ -130,7 +132,7 @@ function Tests.run()
 					local pts = {}
 					for _, v in em:GetVertices() do
 						local p = part.CFrame:PointToWorldSpace(em:GetPosition(v))
-						local s = spline:project(p.X, p.Z, half + 5)
+						local s = spline:project(p.X, p.Z, reach)
 						if s and math.abs(s - sB) < 0.01 then
 							table.insert(pts, p)
 						end
@@ -149,28 +151,35 @@ function Tests.run()
 		end
 		check("chunks meet with no seam", worstSeam < 0.01, `worst gap between neighbouring chunks' shared edge: {fmt(worstSeam, 4)} studs`)
 
-		-- 4b. The barrier tops run on without a step from one box to the next (a level box
-		-- per cut drew a staircase on every slope, seen in the lane).
-		local worstStep, pairs = 0, 0
+		-- 4b. The hedge and K-rail tops run on without a step from one box to the next (a
+		-- level box per cut drew a staircase on every slope, seen in the lane). Only
+		-- neighbours of the same height, and only the low walls whose tops a driver sees: the
+		-- rock face's boxes are a stand-in, redrawn as faces in the feature's next step.
+		local worstStep, pairs, steps = 0, 0, 0
 		for _, model in models do
-			for _, side in { "L", "R" } do
-				local k = 1
-				while true do
-					local a = model:FindFirstChild(`Barrier_{side}_{k}`)
-					local b = model:FindFirstChild(`Barrier_{side}_{k + 1}`)
-					if not a or not b then
-						break
+			local byName = {}
+			for _, p in model:GetChildren() do
+				byName[p.Name] = p
+			end
+			for _, prefix in { "Edge_L_", "Edge_R_", "KRail_L_", "KRail_R_" } do
+				for k = 1, 4000 do
+					local a, b = byName[prefix .. k], byName[prefix .. (k + 1)]
+					if a and b and math.abs(a.Size.Y - b.Size.Y) < 1e-3 and a.Size.Y < 20 then
+						-- the top edge's end of one box, and the start of the next
+						local aEnd = a.CFrame * Vector3.new(0, a.Size.Y / 2, -a.Size.Z / 2 + 0.1)
+						local bStart = b.CFrame * Vector3.new(0, b.Size.Y / 2, b.Size.Z / 2 - 0.1)
+						local step = math.abs(aEnd.Y - bStart.Y)
+						worstStep = math.max(worstStep, step)
+						steps += if step > 0.1 then 1 else 0
+						pairs += 1
 					end
-					-- the top edge's end of one box, and the start of the next
-					local aEnd = a.CFrame * Vector3.new(0, a.Size.Y / 2, -a.Size.Z / 2 + 0.1)
-					local bStart = b.CFrame * Vector3.new(0, b.Size.Y / 2, b.Size.Z / 2 - 0.1)
-					worstStep = math.max(worstStep, math.abs(aEnd.Y - bStart.Y))
-					pairs += 1
-					k += 1
 				end
 			end
 		end
-		check("barrier tops run on without steps", pairs > 0 and worstStep < 0.1, `{pairs} joints: worst step {fmt(worstStep, 3)} studs`)
+		-- WHERE THE GROUND ITSELF TURNS SHARPLY a short box pitches far more than its
+		-- neighbour (the inside of a hairpin, where the grass's width is cut back fast on a
+		-- bank): a step of a few tenths there is the ground's shape, not a staircase
+		check("hedge and K-rail tops run on without steps", pairs > 0 and steps <= pairs * 0.01 and worstStep < 0.5, `{pairs} joints: {steps} step more than 0.1 studs, worst {fmt(worstStep, 3)}`)
 
 		-- 5. Nothing drawn can be touched, collided with or queried.
 		local solid = 0
