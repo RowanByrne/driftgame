@@ -8,7 +8,14 @@
 			"../backups/",
 			"../scratch/",
 			"../../template/repo/",
-			"../../_tools/rocco/"
+			"../../_tools/rocco/",
+			"../../repo/",
+			"../../places/",
+			"../../art/",
+			"../../backups/",
+			"../../scratch/",
+			"../../../template/repo/",
+			"../../../_tools/rocco/"
 		]
 	}
 }
