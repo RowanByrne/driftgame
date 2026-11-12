@@ -10,8 +10,6 @@ Every task in progress and the files it owns, so parallel sessions and workers n
 | Branch | Lane | Files owned | Since |
 |---|---|---|---|
 | `agent/cmdr` (T-159) | lane2 | Cmdr vendored (new folder), `src/ServerScriptService/Services/CmdrService.luau` (new), `src/StarterPlayerScripts/Controllers/CmdrController.luau` (new), the commands folder (new), `src/ReplicatedStorage/Shared/Config/Admin.luau` (new), `docs/game/ARCHITECTURE.md` ("Vendored libraries" row only), `docs/game/features/admin-console.md` (new) | 2026-11-12 |
-| `agent/stand-on-road` (T-154) | lane3 | `src/StarterPlayerScripts/Controllers/RoadGroundController.luau` (new), `src/StarterPlayerScripts/Controllers/SplineRoadController.luau`, `docs/game/features/mountain-road.md` | 2026-11-12 |
-| `agent/camera-hill-pitch` (T-156) | lane4 | `src/StarterPlayerScripts/Controllers/CarCameraController.luau`, `src/ReplicatedStorage/Shared/Config/Camera.luau`, `docs/game/features/drift-camera.md` | 2026-11-12 |
 
 ## Notes between sessions
 

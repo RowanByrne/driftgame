@@ -43,6 +43,8 @@ export type Cycle = typeof(setmetatable(
 		keys: { Key },
 		fields: { string },
 		offset: number,
+		lightsOn: number, -- s into the cycle the headlights come on
+		lightsOff: number, -- and go off
 	},
 	DayNight
 ))
@@ -72,6 +74,13 @@ function DayNight.new(cfg: any?): Cycle
 		starts[phase] = length
 		lengths[phase] = len
 		length += len
+	end
+
+	-- a `{ Phase, f }` as seconds into the cycle
+	local function moment(m: any, label: string): number
+		assert(type(m) == "table" and starts[m.Phase] ~= nil, `DayNight: Headlights.{label} needs a Phase`)
+		assert(type(m.f) == "number" and m.f >= 0 and m.f <= 1, `DayNight: Headlights.{label} needs an f from 0 to 1`)
+		return (starts[m.Phase] + m.f * lengths[m.Phase]) % length
 	end
 
 	local first = c.Keyframes[1]
@@ -142,6 +151,8 @@ function DayNight.new(cfg: any?): Cycle
 		keys = keys,
 		fields = fields,
 		offset = c.Offset or 0,
+		lightsOn = moment(c.Headlights and c.Headlights.On, "On"),
+		lightsOff = moment(c.Headlights and c.Headlights.Off, "Off"),
 	}, DayNight)
 end
 
@@ -220,6 +231,17 @@ end
 -- The look at this server time.
 function DayNight.at(self: Cycle, serverTime: number): { [string]: any }
 	return self:sample(self:cycleTime(serverTime))
+end
+
+-- Whether the headlights are on at `t` seconds into the cycle: from `Headlights.On` round
+-- to `Headlights.Off`.
+function DayNight.lightsAt(self: Cycle, t: number): boolean
+	t %= self.length
+	local on, off = self.lightsOn, self.lightsOff
+	if on < off then
+		return t >= on and t < off
+	end
+	return t >= on or t < off
 end
 
 -- Where each keyframe falls, in seconds into the cycle, in order: { name, t }.

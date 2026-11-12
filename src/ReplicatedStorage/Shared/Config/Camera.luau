@@ -282,6 +282,34 @@ local Camera = {
 	PlayerZoomRate = 10, -- per second. OURS (T-152). How fast the camera eases to the zoom a
 	-- notch asked for: a 100 ms time constant, about 0.3 s to arrive. A
 	-- notch never jumps the camera; a burst of notches eases to the sum
+	-- THE HILL PITCH (T-156): "here i'm going up a steep hill, but the camera keeps it's
+	-- pitch the same as if it's flat. can u have it adjust slightly to pitch up according to
+	-- the strength of hte hill". The rendered view -- camera and look point together -- is
+	-- tipped about the car by a share of the road's grade along the view, read off the car's
+	-- smoothed ground normal. Like the pan, the zoom and the roll it is applied downstream of
+	-- the stepped targets, so it never joins the feedback loop. `HillLookFollow` is the one
+	-- part inside the targets (see it). `HillPitchUp`, `HillPitchDown` AND `HillLookFollow`
+	-- AT 0 IS EXACTLY THE CAMERA BEFORE IT, and so is flat ground at any setting.
+	HillPitchUp = 0.5, -- share of the CLIMB's grade the view pitches up by. OURS (T-156).
+	-- The endless road's grades top out at 8 deg (`Config.Spline.MaxGrade`),
+	-- so this is 4 deg at the steepest: "slightly"
+	HillPitchDown = 0.3, -- share of a DESCENT's grade the view pitches down by. OURS (T-156).
+	-- Weaker than the climb's: looking down a hill already shows the
+	-- road, and more would put the camera on the tarmac. 2.4 deg at 8
+	HillPitchMax = 10, -- deg. OURS (T-156). A lid on the tip, for a ramp far steeper than any
+	-- road: at 0.5 it bites only past 20 deg of grade
+	HillLookFollow = 1, -- share of the road's climb the look point's eased HEIGHT is carried
+	-- with. OURS (T-156). THE OTHER HALF OF THE FIX, found by measuring:
+	-- the look height eases at `CamHeightRate` (1/s), so on a steady
+	-- climb it sits `climb rate / 1` studs below the car -- 8 studs at
+	-- 90 studs/s up 5 deg -- and the view pitched DOWN on a climb, not
+	-- level. 1 removes that lag on a steady grade and leaves bumps and
+	-- jumps eased as before (it follows the road's normal, not the car's
+	-- vertical speed). 0 is the lag back. Unlike the tip, this one is in
+	-- the stepped targets, because the look point is one
+	HillPitchRate = 3, -- per second. OURS (T-156). How fast the tip follows the grade: a 333
+	-- ms time constant, on top of the model's own smoothing of the normal,
+	-- so a crest rolls the view over rather than flicking it
 	CamTargetStep = 1 / 60, -- s. OURS, and NOT `FixedStep`. The camera's targets feed back
 	-- into themselves (the swung target is what the next frame's resting
 	-- direction is measured from), so where they settle depends on how

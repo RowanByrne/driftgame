@@ -29,6 +29,7 @@ local DriftController = require(script.Parent.DriftController)
 local SplineRoadController = {}
 
 local spline: any = nil
+local closing: number? = nil
 local stats = { starts = 0, sections = 0, outOfOrder = 0, stops = 0, closings = 0, bad = 0 }
 
 local function numbers(list: any, group: number): boolean
@@ -92,8 +93,9 @@ function SplineRoadController:_on(message: any)
 		spline = built
 		stats.starts += 1
 		stats.sections = #message.sections
+		closing = if type(message.closing) == "number" then message.closing else nil
 		DriftController:UseSpline(spline)
-		DriftController:SetSplineClosing(if type(message.closing) == "number" then message.closing else nil)
+		DriftController:SetSplineClosing(closing)
 	elseif kind == "more" then
 		if not spline then
 			return
@@ -118,11 +120,13 @@ function SplineRoadController:_on(message: any)
 	elseif kind == "closing" then
 		if spline and type(message.s) == "number" then
 			stats.closings += 1
+			closing = message.s
 			DriftController:SetSplineClosing(message.s)
 		end
 	elseif kind == "stop" then
 		stats.stops += 1
 		spline = nil
+		closing = nil
 		DriftController:UseSpline(nil)
 	else
 		stats.bad += 1
@@ -136,6 +140,13 @@ function SplineRoadController:Start()
 	remote.OnClientEvent:Connect(function(message)
 		self:_on(message)
 	end)
+end
+
+-- The road on this client right now, and where its closing barrier stands: nil and nil
+-- with no run. What `RoadGroundController` builds our walking avatar's ground from (T-154).
+-- The curve is the live copy, growing as sections arrive: read it, never change it.
+function SplineRoadController:Road(): (any?, number?)
+	return spline, closing
 end
 
 function SplineRoadController:DebugState()

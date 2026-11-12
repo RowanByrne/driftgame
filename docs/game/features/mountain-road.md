@@ -130,6 +130,37 @@ The road stays purely visual: the car still reads everything from the curve (`Sp
   A device that cannot make a mesh still draws the tarmac only.
 - **Nothing drawn collides.** As now.
 
+### Walking on the road
+
+T-154. The user, 2026-11-12: *"when i get out of the car in endless mode, i want to be able to
+stand on the ground, instead i fall through."* Nothing on the road is solid (the car stands on the
+maths), so an avatar out of the car (`car-v2.md`) had nothing under it.
+
+- **What it is:** while our own avatar is out of the car, `RoadGroundController` (client) keeps a
+  patch of invisible, anchored, colliding tiles round it, built from this client's curve: the
+  tarmac and the grass on the surface's own slope, a wall at a rock face (80 high, unclimbable), a
+  hedge (12 high: the drawn hedge is 6, which a jump clears into nothing), a K-rail (the car's
+  wall, 3 high: it can be jumped, onto the grass behind it) and the closing barrier. **Nothing
+  past a cliff's lip** or past the end of the laid road: walking off falls, and the fall does
+  what it always did (the server sits the avatar back in the car).
+- **How:** tiles on a fixed lattice along the road, 4 studs a row, up to 6 wide, 6 rows each way
+  of the avatar and 24 studs either side of it, so the tile underfoot never moves. Rebuilt only
+  when the avatar crosses a row or a band, the closing barrier moves, or more road arrives.
+  Footsteps sound right: tarmac tiles are Asphalt, grass Grass.
+- **Only our own avatar:** each client simulates its own character, so each makes ground for its
+  own; everyone else's avatar is seen standing where its own client keeps it.
+- **The car never meets them:** they exist only while the car is held (not driving), when
+  nothing asks the car's world anything, and they go the moment the server seats the avatar,
+  checked every frame before the drift step. None is tagged `DriftSurface`.
+- **Measured (DR-Lane3, seed of the day):** feet 0.002 studs above the curve's ground over 5 s
+  standing; on the grass 0.000 to 0.01; stopped at a rock face 0.7 from its line, at a hedge
+  0.6 (a jump does not clear it), at a K-rail 0.5 (a running jump does, onto grass at 0.000), at
+  the closing barrier 0.6; walking off a cliff's lip, in freefall 2.5 studs past it (the root's middle, read every 0.1 s
+  at walking pace, so most of that is the step between reads). About 70 to 145
+  parts; a rebuild costs about 1.4 ms (1.9 at worst), about four times a second at a walk. Back
+  in the car, 604 and 785 frames driving with no tile in the world, and the car drove on as
+  before (grounded, ride error -0.02, no wall stops).
+
 ## UI
 
 None. The TEST ONLY panel loses its guardrail button.

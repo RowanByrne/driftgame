@@ -236,6 +236,41 @@ wheel"*.
   is passed through to whatever else wants it.
 - **Mouse wheel only.** Touch pinch and gamepad zoom are left out for now.
 
+## Hills
+
+The user (`T-156`): *"here i'm going up a steep hill, but the camera keeps it's pitch the same as if
+it's flat. can u have it adjust slightly to pitch up according to the strength of hte hill it's going
+up?"*
+
+**What was really happening was worse than "the same as flat":** the camera pitched further *down*
+on a climb. The look point's height eases at `CamHeightRate` (1/s), so on a steady climb it sat
+`climb rate / 1` studs under the car — 4 to 5 studs at 70 studs/s up 4°, and the view looked 3–4°
+further down than on the flat. On a descent the same lag lifted the view 5–6° over the drop.
+
+Two numbers fix it, both off the road's grade under the car (the smoothed ground normal, measured
+along the way the car is travelling, so a slide across a banked corner is not read as a hill):
+
+- **`HillLookFollow` (1):** the look point's eased height is carried up or down with the road's
+  steady climb. Bumps and jumps are still eased exactly as before, because it follows the road's
+  normal, not the car's vertical speed. This one is inside the stepped targets.
+- **`HillPitchUp` (0.5) / `HillPitchDown` (0.3):** the rendered view is then tipped about the car by
+  that share of the grade — up on a climb, down (less) on a descent — eased at `HillPitchRate`
+  (3/s), lidded at `HillPitchMax` (10°). The endless road tops out at 8° of grade, so that is at
+  most 4° up and 2.4° down. Like the pan, zoom and roll it is applied to the rendered camera only.
+
+Measured on the spline road, the same recorded drive replayed through the old and the new camera:
+
+| | Old camera | New camera |
+|---|---|---|
+| Up 4.2° at 70 studs/s | pitched **-23.3°** (3–4° more down than flat) | **-17.1°**: 6.2° higher, about 2° up from flat |
+| Over the crest (4.2° to 1.3°) | worst frame 0.168° | worst frame **0.093°**; tip 2.1° to 0.1° in a second |
+| Down 3° at 110 studs/s | pitched **-13.1°** (5° *up* from flat) | **-19.1°**: about 1° down from flat |
+
+**Flat ground is exactly today's camera:** on flat ground, or with the three shares at 0, every
+frame of a 2,025-frame recorded drive matched bit for bit. **The descent is the judgement call:**
+it used to look up over the drop by accident and now looks slightly down the road. To keep the old
+descent, it wants `HillLookFollow` split by direction, which is a small change.
+
 ## Left out
 
 - **Anything the player can change**, apart from the wheel's zoom above. All of this is one look,
@@ -273,6 +308,10 @@ and the shake's four), and proved the same way that zeroing them gives that buil
 | `PlayerZoomMin`, `PlayerZoomMax` | **0.6×, 1.8×** | The wheel's zoom limits, as multiples of the distance (`T-152`). 1 is the default and today's camera |
 | `PlayerZoomStep` | **×1.12** | One wheel notch |
 | `PlayerZoomRate` | **10 /s** | How fast the camera eases to the zoom a notch asked for |
+| `HillLookFollow` | **1** | Share of the road's climb the look point's height is carried with (`T-156`). 0 is the old lag |
+| `HillPitchUp`, `HillPitchDown` | **0.5, 0.3** | Share of the grade the view tips up on a climb, down on a descent |
+| `HillPitchMax` | **10°** | Lid on the tip |
+| `HillPitchRate` | **3 /s** | How fast the tip follows the grade |
 
 **Every one of them must be settable to zero and give exactly today's camera back.** That is the
 test that protects the approved feel, and it is how the roll ships without reopening an argument.

@@ -161,6 +161,12 @@ function SkyController:Start()
 	end)
 end
 
+-- Whether the headlights should be on now: the same moment the sky is showing, so a held or
+-- sped-up sky (Studio tests) switches them too.
+function SkyController:LightsOn(): boolean
+	return cycle:lightsAt(now())
+end
+
 -- The look now, the moment it was taken at, and what was set.
 function SkyController:DebugState(): { [string]: any }
 	local look = lastLook or {}
@@ -182,6 +188,7 @@ function SkyController:DebugState(): { [string]: any }
 		applied = stats.applied,
 		hazeWrites = stats.hazeWrites,
 		hazeMeshes = stats.hazeMeshes,
+		lights = cycle:lightsAt(now()),
 		worstMs = stats.worstMs,
 		clouds = clouds ~= nil,
 	}
