@@ -41,8 +41,9 @@ clip pitched across a wide range sounds thin and squeaky at the top, as ours doe
 
 You drive off and the engine pulls through the gears as now, but it sounds like an engine at each
 rpm rather than one clip sped up. Flick into a drift and the revs flare and **stay up**. The gear
-holds and the note wobbles with your corrections. Hold the drift long enough and it hits the
-limiter. Straighten out and the revs fall as the tyres grip, then it pulls through the gears
+holds and the note wobbles with your corrections. An ordinary drift sits high but clearly under
+the limiter; only an intense one, thrown deep with all four tyres going, hits it, and it comes off
+the limiter as soon as the angle closes. Straighten out and the revs fall as the tyres grip, then it pulls through the gears
 again. Press STOP or lift into a transition and you hear the off-throttle note.
 
 ## Left out
@@ -67,11 +68,12 @@ A small rpm model on top of today's gearbox, fed by the drift model's state each
 | Wheel speed | Road speed, plus a spin term while drifting: `SpinGain × speed × sin(slip)` |
 | RPM | Wheel speed through the current gear's ratio: `ShiftRpm` at the gear's top, never under `IdleRpm`, clamped at `RedlineRpm` |
 | Gear | Today's geometric gearbox, up at a gear's top and down `GearOverlap` under its bottom, but **held while drifting** and through the hook-up |
-| Drift floor | **A ratchet**: in a drift the rpm takes the spin when it is higher and otherwise climbs at `DriftClimbRpm`, and never falls. Measured on the real car: without it a 35° drift bleeding 15 studs/s sagged 900 rpm |
+| Drift floor | **A ratchet**: in a drift the rpm takes the spin when it is higher and otherwise climbs at `DriftClimbRpm`, and falls only when the ceiling comes down on it. Measured on the real car: without it a 35° drift bleeding 15 studs/s sagged 900 rpm |
+| Drift ceiling | (`T-147`) An ordinary drift's revs stop at `DriftCeilingRpm` (6,500), feathering and flare at most `FeatherRpm` over it. The ceiling rises with the slip angle from `IntenseFromDeg` (40°) to `IntenseCeilingRpm` (9,000) at `IntenseFullDeg` (60°), so the limiter is reachable from about 45°. The ceiling caps the floor too, so as the angle closes the revs come off the top while the car is still sliding |
 | Engine's drift | Starts at `DriftEnterDeg` (10°) and `DriftMinSpeed`, not the model's 5°, so a straight's small corrections never flare; lasts while the model says drifting |
 | Entry flare | When a drift starts, rpm jumps by `EntryFlareRpm`, then settles over `FlareSeconds` |
 | Feathering | rpm wobbles by up to `FeatherRpm`, following how fast the slip angle is changing |
-| Limiter | At `RedlineRpm`, rpm is cut and recovers at `LimiterHz` (the stutter) |
+| Limiter | At `RedlineRpm`, rpm is cut and recovers at `LimiterHz` (the stutter). Only an intense drift gets there (the ceiling above) |
 | Hook-up | Leaving a drift, the spin term eases away over `HookUpSeconds` |
 | Load | 1 on throttle (the model's eased throttle), 0 under STOP, past 90° of slip, through a flick (sideways one way then the other inside `TransitionWindowSeconds`), for `ShiftLiftSeconds` at an upshift, and in a limiter cut |
 | Downshift blip | Each downshift adds a short `BlipRpm` spike |
@@ -128,10 +130,17 @@ which already beats today's single idle clip.
 
 - **Unit tests** (`EngineTests`): rpm stays high through a slowing drift; the gear never changes
   while drifting; the limiter cuts at `RedlineRpm` and recovers; hook-up brings rpm back to road
-  speed; a downshift blips; load is 0 under STOP.
+  speed; a downshift blips; load is 0 under STOP; an ordinary drift (25 to 35°) never cuts, an
+  intense one (55°) does, and straightening out stops the cuts within 0.3 s.
 - **Measured in a lane:** a scripted drive (straight, a long drift, an exit) logging rpm, gear,
   load and each loop's volume ten times a second, written to the card.
 - **Ear:** the user's, in a lane, before it merges.
+- **The ceiling, measured (`T-147`),** before and after: a 30° drift held 6 s cut the limiter 16
+  times from 3.5 s in, now never (tops at 6,518 rpm); a 25 to 35° wobble from 100 studs/s cut 45
+  times from 0.1 s, now never (6,685). A 55° drift still cuts (22 times in 3 s, stutter unchanged at
+  7.3 a second). Closing from 55° to 0 over 1 s, the last cut came 0.98 s after the angle began to
+  close, now 0.08 s. On the real model, a gentle finger first hit the limiter at 17° of slip, now
+  at 48°. An entry from low revs flares exactly as before (+1,390 rpm).
 
 ## Open questions
 
