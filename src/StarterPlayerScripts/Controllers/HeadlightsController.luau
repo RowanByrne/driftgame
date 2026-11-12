@@ -6,9 +6,10 @@
 -- server's clock, so every client switches every car at the same moment and nothing is sent.
 --
 -- WHAT, per car in `Workspace.Cars`, this player's and everyone else's:
---   * the beams: a SpotLight per lamp (`Config.DayNight.Headlights.Lamps`), each in an
---     invisible part of this client's own in `Workspace.Headlights`, moved to the car's nose
---     every frame after the cars are drawn. NOTHING GOES INSIDE THE CAR (DECISIONS.md
+--   * the beams: a SpotLight per lamp, and relays hung down the road ahead of the car to
+--     carry the light past a SpotLight's 60 studs (`Config.DayNight.Headlights.Beams`), each
+--     in an invisible part of this client's own in `Workspace.Headlights`, moved with the
+--     car every frame after the cars are drawn. NOTHING GOES INSIDE THE CAR (DECISIONS.md
 --     2026-11-03): the car is the server's and holds no Light.
 --   * the pop-up pods of a car rig (`PodL`, `PodR`) open through `CarParts.open`, which
 --     writes the part's state on this client's copy of the car (CONTRACTS.md "The car rig").
@@ -104,7 +105,7 @@ local function makeBeam(car: Model, i: number): (BasePart, SpotLight)
 	local spot = Instance.new("SpotLight")
 	spot.Face = Enum.NormalId.Front
 	spot.Range = h.Range
-	spot.Angle = h.Angle
+	spot.Angle = h.Beams[i].Angle
 	spot.Color = h.Colour
 	spot.Shadows = h.Shadows
 	spot.Brightness = 0
@@ -217,7 +218,6 @@ local movingFrames: { CFrame } = {}
 local function step(dt: number)
 	local h = H()
 	local night = SkyController:LightsOn()
-	local tilt = CFrame.Angles(-math.rad(h.Tilt), 0, 0)
 	local rate = if h.Fade > 0 then dt / h.Fade else 1
 	table.clear(movingParts)
 	table.clear(movingFrames)
@@ -240,15 +240,15 @@ local function step(dt: number)
 			end
 			continue
 		end
-		for i, offset in h.Lamps do
+		for i, beam in h.Beams do
 			if not state.beams[i] then
 				state.beams[i], state.spots[i] = makeBeam(car, i)
 			end
 			local spot = state.spots[i]
 			spot.Enabled = true
-			spot.Brightness = h.Brightness * state.level
+			spot.Brightness = beam.Brightness * state.level
 			table.insert(movingParts, state.beams[i])
-			table.insert(movingFrames, b.CFrame * CFrame.new(offset) * tilt)
+			table.insert(movingFrames, b.CFrame * CFrame.new(beam.At) * CFrame.Angles(-math.rad(beam.Tilt), 0, 0))
 		end
 	end
 	if #movingParts > 0 then

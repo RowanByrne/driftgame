@@ -67,11 +67,24 @@ return {
 		On = { Phase = "sunset", f = 0.6 }, -- the sun just under the horizon
 		Off = { Phase = "sunrise", f = 0.5 }, -- the sun on it
 		Fade = 0.6, -- s for a beam to come up to full, or go out
-		-- One beam per lamp, in the car's body frame (front -Z, right +X, studs from the body
-		-- part's centre): just ahead of the liftback's lenses, measured in the lane.
-		Lamps = { Vector3.new(-1.99, 0.3, -8.6), Vector3.new(1.99, 0.3, -8.6) },
-		Tilt = 6, -- degrees the beams point down from level, onto the road ahead
-		Brightness = 3,
+		-- The beams, in the car's body frame (front -Z, right +X, studs from the body part's
+		-- centre). A SpotLight reaches 60 studs at most (Roblox's limit), so the light is carried
+		-- down the road by RELAYS: beams hung ahead of the car, each lighting the next 60 studs,
+		-- dimmer the farther out, as a real beam fades. Together they reach about 160 studs
+		-- (the user: "headlights need to shine farther. like 2x or 3x farther").
+		--   At          where the beam starts
+		--   Tilt        degrees it points down from level
+		--   Brightness  at full
+		--   Angle       degrees across the beam
+		Beams = {
+			-- one per lamp, just ahead of the liftback's lenses (measured in the lane), almost
+			-- level so they reach the road at their full 60
+			{ At = Vector3.new(-1.99, 0.3, -8.6), Tilt = 2, Brightness = 3, Angle = 60 },
+			{ At = Vector3.new(1.99, 0.3, -8.6), Tilt = 2, Brightness = 3, Angle = 60 },
+			-- the relays, on the car's centre line
+			{ At = Vector3.new(0, 7, -55), Tilt = 10, Brightness = 2.2, Angle = 80 },
+			{ At = Vector3.new(0, 8, -105), Tilt = 10, Brightness = 1.5, Angle = 80 },
+		},
 		Range = 60, -- studs; Roblox's most for a SpotLight
 		Angle = 70, -- degrees across the beam
 		Colour = Color3.fromRGB(255, 240, 210),

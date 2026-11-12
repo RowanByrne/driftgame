@@ -123,8 +123,10 @@ ambience sounds are left out.
 - Headlights come on 60% into the sunset (132 s, the sun just under the horizon) and go off
   halfway through the sunrise (270 s), fading over 0.6 s. Every client switches every car at
   the same moment.
-- Nothing goes inside the car: two SpotLights per car (range 60, 70 degrees, tilted 6 degrees
-  down) in parts of the client's own, moved to the nose each frame. The pop-up pods open and
+- Nothing goes inside the car: SpotLights in parts of the client's own, moved with the car each
+  frame. A SpotLight reaches 60 studs at most, and the user wanted 2-3x that, so besides one
+  beam per lamp there are two relays hung 55 and 105 studs ahead, lighting the road out to about
+  160 studs, dimmer the farther out. The pop-up pods open and
   the headlight and tail-lamp lenses glow Neon while they're on.
 - Off in the garage room (inside its bounding box), pods down.
 - Cost: no measurable frame time (5.6 ms average with them on and off).
