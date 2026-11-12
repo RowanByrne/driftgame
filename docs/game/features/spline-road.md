@@ -1,6 +1,6 @@
 # Feature: The spline road
 
-**Status:** in progress: steps 1 to 3 of 4 built (`T-133` the curve maths, `T-134` collision, `T-135` the mesh). **Owner task:** `T-132`,
+**Status:** all 4 steps built, behind the switch (`T-133` the curve maths, `T-134` collision, `T-135` the mesh, `T-136` the run). `Config.Road.Mode` is still `"pieces"`. **Owner task:** `T-132`,
 branch `feature/spline-road`, lane 1. Built behind a switch, and merged only when the user has
 driven it there.
 
@@ -184,6 +184,28 @@ The server owns the seed, generates the same curve, and checks the car's reporte
 it, as it checks against the pieces today (`CarService:BelievedPosition`). Joining a run, respawn
 after a fall, and the closing barrier all work in arc length.
 
+**Built in step 4** (`T-136`), behind `Config.Road.Mode` (`"pieces"` by default; in Studio the
+TEST ONLY panel's **RUN ROAD** button switches it between runs, `RoadService:SetMode`):
+
+- **One section is one piece.** `Road/SplineSequence` hands `RoadService` exactly what
+  `Road/Generator` does -- `extendTo`, `piece`, `trimBefore`, `locate`, `progress`, `first`,
+  `last`, `furthestN` -- with each spline section as a piece. So the run's window (`AheadPieces`
+  ahead, `BehindPieces` behind), "forward on new road", the respawn rule (never behind the
+  closing barrier) and the closing barrier (`BarrierBehind` back) are the piece road's own code,
+  unchanged. A section is 60 to 600 studs, the size of a piece. `locate` is the spline's own
+  projection rather than a search over pieces.
+- **No road parts on the server.** In spline mode `Workspace.Road` stays empty: measured, 0 parts
+  with a run going.
+- **The road reaches clients as the server's sections** on `RoadSpline`: everything so far when a
+  player joins the run, sent BEFORE their car is put on it; then each new batch as the window
+  grows; the closing barrier's `s` when it moves; the guardrails; and `stop`.
+  `SplineRoadController` replays them into the client's own curve. Measured: the client's road and
+  the server's were the same length to the stud after the window was pushed on (4 850.114 both).
+- **The closing barrier is a slab** 1 stud deep across the road at its `s`, solid from both
+  sides, as the piece road's box is: a car in front cannot reverse through it, and a car left
+  behind it (the slower of two players) is held at its back face rather than pushed through.
+  Each client draws it (`SplineRoadView:SetClosing`), the piece road's colour, see-through.
+
 ## UI
 
 None new. The run button and the score panel are unchanged.
@@ -193,7 +215,8 @@ None new. The run button and the score panel are unchanged.
 - **Server:** the seed, the curve, progress, respawn, the closing barrier. No road instances.
 - **Client:** the same curve from the same seed; the collision world; the meshes.
 - **The road reaches clients as the server's sections** ("The curve" above), not as a seed:
-  a few knots per section, on the run's state. A client never chooses anything. Step 4 builds it.
+  a few knots per section, on their own remote, `RoadSpline` (step 4). A client never chooses
+  anything.
 
 ## Contracts
 
@@ -257,6 +280,17 @@ None new. The mesh uses today's road colours and materials.
   surface is within 0.049 of the true one; neighbouring chunks share their edge to 0.002 studs;
   barrier tops step by 0.03 at most; nothing drawn is solid; a device that cannot make a mesh
   says so.
+- **The run in a playtest** (`DR-Lane1`, RUN ROAD: SPLINE, then START ENDLESS RUN): the server
+  laid 12 sections and built 0 parts; the client got all 11 sent so far before its car landed,
+  on the centre line 0.005 studs off the surface, with 4 chunks drawn as meshes; the run tracked
+  the car (piece 2, on the road, forward). With the window pushed on to piece 8: the client got
+  the new sections in order (18, none out of order) and its road matched the server's length to
+  the stud; the closing barrier moved to 1 456 studs on both the car's world and the drawing.
+  Guardrails off and on reached both. END RUN: `stop`, the drawn road gone, the car back in the
+  playground. No errors in the console.
+- **The closing barrier from both sides** (`SplineWorldTests`, now 15 checks): reversed into, the
+  car's middle stops 7.6 studs in front (half the car is 7); driven into from behind, it stops
+  8.3 behind the front face (the slab is 1 deep).
 - **The mesh in a playtest** (`DR-Lane1`): 4 chunks drawn as meshes on arriving, 0 fallbacks, 4
   EditableMeshes still free; teleported 3 000 studs on, 5 old chunks taken down and 5 built, 3
   free; with the fallback forced, 5 chunks drawn as 3 605 parts and the car still 0.003 studs off

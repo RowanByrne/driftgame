@@ -178,18 +178,30 @@ ask(nil)
 -- switches its side barriers too, as it does the piece road's.
 local splineOn = false
 local splineButton: TextButton? = nil
+local runModeButton: TextButton? = nil
+local runMode = "pieces"
 if RunService:IsStudio() then
 	local DriftController = require(Players.LocalPlayer:WaitForChild("PlayerScripts"):WaitForChild("Controllers"):WaitForChild("DriftController"))
 	local SplineGen = require(ReplicatedStorage.Shared.Road.SplineGen)
 	local splineRemote = Net.event("SplineTest")
 	local button = newButton("SplineRoad", "SPLINE TEST ROAD", EDGE + (HEIGHT + GAP) * 2)
 	splineButton = button
-	header.Position = UDim2.new(0, EDGE, 1, -(EDGE + (HEIGHT + GAP) * 3))
+	-- WHICH ROAD THE NEXT ENDLESS RUN LAYS (T-136): pieces, as shipped, or the spline road.
+	-- Refused while a run is going; the start button then lays whichever this says.
+	local modeButton = newButton("RunRoad", "RUN ROAD: PIECES", EDGE + (HEIGHT + GAP) * 3)
+	runModeButton = modeButton
+	header.Position = UDim2.new(0, EDGE, 1, -(EDGE + (HEIGHT + GAP) * 4))
 
 	local function paintSpline()
 		button.Text = if splineOn then "LEAVE SPLINE ROAD" else "SPLINE TEST ROAD"
 		button.BackgroundColor3 = if splineOn then LIVE else TEST
+		modeButton.Text = if runMode == "spline" then "RUN ROAD: SPLINE" else "RUN ROAD: PIECES"
+		modeButton.BackgroundColor3 = if runMode == "spline" then LIVE else TEST
 	end
+
+	modeButton.Activated:Connect(function()
+		splineRemote:FireServer("mode")
+	end)
 
 	button.Activated:Connect(function()
 		splineRemote:FireServer("toggle")
@@ -199,8 +211,11 @@ if RunService:IsStudio() then
 		if type(answer) ~= "table" then
 			return
 		end
+		if answer.runMode == "spline" or answer.runMode == "pieces" then
+			runMode = answer.runMode
+		end
 		local o = answer.origin
-		if answer.on == true and type(answer.sections) == "table" and type(o) == "table" then
+		if answer.on == true and type(answer.sections) == "table" and type(o) == "table" and not splineOn then
 			local ok, spline = pcall(SplineGen.replay, answer.sections, { x = o.x, y = o.y, z = o.z, yaw = o.yaw })
 			if ok then
 				splineOn = true
@@ -209,7 +224,7 @@ if RunService:IsStudio() then
 			else
 				warn(`[TestHud] the spline road's sections would not replay: {spline}`)
 			end
-		else
+		elseif answer.on ~= true and splineOn then
 			splineOn = false
 			DriftController:UseSpline(nil)
 		end
@@ -255,12 +270,18 @@ if RunService:IsStudio() then
 				zIndexBehavior = gui.ZIndexBehavior.Name,
 				splineOn = splineOn,
 				splineText = splineButton and splineButton.Text or nil,
+				runMode = runMode,
+				runModeText = runModeButton and runModeButton.Text or nil,
 			}
 		elseif member == "DebugPress" then
 			-- Through the real handler, not past it: what a tap does.
 			local what = ...
 			if what == "spline" and splineButton then
 				Net.event("SplineTest"):FireServer("toggle")
+				return { wanted = what }
+			end
+			if what == "mode" and runModeButton then
+				Net.event("SplineTest"):FireServer("mode")
 				return { wanted = what }
 			end
 			ask(what)

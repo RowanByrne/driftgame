@@ -199,6 +199,12 @@ function SplineWorld.new(spline: Spline.Spline, base: Model.World?): SplineWorld
 		return half - math.abs(d), Vector3.new(-sign * rx, 0, -sign * rz)
 	end
 
+	-- THE CLOSING BARRIER IS A SLAB, `CLOSING_DEPTH` studs thick, its front face at `closing`:
+	-- solid from both sides, as the piece road's box is. A car in front of it cannot reverse
+	-- through it, and a car left behind it (the slower of two players: the barrier follows
+	-- whoever is furthest) is stopped at its back face rather than being pushed through to
+	-- the front. Measured from the front face, positive ahead.
+	local CLOSING_DEPTH = 1
 	local function closingMargin(x: number, z: number): (number?, Vector3?)
 		local sc = self.closing
 		if not sc then
@@ -261,7 +267,12 @@ function SplineWorld.new(spline: Spline.Spline, base: Model.World?): SplineWorld
 			local c0 = closingMargin(x0, z0)
 			local c1, cn = closingMargin(x1, z1)
 			if c0 and c1 and cn then
-				consider(c0, c1, cn)
+				if c0 > -CLOSING_DEPTH * 0.5 then
+					consider(c0, c1, cn) -- in front of it (or in its front half)
+				else
+					-- behind it: its back face is the wall, facing back down the road
+					consider(-CLOSING_DEPTH - c0, -CLOSING_DEPTH - c1, -cn)
+				end
 			end
 		end
 		if bestN then
@@ -317,10 +328,16 @@ function SplineWorld.new(spline: Spline.Spline, base: Model.World?): SplineWorld
 				end
 			end
 			local c, cn = closingMargin(x, z)
-			if c and cn then
-				local depth = PENETRATION_MARGIN - c
+			-- inside the slab: out of whichever face is nearer
+			if c and cn and c < PENETRATION_MARGIN and c > -CLOSING_DEPTH - PENETRATION_MARGIN then
+				local forward = PENETRATION_MARGIN - c
+				local back = c + CLOSING_DEPTH + PENETRATION_MARGIN
+				local depth, dir = forward, cn
+				if back < forward then
+					depth, dir = back, -cn
+				end
 				if depth > worst then
-					worst, worstN = depth, cn
+					worst, worstN = depth, dir
 				end
 			end
 		end

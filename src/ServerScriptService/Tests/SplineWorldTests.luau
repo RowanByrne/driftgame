@@ -391,9 +391,26 @@ function Tests.run(which: { string }?)
 					least = math.min(least, s)
 				end
 			end
+			-- AND FROM BEHIND: the slower of two players can be left behind it, and it holds
+			-- them there rather than pushing them through to the front
+			local yaw2 = spline:yawAt(sc - 40)
+			local bx, by, bz = spline:surfaceXYZ(sc - 40, 0)
+			local behind = Sim.newRunner(CFrame.new(bx, by + D.RideHeight, bz) * CFrame.Angles(0, yaw2, 0))
+			behind.state.velocity = Vector3.new(-math.sin(yaw2), 0, -math.cos(yaw2)) * 50
+			behind.state.time = 10
+			local most = -math.huge
+			for _ = 1, 3 * DRIVE_FPS do
+				Sim.advance(behind, 1 / DRIVE_FPS, { steer = 0, handbrake = false }, sw)
+				local p = behind.state.position
+				local s = spline:projectFrom(p.X, p.Z, sc - 20)
+				if s then
+					most = math.max(most, s)
+				end
+			end
 			sw.setClosing(nil)
 			sw.setRails(true)
 			check("the closing barrier stops a car going back, rails off or on", least >= sc + D.BodyLength * 0.5 - 0.5, `driven back at it for 3 s: the car's middle got to {fmt(least - sc, 2)} studs in front of it (half the car is {fmt(D.BodyLength * 0.5, 2)})`)
+			check("and holds a car left behind it, rather than pushing it through", most <= sc - 1 - D.BodyLength * 0.5 + 0.5, `driven forward at its back for 3 s: the car's middle got to {fmt(sc - most, 2)} studs behind its front face (the slab is 1 deep, half the car {fmt(D.BodyLength * 0.5, 2)})`)
 		end
 
 		-- 7. Lost: a lookup from a hint that is nowhere near still finds the road.

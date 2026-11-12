@@ -15,8 +15,10 @@
 --   * A FALL PUTS YOU BACK ON IT (`SafeStart`), as a fall on the piece road does, through
 --     the one question `CarService:Respawn` asks first.
 --
--- The client may send exactly two things on `SplineTest`: nil ("what is the state?") and
--- "toggle". It never sends a seed, a place or a section.
+-- The client may send exactly three things on `SplineTest`: nil ("what is the state?"),
+-- "toggle" (the test road) and "mode" (T-136: which road the NEXT endless run lays, pieces
+-- or spline, `RoadService:SetMode`, refused while a run is going). It never sends a seed, a
+-- place or a section.
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -114,8 +116,10 @@ function SplineTestService:_state(player: Player)
 	local gen = self.gen
 	local on = self:InTest(player)
 	local o = gen and gen.spline.origin
+	local road = service("RoadService")
 	return {
 		on = on,
+		runMode = if road and type(road.Mode) == "function" then road:Mode() else "pieces",
 		seed = gen and gen.seed or nil,
 		origin = if on and o then { x = o.x, y = o.y, z = o.z, yaw = o.yaw } else nil,
 		sections = if on and gen then gen.sections else nil,
@@ -128,6 +132,18 @@ end
 
 function SplineTestService:_onAsk(player: Player, what: any)
 	if what == nil then
+		self:_tell(player)
+		return
+	end
+	if what == "mode" then
+		local road = service("RoadService")
+		if road and type(road.SetMode) == "function" then
+			local now = road:Mode()
+			local got = road:SetMode(if now == "spline" then "pieces" else "spline")
+			if got == now then
+				self.refused += 1 -- a run is going: the road under it is never swapped
+			end
+		end
 		self:_tell(player)
 		return
 	end
