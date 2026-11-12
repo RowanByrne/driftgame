@@ -22,6 +22,7 @@ assert(RunService:IsStudio(), "EngineTests is Studio only")
 
 local Config = require(ReplicatedStorage.Shared.Config)
 local Engine = require(StarterPlayer.StarterPlayerScripts:WaitForChild("Drift").Engine)
+local EngineSound = require(StarterPlayer.StarterPlayerScripts.Drift.EngineSound)
 
 local Tests = {}
 
@@ -390,6 +391,97 @@ function Tests.run()
 			"reset puts the engine back to idle in first",
 			e.gear == 1 and e.rpm == E.IdleRpm and not e.inDrift and not e.cut,
 			`gear {e.gear}, {f0(e.rpm)} rpm`
+		)
+	end
+
+	----------------------------------------------------------------------------
+	-- 11. The layered mix (T-129), pure: which loops play, how loud, how far pitched
+	----------------------------------------------------------------------------
+	do
+		local L = E.Layers
+		local loops = L.Loops
+		local n = #loops
+		local vols, speeds = table.create(2 * n, 0), table.create(2 * n, 1)
+		local function gains(rpm, load, cut)
+			local total = EngineSound.mix(rpm, load, cut, vols, speeds)
+			return total
+		end
+
+		-- On a rev point: that loop alone, at its own pitch.
+		local exactOk, exactShown = true, {}
+		for i, loop in loops do
+			gains(loop.Rpm, 1, false)
+			for j = 1, n do
+				local want = if j == i then L.Volume else 0
+				if math.abs(vols[2 * j - 1] - want) > 1e-6 or vols[2 * j] > 1e-9 then
+					exactOk = false
+				end
+			end
+			if math.abs(speeds[2 * i - 1] - 1) > 1e-9 then
+				exactOk = false
+			end
+			table.insert(exactShown, tostring(loop.Rpm))
+		end
+		check(
+			"on each rev point that loop plays alone, at its own pitch, full throttle only",
+			exactOk,
+			`checked {table.concat(exactShown, ", ")} rpm`
+		)
+
+		-- A sweep idle to redline: equal power (the sum of squared gains stays put), the
+		-- louder loop never pitched past 25%, no loop past MaxPitchShift, at most two playing.
+		local worstPower, worstLoud, worstAny, mostPlaying = 0, 0, 0, 0
+		for rpm = loops[1].Rpm, loops[n].Rpm, 7 do
+			gains(rpm, 1, false)
+			local power, playing, loudest, loudestAt = 0, 0, -1, 1
+			for j = 1, n do
+				local v = vols[2 * j - 1]
+				power += (v / L.Volume) ^ 2
+				if v > 1e-6 then
+					playing += 1
+					-- Exactly the rpm's ratio: a cap biting here would detune the crossfade.
+					worstAny = math.max(worstAny, math.abs(speeds[2 * j - 1] - rpm / loops[j].Rpm))
+				end
+				if v > loudest then
+					loudest, loudestAt = v, j
+				end
+			end
+			worstPower = math.max(worstPower, math.abs(power - 1))
+			worstLoud = math.max(worstLoud, math.abs(speeds[2 * loudestAt - 1] - 1))
+			mostPlaying = math.max(mostPlaying, playing)
+		end
+		check(
+			"sweeping idle to redline, the crossfade is equal power and never more than two loops",
+			worstPower < 1e-6 and mostPlaying <= 2,
+			`power off by at most {string.format("%.1e", worstPower)}; at most {mostPlaying} loops at once`
+		)
+		check(
+			"the louder loop is never pitched more than 25% from its own rpm, and both are at the rpm's exact ratio",
+			worstLoud <= 0.25 + 1e-6 and worstAny <= 1e-9,
+			`louder loop at most {string.format("%.1f", worstLoud * 100)}% off its own rpm; the furthest any playing `
+				.. `loop is from the exact ratio {string.format("%.1e", worstAny)}`
+		)
+
+		-- Load: on throttle the off loops are silent, off throttle the on loops are.
+		local mid = math.sqrt(loops[3].Rpm * loops[4].Rpm)
+		gains(mid, 1, false)
+		local offAtFull = vols[6] + vols[8]
+		gains(mid, 0, false)
+		local onAtNone = vols[5] + vols[7]
+		local offAtNone = vols[6] + vols[8]
+		check(
+			"full throttle plays only the on loops, none plays only the off loops, OffLoadVolume under",
+			offAtFull < 1e-9 and onAtNone < 1e-9 and offAtNone > 0,
+			`off at full {offAtFull}, on at none {onAtNone}, off at none {string.format("%.3f", offAtNone)}`
+		)
+
+		-- A limiter cut ducks the whole mix.
+		local whole = gains(loops[n].Rpm, 1, false)
+		local ducked = gains(loops[n].Rpm, 1, true)
+		check(
+			`a limiter cut ducks the mix to LimiterDuck ({L.LimiterDuck})`,
+			math.abs(ducked - whole * L.LimiterDuck) < 1e-9,
+			`{string.format("%.3f", whole)} -> {string.format("%.3f", ducked)}`
 		)
 	end
 

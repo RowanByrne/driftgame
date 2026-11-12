@@ -354,6 +354,36 @@ return {
 		LimiterFallRate = 30, -- /s it falls at during a cut
 		BlipRpm = 700, -- a downshift's blip
 		BlipSeconds = 0.15,
+
+		-- THE LAYERED SOUND (T-129): our own synthesized loops, picked by the user on
+		-- 2026-11-11 (DECISIONS.md), at six rev points, each on and off throttle. ALL TWELVE
+		-- ARE ONE UPLOADED FILE, the "sheet", and each `Sound` plays its own slice of it
+		-- through `PlaybackRegion` and `LoopRegion` -- one upload instead of twelve. Each
+		-- slice is padded with a quarter second of itself either side in the file, so the
+		-- codec's smear at a region's edge is engine, not silence.
+		--
+		-- `SoundId = nil` FALLS BACK TO THE ONE CLIP above (it was the game's sound until the sheet
+		-- was uploaded). Built by `..\art\generated\sfx-engine\set-v1\build_set.py`.
+		Layers = {
+			SoundId = "rbxassetid://132857262391195" :: string?, -- engine-sheet.ogg, uploaded 2026-11-12
+			Volume = 0.84, -- the loops are normalised to an RMS of 0.16 and "Car idle" is
+			-- 0.29: 0.45 x 0.29 / 0.16 keeps the engine bed where it was
+			-- in the mix (AUDIO.md "Mix")
+			OffLoadVolume = 0.75, -- the off-throttle loops sit this far under the on ones
+			LimiterDuck = 0.5, -- volume share left during a limiter cut: the stutter
+			MaxPitchShift = 0.6, -- a SAFETY CAP only, past the rev points' 1.52x spacing, so
+			-- two loops in a crossfade always agree on the pitch. The louder
+			-- of the two is never more than 23% off its own rpm (EngineTests)
+			-- Rev point, then { start, length } in seconds in the sheet, on and off.
+			Loops = {
+				{ Rpm = 900, On = { 0.25, 2.0 }, Off = { 2.85, 2.0 } },
+				{ Rpm = 1370, On = { 5.45, 2.014604 }, Off = { 8.05, 2.014604 } },
+				{ Rpm = 2090, On = { 10.65, 2.009562 }, Off = { 13.25, 2.009562 } },
+				{ Rpm = 3190, On = { 15.85, 1.993729 }, Off = { 18.45, 1.993729 } },
+				{ Rpm = 4860, On = { 21.05, 2.0 }, Off = { 23.65, 2.0 } },
+				{ Rpm = 7400, On = { 26.25, 1.994604 }, Off = { 28.85, 1.994604 } },
+			},
+		},
 		-- THE ONE CLIP, until the layered loops (T-123 step 3): its pitch is the rpm's share
 		-- of IdleRpm .. RedlineRpm, lerped MinPitch .. MaxPitch, with NO smoothing of its own
 		-- -- the rpm has inertia already. The notes below are from when the pitch was road

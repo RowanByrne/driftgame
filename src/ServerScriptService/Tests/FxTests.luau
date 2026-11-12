@@ -983,7 +983,7 @@ function Tests.run(opts)
 		local skid = SkidSound.new()
 		local engineOk = engine:Attach(rig)
 		local skidOk = skid:Attach(rig)
-		local wantSounds = 1 + #F.Built -- one engine, one squeal per built surface
+		local wantSounds = EngineSound.expectedInstances() + #F.Built -- the engine (1, or 12 layered), one squeal per built surface
 		local soundsBefore = engine:CountInstances() + skid:CountInstances()
 		check(
 			`a rig gets exactly {wantSounds} sounds, once`,
@@ -997,17 +997,29 @@ function Tests.run(opts)
 			engine:CountInstances() + skid:CountInstances() == wantSounds,
 			`{engine:CountInstances() + skid:CountInstances()} sounds`
 		)
+		-- The engine is one clip, or twelve slices of the uploaded sheet once
+		-- `Layers.SoundId` is set (T-129): every one must carry the picked id.
+		local engineId = if EngineSound.isLayered() then E.Layers.SoundId else E.SoundId
+		local engineSounds = {}
+		for _, child in rig.body:GetChildren() do
+			if child:IsA("Sound") and string.sub(child.Name, 1, #F.Names.Engine) == F.Names.Engine then
+				table.insert(engineSounds, child)
+			end
+		end
+		local idsOk, tapered = #engineSounds == EngineSound.expectedInstances(), true
+		for _, sound in engineSounds do
+			idsOk = idsOk and sound.SoundId == engineId
+			tapered = tapered and sound.RollOffMode == Enum.RollOffMode.InverseTapered
+		end
+		local skidSound = rig.body:FindFirstChild(string.format(F.Names.Skid, F.Default))
 		check(
-			"both sounds are the ids the user picked, by id, nothing uploaded",
-			rig.body:FindFirstChild(F.Names.Engine).SoundId == E.SoundId
-				and rig.body:FindFirstChild(string.format(F.Names.Skid, F.Default)).SoundId == S.SoundIds[F.Default],
-			`{E.SoundId} and {S.SoundIds[F.Default]}`
+			"every sound is an id the user picked, by id",
+			idsOk and skidSound.SoundId == S.SoundIds[F.Default],
+			`{#engineSounds} engine sounds on {engineId}, skid {S.SoundIds[F.Default]}`
 		)
 		check(
-			"both are 3D: tapered roll-off, so another car is heard where it is",
-			rig.body:FindFirstChild(F.Names.Engine).RollOffMode == Enum.RollOffMode.InverseTapered
-				and rig.body:FindFirstChild(string.format(F.Names.Skid, F.Default)).RollOffMode
-					== Enum.RollOffMode.InverseTapered,
+			"all are 3D: tapered roll-off, so another car is heard where it is",
+			tapered and skidSound.RollOffMode == Enum.RollOffMode.InverseTapered,
 			`engine {E.RollOffMin}..{E.RollOffMax} studs, skid {S.RollOffMin}..{S.RollOffMax} studs`
 		)
 
