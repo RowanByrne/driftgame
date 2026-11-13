@@ -96,6 +96,61 @@ LIMITER.
 - Nothing created or destroyed while driving. All the loops play always and only their volumes
   move, so no loop ever restarts in your ear.
 
+### Next: recorded loops from the AE86 sound mod (`T-169`, planned 2026-11-13)
+
+The user, 2026-11-13: switch the engine from our synthesized loops to the recorded loops in the
+"AE86 Sound Mod" (`..\import\AE86 Sound Mod\`), which they have permission to reuse ("yes,
+permission granted"). Everything measured about the mod is in
+`..\art\source\sfx-engine\ae86-mod\FINDINGS.md`; the author's tuning in `author-recipe.json`
+beside it. Nothing is uploaded before the user picks a set by ear, and nothing until the
+permission's link or message is in the manifest.
+
+**Two ladders.** The engine sound plays an **on-throttle ladder** and an **off-throttle ladder**,
+each crossfaded by rpm on its own, and load crossfades between the two. The mod's on and off loops
+sit at different revs and there are fewer off than on, so today's one-to-one pairs cannot hold them.
+The current synthesized sheet must come out **exactly** as today in the new shape: the same volume
+and playback speed for every loop at the same rpm and load (checked by a test over a grid of rpm and
+load), so the switch is built and checked before the pick.
+
+**The candidates**, rendered offline through the game's own mix, on the same scripted drive as the
+earlier demos, played on the card:
+
+| Set | On-throttle ladder (measured rpm) | Off-throttle ladder |
+|---|---|---|
+| A: inside | `on_lower` 3,261 · `on_low` 5,034 · `on_lowmid` 5,604 · `on_midhigh` 6,384 · `on_high_valve2` 7,224 | outside `idle` 1,382 · `off_mid` 4,074 · `off_higher` 6,636 |
+| B: inside low, outside from about 6,300 | `on_lower` 3,261 · `on_low` 5,034 · `on_lowmid` 5,604 · `ext_on_mid` 6,348 · `ext_on_high_exhaust` 7,124 | as A (the outside set has no usable high off-throttle loop) |
+| C: today's synthesized sheet | as now | as now |
+
+- **Revs are the measured ones** from FINDINGS.md, not the author's (2 to 5 % high), so two loops
+  crossfading sit at the same pitch.
+- **One loop per rev point:** `on_lowmid` over `on_mid_power` (cleaner wrap), `off_higher` over
+  `off_high` (cleaner wrap), `on_high_2` left out (240 rpm from `on_midhigh`). `on_high_valve2` is
+  thin and 6 dB down: brought up to the others' loudness, and dropped for `on_high_2` if it still
+  sounds weak.
+- **Never used:** `high_off_ex` (clipped), the inside `idle` (no steady pitch), and the eight Assetto
+  Corsa stock samples FINDINGS.md lists, which are never extracted at all.
+- **Idle:** the outside idle sits at 1,382 rpm and the game idles at 900, so `IdleRpm` rises to
+  match. Rpm drives sound only, so the drive doesn't change. Its click where it repeats gets a
+  crossfade. If it sounds wrong, the alternative is offered on the card.
+- **Low revs:** nothing sits between the idle and 3,261 rpm on throttle, so pulling away pitches
+  `on_lower` further than the ±25 % above. Accepted; the user hears it in the candidates.
+
+**After the pick:** the sheet is built mono, each loop cleaned where it repeats, at the same
+loudness as today's loops so the mix level doesn't move (bright loops tamed by ear: "weighty,
+clean, never harsh"). It's recorded in the manifest with the permission, uploaded **private as the
+game's own audio** with a name and description that say nothing of the car, the mod or the game it
+came from, set in config, and checked in a lane with sound on. Today's sheet `132857262391195`
+stays one config line away.
+
+**Left out:** backfires and pops, gear-change sounds, transmission whine, the `metallic` layer and
+the `power` one-shots, other players' engines, an engine per car, any change to the drive. The mod's
+backfire and gear-change samples are follow-ups to suggest.
+
+**Risks:** Roblox checks every upload for copyright: if it's refused or flagged, stop and tell the
+user, never retry with altered audio. Where the mod's author got the recordings is not known. Using
+mod audio is the user's exception to this spec's "Platform risks" rule below and to
+`AUDIO-PIPELINE.md`'s sources (DECISIONS.md, 2026-11-13).
+
 ## Server and client
 
 Client only, local car only, as today. No remotes, no data.
