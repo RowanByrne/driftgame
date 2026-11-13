@@ -244,6 +244,58 @@ wide."*
   with the tarmac's edge (worked out from the geometry, not measured). The floor
   solve that would catch it only runs below 15 studs/s.
 
+### Kerb hops
+
+T-192. The user, 2026-11-13: *"right now when you go over one of these gravel curbs, you can be
+going super duper fast as you go up the miniature ramp it forms, but right now the car stays 100%
+sucked to the ground. can we have it so those mini ramps and height changes can actually cause
+the car to get bumped into the air?"*
+
+- **What happens:** coming up the gravel bevel at speed throws the car into a short hop. It
+  lands back on its wheels and carries on sliding. A slow roll back on stays planted, as before.
+- **How (`Drift/Model`, the grounded branch).** On stepped ground (every spline hit), each step
+  and for each wheel: how much faster its ground rose than its own normal says it should, for
+  the way that wheel moved, turn included. On any smooth surface that is nothing. On the bevel,
+  which the normals leave out (T-184), it is the bevel's rise under that wheel, about a third
+  of the speed it crosses the edge at. The largest of the four, past `KickMin`, pushes the car
+  up at `KickShare` of it (`State.rideVy`). When the ground stops rising, only gravity slows
+  the car, so it rises past its ride height. If it is still rising at `HopMinSpeed` when it
+  clears it, it leaves the ground: `State.hopping`, the model's own airborne state (gravity,
+  no grip, no drive, levelling at `AirLevel`), held until it is back down on its ride height.
+  Slower than that, it rides the bump on its wheels and keeps its grip. The upward speed is
+  capped for `HopMax`. All numbers are in `Config.Drift` (OURS): `KickMin` 2 studs/s,
+  `KickShare` 0.75, `HopMinSpeed` 4.5 studs/s, `HopMax` 2.5 studs, `HopClear` 0.05.
+- **Crests don't hop, by the numbers.** The steepest grade change the spline allows
+  (`MaxGradeRate` 0.0015 per stud) curves the road down at 15 studs/s² at 100 studs/s, under
+  gravity's 35, so the car never leaves a crest. The rule is the same for any ground, so a
+  sharper one would.
+- **Flat ground and the approved feel are untouched:** the kick only exists on stepped ground,
+  and there only where a wheel's ground outruns its normal by `KickMin`.
+- **Measured (seed 31337, the model run on the curve; from the grass 9 studs past the bevel's
+  foot, aimed at the road, no steering).** Start speeds 20, 40, 60 and 80 studs/s; the car is
+  at about 25 to 30, 45, 62 and 82 at the bevel. Highest is above the ground under the wheels:
+
+  | Angle to the road | 20 | 40 | 60 | 80 |
+  |---|---|---|---|---|
+  | 15° (crossing at 9 to 22 studs/s) | planted | planted | 2 hops, highest 0.80, 0.54 s in the air | 3 hops, 0.36, 0.68 s |
+  | 35° | 2 hops, 0.89, 0.50 s | 3 hops, 0.41, 0.73 s | 2 hops, 0.71, 0.68 s | 2 hops, 1.23, 0.75 s |
+  | 60° | 4 hops, 0.27, 0.82 s | 2 hops, 0.73, 0.71 s | 1 hop, 1.03, 0.47 s | 1 hop, 0.75, 0.43 s |
+
+  - **What the hops are like:** one hop is 0.1 to 0.5 s in the air, usually one as the front
+    axle tops the bevel and one for the rear. Height is not strictly rising with speed: it
+    depends on where each wheel meets the bevel.
+  - **Sliding back on** (body turned 34° further in): about the same, highest 0.87.
+  - **Landings:** every one on all four wheels. The slip angle is the same before and after,
+    within a degree, so the slide carries on. Tilt in the air is at most 8.4°, mostly the
+    road's grade. No wall stops, no car left in the air.
+  - **The cost:** no drive in the air. After 1.25 s the car is 3 to 13 studs/s slower than the
+    same run without hops, and up to 11 studs away along its line.
+  - **Ride error on flat tarmac**, 60 s of autopilot: worst 0.0512, mean 0.0099, against
+    0.0512 and 0.0098 without kicks. No hop with four wheels on the tarmac. The only push on
+    the tarmac is one still dying away, at most 0.11 s after the last wheel came back on.
+- **Tuning:** more hop is `KickShare` or `HopMax` up. Fewer, smaller hops is `HopMinSpeed` up.
+  None of it is approved yet: the user drives it.
+
 ### Walking on the road
 
 T-154. The user, 2026-11-12: *"when i get out of the car in endless mode, i want to be able to

@@ -534,6 +534,51 @@ function Tests.run(which: { string }?, ...)
 				else
 					check("a straight with wide grass found for the raised road", false, `none on this road, seed {SEED}`)
 				end
+				-- KERB HOPS (T-192): back on from the grass up the gravel bevel. Fast and steep,
+				-- the car hops, no higher than `HopMax`, and lands on all four wheels with its
+				-- slide intact and no wall; slow and shallow, it stays planted
+				if s0 then
+					local function backOn(degrees: number, speed: number)
+						local w = SplineWorld.new(mountain, nil)
+						local heading = mountain:yawAt(s0) + side * math.rad(degrees)
+						local x, y, z = mountain:terrainXYZ(s0, side * (half + T.RoadLipWidth + 9))
+						local runner = Sim.newRunner(CFrame.new(x, y + D.RideHeight, z) * CFrame.Angles(0, heading, 0))
+						runner.state.velocity = Vector3.new(-math.sin(heading), 0, -math.cos(heading)) * speed
+						runner.state.time = 10
+						local r = { hops = 0, high = 0, air = 0, walls = 0, landWheels = 4, slipJump = 0 }
+						for _ = 1, 150 do
+							local before = runner.state.airborne
+							local slipBefore = runner.state.slip
+							Sim.advance(runner, D.FixedStep, { steer = 0, handbrake = false }, w)
+							local st = runner.state
+							if st.airborne and not before then
+								r.hops += 1
+							end
+							if st.airborne then
+								r.air += D.FixedStep
+								if st.groundY then
+									r.high = math.max(r.high, st.position.Y - (st.groundY + D.RideHeight))
+								end
+							elseif before then
+								local n = 0
+								for _, dn in st.wheelsDown do
+									n += if dn then 1 else 0
+								end
+								r.landWheels = math.min(r.landWheels, n)
+								r.slipJump = math.max(r.slipJump, math.abs(math.deg(st.slip - slipBefore)))
+							end
+							r.walls += if st.wallHit then 1 else 0
+						end
+						r.airEnd = runner.state.airborne
+						return r
+					end
+					local fast, slow = backOn(60, 60), backOn(15, 20)
+					check(
+						"kerb hops: fast up the bevel hops and lands on four wheels, slow stays planted",
+						fast.hops > 0 and fast.high > 0.2 and fast.high <= D.HopMax + 0.05 and fast.landWheels == 4 and fast.slipJump < 2 and fast.walls == 0 and not fast.airEnd and slow.hops == 0,
+						`60 degrees at 60 studs/s: {fast.hops} hops, highest {fmt(fast.high, 2)} studs (cap {D.HopMax}), {fmt(fast.air, 2)} s in the air, every landing on {fast.landWheels} wheels, slip changed at most {fmt(fast.slipJump, 1)} degrees in a landing step, {fast.walls} wall steps; 15 degrees at 20 studs/s: {slow.hops} hops`
+					)
+				end
 			end
 			-- A tight cliff edge (T-181): a few studs of gravel, the rail on the tarmac's edge,
 			-- the lip just past it. The rail holds the car on the road, square on and glancing
