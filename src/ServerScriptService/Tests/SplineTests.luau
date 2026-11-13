@@ -565,6 +565,7 @@ function parts.terrain(check)
 	local sp = gen.spline
 	local rng = Random.new(11)
 	local wrongKind, worstJoin, worstSlope, worstFlat, n = 0, 0, 0, 0, 0
+	local worstLip, lipNormal = 0, 1
 	local cliffNil, cliffTried, wallGrass, wallTried = 0, 0, 0, 0
 	for _ = 1, 3000 do
 		local s = 50 + rng:NextNumber() * (sp.length - 100)
@@ -575,7 +576,7 @@ function parts.terrain(check)
 		local dT = side * rng:NextNumber() * half
 		local dG = side * (half + 0.01 + rng:NextNumber() * math.max(0, w - 0.02))
 		local dP = side * (half + w + 0.5 + rng:NextNumber() * 10)
-		if sp:groundKind(s, dT) ~= Spline.TARMAC or (w > 0.05 and sp:groundKind(s, dG) ~= (if sp:gravelAt(s, side) then Spline.GRAVEL else Spline.GRASS)) then
+		if sp:groundKind(s, dT) ~= Spline.TARMAC or (w > 0.05 and sp:groundKind(s, dG) ~= (if sp:gravelAt(s, side) or math.abs(dG) - half <= sp:lipWidthAt(s, side) then Spline.GRAVEL else Spline.GRASS)) then
 			wrongKind += 1
 		end
 		if edge == Spline.CLIFF then
@@ -589,22 +590,38 @@ function parts.terrain(check)
 				wallGrass += 1
 			end
 		end
-		-- the grass meets the tarmac without a step or a crease, and is flat at its edge
+		-- the grass meets the tarmac without a gap or a crease, and is flat at its edge: read
+		-- off the ground as if the road were not raised (`terrainY` + `lipAt`)
+		local function baseY(d: number): number
+			return sp:terrainY(s, d) + sp:lipAt(s, d)
+		end
 		local yRoad = sp:heightAt(s) + side * half * math.tan(sp:bankAt(s))
 		worstJoin = math.max(worstJoin, math.abs(sp:terrainY(s, side * half) - yRoad), math.abs(sp:terrainY(s, side * (half + 1e-4)) - yRoad))
 		if w > 2 then
 			local e = 1e-3
-			local inner = (sp:terrainY(s, side * (half + e)) - sp:terrainY(s, side * half)) / e
+			local inner = (baseY(side * (half + e)) - baseY(side * half)) / e
 			worstSlope = math.max(worstSlope, math.abs(inner - side * math.tan(sp:bankAt(s))))
 			local outer = (sp:terrainY(s, side * (half + w)) - sp:terrainY(s, side * (half + w - e))) / e
 			worstFlat = math.max(worstFlat, math.abs(outer))
+			-- the raised road (T-184): `RoadLip` down by the step's foot and all the way out,
+			-- and the step's face, to the car, has the grass's own normal
+			local lw = sp:lipWidthAt(s, side)
+			for _, d in { half + lw, half + lw + rng:NextNumber() * (w - lw), half + w } do
+				worstLip = math.max(worstLip, math.abs(baseY(side * d) - sp:terrainY(s, side * d) - T.RoadLip))
+			end
+			lipNormal = math.min(lipNormal, sp:terrainNormal(s, side * (half + lw * 0.5)):Dot(sp:terrainNormal(s, side * (half + lw + 0.05))))
 		end
 		n += 1
 	end
 	check("tarmac, then grass, at the right offsets", wrongKind == 0, `{wrongKind} of {n} points read the wrong surface`)
 	check("past a cliff's lip there is nothing", cliffTried > 0 and cliffNil == cliffTried, `{cliffNil} of {cliffTried} points past a cliff found nothing under them`)
 	check("past a rock face or a hedge the ground carries on", wallTried > 0 and wallGrass == wallTried, `{wallGrass} of {wallTried}`)
-	check("the grass meets the tarmac with no step", worstJoin < 1e-3, `worst {string.format("%.1e", worstJoin)} studs`)
+	check("the grass meets the tarmac with no gap: the step starts at its edge", worstJoin < 1e-3, `worst {string.format("%.1e", worstJoin)} studs`)
+	check(
+		"the road stands RoadLip above its grass",
+		worstLip < 1e-6 and lipNormal > 0.999,
+		`grass off {T.RoadLip} studs below the unraised ground by {string.format("%.1e", worstLip)} at worst, past a gravel bevel up to {T.RoadLipWidth} across; the bevel's normal to the car against the grass at its foot, dot {fmt(lipNormal, 4)} at worst (1: the forces never read it as a slope)`
+	)
 	check("the grass leaves the road at its bank and eases flat", worstSlope < 0.01 and worstFlat < 0.01, `slope at the tarmac's edge off the bank's by {fmt(worstSlope, 4)}; at the grass's outer edge {fmt(worstFlat, 4)} (flat is 0)`)
 
 	-- A client's replay has the same mountainside, exactly

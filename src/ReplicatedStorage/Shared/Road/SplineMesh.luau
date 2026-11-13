@@ -217,11 +217,15 @@ type Builder = {
 
 -- A quad strip between two rows of vertex ids, each with its normal id. `colours`, when
 -- given, is a colour id per strip (between vertex i and i + 1), painted on both triangles.
-local function strip(b: Builder, rowA: { number }, normA: { number }, rowB: { number }, normB: { number }, flip: boolean, colours: { number }?)
+-- `farA` / `farB`, when given, are the normals a vertex has as the FAR side of a strip
+-- (vertex i + 1 of strip i), so one vertex can be smooth on one strip and flat on the next:
+-- the road's step (T-184).
+local function strip(b: Builder, rowA: { number }, normA: { number }, rowB: { number }, normB: { number }, flip: boolean, colours: { number }?, farA: { number }?, farB: { number }?)
 	local em = b.em
+	local fa, fb = farA or normA, farB or normB
 	for i = 1, #rowA - 1 do
 		local a0, a1, b0, b1 = rowA[i], rowA[i + 1], rowB[i], rowB[i + 1]
-		local na0, na1, nb0, nb1 = normA[i], normA[i + 1], normB[i], normB[i + 1]
+		local na0, na1, nb0, nb1 = normA[i], fa[i + 1], normB[i], fb[i + 1]
 		local f1, f2
 		if flip then
 			f1 = em:AddTriangle(a0, b0, a1)
@@ -322,37 +326,67 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 		-- the surface: the left runoff in `RUNOFF_STRIPS` strips, the tarmac in `across`,
 		-- the right runoff in `RUNOFF_STRIPS`; a row of vertices per cross-section. The
 		-- runoff's width changes along the road, so each row places its own grass vertices
+		-- THE ROAD'S GRAVEL BEVEL (T-184): one more strip each side between the tarmac and
+		-- the grass, `Spline:lipWidthAt` across (`RoadLipWidth`), sloping down `RoadLip` to the
+		-- grass, in the gravel's colour. It is shaded FLAT across (its own normal), so it reads
+		-- as an angled shoulder; the tarmac and the grass either side keep their smooth normals.
 		local RUNOFF_STRIPS = 2
+		local TT = Config.Spline.Terrain
 		local tarmacColour = road.em:AddColor(R.Colours.Road, 1)
-		local grassColour = road.em:AddColor(Config.Spline.Terrain.GrassColour, 1)
+		local grassColour = road.em:AddColor(TT.GrassColour, 1)
+		local gravelColour = road.em:AddColor(TT.GravelColour, 1)
+		local lipL = RUNOFF_STRIPS + 1 -- the left bevel's strip, from its foot's vertex
+		local lipR = lipL + across + 1 -- the right bevel's strip, from its top's vertex
 		local colours = {}
-		for j = 1, RUNOFF_STRIPS * 2 + across do
-			colours[j] = if j <= RUNOFF_STRIPS or j > RUNOFF_STRIPS + across then grassColour else tarmacColour
+		for j = 1, RUNOFF_STRIPS * 2 + across + 2 do
+			colours[j] = if j == lipL or j == lipR then gravelColour elseif j < lipL or j > lipR then grassColour else tarmacColour
 		end
 		-- a tight cliff edge's runoff is gravel (T-181): its strips take the gravel colour
 		-- between two cuts whose middle is in a gravel run
-		local gravelColour = road.em:AddColor(Config.Spline.Terrain.GravelColour, 1)
 		local gravelled = table.clone(colours)
-		local prevRow, prevNorm, prevS = nil, nil, 0
+		local prevRow, prevNear, prevFar, prevS = nil, nil, nil, 0
 		for _, s in cuts do
-			local row, norm = {}, {}
+			local row, norm, pts = {}, {}, {}
 			local wL, wR = spline:runoffAt(s, -1), spline:runoffAt(s, 1)
 			local ds = {}
 			for j = 0, RUNOFF_STRIPS - 1 do
 				table.insert(ds, -half - wL * (1 - j / RUNOFF_STRIPS))
 			end
+			table.insert(ds, -half - spline:lipWidthAt(s, -1))
 			for j = 0, across do
 				table.insert(ds, -half + (2 * half) * j / across)
 			end
+			table.insert(ds, half + spline:lipWidthAt(s, 1))
 			for j = 1, RUNOFF_STRIPS do
 				table.insert(ds, half + wR * j / RUNOFF_STRIPS)
 			end
 			for j, d in ds do
 				local x, y, z = spline:terrainXYZ(s, d)
+				pts[j] = Vector3.new(x, y, z)
 				row[j] = road.em:AddVertex(Vector3.new(x - centre.X, y - centre.Y, z - centre.Z))
 				norm[j] = road.em:AddNormal(spline:terrainNormal(s, d))
 				road.vertices += 1
 			end
+			-- each bevel's own normal: square to the road's way and to its slope, outward
+			local yaw = spline:yawAt(s)
+			local along = Vector3.new(-math.sin(yaw), spline:gradeAt(s), -math.cos(yaw))
+			local right = Vector3.new(math.cos(yaw), 0, -math.sin(yaw))
+			local function stepNormal(foot: Vector3, top: Vector3, side: number): number
+				local n = along:Cross(top - foot)
+				if n.Magnitude < 1e-6 then
+					n = right * side
+				elseif n:Dot(Vector3.yAxis) < 0 then
+					n = -n
+				end
+				return road.em:AddNormal(n.Unit)
+			end
+			local nL = stepNormal(pts[lipL], pts[lipL + 1], -1)
+			local nR = stepNormal(pts[lipR + 1], pts[lipR], 1)
+			-- as the near side of a strip the left foot and the right top are on a bevel; as
+			-- the far side, the left top and the right foot are
+			local near, far = table.clone(norm), table.clone(norm)
+			near[lipL], near[lipR] = nL, nR
+			far[lipL + 1], far[lipR + 1] = nL, nR
 			if prevRow then
 				local mid = (prevS + s) * 0.5
 				local gL, gR = spline:gravelAt(mid, -1), spline:gravelAt(mid, 1)
@@ -360,13 +394,13 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 				if gL or gR then
 					for j = 1, RUNOFF_STRIPS do
 						gravelled[j] = if gL then gravelColour else grassColour
-						gravelled[RUNOFF_STRIPS + across + j] = if gR then gravelColour else grassColour
+						gravelled[lipR + j] = if gR then gravelColour else grassColour
 					end
 					use = gravelled
 				end
-				strip(road, prevRow, prevNorm, row, norm, false, use)
+				strip(road, prevRow, prevNear, row, near, false, use, prevFar, far)
 			end
-			prevRow, prevNorm, prevS = row, norm, s
+			prevRow, prevNear, prevFar, prevS = row, near, far, s
 		end
 
 		-- THE FACES OF THE MOUNTAINSIDE, in the same mesh: a client may hold only eight
@@ -601,7 +635,8 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 		-- a square post and its spacer block, and at a splice the bolt heads in the groove
 		local function post(id: string, s: number, side: number, splice: boolean)
 			local d, sp = T.KRailPostSize, T.KRailSpacer
-			local sink, top = 1, T.KRailHeight - 0.15
+			-- a post stands past the road's step, so it reaches down to the grass (T-184)
+			local sink, top = 1 + T.RoadLip, T.KRailHeight - 0.15
 			plain(`KRailPost_{id}`, Vector3.new(d, top + sink, d), uprightAt(s, side, backU + sp + d * 0.5, (top - sink) * 0.5), T.KRailColour, railMaterial)
 			plain(`KRailSpacer_{id}`, Vector3.new(backU + sp - grooveU, T.KRailBeam * 0.6, d * 0.8), uprightAt(s, side, (grooveU + backU + sp) * 0.5, T.KRailHeight - T.KRailBeam * 0.5), T.KRailColour, railMaterial)
 			if splice then
