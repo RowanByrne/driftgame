@@ -55,8 +55,8 @@ the drop. Running wide is no longer stopped by a wall; it costs you grip, then t
   on the runoff, T-183), villages, lighting and
   time of day. The drop fades into a light haze for now. That is the next feature, with the
   setting's art direction and references.
-- **Final art.** Programmer colours and very low poly shapes: green grass (with a tile of
-  blades drawn in code, T-187), a green box hedge,
+- **Final art.** Programmer colours and very low poly shapes: green grass (with a painted
+  tile, T-187), a green box hedge,
   faceted grey rock, a grey cliff face, galvanized grey crash barriers (white is a one-line
   swap in `Config.Spline`'s `KRailColour`).
 - **Road dressing:** kerbs, road signs, mirrors, painted edge lines, crash barriers anywhere but the K-rail runs.
@@ -197,11 +197,16 @@ The road stays purely visual: the car still reads everything from the curve (`Sp
   the tarmac, on the ground. Driven live into one at 45 degrees, it grinds along the rail with
   its middle 18 studs out and never leaves the tarmac.
 - **Nothing drawn collides.** As now.
-- **The grass's texture (T-187).** The user, 2026-11-13: *"give grass it's own texture."* The
-  grass faces of the chunk mesh are textured with a tile of short grass blades and soft clumps,
-  `Config.Spline.Grass.TileStuds` (12) studs a tile, drawn in code into one 256 x 256
-  `EditableImage` that every chunk shares (`Road/GrassTexture`): no image to upload, no mesh and
-  no part more. The tile is grey; the vertex colour still makes it `GrassColour`.
+- **The grass's texture (T-187).** The user, 2026-11-13: *"give grass it's own texture."* A
+  first tile of fine blades drawn in code read as *"a bit static-y"* in game, so four looks were
+  shown on the card from one daylight view (soft mottled patches, faint blurred blades, a
+  painted image, colour patches with no texture) and the user picked **the painted tile**
+  (DECISIONS.md). It is a painted grass image from the image tool, made grey offline, evened
+  out to average `Shade` and cross-faded so it tiles: 256 x 256, uploaded once
+  (`Config.Spline.Grass.Image`; `assets/grass-texture/`, MANIFEST.md there), tiled every
+  `TileStuds` (24) studs. `Road/GrassTexture` loads it into one `EditableImage` that every chunk
+  shares and sets its corners; the vertex colour still makes it `GrassColour`. No mesh and no
+  part more.
   - **Why this way:** a client had **no EditableMesh to spare** while the road is drawn
     (measured: 0 free), so the grass cannot be a mesh or part of its own. A built-in material
     covers the whole part: `Grass` on the chunk put grass on the tarmac, rock and trees too
@@ -210,18 +215,18 @@ The road stays purely visual: the car still reads everything from the curve (`Sp
     whole number of tiles per chunk, so the tiling runs on across chunks).
   - **What it changes on the rest:** a texture replaces Asphalt's colour map on the whole part
     (measured: the tarmac went flat and about twice as bright). So every face that is not grass
-    samples the tile's plain corner, `Shade` grey (0.49, what the Asphalt map averaged,
-    measured side by side), and the blades average `Shade` too. The tarmac, gravel, rock and
-    trees keep their brightness but **lose Asphalt's fine grain**: flat colour, as the faceted
-    faces are meant to be. `Shade` lightens or darkens them all; `Enabled = false` gives the
-    road exactly as before.
-  - **Measured** (seed 31337, 17 chunks; SplineMeshTests 17 of 17 pass): 9 988 grass faces
-    mapped in world studs, worst 0.002 studs off; all 31 907 other faces on the plain corner;
-    no triangle, vertex, mesh or part more. A chunk builds in about 0.5 ms more (within the
-    noise of three A/B runs, 10.4 to 13 ms either way). The tile is drawn once, the first time
-    a chunk needs it, over a few frames: 47 ms of wall time, at most 4.2 ms of work a frame.
-    Frame time in the lane, 5 textured chunks, with and without the texture: 8.33 and 8.33 ms
-    (capped at 120 fps). A device that will not make the image draws flat grass, as before.
+    samples the tile's plain corner, set to `Shade` grey (0.49, what the Asphalt map averaged,
+    measured side by side) when the image is loaded; that is why it is an EditableImage and not
+    the asset id on the part. The tarmac, gravel, rock and trees keep their brightness but
+    **lose Asphalt's fine grain**: flat colour, as the faceted faces are meant to be. `Shade`
+    lightens or darkens them all; `Enabled = false` gives the road exactly as before.
+  - **Measured** (seed 31337, 17 chunks, with T-189's joined mountain in; SplineMeshTests 16 of
+    16 pass): 9 988 grass faces mapped in world studs, worst 0.002 studs off; all 43 613 other
+    faces on the plain corner; no triangle, vertex, mesh or part more. Build time per chunk,
+    three A/B pairs: 13.2 to 14.3 ms with the texture, 13.1 to 14.1 without, within the noise.
+    The tile loads once, the first time a chunk needs it, 170 to 310 ms of wall time (an asset
+    fetch, waited on, not frame work); its corners read 125/255 and it averages 0.490. A device
+    that will not load the image draws flat grass, as before.
 
 ### The raised road
 
