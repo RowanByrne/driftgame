@@ -142,6 +142,12 @@ earlier demos, played on the card:
 - **Low revs:** nothing sits between the idle and 3,261 rpm on throttle, so pulling away pitches
   `on_lower` further than the ±25 % above. Accepted; the user hears it in the candidates.
 
+**The pick (`T-173`, 2026-11-13): set B.** The user played the three test drives and chose
+"B: outside up high". The drives also had a lift and coast down to idle added at the end, where the
+off-throttle ladder is thinnest. Recorded sheets set `MaxPitchShift` to 2.0: their rev points are
+up to 2.95 times apart (1,382 to 4,074 off throttle), and the cap must never bite inside a
+crossfade, or the two loops disagree on the pitch.
+
 **After the pick:** the sheet is built mono, each loop cleaned where it repeats, at the same
 loudness as today's loops so the mix level doesn't move (bright loops tamed by ear: "weighty,
 clean, never harsh"). It's recorded in the manifest with the permission, uploaded **private as the
