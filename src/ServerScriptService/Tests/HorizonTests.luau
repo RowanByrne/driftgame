@@ -144,7 +144,7 @@ function Tests.run()
 	-- the highest the floor stands against the lowest a cliff's face goes: the road at its
 	-- lowest, the horizon risen with a camera at the road's highest
 	local floorHigh = -F.Depth + H.FollowHeight * Config.Spline.MaxHeight
-	local cliffLow = Config.Spline.MinHeight - Config.Spline.Terrain.CliffDrop
+	local cliffLow = Config.Spline.MinHeight - math.max(Config.Spline.Terrain.CliffDrop, Config.Spline.Terrain.GrandCliffDrop)
 	check("floor: below every cliff's face", floorHigh < cliffLow, string.format("floor at most %.0f, cliffs down to %.0f", floorHigh, cliffLow))
 	local feetSink = true
 	for _, L in H.Layers do

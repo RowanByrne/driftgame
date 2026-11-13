@@ -55,7 +55,7 @@ local function validSection(sec: any): boolean
 			return false
 		end
 	end
-	for _, key in { "rl", "rr", "el", "er" } do
+	for _, key in { "rl", "rr", "el", "er", "gd" } do
 		if sec[key] ~= nil and not numbers(sec[key], 2) then
 			return false
 		end

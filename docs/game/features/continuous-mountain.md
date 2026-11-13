@@ -6,7 +6,7 @@
 
 The user, 2026-11-13: *"we need to sell the idea that we are actually on a endless mountain road here -
 that means we can't be constantly looking at the inside of cliffs ... right now i can go into a
-switchback and be staring at a mountain lol."* Their idea: let the road get much wider at times,
+switchback and be staring at a mountain lol."* Their idea: let the runoff (grass, trees and the like) get much wider at times, not the drivable road,
 and have the generator "send out horizontal checks" before sharp turns so the upcoming road doesn't
 make unnatural geometry. They asked for a sanity check and better methods.
 
@@ -37,10 +37,7 @@ surface in the world** and cut the road into it:
    a turn that keeps the cutting and the drop within limits: a hairpin goes where the slope can hold
    it, and a turn that would aim the road into the hillside is refused or eased. This is where the
    user's idea fits, and it's cheap: a few dozen height samples per candidate turn.
-3. **Wider road where it helps.** Real switchbacks are widened at the turn, and the odd wide
-   stretch (a lay-by, a run-off apron) reads well. Width varies smoothly from today's width up to
-   about double, mostly at hairpins. On its own it doesn't fix the view, so it comes last and is
-   optional.
+3. **Wider runoff** (the user's first idea) comes from step 1: with the ground continuous, grass and trees can run as wide as the slope allows. The user, 2026-11-13: "i didn't mean actually wider drive-able roads, i meant the sections of runoff (grass, trees, etc.) would all be wider - and you are already saying that with point 1 so it's probs not needed!" So there is no separate step, and the drivable road keeps its width.
 
 ## How it plays
 
@@ -65,7 +62,6 @@ First guesses, all in `Config.Spline` (a `Mountain` block):
 | Ridges and gullies | 300 to 900 studs across, ±40 studs | Seeded noise; gives cuttings and embankments their variety |
 | Drawn out to | 400 studs either side of the road | Far enough to meet the next leg; past it the horizon takes over |
 | Cutting height | capped by the turn check | So a hairpin never sits in a 200-stud trench |
-| Road width | 1x to 2x today's, eased | Widest at hairpins |
 
 - **Seeded and replayed:** the surface is a pure function of the seed and world position, so every
   device computes the same mountain; nothing extra goes over the wire.
@@ -94,4 +90,4 @@ the surface); the build says what changes in `CONTRACTS.md`.
 
 ## Open questions
 
-- Whether step 3 (wider road) is still wanted once steps 1 and 2 are in.
+- None blocking.
