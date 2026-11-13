@@ -237,6 +237,12 @@ local Spline = {
 		GrandRockSlope = { 64, 78 }, -- degrees, so a tall face doesn't reach out for ever
 		RockTop = { 14, 36 }, -- studs of scrub on top, near and grand
 		RockBack = 0.36, -- the back slope's run, as a share of the height
+		-- LOWER THAN NEAR A TURNAROUND (T-189): with no hedges, the uphill side just past a
+		-- hairpin is rock too, right under the leg you came down. Where even a low body would
+		-- stand up through that road, the grandeur goes below 0 (to -1) and the body shrinks
+		-- toward these, so it stays under the leg above. The car's wall stays `RockHeight[1]`
+		LowRockHeight = 4, -- studs, at -1
+		LowRockTop = 3, -- studs of scrub on top, at -1
 		GrandCliffDrop = 200, -- studs, mid-leg (`CliffDrop` near). Above the valley floor
 		-- (`Config.Horizon.Floor`; HorizonTests checks it)
 		-- A ROCK FACE'S SHADOW (T-178): the mesh casts none, so plain boxes stand behind each

@@ -913,7 +913,7 @@ function parts.grand(check)
 				bad += 1
 			else
 				for j = 2, #sec.gd, 2 do
-					if sec.gd[j] < 0 or sec.gd[j] > 1 then
+					if sec.gd[j] < -1 or sec.gd[j] > 1 then -- below 0: lower, under the leg above (T-189)
 						badKnots += 1
 					end
 					-- how fast it changes, knot to knot (the last knot rounded to 0.001)
@@ -1031,7 +1031,7 @@ function parts.grand(check)
 			end
 		end
 	end
-	check("every section carries its grandeur, 0 to 1", bad == 0 and badKnots == 0, `{bad} sections without, {badKnots} knots out of range`)
+	check("every section carries its grandeur, -1 to 1", bad == 0 and badKnots == 0, `{bad} sections without, {badKnots} knots out of range`)
 	check(
 		"grandeur rises no faster than GrandRate",
 		worstRise <= 0.0011,

@@ -825,6 +825,13 @@ end
 -- reaches out past the grass at its least steep (`Road/SplineMesh`'s profile, at its largest).
 local function bodyAt(g: number): (number, number)
 	local T = Config.Spline.Terrain
+	if g < 0 then
+		-- lower than near a turnaround (T-189): toward `LowRockHeight`, as the profile draws it
+		local low = -g
+		local h = T.RockHeight[2] + (T.LowRockHeight - T.RockHeight[2]) * low
+		local top = T.RockTop[1] + (T.LowRockTop - T.RockTop[1]) * low
+		return h + 4 * (1 - low) + 0.5 * low, h / math.tan(math.rad(T.RockSlope[1])) + top + T.RockBack * h + 1.25 * (1 - low)
+	end
 	local h = T.RockHeight[2] + (T.GrandRockHeight[2] - T.RockHeight[2]) * g
 	local lean = math.rad(T.RockSlope[1] + (T.GrandRockSlope[1] - T.RockSlope[1]) * g)
 	local top = T.RockTop[1] + (T.RockTop[2] - T.RockTop[1]) * g
@@ -843,14 +850,11 @@ function SplineGen._grand(self: Gen, sec: Spline.Section): { number }
 	local s0 = sp.length
 	local n = math.max(1, math.ceil(len / T.GrandKnotEvery - 1e-9))
 	local out = table.create(2 * n)
-	if self.turning and TURNAROUNDS[self.turning] then
-		-- a turnaround itself: low all through, and the distance counts from its end
+	-- a turnaround itself: low all through (or lower, under the leg above: T-189), and the
+	-- distance counts from its end
+	local turnaround = self.turning ~= nil and TURNAROUNDS[self.turning :: string] == true
+	if turnaround then
 		self.lastTurnEnd = s0 + len
-		self.lastGrand = 0
-		for i = 1, n do
-			out[2 * i - 1], out[2 * i] = if i == n then len else i * len / n, 0
-		end
-		return out
 	end
 	local ahead = self:_toTurnaround()
 	if self.turning then
@@ -874,8 +878,10 @@ function SplineGen._grand(self: Gen, sec: Spline.Section): { number }
 		local p = pts[i] or pts[#pts] or { ds, x0, z0 }
 		local d = math.min(s0 + ds - self.lastTurnEnd, ahead - ds)
 		local t = math.clamp((d - T.GrandNear) / T.GrandRamp, 0, 1)
-		local g = t * t * (3 - 2 * t)
-		if g > 0 then
+		local g = if turnaround then 0 else t * t * (3 - 2 * t)
+		-- (since T-189 at every knot, not only grand ones: with no hedges, a low body just past
+		-- a hairpin is right under the leg above, and must go lower still, below 0)
+		do
 			-- the side the rock is on here (or would be): the side across from a cliff
 			local function kindAt(list: { number }): number
 				for j = 1, #list, 2 do
@@ -920,7 +926,7 @@ function SplineGen._grand(self: Gen, sec: Spline.Section): { number }
 			end
 			-- the grandest that stands clear: under each such road, or, short of it, no
 			-- higher above it than it is far off (so no pinnacle towers over the leg above)
-			while g > 0 do
+			while g > -1 do
 				local h, reachG = bodyAt(g)
 				local clear = true
 				for j = 1, #near, 3 do
@@ -937,7 +943,7 @@ function SplineGen._grand(self: Gen, sec: Spline.Section): { number }
 				if clear then
 					break
 				end
-				g = math.max(0, g - 0.05)
+				g = math.max(-1, g - 0.05)
 			end
 		end
 		values[i] = g

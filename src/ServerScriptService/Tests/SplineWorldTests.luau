@@ -360,11 +360,16 @@ function Tests.run(which: { string }?, ...)
 		-- 5. The mountainside (T-140): grass, rock, K-rail and cliff, each driven at.
 		if want("mountain") then
 			local T = Config.Spline.Terrain
+			-- further along than the yardstick's road: since T-189 (every downhill side a cliff, so
+			-- more tight edges, T-181, in place of K-rails) the first 2 600 studs of this seed hold
+			-- no K-rail on a gentle stretch
+			local searchTo = 8000
+			gen:extendTo(searchTo + 300)
 			local mw = SplineWorld.new(mountain, nil)
 			-- A place where `side` ends in `kind` for 80 studs either way, on a gentle stretch,
 			-- with or without a K-rail.
 			local function find(kind: number, side: number, rail: boolean): number?
-				for s = 300, LENGTH - 300, 7 do
+				for s = 300, searchTo - 300, 7 do
 					local good = true
 					for u = s - 80, s + 80, 10 do
 						if mountain:edgeAt(u, side) ~= kind or math.abs(mountain:curvatureAt(u)) > 1 / 300 or (mountain:kRailAt(u, side) ~= nil) ~= rail then
