@@ -390,6 +390,32 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 			end
 		end
 
+		-- THE BACK OF EVERY FACE (T-178). The mesh is a sheet, one-sided, and a one-sided face
+		-- blocks light only from its front: light reaching a rock face from inside the
+		-- mountain, or the road from beneath, went straight through it, and a low moon threw
+		-- the car's shadow onto the next rock face across a hairpin (measured: at a 4 degree
+		-- moon, 359 of 424 spots on the road had only such backs between them and it). Every face
+		-- gets a twin wound the other way with its normals reversed, sharing its vertices, so
+		-- the sheet blocks light from both sides. Seen from the front the twin is culled.
+		local flipped: { [number]: number } = {}
+		local function flip(id: number): number
+			local f = flipped[id]
+			if not f then
+				f = em:AddNormal(-em:GetNormal(id))
+				flipped[id] = f
+			end
+			return f
+		end
+		for _, f in em:GetFaces() do
+			local v = em:GetFaceVertices(f)
+			local n = em:GetFaceNormals(f)
+			local c = em:GetFaceColors(f)
+			local back = em:AddTriangle(v[1], v[3], v[2])
+			em:SetFaceNormals(back, { flip(n[1]), flip(n[3]), flip(n[2]) })
+			em:SetFaceColors(back, { c[1], c[3], c[2] })
+			road.triangles += 1
+		end
+
 		local model = Instance.new("Model")
 		model.Name = `Chunk_{math.floor(s0)}`
 		model:SetAttribute("S0", s0)
