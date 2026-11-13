@@ -29,6 +29,15 @@ the mountain a fixed direction in the world, and makes the road travel down it.
    current mix of uphill and downhill"). Only the long-run trend points down.
 5. **Turning back is rare and deliberate:** the road reverses only through a hairpin or switchback at
    the end of a leg, never with a quick ordinary bend, so the cliff can't swap after "one quick turn".
+6. **Short detours are fine** (the user, 2026-11-13: "it's okay for the road to quickly invert back
+   the way it came and then continue back to the proper direction, as long as that flip flop happens
+   over a short distance, like a double hairpin. it's also okay for the road to run sideways to the
+   proper direction for short to medium distances"):
+   - **A double hairpin:** two hairpins close together, so the road runs back the way it came for a
+     short stretch, then carries on its leg. The cliff swaps for that stretch and swaps back, because
+     it follows the heading.
+   - **Running sideways:** the road may run straight up or down the slope for a short to medium
+     stretch before turning back onto its leg. The cliff side holds through it.
 
 ## Left out
 
@@ -61,7 +70,9 @@ Starting values, all in `Config.Spline` (a `Mountain` block), numbers not code.
 | Leg heading | Across the slope, tilted `LegTilt` 10 to 25° downhill | A leg's own bends stay within `LegHeadingLimit` (60°) of it, so no ordinary bend reverses the road |
 | Leg length | 1 200 to 3 000 studs | Then a turnaround |
 | Turnaround | A hairpin (most), or a switchback of two tight bends | Turns the road onto the next leg, the other way across the slope |
-| Cliff swap | Through the turnaround only | Edges either side of the hairpin pass through the existing hedge-both-sides transition |
+| Double hairpin | `DoubleHairpinChance` 0.15 per leg; the reversed stretch 150 to 500 studs | Then the leg carries on in its own direction |
+| Sideways stretch | `SidewaysChance` 0.2 per leg; up or down the slope for 300 to 1 200 studs | Bends inside it may go past `LegHeadingLimit`, never past 120° off the leg; the side holds (hysteresis) |
+| Cliff swap | Through a turnaround or a double hairpin only | Edges either side of the hairpin pass through the existing hedge-both-sides transition |
 | No-crossing | As now | A new leg must clear the one above it; the build measures how often a turnaround is refused and the road extends the leg instead |
 
 ### Height
