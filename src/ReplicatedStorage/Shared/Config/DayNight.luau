@@ -58,6 +58,24 @@ return {
 	-- every frame.
 	HazeStep = 2 / 255,
 
+	-- ---------------------------------------------------------------- the low light (T-179)
+	-- Roblox's sun and moon cross the horizon together (the moon's height is the sun's,
+	-- mirrored: measured in the lane), so at dusk and dawn the light comes from a moon just
+	-- over the horizon, and a 5-stud car threw its shadow 30 to 500 studs onto far rock.
+	-- So the direct light (`Lighting.Brightness`) fades with the height of whichever is
+	-- lighting the world, by a smoothstep between these heights in degrees: none at or below
+	-- `From`, the keyframe's whole `Brightness` at `To` and above. Both are at nothing at the
+	-- horizon, so the hand-over from sun to moon cannot pop. The sky, the ambient light and
+	-- the moon and stars themselves are untouched.
+	LightFade = {
+		-- The sun: only its last 2 degrees, the last 4 s of the sunset and first 4 s of the
+		-- sunrise; the long shadows of the golden hour stay.
+		Sun = { From = 0, To = 2 },
+		-- The moon: no moonlight under 12 degrees (a car's shadow would be over 24 studs),
+		-- all of it from 28 (under 10 studs).
+		Moon = { From = 12, To = 28 },
+	},
+
 	-- ---------------------------------------------------------------- headlights (step 2)
 	-- `Controllers/HeadlightsController`. Every car's, on every client, switched by the same
 	-- clock, so everyone sees the same cars lit. Nothing goes inside a car (DECISIONS.md

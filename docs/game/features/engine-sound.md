@@ -148,6 +148,12 @@ off-throttle ladder is thinnest. Recorded sheets set `MaxPitchShift` to 2.0: the
 up to 2.95 times apart (1,382 to 4,074 off throttle), and the cap must never bite inside a
 crossfade, or the two loops disagree on the pitch.
 
+**Built and switched on (`T-176`, 2026-11-13).** Set B is `assets/audio/sfx-engine/engine-sheet-b.ogg`,
+uploaded private as `126307015260351` ("Engine loops B"), and is `Config.Fx.Engine.Sheets.Recorded`.
+`Sheet = "Recorded"` and `IdleRpm = 1382`. Today's synthesized sheet is `Sheet = "Synth"`. The
+permission rests on the user's word ("already given, continue"): no link is in the manifest. Not
+done by ear by the agent: taming bright loops.
+
 **After the pick:** the sheet is built mono, each loop cleaned where it repeats, at the same
 loudness as today's loops so the mix level doesn't move (bright loops tamed by ear: "weighty,
 clean, never harsh"). It's recorded in the manifest with the permission, uploaded **private as the

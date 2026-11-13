@@ -220,6 +220,28 @@ function Tests.run()
 	)
 	check("they switch once each way a cycle", ons == 1 and offs == 1, `{ons} on, {offs} off`)
 
+	-- 10. The low light (T-179): no direct light from a sun or moon on the horizon, so the
+	--     hand-over cannot pop; all of it once high; never down as it climbs.
+	local F = C.LightFade
+	local rising, prevSun, prevMoon = true, -1, -1
+	for e = 0, 90, 0.25 do
+		local fs, fm = DayNight.lightFade(true, e), DayNight.lightFade(false, e)
+		if fs < prevSun or fm < prevMoon then
+			rising = false
+		end
+		prevSun, prevMoon = fs, fm
+	end
+	check(
+		"sun and moon both give no direct light on the horizon",
+		DayNight.lightFade(true, 0) == 0 and DayNight.lightFade(false, 0) == 0
+	)
+	check(
+		"the moon gives none under its From and all of it from its To",
+		DayNight.lightFade(false, F.Moon.From) == 0 and DayNight.lightFade(false, F.Moon.To) == 1 and DayNight.lightFade(true, F.Sun.To) == 1,
+		`moon {F.Moon.From} to {F.Moon.To} deg, sun {F.Sun.From} to {F.Sun.To} deg`
+	)
+	check("the light only grows as the sun or moon climbs", rising)
+
 	local passed = 0
 	for _, c in checks do
 		if c.ok then

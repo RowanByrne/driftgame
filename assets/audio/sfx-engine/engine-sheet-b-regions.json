@@ -1,0 +1,58 @@
+[
+ {
+  "rpm": 3261,
+  "load": "on",
+  "source": "on_lower",
+  "start": 0.25,
+  "length": 3.552917
+ },
+ {
+  "rpm": 5034,
+  "load": "on",
+  "source": "on_low",
+  "start": 4.352917,
+  "length": 2.634958
+ },
+ {
+  "rpm": 5604,
+  "load": "on",
+  "source": "on_lowmid",
+  "start": 7.537875,
+  "length": 5.782875
+ },
+ {
+  "rpm": 6348,
+  "load": "on",
+  "source": "ext_on_mid",
+  "start": 13.87075,
+  "length": 3.1165
+ },
+ {
+  "rpm": 7124,
+  "load": "on",
+  "source": "ext_on_high_exhaust",
+  "start": 17.53725,
+  "length": 2.3455
+ },
+ {
+  "rpm": 1382,
+  "load": "off",
+  "source": "ext_idle",
+  "start": 20.43275,
+  "length": 1.788729
+ },
+ {
+  "rpm": 4074,
+  "load": "off",
+  "source": "off_mid",
+  "start": 22.771479,
+  "length": 3.253062
+ },
+ {
+  "rpm": 6636,
+  "load": "off",
+  "source": "off_higher",
+  "start": 26.574542,
+  "length": 2.616
+ }
+]

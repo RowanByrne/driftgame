@@ -328,7 +328,9 @@ return {
 		MinTimeInGear = 0.5, -- s since the last shift before another is allowed
 
 		-- The rpm (`Drift/Engine`). STARTING VALUES, set to be argued with by ear.
-		IdleRpm = 900,
+		IdleRpm = 1382, -- where the recorded sheet's idle loop was recorded (T-170). It was
+		-- 900 with the synthesized sheet, which still plays fine from here.
+		-- Sound only: the drive never reads it
 		ShiftRpm = 6800, -- rpm at a gear's top: where it upshifts. x1.5 gears drop it to
 		-- about 4 500 in the next
 		RedlineRpm = 7400, -- the limiter
@@ -388,7 +390,7 @@ return {
 		--
 		-- `Sheet` NAMES THE ONE THAT PLAYS: switching sound is this one line. `Sheet = nil`
 		-- (or a sheet with no `SoundId`) falls back to the one clip below.
-		Sheet = "Synth" :: string?,
+		Sheet = "Recorded" :: string?, -- "Synth" is the synthesized sound it replaced
 		Sheets = {
 			-- Our own synthesized loops, picked by the user on 2026-11-11 (DECISIONS.md), at
 			-- six rev points, the same six on and off throttle. Built by
@@ -419,6 +421,36 @@ return {
 					{ Rpm = 3190, Start = 18.45, Length = 1.993729 },
 					{ Rpm = 4860, Start = 23.65, Length = 2.0 },
 					{ Rpm = 7400, Start = 28.85, Length = 1.994604 },
+				},
+			},
+			-- RECORDED LOOPS, set B, picked by the user by ear on 2026-11-13 (DECISIONS.md,
+			-- T-170): recordings from inside the car low down, from outside it from about
+			-- 6 300 rpm up. Where they came from and the permission is in
+			-- `assets/audio/sfx-engine/MANIFEST.md`. Each `Rpm` is the recording's MEASURED
+			-- revs, so two loops in a crossfade sit at the same pitch.
+			--   * The ladders do not match: five loops on throttle, three off.
+			--   * Nothing was recorded on throttle under 3 261 rpm, so pulling away pitches
+			--     that loop far down (accepted, features/engine-sound.md).
+			--   * Its idle loop sits at 1 382 rpm: `IdleRpm` goes to 1382 with this sheet.
+			Recorded = {
+				SoundId = "rbxassetid://126307015260351" :: string?, -- engine-sheet-b.ogg, uploaded 2026-11-13
+				Volume = 0.84, -- the loops are at the synthesized ones' loudness (RMS 0.16)
+				OffLoadVolume = 0.75,
+				LimiterDuck = 0.5,
+				MaxPitchShift = 2.0, -- NO CAP in practice. The rev points are up to 2.95x apart
+				-- (1 382 to 4 074 off throttle), and a cap that bit inside a
+				-- crossfade would leave its two loops at different pitches
+				On = {
+					{ Rpm = 3261, Start = 0.25, Length = 3.552917 },
+					{ Rpm = 5034, Start = 4.352917, Length = 2.634958 },
+					{ Rpm = 5604, Start = 7.537875, Length = 5.782875 },
+					{ Rpm = 6348, Start = 13.87075, Length = 3.1165 },
+					{ Rpm = 7124, Start = 17.53725, Length = 2.3455 },
+				},
+				Off = {
+					{ Rpm = 1382, Start = 20.43275, Length = 1.788729 },
+					{ Rpm = 4074, Start = 22.771479, Length = 3.253062 },
+					{ Rpm = 6636, Start = 26.574542, Length = 2.616 },
 				},
 			},
 		},
