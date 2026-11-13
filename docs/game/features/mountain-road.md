@@ -82,7 +82,7 @@ does), so nothing steps.
 | Runoff on the inside of a bend | Never past 60% of the way to the bend's centre | So the inside of a hairpin keeps a strip, not a spike |
 | Carved apex (T-182) | Inside runoff down to 1 stud at the apex, for 20 to 50 studs | Only on bends of radius 220 or less with the rock inside and the cliff outside; see "Carved apexes" |
 | Runoff slope | Follows the road's bank, then eases flat | A banked road's grass doesn't lip up into a ramp |
-| Raised road (T-184) | The grass sits `RoadLip` 1.2 studs below the tarmac's edge, down a gravel bevel `RoadLipWidth` 2 studs across (31°) | See "The raised road" below |
+| Raised road (T-184) | The grass sits `RoadLip` 1 stud below the tarmac's edge, down a gravel bevel `RoadLipWidth` 3 studs across (18°) | See "The raised road" below |
 | Rock face | Rises 25 to 60 studs at 50 to 70 degrees | Height is looks; to the car it is a wall |
 | Hedge | 6 studs high, 4 thick | |
 | Cliff | The ground ends; the face drops 80 studs into haze | Past the lip, nothing to stand on |
@@ -192,22 +192,25 @@ The road stays purely visual: the car still reads everything from the curve (`Sp
 T-184. The user, 2026-11-13: *"the road itself should be slightly elevated above the surrounding
 runoff and grass areas. one or two studs should be fine, and when the car slips off the road in a
 drift, the back wheels should drop down for a moment as they go off the edge of the road showing
-off our suspension."* After driving the first cut (a 1.5-stud near-vertical step): *"really good
+off our suspension."* After the first cut (a 1.5-stud near-vertical step): *"really good
 mechanically. change this to 1.2 studs height, and ad in an angled section of like gravel or
-something that bridges the gap from the road down to the grass."*
+something that bridges the gap from the road down to the grass."* After the second (1.2 studs
+down a 2-stud bevel): *"close - do 1 stud of height instead. and make the gravel zone 3 studs
+wide."*
 
 - **The ground:** past the tarmac's edge a straight **gravel bevel** slopes down `RoadLip`
-  (1.2 studs) over `RoadLipWidth` (2 studs, about 31°). The ground stays that much lower out
-  to the edge (`Spline.terrainY`; `Spline.lipAt` says how far down a point is, and
+  (1 stud) over `RoadLipWidth` (3 studs, about 18°). The ground stays that much lower out to
+  the edge (`Spline.terrainY`; `Spline.lipAt` says how far down a point is, and
   `Spline.lipWidthAt` how wide the bevel is). On a narrow runoff the bevel takes at most
-  `LipShare` (0.75) of it. So a tight cliff edge's 2.5 to 3.5 studs of gravel is a bevel of
-  1.9 to 2.6 with a flat strip before the lip, and its rail on the tarmac's edge stands over
-  the bevel, posts reaching down to the gravel. Everything on the runoff stands on the lower
-  ground: the grass, a hedge, the foot of a rock face, a cliff's lip, a grove. At a carved apex
-  (1 stud of grass) the bevel is 0.75 across, so the rock rises from a narrow gravel gutter.
-- **Width chosen:** 2 studs. That is wide enough to read as an angled shoulder rather than a
-  step, and narrow enough that a rear wheel is down on the grass within 2 studs of the edge, so
-  the drop still shows.
+  `LipShare` (0.75) of it:
+  - **A tight cliff edge** (2.5 to 3.5 studs of gravel) gets a bevel 1.9 to 2.6 studs wide,
+    then 0.6 to 0.9 studs of flat gravel before the lip. Its rail on the tarmac's edge stands
+    over the bevel, with the posts reaching down to the gravel.
+  - **A carved apex** (1 stud of grass) gets a bevel 0.75 wide, so the rock rises from a narrow
+    gravel gutter.
+
+  Everything on the runoff stands on the lower ground: the grass, a hedge, the foot of a rock
+  face, a cliff's lip, a grove.
 - **Surface:** the bevel is gravel. `groundKind` answers `GRAVEL` on it, it grips and scores as
   `GripGravel` / `ScoreGravel` (0.5, the same as grass for now), it is drawn as one more strip
   each side in `GravelColour`, flat-shaded on its own slope, and walking it sounds as Pebble.
@@ -220,26 +223,26 @@ something that bridges the gap from the road down to the grass."*
   climb still reads the normals. The bevel changes what you see and what the springs do, never
   the line or the speed. On smooth tarmac and grass nothing passes the dead band, so there the
   car is exactly the approved car.
-- **Measured (seed 31337, offline runs of the model on the curve, at 1.2 studs with the bevel):**
+- **Measured (seed 31337, offline runs of the model on the curve, at 1 stud with a 3-stud bevel):**
   - **Tail over the edge.** A slide at 42 studs/s with the tail running out over the bevel and
-    back: the drawn car leans up to 5.5° off the ground (7.2° with the old 1.5 step). The rear
-    wheel over the edge hangs at full droop (travel 0), and is pushed up to 0.45 to 0.6 coming
-    back. Same line and speed as with no drop, to 0.0000 studs and 0.000 studs/s. No airborne
-    steps, no wall stops, no upward speed.
+    back: the drawn car leans up to 4.3° off the ground (5.5° at 1.2 studs, 7.2° with the
+    first 1.5 step). The rear wheel over the edge hangs at full droop (travel 0), then is pushed
+    up to 0.45 to 0.6 coming back. Same line and speed as with no drop, to 0.0000 studs and
+    0.000 studs/s. No airborne steps, no wall stops, no upward speed.
   - **Back on from the grass**, at 15°, 35°, 60° and 90° and 40 studs/s: no wall stops, nothing
-    airborne, no upward speed. Line and speed match no drop to 0.005 studs and 0.003 studs/s.
-    The drawn lean is at most 9°, and the front wheels reach full travel on the way up.
+    airborne, no upward speed. Line and speed match no drop to 0.006 studs and 0.0004
+    studs/s. The drawn lean is at most 7°, and the front wheels reach full travel on the way up.
   - **Ride error on the tarmac**, from 60 s of autopilot: worst 0.051, mean 0.010 once settled
     (0.051 and 0.009 with no drop). The plane tilt never acted with all four wheels on the
-    tarmac. In the first half second back on, the height is still easing up the bevel: up
-    to 0.22 (0.56 with the old step).
+    tarmac. In the first half second back on, the height is still easing up the bevel: up to
+    0.13.
   - **Tight cliff edges:** the rail still stops the car before the drop, square on and
     glancing (SplineWorldTests).
-  - **Walking:** an avatar walks down the bevel onto the grass and back up a 31° Pebble slope
-    tile, feet within 0.0001 of the ground either side.
-- **Known:** with two wheels down the bevel, the default floor box's middle can sit up to
-  about 0.1 studs into the tarmac's edge (worked out from the geometry, not measured). The floor solve that would
-  catch it only runs below 15 studs/s.
+  - **Walking** (measured at 1.2 studs with the 2-stud bevel): an avatar walks down the bevel
+    onto the grass and back up a Pebble slope tile, feet within 0.0001 of the ground either side.
+- **Known:** with two wheels down the bevel, the default floor box's middle can come down level
+  with the tarmac's edge (worked out from the geometry, not measured). The floor
+  solve that would catch it only runs below 15 studs/s.
 
 ### Walking on the road
 
