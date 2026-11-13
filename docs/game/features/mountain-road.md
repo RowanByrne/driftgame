@@ -307,7 +307,9 @@ side (where "height" applies most) and the cliff drop on the downhill side.
   window round the car about 12 500 (9 200); a chunk builds in 9.1 to 9.9 ms on average, 14 to 16
   at worst (7.2 and 10.8 before). Driving a run at 80 studs a second through a grand leg and down
   to its hairpin, teleported along the curve: frames 8.3 ms mean, 10.2 p99, 23.5 worst; 8 chunks
-  of 2 190 triangles on average, 5 meshes alive.
+  of 2 190 triangles on average, 5 meshes alive. Again on another seed, 2 400 studs from the
+  start through a leg at full grandeur: 8.3, 10.4 and 14.8 (the groves' measure was 8.3, 10.5 and
+  17.6).
 
 ## UI
 
