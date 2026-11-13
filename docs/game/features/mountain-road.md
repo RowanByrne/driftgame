@@ -386,6 +386,23 @@ side (where "height" applies most) and the cliff drop on the downhill side.
   average, 14.5 to 20 at worst. Driving at 80 studs a second: frames 8.4 ms mean, 10.7 to 12.1
   p99, 5 to 11 frames in 3 500 over 20 ms where a chunk builds (12 to 18 ms each), one 144 ms
   spike once.
+- **Built a few ms a frame (T-193).** A chunk's build hands the frame back whenever 3 ms of it
+  is spent (`Mesh.SliceMs`) and carries on next frame; the chunk is put in the world only when
+  all of it is done, so nothing arrives late. A chunk drawn short (the road had not reached its
+  end) stays up until its redraw is whole. Driving the same three stretches at 80 studs a second
+  (seed 1453038578): frames over 20 ms 7, 2 and 0 before, 0, 0 and 0 after; the worst frame 98,
+  32 and 20 ms before, 19, 14 and 12 after. A chunk now takes 4 to 6 frames and the most any one
+  frame pays is about 4 ms on the client (6 at worst in the tests, where one step overruns).
+- **Rock on the inside of a tight bend (T-193).** Within `TightRockLook` (60 studs) of a bend
+  tighter than `TightRockRadius` (250) on its side, a rock body is less grand (none at the
+  tightest bend), reaches no further than `TightRockReach` (0.65, up from 0.9) of the way to the
+  bend's centre, and once squeezed is no taller than `TightRockAspect` (2.5) times its reach,
+  so it no longer folds over itself where the profiles turn in. Shadow boxes there are cut every
+  0.06 radians of the tighter end, and each box is as long as its own top edge. Box corners more
+  than 2 studs outside the drawn body (three seeds): rock boxes away from tight bends 8 before,
+  1 after (4 studs); on the inside of tight bends 29 before, 7 after (11 at worst, from 47); top
+  boxes 0; cliff boxes 4 on tight bends, unchanged. Rays from the road to a 25 and 45-degree sun
+  through rock meet a box 86% and 85% of the time (88% before).
 
 ## UI
 
