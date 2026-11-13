@@ -186,10 +186,11 @@ local Spline = {
 		-- through its wheels, `Drift/Model`); a wheel coming back rolls up it. Keep `RoadLip`
 		-- under `RideHeight` (2.4): a wheel more than that below the others no longer carries
 		-- the car
-		RoadLip = 1.2, -- studs
-		RoadLipWidth = 2, -- studs across the bevel: about 31 degrees
+		RoadLip = 1, -- studs (the user, 2026-11-13: "do 1 stud of height instead")
+		RoadLipWidth = 3, -- studs across the bevel ("make the gravel zone 3 studs wide"): about 18 degrees
 		LipShare = 0.75, -- the most of a narrow runoff the bevel takes (a tight cliff edge's
-		-- 2.5 to 3.5 studs of gravel keeps a flat strip before its lip)
+		-- 2.5 to 3.5 studs of gravel is a 1.9 to 2.6 bevel and a flat strip before its lip; a
+		-- carved apex's 1 stud, a 0.75 gutter)
 		-- A CARVED APEX (T-182): on some sharp bends whose inside is the rock face and whose
 		-- outside is the cliff, the inside grass narrows to almost nothing at the apex, so the
 		-- rock rises right at the tarmac's edge, as if the road were cut into the cliff
