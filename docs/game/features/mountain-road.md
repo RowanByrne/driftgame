@@ -54,7 +54,8 @@ the drop. Running wide is no longer stopped by a wall; it costs you grip, then t
   on the runoff, T-183), villages, lighting and
   time of day. The drop fades into a light haze for now. That is the next feature, with the
   setting's art direction and references.
-- **Final art.** Programmer colours and very low poly shapes: green grass, a green box hedge,
+- **Final art.** Programmer colours and very low poly shapes: green grass (with a tile of
+  blades drawn in code, T-187), a green box hedge,
   faceted grey rock, a grey cliff face, galvanized grey crash barriers (white is a one-line
   swap in `Config.Spline`'s `KRailColour`).
 - **Road dressing:** kerbs, road signs, mirrors, painted edge lines, crash barriers anywhere but the K-rail runs.
@@ -186,6 +187,31 @@ The road stays purely visual: the car still reads everything from the curve (`Sp
   the tarmac, on the ground. Driven live into one at 45 degrees, it grinds along the rail with
   its middle 18 studs out and never leaves the tarmac.
 - **Nothing drawn collides.** As now.
+- **The grass's texture (T-187).** The user, 2026-11-13: *"give grass it's own texture."* The
+  grass faces of the chunk mesh are textured with a tile of short grass blades and soft clumps,
+  `Config.Spline.Grass.TileStuds` (12) studs a tile, drawn in code into one 256 x 256
+  `EditableImage` that every chunk shares (`Road/GrassTexture`): no image to upload, no mesh and
+  no part more. The tile is grey; the vertex colour still makes it `GrassColour`.
+  - **Why this way:** a client had **no EditableMesh to spare** while the road is drawn
+    (measured: 0 free), so the grass cannot be a mesh or part of its own. A built-in material
+    covers the whole part: `Grass` on the chunk put grass on the tarmac, rock and trees too
+    (measured: a MeshPart's material is projected, it ignores the mesh's UVs). A texture is
+    mapped by UVs, so only the grass faces get UVs (world X and Z over `TileStuds`, shifted a
+    whole number of tiles per chunk, so the tiling runs on across chunks).
+  - **What it changes on the rest:** a texture replaces Asphalt's colour map on the whole part
+    (measured: the tarmac went flat and about twice as bright). So every face that is not grass
+    samples the tile's plain corner, `Shade` grey (0.49, what the Asphalt map averaged,
+    measured side by side), and the blades average `Shade` too. The tarmac, gravel, rock and
+    trees keep their brightness but **lose Asphalt's fine grain**: flat colour, as the faceted
+    faces are meant to be. `Shade` lightens or darkens them all; `Enabled = false` gives the
+    road exactly as before.
+  - **Measured** (seed 31337, 17 chunks; SplineMeshTests 17 of 17 pass): 9 988 grass faces
+    mapped in world studs, worst 0.002 studs off; all 31 907 other faces on the plain corner;
+    no triangle, vertex, mesh or part more. A chunk builds in about 0.5 ms more (within the
+    noise of three A/B runs, 10.4 to 13 ms either way). The tile is drawn once, the first time
+    a chunk needs it, over a few frames: 47 ms of wall time, at most 4.2 ms of work a frame.
+    Frame time in the lane, 5 textured chunks, with and without the texture: 8.33 and 8.33 ms
+    (capped at 120 fps). A device that will not make the image draws flat grass, as before.
 
 ### The raised road
 

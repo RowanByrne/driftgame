@@ -182,6 +182,8 @@ function Tests.run()
 			end
 			local mean = sum / (G.Size * G.Size) / 255
 			check("the tile's corners are plain Shade, and the grass averages it", cornerOk and math.abs(mean - G.Shade) < 0.03, `corners {want}/255; the tile's mean {fmt(mean, 3)} against Shade {G.Shade}`)
+			local ts = GrassTexture.DebugState()
+			check("the tile is drawn over a few frames, not in one", ts.made and ts.worstSliceMs < G.SliceMs * 2.5, `made over {fmt(ts.buildMs, 1)} ms of wall time, at most {fmt(ts.worstSliceMs, 2)} ms of work a frame (slice {G.SliceMs})`)
 		end
 
 		-- 3. Between the cuts, the drawn surface stays within the tolerance of the true one.

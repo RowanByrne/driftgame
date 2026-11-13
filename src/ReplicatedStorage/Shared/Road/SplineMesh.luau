@@ -184,6 +184,11 @@ type Builder = {
 	vertices: number,
 	triangles: number,
 	grassTriangles: number,
+	-- with the grass's texture: the tile's plain corner, (0, 0), for the faces that are not
+	-- grass but share a vertex with it. Every other face's default UV is (0, 0) already, but
+	-- one sharing a grass vertex picks up the grass's UV there (measured: the bevel did).
+	-- Set only where needed: on every face it cost ~2 ms a chunk (measured)
+	plainUV: number?,
 }
 
 
@@ -193,7 +198,7 @@ type Builder = {
 -- (vertex i + 1 of strip i), so one vertex can be smooth on one strip and flat on the next:
 -- the road's step (T-184).
 -- `uvA` / `uvB`, when given, are UV ids for the grass's vertices (T-187): a strip painted
--- `grass` is mapped with them; every other strip keeps its vertices' own UVs, (0, 0).
+-- `grass` is mapped with them; one that shares a grass vertex but is not grass gets `plainUV`.
 local function strip(b: Builder, rowA: { number }, normA: { number }, rowB: { number }, normB: { number }, flip: boolean, colours: { number }?, farA: { number }?, farB: { number }?, uvA: { [number]: number }?, uvB: { [number]: number }?, grass: number?)
 	local em = b.em
 	local fa, fb = farA or normA, farB or normB
@@ -228,6 +233,12 @@ local function strip(b: Builder, rowA: { number }, normA: { number }, rowB: { nu
 					end
 					b.grassTriangles += 2
 				end
+			elseif b.plainUV and uvA and uvB and (uvA[i] or uvA[i + 1] or uvB[i] or uvB[i + 1]) then
+				-- a strip that is not grass but shares a vertex with the grass: the bevel, or
+				-- a gravelled runoff
+				local u = b.plainUV
+				em:SetFaceUVs(f1, { u, u, u })
+				em:SetFaceUVs(f2, { u, u, u })
 			end
 		end
 		b.triangles += 2
@@ -238,7 +249,7 @@ local function newBuilder(centre: Vector3): Builder
 	local em = AssetService:CreateEditableMesh({ FixedSize = false })
 	-- nil is the device saying no: out of its EditableMesh budget
 	assert(em, "this device would not make an EditableMesh (out of its budget)")
-	return { em = em :: EditableMesh, centre = centre, vertices = 0, triangles = 0, grassTriangles = 0 }
+	return { em = em :: EditableMesh, centre = centre, vertices = 0, triangles = 0, grassTriangles = 0, plainUV = nil }
 end
 
 -- A MeshPart made from an EditableMesh keeps the vertices exactly where they were written,
@@ -338,8 +349,14 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 		local gravelled = table.clone(colours)
 		-- THE GRASS'S TEXTURE (T-187): its vertices get UVs in world studs, in the shared
 		-- tile; a strip painted grass is mapped with them (`strip`)
+		-- (made once, over a few frames, the first time: not this chunk's cost)
+		local g0 = os.clock()
 		local grassImage = GrassTexture.get()
+		paused += os.clock() - g0
 		local baseU, baseV = GrassTexture.base(centre)
+		if grassImage then
+			road.plainUV = road.em:AddUV(Vector2.zero)
+		end
 		local prevRow, prevNear, prevFar, prevS, prevUV = nil, nil, nil, 0, nil
 		for _, s in cuts do
 			local row, norm, pts = {}, {}, {}

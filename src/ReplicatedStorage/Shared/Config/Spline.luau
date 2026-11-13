@@ -322,6 +322,7 @@ local Spline = {
 		TileStuds = 12, -- studs one tile covers, each way
 		Size = 256, -- pixels, each way: about 21 a stud
 		Seed = 187,
+		SliceMs = 4, -- drawn once, the first time a chunk needs it, at most this much a frame
 		-- What Roblox's Asphalt map multiplied the whole road's mesh by (measured, T-187: the
 		-- tarmac drawn without it came out twice as bright). The texture's plain corners are
 		-- this grey, so the tarmac, gravel, rocks and trees keep their brightness, and the

@@ -28,12 +28,27 @@ local GrassTexture = {}
 
 local CORNER = 2 -- pixels each side of the wrap point held at `Shade`: a 4 x 4 block
 
+local worstSliceMs = 0
+
 -- The pixels, RGBA, `size` square, from `seed`: the same on every device. Tiles seamlessly.
-function GrassTexture.pixels(size: number, seed: number): buffer
+-- With `sliceMs` it waits a frame whenever it has worked that long (measured: about 30 ms
+-- in one go, too long for one frame), so call it from a thread that may yield.
+function GrassTexture.pixels(size: number, seed: number, sliceMs: number?): buffer
 	local G = Config.Spline.Grass
 	local n = size * size
 	local f = table.create(n, 0) -- each pixel's offset from the mean, in units of `Shade`
 	local rng = Random.new(seed)
+	local sliceStart = os.clock()
+	local function pace()
+		if sliceMs then
+			local ms = (os.clock() - sliceStart) * 1000
+			if ms >= sliceMs then
+				worstSliceMs = math.max(worstSliceMs, ms)
+				task.wait()
+				sliceStart = os.clock()
+			end
+		end
+	end
 
 	-- CLUMPS: tiling value noise, two octaves, so the grass is patchy rather than even
 	local function octave(cells: number, amp: number)
@@ -60,6 +75,7 @@ function GrassTexture.pixels(size: number, seed: number): buffer
 				local i = y * size + x + 1
 				f[i] += (a + (b - a) * ty) * amp
 			end
+			pace()
 		end
 	end
 	octave(4, G.Clump)
@@ -68,7 +84,10 @@ function GrassTexture.pixels(size: number, seed: number): buffer
 	-- BLADES: short strokes in every direction (it is seen from above), lighter or darker
 	-- than the ground, fading toward the tip, wrapping round the tile's edges
 	local lenLo, lenHi = G.BladeLength[1], G.BladeLength[2]
-	for _ = 1, G.Blades do
+	for blade = 1, G.Blades do
+		if blade % 256 == 0 then
+			pace()
+		end
 		local x0, y0 = rng:NextNumber() * size, rng:NextNumber() * size
 		local angle = rng:NextNumber() * math.pi * 2
 		local len = lenLo + (lenHi - lenLo) * rng:NextNumber()
@@ -106,6 +125,9 @@ function GrassTexture.pixels(size: number, seed: number): buffer
 		local v = shade * (1 + d)
 		local warm = math.max(d, 0) * G.Warm
 		put(i, v * (1 + warm), v, v * (1 - warm))
+		if i % size == 0 then
+			pace()
+		end
 	end
 	-- THE CORNERS, where every face that is not grass samples: exactly `Shade`. A block, not
 	-- one pixel, so a texture a device draws at lower resolution still reads `Shade` there.
@@ -120,25 +142,30 @@ function GrassTexture.pixels(size: number, seed: number): buffer
 end
 
 local image: EditableImage? = nil
-local tried = false
+local state = "none" -- "none", "making", "done"
 local buildMs = 0
 
--- The shared image, made the first time it is asked for. nil when this device will not make
--- one (out of its EditableImage memory), or when the texture is switched off.
+-- The shared image, made the first time it is asked for, over a few frames (it yields: the
+-- first chunk to ask waits for it, and so does any chunk asking meanwhile). nil when this
+-- device will not make one (out of its EditableImage memory), or when the texture is off.
 function GrassTexture.get(): EditableImage?
-	if tried then
-		return image
-	end
-	tried = true
 	local G = Config.Spline.Grass
 	if not G.Enabled then
-		return nil
+		return nil -- read each time, so a test can switch it off and on
 	end
+	while state == "making" do
+		task.wait()
+	end
+	if state == "done" then
+		return image
+	end
+	state = "making"
 	local t0 = os.clock()
 	local ok, made = pcall(function()
 		local img = AssetService:CreateEditableImage({ Size = Vector2.new(G.Size, G.Size) })
 		assert(img, "this device would not make an EditableImage")
-		img:WritePixelsBuffer(Vector2.zero, Vector2.new(G.Size, G.Size), GrassTexture.pixels(G.Size, G.Seed))
+		local px = GrassTexture.pixels(G.Size, G.Seed, G.SliceMs)
+		img:WritePixelsBuffer(Vector2.zero, Vector2.new(G.Size, G.Size), px)
 		return img
 	end)
 	buildMs = (os.clock() - t0) * 1000
@@ -147,6 +174,7 @@ function GrassTexture.get(): EditableImage?
 	else
 		warn(`[GrassTexture] no grass texture on this device, the grass is drawn flat: {made}`)
 	end
+	state = "done"
 	return image
 end
 
@@ -165,7 +193,8 @@ function GrassTexture.base(centre: Vector3): (number, number)
 end
 
 function GrassTexture.DebugState()
-	return { made = image ~= nil, tried = tried, buildMs = buildMs }
+	-- `buildMs` is wall time, frames waited included; `worstSliceMs` the most work in a frame
+	return { made = image ~= nil, state = state, buildMs = buildMs, worstSliceMs = worstSliceMs }
 end
 
 return GrassTexture
