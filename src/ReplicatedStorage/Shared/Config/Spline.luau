@@ -45,6 +45,7 @@ local Spline = {
 	MaxGradeRate = 0.0015, -- grade (dy/ds) per stud
 	-- The road may not wander off up or down for ever: it keeps its height inside this band
 	-- round where it started, and the grade is chosen to head back when it nears an edge.
+	-- On a descent the band's centre drops as the road goes on (`Mountain.DescentRate`).
 	MinHeight = -160, -- studs relative to the start
 	MaxHeight = 160,
 	-- How often a section keeps the grade it has rather than choosing a new one.
@@ -64,14 +65,87 @@ local Spline = {
 	-- lines this far apart in plan: the tarmac, the widest runoff and an edge either side,
 	-- and a gap (`SplineGen.limits`).
 	ClearanceGap = 20, -- studs between the outer faces of the two stretches' edges
-	-- The road keeps a general direction and may wander this far off it either way. A
-	-- hairpin can still swing it right round, but it can never spiral into itself.
+	-- With no mountain to follow (`Mountain.Mode = "traverse"`, not used yet) the road keeps
+	-- its start heading and may wander this far off it either way. On a descent the legs'
+	-- own limit (`Mountain.LegHeadingLimit`) does this job.
 	HeadingLimit = 115, -- degrees either side of `Config.Road.StartHeading`
 	-- Every section is accepted only if the road could still straighten up and run this far
 	-- clear afterwards. That is the escape: the road can never box itself in, because the
 	-- way out is checked before the way in is taken.
 	EscapeLength = 260, -- studs of straight
 	CandidateTries = 14, -- random sections tried before taking the escape itself
+
+	-- --------------------------------------------------------------- the mountain's direction
+	-- (features/mountain-direction.md, T-166.) The mountain has ONE FALL LINE, fixed in the
+	-- world for the whole road: uphill one way, the valley the other. The road is laid as
+	-- LEGS across the slope, each tilted a little downhill, joined by TURNAROUNDS (a hairpin,
+	-- or a switchback of two tight bends) that send it back the other way, a level lower.
+	-- Ordinary bends inside a leg stay within `LegHeadingLimit` of it, so only a turnaround
+	-- can turn the road back. Chosen by the server from the seed; clients only replay.
+	Mountain = {
+		-- "descent" is the only one used. "ascent" climbs the same way (the legs tilt uphill
+		-- and the height band rises); "traverse" is the road as it was before: no legs, the
+		-- start heading kept within `HeadingLimit`, the height band fixed.
+		Mode = "descent",
+		-- Uphill is the start heading turned this far, to a side chosen from the seed, so the
+		-- first leg runs across the slope.
+		FallLineTurn = 90, -- degrees
+		-- Heading within this of straight up or down the slope counts as neither side: the
+		-- uphill side holds what it was, so a wiggle can't flip it (the cliff step).
+		AlongFallLine = 30, -- degrees
+		LegTilt = { 10, 25 }, -- degrees downhill off straight across
+		LegLength = { 1200, 3000 }, -- studs, then a turnaround
+		LegHeadingLimit = 60, -- degrees: no ordinary bend takes the road further off its leg
+		LegUphillLimit = 30, -- degrees, and no further off it UP the slope, toward the leg above
+		-- A turnaround: mostly a hairpin; sometimes two tight bends with a short run straight
+		-- down the slope between them.
+		HairpinRadius = { 75, 110 }, -- studs
+		TurnaroundSwitchbackChance = 0.25,
+		SwitchbackRadius = { 95, 150 }, -- studs, each of the two bends
+		SwitchbackGap = { 40, 140 }, -- studs between them, heading down the slope
+		-- A DOUBLE HAIRPIN in the middle of a leg: the road runs back the way it came for a
+		-- short stretch, a level lower, then turns back onto its leg another level down.
+		DoubleHairpinChance = 0.15, -- per leg
+		DoubleHairpinBack = { 150, 500 }, -- studs of the reversed stretch
+		-- A SIDEWAYS stretch in the middle of a leg: straight down (or now and then up) the
+		-- slope for a while, then back onto the leg.
+		SidewaysChance = 0.2, -- per leg
+		SidewaysLength = { 300, 1200 }, -- studs
+		-- of sideways stretches, how many climb rather than descend. 0: a climb ran into the
+		-- leg above and boxed the road in on 2 seeds of 40 at 0.3 (measured), so they are off
+		SidewaysUpShare = 0,
+		SidewaysUpLength = { 200, 500 }, -- studs: a climb is kept short, below the leg above
+		-- degrees its own bends may wander off straight up or down: inside `AlongFallLine`, so
+		-- the uphill side holds through the whole stretch
+		SidewaysLimit = 25,
+		SidewaysRadius = { 150, 320 }, -- studs, the bends into and out of it
+		-- A turnaround is laid only once the road heads within this of its leg; further off,
+		-- a bend first brings it back, so every hairpin turns about the same amount.
+		TurnWindow = 20, -- degrees
+		-- Bends in a stretch lean back toward its line (from where it began, along its
+		-- heading) as well as its heading: this far off the line, they aim back at half the
+		-- stretch's heading limit. Keeps each leg on its own level of the slope.
+		LineReach = 300, -- studs
+		StraightenRadius = { 200, 500 }, -- studs, that bend
+		-- When a planned turn is refused (it would come too close to old road), the stretch
+		-- before it runs on this far and it is tried again.
+		RetryAfter = 120, -- studs
+		TurnTries = 6, -- radii tried for one planned turn before it is refused
+		-- THE DESCENT: the height band (`MinHeight..MaxHeight`) moves with the road, its centre
+		-- dropping this much per stud of road, so the grade still goes up and down locally but
+		-- the run works its way down. 1 in 25 is about 2.3 degrees net.
+		DescentRate = 1 / 25, -- studs of height per stud of road
+		-- THE CLIMBS that let a run go on for hours (the user, 2026-11-13: "we want a system
+		-- that will allow for hours of running ... add uphill sections that are short and gain
+		-- good vertically every now and then"). Once the band's centre is `DescentFloor` below
+		-- the start, it rises at `ClimbRate` until it is back at `ClimbTop`, then the descent
+		-- goes on. Only the height changes: the road keeps zig-zagging down the mountain in
+		-- plan, so the cliff side is unaffected. With the band's 160 either side, the road
+		-- stays above Y -440, clear of Roblox's fall-kill height (-500).
+		DescentFloor = -280, -- studs, the centre's lowest, relative to the start
+		ClimbRate = 1 / 10, -- studs of height per stud of road, about 5.7 degrees
+		ClimbTop = 0, -- studs, where a climb hands back to the descent
+	},
 
 	-- --------------------------------------------------------------- the bends
 	StartStraight = 220, -- studs of straight the road begins with (a car spawns 20 in)
@@ -112,9 +186,8 @@ local Spline = {
 		CliffDrop = 80, -- studs the face is drawn down into haze
 		-- How far past the runoff an edge reaches, for keeping two stretches of road apart.
 		EdgeDepth = 4, -- studs: a hedge's thickness, and the foot of a rock face
-		-- WHICH SIDE IS UPHILL is kept for a long stretch, then swaps through a straight with
-		-- hedge both sides (the road crossing a ridge). Never in a bend.
-		UphillStretch = { 900, 2600 }, -- studs between two swaps
+		-- WHICH SIDE IS UPHILL follows from the heading against the fall line (T-166,
+		-- `Mountain.AlongFallLine`): no stretch length and no random swap any more.
 		UphillHedgeChance = 0.2, -- per section: hedge instead of rock on the uphill side
 		DownhillHedgeChance = 0.15, -- per section: hedge instead of cliff on the downhill side
 		-- K-RAILS: drawn as METAL CRASH BARRIERS (T-149): a W-beam steel guardrail held off
