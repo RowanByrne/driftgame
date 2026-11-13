@@ -10,6 +10,7 @@
 | Backfire | Not built, and deliberately — the user decided against it, 2026-11-04 (`AUDIO.md`) |
 | Remote cars | Not built, and out of scope for this round |
 | A darkness that varies along a mark | **Built, driven and removed** at the user's call, 2026-11-06. One shade of line now; the record of what it was and what it cost is below, so nobody rebuilds it blind |
+| Off the road: grass tears up, gravel dusts, per wheel | **Built** (`T-188`) — `Config/Fx.luau` `Ground`, `Drift/Wheels.luau`; see "Off the road" |
 
 The car slides in silence and leaves nothing behind. This is the layer that makes a drift
 *read* — engine note, tyre squeal, tyre marks on the road and smoke off the wheels — ported
@@ -142,7 +143,7 @@ Nothing in this feature needs a new number out of the drift model. `Drift/Model`
 | `_acceleration` | `s.throttle` (0..1) | Eased, never an input |
 | `_handbrake` | the input's `handbrake` | |
 | Per-wheel ground | `s.wheelsDown` (FL, FR, RL, RR) | |
-| `GetWheelSurfaceTypes()` | **a gap, and a small one.** `s.surfaceGrip` is the *mean* of four wheels' grip, not four surface names | One surface exists, so the port uses one surface for all four wheels and the per-wheel table is built but fed from one value. The day `dirt` is laid, `Drift/World`'s `Hit` grows a surface name and this reads it. Written down so it is a decision, not an oversight |
+| `GetWheelSurfaceTypes()` | **`s.wheelSurface`** (FL, FR, RL, RR), since `T-188` | `Hit` grows an optional `surface` name; the spline road's probe answers `"tarmac"`, `"grass"` or `"gravel"` per hit, and `Drift/Model` copies each wheel's into `s.wheelSurface` (`""` for unnamed). The parts world names nothing, so there every wheel is `Config.Fx.Default`, as before |
 | Wheel positions | `Render`'s rig: four wheels with their offsets | The OFFSETS are what the effects use; they hang off the car's `Body` and not off the wheel parts, because `Render` spins a wheel about its axle (see "The budget") |
 
 ## How it plays
@@ -171,7 +172,7 @@ are back.
 ## Left out
 
 - **The backfire** (above). Specced here so it need not be read off the reference twice.
-- **Dirt, and any second surface.** The table has room; the game has one surface.
+- **A second *smoking* surface.** Grass and gravel are built (`T-188`, "Off the road"), as ground that tears up rather than smokes; `Surfaces.dirt` is a look with no ground.
 - **Music, ambience, UI sound and the collision/wall-hit sound.** This is the car, not the
   soundtrack. `AUDIO.md` "Direction" is still empty and this feature's approval is what fills it.
 - **Anything another player can hear or see.** Step 1 is the local car only. Remote cars
@@ -479,6 +480,91 @@ time in the middle of that ladder, so this reads about as the marks did — with
 going faint or the dark end going to paint. **It is one number and the whole look of a mark is in
 it**; lower is darker.
 
+## Off the road: the grass tears up (`T-188`)
+
+The user, 2026-11-13: *"when you go onto the grass, the tiremarks should be different, I want it
+to look like the weight of the car is tearing through the grass, so the smoke should stop on any
+wheels that are in grass (not instantly but over a fast tween), the tire mark in the grass should
+look like a brown trench, as if it cut through to dirt below, when sliding at high angles. when
+drifting at lower angles it's fine for it to stay grass. when drifting on the grass, instead of
+smoke, add some particle effects that looks like grass is getting kicked up behind the car, and
+same with the high angle slides, we can have it look like dirt is spraying."*
+
+**Per wheel, from that wheel's own ground** (`s.wheelSurface`). The four gates are unchanged —
+they decide *whether* a wheel marks; the surface decides *what* it leaves.
+
+| On | Mark | Particles |
+|---|---|---|
+| **Tarmac** | The black line, unchanged | The two smoke layers, unchanged |
+| **Grass, under 30° of slip** | A flattened-grass line, darker green (`Grass.FlatMark`) | Green clippings kicked up and back (`Grass.Clippings`) |
+| **Grass, past 30°** | The green line **plus** a wider, near-solid brown trench laid over it (`Grass.TrenchMark`, 1.9 studs against 1.2) | Clippings, and brown dirt clods blending in from 22° to full at 40° (`Grass.Dirt`); the clippings drop to half as the dirt fills |
+| **Gravel** (the road's bevel, the tight-cliff strips) | A pale scuff (`Gravel.Mark`) | A tan dust cloud (`Gravel.Dust`). **Our choice, kept to one emitter:** loose stone does not burn rubber, so no smoke, and no pebbles |
+
+- **The smoke fades, it is not cut.** Each wheel keeps a mix per kind of ground, walked toward 1 on
+  its own ground and 0 off it over `Ground.FadeSeconds` (**0.2 s**); the smoke's rate is scaled by
+  it, and so is the debris'. Leaving the road the smoke thins out over 0.2 s while the clippings
+  come up; back on the road the reverse. The *mark* changes at once, because a mark is on the
+  ground it is on. In the air the mixes hold.
+- **The trench is a layer, not a swap,** and that is the lesson of "The darkness ramp" applied: a
+  swap between trails is a hole, so the green line runs unbroken underneath and the trench is a
+  second ribbon on its own wider attachment pair, 0.04 studs higher so the two never depth-fight.
+  It starts at 30° and stops under 25° (hysteresis), so a slide sitting on the threshold cannot
+  chatter it.
+- **The slip that decides the trench is the car's,** not the wheel's: the fronts only mark past 30°
+  anyway, so on grass a front that marks always cuts a trench.
+- **The debris is thrown back** off a 60° tilt on the trench's left attachment, falls under its own
+  gravity, and is `SquareParticle.png` — a built-in flat square, which is the low-poly look.
+  Nothing is uploaded.
+- **The squeal is unchanged on grass and gravel.** They have no clip, so `SkidSound` plays the
+  tarmac one there as it always has; a clip for a surface is the user's pick (see "Open questions").
+
+**The budget**, which these grow:
+
+```
+per car = 4 wheels × (2 Attachments + smoking surfaces × (1 Trail + 2 Emitters)
+                      + 2 Attachments + 3 Trails + 3 Emitters)          (T-188)
+```
+
+**52** at one smoking surface, up from 20; `Wheels.perWheel()` is the formula. Still built once and
+switched with `Enabled`; `FxTests` drives 1 000 frames with each wheel's ground changing under it
+and counts **52 → 52**.
+
+| Number | Start | What it does |
+|---|---|---|
+| `Ground.FadeSeconds` | 0.2 s | Smoke out / debris in, and back, per wheel |
+| `Ground.Grass.TrenchSlipDegrees` / `TrenchStopDegrees` | 30 / 25 | The trench starts at, and stops under |
+| `Ground.Grass.DirtStartDegrees` / `DirtFullDegrees` | 22 / 40 | The dirt spray's smoothstep |
+| `Ground.Grass.ClippingsAtFullDirt` | 0.5 | Share of the clippings left once the dirt is full |
+| `Ground.Grass.FullSlipDegrees` | 90 | The debris rates are at their max here |
+| `Ground.Grass.KickAngleDegrees` | 60 | How far back off straight up the debris is thrown |
+| `Ground.Grass.FlatMark`, `TrenchMark`, `Gravel.Mark` | see the file | Colour, transparency; the trench's width and lift |
+| `Ground.Grass.Clippings`, `Dirt`, `Gravel.Dust` | see the file | Each emitter's look, and `RateMin`..`RateMax` |
+
+**Measured** (`DR-Lane2`, the spline test road, a quiet playtest):
+
+- **Per wheel, road → grass → road, sampled at 10 Hz.** Running wide at 82 studs/s the front right
+  read grass at 9.3 s with its smoke mix at 0.87 while the rears were still on tarmac smoking at
+  11/s; at 9.5 s the rear right was on grass, its smoke at 7/s with mix 0.58 and clippings at 5/s,
+  the rear left still at 10/s (0.79); by 9.7 s both rears were at smoke 0 and clippings 40/s. Back
+  on the road at 12.7 s the rear left read smoke 2/s at mix 0.25 with clippings still 10/s, the
+  rear right still on grass at 21/s, and at 12.9 s both rears were at mix 0.79–1.00 and smoking
+  9–11/s. **Every wheel crossed on its own sample**, never all four at once.
+- **The trench and the dirt follow the angle.** On grass at 20.9° only the green line and
+  clippings (40/s); at 29.6° the dirt was in at 19/s, still no trench; at 34.6° the trench was
+  laid on all four and the dirt at 43/s; at 45° dirt 65/s and clippings 29/s.
+- **No gaps:** 0 samples of a wheel marking with no line drawn, across all the runs.
+- **Instances 52 → 52** for every sample of every run.
+- **Particles:** estimated live (rate × mean lifetime, summed over the car) mean **110–127**,
+  peak **387**, while marking on grass.
+- **Frame time,** Studio unfocused (which caps it, as before): while marking on grass, 509 frames,
+  mean **8.34 ms**, median 8.07, p99 10.09, max 11.62. Interleaved 2-second blocks with the
+  effects on and off on the same drive: **8.33 ms on, 8.34 off** — no measurable cost, with the
+  same caveat as "Frame cost" in "Testing": a real headroom number needs a focused window.
+- `FxTests`: **96 checks pass**, ten of them new for this (the fade takes exactly 12 frames at 60 fps;
+  hysteresis held at 27° and dropped at 24° with the green line still drawing; the dirt ramp
+  0.00 / 0.13 / 0.50 / 0.87 / 1.00; smoke 1.75/s one frame back on tarmac and 21.00/s, its full
+  rate, half a second later; two wheels on grass and two on tarmac each doing their own).
+
 ## UI
 
 None. The effects are on the car.
@@ -521,7 +607,18 @@ In `CONTRACTS.md`. **What `T-062` built, for the conductor to record at merge:**
 | `DriftController` | `DebugSound() -> { engine, skid }`, `DebugSoundMeasure() -> { engine, skid }` (the largest single-frame change in each lerped value since the last call, and reset) and `DebugSoundFx(on: boolean?) -> boolean`. Studio only, through the client debug bridge |
 | Instance names on a rig | `Config.Fx.Names`: `FxEngine` (one `Sound`) and `FxSkid_<surface>` (one `Sound` per built surface), both direct children of `Body` |
 
-**No `Hit` change:** the per-wheel surface gap is deferred, as planned. **No remote, no packet field,
+**What `T-188` added, for the conductor to record at merge:**
+
+| Entry | Surface |
+|---|---|
+| `Drift/Model` | `Hit` grows `surface: string?`; `State` grows `wheelSurface: { string }` (FL, FR, RL, RR; `""` for unnamed or no ground), written in place each step. The model never reads it |
+| `Drift/SplineWorld` | `probe` names every hit: `"tarmac"`, `"grass"` or `"gravel"` |
+| `Shared/Config/Fx` | `Ground` (`FadeSeconds`, `Grass`, `Gravel`); `Names` grows `TrenchAttachment`, `GroundTrail`, `GroundEmitter` |
+| `Drift/Wheels` | `surfaceOf` now reads `state.wheelSurface`; new pure `mixStep(mix, target, dt)`, `trenchOn(slipDeg, was)`, `dirtShare(slipDeg)`, `kickRate(S, slipDeg)`, `perWheel()`. `DebugState` per wheel grows `smokeMix`, `grassMix`, `gravelMix`, `trench`, `smokeRate`, `grassMark`, `trenchMark`, `gravelMark`, `clippingsRate`, `dirtRate`, `dustRate`; `emitting` is now the wheel's gate result and `lit` counts the off-road lines too |
+| `Drift/SkidSound` | `surfaceOf` falls back to `Default` for a surface with no clip, so the squeal is unchanged on grass and gravel |
+| Instance names on a rig | `FxT_<Wheel>_<L\|R>` (8 more `Attachment`s on `Body`), `FxMark_<Wheel>_<grass\|trench\|gravel>` (12 `Trail`s), `FxKick_<Wheel>_<grass\|dirt\|dust>` (12 `ParticleEmitter`s). The trench trail and the grass/dirt emitters hang off `FxT_<Wheel>_L`; the grass and gravel trails and the dust off `FxA_<Wheel>_L` |
+
+**No `Hit` change in `T-064`:** the per-wheel surface gap was deferred then, and closed by `T-188`. **No remote, no packet field,
 no server instance:** `T-064` is the client and the local car only, as this spec says it must be.
 
 ## Analytics
@@ -651,6 +748,15 @@ gate is wrong rather than "no smoke".
   `DriftController:DebugWheelFx` are already the switch; what is missing is a focused-window
   measurement to say whether it is worth a setting.
 - **Coloured smoke and marks as a cosmetic,** which is a monetization decision and not this round's.
+
+Added by `T-188`:
+
+- **The look off the road** — the trench's brown and width, the green line's shade, how many bits
+  and how big. All in `Config/Fx.luau` `Ground`; a first pass for the user's eye.
+- **A squeal on grass.** It plays the tarmac clip there, unchanged. Silence, or a softer
+  grass-scrub clip, is a pick by ear (`AUDIO.md`).
+- **Whether the trench should follow each wheel's own slip** rather than the car's. With the car's,
+  a front that marks on grass always trenches.
 
 Added by `T-062`, from building it:
 

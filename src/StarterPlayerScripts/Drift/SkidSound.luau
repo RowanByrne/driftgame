@@ -163,7 +163,14 @@ function SkidSound.surfaceOf(state: DriftModel.State?): string?
 	end
 	for i, down in state.wheelsDown do
 		if down == true then
-			return Wheels.surfaceOf(state, i, true)
+			-- Grass and gravel have no clip of their own (T-188), so the squeal stays the
+			-- tarmac one there, exactly as before wheels knew their ground. A clip in
+			-- `Skid.SoundIds` for a surface (and that surface in `Built`) gives it its own.
+			local surface = Wheels.surfaceOf(state, i, true)
+			if surface and Config.Fx.Skid.SoundIds[surface] == nil then
+				return Config.Fx.Default
+			end
+			return surface
 		end
 	end
 	return nil
