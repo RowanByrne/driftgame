@@ -528,8 +528,8 @@ function Tests.run(which: { string }?, ...)
 					check(
 						"the raised road: a tail over the step tips the drawn car and changes nothing else",
 						raised.grass > 0 and raised.tilt > 0 and raised.lean > 3 and raised.travelLo < 0.05 and raised.travelHi > 0.45
-							and apart < 0.01 and math.abs(raised.speed - flat.speed) < 0.01 and raised.air == 0 and raised.walls == 0 and raised.vy <= 0.01,
-						`{raised.grass} wheel contacts on grass, plane tilt for {raised.tilt} steps, drawn car leans {fmt(raised.lean, 1)} degrees off the ground; rear travel {fmt(raised.travelLo, 2)} (hanging) to {fmt(raised.travelHi, 2)} (pushed up coming back); against no step: {fmt(apart, 4)} studs apart, speed {fmt(raised.speed, 2)} vs {fmt(flat.speed, 2)}; {raised.air} airborne steps, {raised.walls} wall steps, most upward speed {fmt(raised.vy, 2)}`
+							and apart < 0.01 and math.abs(raised.speed - flat.speed) < 0.01 and raised.air == 0 and raised.walls == 0 and raised.vy <= flat.vy + 0.01,
+						`{raised.grass} wheel contacts on grass, plane tilt for {raised.tilt} steps, drawn car leans {fmt(raised.lean, 1)} degrees off the ground; rear travel {fmt(raised.travelLo, 2)} (hanging) to {fmt(raised.travelHi, 2)} (pushed up coming back); against no step: {fmt(apart, 4)} studs apart, speed {fmt(raised.speed, 2)} vs {fmt(flat.speed, 2)}; {raised.air} airborne steps, {raised.walls} wall steps, most upward speed {fmt(raised.vy, 2)} ({fmt(flat.vy, 2)} with no step: the grade)`
 					)
 				else
 					check("a straight with wide grass found for the raised road", false, `none on this road, seed {SEED}`)

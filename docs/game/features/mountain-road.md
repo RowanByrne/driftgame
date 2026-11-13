@@ -73,6 +73,7 @@ does), so nothing steps.
 | Runoff width | 12 to 40 studs, each side on its own | About 2 to 5 car widths |
 | Runoff on the inside of a bend | Never past 60% of the way to the bend's centre | So the inside of a hairpin keeps a strip, not a spike |
 | Runoff slope | Follows the road's bank, then eases flat | A banked road's grass doesn't lip up into a ramp |
+| Raised road (T-184) | The grass sits `RoadLip` 1.5 studs below the tarmac's edge, down a step `RoadLipWidth` 0.6 across | See "The raised road" below |
 | Rock face | Rises 25 to 60 studs at 50 to 70 degrees | Height is looks; to the car it is a wall |
 | Hedge | 6 studs high, 4 thick | |
 | Cliff | The ground ends; the face drops 80 studs into haze | Past the lip, nothing to stand on |
@@ -98,7 +99,7 @@ The road stays purely visual: the car still reads everything from the curve (`Sp
 
 | The model asks | Now answered |
 |---|---|
-| `probe`: the ground under a point | Tarmac or grass, by lateral offset, with its grip and score. Nothing past a cliff's lip, so the car falls there |
+| `probe`: the ground under a point | Tarmac or grass, by lateral offset, with its grip and score; the grass `RoadLip` below the tarmac (T-184). Nothing past a cliff's lip, so the car falls there |
 | `sweep`: how far the car may move | Stops at a rock face, a hedge or a K-rail, with the wall's normal. Nothing at the tarmac's edge any more |
 | Surface | Grass uses dirt's numbers to start (`GripDirt` 0.5, `ScoreDirt` 0.5), as its own `GripGrass` / `ScoreGrass` so they can part later |
 
@@ -130,6 +131,46 @@ The road stays purely visual: the car still reads everything from the curve (`Sp
   A device that cannot make a mesh still draws the tarmac only.
 - **Nothing drawn collides.** As now.
 
+### The raised road
+
+T-184. The user, 2026-11-13: *"the road itself should be slightly elevated above the surrounding
+runoff and grass areas. one or two studs should be fine, and when the car slips off the road in a
+drift, the back wheels should drop down for a moment as they go off the edge of the road showing
+off our suspension."*
+
+- **The ground:** past the tarmac's edge the ground steps down `RoadLip` (1.5 studs) over
+  `RoadLipWidth` (0.6), eased at both ends, and stays that much lower out to the edge
+  (`Spline.terrainY`; `Spline.lipAt` says how far down a point is). Everything on the runoff
+  stands on the lower ground: the grass, a hedge, the foot of a rock face, a cliff's lip.
+  K-rails stay on the tarmac's edge; their posts reach down to the grass.
+- **Drawn:** one more strip each side in the chunk mesh, the step's face, flat-shaded and in
+  `LipColour`. The tarmac and grass keep their smooth normals.
+- **To the car the step is no wall and no slope.** `probe` gives the grass's height and the
+  grass's own normal, even on the step's face. Every spline hit is marked `stepped`, and there
+  the drawn car tips onto the plane through its four wheels: the model takes the part of that
+  plane the wheels' mean normal misses, past `Config.Drift.Suspension.StepTiltDead` (0.02 of
+  slope). **The forces don't see it:** grip and gravity keep the ground's own normal
+  (`State.surfaceUp` while the two differ), and the climb still reads the normals. The step
+  changes what you see and what the springs do, never the line or the speed. On smooth tarmac
+  and grass nothing passes the dead band, so there the car is exactly the approved car.
+- **Measured (seed 31337, offline runs of the model on the curve):**
+  - **Tail over the step.** A slide at 42 studs/s with the tail running out over the step and
+    back: the drawn car leans up to 7.2° off the ground. The rear wheel over the edge hangs at
+    full droop (travel 0), and is pushed to full travel (0.6) as it climbs back on. Same line
+    and speed as with no step, to 0.0000 studs and 0.00 studs/s. No airborne steps, no wall
+    stops, no upward speed beyond the grade's.
+  - **Back on from the grass**, at 15°, 35°, 60° and 90° and 40 studs/s: no wall stops, nothing
+    airborne, no upward speed. Line and speed match no step to 0.003 studs/s. The drawn lean is
+    at most 12° (two wheels each side of the step), and the wheels hit full travel on the way up.
+  - **Ride error on the tarmac**, from 60 s of autopilot: worst 0.053, mean 0.009 once settled,
+    the same as with no step. In the first half second back on the tarmac, the height is still
+    easing up the step: up to 0.56.
+  - **Walking:** an avatar walks down onto the grass and back up a ramp tile on the step (68°),
+    feet within 0.0001 of the ground either side.
+- **Known:** with two wheels down the step, the default floor box's middle sits up to about a
+  quarter stud into the tarmac's edge. The floor solve that would catch it only runs below
+  15 studs/s, and a drift is past the edge before it would. A lower `RoadLip` reduces it.
+
 ### Walking on the road
 
 T-154. The user, 2026-11-12: *"when i get out of the car in endless mode, i want to be able to
@@ -138,7 +179,7 @@ maths), so an avatar out of the car (`car-v2.md`) had nothing under it.
 
 - **What it is:** while our own avatar is out of the car, `RoadGroundController` (client) keeps a
   patch of invisible, anchored, colliding tiles round it, built from this client's curve: the
-  tarmac and the grass on the surface's own slope, a wall at a rock face (80 high, unclimbable), a
+  tarmac and the grass on the surface's own slope (a ramp tile up the road's step, T-184), a wall at a rock face (80 high, unclimbable), a
   hedge (12 high: the drawn hedge is 6, which a jump clears into nothing), a K-rail (the car's
   wall, 3 high: it can be jumped, onto the grass behind it) and the closing barrier. **Nothing
   past a cliff's lip** or past the end of the laid road: walking off falls, and the fall does
@@ -201,7 +242,9 @@ in `ART-DIRECTION.md` "World" with the next feature.
 - **Unit tests** (the spline tests, run from the DebugBridge): the cross-section at a point gives
   the right surface and edge on both sides; a cliff lip ends `probe`; a rock face, a hedge and a
   K-rail stop `sweep`; server and client replays give the same edges; no-crossing holds with the
-  wider clearance over long seeded roads.
+  wider clearance over long seeded roads; the grass stands `RoadLip` below the tarmac and the
+  step is no slope to the car (T-184). SplineWorldTests: a tail over the step tips the drawn car
+  and changes nothing else (line, speed, walls, air).
 - **In the lane:** a scripted run with the car steered wide on purpose: it reaches the grass,
   slows, hits a rock face and grinds, goes off a cliff and is respawned. Count each. Frame time,
   meshes in use (at most eight), triangles per chunk, parts per chunk.
