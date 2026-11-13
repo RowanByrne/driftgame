@@ -25,7 +25,7 @@ The user hands over work and follows it in Rocco's Workboard, and the conductor 
 5. **Check, then push.** Check the merged build in that lane's place, then push it to `main` from the lane, so Main gets exactly the build you checked. When it doesn't play, fix it in the lane first, or drop the merge: nothing was pushed, so `main` never had it.
 6. **Refresh lanes.** Move every idle lane to the new `main` ("Refresh" step 4), so every place shows the merged game.
 7. **Clean up.** Remove the round's lines from `docs/CLAIMS.md` and push. Delete the merged `agent/*` branches, locally and on GitHub.
-8. **Report** to the user, short (AGENTS.md "Talking to the user"): what merged and what to try in the Main place, then anything flagged: problems workers raised, follow-ups, decisions needed. On the Workboard, each merged task goes to To test, with what to try.
+8. **Report** to the user, short (AGENTS.md "Talking to the user"): what merged and what to try in the Main place, then anything flagged: problems workers raised, follow-ups, decisions needed. On the Workboard, each merged task goes to To test, with what to try, except one the user already tested and approved in its lane (`[merge]`): it stays done.
 
 ### Checking in a lane
 
@@ -72,7 +72,7 @@ Rocco's Workboard (`tools\rocco.bat`) is where the user hands over work and foll
 | `[stop]`, `[resume]`, `[restart]`, `[assign]` | Stepped in on a task from its card: Pause, Resume, Start again, or a lane or worker picked for it | Do what `show T-012` says for it: stop its worker and keep its branch; hand it out again; stop its worker and start a fresh one from what it left; or move it. Then `clear` |
 | `[reopen]` | Tested it: not right yet | Their words are the last `you` line in `show`. Fix it as a task again: with the worker that built it, if it's still there (below) |
 | `[followup]` | Added to a task while it ran | Fold it in, or pass it to the worker (below); then `clear`. A question about it ("are you stuck?"): answer on its card with `reply T-012 -Text "..."`, which leaves the card where it is. Never `set -Status ready` to answer: ready means built and checked |
-| `[merge]` | Approved a feature they tested in a lane | Merge its branch ("A round", step 4), then `clear` |
+| `[merge]` | Approved a feature they tested in a lane | Merge its branch ("A round", step 4), then `clear`. It's done: they've tried it, so don't `set` it ready again (`set` refuses) |
 | `[cancel]` | Deleted a task while it ran, or before its branch merged (its status is `removed`) | Stop its worker, if one is on it (a worker hears it from `set` too). In its lane, commit what it left to its branch, so nothing is lost, then put the lane back on main: `git -C <lane> switch --detach origin/main`. Don't merge the branch, and leave it there in case they change their mind. Take its row out of `docs/CLAIMS.md` and push. What's already in `main` stays; if they want it out, they'll say. Then `clear` |
 | `[lane]` | Nothing: a task you parked for a lane (below), and that lane is free now | Start it there: `set T-012 -Status working -Lane 2 ...`, as `list` says |
 
@@ -88,7 +88,7 @@ Rocco's Workboard (`tools\rocco.bat`) is where the user hands over work and foll
 **Through a round:**
 - **Spawning:** `set T-012 -Status working -Lane 3 -Branch agent/<slug> -Step "Starting"`, and give the worker its id. Workers add their own steps, progress and questions.
 - **Work you do yourself:** `set -Status working -Step "..."` as you start, and `log` what matters.
-- **Merged and checked:** `set T-012 -Status ready -Where main -Summary "what changed" -Test "Drive a lap","Drift the hairpin"`. The summary is a sentence or two on what changed, and the test the few steps to try in the Main place, 30 words each: the card's hover shows them whole. The detail goes in `log`, and a choice for the user is a question ("Talking to the user"), not a line in the summary. A feature the user should try before it merges stays on its branch: `-Where lane`, and the test is in that lane's place. Approving it asks you to merge it (`[merge]`).
+- **Merged and checked:** `set T-012 -Status ready -Where main -Summary "what changed" -Test "Drive a lap","Drift the hairpin"`. The summary is a sentence or two on what changed, and the test the few steps to try in the Main place, 30 words each: the card's hover shows them whole. The detail goes in `log`, and a choice for the user is a question ("Talking to the user"), not a line in the summary. A feature the user should try before it merges stays on its branch: `-Where lane`, and the test is in that lane's place. Approving it asks you to merge it (`[merge]`), and it stays done through the merge.
 - **The user's questions while a task runs** (`ask` from a worker, or from you) turn its card Stuck until they answer. Options are a few words each, with what each means in the question (WORKER.md): the card shows two lines of an option at most.
 - **Things you notice outside the task:** `suggest -Title "..." -Summary "why"`. The user queues or dismisses them.
 
