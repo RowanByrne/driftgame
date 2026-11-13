@@ -389,7 +389,8 @@ function parts.terrain(check)
 					local prevV, prevS = nil, 0
 					for j = 1, #knots, 2 do
 						local w = knots[j + 1]
-						if w < T.RunoffMin - 1e-9 or w > T.RunoffMax + 1e-9 then
+						-- a grove (T-183) widens it to `GroveRunoff`, and the next section eases back
+						if w < T.RunoffMin - 1e-9 or w > math.max(T.RunoffMax, T.GroveRunoff[2]) + 1e-9 then
 							badWidth += 1
 						end
 						if prevV then
@@ -506,7 +507,7 @@ function parts.terrain(check)
 	table.sort(stretches)
 	local median = stretches[math.max(1, #stretches // 2)] or 0
 	check("every section carries its mountainside", missing == 0, `{missing} sections without runoff or edges`)
-	check("runoff 12 to 40 studs, and it never changes fast", badWidth == 0 and worstRate <= 0.25 + 1e-9, `{badWidth} widths outside {T.RunoffMin}..{T.RunoffMax}; steepest change {fmt(worstRate, 3)} stud per stud between knots (limit 0.25)`)
+	check("runoff 12 to 40 studs (58 on a grove), and it never changes fast", badWidth == 0 and worstRate <= 0.25 + 1e-9, `{badWidth} widths outside {T.RunoffMin}..{math.max(T.RunoffMax, T.GroveRunoff[2])}; steepest change {fmt(worstRate, 3)} stud per stud between knots (limit 0.25)`)
 	check("the mountain on one side, the drop on the other", sameSides == 0, `{sameSides} points with rock or cliff both sides. Left/right mix of sections' first edges: {table.concat(mixList, ", ")}`)
 	check("the mountain is on the uphill side of the road", wrongSide == 0 and sideChecked > 0, `{wrongSide} of {sideChecked} points away from the fall line have it on the wrong side`)
 	check(

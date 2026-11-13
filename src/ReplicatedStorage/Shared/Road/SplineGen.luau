@@ -113,6 +113,7 @@ export type Gen = typeof(setmetatable(
 		lineX: number?, -- where the stretch began: its line runs from here along `aim`
 		lineZ: number?,
 		trng: Random, -- the mountainside's own stream
+		grng: Random, -- the groves' own stream (T-183), so they never change the rest
 		uphill: number, -- the side the mountain is on: -1 left, 1 right
 		inBand: boolean, -- heading within `AlongFallLine` of the fall line: the side holds
 		lowUntil: number, -- s: the uphill side stays hedge to here after the mountain changes sides
@@ -177,6 +178,7 @@ function SplineGen.new(seed: number, origin: Spline.Origin?, clearOverride: numb
 		upSign = 0,
 		limitUp = math.rad(Config.Spline.HeadingLimit),
 		trng = Random.new((seed * 7 + 1013) % 2 ^ 31),
+		grng = Random.new((seed * 11 + 2027) % 2 ^ 31),
 		uphill = 1,
 		inBand = false,
 		lowUntil = 0,
@@ -253,6 +255,31 @@ function SplineGen._terrain(self: Gen, sec: Spline.Section)
 		return range[1] + (range[2] - range[1]) * r:NextNumber()
 	end
 
+	-- THE GROVES (T-183): on a flat, gentle section, a side's runoff widens and is dressed
+	-- with trees. Their own stream, always the same four draws, so a grove changes nothing
+	-- else the road chooses: only that side's runoff widths are drawn from a wider range.
+	local grove: { [number]: number } = {} -- side -> seed
+	do
+		local g = self.grng
+		local roll, pick, both, seed = g:NextNumber(), g:NextNumber(), g:NextNumber(), g:NextInteger(1, 2 ^ 30)
+		local _, _, _, k0, g0 = self.spline:tip()
+		local kMost, gMost = math.abs(k0), math.abs(g0)
+		for j = 2, #sec.k, 2 do
+			kMost = math.max(kMost, math.abs(sec.k[j]))
+		end
+		for j = 2, #sec.g, 2 do
+			gMost = math.max(gMost, math.abs(sec.g[j]))
+		end
+		local flat = kMost <= 1 / T.GroveMinRadius and gMost <= math.tan(math.rad(T.GroveMaxGrade))
+		if tag ~= "Start" and len >= T.GroveMinLength and flat and roll < T.GroveChance then
+			local first = if pick < 0.5 then -1 else 1
+			grove[first] = seed
+			if both < T.GroveBothChance then
+				grove[-first] = (seed * 31 + 7) % 2 ^ 30
+			end
+		end
+	end
+
 	-- THE RUNOFF: a width every `RunoffKnotEvery` studs, each side on its own, never
 	-- changing faster than a quarter of a stud per stud, so the grass's edge never runs at
 	-- the car faster than about 14 degrees (smoothstep's steepest is 1.5 times that)
@@ -263,8 +290,9 @@ function SplineGen._terrain(self: Gen, sec: Spline.Section)
 		end
 		local out = {}
 		local prev, prevAt = self.runoff[side], 0
+		local range = if grove[side] then T.GroveRunoff else { T.RunoffMin, T.RunoffMax }
 		local function knot(at: number)
-			local w = between({ T.RunoffMin, T.RunoffMax })
+			local w = between(range)
 			local most = 0.25 * (at - prevAt)
 			w = math.clamp(w, prev - most, prev + most)
 			table.insert(out, at)
@@ -402,8 +430,23 @@ function SplineGen._terrain(self: Gen, sec: Spline.Section)
 		local a = (len - run) * r:NextNumber()
 		kr = { a, a + run, side }
 	end
+	-- a K-rail on a grove's side would keep the car off the very grass the grove widened:
+	-- drawn as usual (the stream stays the same), then dropped
+	if #kr > 0 and grove[kr[3]] then
+		kr = {}
+	end
 	if #kr > 0 then
 		sec.kr = kr
+	end
+	if grove[-1] or grove[1] then
+		local gv = {}
+		for _, side in { -1, 1 } do
+			if grove[side] then
+				table.insert(gv, side)
+				table.insert(gv, grove[side])
+			end
+		end
+		sec.gv = gv
 	end
 end
 
