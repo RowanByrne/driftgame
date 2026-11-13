@@ -368,6 +368,24 @@ side (where "height" applies most) and the cliff drop on the downhill side.
   of 2 190 triangles on average, 5 meshes alive. Again on another seed, 2 400 studs from the
   start through a leg at full grandeur: 8.3, 10.4 and 14.8 (the groves' measure was 8.3, 10.5 and
   17.6).
+- **Their shadows (with T-178's hidden boxes).** A rock body casts through a `RockShade_*` box
+  behind its face, from below the foot to 2 to 6 studs under the face's top edge, set back past
+  the deepest jag, and a `RockShadeTop_*` box 3 studs under its scrub top, so a grand body's whole
+  height casts. Each box takes the lowest the body stands over its span and half a span either
+  side, is as long as its longer edge (neighbours overlap, so no light slips between them up a
+  tall face on a bend), and a new box starts where the grandeur moves on or, on the inside of a
+  tight bend, every 0.06 radians of turn. A cliff's `CliffShade_*` box reaches the face's foot,
+  kept above the shallower end. Measured on three seeds of 8 000 studs (DR-Lane5): a ray from
+  the road towards a 25-degree sun through 8 or more studs of rock meets a box 88% of the time
+  (45-degree sun: 88%); of 1 630 rock boxes, 8 have a corner more than 2 studs outside the drawn
+  body away from tight bends (5 to 8 studs, high on a grand face), and 29 on the inside of bends
+  tighter than 250 studs, where the squeezed body itself folds round the bend's centre; no cliff
+  box is out away from those bends. `RoadShade_*` tops stay under the drawn ground, the raised
+  road's bevel included (T-184): 3 810 of 3 810 corners, the highest 1.14 studs under it. A chunk
+  is now about 186 parts (78 shadow boxes) and 2 900 triangles; it builds in 11.6 to 12.7 ms on
+  average, 14.5 to 20 at worst. Driving at 80 studs a second: frames 8.4 ms mean, 10.7 to 12.1
+  p99, 5 to 11 frames in 3 500 over 20 ms where a chunk builds (12 to 18 ms each), one 144 ms
+  spike once.
 
 ## UI
 

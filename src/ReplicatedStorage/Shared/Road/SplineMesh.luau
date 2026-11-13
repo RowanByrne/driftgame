@@ -694,16 +694,55 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 			-- A ROCK BODY'S TOP (T-185): a second box under its scrub top, from the face's top
 			-- edge to the crest, `shadeBack` down inside the body and short of both ends, so a
 			-- grand body's whole height casts and the box is never seen
-			local function shadeTop(ka: number, kb: number)
-				local pa = SplineMesh.profile(spline, cuts[ka], side, Spline.ROCK)
-				local pb = SplineMesh.profile(spline, cuts[kb], side, Spline.ROCK)
+			-- Both ends' profiles for a box over cuts ka..kb. A rock body's height changes
+			-- along the road, and a box drawn between its two ends would show at the lower one,
+			-- so the taller end is brought down to the lower's height above its foot (T-185)
+			local function ends(ka: number, kb: number, kind: number): ({ Vector3 }, { Vector3 })
+				local pa = SplineMesh.profile(spline, cuts[ka], side, kind)
+				local pb = SplineMesh.profile(spline, cuts[kb], side, kind)
+				if kind == Spline.ROCK then
+					-- the lowest the body stands anywhere over the span (its height wanders on
+					-- slow sines, and can dip between the two ends), sampled every 4 studs
+					local ha, hb = pa[4].Y - pa[1].Y, pb[4].Y - pb[1].Y
+					local low = math.min(ha, hb)
+					local a, b = cuts[ka], cuts[kb]
+					-- and half the span past each end: a box overlaps its neighbours, and high on
+					-- the inside of a bend, where the profiles fan in, a stud of box covers more
+					-- than a stud of road
+					local ext = 2 + (b - a) * 0.5
+					local from, to = math.max(0, a - ext), math.min(b + ext, spline.length)
+					local n = math.max(1, math.ceil((to - from) / 4))
+					for i = 0, n do
+						local p = SplineMesh.profile(spline, from + (to - from) * i / n, side, kind)
+						low = math.min(low, p[4].Y - p[1].Y)
+					end
+					local function lower(p: { Vector3 }, r: number)
+						for i = 2, #p do
+							p[i] = p[1] + (p[i] - p[1]) * r
+						end
+					end
+					if ha > low and ha > 1e-3 then
+						lower(pa, math.max(low, 0) / ha)
+					end
+					if hb > low and hb > 1e-3 then
+						lower(pb, math.max(low, 0) / hb)
+					end
+				end
+				return pa, pb
+			end
+			local function shadeTop(ka: number, kb: number, pa: { Vector3 }, pb: { Vector3 })
 				local edge, crest = (pa[4] + pb[4]) * 0.5, (pa[5] + pb[5]) * 0.5
 				local along = ((pb[4] + pb[5]) - (pa[4] + pa[5])) * 0.5
 				local over = crest - edge
 				local len, width = along.Magnitude, over.Magnitude
 				local thick = T.RockShadeThickness
-				local trim = shadeBack + T.RockShadeTopGap
-				if len < 1e-3 or width < 2 * trim + 1 then
+				-- a stud short of the face's edge (the face leans back below it, so under the top
+				-- there is body) and `trimCrest` short of the crest: the box sinks along the
+				-- top's normal, which leans out toward the steep back slope
+				local g = spline:grandAt((cuts[ka] + cuts[kb]) * 0.5)
+				-- (further from a grand body's edge: its jagged face wanders more from one cut to the next)
+				local trim, trimCrest = 1 + 8 * g, 2 + (shadeBack + thick) * 0.6
+				if len < 1e-3 or width < trim + trimCrest + 1 then
 					return
 				end
 				local x = along / len
@@ -714,14 +753,16 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 					z = -z
 				end
 				-- z now points down, into the body
-				local centre = (edge + crest) * 0.5 + z * (shadeBack + thick * 0.5)
-				plain(`RockShadeTop_{tag}_{ka}`, Vector3.new(len + 1, width - 2 * trim, thick), CFrame.fromMatrix(centre, x, y, z), T.RockColour, Enum.Material.Slate)
+				local centre = (edge + crest) * 0.5 + y * ((trim - trimCrest) * 0.5) + z * (shadeBack + thick * 0.5)
+				-- as long as the longer of its two edges, so neighbouring boxes overlap all the way
+				-- up a body on a bend (T-185); the overlap is inside the body that runs on
+				local short = math.max((pb[4] - pa[4]).Magnitude, (pb[5] - pa[5]).Magnitude) + 1
+				plain(`RockShadeTop_{tag}_{ka}`, Vector3.new(short, width - trim - trimCrest, thick), CFrame.fromMatrix(centre, x, y, z), T.RockColour, Enum.Material.Slate)
 			end
 			local function shade(ka: number, kb: number, kind: number)
 				local rock = kind == Spline.ROCK
 				local shadeThick = if rock then T.RockShadeThickness else T.CliffShadeThickness
-				local pa = SplineMesh.profile(spline, cuts[ka], side, kind)
-				local pb = SplineMesh.profile(spline, cuts[kb], side, kind)
+				local pa, pb = ends(ka, kb, kind)
 				-- rock, foot to top: the profile's first point and its face's top edge (the
 				-- fourth, T-185); cliff, foot to top: the last, and the lip lowered by
 				-- `RoadShadeSink` (under the grass, as the road's boxes are, so a ray in just
@@ -757,25 +798,43 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 					-- behind the face, away from the road, and down past the foot by
 					-- `shadeBack`, so no low light slips under it; its top `RockShadeTopGap` short
 					-- of the face's, so it stays under the ledge where a bend narrows the ledge
-					local gap = T.RockShadeTopGap
+					-- up to a stud under the face's top edge where the top is deep enough to hold the
+					-- box behind the face (T-185: so the shadow reaches the body's top); where a bend
+					-- squeezes the top narrow, `RockShadeTopGap` short as before
+					local topDeep = math.min(((pa[5] - pa[4]) * Vector3.new(1, 0, 1)).Magnitude, ((pb[5] - pb[4]) * Vector3.new(1, 0, 1)).Magnitude)
+					local gap = if topDeep > shadeBack + 5 + shadeThick + 2 then 2 + 4 * spline:grandAt((cuts[ka] + cuts[kb]) * 0.5) else T.RockShadeTopGap
 					-- and behind the deepest the jagged face can dent in (T-185: half its jag)
 					local back = shadeBack + (2.5 + 7 * spline:grandAt((cuts[ka] + cuts[kb]) * 0.5)) * 0.5
 					local centre = (foot + top) * 0.5 - y * ((shadeBack + gap) * 0.5) - toRoad * (back + shadeThick * 0.5)
 					local cf = CFrame.fromMatrix(centre, x, y, toRoad)
-					plain(`RockShade_{tag}_{ka}`, Vector3.new(len + 1, math.max(1, height + shadeBack - gap), shadeThick), cf, T.RockColour, Enum.Material.Slate)
-					shadeTop(ka, kb)
+					-- as long as the longer of its foot and its top, so neighbouring boxes overlap all
+					-- the way up a tall body on a bend (T-185)
+					local short = math.max((fb - fa).Magnitude, (tb - ta).Magnitude) + 1
+					plain(`RockShade_{tag}_{ka}`, Vector3.new(short, math.max(1, height + shadeBack - gap), shadeThick), cf, T.RockColour, Enum.Material.Slate)
+					shadeTop(ka, kb, pa, pb)
 				else
 					-- behind the face is the road's side: inside the drop, under the grass
 					local centre = (foot + top) * 0.5 + toRoad * (shadeBack + shadeThick * 0.5)
 					local cf = CFrame.fromMatrix(centre, x, y, toRoad)
-					plain(`CliffShade_{tag}_{ka}`, Vector3.new(len + 1, height, shadeThick), cf, T.CliffColour, Enum.Material.Slate)
+					plain(`CliffShade_{tag}_{ka}`, Vector3.new(math.max((fb - fa).Magnitude, (tb - ta).Magnitude) + 1, height, shadeThick), cf, T.CliffColour, Enum.Material.Slate)
 				end
 			end
 			local k0, kind0 = nil, nil
 			for k = 1, #cuts do
 				local kind = if k < #cuts then spline:edgeAt((cuts[k] + cuts[k + 1]) * 0.5, side) else nil
 				local face = kind == Spline.ROCK or kind == Spline.CLIFF
-				if k0 and (kind ~= kind0 or cuts[k] - cuts[k0] >= shadeStep) then
+				-- (and a new box where the grandeur has moved on, so a box follows a body that
+				-- grows or shrinks fast, T-185)
+				-- On the inside of a tight bend the profiles fan round the bend's centre, so a
+				-- flat box there covers less road: about 0.06 radians of the turn
+				local span = shadeStep
+				if k0 then
+					local kk = spline:curvatureAt(cuts[k0])
+					if kk ~= 0 and (kk > 0) == (side < 0) then
+						span = math.clamp(0.06 / math.abs(kk), 4, shadeStep)
+					end
+				end
+				if k0 and (kind ~= kind0 or cuts[k] - cuts[k0] >= span or math.abs(spline:grandAt(cuts[k]) - spline:grandAt(cuts[k0])) > 0.05) then
 					shade(k0, k, kind0 :: number)
 					k0 = nil
 				end
