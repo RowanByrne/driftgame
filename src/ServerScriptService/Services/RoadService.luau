@@ -820,6 +820,10 @@ function RoadService:_sendAll(player: Player)
 		origin = { x = o.x, y = o.y, z = o.z, yaw = o.yaw },
 		sections = generator.gen.sections,
 		closing = sentClosing,
+		-- the mountain's direction (T-166): the uphill heading and "descent" / "ascent" /
+		-- "traverse". The sections already carry everything drawn; this is for the view
+		fall = generator.gen.fall,
+		mode = generator.gen.mode,
 	})
 end
 

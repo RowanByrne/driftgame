@@ -36,6 +36,11 @@ end
 
 local parts = {}
 
+-- how the height band's centre moves per stud, for the mode the config sets
+local function gen0Drift(): number
+	return SplineGen.new(1).drift
+end
+
 -- 1. Every limit, read off the knots themselves (exact) and sampled along the surface.
 function parts.limits(check)
 	local C = Config.Spline
@@ -74,7 +79,8 @@ function parts.limits(check)
 			worst.stepErr = math.max(worst.stepErr, math.abs(dist - 1))
 			worst.yawRate = math.max(worst.yawRate, math.abs(yaw - pyaw))
 			px, pz, pyaw = x, z, yaw
-			local y = sp:heightAt(s) - base
+			-- the band's centre moves with the road on a descent (T-166)
+			local y = sp:heightAt(s) - (base + gen:bandAt(s))
 			worst.yLo = math.min(worst.yLo, y)
 			worst.yHi = math.max(worst.yHi, y)
 			if s % 5 == 0 then
@@ -100,7 +106,12 @@ function parts.limits(check)
 	check("plan is continuous", worst.stepErr < 1e-3, `1 stud of road was 1 stud of plan to within {string.format("%.2e", worst.stepErr)}`)
 	check("grade within MaxGrade", worst.g <= gMax + 1e-12, `steepest {fmt(math.deg(math.atan(worst.g)), 2)} deg, limit {C.MaxGrade}`)
 	check("grade changes no faster than MaxGradeRate", worst.gRate <= C.MaxGradeRate * (1 + 1e-9), `worst {fmt(worst.gRate * 1000, 4)}e-3 per stud, limit {fmt(C.MaxGradeRate * 1000, 4)}e-3`)
-	check("height stays in its band", worst.yLo >= C.MinHeight - 1e-6 and worst.yHi <= C.MaxHeight + 1e-6, `{fmt(worst.yLo, 1)} .. {fmt(worst.yHi, 1)} studs, band {C.MinHeight} .. {C.MaxHeight}`)
+	-- the band moves with the road on a descent (T-166) and the generator plans each section
+	-- against where it will be at the section's end, so a crest mid-section may sit a stud
+	-- past it: 0.3 measured, and 1.7 where a climb begins at the floor. The grade limits above
+	-- are the hard ones
+	local slack = if gen0Drift() ~= 0 then 2 else 1e-6
+	check("height stays in its band", worst.yLo >= C.MinHeight - slack and worst.yHi <= C.MaxHeight + slack, `{fmt(worst.yLo, 1)} .. {fmt(worst.yHi, 1)} studs, band {C.MinHeight} .. {C.MaxHeight} round a centre moving {fmt(gen0Drift() * 1000, 1)} studs per 1000 and climbing back`)
 	check("bank within MaxBank", worst.b <= bMax + 1e-12, `most {fmt(math.deg(worst.b), 2)} deg, limit {C.MaxBank}`)
 	check("bank changes no faster than MaxBankRate", worst.bRate <= math.rad(C.MaxBankRate) * (1 + 1e-9), `worst {fmt(math.deg(worst.bRate), 4)} deg/stud, limit {fmt(C.MaxBankRate, 4)}`)
 	check(
@@ -364,23 +375,28 @@ function parts.terrain(check)
 	local rails, railsOnBendCliff, badRails, bendsOverCliff = 0, 0, 0, 0
 	local insideWorst, insideN = -math.huge, 0
 	local stretches = {}
+	local lowChecked, lowBad, lowFirst = 0, 0, "" -- the uphill side just past a change of sides
+	local wrongSide, sideChecked, swapLen = 0, 0, 0
 	for _, seed in SEEDS do
 		local gen = road(seed, LIMIT_LENGTH)
 		local sp = gen.spline
-		local upPrev, runFrom, s = nil, 0, 0
-		local straightHedged = false -- a straight hedged both sides since the side was last known
+		local s = 0
 		for _, sec in gen.sections do
 			if not (sec.rl and sec.rr and sec.el and sec.er) then
 				missing += 1
 			else
-				for _, knots in { sec.rl, sec.rr } do
+				for i, knots in { sec.rl, sec.rr } do
+					-- a tight cliff edge's side (T-181) narrows to gravel faster: `parts.tight`
+					local tight = sec.gl ~= nil and sec.gl[3] == (if i == 1 then -1 else 1)
 					local prevV, prevS = nil, 0
 					for j = 1, #knots, 2 do
 						local w = knots[j + 1]
-						if w < T.RunoffMin - 1e-9 or w > T.RunoffMax + 1e-9 then
+						-- a grove (T-183) widens it to `GroveRunoff`, and the next section eases back; a tight
+						-- cliff edge (T-181) narrows it to `TightRunoff`
+						if w < (if tight then T.TightRunoff[1] else T.RunoffMin) - 1e-9 or w > math.max(T.RunoffMax, T.GroveRunoff[2]) + 1e-9 then
 							badWidth += 1
 						end
-						if prevV then
+						if prevV and not tight then
 							worstRate = math.max(worstRate, math.abs(w - prevV) / (knots[j] - prevS))
 						end
 						prevV, prevS = w, knots[j]
@@ -393,25 +409,6 @@ function parts.terrain(check)
 				-- cliff both sides
 				if (l == Spline.ROCK and r == Spline.ROCK) or (l == Spline.CLIFF and r == Spline.CLIFF) then
 					sameSides += 1
-				end
-				-- which side the mountain is on, where this section says
-				local up = if l == Spline.ROCK or r == Spline.CLIFF then -1 elseif r == Spline.ROCK or l == Spline.CLIFF then 1 else nil
-				-- a hedge both sides happens by chance too (a hedge either side): only a change of
-				-- side must come through one, and through a straight
-				if l == Spline.HEDGE and r == Spline.HEDGE and (sec.tag == "Straight" or sec.tag == "Escape") then
-					straightHedged = true
-				end
-				if up and upPrev and up ~= upPrev then
-					swaps += 1
-					if not straightHedged then
-						badSwaps += 1
-					end
-					table.insert(stretches, s - runFrom)
-					runFrom = s
-				end
-				if up then
-					upPrev = up
-					straightHedged = false
 				end
 				local bend = sec.tag ~= "Straight" and sec.tag ~= "Escape" and sec.tag ~= "Start"
 				local kEnd = sec.k[#sec.k]
@@ -445,6 +442,65 @@ function parts.terrain(check)
 				insideN += 1
 			end
 		end
+		-- WHICH SIDE THE MOUNTAIN IS ON, along the road (T-166): the side the uphill direction
+		-- is on, outside the band along the fall line; and it changes only inside a planned
+		-- turn (a hairpin, a switchback or a double hairpin), never on an ordinary bend
+		local band = math.sin(math.rad(Config.Spline.Mountain.AlongFallLine))
+		local upPrev, runFrom, lastS = nil, 0, 0
+		local lowAfter = Config.Spline.Terrain.UphillLowAfterTurn
+		local headSide, headFlip, lowFrom, lowTo = nil, -math.huge, 0, -math.huge
+		for u = 0, sp.length, 4 do
+			local l, r = sp:edgeAt(u, -1), sp:edgeAt(u, 1)
+			if (l == Spline.ROCK and r == Spline.ROCK) or (l == Spline.CLIFF and r == Spline.CLIFF) then
+				sameSides += 1
+			end
+			local up = if l == Spline.ROCK or r == Spline.CLIFF then -1 elseif r == Spline.ROCK or l == Spline.CLIFF then 1 else nil
+			local across = math.sin(sp:yawAt(u) - gen.fall)
+			-- where the heading last came out of the band on the other side: the turn's end
+			if math.abs(across) >= band then
+				local side = if across > 0 then 1 else -1
+				if headSide and side ~= headSide then
+					headFlip = u
+				end
+				headSide = side
+			end
+			if up and math.abs(across) >= band + 0.02 then
+				sideChecked += 1
+				if up ~= (if across > 0 then 1 else -1) then
+					wrongSide += 1
+				end
+			end
+			if up then
+				if upPrev and up ~= upPrev then
+					swaps += 1
+					local planned = false
+					for _, t in gen.turns do
+						if t[1] <= u and t[2] >= lastS and t[3] ~= "straighten" and t[3] ~= "sideways" and t[3] ~= "sidewaysOut" then
+							planned = true
+							break
+						end
+					end
+					if not planned then
+						badSwaps += 1
+					end
+					-- sampled 4 studs apart here and in the generator: 8 studs of slack each end
+					lowFrom, lowTo = headFlip + 8, headFlip + lowAfter - 8
+					table.insert(stretches, u - runFrom)
+					runFrom = u
+				end
+				upPrev, lastS = up, u
+				if u >= lowFrom and u <= lowTo then
+					lowChecked += 1
+					if (if up < 0 then l else r) ~= Spline.HEDGE then
+						lowBad += 1
+						if lowFirst == "" then
+							lowFirst = `; first at seed {seed}, {math.floor(u)} studs ({math.floor(u - headFlip)} past the turn)`
+						end
+					end
+				end
+			end
+		end
+		swapLen += sp.length
 	end
 	local mixList = {}
 	for k, n in mixes do
@@ -454,9 +510,19 @@ function parts.terrain(check)
 	table.sort(stretches)
 	local median = stretches[math.max(1, #stretches // 2)] or 0
 	check("every section carries its mountainside", missing == 0, `{missing} sections without runoff or edges`)
-	check("runoff 12 to 40 studs, and it never changes fast", badWidth == 0 and worstRate <= 0.25 + 1e-9, `{badWidth} widths outside {T.RunoffMin}..{T.RunoffMax}; steepest change {fmt(worstRate, 3)} stud per stud between knots (limit 0.25)`)
-	check("the mountain on one side, the drop on the other", sameSides == 0, `{sameSides} sections with rock or cliff both sides. Left/right mix: {table.concat(mixList, ", ")}`)
-	check("the mountain changes sides only through a straight, hedged both sides", badSwaps == 0 and swaps > 0, `{swaps} changes of side, {badSwaps} not through a straight hedged both sides; the mountain stayed on one side for {fmt(median, 0)} studs (median, {#stretches} swaps measured)`)
+	check("runoff 12 to 40 studs (58 on a grove), and it never changes fast", badWidth == 0 and worstRate <= 0.25 + 1e-9, `{badWidth} widths outside {T.RunoffMin}..{math.max(T.RunoffMax, T.GroveRunoff[2])}; steepest change {fmt(worstRate, 3)} stud per stud between knots (limit 0.25)`)
+	check("the mountain on one side, the drop on the other", sameSides == 0, `{sameSides} points with rock or cliff both sides. Left/right mix of sections' first edges: {table.concat(mixList, ", ")}`)
+	check("the mountain is on the uphill side of the road", wrongSide == 0 and sideChecked > 0, `{wrongSide} of {sideChecked} points away from the fall line have it on the wrong side`)
+	check(
+		"the mountain changes sides only inside a hairpin, switchback or double hairpin",
+		badSwaps == 0 and swaps > 0,
+		`{swaps} changes of side ({fmt(swaps / swapLen * 10000, 1)} per 10 000 studs; 3.5 before T-166, measured), {badSwaps} anywhere else; the mountain stayed on one side for {fmt(median, 0)} studs (median)`
+	)
+	check(
+		"past a hairpin the uphill side stays low a while",
+		lowBad == 0 and lowChecked > 0,
+		`{lowBad} of {lowChecked} points within {Config.Spline.Terrain.UphillLowAfterTurn} studs after a change of sides have a rock face uphill{lowFirst}`
+	)
 	check(
 		"K-rails 60 to 300 studs, on most bends above a cliff",
 		badRails == 0 and rails > 0 and railsOnBendCliff >= bendsOverCliff * 0.3,
@@ -479,7 +545,7 @@ function parts.terrain(check)
 		local dT = side * rng:NextNumber() * half
 		local dG = side * (half + 0.01 + rng:NextNumber() * math.max(0, w - 0.02))
 		local dP = side * (half + w + 0.5 + rng:NextNumber() * 10)
-		if sp:groundKind(s, dT) ~= Spline.TARMAC or (w > 0.05 and sp:groundKind(s, dG) ~= Spline.GRASS) then
+		if sp:groundKind(s, dT) ~= Spline.TARMAC or (w > 0.05 and sp:groundKind(s, dG) ~= (if sp:gravelAt(s, side) then Spline.GRAVEL else Spline.GRASS)) then
 			wrongKind += 1
 		end
 		if edge == Spline.CLIFF then
@@ -579,6 +645,202 @@ function parts.twist(check)
 	)
 end
 
+-- 9. The mountain's direction (features/mountain-direction.md, T-166): a fixed fall line,
+-- legs across it joined by planned turns, and a descent.
+function parts.mountain(check)
+	local C = Config.Spline
+	local M = C.Mountain
+	local neutral = math.sin(math.rad(M.AlongFallLine))
+	local flips, badFlips, length, drop, stalls = 0, 0, 0, 0, 0
+	local downLen, climbLen, climbs, lowest = 0, 0, 0, math.huge
+	local legs, turnarounds, doubles, sideways, refused, straightens = 0, 0, 0, 0, 0, 0
+	local fallOk = 0
+	local seeds = 0
+	for i = 1, HEALTH_SEEDS do
+		local gen = road(1000 + i * 37, HEALTH_LENGTH)
+		local sp = gen.spline
+		seeds += 1
+		if gen.stats.stalled then
+			stalls += 1
+		end
+		-- the fall line is square to the start heading
+		if math.abs(math.cos(gen.fall - sp.origin.yaw)) < 1e-6 then
+			fallOk += 1
+		end
+		-- which way across the slope the road runs, outside the band along the fall line;
+		-- it may change only where a planned turn was laid
+		local lastSign, lastS = 0, 0
+		local turns = gen.turns
+		for s = 0, sp.length, 4 do
+			local a = sp:yawAt(s) - gen.fall
+			local across = math.sin(a)
+			if math.abs(across) >= neutral then
+				local sg = if across > 0 then 1 else -1
+				if lastSign ~= 0 and sg ~= lastSign then
+					flips += 1
+					local covered = false
+					for _, t in turns do
+						if t[1] <= s and t[2] >= lastS and t[3] ~= "straighten" then
+							covered = true
+							break
+						end
+					end
+					if not covered then
+						badFlips += 1
+					end
+				end
+				lastSign, lastS = sg, s
+			end
+		end
+		length += sp.length
+		-- the height lost while the band is going down, and the road it took
+		local b = gen.band
+		for j = 3, #b, 2 do
+			if b[j + 1] < b[j - 1] then
+				drop += sp:heightAt(b[j - 2]) - sp:heightAt(b[j])
+				downLen += b[j] - b[j - 2]
+			else
+				climbLen += b[j] - b[j - 2]
+			end
+		end
+		climbs += gen.stats.climbs
+		for s = 0, sp.length, 8 do
+			lowest = math.min(lowest, sp:heightAt(s) - sp.origin.y)
+		end
+		local st = gen.stats
+		legs += st.legs
+		turnarounds += st.turnarounds
+		doubles += st.doubles
+		sideways += st.sideways
+		refused += st.turnsRefused
+		straightens += st.straightens
+	end
+	local per = 10000 / length
+	local perK = drop / downLen * 1000
+	check("the fall line is square to the start heading, every seed", fallOk == seeds, `{fallOk} of {seeds}`)
+	check("never boxed in, on a descent", stalls == 0, `{stalls} of {seeds} roads of {HEALTH_LENGTH} studs stalled`)
+	check(
+		"the road turns back across the slope only through a planned turn",
+		badFlips == 0 and flips > 0,
+		`{flips} changes of direction across the slope, {badFlips} outside a hairpin, switchback or double hairpin`
+	)
+	check(
+		"legs, turnarounds and detours (measured)",
+		legs * per >= 2 and legs * per <= 8,
+		`per 10 000 studs: {fmt(legs * per, 1)} legs, {fmt(turnarounds * per, 1)} turnarounds, {fmt(doubles * per, 2)} double hairpins, {fmt(sideways * per, 2)} sideways stretches, {fmt(straightens * per, 1)} straightening bends, {fmt(refused * per, 2)} turns refused and retried`
+	)
+	check(
+		"the run works its way down",
+		perK >= M.DescentRate * 1000 * 0.75 and perK <= M.DescentRate * 1000 * 1.25,
+		`net drop {fmt(perK, 1)} studs per 1000 of road while descending (DescentRate is {fmt(M.DescentRate * 1000, 1)}); {climbs} climbs, {fmt(climbLen / length * 100, 1)}% of the road`
+	)
+	-- hours of running: one very long road never sinks past the fall-kill height
+	local long = road(5151, 150000)
+	local low, ups = math.huge, long.stats.climbs
+	for s = 0, long.spline.length, 8 do
+		low = math.min(low, long.spline:heightAt(s))
+	end
+	lowest = math.min(lowest, low - long.spline.origin.y)
+	check(
+		"a run of hours stays above the fall-kill height",
+		long.spline.length >= 150000 and low > -500 + 20,
+		`one road of {math.floor(long.spline.length)} studs: lowest point Y {fmt(low, 1)}, {ups} climbs; lowest over all {seeds + 1} roads {fmt(lowest, 1)} below the start (kill height Y -500)`
+	)
+
+	-- "traverse" is the road as it was: no plan, the start heading kept within HeadingLimit
+	local was = M.Mode
+	M.Mode = "traverse"
+	local ok, res = pcall(function()
+		local gen = road(4242, LIMIT_LENGTH)
+		local worstOff = 0
+		for s = 0, gen.spline.length, 8 do
+			local off = math.abs((gen.spline:yawAt(s) - gen.spline.origin.yaw + math.pi) % (2 * math.pi) - math.pi)
+			worstOff = math.max(worstOff, off)
+		end
+		return { len = gen.spline.length, legs = gen.stats.legs, off = math.deg(worstOff), y = gen.spline:heightAt(gen.spline.length) - gen.spline.origin.y }
+	end)
+	M.Mode = was
+	check(
+		"traverse still lays the old road",
+		ok and res.len >= LIMIT_LENGTH and res.legs == 0 and res.off <= C.HeadingLimit + 1,
+		if ok then `{math.floor(res.len)} studs, {res.legs} legs, furthest off the start heading {fmt(res.off, 1)} deg (limit {C.HeadingLimit})` else tostring(res)
+	)
+end
+
+-- 10. TIGHT CLIFF EDGES (T-181): now and then on a cliff side the runoff closes in to a few
+-- studs of gravel with a crash barrier on the tarmac's edge.
+function parts.tight(check)
+	local T = Config.Spline.Terrain
+	local half = Config.Road.Width * 0.5
+	local count, length, gravelLen, rate = 0, 0, 0, 0
+	local notCliff, unrailed, wrongKind, samples = 0, 0, 0, 0
+	local narrowest, widestCore = math.huge, 0
+	local differ, clash = 0, 0
+	for _, seed in SEEDS do
+		local gen = road(seed, LIMIT_LENGTH)
+		local sp = gen.spline
+		length += sp.length
+		local copy = SplineGen.replay(gen.sections)
+		local s0 = 0
+		for _, sec in gen.sections do
+			if sec.gl then
+				local a, b, side = s0 + sec.gl[1], s0 + sec.gl[2], sec.gl[3]
+				count += 1
+				gravelLen += b - a
+				-- a grove (T-183) is chosen first and keeps its side
+				if sec.gv then
+					for j = 1, #sec.gv, 2 do
+						if sec.gv[j] == side then
+							clash += 1
+						end
+					end
+				end
+				local knots = if side < 0 then sec.rl else sec.rr
+				-- the narrow part is between the two knots at the gravel's width
+				widestCore = math.max(widestCore, knots[4], knots[6])
+				local prevV, prevS = nil, 0
+				for j = 1, #knots, 2 do
+					if prevV then
+						rate = math.max(rate, math.abs(knots[j + 1] - prevV) / (knots[j] - prevS))
+					end
+					prevV, prevS = knots[j + 1], knots[j]
+				end
+				for u = a, b, 2 do
+					samples += 1
+					local w = sp:runoffAt(u, side)
+					narrowest = math.min(narrowest, w)
+					if sp:edgeAt(u, side) ~= Spline.CLIFF then
+						notCliff += 1
+					end
+					if not sp:kRailAt(u, side) then
+						unrailed += 1
+					end
+					if sp:groundKind(u, side * (half + w * 0.5)) ~= Spline.GRAVEL or sp:groundKind(u, side * (half + w + 0.3)) ~= nil then
+						wrongKind += 1
+					end
+					if copy:gravelAt(u, side) ~= true or copy:runoffAt(u, side) ~= w then
+						differ += 1
+					end
+				end
+			end
+			s0 += sec.len
+		end
+	end
+	check(
+		"tight cliff edges: gravel a few studs wide, now and then",
+		count > 0 and widestCore <= T.TightRunoff[2] + 1e-9 and narrowest >= T.TightRunoff[1] - 1e-6,
+		`{count} in {math.floor(length)} studs ({fmt(count / length * 10000, 2)} per 10 000 studs, {fmt(gravelLen / length * 100, 1)}% of the road's length); gravel {fmt(narrowest, 2)} to {fmt(widestCore, 2)} studs at its narrowest part`
+	)
+	check("tight cliff edges ease in and out", rate <= T.TightRate + 1e-9, `steepest change {fmt(rate, 3)} stud per stud between knots (limit {T.TightRate})`)
+	check(
+		"tight cliff edges: a cliff past the gravel and a rail on the tarmac's edge all the way",
+		notCliff == 0 and unrailed == 0 and wrongKind == 0 and samples > 0,
+		`{samples} points: {notCliff} not over a cliff, {unrailed} without a rail, {wrongKind} not gravel then nothing`
+	)
+	check("a client's replay has the same gravel", differ == 0, `{differ} of {samples} differ`)
+	check("a tight cliff edge never shares a side with a grove", clash == 0, `{clash} of {count} on a grove's side`)
+end
+
 function Tests.run(which: { string }?, ...)
 	-- The DebugBridge calls a member as a method, so the module itself comes first.
 	if which == Tests then
@@ -588,7 +850,7 @@ function Tests.run(which: { string }?, ...)
 	local function check(name: string, ok: boolean, detail: string?)
 		table.insert(checks, { name = name, ok = ok, detail = detail })
 	end
-	local order = { "limits", "crossing", "replay", "health", "project", "accuracy", "terrain", "twist" }
+	local order = { "limits", "crossing", "replay", "health", "project", "accuracy", "terrain", "twist", "mountain", "tight" }
 	for _, name in which or order do
 		local ok, err = pcall(parts[name], check)
 		if not ok then
