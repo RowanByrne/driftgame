@@ -23,13 +23,12 @@ replaces them with the real thing.
   it, a ramp throws you, a kerb under one wheel kicks that corner up and tips the car.
 - One rear wheel up a ramp lifts that corner. Both rears up it pitch the car onto its nose while the
   fronts stay planted.
-- A wheel in the air has no grip and no drive, so a car with its rear unloaded slides as it would.
 - On flat, smooth tarmac the car drives and drifts exactly as it does now: the approved feel
   (DECISIONS.md, 2026-11-03) doesn't move.
 
 ## Left out
 
-- New tyre or grip models, damage, rollovers beyond what the springs give (the car is kept upright
+- New tyre or grip models (including per-wheel grip from load), damage, rollovers beyond what the springs give (the car is kept upright
   past a set roll and pitch, and always lands on its wheels).
 - Any change to the drift tuning, the controls or the camera's approved behaviour.
 
@@ -53,12 +52,9 @@ its own speed.
 - **Safety:** pitch and roll are held under set limits so the car can't flip, and a landing never
   puts it in a wall.
 
-### Grip from contact
+### Not Roblox physics, and the tyres stay as they are
 
-- Each wheel's share of grip and drive scales with its spring's load. A wheel in the air gives none.
-- On flat tarmac all four carry their normal share, so the drift is exactly as approved; the build
-  proves this by running today's drift tests and a recorded drive against the new model with the
-  numbers matching.
+The user, 2026-11-13: "is this using roblox physics? or still faking it? i don't want to necessarily rewrite how we run car physics and tyre simulation right now". So: it is **our own model, not Roblox physics**, as the drive is today, and the **tyre and grip simulation is not touched**. The vertical motion is a layer on top: the planar drift model runs exactly as now, and the body's height, pitch and roll come from the springs. A wheel in the air still grips as the model already decides (the whole car loses grip only when it's fully airborne, as now); per-wheel grip from load is a possible later feature.
 
 ### Starting numbers
 
