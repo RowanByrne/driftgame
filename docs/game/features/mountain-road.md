@@ -201,12 +201,20 @@ The road stays purely visual: the car still reads everything from the curve (`Sp
   first tile of fine blades drawn in code read as *"a bit static-y"* in game, so four looks were
   shown on the card from one daylight view (soft mottled patches, faint blurred blades, a
   painted image, colour patches with no texture) and the user picked **the painted tile**
-  (DECISIONS.md). It is a painted grass image from the image tool, made grey offline, evened
-  out to average `Shade` and cross-faded so it tiles: 256 x 256, uploaded once
-  (`Config.Spline.Grass.Image`; `assets/grass-texture/`, MANIFEST.md there), tiled every
-  `TileStuds` (24) studs. `Road/GrassTexture` loads it into one `EditableImage` that every chunk
-  shares and sets its corners; the vertex colour still makes it `GrassColour`. No mesh and no
-  part more.
+  (DECISIONS.md). It is a painted grass image from the image tool, made grey offline and evened
+  out to average `Shade` (`Config.Spline.Grass.Image`; `assets/grass-texture/`, MANIFEST.md
+  there). `Road/GrassTexture` loads it into one `EditableImage` that every chunk shares and sets
+  its corners; the vertex colour still makes it `GrassColour`. No mesh and no part more.
+  - **v2, after "very visible repeating patterns" (the user):** v1 (256 px every 24 studs)
+    showed short double lines on a grid and repeated plainly. The lines were the source image's
+    own seam (it does not wrap: a step of 7 across its edge against 3 inside), which v1's
+    cross-fade had only moved to the middle of each tile edge (a step of 17 there). v2 is made
+    seamless by a four-way blend of the image and its half-offset copies, each weighted to zero
+    along its own seams (steps of 5 to 6 across the wrap and across the middle, as anywhere),
+    is 512 px, and tiles every `TileStuds` (48) studs, the same 10.7 pixels a stud. Over it,
+    **blotches**: each grass vertex's colour is `GrassColour` lightened or darkened by up to
+    `Blotch` (12%) from smooth world-space noise over `BlotchStuds` (70) cells, blended across
+    each face, so neighbouring tiles never look alike.
   - **Why this way:** a client had **no EditableMesh to spare** while the road is drawn
     (measured: 0 free), so the grass cannot be a mesh or part of its own. A built-in material
     covers the whole part: `Grass` on the chunk put grass on the tarmac, rock and trees too
@@ -217,16 +225,20 @@ The road stays purely visual: the car still reads everything from the curve (`Sp
     (measured: the tarmac went flat and about twice as bright). So every face that is not grass
     samples the tile's plain corner, set to `Shade` grey (0.49, what the Asphalt map averaged,
     measured side by side) when the image is loaded; that is why it is an EditableImage and not
-    the asset id on the part. The tarmac, gravel, rock and trees keep their brightness but
+    the asset id on the part. The 4 x 4 plain block is the tile's mean grey, so where the grass
+    samples it, it does not show. The tarmac, gravel, rock and trees keep their brightness but
     **lose Asphalt's fine grain**: flat colour, as the faceted faces are meant to be. `Shade`
     lightens or darkens them all; `Enabled = false` gives the road exactly as before.
-  - **Measured** (seed 31337, 17 chunks, with T-189's joined mountain in; SplineMeshTests 16 of
-    16 pass): 9 988 grass faces mapped in world studs, worst 0.002 studs off; all 43 613 other
-    faces on the plain corner; no triangle, vertex, mesh or part more. Build time per chunk,
-    three A/B pairs: 13.2 to 14.3 ms with the texture, 13.1 to 14.1 without, within the noise.
-    The tile loads once, the first time a chunk needs it, 170 to 310 ms of wall time (an asset
-    fetch, waited on, not frame work); its corners read 125/255 and it averages 0.490. A device
-    that will not load the image draws flat grass, as before.
+  - **Measured** (v2; seed 31337, 17 chunks, with T-189 and T-193 in; SplineMeshTests 17 of 17
+    pass): 9 988 grass faces mapped in world studs, worst 0.002 studs off; all 43 613 other faces
+    on the plain corner; blotches 0.90 to 1.11 of the grass colour; no triangle, vertex, mesh or
+    part more. Work per chunk, three A/B pairs: 17.1 to 17.9 ms with the texture and blotches,
+    15.0 to 15.7 without (about 2 ms more), spread over frames by T-193's slices (worst frame
+    5.0 ms). The tile loads once, about 170 ms of wall time (an asset fetch, waited on, not
+    frame work); its corners read 125/255 and it averages 0.490. A top-down capture across a
+    tile boundary: the row-mean step there 0.19, against a median of 0.10 and 0.6 at most
+    elsewhere, and no thin line anywhere in the grass. A device that will not load the image
+    draws flat grass, as before.
 
 ### The raised road
 
