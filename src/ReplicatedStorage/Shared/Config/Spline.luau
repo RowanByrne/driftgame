@@ -177,6 +177,20 @@ local Spline = {
 		-- On the inside of a bend the grass never reaches past this share of the way to the
 		-- bend's centre, so the inside of a hairpin keeps a strip, not a spike.
 		InsideShare = 0.6,
+		-- THE RAISED ROAD (T-184): the grass sits `RoadLip` below the tarmac's edge, reached
+		-- down a straight GRAVEL BEVEL `RoadLipWidth` across (the user, 2026-11-13: "an angled
+		-- section of like gravel ... that bridges the gap from the road down to the grass"),
+		-- drawn in `GravelColour` and gripping as gravel. Everything on the runoff -- the
+		-- grass, a hedge, the foot of a rock face, a cliff's lip -- stands on the lower ground.
+		-- To the car it is no wall: a wheel on it rolls down and the drawn car tips (the plane
+		-- through its wheels, `Drift/Model`); a wheel coming back rolls up it. Keep `RoadLip`
+		-- under `RideHeight` (2.4): a wheel more than that below the others no longer carries
+		-- the car
+		RoadLip = 1, -- studs (the user, 2026-11-13: "do 1 stud of height instead")
+		RoadLipWidth = 3, -- studs across the bevel ("make the gravel zone 3 studs wide"): about 18 degrees
+		LipShare = 0.75, -- the most of a narrow runoff the bevel takes (a tight cliff edge's
+		-- 2.5 to 3.5 studs of gravel is a 1.9 to 2.6 bevel and a flat strip before its lip; a
+		-- carved apex's 1 stud, a 0.75 gutter)
 		-- A CARVED APEX (T-182): on some sharp bends whose inside is the rock face and whose
 		-- outside is the cliff, the inside grass narrows to almost nothing at the apex, so the
 		-- rock rises right at the tarmac's edge, as if the road were cut into the cliff

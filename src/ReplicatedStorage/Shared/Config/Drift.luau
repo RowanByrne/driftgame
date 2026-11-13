@@ -246,6 +246,12 @@ local Drift = {
 		FloorInset = 0.1, -- studs the read-off floor's corners are pulled in from the body's
 		FloorCover = 0.3, -- studs of slack when asking which part a floor point is under
 		LiftRange = 1, -- studs either way of zero a wheel's lift can be sent over `CarState`
+		-- THE PLANE THROUGH THE WHEELS (T-184), only where the ground has steps the normals
+		-- cannot see (the spline road's `RoadLip`, a hit marked `stepped`): the car's tilt takes
+		-- the part of its four wheels' own plane that their mean normal misses, less this
+		-- much slope (rise over run) either way. Smooth tarmac and grass never miss by this
+		-- much, so there the car is exactly as approved; over the step it tips on to the grass
+		StepTiltDead = 0.02,
 	},
 
 	-- ---------------------------------------------------------------- a hand-placed track

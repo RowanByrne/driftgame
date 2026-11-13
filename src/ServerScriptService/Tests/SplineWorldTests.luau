@@ -473,6 +473,68 @@ function Tests.run(which: { string }?, ...)
 					check("a K-rail found to drive at", false, `none on this road, seed {SEED}`)
 				end
 			end
+			-- THE RAISED ROAD (T-184): a slide whose tail runs out over the step and comes back.
+			-- The drawn car tips on to the plane through its wheels and the springs work, and
+			-- nothing else changes: the same line and speed as with no step, no wall, no air
+			do
+				local s0, side = nil, 1
+				for s = 300, LENGTH - 300, 10 do
+					local good = true
+					for u = s, s + 120, 10 do
+						if math.abs(mountain:curvatureAt(u)) > 1 / 1500 or mountain:runoffAt(u, side) < 16 then
+							good = false
+							break
+						end
+					end
+					if good then
+						s0 = s
+						break
+					end
+				end
+				if s0 then
+					local function slide(lip: number)
+						local keep = T.RoadLip
+						T.RoadLip = lip
+						local w = SplineWorld.new(mountain, nil)
+						local y0 = mountain:yawAt(s0)
+						local x, y, z = mountain:surfaceXYZ(s0, side * (half - 6))
+						local runner = Sim.newRunner(CFrame.new(x, y + D.RideHeight, z) * CFrame.Angles(0, y0 + side * 0.55, 0))
+						runner.state.velocity = Vector3.new(-math.sin(y0), 0, -math.cos(y0)) * 42 + Vector3.new(math.cos(y0), 0, -math.sin(y0)) * side * 18
+						runner.state.time = 10
+						local r = { tilt = 0, lean = 0, travelLo = math.huge, travelHi = 0, air = 0, walls = 0, vy = 0 }
+						for _ = 1, 168 do
+							Sim.advance(runner, D.FixedStep, { steer = side * 0.25, handbrake = false }, w)
+							local st = runner.state
+							if st.stepTilt then
+								r.tilt += 1
+							end
+							r.lean = math.max(r.lean, math.deg(math.acos(math.clamp(st.up:Dot(st.surfaceUp or st.up), -1, 1))))
+							for _, i in { 3, 4 } do
+								r.travelLo = math.min(r.travelLo, st.travel[i])
+								r.travelHi = math.max(r.travelHi, st.travel[i])
+							end
+							r.air += if st.airborne then 1 else 0
+							r.walls += if st.wallHit then 1 else 0
+							r.vy = math.max(r.vy, st.velocity.Y)
+						end
+						T.RoadLip = keep
+						r.pos = runner.state.position
+						r.speed = Vector3.new(runner.state.velocity.X, 0, runner.state.velocity.Z).Magnitude
+						r.grass = w.stats.grass
+						return r
+					end
+					local flat, raised = slide(0), slide(T.RoadLip)
+					local apart = Vector3.new(raised.pos.X - flat.pos.X, 0, raised.pos.Z - flat.pos.Z).Magnitude
+					check(
+						"the raised road: a tail over the step tips the drawn car and changes nothing else",
+						raised.grass > 0 and raised.tilt > 0 and raised.lean > 3 and raised.travelLo < 0.05 and raised.travelHi > 0.45
+							and apart < 0.01 and math.abs(raised.speed - flat.speed) < 0.01 and raised.air == 0 and raised.walls == 0 and raised.vy <= flat.vy + 0.01,
+						`{raised.grass} wheel contacts on grass, plane tilt for {raised.tilt} steps, drawn car leans {fmt(raised.lean, 1)} degrees off the ground; rear travel {fmt(raised.travelLo, 2)} (hanging) to {fmt(raised.travelHi, 2)} (pushed up coming back); against no step: {fmt(apart, 4)} studs apart, speed {fmt(raised.speed, 2)} vs {fmt(flat.speed, 2)}; {raised.air} airborne steps, {raised.walls} wall steps, most upward speed {fmt(raised.vy, 2)} ({fmt(flat.vy, 2)} with no step: the grade)`
+					)
+				else
+					check("a straight with wide grass found for the raised road", false, `none on this road, seed {SEED}`)
+				end
+			end
 			-- A tight cliff edge (T-181): a few studs of gravel, the rail on the tarmac's edge,
 			-- the lip just past it. The rail holds the car on the road, square on and glancing
 			do

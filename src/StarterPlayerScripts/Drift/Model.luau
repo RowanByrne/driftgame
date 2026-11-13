@@ -67,7 +67,9 @@ export type Input = {
 
 -- What a ground ray found. `grip` and `score` are the surface's own multipliers, so the
 -- model never has to know what a surface is called (Drift/World).
-export type Hit = { y: number, normal: Vector3, grip: number, score: number }
+-- `stepped`: this ground has steps its normal does not show -- the spline road, raised above
+-- its grass (T-184) -- so the car's tilt follows the plane through its wheels there.
+export type Hit = { y: number, normal: Vector3, grip: number, score: number, stepped: boolean? }
 
 -- The queries the model makes of the world. Drift/World builds them, for the live
 -- Workspace and for a flat plane.
@@ -105,7 +107,12 @@ export type State = {
 	surfaceScore: number, -- the same for the score multiplier
 	grounded: boolean,
 	airborne: boolean,
-	up: Vector3, -- smoothed surface normal
+	up: Vector3, -- smoothed surface normal: the car's drawn tilt, and its forces' frame...
+	stepTilt: boolean, -- the tilt took the plane through the wheels this step: a step under them (T-184)
+	surfaceUp: Vector3?, -- ...except while a step tilts it (T-184): then the forces keep the
+	-- smoothed normal of the ground itself, this, and only the drawn car tips. nil the rest of
+	-- the time, when the two are one
+
 	groundY: number?, -- ground height under the car THIS step; nil over a void
 	fallFrom: number, -- the last ground height the car had under it, kept after the ground
 	-- is gone. A fall is measured from this, never from a world Y
@@ -163,8 +170,10 @@ function Model.axes(yaw: number): (Vector3, Vector3)
 end
 
 -- The car's real basis, tilted onto the surface it is standing on: forward, right, up.
-local function basis(s: State): (Vector3, Vector3, Vector3)
-	local up = s.up
+-- `forces`: the frame the grip and gravity act in, which over a step is the ground's own
+-- and not the drawn car's tip (`surfaceUp`, T-184).
+local function basis(s: State, forces: boolean?): (Vector3, Vector3, Vector3)
+	local up = if forces then s.surfaceUp or s.up else s.up
 	if up.Magnitude < EPS then
 		up = Vector3.yAxis
 	end
@@ -204,6 +213,7 @@ function Model.new(spawnCFrame: CFrame): State
 		grounded = true,
 		airborne = false,
 		up = Vector3.yAxis,
+		stepTilt = false,
 		groundY = nil,
 		-- A car is spawned standing on something, at ride height above it, so that is the
 		-- ground a fall is measured from until the first ray finds the real one -- one step
@@ -266,7 +276,7 @@ function Model.step(s: State, input: Input, dt: number, world: World): State
 	s.r = C.MaxSteeringSpeed * steer * C.SteeringSensitivity * (if C.InvertSteering then 1 else -1)
 	s.yaw += s.r * dt
 
-	local fwd, right, up = basis(s)
+	local fwd, right, up = basis(s, true)
 
 	---------------------------------------------------------------- the slip angle
 	-- Nothing above touched the velocity, so the nose has just moved out from under it:
@@ -566,8 +576,11 @@ function Model.step(s: State, input: Input, dt: number, world: World): State
 	local found: { boolean } = table.create(#WHEELS, false)
 	local wheelHits: { Hit? } = table.create(#WHEELS, nil)
 	local highest = -math.huge
+	local wheelX: { number } = table.create(#WHEELS, 0)
+	local wheelZ: { number } = table.create(#WHEELS, 0)
 	for i, wheel in WHEELS do
 		local at = target + fwd * (halfBase * wheel.front) + right * (halfTrack * wheel.side)
+		wheelX[i], wheelZ[i] = at.X - target.X, at.Z - target.Z
 		local hit = world.probe(at)
 		if hit then
 			found[i] = true
@@ -601,6 +614,69 @@ function Model.step(s: State, input: Input, dt: number, world: World): State
 	local groundY: number? = if carrying > 0 then sumY / carrying else nil
 	normal = if normal.Magnitude > EPS then normal.Unit else Vector3.yAxis
 	s.groundY = groundY
+
+	-- THE PLANE THROUGH THE WHEELS (T-184, features/mountain-road.md "The raised road"). The
+	-- tilt above is the mean of the wheels' normals, which on any one smooth surface IS the
+	-- plane they stand on. Over a step it is not: the spline road stands `RoadLip` proud of
+	-- its grass, each wheel finds level ground either side of the step, the mean normal is
+	-- level, and a car with two wheels over the edge would hold them in the air. So where
+	-- every carrying wheel's ground says it has steps (`Hit.stepped`: only the spline road),
+	-- the TILT -- and only the tilt -- also takes the part of the wheels' own plane the
+	-- normals miss, past `StepTiltDead` of slope. Smooth tarmac and grass never miss by that
+	-- much (measured), so there the car is exactly the car the user approved; over the step
+	-- it tips on to the grass and back, as the height eases. The climb below still reads the
+	-- normals, so a step neither launches the car nor throws it down: the height eases on to
+	-- the new ground as it does on to any other.
+	local tiltNormal = normal
+	if carrying >= 3 and normal.Y > GROUND_NORMAL_Y then
+		local stepped = true
+		local mx, mz, my = 0, 0, 0
+		for i = 1, #WHEELS do
+			local hit = wheelHits[i]
+			if hit and highest - hit.y <= C.RideHeight then
+				if not hit.stepped then
+					stepped = false
+					break
+				end
+				mx += wheelX[i]
+				mz += wheelZ[i]
+				my += hit.y
+			end
+		end
+		if stepped then
+			mx, mz, my = mx / carrying, mz / carrying, my / carrying
+			local sxx, sxz, szz, sxy, szy = 0, 0, 0, 0, 0
+			for i = 1, #WHEELS do
+				local hit = wheelHits[i]
+				if hit and highest - hit.y <= C.RideHeight then
+					local ox, oz, oy = wheelX[i] - mx, wheelZ[i] - mz, hit.y - my
+					sxx += ox * ox
+					sxz += ox * oz
+					szz += oz * oz
+					sxy += ox * oy
+					szy += oz * oy
+				end
+			end
+			local det = sxx * szz - sxz * sxz
+			if det > EPS then
+				-- the wheels' plane, less the normals', as slope along the car and across it
+				local dx = (szz * sxy - sxz * szy) / det + normal.X / normal.Y
+				local dz = (sxx * szy - sxz * sxy) / det + normal.Z / normal.Y
+				local flatFwd, flatRight = Model.axes(s.yaw)
+				local dead = C.Suspension.StepTiltDead
+				local p = dx * flatFwd.X + dz * flatFwd.Z
+				local q = dx * flatRight.X + dz * flatRight.Z
+				p = math.sign(p) * math.max(math.abs(p) - dead, 0)
+				q = math.sign(q) * math.max(math.abs(q) - dead, 0)
+				if p ~= 0 or q ~= 0 then
+					local gx = -normal.X / normal.Y + p * flatFwd.X + q * flatRight.X
+					local gz = -normal.Z / normal.Y + p * flatFwd.Z + q * flatRight.Z
+					tiltNormal = Vector3.new(-gx, 1, -gz).Unit
+				end
+			end
+		end
+	end
+	s.stepTilt = tiltNormal ~= normal
 	-- THE ONE LINE A FALL IS MEASURED FROM. `groundY` goes nil the moment the car is over
 	-- nothing, which is exactly when a fall is being decided, so the last height it had is
 	-- kept: the ground the car drove off. The model needs to know nothing about the road,
@@ -706,6 +782,7 @@ function Model.step(s: State, input: Input, dt: number, world: World): State
 		local upH = Suspension.upOf(s.yaw, a, b)
 		s.tiltRate = Vector2.new(ra, rb)
 		s.up = upH
+		s.surfaceUp = nil
 		local restY = Suspension.need(sup, s.yaw, upH)
 		if target.Y - restY <= C.AirborneMargin then
 			s.airborne = false
@@ -764,11 +841,24 @@ function Model.step(s: State, input: Input, dt: number, world: World): State
 			climb = clamp(-(normal.X * vel.X + normal.Z * vel.Z) / normal.Y, -flatSpeed, flatSpeed)
 		end
 		vel = Vector3.new(vel.X, clamp(climb, -C.TopSpeed, C.TopSpeed), vel.Z)
-		s.up = s.up:Lerp(normal, follow)
+		-- Over a step the drawn car tips on to the plane through its wheels while the forces
+		-- keep the ground's own normal (T-184): the step is something to see and to feel in
+		-- the springs, not a slope that pulls the car off the road. Once the two agree again
+		-- they are one vector, as they always were.
+		local su = s.surfaceUp
+		if tiltNormal ~= normal or su then
+			su = (su or s.up):Lerp(normal, follow)
+		end
+		s.up = s.up:Lerp(tiltNormal, follow)
+		if su and tiltNormal == normal and (su.Unit - s.up.Unit).Magnitude < 1e-4 then
+			su = nil
+		end
+		s.surfaceUp = if su and su.Magnitude > EPS then su.Unit else nil
 	else
 		s.tiltRate = Vector2.zero
 		s.airborne = true
 		s.up = s.up:Lerp(Vector3.yAxis, 1 - math.exp(-dt / math.max(C.AirLevel, EPS)))
+		s.surfaceUp = nil
 		if groundY and target.Y < groundY + C.RideHeight then
 			target = Vector3.new(target.X, groundY + C.RideHeight, target.Z)
 			s.airborne = false

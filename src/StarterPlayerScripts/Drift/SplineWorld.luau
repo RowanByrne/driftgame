@@ -11,7 +11,9 @@
 --
 --   probe        the ground at the point's (s, d): the tarmac (`GripTarmac`), the grass
 --                runoff either side (`GripGrass`, `ScoreGrass`), and NOTHING past a
---                cliff's lip, so a car that goes over falls
+--                cliff's lip, so a car that goes over falls. The grass is `RoadLip` below
+--                the tarmac's edge (T-184); every hit is marked `stepped`, so the car tips
+--                on to the plane through its wheels over that step (`Drift/Model`)
 --   sweep        the walls: a rock face or a hedge at the runoff's outer edge, and a K-rail
 --                on the tarmac's edge where one stands. The car's footprint is six points
 --                (its corners and the middle of each long side), and the step is cut where
@@ -160,14 +162,14 @@ function SplineWorld.new(spline: Spline.Spline, base: Model.World?): SplineWorld
 				if dy <= rayTop and dy >= rayBottom then
 					stats.hits += 1
 					if kind == Spline.TARMAC then
-						return { y = y, normal = spline:normalAt(s, d), grip = C.GripTarmac, score = C.ScoreTarmac }
+						return { y = y, normal = spline:normalAt(s, d), grip = C.GripTarmac, score = C.ScoreTarmac, stepped = true }
 					end
 					if kind == Spline.GRAVEL then
 						stats.gravel += 1
-						return { y = y, normal = spline:terrainNormal(s, d), grip = C.GripGravel, score = C.ScoreGravel }
+						return { y = y, normal = spline:terrainNormal(s, d), grip = C.GripGravel, score = C.ScoreGravel, stepped = true }
 					end
 					stats.grass += 1
-					return { y = y, normal = spline:terrainNormal(s, d), grip = C.GripGrass, score = C.ScoreGrass }
+					return { y = y, normal = spline:terrainNormal(s, d), grip = C.GripGrass, score = C.ScoreGrass, stepped = true }
 				end
 			end
 		end
