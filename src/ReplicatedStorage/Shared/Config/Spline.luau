@@ -196,6 +196,18 @@ local Spline = {
 		HedgeHeight = 6, -- studs
 		HedgeThickness = 4, -- studs
 		CliffDrop = 80, -- studs the face is drawn down into haze
+		-- A ROCK FACE'S SHADOW (T-178): the mesh casts none, so plain boxes stand behind each
+		-- face, foot to top, unseen, and cast it (`Road/SplineMesh`)
+		RockShadeStep = 16, -- studs of road a box covers at most (a bend's chord stays near it)
+		RockShadeBack = 3, -- studs behind the face, and below its foot
+		RockShadeThickness = 2, -- studs
+		RockShadeTopGap = 4, -- studs short of the face's top (a bend's narrow ledge would show it)
+		CliffShadeThickness = 6, -- studs: a cliff's boxes, behind its face, under the lip
+		-- and the road's surface: a flat box under each stretch, deep enough below the lowest
+		-- point of what it covers that no edge (gravel, a raised lip) is pierced
+		RoadShadeStep = 24, -- studs of road a box covers at most
+		RoadShadeSink = 3, -- studs below the surface
+		RoadShadeThickness = 4, -- studs
 		-- How far past the runoff an edge reaches, for keeping two stretches of road apart.
 		EdgeDepth = 4, -- studs: a hedge's thickness, and the foot of a rock face
 		-- WHICH SIDE IS UPHILL follows from the heading against the fall line (T-166,
