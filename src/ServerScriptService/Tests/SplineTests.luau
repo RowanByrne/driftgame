@@ -871,6 +871,205 @@ function parts.tight(check)
 	check("a tight cliff edge never shares a side with a grove", clash == 0, `{clash} of {count} on a grove's side`)
 end
 
+-- 11. Grand cliffs (features/mountain-road.md "Grand cliffs", T-185): the faces' grandeur,
+-- low near a turnaround and huge mid-leg, never standing up through the leg above.
+function parts.grand(check)
+	local T = Config.Spline.Terrain
+	local SplineMesh = require(ReplicatedStorage.Shared.Road.SplineMesh)
+	local half = Config.Road.Width * 0.5
+	local TURNS = { turnaround = true, switchbackOut = true, double = true, doubleOut = true }
+	local buckets = { { 0, T.GrandNear }, { T.GrandNear, T.GrandNear + T.GrandRamp * 0.5 }, { T.GrandNear + T.GrandRamp * 0.5, T.GrandNear + T.GrandRamp }, { T.GrandNear + T.GrandRamp, math.huge } }
+	local sums = {}
+	for i = 1, #buckets do
+		sums[i] = { n = 0, g = 0, rock = 0, rockN = 0, rockMax = 0, cliff = 0, cliffN = 0 }
+	end
+	local bad, badKnots, nearHigh, nearN, poke, pokeFirst, under, differ = 0, 0, 0, 0, 0, "", 0, 0
+	local besideWorst = -math.huge
+	local worstRise, fastDrops, knotsN = -math.huge, 0, 0
+	local perSeed = {}
+	for _, seed in SEEDS do
+		local gen = road(seed, LIMIT_LENGTH)
+		local sp = gen.spline
+		local prevG, prevS, s0 = 0, 0, 0
+		for _, sec in gen.sections do
+			if not sec.gd then
+				bad += 1
+			else
+				for j = 2, #sec.gd, 2 do
+					if sec.gd[j] < 0 or sec.gd[j] > 1 then
+						badKnots += 1
+					end
+					-- how fast it changes, knot to knot (the last knot rounded to 0.001)
+					local s = s0 + sec.gd[j - 1]
+					local dg, ds = sec.gd[j] - prevG, s - prevS
+					if dg > 0 then
+						-- past what the rate allows, in grandeur (knots are rounded to 0.001)
+						worstRise = math.max(worstRise, dg - ds / T.GrandRate)
+					elseif -dg > ds / T.GrandRate + 0.0011 then
+						fastDrops += 1
+					end
+					knotsN += 1
+					prevG, prevS = sec.gd[j], s
+				end
+			end
+			s0 += sec.len
+		end
+		-- the turnarounds actually laid, as [s0, s1]
+		local turns = {}
+		for _, t in gen.turns do
+			if TURNS[t[3]] then
+				table.insert(turns, t)
+			end
+		end
+		local seedMax = 0
+		for u = 0, sp.length, 8 do
+			local d = math.huge
+			for _, t in turns do
+				d = math.min(d, if u < t[1] then t[1] - u elseif u > t[2] then u - t[2] else 0)
+			end
+			d = math.min(d, u) -- the road's start counts as one
+			local gr = sp:grandAt(u)
+			if d < T.GrandNear - T.GrandKnotEvery then
+				nearN += 1
+				if gr > 1e-6 then
+					nearHigh += 1
+				end
+			end
+			for i, b in buckets do
+				if d >= b[1] and d < b[2] then
+					local sm = sums[i]
+					sm.n += 1
+					sm.g += gr
+					for _, side in { -1, 1 } do
+						local kind = sp:edgeAt(u, side)
+						if kind == Spline.ROCK then
+							local pts = SplineMesh.profile(sp, u, side, kind)
+							local top = -math.huge
+							for _, p in pts do
+								top = math.max(top, p.Y - pts[1].Y)
+							end
+							sm.rock += top
+							sm.rockN += 1
+							sm.rockMax = math.max(sm.rockMax, top)
+							seedMax = math.max(seedMax, top)
+						elseif kind == Spline.CLIFF then
+							local pts = SplineMesh.profile(sp, u, side, kind)
+							sm.cliff += pts[1].Y - pts[#pts].Y
+							sm.cliffN += 1
+						end
+					end
+				end
+			end
+		end
+		table.insert(perSeed, `{seed}: {fmt(seedMax, 0)}`)
+		-- NO ROCK BODY STANDS UP THROUGH OLDER ROAD: every drawn point of a rock body that
+		-- lies under the grass or tarmac of road laid before it is below that road. Brute
+		-- force over the centre line every 8 studs, not the generator's hash
+		local cell = 64
+		local grid = {}
+		for so = 0, sp.length, 8 do
+			local x, z = sp:planAt(so)
+			local key = math.floor(x / cell) * 100000 + math.floor(z / cell)
+			grid[key] = grid[key] or {}
+			table.insert(grid[key], so)
+		end
+		for u = 0, sp.length, 8 do
+			for _, side in { -1, 1 } do
+				if sp:edgeAt(u, side) == Spline.ROCK then
+					for _, p in SplineMesh.profile(sp, u, side, Spline.ROCK) do
+						local cx, cz = math.floor(p.X / cell), math.floor(p.Z / cell)
+						for ix = cx - 6, cx + 6 do
+							for iz = cz - 6, cz + 6 do
+								for _, so in grid[ix * 100000 + iz] or {} do
+									if u - so > gen.separation then
+										local x, z = sp:planAt(so)
+										local dist = math.sqrt((p.X - x) ^ 2 + (p.Z - z) ^ 2)
+										local wo = half + math.max(sp:runoffAt(so, -1), sp:runoffAt(so, 1)) + T.EdgeDepth
+										if dist >= wo and dist < wo + 300 then
+											-- beside it: how far above the road, against how far off
+											besideWorst = math.max(besideWorst, p.Y - sp:heightAt(so) - T.GrandAbove * (dist - wo))
+										end
+										if dist < wo then
+											under += 1
+											if p.Y > sp:heightAt(so) - 1 then
+												poke += 1
+												if pokeFirst == "" then
+													pokeFirst = `; first seed {seed} at {math.floor(u)}, {fmt(p.Y - sp:heightAt(so), 1)} studs above the road at {math.floor(so)}`
+												end
+											end
+										end
+									end
+								end
+							end
+						end
+					end
+				end
+			end
+		end
+		-- a client's replay has the same grandeur
+		local copy = SplineGen.replay(gen.sections)
+		for u = 0, sp.length, 37 do
+			if copy:grandAt(u) ~= sp:grandAt(u) then
+				differ += 1
+			end
+		end
+	end
+	check("every section carries its grandeur, 0 to 1", bad == 0 and badKnots == 0, `{bad} sections without, {badKnots} knots out of range`)
+	check(
+		"grandeur rises no faster than GrandRate",
+		worstRise <= 0.0011,
+		`steepest rise {fmt(worstRise, 4)} past the limit (rounding is 0.001); {fastDrops} of {knotsN} knots fall faster, where older road above cuts it back as a section begins (a knot laid before cannot ease down for it)`
+	)
+	check("low within GrandNear of a turnaround", nearN > 0 and nearHigh == 0, `{nearHigh} of {nearN} points within {T.GrandNear - T.GrandKnotEvery} studs of a hairpin, switchback or double hairpin are grand at all`)
+	local rows = {}
+	for i, b in buckets do
+		local sm = sums[i]
+		table.insert(
+			rows,
+			`{b[1]}-{if b[2] == math.huge then "" else tostring(b[2])}: grandeur {fmt(sm.g / math.max(1, sm.n), 2)}, rock {fmt(sm.rock / math.max(1, sm.rockN), 0)} (most {fmt(sm.rockMax, 0)}), cliff {fmt(sm.cliff / math.max(1, sm.cliffN), 0)} [{sm.n} points]`
+		)
+	end
+	local nearRock = sums[1].rock / math.max(1, sums[1].rockN)
+	local farRock = sums[#sums].rock / math.max(1, sums[#sums].rockN)
+	check("rock rises with distance from a turnaround (measured, studs from the nearest)", farRock > nearRock * 2.5, table.concat(rows, "; ") .. `. Tallest per seed: {table.concat(perSeed, ", ")}`)
+	-- the generator keeps a body's footprint (with a knot's spacing) `foot` clear of older
+	-- road before it lets it rise above it, wider than the road's own grass checked here, so
+	-- `beside` may come out a few tens of studs over; a pinnacle would be a hundred or more
+	check(
+		"no rock body stands up through the leg above",
+		poke == 0 and besideWorst < 80,
+		`{poke} of {under} rock points under older road stand above it{pokeFirst}; beside older road, the most a rock point stands above it past {T.GrandAbove} studs per stud off its grass: {fmt(besideWorst, 1)}`
+	)
+	check("a client's replay has the same grandeur", differ == 0, `{differ} samples differ`)
+
+	-- the grandeur changes nothing else the road chooses
+	local was = T.GrandNear
+	T.GrandNear = 1e9
+	local ok, flat = pcall(road, 31337, 8000)
+	T.GrandNear = was
+	local same = ok
+	if ok then
+		local a = road(31337, 8000)
+		same = #a.sections == #flat.sections
+		for i = 1, math.min(#a.sections, #flat.sections) do
+			local x, y = a.sections[i], flat.sections[i]
+			for _, key in { "k", "g", "b", "rl", "rr", "el", "er", "kr", "gv", "gl" } do
+				local p, q = x[key] or {}, y[key] or {}
+				if #p ~= #q then
+					same = false
+				else
+					for j = 1, #p do
+						if p[j] ~= q[j] then
+							same = false
+						end
+					end
+				end
+			end
+		end
+	end
+	check("the grandeur changes nothing else the road chooses", same, "seed 31337, 8000 studs, with and without grand faces: every curve, runoff, edge, K-rail and grove knot the same")
+end
+
 function Tests.run(which: { string }?, ...)
 	-- The DebugBridge calls a member as a method, so the module itself comes first.
 	if which == Tests then
@@ -880,7 +1079,7 @@ function Tests.run(which: { string }?, ...)
 	local function check(name: string, ok: boolean, detail: string?)
 		table.insert(checks, { name = name, ok = ok, detail = detail })
 	end
-	local order = { "limits", "crossing", "replay", "health", "project", "accuracy", "terrain", "twist", "mountain", "tight" }
+	local order = { "limits", "crossing", "replay", "health", "project", "accuracy", "terrain", "twist", "mountain", "tight", "grand" }
 	for _, name in which or order do
 		local ok, err = pcall(parts[name], check)
 		if not ok then

@@ -124,11 +124,17 @@ end
 -- THE PROFILE OF AN EDGE'S FACE at `s` on `side`: the points of its cross-section, world
 -- space, from the grass's outer edge outward. The same on every device, from `s` alone.
 --
---   ROCK   the foot on the grass, a jagged middle, the top at `RockHeight` leaning back at
---          `RockSlope`, then a ledge of scrub. Height, lean and jag wander along the road on
---          slow sines, so the face is never a wall of one height. On the inside of a bend the
---          face is drawn steeper rather than reach past the bend's centre
---   CLIFF  the lip, then a face dropping `CliffDrop` and stepping out a little as it goes
+--   ROCK   A SOLID BODY (T-185): the foot on the grass, a jagged face up to its top at
+--          `RockHeight` leaning back at `RockSlope`, a top of scrub `RockTop` deep, and a
+--          back slope down to the ground again, `RockBack` of its height behind. Height, lean
+--          and jag wander along the road on slow sines, so the face is never a wall of one
+--          height; and all of it grows with the road's grandeur (`Spline.grandAt`) toward the
+--          `Grand` numbers, huge mid-leg. On the inside of a bend the body is drawn squeezed
+--          rather than reach past the bend's centre
+--   CLIFF  the lip, then a jagged face dropping `CliffDrop` (to `GrandCliffDrop`, grand) and
+--          stepping out a little as it goes
+-- Traversed so the body is always on the right of the profile's way (out, then up and
+-- over, or out and down): each quad faces (-dUp, dOut), away from the mountain.
 local function wave(s: number, a: number, b: number): number
 	-- two slow sines with no common period: 0..1, smooth, the same everywhere
 	return 0.5 + 0.3 * math.sin(s / a) + 0.2 * math.sin(s / b + 1.7)
@@ -141,18 +147,35 @@ function SplineMesh.profile(spline: Spline.Spline, s: number, side: number, kind
 	local yaw = spline:yawAt(s)
 	local rx, rz = math.cos(yaw), -math.sin(yaw)
 	local y0 = spline:terrainY(s, side * w)
+	local g = spline:grandAt(s)
+	local function grand(near: number, far: number): number
+		return near + (far - near) * g
+	end
 	local pts: { { number } } -- {out, up}
 	if kind == Spline.ROCK then
-		local h = T.RockHeight[1] + (T.RockHeight[2] - T.RockHeight[1]) * wave(s + side * 311, 61, 23)
-		local lean = math.rad(T.RockSlope[1] + (T.RockSlope[2] - T.RockSlope[1]) * wave(s - side * 173, 43, 17))
+		local hLo, hHi = grand(T.RockHeight[1], T.GrandRockHeight[1]), grand(T.RockHeight[2], T.GrandRockHeight[2])
+		local h = hLo + (hHi - hLo) * wave(s + side * 311, 61, 23)
+		local lLo, lHi = grand(T.RockSlope[1], T.GrandRockSlope[1]), grand(T.RockSlope[2], T.GrandRockSlope[2])
+		local lean = math.rad(lLo + (lHi - lLo) * wave(s - side * 173, 43, 17))
 		local run = h / math.tan(lean)
-		local jag = 2.5 * (wave(s * 3.1, 7, 3) - 0.5)
-		pts = { { 0, 0 }, { run * 0.4 + jag, h * 0.45 }, { run, h }, { run + 14, h + 4 } }
+		local jagSize = 2.5 + 7 * g
+		local jag = jagSize * (wave(s * 3.1, 7, 3) - 0.5)
+		local jag2 = jagSize * (wave(s * 2.3 + 50, 5, 11) - 0.5)
+		local top = grand(T.RockTop[1], T.RockTop[2])
+		local crest = h + 4 + 6 * g
+		pts = {
+			{ 0, 0 },
+			{ run * 0.3 + jag, h * 0.3 },
+			{ run * 0.62 + jag2, h * 0.64 },
+			{ run, h },
+			{ run + top, crest },
+			{ run + top + T.RockBack * h, 0 },
+		}
 		-- the inside of a bend: never past 90% of the way to its centre
 		local k = spline:curvatureAt(s)
 		if k ~= 0 and (k > 0) == (side < 0) then
 			local room = 0.9 / math.abs(k) - w
-			local reach = pts[4][1]
+			local reach = pts[#pts][1]
 			if room < reach then
 				local scale = math.max(room, 0.5) / reach
 				for _, p in pts do
@@ -161,8 +184,17 @@ function SplineMesh.profile(spline: Spline.Spline, s: number, side: number, kind
 			end
 		end
 	else
-		local drop = T.CliffDrop
-		pts = { { 0, 0 }, { 1.5, -drop * 0.08 }, { 4, -drop * 0.45 }, { 7, -drop } }
+		-- never deeper than `GrandCliffDrop`: the valley floor is below that
+		local drop = grand(T.CliffDrop, T.GrandCliffDrop) * (0.8 + 0.2 * wave(s - side * 97, 53, 19))
+		local jagSize = 1.5 + 4 * g
+		local reach = 7 + 9 * g
+		pts = {
+			{ 0, 0 },
+			{ 1.5, -drop * 0.06 },
+			{ reach * 0.45 + jagSize * (wave(s * 2.7 + 9, 6, 13) - 0.5), -drop * 0.3 },
+			{ reach * 0.7 + jagSize * (wave(s * 1.9 + 31, 8, 5) - 0.5), -drop * 0.62 },
+			{ reach, -drop },
+		}
 	end
 	local out = {}
 	for i, p in pts do
@@ -381,25 +413,69 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 				rows[k] = row
 				return row
 			end
+			-- the edge between each pair of cuts, and the one just before the chunk (so a body
+			-- running on from the last chunk gets no end drawn across it)
+			local kinds = table.create(#cuts - 1)
+			for k = 1, #cuts - 1 do
+				kinds[k] = spline:edgeAt((cuts[k] + cuts[k + 1]) * 0.5, side)
+			end
+			kinds[0] = if cuts[1] > 0 then spline:edgeAt(cuts[1] - 0.01, side) else kinds[1]
+			local sEnd = cuts[#cuts]
+			kinds[#cuts] = if sEnd < spline.length - 0.01 then spline:edgeAt(sEnd + 0.01, side) else kinds[#cuts - 1]
+			-- AN END: where a body starts or stops, its profile is closed with a fan of
+			-- triangles round its middle, facing along the road out of the body (T-185). A
+			-- cliff's is closed straight down from just past its lip (past it, so no point of
+			-- the body stands where the grass is)
+			local function cap(row: { pts: { Vector3 }, ids: { number }, kind: number }, s: number, facingSign: number)
+				local pts, ids = table.clone(row.pts), table.clone(row.ids)
+				if row.kind == Spline.CLIFF then
+					local lip = pts[1]:Lerp(pts[2], 0.3)
+					local under = Vector3.new(lip.X, pts[#pts].Y, lip.Z)
+					table.insert(pts, under)
+					table.insert(ids, em:AddVertex(under - centre))
+					road.vertices += 1
+				end
+				local mid = Vector3.zero
+				for _, p in pts do
+					mid += p
+				end
+				mid /= #pts
+				local midId = em:AddVertex(mid - centre)
+				road.vertices += 1
+				local yaw = spline:yawAt(s)
+				local facing = Vector3.new(-math.sin(yaw), 0, -math.cos(yaw)) * facingSign
+				local colour = if row.kind == Spline.ROCK then faceColours.rock else cliffMid
+				for i = 1, #pts do
+					local j = i % #pts + 1
+					tri(midId, ids[i], ids[j], mid, pts[i], pts[j], colour, facing)
+				end
+			end
 			for k = 1, #cuts - 1 do
 				local a, b = cuts[k], cuts[k + 1]
-				local kind = spline:edgeAt((a + b) * 0.5, side)
+				local kind = kinds[k]
 				if kind == Spline.ROCK or kind == Spline.CLIFF then
 					local ra, rb = rowAt(k, kind), rowAt(k + 1, kind)
-					-- a rock face faces the road; a cliff face faces out, over the drop
 					local yaw = spline:yawAt((a + b) * 0.5)
 					local outward = Vector3.new(side * math.cos(yaw), 0, -side * math.sin(yaw))
-					local facing = if kind == Spline.ROCK then -outward + Vector3.yAxis * 0.3 else outward
 					local pa, pb, ia, ib = ra.pts, rb.pts, ra.ids, rb.ids
 					for i = 1, #pa - 1 do
 						local colour
 						if kind == Spline.ROCK then
-							colour = if i == #pa - 1 then faceColours.scrub else faceColours.rock
+							colour = if i == #pa - 2 then faceColours.scrub else faceColours.rock
 						else
 							colour = if i == 1 then faceColours.cliff elseif i == #pa - 1 then faceColours.haze else cliffMid
 						end
+						-- each quad faces away from the body: the profile's way turned (-up, out)
+						local e = pa[i + 1] - pa[i]
+						local facing = outward * -e.Y + Vector3.yAxis * e:Dot(outward)
 						tri(ia[i], ia[i + 1], ib[i], pa[i], pa[i + 1], pb[i], colour, facing)
 						tri(ia[i + 1], ib[i + 1], ib[i], pa[i + 1], pb[i + 1], pb[i], colour, facing)
+					end
+					if kinds[k - 1] ~= kind then
+						cap(ra, a, -1)
+					end
+					if kinds[k + 1] ~= kind then
+						cap(rb, b, 1)
 					end
 				end
 			end

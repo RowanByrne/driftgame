@@ -41,6 +41,8 @@
 --              cliff edges, a strip of a few studs between a K-rail and the drop (T-181)
 --   groves     runs `(s0, s1, seed)` per side, a whole section each (T-183): the trees on
 --              that side's runoff, placed from the seed by `Road/SplineGrove`
+--   grandeur   0..1, one eased track (T-185): how grand the rock and cliff faces are drawn,
+--              low near a turnaround and huge mid-leg. A look only; the car never reads it
 --
 -- A section that carries none of these (a test's hand-made road) gets no runoff and a hedge
 -- on both sides: a wall exactly where the old barriers stood.
@@ -71,6 +73,7 @@ export type Section = {
 	kr: { number }?, -- K-rail runs {ds0, ds1, side, ...}, side -1 left, 1 right
 	gl: { number }?, -- gravel runoff runs {ds0, ds1, side, ...}, as `kr` (T-181)
 	gv: { number }?, -- groves {side, seed, ...}: trees on that side's runoff, the whole section (T-183)
+	gd: { number }?, -- grandeur knots {ds, g, ...}, g 0..1, the last at `len` (T-185)
 }
 
 -- The edge kinds, as they go over the wire.
@@ -123,6 +126,7 @@ export type Spline = typeof(setmetatable(
 		gravR: Runs,
 		groveL: Groves,
 		groveR: Groves,
+		grand: Track?, -- the rock and cliff faces' grandeur (T-185), made on the first section
 	},
 	Spline
 ))
@@ -244,6 +248,7 @@ function Spline.new(origin: Origin?): Spline
 		gravR = { a = {}, b = {} },
 		groveL = { a = {}, b = {}, seed = {} },
 		groveR = { a = {}, b = {}, seed = {} },
+		grand = nil,
 	}, Spline)
 	return self
 end
@@ -473,6 +478,15 @@ local function checkTerrain(self: Spline, sec: Section)
 			lastEnd[side] = b
 		end
 	end
+	local gd = sec.gd
+	if gd then
+		assert(#gd >= 2 and #gd % 2 == 0 and math.abs(gd[#gd - 1] - len) < 1e-6, "Spline: grandeur knots must end at the section's end")
+		local last = 0
+		for j = 1, #gd, 2 do
+			assert(gd[j] > last and gd[j + 1] >= 0 and gd[j + 1] <= 1, "Spline: grandeur knots in order, 0 to 1")
+			last = gd[j]
+		end
+	end
 	local gv = sec.gv
 	if gv then
 		assert(#gv % 2 == 0, "Spline: groves come in pairs")
@@ -511,6 +525,11 @@ function Spline.append(self: Spline, sec: Section)
 	appendRuns(self, s0, sec.kr)
 	appendGravel(self, s0, sec.gl)
 	appendGroves(self, s0, sec.len, sec.gv)
+	if not self.grand then
+		self.grand = newTrack(if sec.gd then sec.gd[2] else 0, true)
+	end
+	local grand = self.grand :: Track
+	appendTrack(grand, nil, s0, sec.gd or { sec.len, grand.v[#grand.v] })
 	self.length = s1
 	self.sections += 1
 	local step = self.step
@@ -639,6 +658,15 @@ function Spline.edgeAt(self: Spline, s: number, side: number): number
 		end
 	end
 	return sp.t[lo]
+end
+
+-- How grand the rock and cliff faces are at `s`, 0..1 (T-185): eased between the knots.
+function Spline.grandAt(self: Spline, s: number): number
+	local t = self.grand
+	if not t then
+		return 0
+	end
+	return (valueAt(t, s))
 end
 
 -- The K-rail run standing on `side` at `s`, as its start and end, or nil.

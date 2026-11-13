@@ -82,9 +82,9 @@ does), so nothing steps.
 | Runoff on the inside of a bend | Never past 60% of the way to the bend's centre | So the inside of a hairpin keeps a strip, not a spike |
 | Carved apex (T-182) | Inside runoff down to 1 stud at the apex, for 20 to 50 studs | Only on bends of radius 220 or less with the rock inside and the cliff outside; see "Carved apexes" |
 | Runoff slope | Follows the road's bank, then eases flat | A banked road's grass doesn't lip up into a ramp |
-| Rock face | Rises 25 to 60 studs at 50 to 70 degrees | Height is looks; to the car it is a wall |
+| Rock face | A solid body: rises 25 to 60 studs at 50 to 70 degrees near a turnaround, up to 140 to 220 at 64 to 78 degrees mid-leg ("Grand cliffs") | Height is looks; to the car it is a wall |
 | Hedge | 6 studs high, 4 thick | |
-| Cliff | The ground ends; the face drops 80 studs into haze | Past the lip, nothing to stand on |
+| Cliff | The ground ends; the face drops 80 studs into haze near a turnaround, up to 200 mid-leg | Past the lip, nothing to stand on |
 | K-rail (metal crash barrier) | 3 studs high, 2 thick, at the tarmac's edge | Runs of 60 to 300 studs. To the car a wall that size; drawn as a 1.2-stud rounded W-beam, top at 3 studs, face on the tarmac's edge; square posts every 7 studs on spacer blocks behind it, inside the wall; a striped hazard panel at each end |
 
 ### Where each edge goes
@@ -263,6 +263,52 @@ bushes, etc. which should help occlude long angle views."*
   stopped 60 of 60 drives at it, the box ending clear of it; a box inside one was pushed out
   60 of 60; a sweep and a push near a grove cost about 0.1 ms.
 
+### Grand cliffs
+
+T-185. The user, 2026-11-13: *"cliffs should be more solid bodied and grand. the farther you get
+from a switchback, we can have sections where the average cliff height is huge, and then comes
+back down again as we near a switchback"*. Read as both edges: the rock face rising on the uphill
+side (where "height" applies most) and the cliff drop on the downhill side.
+
+- **Solid bodies.** A rock face is no longer a sheet with a ledge: it is a body with a jagged face
+  (three facets up), a top of scrub (14 studs deep near a turnaround, 36 grand), and a back slope
+  down to the ground again (36% of its height behind it), its ends closed where it starts and
+  stops. A cliff face is jagged too (four facets down), stepping further out the deeper it goes
+  (7 to 16 studs), its ends closed straight down from the lip.
+- **How grand, by distance from a turnaround.** Each section carries a **grandeur**, 0 to 1, as
+  eased knots every 60 studs or so (`gd`). It is 0 within 250 studs of the nearest turnaround (a
+  hairpin, either bend of a switchback, either of a double hairpin's), either way along the road,
+  and rises (smoothstep) to 1 at 850. The faces grow with it: rock 25-60 studs tall near, 140-220
+  grand; slope 50-70 degrees near, 64-78 grand; the cliff 80 deep near, up to 200 grand. Just past
+  a hairpin the uphill side is still hedge for 400 studs, as before.
+- **Chosen by the server, from no random stream:** the distance behind is from where the last
+  turnaround ended, the distance ahead from the plan (the stretches still to run before the next
+  one, which can only come later than that, never sooner). Clients replay the knots. Measured:
+  with and without it, every curve, runoff, edge, K-rail and grove knot is the same.
+- **The leg above stays on top.** Wherever a rock body that grand would reach under older road
+  on its uphill side (that road's width plus 30 studs), its top stays 12 studs under that road;
+  short of it, it may stand above it by at most 2 studs for every stud it keeps off. Then the
+  grandeur never rises or eases faster than 0 to 1 over 300 studs (a cut-back as a section
+  begins can be faster: 18 of 1 884 knots, measured).
+- **To the car nothing changed:** a rock face is still a wall `RockHeight[1]` (25) high at the
+  grass's outer edge, a cliff still a lip.
+- **Measured (DR-Lane5), five seeds of 20 000 studs**, studs from the nearest turnaround:
+
+  | Distance | Grandeur | Rock height, mean (most) | Cliff drop, mean |
+  |---|---|---|---|
+  | 0 to 250 | 0.00 | 47 (64) | 72 |
+  | 250 to 550 | 0.08 | 60 (145) | 81 |
+  | 550 to 850 | 0.43 | 108 (226) | 118 |
+  | 850 and on | 0.78 | 160 (230) | 156 |
+
+  No rock point stands above older road it is under; none within 190 studs of a turnaround is
+  grand at all. Choosing it costs a section about 0.02 ms (0.24 mean, 1.2 worst, all in).
+- **Drawing cost (seed 31337, 8 000 studs):** about 2 490 triangles a chunk (1 850 before), the
+  window round the car about 12 500 (9 200); a chunk builds in 9.1 to 9.9 ms on average, 14 to 16
+  at worst (7.2 and 10.8 before). Driving a run at 80 studs a second through a grand leg and down
+  to its hairpin, teleported along the curve: frames 8.3 ms mean, 10.2 p99, 23.5 worst; 8 chunks
+  of 2 190 triangles on average, 5 meshes alive.
+
 ## UI
 
 None. The TEST ONLY panel loses its guardrail button.
@@ -277,6 +323,7 @@ None. The TEST ONLY panel loses its guardrail button.
 
 - `RoadSpline`'s section data gains each side's runoff and edge knots, and the K-rail runs
   (`CONTRACTS.md`, in the same commit); since T-181, its gravel runs (`gl`) too.
+- And, with T-185, the faces' grandeur knots `gd` (`CONTRACTS.md`, in the same commit).
 - `setRails` and the guardrail message are removed.
 - `Config.Road.Mode` defaults to `"spline"`.
 
