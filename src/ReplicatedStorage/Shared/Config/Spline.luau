@@ -135,6 +135,16 @@ local Spline = {
 		-- dropping this much per stud of road, so the grade still goes up and down locally but
 		-- the run works its way down. 1 in 25 is about 2.3 degrees net.
 		DescentRate = 1 / 25, -- studs of height per stud of road
+		-- THE CLIMBS that let a run go on for hours (the user, 2026-11-13: "we want a system
+		-- that will allow for hours of running ... add uphill sections that are short and gain
+		-- good vertically every now and then"). Once the band's centre is `DescentFloor` below
+		-- the start, it rises at `ClimbRate` until it is back at `ClimbTop`, then the descent
+		-- goes on. Only the height changes: the road keeps zig-zagging down the mountain in
+		-- plan, so the cliff side is unaffected. With the band's 160 either side, the road
+		-- stays above Y -440, clear of Roblox's fall-kill height (-500).
+		DescentFloor = -280, -- studs, the centre's lowest, relative to the start
+		ClimbRate = 1 / 10, -- studs of height per stud of road, about 5.7 degrees
+		ClimbTop = 0, -- studs, where a climb hands back to the descent
 	},
 
 	-- --------------------------------------------------------------- the bends
@@ -176,9 +186,8 @@ local Spline = {
 		CliffDrop = 80, -- studs the face is drawn down into haze
 		-- How far past the runoff an edge reaches, for keeping two stretches of road apart.
 		EdgeDepth = 4, -- studs: a hedge's thickness, and the foot of a rock face
-		-- WHICH SIDE IS UPHILL is kept for a long stretch, then swaps through a straight with
-		-- hedge both sides (the road crossing a ridge). Never in a bend.
-		UphillStretch = { 900, 2600 }, -- studs between two swaps
+		-- WHICH SIDE IS UPHILL follows from the heading against the fall line (T-166,
+		-- `Mountain.AlongFallLine`): no stretch length and no random swap any more.
 		UphillHedgeChance = 0.2, -- per section: hedge instead of rock on the uphill side
 		DownhillHedgeChance = 0.15, -- per section: hedge instead of cliff on the downhill side
 		-- K-RAILS: drawn as METAL CRASH BARRIERS (T-149): a W-beam steel guardrail held off
