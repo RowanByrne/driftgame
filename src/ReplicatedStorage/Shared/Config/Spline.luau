@@ -237,6 +237,17 @@ local Spline = {
 		GrandRockSlope = { 64, 78 }, -- degrees, so a tall face doesn't reach out for ever
 		RockTop = { 14, 36 }, -- studs of scrub on top, near and grand
 		RockBack = 0.36, -- the back slope's run, as a share of the height
+		-- ON THE INSIDE OF A TIGHT BEND (T-193) a rock body is no grander than the bend allows
+		-- (none at `MinRadius`, full at this radius), and where it has to be squeezed in short
+		-- of the bend's centre, no taller than this many times what it reaches out
+		TightRockRadius = 250, -- studs
+		TightRockAspect = 2.5,
+		-- and it reaches no further than this share of the way to the bend's centre at the
+		-- tightest bend (0.9 at `TightRockRadius` and wider), clear of where the profiles meet
+		TightRockReach = 0.65,
+		-- studs either way along the road a tight bend limits a body: one just before it
+		-- reaches out across where the bend's profiles turn in
+		TightRockLook = 60,
 		GrandCliffDrop = 200, -- studs, mid-leg (`CliffDrop` near). Above the valley floor
 		-- (`Config.Horizon.Floor`; HorizonTests checks it)
 		-- A ROCK FACE'S SHADOW (T-178): the mesh casts none, so plain boxes stand behind each
@@ -360,6 +371,10 @@ local Spline = {
 		Ahead = 1600, -- studs of road drawn in front of the car
 		Behind = 300, -- and kept behind it
 		FallbackStep = 4, -- studs between cross-sections when a device draws parts instead
+		-- A chunk is built over as many frames as it needs (T-193): its build hands the frame
+		-- back whenever this much of it has been spent, and carries on next frame. Nothing is
+		-- seen until the whole chunk is done, so nothing pops: it all appears at once.
+		SliceMs = 3, -- ms of building in any one frame, at most (about; one step can overrun)
 	},
 
 	-- --------------------------------------------------------------- the Studio test road
