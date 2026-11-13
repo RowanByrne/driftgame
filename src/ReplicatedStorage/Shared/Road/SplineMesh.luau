@@ -13,7 +13,9 @@
 --               grass, faceted, its height and lean changing along the road; a cliff face
 --               dropping from the grass's lip into haze. Faces are flat-shaded on purpose:
 --               very low poly, programmer colours. And a grove's trees and bushes (T-183,
---               `Road/SplineGrove`), faceted the same way
+--               `Road/SplineGrove`), faceted the same way. The grass alone is textured
+--               (T-187): a tile of blades, `Road/GrassTexture`, mapped in world studs; every
+--               other face samples the tile's plain corner
 --   RockShade_* plain boxes standing unseen behind each rock face, casting its shadow,
 --               since a mesh drawn from an EditableMesh casts none (T-178)
 --   Edge_*      a hedge: a green box per cross-section, at the grass's outer edge
@@ -48,6 +50,7 @@ local AssetService = game:GetService("AssetService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Config = require(ReplicatedStorage.Shared.Config)
+local GrassTexture = require(script.Parent.GrassTexture)
 local Spline = require(script.Parent.Spline)
 local SplineGrove = require(script.Parent.SplineGrove)
 
@@ -180,6 +183,7 @@ type Builder = {
 	centre: Vector3,
 	vertices: number,
 	triangles: number,
+	grassTriangles: number,
 }
 
 
@@ -188,7 +192,9 @@ type Builder = {
 -- `farA` / `farB`, when given, are the normals a vertex has as the FAR side of a strip
 -- (vertex i + 1 of strip i), so one vertex can be smooth on one strip and flat on the next:
 -- the road's step (T-184).
-local function strip(b: Builder, rowA: { number }, normA: { number }, rowB: { number }, normB: { number }, flip: boolean, colours: { number }?, farA: { number }?, farB: { number }?)
+-- `uvA` / `uvB`, when given, are UV ids for the grass's vertices (T-187): a strip painted
+-- `grass` is mapped with them; every other strip keeps its vertices' own UVs, (0, 0).
+local function strip(b: Builder, rowA: { number }, normA: { number }, rowB: { number }, normB: { number }, flip: boolean, colours: { number }?, farA: { number }?, farB: { number }?, uvA: { [number]: number }?, uvB: { [number]: number }?, grass: number?)
 	local em = b.em
 	local fa, fb = farA or normA, farB or normB
 	for i = 1, #rowA - 1 do
@@ -210,6 +216,19 @@ local function strip(b: Builder, rowA: { number }, normA: { number }, rowB: { nu
 			local c = colours[i]
 			em:SetFaceColors(f1, { c, c, c })
 			em:SetFaceColors(f2, { c, c, c })
+			if uvA and uvB and c == grass then
+				local ua0, ua1, ub0, ub1 = uvA[i], uvA[i + 1], uvB[i], uvB[i + 1]
+				if ua0 and ua1 and ub0 and ub1 then
+					if flip then
+						em:SetFaceUVs(f1, { ua0, ub0, ua1 })
+						em:SetFaceUVs(f2, { ua1, ub0, ub1 })
+					else
+						em:SetFaceUVs(f1, { ua0, ua1, ub0 })
+						em:SetFaceUVs(f2, { ua1, ub1, ub0 })
+					end
+					b.grassTriangles += 2
+				end
+			end
 		end
 		b.triangles += 2
 	end
@@ -219,14 +238,14 @@ local function newBuilder(centre: Vector3): Builder
 	local em = AssetService:CreateEditableMesh({ FixedSize = false })
 	-- nil is the device saying no: out of its EditableMesh budget
 	assert(em, "this device would not make an EditableMesh (out of its budget)")
-	return { em = em :: EditableMesh, centre = centre, vertices = 0, triangles = 0 }
+	return { em = em :: EditableMesh, centre = centre, vertices = 0, triangles = 0, grassTriangles = 0 }
 end
 
 -- A MeshPart made from an EditableMesh keeps the vertices exactly where they were written,
 -- relative to the part (measured: not re-centred), while its Size -- and so what Roblox culls
 -- it by -- is the bounding box. So the vertices are moved to be centred on their own box
 -- first, and the part is put where that box is.
-local function toPart(b: Builder, name: string, colour: Color3, material: Enum.Material): MeshPart
+local function toPart(b: Builder, name: string, colour: Color3, material: Enum.Material, texture: EditableImage?): MeshPart
 	local lo, hi = Vector3.one * math.huge, -Vector3.one * math.huge
 	for _, v in b.em:GetVertices() do
 		local p = b.em:GetPosition(v)
@@ -258,6 +277,11 @@ local function toPart(b: Builder, name: string, colour: Color3, material: Enum.M
 	mp.Color = colour
 	mp.Material = material
 	mp.CFrame = CFrame.new(b.centre + mid)
+	if texture then
+		-- the grass's texture (T-187, `Road/GrassTexture`); it replaces the material's colour
+		-- map on every face, so the faces that are not grass sample its plain corner
+		mp.TextureContent = Content.fromObject(texture)
+	end
 
 	return mp
 end
@@ -312,7 +336,11 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 		-- a tight cliff edge's runoff is gravel (T-181): its strips take the gravel colour
 		-- between two cuts whose middle is in a gravel run
 		local gravelled = table.clone(colours)
-		local prevRow, prevNear, prevFar, prevS = nil, nil, nil, 0
+		-- THE GRASS'S TEXTURE (T-187): its vertices get UVs in world studs, in the shared
+		-- tile; a strip painted grass is mapped with them (`strip`)
+		local grassImage = GrassTexture.get()
+		local baseU, baseV = GrassTexture.base(centre)
+		local prevRow, prevNear, prevFar, prevS, prevUV = nil, nil, nil, 0, nil
 		for _, s in cuts do
 			local row, norm, pts = {}, {}, {}
 			local wL, wR = spline:runoffAt(s, -1), spline:runoffAt(s, 1)
@@ -328,12 +356,17 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 			for j = 1, RUNOFF_STRIPS do
 				table.insert(ds, half + wR * j / RUNOFF_STRIPS)
 			end
+			local uv: { [number]: number }? = if grassImage then {} else nil
 			for j, d in ds do
 				local x, y, z = spline:terrainXYZ(s, d)
 				pts[j] = Vector3.new(x, y, z)
 				row[j] = road.em:AddVertex(Vector3.new(x - centre.X, y - centre.Y, z - centre.Z))
 				norm[j] = road.em:AddNormal(spline:terrainNormal(s, d))
 				road.vertices += 1
+				-- the grass's vertices: the runoff either side, out from each bevel's foot
+				if uv and (j <= lipL or j > lipR) then
+					uv[j] = road.em:AddUV(GrassTexture.uv(x, z, baseU, baseV))
+				end
 			end
 			-- each bevel's own normal: square to the road's way and to its slope, outward
 			local yaw = spline:yawAt(s)
@@ -366,9 +399,9 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 					end
 					use = gravelled
 				end
-				strip(road, prevRow, prevNear, row, near, false, use, prevFar, far)
+				strip(road, prevRow, prevNear, row, near, false, use, prevFar, far, prevUV, uv, grassColour)
 			end
-			prevRow, prevNear, prevFar, prevS = row, near, far, s
+			prevRow, prevNear, prevFar, prevS, prevUV = row, near, far, s, uv
 		end
 
 		-- THE FACES OF THE MOUNTAINSIDE, in the same mesh: a client may hold only eight
@@ -477,7 +510,7 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 		model:SetAttribute("S0", s0)
 		model:SetAttribute("S1", s1)
 		-- white, so the vertex colours are what show
-		local roadPart = toPart(road, "Road", Color3.new(1, 1, 1), R.RoadMaterial)
+		local roadPart = toPart(road, "Road", Color3.new(1, 1, 1), R.RoadMaterial, grassImage)
 		roadPart.Parent = model
 		local parts = 0
 
@@ -824,6 +857,8 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 			sections = #cuts,
 			vertices = road.vertices,
 			triangles = road.triangles,
+			grassTriangles = road.grassTriangles, -- textured (T-187)
+			textured = grassImage ~= nil,
 			parts = parts,
 			trees = trees,
 			treeTriangles = road.triangles - trianglesBefore,

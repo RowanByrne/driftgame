@@ -118,6 +118,72 @@ function Tests.run()
 		end
 		check("every surface vertex, tarmac and grass, is on the ground the car stands on", n > 0 and worstV < 0.01, `{n} vertices read back through their parts: worst {fmt(worstV, 4)} studs off (a Vector3 20 000 studs out is good to ~0.002)`)
 
+		-- 2b. The grass's texture (T-187): every grass face mapped in world studs, every other
+		-- face on UV (0, 0), where the tile is plain `Shade` grey.
+		if Config.Spline.Grass.Enabled then
+			local G = Config.Spline.Grass
+			local grassHex = Config.Spline.Terrain.GrassColour:ToHex()
+			local grassFaces, mappedOk, plainFaces, plainOk, worstStuds, textured = 0, 0, 0, 0, 0, 0
+			for _, model in models do
+				local road = model:FindFirstChild("Road")
+				local obj = road and road.MeshContent.Object
+				if obj and obj:IsA("EditableMesh") then
+					if road.TextureContent.Object then
+						textured += 1
+					end
+					for _, f in obj:GetFaces() do
+						local uvs = obj:GetFaceUVs(f)
+						if obj:GetColor(obj:GetFaceColors(f)[1]):ToHex() == grassHex then
+							grassFaces += 1
+							-- each corner's UV, times the tile, is its world X and Z less whole tiles
+							local ok = true
+							for k, v in obj:GetFaceVertices(f) do
+								local p = road.CFrame:PointToWorldSpace(obj:GetPosition(v))
+								local uv = obj:GetUV(uvs[k]) * G.TileStuds
+								local du = (p.X - uv.X) / G.TileStuds
+								local dv = (p.Z - uv.Y) / G.TileStuds
+								local off = math.max(math.abs(du - math.round(du)), math.abs(dv - math.round(dv))) * G.TileStuds
+								worstStuds = math.max(worstStuds, off)
+								ok = ok and off < 0.01
+							end
+							if ok then
+								mappedOk += 1
+							end
+						else
+							plainFaces += 1
+							local ok = true
+							for _, u in uvs do
+								ok = ok and obj:GetUV(u).Magnitude < 1e-6
+							end
+							if ok then
+								plainOk += 1
+							end
+						end
+					end
+				end
+			end
+			check(
+				"the grass is textured in world studs, and nothing else is",
+				textured == built and grassFaces > 0 and mappedOk == grassFaces and plainOk == plainFaces,
+				`{textured} of {built} chunks textured; {mappedOk} of {grassFaces} grass faces mapped (worst {fmt(worstStuds, 4)} studs off), {plainOk} of {plainFaces} other faces on the plain corner`
+			)
+			local GrassTexture = require(ReplicatedStorage.Shared.Road.GrassTexture)
+			local px = GrassTexture.pixels(G.Size, G.Seed)
+			local want = math.floor(G.Shade * 255 + 0.5)
+			local cornerOk, sum = true, 0
+			for _, xy in { { 0, 0 }, { 1, 1 }, { G.Size - 1, 0 }, { 0, G.Size - 1 }, { G.Size - 1, G.Size - 1 }, { G.Size - 2, 1 } } do
+				local o = (xy[2] * G.Size + xy[1]) * 4
+				for c = 0, 2 do
+					cornerOk = cornerOk and buffer.readu8(px, o + c) == want
+				end
+			end
+			for i = 0, G.Size * G.Size - 1 do
+				sum += buffer.readu8(px, i * 4 + 1)
+			end
+			local mean = sum / (G.Size * G.Size) / 255
+			check("the tile's corners are plain Shade, and the grass averages it", cornerOk and math.abs(mean - G.Shade) < 0.03, `corners {want}/255; the tile's mean {fmt(mean, 3)} against Shade {G.Shade}`)
+		end
+
 		-- 3. Between the cuts, the drawn surface stays within the tolerance of the true one.
 		local worstSag = 0
 		for i = 0, 5 do

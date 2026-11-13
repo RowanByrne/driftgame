@@ -313,6 +313,28 @@ local Spline = {
 		TrunkColour = Color3.fromRGB(92, 70, 52),
 	},
 
+	-- --------------------------------------------------------------- the grass's texture
+	-- The user, 2026-11-13: "give grass it's own texture" (T-187). A tile of grass blades
+	-- drawn in code (`Road/GrassTexture`), one image every chunk shares, tiled over the grass
+	-- faces in world studs. Everything else on the road's mesh samples its plain corner.
+	Grass = {
+		Enabled = true, -- false: flat grass, and the road's mesh as it was before
+		TileStuds = 12, -- studs one tile covers, each way
+		Size = 256, -- pixels, each way: about 21 a stud
+		Seed = 187,
+		-- What Roblox's Asphalt map multiplied the whole road's mesh by (measured, T-187: the
+		-- tarmac drawn without it came out twice as bright). The texture's plain corners are
+		-- this grey, so the tarmac, gravel, rocks and trees keep their brightness, and the
+		-- grass averages it, so the grass keeps its own. Raise it to lighten all of them.
+		Shade = 0.49,
+		Clump = 0.16, -- patchiness, a fraction of `Shade` either way
+		Blades = 9000, -- strokes in a tile
+		BladeLength = { 3, 9 }, -- pixels
+		Blade = 0.38, -- how much lighter or darker a blade is, a fraction of `Shade`
+		LightShare = 0.55, -- the share of blades lighter than the ground
+		Warm = 0.25, -- a light blade's tint toward yellow
+	},
+
 	-- --------------------------------------------------------------- the mesh (step 3)
 	-- What each device draws (`Road/SplineMesh`, `Drift/SplineRoadView`). Purely visual.
 	Mesh = {
