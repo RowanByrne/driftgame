@@ -126,6 +126,92 @@ function Tests.run()
 		end
 		check("every surface vertex, tarmac and grass, is on the ground the car stands on", n > 0 and worstV < 0.01, `{n} vertices read back through their parts: worst {fmt(worstV, 4)} studs off (a Vector3 20 000 studs out is good to ~0.002)`)
 
+		-- 2b. The grass's texture (T-187): every grass face mapped in world studs, every other
+		-- face on UV (0, 0), where the tile is plain `Shade` grey.
+		local GrassTexture = require(ReplicatedStorage.Shared.Road.GrassTexture)
+		if Config.Spline.Grass.Enabled then
+			local tile = Config.Spline.Grass.TileStuds
+			local G = Config.Spline.Grass
+			-- a grass face: GrassColour, lightened or darkened by a blotch (the same factor on each
+			-- channel, within `Blotch`)
+			local gc = Config.Spline.Terrain.GrassColour
+			local shadeLo, shadeHi = math.huge, -math.huge
+			local function isGrass(c: Color3): boolean
+				local k = c.G / gc.G
+				local ok = math.abs(c.R - gc.R * k) < 0.01 and math.abs(c.B - gc.B * k) < 0.01 and math.abs(k - 1) <= G.Blotch + 0.01
+				if ok then
+					shadeLo, shadeHi = math.min(shadeLo, k), math.max(shadeHi, k)
+				end
+				return ok
+			end
+			local grassFaces, mappedOk, plainFaces, plainOk, worstStuds, textured = 0, 0, 0, 0, 0, 0
+			for _, model in models do
+				local road = model:FindFirstChild("Road")
+				local obj = road and road.MeshContent.Object
+				if obj and obj:IsA("EditableMesh") then
+					if road.TextureContent.Object then
+						textured += 1
+					end
+					for _, f in obj:GetFaces() do
+						local uvs = obj:GetFaceUVs(f)
+						if isGrass(obj:GetColor(obj:GetFaceColors(f)[1])) then
+							grassFaces += 1
+							-- each corner's UV, times the tile, is its world X and Z less whole tiles
+							local ok = true
+							for k, v in obj:GetFaceVertices(f) do
+								local p = road.CFrame:PointToWorldSpace(obj:GetPosition(v))
+								local uv = obj:GetUV(uvs[k]) * tile
+								local du = (p.X - uv.X) / tile
+								local dv = (p.Z - uv.Y) / tile
+								local off = math.max(math.abs(du - math.round(du)), math.abs(dv - math.round(dv))) * tile
+								worstStuds = math.max(worstStuds, off)
+								ok = ok and off < 0.01
+							end
+							if ok then
+								mappedOk += 1
+							end
+						else
+							plainFaces += 1
+							local ok = true
+							for _, u in uvs do
+								ok = ok and obj:GetUV(u).Magnitude < 1e-6
+							end
+							if ok then
+								plainOk += 1
+							end
+						end
+					end
+				end
+			end
+			check(
+				"the grass is textured in world studs, and nothing else is",
+				textured == built and grassFaces > 0 and mappedOk == grassFaces and plainOk == plainFaces,
+				`{textured} of {built} chunks textured; {mappedOk} of {grassFaces} grass faces mapped (worst {fmt(worstStuds, 4)} studs off), {plainOk} of {plainFaces} other faces on the plain corner; blotches {fmt(shadeLo, 3)} to {fmt(shadeHi, 3)} of the grass colour`
+			)
+			-- the shared image itself, as the chunks draw it: the painted tile, its corners set
+			local ts = GrassTexture.DebugState()
+			local img = GrassTexture.get()
+			local cornerOk, mean, size = false, 0, 0
+			local want = math.floor(G.Shade * 255 + 0.5)
+			if img then
+				size = img.Size.X
+				local px = img:ReadPixelsBuffer(Vector2.zero, img.Size)
+				cornerOk = true
+				for _, xy in { { 0, 0 }, { 1, 1 }, { size - 1, 0 }, { 0, size - 1 }, { size - 1, size - 1 }, { size - 2, 1 } } do
+					local o = (xy[2] * size + xy[1]) * 4
+					for c = 0, 2 do
+						cornerOk = cornerOk and buffer.readu8(px, o + c) == want
+					end
+				end
+				local sum = 0
+				for i = 0, size * size - 1 do
+					sum += buffer.readu8(px, i * 4 + 1)
+				end
+				mean = sum / (size * size) / 255
+			end
+			check("the painted tile loads, its corners plain Shade, and it averages Shade", img ~= nil and cornerOk and math.abs(mean - G.Shade) < 0.03, `{G.Image}: {size} px, loaded in {fmt(ts.buildMs, 1)} ms; corners {want}/255; mean {fmt(mean, 3)} against Shade {G.Shade}`)
+		end
+
 		-- 3. Between the cuts, the drawn surface stays within the tolerance of the true one.
 		local worstSag = 0
 		for i = 0, 5 do
