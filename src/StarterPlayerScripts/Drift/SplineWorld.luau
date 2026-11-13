@@ -17,7 +17,8 @@
 --   sweep        the walls: a rock face or a hedge at the runoff's outer edge, and a K-rail
 --                on the tarmac's edge where one stands. The car's footprint is six points
 --                (its corners and the middle of each long side), and the step is cut where
---                the first of them would cross a wall. A cliff is not a wall
+--                the first of them would cross a wall. A cliff is not a wall. A grove's
+--                tree trunks (T-183) are circles met by the whole box (`Road/SplineGrove`)
 --   penetration  the deepest point already past a wall, and the way back out
 --   edge         nothing: the road has no steps
 --
@@ -38,6 +39,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Config = require(ReplicatedStorage.Shared.Config)
 local Spline = require(ReplicatedStorage.Shared.Road.Spline)
+local SplineGrove = require(ReplicatedStorage.Shared.Road.SplineGrove)
 local Model = require(script.Parent.Model)
 
 local SplineWorld = {}
@@ -51,18 +53,20 @@ local PENETRATION_MARGIN = 0.05
 local REACH_PAST_EDGE = 30
 
 -- How a wall stop is counted.
-local KIND_SIDE, KIND_KRAIL, KIND_CLOSING = 1, 2, 3
+local KIND_SIDE, KIND_KRAIL, KIND_CLOSING, KIND_TREE = 1, 2, 3, 4
 
 export type Stats = {
 	probes: number,
 	hits: number,
 	grass: number, -- probes that found grass
+	gravel: number, -- probes that found gravel (a tight cliff stretch, T-181)
 	overCliff: number, -- probes past a cliff's lip: nothing under them
 	searches: number, -- lookups that fell back to the grid
 	sweeps: number,
 	wallStops: number, -- a rock face or a hedge
 	kRailStops: number,
 	closingStops: number,
+	treeStops: number, -- a grove's tree trunk (T-183)
 	pushes: number,
 }
 
@@ -99,12 +103,14 @@ function SplineWorld.new(spline: Spline.Spline, base: Model.World?): SplineWorld
 			probes = 0,
 			hits = 0,
 			grass = 0,
+			gravel = 0,
 			overCliff = 0,
 			searches = 0,
 			sweeps = 0,
 			wallStops = 0,
 			kRailStops = 0,
 			closingStops = 0,
+			treeStops = 0,
 			pushes = 0,
 		},
 	}
@@ -157,6 +163,10 @@ function SplineWorld.new(spline: Spline.Spline, base: Model.World?): SplineWorld
 					stats.hits += 1
 					if kind == Spline.TARMAC then
 						return { y = y, normal = spline:normalAt(s, d), grip = C.GripTarmac, score = C.ScoreTarmac, stepped = true }
+					end
+					if kind == Spline.GRAVEL then
+						stats.gravel += 1
+						return { y = y, normal = spline:terrainNormal(s, d), grip = C.GripGravel, score = C.ScoreGravel, stepped = true }
 					end
 					stats.grass += 1
 					return { y = y, normal = spline:terrainNormal(s, d), grip = C.GripGrass, score = C.ScoreGrass, stepped = true }
@@ -347,6 +357,15 @@ function SplineWorld.new(spline: Spline.Spline, base: Model.World?): SplineWorld
 				end
 			end
 		end
+		-- A GROVE'S TREE TRUNKS (T-183): circles against the car's whole box, not its six points
+		if hint then
+			local hw, hl = boxReach(from, yaw)
+			local fwd, right = Model.axes(yaw)
+			local m0, m1, n = SplineGrove.sweep(spline, hint, from, to, fwd, right, hw, hl, bh)
+			if m0 and m1 and n then
+				consider(m0, m1, n, KIND_TREE)
+			end
+		end
 		if bestN then
 			return best, bestN, bestKind
 		end
@@ -368,6 +387,8 @@ function SplineWorld.new(spline: Spline.Spline, base: Model.World?): SplineWorld
 					stats.closingStops += 1
 				elseif kind == KIND_KRAIL then
 					stats.kRailStops += 1
+				elseif kind == KIND_TREE then
+					stats.treeStops += 1
 				else
 					stats.wallStops += 1
 				end
@@ -436,6 +457,15 @@ function SplineWorld.new(spline: Spline.Spline, base: Model.World?): SplineWorld
 				else
 					take(forward, cn)
 				end
+			end
+		end
+		-- inside a tree's trunk (T-183): out the nearest way
+		if hint then
+			local hw, hl = boxReach(pos, yaw)
+			local fwd, right = Model.axes(yaw)
+			local depth, n = SplineGrove.push(spline, hint, pos, fwd, right, hw, hl, bh, PENETRATION_MARGIN)
+			if n then
+				take(depth, n)
 			end
 		end
 		local dir: Vector3?, depth = worstN, worst

@@ -287,25 +287,27 @@ local function plan(spline: any, sc: number, dc: number, closingS: number?): { [
 		end
 		for _, side in { -1, 1 } do
 			local tag = if side < 0 then "L" else "R"
-			-- the road's step down to the grass (T-184), a ramp tile from the tarmac's edge to
-			-- the step's foot
-			local lipW = T.RoadLipWidth
+			-- the road's gravel bevel down to the grass (T-184), a sloping tile from the tarmac's
+			-- edge to the bevel's foot
+			local lipW = spline:lipWidthAt((s0 + s1) * 0.5, side)
 			if side < 0 then
-				tile(`s{tag}{n}`, s0, s1, -(half + lipW), -half, Enum.Material.Ground, true)
+				tile(`s{tag}{n}`, s0, s1, -(half + lipW), -half, Enum.Material.Pebble, true)
 			else
-				tile(`s{tag}{n}`, s0, s1, half, half + lipW, Enum.Material.Ground, true)
+				tile(`s{tag}{n}`, s0, s1, half, half + lipW, Enum.Material.Pebble, true)
 			end
 			-- the grass, a band [half + w0, half + w1] out on this side over [a, b], from the
-			-- step's foot out
+			-- bevel's foot out
 			local function grass(key: string, a: number, b: number, w0: number, w1: number)
 				w0 = math.max(w0, lipW)
 				if w1 - w0 < 0.05 then
 					return
 				end
+				-- gravel in a tight cliff stretch (T-181), for the footsteps
+				local mat = if spline:gravelAt((a + b) * 0.5, side) then Enum.Material.Pebble else Enum.Material.Grass
 				if side < 0 then
-					tile(key, a, b, -(half + w1), -(half + w0), Enum.Material.Grass)
+					tile(key, a, b, -(half + w1), -(half + w0), mat)
 				else
-					tile(key, a, b, half + w0, half + w1, Enum.Material.Grass)
+					tile(key, a, b, half + w0, half + w1, mat)
 				end
 			end
 			for g, span in edgeSpans(s0, s1, side) do
@@ -481,7 +483,7 @@ function RoadGroundController:DebugState()
 	if spline and root and stats.located then
 		surface = spline:terrainY(stats.s, stats.d)
 		local k = spline:groundKind(stats.s, stats.d)
-		kind = if k == Spline.TARMAC then "tarmac" elseif k == Spline.GRASS then "grass" else "none"
+		kind = if k == Spline.TARMAC then "tarmac" elseif k == Spline.GRASS then "grass" elseif k == Spline.GRAVEL then "gravel" else "none"
 		aboveSurface = root.Position.Y - Driver.rootAboveFeet(player.Character) - surface
 	end
 	local count = 0

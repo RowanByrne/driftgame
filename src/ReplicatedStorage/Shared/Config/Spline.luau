@@ -177,16 +177,19 @@ local Spline = {
 		-- On the inside of a bend the grass never reaches past this share of the way to the
 		-- bend's centre, so the inside of a hairpin keeps a strip, not a spike.
 		InsideShare = 0.6,
-		-- THE RAISED ROAD (T-184): the grass sits `RoadLip` below the tarmac's edge, down a
-		-- short steep step `RoadLipWidth` across (eased, so the step has no corner to catch
-		-- on), drawn in `LipColour`. Everything on the runoff -- the grass, a hedge, the foot
-		-- of a rock face, a cliff's lip -- stands on the lower ground. To the car it is no
-		-- wall: a wheel over it finds the grass lower and the car tips on to it (the plane
-		-- through its wheels, `Drift/Model`); a wheel coming back rides up it. Keep it under
-		-- `RideHeight` (2.4): a wheel more than that below the others no longer carries the car
-		RoadLip = 1.5, -- studs
-		RoadLipWidth = 0.6, -- studs across the step
-		LipColour = Color3.fromRGB(88, 82, 74), -- the step's face: the road's packed edge
+		-- THE RAISED ROAD (T-184): the grass sits `RoadLip` below the tarmac's edge, reached
+		-- down a straight GRAVEL BEVEL `RoadLipWidth` across (the user, 2026-11-13: "an angled
+		-- section of like gravel ... that bridges the gap from the road down to the grass"),
+		-- drawn in `GravelColour` and gripping as gravel. Everything on the runoff -- the
+		-- grass, a hedge, the foot of a rock face, a cliff's lip -- stands on the lower ground.
+		-- To the car it is no wall: a wheel on it rolls down and the drawn car tips (the plane
+		-- through its wheels, `Drift/Model`); a wheel coming back rolls up it. Keep `RoadLip`
+		-- under `RideHeight` (2.4): a wheel more than that below the others no longer carries
+		-- the car
+		RoadLip = 1.2, -- studs
+		RoadLipWidth = 2, -- studs across the bevel: about 31 degrees
+		LipShare = 0.75, -- the most of a narrow runoff the bevel takes (a tight cliff edge's
+		-- 2.5 to 3.5 studs of gravel keeps a flat strip before its lip)
 		-- THE EDGES. A rock face and a hedge are walls at the runoff's outer edge; a cliff is
 		-- where the ground ends.
 		RockHeight = { 25, 60 }, -- studs. A look; to the car it is a wall
@@ -224,8 +227,21 @@ local Spline = {
 		KRailSpliceEvery = 2, -- posts between two splices of the beam, each with its bolts
 		KRailSpliceBolts = 2, -- bolt heads drawn at a splice (0: none)
 		KRailStep = 12, -- studs, the longest straight piece of beam (bends cut it finer)
+		-- TIGHT CLIFF EDGES (T-181): the user, 2026-11-13, "some cliff edges should be barrier
+		-- rails that are right on the edge of the asphalt with less than 3 or 4 studs of gravel
+		-- before the cliff". In a section with a cliff the whole way along one side, now and
+		-- then the runoff closes in to a strip of GRAVEL a few studs wide, a crash barrier on
+		-- the tarmac's edge and the lip just past it, then opens out again. Gravel grips and
+		-- scores as `Config.Drift.GripGravel` / `ScoreGravel`.
+		TightChance = 0.3, -- per section with a cliff its whole length on a side
+		TightRunoff = { 2.5, 3.5 }, -- studs of gravel between the tarmac and the lip
+		TightRun = { 80, 270 }, -- studs at that width (with `TightLead` each end, a rail inside `KRailRun`)
+		TightRate = 0.4, -- studs of width per stud the runoff closes in and opens out
+		TightRamp = 20, -- studs, the shortest closing in or opening out
+		TightLead = 12, -- studs the rail and the gravel reach past each end of the narrow part
 		-- Programmer colours (the look is set with the next feature)
 		GrassColour = Color3.fromRGB(86, 140, 62),
+		GravelColour = Color3.fromRGB(146, 138, 124), -- a tight cliff edge's strip (T-181)
 		HedgeColour = Color3.fromRGB(44, 92, 40),
 		RockColour = Color3.fromRGB(112, 108, 102),
 		ScrubColour = Color3.fromRGB(78, 104, 58), -- the ledge on top of a rock face
@@ -237,6 +253,39 @@ local Spline = {
 		-- KRailColour = Color3.fromRGB(236, 236, 232), -- painted white
 		KRailBoltColour = Color3.fromRGB(58, 60, 62),
 		KRailHazardColours = { Color3.fromRGB(246, 196, 24), Color3.fromRGB(24, 24, 24) }, -- the end panel's stripes
+
+		-- GROVES (T-183): on a flat, gentle section a side's runoff widens to `GroveRunoff` and
+		-- is dressed with low-poly trees and bushes (`Road/SplineGrove`), set back from the
+		-- tarmac, so they hide the long views across the mountain. Chosen by the server with
+		-- the section (`gv`, a seed per side); every device places the same trees from it.
+		-- A section qualifies when no part of it is tighter than `GroveMinRadius`, steeper
+		-- than `GroveMaxGrade` or shorter than `GroveMinLength`; then a grove `GroveChance` of
+		-- the time, on one side, both `GroveBothChance` of those.
+		GroveChance = 0.8,
+		GroveBothChance = 0.3,
+		GroveMinRadius = 200, -- studs: a wide bend or a straight
+		GroveMaxGrade = 6, -- degrees (the road averages about 2.3 down, 8 at most)
+		GroveMinLength = 120, -- studs
+		-- The wide runoff. NO-CROSSING NEEDS NOTHING NEW up to `RunoffMax + ClearanceGap` (60):
+		-- two stretches' centre lines are kept apart by both widest runoffs, both edges and the
+		-- gap, so one side may take the gap's width and still never reach the other road's edge.
+		GroveRunoff = { 46, 58 }, -- studs
+		-- The trees: one item every `GroveSpacing` studs along the road, its offset past the
+		-- tarmac random between its setback and the grass's outer edge (less its own size).
+		-- A tree's trunk is a wall to the car (`Drift/SplineWorld`); a bush is not.
+		GroveSpacing = { 3, 7 }, -- studs
+		TreeSetback = 16, -- studs past the tarmac's edge: never a wall at the road's edge
+		BushSetback = 8,
+		GroveKinds = { conifer = 0.5, broadleaf = 0.2, bush = 0.3 }, -- shares of the items
+		ConiferHeight = { 20, 34 }, -- studs
+		BroadleafHeight = { 14, 22 },
+		BushHeight = { 2.5, 5 },
+		TrunkRadius = { 0.8, 1.4 }, -- studs: drawn and solid
+		-- Programmer colours, a few shades each so a grove isn't one flat green
+		ConiferColours = { Color3.fromRGB(40, 78, 46), Color3.fromRGB(52, 90, 50), Color3.fromRGB(34, 66, 44) },
+		BroadleafColours = { Color3.fromRGB(78, 120, 54), Color3.fromRGB(92, 130, 60) },
+		BushColours = { Color3.fromRGB(62, 104, 50), Color3.fromRGB(74, 112, 54) },
+		TrunkColour = Color3.fromRGB(92, 70, 52),
 	},
 
 	-- --------------------------------------------------------------- the mesh (step 3)

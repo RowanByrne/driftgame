@@ -100,6 +100,7 @@ local Drift = {
 	GripDirt = 0.5, -- FALLBACK. On dirt: half the pull and half the score
 	GripGrass = 0.5, -- OURS. The mountain road's runoff (features/mountain-road.md): dirt's
 	-- number to start, its own key so the two can part later
+	GripGravel = 0.5, -- OURS. The gravel strip at a tight cliff edge (T-181): grass's to start
 	GripUnspecified = 0.1, -- FALLBACK. Anything solid that is not a tagged surface.
 	-- Nearly nothing: off the road the car barely corrects itself
 	-- and a slide there is a passenger
@@ -453,6 +454,7 @@ local Drift = {
 	ScoreTarmac = 1, -- FALLBACK. Score multiplier by surface, averaged over four wheels
 	ScoreDirt = 0.5, -- FALLBACK
 	ScoreGrass = 0.5, -- OURS. The mountain road's runoff, as dirt to start
+	ScoreGravel = 0.5, -- OURS. The gravel strip at a tight cliff edge (T-181), as grass to start
 	ScoreUnspecified = 0.1, -- FALLBACK. Anything solid that is not a tagged surface, for
 	-- the score as well as for the grip: a slide in the gutter is
 	-- worth almost nothing

@@ -12,7 +12,8 @@
 --               side, and the faces of the mountainside -- a rock face rising from the
 --               grass, faceted, its height and lean changing along the road; a cliff face
 --               dropping from the grass's lip into haze. Faces are flat-shaded on purpose:
---               very low poly, programmer colours
+--               very low poly, programmer colours. And a grove's trees and bushes (T-183,
+--               `Road/SplineGrove`), faceted the same way
 --   Edge_*      a hedge: a green box per cross-section, at the grass's outer edge
 --   KRail*_*    a K-rail run drawn as a METAL CRASH BARRIER (T-149): a W-beam guardrail,
 --               its beam two rounded ridges (`KRailTop_*`, `KRailLow_*`) and the groove
@@ -46,6 +47,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Config = require(ReplicatedStorage.Shared.Config)
 local Spline = require(script.Parent.Spline)
+local SplineGrove = require(script.Parent.SplineGrove)
 
 local SplineMesh = {}
 
@@ -260,6 +262,7 @@ end
 function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent: Instance, opts: Options?): (Model?, any)
 	local o: Options = opts or {}
 	local t0 = os.clock()
+	local paused = 0 -- seconds spent waiting a frame between the road and its trees
 	local R = Config.Road
 	local M = Config.Spline.Mesh
 	local half = R.Width * 0.5
@@ -286,22 +289,25 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 		-- the surface: the left runoff in `RUNOFF_STRIPS` strips, the tarmac in `across`,
 		-- the right runoff in `RUNOFF_STRIPS`; a row of vertices per cross-section. The
 		-- runoff's width changes along the road, so each row places its own grass vertices
-		-- THE ROAD'S STEP (T-184): one more strip each side between the tarmac and the grass,
-		-- `RoadLipWidth` across, down which the grass drops `RoadLip`. It is shaded FLAT
-		-- across (its own normal, facing out from the road), so it reads as a step and not as
-		-- more ground; the tarmac and the grass either side keep their smooth normals.
+		-- THE ROAD'S GRAVEL BEVEL (T-184): one more strip each side between the tarmac and
+		-- the grass, `Spline:lipWidthAt` across (`RoadLipWidth`), sloping down `RoadLip` to the
+		-- grass, in the gravel's colour. It is shaded FLAT across (its own normal), so it reads
+		-- as an angled shoulder; the tarmac and the grass either side keep their smooth normals.
 		local RUNOFF_STRIPS = 2
 		local TT = Config.Spline.Terrain
 		local tarmacColour = road.em:AddColor(R.Colours.Road, 1)
 		local grassColour = road.em:AddColor(TT.GrassColour, 1)
-		local lipColour = road.em:AddColor(TT.LipColour, 1)
-		local lipL = RUNOFF_STRIPS + 1 -- the left step's strip, from its foot's vertex
-		local lipR = lipL + across + 1 -- the right step's strip, from its top's vertex
+		local gravelColour = road.em:AddColor(TT.GravelColour, 1)
+		local lipL = RUNOFF_STRIPS + 1 -- the left bevel's strip, from its foot's vertex
+		local lipR = lipL + across + 1 -- the right bevel's strip, from its top's vertex
 		local colours = {}
 		for j = 1, RUNOFF_STRIPS * 2 + across + 2 do
-			colours[j] = if j == lipL or j == lipR then lipColour elseif j < lipL or j > lipR then grassColour else tarmacColour
+			colours[j] = if j == lipL or j == lipR then gravelColour elseif j < lipL or j > lipR then grassColour else tarmacColour
 		end
-		local prevRow, prevNear, prevFar = nil, nil, nil
+		-- a tight cliff edge's runoff is gravel (T-181): its strips take the gravel colour
+		-- between two cuts whose middle is in a gravel run
+		local gravelled = table.clone(colours)
+		local prevRow, prevNear, prevFar, prevS = nil, nil, nil, 0
 		for _, s in cuts do
 			local row, norm, pts = {}, {}, {}
 			local wL, wR = spline:runoffAt(s, -1), spline:runoffAt(s, 1)
@@ -309,11 +315,11 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 			for j = 0, RUNOFF_STRIPS - 1 do
 				table.insert(ds, -half - wL * (1 - j / RUNOFF_STRIPS))
 			end
-			table.insert(ds, -half - math.min(TT.RoadLipWidth, wL * 0.5))
+			table.insert(ds, -half - spline:lipWidthAt(s, -1))
 			for j = 0, across do
 				table.insert(ds, -half + (2 * half) * j / across)
 			end
-			table.insert(ds, half + math.min(TT.RoadLipWidth, wR * 0.5))
+			table.insert(ds, half + spline:lipWidthAt(s, 1))
 			for j = 1, RUNOFF_STRIPS do
 				table.insert(ds, half + wR * j / RUNOFF_STRIPS)
 			end
@@ -324,7 +330,7 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 				norm[j] = road.em:AddNormal(spline:terrainNormal(s, d))
 				road.vertices += 1
 			end
-			-- each step's own normal: square to the road's way and to the step's slope, outward
+			-- each bevel's own normal: square to the road's way and to its slope, outward
 			local yaw = spline:yawAt(s)
 			local along = Vector3.new(-math.sin(yaw), spline:gradeAt(s), -math.cos(yaw))
 			local right = Vector3.new(math.cos(yaw), 0, -math.sin(yaw))
@@ -332,22 +338,32 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 				local n = along:Cross(top - foot)
 				if n.Magnitude < 1e-6 then
 					n = right * side
-				elseif n:Dot(right * side) < 0 then
+				elseif n:Dot(Vector3.yAxis) < 0 then
 					n = -n
 				end
 				return road.em:AddNormal(n.Unit)
 			end
 			local nL = stepNormal(pts[lipL], pts[lipL + 1], -1)
 			local nR = stepNormal(pts[lipR + 1], pts[lipR], 1)
-			-- as the near side of a strip the left foot and the right top are on a step; as
+			-- as the near side of a strip the left foot and the right top are on a bevel; as
 			-- the far side, the left top and the right foot are
 			local near, far = table.clone(norm), table.clone(norm)
 			near[lipL], near[lipR] = nL, nR
 			far[lipL + 1], far[lipR + 1] = nL, nR
 			if prevRow then
-				strip(road, prevRow, prevNear, row, near, false, colours, prevFar, far)
+				local mid = (prevS + s) * 0.5
+				local gL, gR = spline:gravelAt(mid, -1), spline:gravelAt(mid, 1)
+				local use = colours
+				if gL or gR then
+					for j = 1, RUNOFF_STRIPS do
+						gravelled[j] = if gL then gravelColour else grassColour
+						gravelled[lipR + j] = if gR then gravelColour else grassColour
+					end
+					use = gravelled
+				end
+				strip(road, prevRow, prevNear, row, near, false, use, prevFar, far)
 			end
-			prevRow, prevNear, prevFar = row, near, far
+			prevRow, prevNear, prevFar, prevS = row, near, far, s
 		end
 
 		-- THE FACES OF THE MOUNTAINSIDE, in the same mesh: a client may hold only eight
@@ -423,8 +439,36 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 			end
 		end
 
+		-- THE GROVES (T-183): trees and bushes on a widened runoff, in this same mesh, so a
+		-- grove costs triangles and no parts (`Road/SplineGrove`)
+		-- A chunk with a grove is built over two frames, the road then its trees, so neither
+		-- frame pays for both (measured: 13 ms a grove chunk in one go, 20 at worst)
+		if #SplineGrove.items(spline, s0, s1, -1) + #SplineGrove.items(spline, s0, s1, 1) > 0 then
+			local w0 = os.clock()
+			task.wait()
+			paused += os.clock() - w0
+		end
+		local groveColours: { [Color3]: number } = {}
+		local trianglesBefore, treeT0 = road.triangles, os.clock()
+		local trees = SplineGrove.draw(spline, s0, s1, {
+			vertex = function(p: Vector3): number
+				road.vertices += 1
+				return em:AddVertex(p - centre)
+			end,
+			tri = function(a: number, b: number, c: number, pa: Vector3, pb: Vector3, pc: Vector3, colour: Color3, facing: Vector3)
+				local id = groveColours[colour]
+				if not id then
+					id = em:AddColor(colour, 1)
+					groveColours[colour] = id
+				end
+				tri(a, b, c, pa, pb, pc, id, facing)
+			end,
+		})
+		local treeMs = (os.clock() - treeT0) * 1000
+
 		local model = Instance.new("Model")
 		model.Name = `Chunk_{math.floor(s0)}`
+		model:SetAttribute("Trees", trees)
 		model:SetAttribute("S0", s0)
 		model:SetAttribute("S1", s1)
 		-- white, so the vertex colours are what show
@@ -649,6 +693,9 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 			vertices = road.vertices,
 			triangles = road.triangles,
 			parts = parts,
+			trees = trees,
+			treeTriangles = road.triangles - trianglesBefore,
+			treeMs = treeMs,
 			ms = 0,
 		}
 		return { model = model, stats = stats, meshes = { road.em } }
@@ -659,7 +706,7 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 		return nil, tostring(built)
 	end
 	local result = built :: any
-	result.stats.ms = (os.clock() - t0) * 1000
+	result.stats.ms = (os.clock() - t0 - paused) * 1000
 	meshesOf[result.model] = result.meshes
 	result.model.Parent = parent
 	return result.model, result.stats
