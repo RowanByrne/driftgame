@@ -375,33 +375,51 @@ return {
 		BlipRpm = 700, -- a downshift's blip
 		BlipSeconds = 0.15,
 
-		-- THE LAYERED SOUND (T-129): our own synthesized loops, picked by the user on
-		-- 2026-11-11 (DECISIONS.md), at six rev points, each on and off throttle. ALL TWELVE
-		-- ARE ONE UPLOADED FILE, the "sheet", and each `Sound` plays its own slice of it
-		-- through `PlaybackRegion` and `LoopRegion` -- one upload instead of twelve. Each
-		-- slice is padded with a quarter second of itself either side in the file, so the
-		-- codec's smear at a region's edge is engine, not silence.
+		-- THE LAYERED SOUND (T-129, two ladders since T-170). A "sheet" is ONE UPLOADED FILE
+		-- holding every engine loop, and each `Sound` plays its own slice of it through
+		-- `PlaybackRegion` and `LoopRegion` -- one upload instead of one per loop. Each slice
+		-- is padded with a quarter second of itself either side in the file, so the codec's
+		-- smear at a region's edge is engine, not silence.
 		--
-		-- `SoundId = nil` FALLS BACK TO THE ONE CLIP above (it was the game's sound until the sheet
-		-- was uploaded). Built by `..\art\generated\sfx-engine\set-v1\build_set.py`.
-		Layers = {
-			SoundId = "rbxassetid://132857262391195" :: string?, -- engine-sheet.ogg, uploaded 2026-11-12
-			Volume = 0.84, -- the loops are normalised to an RMS of 0.16 and "Car idle" is
-			-- 0.29: 0.45 x 0.29 / 0.16 keeps the engine bed where it was
-			-- in the mix (AUDIO.md "Mix")
-			OffLoadVolume = 0.75, -- the off-throttle loops sit this far under the on ones
-			LimiterDuck = 0.5, -- volume share left during a limiter cut: the stutter
-			MaxPitchShift = 0.6, -- a SAFETY CAP only, past the rev points' 1.52x spacing, so
-			-- two loops in a crossfade always agree on the pitch. The louder
-			-- of the two is never more than 23% off its own rpm (EngineTests)
-			-- Rev point, then { start, length } in seconds in the sheet, on and off.
-			Loops = {
-				{ Rpm = 900, On = { 0.25, 2.0 }, Off = { 2.85, 2.0 } },
-				{ Rpm = 1370, On = { 5.45, 2.014604 }, Off = { 8.05, 2.014604 } },
-				{ Rpm = 2090, On = { 10.65, 2.009562 }, Off = { 13.25, 2.009562 } },
-				{ Rpm = 3190, On = { 15.85, 1.993729 }, Off = { 18.45, 1.993729 } },
-				{ Rpm = 4860, On = { 21.05, 2.0 }, Off = { 23.65, 2.0 } },
-				{ Rpm = 7400, On = { 26.25, 1.994604 }, Off = { 28.85, 1.994604 } },
+		-- A sheet has TWO LADDERS, `On` (on throttle) and `Off` (off throttle). Each is
+		-- crossfaded by rpm ON ITS OWN, between its own rev points, and the load crossfades
+		-- between the two. So the ladders need not have the same number of loops, nor sit at
+		-- the same revs: recorded loops don't (features/engine-sound.md "Next").
+		--
+		-- `Sheet` NAMES THE ONE THAT PLAYS: switching sound is this one line. `Sheet = nil`
+		-- (or a sheet with no `SoundId`) falls back to the one clip below.
+		Sheet = "Synth" :: string?,
+		Sheets = {
+			-- Our own synthesized loops, picked by the user on 2026-11-11 (DECISIONS.md), at
+			-- six rev points, the same six on and off throttle. Built by
+			-- `..\art\generated\sfx-engine\set-v1\build_set.py`.
+			Synth = {
+				SoundId = "rbxassetid://132857262391195" :: string?, -- engine-sheet.ogg, uploaded 2026-11-12
+				Volume = 0.84, -- the loops are normalised to an RMS of 0.16 and "Car idle" is
+				-- 0.29: 0.45 x 0.29 / 0.16 keeps the engine bed where it was
+				-- in the mix (AUDIO.md "Mix")
+				OffLoadVolume = 0.75, -- the off-throttle loops sit this far under the on ones
+				LimiterDuck = 0.5, -- volume share left during a limiter cut: the stutter
+				MaxPitchShift = 0.6, -- a SAFETY CAP only, past the rev points' 1.52x spacing, so
+				-- two loops in a crossfade always agree on the pitch. The louder
+				-- of the two is never more than 23% off its own rpm (EngineTests)
+				-- Each loop: its rev point, then where it is in the sheet, in seconds.
+				On = {
+					{ Rpm = 900, Start = 0.25, Length = 2.0 },
+					{ Rpm = 1370, Start = 5.45, Length = 2.014604 },
+					{ Rpm = 2090, Start = 10.65, Length = 2.009562 },
+					{ Rpm = 3190, Start = 15.85, Length = 1.993729 },
+					{ Rpm = 4860, Start = 21.05, Length = 2.0 },
+					{ Rpm = 7400, Start = 26.25, Length = 1.994604 },
+				},
+				Off = {
+					{ Rpm = 900, Start = 2.85, Length = 2.0 },
+					{ Rpm = 1370, Start = 8.05, Length = 2.014604 },
+					{ Rpm = 2090, Start = 13.25, Length = 2.009562 },
+					{ Rpm = 3190, Start = 18.45, Length = 1.993729 },
+					{ Rpm = 4860, Start = 23.65, Length = 2.0 },
+					{ Rpm = 7400, Start = 28.85, Length = 1.994604 },
+				},
 			},
 		},
 		-- THE ONE CLIP, until the layered loops (T-123 step 3): its pitch is the rpm's share

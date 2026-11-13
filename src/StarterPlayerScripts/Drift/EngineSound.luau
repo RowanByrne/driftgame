@@ -8,15 +8,16 @@
 --
 -- TWO WAYS TO SOUND, and the config picks:
 --
---   * LAYERED (`Config.Fx.Engine.Layers.SoundId` set). Our own synthesized loops at six rev
---     points, each on and off throttle: twelve `Sound`s, all slices of ONE uploaded file
---     (`PlaybackRegion` and `LoopRegion`). Each frame the two loops either side of the rpm
---     are crossfaded, equal power, by where the rpm sits between them on a log scale, and
---     each is pitched `rpm / its own rpm` -- never more than `MaxPitchShift` either way, so
---     no loop squeaks the way the one clip did at 2.2x. The load crossfades on and off
---     throttle, and a limiter cut ducks the lot to `LimiterDuck`: the stutter.
---   * ONE CLIP (`SoundId` nil, the fallback until the sheet is uploaded). Today's clip,
---     `MinPitch` at idle to `MaxPitch` at the redline, quieter off throttle.
+--   * LAYERED (`Config.Fx.Engine.Sheet` names a sheet with a `SoundId`). Engine loops at
+--     fixed revs on TWO LADDERS, one on throttle and one off: one `Sound` per loop, all
+--     slices of ONE uploaded file (`PlaybackRegion` and `LoopRegion`). Each frame, on EACH
+--     ladder, the two loops either side of the rpm are crossfaded, equal power, by where
+--     the rpm sits between them on a log scale, and each is pitched `rpm / its own rpm` --
+--     never more than `MaxPitchShift` either way. The load crossfades the two ladders, and
+--     a limiter cut ducks the lot to `LimiterDuck`: the stutter. The ladders need not
+--     match: recorded on and off loops sit at different revs, and there are fewer off.
+--   * ONE CLIP (no sheet, the fallback). The old clip, `MinPitch` at idle to `MaxPitch` at
+--     the redline, quieter off throttle.
 --
 -- NO SMOOTHING OF ITS OWN in either: the engine's rpm already has inertia, and a second
 -- smoothing would blur the limiter's stutter into a hum.
@@ -59,7 +60,7 @@ export type EngineSound = typeof(setmetatable(
 	{} :: {
 		body: BasePart?,
 		sound: Sound?, -- the one clip (fallback mode)
-		layers: { Sound }, -- the twelve slices (layered mode): on, off, on, off ... by rev point
+		layers: { Sound }, -- the slices (layered mode): the on ladder by rev point, then the off
 		layered: boolean, -- which mode this rig was built in
 		enabled: boolean,
 		engine: Engine.Engine,
@@ -94,32 +95,45 @@ function EngineSound.volumeForLoad(load: number): number
 	return E.Volume * lerp(E.OffLoadVolume, 1, math.clamp(load, 0, 1))
 end
 
--- Whether the layered sound is configured (the sheet uploaded).
-function EngineSound.isLayered(): boolean
-	local L = Config.Fx.Engine.Layers
-	return L ~= nil and type(L.SoundId) == "string" and L.SoundId ~= "" and #L.Loops >= 2
+-- The sheet the config names (`Config.Fx.Engine.Sheet`), or nil.
+function EngineSound.sheet(): any
+	local E = Config.Fx.Engine :: any
+	local name = E.Sheet
+	if type(name) ~= "string" or type(E.Sheets) ~= "table" then
+		return nil
+	end
+	return E.Sheets[name]
 end
 
--- THE MIX, pure. Writes each layer's volume and playback speed into `vols` and `speeds`
--- (index `2i - 1` is loop i on throttle, `2i` off), and returns the total volume.
---
---   * The two loops either side of `rpm` share it, equal power, by where it sits between
---     their rev points on a LOG scale (pitch is a ratio, so the halfway point between
---     3 190 and 4 860 is 3 937, not 4 025). Every other loop is at 0.
---   * Each loop is pitched `rpm / its rpm`, clamped to `1 +- MaxPitchShift`. Below the
---     lowest rev point the lowest loop plays alone, pitched down; above the highest, the
---     highest, pitched up -- both inside the clamp.
---   * On and off throttle share the load, equal power, the off loops `OffLoadVolume` under.
---   * A limiter cut ducks the lot to `LimiterDuck`.
-function EngineSound.mix(rpm: number, load: number, cut: boolean, vols: { number }, speeds: { number }): number
-	local L = Config.Fx.Engine.Layers
-	local loops = L.Loops
+-- Whether the layered sound is configured: a sheet, uploaded, with both ladders.
+function EngineSound.isLayered(): boolean
+	local S = EngineSound.sheet()
+	return S ~= nil and type(S.SoundId) == "string" and S.SoundId ~= "" and #S.On >= 1 and #S.Off >= 1
+end
+
+-- How many loops a sheet has: its `Sound`s, and the length of the mix arrays.
+function EngineSound.loopCount(sheet: any): number
+	return #sheet.On + #sheet.Off
+end
+
+-- ONE LADDER of the mix. Writes its loops' volumes and speeds at `offset + 1 ..
+-- offset + #loops`, and returns their total volume. `share` is the ladder's part of the
+-- load, `master` the level of the whole mix.
+local function ladder(
+	loops: { any },
+	rpm: number,
+	share: number,
+	master: number,
+	shift: number,
+	vols: { number },
+	speeds: { number },
+	offset: number
+): number
 	local n = #loops
-	local shift = L.MaxPitchShift
 
 	-- Which pair, and how far between them.
 	local lo, w = 1, 0
-	if rpm <= loops[1].Rpm then
+	if n < 2 or rpm <= loops[1].Rpm then
 		lo, w = 1, 0
 	elseif rpm >= loops[n].Rpm then
 		lo, w = n - 1, 1
@@ -135,26 +149,53 @@ function EngineSound.mix(rpm: number, load: number, cut: boolean, vols: { number
 	local gLo = math.cos(w * math.pi * 0.5)
 	local gHi = math.sin(w * math.pi * 0.5)
 
-	local l = math.clamp(load, 0, 1)
-	local on = math.sqrt(l)
-	local off = math.sqrt(1 - l) * L.OffLoadVolume
-	local duck = if cut then L.LimiterDuck else 1
-	local master = L.Volume * duck
-
 	local total = 0
 	for i = 1, n do
 		local g = if i == lo then gLo elseif i == lo + 1 then gHi else 0
-		local speed = math.clamp(rpm / loops[i].Rpm, 1 - shift, 1 + shift)
-		vols[2 * i - 1] = g * on * master
-		vols[2 * i] = g * off * master
-		speeds[2 * i - 1] = speed
-		speeds[2 * i] = speed
-		total += vols[2 * i - 1] + vols[2 * i]
+		local v = g * share * master
+		vols[offset + i] = v
+		speeds[offset + i] = math.clamp(rpm / loops[i].Rpm, 1 - shift, 1 + shift)
+		total += v
 	end
 	return total
 end
 
+-- THE MIX, pure. Writes each loop's volume and playback speed into `vols` and `speeds`
+-- (the on ladder's loops first, `1 .. #On`, then the off ladder's, `#On + 1 .. #On + #Off`),
+-- and returns the total volume. `sheet` defaults to the one the config names.
+--
+--   * ON EACH LADDER, the two loops either side of `rpm` share it, equal power, by where it
+--     sits between their rev points on a LOG scale (pitch is a ratio, so the halfway point
+--     between 3 190 and 4 860 is 3 937, not 4 025). Every other loop is at 0.
+--   * Each loop is pitched `rpm / its rpm`, clamped to `1 +- MaxPitchShift`. Below a
+--     ladder's lowest rev point its lowest loop plays alone, pitched down; above the
+--     highest, the highest, pitched up -- both inside the clamp.
+--   * The two ladders share the load, equal power, the off ladder `OffLoadVolume` under.
+--   * A limiter cut ducks the lot to `LimiterDuck`.
+function EngineSound.mix(
+	rpm: number,
+	load: number,
+	cut: boolean,
+	vols: { number },
+	speeds: { number },
+	sheet: any?
+): number
+	local S = sheet or EngineSound.sheet()
+	local shift = S.MaxPitchShift
+
+	local l = math.clamp(load, 0, 1)
+	local on = math.sqrt(l)
+	local off = math.sqrt(1 - l) * S.OffLoadVolume
+	local duck = if cut then S.LimiterDuck else 1
+	local master = S.Volume * duck
+
+	return ladder(S.On, rpm, on, master, shift, vols, speeds, 0)
+		+ ladder(S.Off, rpm, off, master, shift, vols, speeds, #S.On)
+end
+
 function EngineSound.new(): EngineSound
+	local sheet = EngineSound.sheet()
+	local count = if sheet then EngineSound.loopCount(sheet) else 0
 	local self = setmetatable({
 		body = nil,
 		sound = nil,
@@ -165,8 +206,8 @@ function EngineSound.new(): EngineSound
 		feed = Engine.newFeed(),
 		pitch = Config.Fx.Engine.MinPitch,
 		volume = 0,
-		mixVolumes = table.create(2 * #Config.Fx.Engine.Layers.Loops, 0),
-		mixSpeeds = table.create(2 * #Config.Fx.Engine.Layers.Loops, 1),
+		mixVolumes = table.create(count, 0),
+		mixSpeeds = table.create(count, 1),
 		maxStep = 0,
 	}, EngineSound) :: any
 	return self
@@ -213,15 +254,15 @@ function EngineSound.Attach(self: EngineSound, rig: any): boolean
 	local E = Config.Fx.Engine
 	self.layered = EngineSound.isLayered()
 	if self.layered then
-		local L = E.Layers
-		for i, loop in L.Loops do
-			for k, region in { loop.On, loop.Off } do
+		local S = EngineSound.sheet()
+		for k, loops in { S.On, S.Off } do
+			for _, loop in loops do
 				local sound = makeSound(
 					("%s_%d_%s"):format(Config.Fx.Names.Engine, loop.Rpm, if k == 1 then "On" else "Off"),
-					L.SoundId :: string
+					S.SoundId :: string
 				)
 				-- The slice of the sheet this loop is, played and looped inside it.
-				local range = NumberRange.new(region[1], region[1] + region[2])
+				local range = NumberRange.new(loop.Start, loop.Start + loop.Length)
 				sound.PlaybackRegionsEnabled = true
 				sound.PlaybackRegion = range
 				sound.LoopRegion = range
@@ -230,7 +271,7 @@ function EngineSound.Attach(self: EngineSound, rig: any): boolean
 				if not QUIET then
 					sound:Play()
 				end
-				self.layers[2 * i - 2 + k] = sound
+				table.insert(self.layers, sound)
 			end
 		end
 	else
@@ -345,9 +386,10 @@ function EngineSound.CountInstances(self: EngineSound): number
 	return n
 end
 
--- How many it builds per car, in the mode the config is in: 12 layered, 1 otherwise.
+-- How many it builds per car, in the mode the config is in: one per loop layered (12 on
+-- the synthesized sheet), 1 otherwise.
 function EngineSound.expectedInstances(): number
-	return if EngineSound.isLayered() then 2 * #Config.Fx.Engine.Layers.Loops else 1
+	return if EngineSound.isLayered() then EngineSound.loopCount(EngineSound.sheet()) else 1
 end
 
 -- What the engine and the note are doing. Allocates; called by tests and by hand.

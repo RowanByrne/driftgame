@@ -457,15 +457,19 @@ function Tests.run()
 	end
 
 	----------------------------------------------------------------------------
-	-- 11. The layered mix (T-129), pure: which loops play, how loud, how far pitched
+	-- 11. The layered mix (T-129), pure: which loops play, how loud, how far pitched.
+	-- ON THE SYNTHESIZED SHEET, by name, whichever sheet the game is playing: these are
+	-- that sheet's promises (its 1.52x spacing is what keeps the louder loop inside 25%).
+	-- The mix writes the on ladder first, then the off (T-170).
 	----------------------------------------------------------------------------
 	do
-		local L = E.Layers
-		local loops = L.Loops
+		local L = E.Sheets.Synth
+		local loops = L.On
 		local n = #loops
-		local vols, speeds = table.create(2 * n, 0), table.create(2 * n, 1)
+		local count = EngineSound.loopCount(L)
+		local vols, speeds = table.create(count, 0), table.create(count, 1)
 		local function gains(rpm, load, cut)
-			local total = EngineSound.mix(rpm, load, cut, vols, speeds)
+			local total = EngineSound.mix(rpm, load, cut, vols, speeds, L)
 			return total
 		end
 
@@ -475,11 +479,11 @@ function Tests.run()
 			gains(loop.Rpm, 1, false)
 			for j = 1, n do
 				local want = if j == i then L.Volume else 0
-				if math.abs(vols[2 * j - 1] - want) > 1e-6 or vols[2 * j] > 1e-9 then
+				if math.abs(vols[j] - want) > 1e-6 or vols[n + j] > 1e-9 then
 					exactOk = false
 				end
 			end
-			if math.abs(speeds[2 * i - 1] - 1) > 1e-9 then
+			if math.abs(speeds[i] - 1) > 1e-9 then
 				exactOk = false
 			end
 			table.insert(exactShown, tostring(loop.Rpm))
@@ -497,19 +501,19 @@ function Tests.run()
 			gains(rpm, 1, false)
 			local power, playing, loudest, loudestAt = 0, 0, -1, 1
 			for j = 1, n do
-				local v = vols[2 * j - 1]
+				local v = vols[j]
 				power += (v / L.Volume) ^ 2
 				if v > 1e-6 then
 					playing += 1
 					-- Exactly the rpm's ratio: a cap biting here would detune the crossfade.
-					worstAny = math.max(worstAny, math.abs(speeds[2 * j - 1] - rpm / loops[j].Rpm))
+					worstAny = math.max(worstAny, math.abs(speeds[j] - rpm / loops[j].Rpm))
 				end
 				if v > loudest then
 					loudest, loudestAt = v, j
 				end
 			end
 			worstPower = math.max(worstPower, math.abs(power - 1))
-			worstLoud = math.max(worstLoud, math.abs(speeds[2 * loudestAt - 1] - 1))
+			worstLoud = math.max(worstLoud, math.abs(speeds[loudestAt] - 1))
 			mostPlaying = math.max(mostPlaying, playing)
 		end
 		check(
@@ -527,10 +531,10 @@ function Tests.run()
 		-- Load: on throttle the off loops are silent, off throttle the on loops are.
 		local mid = math.sqrt(loops[3].Rpm * loops[4].Rpm)
 		gains(mid, 1, false)
-		local offAtFull = vols[6] + vols[8]
+		local offAtFull = vols[n + 3] + vols[n + 4]
 		gains(mid, 0, false)
-		local onAtNone = vols[5] + vols[7]
-		local offAtNone = vols[6] + vols[8]
+		local onAtNone = vols[3] + vols[4]
+		local offAtNone = vols[n + 3] + vols[n + 4]
 		check(
 			"full throttle plays only the on loops, none plays only the off loops, OffLoadVolume under",
 			offAtFull < 1e-9 and onAtNone < 1e-9 and offAtNone > 0,
@@ -544,6 +548,198 @@ function Tests.run()
 			`a limiter cut ducks the mix to LimiterDuck ({L.LimiterDuck})`,
 			math.abs(ducked - whole * L.LimiterDuck) < 1e-9,
 			`{string.format("%.3f", whole)} -> {string.format("%.3f", ducked)}`
+		)
+	end
+
+	----------------------------------------------------------------------------
+	-- 12. TWO LADDERS CHANGE NOTHING (T-170 step 1). The synthesized sheet, in the new
+	-- shape, must give every loop EXACTLY the volume and playback speed the old mix gave
+	-- it. `OLD` and `oldMix` are the config and the function as they were before the
+	-- split (commit fa3adca), frozen here, word for word: one list of rev points, each an
+	-- on and off pair, written interleaved (`2i - 1` on, `2i` off).
+	----------------------------------------------------------------------------
+	do
+		local OLD = {
+			Volume = 0.84,
+			OffLoadVolume = 0.75,
+			LimiterDuck = 0.5,
+			MaxPitchShift = 0.6,
+			Loops = {
+				{ Rpm = 900, On = { 0.25, 2.0 }, Off = { 2.85, 2.0 } },
+				{ Rpm = 1370, On = { 5.45, 2.014604 }, Off = { 8.05, 2.014604 } },
+				{ Rpm = 2090, On = { 10.65, 2.009562 }, Off = { 13.25, 2.009562 } },
+				{ Rpm = 3190, On = { 15.85, 1.993729 }, Off = { 18.45, 1.993729 } },
+				{ Rpm = 4860, On = { 21.05, 2.0 }, Off = { 23.65, 2.0 } },
+				{ Rpm = 7400, On = { 26.25, 1.994604 }, Off = { 28.85, 1.994604 } },
+			},
+		}
+		local function oldMix(rpm: number, load: number, cut: boolean, vols: { number }, speeds: { number }): number
+			local L = OLD
+			local loops = L.Loops
+			local n = #loops
+			local shift = L.MaxPitchShift
+
+			local lo, w = 1, 0
+			if rpm <= loops[1].Rpm then
+				lo, w = 1, 0
+			elseif rpm >= loops[n].Rpm then
+				lo, w = n - 1, 1
+			else
+				for i = 1, n - 1 do
+					if rpm < loops[i + 1].Rpm then
+						lo = i
+						w = math.log(rpm / loops[i].Rpm) / math.log(loops[i + 1].Rpm / loops[i].Rpm)
+						break
+					end
+				end
+			end
+			local gLo = math.cos(w * math.pi * 0.5)
+			local gHi = math.sin(w * math.pi * 0.5)
+
+			local l = math.clamp(load, 0, 1)
+			local on = math.sqrt(l)
+			local off = math.sqrt(1 - l) * L.OffLoadVolume
+			local duck = if cut then L.LimiterDuck else 1
+			local master = L.Volume * duck
+
+			local total = 0
+			for i = 1, n do
+				local g = if i == lo then gLo elseif i == lo + 1 then gHi else 0
+				local speed = math.clamp(rpm / loops[i].Rpm, 1 - shift, 1 + shift)
+				vols[2 * i - 1] = g * on * master
+				vols[2 * i] = g * off * master
+				speeds[2 * i - 1] = speed
+				speeds[2 * i] = speed
+				total += vols[2 * i - 1] + vols[2 * i]
+			end
+			return total
+		end
+
+		local S = E.Sheets.Synth
+		local n = #OLD.Loops
+
+		-- The same loops, in the same places in the same file.
+		local sameSheet = #S.On == n and #S.Off == n
+		if sameSheet then
+			for i, old in OLD.Loops do
+				local on, off = S.On[i], S.Off[i]
+				sameSheet = sameSheet
+					and on.Rpm == old.Rpm
+					and off.Rpm == old.Rpm
+					and on.Start == old.On[1]
+					and on.Length == old.On[2]
+					and off.Start == old.Off[1]
+					and off.Length == old.Off[2]
+			end
+		end
+		check(
+			"the synthesized sheet is the game's sound, and holds the same twelve loops at the same places as before",
+			sameSheet and E.Sheet == "Synth" and S.SoundId == "rbxassetid://132857262391195",
+			`Sheet = {tostring(E.Sheet)}, {#S.On} on and {#S.Off} off loops, {tostring(S.SoundId)}`
+		)
+
+		-- Every loop's volume and speed, over a grid: 200 to 9 600 rpm (well under idle to
+		-- well over the redline) every 3.7 rpm, 21 loads from -0.1 to 1.1 (so the clamp is
+		-- in it), with and without a limiter cut.
+		local oldVols, oldSpeeds = table.create(2 * n, 0), table.create(2 * n, 1)
+		local newVols, newSpeeds = table.create(2 * n, 0), table.create(2 * n, 1)
+		local points, compared = 0, 0
+		local worstVol, worstSpeed, worstTotal = 0, 0, 0
+		if sameSheet then
+			local rpm = 200
+			while rpm <= 9600 do
+				for k = 0, 20 do
+					local load = -0.1 + k * 0.06
+					for c = 1, 2 do
+						local cut = c == 2
+						local oldTotal = oldMix(rpm, load, cut, oldVols, oldSpeeds)
+						local newTotal = EngineSound.mix(rpm, load, cut, newVols, newSpeeds, S)
+						points += 1
+						worstTotal = math.max(worstTotal, math.abs(newTotal - oldTotal))
+						for i = 1, n do
+							worstVol = math.max(
+								worstVol,
+								math.abs(newVols[i] - oldVols[2 * i - 1]),
+								math.abs(newVols[n + i] - oldVols[2 * i])
+							)
+							worstSpeed = math.max(
+								worstSpeed,
+								math.abs(newSpeeds[i] - oldSpeeds[2 * i - 1]),
+								math.abs(newSpeeds[n + i] - oldSpeeds[2 * i])
+							)
+							compared += 2
+						end
+					end
+				end
+				rpm += 3.7
+			end
+			-- And exactly on every rev point, where the pair changes.
+			for _, old in OLD.Loops do
+				for _, load in { 0, 0.5, 1 } do
+					oldMix(old.Rpm, load, false, oldVols, oldSpeeds)
+					EngineSound.mix(old.Rpm, load, false, newVols, newSpeeds, S)
+					points += 1
+					for i = 1, n do
+						worstVol = math.max(
+							worstVol,
+							math.abs(newVols[i] - oldVols[2 * i - 1]),
+							math.abs(newVols[n + i] - oldVols[2 * i])
+						)
+						worstSpeed = math.max(
+							worstSpeed,
+							math.abs(newSpeeds[i] - oldSpeeds[2 * i - 1]),
+							math.abs(newSpeeds[n + i] - oldSpeeds[2 * i])
+						)
+						compared += 2
+					end
+				end
+			end
+		end
+		check(
+			"in the new shape every loop gets exactly the old volume and playback speed, at every rpm, load and cut",
+			sameSheet and points > 0 and worstVol == 0 and worstSpeed == 0,
+			`{points} points, {compared} loop values compared: largest volume difference {worstVol}, `
+				.. `largest speed difference {worstSpeed}`
+		)
+		check(
+			"and the total volume is the old one",
+			sameSheet and worstTotal < 1e-12,
+			`largest difference {string.format("%.1e", worstTotal)}`
+		)
+
+		-- A sheet whose ladders do NOT match (what recorded loops are): each ladder
+		-- crossfades between its own rev points, each loop pitched from its own rpm.
+		local uneven = {
+			Volume = 1,
+			OffLoadVolume = 1,
+			LimiterDuck = 0.5,
+			MaxPitchShift = 0.6,
+			On = {
+				{ Rpm = 3000, Start = 0, Length = 1 },
+				{ Rpm = 5000, Start = 0, Length = 1 },
+				{ Rpm = 7000, Start = 0, Length = 1 },
+			},
+			Off = {
+				{ Rpm = 1400, Start = 0, Length = 1 },
+				{ Rpm = 6600, Start = 0, Length = 1 },
+			},
+		}
+		local uv, us = table.create(5, 0), table.create(5, 1)
+		EngineSound.mix(5000, 0.5, false, uv, us, uneven)
+		local half = math.sqrt(0.5)
+		local onOk = math.abs(uv[1]) < 1e-9 and math.abs(uv[2] - half) < 1e-9 and math.abs(uv[3]) < 1e-9
+		-- 5 000 between 1 400 and 6 600 on a log scale.
+		local w = math.log(5000 / 1400) / math.log(6600 / 1400)
+		local offOk = math.abs(uv[4] - half * math.cos(w * math.pi / 2)) < 1e-9
+			and math.abs(uv[5] - half * math.sin(w * math.pi / 2)) < 1e-9
+		local speedOk = math.abs(us[2] - 1) < 1e-9
+			and math.abs(us[4] - 1.6) < 1e-9 -- 5 000 / 1 400 is 3.57: capped at 1 + MaxPitchShift
+			and math.abs(us[5] - 5000 / 6600) < 1e-9
+		check(
+			"ladders of different lengths at different revs each crossfade on their own",
+			onOk and offOk and speedOk and EngineSound.loopCount(uneven) == 5,
+			`at 5000 rpm, half load: on {string.format("%.3f %.3f %.3f", uv[1], uv[2], uv[3])}, `
+				.. `off {string.format("%.3f %.3f", uv[4], uv[5])}, off speeds {string.format("%.3f %.3f", us[4], us[5])}`
 		)
 	end
 
