@@ -357,14 +357,19 @@ function Tests.run(which: { string }?, ...)
 			check("the maths costs no more than the rays", perStepA <= perStepB * 1.2, `a whole model step on the maths {fmt(perStepA, 0)} microseconds, on the parts {fmt(perStepB, 0)} (autopilot included in both)`)
 		end
 
-		-- 5. The mountainside (T-140): grass, rock, hedge, K-rail and cliff, each driven at.
+		-- 5. The mountainside (T-140): grass, rock, K-rail and cliff, each driven at.
 		if want("mountain") then
 			local T = Config.Spline.Terrain
+			-- further along than the yardstick's road: since T-189 (every downhill side a cliff, so
+			-- more tight edges, T-181, in place of K-rails) the first 2 600 studs of this seed hold
+			-- no K-rail on a gentle stretch
+			local searchTo = 8000
+			gen:extendTo(searchTo + 300)
 			local mw = SplineWorld.new(mountain, nil)
 			-- A place where `side` ends in `kind` for 80 studs either way, on a gentle stretch,
 			-- with or without a K-rail.
 			local function find(kind: number, side: number, rail: boolean): number?
-				for s = 300, LENGTH - 300, 7 do
+				for s = 300, searchTo - 300, 7 do
 					local good = true
 					for u = s - 80, s + 80, 10 do
 						if mountain:edgeAt(u, side) ~= kind or math.abs(mountain:curvatureAt(u)) > 1 / 300 or (mountain:kRailAt(u, side) ~= nil) ~= rail then
@@ -406,7 +411,8 @@ function Tests.run(which: { string }?, ...)
 				}
 			end
 			local tried = 0
-			for _, case in { { Spline.ROCK, "rock face" }, { Spline.HEDGE, "hedge" } } do
+			-- (no hedge: never an edge since T-189; the bare road above still drives at its walls)
+			for _, case in { { Spline.ROCK, "rock face" } } do
 				local s, side = find(case[1], 1, false), 1
 				if not s then
 					s, side = find(case[1], -1, false), -1
@@ -440,7 +446,7 @@ function Tests.run(which: { string }?, ...)
 			end
 			do
 				local s, side, kind = nil, 1, Spline.CLIFF
-				for _, k in { Spline.CLIFF, Spline.ROCK, Spline.HEDGE } do
+				for _, k in { Spline.CLIFF, Spline.ROCK } do
 					for _, sd in { 1, -1 } do
 						if not s then
 							s = find(k, sd, true)

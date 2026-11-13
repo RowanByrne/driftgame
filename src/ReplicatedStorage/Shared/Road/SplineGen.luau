@@ -120,7 +120,7 @@ export type Gen = typeof(setmetatable(
 		crng: Random, -- the carved apexes' own stream, so they move no other choice (T-182)
 		uphill: number, -- the side the mountain is on: -1 left, 1 right
 		inBand: boolean, -- heading within `AlongFallLine` of the fall line: the side holds
-		lowUntil: number, -- s: the uphill side stays hedge to here after the mountain changes sides
+		crossAt: number, -- s: where the heading last crossed the fall line, inside the band (T-189)
 		runoff: { [number]: number }, -- the last runoff width chosen, by side
 		-- grand cliffs (T-185)
 		lastTurnEnd: number, -- s where the last turnaround ended (the road's start before any)
@@ -191,7 +191,7 @@ function SplineGen.new(seed: number, origin: Spline.Origin?, clearOverride: numb
 		crng = Random.new((seed * 19 + 3089) % 2 ^ 31), -- not the groves' seed: a stream of its own
 		uphill = 1,
 		inBand = false,
-		lowUntil = 0,
+		crossAt = 0,
 		runoff = { [-1] = Config.Spline.Terrain.StartRunoff, [1] = Config.Spline.Terrain.StartRunoff },
 		lastTurnEnd = 0,
 		turning = nil,
@@ -332,21 +332,30 @@ function SplineGen._terrain(self: Gen, sec: Spline.Section)
 	-- from the heading against the fall line (T-166): the side the uphill direction is on.
 	-- Heading within `AlongFallLine` of straight up or down the slope counts as neither and
 	-- the side holds. Coming out of that band on the other side -- the road has turned back
-	-- through a hairpin -- the mountain changes sides, with hedge both sides through the
-	-- band in this section, the road crossing the spur.
-	local upKind = if r:NextNumber() < T.UphillHedgeChance then Spline.HEDGE else Spline.ROCK
-	local downKind = if r:NextNumber() < T.DownhillHedgeChance then Spline.HEDGE else Spline.CLIFF
+	-- through a hairpin -- the mountain changes sides, AT ONE POINT: where the heading last
+	-- crossed the fall line itself, the middle of the turn (or the section's start, if that
+	-- was in a section already laid). There the rock face ends on one side as it starts on
+	-- the other, and the drop the same, so the mountain carries on through the turn with no
+	-- gap (T-189).
+	-- NO HEDGES (T-189, the user 2026-11-13): the uphill side is always rock and the downhill
+	-- side always the drop. The two draws that used to choose a hedge are still made and
+	-- thrown away, so every other choice from this stream (the K-rails) is the road it was.
+	-- `Spline.HEDGE` and its drawing stay, for hedges coming back as decoration.
+	r:NextNumber()
+	r:NextNumber()
+	local upKind, downKind = Spline.ROCK, Spline.CLIFF
 	local band = math.sin(math.rad(Config.Spline.Mountain.AlongFallLine))
 	local _, _, yaw0, k0 = self.spline:tip()
 	local s0 = self.spline.length
-	local spans: { { number } } = {} -- {dsEnd, up side, hedged, uphill hedge to}
-	local lowEnd = self.lowUntil - s0 -- after a change of sides, the uphill side stays low to here
+	local spans: { { number } } = {} -- {dsEnd, up side}
 	local cur = self.uphill
 	local from = 0 -- where the current span began
-	local enteredAt: number? = if self.inBand then 0 else nil
-	local function close(at: number, side: number, hedged: boolean)
+	local inBand = self.inBand
+	local crossAt = math.max(self.crossAt - s0, 0) -- the last fall-line crossing in the band
+	local lastAcross: number?, lastU = nil, 0
+	local function close(at: number, side: number)
 		if at > from + 1e-6 then
-			table.insert(spans, { at, side, if hedged then 1 else 0, lowEnd })
+			table.insert(spans, { at, side })
 			from = at
 		end
 	end
@@ -354,58 +363,41 @@ function SplineGen._terrain(self: Gen, sec: Spline.Section)
 	while true do
 		local yaw = yawAlong(yaw0, k0, sec.k, u)
 		local across = math.sin(yaw - self.fall)
+		if lastAcross and (across > 0) ~= (lastAcross > 0) then
+			-- crossed the fall line between the last sample and this one: where, linearly
+			crossAt = math.clamp(u - (u - lastU) * across / (across - lastAcross), lastU, u)
+		end
+		lastAcross, lastU = across, u
 		if math.abs(across) < band then
-			if enteredAt == nil then
-				enteredAt = u
+			if not inBand then
+				inBand = true
+				crossAt = u
 			end
 		else
 			local side = if across > 0 then 1 else -1
-			if enteredAt ~= nil and side ~= cur then
-				close(enteredAt, cur, false)
-				close(u, 0, true)
+			if inBand and side ~= cur then
+				close(math.max(crossAt, from), cur)
 				cur = side
 				self.stats.cliffSwaps += 1
-				lowEnd = u + T.UphillLowAfterTurn
 			end
-			enteredAt = nil
+			inBand = false
 		end
 		if u >= len then
 			break
 		end
 		u = math.min(u + 4, len)
 	end
-	close(len, cur, false)
+	close(len, cur)
 	self.uphill = cur
-	self.inBand = enteredAt ~= nil
-	self.lowUntil = s0 + lowEnd
-	-- Just past a hairpin the leg you came down is right above you, only a few studs higher:
-	-- a tall rock face there makes no sense (the user, 2026-11-13). So the uphill side stays
-	-- hedge for `UphillLowAfterTurn` studs after the mountain changes sides.
+	self.inBand = inBand
+	self.crossAt = s0 + crossAt
 	local el, er = {}, {}
-	local function add(at: number, l: number, r: number)
-		table.insert(el, at)
-		table.insert(el, l)
-		table.insert(er, at)
-		table.insert(er, r)
-	end
-	local spanFrom = 0
 	for _, sp in spans do
-		local side = sp[2]
-		if sp[3] == 1 then
-			add(sp[1], Spline.HEDGE, Spline.HEDGE)
-		else
-			local kinds = { [side] = upKind, [-side] = downKind }
-			local low = sp[4]
-			if low > spanFrom + 1e-6 then
-				local cut = math.min(low, sp[1])
-				local lowKinds = { [side] = Spline.HEDGE, [-side] = downKind }
-				add(cut, lowKinds[-1], lowKinds[1])
-			end
-			if sp[1] > low + 1e-6 then
-				add(sp[1], kinds[-1], kinds[1])
-			end
-		end
-		spanFrom = sp[1]
+		local kinds = { [sp[2]] = upKind, [-sp[2]] = downKind }
+		table.insert(el, sp[1])
+		table.insert(el, kinds[-1])
+		table.insert(er, sp[1])
+		table.insert(er, kinds[1])
 	end
 	sec.el = el
 	sec.er = er
@@ -833,6 +825,13 @@ end
 -- reaches out past the grass at its least steep (`Road/SplineMesh`'s profile, at its largest).
 local function bodyAt(g: number): (number, number)
 	local T = Config.Spline.Terrain
+	if g < 0 then
+		-- lower than near a turnaround (T-189): toward `LowRockHeight`, as the profile draws it
+		local low = -g
+		local h = T.RockHeight[2] + (T.LowRockHeight - T.RockHeight[2]) * low
+		local top = T.RockTop[1] + (T.LowRockTop - T.RockTop[1]) * low
+		return h + 4 * (1 - low) + 0.5 * low, h / math.tan(math.rad(T.RockSlope[1])) + top + T.RockBack * h + 1.25 * (1 - low)
+	end
 	local h = T.RockHeight[2] + (T.GrandRockHeight[2] - T.RockHeight[2]) * g
 	local lean = math.rad(T.RockSlope[1] + (T.GrandRockSlope[1] - T.RockSlope[1]) * g)
 	local top = T.RockTop[1] + (T.RockTop[2] - T.RockTop[1]) * g
@@ -851,14 +850,11 @@ function SplineGen._grand(self: Gen, sec: Spline.Section): { number }
 	local s0 = sp.length
 	local n = math.max(1, math.ceil(len / T.GrandKnotEvery - 1e-9))
 	local out = table.create(2 * n)
-	if self.turning and TURNAROUNDS[self.turning] then
-		-- a turnaround itself: low all through, and the distance counts from its end
+	-- a turnaround itself: low all through (or lower, under the leg above: T-189), and the
+	-- distance counts from its end
+	local turnaround = self.turning ~= nil and TURNAROUNDS[self.turning :: string] == true
+	if turnaround then
 		self.lastTurnEnd = s0 + len
-		self.lastGrand = 0
-		for i = 1, n do
-			out[2 * i - 1], out[2 * i] = if i == n then len else i * len / n, 0
-		end
-		return out
 	end
 	local ahead = self:_toTurnaround()
 	if self.turning then
@@ -882,8 +878,10 @@ function SplineGen._grand(self: Gen, sec: Spline.Section): { number }
 		local p = pts[i] or pts[#pts] or { ds, x0, z0 }
 		local d = math.min(s0 + ds - self.lastTurnEnd, ahead - ds)
 		local t = math.clamp((d - T.GrandNear) / T.GrandRamp, 0, 1)
-		local g = t * t * (3 - 2 * t)
-		if g > 0 then
+		local g = if turnaround then 0 else t * t * (3 - 2 * t)
+		-- (since T-189 at every knot, not only grand ones: with no hedges, a low body just past
+		-- a hairpin is right under the leg above, and must go lower still, below 0)
+		do
 			-- the side the rock is on here (or would be): the side across from a cliff
 			local function kindAt(list: { number }): number
 				for j = 1, #list, 2 do
@@ -928,7 +926,7 @@ function SplineGen._grand(self: Gen, sec: Spline.Section): { number }
 			end
 			-- the grandest that stands clear: under each such road, or, short of it, no
 			-- higher above it than it is far off (so no pinnacle towers over the leg above)
-			while g > 0 do
+			while g > -1 do
 				local h, reachG = bodyAt(g)
 				local clear = true
 				for j = 1, #near, 3 do
@@ -937,7 +935,9 @@ function SplineGen._grand(self: Gen, sec: Spline.Section): { number }
 					-- to `w + reachG`, past the old road's own width
 					local da = if along < w then w - along elseif along > w + reachG then along - w - reachG else 0
 					local off = math.max(0, math.sqrt(da * da + across * across) - foot) * T.GrandAbove
-					if y + h > yo - T.GrandMargin + off then
+					-- (at 0 and below, only road the body reaches under counts: a low body beside the
+					-- leg above is no pinnacle, and is drawn as it always was, T-189)
+					if (g > 0 or off <= 0) and y + h > yo - T.GrandMargin + off then
 						clear = false
 						break
 					end
@@ -945,7 +945,7 @@ function SplineGen._grand(self: Gen, sec: Spline.Section): { number }
 				if clear then
 					break
 				end
-				g = math.max(0, g - 0.05)
+				g = math.max(-1, g - 0.05)
 			end
 		end
 		values[i] = g

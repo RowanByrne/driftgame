@@ -269,7 +269,18 @@ function Tests.run()
 		-- WHERE THE GROUND ITSELF TURNS SHARPLY a short box pitches far more than its
 		-- neighbour (the inside of a hairpin, where the grass's width is cut back fast on a
 		-- bank): a step of a few tenths there is the ground's shape, not a staircase
-		check("hedge tops run on without steps", pairs > 0 and steps <= pairs * 0.01 and worstStep < 0.5, `{pairs} joints: {steps} step more than 0.1 studs, worst {fmt(worstStep, 3)}`)
+		-- NO HEDGES ON THE ROAD since T-189: the generator never chooses one, so no hedge box
+		-- is drawn. Should one be (hedges come back as decoration), its tops must still run on
+		-- without steps
+		local hedges = 0
+		for _, model in models do
+			for _, p in model:GetChildren() do
+				if string.sub(p.Name, 1, 5) == "Edge_" then
+					hedges += 1
+				end
+			end
+		end
+		check("no hedge drawn on the road, and any hedge tops run on without steps", hedges == 0 and steps <= pairs * 0.01 and worstStep < 0.5, `{hedges} hedge boxes; {pairs} joints: {steps} step more than 0.1 studs, worst {fmt(worstStep, 3)}`)
 
 		-- 4c. The faces of the mountainside: in the one mesh, and never reaching past a
 		-- bend's centre on its inside (where the faces of a hairpin would fold through

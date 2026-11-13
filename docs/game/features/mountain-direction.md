@@ -72,7 +72,7 @@ Starting values, all in `Config.Spline` (a `Mountain` block), numbers not code.
 | Turnaround | A hairpin (most), or a switchback of two tight bends | Turns the road onto the next leg, the other way across the slope |
 | Double hairpin | `DoubleHairpinChance` 0.15 per leg; the reversed stretch 150 to 500 studs | Then the leg carries on in its own direction |
 | Sideways stretch | `SidewaysChance` 0.2 per leg; up or down the slope for 300 to 1 200 studs | Bends inside it may go past `LegHeadingLimit`, never past 120° off the leg; the side holds (hysteresis) |
-| Cliff swap | Through a turnaround or a double hairpin only | Edges either side of the hairpin pass through the existing hedge-both-sides transition |
+| Cliff swap | Through a turnaround or a double hairpin only | Edges either side of the hairpin pass through the existing hedge-both-sides transition (since T-189: no hedge; both sides change at one point, mid-turn, `mountain-road.md`) |
 | No-crossing | As now | A new leg must clear the one above it; the build measures how often a turnaround is refused and the road extends the leg instead |
 
 ### Height
@@ -166,4 +166,4 @@ The fall line, the legs and the turnarounds, and the descent.
   0 of about 17 600 points; 4.1 changes a 10 000 studs (3.5 before), all inside planned turns.
 - **Low past a turn** (the user, 2026-11-13): after the mountain changes sides the uphill side
   stays hedge for `Terrain.UphillLowAfterTurn` (400) studs, since the leg you came down is right
-  above. The drop side keeps its cliff.
+  above. The drop side keeps its cliff. **Replaced by T-189** (DECISIONS.md 2026-11-13): no hedges; the edges change sides at one point, where the heading crosses the fall line, and the uphill side is rock right away, drawn low where the leg above leaves no room (`mountain-road.md` "One mountain through the turns").
