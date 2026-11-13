@@ -203,7 +203,8 @@ something that bridges the gap from the road down to the grass."*
   `LipShare` (0.75) of it. So a tight cliff edge's 2.5 to 3.5 studs of gravel is a bevel of
   1.9 to 2.6 with a flat strip before the lip, and its rail on the tarmac's edge stands over
   the bevel, posts reaching down to the gravel. Everything on the runoff stands on the lower
-  ground: the grass, a hedge, the foot of a rock face, a cliff's lip, a grove.
+  ground: the grass, a hedge, the foot of a rock face, a cliff's lip, a grove. At a carved apex
+  (1 stud of grass) the bevel is 0.75 across, so the rock rises from a narrow gravel gutter.
 - **Width chosen:** 2 studs. That is wide enough to read as an angled shoulder rather than a
   step, and narrow enough that a rear wheel is down on the grass within 2 studs of the edge, so
   the drop still shows.
