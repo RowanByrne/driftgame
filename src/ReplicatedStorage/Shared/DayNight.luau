@@ -244,6 +244,21 @@ function DayNight.lightsAt(self: Cycle, t: number): boolean
 	return t >= on or t < off
 end
 
+-- How much of the direct light to keep (0..1), from the height above the horizon (degrees)
+-- of the body lighting the world: the sun (`isSun`) or the moon. Smoothstep between
+-- `LightFade.<Sun|Moon>.From` and `.To`; the sky's look is not touched (T-179).
+function DayNight.lightFade(isSun: boolean, elevation: number, cfg: any?): number
+	local c: any = (cfg or Config.DayNight).LightFade
+	if not c then
+		return 1
+	end
+	local band = if isSun then c.Sun else c.Moon
+	if band.To <= band.From then
+		return if elevation >= band.To then 1 else 0
+	end
+	return smooth(math.clamp((elevation - band.From) / (band.To - band.From), 0, 1))
+end
+
 -- Where each keyframe falls, in seconds into the cycle, in order: { name, t }.
 function DayNight.keyTimes(self: Cycle): { { name: string, t: number } }
 	local list = {}

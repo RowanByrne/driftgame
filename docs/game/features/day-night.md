@@ -142,6 +142,30 @@ by design (and softer at low graphics quality); the daytime haze washed them out
 not replaced: daytime `AtmosphereHaze` 1-1.4 down to 0.3-0.5, `CloudDensity` 0.6 up to 0.85-0.9 by
 day and 0.7-0.8 at the sunsets and night, whose haze was kept.
 
+## The low moon (`T-179`)
+
+The problem (measured, `T-178`): the headlights are on for 138 s of the 280 s cycle, and for 47 s
+of that the moon was under 20 degrees up (29 s under 10, lowest 0.6 at a 1 s sample), so a
+5-stud car threw its shadow 30 to over 500 studs, onto far rock faces.
+
+- **Roblox's moon mirrors the sun:** its height is always the sun's, negated (measured in the lane,
+  latitude 41.7), so both cross the horizon at 6:00 and 18:00. The moon cannot be kept high
+  through dusk without the clock jumping, so its light is faded instead.
+- **The direct light fades with the height of whichever is lighting the world:**
+  `Lighting.Brightness` is the keyframe's times a smoothstep, `Config.DayNight.LightFade`. The
+  moon gives none under 12 degrees and all of it from 28; the sun fades over only its last 2
+  degrees (the last 4 s of the sunset, the first 4 s of the sunrise), so the golden hour's long
+  shadows stay. Both give none on the horizon, so the hand-over from sun to moon cannot pop. The
+  sky, the ambient light, the moon and the stars are untouched; the clock, the cycle and the
+  sun's path are as before.
+- **Measured, the full cycle sampled every second in a playtest:** of the 138 s with headlights
+  on, 33 s have no direct light (from the lights coming on to the moon at 12 degrees, about 15 s,
+  and the same before dawn), lit by the ambient and the headlights. The lowest the moon lights
+  anything from is 12.7 degrees, and the longest car shadow is **22 studs** (it was 513), faint
+  there: 18 at a tenth of the moonlight, 14 at half. The brightness never moves more than 0.82 a
+  second (the sun's 4 s fade). Unit test: no direct light at the horizon, none under the moon's
+  `From`, all of it at `To`, and never less as either climbs.
+
 ## Open questions
 
 - None blocking. The look of each keyframe is the user's to judge from the lane.
