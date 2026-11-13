@@ -231,6 +231,9 @@ type Builder = {
 	-- one sharing a grass vertex picks up the grass's UV there (measured: the bevel did).
 	-- Set only where needed: on every face it cost ~2 ms a chunk (measured)
 	plainUV: number?,
+	-- with the texture: each grass vertex's colour id, `GrassColour` lightened or darkened by
+	-- `GrassTexture.blotch` at its place
+	grassShade: { [number]: number }?,
 }
 
 
@@ -273,6 +276,18 @@ local function strip(b: Builder, rowA: { number }, normA: { number }, rowB: { nu
 						em:SetFaceUVs(f1, { ua0, ua1, ub0 })
 						em:SetFaceUVs(f2, { ua1, ub1, ub0 })
 					end
+					-- the blotches (T-187): each corner its own vertex's shade of the grass
+					local shadeOf = b.grassShade
+					if shadeOf then
+						local ca0, ca1, cb0, cb1 = shadeOf[a0] or c, shadeOf[a1] or c, shadeOf[b0] or c, shadeOf[b1] or c
+						if flip then
+							em:SetFaceColors(f1, { ca0, cb0, ca1 })
+							em:SetFaceColors(f2, { ca1, cb0, cb1 })
+						else
+							em:SetFaceColors(f1, { ca0, ca1, cb0 })
+							em:SetFaceColors(f2, { ca1, cb1, cb0 })
+						end
+					end
 					b.grassTriangles += 2
 				end
 			elseif b.plainUV and uvA and uvB and (uvA[i] or uvA[i + 1] or uvB[i] or uvB[i + 1]) then
@@ -291,7 +306,7 @@ local function newBuilder(centre: Vector3): Builder
 	local em = AssetService:CreateEditableMesh({ FixedSize = false })
 	-- nil is the device saying no: out of its EditableMesh budget
 	assert(em, "this device would not make an EditableMesh (out of its budget)")
-	return { em = em :: EditableMesh, centre = centre, vertices = 0, triangles = 0, grassTriangles = 0, plainUV = nil }
+	return { em = em :: EditableMesh, centre = centre, vertices = 0, triangles = 0, grassTriangles = 0, plainUV = nil, grassShade = nil }
 end
 
 -- A MeshPart made from an EditableMesh keeps the vertices exactly where they were written,
@@ -398,6 +413,7 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 		local baseU, baseV = GrassTexture.base(centre)
 		if grassImage then
 			road.plainUV = road.em:AddUV(Vector2.zero)
+			road.grassShade = {}
 		end
 		local prevRow, prevNear, prevFar, prevS, prevUV = nil, nil, nil, 0, nil
 		for _, s in cuts do
@@ -425,6 +441,12 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 				-- the grass's vertices: the runoff either side, out from each bevel's foot
 				if uv and (j <= lipL or j > lipR) then
 					uv[j] = road.em:AddUV(GrassTexture.uv(x, z, baseU, baseV))
+					local shade = road.grassShade
+					if shade then
+						local k = GrassTexture.blotch(x, z)
+						local g = TT.GrassColour
+						shade[row[j]] = road.em:AddColor(Color3.new(math.min(1, g.R * k), math.min(1, g.G * k), math.min(1, g.B * k)), 1)
+					end
 				end
 			end
 			-- each bevel's own normal: square to the road's way and to its slope, outward

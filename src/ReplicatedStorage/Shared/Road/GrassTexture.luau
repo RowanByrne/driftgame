@@ -103,6 +103,34 @@ function GrassTexture.base(centre: Vector3): (number, number)
 	return math.floor(centre.X / tile), math.floor(centre.Z / tile)
 end
 
+-- BLOTCHES: the brightness a grass vertex at world (x, z) is drawn at, 1 +- `Blotch`, from
+-- smooth value noise (two octaves, `BlotchStuds` and a third of it). Laid over the tile by
+-- the vertex colours, so tiles side by side never look alike. Exact integer hashing
+-- (bit32), so every device draws the same blotches.
+local function hash(ix: number, iz: number): number
+	local h = bit32.bxor((ix * 73856093) % 4294967296, (iz * 19349663) % 4294967296)
+	for _ = 1, 2 do
+		h = bit32.bxor(h, bit32.lshift(h, 13))
+		h = bit32.bxor(h, bit32.rshift(h, 17))
+		h = bit32.bxor(h, bit32.lshift(h, 5))
+	end
+	return (h % 10007) / 10007 * 2 - 1
+end
+local function noise(x: number, z: number, cell: number, salt: number): number
+	local gx, gz = x / cell + salt, z / cell
+	local x0, z0 = math.floor(gx), math.floor(gz)
+	local tx, tz = gx - x0, gz - z0
+	tx, tz = tx * tx * (3 - 2 * tx), tz * tz * (3 - 2 * tz)
+	local a = hash(x0, z0) + (hash(x0 + 1, z0) - hash(x0, z0)) * tx
+	local b = hash(x0, z0 + 1) + (hash(x0 + 1, z0 + 1) - hash(x0, z0 + 1)) * tx
+	return a + (b - a) * tz
+end
+function GrassTexture.blotch(x: number, z: number): number
+	local G = Config.Spline.Grass
+	local n = noise(x, z, G.BlotchStuds, 0) * 0.7 + noise(x, z, G.BlotchStuds / 3, 1000) * 0.3
+	return 1 + math.clamp(n, -1, 1) * G.Blotch
+end
+
 function GrassTexture.DebugState()
 	-- `buildMs` is wall time, the asset's load included
 	return {

@@ -352,15 +352,21 @@ local Spline = {
 	-- road's mesh samples its plain corner.
 	Grass = {
 		Enabled = true, -- false: flat grass, and the road's mesh as it was before
-		-- the painted tile: 256 x 256, grey, evened out to average `Shade`, tiling seamlessly
-		-- (`assets/grass-texture/grass-painted-grey256.png`, MANIFEST.md there)
-		Image = "rbxassetid://140682021733001",
-		TileStuds = 24, -- studs one tile covers, each way
+		-- the painted tile: 512 x 512, grey, evened out to average `Shade`, tiling seamlessly
+		-- (`assets/grass-texture/grass-painted-grey512-v2.png`, MANIFEST.md there). v1 (256 px,
+		-- 24 studs) showed seam lines and repeated plainly: the user, "very visible repeating patterns"
+		Image = "rbxassetid://86031628618959",
+		TileStuds = 48, -- studs one tile covers, each way (about 10.7 pixels a stud)
 		-- What Roblox's Asphalt map multiplied the whole road's mesh by (measured, T-187: the
 		-- tarmac drawn without it came out twice as bright). The texture's plain corners are
 		-- this grey, so the tarmac, gravel, rocks and trees keep their brightness, and the
 		-- tile averages it, so the grass keeps its own. Raise it to lighten all but the grass.
 		Shade = 0.49,
+		-- BLOTCHES over the tile, so neighbouring tiles never look alike: each grass vertex is
+		-- lighter or darker by up to `Blotch`, from smooth noise over `BlotchStuds` cells in
+		-- world X and Z (two octaves), blended across each face by the vertex colours
+		Blotch = 0.12,
+		BlotchStuds = 70,
 	},
 
 	-- --------------------------------------------------------------- the mesh (step 3)

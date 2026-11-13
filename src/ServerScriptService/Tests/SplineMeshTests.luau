@@ -124,7 +124,18 @@ function Tests.run()
 		if Config.Spline.Grass.Enabled then
 			local tile = Config.Spline.Grass.TileStuds
 			local G = Config.Spline.Grass
-			local grassHex = Config.Spline.Terrain.GrassColour:ToHex()
+			-- a grass face: GrassColour, lightened or darkened by a blotch (the same factor on each
+			-- channel, within `Blotch`)
+			local gc = Config.Spline.Terrain.GrassColour
+			local shadeLo, shadeHi = math.huge, -math.huge
+			local function isGrass(c: Color3): boolean
+				local k = c.G / gc.G
+				local ok = math.abs(c.R - gc.R * k) < 0.01 and math.abs(c.B - gc.B * k) < 0.01 and math.abs(k - 1) <= G.Blotch + 0.01
+				if ok then
+					shadeLo, shadeHi = math.min(shadeLo, k), math.max(shadeHi, k)
+				end
+				return ok
+			end
 			local grassFaces, mappedOk, plainFaces, plainOk, worstStuds, textured = 0, 0, 0, 0, 0, 0
 			for _, model in models do
 				local road = model:FindFirstChild("Road")
@@ -135,7 +146,7 @@ function Tests.run()
 					end
 					for _, f in obj:GetFaces() do
 						local uvs = obj:GetFaceUVs(f)
-						if obj:GetColor(obj:GetFaceColors(f)[1]):ToHex() == grassHex then
+						if isGrass(obj:GetColor(obj:GetFaceColors(f)[1])) then
 							grassFaces += 1
 							-- each corner's UV, times the tile, is its world X and Z less whole tiles
 							local ok = true
@@ -167,7 +178,7 @@ function Tests.run()
 			check(
 				"the grass is textured in world studs, and nothing else is",
 				textured == built and grassFaces > 0 and mappedOk == grassFaces and plainOk == plainFaces,
-				`{textured} of {built} chunks textured; {mappedOk} of {grassFaces} grass faces mapped (worst {fmt(worstStuds, 4)} studs off), {plainOk} of {plainFaces} other faces on the plain corner`
+				`{textured} of {built} chunks textured; {mappedOk} of {grassFaces} grass faces mapped (worst {fmt(worstStuds, 4)} studs off), {plainOk} of {plainFaces} other faces on the plain corner; blotches {fmt(shadeLo, 3)} to {fmt(shadeHi, 3)} of the grass colour`
 			)
 			-- the shared image itself, as the chunks draw it: the painted tile, its corners set
 			local ts = GrassTexture.DebugState()
