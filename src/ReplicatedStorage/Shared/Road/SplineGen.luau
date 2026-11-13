@@ -115,6 +115,7 @@ export type Gen = typeof(setmetatable(
 		trng: Random, -- the mountainside's own stream
 		uphill: number, -- the side the mountain is on: -1 left, 1 right
 		inBand: boolean, -- heading within `AlongFallLine` of the fall line: the side holds
+		lowUntil: number, -- s: the uphill side stays hedge to here after the mountain changes sides
 		runoff: { [number]: number }, -- the last runoff width chosen, by side
 		clearance: number,
 		separation: number,
@@ -178,6 +179,7 @@ function SplineGen.new(seed: number, origin: Spline.Origin?, clearOverride: numb
 		trng = Random.new((seed * 7 + 1013) % 2 ^ 31),
 		uphill = 1,
 		inBand = false,
+		lowUntil = 0,
 		runoff = { [-1] = Config.Spline.Terrain.StartRunoff, [1] = Config.Spline.Terrain.StartRunoff },
 		clearance = clear,
 		separation = sep,
@@ -292,13 +294,15 @@ function SplineGen._terrain(self: Gen, sec: Spline.Section)
 	local downKind = if r:NextNumber() < T.DownhillHedgeChance then Spline.HEDGE else Spline.CLIFF
 	local band = math.sin(math.rad(Config.Spline.Mountain.AlongFallLine))
 	local _, _, yaw0, k0 = self.spline:tip()
-	local spans: { { number } } = {} -- {dsEnd, up side, hedged}
+	local s0 = self.spline.length
+	local spans: { { number } } = {} -- {dsEnd, up side, hedged, uphill hedge to}
+	local lowEnd = self.lowUntil - s0 -- after a change of sides, the uphill side stays low to here
 	local cur = self.uphill
 	local from = 0 -- where the current span began
 	local enteredAt: number? = if self.inBand then 0 else nil
 	local function close(at: number, side: number, hedged: boolean)
 		if at > from + 1e-6 then
-			table.insert(spans, { at, side, if hedged then 1 else 0 })
+			table.insert(spans, { at, side, if hedged then 1 else 0, lowEnd })
 			from = at
 		end
 	end
@@ -317,6 +321,7 @@ function SplineGen._terrain(self: Gen, sec: Spline.Section)
 				close(u, 0, true)
 				cur = side
 				self.stats.cliffSwaps += 1
+				lowEnd = u + T.UphillLowAfterTurn
 			end
 			enteredAt = nil
 		end
@@ -328,14 +333,35 @@ function SplineGen._terrain(self: Gen, sec: Spline.Section)
 	close(len, cur, false)
 	self.uphill = cur
 	self.inBand = enteredAt ~= nil
+	self.lowUntil = s0 + lowEnd
+	-- Just past a hairpin the leg you came down is right above you, only a few studs higher:
+	-- a tall rock face there makes no sense (the user, 2026-11-13). So the uphill side stays
+	-- hedge for `UphillLowAfterTurn` studs after the mountain changes sides.
 	local el, er = {}, {}
+	local function add(at: number, l: number, r: number)
+		table.insert(el, at)
+		table.insert(el, l)
+		table.insert(er, at)
+		table.insert(er, r)
+	end
+	local spanFrom = 0
 	for _, sp in spans do
-		local hedged = sp[3] == 1
-		local kinds = { [sp[2]] = upKind, [-sp[2]] = downKind }
-		table.insert(el, sp[1])
-		table.insert(el, if hedged then Spline.HEDGE else kinds[-1])
-		table.insert(er, sp[1])
-		table.insert(er, if hedged then Spline.HEDGE else kinds[1])
+		local side = sp[2]
+		if sp[3] == 1 then
+			add(sp[1], Spline.HEDGE, Spline.HEDGE)
+		else
+			local kinds = { [side] = upKind, [-side] = downKind }
+			local low = sp[4]
+			if low > spanFrom + 1e-6 then
+				local cut = math.min(low, sp[1])
+				local lowKinds = { [side] = Spline.HEDGE, [-side] = downKind }
+				add(cut, lowKinds[-1], lowKinds[1])
+			end
+			if sp[1] > low + 1e-6 then
+				add(sp[1], kinds[-1], kinds[1])
+			end
+		end
+		spanFrom = sp[1]
 	end
 	sec.el = el
 	sec.er = er

@@ -189,6 +189,9 @@ local Spline = {
 		-- WHICH SIDE IS UPHILL follows from the heading against the fall line (T-166,
 		-- `Mountain.AlongFallLine`): no stretch length and no random swap any more.
 		UphillHedgeChance = 0.2, -- per section: hedge instead of rock on the uphill side
+		-- just past a hairpin or switchback the leg you came down is right above, only a few
+		-- studs higher: the uphill side stays hedge this far after the mountain changes sides
+		UphillLowAfterTurn = 400, -- studs
 		DownhillHedgeChance = 0.15, -- per section: hedge instead of cliff on the downhill side
 		-- K-RAILS: drawn as METAL CRASH BARRIERS (T-149): a W-beam steel guardrail held off
 		-- square posts on spacer blocks, a striped hazard panel at each end of a run; the
