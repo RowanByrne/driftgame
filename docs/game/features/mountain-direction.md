@@ -1,6 +1,6 @@
 # Feature: The mountain has a direction
 
-**Status:** specced, waiting for the user's approval (`T-165`). **Owner task:** none yet.
+**Status:** building (`T-166`): step 1 built in lane 1, step 2 next. **Owner task:** `T-166`.
 
 ## Goal
 
@@ -131,3 +131,28 @@ None.
 ## Open questions
 
 - None blocking. The numbers are first guesses to drive and tune.
+
+## As built (step 1, T-167)
+
+The fall line, the legs and the turnarounds, and the descent. **The edges still swap the old
+way** (`UphillStretch`) until step 2 ties them to the heading.
+
+- **The plan** (`Road/SplineGen`): each leg is a stretch of the old random sections, kept
+  within `LegHeadingLimit` (60°) of the leg's heading downhill but only `LegUphillLimit` (30°)
+  uphill, and leaning back toward the leg's own line (`LineReach`), so a leg keeps its level on
+  the slope. Turnarounds, double hairpins and the bends in and out of a sideways stretch are
+  **planned turns**, built to land exactly on the next heading; when the road is more than
+  `TurnWindow` (20°) off its leg first, a gentle bend brings it back. A planned turn that would
+  crowd old road is refused and retried `RetryAfter` (120) studs on: 0 refused in 20 roads of
+  30 000 studs.
+- **Climbs are off** (`SidewaysUpShare = 0`): at 0.3 a sideways climb ran into the leg above
+  and boxed the road in on 2 seeds of 40. Sideways stretches go down the slope only, and their
+  bends stay within 25° of it (inside `AlongFallLine`, so the side will hold through them).
+- **The descent** is the moving band: its centre drops `DescentRate` per stud of road.
+  Measured: 36.4 studs per 1 000 (the band is planned per section, so a little under 40).
+- **Measured** over 40 roads of 30 000 studs: no road boxed in; per 10 000 studs 3.0 legs,
+  2.7 turnarounds, 0.5 double hairpins, 0.7 sideways stretches; the road turns back across
+  the slope only inside a planned turn (228 of 228 changes); 0.16 ms a section, worst 2.7 ms.
+- **Kill height:** the road passes Roblox's default fall-kill height (Y -500) about 14 000
+  studs into a run. A car (anchored) and anyone seated in it are safe there (measured); an
+  avatar that gets out and walks is not. Open: see the feature's notes.

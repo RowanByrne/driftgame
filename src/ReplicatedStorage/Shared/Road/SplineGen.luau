@@ -25,6 +25,16 @@
 -- stays on one side (`uphill`) for `UphillStretch` studs, then swaps through a straight
 -- with hedge both sides. Clearance (`limits`) is wide enough for the widest runoff and an
 -- edge either side, whatever is chosen.
+--
+-- THE MOUNTAIN'S DIRECTION (features/mountain-direction.md, T-166). The road has a fall
+-- line, fixed for its whole length (`fall`, the uphill heading), and on a descent it is
+-- laid to a PLAN: legs across the slope, each a stretch of random sections that keep within
+-- `LegHeadingLimit` of the leg's heading, joined by planned turns -- a hairpin or a
+-- switchback at the end of each leg, and now and then a double hairpin or a sideways
+-- stretch in the middle of one. A planned turn is built to land exactly on the heading it
+-- is for, and is checked for crossings and its escape like any other section; refused, the
+-- stretch before it runs on `RetryAfter` and it is tried again. The height band's centre
+-- moves with the road (`DescentRate`), so the run works its way down.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -45,6 +55,30 @@ export type Stats = {
 	kinds: { [string]: number },
 	worstMs: number,
 	totalMs: number,
+	-- the plan (T-166)
+	legs: number,
+	turnarounds: number,
+	doubles: number,
+	sideways: number,
+	straightens: number,
+	turnsRefused: number, -- a planned turn that would have crowded old road, run on and retried
+}
+
+-- One step of the plan: a STRETCH of random sections kept within `limit` of `aim` for
+-- `left` studs, or a planned TURN onto heading `to`, turning `dir` (1 left, -1 right) on a
+-- radius from `radius`. `window` is the heading the road must be near before the turn.
+export type Item = {
+	turn: boolean,
+	what: string,
+	aim: number?,
+	limit: number?,
+	left: number?,
+	to: number?,
+	dir: number?,
+	radius: { number }?,
+	tag: string?,
+	window: number?,
+	started: boolean?,
 }
 
 export type Gen = typeof(setmetatable(
@@ -56,7 +90,22 @@ export type Gen = typeof(setmetatable(
 		recent: { string },
 		lastDir: number,
 		lastWasBend: boolean,
-		trend: number,
+		-- the mountain (T-166)
+		mode: string, -- "descent", "ascent" or "traverse"
+		fall: number, -- the uphill heading (a yaw), fixed for the road
+		sense: number, -- 1 descending, -1 climbing
+		drift: number, -- how the height band's centre moves per stud of road
+		legSide: number, -- which way across the slope the current leg runs (1 or -1)
+		tilt: number?, -- the next leg's tilt, chosen with the turnaround onto it
+		prng: Random, -- the plan's own stream
+		plan: { Item },
+		turns: { { any } }, -- every planned turn laid, {s0, s1, what}: the server's record, for tests
+		aim: number, -- the heading random sections keep near...
+		limit: number, -- ...and how far off it they may go
+		upSign: number, -- which way off `aim` (1 left, -1 right) is up the slope; 0 none
+		limitUp: number, -- the limit that way
+		lineX: number?, -- where the stretch began: its line runs from here along `aim`
+		lineZ: number?,
 		trng: Random, -- the mountainside's own stream
 		uphill: number, -- the side the mountain is on: -1 left, 1 right
 		toSwap: number, -- studs of road until the mountain may change sides
@@ -104,7 +153,19 @@ function SplineGen.new(seed: number, origin: Spline.Origin?, clearOverride: numb
 		recent = {},
 		lastDir = 0,
 		lastWasBend = false,
-		trend = spline.origin.yaw,
+		mode = Config.Spline.Mountain.Mode,
+		fall = 0,
+		sense = 1,
+		drift = 0,
+		legSide = 1,
+		tilt = nil,
+		prng = Random.new((seed * 13 + 4099) % 2 ^ 31),
+		plan = {},
+		turns = {},
+		aim = spline.origin.yaw,
+		limit = math.rad(Config.Spline.HeadingLimit),
+		upSign = 0,
+		limitUp = math.rad(Config.Spline.HeadingLimit),
 		trng = Random.new((seed * 7 + 1013) % 2 ^ 31),
 		uphill = 1,
 		toSwap = 0,
@@ -122,8 +183,22 @@ function SplineGen.new(seed: number, origin: Spline.Origin?, clearOverride: numb
 			kinds = {},
 			worstMs = 0,
 			totalMs = 0,
+			legs = 0,
+			turnarounds = 0,
+			doubles = 0,
+			sideways = 0,
+			straightens = 0,
+			turnsRefused = 0,
 		},
 	}, SplineGen)
+	-- THE FALL LINE: the start heading turned `FallLineTurn` to a side chosen from the seed,
+	-- so the first leg runs across the slope, tilted down (or up) it
+	local M = Config.Spline.Mountain
+	local q = if self.prng:NextNumber() < 0.5 then -1 else 1
+	self.fall = wrap(spline.origin.yaw + q * math.rad(M.FallLineTurn))
+	self.legSide = -q
+	self.sense = if self.mode == "ascent" then -1 else 1
+	self.drift = if self.mode == "descent" then -M.DescentRate elseif self.mode == "ascent" then M.DescentRate else 0
 	local T = Config.Spline.Terrain
 	self.uphill = if self.trng:NextNumber() < 0.5 then -1 else 1
 	self.toSwap = T.UphillStretch[1] + (T.UphillStretch[2] - T.UphillStretch[1]) * self.trng:NextNumber()
@@ -389,12 +464,13 @@ end
 
 -- The grade a section heads for, keeping the road's height inside its band: the height
 -- it would reach by the end, plus what it would take to level off from there, must stay
--- inside `MinHeight..MaxHeight` of where the road began.
+-- inside `MinHeight..MaxHeight` of where the road began -- or, on a descent, of where the
+-- band's centre has dropped to by the end of the section (T-166).
 local function pickGrade(self: Gen, g0: number, y0: number, len: number): { number }
 	local C = Config.Spline
 	local gMax = math.tan(math.rad(C.MaxGrade))
 	local rate = C.MaxGradeRate
-	local base = self.spline.origin.y
+	local base = self.spline.origin.y + self.drift * (self.spline.length + len)
 	local function ends(gt: number): number
 		local knots, gEnd = ramp(g0, gt, rate, 0, len)
 		-- the height at the section's end: integrate the ramp
@@ -404,7 +480,8 @@ local function pickGrade(self: Gen, g0: number, y0: number, len: number): { numb
 			s, g = knots[j], knots[j + 1]
 		end
 		-- and what levelling off from gEnd would add
-		return y + sign(gEnd) * gEnd * gEnd / (2 * rate) - base
+		-- (on a descent the band goes on moving while the road levels off)
+		return y + sign(gEnd) * gEnd * gEnd / (2 * rate) - (base + self.drift * math.abs(gEnd) / rate)
 	end
 	local gt: number
 	if self.rng:NextNumber() < C.KeepGradeChance then
@@ -491,8 +568,8 @@ function SplineGen._candidate(self: Gen): (Spline.Section?, string?)
 	local sp = self.spline
 	local _, _, yaw0, k0, g0, b0, y0 = sp:tip()
 	local s0 = sp.length
-	local limit = math.rad(C.HeadingLimit)
-	local rel = wrap(yaw0 - self.trend)
+	local limit = self.limit
+	local rel = wrap(yaw0 - self.aim)
 
 	local kt: number, knots: { number }?, len: number, radius: number?, tag: string
 	if self.lastWasBend and rng:NextNumber() < C.StraightChance then
@@ -506,8 +583,16 @@ function SplineGen._candidate(self: Gen): (Spline.Section?, string?)
 		if self.lastWasBend and rng:NextNumber() < C.SwitchbackChance then
 			dir = -self.lastDir
 		else
-			-- lean back toward the road's general direction the further it has strayed
-			local pLeft = 0.5 - 0.45 * math.clamp(rel / limit, -1, 1)
+			-- lean back toward the road's general direction the further it has strayed; on a
+			-- planned stretch, toward its line too, so a leg keeps its place on the slope and
+			-- does not drift up into the leg above (T-166)
+			local want = 0
+			local x0, z0 = sp:tip()
+			if self.lineX then
+				local off = (x0 - self.lineX :: number) * -math.cos(self.aim) + (z0 - self.lineZ :: number) * math.sin(self.aim)
+				want = -math.clamp(off / Config.Spline.Mountain.LineReach, -1, 1) * limit * 0.5
+			end
+			local pLeft = 0.5 - 0.45 * math.clamp((rel - want) / limit, -1, 1)
 			dir = if rng:NextNumber() < pLeft then 1 else -1
 		end
 		local r0, r1 = kind.radius[1], kind.radius[2]
@@ -517,7 +602,7 @@ function SplineGen._candidate(self: Gen): (Spline.Section?, string?)
 		kt = dir / (radius :: number)
 		-- keep the heading, with the escape's own easing, inside the limit
 		local escapeTurn = 0.5 * kt * transition(kt, 0)
-		local room = limit - dir * (rel + escapeTurn)
+		local room = (if dir == self.upSign then self.limitUp else limit) - dir * (rel + escapeTurn)
 		if turn > room then
 			turn = room
 		end
@@ -533,7 +618,8 @@ function SplineGen._candidate(self: Gen): (Spline.Section?, string?)
 	-- the final word on the heading, from the knots themselves
 	local yawEnd = yawAfter(yaw0, k0, knots)
 	local escYaw = 0.5 * kt * transition(kt, 0)
-	if math.abs(wrap(yawEnd + escYaw - self.trend)) > limit + 1e-6 then
+	local off = wrap(yawEnd + escYaw - self.aim)
+	if math.abs(off) > (if sign(off) == self.upSign then self.limitUp else limit) + 1e-6 then
 		return nil, "heading"
 	end
 	if not self:_clear(withEscape(knots, kt)) then
@@ -551,6 +637,187 @@ function SplineGen._candidate(self: Gen): (Spline.Section?, string?)
 		nil
 end
 
+--------------------------------------------------------------------------------
+-- The plan: legs, turnarounds, double hairpins, sideways stretches (T-166)
+--------------------------------------------------------------------------------
+
+-- The heading of a leg running `side` across the slope, tilted `tilt` down it (up it on
+-- an ascent).
+function SplineGen._legAim(self: Gen, side: number, tilt: number): number
+	return wrap(self.fall + side * (math.pi * 0.5 + self.sense * tilt))
+end
+
+-- Plan the next leg: its stretches, anything in the middle of it, and the turnaround at
+-- its end onto the leg after it, which runs the other way across the slope.
+function SplineGen._planLeg(self: Gen)
+	local M = Config.Spline.Mountain
+	local r = self.prng
+	local function between(range: { number }): number
+		return range[1] + (range[2] - range[1]) * r:NextNumber()
+	end
+	local plan = self.plan
+	local side = self.legSide
+	local tilt = self.tilt or math.rad(between(M.LegTilt))
+	local aim = self:_legAim(side, tilt)
+	local limit = math.rad(M.LegHeadingLimit)
+	local length = between(M.LegLength)
+	local down = if self.sense > 0 then wrap(self.fall + math.pi) else self.fall
+	local turnDir = self.sense * side -- a turnaround turns through the downhill side
+	self.stats.legs += 1
+
+	local function stretch(len: number, what: string, a: number?, lim: number?)
+		table.insert(plan, { turn = false, what = what, aim = a or aim, limit = lim or limit, left = len })
+	end
+	local function turn(what: string, to: number, dir: number, radius: { number }, tag: string, window: number)
+		table.insert(plan, { turn = true, what = what, to = to, dir = dir, radius = radius, tag = tag, window = window })
+	end
+
+	local events = {}
+	if r:NextNumber() < M.DoubleHairpinChance then
+		table.insert(events, "double")
+	end
+	if r:NextNumber() < M.SidewaysChance then
+		table.insert(events, "sideways")
+	end
+	if #events == 2 and r:NextNumber() < 0.5 then
+		events[1], events[2] = events[2], events[1]
+	end
+	local used = 0
+	for i, ev in events do
+		local run = length / (#events + 1) * (0.75 + 0.5 * r:NextNumber())
+		-- a climb only comes last, in the leg's later part, where the leg above is furthest
+		-- off (the two legs spread apart from the hairpin that joins them)
+		local up = ev == "sideways" and i == #events and r:NextNumber() < M.SidewaysUpShare
+		if up then
+			run = math.max(run, length * 0.6 - used)
+		end
+		stretch(run, "leg")
+		used += run
+		if ev == "double" then
+			-- back the way it came, a level lower, then on along the leg another level down
+			local back = self:_legAim(-side, tilt)
+			turn("double", back, turnDir, M.HairpinRadius, "Hairpin", aim)
+			stretch(between(M.DoubleHairpinBack), "back", back, limit * 0.5)
+			turn("doubleOut", aim, -turnDir, M.HairpinRadius, "Hairpin", back)
+		else
+			local sAim = if up then wrap(down + math.pi) else down
+			local d = sign(wrap(sAim - aim))
+			turn("sideways", sAim, d, M.SidewaysRadius, "Sideways", aim)
+			local span = between(if up then M.SidewaysUpLength else M.SidewaysLength)
+			stretch(span, "sideways", sAim, math.rad(M.SidewaysLimit))
+			turn("sidewaysOut", aim, -d, M.SidewaysRadius, "Sideways", sAim)
+		end
+	end
+	stretch(math.max(length - used, 200), "leg")
+
+	-- the turnaround, onto the next leg
+	local nextTilt = math.rad(between(M.LegTilt))
+	local nextAim = self:_legAim(-side, nextTilt)
+	if r:NextNumber() < M.TurnaroundSwitchbackChance then
+		turn("turnaround", down, turnDir, M.SwitchbackRadius, "Switchback", aim)
+		stretch(between(M.SwitchbackGap), "gap", down, math.rad(10))
+		turn("switchbackOut", nextAim, turnDir, M.SwitchbackRadius, "Switchback", down)
+	else
+		turn("turnaround", nextAim, turnDir, M.HairpinRadius, "Hairpin", aim)
+	end
+	self.legSide = -side
+	self.tilt = nextTilt
+end
+
+-- A planned turn, built to land on its heading: the turn eases in from the road's present
+-- curvature, holds, and (with the easing the next section will need to straighten out)
+-- leaves the road on `item.to`. "done" if there is nothing to turn; nil if every radius
+-- tried would crowd old road or could not land on the heading.
+function SplineGen._turn(self: Gen, item: Item): (Spline.Section | string)?
+	local C = Config.Spline
+	local M = C.Mountain
+	local sp = self.spline
+	local _, _, yaw0, k0, g0, b0, y0 = sp:tip()
+	local dir = item.dir :: number
+	local to = item.to :: number
+	local needed = (dir * (to - yaw0)) % (2 * math.pi)
+	if needed > 2 * math.pi - math.rad(20) then
+		needed -= 2 * math.pi -- already a little past it
+	end
+	if needed < math.rad(3) then
+		return "done"
+	end
+	local range = item.radius :: { number }
+	for try = 1, M.TurnTries do
+		-- the planned radii first, then anything down to the tightest bend allowed
+		local lo = if try > M.TurnTries // 2 then math.min(C.MinRadius, range[1]) else range[1]
+		local radius = lo * (range[2] / lo) ^ self.rng:NextNumber()
+		local kt = dir / radius
+		local esc = 0.5 * math.abs(kt) * transition(kt, 0)
+		local knots, len = curvatureKnots(k0, kt, dir * (needed - esc), nil)
+		self.stats.tries += 1
+		if knots then
+			local yawEnd = yawAfter(yaw0, k0, knots) + dir * esc
+			if math.abs(wrap(yawEnd - to)) < math.rad(3) then
+				if self:_clear(withEscape(knots, kt)) then
+					local T = transition(k0, kt)
+					local flat = self.rng:NextNumber() < C.UnbankedChance
+					return {
+						len = len,
+						k = knots,
+						g = pickGrade(self, g0, y0, len),
+						b = pickBank(kt, radius, b0, math.min(T, len), len, flat),
+						tag = item.tag,
+					}
+				end
+				self.stats.rejectedCrowded += 1
+			end
+		end
+	end
+	return nil
+end
+
+-- The next planned turn, or a bend that first brings the road back near the heading the
+-- turn is planned from. nil when it is refused: the stretch before it then runs on.
+function SplineGen._planned(self: Gen, item: Item): Spline.Section?
+	local M = Config.Spline.Mountain
+	local st = self.stats
+	local yaw0 = select(3, self.spline:tip())
+	local window = item.window
+	if window and math.abs(wrap(yaw0 - window)) > math.rad(M.TurnWindow) then
+		local fix = self:_turn({
+			turn = true,
+			what = "straighten",
+			to = window,
+			dir = sign(wrap(window - yaw0)),
+			radius = M.StraightenRadius,
+			tag = "Medium",
+		})
+		if typeof(fix) == "table" then
+			st.straightens += 1
+			return fix :: Spline.Section
+		end
+	end
+	do
+		local sec = self:_turn(item)
+		if sec == "done" or typeof(sec) == "table" then
+			table.remove(self.plan, 1)
+			if item.what == "turnaround" then
+				st.turnarounds += 1
+			elseif item.what == "double" then
+				st.doubles += 1
+			elseif item.what == "sideways" then
+				st.sideways += 1
+			end
+			if typeof(sec) == "table" then
+				local s0 = self.spline.length
+				table.insert(self.turns, { s0, s0 + (sec :: Spline.Section).len, item.what })
+				return sec :: Spline.Section
+			end
+			return nil
+		end
+	end
+	-- refused: run on along the stretch before it, and try again further on
+	st.turnsRefused += 1
+	table.insert(self.plan, 1, { turn = false, what = "wait", aim = self.aim, limit = self.limit, left = M.RetryAfter })
+	return nil
+end
+
 -- Lay the next section. Returns it, or nil if the road is stalled.
 function SplineGen.step(self: Gen): Spline.Section?
 	local st = self.stats
@@ -560,7 +827,38 @@ function SplineGen.step(self: Gen): Spline.Section?
 	local t0 = os.clock()
 	local C = Config.Spline
 	local sec: Spline.Section? = nil
-	for _ = 1, C.CandidateTries do
+	local planned = false
+	if self.mode ~= "traverse" then
+		if #self.plan == 0 then
+			self:_planLeg()
+		end
+		local item = self.plan[1]
+		if item.turn then
+			sec = self:_planned(item)
+			planned = sec ~= nil
+			item = self.plan[1]
+			if not item then
+				self:_planLeg()
+				item = self.plan[1]
+			end
+		end
+		if not planned and not item.turn then
+			self.aim, self.limit = item.aim :: number, item.limit :: number
+			-- across the slope, the bends may stray less far uphill than down: toward the
+			-- leg above is where the road would crowd itself
+			local across = math.abs(math.cos(wrap(self.aim - self.fall))) < 0.7
+			self.upSign = if across then self.sense * sign(wrap(self.fall - self.aim)) else 0
+			self.limitUp = math.min(self.limit, math.rad(Config.Spline.Mountain.LegUphillLimit))
+			-- a stretch's line runs from where it began; a wait carries on the line before it
+			if not item.started then
+				item.started = true
+				if item.what ~= "wait" or not self.lineX then
+					self.lineX, self.lineZ = self.spline:tip()
+				end
+			end
+		end
+	end
+	for _ = 1, if planned then 0 else C.CandidateTries do
 		st.tries += 1
 		local cand, why = self:_candidate()
 		if cand then
@@ -585,6 +883,12 @@ function SplineGen.step(self: Gen): Spline.Section?
 			return nil
 		end
 		st.escapes += 1
+		-- a detour that has run into old road ends here, and the turn back onto the leg
+		-- comes next (a sideways climb toward the leg above can otherwise box itself in)
+		local head = self.plan[1]
+		if head and not head.turn and head.what ~= "leg" then
+			head.left = 0
+		end
 		if not self:_clear(withEscape(knots, 0)) then
 			st.cornered += 1
 		end
@@ -599,6 +903,14 @@ function SplineGen.step(self: Gen): Spline.Section?
 	local chosen = sec :: Spline.Section
 	self:_terrain(chosen)
 	self:_commit(chosen)
+	-- a random section counts toward the stretch it was laid in
+	local head = self.plan[1]
+	if not planned and head and not head.turn then
+		head.left = (head.left :: number) - chosen.len
+		if (head.left :: number) <= 0 then
+			table.remove(self.plan, 1)
+		end
+	end
 	local bend = chosen.tag ~= "Straight" and chosen.tag ~= "Escape" and chosen.tag ~= "Start"
 	if bend then
 		table.insert(self.recent, chosen.tag :: string)
