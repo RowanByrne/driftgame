@@ -375,7 +375,7 @@ function parts.terrain(check)
 	local rails, railsOnBendCliff, badRails, bendsOverCliff = 0, 0, 0, 0
 	local insideWorst, insideN = -math.huge, 0
 	local stretches = {}
-	local lowChecked, lowBad, lowFirst = 0, 0, "" -- the uphill side just past a change of sides
+	local hedgePoints, swapApart, swapOutOfBand = 0, 0, 0 -- no hedges, and the mountain joined through a change of sides (T-189)
 	-- carved apexes (T-182): how many, how close, and what is either side of each
 	local worstCarveRate, carves, carveLen, carveWorstGap, carveBad = 0, 0, 0, 0, 0
 	local wrongSide, sideChecked, swapLen = 0, 0, 0
@@ -469,26 +469,22 @@ function parts.terrain(check)
 		end
 		-- WHICH SIDE THE MOUNTAIN IS ON, along the road (T-166): the side the uphill direction
 		-- is on, outside the band along the fall line; and it changes only inside a planned
-		-- turn (a hairpin, a switchback or a double hairpin), never on an ordinary bend
+		-- turn (a hairpin, a switchback or a double hairpin), never on an ordinary bend.
+		-- NO HEDGES (T-189): every point is rock one side and the drop the other, and a change
+		-- of sides happens at one point, both sides at once, inside the band: the rock face
+		-- ends on one side where it starts on the other, so the mountain has no gap
 		local band = math.sin(math.rad(Config.Spline.Mountain.AlongFallLine))
 		local upPrev, runFrom, lastS = nil, 0, 0
-		local lowAfter = Config.Spline.Terrain.UphillLowAfterTurn
-		local headSide, headFlip, lowFrom, lowTo = nil, -math.huge, 0, -math.huge
 		for u = 0, sp.length, 4 do
 			local l, r = sp:edgeAt(u, -1), sp:edgeAt(u, 1)
 			if (l == Spline.ROCK and r == Spline.ROCK) or (l == Spline.CLIFF and r == Spline.CLIFF) then
 				sameSides += 1
 			end
+			if l == Spline.HEDGE or r == Spline.HEDGE then
+				hedgePoints += 1
+			end
 			local up = if l == Spline.ROCK or r == Spline.CLIFF then -1 elseif r == Spline.ROCK or l == Spline.CLIFF then 1 else nil
 			local across = math.sin(sp:yawAt(u) - gen.fall)
-			-- where the heading last came out of the band on the other side: the turn's end
-			if math.abs(across) >= band then
-				local side = if across > 0 then 1 else -1
-				if headSide and side ~= headSide then
-					headFlip = u
-				end
-				headSide = side
-			end
 			if up and math.abs(across) >= band + 0.02 then
 				sideChecked += 1
 				if up ~= (if across > 0 then 1 else -1) then
@@ -508,21 +504,25 @@ function parts.terrain(check)
 					if not planned then
 						badSwaps += 1
 					end
-					-- sampled 4 studs apart here and in the generator: 8 studs of slack each end
-					lowFrom, lowTo = headFlip + 8, headFlip + lowAfter - 8
+					-- where each side changed, to a quarter of a stud: the same point, in the band
+					local at = { [-1] = u, [1] = u }
+					for _, side in { -1, 1 } do
+						local was = sp:edgeAt(lastS, side)
+						for v = lastS, u, 0.25 do
+							if sp:edgeAt(v, side) ~= was then
+								at[side] = v
+								break
+							end
+						end
+					end
+					swapApart = math.max(swapApart, math.abs(at[-1] - at[1]))
+					if math.abs(math.sin(sp:yawAt(at[1]) - gen.fall)) > band + 1e-3 then
+						swapOutOfBand += 1
+					end
 					table.insert(stretches, u - runFrom)
 					runFrom = u
 				end
 				upPrev, lastS = up, u
-				if u >= lowFrom and u <= lowTo then
-					lowChecked += 1
-					if (if up < 0 then l else r) ~= Spline.HEDGE then
-						lowBad += 1
-						if lowFirst == "" then
-							lowFirst = `; first at seed {seed}, {math.floor(u)} studs ({math.floor(u - headFlip)} past the turn)`
-						end
-					end
-				end
 			end
 		end
 		swapLen += sp.length
@@ -549,9 +549,9 @@ function parts.terrain(check)
 		`{swaps} changes of side ({fmt(swaps / swapLen * 10000, 1)} per 10 000 studs; 3.5 before T-166, measured), {badSwaps} anywhere else; the mountain stayed on one side for {fmt(median, 0)} studs (median)`
 	)
 	check(
-		"past a hairpin the uphill side stays low a while",
-		lowBad == 0 and lowChecked > 0,
-		`{lowBad} of {lowChecked} points within {Config.Spline.Terrain.UphillLowAfterTurn} studs after a change of sides have a rock face uphill{lowFirst}`
+		"no hedge edges, and the mountain joined through every change of sides",
+		hedgePoints == 0 and swapApart <= 0.25 + 1e-6 and swapOutOfBand == 0,
+		`{hedgePoints} points with a hedge; the two sides change at most {fmt(swapApart, 2)} studs apart (rock ends one side where it starts the other); {swapOutOfBand} changes outside the band along the fall line`
 	)
 	check(
 		"K-rails 60 to 300 studs, on most bends above a cliff",
