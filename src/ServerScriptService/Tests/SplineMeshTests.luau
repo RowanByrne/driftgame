@@ -46,6 +46,7 @@ function Tests.run()
 		local L = M.ChunkLength
 		local chunks = math.ceil(spline.length / L)
 		local tris, verts, worstMs, sumMs, failed, sections, plainParts = 0, 0, 0, 0, 0, 0, 0
+		local worstSlice, slices = 0, 0 -- a chunk is built a few ms a frame (T-193)
 		local models = {}
 		for i = 0, chunks - 1 do
 			local s0, s1 = i * L, math.min((i + 1) * L, spline.length)
@@ -60,6 +61,8 @@ function Tests.run()
 				sections += info.sections
 				plainParts += info.parts
 				worstMs = math.max(worstMs, info.ms)
+				worstSlice = math.max(worstSlice, info.sliceMs or info.ms)
+				slices += info.slices or 1
 				sumMs += info.ms
 			end
 			if i % 4 == 3 then
@@ -72,7 +75,12 @@ function Tests.run()
 			failed == 0,
 			`{built} chunks of {L} studs for {math.floor(spline.length)} studs of road: {tris} triangles, {verts} vertices, {sections} cross-sections ({fmt(spline.length / math.max(1, sections - built), 1)} studs apart on average), {plainParts} barrier and dash parts`
 		)
-		check("a chunk is quick to build", worstMs < 25, `mean {fmt(sumMs / math.max(1, built), 2)} ms, worst {fmt(worstMs, 2)} ms (one chunk is built per frame at most)`)
+		check("a chunk is quick to build", worstMs < 30, `mean {fmt(sumMs / math.max(1, built), 2)} ms of work, worst {fmt(worstMs, 2)} ms (one chunk is built at a time)`)
+		check(
+			"no frame pays much of a chunk",
+			worstSlice < Config.Spline.Mesh.SliceMs * 3,
+			`spread over {fmt(slices / math.max(1, built), 1)} frames a chunk; the most any one frame paid {fmt(worstSlice, 2)} ms (aim {Config.Spline.Mesh.SliceMs})`
+		)
 		local window = math.ceil((M.Ahead + M.Behind) / L) + 1
 		check(
 			"the window fits the client's eight EditableMeshes",
