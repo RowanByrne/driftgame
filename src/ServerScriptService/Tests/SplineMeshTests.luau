@@ -14,6 +14,7 @@ assert(RunService:IsStudio(), "SplineMeshTests is Studio only")
 local Config = require(ReplicatedStorage.Shared.Config)
 local SplineGen = require(ReplicatedStorage.Shared.Road.SplineGen)
 local SplineMesh = require(ReplicatedStorage.Shared.Road.SplineMesh)
+local SplineGrove = require(ReplicatedStorage.Shared.Road.SplineGrove)
 
 local Tests = {}
 
@@ -95,7 +96,18 @@ function Tests.run()
 						-- the ground only: the tarmac and the grass, not the rock and cliff faces
 						-- that share the mesh
 						local side = if d and d < 0 then -1 else 1
-						if s and d and math.abs(d) <= half + spline:runoffAt(s, side) + 0.01 then
+						-- nor a grove's trees and bushes standing on the grass (T-183)
+						local onTree = false
+						if s and d then
+							for _, it in SplineGrove.items(spline, s - 20, s + 20, side) do
+								local dx, dz = p.X - it.x, p.Z - it.z
+								if dx * dx + dz * dz <= (it.r + 0.1) ^ 2 then
+									onTree = true
+									break
+								end
+							end
+						end
+						if s and d and not onTree and math.abs(d) <= half + spline:runoffAt(s, side) + 0.01 then
 							local y = spline:terrainY(s, d)
 							worstV = math.max(worstV, math.abs(p.Y - y))
 							n += 1

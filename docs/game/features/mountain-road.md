@@ -44,7 +44,8 @@ the drop. Running wide is no longer stopped by a wall; it costs you grip, then t
 
 ## Left out
 
-- **The view past the edges:** the valley floor, distant mountains, trees, villages, lighting and
+- **The view past the edges:** the valley floor, distant mountains, trees (other than the groves
+  on the runoff, T-183), villages, lighting and
   time of day. The drop fades into a light haze for now. That is the next feature, with the
   setting's art direction and references.
 - **Final art.** Programmer colours and very low poly shapes: green grass, a green box hedge,
@@ -160,6 +161,52 @@ maths), so an avatar out of the car (`car-v2.md`) had nothing under it.
   parts; a rebuild costs about 1.4 ms (1.9 at worst), about four times a second at a walk. Back
   in the car, 604 and 785 frames driving with no tile in the world, and the car drove on as
   before (grounded, ride error -0.02, no wall stops).
+
+### Groves
+
+T-183. The user, 2026-11-13: *"some flatter sections should have large runoffs with trees,
+bushes, etc. which should help occlude long angle views."*
+
+- **Where:** a section qualifies when none of it is tighter than 200 studs of radius, steeper
+  than 6 degrees or shorter than 120 studs (straights, sweepers, the gentler medium bends). Then
+  80% of the time one side's runoff is a **grove**, 30% of those both sides. The road averages
+  2.3 degrees down and only about a fifth of its sections qualify, so groves come in stretches.
+- **The wide runoff:** a grove side's runoff widths are drawn from 46 to 58 studs instead of 12
+  to 40, eased in and out at the usual quarter of a stud per stud, so it widens over the
+  section and narrows over the next. **No-crossing needs nothing new:** two stretches of road
+  keep their centre lines apart by both widest runoffs (40), both edges and a 20-stud gap, so one
+  side may take the gap and still never reach the other road's edge (58 is the most; 60 would
+  touch). The edge past it (rock, hedge, cliff) is chosen as before. No K-rail stands on a
+  grove's side (one that would have is dropped).
+- **The trees:** one item every 3 to 7 studs along the grove: half conifers (20 to 34 studs
+  tall), a fifth broadleaves (14 to 22), the rest bushes (2.5 to 5). A tree stands at least 16
+  studs past the tarmac and a bush 8, out to the grass's outer edge less half its own spread,
+  so they sit back from the road rather than wall it in, and fill the grass where it is wide.
+  Very low poly and flat-shaded: a conifer is a four-sided trunk and two five-sided cones, a
+  broadleaf a trunk and a faceted blob, a bush a faceted lump; a few greens each.
+- **Seeded and replayed:** the section carries one whole-number seed per grove side (`gv`); the
+  server chooses it with the section, from a random stream of its own, so groves change nothing
+  else the road chooses (measured: every curve and edge knot the same with groves off). Every
+  device places the same trees from the seed and its copy of the curve (`Road/SplineGrove`); no
+  tree goes over the wire.
+- **Solid:** a tree's trunk is a wall to the car, a circle its trunk's width and the tree's
+  height, met by the car's whole box (`Drift/SplineWorld`): the car stops against it and is
+  pushed out of it as from a rock face. A bush is not solid: the car drives through it.
+- **Drawn in the chunk's own mesh,** not as parts: a grove costs triangles (about 20 an item),
+  no parts and no EditableMesh of its own. A chunk with a grove is built over two frames, the
+  road then its trees, so no frame pays for both. A device that cannot make a mesh draws no
+  trees (it draws the tarmac only, as before).
+- **Walking:** the trunks are not solid to an avatar out of the car (`RoadGroundController`
+  makes no tiles for them); a walker passes through a tree. Left for now.
+- **Measured (DR-Lane5):** over 100 000 studs on five seeds, 6.2 grove stretches per 10 000
+  studs, 10% of the road's sides; 3 904 items, none on the tarmac, inside its setback or past the
+  grass. A chunk with a grove holds 60 items on average, 191 at most (about 4 000 triangles);
+  65 of 209 chunks have one. A grove chunk builds in 10.4 ms on average across its two frames,
+  the trees 7.2 ms at worst. Driving through a run at 80 studs a second, teleported along the
+  curve: through two groves (211 trees in the window, 752 plain parts, none of them trees) frames
+  were 8.3 ms mean, 10.5 p99, 17.6 worst; on road with no grove, 8.3, 10.5 and 17.1. A trunk
+  stopped 60 of 60 drives at it, the box ending clear of it; a box inside one was pushed out
+  60 of 60; a sweep and a push near a grove cost about 0.1 ms.
 
 ## UI
 
