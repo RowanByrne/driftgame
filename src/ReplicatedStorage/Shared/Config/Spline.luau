@@ -219,8 +219,21 @@ local Spline = {
 		KRailSpliceEvery = 2, -- posts between two splices of the beam, each with its bolts
 		KRailSpliceBolts = 2, -- bolt heads drawn at a splice (0: none)
 		KRailStep = 12, -- studs, the longest straight piece of beam (bends cut it finer)
+		-- TIGHT CLIFF EDGES (T-181): the user, 2026-11-13, "some cliff edges should be barrier
+		-- rails that are right on the edge of the asphalt with less than 3 or 4 studs of gravel
+		-- before the cliff". In a section with a cliff the whole way along one side, now and
+		-- then the runoff closes in to a strip of GRAVEL a few studs wide, a crash barrier on
+		-- the tarmac's edge and the lip just past it, then opens out again. Gravel grips and
+		-- scores as `Config.Drift.GripGravel` / `ScoreGravel`.
+		TightChance = 0.3, -- per section with a cliff its whole length on a side
+		TightRunoff = { 2.5, 3.5 }, -- studs of gravel between the tarmac and the lip
+		TightRun = { 80, 270 }, -- studs at that width (with `TightLead` each end, a rail inside `KRailRun`)
+		TightRate = 0.4, -- studs of width per stud the runoff closes in and opens out
+		TightRamp = 20, -- studs, the shortest closing in or opening out
+		TightLead = 12, -- studs the rail and the gravel reach past each end of the narrow part
 		-- Programmer colours (the look is set with the next feature)
 		GrassColour = Color3.fromRGB(86, 140, 62),
+		GravelColour = Color3.fromRGB(146, 138, 124), -- a tight cliff edge's strip (T-181)
 		HedgeColour = Color3.fromRGB(44, 92, 40),
 		RockColour = Color3.fromRGB(112, 108, 102),
 		ScrubColour = Color3.fromRGB(78, 104, 58), -- the ledge on top of a rock face

@@ -297,7 +297,11 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 		for j = 1, RUNOFF_STRIPS * 2 + across do
 			colours[j] = if j <= RUNOFF_STRIPS or j > RUNOFF_STRIPS + across then grassColour else tarmacColour
 		end
-		local prevRow, prevNorm = nil, nil
+		-- a tight cliff edge's runoff is gravel (T-181): its strips take the gravel colour
+		-- between two cuts whose middle is in a gravel run
+		local gravelColour = road.em:AddColor(Config.Spline.Terrain.GravelColour, 1)
+		local gravelled = table.clone(colours)
+		local prevRow, prevNorm, prevS = nil, nil, 0
 		for _, s in cuts do
 			local row, norm = {}, {}
 			local wL, wR = spline:runoffAt(s, -1), spline:runoffAt(s, 1)
@@ -318,9 +322,19 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 				road.vertices += 1
 			end
 			if prevRow then
-				strip(road, prevRow, prevNorm, row, norm, false, colours)
+				local mid = (prevS + s) * 0.5
+				local gL, gR = spline:gravelAt(mid, -1), spline:gravelAt(mid, 1)
+				local use = colours
+				if gL or gR then
+					for j = 1, RUNOFF_STRIPS do
+						gravelled[j] = if gL then gravelColour else grassColour
+						gravelled[RUNOFF_STRIPS + across + j] = if gR then gravelColour else grassColour
+					end
+					use = gravelled
+				end
+				strip(road, prevRow, prevNorm, row, norm, false, use)
 			end
-			prevRow, prevNorm = row, norm
+			prevRow, prevNorm, prevS = row, norm, s
 		end
 
 		-- THE FACES OF THE MOUNTAINSIDE, in the same mesh: a client may hold only eight
