@@ -160,11 +160,13 @@ local Drift = {
 	KickMin = 2, -- studs/s: a wheel's ground must rise this much faster than its normal says
 	-- before it pushes the car at all
 	KickShare = 0.75, -- share of that wheel's extra rise the whole car takes upward
-	HopMinSpeed = 4.5, -- studs/s: the car leaves the ground only if it is still rising at
-	-- least this fast when it clears its ride height (a hop of about 0.3 studs). Slower, it
+	HopMinSpeed = 6, -- studs/s: the car leaves the ground only if it is still rising at
+	-- least this fast when it clears its ride height (a hop of about half a stud). Slower, it
 	-- rides the bump on its wheels and keeps its grip: no chatter of tiny hops
 	HopMax = 2.5, -- studs: the highest a hop can carry the car, at any speed (its upward
 	-- speed is capped at sqrt(2 x Gravity x HopMax), about 13 studs/s)
+	HopRest = 0.3, -- s after landing a hop before another can start: the car rides the rest
+	-- of the bevel on its wheels rather than skipping along it
 	HopClear = 0.05, -- studs above its ride height a pushed car must rise to count as off
 	-- the ground
 	TerminalFall = 200, -- studs/s, the fastest a fall may get. Without it a car that has

@@ -116,6 +116,7 @@ export type State = {
 	stepTilt: boolean, -- the tilt took the plane through the wheels this step: a step under them (T-184)
 	hopping: boolean, -- in the air from a kick off the ground's shape (T-192): stays in the air until it lands
 	rideVy: number, -- studs/s the ground's shape is carrying the car upward, past its climb (T-192)
+	hopRest: number, -- s until another hop may start, after a landing (T-192)
 	kickWheelY: { number }?, -- last step's ground height and plan position under each wheel, {y, x, z} flat, on stepped ground (T-192)
 	surfaceUp: Vector3?, -- ...except while a step tilts it (T-184): then the forces keep the
 	-- smoothed normal of the ground itself, this, and only the drawn car tips. nil the rest of
@@ -225,6 +226,7 @@ function Model.new(spawnCFrame: CFrame): State
 		stepTilt = false,
 		hopping = false,
 		rideVy = 0,
+		hopRest = 0,
 		groundY = nil,
 		-- A car is spawned standing on something, at ride height above it, so that is the
 		-- ground a fall is measured from until the first ray finds the real one -- one step
@@ -912,12 +914,17 @@ function Model.step(s: State, input: Input, dt: number, world: World): State
 		end
 		if s.rideVy > 0 and groundY then
 			local carried = s.position.Y + (vel.Y + s.rideVy) * dt
-			target = Vector3.new(target.X, math.max(target.Y, carried), target.Z)
-			if carried > groundY + C.RideHeight + C.HopClear and s.rideVy >= C.HopMinSpeed then
+			local clear = groundY + C.RideHeight + C.HopClear
+			if carried > clear and s.rideVy >= C.HopMinSpeed and s.hopRest <= 0 then
+				target = Vector3.new(target.X, math.max(target.Y, carried), target.Z)
 				vel = Vector3.new(vel.X, vel.Y + s.rideVy, vel.Z)
 				s.airborne = true
 				s.hopping = true
 				s.rideVy = 0
+			else
+				-- too slow to hop, or just landed: it rides the bump on its wheels, never
+				-- floating above them
+				target = Vector3.new(target.X, math.max(target.Y, math.min(carried, clear)), target.Z)
 			end
 		end
 		-- Over a step the drawn car tips on to the plane through its wheels while the forces
@@ -941,10 +948,14 @@ function Model.step(s: State, input: Input, dt: number, world: World): State
 		if groundY and target.Y < groundY + C.RideHeight then
 			target = Vector3.new(target.X, groundY + C.RideHeight, target.Z)
 			s.airborne = false
+			if s.hopping then
+				s.hopRest = C.HopRest -- just down from a hop: no new one straight away
+			end
 			s.hopping = false
 			vel = Vector3.new(vel.X, 0, vel.Z)
 		end
 	end
+	s.hopRest = math.max(s.hopRest - dt, 0)
 	if not s.airborne then
 		s.hopping = false
 	end
