@@ -112,6 +112,13 @@ The current synthesized sheet must come out **exactly** as today in the new shap
 and playback speed for every loop at the same rpm and load (checked by a test over a grid of rpm and
 load), so the switch is built and checked before the pick.
 
+**Built (`T-171`, 2026-11-13).** `Config.Fx.Engine.Sheets` holds each sheet with its own `On` and
+`Off` ladder (a rev point, start and length per loop), and `Config.Fx.Engine.Sheet` names the one
+that plays: switching sound is that one line. `EngineSound.mix` writes the on ladder's loops first,
+then the off ladder's. Checked in `EngineTests` against the old mix, frozen in the test: 106,740
+points of rpm (200 to 9,600), load and limiter cut, 1,280,880 loop values, and the largest
+difference in volume and in playback speed is exactly 0.
+
 **The candidates**, rendered offline through the game's own mix, on the same scripted drive as the
 earlier demos, played on the card:
 

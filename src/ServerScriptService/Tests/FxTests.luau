@@ -1004,9 +1004,9 @@ function Tests.run(opts)
 			engine:CountInstances() + skid:CountInstances() == wantSounds,
 			`{engine:CountInstances() + skid:CountInstances()} sounds`
 		)
-		-- The engine is one clip, or twelve slices of the uploaded sheet once
-		-- `Layers.SoundId` is set (T-129): every one must carry the picked id.
-		local engineId = if EngineSound.isLayered() then E.Layers.SoundId else E.SoundId
+		-- The engine is one clip, or one slice per loop of the uploaded sheet `Sheet`
+		-- names (T-129, T-170): every one must carry the picked id.
+		local engineId = if EngineSound.isLayered() then EngineSound.sheet().SoundId else E.SoundId
 		local engineSounds = {}
 		for _, child in rig.body:GetChildren() do
 			if child:IsA("Sound") and string.sub(child.Name, 1, #F.Names.Engine) == F.Names.Engine then
