@@ -41,7 +41,7 @@
 --              cliff edges, a strip of a few studs between a K-rail and the drop (T-181)
 --   groves     runs `(s0, s1, seed)` per side, a whole section each (T-183): the trees on
 --              that side's runoff, placed from the seed by `Road/SplineGrove`
---   grandeur   0..1, one eased track (T-185): how grand the rock and cliff faces are drawn,
+--   grandeur   -1..1, one eased track (T-185): how grand the rock and cliff faces are drawn,
 --              low near a turnaround and huge mid-leg. A look only; the car never reads it
 --
 -- A section that carries none of these (a test's hand-made road) gets no runoff and a hedge
@@ -73,7 +73,7 @@ export type Section = {
 	kr: { number }?, -- K-rail runs {ds0, ds1, side, ...}, side -1 left, 1 right
 	gl: { number }?, -- gravel runoff runs {ds0, ds1, side, ...}, as `kr` (T-181)
 	gv: { number }?, -- groves {side, seed, ...}: trees on that side's runoff, the whole section (T-183)
-	gd: { number }?, -- grandeur knots {ds, g, ...}, g 0..1, the last at `len` (T-185)
+	gd: { number }?, -- grandeur knots {ds, g, ...}, g -1..1 (below 0: lower rock, T-189), the last at `len` (T-185)
 }
 
 -- The edge kinds, as they go over the wire.
@@ -483,7 +483,7 @@ local function checkTerrain(self: Spline, sec: Section)
 		assert(#gd >= 2 and #gd % 2 == 0 and math.abs(gd[#gd - 1] - len) < 1e-6, "Spline: grandeur knots must end at the section's end")
 		local last = 0
 		for j = 1, #gd, 2 do
-			assert(gd[j] > last and gd[j + 1] >= 0 and gd[j + 1] <= 1, "Spline: grandeur knots in order, 0 to 1")
+			assert(gd[j] > last and gd[j + 1] >= -1 and gd[j + 1] <= 1, "Spline: grandeur knots in order, -1 to 1")
 			last = gd[j]
 		end
 	end
@@ -666,7 +666,18 @@ function Spline.grandAt(self: Spline, s: number): number
 	if not t then
 		return 0
 	end
-	return (valueAt(t, s))
+	return math.max(0, (valueAt(t, s)))
+end
+
+-- How far a rock body is drawn LOWER than near a turnaround at `s`, 0..1 (T-189): the
+-- grandeur track below 0, where older road above leaves no room for even a low body (just
+-- past a hairpin, the leg you came down). At 1 it is `LowRockHeight` high.
+function Spline.lowAt(self: Spline, s: number): number
+	local t = self.grand
+	if not t then
+		return 0
+	end
+	return math.max(0, -(valueAt(t, s)))
 end
 
 -- The K-rail run standing on `side` at `s`, as its start and end, or nil.

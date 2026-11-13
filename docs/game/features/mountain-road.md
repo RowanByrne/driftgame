@@ -25,7 +25,8 @@ the drop. Running wide is no longer stopped by a wall; it costs you grip, then t
    scores about half, as dirt does today: a drift that runs wide onto it washes out.
 3. **Past the grass, each side ends in one of three edges**, which change along the road:
    - **Rock face:** the mountain rising on the uphill side. A wall: you hit it and grind along it.
-   - **Hedge:** a low green wall. A wall, as the rock face.
+   - **Hedge:** a low green wall. A wall, as the rock face. **No longer chosen since T-189**: it
+     comes back later as decoration only.
    - **Cliff drop:** the grass ends at an edge and the ground falls away. Go over and it is a fall,
      and the run puts you back on the road as it does today.
 4. **K-rails**, drawn as **metal crash barriers** (a rounded W-beam steel guardrail held off square
@@ -93,10 +94,19 @@ does), so nothing steps.
 A mountain road has the mountain on one side and the drop on the other, so the generator picks
 **which side is uphill** and keeps it for a long stretch:
 
-- **Uphill side:** rock face, sometimes hedge.
-- **Downhill side:** cliff drop, sometimes hedge.
-- The uphill side swaps now and then (the road crosses a ridge), never in a bend, through a
-  stretch of hedge both sides.
+- **Uphill side:** always rock face (T-189).
+- **Downhill side:** always cliff drop (T-189).
+- **No hedges as a road edge** (the user, 2026-11-13, T-189: "ditch the hedge concept as a road
+  barrier. hedges going forward will just be decoration and we will bring them back later").
+  The generator never chooses one; the hedge's kind (2), its numbers and its drawing code stay,
+  unused, so hedges can come back as decoration. The two random draws that chose one are still
+  made and thrown away, so the curve and every other draw are the same (the road per seed is
+  identical; more sides are cliff now, so a few more bends and tight edges qualify).
+- The uphill side changes only through a turnaround (T-166), **at one point**: where the heading
+  crosses the fall line, the middle of the turn. The rock face ends on one side exactly where it
+  starts on the other, and the drop the same, so the mountain carries on through the turn with no
+  gap. (Before T-189: a stretch of hedge both sides through the turn, then 400 studs of hedge on
+  the uphill side, T-168.)
 - **K-rails:** on the outside of a bend whose outside is a cliff, about half the time, and the
   odd stretch elsewhere.
 - **Tight cliff edges:** in a section with a cliff the whole way along one side, 30% of the
@@ -337,8 +347,8 @@ side (where "height" applies most) and the cliff drop on the downhill side.
   eased knots every 60 studs or so (`gd`). It is 0 within 250 studs of the nearest turnaround (a
   hairpin, either bend of a switchback, either of a double hairpin's), either way along the road,
   and rises (smoothstep) to 1 at 850. The faces grow with it: rock 25-60 studs tall near, 140-220
-  grand; slope 50-70 degrees near, 64-78 grand; the cliff 80 deep near, up to 200 grand. Just past
-  a hairpin the uphill side is still hedge for 400 studs, as before.
+  grand; slope 50-70 degrees near, 64-78 grand; the cliff 80 deep near, up to 200 grand. (Before
+  T-189, just past a hairpin the uphill side was hedge for 400 studs.)
 - **Chosen by the server, from no random stream:** the distance behind is from where the last
   turnaround ended, the distance ahead from the plan (the stretches still to run before the next
   one, which can only come later than that, never sooner). Clients replay the knots. Measured:
@@ -404,6 +414,45 @@ side (where "height" applies most) and the cliff drop on the downhill side.
   boxes 0; cliff boxes 4 on tight bends, unchanged. Rays from the road to a 25 and 45-degree sun
   through rock meet a box 86% and 85% of the time (88% before).
 
+### One mountain through the turns (no hedges)
+
+T-189. With no hedge to hide the change of sides, the mountain is joined through each turnaround:
+
+- **One point, both sides.** The edges change sides where the heading crosses the fall line (or at
+  the section's start, if that crossing was in a section already laid), both sides at once.
+- **Where the rock meets the drop on one side** (the outside's rock ends where its cliff starts,
+  the inside's the other way round), each body's end is closed by its cap (T-185), and a wall in
+  the plane of the join, drawn both ways, closes the space under the rock body's end from the
+  cliff's face out to the body's back foot and down to the cliff's foot, so nothing shows through
+  under the rock from the drop side. The hidden shadow boxes (`RockShade_*`, `RockShadeTop_*`,
+  `CliffShade_*`) stop half a stud short of a body's end instead of reaching half a stud past it,
+  so none shows through a cap.
+- **Low rock under the leg above.** Just past a hairpin the uphill rock is right under the leg you
+  came down, and even a near-turnaround body (25-60 studs) would stand up through that road. So
+  the grandeur goes **below 0, to -1** (`gd`), checked at every knot including the turnaround
+  itself: the body shrinks toward `LowRockHeight` (4 studs) with a 3-stud scrub top, until its
+  top is 12 studs under the road it reaches beneath. Only road the body reaches under counts at 0
+  and below (the "2 studs per stud beside it" rule stays for grand bodies). To the car the rock is
+  still a 25-stud wall.
+- **Measured (DR-Lane3), five seeds of 20 000 studs (100 468 studs of road), before / after:**
+  - hedge stretches: 163 (16.2 per 10 000 studs) / 0
+  - gaps between one rock body and the next (any side, more than 1.5 studs): 84 (8.4 per 10 000
+    studs, mean 467 studs, longest 1 558; 46 of them on the same side) / 0
+  - changes of side: 41 (4.1 per 10 000 studs), both sides within 0.25 studs of each other, all
+    inside the band along the fall line
+  - rock lowered below the near-turnaround size: 22% of rock points (2 studs apart), about 4%
+    of them all the way to 4 studs; no rock point stands above older road it is under
+  - **a wall ahead in a turnaround** (46 turnarounds, a ray along the heading meeting a rock
+    face's foot within 4 studs): at the turn's middle, within 150 studs 4 / 5 times (at 98 to 147
+    studs), none within 1 000 studs 38 / 37 times, since the outside's rock ends there. A quarter
+    of the way into the turn, 23 of 46 meet the outside's rock within 150 studs (89 to 145 studs)
+    after T-189. This is the "staring at the mountain" the continuous-mountain plan (T-190,
+    `continuous-mountain.md`) sets out to fix.
+  - drawing (seed 31337, 8 085 studs): 53 601 triangles in 17 chunks, still within the mesh
+    budget.
+- **What is still a ribbon** (T-190's work): a rock body on the outside of a hairpin stands over
+  nothing, so from below or beyond it its underside shows; between two legs there is still haze.
+
 ## UI
 
 None. The TEST ONLY panel loses its guardrail button.
@@ -419,6 +468,8 @@ None. The TEST ONLY panel loses its guardrail button.
 - `RoadSpline`'s section data gains each side's runoff and edge knots, and the K-rail runs
   (`CONTRACTS.md`, in the same commit); since T-181, its gravel runs (`gl`) too.
 - And, with T-185, the faces' grandeur knots `gd` (`CONTRACTS.md`, in the same commit).
+- T-189: no hedge (kind 2) is sent any more, and `gd` runs from -1 to 1 (`CONTRACTS.md`, in the
+  same commit).
 - `setRails` and the guardrail message are removed.
 - `Config.Road.Mode` defaults to `"spline"`.
 

@@ -142,6 +142,8 @@ function DriftController:Init()
 	-- While held, where the car is drawn, if something other than "where it stopped" says:
 	-- the garage's turntable turning it (T-103). A function, asked once a frame.
 	self.heldPose = nil
+	-- While held after Get out: the car settled on its four wheels where it stopped (T-191).
+	self.parkState = nil
 	self.worldRebuilds = 0
 	-- The tyre marks and the smoke (T-062, features/car-fx.md). The object is free until a
 	-- rig exists: it holds no instance and does no work without one, and its sixteen are
@@ -675,14 +677,96 @@ function DriftController:IsDriving(): boolean
 	return self.runner ~= nil and not self.held
 end
 
+-- THE PARKED CAR STANDS ON ITS FOUR WHEELS (T-191, features/car-v2.md "Parked"). A copy of
+-- `state`, settled where it stopped: the model is stepped in place -- the handbrake on, and
+-- after every step its position across the ground, its heading and every speed put back --
+-- so the height, the tilt (grade, bank, the plane through the wheels over the road's lip
+-- and bevel), each wheel's travel and the body on its springs come to rest exactly as the
+-- model would hold them, and nothing slides. It stops once nothing moves by more than
+-- `SETTLE_EPS` a step, `SETTLE_MAX` steps at most. Asks the world, so it runs at the press
+-- of Get out, before anything is held (`RoadGroundController`'s tiles exist only while held).
+local SETTLE_MIN, SETTLE_MAX, SETTLE_EPS = 24, 360, 1e-5
+local SETTLE_INPUT = table.freeze({ steer = 0, handbrake = true })
+
+function DriftController._settle(state, world): any
+	local s = table.clone(state)
+	s.travel = table.clone(state.travel)
+	s.wheelLift = table.clone(state.wheelLift)
+	s.body = table.clone(state.body)
+	s.wheelsDown = table.clone(state.wheelsDown)
+	s.supportCache = nil
+	local x, z, yaw = s.position.X, s.position.Z, s.yaw
+	local dt = Config.Drift.FixedStep
+	local function still()
+		s.position = Vector3.new(x, s.position.Y, z)
+		s.yaw = yaw
+		s.velocity = Vector3.zero
+		s.r, s.u, s.v, s.vy, s.slip = 0, 0, 0, 0, 0
+		s.drifting, s.braking, s.gripAccel = false, false, 0
+		s.tiltRate = Vector2.zero
+	end
+	still()
+	for i = 1, SETTLE_MAX do
+		local y, up, b = s.position.Y, s.up, s.body
+		local z0, p0, q0, roll = b.z, b.p, b.q, s.bodyRoll
+		local l1, l2, l3, l4 = s.wheelLift[1], s.wheelLift[2], s.wheelLift[3], s.wheelLift[4]
+		DriftModel.step(s, SETTLE_INPUT, dt, world)
+		still()
+		local w, bb = s.wheelLift, s.body
+		local moved = math.max(
+			math.abs(s.position.Y - y),
+			(s.up - up).Magnitude,
+			math.abs(bb.z - z0) + math.abs(bb.p - p0) + math.abs(bb.q - q0) + math.abs(s.bodyRoll - roll),
+			math.abs(w[1] - l1) + math.abs(w[2] - l2) + math.abs(w[3] - l3) + math.abs(w[4] - l4)
+		)
+		if i >= SETTLE_MIN and moved < SETTLE_EPS then
+			break
+		end
+	end
+	-- the springs' last speeds are below a hundred-thousandth: at rest is at rest
+	local b = s.body
+	b.vz, b.vp, b.vq, b.kick = 0, 0, 0, 0
+	s.supportCache = nil
+	return s
+end
+
 -- Stop the car where it is, now, and say where that is: the press of Get out. Nothing
--- steps until `Resume` (refused) or `Park` (accepted).
+-- steps until `Resume` (refused) or `Park` (accepted). What is said is the car settled on
+-- its wheels (`_settle`); the state it stopped in is kept as it was, for `Resume`.
 function DriftController:Hold(): CFrame?
 	if not self.runner then
 		return nil
 	end
+	local ok, rest = pcall(DriftController._settle, self.runner.state, self.world)
+	self.parkState = if ok then rest else nil
+	if not ok then
+		warn(`[DriftController] settling the parked car failed: {rest}`)
+	end
 	self.held = true
-	return DriftModel.cframe(self.runner.state)
+	return DriftModel.cframe(self.parkState or self.runner.state)
+end
+
+-- The car as it will be parked, settled on its wheels (`Hold`); nil when not held.
+function DriftController:HeldState()
+	return if self.held then self.parkState else nil
+end
+
+-- A new state at `cf`, standing as the settled `rest` stood if `rest` is the same place:
+-- its tilt, its wheels' travel and the body on its springs. Otherwise at `cf`'s own tilt.
+local function standing(cf: CFrame, rest: any?)
+	local runner = Sim.newRunner(cf)
+	local s = runner.state
+	if rest and (rest.position - cf.Position).Magnitude < 0.05 then
+		s.up, s.surfaceUp = rest.up, rest.surfaceUp
+		s.travel = table.clone(rest.travel)
+		s.wheelLift = table.clone(rest.wheelLift)
+		s.body = table.clone(rest.body)
+		s.groundY, s.fallFrom = rest.groundY, rest.fallFrom
+		s.floor = rest.floor
+	elseif cf.UpVector.Y > 0.5 then
+		s.up = cf.UpVector
+	end
+	return runner
 end
 
 -- Refused: drive on from exactly where it was held, at the speed it had.
@@ -691,6 +775,7 @@ function DriftController:Resume()
 		return
 	end
 	self.held = false
+	self.parkState = nil
 	self.runner.accumulator = 0
 	self.sendClock = 0
 end
@@ -701,7 +786,8 @@ function DriftController:Park(cf: CFrame)
 		return
 	end
 	self.held = true
-	self.runner = Sim.newRunner(cf)
+	self.runner = standing(cf, self.parkState)
+	self.parkState = self.runner.state
 	self.wheels:Cut()
 	self.engineSound:Cut()
 	self.skidSound:Cut()
@@ -734,20 +820,29 @@ function DriftController:Drive(cf: CFrame?)
 		return
 	end
 	if typeof(cf) == "CFrame" then
-		self.runner = Sim.newRunner(cf)
+		-- standing as it was parked, so it does not drop level for a moment as it drives off
+		self.runner = standing(cf, if self.held then self.parkState else nil)
 		self.spawnCFrame = cf
 	end
 	self.held = false
+	self.parkState = nil
 	self.awaitingRespawn = false
 	self.runner.accumulator = 0
 	self.sendClock = 0
 end
 
-function DriftController:_send(state)
+-- `velocity` overrides the state's own: the settled parked car is sent with the speed the
+-- car really had when Get out was pressed, which is what the server judges it by.
+function DriftController:_send(state, velocity: Vector3?)
 	-- `drifting` is read off the car, not off the input: rotating is drifting, and there
 	-- is no drift input left to report (Config.Drift.MinSlipAngleForDrift).
 	-- And the four wheels' suspension, one byte each, so others see them move (T-095).
-	self._carState:FireServer(DriftModel.cframe(state), state.velocity, state.drifting, Suspension.pack(state.wheelLift))
+	self._carState:FireServer(
+		DriftModel.cframe(state),
+		velocity or state.velocity,
+		state.drifting,
+		Suspension.pack(state.wheelLift)
+	)
 end
 
 -- The camera asks for this every frame (docs/game/ARCHITECTURE.md "Studio tools").
@@ -874,6 +969,87 @@ function DriftController:DebugSpline()
 		end
 	end
 	return out
+end
+
+-- The car as it stands (T-191): its pitch and roll, the ground's normal under its middle
+-- and the angle between the two, each wheel's drawn lift and the gap from where its tyre
+-- touches (the contact at `Rest`, raised by its lift) down to the ground under it, and the
+-- drawn body's position. For proving a parked car sits on its wheels and does not move.
+function DriftController:DebugParked()
+	local s = self:CurrentState()
+	local w: any = self.world
+	if not s or not w then
+		return nil
+	end
+	local cf = DriftModel.cframe(s)
+	local out: { [string]: any } = {
+		held = self.held,
+		position = s.position,
+		pitchDeg = math.deg(math.asin(math.clamp(cf.LookVector.Y, -1, 1))),
+		rollDeg = math.deg(math.asin(math.clamp(cf.RightVector.Y, -1, 1))),
+		lift = table.clone(s.wheelLift),
+		body = { z = s.body.z, p = s.body.p, q = s.body.q },
+		gaps = {},
+	}
+	local mid = w.probe(s.position)
+	if mid then
+		out.groundNormal = mid.normal
+		out.tiltOffDeg = math.deg(math.acos(math.clamp(mid.normal:Dot(cf.UpVector), -1, 1)))
+	end
+	for i = 1, 4 do
+		local at = cf * (Suspension.wheelContact(i) + Vector3.new(0, s.wheelLift[i], 0))
+		local hit = w.probe(at)
+		out.gaps[i] = if hit then at.Y - hit.y else false
+	end
+	-- the tyres as drawn: each shell wheel's hub, and its gap to the ground along the
+	-- ground's normal less the tyre's radius (half its largest extent)
+	local shell = self.car and self.car:FindFirstChild("Shell")
+	if shell then
+		out.tyreGaps = {}
+		for i, name in Suspension.WHEEL_NAMES do
+			local g = shell:FindFirstChild(name)
+			if g and g:IsA("Model") and #g:GetChildren() > 0 then
+				local hub = g:GetPivot().Position
+				local size = g:GetExtentsSize()
+				local hit = w.probe(hub)
+				if hit then
+					local rel = hub - Vector3.new(hub.X, hit.y, hub.Z)
+					out.tyreGaps[i] = rel:Dot(hit.normal) - math.max(size.X, size.Y, size.Z) * 0.5
+				end
+			end
+		end
+	end
+	local body = self.rig and self.rig.body
+	out.drawnBody = body and body.CFrame or nil
+	return out
+end
+
+-- Spots to park on, for tests (T-191): every `every` studs of the laid curve from `from`,
+-- its grade and bank in degrees. And the pose of a car at distance `s` along it, `d` off its
+-- centre line, facing along it, at ride height over the ground there.
+function DriftController:DebugCurveScan(from: number?, every: number?)
+	local spline = self.spline
+	if not spline then
+		return nil
+	end
+	local list = {}
+	local s = from or 0
+	while s <= spline.length and #list < 400 do
+		table.insert(list, { s = s, grade = math.deg(math.atan(spline:gradeAt(s))), bank = math.deg(spline:bankAt(s)) })
+		s += every or 20
+	end
+	return list
+end
+
+function DriftController:DebugCurvePose(s: number, d: number): CFrame?
+	local spline = self.spline
+	if not spline then
+		return nil
+	end
+	local x, _, z = spline:surfaceXYZ(s, d)
+	local y = spline:terrainY(s, d)
+	local yaw = spline:yawAt(s)
+	return CFrame.new(x, y + Config.Drift.RideHeight, z) * CFrame.Angles(0, yaw, 0)
 end
 
 -- How far the drawn car is from where the simulation says it is, in studs, or -1 when
