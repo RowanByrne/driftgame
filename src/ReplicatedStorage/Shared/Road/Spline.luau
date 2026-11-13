@@ -623,12 +623,32 @@ end
 -- a banked road's grass never lips up into a ramp. Past the runoff it holds that height:
 -- the foot of a hedge or a rock face. (Past a cliff's lip there is nothing; that is
 -- `groundKind`'s answer, not this one's.)
-function Spline.terrainY(self: Spline, s: number, d: number): number
+--
+-- THE ROAD STANDS `RoadLip` PROUD OF ITS GRASS (T-184): past the tarmac's edge the ground
+-- steps down that far over `RoadLipWidth`, eased at both ends (smoothstep), and everything
+-- out to the edges is that much lower. `lipDrop` is how far down the step a point is.
+local function lipDrop(e: number, w: number): number
+	if e <= 0 or w <= 0 then
+		return 0
+	end
+	local T = Config.Spline.Terrain
+	local lw = math.min(T.RoadLipWidth, w * 0.5)
+	if e >= lw then
+		return T.RoadLip
+	end
+	local t = e / lw
+	return T.RoadLip * t * t * (3 - 2 * t)
+end
+
+-- The ground's height as if the road were not raised: the grass following the bank and
+-- easing flat. `terrainNormal` reads its slope from this, so the step is a step to the car
+-- and the walking tiles, never a slope that tilts the grass beside it.
+local function groundY(self: Spline, s: number, d: number): (number, number, number)
 	local half = Config.Road.Width * 0.5
 	local tb = math.tan(self:bankAt(s))
 	local a = math.abs(d)
 	if a <= half then
-		return self:heightAt(s) + d * tb
+		return self:heightAt(s) + d * tb, 0, 0
 	end
 	local side = if d < 0 then -1 else 1
 	local w = self:runoffAt(s, side)
@@ -639,7 +659,19 @@ function Spline.terrainY(self: Spline, s: number, d: number): number
 	else
 		off = e - e * e / (2 * w)
 	end
-	return self:heightAt(s) + side * tb * (half + off)
+	return self:heightAt(s) + side * tb * (half + off), e, w
+end
+
+function Spline.terrainY(self: Spline, s: number, d: number): number
+	local y, e, w = groundY(self, s, d)
+	return y - lipDrop(e, w)
+end
+
+-- How far below the tarmac's edge the ground at (s, d) has stepped: 0 on the tarmac,
+-- `RoadLip` once past the step.
+function Spline.lipAt(self: Spline, s: number, d: number): number
+	local _, e, w = groundY(self, s, d)
+	return lipDrop(e, w)
 end
 
 function Spline.terrainXYZ(self: Spline, s: number, d: number): (number, number, number)
@@ -649,16 +681,23 @@ function Spline.terrainXYZ(self: Spline, s: number, d: number): (number, number,
 end
 
 -- The ground's normal at (s, d). On the tarmac, the exact one (`normalAt`); past it, from
--- the ground half a stud either side of the point, along and across.
+-- the ground half a stud either side of the point, along and across. THE ROAD'S STEP IS
+-- LEFT OUT (T-184): it is a step, not a slope, so the grass at its foot and a wheel on its
+-- face both get the grass's own normal.
 function Spline.terrainNormal(self: Spline, s: number, d: number): Vector3
 	if math.abs(d) <= Config.Road.Width * 0.5 then
 		return self:normalAt(s, d)
 	end
 	local e = 0.5
-	local ax, ay, az = self:terrainXYZ(s - e, d)
-	local bx, by, bz = self:terrainXYZ(s + e, d)
-	local cx, cy, cz = self:terrainXYZ(s, d - e)
-	local dx, dy, dz = self:terrainXYZ(s, d + e)
+	local function at(sa: number, da: number): (number, number, number)
+		local x, z = self:planAt(sa)
+		local yaw = self:yawAt(sa)
+		return x + da * math.cos(yaw), (groundY(self, sa, da)), z - da * math.sin(yaw)
+	end
+	local ax, ay, az = at(s - e, d)
+	local bx, by, bz = at(s + e, d)
+	local cx, cy, cz = at(s, d - e)
+	local dx, dy, dz = at(s, d + e)
 	local along = Vector3.new(bx - ax, by - ay, bz - az)
 	local across = Vector3.new(dx - cx, dy - cy, dz - cz)
 	local n = across:Cross(along)

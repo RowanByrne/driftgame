@@ -179,8 +179,11 @@ local function plan(spline: any, sc: number, dc: number, closingS: number?): { [
 	local want: { [string]: Spec } = {}
 	local lo, hi = dc - ACROSS, dc + ACROSS
 
-	-- a ground tile over [s0, s1] x [d0, d1], its top on the surface at its middle
-	local function tile(key: string, s0: number, s1: number, d0: number, d1: number, material: Enum.Material)
+	-- a ground tile over [s0, s1] x [d0, d1], its top on the surface at its middle. A
+	-- `slope` tile lies along the chord from its inner edge to its outer one instead of on
+	-- the ground's normal: the road's step down to the grass (T-184), a ramp an avatar walks
+	-- up rather than a ledge it has to jump
+	local function tile(key: string, s0: number, s1: number, d0: number, d1: number, material: Enum.Material, slope: boolean?)
 		if d1 - d0 < 0.05 or s1 - s0 < 0.05 or d1 < lo or d0 > hi then
 			return
 		end
@@ -195,6 +198,16 @@ local function plan(spline: any, sc: number, dc: number, closingS: number?): { [
 		local cx, cy, cz = spline:terrainXYZ(sm, d0)
 		local ex, ey, ez = spline:terrainXYZ(sm, d1)
 		local across = dist(cx, cy, cz, ex, ey, ez)
+		if slope then
+			local ax, ay, az = spline:terrainXYZ(s0, dm)
+			local bx, by, bz = spline:terrainXYZ(s1, dm)
+			local m = Vector3.new(bx - ax, by - ay, bz - az):Cross(Vector3.new(ex - cx, ey - cy, ez - cz))
+			if m.Magnitude < 1e-6 then
+				return
+			end
+			n = if m.Y < 0 then -m.Unit else m.Unit
+			x, y, z = (cx + ex) * 0.5, (cy + ey) * 0.5, (cz + ez) * 0.5
+		end
 		local yaw = spline:yawAt(sm)
 		local right = Vector3.new(math.cos(yaw), 0, -math.sin(yaw))
 		local r = right - n * right:Dot(n)
@@ -274,8 +287,21 @@ local function plan(spline: any, sc: number, dc: number, closingS: number?): { [
 		end
 		for _, side in { -1, 1 } do
 			local tag = if side < 0 then "L" else "R"
-			-- the grass, a band [half + w0, half + w1] out on this side over [a, b]
+			-- the road's step down to the grass (T-184), a ramp tile from the tarmac's edge to
+			-- the step's foot
+			local lipW = T.RoadLipWidth
+			if side < 0 then
+				tile(`s{tag}{n}`, s0, s1, -(half + lipW), -half, Enum.Material.Ground, true)
+			else
+				tile(`s{tag}{n}`, s0, s1, half, half + lipW, Enum.Material.Ground, true)
+			end
+			-- the grass, a band [half + w0, half + w1] out on this side over [a, b], from the
+			-- step's foot out
 			local function grass(key: string, a: number, b: number, w0: number, w1: number)
+				w0 = math.max(w0, lipW)
+				if w1 - w0 < 0.05 then
+					return
+				end
 				if side < 0 then
 					tile(key, a, b, -(half + w1), -(half + w0), Enum.Material.Grass)
 				else

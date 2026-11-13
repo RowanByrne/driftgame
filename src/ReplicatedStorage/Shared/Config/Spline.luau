@@ -177,6 +177,16 @@ local Spline = {
 		-- On the inside of a bend the grass never reaches past this share of the way to the
 		-- bend's centre, so the inside of a hairpin keeps a strip, not a spike.
 		InsideShare = 0.6,
+		-- THE RAISED ROAD (T-184): the grass sits `RoadLip` below the tarmac's edge, down a
+		-- short steep step `RoadLipWidth` across (eased, so the step has no corner to catch
+		-- on), drawn in `LipColour`. Everything on the runoff -- the grass, a hedge, the foot
+		-- of a rock face, a cliff's lip -- stands on the lower ground. To the car it is no
+		-- wall: a wheel over it finds the grass lower and the car tips on to it (the plane
+		-- through its wheels, `Drift/Model`); a wheel coming back rides up it. Keep it under
+		-- `RideHeight` (2.4): a wheel more than that below the others no longer carries the car
+		RoadLip = 1.5, -- studs
+		RoadLipWidth = 0.6, -- studs across the step
+		LipColour = Color3.fromRGB(88, 82, 74), -- the step's face: the road's packed edge
 		-- THE EDGES. A rock face and a hedge are walls at the runoff's outer edge; a cliff is
 		-- where the ground ends.
 		RockHeight = { 25, 60 }, -- studs. A look; to the car it is a wall
