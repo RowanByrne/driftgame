@@ -14,6 +14,8 @@
 --               dropping from the grass's lip into haze. Faces are flat-shaded on purpose:
 --               very low poly, programmer colours. And a grove's trees and bushes (T-183,
 --               `Road/SplineGrove`), faceted the same way
+--   RockShade_* plain boxes standing unseen behind each rock face, casting its shadow,
+--               since a mesh drawn from an EditableMesh casts none (T-178)
 --   Edge_*      a hedge: a green box per cross-section, at the grass's outer edge
 --   KRail*_*    a K-rail run drawn as a METAL CRASH BARRIER (T-149): a W-beam guardrail,
 --               its beam two rounded ridges (`KRailTop_*`, `KRailLow_*`) and the groove
@@ -245,8 +247,9 @@ local function toPart(b: Builder, name: string, colour: Color3, material: Enum.M
 	mp.CanCollide = false
 	mp.CanQuery = false
 	mp.CanTouch = false
-	-- casts (T-178): the tarmac, runoff, rock and cliff faces block the sun and the moon, so
-	-- a car's shadow lands on the road under it and the mountain shades the road
+	-- Set, but it does nothing (T-178, measured in the lane): a MeshPart drawn from an
+	-- EditableMesh casts no shadow at all, either side of its faces. The rock faces' shadow
+	-- comes from the plain `RockShade_*` parts behind them (`build`).
 	mp.CastShadow = true
 	mp.Color = colour
 	mp.Material = material
@@ -550,6 +553,56 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 			frame.Parent = gui
 			gui.Parent = part
 		end
+		-- THE ROCK FACES' SHADOW (T-178). The mesh casts none -- a MeshPart drawn from an
+		-- EditableMesh casts no shadow, measured: a low sun shone straight through a 40-stud
+		-- rock face onto the car, and a plain part put where the face is shaded it. So each
+		-- rock face has plain boxes standing just behind it, inside the mountain, foot to top,
+		-- a box per `RockShadeStep` of road at most: they cast the face's shadow and are never
+		-- seen, the face is in front of them and its ledge above them.
+		local shadeStep = T.RockShadeStep
+		local shadeBack = T.RockShadeBack
+		local shadeThick = T.RockShadeThickness
+		for _, side in { -1, 1 } do
+			local tag = if side < 0 then "L" else "R"
+			local function shade(ka: number, kb: number)
+				local pa = SplineMesh.profile(spline, cuts[ka], side, Spline.ROCK)
+				local pb = SplineMesh.profile(spline, cuts[kb], side, Spline.ROCK)
+				-- foot to top: the profile's first and third points
+				local foot = (pa[1] + pb[1]) * 0.5
+				local top = (pa[3] + pb[3]) * 0.5
+				local along = ((pb[1] + pb[3]) - (pa[1] + pa[3])) * 0.5
+				local up = top - foot
+				local len, height = along.Magnitude, up.Magnitude
+				if len < 1e-3 or height < 1e-3 then
+					return
+				end
+				local x = along / len
+				local y = (up - x * up:Dot(x)).Unit
+				-- the face's normal, pointing at the road: the road's side of the foot (x turned
+				-- round with it, so the frame stays right-handed)
+				local roadward = Vector3.new(spline:surfaceXYZ((cuts[ka] + cuts[kb]) * 0.5, 0)) - foot
+				if x:Cross(y):Dot(roadward) < 0 then
+					x = -x
+				end
+				local toRoad = x:Cross(y)
+				-- down past the foot by `shadeBack`, so no low light slips under it
+				local centre = (foot + top) * 0.5 - y * (shadeBack * 0.5) - toRoad * (shadeBack + shadeThick * 0.5)
+				local cf = CFrame.fromMatrix(centre, x, y, toRoad)
+				plain(`RockShade_{tag}_{ka}`, Vector3.new(len + 1, height + shadeBack, shadeThick), cf, T.RockColour, Enum.Material.Slate)
+			end
+			local k0 = nil
+			for k = 1, #cuts do
+				local rock = k < #cuts and spline:edgeAt((cuts[k] + cuts[k + 1]) * 0.5, side) == Spline.ROCK
+				if k0 and (not rock or cuts[k] - cuts[k0] >= shadeStep) then
+					shade(k0, k)
+					k0 = nil
+				end
+				if rock and not k0 then
+					k0 = k
+				end
+			end
+		end
+
 		-- HEDGES: a green box per cut at the grass's outer edge (rock and cliff are faces in
 		-- the mesh, above)
 		for _, side in { -1, 1 } do
