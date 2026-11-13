@@ -53,6 +53,7 @@ local Config = require(ReplicatedStorage.Shared.Config)
 local GrassTexture = require(script.Parent.GrassTexture)
 local Spline = require(script.Parent.Spline)
 local SplineGrove = require(script.Parent.SplineGrove)
+local SplineHill = require(script.Parent.SplineHill)
 
 local SplineMesh = {}
 
@@ -86,6 +87,7 @@ export type Options = {
 	across: number?,
 	forceFail: boolean?, -- Studio tests: behave as a device that cannot make a mesh
 	sliceMs: number?, -- ms of building a frame (`Mesh.SliceMs`); math.huge builds it in one go
+	hill: boolean?, -- false: no hillside past the faces, and no caps on them (the road as before T-190)
 }
 
 export type Stats = {
@@ -146,7 +148,10 @@ local function wave(s: number, a: number, b: number): number
 	return 0.5 + 0.3 * math.sin(s / a) + 0.2 * math.sin(s / b + 1.7)
 end
 
-function SplineMesh.profile(spline: Spline.Spline, s: number, side: number, kind: number): { Vector3 }
+-- `cap`, when given, is the tallest the face may stand (T-190, `SplineHill.cap`): a rock body
+-- taller than it is drawn scaled down to it, a cliff deeper than it shallower (and reaching
+-- less far out). Without it the face is the size the road alone gives it.
+function SplineMesh.profile(spline: Spline.Spline, s: number, side: number, kind: number, cap: number?): { Vector3 }
 	local T = Config.Spline.Terrain
 	local w = Config.Road.Width * 0.5 + spline:runoffAt(s, side)
 	local x, z = spline:planAt(s)
@@ -242,6 +247,18 @@ function SplineMesh.profile(spline: Spline.Spline, s: number, side: number, kind
 			{ reach * 0.7 + jagSize * (wave(s * 1.9 + 31, 8, 5) - 0.5), -drop * 0.62 },
 			{ reach, -drop },
 		}
+	end
+	-- no taller than its cap: the room there is between this leg and the next (T-190)
+	if cap then
+		local tall = math.abs(pts[5][2])
+		if tall > cap and tall > 1e-6 then
+			local f = math.max(cap, 0) / tall
+			local across = if kind == Spline.ROCK then f else math.sqrt(f)
+			for _, p in pts do
+				p[1] *= across
+				p[2] *= f
+			end
+		end
 	end
 	local out = {}
 	for i, p in pts do
@@ -541,6 +558,87 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 			slice()
 		end
 
+		-- THE HILLSIDE (T-190, `Road/SplineHill`): the stations of every stretch of road round
+		-- this chunk, then a ray per cut and side: how tall its face may stand (`caps`), and
+		-- where its ground ends. The faces below are drawn to their caps, and past them the
+		-- ground carries on to the next leg
+		local H = Config.Spline.Hill
+		local hill = if o.hill ~= false then SplineHill.context(spline, s0, s1, SplineMesh.profile, slice) else nil
+		local rays: { [number]: { SplineHill.Ray } } = { [-1] = {}, [1] = {} }
+		local caps: { [number]: { number } } = { [-1] = {}, [1] = {} }
+		local hillTriangles = 0
+		-- the cuts a ray is worked out at: `CutStep` apart at least (a hairpin's cuts are a stud
+		-- or two apart, far too many), the chunk's two ends (so the next chunk's first ray is
+		-- this one's last), and wherever an edge changes kind (its faces come down to nothing
+		-- there). The cuts between take their caps from the rays either side
+		local rayCuts: { number } = {}
+		if hill then
+			local need = { [1] = true, [#cuts] = true }
+			local last = 1
+			for k = 2, #cuts - 1 do
+				local changes = false
+				for _, side in { -1, 1 } do
+					if spline:edgeAt((cuts[k - 1] + cuts[k]) * 0.5, side) ~= spline:edgeAt((cuts[k] + cuts[k + 1]) * 0.5, side) then
+						changes = true
+					end
+				end
+				if changes or cuts[k] - cuts[last] >= H.CutStep then
+					need[k] = true
+					if not changes then
+						last = k
+					end
+				end
+			end
+			for k = 1, #cuts do
+				if need[k] then
+					table.insert(rayCuts, k)
+					for _, side in { -1, 1 } do
+						local ray = SplineHill.ray(hill, cuts[k], side)
+						rays[side][k] = ray
+						caps[side][k] = SplineHill.cap(ray)
+					end
+					slice()
+				end
+			end
+			for n = 1, #rayCuts - 1 do
+				local a, b = rayCuts[n], rayCuts[n + 1]
+				for k = a + 1, b - 1 do
+					local u = (cuts[k] - cuts[a]) / math.max(cuts[b] - cuts[a], 1e-9)
+					for _, side in { -1, 1 } do
+						local ca, cb = caps[side][a], caps[side][b]
+						caps[side][k] = if ca == math.huge or cb == math.huge then (if u < 0.5 then ca else cb) else ca + (cb - ca) * u
+					end
+				end
+			end
+		end
+		-- a face's cap anywhere in the chunk, between the cuts' own (nil with no hillside)
+		local function capAt(s: number, side: number): number?
+			if not hill then
+				return nil
+			end
+			local list = caps[side]
+			local lo, hi = 1, #cuts
+			if s <= cuts[1] then
+				return list[1]
+			elseif s >= cuts[hi] then
+				return list[hi]
+			end
+			while hi - lo > 1 do
+				local mid = (lo + hi) // 2
+				if cuts[mid] <= s then
+					lo = mid
+				else
+					hi = mid
+				end
+			end
+			local a, b = list[lo], list[hi]
+			local u = (s - cuts[lo]) / math.max(cuts[hi] - cuts[lo], 1e-9)
+			if a == math.huge or b == math.huge then
+				return if u < 0.5 then a else b
+			end
+			return a + (b - a) * u
+		end
+
 		-- THE FACES OF THE MOUNTAINSIDE, in the same mesh: a client may hold only eight
 		-- EditableMeshes and the road's window uses six, so the faces cannot have meshes of
 		-- their own. Between each pair of cuts, on each side whose edge is a rock face or a
@@ -580,7 +678,7 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 				if row and row.kind == kind then
 					return row
 				end
-				local pts = SplineMesh.profile(spline, cuts[k], side, kind)
+				local pts = SplineMesh.profile(spline, cuts[k], side, kind, if hill then caps[side][k] else nil)
 				local ids = table.create(#pts)
 				for i, p in pts do
 					ids[i] = em:AddVertex(p - centre)
@@ -668,12 +766,15 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 					local yaw = spline:yawAt((a + b) * 0.5)
 					local outward = Vector3.new(side * math.cos(yaw), 0, -side * math.sin(yaw))
 					local pa, pb, ia, ib = ra.pts, rb.pts, ra.ids, rb.ids
-					for i = 1, #pa - 1 do
+					-- with the hillside (T-190) a rock body has no back slope: the ground carries on
+					-- up from its crest; and a cliff's foot stands on ground, not in haze
+					local last = if hill and kind == Spline.ROCK then #pa - 2 else #pa - 1
+					for i = 1, last do
 						local colour
 						if kind == Spline.ROCK then
 							colour = if i == #pa - 2 then faceColours.scrub else faceColours.rock
 						else
-							colour = if i == 1 then faceColours.cliff elseif i == #pa - 1 then faceColours.haze else cliffMid
+							colour = if i == 1 then faceColours.cliff elseif i == #pa - 1 and not hill then faceColours.haze else cliffMid
 						end
 						-- each quad faces away from the body: the profile's way turned (-up, out)
 						local e = pa[i + 1] - pa[i]
@@ -687,7 +788,8 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 					if kinds[k + 1] ~= kind then
 						cap(rb, b, 1)
 					end
-					if kind == Spline.ROCK then
+					-- (with the hillside both faces come down to nothing where they meet: no wall)
+					if kind == Spline.ROCK and not hill then
 						if kinds[k - 1] == Spline.CLIFF then
 							join(ra, k)
 						end
@@ -697,6 +799,84 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 					end
 				end
 				slice()
+			end
+
+			-- THE HILLSIDE (T-190): past each face's end -- a rock body's crest, a cliff's foot --
+			-- the ground carries on along the cut's ray to where it meets the next stretch's,
+			-- a row of vertices per ray at `Hill.Rings` of its length. Rays are `CutStep` apart
+			-- at least (a hairpin's cuts are a stud or two apart: far too many), and the faces'
+			-- own rows, on every cut, are stitched to the first ring with a fan.
+			if hill then
+				local sideRays = rays[side]
+				local hk = rayCuts
+				local shades: { [number]: number } = {}
+				local function ground(a: number, b: number, c: number, pa: Vector3, pb: Vector3, pc: Vector3)
+					local n = (pb - pa):Cross(pc - pa)
+					if n.Magnitude < 1e-9 then
+						return
+					end
+					local colour
+					if math.abs(n.Unit.Y) < H.SteepRock then
+						colour = faceColours.rock
+					else
+						-- a few greens, by the blotch at the face's middle
+						local mid = (pa + pb + pc) / 3
+						local level = math.floor((GrassTexture.blotch(mid.X, mid.Z) - 1) * 12 + 0.5)
+						colour = shades[level]
+						if not colour then
+							local g, kk = H.Colour, 1 + level / 12
+							colour = em:AddColor(Color3.new(math.min(1, g.R * kk), math.min(1, g.G * kk), math.min(1, g.B * kk)), 1)
+							shades[level] = colour
+						end
+					end
+					tri(a, b, c, pa, pb, pc, colour, Vector3.yAxis)
+					hillTriangles += 1
+				end
+				local hillRows: { [number]: { pts: { Vector3 }, ids: { number } } } = {}
+				local function hillRow(k: number)
+					local row = hillRows[k]
+					if row then
+						return row
+					end
+					local ray = sideRays[k]
+					SplineHill.finish(hill, ray)
+					local t0f = SplineHill.faceEnd(ray)
+					local span = math.max(ray.clip - t0f, 0)
+					local pts, ids = {}, {}
+					for j, share in H.Rings do
+						pts[j] = SplineHill.at(ray, t0f + span * share)
+					end
+					table.insert(pts, SplineHill.at(ray, t0f + span + H.Skirt))
+					for j, p in pts do
+						ids[j] = em:AddVertex(p - centre)
+					end
+					road.vertices += #pts
+					row = { pts = pts, ids = ids }
+					hillRows[k] = row
+					return row
+				end
+				for n = 1, #hk - 1 do
+					local ka, kb = hk[n], hk[n + 1]
+					local kind = kinds[ka]
+					if kind == Spline.ROCK or kind == Spline.CLIFF then
+						local A, B = hillRow(ka), hillRow(kb)
+						-- the fan from the faces' ends (their fifth point, on every cut) to the
+						-- first ring's two vertices
+						local m = (ka + kb + 1) // 2
+						for i = ka, kb - 1 do
+							local fa, fb = rowAt(i, kind), rowAt(i + 1, kind)
+							local far = if i < m then A else B
+							ground(fa.ids[5], fb.ids[5], far.ids[1], fa.pts[5], fb.pts[5], far.pts[1])
+						end
+						local fm = rowAt(m, kind)
+						ground(fm.ids[5], A.ids[1], B.ids[1], fm.pts[5], A.pts[1], B.pts[1])
+						for j = 1, #A.pts - 1 do
+							ground(A.ids[j], A.ids[j + 1], B.ids[j], A.pts[j], A.pts[j + 1], B.pts[j])
+							ground(A.ids[j + 1], B.ids[j + 1], B.ids[j], A.pts[j + 1], B.pts[j + 1], B.pts[j])
+						end
+					end
+					slice()
+				end
 			end
 		end
 
@@ -878,8 +1058,8 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 			-- along the road, and a box drawn between its two ends would show at the lower one,
 			-- so the taller end is brought down to the lower's height above its foot (T-185)
 			local function ends(ka: number, kb: number, kind: number): ({ Vector3 }, { Vector3 })
-				local pa = SplineMesh.profile(spline, cuts[ka], side, kind)
-				local pb = SplineMesh.profile(spline, cuts[kb], side, kind)
+				local pa = SplineMesh.profile(spline, cuts[ka], side, kind, capAt(cuts[ka], side))
+				local pb = SplineMesh.profile(spline, cuts[kb], side, kind, capAt(cuts[kb], side))
 				if kind == Spline.ROCK then
 					-- the lowest the body stands anywhere over the span (its height wanders on
 					-- slow sines, and can dip between the two ends), sampled every 4 studs
@@ -895,7 +1075,8 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 					local from, to = math.max(0, a - ext), math.min(b + ext, spline.length)
 					local n = math.max(1, math.ceil((to - from) / 4))
 					for i = 0, n do
-						local p = SplineMesh.profile(spline, from + (to - from) * i / n, side, kind)
+						local at = from + (to - from) * i / n
+						local p = SplineMesh.profile(spline, at, side, kind, capAt(at, side))
 						low = math.min(low, p[4].Y - p[1].Y)
 					end
 					local function lower(p: { Vector3 }, r: number)
@@ -1205,6 +1386,8 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 			trees = trees,
 			treeTriangles = road.triangles - trianglesBefore,
 			treeMs = treeMs,
+			hillTriangles = hillTriangles,
+			stations = if hill then #hill.stations else 0,
 			ms = 0,
 		}
 		return { model = model, stats = stats, meshes = { road.em } }

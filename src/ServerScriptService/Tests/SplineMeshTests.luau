@@ -75,7 +75,9 @@ function Tests.run()
 			failed == 0,
 			`{built} chunks of {L} studs for {math.floor(spline.length)} studs of road: {tris} triangles, {verts} vertices, {sections} cross-sections ({fmt(spline.length / math.max(1, sections - built), 1)} studs apart on average), {plainParts} barrier and dash parts`
 		)
-		check("a chunk is quick to build", worstMs < 30, `mean {fmt(sumMs / math.max(1, built), 2)} ms of work, worst {fmt(worstMs, 2)} ms (one chunk is built at a time)`)
+		-- (40: the hillside, T-190, is about 6 ms of a chunk, measured: 22 against 16; it is
+		-- built a few ms a frame, the next check, so what a frame pays is unchanged)
+		check("a chunk is quick to build", worstMs < 40, `mean {fmt(sumMs / math.max(1, built), 2)} ms of work, worst {fmt(worstMs, 2)} ms (one chunk is built at a time)`)
 		check(
 			"no frame pays much of a chunk",
 			worstSlice < Config.Spline.Mesh.SliceMs * 3,
@@ -124,7 +126,10 @@ function Tests.run()
 				end
 			end
 		end
-		check("every surface vertex, tarmac and grass, is on the ground the car stands on", n > 0 and worstV < 0.01, `{n} vertices read back through their parts: worst {fmt(worstV, 4)} studs off (a Vector3 20 000 studs out is good to ~0.002)`)
+		-- (0.03, where it was 0.01: with the hillside in it, T-190, a chunk's mesh is far bigger,
+		-- and the error read back grew with its size -- 0.015 at 973 studs across, 0.022 now --
+		-- as if a mesh kept its vertices to a 65 536th of its size)
+		check("every surface vertex, tarmac and grass, is on the ground the car stands on", n > 0 and worstV < 0.03, `{n} vertices read back through their parts: worst {fmt(worstV, 4)} studs off (it grows with the mesh's size: the hillside is in it)`)
 
 		-- 2b. The grass's texture (T-187): every grass face mapped in world studs, every other
 		-- face on UV (0, 0), where the tile is plain `Shade` grey.

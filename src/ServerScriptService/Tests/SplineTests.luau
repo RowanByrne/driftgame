@@ -484,7 +484,15 @@ function parts.terrain(check)
 				hedgePoints += 1
 			end
 			local up = if l == Spline.ROCK or r == Spline.CLIFF then -1 elseif r == Spline.ROCK or l == Spline.CLIFF then 1 else nil
-			local across = math.sin(sp:yawAt(u) - gen.fall)
+			-- (while the road climbs the far side of a valley, the mountain is on the other
+			-- side of it, T-190: `gen.flips` says from where)
+			local flip = 1
+			for _, f in gen.flips do
+				if f[1] <= u then
+					flip = f[2]
+				end
+			end
+			local across = math.sin(sp:yawAt(u) - gen.fall) * flip
 			if up and math.abs(across) >= band + 0.02 then
 				sideChecked += 1
 				if up ~= (if across > 0 then 1 else -1) then

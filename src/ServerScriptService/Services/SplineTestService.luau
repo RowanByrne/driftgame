@@ -96,7 +96,7 @@ end
 
 function SplineTestService:_build()
 	local C = Config.Spline
-	local seed = (os.time() * 7919 + self.builds * 104729) % 1000000
+	local seed = self.debugSeed or (os.time() * 7919 + self.builds * 104729) % 1000000
 	self.builds += 1
 	local o = C.TestOrigin
 	local gen = SplineGen.new(seed, { x = o.X, y = o.Y, z = o.Z, yaw = math.rad(Config.Road.StartHeading) })
@@ -123,6 +123,7 @@ function SplineTestService:_state(player: Player)
 		seed = gen and gen.seed or nil,
 		origin = if on and o then { x = o.x, y = o.y, z = o.z, yaw = o.yaw } else nil,
 		sections = if on and gen then gen.sections else nil,
+		fall = if on and gen then gen.fall else nil, -- the mountain's uphill heading (T-190)
 	}
 end
 
@@ -216,8 +217,18 @@ function SplineTestService:DebugState()
 	}
 end
 
+-- The test road's planned turns, `{ s0, s1, what }` each ("turnaround", "double", ...): where
+-- to look at a hairpin (T-190).
+function SplineTestService:DebugTurns()
+	return if self.gen then self.gen.turns else {}
+end
+
 -- Join or leave for a player with no client button to press (tests, the debug bridge).
-function SplineTestService:DebugToggle(userId: number?)
+-- `seed`, when given, is the seed the next test road is built from (and every one after).
+function SplineTestService:DebugToggle(userId: number?, seed: number?)
+	if seed then
+		self.debugSeed = seed
+	end
 	local player = if userId then Players:GetPlayerByUserId(userId) else Players:GetPlayers()[1]
 	if not player then
 		return "no player"

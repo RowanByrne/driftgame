@@ -139,12 +139,23 @@ local Spline = {
 		-- that will allow for hours of running ... add uphill sections that are short and gain
 		-- good vertically every now and then"). Once the band's centre is `DescentFloor` below
 		-- the start, it rises at `ClimbRate` until it is back at `ClimbTop`, then the descent
-		-- goes on. Only the height changes: the road keeps zig-zagging down the mountain in
-		-- plan, so the cliff side is unaffected. With the band's 160 either side, the road
-		-- stays above Y -440, clear of Roblox's fall-kill height (-500).
+		-- goes on.
+		-- A CLIMB IS THE FAR SIDE OF A VALLEY (T-190). The road keeps zig-zagging the same way
+		-- in plan, so while it climbs, each new leg is HIGHER than the one before it: the
+		-- mountain is on the other side of the road. So a climb (and the descent after it)
+		-- begins where the road next heads straight along the fall line, the middle of a
+		-- hairpin as a rule, and from there the rock and the drop are on the other sides
+		-- (`SplineGen.flip`). The band waits at `DescentFloor` (or `ClimbTop`) for that turn,
+		-- and the stretches planned before it are cut to `FlipWithin` so it comes soon.
+		-- With the band's 160 either side, the road stays above Y -440, clear of Roblox's
+		-- fall-kill height (-500).
 		DescentFloor = -280, -- studs, the centre's lowest, relative to the start
 		ClimbRate = 1 / 10, -- studs of height per stud of road, about 5.7 degrees
 		ClimbTop = 0, -- studs, where a climb hands back to the descent
+		FlipWithin = 250, -- studs: the longest stretch left before the turn the mountain changes sides in
+		-- but that turn comes no sooner than the faces already drawn were told it would: they
+		-- are grand by their distance from a turnaround, full at `GrandNear + GrandRamp`
+		FlipClear = 850, -- studs
 	},
 
 	-- --------------------------------------------------------------- the bends
@@ -380,6 +391,57 @@ local Spline = {
 		BlotchStuds = 70,
 	},
 
+	-- --------------------------------------------------------------- the hillside
+	-- ONE CONTINUOUS MOUNTAIN (features/continuous-mountain.md, T-190): past a rock face's
+	-- top and a cliff's foot the ground carries on, up and down the mountain, until it meets
+	-- the ground of the next leg (`Road/SplineHill`; drawn by `Road/SplineMesh`). A look only:
+	-- the car still meets a wall at a rock face and falls at a cliff's lip.
+	Hill = {
+		Reach = 500, -- studs past the road's edge the ground is drawn to, with nothing in the way
+		-- THE SLOPE of the open hillside along the fall line. The road only drops 1 in 25, so
+		-- two legs are seldom more than this apart in height: steeper, and the ground from the
+		-- leg above would miss the leg below
+		Slope = 0.2, -- studs of height per stud (about 11 degrees)
+		-- FACES FIT THE ROOM THERE IS between two legs: a rock face under a drop share the
+		-- height between the two roads, less this slope across the gap between their edges
+		MinSlope = 0.04,
+		SameShare = 0.25, -- two rock faces (or two drops) facing each other: this much of the gap, each
+		MinRock = 4, -- studs: a rock face next to another leg is never capped lower (the car's wall is there)
+		MinCliff = 6, -- studs, a drop the same
+		-- two legs further apart than this (centre lines) are capped less and less
+		RelaxFrom = 300, -- studs
+		RelaxRate = 0.5, -- studs of cap per stud further
+		-- WHERE THE MOUNTAIN CHANGES SIDES (the middle of a hairpin) the rock on one side and
+		-- the drop on the other both come down to nothing, this fast, so they meet level
+		TaperRate = 0.6, -- studs of face per stud of road from the change
+		-- and a face is as tall as its side faces squarely up or down the fall line (the sine
+		-- of the heading off the fall line, to this power): full across the slope, none
+		-- heading straight down it. 1 is a plane hillside, cut; higher opens the bends more
+		AcrossPower = 1,
+		FaceShare = 0.8, -- the most of its own ground a face may reach across (the inside of a bend)
+		Aspect = 1.5, -- and the tallest it may stand, as a multiple of how wide that ground is
+		RimDrop = 60, -- studs a drop's open hillside falls away at its rim, with nothing below
+		-- Two legs more than two reaches apart do not meet: each has the ground it would have
+		-- alone, ending at a rim. As they close in, a ray eases from that to the meeting
+		-- height over the last `MeetOver` of its reach
+		MeetOver = 150, -- studs
+		-- road this many times further along the curve than away is another stretch (the far
+		-- side of a bend from about 85 degrees round it)
+		Facing = 1.1,
+		-- broad ridges and gullies, away from the road
+		NoiseSize = 420, -- studs
+		NoiseHeight = 26, -- studs, either way
+		NoiseFrom = 120, -- studs past a face's end over which they ease in (or the ray's length, if less)
+		-- the drawing
+		StationStep = 16, -- studs between the road's stations (a multiple of `CheckStep`)
+		Gather = 1200, -- studs round a chunk its stations are gathered from (two reaches and two runoffs)
+		CutStep = 10, -- studs of road between two rays, at least
+		Rings = { 0.12, 0.32, 0.62, 1 }, -- where a ray's vertices go, as shares of its length
+		Skirt = 4, -- studs a ray is drawn past its end, level, so no crack shows where two meet
+		SteepRock = 0.72, -- a face whose normal is flatter than this (its Y) is drawn as rock
+		Colour = Color3.fromRGB(78, 122, 60), -- the open hillside: a shade under the runoff's grass
+	},
+
 	-- --------------------------------------------------------------- the mesh (step 3)
 	-- What each device draws (`Road/SplineMesh`, `Drift/SplineRoadView`). Purely visual.
 	Mesh = {
@@ -397,6 +459,9 @@ local Spline = {
 		ChunkLength = 480,
 		Ahead = 1600, -- studs of road drawn in front of the car
 		Behind = 300, -- and kept behind it
+		-- A chunk whose hillside new road has come beside (T-190) is redrawn once it starts
+		-- within this of the car: further off, more road is still to come beside it
+		RedrawWithin = 800, -- studs ahead of the car
 		FallbackStep = 4, -- studs between cross-sections when a device draws parts instead
 		-- A chunk is built over as many frames as it needs (T-193): its build hands the frame
 		-- back whenever this much of it has been spent, and carries on next frame. Nothing is

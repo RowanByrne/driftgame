@@ -102,6 +102,14 @@ export type Gen = typeof(setmetatable(
 		drift: number, -- how the height band's centre moves per stud of road, going down
 		centre: number, -- the band's centre at the road's end, relative to the start
 		climbing: boolean, -- in one of the short climbs that win the height back
+		-- THE MOUNTAIN'S SIDE (T-190): 1 on a descent; -1 while the road climbs the far side
+		-- of a valley, where the mountain is on the other side of the road. It changes where
+		-- the road next heads straight along the fall line (`flipWanted` until then), and the
+		-- climb or the descent begins there
+		flip: number,
+		flipWanted: boolean,
+		flipDone: boolean, -- it changed in the section being laid
+		flips: { { number } }, -- every change, {s, flip}: the server's record, for tests
 		band: { number }, -- the centre's knots, {s, centre, ...}: what the band was, for tests
 		legSide: number, -- which way across the slope the current leg runs (1 or -1)
 		tilt: number?, -- the next leg's tilt, chosen with the turnaround onto it
@@ -141,6 +149,10 @@ local function sign(x: number): number
 	return if x > 0 then 1 elseif x < 0 then -1 else 0
 end
 
+-- The planned turns the mountain changes sides through: a turnaround, by either of the
+-- switchback's two bends, and the double hairpin's two.
+local TURNAROUNDS = { turnaround = true, switchbackOut = true, double = true, doubleOut = true }
+
 -- How far apart two centre-line points must be, and how far along the road two points
 -- must be before that applies at all. On the tightest bend allowed, two points `sep`
 -- apart along it are already `clear` apart in a straight line, so anything closer along
@@ -175,6 +187,10 @@ function SplineGen.new(seed: number, origin: Spline.Origin?, clearOverride: numb
 		drift = 0,
 		centre = 0,
 		climbing = false,
+		flip = 1,
+		flipWanted = false,
+		flipDone = false,
+		flips = {},
 		band = { 0, 0 },
 		legSide = 1,
 		tilt = nil,
@@ -226,6 +242,7 @@ function SplineGen.new(seed: number, origin: Spline.Origin?, clearOverride: numb
 	local M = Config.Spline.Mountain
 	local q = if self.prng:NextNumber() < 0.5 then -1 else 1
 	self.fall = wrap(spline.origin.yaw + q * math.rad(M.FallLineTurn))
+	spline.fall = self.fall -- for the hillside's slope (T-190)
 	self.legSide = -q
 	self.sense = if self.mode == "ascent" then -1 else 1
 	self.drift = if self.mode == "descent" then -M.DescentRate elseif self.mode == "ascent" then M.DescentRate else 0
@@ -362,10 +379,26 @@ function SplineGen._terrain(self: Gen, sec: Spline.Section)
 	local u = 0
 	while true do
 		local yaw = yawAlong(yaw0, k0, sec.k, u)
-		local across = math.sin(yaw - self.fall)
+		local across = math.sin(yaw - self.fall) * self.flip
 		if lastAcross and (across > 0) ~= (lastAcross > 0) then
 			-- crossed the fall line between the last sample and this one: where, linearly
 			crossAt = math.clamp(u - (u - lastU) * across / (across - lastAcross), lastU, u)
+			-- THE VALLEY'S FLOOR, OR THE PASS (T-190). The road has come down as far as it
+			-- goes (or climbed as far) and here heads straight along the fall line: from here
+			-- it climbs the far side of the valley (or goes down the far side of the ridge),
+			-- so the mountain is on the OTHER side of the road from now on. Through this turn
+			-- the rock and the drop therefore keep their sides
+			-- (only in a turnaround -- a hairpin, a switchback and the gap inside it, a double
+			-- hairpin -- never in a sideways stretch, which the mountain holds its side through)
+			local head = self.plan[1]
+			local turnaround = (self.turning ~= nil and TURNAROUNDS[self.turning :: string] == true) or (self.turning == nil and head ~= nil and head.what == "gap")
+			if self.flipWanted and not self.flipDone and turnaround then
+				-- (the band starts to move again with the next section: `_commit`)
+				self.flipDone = true
+				self.flip = -self.flip
+				table.insert(self.flips, { s0 + crossAt, self.flip })
+				across = -across
+			end
 		end
 		lastAcross, lastU = across, u
 		if math.abs(across) < band then
@@ -607,8 +640,10 @@ function SplineGen._carve(self: Gen, sec: Spline.Section)
 end
 
 -- A client's copy: the same road from the same sections, with no choosing.
-function SplineGen.replay(sections: { Spline.Section }, origin: Spline.Origin?): Spline.Spline
+-- `fall` is the mountain's uphill heading, as the server sent it with the road (T-190).
+function SplineGen.replay(sections: { Spline.Section }, origin: Spline.Origin?, fall: number?): Spline.Spline
 	local spline = Spline.new(origin)
+	spline.fall = fall
 	for _, sec in sections do
 		spline:append(sec)
 	end
@@ -628,13 +663,26 @@ function SplineGen._commit(self: Gen, sec: Spline.Section)
 	local M = Config.Spline.Mountain
 	local move = self:_bandRate()
 	local c = self.centre + move * sec.len
-	if self.drift ~= 0 then
+	-- (T-190) the climb, and the descent after it, begin where the road next heads straight
+	-- along the fall line -- the middle of a hairpin, as a rule -- because there the mountain
+	-- changes sides (`_terrain`): the valley's floor, and the pass. Until then the band
+	-- stays where it stopped (`_bandRate`), and the stretches still planned are cut short
+	-- (`_hurry`) so that turn comes soon
+	if self.flipDone then
+		-- the mountain changed sides in this section: the climb (or the descent) starts now
+		self.flipDone, self.flipWanted = false, false
+		self.climbing = not self.climbing
+		if self.climbing then
+			st.climbs += 1
+		end
+	elseif self.drift ~= 0 and not self.flipWanted then
 		local floor, top = M.DescentFloor * self.sense, M.ClimbTop * self.sense
 		if not self.climbing and (c - floor) * self.sense <= 0 then
-			c, self.climbing = floor, true
-			st.climbs += 1
+			c, self.flipWanted = floor, true
+			self:_hurry()
 		elseif self.climbing and (c - top) * self.sense >= 0 then
-			c, self.climbing = top, false
+			c, self.flipWanted = top, true
+			self:_hurry()
 		end
 	end
 	self.centre = c
@@ -644,6 +692,9 @@ end
 
 -- How the height band's centre moves per stud of road just now.
 function SplineGen._bandRate(self: Gen): number
+	if self.flipWanted then
+		return 0 -- at the floor or the top, waiting for the turn the mountain changes sides in
+	end
 	if self.climbing then
 		return Config.Spline.Mountain.ClimbRate * self.sense
 	end
@@ -651,12 +702,43 @@ function SplineGen._bandRate(self: Gen): number
 end
 
 
+-- With the mountain about to change sides, every stretch still planned is cut to
+-- `FlipWithin`, so a turn through the fall line comes soon (T-190).
+-- But no sooner than the grandeur already laid allows: the faces behind were drawn as grand
+-- as the turnaround was then far off (`_grand`), so the first stretch keeps what it takes
+-- for that turnaround to be no nearer than they were promised.
+function SplineGen._hurry(self: Gen)
+	local M = Config.Spline.Mountain
+	local within = M.FlipWithin
+	local first: Item? = nil
+	local was = 0
+	-- the grandest the last knot laid can be: as far from the turnaround behind, and from the
+	-- one the plan held ahead, as it was told (at most `FlipClear`, where it is full)
+	local need = math.min(self.spline.length - self.lastTurnEnd, self:_toTurnaround(), M.FlipClear)
+	for _, item in self.plan do
+		if not item.turn then
+			if not first then
+				first, was = item, item.left or 0
+			end
+			if (item.left or 0) > within then
+				item.left = within
+			end
+		end
+	end
+	if first then
+		local ahead = self:_toTurnaround()
+		if ahead < need then
+			first.left = math.min(was, (first.left or 0) + need - ahead)
+		end
+	end
+end
+
 -- Where the band's centre will be `ds` studs on from the road's end, stopping where a
--- climb or the descent stops.
+-- climb or the descent stops (and staying there until the mountain changes sides, T-190).
 function SplineGen._centreAfter(self: Gen, ds: number): number
 	local M = Config.Spline.Mountain
 	local c = self.centre + self:_bandRate() * ds
-	if self.drift == 0 then
+	if self.drift == 0 or self.flipWanted then
 		return c
 	end
 	if self.climbing then
@@ -799,10 +881,6 @@ end
 --------------------------------------------------------------------------------
 -- Grand cliffs (T-185)
 --------------------------------------------------------------------------------
-
--- The planned turns the mountain changes sides through: a turnaround, by either of the
--- switchback's two bends, and the double hairpin's two.
-local TURNAROUNDS = { turnaround = true, switchbackOut = true, double = true, doubleOut = true }
 
 -- Studs from the road's end to the next turnaround the plan holds: the stretches still to
 -- run before it (a detour's own turns counted as nothing). It can only come later than
@@ -1270,6 +1348,9 @@ function SplineGen._planLeg(self: Gen)
 	end
 	self.legSide = -side
 	self.tilt = nextTilt
+	if self.flipWanted then
+		self:_hurry()
+	end
 end
 
 -- A planned turn, built to land on its heading: the turn eases in from the road's present

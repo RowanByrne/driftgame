@@ -156,6 +156,12 @@ The fall line, the legs and the turnarounds, and the descent.
   `DescentFloor` (-280), then climbs at `ClimbRate` (1 in 10) to `ClimbTop` (0) and drops again,
   so a run of hours stays above Roblox's fall-kill height (Y -500): a 150 000-stud road's
   lowest point is Y -396. The descent itself measures 36 studs per 1 000.
+- **A climb is the far side of a valley** (T-190, `continuous-mountain.md` "A climb is the far
+  side of a valley"): while the road climbs, each new leg is higher than the one before, so the
+  mountain is on the other side of the road. The climb, and the descent after it, begin where
+  the road next points along the fall line inside a turnaround, and the rock and the drop keep
+  their sides through that one turn. "The cliff side follows from the heading" above holds on
+  the way down; on a climb it is the other way round.
 - **No hairpin in the first 1 500 studs** (`Bends.Hairpin.minS`), as before.
 
 ## As built (step 2, T-168)

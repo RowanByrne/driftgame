@@ -210,7 +210,8 @@ if RunService:IsStudio() then
 		end
 		local o = answer.origin
 		if answer.on == true and type(answer.sections) == "table" and type(o) == "table" and not splineOn then
-			local ok, spline = pcall(SplineGen.replay, answer.sections, { x = o.x, y = o.y, z = o.z, yaw = o.yaw })
+			local fall = if type(answer.fall) == "number" then answer.fall else nil
+			local ok, spline = pcall(SplineGen.replay, answer.sections, { x = o.x, y = o.y, z = o.z, yaw = o.yaw }, fall)
 			if ok then
 				splineOn = true
 				DriftController:UseSpline(spline)

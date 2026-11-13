@@ -127,6 +127,10 @@ export type Spline = typeof(setmetatable(
 		groveL: Groves,
 		groveR: Groves,
 		grand: Track?, -- the rock and cliff faces' grandeur (T-185), made on the first section
+		-- the mountain's uphill heading (a yaw), fixed for the road (T-166): set by whoever
+		-- makes the road (`SplineGen`), nil on a road with no mountain. The hillside's slope
+		-- reads it (`Road/SplineHill`, T-190)
+		fall: number?,
 	},
 	Spline
 ))
@@ -249,6 +253,7 @@ function Spline.new(origin: Origin?): Spline
 		groveL = { a = {}, b = {}, seed = {} },
 		groveR = { a = {}, b = {}, seed = {} },
 		grand = nil,
+		fall = nil :: number?,
 	}, Spline)
 	return self
 end

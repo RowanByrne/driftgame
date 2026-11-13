@@ -44,6 +44,14 @@ export type View = typeof(setmetatable(
 		closingS: number?,
 		short: { [number]: number }, -- chunk -> the road's length when it was built short
 		rebuilt: number,
+		-- THE HILLSIDE (T-190) is drawn from every stretch of road near a chunk, and the leg
+		-- below a chunk is often laid after the chunk is drawn. So: the road's length when
+		-- each chunk was built, how far the road has been checked against them, and the
+		-- chunks new road has come beside since (`stale`), redrawn when nothing else is wanted
+		builtAt: { [number]: number },
+		checkedTo: number,
+		stale: { [number]: boolean },
+		redrawn: number,
 	},
 	SplineRoadView
 ))
@@ -73,7 +81,80 @@ function SplineRoadView.new(spline: Spline.Spline, parent: Instance?): View
 		closingS = nil,
 		short = {},
 		rebuilt = 0,
+		builtAt = {},
+		checkedTo = spline.length,
+		stale = {},
+		redrawn = 0,
 	}, SplineRoadView)
+end
+
+-- Has road laid since a chunk was drawn come beside it, near enough to end one of its
+-- hillside's rays sooner (`Road/SplineHill`)? Marks such chunks stale. Cheap: a few points of
+-- the new road against a few cross-sections of each chunk.
+function SplineRoadView._checkNewRoad(self: View)
+	local spline = self.spline
+	local from, to = self.checkedTo, spline.length
+	if to <= from + 1e-6 then
+		return
+	end
+	self.checkedTo = to
+	local H = Config.Spline.Hill
+	local L = Config.Spline.Mesh.ChunkLength
+	local reach = Config.Road.Width * 0.5 + Config.Spline.Terrain.GroveRunoff[2] + H.Reach
+	local function points(a: number, b: number): { number }
+		local out = {}
+		for s = a, b, 32 do
+			local x, z = spline:planAt(s)
+			table.insert(out, x)
+			table.insert(out, z)
+		end
+		return out
+	end
+	local fresh = points(from, to)
+	for i in self.chunks do
+		if not self.stale[i] and (self.builtAt[i] or to) < to then
+			local s0, s1 = i * L, math.min((i + 1) * L, to)
+			-- the road the chunk already knew between its own end and the old end of the road:
+			-- most new road is further off than that along every ray, and changes nothing
+			local known = points(math.min(s1 + 32, from), from)
+			local hit = false
+			local s = s0
+			while not hit do
+				local x, z = spline:planAt(s)
+				local yaw = spline:yawAt(s)
+				local rx, rz = math.cos(yaw), -math.sin(yaw)
+				-- where a ray from here, to each side, is as near a point as its own road
+				local function nearest(list: { number }, limit: { [number]: number }): boolean
+					local sooner = false
+					for j = 1, #list, 2 do
+						local qx, qz = list[j] - x, list[j + 1] - z
+						local across = qx * rx + qz * rz
+						if math.abs(across) > 1 then
+							local side = if across > 0 then 1 else -1
+							local t = (qx * qx + qz * qz) / (2 * math.abs(across))
+							if t < limit[side] - 3 then
+								limit[side] = t
+								sooner = true
+							end
+						end
+					end
+					return sooner
+				end
+				local limit = { [-1] = reach, [1] = reach }
+				nearest(known, limit)
+				if nearest(fresh, limit) then
+					hit = true
+				end
+				if s >= s1 then
+					break
+				end
+				s = math.min(s + 48, s1)
+			end
+			if hit then
+				self.stale[i] = true
+			end
+		end
+	end
 end
 
 -- THE CLOSING BARRIER (T-136): a wall across the road and its runoff at `s`, the piece
@@ -130,6 +211,8 @@ function SplineRoadView._build(self: View, i: number)
 	local L = Config.Spline.Mesh.ChunkLength
 	local s0 = i * L
 	local s1 = math.min((i + 1) * L, self.spline.length)
+	self.builtAt[i] = self.spline.length
+	self.stale[i] = nil
 	local t0 = os.clock()
 	local model, info = SplineMesh.build(self.spline, s0, s1, self.folder, { forceFail = self.forceFallback })
 	local chunk: Instance
@@ -189,9 +272,12 @@ function SplineRoadView.Update(self: View, s: number?)
 			removeChunk(chunk)
 			self.chunks[i] = nil
 			self.short[i] = nil
+			self.builtAt[i] = nil
+			self.stale[i] = nil
 			self.removed += 1
 		end
 	end
+	self:_checkNewRoad()
 	-- a chunk drawn to the old end of a road that has since grown: take it down to redraw
 	if not self.building then
 		-- (the old one stays up until the new one is whole, T-193)
@@ -226,6 +312,21 @@ function SplineRoadView.Update(self: View, s: number?)
 	end
 	if want then
 		self:_start(want :: number)
+		return
+	end
+	-- nothing missing: redraw a chunk new road has come beside (T-190), nearest the car
+	-- first. The old one stays up until the new one is whole
+	-- (not one still far ahead: more road will come beside it before the car does, and it
+	-- would be redrawn for each stretch of it)
+	local best: number? = nil
+	for i in self.stale do
+		if self.chunks[i] and i * L <= at + M.RedrawWithin and (not best or math.abs(i - here) < math.abs(best - here)) then
+			best = i
+		end
+	end
+	if best then
+		self.redrawn += 1
+		self:_start(best)
 	end
 end
 
@@ -280,6 +381,7 @@ function SplineRoadView.DebugState(self: View)
 		lastError = self.lastError,
 		closingS = self.closingS,
 		rebuilt = self.rebuilt,
+		redrawn = self.redrawn, -- chunks redrawn because new road came beside them (T-190)
 		length = self.spline.length,
 	}
 end
