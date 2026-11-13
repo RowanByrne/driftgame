@@ -55,6 +55,7 @@ export type Stats = {
 	probes: number,
 	hits: number,
 	grass: number, -- probes that found grass
+	gravel: number, -- probes that found gravel (a tight cliff stretch, T-181)
 	overCliff: number, -- probes past a cliff's lip: nothing under them
 	searches: number, -- lookups that fell back to the grid
 	sweeps: number,
@@ -97,6 +98,7 @@ function SplineWorld.new(spline: Spline.Spline, base: Model.World?): SplineWorld
 			probes = 0,
 			hits = 0,
 			grass = 0,
+			gravel = 0,
 			overCliff = 0,
 			searches = 0,
 			sweeps = 0,
@@ -155,6 +157,10 @@ function SplineWorld.new(spline: Spline.Spline, base: Model.World?): SplineWorld
 					stats.hits += 1
 					if kind == Spline.TARMAC then
 						return { y = y, normal = spline:normalAt(s, d), grip = C.GripTarmac, score = C.ScoreTarmac }
+					end
+					if kind == Spline.GRAVEL then
+						stats.gravel += 1
+						return { y = y, normal = spline:terrainNormal(s, d), grip = C.GripGravel, score = C.ScoreGravel }
 					end
 					stats.grass += 1
 					return { y = y, normal = spline:terrainNormal(s, d), grip = C.GripGrass, score = C.ScoreGrass }

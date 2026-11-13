@@ -37,6 +37,8 @@
 --              a bend it is cut to `InsideShare` of the way to the bend's centre
 --   edge       which edge, as spans `(sEnd, kind)` per side: ROCK, HEDGE or CLIFF
 --   K-rails    runs `(s0, s1)` per side
+--   gravel     runs `(s0, s1)` per side where the runoff is gravel, not grass: the tight
+--              cliff edges, a strip of a few studs between a K-rail and the drop (T-181)
 --
 -- A section that carries none of these (a test's hand-made road) gets no runoff and a hedge
 -- on both sides: a wall exactly where the old barriers stood.
@@ -65,6 +67,7 @@ export type Section = {
 	el: { number }?, -- left edge spans {dsEnd, kind, ...}, the last ending at `len`
 	er: { number }?, -- right
 	kr: { number }?, -- K-rail runs {ds0, ds1, side, ...}, side -1 left, 1 right
+	gv: { number }?, -- gravel runoff runs {ds0, ds1, side, ...}, as `kr` (T-181)
 }
 
 -- The edge kinds, as they go over the wire.
@@ -75,6 +78,7 @@ Spline.CLIFF = 3
 -- What is under a point, from `Spline.groundKind`.
 Spline.TARMAC = 0
 Spline.GRASS = 1
+Spline.GRAVEL = 2 -- the runoff inside a gravel run (T-181)
 
 type Spans = { e: { number }, t: { number } } -- span ends, increasing, and each span's kind
 type Runs = { a: { number }, b: { number } } -- run starts (increasing) and ends
@@ -111,6 +115,8 @@ export type Spline = typeof(setmetatable(
 		edgeR: Spans,
 		railL: Runs,
 		railR: Runs,
+		gravL: Runs, -- gravel runoff runs (T-181)
+		gravR: Runs,
 	},
 	Spline
 ))
@@ -228,6 +234,8 @@ function Spline.new(origin: Origin?): Spline
 		edgeR = { e = {}, t = {} },
 		railL = { a = {}, b = {} },
 		railR = { a = {}, b = {} },
+		gravL = { a = {}, b = {} },
+		gravR = { a = {}, b = {} },
 	}, Spline)
 	return self
 end
@@ -384,6 +392,17 @@ local function appendRuns(sp: Spline, s0: number, runs: { number }?)
 	end
 end
 
+local function appendGravel(sp: Spline, s0: number, runs: { number }?)
+	if not runs then
+		return
+	end
+	for j = 1, #runs, 3 do
+		local list = if runs[j + 2] < 0 then sp.gravL else sp.gravR
+		local n = #list.a
+		list.a[n + 1], list.b[n + 1] = s0 + runs[j], s0 + runs[j + 1]
+	end
+end
+
 -- Is a section's mountainside well formed? Its knots inside it, its spans ending at its
 -- end, its edge kinds known, its runs inside it, in order and apart. Anything else is
 -- refused before any of it is laid, so a half-appended section never exists.
@@ -423,6 +442,17 @@ local function checkTerrain(self: Spline, sec: Section)
 			lastEnd[side] = b
 		end
 	end
+	local gv = sec.gv
+	if gv then
+		assert(#gv % 3 == 0, "Spline: gravel runs come in threes")
+		local lastEnd = { [-1] = -math.huge, [1] = -math.huge }
+		for j = 1, #gv, 3 do
+			local a, b, side = gv[j], gv[j + 1], gv[j + 2]
+			assert(side == -1 or side == 1, "Spline: a gravel run's side is -1 or 1")
+			assert(a >= 0 and b > a and b <= len + 1e-6 and a >= lastEnd[side], "Spline: gravel runs inside their section, in order")
+			lastEnd[side] = b
+		end
+	end
 end
 
 function Spline.append(self: Spline, sec: Section)
@@ -448,6 +478,7 @@ function Spline.append(self: Spline, sec: Section)
 	appendSpans(self.edgeL, s0, sec.len, sec.el)
 	appendSpans(self.edgeR, s0, sec.len, sec.er)
 	appendRuns(self, s0, sec.kr)
+	appendGravel(self, s0, sec.gv)
 	self.length = s1
 	self.sections += 1
 	local step = self.step
@@ -617,6 +648,25 @@ function Spline.kRailsIn(self: Spline, s0: number, s1: number, side: number): { 
 	return out
 end
 
+-- Is the runoff on `side` at `s` gravel rather than grass (T-181)?
+function Spline.gravelAt(self: Spline, s: number, side: number): boolean
+	local r = if side < 0 then self.gravL else self.gravR
+	local a = r.a
+	local lo, hi = 1, #a
+	if hi == 0 or s < a[1] then
+		return false
+	end
+	while lo < hi do
+		local mid = (lo + hi + 1) // 2
+		if a[mid] <= s then
+			lo = mid
+		else
+			hi = mid - 1
+		end
+	end
+	return s <= r.b[lo]
+end
+
 -- The ground's height at (s, d), across the whole cross-section. On the tarmac it is the
 -- road's own surface. Past it the grass FOLLOWS THE BANK AND EASES FLAT: its slope across
 -- starts at the road's (tan bank) and falls away to nothing at the runoff's outer edge, so
@@ -671,8 +721,9 @@ function Spline.terrainNormal(self: Spline, s: number, d: number): Vector3
 	return n.Unit
 end
 
--- What is underfoot at (s, d): TARMAC, GRASS, or nil past a cliff's lip, where there is
--- nothing. Past a rock face or a hedge the grass carries on under it.
+-- What is underfoot at (s, d): TARMAC, GRASS, GRAVEL (the runoff in a gravel run), or nil
+-- past a cliff's lip, where there is nothing. Past a rock face or a hedge the grass carries
+-- on under it.
 function Spline.groundKind(self: Spline, s: number, d: number): number?
 	local half = Config.Road.Width * 0.5
 	local a = math.abs(d)
@@ -681,7 +732,7 @@ function Spline.groundKind(self: Spline, s: number, d: number): number?
 	end
 	local side = if d < 0 then -1 else 1
 	if a - half <= self:runoffAt(s, side) then
-		return Spline.GRASS
+		return if self:gravelAt(s, side) then Spline.GRAVEL else Spline.GRASS
 	end
 	if self:edgeAt(s, side) == Spline.CLIFF then
 		return nil
