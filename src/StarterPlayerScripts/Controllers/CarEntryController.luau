@@ -360,7 +360,9 @@ function CarEntryController:RequestExit(): (boolean, string?)
 	-- packet old -- and a car that has just stopped dead against a wall was doing 40 in
 	-- it. So the held pose goes first, as an ordinary `CarState`, and the request a packet
 	-- later: what the server checks is the car as it is when the button went down.
-	DriftController:_send(state)
+	-- The pose sent is the car settled on its wheels where it stopped (T-191), so the other
+	-- players' last look at it is the parked car; the speed is still the one it had.
+	DriftController:_send(DriftController:HeldState() or state, state.velocity)
 	local wanted = self.counts.exitsAsked
 	task.delay(1 / math.max(Config.Drift.StateSendRate, 1), function()
 		if self.mode == "leaving" and self.counts.exitsAsked == wanted then

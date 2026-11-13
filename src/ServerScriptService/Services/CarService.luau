@@ -895,6 +895,7 @@ function CarService:_onState(player: Player, cf, velocity, drifting, lift)
 		-- press itself cannot be believed, and whether it was slow enough (T-096).
 		seen.lastCF = cf
 		seen.lastVelocity = velocity
+		seen.lastLift = lift -- the wheels as last seen, for the parked car's pose (T-191)
 	elseif seen.was and reaches(seen.was) then
 		-- Sent before the respawn, arrived after it. Honest, so it is passed on, but it
 		-- does not move where the server expects the car: that stays the respawn position
@@ -1127,6 +1128,14 @@ function CarService:_onExit(player: Player, cf: any): (boolean, string?)
 	seen.lastCF, seen.lastVelocity = park, Vector3.zero
 	self.exits += 1
 	self.carExit:FireClient(player, true, park)
+	-- Everyone else sees it parked: the pose at rest, its wheels as the last packet had
+	-- them, which is the car settled on its wheels (T-191) -- and no speed, so their copy's
+	-- wheels stop turning.
+	for _, other in Players:GetPlayers() do
+		if other ~= player then
+			self.carStateOther:FireClient(other, userId, park, Vector3.zero, false, seen.lastLift)
+		end
+	end
 
 	local gen = entry.gen
 	task.spawn(function()
