@@ -935,7 +935,9 @@ function SplineGen._grand(self: Gen, sec: Spline.Section): { number }
 					-- to `w + reachG`, past the old road's own width
 					local da = if along < w then w - along elseif along > w + reachG then along - w - reachG else 0
 					local off = math.max(0, math.sqrt(da * da + across * across) - foot) * T.GrandAbove
-					if y + h > yo - T.GrandMargin + off then
+					-- (at 0 and below, only road the body reaches under counts: a low body beside the
+					-- leg above is no pinnacle, and is drawn as it always was, T-189)
+					if (g > 0 or off <= 0) and y + h > yo - T.GrandMargin + off then
 						clear = false
 						break
 					end
