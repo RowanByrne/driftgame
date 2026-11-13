@@ -863,7 +863,7 @@ function DriftController:DebugSpline()
 			out.surfaceY = y
 			-- the mountainside where the car is (T-140): what is under it, and each side
 			local kind = spline:groundKind(along, across)
-			out.ground = if kind == 0 then "tarmac" elseif kind == 1 then "grass" else "nothing"
+			out.ground = if kind == 0 then "tarmac" elseif kind == 1 then "grass" elseif kind == 2 then "gravel" else "nothing"
 			local names = { "rock", "hedge", "cliff" }
 			out.left = { runoff = spline:runoffAt(along, -1), edge = names[spline:edgeAt(along, -1)], kRail = spline:kRailAt(along, -1) ~= nil }
 			out.right = { runoff = spline:runoffAt(along, 1), edge = names[spline:edgeAt(along, 1)], kRail = spline:kRailAt(along, 1) ~= nil }

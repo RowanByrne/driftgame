@@ -473,6 +473,57 @@ function Tests.run(which: { string }?, ...)
 					check("a K-rail found to drive at", false, `none on this road, seed {SEED}`)
 				end
 			end
+			-- A tight cliff edge (T-181): a few studs of gravel, the rail on the tarmac's edge,
+			-- the lip just past it. The rail holds the car on the road, square on and glancing
+			do
+				local s, side = nil, 1
+				for _, sd in { 1, -1 } do
+					local runs = if sd < 0 then mountain.gravL else mountain.gravR
+					for i = 1, #runs.a do
+						if not s and runs.a[i] > 200 and runs.b[i] < LENGTH - 200 then
+							s, side = (runs.a[i] + runs.b[i]) * 0.5, sd
+						end
+					end
+				end
+				if s then
+					local w = mountain:runoffAt(s, side)
+					local r = offTheSide(s, side)
+					local nose = r.d + D.BodyLength * 0.5
+					-- glancing: 30 degrees off the road's line toward the rail at 60 studs/s
+					local yaw = mountain:yawAt(s) - side * math.rad(30)
+					local x, y, z = mountain:surfaceXYZ(s - 40, side * 2)
+					local runner = Sim.newRunner(CFrame.new(x, y + D.RideHeight, z) * CFrame.Angles(0, yaw, 0))
+					runner.state.velocity = Vector3.new(-math.sin(yaw), 0, -math.cos(yaw)) * 60
+					runner.state.time = 10
+					local before = table.clone(mw.stats)
+					local widest = 0
+					for _ = 1, 2 * DRIVE_FPS do
+						Sim.advance(runner, 1 / DRIVE_FPS, { steer = 0, handbrake = false }, mw)
+						local p = runner.state.position
+						local _, d = mountain:projectFrom(p.X, p.Z, s)
+						widest = math.max(widest, (d or 0) * side)
+					end
+					local gl = {
+						d = mountain:groundKind(s, side * (half + w * 0.5)),
+						past = mountain:groundKind(s, side * (half + w + 0.3)),
+						hit = mw.probe(Vector3.new(mountain:terrainXYZ(s, side * (half + w * 0.5))) + Vector3.yAxis),
+					}
+					check(
+						"a tight cliff edge: gravel a few studs wide, then nothing",
+						w >= T.TightRunoff[1] - 1e-6 and w <= T.TightRunoff[2] + 1e-6 and gl.d == Spline.GRAVEL and gl.past == nil and gl.hit ~= nil and gl.hit.grip == D.GripGravel and gl.hit.score == D.ScoreGravel,
+						`at s {fmt(s, 0)}: {fmt(w, 2)} studs of gravel past the tarmac, the lip at {fmt(half + w, 2)}; grip there {gl.hit and gl.hit.grip or "none"}`
+					)
+					check(
+						"its rail stops the car before the drop",
+						-- held by the rail (its sweep, or its push out if the sweep missed: the
+						-- counts below say which), never past its face, never over the lip
+						nose <= half + 0.5 and nose > half - 1.5 and not r.airborne and r.overCliff == 0 and widest + D.BodyWidth * 0.5 <= half + 1 and not runner.state.airborne and mw.stats.overCliff == before.overCliff,
+						`square on at 50 studs/s for 3 s: nose {fmt(nose, 2)} studs out (rail's face {half}, lip {fmt(half + w, 2)}), {r.rails} rail stops by the sweep; glancing at 60 studs/s, 30 degrees: the car's side at most {fmt(widest + D.BodyWidth * 0.5, 2)} studs out, {mw.stats.kRailStops - before.kRailStops} rail stops, on the ground {tostring(not runner.state.airborne)}`
+					)
+				else
+					check("a tight cliff edge found to drive at", false, `none on this road, seed {SEED}`)
+				end
+			end
 			-- The ground: grass grips and scores as grass
 			do
 				local s = 500

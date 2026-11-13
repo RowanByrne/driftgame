@@ -65,6 +65,7 @@ export type Stats = {
 	turnsRefused: number, -- a planned turn that would have crowded old road, run on and retried
 	climbs: number, -- times the descent bottomed out and a climb began
 	cliffSwaps: number, -- times the mountain changed sides
+	tight: number, -- tight cliff edges laid: gravel and a rail at the lip (T-181)
 }
 
 -- One step of the plan: a STRETCH of random sections kept within `limit` of `aim` for
@@ -114,6 +115,7 @@ export type Gen = typeof(setmetatable(
 		lineZ: number?,
 		trng: Random, -- the mountainside's own stream
 		grng: Random, -- the groves' own stream (T-183), so they never change the rest
+		xrng: Random, -- the tight cliff edges' own stream (T-181), so they never change the rest
 		uphill: number, -- the side the mountain is on: -1 left, 1 right
 		inBand: boolean, -- heading within `AlongFallLine` of the fall line: the side holds
 		lowUntil: number, -- s: the uphill side stays hedge to here after the mountain changes sides
@@ -179,6 +181,7 @@ function SplineGen.new(seed: number, origin: Spline.Origin?, clearOverride: numb
 		limitUp = math.rad(Config.Spline.HeadingLimit),
 		trng = Random.new((seed * 7 + 1013) % 2 ^ 31),
 		grng = Random.new((seed * 11 + 2027) % 2 ^ 31),
+		xrng = Random.new((seed * 17 + 2311) % 2 ^ 31),
 		uphill = 1,
 		inBand = false,
 		lowUntil = 0,
@@ -204,6 +207,7 @@ function SplineGen.new(seed: number, origin: Spline.Origin?, clearOverride: numb
 			turnsRefused = 0,
 			climbs = 0,
 			cliffSwaps = 0,
+			tight = 0,
 		},
 	}, SplineGen)
 	-- THE FALL LINE: the start heading turned `FallLineTurn` to a side chosen from the seed,
@@ -309,6 +313,7 @@ function SplineGen._terrain(self: Gen, sec: Spline.Section)
 		self.runoff[side] = prev
 		return out
 	end
+	local startRun = { [-1] = self.runoff[-1], [1] = self.runoff[1] } -- for a tight edge (T-181)
 	sec.rl = runoff(-1)
 	sec.rr = runoff(1)
 
@@ -434,6 +439,51 @@ function SplineGen._terrain(self: Gen, sec: Spline.Section)
 	-- drawn as usual (the stream stays the same), then dropped
 	if #kr > 0 and grove[kr[3]] then
 		kr = {}
+	end
+
+	-- TIGHT CLIFF EDGES (T-181): now and then, on a side with a cliff the whole way along,
+	-- the runoff closes in to a few studs of gravel with a crash barrier on the tarmac's
+	-- edge and the lip just past it. Its width eases in and out at `TightRate` on the
+	-- runoff's own smoothstep knots, so nothing steps; the rail and the gravel reach
+	-- `TightLead` past the narrow part into the easing. A K-rail already chosen on that side
+	-- gives way to this one. A GROVE IS CHOSEN FIRST (T-183) and wins: a side with a grove
+	-- never gets a tight edge (nor a K-rail).
+	-- ITS OWN STREAM, always the same four draws a section, so a tight edge (or a grove
+	-- blocking one) changes nothing else the road chooses: with `TightChance = 0` the road is
+	-- exactly the one before T-181.
+	if tag ~= "Start" then
+		local x = self.xrng
+		local roll, uWidth, uCore, uAt = x:NextNumber(), x:NextNumber(), x:NextNumber(), x:NextNumber()
+		local side = if edgeOver(1, 0, len) == Spline.CLIFF and not grove[1] then 1 elseif edgeOver(-1, 0, len) == Spline.CLIFF and not grove[-1] then -1 else 0
+		if side ~= 0 and roll < T.TightChance then
+			local w0, w1 = startRun[side], self.runoff[side]
+			local wt = T.TightRunoff[1] + (T.TightRunoff[2] - T.TightRunoff[1]) * uWidth
+			local rampIn = math.max(T.TightRamp, math.abs(w0 - wt) / T.TightRate)
+			local rampOut = math.max(T.TightRamp, math.abs(w1 - wt) / T.TightRate)
+			local room = len - rampIn - rampOut - 2
+			if room >= T.TightRun[1] then
+				local core = math.min(T.TightRun[1] + (T.TightRun[2] - T.TightRun[1]) * uCore, room)
+				local a = rampIn + 1 + (room - core) * uAt
+				local b = a + core
+				-- b + rampOut is at most len - 1, so the last knot is always its own
+				local knots = { a - rampIn, w0, a, wt, b, wt, b + rampOut, w1, len, w1 }
+				if side < 0 then
+					sec.rl = knots
+				else
+					sec.rr = knots
+				end
+				local ga = a - math.min(T.TightLead, rampIn * 0.5)
+				local gb = b + math.min(T.TightLead, rampOut * 0.5)
+				if #kr > 0 and kr[3] == side then
+					kr = {}
+				end
+				table.insert(kr, ga)
+				table.insert(kr, gb)
+				table.insert(kr, side)
+				sec.gl = { ga, gb, side }
+				self.stats.tight += 1
+			end
+		end
 	end
 	if #kr > 0 then
 		sec.kr = kr

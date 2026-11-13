@@ -385,15 +385,18 @@ function parts.terrain(check)
 			if not (sec.rl and sec.rr and sec.el and sec.er) then
 				missing += 1
 			else
-				for _, knots in { sec.rl, sec.rr } do
+				for i, knots in { sec.rl, sec.rr } do
+					-- a tight cliff edge's side (T-181) narrows to gravel faster: `parts.tight`
+					local tight = sec.gl ~= nil and sec.gl[3] == (if i == 1 then -1 else 1)
 					local prevV, prevS = nil, 0
 					for j = 1, #knots, 2 do
 						local w = knots[j + 1]
-						-- a grove (T-183) widens it to `GroveRunoff`, and the next section eases back
-						if w < T.RunoffMin - 1e-9 or w > math.max(T.RunoffMax, T.GroveRunoff[2]) + 1e-9 then
+						-- a grove (T-183) widens it to `GroveRunoff`, and the next section eases back; a tight
+						-- cliff edge (T-181) narrows it to `TightRunoff`
+						if w < (if tight then T.TightRunoff[1] else T.RunoffMin) - 1e-9 or w > math.max(T.RunoffMax, T.GroveRunoff[2]) + 1e-9 then
 							badWidth += 1
 						end
-						if prevV then
+						if prevV and not tight then
 							worstRate = math.max(worstRate, math.abs(w - prevV) / (knots[j] - prevS))
 						end
 						prevV, prevS = w, knots[j]
@@ -542,7 +545,7 @@ function parts.terrain(check)
 		local dT = side * rng:NextNumber() * half
 		local dG = side * (half + 0.01 + rng:NextNumber() * math.max(0, w - 0.02))
 		local dP = side * (half + w + 0.5 + rng:NextNumber() * 10)
-		if sp:groundKind(s, dT) ~= Spline.TARMAC or (w > 0.05 and sp:groundKind(s, dG) ~= Spline.GRASS) then
+		if sp:groundKind(s, dT) ~= Spline.TARMAC or (w > 0.05 and sp:groundKind(s, dG) ~= (if sp:gravelAt(s, side) then Spline.GRAVEL else Spline.GRASS)) then
 			wrongKind += 1
 		end
 		if edge == Spline.CLIFF then
@@ -764,6 +767,80 @@ function parts.mountain(check)
 	)
 end
 
+-- 10. TIGHT CLIFF EDGES (T-181): now and then on a cliff side the runoff closes in to a few
+-- studs of gravel with a crash barrier on the tarmac's edge.
+function parts.tight(check)
+	local T = Config.Spline.Terrain
+	local half = Config.Road.Width * 0.5
+	local count, length, gravelLen, rate = 0, 0, 0, 0
+	local notCliff, unrailed, wrongKind, samples = 0, 0, 0, 0
+	local narrowest, widestCore = math.huge, 0
+	local differ, clash = 0, 0
+	for _, seed in SEEDS do
+		local gen = road(seed, LIMIT_LENGTH)
+		local sp = gen.spline
+		length += sp.length
+		local copy = SplineGen.replay(gen.sections)
+		local s0 = 0
+		for _, sec in gen.sections do
+			if sec.gl then
+				local a, b, side = s0 + sec.gl[1], s0 + sec.gl[2], sec.gl[3]
+				count += 1
+				gravelLen += b - a
+				-- a grove (T-183) is chosen first and keeps its side
+				if sec.gv then
+					for j = 1, #sec.gv, 2 do
+						if sec.gv[j] == side then
+							clash += 1
+						end
+					end
+				end
+				local knots = if side < 0 then sec.rl else sec.rr
+				-- the narrow part is between the two knots at the gravel's width
+				widestCore = math.max(widestCore, knots[4], knots[6])
+				local prevV, prevS = nil, 0
+				for j = 1, #knots, 2 do
+					if prevV then
+						rate = math.max(rate, math.abs(knots[j + 1] - prevV) / (knots[j] - prevS))
+					end
+					prevV, prevS = knots[j + 1], knots[j]
+				end
+				for u = a, b, 2 do
+					samples += 1
+					local w = sp:runoffAt(u, side)
+					narrowest = math.min(narrowest, w)
+					if sp:edgeAt(u, side) ~= Spline.CLIFF then
+						notCliff += 1
+					end
+					if not sp:kRailAt(u, side) then
+						unrailed += 1
+					end
+					if sp:groundKind(u, side * (half + w * 0.5)) ~= Spline.GRAVEL or sp:groundKind(u, side * (half + w + 0.3)) ~= nil then
+						wrongKind += 1
+					end
+					if copy:gravelAt(u, side) ~= true or copy:runoffAt(u, side) ~= w then
+						differ += 1
+					end
+				end
+			end
+			s0 += sec.len
+		end
+	end
+	check(
+		"tight cliff edges: gravel a few studs wide, now and then",
+		count > 0 and widestCore <= T.TightRunoff[2] + 1e-9 and narrowest >= T.TightRunoff[1] - 1e-6,
+		`{count} in {math.floor(length)} studs ({fmt(count / length * 10000, 2)} per 10 000 studs, {fmt(gravelLen / length * 100, 1)}% of the road's length); gravel {fmt(narrowest, 2)} to {fmt(widestCore, 2)} studs at its narrowest part`
+	)
+	check("tight cliff edges ease in and out", rate <= T.TightRate + 1e-9, `steepest change {fmt(rate, 3)} stud per stud between knots (limit {T.TightRate})`)
+	check(
+		"tight cliff edges: a cliff past the gravel and a rail on the tarmac's edge all the way",
+		notCliff == 0 and unrailed == 0 and wrongKind == 0 and samples > 0,
+		`{samples} points: {notCliff} not over a cliff, {unrailed} without a rail, {wrongKind} not gravel then nothing`
+	)
+	check("a client's replay has the same gravel", differ == 0, `{differ} of {samples} differ`)
+	check("a tight cliff edge never shares a side with a grove", clash == 0, `{clash} of {count} on a grove's side`)
+end
+
 function Tests.run(which: { string }?, ...)
 	-- The DebugBridge calls a member as a method, so the module itself comes first.
 	if which == Tests then
@@ -773,7 +850,7 @@ function Tests.run(which: { string }?, ...)
 	local function check(name: string, ok: boolean, detail: string?)
 		table.insert(checks, { name = name, ok = ok, detail = detail })
 	end
-	local order = { "limits", "crossing", "replay", "health", "project", "accuracy", "terrain", "twist", "mountain" }
+	local order = { "limits", "crossing", "replay", "health", "project", "accuracy", "terrain", "twist", "mountain", "tight" }
 	for _, name in which or order do
 		local ok, err = pcall(parts[name], check)
 		if not ok then
