@@ -121,8 +121,8 @@ function Tests.run()
 		-- 2b. The grass's texture (T-187): every grass face mapped in world studs, every other
 		-- face on UV (0, 0), where the tile is plain `Shade` grey.
 		local GrassTexture = require(ReplicatedStorage.Shared.Road.GrassTexture)
-		if Config.Spline.Grass.Enabled and GrassTexture.style().Texture and (GrassTexture.style().Image or "") == "" then
-			local tile = GrassTexture.style().TileStuds
+		if Config.Spline.Grass.Enabled then
+			local tile = Config.Spline.Grass.TileStuds
 			local G = Config.Spline.Grass
 			local grassHex = Config.Spline.Terrain.GrassColour:ToHex()
 			local grassFaces, mappedOk, plainFaces, plainOk, worstStuds, textured = 0, 0, 0, 0, 0, 0
@@ -169,22 +169,28 @@ function Tests.run()
 				textured == built and grassFaces > 0 and mappedOk == grassFaces and plainOk == plainFaces,
 				`{textured} of {built} chunks textured; {mappedOk} of {grassFaces} grass faces mapped (worst {fmt(worstStuds, 4)} studs off), {plainOk} of {plainFaces} other faces on the plain corner`
 			)
-			local px = GrassTexture.pixels(G.Size, G.Seed)
-			local want = math.floor(G.Shade * 255 + 0.5)
-			local cornerOk, sum = true, 0
-			for _, xy in { { 0, 0 }, { 1, 1 }, { G.Size - 1, 0 }, { 0, G.Size - 1 }, { G.Size - 1, G.Size - 1 }, { G.Size - 2, 1 } } do
-				local o = (xy[2] * G.Size + xy[1]) * 4
-				for c = 0, 2 do
-					cornerOk = cornerOk and buffer.readu8(px, o + c) == want
-				end
-			end
-			for i = 0, G.Size * G.Size - 1 do
-				sum += buffer.readu8(px, i * 4 + 1)
-			end
-			local mean = sum / (G.Size * G.Size) / 255
-			check("the tile's corners are plain Shade, and the grass averages it", cornerOk and math.abs(mean - G.Shade) < 0.03, `corners {want}/255; the tile's mean {fmt(mean, 3)} against Shade {G.Shade}`)
+			-- the shared image itself, as the chunks draw it: the painted tile, its corners set
 			local ts = GrassTexture.DebugState()
-			check("the tile is drawn over a few frames, not in one", ts.made and ts.worstSliceMs < G.SliceMs * 2.5, `made over {fmt(ts.buildMs, 1)} ms of wall time, at most {fmt(ts.worstSliceMs, 2)} ms of work a frame (slice {G.SliceMs})`)
+			local img = GrassTexture.get()
+			local cornerOk, mean, size = false, 0, 0
+			local want = math.floor(G.Shade * 255 + 0.5)
+			if img then
+				size = img.Size.X
+				local px = img:ReadPixelsBuffer(Vector2.zero, img.Size)
+				cornerOk = true
+				for _, xy in { { 0, 0 }, { 1, 1 }, { size - 1, 0 }, { 0, size - 1 }, { size - 1, size - 1 }, { size - 2, 1 } } do
+					local o = (xy[2] * size + xy[1]) * 4
+					for c = 0, 2 do
+						cornerOk = cornerOk and buffer.readu8(px, o + c) == want
+					end
+				end
+				local sum = 0
+				for i = 0, size * size - 1 do
+					sum += buffer.readu8(px, i * 4 + 1)
+				end
+				mean = sum / (size * size) / 255
+			end
+			check("the painted tile loads, its corners plain Shade, and it averages Shade", img ~= nil and cornerOk and math.abs(mean - G.Shade) < 0.03, `{G.Image}: {size} px, loaded in {fmt(ts.buildMs, 1)} ms; corners {want}/255; mean {fmt(mean, 3)} against Shade {G.Shade}`)
 		end
 
 		-- 3. Between the cuts, the drawn surface stays within the tolerance of the true one.
