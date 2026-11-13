@@ -143,11 +143,13 @@ local Drift = {
 	-- ground rays go -- the art never moves the geometry
 
 	-- ---------------------------------------------------------------- ground
-	-- One downward ray per wheel each step; the car's height and tilt follow the surface.
-	-- The reference runs a spring-and-damper suspension per wheel, which a kinematic car
-	-- cannot have; the only part of it a player feels is the tilt, and this is that.
-	GroundFollow = 0.12, -- s, how fast height and tilt follow the surface
-	AirborneMargin = 2, -- studs above RideHeight with no ground before the car is airborne
+	-- One downward ray per wheel each step. The drift model's own frame -- where its forces
+	-- act -- eases on to the surface; the BODY rides it on four springs (`Body`, below).
+	GroundFollow = 0.12, -- s, how fast the forces' frame (`state.groundUp`) follows the surface
+	AirborneMargin = 2, -- studs above RideHeight before the drift model counts the car as
+	-- airborne and lets go of the grip and the drive. The body itself
+	-- leaves the road the moment its springs run out (T-196); this is
+	-- how high a hop may go before it costs the car its grip
 	GroundRayUp = 4, -- studs above the contact point each ray starts from
 	GroundRayLength = 28, -- studs each ray reaches
 	AirLevel = 0.25, -- s, how fast the car levels out while airborne
@@ -169,12 +171,31 @@ local Drift = {
 	SurfaceAttribute = "Surface", -- attribute on a tagged part naming its surface
 	SurfaceDirt = "dirt", -- the value that means dirt; anything else tagged is tarmac
 
+	-- ---------------------------------------------------------------- the body on its springs
+	-- OURS, T-196 (features/car-body-physics.md, `Suspension.ride`). The body's height, pitch
+	-- and roll are real motion: four springs push it up (their stiffness, damping, travel and
+	-- rest are the CAR's, `Suspension` below), gravity and downforce pull it down. On flat
+	-- ground the springs sit still and none of this moves anything.
+	Body = {
+		PitchInertia = 1, -- x the pitch inertia of a box the car's `BodyLength` long. More is a
+		-- car that is slower to nose over and slower to come back
+		RollInertia = 1, -- the same in roll, from `BodyWidth`
+		MaxPitch = 25, -- deg the body may pitch off the ground's own slope, either way. A hard
+		-- limit: it is what stops a car going over on its nose or its tail
+		MaxRoll = 20, -- deg it may roll off the ground's own bank
+		DamperMaxSpeed = 15, -- studs/s. The dampers resist a strut closing or opening no faster
+		-- than this: past it they blow off, as real ones do. A kerb is a step, and
+		-- an unlimited damper turns one into a launch
+		AirDamping = 0, -- 1/s. How fast pitching and rolling die away in the air. 0 keeps the
+		-- rate the car left the ground with until it lands
+	},
+
 	-- ---------------------------------------------------------------- suspension and the floor
-	-- OURS, T-095 (features/car-v2.md "Rules and numbers", `Drift/Suspension`). Two layers:
-	-- the drawn springs (each wheel's travel, the body's sprung offset), which nothing in the
-	-- model reads; and the floor solve, which the model runs ONLY when a wheel has run out
-	-- of travel or the floor is already resting on something. On flat ground and every road
-	-- all four wheels are within their travel and neither layer touches the line.
+	-- OURS, T-095 (features/car-v2.md "Rules and numbers", `Drift/Suspension`): the wheels'
+	-- springs, which carry the body (`Body`, above), and the floor solve, which the model
+	-- runs ONLY when a wheel has run out of travel or the floor is already resting on
+	-- something. On flat ground and every road the springs sit at `Rest` and the floor solve
+	-- never runs.
 	-- A WHEEL'S TRAVEL is measured up from fully hanging: 0 hangs, `Travel` is fully up.
 	--
 	-- TRAVEL, REST, STIFFNESS, DAMPING AND RIDE ARE THE CAR'S (T-109): `Suspension.Travel` and
@@ -186,10 +207,6 @@ local Drift = {
 	-- at about 2.8 Hz and settle a landing in a third of a second.
 	Suspension = {
 		DropTime = 0.15, -- s a wheel takes to fall the whole of its travel with nothing under it
-		LandingSquash = 0.15, -- share of a change in the car's vertical speed, on the ground,
-		-- the body takes as a jolt into its springs: a landing at 30 studs/s
-		-- dips it about a quarter of a stud. 0 turns it off
-		MaxBodyTilt = 4, -- deg the body may pitch or roll on its springs off the car's frame
 		ReachSlack = 0.05, -- studs past full hang a wheel still counts as touching (drawn)
 		HangSlack = 0.75, -- studs past full hang before a wheel counts as out of travel and
 		-- the floor solve runs (two wheels at least): a whole stud short of its ground. Over a
@@ -246,12 +263,6 @@ local Drift = {
 		FloorInset = 0.1, -- studs the read-off floor's corners are pulled in from the body's
 		FloorCover = 0.3, -- studs of slack when asking which part a floor point is under
 		LiftRange = 1, -- studs either way of zero a wheel's lift can be sent over `CarState`
-		-- THE PLANE THROUGH THE WHEELS (T-184), only where the ground has steps the normals
-		-- cannot see (the spline road's `RoadLip`, a hit marked `stepped`): the car's tilt takes
-		-- the part of its four wheels' own plane that their mean normal misses, less this
-		-- much slope (rise over run) either way. Smooth tarmac and grass never miss by this
-		-- much, so there the car is exactly as approved; over the step it tips on to the grass
-		StepTiltDead = 0.02,
 	},
 
 	-- ---------------------------------------------------------------- a hand-placed track
