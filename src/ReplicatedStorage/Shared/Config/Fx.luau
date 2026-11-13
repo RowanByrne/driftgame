@@ -261,12 +261,10 @@ return {
 	},
 
 	-- ------------------------------------------------------------------ surfaces
-	-- A mark's colour and a puff's colour, per surface. THE GAME HAS ONE SURFACE
-	-- (features/car-fx.md "What our model already publishes"): `Drift/World`'s `Hit`
-	-- carries a grip multiplier and not a surface name, so every wheel is told `Default`
-	-- today. The table is here, and `Built` below is what decides how many instances a car
-	-- actually carries -- the day `dirt` is laid, `Hit` grows a name, `dirt` goes in
-	-- `Built`, and nothing else in `Drift/Wheels` changes.
+	-- A mark's colour and a puff's colour, per SMOKING surface. Only tarmac smokes: grass and
+	-- gravel are `Ground` below (T-188), which tears up the ground instead. `Hit.surface`
+	-- names each wheel's ground on the spline road; anything unnamed is `Default`. `dirt` is
+	-- a look with no ground that is dirt, kept for the day there is some.
 	Surfaces = {
 		tarmac = {
 			MarkColour = Color3.fromRGB(26, 26, 28), -- near black, not black: a pure black
@@ -293,8 +291,128 @@ return {
 	-- ladder, 28 with a three-rung one, and 20 again now the ladder is gone (T-062).
 	-- A second surface adds 12, which is why `dirt` is not in here until there is dirt.
 	Built = { "tarmac" },
-	Default = "tarmac", -- what a wheel on the ground is told it is standing on, until
-	-- `Hit` can say
+	Default = "tarmac", -- what a wheel is told it is standing on when its `Hit` has no
+	-- `surface` (the parts world, the playground). The spline road names every hit (T-188)
+
+	-- ------------------------------------------------------------------ off the road (T-188)
+	-- What a wheel does on GRASS and GRAVEL instead of smoking (features/car-fx.md "Off the
+	-- road"). The user: *"it should look like the weight of the car is tearing through the
+	-- grass"*. Per wheel, from that wheel's own `Hit.surface`:
+	--
+	--   * the tarmac smoke (both layers) FADES OUT over `FadeSeconds` when the wheel leaves
+	--     tarmac, and back in when it returns -- a rate scaled by a per-wheel mix, not a switch
+	--   * on grass the mark is a flattened-grass line (`Grass.FlatMark`), and above
+	--     `Grass.TrenchSlipDegrees` of slip a wider brown TRENCH (`Grass.TrenchMark`) is laid
+	--     ON TOP of it. Layered, never swapped: the flat line runs unbroken underneath, so the
+	--     trench starting or ending is a brown line appearing over a green one, not a hole
+	--   * on grass, `Grass.Clippings` (green bits) are kicked up behind the wheel, and
+	--     `Grass.Dirt` (brown clods) blends in around the trench threshold
+	--   * on gravel, a pale scuff mark and a tan dust cloud (`Gravel`). Kept to one emitter
+	--
+	-- BUILT-IN TEXTURES ONLY: the bits are `SquareParticle.png`, flat-coloured squares, which
+	-- is the low-poly look. Nothing uploaded.
+	--
+	-- THE BUDGET grows by 8 a wheel: 2 Attachments (the trench is wider, so it needs its own
+	-- pair) + 3 Trails + 3 Emitters. 4 x (5 + 8) = 52 a car, built once and switched with
+	-- `Enabled` for ever after, like everything else here.
+	Ground = {
+		FadeSeconds = 0.2, -- s for a wheel's smoke to fade out when it leaves tarmac, and for
+		-- the grass/gravel debris to fade in -- and the same back. Fast, but not a cut
+
+		Grass = {
+			TrenchSlipDegrees = 30, -- |slip| at which the trench starts being cut
+			TrenchStopDegrees = 25, -- |slip| it has to fall under to stop. The gap is the
+			-- hysteresis: a slide sitting on 30 must not flick the trench on and off
+			DirtStartDegrees = 22, -- |slip| the dirt spray starts at, and...
+			DirtFullDegrees = 40, -- ...is full at. A ramp, so the spray BLENDS in around the
+			-- trench rather than popping on with it
+			ClippingsAtFullDirt = 0.5, -- the grass bits are cut to this share once the dirt is
+			-- full: deep slides throw mostly dirt
+			FullSlipDegrees = 90, -- slip at which the debris rates are at their max
+
+			FlatMark = {
+				Colour = Color3.fromRGB(52, 92, 38), -- darker than the grass (86, 140, 62):
+				-- flattened, shadowed blades
+				Transparency = 0.45,
+			},
+			TrenchMark = {
+				Colour = Color3.fromRGB(70, 48, 28), -- dark wet earth
+				Transparency = 0.08, -- near solid: the grass is GONE here
+				Width = 1.9, -- studs. Wider than a tyre mark (1.2): the tyre ploughs
+				Lift = 0.04, -- studs ABOVE the flat mark, so the two never depth-fight
+			},
+
+			-- How far back the debris is thrown, off straight up. On its own attachment pair
+			-- (the trench's), so the stylized smoke's 35 degrees is untouched
+			KickAngleDegrees = 60,
+
+			Clippings = {
+				Texture = "rbxasset://textures/particles/SquareParticle.png", -- BUILT IN
+				Colour = Color3.fromRGB(96, 156, 64),
+				RateMin = 25, -- particles/s at the smallest slide that marks
+				RateMax = 90, -- at `FullSlipDegrees`
+				Lifetime = { 0.45, 0.8 },
+				SizeStart = 0.42, -- studs. Chunky, low-poly bits
+				SizeEnd = 0.26,
+				Transparency = 0, -- solid bits
+				FadeIn = 0, -- opaque from birth, fade only at the end
+				Speed = { 12, 22 },
+				SpreadDegrees = 28,
+				RiseAcceleration = -60, -- NEGATIVE: gravity. Bits fall back down
+				Drag = 1.2,
+				RotationDegrees = { -180, 180 },
+				RotationSpeed = { -400, 400 }, -- tumbling
+				LightEmission = 0,
+				LightInfluence = 1,
+			},
+			Dirt = {
+				Texture = "rbxasset://textures/particles/SquareParticle.png",
+				Colour = Color3.fromRGB(92, 64, 38),
+				RateMin = 20, -- at the start of the dirt ramp
+				RateMax = 110, -- full ramp, at `FullSlipDegrees`
+				Lifetime = { 0.5, 0.9 },
+				SizeStart = 0.55, -- clods, bigger than the grass
+				SizeEnd = 0.35,
+				Transparency = 0,
+				FadeIn = 0,
+				Speed = { 16, 28 }, -- thrown harder than the grass
+				SpreadDegrees = 22,
+				RiseAcceleration = -70,
+				Drag = 0.8,
+				RotationDegrees = { -180, 180 },
+				RotationSpeed = { -300, 300 },
+				LightEmission = 0,
+				LightInfluence = 1,
+			},
+		},
+
+		-- GRAVEL: the bevel at the road's edge and the tight-cliff strips. A pale scuff and a
+		-- dust cloud, no smoke -- loose stone does not burn rubber. Kept to one emitter.
+		Gravel = {
+			Mark = {
+				Colour = Color3.fromRGB(110, 102, 90), -- a scuffed, darker gravel (146, 138, 124)
+				Transparency = 0.5,
+			},
+			Dust = {
+				Texture = "rbxasset://textures/particles/smoke_main.dds",
+				Colour = Color3.fromRGB(176, 160, 132),
+				RateMin = 10,
+				RateMax = 45,
+				Lifetime = { 0.6, 1.1 },
+				SizeStart = 1.6,
+				SizeEnd = 6,
+				Transparency = 0.5,
+				Speed = { 3, 7 },
+				SpreadDegrees = 25,
+				RiseAcceleration = 2,
+				Drag = 1.5,
+				RotationDegrees = { -180, 180 },
+				RotationSpeed = { -30, 30 },
+				LightEmission = 0,
+				LightInfluence = 1,
+			},
+		},
+	},
 
 	-- The instance names a rig's effects are given, so `Drift/Wheels`, the tests and
 	-- anything that inspects a car agree on what they are called (CONTRACTS.md).
@@ -308,6 +426,9 @@ return {
 		Trail = "FxMark_%s_%s", -- wheel name, then surface. ONE per wheel per surface
 		Emitter = "FxSmoke_%s_%s", -- wheel name, then surface. The DIFFUSE layer
 		Stylized = "FxPuff_%s_%s", -- wheel name, then surface. The STYLIZED layer
+		TrenchAttachment = "FxT_%s_%s", -- wheel name, then "L" or "R": the wider trench pair (T-188)
+		GroundTrail = "FxMark_%s_%s", -- wheel name, then "grass", "trench" or "gravel" (T-188)
+		GroundEmitter = "FxKick_%s_%s", -- wheel name, then "grass", "dirt" or "dust" (T-188)
 		Engine = "FxEngine", -- the one engine `Sound`, on the body (T-064)
 		Skid = "FxSkid_%s", -- surface. One `Sound` per surface in `Built`, on the body
 		Spark = "FxSpark_%d", -- slot. One anchored part per spark slot, NOT in the car (T-097)

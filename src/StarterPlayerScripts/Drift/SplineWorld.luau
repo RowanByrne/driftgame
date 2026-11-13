@@ -162,14 +162,14 @@ function SplineWorld.new(spline: Spline.Spline, base: Model.World?): SplineWorld
 				if dy <= rayTop and dy >= rayBottom then
 					stats.hits += 1
 					if kind == Spline.TARMAC then
-						return { y = y, normal = spline:normalAt(s, d), grip = C.GripTarmac, score = C.ScoreTarmac, stepped = true }
+						return { y = y, normal = spline:normalAt(s, d), grip = C.GripTarmac, score = C.ScoreTarmac, stepped = true, surface = "tarmac" }
 					end
 					if kind == Spline.GRAVEL then
 						stats.gravel += 1
-						return { y = y, normal = spline:terrainNormal(s, d), grip = C.GripGravel, score = C.ScoreGravel, stepped = true }
+						return { y = y, normal = spline:terrainNormal(s, d), grip = C.GripGravel, score = C.ScoreGravel, stepped = true, surface = "gravel" }
 					end
 					stats.grass += 1
-					return { y = y, normal = spline:terrainNormal(s, d), grip = C.GripGrass, score = C.ScoreGrass, stepped = true }
+					return { y = y, normal = spline:terrainNormal(s, d), grip = C.GripGrass, score = C.ScoreGrass, stepped = true, surface = "grass" }
 				end
 			end
 		end

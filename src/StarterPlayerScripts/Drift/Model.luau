@@ -69,7 +69,10 @@ export type Input = {
 -- model never has to know what a surface is called (Drift/World).
 -- `stepped`: this ground has steps its normal does not show -- the spline road, raised above
 -- its grass (T-184) -- so the car's tilt follows the plane through its wheels there.
-export type Hit = { y: number, normal: Vector3, grip: number, score: number, stepped: boolean? }
+-- `surface`: what the ground is called, for the wheel EFFECTS only (T-188: "tarmac", "grass",
+-- "gravel"). The model never reads it -- it only copies it to `wheelSurface` -- and nil is
+-- whatever `Config.Fx.Default` says.
+export type Hit = { y: number, normal: Vector3, grip: number, score: number, stepped: boolean?, surface: string? }
 
 -- The queries the model makes of the world. Drift/World builds them, for the live
 -- Workspace and for a flat plane.
@@ -102,6 +105,8 @@ export type State = {
 	braking: boolean, -- past 90 degrees of slip: the grip is pointing against the travel
 	drifting: boolean, -- |slip| >= MinSlipAngleForDrift, for the readout and the score
 	wheelsDown: { boolean }, -- FL, FR, RL, RR
+	wheelSurface: { string }, -- FL, FR, RL, RR: each wheel's `Hit.surface`, "" for unnamed or
+	-- no ground. Written in place; read only by the wheel effects (T-188)
 	rearDown: boolean, -- at least one driven wheel is on the ground
 	surfaceGrip: number, -- mean of the four wheels' surface grip, 0 .. 1
 	surfaceScore: number, -- the same for the score multiplier
@@ -207,6 +212,7 @@ function Model.new(spawnCFrame: CFrame): State
 		-- read these before the first ground ray has been cast. One step (1/120 s) later
 		-- the rays own them, so a car spawned in the air corrects itself immediately.
 		wheelsDown = { true, true, true, true },
+		wheelSurface = { "", "", "", "" },
 		rearDown = true,
 		surfaceGrip = Config.Drift.GripTarmac,
 		surfaceScore = Config.Drift.ScoreTarmac,
@@ -582,6 +588,7 @@ function Model.step(s: State, input: Input, dt: number, world: World): State
 		local at = target + fwd * (halfBase * wheel.front) + right * (halfTrack * wheel.side)
 		wheelX[i], wheelZ[i] = at.X - target.X, at.Z - target.Z
 		local hit = world.probe(at)
+		s.wheelSurface[i] = if hit and hit.surface then hit.surface else ""
 		if hit then
 			found[i] = true
 			wheelHits[i] = hit
