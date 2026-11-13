@@ -250,6 +250,45 @@ local function buildRamp(parent: Instance)
 	}
 end
 
+-- The body pad (Layout.BodyPad, T-196): each piece a box standing on the plate, or a slab
+-- tilted so its top runs from one height to the other, tagged as road.
+--
+-- A SLOPE IS A TILTED BOX, NOT A WedgePart, and that is not taste: the car is kept out of
+-- things by `Drift/World.penetration`, which knows a part by its box. To it a wedge is the
+-- whole block the wedge was cut from, so the car met the thin end of one as a wall and
+-- stopped dead (measured: 78 studs/s to nothing at the foot of the first slope). A tilted
+-- box is what the ramp and the bowl are made of, and its buried underside is never seen.
+local function buildBodyPad(parent: Instance)
+	local spec = Layout.BodyPad
+	local folder = newFolder(spec.id, parent)
+	local sink = 1 -- studs a box goes into the plate
+	local slab = 2 -- studs thick a slope is
+	for _, p in spec.pieces do
+		local x, z = spec.x + p.dx, spec.z + p.dz + p.length * 0.5
+		if p.from == p.to then
+			Build.surface(
+				p.name,
+				Vector3.new(p.width, p.from + sink, p.length),
+				CFrame.new(x, (p.from - sink) * 0.5, z),
+				palette[spec.colour],
+				folder
+			)
+		else
+			local run = Vector3.new(0, p.to - p.from, p.length)
+			local up = Vector3.new(0, p.length, p.from - p.to).Unit
+			local top = Vector3.new(x, (p.from + p.to) * 0.5, z)
+			Build.surface(
+				p.name,
+				Vector3.new(p.width, slab, run.Magnitude),
+				CFrame.fromMatrix(top - up * (slab * 0.5), Vector3.xAxis, up),
+				palette[spec.colour],
+				folder
+			)
+		end
+		partCount += 1
+	end
+end
+
 -- THE GUARDRAIL SWITCH, the hill's half (T-067). `RoadService` has the identical thing
 -- for the endless road and the one button asks both.
 --
@@ -801,6 +840,7 @@ function PlaygroundService:Build()
 	buildPillars(root)
 	buildCircle(root)
 	buildRamp(root)
+	buildBodyPad(root)
 	-- The test hill before the spots, because two of them are read off its pieces.
 	buildHill(root)
 	buildSpots()

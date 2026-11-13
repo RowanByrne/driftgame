@@ -93,6 +93,29 @@ set from the car's size. All in `Config.Drift`; tuned by the user's feel in a la
 - **Thrown by a 25° ramp under one side at 120 studs/s:** pitch and roll stay inside their limits, and it lands and stands level.
 - **Cost:** 5.6 µs a step on flat ground, 7.4 on ground that works all four springs (5.9 before).
 
+### The test pad (`T-198`)
+
+Three lanes in the playground's yard, built by code (`Layout.BodyPad`, 13 parts), each driven
+in +Z. Get there with `tp BodyPad`, `tp BodyPadLedge` or `tp BodyPadKerbs` in the admin console.
+
+| Lane | What's on it |
+|---|---|
+| Ledge | A long easy climb to a deck 2.5 studs up that just ends; further on, the same 1 stud up |
+| Ramp | A 0.8-stud ramp and deck under one side's wheels only; then a short steep kicker (2.5 up over 12) |
+| Kerbs | A 0.3 kerb under one side, a 0.3 kerb right across, a 0.6 kerb under the other side, and a 1-stud kerb with sloped faces (1 up over 3) |
+
+**Slopes are tilted boxes, never `WedgePart`s:** `Drift/World.penetration` knows a part by its
+box, so the thin end of a wedge was a wall and stopped the car dead.
+
+**Measured live (DR-Lane2, the player's own car, about 90 studs/s, 2026-11-13):**
+
+- **The 2.5 ledge:** falls at up to 11 studs/s, nose down 6.5° at most, lowest 2.10 (bump stops 2.05).
+- **One side on the 0.8 ramp:** rolls 11.4°, nose up 3.7°; back level within a second of its end.
+- **The kicker:** leaves at 18.7 studs/s upward, nose up 13°, about 5.5 studs of air for 0.6 s.
+- **Kerbs:** the 0.3 kerbs move the body under a tenth of a stud (1° of pitch or roll); the 0.6 kerb rolls it 3°.
+- **The 1-stud sloped kerb, one side, square on at 99 studs/s:** that side is thrown, the car's middle rises 1.45 studs and it rolls to the 20° limit, three wheels off for about half a second. It is a real 18° ramp; the road's own gravel edge reads as level ground to the car and does much less (above).
+- **No wall hits** on any lane; worst frame 10.9 ms, mean 8.3 ms (120 a second).
+
 ### What changed for other things
 
 - **A sharp crest or a bank now throws the car** where the old model held it to the ground: the playground's bowl crossed at 120 studs/s flies for most of a second (`CollisionTests` used to demand no air there).
