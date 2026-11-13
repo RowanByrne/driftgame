@@ -348,8 +348,10 @@ local Spline = {
 	-- faces in world studs. Everything else on the road's mesh samples its plain corner.
 	Grass = {
 		Enabled = true, -- false: flat grass, and the road's mesh as it was before
-		TileStuds = 12, -- studs one tile covers, each way
-		Size = 256, -- pixels, each way: about 21 a stud
+		-- WHICH LOOK (the user picks, T-187): "blades", "mottled", "soft", "painted" or
+		-- "patches" (`Road/GrassTexture`). The first four are a texture; "patches" is none.
+		Style = "mottled",
+		Size = 256, -- pixels, each way, of a tile drawn in code
 		Seed = 187,
 		SliceMs = 4, -- drawn once, the first time a chunk needs it, at most this much a frame
 		-- What Roblox's Asphalt map multiplied the whole road's mesh by (measured, T-187: the
@@ -357,12 +359,30 @@ local Spline = {
 		-- this grey, so the tarmac, gravel, rocks and trees keep their brightness, and the
 		-- grass averages it, so the grass keeps its own. Raise it to lighten all of them.
 		Shade = 0.49,
-		Clump = 0.16, -- patchiness, a fraction of `Shade` either way
-		Blades = 9000, -- strokes in a tile
-		BladeLength = { 3, 9 }, -- pixels
-		Blade = 0.38, -- how much lighter or darker a blade is, a fraction of `Shade`
-		LightShare = 0.55, -- the share of blades lighter than the ground
-		Warm = 0.25, -- a light blade's tint toward yellow
+		Styles = {
+			base = {
+				Texture = true,
+				TileStuds = 12, -- studs one tile covers, each way
+				Clump = 0.16, -- patchiness, a fraction of `Shade` either way
+				Cells = { 4, 16 }, -- the clumps' noise: lattice cells a tile, per octave
+				Blades = 0, -- strokes in a tile
+				BladeLength = { 3, 9 }, -- pixels
+				Blade = 0.38, -- how much lighter or darker a blade is, a fraction of `Shade`
+				LightShare = 0.55, -- the share of blades lighter than the ground
+				Warm = 0.25, -- a light blade's tint toward yellow
+				Blur = 0, -- box-blur passes
+			},
+			-- the first try: fine high-contrast blades. The user: "a bit static-y"
+			blades = { Blades = 9000 },
+			-- big soft patches, nothing fine: a 48-stud tile
+			mottled = { TileStuds = 48, Clump = 0.2, Cells = { 3, 6, 12 }, Warm = 0.15 },
+			-- a few faint blades, blurred twice, on a 20-stud tile
+			soft = { TileStuds = 20, Clump = 0.14, Cells = { 4, 8 }, Blades = 3000, BladeLength = { 6, 14 }, Blade = 0.22, Blur = 2 },
+			-- the painted image (the image tool), uploaded grey and evened out to `Shade`
+			painted = { TileStuds = 24, Image = "" },
+			-- no texture: the grass's faces in soft patches of these brightness steps
+			patches = { Texture = false, PatchStuds = 40, PatchShades = { -0.1, -0.05, 0, 0.05, 0.1 } },
+		},
 	},
 
 	-- --------------------------------------------------------------- the mesh (step 3)

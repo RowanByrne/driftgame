@@ -221,6 +221,8 @@ type Builder = {
 	-- one sharing a grass vertex picks up the grass's UV there (measured: the bevel did).
 	-- Set only where needed: on every face it cost ~2 ms a chunk (measured)
 	plainUV: number?,
+	-- the "patches" style: a colour id per `PatchShades` step, the grass's own colour varied
+	patchColours: { number }?,
 }
 
 
@@ -265,6 +267,16 @@ local function strip(b: Builder, rowA: { number }, normA: { number }, rowB: { nu
 					end
 					b.grassTriangles += 2
 				end
+			elseif c == grass and b.patchColours then
+				-- the "patches" style (T-187): each grass triangle takes the patch shade at its
+				-- middle, so the grass is soft blotches of lighter and darker green
+				local pc = b.patchColours
+				for _, t in { { f1, a0, a1, b0 }, { f2, a1, b1, b0 } } do
+					local m = (em:GetPosition(t[2]) + em:GetPosition(t[3]) + em:GetPosition(t[4])) / 3 + b.centre
+					local k = pc[GrassTexture.patch(m.X, m.Z) or 1] or c
+					em:SetFaceColors(t[1], { k, k, k })
+				end
+				b.grassTriangles += 2
 			elseif b.plainUV and uvA and uvB and (uvA[i] or uvA[i + 1] or uvB[i] or uvB[i + 1]) then
 				-- a strip that is not grass but shares a vertex with the grass: the bevel, or
 				-- a gravelled runoff
@@ -281,7 +293,7 @@ local function newBuilder(centre: Vector3): Builder
 	local em = AssetService:CreateEditableMesh({ FixedSize = false })
 	-- nil is the device saying no: out of its EditableMesh budget
 	assert(em, "this device would not make an EditableMesh (out of its budget)")
-	return { em = em :: EditableMesh, centre = centre, vertices = 0, triangles = 0, grassTriangles = 0, plainUV = nil }
+	return { em = em :: EditableMesh, centre = centre, vertices = 0, triangles = 0, grassTriangles = 0, plainUV = nil, patchColours = nil }
 end
 
 -- A MeshPart made from an EditableMesh keeps the vertices exactly where they were written,
@@ -388,6 +400,15 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 		local baseU, baseV = GrassTexture.base(centre)
 		if grassImage then
 			road.plainUV = road.em:AddUV(Vector2.zero)
+		end
+		local patchStyle = GrassTexture.style()
+		if Config.Spline.Grass.Enabled and not patchStyle.Texture and patchStyle.PatchShades then
+			local ids = {}
+			for i, step in patchStyle.PatchShades do
+				local g = TT.GrassColour
+				ids[i] = road.em:AddColor(if step >= 0 then g:Lerp(Color3.new(1, 1, 0.8), step) else g:Lerp(Color3.new(0, 0.08, 0), -step), 1)
+			end
+			road.patchColours = ids
 		end
 		local prevRow, prevNear, prevFar, prevS, prevUV = nil, nil, nil, 0, nil
 		for _, s in cuts do

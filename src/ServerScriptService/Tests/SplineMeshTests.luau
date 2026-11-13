@@ -120,7 +120,9 @@ function Tests.run()
 
 		-- 2b. The grass's texture (T-187): every grass face mapped in world studs, every other
 		-- face on UV (0, 0), where the tile is plain `Shade` grey.
-		if Config.Spline.Grass.Enabled then
+		local GrassTexture = require(ReplicatedStorage.Shared.Road.GrassTexture)
+		if Config.Spline.Grass.Enabled and GrassTexture.style().Texture and (GrassTexture.style().Image or "") == "" then
+			local tile = GrassTexture.style().TileStuds
 			local G = Config.Spline.Grass
 			local grassHex = Config.Spline.Terrain.GrassColour:ToHex()
 			local grassFaces, mappedOk, plainFaces, plainOk, worstStuds, textured = 0, 0, 0, 0, 0, 0
@@ -139,10 +141,10 @@ function Tests.run()
 							local ok = true
 							for k, v in obj:GetFaceVertices(f) do
 								local p = road.CFrame:PointToWorldSpace(obj:GetPosition(v))
-								local uv = obj:GetUV(uvs[k]) * G.TileStuds
-								local du = (p.X - uv.X) / G.TileStuds
-								local dv = (p.Z - uv.Y) / G.TileStuds
-								local off = math.max(math.abs(du - math.round(du)), math.abs(dv - math.round(dv))) * G.TileStuds
+								local uv = obj:GetUV(uvs[k]) * tile
+								local du = (p.X - uv.X) / tile
+								local dv = (p.Z - uv.Y) / tile
+								local off = math.max(math.abs(du - math.round(du)), math.abs(dv - math.round(dv))) * tile
 								worstStuds = math.max(worstStuds, off)
 								ok = ok and off < 0.01
 							end
@@ -167,7 +169,6 @@ function Tests.run()
 				textured == built and grassFaces > 0 and mappedOk == grassFaces and plainOk == plainFaces,
 				`{textured} of {built} chunks textured; {mappedOk} of {grassFaces} grass faces mapped (worst {fmt(worstStuds, 4)} studs off), {plainOk} of {plainFaces} other faces on the plain corner`
 			)
-			local GrassTexture = require(ReplicatedStorage.Shared.Road.GrassTexture)
 			local px = GrassTexture.pixels(G.Size, G.Seed)
 			local want = math.floor(G.Shade * 255 + 0.5)
 			local cornerOk, sum = true, 0
