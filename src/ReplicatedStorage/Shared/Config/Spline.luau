@@ -240,6 +240,39 @@ local Spline = {
 		-- KRailColour = Color3.fromRGB(236, 236, 232), -- painted white
 		KRailBoltColour = Color3.fromRGB(58, 60, 62),
 		KRailHazardColours = { Color3.fromRGB(246, 196, 24), Color3.fromRGB(24, 24, 24) }, -- the end panel's stripes
+
+		-- GROVES (T-183): on a flat, gentle section a side's runoff widens to `GroveRunoff` and
+		-- is dressed with low-poly trees and bushes (`Road/SplineGrove`), set back from the
+		-- tarmac, so they hide the long views across the mountain. Chosen by the server with
+		-- the section (`gv`, a seed per side); every device places the same trees from it.
+		-- A section qualifies when no part of it is tighter than `GroveMinRadius`, steeper
+		-- than `GroveMaxGrade` or shorter than `GroveMinLength`; then a grove `GroveChance` of
+		-- the time, on one side, both `GroveBothChance` of those.
+		GroveChance = 0.8,
+		GroveBothChance = 0.3,
+		GroveMinRadius = 200, -- studs: a wide bend or a straight
+		GroveMaxGrade = 6, -- degrees (the road averages about 2.3 down, 8 at most)
+		GroveMinLength = 120, -- studs
+		-- The wide runoff. NO-CROSSING NEEDS NOTHING NEW up to `RunoffMax + ClearanceGap` (60):
+		-- two stretches' centre lines are kept apart by both widest runoffs, both edges and the
+		-- gap, so one side may take the gap's width and still never reach the other road's edge.
+		GroveRunoff = { 46, 58 }, -- studs
+		-- The trees: one item every `GroveSpacing` studs along the road, its offset past the
+		-- tarmac random between its setback and the grass's outer edge (less its own size).
+		-- A tree's trunk is a wall to the car (`Drift/SplineWorld`); a bush is not.
+		GroveSpacing = { 3, 7 }, -- studs
+		TreeSetback = 16, -- studs past the tarmac's edge: never a wall at the road's edge
+		BushSetback = 8,
+		GroveKinds = { conifer = 0.5, broadleaf = 0.2, bush = 0.3 }, -- shares of the items
+		ConiferHeight = { 20, 34 }, -- studs
+		BroadleafHeight = { 14, 22 },
+		BushHeight = { 2.5, 5 },
+		TrunkRadius = { 0.8, 1.4 }, -- studs: drawn and solid
+		-- Programmer colours, a few shades each so a grove isn't one flat green
+		ConiferColours = { Color3.fromRGB(40, 78, 46), Color3.fromRGB(52, 90, 50), Color3.fromRGB(34, 66, 44) },
+		BroadleafColours = { Color3.fromRGB(78, 120, 54), Color3.fromRGB(92, 130, 60) },
+		BushColours = { Color3.fromRGB(62, 104, 50), Color3.fromRGB(74, 112, 54) },
+		TrunkColour = Color3.fromRGB(92, 70, 52),
 	},
 
 	-- --------------------------------------------------------------- the mesh (step 3)

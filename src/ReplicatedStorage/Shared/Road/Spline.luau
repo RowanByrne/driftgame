@@ -39,6 +39,8 @@
 --   K-rails    runs `(s0, s1)` per side
 --   gravel     runs `(s0, s1)` per side where the runoff is gravel, not grass: the tight
 --              cliff edges, a strip of a few studs between a K-rail and the drop (T-181)
+--   groves     runs `(s0, s1, seed)` per side, a whole section each (T-183): the trees on
+--              that side's runoff, placed from the seed by `Road/SplineGrove`
 --
 -- A section that carries none of these (a test's hand-made road) gets no runoff and a hedge
 -- on both sides: a wall exactly where the old barriers stood.
@@ -67,7 +69,8 @@ export type Section = {
 	el: { number }?, -- left edge spans {dsEnd, kind, ...}, the last ending at `len`
 	er: { number }?, -- right
 	kr: { number }?, -- K-rail runs {ds0, ds1, side, ...}, side -1 left, 1 right
-	gv: { number }?, -- gravel runoff runs {ds0, ds1, side, ...}, as `kr` (T-181)
+	gl: { number }?, -- gravel runoff runs {ds0, ds1, side, ...}, as `kr` (T-181)
+	gv: { number }?, -- groves {side, seed, ...}: trees on that side's runoff, the whole section (T-183)
 }
 
 -- The edge kinds, as they go over the wire.
@@ -82,6 +85,7 @@ Spline.GRAVEL = 2 -- the runoff inside a gravel run (T-181)
 
 type Spans = { e: { number }, t: { number } } -- span ends, increasing, and each span's kind
 type Runs = { a: { number }, b: { number } } -- run starts (increasing) and ends
+export type Groves = { a: { number }, b: { number }, seed: { number } } -- grove runs (T-183)
 
 type Track = {
 	s: { number }, -- knot positions, increasing
@@ -117,6 +121,8 @@ export type Spline = typeof(setmetatable(
 		railR: Runs,
 		gravL: Runs, -- gravel runoff runs (T-181)
 		gravR: Runs,
+		groveL: Groves,
+		groveR: Groves,
 	},
 	Spline
 ))
@@ -236,6 +242,8 @@ function Spline.new(origin: Origin?): Spline
 		railR = { a = {}, b = {} },
 		gravL = { a = {}, b = {} },
 		gravR = { a = {}, b = {} },
+		groveL = { a = {}, b = {}, seed = {} },
+		groveR = { a = {}, b = {}, seed = {} },
 	}, Spline)
 	return self
 end
@@ -403,6 +411,18 @@ local function appendGravel(sp: Spline, s0: number, runs: { number }?)
 	end
 end
 
+-- A section's groves (T-183): each side's grove covers the whole section.
+local function appendGroves(sp: Spline, s0: number, len: number, gv: { number }?)
+	if not gv then
+		return
+	end
+	for j = 1, #gv, 2 do
+		local list = if gv[j] < 0 then sp.groveL else sp.groveR
+		local n = #list.a
+		list.a[n + 1], list.b[n + 1], list.seed[n + 1] = s0, s0 + len, gv[j + 1]
+	end
+end
+
 -- Is a section's mountainside well formed? Its knots inside it, its spans ending at its
 -- end, its edge kinds known, its runs inside it, in order and apart. Anything else is
 -- refused before any of it is laid, so a half-appended section never exists.
@@ -442,15 +462,26 @@ local function checkTerrain(self: Spline, sec: Section)
 			lastEnd[side] = b
 		end
 	end
-	local gv = sec.gv
-	if gv then
-		assert(#gv % 3 == 0, "Spline: gravel runs come in threes")
+	local gl = sec.gl
+	if gl then
+		assert(#gl % 3 == 0, "Spline: gravel runs come in threes")
 		local lastEnd = { [-1] = -math.huge, [1] = -math.huge }
-		for j = 1, #gv, 3 do
-			local a, b, side = gv[j], gv[j + 1], gv[j + 2]
+		for j = 1, #gl, 3 do
+			local a, b, side = gl[j], gl[j + 1], gl[j + 2]
 			assert(side == -1 or side == 1, "Spline: a gravel run's side is -1 or 1")
 			assert(a >= 0 and b > a and b <= len + 1e-6 and a >= lastEnd[side], "Spline: gravel runs inside their section, in order")
 			lastEnd[side] = b
+		end
+	end
+	local gv = sec.gv
+	if gv then
+		assert(#gv % 2 == 0, "Spline: groves come in pairs")
+		local seen = {}
+		for j = 1, #gv, 2 do
+			local side, seed = gv[j], gv[j + 1]
+			assert((side == -1 or side == 1) and not seen[side], "Spline: a grove's side is -1 or 1, once each")
+			assert(seed == math.floor(seed) and math.abs(seed) < 2 ^ 31, "Spline: a grove's seed is a whole number")
+			seen[side] = true
 		end
 	end
 end
@@ -478,7 +509,8 @@ function Spline.append(self: Spline, sec: Section)
 	appendSpans(self.edgeL, s0, sec.len, sec.el)
 	appendSpans(self.edgeR, s0, sec.len, sec.er)
 	appendRuns(self, s0, sec.kr)
-	appendGravel(self, s0, sec.gv)
+	appendGravel(self, s0, sec.gl)
+	appendGroves(self, s0, sec.len, sec.gv)
 	self.length = s1
 	self.sections += 1
 	local step = self.step
@@ -665,6 +697,11 @@ function Spline.gravelAt(self: Spline, s: number, side: number): boolean
 		end
 	end
 	return s <= r.b[lo]
+end
+
+-- The grove runs on `side` (T-183): starts (increasing), ends and seeds. Read, never change.
+function Spline.groves(self: Spline, side: number): Groves
+	return if side < 0 then self.groveL else self.groveR
 end
 
 -- The ground's height at (s, d), across the whole cross-section. On the tarmac it is the

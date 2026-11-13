@@ -63,7 +63,10 @@ local function validSection(sec: any): boolean
 	if sec.kr ~= nil and not numbers(sec.kr, 3) then
 		return false
 	end
-	if sec.gv ~= nil and not numbers(sec.gv, 3) then -- gravel runs (T-181)
+	if sec.gl ~= nil and not numbers(sec.gl, 3) then -- gravel runs (T-181)
+		return false
+	end
+	if sec.gv ~= nil and not numbers(sec.gv, 2) then
 		return false
 	end
 	return true

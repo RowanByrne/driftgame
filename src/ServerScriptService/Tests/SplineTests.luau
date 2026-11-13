@@ -387,11 +387,13 @@ function parts.terrain(check)
 			else
 				for i, knots in { sec.rl, sec.rr } do
 					-- a tight cliff edge's side (T-181) narrows to gravel faster: `parts.tight`
-					local tight = sec.gv ~= nil and sec.gv[3] == (if i == 1 then -1 else 1)
+					local tight = sec.gl ~= nil and sec.gl[3] == (if i == 1 then -1 else 1)
 					local prevV, prevS = nil, 0
 					for j = 1, #knots, 2 do
 						local w = knots[j + 1]
-						if w < (if tight then T.TightRunoff[1] else T.RunoffMin) - 1e-9 or w > T.RunoffMax + 1e-9 then
+						-- a grove (T-183) widens it to `GroveRunoff`, and the next section eases back; a tight
+						-- cliff edge (T-181) narrows it to `TightRunoff`
+						if w < (if tight then T.TightRunoff[1] else T.RunoffMin) - 1e-9 or w > math.max(T.RunoffMax, T.GroveRunoff[2]) + 1e-9 then
 							badWidth += 1
 						end
 						if prevV and not tight then
@@ -508,7 +510,7 @@ function parts.terrain(check)
 	table.sort(stretches)
 	local median = stretches[math.max(1, #stretches // 2)] or 0
 	check("every section carries its mountainside", missing == 0, `{missing} sections without runoff or edges`)
-	check("runoff 12 to 40 studs, and it never changes fast", badWidth == 0 and worstRate <= 0.25 + 1e-9, `{badWidth} widths outside {T.RunoffMin}..{T.RunoffMax}; steepest change {fmt(worstRate, 3)} stud per stud between knots (limit 0.25)`)
+	check("runoff 12 to 40 studs (58 on a grove), and it never changes fast", badWidth == 0 and worstRate <= 0.25 + 1e-9, `{badWidth} widths outside {T.RunoffMin}..{math.max(T.RunoffMax, T.GroveRunoff[2])}; steepest change {fmt(worstRate, 3)} stud per stud between knots (limit 0.25)`)
 	check("the mountain on one side, the drop on the other", sameSides == 0, `{sameSides} points with rock or cliff both sides. Left/right mix of sections' first edges: {table.concat(mixList, ", ")}`)
 	check("the mountain is on the uphill side of the road", wrongSide == 0 and sideChecked > 0, `{wrongSide} of {sideChecked} points away from the fall line have it on the wrong side`)
 	check(
@@ -773,7 +775,7 @@ function parts.tight(check)
 	local count, length, gravelLen, rate = 0, 0, 0, 0
 	local notCliff, unrailed, wrongKind, samples = 0, 0, 0, 0
 	local narrowest, widestCore = math.huge, 0
-	local differ = 0
+	local differ, clash = 0, 0
 	for _, seed in SEEDS do
 		local gen = road(seed, LIMIT_LENGTH)
 		local sp = gen.spline
@@ -781,10 +783,18 @@ function parts.tight(check)
 		local copy = SplineGen.replay(gen.sections)
 		local s0 = 0
 		for _, sec in gen.sections do
-			if sec.gv then
-				local a, b, side = s0 + sec.gv[1], s0 + sec.gv[2], sec.gv[3]
+			if sec.gl then
+				local a, b, side = s0 + sec.gl[1], s0 + sec.gl[2], sec.gl[3]
 				count += 1
 				gravelLen += b - a
+				-- a grove (T-183) is chosen first and keeps its side
+				if sec.gv then
+					for j = 1, #sec.gv, 2 do
+						if sec.gv[j] == side then
+							clash += 1
+						end
+					end
+				end
 				local knots = if side < 0 then sec.rl else sec.rr
 				-- the narrow part is between the two knots at the gravel's width
 				widestCore = math.max(widestCore, knots[4], knots[6])
@@ -828,6 +838,7 @@ function parts.tight(check)
 		`{samples} points: {notCliff} not over a cliff, {unrailed} without a rail, {wrongKind} not gravel then nothing`
 	)
 	check("a client's replay has the same gravel", differ == 0, `{differ} of {samples} differ`)
+	check("a tight cliff edge never shares a side with a grove", clash == 0, `{clash} of {count} on a grove's side`)
 end
 
 function Tests.run(which: { string }?, ...)
