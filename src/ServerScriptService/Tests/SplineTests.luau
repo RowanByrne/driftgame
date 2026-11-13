@@ -376,6 +376,8 @@ function parts.terrain(check)
 	local insideWorst, insideN = -math.huge, 0
 	local stretches = {}
 	local lowChecked, lowBad, lowFirst = 0, 0, "" -- the uphill side just past a change of sides
+	-- carved apexes (T-182): how many, how close, and what is either side of each
+	local worstCarveRate, carves, carveLen, carveWorstGap, carveBad = 0, 0, 0, 0, 0
 	local wrongSide, sideChecked, swapLen = 0, 0, 0
 	for _, seed in SEEDS do
 		local gen = road(seed, LIMIT_LENGTH)
@@ -392,12 +394,19 @@ function parts.terrain(check)
 					for j = 1, #knots, 2 do
 						local w = knots[j + 1]
 						-- a grove (T-183) widens it to `GroveRunoff`, and the next section eases back; a tight
-						-- cliff edge (T-181) narrows it to `TightRunoff`
-						if w < (if tight then T.TightRunoff[1] else T.RunoffMin) - 1e-9 or w > math.max(T.RunoffMax, T.GroveRunoff[2]) + 1e-9 then
+						-- cliff edge (T-181) narrows it to `TightRunoff`; a carved apex (T-182) narrows
+						-- the rock side to `CarvedGap`, at up to `CarvedRate`
+						local carved = math.abs(w - T.CarvedGap) < 1e-9
+						if (w < (if tight then T.TightRunoff[1] else T.RunoffMin) - 1e-9 and not carved) or w > math.max(T.RunoffMax, T.GroveRunoff[2]) + 1e-9 then
 							badWidth += 1
 						end
 						if prevV and not tight then
-							worstRate = math.max(worstRate, math.abs(w - prevV) / (knots[j] - prevS))
+							local rate = math.abs(w - prevV) / math.max(knots[j] - prevS, 1e-9)
+							if carved or math.abs(prevV - T.CarvedGap) < 1e-9 then
+								worstCarveRate = math.max(worstCarveRate, rate)
+							else
+								worstRate = math.max(worstRate, rate)
+							end
 						end
 						prevV, prevS = w, knots[j]
 					end
@@ -440,6 +449,22 @@ function parts.terrain(check)
 				local reach = (half + sp:runoffAt(u, inside)) * math.abs(k)
 				insideWorst = math.max(insideWorst, reach)
 				insideN += 1
+			end
+		end
+		-- CARVED APEXES (T-182): wherever the inside grass is down to `CarvedGap`, the rock is
+		-- that side, the drop the other, and the road is bending toward the rock
+		carves += gen.stats.carved
+		carveLen += sp.length
+		for u = 0, sp.length, 2 do
+			for _, side in { -1, 1 } do
+				local w = sp:runoffRaw(u, side)
+				if w < T.RunoffMin - 0.01 then
+					carveWorstGap = math.max(carveWorstGap, if w <= T.CarvedGap + 1e-6 then sp:runoffAt(u, side) else 0)
+					local k = sp:curvatureAt(u)
+					if w <= T.CarvedGap + 1e-6 and (sp:edgeAt(u, side) ~= Spline.ROCK or sp:edgeAt(u, -side) ~= Spline.CLIFF or (k > 0) ~= (side < 0) or k == 0) then
+						carveBad += 1
+					end
+				end
 			end
 		end
 		-- WHICH SIDE THE MOUNTAIN IS ON, along the road (T-166): the side the uphill direction
@@ -511,6 +536,11 @@ function parts.terrain(check)
 	local median = stretches[math.max(1, #stretches // 2)] or 0
 	check("every section carries its mountainside", missing == 0, `{missing} sections without runoff or edges`)
 	check("runoff 12 to 40 studs (58 on a grove), and it never changes fast", badWidth == 0 and worstRate <= 0.25 + 1e-9, `{badWidth} widths outside {T.RunoffMin}..{math.max(T.RunoffMax, T.GroveRunoff[2])}; steepest change {fmt(worstRate, 3)} stud per stud between knots (limit 0.25)`)
+	check(
+		"some sharp bends carve the rock to the tarmac's edge at the apex, eased in and out",
+		carves > 0 and carveBad == 0 and carveWorstGap <= T.CarvedGap + 1e-6 and worstCarveRate <= T.CarvedRate + 1e-9,
+		`{carves} carved apexes ({fmt(carves / carveLen * 10000, 2)} per 10 000 studs); rock to tarmac at the apex at most {fmt(carveWorstGap, 2)} studs; {carveBad} points carved without rock inside the bend and a cliff outside; steepest easing {fmt(worstCarveRate, 3)} stud per stud (limit {T.CarvedRate})`
+	)
 	check("the mountain on one side, the drop on the other", sameSides == 0, `{sameSides} points with rock or cliff both sides. Left/right mix of sections' first edges: {table.concat(mixList, ", ")}`)
 	check("the mountain is on the uphill side of the road", wrongSide == 0 and sideChecked > 0, `{wrongSide} of {sideChecked} points away from the fall line have it on the wrong side`)
 	check(

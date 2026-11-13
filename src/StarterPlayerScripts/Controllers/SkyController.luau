@@ -75,9 +75,23 @@ local function hazeMoved(a: Color3, b: Color3): boolean
 	return math.abs(a.R - b.R) >= step or math.abs(a.G - b.G) >= step or math.abs(a.B - b.B) >= step
 end
 
+-- The body lighting the world (the sun while it is over the horizon, else the moon), its
+-- height in degrees, and how much of the direct light to keep (`LightFade`, T-179). Read
+-- off Roblox's own sun and moon, after the clock is set.
+local lightSource, lightElevation, lightFade = "sun", 0, 1
+local function fadeLight(): number
+	local sunY = Lighting:GetSunDirection().Y
+	local isSun = sunY > 0
+	local y = if isSun then sunY else Lighting:GetMoonDirection().Y
+	lightSource = if isSun then "sun" else "moon"
+	lightElevation = math.deg(math.asin(math.clamp(y, -1, 1)))
+	lightFade = DayNight.lightFade(isSun, lightElevation)
+	return lightFade
+end
+
 local function apply(look: { [string]: any })
 	Lighting.ClockTime = look.Clock
-	Lighting.Brightness = look.Brightness
+	Lighting.Brightness = look.Brightness * fadeLight()
 	Lighting.ExposureCompensation = look.Exposure
 	Lighting.Ambient = look.Ambient
 	Lighting.OutdoorAmbient = look.OutdoorAmbient
@@ -181,6 +195,9 @@ function SkyController:DebugState(): { [string]: any }
 		sunY = Lighting:GetSunDirection().Y,
 		moonY = Lighting:GetMoonDirection().Y,
 		brightness = Lighting.Brightness,
+		lightSource = lightSource,
+		lightElevation = lightElevation,
+		lightFade = lightFade,
 		haze = lastHaze and lastHaze:ToHex(),
 		held = hold,
 		speed = speed,
