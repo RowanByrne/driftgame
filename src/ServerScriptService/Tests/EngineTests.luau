@@ -633,9 +633,9 @@ function Tests.run()
 			end
 		end
 		check(
-			"the synthesized sheet is the game's sound, and holds the same twelve loops at the same places as before",
-			sameSheet and E.Sheet == "Synth" and S.SoundId == "rbxassetid://132857262391195",
-			`Sheet = {tostring(E.Sheet)}, {#S.On} on and {#S.Off} off loops, {tostring(S.SoundId)}`
+			"the synthesized sheet holds the same twelve loops at the same places as before, one config line away",
+			sameSheet and S.SoundId == "rbxassetid://132857262391195",
+			`{#S.On} on and {#S.Off} off loops, {tostring(S.SoundId)}`
 		)
 
 		-- Every loop's volume and speed, over a grid: 200 to 9 600 rpm (well under idle to

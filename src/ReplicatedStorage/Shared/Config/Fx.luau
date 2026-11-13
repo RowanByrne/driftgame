@@ -328,7 +328,9 @@ return {
 		MinTimeInGear = 0.5, -- s since the last shift before another is allowed
 
 		-- The rpm (`Drift/Engine`). STARTING VALUES, set to be argued with by ear.
-		IdleRpm = 900,
+		IdleRpm = 1382, -- where the recorded sheet's idle loop was recorded (T-170). It was
+		-- 900 with the synthesized sheet, which still plays fine from here.
+		-- Sound only: the drive never reads it
 		ShiftRpm = 6800, -- rpm at a gear's top: where it upshifts. x1.5 gears drop it to
 		-- about 4 500 in the next
 		RedlineRpm = 7400, -- the limiter
@@ -388,7 +390,7 @@ return {
 		--
 		-- `Sheet` NAMES THE ONE THAT PLAYS: switching sound is this one line. `Sheet = nil`
 		-- (or a sheet with no `SoundId`) falls back to the one clip below.
-		Sheet = "Synth" :: string?,
+		Sheet = "Recorded" :: string?, -- "Synth" is the synthesized sound it replaced
 		Sheets = {
 			-- Our own synthesized loops, picked by the user on 2026-11-11 (DECISIONS.md), at
 			-- six rev points, the same six on and off throttle. Built by
@@ -430,9 +432,8 @@ return {
 			--   * Nothing was recorded on throttle under 3 261 rpm, so pulling away pitches
 			--     that loop far down (accepted, features/engine-sound.md).
 			--   * Its idle loop sits at 1 382 rpm: `IdleRpm` goes to 1382 with this sheet.
-			-- `SoundId` IS NIL UNTIL IT IS UPLOADED, and a sheet without one cannot play.
 			Recorded = {
-				SoundId = nil :: string?, -- engine-sheet-b.ogg, not uploaded yet
+				SoundId = "rbxassetid://126307015260351" :: string?, -- engine-sheet-b.ogg, uploaded 2026-11-13
 				Volume = 0.84, -- the loops are at the synthesized ones' loudness (RMS 0.16)
 				OffLoadVolume = 0.75,
 				LimiterDuck = 0.5,
