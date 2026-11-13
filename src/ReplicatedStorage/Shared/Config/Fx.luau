@@ -421,6 +421,37 @@ return {
 					{ Rpm = 7400, Start = 28.85, Length = 1.994604 },
 				},
 			},
+			-- RECORDED LOOPS, set B, picked by the user by ear on 2026-11-13 (DECISIONS.md,
+			-- T-170): recordings from inside the car low down, from outside it from about
+			-- 6 300 rpm up. Where they came from and the permission is in
+			-- `assets/audio/sfx-engine/MANIFEST.md`. Each `Rpm` is the recording's MEASURED
+			-- revs, so two loops in a crossfade sit at the same pitch.
+			--   * The ladders do not match: five loops on throttle, three off.
+			--   * Nothing was recorded on throttle under 3 261 rpm, so pulling away pitches
+			--     that loop far down (accepted, features/engine-sound.md).
+			--   * Its idle loop sits at 1 382 rpm: `IdleRpm` goes to 1382 with this sheet.
+			-- `SoundId` IS NIL UNTIL IT IS UPLOADED, and a sheet without one cannot play.
+			Recorded = {
+				SoundId = nil :: string?, -- engine-sheet-b.ogg, not uploaded yet
+				Volume = 0.84, -- the loops are at the synthesized ones' loudness (RMS 0.16)
+				OffLoadVolume = 0.75,
+				LimiterDuck = 0.5,
+				MaxPitchShift = 2.0, -- NO CAP in practice. The rev points are up to 2.95x apart
+				-- (1 382 to 4 074 off throttle), and a cap that bit inside a
+				-- crossfade would leave its two loops at different pitches
+				On = {
+					{ Rpm = 3261, Start = 0.25, Length = 3.552917 },
+					{ Rpm = 5034, Start = 4.352917, Length = 2.634958 },
+					{ Rpm = 5604, Start = 7.537875, Length = 5.782875 },
+					{ Rpm = 6348, Start = 13.87075, Length = 3.1165 },
+					{ Rpm = 7124, Start = 17.53725, Length = 2.3455 },
+				},
+				Off = {
+					{ Rpm = 1382, Start = 20.43275, Length = 1.788729 },
+					{ Rpm = 4074, Start = 22.771479, Length = 3.253062 },
+					{ Rpm = 6636, Start = 26.574542, Length = 2.616 },
+				},
+			},
 		},
 		-- THE ONE CLIP, until the layered loops (T-123 step 3): its pitch is the rpm's share
 		-- of IdleRpm .. RedlineRpm, lerped MinPitch .. MaxPitch, with NO smoothing of its own

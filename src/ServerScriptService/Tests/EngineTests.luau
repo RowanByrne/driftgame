@@ -743,6 +743,96 @@ function Tests.run()
 		)
 	end
 
+	----------------------------------------------------------------------------
+	-- 13. THE RECORDED SHEET (T-170): its ladders are uneven and far apart, so what the
+	-- synthesized sheet promises in 11 (the louder loop inside 25%) is not promised here.
+	-- What is: the loops are in order and apart in the file, the crossfade is equal power,
+	-- and from the recorded idle to the redline every playing loop is at the rpm's EXACT
+	-- ratio -- the pitch cap never bites, so two loops in a crossfade always agree.
+	----------------------------------------------------------------------------
+	do
+		local R = E.Sheets.Recorded
+		local SHEET_SECONDS = 29.491 -- engine-sheet-b.ogg
+		local RECORDED_IDLE = 1382
+		local nOn, nOff = #R.On, #R.Off
+		local count = EngineSound.loopCount(R)
+
+		local ordered, slices = true, {}
+		for _, loops in { R.On, R.Off } do
+			for i, loop in loops do
+				if i > 1 and loop.Rpm <= loops[i - 1].Rpm then
+					ordered = false
+				end
+				table.insert(slices, loop)
+			end
+		end
+		table.sort(slices, function(a, b)
+			return a.Start < b.Start
+		end)
+		local apart = true
+		for i, s in slices do
+			-- A quarter second of padding either side of every slice.
+			local before = if i == 1 then 0 else slices[i - 1].Start + slices[i - 1].Length
+			local after = if i == #slices then SHEET_SECONDS else slices[i + 1].Start
+			if s.Start - before < 0.25 - 1e-6 or after - (s.Start + s.Length) < 0.25 - 1e-6 then
+				apart = false
+			end
+		end
+		check(
+			"the recorded sheet's ladders are in rev order, and every slice has its padding inside the file",
+			ordered and apart and nOn >= 2 and nOff >= 2,
+			`{nOn} on and {nOff} off loops, the last ends at {string.format("%.3f", slices[#slices].Start + slices[#slices].Length)} s of {SHEET_SECONDS}`
+		)
+
+		local vols, speeds = table.create(count, 0), table.create(count, 1)
+		local worstRatio, worstPower, mostPlaying = 0, 0, 0
+		local lowest, highest = math.huge, 0
+		for rpm = RECORDED_IDLE, E.RedlineRpm, 3 do
+			for _, load in { 0, 0.3, 1 } do
+				EngineSound.mix(rpm, load, false, vols, speeds, R)
+				local on, off, playing = 0, 0, 0
+				for j = 1, count do
+					local v = vols[j]
+					local loop = if j <= nOn then R.On[j] else R.Off[j - nOn]
+					if v > 1e-6 then
+						playing += 1
+						worstRatio = math.max(worstRatio, math.abs(speeds[j] - rpm / loop.Rpm))
+						lowest = math.min(lowest, speeds[j])
+						highest = math.max(highest, speeds[j])
+					end
+					if j <= nOn then
+						on += v * v
+					else
+						off += v * v
+					end
+				end
+				-- Equal power on each ladder, and across the load.
+				local want = R.Volume ^ 2 * (load + (1 - load) * R.OffLoadVolume ^ 2)
+				worstPower = math.max(worstPower, math.abs(on + off - want))
+				mostPlaying = math.max(mostPlaying, playing)
+			end
+		end
+		check(
+			"from the recorded idle to the redline every playing loop is at the rpm's exact ratio: the cap never bites",
+			worstRatio <= 1e-9,
+			`furthest from the exact ratio {string.format("%.1e", worstRatio)}; playing loops pitched {string.format("%.2f", lowest)}x to {string.format("%.2f", highest)}x`
+		)
+		check(
+			"its crossfade is equal power, with at most two loops a ladder",
+			worstPower < 1e-9 and mostPlaying <= 4,
+			`power off by at most {string.format("%.1e", worstPower)}; at most {mostPlaying} loops at once`
+		)
+		-- Whichever sheet plays must be playable, and the idle must match a recorded sheet's.
+		local active = EngineSound.sheet()
+		check(
+			"the sheet the game plays is uploaded, and the engine idles where its idle loop was recorded",
+			active ~= nil
+				and type(active.SoundId) == "string"
+				and (active ~= R or E.IdleRpm == RECORDED_IDLE),
+			`Sheet = {tostring(E.Sheet)}, {tostring(active and active.SoundId)}, IdleRpm {E.IdleRpm}`
+		)
+	end
+
 	local passed = true
 	for _, c in checks do
 		passed = passed and c.ok

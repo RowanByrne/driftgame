@@ -66,3 +66,25 @@ its start on the engine's own cycle (40 ms), and brought to the loudness of toda
 the earlier demos, with a lift and coast down to idle added at the end. All three share one
 listening gain, so what is louder in the game is louder in the files. Idle is 1,382 rpm in A and
 B, 900 in C.
+
+## Recorded set B: the master (T-170, 2026-11-13)
+
+| File | What | SHA-256 | Status | Asset id |
+|---|---|---|---|---|
+| `engine-sheet-b.ogg` | The eight loops of set B in one 29.5 s mono file, 48 kHz Ogg Vorbis: five on throttle (3,261, 5,034, 5,604, 6,348 and 7,124 rpm), three off (1,382, 4,074 and 6,636). Each loop is padded with a quarter second of itself on each side | `004125bd0712b66e6212dc228bdd049e76ca01021eeab70e78ef0859d7d301d1` | **picked** by the user 2026-11-13 ("B: outside up high"); **not uploaded yet** | |
+| `engine-sheet-b-regions.json` | Each loop's measured revs, load, source sample and region in the sheet. Copied into `Config.Fx.Engine.Sheets.Recorded` | `05ceca211ab2765f804b191322a37bdb9b6247db3a254d8cc0fa58d3a516a415` | the master's record | |
+
+**Source:** "Toyota AE86 Sound Mod by PheNom107th" (above). Samples `on_lower`, `on_low`,
+`on_lowmid`, `ext_on_mid`, `ext_on_high_exhaust`, the outside `idle`, `off_mid` and `off_higher`.
+None is one of the eight Assetto Corsa stock samples, which are never read.
+
+**Permission, as recorded:** the download carries no licence. The user, 2026-11-13, asked whether
+the download page or the author permits reusing the audio: "yes, permission granted." Asked again
+before the upload for the link or message that grants it: "already given, continue". **There is no
+link or written message from the author in this record: it rests on the user's word.** Where the
+author got the recordings is not known.
+
+**Made by** `..\art\source\sfx-engine\ae86-mod\tools\build_sheet.py`, with the same cleaning as
+the test drives. Checked on the encoded file, sliced where the game slices it: every loop at RMS
+0.159 to 0.160, peaks 0.32 to 0.67, no burst where any loop repeats (0.38 to 0.92, where 1 or less
+is clean).
