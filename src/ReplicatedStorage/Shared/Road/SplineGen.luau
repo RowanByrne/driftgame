@@ -65,6 +65,7 @@ export type Stats = {
 	turnsRefused: number, -- a planned turn that would have crowded old road, run on and retried
 	climbs: number, -- times the descent bottomed out and a climb began
 	cliffSwaps: number, -- times the mountain changed sides
+	tight: number, -- tight cliff edges laid: gravel and a rail at the lip (T-181)
 }
 
 -- One step of the plan: a STRETCH of random sections kept within `limit` of `aim` for
@@ -202,6 +203,7 @@ function SplineGen.new(seed: number, origin: Spline.Origin?, clearOverride: numb
 			turnsRefused = 0,
 			climbs = 0,
 			cliffSwaps = 0,
+			tight = 0,
 		},
 	}, SplineGen)
 	-- THE FALL LINE: the start heading turned `FallLineTurn` to a side chosen from the seed,
@@ -281,6 +283,7 @@ function SplineGen._terrain(self: Gen, sec: Spline.Section)
 		self.runoff[side] = prev
 		return out
 	end
+	local startRun = { [-1] = self.runoff[-1], [1] = self.runoff[1] } -- for a tight edge (T-181)
 	sec.rl = runoff(-1)
 	sec.rr = runoff(1)
 
@@ -401,6 +404,46 @@ function SplineGen._terrain(self: Gen, sec: Spline.Section)
 		local run = between({ runMin, math.min(runMax, len) })
 		local a = (len - run) * r:NextNumber()
 		kr = { a, a + run, side }
+	end
+
+	-- TIGHT CLIFF EDGES (T-181): now and then, on a side with a cliff the whole way along,
+	-- the runoff closes in to a few studs of gravel with a crash barrier on the tarmac's
+	-- edge and the lip just past it. Its width eases in and out at `TightRate` on the
+	-- runoff's own smoothstep knots, so nothing steps; the rail and the gravel reach
+	-- `TightLead` past the narrow part into the easing. A K-rail already chosen on that side
+	-- gives way to this one.
+	if tag ~= "Start" then
+		local side = if edgeOver(1, 0, len) == Spline.CLIFF then 1 elseif edgeOver(-1, 0, len) == Spline.CLIFF then -1 else 0
+		-- (no draw at all when TightChance is 0: the road is then exactly the one before T-181)
+		if side ~= 0 and T.TightChance > 0 and r:NextNumber() < T.TightChance then
+			local w0, w1 = startRun[side], self.runoff[side]
+			local wt = between(T.TightRunoff)
+			local rampIn = math.max(T.TightRamp, math.abs(w0 - wt) / T.TightRate)
+			local rampOut = math.max(T.TightRamp, math.abs(w1 - wt) / T.TightRate)
+			local room = len - rampIn - rampOut - 2
+			if room >= T.TightRun[1] then
+				local core = math.min(between(T.TightRun), room)
+				local a = rampIn + 1 + (room - core) * r:NextNumber()
+				local b = a + core
+				-- b + rampOut is at most len - 1, so the last knot is always its own
+				local knots = { a - rampIn, w0, a, wt, b, wt, b + rampOut, w1, len, w1 }
+				if side < 0 then
+					sec.rl = knots
+				else
+					sec.rr = knots
+				end
+				local ga = a - math.min(T.TightLead, rampIn * 0.5)
+				local gb = b + math.min(T.TightLead, rampOut * 0.5)
+				if #kr > 0 and kr[3] == side then
+					kr = {}
+				end
+				table.insert(kr, ga)
+				table.insert(kr, gb)
+				table.insert(kr, side)
+				sec.gv = { ga, gb, side }
+				self.stats.tight += 1
+			end
+		end
 	end
 	if #kr > 0 then
 		sec.kr = kr

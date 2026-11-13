@@ -276,10 +276,12 @@ local function plan(spline: any, sc: number, dc: number, closingS: number?): { [
 			local tag = if side < 0 then "L" else "R"
 			-- the grass, a band [half + w0, half + w1] out on this side over [a, b]
 			local function grass(key: string, a: number, b: number, w0: number, w1: number)
+				-- gravel in a tight cliff stretch (T-181), for the footsteps
+				local mat = if spline:gravelAt((a + b) * 0.5, side) then Enum.Material.Pebble else Enum.Material.Grass
 				if side < 0 then
-					tile(key, a, b, -(half + w1), -(half + w0), Enum.Material.Grass)
+					tile(key, a, b, -(half + w1), -(half + w0), mat)
 				else
-					tile(key, a, b, half + w0, half + w1, Enum.Material.Grass)
+					tile(key, a, b, half + w0, half + w1, mat)
 				end
 			end
 			for g, span in edgeSpans(s0, s1, side) do
@@ -455,7 +457,7 @@ function RoadGroundController:DebugState()
 	if spline and root and stats.located then
 		surface = spline:terrainY(stats.s, stats.d)
 		local k = spline:groundKind(stats.s, stats.d)
-		kind = if k == Spline.TARMAC then "tarmac" elseif k == Spline.GRASS then "grass" else "none"
+		kind = if k == Spline.TARMAC then "tarmac" elseif k == Spline.GRASS then "grass" elseif k == Spline.GRAVEL then "gravel" else "none"
 		aboveSurface = root.Position.Y - Driver.rootAboveFeet(player.Character) - surface
 	end
 	local count = 0

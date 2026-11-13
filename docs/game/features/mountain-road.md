@@ -39,7 +39,13 @@ the drop. Running wide is no longer stopped by a wall; it costs you grip, then t
    2026-11-12): "model the metal barriers like these things please. with the begining and end
    having this type of hazard end piece thing on it", so the beam was rounded and the spacers,
    bolts and end panels added.
-5. Everything else is the run as it is: the score, the closing barrier behind you, joining
+5. **Tight cliff edges** (T-181). The user, 2026-11-13: *"some cliff edges should be barrier
+   rails that are right on the edge of the asphalt with less than 3 or 4 studs of gravel before
+   the cliff."* Now and then, on a side with a cliff the whole way along a section, the runoff
+   closes in to a strip of **gravel** 2.5 to 3.5 studs wide, a crash barrier stands on the
+   tarmac's edge, and the lip is just past it; then it opens out to grass again. Gravel grips
+   and scores as grass to start (`GripGravel`, `ScoreGravel`, their own numbers).
+6. Everything else is the run as it is: the score, the closing barrier behind you, joining
    another player's road, respawn after a fall.
 
 ## Left out
@@ -71,6 +77,7 @@ does), so nothing steps.
 | | Start | Notes |
 |---|---|---|
 | Runoff width | 12 to 40 studs, each side on its own | About 2 to 5 car widths |
+| Tight cliff edge (T-181) | Gravel 2.5 to 3.5 studs wide for 80 to 270 studs, easing in and out at 0.4 stud per stud (`Tight*` in `Terrain`) | A K-rail over the narrow part and 12 studs (at most half the easing) past each end; the gravel covers the same stretch |
 | Runoff on the inside of a bend | Never past 60% of the way to the bend's centre | So the inside of a hairpin keeps a strip, not a spike |
 | Runoff slope | Follows the road's bank, then eases flat | A banked road's grass doesn't lip up into a ramp |
 | Rock face | Rises 25 to 60 studs at 50 to 70 degrees | Height is looks; to the car it is a wall |
@@ -89,6 +96,10 @@ A mountain road has the mountain on one side and the drop on the other, so the g
   stretch of hedge both sides.
 - **K-rails:** on the outside of a bend whose outside is a cliff, about half the time, and the
   odd stretch elsewhere.
+- **Tight cliff edges:** in a section with a cliff the whole way along one side, 30% of the
+  time, if the section is long enough for the easing in, 80 studs narrow and the easing out.
+  A K-rail chosen on that side gives way to the tight edge's own. The section carries it as
+  its runoff knots, a K-rail run and a gravel run (`gv`).
 - **Seeded and replayed,** like the curve: the server chooses, the edges go to the clients with
   each section (`RoadSpline`), and the clients replay them. A client never chooses.
 
@@ -100,7 +111,7 @@ The road stays purely visual: the car still reads everything from the curve (`Sp
 |---|---|
 | `probe`: the ground under a point | Tarmac or grass, by lateral offset, with its grip and score. Nothing past a cliff's lip, so the car falls there |
 | `sweep`: how far the car may move | Stops at a rock face, a hedge or a K-rail, with the wall's normal. Nothing at the tarmac's edge any more |
-| Surface | Grass uses dirt's numbers to start (`GripDirt` 0.5, `ScoreDirt` 0.5), as its own `GripGrass` / `ScoreGrass` so they can part later |
+| Surface | Grass uses dirt's numbers to start (`GripDirt` 0.5, `ScoreDirt` 0.5), as its own `GripGrass` / `ScoreGrass` so they can part later. Gravel (T-181) the same, as `GripGravel` / `ScoreGravel` |
 
 - **The side barriers go, for good,** and with them the guardrail switch (`setRails`, the TEST
   ONLY button). The closing barrier behind you stays.
@@ -128,6 +139,16 @@ The road stays purely visual: the car still reads everything from the curve (`Sp
   most in one chunk (50, then 135); about 377 plain parts in the window round the car. From the
   grass side the car stops at the wall's back face, about 0.9 studs behind the posts.
   A device that cannot make a mesh still draws the tarmac only.
+- **Tight cliff edges (T-181):** the gravel is the runoff's own strips in the chunk mesh, in
+  `GravelColour`, so no mesh and no triangle more; its rail is the crash barrier as drawn
+  anywhere else. Walking on it, the ground tiles are Pebble. Measured, 5 seeds of 20 000 studs:
+  46 tight edges, **4.6 per 10 000 studs**, 7.6% of the road's length; gravel 2.55 to 3.50
+  studs at its narrowest; a cliff past it and a rail on the tarmac's edge at every one of 3 828
+  points sampled; a client's replay the same. Seed 31337, 8 000 studs: 31 538 triangles (31 400
+  without), the window still 5 meshes, about 738 plain parts in it (423 without: 2 004 studs
+  of rail where there were 540). The car driven square at a tight edge's rail at 50 studs/s
+  stops with its nose at the rail's face, 2.9 studs short of the lip; driven at it glancing
+  (30 degrees, 60 studs/s) it is held on the tarmac, on the ground.
 - **Nothing drawn collides.** As now.
 
 ### Walking on the road
@@ -174,7 +195,7 @@ None. The TEST ONLY panel loses its guardrail button.
 ## Contracts
 
 - `RoadSpline`'s section data gains each side's runoff and edge knots, and the K-rail runs
-  (`CONTRACTS.md`, in the same commit).
+  (`CONTRACTS.md`, in the same commit); since T-181, its gravel runs (`gv`) too.
 - `setRails` and the guardrail message are removed.
 - `Config.Road.Mode` defaults to `"spline"`.
 
