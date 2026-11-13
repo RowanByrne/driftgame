@@ -89,6 +89,13 @@ local function stateWith(opts)
 		down = { not s.airborne, not s.airborne, not s.airborne, not s.airborne }
 	end
 	s.wheelsDown = down
+	-- Each wheel's named ground (T-188): one name for all four, or a list of four.
+	local surface = opts.surface
+	if type(surface) == "string" then
+		s.wheelSurface = { surface, surface, surface, surface }
+	elseif type(surface) == "table" then
+		s.wheelSurface = surface
+	end
 	s.drifting = math.abs(s.slip) >= math.rad(Config.Drift.MinSlipAngleForDrift)
 	return s
 end
@@ -182,13 +189,13 @@ function Tests.run(opts)
 			builtOk,
 			`built: {table.concat(F.Built, ", ")}{if builtOk then "" else "; incomplete look for " .. table.concat(missing, ", ")}`
 		)
-		-- THE INSTANCE BUDGET IS THIS FORMULA, and the surfaces are all that is left in it
-		-- since the darkness ladder came out:
-		-- 4 wheels x (2 Attachments + surfaces x (1 Trail + 2 ParticleEmitters)).
+		-- THE INSTANCE BUDGET IS THIS FORMULA: 4 wheels x (2 Attachments + smoking surfaces x
+		-- (1 Trail + 2 ParticleEmitters) + the off-road layer's 2 Attachments, 3 Trails and 3
+		-- ParticleEmitters, T-188).
 		check(
-			"one built surface, and the budget it comes to",
-			#F.Built == 1,
-			`{#F.Built} surface(s) -> {#CarModel.WHEEL_NAMES * (2 + #F.Built * 3)} instances per car`
+			"one smoking surface, and the budget it comes to",
+			#F.Built == 1 and Wheels.perWheel() == 13,
+			`{#F.Built} surface(s) -> {#CarModel.WHEEL_NAMES * Wheels.perWheel()} instances per car`
 		)
 		-- ONE DARKNESS, which is the whole of the rollback. A ladder would be a table.
 		check(
@@ -579,7 +586,7 @@ function Tests.run(opts)
 		local rig, car = standInRig()
 		local w = Wheels.new()
 		local attached = w:Attach(rig)
-		local want = #CarModel.WHEEL_NAMES * (2 + #F.Built * 3)
+		local want = #CarModel.WHEEL_NAMES * Wheels.perWheel()
 		local before = w:CountInstances()
 		local bodyBefore = #rig.body:GetDescendants()
 		check(
@@ -600,6 +607,14 @@ function Tests.run(opts)
 					if fx.trail.Enabled then
 						here += 1
 					end
+				end
+				-- The off-road marks (T-188). The trench is a layer OVER the grass line and
+				-- is not one of the alternatives, so it is not counted.
+				if wheel.ground.flat.trail.Enabled then
+					here += 1
+				end
+				if wheel.ground.gravel.trail.Enabled then
+					here += 1
 				end
 				lit += here
 				maxPerWheel = math.max(maxPerWheel, here)
@@ -624,9 +639,16 @@ function Tests.run(opts)
 				throttle = if frame % 7 == 0 then 0 else 1,
 				airborne = frame % 97 == 0,
 				rollDeg = Config.Drift.BodyRollMax * math.sin(t * math.pi * 5),
+				-- and the ground changes under it (T-188), one wheel at a time
+				surface = {
+					({ "tarmac", "grass", "gravel" })[(frame // 37) % 3 + 1],
+					({ "tarmac", "grass", "gravel" })[(frame // 41) % 3 + 1],
+					({ "tarmac", "grass", "gravel" })[(frame // 43) % 3 + 1],
+					({ "tarmac", "grass", "gravel" })[(frame // 47) % 3 + 1],
+				},
 			})
 			w:Update(s, { handbrake = frame % 53 == 0 }, 1 / 60)
-			local on = w.wheels[1].fx[1].on
+			local on = w.wheels[1].marking
 			if on ~= lastOn then
 				flips += 1
 				lastOn = on
@@ -634,10 +656,12 @@ function Tests.run(opts)
 			local _, perWheel = litTrails()
 			worstPerWheel = math.max(worstPerWheel, perWheel)
 			for _, wheel in w.wheels do
+				local drawn = wheel.ground.flat.trail.Enabled or wheel.ground.gravel.trail.Enabled
 				for _, fx in wheel.fx do
-					if fx.on and not fx.trail.Enabled then
-						blank += 1
-					end
+					drawn = drawn or fx.trail.Enabled
+				end
+				if wheel.marking and not drawn then
+					blank += 1
 				end
 			end
 		end
@@ -733,6 +757,160 @@ function Tests.run(opts)
 			`emitting {anyWhileOff}, instances {w:CountInstances()}`
 		)
 		w:SetEnabled(true)
+
+		------------------------------------------------------------------------
+		-- 9b. OFF THE ROAD (T-188): the smoke fades, the grass tears up.
+		------------------------------------------------------------------------
+		local G = F.Ground
+		local DT = 1 / 60
+		w:Cut()
+		-- A rear wheel (RL) on tarmac at 20 deg -- smoking -- then all four go on grass.
+		local rl
+		for _, wheel in w.wheels do
+			if wheel.name == CarModel.WHEEL_NAMES[3] then
+				rl = wheel
+			end
+		end
+		local tarmac20 = stateWith({ slipDeg = 20, speed = 70, throttle = 1, surface = "tarmac" })
+		for _ = 1, 30 do
+			w:Update(tarmac20, { handbrake = false }, DT)
+		end
+		local smokeBefore = rl.fx[1].diffuse.Rate
+		local grass20 = stateWith({ slipDeg = 20, speed = 70, throttle = 1, surface = "grass" })
+		local framesToZero, halfway = nil, nil
+		for frame = 1, 60 do
+			w:Update(grass20, { handbrake = false }, DT)
+			if frame == 6 then
+				halfway = rl.fx[1].diffuse.Rate
+			end
+			if not framesToZero and not rl.fx[1].diffuse.Enabled then
+				framesToZero = frame
+			end
+		end
+		local wantFrames = math.ceil(G.FadeSeconds / DT)
+		check(
+			"on grass the smoke FADES out over FadeSeconds, not a cut",
+			smokeBefore > 0
+				and halfway ~= nil
+				and halfway > 0
+				and halfway < smokeBefore
+				and framesToZero ~= nil
+				and math.abs(framesToZero - wantFrames) <= 1,
+			string.format(
+				"rate %.2f on tarmac, %.2f after 0.1 s on grass, off after %s frames (want %d = %.2f s)",
+				smokeBefore,
+				halfway or -1,
+				tostring(framesToZero),
+				wantFrames,
+				G.FadeSeconds
+			)
+		)
+		check(
+			"at a low angle on grass: the flat grass line, clippings, no trench, no dirt",
+			rl.ground.flat.trail.Enabled
+				and not rl.ground.trench.trail.Enabled
+				and not rl.fx[1].trail.Enabled
+				and rl.ground.clippings.emitter.Enabled
+				and not rl.ground.dirt.emitter.Enabled,
+			string.format("clippings %.1f/s, mix %.2f", rl.ground.clippings.emitter.Rate, rl.mixGrass)
+		)
+		-- Past the trench threshold: the trench is a LAYER, so the flat line keeps drawing.
+		local grass45 = stateWith({ slipDeg = 45, speed = 70, throttle = 1, surface = "grass" })
+		for _ = 1, 10 do
+			w:Update(grass45, { handbrake = false }, DT)
+		end
+		check(
+			"at a high angle on grass: the trench over the flat line, and dirt sprays",
+			rl.ground.flat.trail.Enabled
+				and rl.ground.trench.trail.Enabled
+				and rl.ground.dirt.emitter.Enabled
+				and rl.ground.dirt.emitter.Rate > 0,
+			string.format(
+				"dirt %.1f/s, clippings %.1f/s at 45 deg",
+				rl.ground.dirt.emitter.Rate,
+				rl.ground.clippings.emitter.Rate
+			)
+		)
+		-- Hysteresis: 27 deg keeps the trench (stop is 25), 24 drops it.
+		w:Update(stateWith({ slipDeg = 27, speed = 70, throttle = 1, surface = "grass" }), { handbrake = false }, DT)
+		local held = rl.ground.trench.trail.Enabled
+		w:Update(stateWith({ slipDeg = 24, speed = 70, throttle = 1, surface = "grass" }), { handbrake = false }, DT)
+		local dropped = not rl.ground.trench.trail.Enabled and rl.ground.flat.trail.Enabled
+		check(
+			"the trench has hysteresis, and the flat line survives it ending",
+			held and dropped and Wheels.trenchOn(30, false) and not Wheels.trenchOn(29.9, false),
+			`held at 27 {held}, dropped at 24 with the grass line still drawing {dropped}`
+		)
+		-- The dirt is a smooth ramp, not a step.
+		local shares = {}
+		for _, deg in { G.Grass.DirtStartDegrees, 26, 31, 36, G.Grass.DirtFullDegrees } do
+			table.insert(shares, Wheels.dirtShare(deg))
+		end
+		local rising = true
+		for i = 2, #shares do
+			rising = rising and shares[i] > shares[i - 1]
+		end
+		check(
+			"the dirt blends in: 0 at its start, 1 at its full, rising between",
+			shares[1] == 0 and shares[#shares] == 1 and rising,
+			fmtList(shares)
+		)
+		-- Back on tarmac: the debris fades out, the smoke fades back in.
+		local back = stateWith({ slipDeg = 45, speed = 70, throttle = 1, surface = "tarmac" })
+		w:Update(back, { handbrake = false }, DT)
+		local smokeIn1 = rl.fx[1].diffuse.Rate
+		local clipStill = rl.ground.clippings.emitter.Enabled
+		for _ = 1, 30 do
+			w:Update(back, { handbrake = false }, DT)
+		end
+		local full = select(2, Wheels.evaluate(back, false, false, true, true))
+		check(
+			"back on tarmac the smoke fades IN and the grass fades out",
+			smokeIn1 > 0
+				and smokeIn1 < full * 0.2
+				and clipStill
+				and math.abs(rl.fx[1].diffuse.Rate - full) < 1e-6
+				and not rl.ground.clippings.emitter.Enabled
+				and rl.fx[1].trail.Enabled
+				and not rl.ground.flat.trail.Enabled,
+			string.format("smoke %.2f one frame back, %.2f half a second later (full %.2f)", smokeIn1, rl.fx[1].diffuse.Rate, full)
+		)
+		-- Per wheel: two wheels on grass, two on tarmac.
+		w:Cut()
+		local split = stateWith({ slipDeg = 60, speed = 70, throttle = 1, surface = { "tarmac", "grass", "tarmac", "grass" } })
+		for _ = 1, 30 do
+			w:Update(split, { handbrake = false }, DT)
+		end
+		local perWheelOk, line = true, {}
+		for _, wheel in w.wheels do
+			local onGrass = wheel.index == 2 or wheel.index == 4
+			local smoking = wheel.fx[1].diffuse.Enabled
+			local kicking = wheel.ground.clippings.emitter.Enabled
+			perWheelOk = perWheelOk and smoking == not onGrass and kicking == onGrass
+			table.insert(line, `{wheel.name}: smoke {smoking} grass {kicking}`)
+		end
+		check("each wheel reads its own ground", perWheelOk, table.concat(line, "; "))
+		-- Gravel: dust, a scuff, no smoke.
+		local gravel = stateWith({ slipDeg = 40, speed = 70, throttle = 1, surface = "gravel" })
+		for _ = 1, 30 do
+			w:Update(gravel, { handbrake = false }, DT)
+		end
+		check(
+			"on gravel: a scuff mark and dust, no smoke, no grass",
+			rl.ground.gravel.trail.Enabled
+				and rl.ground.dust.emitter.Enabled
+				and not rl.fx[1].diffuse.Enabled
+				and not rl.ground.clippings.emitter.Enabled,
+			string.format("dust %.1f/s", rl.ground.dust.emitter.Rate)
+		)
+		check(
+			"a hit with no name is the default surface",
+			Wheels.surfaceOf(stateWith({ surface = "" }), 1, true) == F.Default
+				and Wheels.surfaceOf(stateWith({ surface = "grass" }), 1, true) == "grass"
+				and Wheels.surfaceOf(stateWith({ surface = "grass" }), 1, false) == nil,
+			"'' -> default, grass -> grass, not down -> nil"
+		)
+		check("and none of it built anything", w:CountInstances() == want, `{w:CountInstances()} instances`)
 
 		w:Clear()
 		check("Clear takes all of them away", w:CountInstances() == 0, `{#rig.body:GetDescendants()} left on the body`)
