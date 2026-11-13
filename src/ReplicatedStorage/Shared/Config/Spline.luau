@@ -205,11 +205,40 @@ local Spline = {
 		CarvedRate = 0.4,
 		-- THE EDGES. A rock face and a hedge are walls at the runoff's outer edge; a cliff is
 		-- where the ground ends.
+		-- The heights and slopes here are near a turnaround; mid-leg they grow to the `Grand`
+		-- numbers below. `RockHeight[1]` is also the car's wall height (`Drift/SplineWorld`)
 		RockHeight = { 25, 60 }, -- studs. A look; to the car it is a wall
 		RockSlope = { 50, 70 }, -- degrees
 		HedgeHeight = 6, -- studs
 		HedgeThickness = 4, -- studs
 		CliffDrop = 80, -- studs the face is drawn down into haze
+		-- GRAND CLIFFS (T-185). The user, 2026-11-13: "cliffs should be more solid bodied and
+		-- grand. the farther you get from a switchback, we can have sections where the average
+		-- cliff height is huge, and then comes back down again as we near a switchback".
+		-- A rock face is a SOLID BODY: its face, a top of scrub `RockTop` deep, and a back
+		-- slope down to the ground `RockBack` of its height behind, closed at both ends. A
+		-- cliff is a jagged face with closed ends.
+		-- HOW GRAND, 0..1, is chosen by the server with each section (`gd` knots) from how far
+		-- the road is from the nearest turnaround (hairpin, switchback or double hairpin):
+		-- 0 within `GrandNear`, rising (smoothstep) to 1 over `GrandRamp` more. And never so
+		-- tall that a rock body would stand up through old road on its uphill side (the leg
+		-- above): it stays `GrandMargin` under that road wherever it reaches beneath it.
+		GrandNear = 250, -- studs from a turnaround
+		GrandRamp = 600, -- studs, then full
+		GrandKnotEvery = 60, -- studs between two knots of a section's grandeur
+		GrandRate = 300, -- studs, at the least, for the grandeur to go from 0 to 1 or back
+		GrandMargin = 12, -- studs a rock body's top keeps under old road above it
+		-- and short of that road, it may stand above it by this many studs for every stud it
+		-- keeps off it, so no pinnacle towers right beside the leg above. Measured over five
+		-- seeds, mid-leg (850+ studs from a turnaround) grandeur averages 0.54 at 1, 0.81 at 2,
+		-- 0.87 at 3 and 0.92 with no limit but the road above (0.78 at 2 with `GrandRate`)
+		GrandAbove = 2,
+		GrandRockHeight = { 140, 220 }, -- studs, mid-leg (`RockHeight` near a turnaround)
+		GrandRockSlope = { 64, 78 }, -- degrees, so a tall face doesn't reach out for ever
+		RockTop = { 14, 36 }, -- studs of scrub on top, near and grand
+		RockBack = 0.36, -- the back slope's run, as a share of the height
+		GrandCliffDrop = 200, -- studs, mid-leg (`CliffDrop` near). Above the valley floor
+		-- (`Config.Horizon.Floor`; HorizonTests checks it)
 		-- A ROCK FACE'S SHADOW (T-178): the mesh casts none, so plain boxes stand behind each
 		-- face, foot to top, unseen, and cast it (`Road/SplineMesh`)
 		RockShadeStep = 16, -- studs of road a box covers at most (a bend's chord stays near it)

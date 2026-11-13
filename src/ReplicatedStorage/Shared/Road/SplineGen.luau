@@ -122,6 +122,10 @@ export type Gen = typeof(setmetatable(
 		inBand: boolean, -- heading within `AlongFallLine` of the fall line: the side holds
 		lowUntil: number, -- s: the uphill side stays hedge to here after the mountain changes sides
 		runoff: { [number]: number }, -- the last runoff width chosen, by side
+		-- grand cliffs (T-185)
+		lastTurnEnd: number, -- s where the last turnaround ended (the road's start before any)
+		turning: string?, -- the planned turn being laid, if the section is one
+		lastGrand: number, -- the grandeur the last section ended on
 		clearance: number,
 		separation: number,
 		stats: Stats,
@@ -189,6 +193,9 @@ function SplineGen.new(seed: number, origin: Spline.Origin?, clearOverride: numb
 		inBand = false,
 		lowUntil = 0,
 		runoff = { [-1] = Config.Spline.Terrain.StartRunoff, [1] = Config.Spline.Terrain.StartRunoff },
+		lastTurnEnd = 0,
+		turning = nil,
+		lastGrand = 0,
 		clearance = clear,
 		separation = sep,
 		stats = {
@@ -502,6 +509,10 @@ function SplineGen._terrain(self: Gen, sec: Spline.Section)
 		end
 		sec.gv = gv
 	end
+	-- GRAND CLIFFS (T-185): how grand its rock and cliff faces are drawn, from no random
+	-- stream at all, so it changes nothing else the road chooses
+	sec.gd = self:_grand(sec)
+	self.turning = nil
 end
 
 -- A CARVED APEX (T-182): the road cut into the cliff. On some sharp bends whose inside is
@@ -791,6 +802,169 @@ local function walk(x: number, z: number, yaw0: number, k0: number, knots: { num
 		end
 	end
 	return true
+end
+
+--------------------------------------------------------------------------------
+-- Grand cliffs (T-185)
+--------------------------------------------------------------------------------
+
+-- The planned turns the mountain changes sides through: a turnaround, by either of the
+-- switchback's two bends, and the double hairpin's two.
+local TURNAROUNDS = { turnaround = true, switchbackOut = true, double = true, doubleOut = true }
+
+-- Studs from the road's end to the next turnaround the plan holds: the stretches still to
+-- run before it (a detour's own turns counted as nothing). It can only come later than
+-- this (a turn refused runs the stretch on, a turn takes room), never sooner.
+function SplineGen._toTurnaround(self: Gen): number
+	local ahead = 0
+	for _, item in self.plan do
+		if item.turn then
+			if TURNAROUNDS[item.what] then
+				return ahead
+			end
+		else
+			ahead += math.max(item.left or 0, 0)
+		end
+	end
+	return math.huge
+end
+
+-- How grand a rock body may be at grandeur `g`: its tallest (its crest), and how far it
+-- reaches out past the grass at its least steep (`Road/SplineMesh`'s profile, at its largest).
+local function bodyAt(g: number): (number, number)
+	local T = Config.Spline.Terrain
+	local h = T.RockHeight[2] + (T.GrandRockHeight[2] - T.RockHeight[2]) * g
+	local lean = math.rad(T.RockSlope[1] + (T.GrandRockSlope[1] - T.RockSlope[1]) * g)
+	local top = T.RockTop[1] + (T.RockTop[2] - T.RockTop[1]) * g
+	local jag = (2.5 + 7 * g) * 0.5
+	return h + 4 + 6 * g, h / math.tan(lean) + top + T.RockBack * h + jag
+end
+
+-- A section's grandeur knots {ds, g, ...}: 0 within `GrandNear` of a turnaround, either
+-- way along the road, rising (smoothstep) to 1 over `GrandRamp`. Then cut back wherever a
+-- rock body that grand would stand up through older road on its uphill side, so the leg
+-- above stays on top of the mountain.
+function SplineGen._grand(self: Gen, sec: Spline.Section): { number }
+	local T = Config.Spline.Terrain
+	local sp = self.spline
+	local len = sec.len
+	local s0 = sp.length
+	local n = math.max(1, math.ceil(len / T.GrandKnotEvery - 1e-9))
+	local out = table.create(2 * n)
+	if self.turning and TURNAROUNDS[self.turning] then
+		-- a turnaround itself: low all through, and the distance counts from its end
+		self.lastTurnEnd = s0 + len
+		self.lastGrand = 0
+		for i = 1, n do
+			out[2 * i - 1], out[2 * i] = if i == n then len else i * len / n, 0
+		end
+		return out
+	end
+	local ahead = self:_toTurnaround()
+	if self.turning then
+		ahead += len -- a straightening bend or a detour's turn, laid before the plan's next stretch
+	end
+	-- the points along the section a knot goes at, from the plan's own walk
+	local x0, z0, yaw0, k0, g0, _, y0 = sp:tip()
+	local pts: { { number } } = {}
+	walk(x0, z0, yaw0, k0, sec.k, len / n, len / n, function(u, x, z)
+		table.insert(pts, { u, x, z })
+		return true
+	end)
+	local half = Config.Road.Width * 0.5
+	local w = half + math.max(T.RunoffMax, T.GroveRunoff[2]) -- the foot of the rock, at its furthest
+	local foot = half + math.max(T.RunoffMax, T.GroveRunoff[2]) + T.EdgeDepth + T.GrandKnotEvery * 0.5 -- old road's own width, and between knots
+	local _, reachMax = bodyAt(1)
+	local cell = sp.cell
+	local values = table.create(n)
+	for i = 1, n do
+		local ds = if i == n then len else i * len / n
+		local p = pts[i] or pts[#pts] or { ds, x0, z0 }
+		local d = math.min(s0 + ds - self.lastTurnEnd, ahead - ds)
+		local t = math.clamp((d - T.GrandNear) / T.GrandRamp, 0, 1)
+		local g = t * t * (3 - 2 * t)
+		if g > 0 then
+			-- the side the rock is on here (or would be): the side across from a cliff
+			local function kindAt(list: { number }): number
+				for j = 1, #list, 2 do
+					if list[j] >= ds - 1e-6 then
+						return list[j + 1]
+					end
+				end
+				return list[#list]
+			end
+			local l, r = kindAt(sec.el :: { number }), kindAt(sec.er :: { number })
+			local side = if l == Spline.ROCK or r == Spline.CLIFF then -1 elseif r == Spline.ROCK or l == Spline.CLIFF then 1 else self.uphill
+			local yaw = yawAlong(yaw0, k0, sec.k, ds)
+			local y = yawAlong(y0, g0, sec.g, ds) -- the height: the grade's integral, as the heading is the curvature's
+			local rx, rz = side * math.cos(yaw), -side * math.sin(yaw)
+			local px, pz = p[2], p[3]
+			-- old road near enough to matter, and not this stretch's own neighbours
+			local hMax = bodyAt(g)
+			local reach = w + reachMax + foot + hMax / math.max(T.GrandAbove, 0.1)
+			local near: { number } = {}
+			for cx = math.floor((px - reach) / cell), math.floor((px + reach) / cell) do
+				for cz = math.floor((pz - reach) / cell), math.floor((pz + reach) / cell) do
+					local list = sp.hash[(cx + 1048576) * 2097152 + (cz + 1048576)]
+					if list then
+						for j = 1, #list, 3 do
+							local so = list[j]
+							if s0 + ds - so > self.separation then
+								local ox, oz = list[j + 1] - px, list[j + 2] - pz
+								local along = ox * rx + oz * rz -- how far out on the rock's side
+								local across = ox * rz - oz * rx
+								if along > 0 and along < reach and math.abs(across) < reach then
+									local yo = sp:heightAt(so)
+									if yo - T.GrandMargin < y + hMax then
+										table.insert(near, along)
+										table.insert(near, across)
+										table.insert(near, yo)
+									end
+								end
+							end
+						end
+					end
+				end
+			end
+			-- the grandest that stands clear: under each such road, or, short of it, no
+			-- higher above it than it is far off (so no pinnacle towers over the leg above)
+			while g > 0 do
+				local h, reachG = bodyAt(g)
+				local clear = true
+				for j = 1, #near, 3 do
+					local along, across, yo = near[j], near[j + 1], near[j + 2]
+					-- distance from the old road to the body's footprint, a line from `w` out
+					-- to `w + reachG`, past the old road's own width
+					local da = if along < w then w - along elseif along > w + reachG then along - w - reachG else 0
+					local off = math.max(0, math.sqrt(da * da + across * across) - foot) * T.GrandAbove
+					if y + h > yo - T.GrandMargin + off then
+						clear = false
+						break
+					end
+				end
+				if clear then
+					break
+				end
+				g = math.max(0, g - 0.05)
+			end
+		end
+		values[i] = g
+	end
+	-- never faster than 1 over `GrandRate` studs: rising after a cut-back point (from where
+	-- the last section left off), and easing down to one in good time
+	local rate = (len / n) / T.GrandRate
+	for i = 1, n do
+		values[i] = math.min(values[i], (if i == 1 then self.lastGrand else values[i - 1]) + rate)
+	end
+	for i = n - 1, 1, -1 do
+		values[i] = math.min(values[i], values[i + 1] + rate)
+	end
+	for i = 1, n do
+		out[2 * i - 1] = if i == n then len else i * len / n
+		out[2 * i] = math.floor(values[i] * 1000 + 0.5) / 1000
+	end
+	self.lastGrand = out[2 * n]
+	return out
 end
 
 --------------------------------------------------------------------------------
@@ -1164,6 +1338,7 @@ function SplineGen._planned(self: Gen, item: Item): Spline.Section?
 		})
 		if typeof(fix) == "table" then
 			st.straightens += 1
+			self.turning = "straighten"
 			return fix :: Spline.Section
 		end
 	end
@@ -1181,6 +1356,7 @@ function SplineGen._planned(self: Gen, item: Item): Spline.Section?
 			if typeof(sec) == "table" then
 				local s0 = self.spline.length
 				table.insert(self.turns, { s0, s0 + (sec :: Spline.Section).len, item.what })
+				self.turning = item.what
 				return sec :: Spline.Section
 			end
 			return nil
