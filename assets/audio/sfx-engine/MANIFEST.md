@@ -55,9 +55,9 @@ the mod's author got the recordings is not known.
 
 | | What | SHA-256 | Status |
 |---|---|---|---|
-| A | `A-inside.ogg`: on throttle `on_lower` 3,261 rpm, `on_low` 5,034, `on_lowmid` 5,604, `on_midhigh` 6,384, `on_high_valve2` 7,224; off throttle the outside `idle` 1,382, `off_mid` 4,074, `off_higher` 6,636 | `a895679e5166f1930e09e87690dfe33cd7011be1db97bf7916ba0f5b4935f19c` | candidate |
-| B | `B-inside-low-outside-high.ogg`: as A, with `ext_on_mid` 6,348 and `ext_on_high_exhaust` 7,124 as the top two on-throttle loops | `69d7696bec476f74a588ded62b85f4facf341ad79ab622d786964db1d5223795` | candidate |
-| C | `C-todays-sound.ogg`: today's sheet (`engine-sheet.ogg` above), for comparison | `44062cf6288aa8a938e53d20317e74c81252c1ceeaf92d8e310b563a7ac4d94f` | candidate |
+| A | `A-inside.ogg`: on throttle `on_lower` 3,261 rpm, `on_low` 5,034, `on_lowmid` 5,604, `on_midhigh` 6,384, `on_high_valve2` 7,224; off throttle the outside `idle` 1,382, `off_mid` 4,074, `off_higher` 6,636 | `a895679e5166f1930e09e87690dfe33cd7011be1db97bf7916ba0f5b4935f19c` | rejected |
+| B | `B-inside-low-outside-high.ogg`: as A, with `ext_on_mid` 6,348 and `ext_on_high_exhaust` 7,124 as the top two on-throttle loops | `69d7696bec476f74a588ded62b85f4facf341ad79ab622d786964db1d5223795` | **picked** by the user 2026-11-13 ("B: outside up high") |
+| C | `C-todays-sound.ogg`: today's sheet (`engine-sheet.ogg` above), for comparison | `44062cf6288aa8a938e53d20317e74c81252c1ceeaf92d8e310b563a7ac4d94f` | not picked; stays in the game's config as the `Synth` sheet |
 
 Made by `..\art\source\sfx-engine\ae86-mod\tools\build_candidates.py` (numbers for every loop in
 `recorded-v1\candidates.json`): each loop summed to mono, taken to 48 kHz, its end crossfaded into
