@@ -245,7 +245,9 @@ local function toPart(b: Builder, name: string, colour: Color3, material: Enum.M
 	mp.CanCollide = false
 	mp.CanQuery = false
 	mp.CanTouch = false
-	mp.CastShadow = false
+	-- casts (T-178): the tarmac, runoff, rock and cliff faces block the sun and the moon, so
+	-- a car's shadow lands on the road under it and the mountain shades the road
+	mp.CastShadow = true
 	mp.Color = colour
 	mp.Material = material
 	mp.CFrame = CFrame.new(b.centre + mid)
@@ -435,7 +437,9 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 			part.CanCollide = false
 			part.CanQuery = false
 			part.CanTouch = false
-			part.CastShadow = false
+			-- hedges, walls and guardrails cast (T-178); bolts and dashes, too small or too
+			-- flat to show one, are switched off where they are made
+			part.CastShadow = true
 			part.TopSurface = Enum.SurfaceType.Smooth
 			part.BottomSurface = Enum.SurfaceType.Smooth
 			part.Material = material
@@ -515,6 +519,7 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 					-- a cylinder's axis is its X: across the road, a round head facing it
 					local bolt = plain(`KRailBolt_{id}_{i}`, Vector3.new(0.08, 0.16, 0.16), cf, T.KRailBoltColour, Enum.Material.Metal)
 					bolt.Shape = Enum.PartType.Cylinder
+					bolt.CastShadow = false
 				end
 			end
 		end
@@ -633,7 +638,8 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 					local right = fwd:Cross(n).Unit
 					local up = right:Cross(fwd)
 					local centreOf = (pa + pb) * 0.5 + up * (R.MarkLift - R.MarkThickness * 0.5)
-					plain("Mark", Vector3.new(R.MarkWidth, R.MarkThickness, len), CFrame.fromMatrix(centreOf, right, up), R.Colours.Marking, Enum.Material.SmoothPlastic)
+					local mark = plain("Mark", Vector3.new(R.MarkWidth, R.MarkThickness, len), CFrame.fromMatrix(centreOf, right, up), R.Colours.Marking, Enum.Material.SmoothPlastic)
+					mark.CastShadow = false
 				end
 			end
 			start += interval

@@ -65,6 +65,7 @@ function SplineParts.build(spline: Spline.Spline, s0: number, s1: number, parent
 			p.CanQuery = queryable
 			p.CanCollide = false
 			p.CanTouch = false
+			p.CastShadow = true -- T-178, as the mesh road
 			if queryable then
 				p:AddTag(D.SurfaceTag)
 				p:SetAttribute(D.SurfaceAttribute, R.SurfaceTarmac)
@@ -90,7 +91,7 @@ function SplineParts.build(spline: Spline.Spline, s0: number, s1: number, parent
 				wall.CanCollide = false
 				wall.CanTouch = false
 				wall.CanQuery = queryable
-				wall.CastShadow = false
+				wall.CastShadow = true -- T-178, as the mesh road's barriers
 				wall.Material = R.BarrierMaterial
 				wall.Color = R.Colours.Barrier
 				-- a little long, so neighbouring slices overlap rather than leave a slot
