@@ -1,4 +1,4 @@
-﻿# Decisions
+# Decisions
 
 The user's decisions about this game, so they aren't reopened later. Before proposing something, check it hasn't already been decided here.
 
