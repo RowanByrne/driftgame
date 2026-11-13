@@ -72,6 +72,7 @@ does), so nothing steps.
 |---|---|---|
 | Runoff width | 12 to 40 studs, each side on its own | About 2 to 5 car widths |
 | Runoff on the inside of a bend | Never past 60% of the way to the bend's centre | So the inside of a hairpin keeps a strip, not a spike |
+| Carved apex (T-182) | Inside runoff down to 1 stud at the apex, for 20 to 50 studs | Only on bends of radius 220 or less with the rock inside and the cliff outside; see "Carved apexes" |
 | Runoff slope | Follows the road's bank, then eases flat | A banked road's grass doesn't lip up into a ramp |
 | Rock face | Rises 25 to 60 studs at 50 to 70 degrees | Height is looks; to the car it is a wall |
 | Hedge | 6 studs high, 4 thick | |
@@ -91,6 +92,31 @@ A mountain road has the mountain on one side and the drop on the other, so the g
   odd stretch elsewhere.
 - **Seeded and replayed,** like the curve: the server chooses, the edges go to the clients with
   each section (`RoadSpline`), and the clients replay them. A client never chooses.
+
+### Carved apexes
+
+T-182. The user, 2026-11-13: *"some mountain rock faces should come right up to the edge of the
+road, like at an apex of a sharp turn on, which would be paired with a clifside, so it feels like
+the road was carved into a cliff."*
+
+- **Where:** a bend of radius 220 studs or less (hairpins, tight bends, the tightest medium ones)
+  whose inside is the rock face all along and whose outside is the cliff at the apex. Every such
+  bend that has room for the easing gets one (`CarvedChance` 1). Turnaround hairpins never do:
+  they turn through the downhill side, so their inside is the drop.
+- **What:** the inside runoff narrows to `CarvedGap` (1 stud) at the apex, the middle of the
+  bend's held arc, holds there 20 to 50 studs, then widens again, all inside the section. The
+  apex moves later in the bend (toward the exit) when the easing needs the room.
+- **Eased:** smoothstep knots, no faster than `CarvedRate` (0.4 studs per stud on average, so
+  the wall leans in at 31 degrees at the steepest; the runoff's own rule is 0.25, which fits a
+  carve in too few bends to notice). The car's wall carries that lean, so it grinds.
+- **Only the runoff knots change** (`rl`/`rr`, no new section data), chosen by the server from a
+  random stream of their own, so no other choice on the road moves. No new parts or triangles.
+- **Measured (DR-Lane4):** 1.7 to 1.9 carved apexes per 10 000 studs (8 to 12 seeds of 20 000
+  studs); rock to tarmac at the apex 1.00 stud. A scripted drive held the inside line through
+  each of seed 31337's 5 apexes at 40 and 70 studs/s, with the car's centre 1 and 3 studs off the
+  rock line: 20 of 20 got through. The worst speed lost in one frame on the rock was 34 studs/s
+  on the easing in and 13 at the apex, against 32 grinding an ordinary rock face the same way,
+  where 9 of 36 such drives stalled.
 
 ### Driving on it, from the maths
 

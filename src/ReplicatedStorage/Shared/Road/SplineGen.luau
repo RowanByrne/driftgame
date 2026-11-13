@@ -65,6 +65,7 @@ export type Stats = {
 	turnsRefused: number, -- a planned turn that would have crowded old road, run on and retried
 	climbs: number, -- times the descent bottomed out and a climb began
 	cliffSwaps: number, -- times the mountain changed sides
+	carved: number, -- bends whose inside rock face was carved to the tarmac's edge (T-182)
 }
 
 -- One step of the plan: a STRETCH of random sections kept within `limit` of `aim` for
@@ -113,6 +114,7 @@ export type Gen = typeof(setmetatable(
 		lineX: number?, -- where the stretch began: its line runs from here along `aim`
 		lineZ: number?,
 		trng: Random, -- the mountainside's own stream
+		crng: Random, -- the carved apexes' own stream, so they move no other choice (T-182)
 		uphill: number, -- the side the mountain is on: -1 left, 1 right
 		inBand: boolean, -- heading within `AlongFallLine` of the fall line: the side holds
 		lowUntil: number, -- s: the uphill side stays hedge to here after the mountain changes sides
@@ -177,6 +179,7 @@ function SplineGen.new(seed: number, origin: Spline.Origin?, clearOverride: numb
 		upSign = 0,
 		limitUp = math.rad(Config.Spline.HeadingLimit),
 		trng = Random.new((seed * 7 + 1013) % 2 ^ 31),
+		crng = Random.new((seed * 11 + 2027) % 2 ^ 31),
 		uphill = 1,
 		inBand = false,
 		lowUntil = 0,
@@ -202,6 +205,7 @@ function SplineGen.new(seed: number, origin: Spline.Origin?, clearOverride: numb
 			turnsRefused = 0,
 			climbs = 0,
 			cliffSwaps = 0,
+			carved = 0,
 		},
 	}, SplineGen)
 	-- THE FALL LINE: the start heading turned `FallLineTurn` to a side chosen from the seed,
@@ -405,6 +409,96 @@ function SplineGen._terrain(self: Gen, sec: Spline.Section)
 	if #kr > 0 then
 		sec.kr = kr
 	end
+end
+
+-- A CARVED APEX (T-182): the road cut into the cliff. On some sharp bends whose inside is
+-- the rock face and whose outside is the drop, the inside runoff narrows to `CarvedGap` at
+-- the apex -- the middle of the bend's held arc -- so the rock rises right at the tarmac's
+-- edge, then widens again. Only that side's runoff knots change, eased (smoothstep) in and
+-- out no faster than `CarvedRate` a stud, so the wall leans in gently enough to grind along.
+-- Its own random stream, so no other choice moves. After `_terrain`, before the commit.
+function SplineGen._carve(self: Gen, sec: Spline.Section)
+	local T = Config.Spline.Terrain
+	local tag = sec.tag
+	if tag == "Straight" or tag == "Escape" or tag == "Start" or not (sec.rl and sec.rr and sec.el and sec.er) then
+		return
+	end
+	local k = sec.k
+	local kEnd = k[#k]
+	if kEnd == 0 or 1 / math.abs(kEnd) > T.CarvedMaxRadius + 1e-6 then
+		return
+	end
+	local r = self.crng
+	if r:NextNumber() >= T.CarvedChance then
+		return
+	end
+	local len = sec.len
+	local inside = if kEnd > 0 then -1 else 1 -- a left turn's inside is the left
+	-- the held arc: the run of the section at the bend's own curvature
+	local _, _, _, kv = self.spline:tip()
+	local holdFrom: number?, at = nil, 0
+	for j = 1, #k, 2 do
+		if math.abs(kv - kEnd) < 1e-12 and math.abs(k[j + 1] - kEnd) < 1e-12 then
+			holdFrom = at
+			break
+		end
+		at, kv = k[j], k[j + 1]
+	end
+	if not holdFrom or len - holdFrom < 20 then
+		return
+	end
+	local function all(list: { number }, kind: number, a: number, b: number): boolean
+		local s0 = 0
+		for j = 1, #list, 2 do
+			if list[j] > a and s0 < b and list[j + 1] ~= kind then
+				return false
+			end
+			s0 = list[j]
+		end
+		return true
+	end
+	local hold = math.min(T.CarvedHold[1] + (T.CarvedHold[2] - T.CarvedHold[1]) * r:NextNumber(), (len - holdFrom) * 0.5)
+	local gap, rate = T.CarvedGap, T.CarvedRate
+	local old = if inside < 0 then sec.rl else sec.rr
+	-- in from the width the section starts at, out to the width it was given (or less, to
+	-- fit: never under `RunoffMin`), each no faster than `rate`
+	local prev = self.spline:runoffRaw(self.spline.length, inside)
+	local eIn = math.max(T.CarvedEase, (prev - gap) / rate)
+	local vEnd = math.max(T.RunoffMin, math.min(old[#old], gap + rate * math.max(len - eIn - hold, 0)))
+	local eOut = math.max(T.CarvedEase, (vEnd - gap) / rate)
+	-- the apex is the middle of the held arc, or as near it as the easing allows (a bend
+	-- is short: often the rock meets the road late, toward the exit)
+	local lo, hi = math.max(eIn, holdFrom), len - eOut - hold
+	if lo > hi + 1e-6 then
+		return
+	end
+	local b = math.min(math.max((holdFrom + len - hold) * 0.5, lo), hi)
+	local c = b + hold
+	-- the rock all along the inside, the drop on the outside through the apex
+	if not all(if inside < 0 then sec.el else sec.er, Spline.ROCK, 0, len) or not all(if inside < 0 then sec.er else sec.el, Spline.CLIFF, b, c) then
+		return
+	end
+	local knots = {}
+	local function knot(s: number, w: number)
+		table.insert(knots, s)
+		table.insert(knots, w)
+	end
+	if b - eIn > 1e-6 then
+		knot(b - eIn, prev)
+	end
+	knot(b, gap)
+	knot(c, gap)
+	if c + eOut < len - 1e-6 then
+		knot(c + eOut, vEnd)
+	end
+	knot(len, vEnd)
+	if inside < 0 then
+		sec.rl = knots
+	else
+		sec.rr = knots
+	end
+	self.runoff[inside] = vEnd
+	self.stats.carved += 1
 end
 
 -- A client's copy: the same road from the same sections, with no choosing.
@@ -1080,6 +1174,7 @@ function SplineGen.step(self: Gen): Spline.Section?
 	end
 	local chosen = sec :: Spline.Section
 	self:_terrain(chosen)
+	self:_carve(chosen)
 	self:_commit(chosen)
 	-- a random section counts toward the stretch it was laid in
 	local head = self.plan[1]

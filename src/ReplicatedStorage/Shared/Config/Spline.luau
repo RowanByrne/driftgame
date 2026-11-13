@@ -177,6 +177,18 @@ local Spline = {
 		-- On the inside of a bend the grass never reaches past this share of the way to the
 		-- bend's centre, so the inside of a hairpin keeps a strip, not a spike.
 		InsideShare = 0.6,
+		-- A CARVED APEX (T-182): on some sharp bends whose inside is the rock face and whose
+		-- outside is the cliff, the inside grass narrows to almost nothing at the apex, so the
+		-- rock rises right at the tarmac's edge, as if the road were cut into the cliff
+		CarvedChance = 1, -- of the bends that could have one (about 1.7 per 10 000 studs, measured)
+		CarvedMaxRadius = 220, -- studs: hairpins, tight bends and the tightest medium ones
+		CarvedGap = 1, -- studs of grass left between the tarmac and the rock at the apex
+		CarvedHold = { 20, 50 }, -- studs the rock stays that close, round the apex
+		CarvedEase = 40, -- studs, at least, easing in and out
+		-- the most the width changes per stud, on average between two knots (smoothstep's
+		-- steepest is 1.5 times it). Steeper than the runoff's own 0.25, or a bend is too
+		-- short to fit one; the car's wall leans with it, so it grinds rather than snags
+		CarvedRate = 0.4,
 		-- THE EDGES. A rock face and a hedge are walls at the runoff's outer edge; a cliff is
 		-- where the ground ends.
 		RockHeight = { 25, 60 }, -- studs. A look; to the car it is a wall
