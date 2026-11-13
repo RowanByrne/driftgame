@@ -65,6 +65,7 @@ export type Stats = {
 	turnsRefused: number, -- a planned turn that would have crowded old road, run on and retried
 	climbs: number, -- times the descent bottomed out and a climb began
 	cliffSwaps: number, -- times the mountain changed sides
+	tight: number, -- tight cliff edges laid: gravel and a rail at the lip (T-181)
 	carved: number, -- bends whose inside rock face was carved to the tarmac's edge (T-182)
 }
 
@@ -114,6 +115,8 @@ export type Gen = typeof(setmetatable(
 		lineX: number?, -- where the stretch began: its line runs from here along `aim`
 		lineZ: number?,
 		trng: Random, -- the mountainside's own stream
+		grng: Random, -- the groves' own stream (T-183), so they never change the rest
+		xrng: Random, -- the tight cliff edges' own stream (T-181), so they never change the rest
 		crng: Random, -- the carved apexes' own stream, so they move no other choice (T-182)
 		uphill: number, -- the side the mountain is on: -1 left, 1 right
 		inBand: boolean, -- heading within `AlongFallLine` of the fall line: the side holds
@@ -179,7 +182,9 @@ function SplineGen.new(seed: number, origin: Spline.Origin?, clearOverride: numb
 		upSign = 0,
 		limitUp = math.rad(Config.Spline.HeadingLimit),
 		trng = Random.new((seed * 7 + 1013) % 2 ^ 31),
-		crng = Random.new((seed * 11 + 2027) % 2 ^ 31),
+		grng = Random.new((seed * 11 + 2027) % 2 ^ 31),
+		xrng = Random.new((seed * 17 + 2311) % 2 ^ 31),
+		crng = Random.new((seed * 19 + 3089) % 2 ^ 31), -- not the groves' seed: a stream of its own
 		uphill = 1,
 		inBand = false,
 		lowUntil = 0,
@@ -205,6 +210,7 @@ function SplineGen.new(seed: number, origin: Spline.Origin?, clearOverride: numb
 			turnsRefused = 0,
 			climbs = 0,
 			cliffSwaps = 0,
+			tight = 0,
 			carved = 0,
 		},
 	}, SplineGen)
@@ -257,6 +263,31 @@ function SplineGen._terrain(self: Gen, sec: Spline.Section)
 		return range[1] + (range[2] - range[1]) * r:NextNumber()
 	end
 
+	-- THE GROVES (T-183): on a flat, gentle section, a side's runoff widens and is dressed
+	-- with trees. Their own stream, always the same four draws, so a grove changes nothing
+	-- else the road chooses: only that side's runoff widths are drawn from a wider range.
+	local grove: { [number]: number } = {} -- side -> seed
+	do
+		local g = self.grng
+		local roll, pick, both, seed = g:NextNumber(), g:NextNumber(), g:NextNumber(), g:NextInteger(1, 2 ^ 30)
+		local _, _, _, k0, g0 = self.spline:tip()
+		local kMost, gMost = math.abs(k0), math.abs(g0)
+		for j = 2, #sec.k, 2 do
+			kMost = math.max(kMost, math.abs(sec.k[j]))
+		end
+		for j = 2, #sec.g, 2 do
+			gMost = math.max(gMost, math.abs(sec.g[j]))
+		end
+		local flat = kMost <= 1 / T.GroveMinRadius and gMost <= math.tan(math.rad(T.GroveMaxGrade))
+		if tag ~= "Start" and len >= T.GroveMinLength and flat and roll < T.GroveChance then
+			local first = if pick < 0.5 then -1 else 1
+			grove[first] = seed
+			if both < T.GroveBothChance then
+				grove[-first] = (seed * 31 + 7) % 2 ^ 30
+			end
+		end
+	end
+
 	-- THE RUNOFF: a width every `RunoffKnotEvery` studs, each side on its own, never
 	-- changing faster than a quarter of a stud per stud, so the grass's edge never runs at
 	-- the car faster than about 14 degrees (smoothstep's steepest is 1.5 times that)
@@ -267,8 +298,9 @@ function SplineGen._terrain(self: Gen, sec: Spline.Section)
 		end
 		local out = {}
 		local prev, prevAt = self.runoff[side], 0
+		local range = if grove[side] then T.GroveRunoff else { T.RunoffMin, T.RunoffMax }
 		local function knot(at: number)
-			local w = between({ T.RunoffMin, T.RunoffMax })
+			local w = between(range)
 			local most = 0.25 * (at - prevAt)
 			w = math.clamp(w, prev - most, prev + most)
 			table.insert(out, at)
@@ -285,6 +317,7 @@ function SplineGen._terrain(self: Gen, sec: Spline.Section)
 		self.runoff[side] = prev
 		return out
 	end
+	local startRun = { [-1] = self.runoff[-1], [1] = self.runoff[1] } -- for a tight edge (T-181)
 	sec.rl = runoff(-1)
 	sec.rr = runoff(1)
 
@@ -406,8 +439,68 @@ function SplineGen._terrain(self: Gen, sec: Spline.Section)
 		local a = (len - run) * r:NextNumber()
 		kr = { a, a + run, side }
 	end
+	-- a K-rail on a grove's side would keep the car off the very grass the grove widened:
+	-- drawn as usual (the stream stays the same), then dropped
+	if #kr > 0 and grove[kr[3]] then
+		kr = {}
+	end
+
+	-- TIGHT CLIFF EDGES (T-181): now and then, on a side with a cliff the whole way along,
+	-- the runoff closes in to a few studs of gravel with a crash barrier on the tarmac's
+	-- edge and the lip just past it. Its width eases in and out at `TightRate` on the
+	-- runoff's own smoothstep knots, so nothing steps; the rail and the gravel reach
+	-- `TightLead` past the narrow part into the easing. A K-rail already chosen on that side
+	-- gives way to this one. A GROVE IS CHOSEN FIRST (T-183) and wins: a side with a grove
+	-- never gets a tight edge (nor a K-rail).
+	-- ITS OWN STREAM, always the same four draws a section, so a tight edge (or a grove
+	-- blocking one) changes nothing else the road chooses: with `TightChance = 0` the road is
+	-- exactly the one before T-181.
+	if tag ~= "Start" then
+		local x = self.xrng
+		local roll, uWidth, uCore, uAt = x:NextNumber(), x:NextNumber(), x:NextNumber(), x:NextNumber()
+		local side = if edgeOver(1, 0, len) == Spline.CLIFF and not grove[1] then 1 elseif edgeOver(-1, 0, len) == Spline.CLIFF and not grove[-1] then -1 else 0
+		if side ~= 0 and roll < T.TightChance then
+			local w0, w1 = startRun[side], self.runoff[side]
+			local wt = T.TightRunoff[1] + (T.TightRunoff[2] - T.TightRunoff[1]) * uWidth
+			local rampIn = math.max(T.TightRamp, math.abs(w0 - wt) / T.TightRate)
+			local rampOut = math.max(T.TightRamp, math.abs(w1 - wt) / T.TightRate)
+			local room = len - rampIn - rampOut - 2
+			if room >= T.TightRun[1] then
+				local core = math.min(T.TightRun[1] + (T.TightRun[2] - T.TightRun[1]) * uCore, room)
+				local a = rampIn + 1 + (room - core) * uAt
+				local b = a + core
+				-- b + rampOut is at most len - 1, so the last knot is always its own
+				local knots = { a - rampIn, w0, a, wt, b, wt, b + rampOut, w1, len, w1 }
+				if side < 0 then
+					sec.rl = knots
+				else
+					sec.rr = knots
+				end
+				local ga = a - math.min(T.TightLead, rampIn * 0.5)
+				local gb = b + math.min(T.TightLead, rampOut * 0.5)
+				if #kr > 0 and kr[3] == side then
+					kr = {}
+				end
+				table.insert(kr, ga)
+				table.insert(kr, gb)
+				table.insert(kr, side)
+				sec.gl = { ga, gb, side }
+				self.stats.tight += 1
+			end
+		end
+	end
 	if #kr > 0 then
 		sec.kr = kr
+	end
+	if grove[-1] or grove[1] then
+		local gv = {}
+		for _, side in { -1, 1 } do
+			if grove[side] then
+				table.insert(gv, side)
+				table.insert(gv, grove[side])
+			end
+		end
+		sec.gv = gv
 	end
 end
 
@@ -460,11 +553,21 @@ function SplineGen._carve(self: Gen, sec: Spline.Section)
 	local hold = math.min(T.CarvedHold[1] + (T.CarvedHold[2] - T.CarvedHold[1]) * r:NextNumber(), (len - holdFrom) * 0.5)
 	local gap, rate = T.CarvedGap, T.CarvedRate
 	local old = if inside < 0 then sec.rl else sec.rr
-	-- in from the width the section starts at, out to the width it was given (or less, to
-	-- fit: never under `RunoffMin`), each no faster than `rate`
+	-- never on a grove's side (T-183); a tight edge (T-181) is on the cliff side, the other
+	-- one, so the two can share a bend. In from the width the section starts at and out to
+	-- the width it ends at, each no faster than `rate`
+	if sec.gv then
+		for j = 1, #sec.gv, 2 do
+			if sec.gv[j] == inside then
+				return
+			end
+		end
+	end
 	local prev = self.spline:runoffRaw(self.spline.length, inside)
 	local eIn = math.max(T.CarvedEase, (prev - gap) / rate)
-	local vEnd = math.max(T.RunoffMin, math.min(old[#old], gap + rate * math.max(len - eIn - hold, 0)))
+	-- out to the width the section already ends at, so the next section (and every other
+	-- choice) is the same with or without the carve
+	local vEnd = old[#old]
 	local eOut = math.max(T.CarvedEase, (vEnd - gap) / rate)
 	-- the apex is the middle of the held arc, or as near it as the easing allows (a bend
 	-- is short: often the rock meets the road late, toward the exit)
@@ -497,7 +600,6 @@ function SplineGen._carve(self: Gen, sec: Spline.Section)
 	else
 		sec.rr = knots
 	end
-	self.runoff[inside] = vEnd
 	self.stats.carved += 1
 end
 
