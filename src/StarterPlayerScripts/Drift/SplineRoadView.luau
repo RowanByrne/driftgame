@@ -35,6 +35,9 @@ export type View = typeof(setmetatable(
 		removed: number,
 		lastMs: number,
 		worstMs: number,
+		lastSliceMs: number, -- the most of the last build any one frame paid (T-193)
+		worstSliceMs: number,
+		lastSlices: number, -- frames the last build was spread over
 		triangles: number,
 		lastError: string?,
 		closing: BasePart?,
@@ -61,6 +64,9 @@ function SplineRoadView.new(spline: Spline.Spline, parent: Instance?): View
 		removed = 0,
 		lastMs = 0,
 		worstMs = 0,
+		lastSliceMs = 0,
+		worstSliceMs = 0,
+		lastSlices = 0,
 		triangles = 0,
 		lastError = nil,
 		closing = nil,
@@ -130,6 +136,9 @@ function SplineRoadView._build(self: View, i: number)
 	if model then
 		chunk = model
 		self.triangles += info.triangles
+		self.lastSliceMs = info.sliceMs or 0
+		self.worstSliceMs = math.max(self.worstSliceMs, self.lastSliceMs)
+		self.lastSlices = info.slices or 1
 	else
 		-- this device cannot make the mesh: draw the chunk as parts instead
 		self.fallbacks += 1
@@ -149,7 +158,13 @@ function SplineRoadView._build(self: View, i: number)
 		removeChunk(chunk)
 		return
 	end
+	-- a chunk rebuilt to more road replaces the old one only now it is whole (T-193), so the
+	-- road never has a hole while the new one is built over several frames
+	local old = self.chunks[i]
 	self.chunks[i] = chunk
+	if old and old ~= chunk then
+		removeChunk(old)
+	end
 	-- built up to where the road ended at the time: rebuild it once more road arrives
 	if s1 < (i + 1) * L - 1e-6 then
 		self.short[i] = s1
@@ -179,13 +194,13 @@ function SplineRoadView.Update(self: View, s: number?)
 	end
 	-- a chunk drawn to the old end of a road that has since grown: take it down to redraw
 	if not self.building then
+		-- (the old one stays up until the new one is whole, T-193)
 		for i, builtTo in self.short do
 			if self.spline.length > builtTo + 1e-6 and self.chunks[i] then
-				removeChunk(self.chunks[i])
-				self.chunks[i] = nil
 				self.short[i] = nil
 				self.rebuilt += 1
-				break
+				self:_start(i)
+				return
 			end
 		end
 	end
@@ -210,17 +225,21 @@ function SplineRoadView.Update(self: View, s: number?)
 		end
 	end
 	if want then
-		local i = want :: number
-		self.building = i
-		task.spawn(function()
-			local ok, err = pcall(self._build, self, i)
-			if not ok then
-				self.lastError = tostring(err)
-				warn(`[SplineRoadView] chunk {i} failed: {err}`)
-			end
-			self.building = nil
-		end)
+		self:_start(want :: number)
 	end
+end
+
+-- Build chunk `i` in its own thread: it takes a few frames (T-193).
+function SplineRoadView._start(self: View, i: number)
+	self.building = i
+	task.spawn(function()
+		local ok, err = pcall(self._build, self, i)
+		if not ok then
+			self.lastError = tostring(err)
+			warn(`[SplineRoadView] chunk {i} failed: {err}`)
+		end
+		self.building = nil
+	end)
 end
 
 function SplineRoadView.Destroy(self: View)
@@ -253,6 +272,9 @@ function SplineRoadView.DebugState(self: View)
 		building = self.building,
 		lastMs = self.lastMs,
 		worstMs = self.worstMs,
+		lastSliceMs = self.lastSliceMs,
+		worstSliceMs = self.worstSliceMs,
+		lastSlices = self.lastSlices,
 		trianglesBuilt = self.triangles,
 		forceFallback = self.forceFallback,
 		lastError = self.lastError,

@@ -85,6 +85,7 @@ export type Options = {
 	minStep: number?,
 	across: number?,
 	forceFail: boolean?, -- Studio tests: behave as a device that cannot make a mesh
+	sliceMs: number?, -- ms of building a frame (`Mesh.SliceMs`); math.huge builds it in one go
 }
 
 export type Stats = {
@@ -153,6 +154,34 @@ function SplineMesh.profile(spline: Spline.Spline, s: number, side: number, kind
 	local rx, rz = math.cos(yaw), -math.sin(yaw)
 	local y0 = spline:terrainY(s, side * w)
 	local g = spline:grandAt(s)
+	-- ON THE INSIDE OF A TIGHT BEND (T-193) the profiles fan in round the bend's centre, and a
+	-- grand body squeezed in there folds over itself. So a rock body there is no grander than
+	-- the bend allows: full grandeur at `TightRockRadius` and wider, none at the tightest bend
+	-- And not only at `s`: a body just before or after such a bend reaches out across where the
+	-- bend's own profiles turn in, so the bends `TightRockLook` either way count too, less the
+	-- further off they are. `room` is how far out from the centre line the body may reach.
+	local inside = false
+	local room = math.huge
+	if kind == Spline.ROCK then
+		local look = T.TightRockLook
+		local tight = T.TightRockRadius
+		local rMin = Config.Spline.MinRadius
+		local open = 1
+		for u = -look, look, look / 6 do
+			local at = s + u
+			if at >= 0 and at <= spline.length then
+				local kk = spline:curvatureAt(at)
+				if kk ~= 0 and (kk > 0) == (side < 0) then
+					inside = true
+					local here = math.clamp((1 / math.abs(kk) - rMin) / (tight - rMin), 0, 1)
+					local share = 0.9 - (0.9 - T.TightRockReach) * (1 - here)
+					room = math.min(room, share / math.abs(kk) + math.abs(u))
+					open = math.min(open, math.max(here, math.abs(u) / look))
+				end
+			end
+		end
+		g *= open
+	end
 	local function grand(near: number, far: number): number
 		return near + (far - near) * g
 	end
@@ -186,15 +215,18 @@ function SplineMesh.profile(spline: Spline.Spline, s: number, side: number, kind
 			{ run + top, crest },
 			{ run + top + T.RockBack * h, 0 },
 		}
-		-- the inside of a bend: never past 90% of the way to its centre
-		local k = spline:curvatureAt(s)
-		if k ~= 0 and (k > 0) == (side < 0) then
-			local room = 0.9 / math.abs(k) - w
+		-- the inside of a bend: never past 90% of the way to its centre, and squeezed in, no
+		-- taller than `TightRockAspect` times what it reaches out (T-193)
+		if inside then
+			room -= w
 			local reach = pts[#pts][1]
 			if room < reach then
 				local scale = math.max(room, 0.5) / reach
+				local tallest = math.max(room, 0.5) * T.TightRockAspect
+				local lower = math.min(1, tallest / math.max(crest, 1e-3))
 				for _, p in pts do
 					p[1] *= scale
+					p[2] *= lower
 				end
 			end
 		end
@@ -359,9 +391,27 @@ end
 function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent: Instance, opts: Options?): (Model?, any)
 	local o: Options = opts or {}
 	local t0 = os.clock()
-	local paused = 0 -- seconds spent waiting a frame between the road and its trees
+	local paused = 0 -- seconds spent waiting for the next frame
 	local R = Config.Road
 	local M = Config.Spline.Mesh
+	-- BUILT A FEW MS A FRAME (T-193): `slice()` between steps hands the frame back once
+	-- `SliceMs` of it has gone, and the build carries on next frame. The chunk's model is
+	-- parented only when all of it is done, so it appears whole: no face or box arrives late
+	local budget = (o.sliceMs or M.SliceMs) / 1000
+	local sliceStart, worstSlice, slices = t0, 0, 1
+	local function yieldNow()
+		local now = os.clock()
+		worstSlice = math.max(worstSlice, now - sliceStart)
+		task.wait()
+		sliceStart = os.clock()
+		paused += sliceStart - now
+		slices += 1
+	end
+	local function slice()
+		if os.clock() - sliceStart >= budget then
+			yieldNow()
+		end
+	end
 	local half = R.Width * 0.5
 	local across = o.across or M.Across
 	local cuts = SplineMesh.sections(spline, s0, s1, o)
@@ -409,7 +459,12 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 		-- (loaded once, the first time a chunk asks: not that chunk's cost)
 		local g0 = os.clock()
 		local grassImage = GrassTexture.get()
-		paused += os.clock() - g0
+		local g1 = os.clock()
+		if g1 - g0 > 0.001 then
+			-- it waited on the asset: not work, and the frame's slice starts afresh (T-193)
+			paused += g1 - g0
+			sliceStart = g1
+		end
 		local baseU, baseV = GrassTexture.base(centre)
 		if grassImage then
 			road.plainUV = road.em:AddUV(Vector2.zero)
@@ -483,6 +538,7 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 				strip(road, prevRow, prevNear, row, near, false, use, prevFar, far, prevUV, uv, grassColour)
 			end
 			prevRow, prevNear, prevFar, prevS, prevUV = row, near, far, s, uv
+			slice()
 		end
 
 		-- THE FACES OF THE MOUNTAINSIDE, in the same mesh: a client may hold only eight
@@ -640,18 +696,15 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 						end
 					end
 				end
+				slice()
 			end
 		end
 
 		-- THE GROVES (T-183): trees and bushes on a widened runoff, in this same mesh, so a
 		-- grove costs triangles and no parts (`Road/SplineGrove`)
-		-- A chunk with a grove is built over two frames, the road then its trees, so neither
-		-- frame pays for both (measured: 13 ms a grove chunk in one go, 20 at worst)
-		if #SplineGrove.items(spline, s0, s1, -1) + #SplineGrove.items(spline, s0, s1, 1) > 0 then
-			local w0 = os.clock()
-			task.wait()
-			paused += os.clock() - w0
-		end
+		-- (measured: 13 ms a grove chunk in one go, 20 at worst). Its trees are drawn a few ms a
+		-- frame like the rest (T-193): `slice()` between the triangles
+		slice()
 		local groveColours: { [Color3]: number } = {}
 		local trianglesBefore, treeT0 = road.triangles, os.clock()
 		local trees = SplineGrove.draw(spline, s0, s1, {
@@ -666,6 +719,7 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 					groveColours[colour] = id
 				end
 				tri(a, b, c, pa, pb, pc, id, facing)
+				slice()
 			end,
 		})
 		local treeMs = (os.clock() - treeT0) * 1000
@@ -676,8 +730,10 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 		model:SetAttribute("S0", s0)
 		model:SetAttribute("S1", s1)
 		-- white, so the vertex colours are what show
+		slice()
 		local roadPart = toPart(road, "Road", Color3.new(1, 1, 1), R.RoadMaterial, grassImage)
 		roadPart.Parent = model
+		slice()
 		local parts = 0
 
 		local function plain(name: string, size: Vector3, cf: CFrame, colour: Color3, material: Enum.Material): Part
@@ -698,6 +754,7 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 			part.CFrame = cf
 			part.Parent = model
 			parts += 1
+			slice()
 			return part
 		end
 
@@ -829,10 +886,12 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 					local ha, hb = pa[4].Y - pa[1].Y, pb[4].Y - pb[1].Y
 					local low = math.min(ha, hb)
 					local a, b = cuts[ka], cuts[kb]
-					-- and half the span past each end: a box overlaps its neighbours, and high on
-					-- the inside of a bend, where the profiles fan in, a stud of box covers more
-					-- than a stud of road
-					local ext = 2 + (b - a) * 0.5
+					-- and half a span past each end, where a box overlaps its neighbours; one and a
+					-- half on the inside of a tight bend, where the profiles fan in and a stud of box
+					-- high up covers several studs of road (T-193)
+					local kk = spline:curvatureAt((a + b) * 0.5)
+					local fan = kk ~= 0 and (kk > 0) == (side < 0) and math.abs(kk) > 1 / T.TightRockRadius
+					local ext = 2 + (b - a) * (if fan then 1.5 else 0.5)
 					local from, to = math.max(0, a - ext), math.min(b + ext, spline.length)
 					local n = math.max(1, math.ceil((to - from) / 4))
 					for i = 0, n do
@@ -876,7 +935,7 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 				-- top's normal, which leans out toward the steep back slope
 				local g = spline:grandAt((cuts[ka] + cuts[kb]) * 0.5)
 				-- (further from a grand body's edge: its jagged face wanders more from one cut to the next)
-				local trim, trimCrest = 1 + 8 * g, 2 + (shadeBack + thick) * 0.6
+				local trim, trimCrest = 1 + 8 * g, 2 + (shadeBack + thick) * 0.6 + 8 * g
 				if len < 1e-3 or width < trim + trimCrest + 1 then
 					return
 				end
@@ -889,9 +948,11 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 				end
 				-- z now points down, into the body
 				local centre = (edge + crest) * 0.5 + y * ((trim - trimCrest) * 0.5) + z * (shadeBack + thick * 0.5)
-				-- as long as the longer of its two edges, so neighbouring boxes overlap all the way
-				-- up a body on a bend (T-185); the overlap is inside the body that runs on
-				local short, shift = fitEnds(ka, kb, Spline.ROCK, math.max((pb[4] - pa[4]).Magnitude, (pb[5] - pa[5]).Magnitude))
+				-- as long as the crest's own stretch (T-193): on the outside of a bend that is the
+				-- longer edge, so neighbours overlap; on the inside, where the profiles fan in, the
+				-- shorter, so the box never reaches into a neighbour's differently shaped top; and
+				-- short of the body's ends (T-189)
+				local short, shift = fitEnds(ka, kb, Spline.ROCK, (pb[5] - pa[5]).Magnitude)
 				centre += along / len * shift
 				plain(`RockShadeTop_{tag}_{ka}`, Vector3.new(short, width - trim - trimCrest, thick), CFrame.fromMatrix(centre, x, y, z), T.RockColour, Enum.Material.Slate)
 			end
@@ -941,9 +1002,10 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 					local gap = if topDeep > shadeBack + 5 + shadeThick + 2 then 2 + 4 * spline:grandAt((cuts[ka] + cuts[kb]) * 0.5) else T.RockShadeTopGap
 					-- and behind the deepest the jagged face can dent in (T-185: half its jag)
 					local back = shadeBack + (2.5 + 7 * spline:grandAt((cuts[ka] + cuts[kb]) * 0.5)) * 0.5
-					-- as long as the longer of its foot and its top, so neighbouring boxes overlap all
-					-- the way up a tall body on a bend (T-185), and short of the body's ends (T-189)
-					local short, shift = fitEnds(ka, kb, kind, math.max((fb - fa).Magnitude, (tb - ta).Magnitude))
+					-- as long as its top's own stretch (T-193): on the outside of a bend the longer
+					-- edge, so neighbours overlap up a tall face; on the inside the shorter, so it stays
+					-- out of a neighbour where the profiles fan in; and short of the body's ends (T-189)
+					local short, shift = fitEnds(ka, kb, kind, (tb - ta).Magnitude)
 					local centre = (foot + top) * 0.5 - y * ((shadeBack + gap) * 0.5) - toRoad * (back + shadeThick * 0.5) + along / len * shift
 					local cf = CFrame.fromMatrix(centre, x, y, toRoad)
 					plain(`RockShade_{tag}_{ka}`, Vector3.new(short, math.max(1, height + shadeBack - gap), shadeThick), cf, T.RockColour, Enum.Material.Slate)
@@ -966,9 +1028,13 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 				-- flat box there covers less road: about 0.06 radians of the turn
 				local span = shadeStep
 				if k0 then
-					local kk = spline:curvatureAt(cuts[k0])
-					if kk ~= 0 and (kk > 0) == (side < 0) then
-						span = math.clamp(0.06 / math.abs(kk), 4, shadeStep)
+					-- the tighter of the bend where the box began and where it has reached (T-193: a
+					-- box running from a bend's easing into its tight part would be as long as the easing allows)
+					for _, at in { cuts[k0], cuts[k] } do
+						local kk = spline:curvatureAt(at)
+						if kk ~= 0 and (kk > 0) == (side < 0) then
+							span = math.min(span, math.clamp(0.06 / math.abs(kk), 4, shadeStep))
+						end
 					end
 				end
 				if k0 and (kind ~= kind0 or cuts[k] - cuts[k0] >= span or math.abs(spline:grandAt(cuts[k]) - spline:grandAt(cuts[k0])) > 0.05) then
@@ -1149,9 +1215,19 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 		return nil, tostring(built)
 	end
 	local result = built :: any
-	result.stats.ms = (os.clock() - t0 - paused) * 1000
 	meshesOf[result.model] = result.meshes
-	result.model.Parent = parent
+	-- the parent may have gone while the chunk was built over several frames (T-193)
+	local placed = pcall(function()
+		result.model.Parent = parent
+	end)
+	worstSlice = math.max(worstSlice, os.clock() - sliceStart)
+	result.stats.ms = (os.clock() - t0 - paused) * 1000
+	result.stats.slices = slices -- frames the build was spread over
+	result.stats.sliceMs = worstSlice * 1000 -- the most of it any one frame paid
+	if not placed then
+		SplineMesh.destroy(result.model)
+		return nil, "the chunk's parent went while it was built"
+	end
 	return result.model, result.stats
 end
 
