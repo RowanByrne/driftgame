@@ -480,8 +480,9 @@ function Tests.run(which: { string }?, ...)
 				end
 			end
 			-- THE RAISED ROAD (T-184): a slide whose tail runs out over the step and comes back.
-			-- The drawn car tips on to the plane through its wheels and the springs work, and
-			-- nothing else changes: the same line and speed as with no step, no wall, no air
+			-- The body tips on its springs (T-196: its real pitch and roll, off the ground's own
+			-- frame), and nothing else changes: the same line and speed as with no step, no
+			-- wall, and never airborne to the drift model
 			do
 				local s0, side = nil, 1
 				for s = 300, LENGTH - 300, 10 do
@@ -508,13 +509,15 @@ function Tests.run(which: { string }?, ...)
 						runner.state.velocity = Vector3.new(-math.sin(y0), 0, -math.cos(y0)) * 42 + Vector3.new(math.cos(y0), 0, -math.sin(y0)) * side * 18
 						runner.state.time = 10
 						local r = { tilt = 0, lean = 0, travelLo = math.huge, travelHi = 0, air = 0, walls = 0, vy = 0 }
-						for _ = 1, 168 do
+						for i = 1, 168 do
 							Sim.advance(runner, D.FixedStep, { steer = side * 0.25, handbrake = false }, w)
 							local st = runner.state
-							if st.stepTilt then
+							-- past the first quarter second: the car is put down level and settles on the grade
+							local lean = if i > 30 then math.deg(math.acos(math.clamp(st.up:Dot(st.groundUp), -1, 1))) else 0
+							if lean > 1 then
 								r.tilt += 1
 							end
-							r.lean = math.max(r.lean, math.deg(math.acos(math.clamp(st.up:Dot(st.surfaceUp or st.up), -1, 1))))
+							r.lean = math.max(r.lean, lean)
 							for _, i in { 3, 4 } do
 								r.travelLo = math.min(r.travelLo, st.travel[i])
 								r.travelHi = math.max(r.travelHi, st.travel[i])
@@ -532,10 +535,10 @@ function Tests.run(which: { string }?, ...)
 					local flat, raised = slide(0), slide(T.RoadLip)
 					local apart = Vector3.new(raised.pos.X - flat.pos.X, 0, raised.pos.Z - flat.pos.Z).Magnitude
 					check(
-						"the raised road: a tail over the step tips the drawn car and changes nothing else",
-						raised.grass > 0 and raised.tilt > 0 and raised.lean > 3 and raised.travelLo < 0.05 and raised.travelHi > 0.45
+						"the raised road: a tail over the step tips the car on its springs and changes nothing else",
+						raised.grass > 0 and raised.tilt > 0 and raised.lean > 3 and flat.lean < 2 and raised.travelLo < 0.05 and raised.travelHi > 0.45
 							and apart < 0.01 and math.abs(raised.speed - flat.speed) < 0.01 and raised.air == 0 and raised.walls == 0 and raised.vy <= flat.vy + 0.01,
-						`{raised.grass} wheel contacts on grass, plane tilt for {raised.tilt} steps, drawn car leans {fmt(raised.lean, 1)} degrees off the ground; rear travel {fmt(raised.travelLo, 2)} (hanging) to {fmt(raised.travelHi, 2)} (pushed up coming back); against no step: {fmt(apart, 4)} studs apart, speed {fmt(raised.speed, 2)} vs {fmt(flat.speed, 2)}; {raised.air} airborne steps, {raised.walls} wall steps, most upward speed {fmt(raised.vy, 2)} ({fmt(flat.vy, 2)} with no step: the grade)`
+						`{raised.grass} wheel contacts on grass, tipped more than a degree for {raised.tilt} steps, the car leans up to {fmt(raised.lean, 1)} degrees off the ground ({fmt(flat.lean, 2)} with no step); rear travel {fmt(raised.travelLo, 2)} (hanging) to {fmt(raised.travelHi, 2)} (pushed up coming back); against no step: {fmt(apart, 4)} studs apart, speed {fmt(raised.speed, 2)} vs {fmt(flat.speed, 2)}; {raised.air} airborne steps, {raised.walls} wall steps, most upward speed {fmt(raised.vy, 2)} ({fmt(flat.vy, 2)} with no step: the grade)`
 					)
 				else
 					check("a straight with wide grass found for the raised road", false, `none on this road, seed {SEED}`)

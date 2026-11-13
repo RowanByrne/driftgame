@@ -557,6 +557,7 @@ local function drive(o): any
 		else
 			if curAir > r.longestAir then
 				r.longestAir, r.landedAt, r.landedPos, r.takeoffAt = curAir, s.time, s.position, airStart
+				r.landedGround = s.groundY
 			end
 			curAir = 0
 		end
@@ -598,7 +599,10 @@ end
 
 -- The three numbers every one of these runs has to come back with.
 local function sane(r, plateY: number): (boolean, string)
-	local landed = r.longestAir == 0 or (r.landedPos ~= nil and math.abs(r.landedPos.Y - plateY - C.RideHeight) < 3)
+	-- Down on the ground UNDER it (T-196): a car thrown by the bowl's bank can come down on the
+	-- bank, which is not the plate.
+	local landed = r.longestAir == 0
+		or (r.landedPos ~= nil and math.abs(r.landedPos.Y - (r.landedGround or plateY) - C.RideHeight) < 3)
 	return r.insideDepth <= 0 and r.overVy <= 1e-6 and landed and r.lowest > plateY - 1,
 		string.format(
 			"apex %.2f, %.2f s of air, landed %s, vy %.1f..%.1f (%.3f past what the ground can explain), lowest %.2f, inside %d steps%s",
@@ -930,7 +934,7 @@ function CollisionTests:run(driftFolder: Instance?)
 			check(
 				checks,
 				`the bowl is crossed at {speed} studs/s, aimed {miss} studs off the middle`,
-				ok and r.airSeconds == 0,
+				ok and not r.state.airborne,
 				detail
 			)
 			task.wait()
@@ -939,7 +943,7 @@ function CollisionTests:run(driftFolder: Instance?)
 	for _, speed in { 60, 179 } do
 		local r = at(bowl, math.pi * 0.5, speed, math.min(5, 450 / speed))
 		local ok, detail = sane(r, plateY)
-		check(checks, `the bowl is driven out of the middle at {speed} studs/s`, ok and r.airSeconds == 0, detail)
+		check(checks, `the bowl is driven out of the middle at {speed} studs/s`, ok and not r.state.airborne, detail)
 		task.wait()
 	end
 	local around = at(bowl + Vector3.new(Layout.Circle.radius, 0, 0), math.pi, 90, 6, -0.3)

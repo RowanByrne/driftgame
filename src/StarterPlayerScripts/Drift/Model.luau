@@ -26,6 +26,12 @@
 -- There is NO yaw inertia, NO yaw damping, NO steering lock, NO bicycle-model tyre slip
 -- and NO weight-throw in this model. Adding any of them breaks the feel this is for.
 --
+-- AND ON TOP OF IT, THE BODY (T-196, features/car-body-physics.md). Those five lines move
+-- the car ACROSS the ground. Its height, pitch and roll are a separate layer, and real
+-- motion: four springs push the body up, gravity pulls it down (`Suspension.ride`). The
+-- five lines do not read it -- their forces act in the ground's own frame (`groundUp`) --
+-- so on flat ground, where the springs sit still, the car is exactly the car above.
+--
 -- Signs, which are the only thing here that is easy to get wrong:
 --   `yaw`  Roblox's, radians. POSITIVE TURNS LEFT, and `yaw += r * dt`.
 --   `r`    the yaw rate, same sense: positive turns left.
@@ -637,10 +643,9 @@ function Model.step(s: State, input: Input, dt: number, world: World): State
 	end
 
 	---------------------------------------------------------------- out of travel: the floor
-	-- OURS (T-095, Drift/Suspension, features/car-v2.md). Everything above put the car on
-	-- the wheels that carry it, level with their mean and tilted to their normals. That is
-	-- the car the user approved, and on flat ground and every road it is the whole story:
-	-- all four wheels are within their travel of that pose. THIS BLOCK ONLY RUNS WHEN ONE
+	-- OURS (T-095, Drift/Suspension, features/car-v2.md). The body rides its four springs
+	-- (below), and on flat ground and every road that is the whole story: all four wheels
+	-- are within their travel of the ground under them. THIS BLOCK ONLY RUNS WHEN ONE
 	-- IS NOT -- its ground is further below it than a wheel can hang (`Rest` and
 	-- `HangSlack`), or there is no ground under it at all -- or when it ran last step and the
 	-- floor is still near something. Then the car is a rigid body on point supports: the

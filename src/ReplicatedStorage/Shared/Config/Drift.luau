@@ -186,8 +186,14 @@ local Drift = {
 		DamperMaxSpeed = 15, -- studs/s. The dampers resist a strut closing or opening no faster
 		-- than this: past it they blow off, as real ones do. A kerb is a step, and
 		-- an unlimited damper turns one into a launch
-		AirDamping = 0, -- 1/s. How fast pitching and rolling die away in the air. 0 keeps the
-		-- rate the car left the ground with until it lands
+		DamperBump = 0.5, -- share of the car's `SuspensionDamping` that resists a wheel being
+		-- pushed UP (dropping back always gets all of it). Less passes less of a
+		-- kerb on to the body, and lets a landing sink further into its travel
+		AirDamping = 8, -- 1/s. How fast pitching and rolling die away in the air. 0 keeps the
+		-- rate the car left the ground with until it lands -- and a car leaves a
+		-- crest or a ramp's lip turning nose-down, fast (its rear is still being
+		-- pushed up as its front comes off), so at 0 every jump lands on its nose.
+		-- At 8 it turns about an eighth of that rate's worth of a second further
 	},
 
 	-- ---------------------------------------------------------------- suspension and the floor

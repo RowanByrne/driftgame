@@ -1,6 +1,6 @@
 # Feature: The car's body rides the ground
 
-**Status:** specced, waiting for the user's approval (from `T-192`). **Owner task:** none yet.
+**Status:** plan approved by the user 2026-11-13 (`T-196`). Step 1, the real height, pitch and roll, is built (`T-197`) and waits for the user's drive; the test pad and feel tuning are step 2. **Owner task:** `T-196`.
 
 ## Goal
 
@@ -62,6 +62,42 @@ Spring stiffness, damping, ride height and travel come from today's suspension v
 (`Config.Drift.Suspension`), so a car at rest sits as it does now. Body inertia in pitch and roll is
 set from the car's size. All in `Config.Drift`; tuned by the user's feel in a lane.
 
+| `Config.Drift.Body` | Value | What it is |
+|---|---|---|
+| `PitchInertia` / `RollInertia` | 1 / 1 | times the inertia of a box the car's `BodyLength` / `BodyWidth` across. More is slower to tip and slower to come back |
+| `MaxPitch` / `MaxRoll` | 25° / 20° | the most the body tips off the ground's own slope. Hard limits: the car can't go over |
+| `DamperMaxSpeed` | 15 studs/s | the dampers resist a strut moving no faster than this. A kerb is a step; an unlimited damper turns it into a launch |
+| `DamperBump` | 0.5 | share of the damping that resists a wheel being pushed up (dropping back gets all of it). Less passes less of a kerb to the body |
+| `AirDamping` | 8 /s | how fast pitching and rolling die away in the air. The spec said "keeps its speeds" (0); at 0 every crest and jump lands on its nose, because the rear is still being pushed up as the front leaves. To tune with the user |
+
+`Config.Drift.AirborneMargin` (2 studs) keeps its old job for the drift model only: how far above ride height the body may be before the car loses grip and drive.
+
+### How it is built (`T-197`)
+
+- **`Suspension.ride`** (`Drift/Suspension`), called from `Drift/Model.step` after the car has moved across the ground. Each step: the body moves at the speeds it had; each wheel's strut is read against its ground ray (pushed up to `Travel - Rest` above where it sits on the flat, hanging to `Rest` below, in the air past that); spring and damper push on the body's height, pitch and roll; gravity and downforce pull; wheels past their bump stop have their corner lifted off it and stopped, without a bounce; the tilt is held inside its limits.
+- **A spring carries a quarter of the car at rest,** and the code works in the difference from that, so on flat ground every force is exactly zero and the body does not move at all.
+- **Downforce presses on the springs too,** and they are wound up to carry it, so ride height doesn't change with speed, but a crest has to beat gravity and downforce before a wheel lifts.
+- **Two frames.** `State.up` is the body's (drawn and sent). `State.groundUp` is the ground's smoothed normal, what `State.up` used to be: grip, drive and gravity act in it and the camera reads its grade. A body bouncing on its springs moves neither.
+- **The drift model's velocity** keeps its vertical part as the slope's climb while the car is within `AirborneMargin` of ride height, as before. Past that the car is airborne to it and the vertical part is the body's real speed (`State.heave`).
+- **The slow ledge** (rolled off rear first, the floor grinding on the edge, `T-095`) is unchanged: the floor solve still takes over under `HangSpeed`, and hands the body back to its springs.
+- **Gone:** the drawn body springs, the landing jolt (`LandingSquash`, `MaxBodyTilt`), the plane through the wheels (`StepTiltDead`, `Hit.stepped`), and the ease of height on to the ground.
+
+### Measured (`BodyTests`, DR-Lane2, 2026-11-13, the balanced car)
+
+- **Flat ground:** 20 s of straights, slides and a spin in three cars end at the same position, heading and velocity as the model before `T-196`, to the last bit, and the body never moves. A smooth hill is the same line too.
+- **At rest:** exactly ride height, every wheel at `Rest`. Dropped from half a stud: lowest 2.27 (bump stops at 2.05), settled in 0.62 s.
+- **A 3-stud ledge at 60 studs/s:** all four wheels in the air for 0.2 s, falling at up to 11.8 studs/s, nose down 9° at most, settled 0.43 s after landing. A 1-stud ledge: falls at 4.7 studs/s, nose down 6°, never loses grip, and is the same line as flat ground to the bit.
+- **0.8 studs under the left wheels:** the car leans 8.2° to the right (the ground is 8.1°).
+- **Both rear wheels up a 1.2-stud ramp, the front on the flat:** nose down 7.2° (the ground is 7.1°), the front wheels never leave the ground. One rear wheel first lifts that corner.
+- **Coming back over the road's bevel** (1 stud up, 3 across) at 60 to 179 studs/s, closing at 6 to 60: never airborne to the drift model, the car's middle at most 0.52 studs over ride height, same line as flat ground.
+- **Thrown by a 25° ramp under one side at 120 studs/s:** pitch and roll stay inside their limits, and it lands and stands level.
+- **Cost:** 5.6 µs a step on flat ground, 7.4 on ground that works all four springs (5.9 before).
+
+### What changed for other things
+
+- **A sharp crest or a bank now throws the car** where the old model held it to the ground: the playground's bowl crossed at 120 studs/s flies for most of a second (`CollisionTests` used to demand no air there).
+- **`wheelsDown`** is true only for a wheel that really reaches its ground, so a lifted corner lays no smoke or marks. The drive and the grip still ask only for ground under the wheel.
+
 ## Testing
 
 - **Unit:** the car at rest settles at today's ride height; flat-ground drift numbers match today's
@@ -78,9 +114,15 @@ Client only, as the drift model is. Other players see the body's pose through `C
 
 ## Contracts
 
-`Drift/Model` `State` gains the body's vertical speeds; `T-184`'s `stepTilt`/`surfaceUp` and
-`T-192`'s `hopping`/`rideVy`/`hopRest`/`kickWheelY` go. Recorded in `CONTRACTS.md` in the same commit.
+`Drift/Model` `State` gains `groundUp`, `heave`, `height` and `strut`, and `tiltRate` becomes the
+body's own; `T-184`'s `Hit.stepped`, `stepTilt` and `surfaceUp` go (`T-192`'s kick was never
+merged). Recorded in `CONTRACTS.md`.
 
 ## Open questions
 
-- None blocking.
+- **Feel, for step 2 with the user:** how hard a kerb kicks (`DamperBump`, `DamperMaxSpeed`), how
+  much the car keeps turning in the air (`AirDamping`), and whether a small hop should cost grip
+  (`AirborneMargin`).
+- **The body can clip a ledge's edge at speed:** between the front wheels dropping off and the
+  rear following, nothing holds the floor off the edge above `HangSpeed`. Not seen as a problem
+  in the tests; to look at on the test pad.
