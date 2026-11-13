@@ -151,6 +151,22 @@ local Drift = {
 	GroundRayUp = 4, -- studs above the contact point each ray starts from
 	GroundRayLength = 28, -- studs each ray reaches
 	AirLevel = 0.25, -- s, how fast the car levels out while airborne
+	-- THE GROUND'S KICK (T-192, features/mountain-road.md "Kerb hops"). OURS. Where the
+	-- ground has drops its normals don't show (a `stepped` hit: the spline road's gravel
+	-- bevel), a wheel whose ground rises faster than its normal says pushes the whole car
+	-- up; when the ground stops rising only gravity slows the car, so it rises on past its
+	-- ride height and hops. A slow roll back on never pushes hard enough to hop, and stays
+	-- planted as it always did
+	KickMin = 2, -- studs/s: a wheel's ground must rise this much faster than its normal says
+	-- before it pushes the car at all
+	KickShare = 0.75, -- share of that wheel's extra rise the whole car takes upward
+	HopMinSpeed = 4.5, -- studs/s: the car leaves the ground only if it is still rising at
+	-- least this fast when it clears its ride height (a hop of about 0.3 studs). Slower, it
+	-- rides the bump on its wheels and keeps its grip: no chatter of tiny hops
+	HopMax = 2.5, -- studs: the highest a hop can carry the car, at any speed (its upward
+	-- speed is capped at sqrt(2 x Gravity x HopMax), about 13 studs/s)
+	HopClear = 0.05, -- studs above its ride height a pushed car must rise to count as off
+	-- the ground
 	TerminalFall = 200, -- studs/s, the fastest a fall may get. Without it a car that has
 	-- driven off the world accelerates without limit and the state the
 	-- server is sent stops being anything the server can check
