@@ -609,7 +609,12 @@ function parts.terrain(check)
 			for _, d in { half + lw, half + lw + rng:NextNumber() * (w - lw), half + w } do
 				worstLip = math.max(worstLip, math.abs(baseY(side * d) - sp:terrainY(s, side * d) - T.RoadLip))
 			end
-			lipNormal = math.min(lipNormal, sp:terrainNormal(s, side * (half + lw * 0.5)):Dot(sp:terrainNormal(s, side * (half + lw + 0.05))))
+			-- (not on a runoff narrowed to a few studs, as at a carved apex: there the ground's
+			-- normal turns a few degrees across the narrow strip, 3.3 measured. More carved apexes since T-189,
+			-- with rock on every uphill side, put one of the sampled points there)
+			if w >= 6 then
+				lipNormal = math.min(lipNormal, sp:terrainNormal(s, side * (half + lw * 0.5)):Dot(sp:terrainNormal(s, side * (half + lw + 0.05))))
+			end
 		end
 		n += 1
 	end
