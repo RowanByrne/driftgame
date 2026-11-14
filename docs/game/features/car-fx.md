@@ -271,7 +271,8 @@ nothing more: the look is the user's call.**
 | `TrailRenderer` | `Trail` between two `Attachment`s at the wheel's contact patch | Lifetime, width and colour all map directly |
 | `ParticleSystem` | `ParticleEmitter` on one `Attachment` at the contact patch | `Rate` maps to `rateOverTime` |
 
-**The budget**, and it is a formula and not a number, because the surfaces multiply it:
+**The original tarmac-only budget**, before the off-road effects (`T-188`) and independent
+particle anchors (`T-207`); the current total is in "Off the road" below:
 
 ```
 per car = 4 wheels × (2 Attachments + surfaces × (1 Trail + 2 ParticleEmitters))
@@ -296,10 +297,9 @@ patches are four fixed local offsets on it, read straight off the rig's own whee
 below: `Render` rolls the body about the centre of mass, the roll swings each patch through an arc
 far larger than the clearance they are drawn at, and the fix is to cancel it.
 
-There is **no folder**: the eight attachments are direct children of `Body` (an `Attachment` has to
-be parented to a `BasePart` to have a position), each wheel's `Trail`s and its diffuse emitter hang
-off its first attachment, and its stylized emitter off the second. A folder would be one more
-instance for nothing.
+There is **no folder**: the attachments are direct children of `Body`. Each wheel now has four
+mark endpoints and three fixed particle anchors (`T-207`), so turning the ribbon across the path
+does not move the smoke or debris sources. A folder would be one more instance for nothing.
 
 **A trail must be cut when the car jumps.** A spawn, a respawn or a `DebugTeleport` moves the body
 hundreds or thousands of studs in one frame, and a `Trail` that is still enabled across that draws
@@ -365,7 +365,7 @@ can be traced to one tyre: **small** (0.9 studs born, 4.2 died, against the diff
 contact patch; **fast and draggy** (9–15 studs/s, drag 4.5) so it is flicked off the tyre and stops
 near it; **short-lived** (0.30–0.55 s against 0.8–1.6) so the shape stays by the car; **opaque and
 faintly self-lit** (0.18 transparency, 0.35 light emission) so it reads against the cloud behind it;
-and **tilted 35° backward**, which is why it lives on the wheel's *second* attachment — the tilt is
+and **tilted 35° backward**, which is why it lives on the wheel's separate stylized source attachment (`T-207`) — the tilt is
 that attachment's own `Orientation`, and the diffuse layer must not be tilted with it. A rotation
 does not move a `Trail`, which reads the two attachments' positions, so the mark is untouched.
 
@@ -523,12 +523,13 @@ they decide *whether* a wheel marks; the surface decides *what* it leaves.
 
 ```
 per car = 4 wheels × (2 Attachments + smoking surfaces × (1 Trail + 2 Emitters)
-                      + 2 Attachments + 3 Trails + 3 Emitters)          (T-188)
+                      + 2 Attachments + 3 Trails + 3 Emitters
+                      + 3 fixed emitter anchors)                     (T-207)
 ```
 
-**52** at one smoking surface, up from 20; `Wheels.perWheel()` is the formula. Still built once and
+**64** at one smoking surface, up from 52 before `T-207` and 20 before `T-188`; `Wheels.perWheel()` is the formula. Still built once and
 switched with `Enabled`; `FxTests` drives 1 000 frames with each wheel's ground changing under it
-and counts **52 → 52**.
+and counts **64 → 64**.
 
 | Number | Start | What it does |
 |---|---|---|
@@ -584,6 +585,29 @@ and counts **52 → 52**.
   gaps; no screenshot was needed for the emission fix. The exact 30° radian round-trip can
   fall fractionally below 30°, as before; tuning and comparisons are unchanged.
 
+
+## Consistent mark width through a slide (`T-207`)
+
+The user, 2026-11-14: *"tyre marks change thickness depending on slide angle - that doesn't
+really make sense, pls fix."* The previous endpoints stayed across the car: a 1.2-stud span
+projected to 0.85 studs at 45°, 0.60 at 60° and almost zero at 90° of slip.
+
+Each wheel now puts its mark endpoints perpendicular to its own rendered contact path,
+projected onto the ground plane. The endpoints stay centred at the same contact and use the
+configured 1.2-stud width (green, gravel and tarmac) or 1.9-stud trench width. The render pose
+includes yaw extrapolation between simulation steps, banking, wheel lift and cancellation of
+the body's sprung pitch/roll and cosmetic lean. First-frame fallback uses world velocity plus
+the contact's yaw motion; at rest the last valid span is kept. Endpoint ordering stays continuous
+through reversal, without dividing by cos(slip), changing physics or clearing historical marks.
+`Cut`, reattachment and cleanup reset the motion history.
+
+Three fixed particle-source attachments per wheel keep the previous source positions and tilts:
+`FxA_<Wheel>_L_Emitter` for diffuse smoke/dust, `FxA_<Wheel>_R_Emitter` for stylized smoke, and
+`FxT_<Wheel>_L_Emitter` for clippings/dirt. Trails keep the original four endpoints. The anchors
+add 12 once-created instances per car: **64 total at one smoking surface**, with none created
+or destroyed while driving; `Clear` removes all of them. Smoke/debris rates, gates and fades,
+the exclusive green/brown rule, trail lifetimes and material widths are unchanged.
+
 ## UI
 
 None. The effects are on the car.
@@ -635,7 +659,7 @@ In `CONTRACTS.md`. **What `T-062` built, for the conductor to record at merge:**
 | `Shared/Config/Fx` | `Ground` (`FadeSeconds`, `Grass`, `Gravel`); `Names` grows `TrenchAttachment`, `GroundTrail`, `GroundEmitter` |
 | `Drift/Wheels` | `surfaceOf` now reads `state.wheelSurface`; new pure `mixStep(mix, target, dt)`, `trenchOn(slipDeg, was)`, `dirtShare(slipDeg)`, `kickRate(S, slipDeg)`, `perWheel()`. `DebugState` per wheel grows `smokeMix`, `grassMix`, `gravelMix`, `trench`, `smokeRate`, `grassMark`, `trenchMark`, `gravelMark`, `clippingsRate`, `dirtRate`, `dustRate`; `emitting` is now the wheel's gate result and `lit` counts the off-road lines too |
 | `Drift/SkidSound` | `surfaceOf` falls back to `Default` for a surface with no clip, so the squeal is unchanged on grass and gravel |
-| Instance names on a rig | `FxT_<Wheel>_<L\|R>` (8 more `Attachment`s on `Body`), `FxMark_<Wheel>_<grass\|trench\|gravel>` (12 `Trail`s), `FxKick_<Wheel>_<grass\|dirt\|dust>` (12 `ParticleEmitter`s). The trench trail and the grass/dirt emitters hang off `FxT_<Wheel>_L`; the grass and gravel trails and the dust off `FxA_<Wheel>_L` |
+| Instance names on a rig | `FxT_<Wheel>_<L\|R>` (8 more `Attachment`s on `Body`), `FxMark_<Wheel>_<grass\|trench\|gravel>` (12 `Trail`s), `FxKick_<Wheel>_<grass\|dirt\|dust>` (12 `ParticleEmitter`s). The trench trail hangs off `FxT_<Wheel>_L`; grass and gravel trails off `FxA_<Wheel>_L`. Since `T-207`, particles use the three separate `_Emitter` anchors listed above |
 
 **No `Hit` change in `T-064`:** the per-wheel surface gap was deferred then, and closed by `T-188`. **No remote, no packet field,
 no server instance:** `T-064` is the client and the local car only, as this spec says it must be.

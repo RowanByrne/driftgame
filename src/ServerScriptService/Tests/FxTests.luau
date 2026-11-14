@@ -46,6 +46,8 @@ local DriftFolder = StarterPlayer.StarterPlayerScripts:WaitForChild("Drift")
 local Engine = require(DriftFolder.Engine)
 local EngineSound = require(DriftFolder.EngineSound)
 local Model = require(DriftFolder.Model)
+local Render = require(DriftFolder.Render)
+local Suspension = require(DriftFolder.Suspension)
 local SkidSound = require(DriftFolder.SkidSound)
 local Wheels = require(DriftFolder.Wheels)
 
@@ -191,10 +193,10 @@ function Tests.run(opts)
 		)
 		-- THE INSTANCE BUDGET IS THIS FORMULA: 4 wheels x (2 Attachments + smoking surfaces x
 		-- (1 Trail + 2 ParticleEmitters) + the off-road layer's 2 Attachments, 3 Trails and 3
-		-- ParticleEmitters, T-188).
+		-- ParticleEmitters, T-188, plus 3 fixed emitter anchors, T-207).
 		check(
 			"one smoking surface, and the budget it comes to",
-			#F.Built == 1 and Wheels.perWheel() == 13,
+			#F.Built == 1 and Wheels.perWheel() == 16,
 			`{#F.Built} surface(s) -> {#CarModel.WHEEL_NAMES * Wheels.perWheel()} instances per car`
 		)
 		-- ONE DARKNESS, which is the whole of the rollback. A ladder would be a table.
@@ -598,6 +600,98 @@ function Tests.run(opts)
 		-- A second Attach on the same body must build nothing.
 		w:Attach(rig)
 		check("attaching again builds nothing", w:CountInstances() == want, `{w:CountInstances()} instances`)
+
+		-- T-207: measure width ACROSS THE ACTUAL CONTACT PATH, not attachment distance.
+		-- The former body-X span still measured Width end-to-end while shrinking to
+		-- Width*cos(slip) on the road. Use coherent world velocity and Render.apply
+		-- so suspension, banking, yaw and the renderer's remainder are all exercised.
+		rig.lift = {}
+		local widthError, centreError, emitterError, planeError, diagnosticError, flips = 0, 0, 0, 0, 0, 0
+		local geometryFrames = 0
+		local function geometry(s, steps, remA, remB, change)
+			w:Cut()
+			local previous, spans = {}, {}
+			for frame = 1, steps do
+				if change then change(s, frame) end
+				if frame > 1 then
+					s.position += s.velocity / 60
+					s.yaw += s.r / 60
+				end
+				local rem = if frame % 2 == 0 then remB else remA
+				Render.apply(rig, s, rem)
+				w:Update(s, { handbrake = true }, 1 / 60)
+				local road = Render.pose(s, rem)
+				for _, debugWheel in w:DebugState(s, { handbrake = true }).wheels do
+					diagnosticError = math.max(diagnosticError, math.abs(debugWheel.patchResidualY))
+				end
+				for _, wheel in w.wheels do
+					local lift = Vector3.new(0, s.wheelLift[wheel.index], 0)
+					local expected = road:PointToWorldSpace((wheel.patchA + wheel.patchB) * 0.5 + lift)
+					local actual = (wheel.a.WorldPosition + wheel.b.WorldPosition) * 0.5
+					centreError = math.max(centreError, (actual - expected).Magnitude)
+					for _, pair in { { wheel.sourceA, wheel.patchA }, { wheel.sourceB, wheel.patchB }, { wheel.sourceC, wheel.patchC } } do
+						emitterError = math.max(emitterError, (pair[1].WorldPosition - road:PointToWorldSpace(pair[2] + lift)).Magnitude)
+					end
+					local path = if previous[wheel.index] then expected - previous[wheel.index] else s.velocity
+					path -= s.groundUp * path:Dot(s.groundUp)
+					local span = wheel.b.WorldPosition - wheel.a.WorldPosition
+					local trenchSpan = wheel.d.WorldPosition - wheel.c.WorldPosition
+					planeError = math.max(planeError, math.abs(span:Dot(s.groundUp)), math.abs(trenchSpan:Dot(s.groundUp)))
+					if path.Magnitude > 1e-4 then
+						local across = path.Unit:Cross(s.groundUp).Unit
+						-- Ignore the very first yawing frame: its fallback is instantaneous
+						-- velocity+r*offset, whereas following frames have a measured chord.
+						if frame > 1 or s.r == 0 then
+							widthError = math.max(widthError, math.abs(math.abs(span:Dot(across)) - F.Marks.Width),
+								math.abs(math.abs(trenchSpan:Dot(across)) - F.Ground.Grass.TrenchMark.Width))
+						end
+					else
+						widthError = math.max(widthError, math.abs(span.Magnitude - F.Marks.Width),
+							math.abs(trenchSpan.Magnitude - F.Ground.Grass.TrenchMark.Width))
+					end
+					if spans[wheel.index] and span:Dot(spans[wheel.index]) < -1e-5 then flips += 1 end
+					previous[wheel.index], spans[wheel.index] = expected, span
+					geometryFrames += 1
+				end
+			end
+		end
+		for _, profile in { 0, 1, 2 } do
+			local banked = profile > 0
+			for _, deg in { 0, -45, 45, -60, 60, -89.9, 89.9, -90, 90, -135, 135 } do
+				local s = stateWith({ slipDeg = deg, speed = 70, throttle = 1, rollDeg = if banked then 10 else 0 })
+				s.up = if banked then Vector3.new(0.25, 1, -0.15).Unit else Vector3.yAxis
+				s.groundUp = if profile == 2 then Vector3.new(0.1, 1, -0.05).Unit else s.up
+				local f, right = Suspension.basis(s.yaw, s.groundUp)
+				s.velocity = (f * math.cos(s.slip) - right * math.sin(s.slip)) * 70
+				if banked then s.body.z, s.body.p, s.body.q = 0.3, math.rad(8), math.rad(-6) end
+				s.wheelLift = if banked then { 0.1, -0.2, 0.3, -0.1 } else { 0, 0, 0, 0 }
+				geometry(s, 3, 0, 0)
+				s.r = if deg < 0 then -1.2 else 1.2
+				geometry(s, 6, 0.001, 0.007)
+			end
+		end
+		local stopped = stateWith({ speed = 0, throttle = 1 })
+		stopped.wheelLift = { 0, 0, 0, 0 }
+		geometry(stopped, 3, 0, 0)
+		geometry(stopped, 12, 0, 0, function(s, frame)
+			local deg = ({ -90, -60, -45, 0, 45, 60, 89.9, 90, 135, -45, -45, -45 })[frame]
+			s.slip = math.rad(deg)
+			s.u = if frame == 11 then 0 else if frame == 12 then 1e-8 else 70
+			s.velocity = Vector3.new(-math.sin(s.slip), 0, -math.cos(s.slip)) * s.u
+		end)
+		check(
+			"marks keep their configured width across the actual path, including sideways and banked turns",
+			widthError < 1e-4 and planeError < 1e-4,
+			string.format("%d wheel-frames; max cross-path width error %.2e, out-of-plane %.2e studs; old 60deg body-X width %.3f instead of %.3f",
+				geometryFrames, widthError, planeError, F.Marks.Width * math.cos(math.rad(60)), F.Marks.Width)
+		)
+		check(
+			"turning mark spans preserves patch centres and fixed smoke/debris sources",
+			centreError < 1e-4 and emitterError < 1e-4 and diagnosticError < 1e-4,
+			string.format("max patch-centre error %.2e, particle-source error %.2e, diagnostic residual %.2e studs", centreError, emitterError, diagnosticError)
+		)
+		check("mark endpoints stay ordered through turns and rest fallback", flips == 0, `{flips} endpoint flips`)
+		w:Cut()
 
 		local function litTrails(): (number, number)
 			local lit, maxPerWheel = 0, 0
