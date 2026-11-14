@@ -1,6 +1,6 @@
 # Feature: One continuous mountain
 
-**Status:** building (`T-190`, lane 5, branch `feature/continuous-mountain`). The user approved the plan on 2026-11-13. Step 1, the mountain as one surface (`T-194`), is built and waiting for the user's drive; see "As built" at the end, which says where it differs from the first guesses below. Step 2, the turn checks (`T-199`), is built; final lane verification is recorded below. **Owner task:** `T-190`.
+**Status:** approved and merged (`T-190`, steps `T-194` and `T-199`). The user approved both steps after the lane drive on 2026-11-13; the conductor checked and merged the build on 2026-11-14. See "As built" for measured behavior and remaining limits. **Owner task:** `T-190` (complete).
 
 ## Goal
 
@@ -268,7 +268,7 @@ call a facing road "above" when its edge is higher. Recorded counterexample, see
 own edge Y -80.2223, neighbour -83.4648, crest -73.2484. That is a low ridge facing a road 3.2425
 studs below, not a face pushing through a road above. The no-hillside-over-road check is unchanged.
 
-The user still needs to drive it. **Low banks remain walls to the car, and ground drawn below a
+The user approved the lane build on 2026-11-13. **Low banks remain walls to the car, and ground drawn below a
 cliff lip does not catch it.** Trees on the open hillside remain out of scope.
 ### Final before/after sightlines
 
@@ -288,7 +288,7 @@ Raw rising ground remains visible: at entry / 45 degrees round / pointing along 
 climbing turns go from 1/6, 3/6, 5/6 to 0/5, 3/5, 5/5, with the tallest rise down from 50 to
 36 studs. Floors/passes go from 0/6, 1/6, 2/6 to 1/3, 1/3, 3/3, tallest 34 to 36 studs:
 the far bank of the valley still rises ahead. Descending turns remain 0/5 at all three points
-before and 0/4 after. The user must judge those natural climbing/valley views.
+before and 0/4 after. The user approved those natural climbing/valley views on 2026-11-13.
 
 81 candidate fits, 39 outside preferred limits, eight location retries and two relaxed fits
 (including a sideways turn). This is a bounded preference, not a promise of an open view at
