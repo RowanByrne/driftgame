@@ -9,6 +9,7 @@ Every task in progress and the files it owns, so parallel sessions and workers n
 
 | Branch | Lane | Files owned | Since |
 |---|---|---|---|
+| `feature/glass-settings` (T-201, current step T-202) | 1 | `src/StarterPlayerScripts/Settings/*` (new), `src/StarterPlayerScripts/UI/*` (new), `Controllers/SettingsController.luau` (new), existing `Controllers/CarInputController.luau`, `Controllers/UiVisibilityController.luau`, `Controllers/GarageController.luau`, `Drift/TunerUI.luau`; `docs/game/features/settings-menu.md`, `docs/game/ART-DIRECTION.md` UI section, `docs/game/DECISIONS.md` settings entries only, `docs/game/UI-INVENTORY.md`, `docs/game/SETTINGS.md`, `docs/game/ARCHITECTURE.md` UI entries, `docs/game/CONTRACTS.md` UI entries; `assets/settings-menu/*`, `assets/reference/settings-menu-*` | 2026-11-14 |
 | `agent/consistent-tyre-mark-width` (T-207) | 3 | `src/StarterPlayerScripts/Drift/Wheels.luau`, `src/ServerScriptService/Tests/FxTests.luau`, `docs/game/features/car-fx.md` | 2026-11-14 |
 | `agent/contained-shadow-blocks` (T-206) | 4 | `src/ReplicatedStorage/Shared/Road/SplineMesh.luau`, `src/ReplicatedStorage/Shared/Road/SplineShadow.luau` (new, if needed), `src/ServerScriptService/Tests/SplineMeshTests.luau`, `docs/game/features/mountain-road.md` | 2026-11-14 |
 
