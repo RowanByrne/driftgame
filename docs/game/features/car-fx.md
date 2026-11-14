@@ -608,6 +608,24 @@ add 12 once-created instances per car: **64 total at one smoking surface**, with
 or destroyed while driving; `Clear` removes all of them. Smoke/debris rates, gates and fades,
 the exclusive green/brown rule, trail lifetimes and material widths are unchanged.
 
+
+**Checked in `DR-Lane3`, 2026-11-14:** `FxTests` **100/100 pass**. Its geometry sweep covers
+**1 248 wheel-frames** across straight motion, both turn/slip signs, 45°, 60°, near/exact 90°,
+banking, sprung pitch/roll, ground and car up differing, render substeps, rest and reversal.
+Maximum cross-path width error **0.00000157 studs**, centre/source error **0.0000021 studs**,
+and **0** endpoint flips. The old body-X span at 60° would measure **0.60 instead of 1.20**.
+The existing 1 000-frame mixed-ground allocation test is **64 → 64**, and grass exclusivity,
+fade, gate and cleanup checks still pass.
+
+A moving client fixture over **132 Heartbeats / 528 wheel-frames** measured normal mark width
+**1.199969–1.200028 studs**, maximum normal/trench width error **0.000041 studs**, and **0**
+endpoint flips, double grass marks, missing enabled trails or incorrect per-wheel gate states.
+It includes a lifted wheel, airborne, effects disabled/restored, mixed surfaces, rest, reverse,
+and `Cut`. At its world height of 3 000 studs, contact/source error stayed below **0.000245 studs**
+(float precision); old trails and lifetimes survived, motion history reset on `Cut`, the count
+stayed **64**, and `Clear` left **0** descendants. All car sounds were silent. Console review
+found only existing Studio plugin/MCP connection messages; the playtest was stopped.
+
 ## UI
 
 None. The effects are on the car.

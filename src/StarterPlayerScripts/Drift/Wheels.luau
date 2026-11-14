@@ -43,12 +43,13 @@
 -- `Marks.Lift` is 0.05. At the full 10 degrees it reaches about six tenths of a stud. The
 -- trails were `Enabled` the whole time; there was simply nothing to see.
 --
--- So the patches are UN-ROLLED every frame. The body's transform about the centre of mass
--- is `C(com) * R(roll) * C(-com)`, and each attachment is given the local position that
--- transform maps back onto the flat contact patch -- which is `R(-roll)` about the same
--- point, two scalars of trigonometry per frame shared across all eight. The wheels
--- themselves are drawn flat by `Render` for exactly the same reason, so this makes the
--- marks agree with the wheels that leave them.
+-- The patches are taken back through the body's full local transform each frame, so
+-- the lean and sprung pitch/roll move neither their ground centres nor particle sources.
+-- T-207 also turns each mark's span across its wheel's actual rendered ground travel:
+-- fixed body-X endpoints projected to Width*cos(slip), vanishing when fully sideways.
+-- Contact-centre deltas include yaw and Render's substep; velocity/yaw is the first-frame
+-- fallback and endpoint order stays continuous through reversal. Particle sources have
+-- their own fixed anchors so turning a ribbon does not move its smoke or debris.
 --
 -- ------------------------------------- ONE SHADE OF LINE, and the ramp that is not here
 --
@@ -360,7 +361,7 @@ function Wheels.patchLocal(patch: Vector3, com: Vector3, cosR: number, sinR: num
 end
 
 -- The roll itself, forward: what `Drift/Render`'s body transform does to a local point.
--- Only the tests and `DebugState` use it, to prove the inverse above really is one --
+-- The tests use it to prove the roll-only inverse above really is one --
 -- `applyRoll(patchLocal(p)) == p` for every roll, which is the one way a sign error in
 -- this pair shows up as a number rather than as a mark nobody can see.
 function Wheels.applyRoll(p: Vector3, com: Vector3, cosR: number, sinR: number): Vector3
