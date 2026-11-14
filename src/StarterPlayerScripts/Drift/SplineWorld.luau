@@ -254,12 +254,8 @@ function SplineWorld.new(spline: Spline.Spline, base: Model.World?): SplineWorld
 
 	local function sideWallStands(s: number, d: number, carY: number): boolean
 		local side = if d >= 0 then 1 else -1
-		local kind = spline:edgeAt(s, side)
-		if kind == Spline.CLIFF then
-			return false
-		end
 		local height = spline:boundaryHeight(s,side)
-		return standsBeside(s, side * (half + spline:runoffAt(s, side)), height, carY)
+		return height>0 and standsBeside(s, side * (half + spline:runoffAt(s, side)), height, carY)
 	end
 
 	-- A K-RAIL is a slab on the tarmac's edge, `railT` thick: solid from both sides, as the

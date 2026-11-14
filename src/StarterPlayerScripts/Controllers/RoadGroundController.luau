@@ -187,7 +187,7 @@ local function plan(spline: any, sc: number, dc: number, closingS: number?): { [
 	-- `slope` tile lies along the chord from its inner edge to its outer one instead of on
 	-- the ground's normal: the road's step down to the grass (T-184), a ramp an avatar walks
 	-- up rather than a ledge it has to jump
-	local function tile(key: string, s0: number, s1: number, d0: number, d1: number, material: Enum.Material, slope: boolean?)
+	local function tile(key: string, s0: number, s1: number, d0: number, d1: number, material: Enum.Material, slope: boolean?, depth: number?)
 		if d1 - d0 < 0.05 or s1 - s0 < 0.05 or d1 < lo or d0 > hi then
 			return
 		end
@@ -217,6 +217,31 @@ local function plan(spline: any, sc: number, dc: number, closingS: number?): { [
 		local r = right - n * right:Dot(n)
 		if r.Magnitude < 1e-4 then
 			return
+		end
+		-- Refine a fixed tile only where a bank/turn needs it. The avatar never
+		-- changes the lattice, and no broad tangent box bridges a curved bank.
+		if spline:hasBiomeGround() and not slope and (depth or 0)<5 then
+			local alongError,acrossError=0,0
+			for _,sa in {s0,s1} do
+				for _,da in {d0,d1} do
+					local px,py,pz=spline:terrainXYZ(sa,da)
+					local error=math.abs(py-(y-(n.X*(px-x)+n.Z*(pz-z))/n.Y))
+					if error>0.08 then
+						alongError=math.max(alongError,math.abs(s1-s0))
+						acrossError=math.max(acrossError,math.abs(d1-d0))
+					end
+				end
+			end
+			if math.max(alongError,acrossError)>0 then
+				if acrossError>alongError then
+					tile(key.."a",s0,s1,d0,dm,material,slope,(depth or 0)+1)
+					tile(key.."b",s0,s1,dm,d1,material,slope,(depth or 0)+1)
+				else
+					tile(key.."a",s0,sm,d0,d1,material,slope,(depth or 0)+1)
+					tile(key.."b",sm,s1,d0,d1,material,slope,(depth or 0)+1)
+				end
+				return
+			end
 		end
 		want[key] = {
 			size = Vector3.new(across + OVERLAP, THICK, math.max(along(d0), along(d1)) + OVERLAP),
@@ -333,7 +358,7 @@ local function plan(spline: any, sc: number, dc: number, closingS: number?): { [
 						local w = math.min(spline:runoffAt(sa, side), spline:runoffAt(sb, side))
 						grass(`l{key}:{i}`, sa, sb, full * PIECE, w)
 					end
-					if kind~=Spline.CLIFF then
+					if kind~=Spline.CLIFF or spline:outerRailAt((a+b)*.5) then
 						local height=spline:boundaryHeight((a+b)*.5,side)
 						if height>0 then wall(`w{key}`,"wall",a,b,side,half+wa,half+wb,ROCK_THICK,height,Enum.Material.Rock) end
 					end
@@ -447,6 +472,10 @@ local function frame()
 	local R = Config.Road
 	local reach = R.Width * 0.5 + math.max(Config.Spline.Terrain.RunoffMax,if spline:hasBiomeGround() then Config.Spline.Biomes.Width[1] else 0) + ACROSS
 	local pos = root.Position
+	if not hint and spline:hasBiomeGround() then
+		local carSpline,carHint=DriftController:SplineHint()
+		if carSpline==spline then hint=carHint end
+	end
 	local s, d = locate(spline, pos.X, pos.Z, reach)
 	if not s or not d then
 		stats.located = false

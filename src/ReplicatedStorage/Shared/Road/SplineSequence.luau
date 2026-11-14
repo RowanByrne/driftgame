@@ -187,7 +187,7 @@ end
 -- unsigned. nil off the road altogether -- further from the centre line than the road, the
 -- widest runoff and a margin (T-140), or not over live road at all.
 function SplineSequence.locate(self: Sequence, position: Vector3): (number?, number, number)
-	local reach = Config.Road.Width * 0.5 + Config.Spline.Terrain.RunoffMax + 30
+	local reach = Config.Road.Width * 0.5 + math.max(Config.Spline.Terrain.RunoffMax,if self.spline:hasBiomeGround() then Config.Spline.Biomes.Width[1] else 0) + 30
 	local s, d = self.spline:project(position.X, position.Z, reach)
 	if not s or not d then
 		return nil, 0, math.huge
@@ -199,13 +199,30 @@ function SplineSequence.locate(self: Sequence, position: Vector3): (number?, num
 	return piece.n, (s - piece.s0) / math.max(piece.length, 1e-6), math.abs(d)
 end
 
+-- Gameplay lookup belongs to one runner. A broad field must never reacquire a
+-- different leg when its current projection fails or leaves supported ground.
+function SplineSequence.locateOwned(self:Sequence,position:Vector3,hint:number,maxAdvance:number?):(number?,number,number,number?)
+	local s,d=self.spline:projectFrom(position.X,position.Z,hint)
+	if not s or not d or math.abs(s-hint)>(maxAdvance or 160)
+		or self.spline:groundKind(s,d)==nil then return nil,0,math.huge,nil end
+	local piece=self:pieceAtS(s)
+	if not piece then return nil,0,math.huge,nil end
+	return piece.n,(s-piece.s0)/math.max(piece.length,1e-6),math.abs(d),s
+end
+
 -- The same flags `Road/Generator.progress` hands back.
 function SplineSequence.progress(self: Sequence, position: Vector3)
 	local n, t, lateral = self:locate(position)
 	if not n then
 		return nil
 	end
-	local forward = n > self.furthestN or (n == self.furthestN and t > self.furthestT + 1e-9)
+	return self:progressAt(n,t,lateral)
+end
+
+-- Consume an already accepted projection; no second nearest-leg lookup.
+function SplineSequence.progressAt(self:Sequence,n:number,t:number,lateral:number)
+	local onRoad=lateral<=Config.Road.Width*.5
+	local forward = (not self.spline:hasBiomeGround() or onRoad) and (n > self.furthestN or (n == self.furthestN and t > self.furthestT + 1e-9))
 	if forward then
 		self.furthestN, self.furthestT = n, t
 	end
@@ -213,7 +230,7 @@ function SplineSequence.progress(self: Sequence, position: Vector3)
 		n = n,
 		t = t,
 		lateral = lateral,
-		onRoad = lateral <= Config.Road.Width * 0.5,
+		onRoad = onRoad,
 		forwardOnNewRoad = forward,
 		backwards = n < self.furthestN - 1,
 		furthestN = self.furthestN,

@@ -406,7 +406,7 @@ bank is traversable grass. Grip and score multipliers are unchanged.
 | Module | API | Contract |
 |---|---|---|
 | `Road/Spline` | `hasBiomeGround()`, `edgeLiftAt(s,side)` | Whether this road uses the complete biome-ground construction switch, and the replayed signed bank-lift track. A road without biome records retains the previous surface semantics |
-| `Road/Spline` | `boundaryHeight(s,side)` | Shared solid-boundary height at the supported strip's outer edge. Cliffs have no wall; rock/hedge legacy defaults remain on older roads. The field/bank wall is at the actual extent, not at the former runoff width |
+| `Road/Spline` | `boundaryHeight(s,side)` | Shared solid-boundary height at the supported strip's outer edge. Cliffs have no wall outside outer protection at side swaps; rock/hedge legacy defaults remain on older roads. The field/bank wall is at the actual extent, not at the former runoff width |
 | `Drift/SplineWorld` | `resetHint()` | Clear road-leg ownership on an explicit placement/respawn. Biome-ground lookups with a valid hint stay on that leg and do not fall back to a wider grid search onto another nearby leg |
 
 Both sides of a biome field have finite support. `groundKind` returns nil past
@@ -436,3 +436,13 @@ Client-owned session UI. No new remotes, persistent data keys, analytics events 
 | `SettingsController:DebugNavigate(name)` | Studio-only invocation of an actual navigation handler (`Toggle`, `Close`, `Next`, `Previous`, `Left`, `Right`, `Activate`) when an input tool cannot deliver that key |
 
 `PlayerGui.Settings` is one ScreenGui at `UI/Layers.Settings = 36`, Sibling order. Its `OpenSettings` entry and `Modal.Pane` are the visual roots. `Lighting.SettingsFog` is a client-only full-scene BlurEffect, enabled only while the modal is effective; reduced transparency decreases its strength and zero transparency turns it off. No UI artwork is uploaded.
+
+### Supported biome boundaries and ownership (T-203)
+
+Active biome ground retains a visible four-stud low rock foot on the uphill outer edge, independent of distant hillside caps. A geometry-derived outer guardrail protects both supported edges within 45 degrees of the fall line, where the existing mountain changes sides through a flat profile. Its inner face is at `halfWidth + runoffAt(s,side)` and its height is the existing three studs; `SplineBoundary` draws it in both mesh and parts chunks. This is separate from `kr`, whose rails remain at the asphalt edge. `boundaryHeight` supplies the matching car and walking limit. The distant mountain keeps its existing caps and joins.
+
+`DriftController:SplineHint()` hands walking the current spline identity and accepted car arc. Rebuilding a world for the same spline preserves that hint; actual placements reset it. Walking refines fixed tiles to within 0.08 studs of their shared tangent plane where banks need smaller tiles. Added bank lift shares its cross-slope budget with the existing road bank.
+
+`SplineSequence:locateOwned(position,hint,maxAdvance?)` projects only from that runner's accepted arc, refuses unsupported ground and excessive arc movement, and never searches a neighbouring leg on failure. `progressAt(n,t,lateral)` consumes that accepted projection. Grass updates ownership but does not advance biome run progress, the streaming window or recovery. RoadService seeds ownership from server placements and hands CarService recovery the runner's last accepted road piece, clamped ahead of the closing barrier. Generic `locate`/`PieceAt` remain nonmutating world queries.
+
+`SplineSurfaceCuts` samples the entire supported cross-section, including bevel feet and banks. `SplineParts.build(...,{terrain=true,sliceMs=...,cancelled=...})` draws finite ground and capped outer faces/hills as ordinary visual wedges with bounded batches and yielding; the second return contains triangle and slice statistics. The original tarmac-only yardstick call remains supported.

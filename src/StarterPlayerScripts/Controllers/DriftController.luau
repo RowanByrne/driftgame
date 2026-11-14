@@ -280,6 +280,7 @@ function DriftController:_rebuildWorld()
 	-- (features/spline-road.md, T-134). Off it, exactly the world it always was.
 	if self.spline then
 		local sw = SplineWorld.new(self.spline, live)
+		if old and old.spline==self.spline then sw.hint=old.hint end
 		sw.setClosing(self.splineClosing)
 		self.world = sw
 	else
@@ -887,6 +888,12 @@ function DriftController:Car(): Model?
 	return self.car
 end
 
+-- Hand walking the car's accepted road leg, including when parked far onto grass.
+function DriftController:SplineHint()
+	local world = self.world
+	return self.spline, world and world.hint or nil
+end
+
 -- The model's full state, for tests and agent playtests.
 function DriftController:DebugState()
 	local s = self:CurrentState()
@@ -1146,6 +1153,7 @@ function DriftController:DebugTeleport(cf: CFrame)
 	if typeof(cf) ~= "CFrame" or not self.runner then
 		return nil
 	end
+	if self.world and self.world.resetHint then self.world.resetHint() end
 	self.runner = Sim.newRunner(cf)
 	self.wheels:Cut()
 	self.engineSound:Cut()

@@ -18,6 +18,7 @@ local Config = require(ReplicatedStorage.Shared.Config)
 local Spline = require(ReplicatedStorage.Shared.Road.Spline)
 local SplineMesh = require(ReplicatedStorage.Shared.Road.SplineMesh)
 local SplineParts = require(ReplicatedStorage.Shared.Road.SplineParts)
+local SplineBoundary = require(ReplicatedStorage.Shared.Road.SplineBoundary)
 
 local SplineRoadView = {}
 SplineRoadView.__index = SplineRoadView
@@ -174,9 +175,19 @@ function SplineRoadView.SetClosing(self: View, s: number?)
 	-- tall enough to cover the banked road edge to edge
 	local bankRise = wide * 0.5 * math.abs(math.tan(spline:bankAt(s)))
 	local p = part :: BasePart
-	p.Size = Vector3.new(wide, height + 2 * bankRise, 1)
+	local bottom,top=y-R.Thickness-bankRise,y+R.BarrierHeight+bankRise
+	if spline:hasBiomeGround() then
+		for _,side in {-1,1} do
+			local edge=R.Width*.5+spline:runoffAt(s,side)
+			for t=0,1,.25 do
+				local ground=spline:terrainY(s,side*edge*t)
+				bottom,top=math.min(bottom,ground-R.Thickness),math.max(top,ground+R.BarrierHeight)
+			end
+		end
+	end
+	p.Size = Vector3.new(wide, top-bottom, 1)
 	-- the slab `Drift/SplineWorld` makes solid: 1 stud deep, its front face at `s`
-	p.CFrame = CFrame.new(x, y + (R.BarrierHeight - R.Thickness) * 0.5, z) * CFrame.Angles(0, spline:yawAt(s), 0) * CFrame.new(0, 0, 0.5)
+	p.CFrame = CFrame.new(x, (bottom+top)*.5, z) * CFrame.Angles(0, spline:yawAt(s), 0) * CFrame.new(0, 0, 0.5)
 end
 
 local function removeChunk(chunk: Instance)
@@ -208,10 +219,19 @@ function SplineRoadView._build(self: View, i: number)
 		self.lastError = info
 		local folder = Instance.new("Folder")
 		folder.Name = `Chunk_{math.floor(s0)}_parts`
-		SplineParts.build(self.spline, s0, s1, folder, { step = Config.Spline.Mesh.FallbackStep, queryable = false, barriers = false })
+		local _,stats=SplineParts.build(self.spline, s0, s1, folder, { step = Config.Spline.Mesh.FallbackStep, queryable = false, barriers = false,terrain=true,cancelled=function()return self.dead end })
+		self.lastSliceMs=stats.sliceMs
+		self.worstSliceMs=math.max(self.worstSliceMs,stats.sliceMs)
+		self.lastSlices=stats.slices
 		folder:SetAttribute("Fallback", true)
 		folder.Parent = self.folder
 		chunk = folder
+	end
+	if not self.dead then
+		local sliceStart=os.clock()
+		SplineBoundary.build(self.spline,s0,s1,chunk,function()
+			if os.clock()-sliceStart>=Config.Spline.Mesh.SliceMs/1000 then task.wait();sliceStart=os.clock() end
+		end,not model)
 	end
 	local ms = (os.clock() - t0) * 1000
 	self.lastMs = ms
