@@ -26,6 +26,20 @@ Lane2 verification (2026-11-14): actual P hides all 21 game visual roots below o
 
 ## Layouts
 
+### Settings page (T-201, T-208)
+
+**Status:** working in lane 1, awaiting the user's shell review. Approved style A / Smoked glass. Source: `Settings/SettingsView` and fixtures, driven by `Controllers/SettingsController`. Open from Settings, M or gamepad R3 while driving. Close from Back/X, Backspace or B. Categories: Steering and Interface. Native controls: mode segments, integer sensitivity slider with minus/plus nudges, and the existing P shortcut's keycap/instructions. Session-only values; no decorative live sliders or unavailable categories.
+
+One `Settings` ScreenGui, DisplayOrder 36, Sibling order. Full-screen backdrop; the pane and entry are fitted to the measured core/device-safe rectangle. Wide layouts (width at least 1000 and height at least 500) use the left rail; narrower layouts use horizontal tabs. Short landscape places steering and sensitivity in two columns where they fit; portrait and larger text stack and scroll. The Back and X targets stay fixed and reachable. The entry sits below TUNE and is put away while that tuner is open so it cannot cover its header.
+
+The other game HUD is suppressed while settings is effective, through UiVisibilityController's shared owner-aware registry; HUD owners keep their own flags. Keyboard P suspends the modal and releases blur, focus and driving input ownership, then restores it on P again. Car/avatar respawn and garage entry close it. The console closes settings and owns its own input block. Menu gestures do not steer, toggle the brake, pan/zoom the camera, enter the garage, open the tuner or fire debug shortcuts.
+
+Measured at actual simulator resolution on 2026-11-14: desktop 1280×720 and 1920×1080; tablet 1024×768; small landscape 667×375 and 640×360; notched phone landscape camera viewport 750×390 (full GUI 844×390); notched portrait camera viewport 390×763 (full GUI 390×844); compact portrait 360×640; ultrawide 2560×1080. Native essential text is at least 16 px, all buttons/slider hit areas at least 48×48. Long-copy and 1.5× text/opaque-pane fixtures fit by wrapping and scrolling. The settings modal suppresses the game's touch controls, so thumb-control zones are not active during its measurements. Details and input-tool limitations are in `docs/archive/settings-menu-shell-checks.md`.
+
+The glass material is native, with quiet inset tiles and a fine rim; the client BlurEffect softens the entire 3D scene, not individual GUI panes. Immediate transitions respect reduced motion. Preferred text size, transparency and input changes are observed live. No UI image load or aspect-ratio risk exists in this implementation.
+
+### Layouts for the existing screens
+
 > The layouts this game supports and how each is chosen: from the input type and the measured screen, never a guess at the device (UI.md "Layouts per device"). Delete the rows the game doesn't support.
 
 | Layout | Chosen when | Reference size | Supported |

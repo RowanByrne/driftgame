@@ -40,6 +40,7 @@ local Preview = require(GarageFolder.Preview)
 local CarCameraController = require(script.Parent.CarCameraController)
 local CarEntryController = require(script.Parent.CarEntryController)
 local DriftController = require(script.Parent.DriftController)
+local MenuInput = require(script.Parent.Parent:WaitForChild("UI"):WaitForChild("MenuInput"))
 
 local GarageController = {}
 GarageController.Priority = 0 -- after the controllers it drives
@@ -158,7 +159,7 @@ function GarageController:_buildHud(playerGui: Instance)
 end
 
 function GarageController:_canAskIn(): boolean
-	return not self.inGarage and CarEntryController.mode == "driving" and DriftController:IsDriving()
+	return not MenuInput.IsBlocked() and not self.inGarage and CarEntryController.mode == "driving" and DriftController:IsDriving()
 end
 
 -- The Garage button, G and DPad down. The server decides; this only asks.

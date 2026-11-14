@@ -2,7 +2,7 @@
 
 This game's code as built: what each module does and where things are registered. The rules every game follows are in docs/workflow/CODING.md; what other code relies on (data, remotes, tags, attributes, events) is in `CONTRACTS.md` and `EVENT-CATALOG.md`. Started in the Foundation phase; update it in the same commit as the code it describes. Replace each prompt with the answer.
 
-**Where it stands:** only the prototype skeleton and the drift prototype exist. The rest of the foundation kit (DataService, PlayerData, Sounds, the UI kit, notifications, analytics, live config, the admin console) is deliberately not built yet: the prototype's only job is to prove the drift feel (`ROADMAP.md` "Next"). It is built before anything that saves, sells or scores.
+**Where it stands:** the game remains a prototype, with the drift, run, score, garage and admin systems listed below implemented. T-201 supplies the first small native UI kit for settings. DataService, PlayerData, a general Sounds API, notifications, analytics and live config remain unbuilt. The prototype garage uses its documented throwaway development store; it is not a player-profile foundation. The current phase is recorded in `PROJECT.md`.
 
 ## Overview
 
@@ -33,7 +33,8 @@ The car is **not** driven by Roblox's physics (`DECISIONS.md`, 2026-11-03). Its 
 | `DriftController` | The drift model: the fixed-step simulation that moves the local player's car | `DebugState()`, `DebugDrive(inputs, seconds)` |
 | `ScoreController` | The endless run's score, on the client: steps `Drift/Score` on every simulation step while the server says this player is in a run (`features/endless-score.md`) | `View()`, `DebugState()` |
 | `CarInputController` | Steering, drift and brake input across keyboard, touch and gamepad | `DebugState()` |
-| `UiVisibilityController` | Session keyboard shortcut: P hides and restores game UI while driving input remains active; ignores typing and the Roblox menu (`T-200`) | `Toggle()`, `DebugState() -> {hidden, toggles, suppressed, bound}` |
+| `UiVisibilityController` | Session P shortcut plus owner-aware HUD suppression for menus; preserves screen visibility ownership (`T-200`, T-201) | `Toggle()`, `Changed(hidden)`, `SetOverlayHidden(owner, on, exceptions?)`, `DebugState()` |
+| `SettingsController` | Smoked-glass driving settings, session pointer preferences, menu/focus lifecycle and client scene blur (T-201) | `Open()`, `Close()`, `DebugState()`, `DebugAction()`, `DebugFixture()`, `DebugNavigate()`, Studio layout methods below |
 | `CarCameraController` | The reference game's in-game camera: it looks at the car from a fixed radius, swings that place round as the car turns, and leans it toward the travel as the slip opens. **A touch of roll and a speed shake since `T-072`** -- both applied to the rendered camera only, downstream of the stepped targets, so neither can reach the feedback loop. Still no zoom and no position smoothing: those were the predecessor camera the user rejected. Its targets run on their own fixed step (`CamTargetStep`), interpolated between, so every frame rate puts the camera in the same place | `Release()`, `Follow()`, `DebugState()`, `DebugProbe(opts)`, `DebugShakeProbe(opts)`, `DebugRecord(seconds)` |
 | `SkyController` | The sky and the day-night cycle (`features/day-night.md`, `T-144`): works the moment out from the server's clock, asks `Shared/DayNight` for its look and sets this client's Lighting, atmosphere, clouds and colour grading, and the cliffs' haze in the road mesh (`SplineMesh.setHaze`). Nothing is sent; the server sets no lighting | `DebugState()`, `DebugLook(t)`, `DebugKeyTimes()`, `DebugHold(t)`, `DebugSpeed(k, t?)`, `DebugResume()` |
 | `RoadGroundController` | Solid ground for the local avatar while it is out of the car on the spline road (`T-154`, `features/mountain-road.md` "Walking on the road"): a patch of invisible anchored tiles over tarmac and grass, walls at rock faces, hedges, crash barriers and the closing barrier, nothing past a cliff's lip. Client-only `Workspace.RoadGround`, never tagged `DriftSurface`, and gone whenever the car is driven | `DebugState()`, `DebugPoint(s, d)` |
@@ -42,6 +43,17 @@ The car is **not** driven by Roblox's physics (`DECISIONS.md`, 2026-11-03). Its 
 | `CmdrController` | F2 admin console, command dispatch, and targeted client car/score actions | `Run(text)`, `Act(action, ...)`, `onlyMe(players?)`, `Show()`, `Hide()`, `DebugState()` |
 
 ## Shared modules
+
+### Settings UI kit (client, T-201)
+
+The first small UI kit is implemented for settings; the broader foundation remains incomplete. `UI/Theme` owns semantic surface, type, selection and focus tokens; `UI/Create` creates native instances; `UI/Layers` owns the settings DisplayOrder; `UI/Glass` supplies panel/label/button and transparency handling. Buttons expose Normal/Hover/Pressed/Selected/Focus/Disabled state attributes. Disabled buttons are non-interactable and non-selectable. No generated image, atlas or baked text is required.
+
+`Settings/SettingsView` implements `new(parent)`, `setData(snapshot)`, `show()`, `hide()`, `describe()`, `setLayoutOffset(name, Vector2)` and `destroy()`, with `ActionRequested` for `open`, `close`, `category`, `mode` and `sensitivity`. Its fixtures cover steering, centred mode, interface, long copy and largest text/opaque panes. Global pointer listeners are disconnected by destroy and drags end on hide, window focus loss, resize or input-type change.
+
+`UI/Dev/LayoutDrag` is copied unchanged from the template. In Studio, `SettingsController:DebugDrag(on, "items" or "groups")`, `DebugSnap(on)`, `DebugExportLayout()` and `DebugResetLayout()` expose the page's whole-widget layout handles and exports. This page-specific preview is available through the existing debug bridge; a general UI-preview browser/admin command remains unbuilt.
+
+`UI/MenuInput` tracks independent input owners. Car input, camera zoom, car entry, garage entry, tuner and the legacy debug/trajectory bindings consult that ownership. Settings avoids the walking camera by opening only while driving, closes for car/avatar respawn and garage entry, yields to the console, and suspends for P or Roblox's menu. `CarInputController:SetSettings/GetSettings` is the intentional runtime preference API; the older Studio-only overrides remain available for existing tests.
+
 
 > The modules in `src/ReplicatedStorage/Shared/` that other code requires.
 
@@ -69,6 +81,14 @@ The car is **not** driven by Roblox's physics (`DECISIONS.md`, 2026-11-03). Its 
 | `Cars/Garage` | The tuner's eight sliders **and every rule about what a tuned car may be**. Shared so the client draws from it and the server validates against it (`features/car-tuner.md`) |
 
 Loaders: `ServerScriptService/Main.luau` loads `Services/`, `StarterPlayerScripts/Client.luau` loads `Controllers/`. Both call `Init()` on every module in `Priority` order (highest first, nothing yields), then `Start()` on each in its own thread. A module that fails to load is warned about and skipped.
+
+## Wheel marks (T-207)
+
+`StarterPlayerScripts/Drift/Wheels.luau` places each mark span perpendicular to that wheel's actual rendered contact travel, projected onto its ground plane. It preserves the natural angle-dependent body-right projection down to `Config.Fx.Marks.MinWidthRatio` (0.25), so the narrowest ribbon is one quarter of its configured normal width (1.2 to 0.3 studs; trench 1.9 to 0.475). The complete body-local transform preserves the contact centre through body pitch, roll and suspension movement. A bounded motion fallback covers stationary starts; stable endpoint ordering avoids a ribbon flip on reversal. `Cut`, reattachment and cleanup reset the direction history. Ordinary updates retain trail history and allocate no instances.
+
+Three fixed emitter anchors per wheel keep smoke, dust, grass and dirt at their existing offsets while the four mark endpoints rotate. Names and parents are in `CONTRACTS.md`. At one built smoking surface, the budget is 16 instances per wheel, 64 per car; `Clear` removes them all. Green and brown grass marks remain mutually exclusive. `DebugState.patchResidualY` measures the fixed source through the full body-local transform and wheel lift.
+
+`FxTests` checks projected width through both slip signs, near-sideways motion, banks, sprung pitch/roll, moving/rest/reverse transitions, fixed particle sources, gates and allocation cleanup. Lane3 also measured a moving client fixture; the measured result and visual review boundary are recorded in `features/car-fx.md`.
 
 ## Registries
 

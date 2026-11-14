@@ -60,6 +60,7 @@ local Signal = require(ReplicatedStorage.Shared.Signal)
 
 -- PlayerScripts.Controllers.CarInputController -> PlayerScripts.Drift
 local DragControl = require(script.Parent.Parent:WaitForChild("Drift").DragControl)
+local MenuInput = require(script.Parent.Parent:WaitForChild("UI"):WaitForChild("MenuInput"))
 
 local CarInputController = {}
 
@@ -77,6 +78,7 @@ local function binding(name: string, parent: Instance, props: { [string]: any })
 end
 
 function CarInputController:Init()
+	self.settings = {mode = Config.Drift.InputMode, sensitivity = Config.Drift.Sensitivity}
 	self.steer = 0
 	-- The toggle. `brakeOn` IS the latch; `handbrake` is only what the last `Get()` handed
 	-- the model, which is the latch except under a Studio override.
@@ -138,6 +140,7 @@ function CarInputController:Start()
 	context.Parent = playerScripts
 
 	debugToggle.Pressed:Connect(function()
+		if MenuInput.IsBlocked() then return end
 		self.DebugToggled:Fire()
 	end)
 
@@ -152,6 +155,9 @@ function CarInputController:Start()
 		self:_toggleBrake()
 	end)
 	self._drag:SetBrake(self.brakeOn)
+	self._drag:SetSettings(self.settings.mode, self.settings.sensitivity)
+	MenuInput.Changed:Connect(function() self:_syncInput() end)
+	self:_syncInput()
 
 	self:_bindPan()
 	self:_bindCarEvents()
@@ -167,6 +173,11 @@ end
 function CarInputController:SetDriving(on: boolean)
 	on = on == true
 	self.driving = on
+	self:_syncInput()
+end
+
+function CarInputController:_syncInput()
+	local on = self:IsDriving() and not MenuInput.IsBlocked()
 	if self._context then
 		self._context.Enabled = on
 	end
@@ -182,6 +193,9 @@ end
 
 function CarInputController:IsDriving(): boolean
 	return self.driving ~= false
+end
+function CarInputController:IsMenuBlocked(): boolean
+	return MenuInput.IsBlocked()
 end
 
 -- ---------------------------------------------------------------- the brake toggle
@@ -201,6 +215,7 @@ function CarInputController:_setBrake(on: boolean): boolean
 end
 
 function CarInputController:_toggleBrake(): boolean
+	if MenuInput.IsBlocked() then return self.brakeOn end
 	return self:_setBrake(not self.brakeOn)
 end
 
@@ -252,6 +267,7 @@ function CarInputController:_bindPan()
 	end
 
 	connect(UserInputService.InputBegan, function(input)
+		if MenuInput.IsBlocked() or not self:IsDriving() then return end
 		if input.UserInputType == Enum.UserInputType.MouseButton2 then
 			self._pan.held = true
 			self._panLastPos = nil -- the first move of a drag is measured from itself
@@ -293,6 +309,7 @@ function CarInputController:_bindPan()
 end
 
 function CarInputController:_addPan(dx: number, dy: number)
+	if MenuInput.IsBlocked() or not self:IsDriving() then return end
 	self._pan.dx += dx
 	self._pan.dy += dy
 	self._pan.totalX += dx
@@ -304,6 +321,7 @@ end
 -- call it, or the pixels go to whoever asked first.
 function CarInputController:PanInput(): { held: boolean, dx: number, dy: number }
 	local pan = self._pan
+	if MenuInput.IsBlocked() then pan.held, pan.dx, pan.dy = false, 0, 0 end
 	local out = { held = pan.held, dx = pan.dx, dy = pan.dy }
 	pan.dx, pan.dy = 0, 0
 	return out
@@ -314,6 +332,10 @@ end
 -- around -- and the keys steer between drags, so a player with a gamepad plugged in can
 -- still use it.
 function CarInputController:Get(): { steer: number, handbrake: boolean }
+	if MenuInput.IsBlocked() then
+		self.steer, self.handbrake = 0, self.brakeOn
+		return {steer = 0, handbrake = self.brakeOn}
+	end
 	if self._override then
 		self.steer, self.handbrake = self._override.steer, self._override.handbrake
 		return self._override
@@ -353,6 +375,19 @@ function CarInputController:Device(): string
 	return UserInputService.PreferredInput.Name
 end
 
+-- Personal session preferences. Nil leaves that value alone; malformed values do nothing.
+function CarInputController:SetSettings(mode, sensitivity)
+	if mode ~= nil and mode ~= "dynamic" and mode ~= "centred" then return false end
+	if sensitivity ~= nil and (type(sensitivity) ~= "number" or sensitivity ~= sensitivity or sensitivity < 1 or sensitivity > 10) then return false end
+	if mode then self.settings.mode = mode end
+	if sensitivity then self.settings.sensitivity = math.floor(sensitivity + 0.5) end
+	if self._drag then self._drag:SetSettings(self.settings.mode, self.settings.sensitivity) end
+	return true
+end
+function CarInputController:GetSettings()
+	return table.clone(self.settings)
+end
+
 function CarInputController:DebugState()
 	return {
 		steer = self.steer,
@@ -363,7 +398,8 @@ function CarInputController:DebugState()
 		brakeWatching = self._carEventsBound == true,
 		device = self:Device(),
 		mode = if self._drag then self._drag:Mode() else Config.Drift.InputMode,
-		sensitivity = Config.Drift.Sensitivity,
+		sensitivity = self.settings.sensitivity,
+		menuBlocked = MenuInput.IsBlocked(),
 		keySensitivity = Config.Drift.KeySensitivity,
 		travelPx = if self._drag then self._drag:TravelPx() else 0,
 		drag = if self._drag then self._drag:DebugState() else nil,

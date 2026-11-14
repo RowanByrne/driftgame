@@ -85,6 +85,7 @@ end
 
 function CarEntryController:Start()
 	local player = Players.LocalPlayer
+	require(script.Parent.Parent.UI.MenuInput).Changed:Connect(function() self:_applyControls() end)
 	self:_buildButton()
 	self:_bindKeys()
 	self:_buildPrompt()
@@ -225,7 +226,7 @@ end
 function CarEntryController:_applyControls()
 	local controls = self._controls
 	if controls then
-		if self.seated then
+		if self.seated or CarInputController:IsMenuBlocked() then
 			controls:Disable()
 		else
 			controls:Enable()
@@ -233,7 +234,7 @@ function CarEntryController:_applyControls()
 	end
 	local touch = Players.LocalPlayer.PlayerGui:FindFirstChild("TouchGui")
 	if touch and touch:IsA("ScreenGui") then
-		touch.Enabled = not self.seated
+		touch.Enabled = not self.seated and not CarInputController:IsMenuBlocked()
 	end
 end
 
@@ -277,10 +278,10 @@ function CarEntryController:_frame(_dt: number)
 
 	-- The button: driving, and slow enough to get out.
 	local state = DriftController:CurrentState()
-	self.button.Visible = self.mode == "driving"
+	self.button.Visible = not CarInputController:IsMenuBlocked() and self.mode == "driving"
 		and DriftController:IsDriving()
 		and flatSpeed(state) < Config.CarEntry.ExitSpeed
-	self._context.Enabled = self.mode == "driving"
+	self._context.Enabled = self.mode == "driving" and not CarInputController:IsMenuBlocked()
 
 	-- The prompt: at the driver's door of the parked car, while walking.
 	local walking = self.mode == "walking" and car ~= nil
@@ -288,7 +289,7 @@ function CarEntryController:_frame(_dt: number)
 		local carCF = self.parkCF or (state and DriftModel.cframe(state)) or car:GetPivot()
 		self.promptPart.CFrame = CFrame.new(Driver.doorPoint(carCF, car))
 	end
-	self.prompt.Enabled = walking
+	self.prompt.Enabled = walking and not CarInputController:IsMenuBlocked()
 end
 
 -- ---------------------------------------------------------------- the modes

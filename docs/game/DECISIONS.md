@@ -63,6 +63,8 @@ The user's decisions about this game, so they aren't reopened later. Before prop
 
 - 2026-11-14: Settings uses **A / Smoked glass**: dark rounded glass panes, warm orange selection and the wide left category rail, with reflowed compact layouts. The user picked "A: Smoked glass" on the comparison sheet and said "i picked a. continue" (T-201/T-202). The first batch of controls is still a separate choice.
 
+- 2026-11-14: The first settings batch is **Steering and UI**, chosen from the concrete catalogue (C-3effee, T-201): steering mode and sensitivity, plus the existing keyboard P shortcut. Tuner, camera tuning and test tools keep their separate entries and permissions. Values remain session-only.
+
 - 2026-11-14: Tone down the constant cliffs by linking road biomes: steep cliffs on both sides with lots of guardrails and tight bends, smaller one-sided cliffs with a smoother rising bank opposite, and mostly flat fields sloping gently down the mountain. This requests a replacement for the always-rock-uphill/cliff-downhill scenery rule; its layout, distribution and transitions are proposed for approval in features/road-biomes.md (C-ea75df).
 
 - 2026-11-14: A grass tyre mark is green or brown per wheel, never both emitting together. Brown replaces green at the existing trench threshold and green returns below its hysteresis threshold; old marks fade normally. This replaces the deliberate layered trench in T-188 (T-205, features/car-fx.md).
@@ -74,3 +76,5 @@ The user's decisions about this game, so they aren't reopened later. Before prop
 - 2026-11-14: Road biomes categorise the existing terrain style: steep cliffs retain one uphill mountain side and one downhill drop, never a ridge with drops on both sides. Make the categories shorter and change more often, blending smoothly within road sections independently of switchbacks. The first field and small-cliff profile drawings are suitable. This corrects the original brief's two-sided-cliff interpretation and replaces layout v1; the user: "we are not majorly redesigning the style of the terrain we already have, just creating categories to fit it into" (T-203/T-204).
 
 - 2026-11-14: The corrected biome layout is approved with physical, gradual transitions between hills and steep cliffs, and semi-random category lengths bounded by minimum and maximum values. The user: "yes but you can't rapidly switch from hills to steep cliffs without a transition" and "the lengths of different sections should be semi random. min and max, yes. but semi random". The sketch's fixed example lengths are illustrative, not the generated schedule (T-203/T-204).
+
+- 2026-11-14: Tyre marks should thin naturally with the slide, but never below **25% of their normal width**. Asked whether that meant 75% remaining or 25% remaining, the user chose "25% width". This revises the constant-width version of T-207; keep its stable mark direction and fixed particle sources (T-207, lane review attempt 2).
