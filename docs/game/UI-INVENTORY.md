@@ -28,7 +28,7 @@ Lane2 verification (2026-11-14): actual P hides all 21 game visual roots below o
 
 ### Settings page (T-201, T-208)
 
-**Status:** working in lane 1, awaiting the user's shell review. Approved style A / Smoked glass. Source: `Settings/SettingsView` and fixtures, driven by `Controllers/SettingsController`. Open from Settings, M or gamepad R3 while driving. Close from Back/X, Backspace or B. Categories: Steering and Interface. Native controls: mode segments, integer sensitivity slider with minus/plus nudges, and the existing P shortcut's keycap/instructions. Session-only values; no decorative live sliders or unavailable categories.
+**Status:** approved and merged to Main, 2026-11-14. Approved style A / Smoked glass. Source: `Settings/SettingsView` and fixtures, driven by `Controllers/SettingsController`. Open from Settings, M or gamepad R3 while driving. Close from Back/X, Backspace or B. Categories: Steering and Interface. Native controls: mode segments, integer sensitivity slider with minus/plus nudges, and the existing P shortcut's keycap/instructions. Session-only values; no decorative live sliders or unavailable categories.
 
 One `Settings` ScreenGui, DisplayOrder 36, Sibling order. Full-screen backdrop; the pane and entry are fitted to the measured core/device-safe rectangle. Wide layouts (width at least 1000 and height at least 500) use the left rail; narrower layouts use horizontal tabs. Short landscape places steering and sensitivity in two columns where they fit; portrait and larger text stack and scroll. The Back and X targets stay fixed and reachable. The entry sits below TUNE and is put away while that tuner is open so it cannot cover its header.
 
