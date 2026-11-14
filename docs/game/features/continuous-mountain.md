@@ -200,3 +200,13 @@ Three seeds of 12 000 studs (`SplineHillTests`), unless said.
   now has ground a few studs below it.** Its world is unchanged (`Drift/SplineWorld`).
 - On a climb, and at a valley's floor, a hairpin turns toward the mountain, so ground rises ahead
   part way round. Step 2's turn checks are where that is weighed.
+
+### Rechecked on current main (2026-11-13)
+
+After merging the four-spring car body: all 26 feature and merged source modules matched and
+compiled in DR-Lane5 before a quiet test. Hill 8/8, spline 64/64, mesh 17/17, body 8/8 and
+suspension 9/9. World remains 19/21 with the two previously recorded normal approximations.
+Shared endpoints from adjacent chunk contexts: 288 samples across the same three seeds,
+0 studs apart. A live car starting at s 1800 stayed grounded for 360 heartbeat samples,
+reached s 1845 at 32.5 studs/s, worst ride-height error 0.035 studs; five meshes, no fallback.
+The playtest was stopped. The known visual/physical edge mismatch remains.
