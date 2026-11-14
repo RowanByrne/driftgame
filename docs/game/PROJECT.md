@@ -39,7 +39,7 @@ Each PC that works on this game, and how many lanes it opens: `lane1` up to that
 
 ## Game-only rules
 
-- None yet.
+- Agent choice (2026-11-13): Codex on `gpt-6.1-sol`, ultra effort, for the conductor and feature leads. Workers also use `gpt-6.1-sol`: light = high, standard = xhigh, heavy = ultra. This overrides the template's model defaults while Claude credits are exhausted. Use explicit model and effort overrides when starting workers; the template's worker launcher still has its older defaults.
 
 ## Current focus
 

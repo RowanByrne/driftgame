@@ -307,7 +307,7 @@ local function fromTheWall(bankDeg: number, noseDeg: number, steer: number, seco
 	local yaw = math.rad(noseDeg)
 	local x = limitFor(yaw) + 0.05
 	local runner = Sim.newRunner(CFrame.new(x, math.tan(math.rad(bankDeg)) * x + C.RideHeight, 0) * CFrame.Angles(0, yaw, 0))
-	runner.state.up = up
+	runner.state.up, runner.state.groundUp = up, up
 	runner.state.velocity = Vector3.new(0, 0, -2)
 	runner.state.time = 10 -- past the throttle's ease-in
 	local t, away, pinnedSteps = 0, nil, 0
@@ -361,7 +361,7 @@ local function driveOn(opts: { [string]: any })
 	local runner = Sim.newRunner(opts.start)
 	runner.state.velocity = opts.velocity or Vector3.zero
 	if opts.up then
-		runner.state.up = opts.up
+		runner.state.up, runner.state.groundUp = opts.up, opts.up
 	end
 	local inputs = opts.inputs or { { t = 0, steer = 0 } }
 	local fn = function(t: number): Model.Input
@@ -1379,7 +1379,7 @@ function DriftTests.run()
 			velocity = ahead(CORNER_ENTRY, TEST_YAW),
 			onStep = function(s)
 				flatSteps += 1
-				flatAlong = math.max(flatAlong, gravityAlong(s.up).Magnitude)
+				flatAlong = math.max(flatAlong, gravityAlong(s.groundUp).Magnitude)
 			end,
 		})
 	end)
@@ -1689,7 +1689,7 @@ function DriftTests.run()
 	local lean = withUnstick(C.UnstickSpeed, C.UnstickSeconds, C.UnstickRelease, function()
 		local world, up, limitFor = bankedBarrier(30, 40)
 		local runner = Sim.newRunner(CFrame.new(0, C.RideHeight, 0))
-		runner.state.up = up
+		runner.state.up, runner.state.groundUp = up, up
 		runner.state.velocity = Vector3.new(0, 0, -110)
 		runner.state.time = 10
 		local t, pinnedSteps, wallSteps, slowest = 0, 0, 0, math.huge
@@ -1730,7 +1730,7 @@ function DriftTests.run()
 			local yaw = math.rad(nose)
 			local x = limitFor(yaw) + 0.05
 			local runner = Sim.newRunner(CFrame.new(x, math.tan(math.rad(30)) * x + C.RideHeight, 0) * CFrame.Angles(0, yaw, 0))
-			runner.state.up = up
+			runner.state.up, runner.state.groundUp = up, up
 			runner.state.velocity = Vector3.new(0, 0, -2)
 			runner.state.time = 10
 			local t = 0

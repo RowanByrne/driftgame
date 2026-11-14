@@ -770,7 +770,8 @@ local function viewFrom(state, rem: number): View?
 		velocity = state.velocity,
 		slip = state.slip,
 		speed = DriftModel.speed(state),
-		up = state.up,
+		-- the GROUND's smoothed normal, not the body's own tilt on its springs (T-196)
+		up = state.groundUp or state.up,
 	}
 end
 

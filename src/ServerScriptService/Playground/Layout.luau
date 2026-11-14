@@ -287,6 +287,53 @@ Layout.Hill = {
 	},
 }
 
+-- THE BODY PAD: shapes to drive the car's body over (features/car-body-physics.md, T-196).
+-- A ledge, a ramp and a kerb do nothing special to the car -- its four springs take each as
+-- ground under a wheel -- and this is where that is driven and measured. Three lanes side
+-- by side in the yard, each driven in +Z from the `BodyPad` spot:
+--
+--   the LEDGE lane   a long easy climb to a deck 2.5 studs up that simply ends, then,
+--                    past where a fast car lands, a second one 1 stud up: drive off the
+--                    end and the car falls
+--   the RAMP lane    a low ramp and deck under ONE side's wheels only, which tips the car
+--                    (or, slid across sideways, lifts the rear and leaves the front on the
+--                    ground); then a short steep kicker that ends in the air, last in its
+--                    lane because at speed it carries the car 60 studs
+--   the KERB lane    a 0.3 kerb under one side, a 0.3 kerb right across, a 0.6 kerb under
+--                    the other side, and a 1-stud kerb with sloped faces (1 up over 3, the
+--                    shape of the endless road's gravel edge -- but a real slope, which
+--                    throws a wheel that meets it square on; the road's own edge reads as
+--                    level ground to the car and is driven on the test road)
+--
+-- Every piece is a box or a slope: `dx` is its middle across the pad (+X), `dz` its near
+-- edge along the drive, `from` and `to` the height of its top at the near and far ends
+-- (the same: a box; different: a slope). Nothing is 0.25 proud here, unlike the bowl and the
+-- ramp: a slope starts flush with the plate, because a kerb at its foot would be one more
+-- shape than the one being tested.
+Layout.BodyPad = {
+	id = "BodyPad",
+	x = -135, -- the middle lane's centre line
+	z = 200, -- where the lanes start
+	colour = "Ramp",
+	pieces = {
+		{ name = "LedgeClimb", dx = -45, width = 36, dz = 0, length = 50, from = 0, to = 2.5 },
+		{ name = "LedgeDeck", dx = -45, width = 36, dz = 50, length = 36, from = 2.5, to = 2.5 },
+		{ name = "LowLedgeClimb", dx = -45, width = 36, dz = 130, length = 24, from = 0, to = 1 },
+		{ name = "LowLedgeDeck", dx = -45, width = 36, dz = 154, length = 16, from = 1, to = 1 },
+
+		{ name = "SideRamp", dx = 8, width = 12, dz = 20, length = 4, from = 0, to = 0.8 },
+		{ name = "SideDeck", dx = 8, width = 12, dz = 24, length = 24, from = 0.8, to = 0.8 },
+		{ name = "Kicker", dx = 0, width = 36, dz = 100, length = 12, from = 0, to = 2.5 },
+
+		{ name = "KerbLeft", dx = 54, width = 18, dz = 30, length = 3, from = 0.3, to = 0.3 },
+		{ name = "KerbAcross", dx = 45, width = 36, dz = 60, length = 3, from = 0.3, to = 0.3 },
+		{ name = "KerbRight", dx = 36, width = 18, dz = 90, length = 3, from = 0.6, to = 0.6 },
+		{ name = "SlopedKerbUp", dx = 54, width = 18, dz = 120, length = 3, from = 0, to = 1 },
+		{ name = "SlopedKerbTop", dx = 54, width = 18, dz = 123, length = 8, from = 1, to = 1 },
+		{ name = "SlopedKerbDown", dx = 54, width = 18, dz = 131, length = 3, from = 1, to = 0 },
+	},
+}
+
 -- Named spots that are simply a place on the plate. The two that sit on a feature
 -- (CircleCentre, RampBase) are declared with the feature instead.
 Layout.Spots = {
@@ -296,6 +343,10 @@ Layout.Spots = {
 	{ name = "Boulevard", x = 400, z = -75, heading = -90 }, -- the 110-stud street
 	{ name = "TightAlley", x = 400, z = 98, heading = -90 }, -- the 44-stud one
 	{ name = "PillarRun", x = -500, z = 0, heading = 0 },
+	-- lined up on the body pad's lanes, 40 studs short of them: ledge, ramp, kerb
+	{ name = "BodyPadLedge", x = Layout.BodyPad.x - 45, z = Layout.BodyPad.z - 40, heading = 180 },
+	{ name = "BodyPad", x = Layout.BodyPad.x, z = Layout.BodyPad.z - 40, heading = 180 },
+	{ name = "BodyPadKerbs", x = Layout.BodyPad.x + 45, z = Layout.BodyPad.z - 40, heading = 180 },
 }
 
 -- A spot's CFrame sits this far above its surface, and is shown by a flat disc on the

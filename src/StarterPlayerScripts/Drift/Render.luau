@@ -351,7 +351,14 @@ function Render.subStep(state: DriftModel.State, rem: number?): (Vector3, number
 		return state.position, state.yaw, state.wheelSpin
 	end
 	local radius = math.max(Config.Drift.WheelDiameter * 0.5, 1e-4)
-	return state.position + state.velocity * dt, state.yaw + state.r * dt, state.wheelSpin + (state.u / radius) * dt
+	-- The height moves at the BODY's own vertical speed (`heave`, T-196): on the ground
+	-- `velocity.Y` is the slope's climb, which a body bouncing on its springs is not doing.
+	local v = state.velocity
+	local heave = (state :: any).heave
+	if heave and heave ~= v.Y then
+		v = Vector3.new(v.X, heave, v.Z)
+	end
+	return state.position + v * dt, state.yaw + state.r * dt, state.wheelSpin + (state.u / radius) * dt
 end
 
 -- The car's basis from a heading and the surface normal it is following. This mirrors

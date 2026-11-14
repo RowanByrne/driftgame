@@ -9,6 +9,7 @@ Every task in progress and the files it owns, so parallel sessions and workers n
 
 | Branch | Lane | Files owned | Since |
 |---|---|---|---|
+| feature/continuous-mountain (T-190, T-194) | 5 | src/ReplicatedStorage/Shared/Road/Spline*.luau; src/ReplicatedStorage/Shared/Config/Spline.luau; src/ServerScriptService/Tests/Spline*Tests.luau; src/ServerScriptService/Services/SplineTestService.luau; src/StarterPlayerScripts/Controllers/SplineRoadController.luau; src/StarterPlayerScripts/Drift/SplineRoadView.luau; src/StarterPlayerScripts/Drift/TestHud.luau; docs/game/features/continuous-mountain.md; docs/game/features/mountain-direction.md; docs/game/ARCHITECTURE.md; docs/game/CONTRACTS.md | 2026-11-13 |
 
 ## Notes between sessions
 

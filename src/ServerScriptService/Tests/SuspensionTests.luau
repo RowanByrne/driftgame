@@ -123,7 +123,7 @@ local function runAll()
 			"on flat ground the floor solve never runs and every wheel sits at Rest",
 			hangs == 0 and worstTravel < 0.01 and worstLift < 0.02,
 			string.format(
-				"10 s straight then sliding on a flat plane: the floor solve ran on %d steps; worst travel off Rest %.2e studs; worst drawn lift %.4f studs (the model's own ground follow sits that far under ride height at speed, and the wheels are drawn on the road)",
+				"10 s straight then sliding on a flat plane: the floor solve ran on %d steps; worst travel off Rest %.2e studs; worst drawn lift %.4f studs",
 				hangs,
 				worstTravel,
 				worstLift
@@ -162,7 +162,8 @@ local function runAll()
 				peak[k] = math.max(peak[k], s.travel[k])
 				low[k] = math.min(low[k], s.travel[k])
 			end
-			roll = math.max(roll, math.abs(s.body.q))
+			local _, b = Suspension.tiltOf(s.yaw, s.up)
+			roll = math.max(roll, math.abs(b))
 			if s.hanging then
 				hangs += 1
 			end
@@ -179,7 +180,7 @@ local function runAll()
 			"over a kerb the left wheels ride up on their own and the right ones barely move",
 			peak[1] > P.Rest + 0.15 and peak[3] > P.Rest + 0.15 and peak[2] < P.Rest + 0.15 and hangs == 0,
 			string.format(
-				"0.3-stud kerb under the left side at 40 studs/s: peak travel FL %.3f FR %.3f RL %.3f RR %.3f (Rest %.2f, Travel %.2f); lowest FL %.3f FR %.3f; the body rolled %.2f deg on its springs; floor solve ran %d steps",
+				"0.3-stud kerb under the left side at 40 studs/s: peak travel FL %.3f FR %.3f RL %.3f RR %.3f (Rest %.2f, Travel %.2f); lowest FL %.3f FR %.3f; the car rolled %.2f deg on its springs; floor solve ran %d steps",
 				peak[1],
 				peak[2],
 				peak[3],
@@ -212,11 +213,13 @@ local function runAll()
 		local high = { 0, 0, 0, 0 }
 		local samples = {}
 		local air = 0
+		local last
 		drive(crest, 0, 40, 3.5, function(s, i)
+			last = s
 			if s.airborne then
 				air += 1
 			end
-			if -s.position.Z > 45 and -s.position.Z < 105 then
+			if -s.position.Z > 45 and -s.position.Z < 135 then
 				for k = 1, 4 do
 					low[k] = math.min(low[k], s.travel[k])
 					high[k] = math.max(high[k], s.travel[k])
@@ -230,18 +233,22 @@ local function runAll()
 			end
 		end)
 		table.insert(log, "CREST 10 deg up, 10 down, at 40 studs/s, travel FL FR RL RR:\n  " .. table.concat(samples, "\n  "))
+		-- Since T-196 the body really leaves a crest this sharp (20 degrees of kink at 40
+		-- studs/s): it used to be eased over it, held to the road.
+		local settled = last ~= nil and not last.airborne and last.wheelsDown[1] and last.wheelsDown[3]
 		check(
 			checks,
-			"over a crest the wheels drop and over the sag after it they take the load",
-			low[1] < P.Rest - 0.05 and math.max(high[1], high[3]) > P.Rest + 0.05 and air == 0,
+			"over a crest the wheels drop, and where the car comes down they take the load",
+			low[1] < P.Rest - 0.05 and math.max(high[1], high[3]) > P.Rest + 0.05 and settled,
 			string.format(
-				"10-degree crest at 40 studs/s: front travel from %.3f to %.3f, rear from %.3f to %.3f (Rest %.2f); airborne %d steps",
+				"10-degree crest at 40 studs/s: front travel from %.3f to %.3f, rear from %.3f to %.3f (Rest %.2f); airborne %d steps (it flies off the top), back on its wheels at the end: %s",
 				low[1],
 				high[1],
 				low[3],
 				high[3],
 				P.Rest,
-				air
+				air,
+				tostring(settled)
 			)
 		)
 	end
@@ -290,7 +297,7 @@ local function runAll()
 					off = math.max(off, math.abs(s.travel[k] - P.Rest))
 				end
 				-- Settled: every wheel within a hundredth of Rest and the body still.
-				if off < 0.01 and math.abs(s.body.vz) < 0.05 and s.time - landed > dt then
+				if off < 0.01 and math.abs(s.heave) < 0.05 and s.time - landed > dt then
 					flatAgain = s.time
 				end
 			end
@@ -298,14 +305,14 @@ local function runAll()
 				table.insert(
 					samples,
 					string.format(
-						"t %.2f %s: %s %s %s %s body %+.3f",
+						"t %.2f %s: %s %s %s %s rising %+.2f",
 						s.time,
 						if s.airborne then "air " else "road",
 						fmt(s.travel[1]),
 						fmt(s.travel[2]),
 						fmt(s.travel[3]),
 						fmt(s.travel[4]),
-						s.body.z
+						s.heave
 					)
 				)
 			end
