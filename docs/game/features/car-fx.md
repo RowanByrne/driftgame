@@ -238,7 +238,8 @@ still the reference's, converted, except the two marked **ours**.
 | `Gates.MinMarkSpeed` | 15 studs/s | — | **Ours (T-151).** A wheel only *starts* marking (and smoking) at or above this. Pulling away from rest with a finger held, the slip angle is noise on a velocity of a stud or two a second: measured in `DR-Lane3`, the rears marked from 0.1 studs/s and chattered up to ~14. A wheel already marking ignores it and runs down to `StopSlipDegrees`, so a drift that slows keeps its mark. The handbrake keeps its own floor |
 | `Gates.MaxSlipDegrees` | 180 | — | The angle the smoke rate is full at. This is the reference's `slip / π` written in degrees. **Note it is not the squeal's 90°:** at 90° of slip — a car fully sideways — the smoke is only at 34/s of its 60, which is a tuning question for the user's eye, not a bug |
 | `Marks.Seconds` | 5 | `MarkSeconds` | `Trail.Lifetime` |
-| `Marks.Width` | 1.2 studs | `MarkWidth` | The gap between the two attachments. A little under the tyre's 1.6 |
+| `Marks.Width` | 1.2 studs | `MarkWidth` | Normal width before angle-dependent thinning. A little under the tyre's 1.6 |
+| `Marks.MinWidthRatio` | 0.25 | Ours (`T-207`, user clarification) | Minimum share of each normal material width; a quarter-width floor, not 25% thinner |
 | `Smoke.RateMin`, `Smoke.RateMax` | 8, 60 /s | `SmokeRateMin/Max` | `ParticleEmitter.Rate`, lerped by `slip / Gates.MaxSlipDegrees` |
 
 Added in round two, and all of them ours — see the sections below for the measurements behind each:
@@ -271,7 +272,8 @@ nothing more: the look is the user's call.**
 | `TrailRenderer` | `Trail` between two `Attachment`s at the wheel's contact patch | Lifetime, width and colour all map directly |
 | `ParticleSystem` | `ParticleEmitter` on one `Attachment` at the contact patch | `Rate` maps to `rateOverTime` |
 
-**The budget**, and it is a formula and not a number, because the surfaces multiply it:
+**The original tarmac-only budget**, before the off-road effects (`T-188`) and independent
+particle anchors (`T-207`); the current total is in "Off the road" below:
 
 ```
 per car = 4 wheels × (2 Attachments + surfaces × (1 Trail + 2 ParticleEmitters))
@@ -296,10 +298,9 @@ patches are four fixed local offsets on it, read straight off the rig's own whee
 below: `Render` rolls the body about the centre of mass, the roll swings each patch through an arc
 far larger than the clearance they are drawn at, and the fix is to cancel it.
 
-There is **no folder**: the eight attachments are direct children of `Body` (an `Attachment` has to
-be parented to a `BasePart` to have a position), each wheel's `Trail`s and its diffuse emitter hang
-off its first attachment, and its stylized emitter off the second. A folder would be one more
-instance for nothing.
+There is **no folder**: the attachments are direct children of `Body`. Each wheel now has four
+mark endpoints and three fixed particle anchors (`T-207`), so turning the ribbon across the path
+does not move the smoke or debris sources. A folder would be one more instance for nothing.
 
 **A trail must be cut when the car jumps.** A spawn, a respawn or a `DebugTeleport` moves the body
 hundreds or thousands of studs in one frame, and a `Trail` that is still enabled across that draws
@@ -365,7 +366,7 @@ can be traced to one tyre: **small** (0.9 studs born, 4.2 died, against the diff
 contact patch; **fast and draggy** (9–15 studs/s, drag 4.5) so it is flicked off the tyre and stops
 near it; **short-lived** (0.30–0.55 s against 0.8–1.6) so the shape stays by the car; **opaque and
 faintly self-lit** (0.18 transparency, 0.35 light emission) so it reads against the cloud behind it;
-and **tilted 35° backward**, which is why it lives on the wheel's *second* attachment — the tilt is
+and **tilted 35° backward**, which is why it lives on the wheel's separate stylized source attachment (`T-207`) — the tilt is
 that attachment's own `Orientation`, and the diffuse layer must not be tilted with it. A rotation
 does not move a `Trail`, which reads the two attachments' positions, so the mark is untouched.
 
@@ -523,12 +524,13 @@ they decide *whether* a wheel marks; the surface decides *what* it leaves.
 
 ```
 per car = 4 wheels × (2 Attachments + smoking surfaces × (1 Trail + 2 Emitters)
-                      + 2 Attachments + 3 Trails + 3 Emitters)          (T-188)
+                      + 2 Attachments + 3 Trails + 3 Emitters
+                      + 3 fixed emitter anchors)                     (T-207)
 ```
 
-**52** at one smoking surface, up from 20; `Wheels.perWheel()` is the formula. Still built once and
+**64** at one smoking surface, up from 52 before `T-207` and 20 before `T-188`; `Wheels.perWheel()` is the formula. Still built once and
 switched with `Enabled`; `FxTests` drives 1 000 frames with each wheel's ground changing under it
-and counts **52 → 52**.
+and counts **64 → 64**.
 
 | Number | Start | What it does |
 |---|---|---|
@@ -584,6 +586,69 @@ and counts **52 → 52**.
   gaps; no screenshot was needed for the emission fix. The exact 30° radian round-trip can
   fall fractionally below 30°, as before; tuning and comparisons are unchanged.
 
+
+## Limited mark thinning through a slide (`T-207`)
+
+The user, 2026-11-14: *"tyre marks change thickness depending on slide angle - that doesn't
+really make sense, pls fix."* The previous endpoints stayed across the car: a 1.2-stud span
+projected to 0.85 studs at 45°, 0.60 at 60° and almost zero at 90° of slip.
+
+Each wheel now puts its mark endpoints perpendicular to its own rendered contact path,
+projected onto the ground plane. The endpoints stay centred at the same contact. Following
+the user's lane feedback and clarification **"25% width"**, the natural angle-dependent width
+now returns, capped by `Marks.MinWidthRatio = 0.25`: normal 1.2-stud marks (green, gravel and
+tarmac) narrow to **0.3 studs**, and 1.9-stud trenches to **0.475 studs**. The share is the
+absolute body-right projection across that wheel's actual path, floored at one quarter. The render pose
+includes yaw extrapolation between simulation steps, banking, wheel lift and cancellation of
+the body's sprung pitch/roll and cosmetic lean. First-frame fallback uses world velocity plus
+the contact's yaw motion; at rest the last valid span is kept. Endpoint ordering stays continuous
+through reversal, without dividing by cos(slip), changing physics or clearing historical marks.
+`Cut`, reattachment and cleanup reset the motion history.
+
+Three fixed particle-source attachments per wheel keep the previous source positions and tilts:
+`FxA_<Wheel>_L_Emitter` for diffuse smoke/dust, `FxA_<Wheel>_R_Emitter` for stylized smoke, and
+`FxT_<Wheel>_L_Emitter` for clippings/dirt. Trails keep the original four endpoints. The anchors
+add 12 once-created instances per car: **64 total at one smoking surface**, with none created
+or destroyed while driving; `Clear` removes all of them. Smoke/debris rates, gates and fades,
+the exclusive green/brown rule, trail lifetimes and normal material widths are unchanged.
+
+
+**First constant-width lane review, superseded by the quarter-width floor above:**
+`FxTests` **100/100 pass** in `DR-Lane3`, 2026-11-14. Its geometry sweep covers
+**1 248 wheel-frames** across straight motion, both turn/slip signs, 45°, 60°, near/exact 90°,
+banking, sprung pitch/roll, ground and car up differing, render substeps, rest and reversal.
+Maximum cross-path width error **0.00000157 studs**, centre/source error **0.0000021 studs**,
+and **0** endpoint flips. The old body-X span at 60° would measure **0.60 instead of 1.20**.
+The existing 1 000-frame mixed-ground allocation test is **64 → 64**, and grass exclusivity,
+fade, gate and cleanup checks still pass.
+
+A moving client fixture over **132 Heartbeats / 528 wheel-frames** measured normal mark width
+**1.199969–1.200028 studs**, maximum normal/trench width error **0.000041 studs**, and **0**
+endpoint flips, double grass marks, missing enabled trails or incorrect per-wheel gate states.
+It includes a lifted wheel, airborne, effects disabled/restored, mixed surfaces, rest, reverse,
+and `Cut`. At its world height of 3 000 studs, contact/source error stayed below **0.000245 studs**
+(float precision); old trails and lifetimes survived, motion history reset on `Cut`, the count
+stayed **64**, and `Clear` left **0** descendants. All car sounds were silent. Console review
+found only existing Studio plugin/MCP connection messages; the playtest was stopped.
+
+
+**Quarter-width revision checked in `DR-Lane3`, 2026-11-14:** `FxTests` **101/101 pass**.
+The same 1 248 geometry wheel-frames now compare against the natural body-right projection
+until capped, with maximum error **0.00000240 studs**. Explicit flat angles follow **1.2** at
+straight, **0.8485** at 45°, **0.60** at 60° and the **0.30** floor sideways, for both signs.
+The corresponding trench floor is **0.475**. Bank, sprung pitch/roll, ground/car up differing,
+render remainder, rest/reversal, source positions, grass exclusivity and the **64 → 64**
+allocation sweep still pass.
+
+The moving client fixture passed **104 Heartbeats / 416 wheel-frames**. Minimum measured
+ordinary/trench widths were **0.299991 / 0.474986 studs**; maximum error against the natural
+projection or floor was **0.000083 studs**. It found **0** endpoint flips, simultaneous green/brown
+emissions or wrong per-wheel gate states; retained particle/contact sources within **0.000245**
+studs at world height 3 000; preserved lifetimes; reset motion history on `Cut`; and left **0**
+descendants after cleanup. The effects-off branch checks no emission and excludes inactive
+geometry from visible-width measurements. Console review found only existing Studio plugin/MCP
+messages, and the quiet playtest was stopped. Lane 3 is retained for another user review.
+
 ## UI
 
 None. The effects are on the car.
@@ -635,7 +700,7 @@ In `CONTRACTS.md`. **What `T-062` built, for the conductor to record at merge:**
 | `Shared/Config/Fx` | `Ground` (`FadeSeconds`, `Grass`, `Gravel`); `Names` grows `TrenchAttachment`, `GroundTrail`, `GroundEmitter` |
 | `Drift/Wheels` | `surfaceOf` now reads `state.wheelSurface`; new pure `mixStep(mix, target, dt)`, `trenchOn(slipDeg, was)`, `dirtShare(slipDeg)`, `kickRate(S, slipDeg)`, `perWheel()`. `DebugState` per wheel grows `smokeMix`, `grassMix`, `gravelMix`, `trench`, `smokeRate`, `grassMark`, `trenchMark`, `gravelMark`, `clippingsRate`, `dirtRate`, `dustRate`; `emitting` is now the wheel's gate result and `lit` counts the off-road lines too |
 | `Drift/SkidSound` | `surfaceOf` falls back to `Default` for a surface with no clip, so the squeal is unchanged on grass and gravel |
-| Instance names on a rig | `FxT_<Wheel>_<L\|R>` (8 more `Attachment`s on `Body`), `FxMark_<Wheel>_<grass\|trench\|gravel>` (12 `Trail`s), `FxKick_<Wheel>_<grass\|dirt\|dust>` (12 `ParticleEmitter`s). The trench trail and the grass/dirt emitters hang off `FxT_<Wheel>_L`; the grass and gravel trails and the dust off `FxA_<Wheel>_L` |
+| Instance names on a rig | `FxT_<Wheel>_<L\|R>` (8 more `Attachment`s on `Body`), `FxMark_<Wheel>_<grass\|trench\|gravel>` (12 `Trail`s), `FxKick_<Wheel>_<grass\|dirt\|dust>` (12 `ParticleEmitter`s). The trench trail hangs off `FxT_<Wheel>_L`; grass and gravel trails off `FxA_<Wheel>_L`. Since `T-207`, particles use the three separate `_Emitter` anchors listed above |
 
 **No `Hit` change in `T-064`:** the per-wheel surface gap was deferred then, and closed by `T-188`. **No remote, no packet field,
 no server instance:** `T-064` is the client and the local car only, as this spec says it must be.

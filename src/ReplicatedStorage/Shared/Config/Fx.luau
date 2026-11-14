@@ -22,14 +22,15 @@
 
 return {
 	-- ------------------------------------------------------------------ tyre marks
-	-- The black line a sliding wheel leaves. Per wheel: two `Attachment`s `Width` apart at
+	-- The black line a sliding wheel leaves. Per wheel: two attachments up to `Width` apart at
 	-- the contact patch, and one `Trail` PER BAND strung between them -- enabled and
 	-- disabled, never created or destroyed while driving (features/car-fx.md "The budget").
 	Marks = {
 		Seconds = 5, -- s of `Trail.Lifetime`. How long a mark stays on the road, and
 		-- therefore how much of a corner you can still see behind you
-		Width = 1.2, -- studs between the two attachments. A little under the tyre, which
-		-- is `Config.Drift.WheelWidth` wide
+		Width = 1.2, -- normal width in studs. A little under `Config.Drift.WheelWidth`.
+		MinWidthRatio = 0.25, -- minimum share of each material width during a slide (T-207).
+		-- User, 2026-11-14: narrow down to 25% width, not 25% thinner.
 		Lift = 0.25, -- studs the attachments sit ABOVE the contact patch. OURS, and
 		-- MEASURED rather than chosen. A trail drawn exactly in the road's
 		-- surface z-fights with it, so there has to be some.
@@ -286,10 +287,11 @@ return {
 	--
 	--   per car = 4 wheels x (2 Attachments + surfaces x (1 Trail + 2 Emitters))
 	--
-	-- At one surface that is 4 x 5 = 20, built once when the rig is caught and never
-	-- again. It was 16 before the stylized smoke layer, 32 with a four-rung darkness
-	-- ladder, 28 with a three-rung one, and 20 again now the ladder is gone (T-062).
-	-- A second surface adds 12, which is why `dirt` is not in here until there is dirt.
+	-- This original tarmac-only layer is 4 x 5 = 20 at one smoking surface. With the
+	-- off-road layer and fixed emitter anchors below, the current total is 64 (T-207),
+	-- all built once when the rig is caught. The old tarmac layer was 16 before stylized
+	-- smoke, 32 with four darkness rungs, 28 with three, then 20 after removal (T-062).
+	-- A second smoking surface adds 12 instances.
 	Built = { "tarmac" },
 	Default = "tarmac", -- what a wheel is told it is standing on when its `Hit` has no
 	-- `surface` (the parts world, the playground). The spline road names every hit (T-188)
@@ -312,9 +314,10 @@ return {
 	-- BUILT-IN TEXTURES ONLY: the bits are `SquareParticle.png`, flat-coloured squares, which
 	-- is the low-poly look. Nothing uploaded.
 	--
-	-- THE BUDGET grows by 8 a wheel: 2 Attachments (the trench is wider, so it needs its own
-	-- pair) + 3 Trails + 3 Emitters. 4 x (5 + 8) = 52 a car, built once and switched with
-	-- `Enabled` for ever after, like everything else here.
+	-- THE BUDGET: the off-road layer adds 8 per wheel (2 trench Attachments + 3 Trails
+	-- + 3 Emitters). T-207 adds 3 fixed particle-source Attachments per wheel so turning
+	-- the mark span does not move smoke/debris. At one smoking surface that is 16 per
+	-- wheel, 4 x (5 + 8 + 3) = 64 per car. All built once, then switched with `Enabled`.
 	Ground = {
 		FadeSeconds = 0.2, -- s for a wheel's smoke to fade out when it leaves tarmac, and for
 		-- the grass/gravel debris to fade in -- and the same back. Fast, but not a cut

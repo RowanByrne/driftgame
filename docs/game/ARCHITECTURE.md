@@ -67,6 +67,14 @@ The car is **not** driven by Roblox's physics (`DECISIONS.md`, 2026-11-03). Its 
 
 Loaders: `ServerScriptService/Main.luau` loads `Services/`, `StarterPlayerScripts/Client.luau` loads `Controllers/`. Both call `Init()` on every module in `Priority` order (highest first, nothing yields), then `Start()` on each in its own thread. A module that fails to load is warned about and skipped.
 
+## Wheel marks (T-207)
+
+`StarterPlayerScripts/Drift/Wheels.luau` places each mark span perpendicular to that wheel's actual rendered contact travel, projected onto its ground plane. It preserves the natural angle-dependent body-right projection down to `Config.Fx.Marks.MinWidthRatio` (0.25), so the narrowest ribbon is one quarter of its configured normal width (1.2 to 0.3 studs; trench 1.9 to 0.475). The complete body-local transform preserves the contact centre through body pitch, roll and suspension movement. A bounded motion fallback covers stationary starts; stable endpoint ordering avoids a ribbon flip on reversal. `Cut`, reattachment and cleanup reset the direction history. Ordinary updates retain trail history and allocate no instances.
+
+Three fixed emitter anchors per wheel keep smoke, dust, grass and dirt at their existing offsets while the four mark endpoints rotate. Names and parents are in `CONTRACTS.md`. At one built smoking surface, the budget is 16 instances per wheel, 64 per car; `Clear` removes them all. Green and brown grass marks remain mutually exclusive. `DebugState.patchResidualY` measures the fixed source through the full body-local transform and wheel lift.
+
+`FxTests` checks projected width through both slip signs, near-sideways motion, banks, sprung pitch/roll, moving/rest/reverse transitions, fixed particle sources, gates and allocation cleanup. Lane3 also measured a moving client fixture; the measured result and visual review boundary are recorded in `features/car-fx.md`.
+
 ## Registries
 
 Where each kind of thing is listed in code, so nothing gets scattered.

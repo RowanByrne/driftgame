@@ -43,12 +43,13 @@
 -- `Marks.Lift` is 0.05. At the full 10 degrees it reaches about six tenths of a stud. The
 -- trails were `Enabled` the whole time; there was simply nothing to see.
 --
--- So the patches are UN-ROLLED every frame. The body's transform about the centre of mass
--- is `C(com) * R(roll) * C(-com)`, and each attachment is given the local position that
--- transform maps back onto the flat contact patch -- which is `R(-roll)` about the same
--- point, two scalars of trigonometry per frame shared across all eight. The wheels
--- themselves are drawn flat by `Render` for exactly the same reason, so this makes the
--- marks agree with the wheels that leave them.
+-- The patches are taken back through the body's full local transform each frame, so
+-- the lean and sprung pitch/roll move neither their ground centres nor particle sources.
+-- T-207 turns each span across its wheel's actual rendered ground travel and restores
+-- the natural body-X projection, capped at Marks.MinWidthRatio so it cannot disappear.
+-- Contact-centre deltas include yaw and Render's substep; velocity/yaw is the first-frame
+-- fallback and endpoint order stays continuous through reversal. Particle sources have
+-- their own fixed anchors so turning a ribbon does not move its smoke or debris.
 --
 -- ------------------------------------- ONE SHADE OF LINE, and the ramp that is not here
 --
@@ -97,10 +98,10 @@
 -- line OR a brown trench past `Grass.TrenchSlipDegrees`, with hysteresis (T-205).
 -- Only one grass mark emits per wheel; already-laid marks keep their normal lifetime.
 --
--- NOTHING IS CREATED OR DESTROYED WHILE DRIVING. 52 instances per car at one smoking
+-- NOTHING IS CREATED OR DESTROYED WHILE DRIVING. 64 instances per car at one smoking
 -- surface -- 4 wheels x (2 Attachments + 1 Trail + 2 ParticleEmitters, and the off-road
--- layer's 2 Attachments + 3 Trails + 3 ParticleEmitters) -- built once when the rig is
--- caught and switched with `Enabled` for ever after. It was 20 before T-188. There is no
+-- layer's 2 Attachments + 3 Trails + 3 ParticleEmitters + 3 emitter anchors) -- built
+-- once and switched with `Enabled` for ever after. It was 20 before T-188. There is no
 -- `Instance.new`, no table, no `NumberSequence` and no `NumberRange` anywhere in `Update`:
 -- a frame that allocates is the thing to fail on, and `FxTests` counts the instances
 -- before and after a thousand frames because of it.
@@ -158,8 +159,13 @@ type WheelFx = {
 	front: boolean,
 	a: Attachment,
 	b: Attachment,
-	c: Attachment, -- the trench's wider pair (T-188); `c` also carries the debris
+	c: Attachment, -- the trench's wider pair (T-188)
 	d: Attachment,
+	sourceA: Attachment, -- fixed diffuse smoke / dust source, independent of mark span
+	sourceB: Attachment, -- fixed stylized smoke source
+	sourceC: Attachment, -- fixed clippings / dirt source
+	previousPatch: Vector3?, -- rendered contact centre last frame, including yaw / substep
+	span: Vector3?, -- world cross-track axis; keep endpoint ordering continuous
 	patchA: Vector3, -- the FLAT contact patch, in the car's own frame, before the lean
 	patchB: Vector3,
 	patchC: Vector3,
@@ -183,7 +189,6 @@ export type Wheels = typeof(setmetatable(
 		wheels: { WheelFx },
 		enabled: boolean,
 		built: number, -- instances this object made for the body it holds
-		roll: number, -- the lean the attachment positions were last written for
 	},
 	Wheels
 ))
@@ -356,7 +361,7 @@ function Wheels.patchLocal(patch: Vector3, com: Vector3, cosR: number, sinR: num
 end
 
 -- The roll itself, forward: what `Drift/Render`'s body transform does to a local point.
--- Only the tests and `DebugState` use it, to prove the inverse above really is one --
+-- The tests use it to prove the roll-only inverse above really is one --
 -- `applyRoll(patchLocal(p)) == p` for every roll, which is the one way a sign error in
 -- this pair shows up as a number rather than as a mark nobody can see.
 function Wheels.applyRoll(p: Vector3, com: Vector3, cosR: number, sinR: number): Vector3
@@ -374,15 +379,14 @@ function Wheels.new(): Wheels
 		wheels = {},
 		enabled = true,
 		built = 0,
-		roll = math.huge, -- nothing written yet, so the first frame always writes
 	}, Wheels) :: any
 end
 
 -- Instances one wheel carries: its 2 attachments and 1 trail + 2 emitters per smoking
--- surface, plus the off-road layer's 2 attachments, 3 trails and 3 emitters (T-188).
--- 13 at one smoking surface, so 52 a car.
+-- surface, plus the off-road layer's 2 attachments, 3 trails and 3 emitters (T-188),
+-- and 3 fixed emitter anchors (T-207). 16 at one smoking surface, so 64 a car.
 function Wheels.perWheel(): number
-	return 2 + #Config.Fx.Built * 3 + 2 + 3 + 3
+	return 2 + #Config.Fx.Built * 3 + 2 + 3 + 3 + 3
 end
 
 local function wheelIndex(name: string): number?
@@ -489,11 +493,13 @@ function Wheels.Clear(self: Wheels)
 		w.b:Destroy()
 		w.c:Destroy()
 		w.d:Destroy()
+		w.sourceA:Destroy()
+		w.sourceB:Destroy()
+		w.sourceC:Destroy()
 	end
 	table.clear(self.wheels)
 	self.body = nil
 	self.built = 0
-	self.roll = math.huge
 end
 
 -- Build them all, once, for the car this rig holds. Called every frame and does nothing at
@@ -539,15 +545,13 @@ function Wheels.Attach(self: Wheels, rig: any): boolean
 		local b = Instance.new("Attachment")
 		b.Name = string.format(F.Names.Attachment, name, "R")
 		b.Position = patchB
-		-- The stylized layer is thrown BACKWARD off the patch, and this is the tilt. It is
-		-- on `b` and not on `a` precisely so the diffuse layer, which the user approved as
-		-- it is, keeps emitting straight up. A rotation does not move a `Trail`, which
-		-- reads the two attachments' positions, so the mark is untouched.
+		-- The stylized source keeps its backward tilt. The source built below copies
+		-- this frame independently of the mark span; diffuse smoke stays straight up.
 		b.Orientation = Vector3.new(F.Stylized.EmitAngleDegrees, 0, 0)
 		b.Parent = body
 
-		-- The trench's own pair (T-188): wider than the mark, a hair above it. `c` also
-		-- carries the debris, tilted back by `KickAngleDegrees` -- which moves no trail.
+		-- The trench's own pair (T-188): wider than the mark, a hair above it. Its
+		-- fixed debris source below copies the backward `KickAngleDegrees` tilt.
 		local G = F.Ground
 		local tw = G.Grass.TrenchMark
 		local tPatch = patch + Vector3.new(0, tw.Lift, 0)
@@ -563,14 +567,25 @@ function Wheels.Attach(self: Wheels, rig: any): boolean
 		d.Position = patchD
 		d.Parent = body
 
+		-- Marks turn across the ground path, but particle sources keep their original
+		-- positions and tilt. Built once: no source moves around a tyre with the slip.
+		local function source(at: Attachment): Attachment
+			local anchor = Instance.new("Attachment")
+			anchor.Name = at.Name .. "_Emitter"
+			anchor.CFrame = at.CFrame
+			anchor.Parent = body
+			return anchor
+		end
+		local sourceA, sourceB, sourceC = source(a), source(b), source(c)
+
 		local fx: { SurfaceFx } = {}
 		for _, surface in F.Built do
 			local look = F.Surfaces[surface] or F.Surfaces[F.Default]
 			table.insert(fx, {
 				surface = surface,
 				trail = makeTrail(string.format(F.Names.Trail, name, surface), look.MarkColour, F.Marks.Transparency, a, b),
-				diffuse = makeEmitter(string.format(F.Names.Emitter, name, surface), look.SmokeColour, F.Smoke, a),
-				stylized = makeEmitter(string.format(F.Names.Stylized, name, surface), look.PuffColour, F.Stylized, b),
+				diffuse = makeEmitter(string.format(F.Names.Emitter, name, surface), look.SmokeColour, F.Smoke, sourceA),
+				stylized = makeEmitter(string.format(F.Names.Stylized, name, surface), look.PuffColour, F.Stylized, sourceB),
 				on = false,
 				smoking = false,
 				diffuseRate = 0,
@@ -588,9 +603,9 @@ function Wheels.Attach(self: Wheels, rig: any): boolean
 			flat = mark("grass", G.Grass.FlatMark, a, b),
 			trench = mark("trench", tw, c, d),
 			gravel = mark("gravel", G.Gravel.Mark, a, b),
-			clippings = kick("grass", G.Grass.Clippings, c),
-			dirt = kick("dirt", G.Grass.Dirt, c),
-			dust = kick("dust", G.Gravel.Dust, a),
+			clippings = kick("grass", G.Grass.Clippings, sourceC),
+			dirt = kick("dirt", G.Grass.Dirt, sourceC),
+			dust = kick("dust", G.Gravel.Dust, sourceA),
 		}
 
 		table.insert(self.wheels, {
@@ -601,6 +616,11 @@ function Wheels.Attach(self: Wheels, rig: any): boolean
 			b = b,
 			c = c,
 			d = d,
+			sourceA = sourceA,
+			sourceB = sourceB,
+			sourceC = sourceC,
+			previousPatch = nil,
+			span = nil,
 			patchA = patchA,
 			patchB = patchB,
 			patchC = patchC,
@@ -696,6 +716,8 @@ end
 function Wheels.Cut(self: Wheels)
 	for _, w in self.wheels do
 		w.heat = 0
+		w.previousPatch = nil
+		w.span = nil
 		w.marking = false
 		w.trench = false
 		for _, fx in w.fx do
@@ -720,46 +742,60 @@ function Wheels.Update(self: Wheels, state: DriftModel.State?, input: any, dt: n
 	local handbrake = input ~= nil and input.handbrake == true
 	local slipSpeed = Wheels.slipSpeed(state)
 
-	-- Cancel the body's lean, once for all eight attachments: two trig calls a frame.
-	-- Written only when the lean has actually moved, which it has not while the car is
-	-- standing still or running dead straight.
-	--
-	-- AND THE SUSPENSION'S, when there is any (T-095). The body rides a sprung offset on the
-	-- car's frame and each wheel its own lift, so a patch is put where its wheel actually
-	-- meets the ground -- the flat patch, up by that wheel's lift -- and taken back through
-	-- the body's whole transform, offset and lean together. On flat ground both are exactly
-	-- zero and this is skipped, so the marks there are what they always were.
-	local roll = state.bodyRoll
-	local lifts = (state :: any).wheelLift
-	local sprung = not Suspension.bodyAtRest(state)
-	if not sprung and lifts then
-		for i = 1, #lifts do
-			if lifts[i] ~= 0 then
-				sprung = true
-				break
+	-- Recover the road pose actually drawn by Render.apply, including its fractional
+	-- simulation step. Cancel suspension and cosmetic lean before placing the patch.
+	local bodyLocal = Suspension.bodyLocal(state)
+	local unbody = bodyLocal:Inverse()
+	local road = (self.body :: BasePart).CFrame * unbody
+	local normal = state.groundUp
+	local normalLength = normal.Magnitude
+	if normalLength > 1e-4 and normalLength < math.huge then
+		normal /= normalLength
+	else
+		normal = road.UpVector
+	end
+	local lifts = state.wheelLift
+	local half = Config.Fx.Marks.Width * 0.5
+	local trenchHalf = Config.Fx.Ground.Grass.TrenchMark.Width * 0.5
+	for _, w in self.wheels do
+		local lift = Vector3.new(0, if lifts then lifts[w.index] or 0 else 0, 0)
+		local patch = (w.patchA + w.patchB) * 0.5 + lift
+		local centre = road:PointToWorldSpace(patch)
+		local previous = w.previousPatch
+		local flow = if previous then centre - previous else Vector3.zero
+		flow -= normal * flow:Dot(normal)
+		if flow.Magnitude < 1e-4 or not (flow.Magnitude < math.huge) then
+			-- First frame / stopped: use velocity plus this contact's yaw motion, then
+			-- retain the previous axis at rest. Never divide by cos(slip) near sideways.
+			flow = state.velocity + (Vector3.yAxis * state.r):Cross(centre - road.Position)
+			flow -= normal * flow:Dot(normal)
+		end
+		local span = flow:Cross(normal)
+		if span.Magnitude < 1e-4 or not (span.Magnitude < math.huge) then
+			span = w.span or road.RightVector
+			span -= normal * span:Dot(normal)
+			if span.Magnitude < 1e-4 then
+				span = road.LookVector:Cross(normal)
 			end
 		end
-	end
-	if sprung then
-		self.roll = math.huge -- so the plain path writes again once the springs are still
-		local bodyLocal = Suspension.bodyLocal(state)
-		for _, w in self.wheels do
-			local up = Vector3.new(0, if lifts then lifts[w.index] or 0 else 0, 0)
-			w.a.Position = bodyLocal:PointToObjectSpace(w.patchA + up)
-			w.b.Position = bodyLocal:PointToObjectSpace(w.patchB + up)
-			w.c.Position = bodyLocal:PointToObjectSpace(w.patchC + up)
-			w.d.Position = bodyLocal:PointToObjectSpace(w.patchD + up)
+		span = span.Unit
+		local oldSpan = w.span
+		if oldSpan and span:Dot(oldSpan) < 0 then
+			span = -span -- the same undirected width, with no endpoint swap on reversing
 		end
-	elseif roll ~= self.roll then
-		self.roll = roll
-		local com = Config.Drift.CenterOfMass
-		local cosR, sinR = math.cos(roll), math.sin(roll)
-		for _, w in self.wheels do
-			w.a.Position = Wheels.patchLocal(w.patchA, com, cosR, sinR)
-			w.b.Position = Wheels.patchLocal(w.patchB, com, cosR, sinR)
-			w.c.Position = Wheels.patchLocal(w.patchC, com, cosR, sinR)
-			w.d.Position = Wheels.patchLocal(w.patchD, com, cosR, sinR)
-		end
+		w.previousPatch, w.span = centre, span
+		-- Keep the original angle-dependent projection until the configured floor,
+		-- while spanning across the path avoids an unbounded 1/cos expansion sideways.
+		local ratio = math.clamp(math.abs(road.RightVector:Dot(span)), Config.Fx.Marks.MinWidthRatio, 1)
+		local localSpan = road:VectorToObjectSpace(span) * ratio
+		local trench = (w.patchC + w.patchD) * 0.5 + lift
+		w.a.Position = unbody:PointToWorldSpace(patch - localSpan * half)
+		w.b.Position = unbody:PointToWorldSpace(patch + localSpan * half)
+		w.c.Position = unbody:PointToWorldSpace(trench - localSpan * trenchHalf)
+		w.d.Position = unbody:PointToWorldSpace(trench + localSpan * trenchHalf)
+		w.sourceA.Position = unbody:PointToWorldSpace(w.patchA + lift)
+		w.sourceB.Position = unbody:PointToWorldSpace(w.patchB + lift)
+		w.sourceC.Position = unbody:PointToWorldSpace(w.patchC + lift)
 	end
 
 	local G = Config.Fx.Ground
@@ -866,8 +902,7 @@ function Wheels.DebugState(self: Wheels, state: DriftModel.State?, input: any)
 		return out
 	end
 	local handbrake = out.handbrake
-	local com = Config.Drift.CenterOfMass
-	local cosR, sinR = math.cos(state.bodyRoll), math.sin(state.bodyRoll)
+	local bodyLocal = Suspension.bodyLocal(state)
 	for _, w in self.wheels do
 		local down = state.wheelsDown[w.index] == true
 		local emit, diffuseRate, slipPast, throttleOk, handbrakeOk =
@@ -934,10 +969,11 @@ function Wheels.DebugState(self: Wheels, state: DriftModel.State?, input: any)
 			-- This IS the bug, in one number: before the fix the attachment sat here and
 			-- the mark went with it, up to six tenths of a stud under a road with five
 			-- hundredths of clearance.
-			leanOffsetY = w.a.Position.Y - w.patchA.Y,
-			-- And the proof the cancelling is exact: roll the written position forward
-			-- again, the way `Render` will, and it must land back on the flat patch.
-			patchResidualY = Wheels.applyRoll(w.a.Position, com, cosR, sinR).Y - w.patchA.Y,
+			leanOffsetY = w.sourceA.Position.Y - w.patchA.Y,
+			-- Undo the full body-local offset on the fixed source, not the turning mark
+			-- endpoint. Include suspension lift so pitch / roll do not fake a residual.
+			patchResidualY = bodyLocal:PointToWorldSpace(w.sourceA.Position).Y
+				- w.patchA.Y - (if state.wheelLift then state.wheelLift[w.index] or 0 else 0),
 		})
 	end
 	return out
@@ -950,6 +986,7 @@ function Wheels.CountInstances(self: Wheels): number
 	for _, w in self.wheels do
 		n += (if w.a.Parent then 1 else 0) + (if w.b.Parent then 1 else 0)
 		n += (if w.c.Parent then 1 else 0) + (if w.d.Parent then 1 else 0)
+		n += (if w.sourceA.Parent then 1 else 0) + (if w.sourceB.Parent then 1 else 0) + (if w.sourceC.Parent then 1 else 0)
 		for _, fx in w.fx do
 			n += (if fx.trail.Parent then 1 else 0)
 				+ (if fx.diffuse.Parent then 1 else 0)
