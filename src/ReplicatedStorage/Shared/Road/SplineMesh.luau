@@ -54,6 +54,7 @@ local GrassTexture = require(script.Parent.GrassTexture)
 local Spline = require(script.Parent.Spline)
 local SplineGrove = require(script.Parent.SplineGrove)
 local SplineHill = require(script.Parent.SplineHill)
+local Shadow = require(script.Parent.SplineShadow)
 
 local SplineMesh = {}
 
@@ -364,8 +365,9 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 			road.plainUV = road.em:AddUV(Vector2.zero)
 			road.grassShade = {}
 		end
+		local surfaceRows: { { Vector3 } } = {}
 		local prevRow, prevNear, prevFar, prevS, prevUV = nil, nil, nil, 0, nil
-		for _, s in cuts do
+		for k, s in cuts do
 			local row, norm, pts = {}, {}, {}
 			local wL, wR = spline:runoffAt(s, -1), spline:runoffAt(s, 1)
 			local ds = {}
@@ -400,6 +402,7 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 			end
 			-- each bevel's own normal: square to the road's way and to its slope, outward
 			local yaw = spline:yawAt(s)
+			surfaceRows[k] = pts
 			local along = Vector3.new(-math.sin(yaw), spline:gradeAt(s), -math.cos(yaw))
 			local right = Vector3.new(math.cos(yaw), 0, -math.sin(yaw))
 			local function stepNormal(foot: Vector3, top: Vector3, side: number): number
@@ -488,33 +491,6 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 				end
 			end
 		end
-		-- a face's cap anywhere in the chunk, between the cuts' own (nil with no hillside)
-		local function capAt(s: number, side: number): number?
-			if not hill then
-				return nil
-			end
-			local list = caps[side]
-			local lo, hi = 1, #cuts
-			if s <= cuts[1] then
-				return list[1]
-			elseif s >= cuts[hi] then
-				return list[hi]
-			end
-			while hi - lo > 1 do
-				local mid = (lo + hi) // 2
-				if cuts[mid] <= s then
-					lo = mid
-				else
-					hi = mid
-				end
-			end
-			local a, b = list[lo], list[hi]
-			local u = (s - cuts[lo]) / math.max(cuts[hi] - cuts[lo], 1e-9)
-			if a == math.huge or b == math.huge then
-				return if u < 0.5 then a else b
-			end
-			return a + (b - a) * u
-		end
 
 		-- THE FACES OF THE MOUNTAINSIDE, in the same mesh: a client may hold only eight
 		-- EditableMeshes and the road's window uses six, so the faces cannot have meshes of
@@ -547,6 +523,7 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 		end
 		local cliffMid = em:AddColor(T.CliffColour:Lerp(haze, 0.5), 1)
 		hazeOf[em] = { haze = faceColours.haze, mid = cliffMid }
+		local faceRows: { [number]: { [number]: { [number]: { Vector3 } } } } = { [-1] = {}, [1] = {} }
 		for _, side in { -1, 1 } do
 			-- one row of vertices per cut and kind, made the first time a face needs it
 			local rows: { [number]: { pts: { Vector3 }, ids: { number }, kind: number } } = {}
@@ -556,6 +533,8 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 					return row
 				end
 				local pts = SplineMesh.profile(spline, cuts[k], side, kind, if hill then caps[side][k] else nil)
+				faceRows[side][kind] = faceRows[side][kind] or {}
+				faceRows[side][kind][k] = pts
 				local ids = table.create(#pts)
 				for i, p in pts do
 					ids[i] = em:AddVertex(p - centre)
@@ -926,8 +905,112 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 		-- `CliffShadeThickness` thick, so light cannot come up through the drop.
 		local shadeStep = T.RockShadeStep
 		local shadeBack = T.RockShadeBack
+		-- T-206: certify against the same rows and triangle diagonals as the mesh above.
+		-- Intersecting their inward halfspaces gives a conservative convex part of the
+		-- terrain, even on a twisted bend. Span/footprint bounds keep boxes behind caps.
+		local function endPlanes(planes: { Shadow.Plane }, ka: number, kb: number)
+			for _, pair in { { ka, -1 }, { kb, 1 } } do
+				local yaw = spline:yawAt(cuts[pair[1]])
+				local n = Vector3.new(-math.sin(yaw), 0, -math.cos(yaw)) * pair[2]
+				table.insert(planes, { n = n, d = n:Dot(surfaceRows[pair[1]][lipL + 1]), span = true })
+			end
+		end
+		local function roof(planes: { Shadow.Plane }, a: { Vector3 }, b: { Vector3 }, first: number, last: number)
+			for j = first, last - 1 do
+				Shadow.plane(planes, a[j], a[j + 1], b[j], Vector3.yAxis)
+				Shadow.plane(planes, a[j + 1], b[j + 1], b[j], Vector3.yAxis)
+			end
+		end
+		local planeCache: { [string]: { Shadow.Plane } } = {}
+		local function facePlanes(ka: number, kb: number, side: number, kind: number): { Shadow.Plane }
+			local key = `{side}:{kind}:{ka}:{kb}`
+			if planeCache[key] then return planeCache[key] end
+			local planes = {}
+			endPlanes(planes, ka, kb)
+			local rows = faceRows[side][kind]
+			for k = ka, kb - 1 do
+				local a, b = rows[k], rows[k + 1]
+				local yaw = spline:yawAt((cuts[k] + cuts[k + 1]) / 2)
+				local outward = Vector3.new(side * math.cos(yaw), 0, -side * math.sin(yaw))
+				local last = if kind == Spline.ROCK and hill then #a - 2 else #a - 1
+				for j = 1, last do
+					local e = a[j + 1] - a[j]
+					local facing = outward * -e.Y + Vector3.yAxis * e:Dot(outward)
+					Shadow.plane(planes, a[j], a[j + 1], b[j], facing)
+					Shadow.plane(planes, a[j + 1], b[j + 1], b[j], facing)
+				end
+				if kind == Spline.ROCK then
+					-- The hillside starts at the crest; keep the whole caster on this side
+					-- of it, without extrapolating an unrelated hillside triangle over it.
+					if hill then Shadow.edge(planes, a[5], b[5], (a[1] + b[1]) / 2) end
+				else
+					-- A cliff caster is inside the drop, under this side's actual runoff.
+					local sa, sb = surfaceRows[k], surfaceRows[k + 1]
+					local first, lastGrass = if side < 0 then 1 else lipR + 1, if side < 0 then lipL else #sa
+					roof(planes, sa, sb, first, lastGrass)
+					local inner = if side < 0 then lipL else lipR + 1
+					Shadow.edge(planes, sa[inner], sb[inner], (a[1] + b[1]) / 2)
+					-- Keep the caster under the actual runoff footprint, including the
+					-- lip at a narrow cap. A lower face can fan outside that footprint.
+					Shadow.edge(planes, a[1], b[1], (sa[inner] + sb[inner]) / 2)
+				end
+				slice()
+			end
+			planeCache[key] = planes
+			return planes
+		end
+		local function footPlanes(ka: number, kb: number, side: number): { Shadow.Plane }?
+			local key = `foot:{side}:{ka}:{kb}`
+			if planeCache[key] then return planeCache[key] end
+			local planes = {}
+			endPlanes(planes, ka, kb)
+			local rows = faceRows[side][Spline.ROCK]
+			for k = ka, kb - 1 do
+				local a, b = rows[k], rows[k + 1]
+				-- A separate safe solid BELOW the actual first face strip. Its vertical
+				-- footprint is closed on both sides, so higher jags' infinite planes need
+				-- not clip this low caster. This is only valid for an upward facing strip.
+				local before = #planes
+				local yaw = spline:yawAt((cuts[k] + cuts[k + 1]) / 2)
+				local outward = Vector3.new(side * math.cos(yaw), 0, -side * math.sin(yaw))
+				local e = a[2] - a[1]
+				local facing = outward * -e.Y + Vector3.yAxis * e:Dot(outward)
+				Shadow.plane(planes, a[1], a[2], b[1], facing)
+				Shadow.plane(planes, a[2], b[2], b[1], facing)
+				if #planes ~= before + 2 or planes[before + 1].n.Y <= 1e-5 or planes[before + 2].n.Y <= 1e-5 then return nil end
+				Shadow.edge(planes, a[1], b[1], (a[2] + b[2]) / 2)
+				Shadow.edge(planes, a[2], b[2], (a[1] + b[1]) / 2)
+			end
+			planeCache[key] = planes
+			return planes
+		end
 		for _, side in { -1, 1 } do
 			local tag = if side < 0 then "L" else "R"
+			local function footShade(ka: number, kb: number)
+				local a, b = faceRows[side][Spline.ROCK][ka], faceRows[side][Spline.ROCK][kb]
+				local along = (b[1] - a[1]) * Vector3.new(1, 0, 1)
+				if along.Magnitude < 1e-3 then return end
+				local x = along.Unit
+				local up = (a[4] + b[4] - a[1] - b[1]) / 2
+				local y = (up - x * up:Dot(x)).Unit
+				local outward = Vector3.new(side * math.cos(spline:yawAt((cuts[ka] + cuts[kb]) / 2)), 0, -side * math.sin(spline:yawAt((cuts[ka] + cuts[kb]) / 2)))
+				if x:Cross(y):Dot(outward) > 0 then x = -x end
+				local toRoad = x:Cross(y)
+				local h = math.min(up.Magnitude, T.RockShadeStep)
+				if up.Y <= 0.25 or h < 1 then return end
+				local size = Vector3.new(along.Magnitude, h + shadeBack, T.RockShadeThickness)
+				local centre = (a[1] + b[1]) / 2 + y * ((h - shadeBack) / 2) - toRoad * (shadeBack + size.Z / 2)
+				local planes = footPlanes(ka, kb, side)
+				if not planes then return end
+				local cf, fit = Shadow.fit(CFrame.fromMatrix(centre, x, y, toRoad), size, planes, -toRoad)
+				if kb - ka > 1 and (not fit or fit.X < size.X * 0.85 or fit.Y < size.Y * 0.8) then
+					local mid = (ka + kb) // 2
+					footShade(ka, mid)
+					footShade(mid, kb)
+				elseif cf and fit and fit.X > 0.15 and fit.Y > 0.25 and fit.Z > 0.15 then
+					plain(`RockShade_{tag}_{ka}_Foot`, fit, cf, T.RockColour, Enum.Material.Slate)
+				end
+			end
 			-- A ROCK BODY'S TOP (T-185): a second box under its scrub top, from the face's top
 			-- edge to the crest, `shadeBack` down inside the body and short of both ends, so a
 			-- grand body's whole height casts and the box is never seen
@@ -935,41 +1018,21 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 			-- along the road, and a box drawn between its two ends would show at the lower one,
 			-- so the taller end is brought down to the lower's height above its foot (T-185)
 			local function ends(ka: number, kb: number, kind: number): ({ Vector3 }, { Vector3 })
-				local pa = SplineMesh.profile(spline, cuts[ka], side, kind, capAt(cuts[ka], side))
-				local pb = SplineMesh.profile(spline, cuts[kb], side, kind, capAt(cuts[kb], side))
+				local rows = faceRows[side][kind]
+				local pa, pb = table.clone(rows[ka]), table.clone(rows[kb])
 				if kind == Spline.ROCK then
-					-- the lowest the body stands anywhere over the span (its height wanders on
-					-- slow sines, and can dip between the two ends), sampled every 4 studs
-					local ha, hb = pa[4].Y - pa[1].Y, pb[4].Y - pb[1].Y
-					local low = math.min(ha, hb)
-					local a, b = cuts[ka], cuts[kb]
-					-- and half a span past each end, where a box overlaps its neighbours; one and a
-					-- half on the inside of a tight bend, where the profiles fan in and a stud of box
-					-- high up covers several studs of road (T-193)
-					local kk = spline:curvatureAt((a + b) * 0.5)
-					local fan = kk ~= 0 and (kk > 0) == (side < 0) and math.abs(kk) > 1 / T.TightRockRadius
-					local ext = 2 + (b - a) * (if fan then 1.5 else 0.5)
-					local from, to = math.max(0, a - ext), math.min(b + ext, spline.length)
-					local n = math.max(1, math.ceil((to - from) / 4))
-					for i = 0, n do
-						local at = from + (to - from) * i / n
-						local p = SplineMesh.profile(spline, at, side, kind, capAt(at, side))
-						low = math.min(low, p[4].Y - p[1].Y)
-					end
-					local function lower(p: { Vector3 }, r: number)
-						for i = 2, #p do
-							p[i] = p[1] + (p[i] - p[1]) * r
+					local low = math.huge
+					for k = ka, kb do low = math.min(low, rows[k][4].Y - rows[k][1].Y) end
+					for _, p in { pa, pb } do
+						local h = p[4].Y - p[1].Y
+						if h > low and h > 1e-3 then
+							for i = 2, #p do p[i] = p[1] + (p[i] - p[1]) * math.max(0, low) / h end
 						end
-					end
-					if ha > low and ha > 1e-3 then
-						lower(pa, math.max(low, 0) / ha)
-					end
-					if hb > low and hb > 1e-3 then
-						lower(pb, math.max(low, 0) / hb)
 					end
 				end
 				return pa, pb
 			end
+
 			-- A BODY'S END (T-189): a box reaches half a stud past each end of its span, to
 			-- overlap its neighbour inside the body; where the body itself ends there (its end
 			-- closed by a cap, `cap` above) the box stops half a stud short instead, so it never
@@ -997,7 +1060,9 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 				if len < 1e-3 or width < trim + trimCrest + 1 then
 					return
 				end
-				local x = along / len
+				local planAlong = Vector3.new(along.X, 0, along.Z)
+				if planAlong.Magnitude < 1e-3 then return end
+				local x = planAlong.Unit
 				local y = (over - x * over:Dot(x)).Unit
 				local z = x:Cross(y)
 				if z.Y > 0 then
@@ -1010,9 +1075,19 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 				-- longer edge, so neighbours overlap; on the inside, where the profiles fan in, the
 				-- shorter, so the box never reaches into a neighbour's differently shaped top; and
 				-- short of the body's ends (T-189)
-				local short, shift = fitEnds(ka, kb, Spline.ROCK, (pb[5] - pa[5]).Magnitude)
-				centre += along / len * shift
-				plain(`RockShadeTop_{tag}_{ka}`, Vector3.new(short, width - trim - trimCrest, thick), CFrame.fromMatrix(centre, x, y, z), T.RockColour, Enum.Material.Slate)
+				local short, shift = fitEnds(ka, kb, Spline.ROCK, ((pb[5] - pa[5]) * Vector3.new(1, 0, 1)).Magnitude)
+				centre += planAlong.Unit * shift
+				local desired = Vector3.new(short, width - trim - trimCrest, thick)
+				local cf, size = Shadow.fit(CFrame.fromMatrix(centre, x, y, z), desired, facePlanes(ka, kb, side, Spline.ROCK), z)
+				if kb - ka > 1 and (not size or size.X < desired.X * 0.65 or size.Y < desired.Y * 0.7) then
+					local mid = (ka + kb) // 2
+					local aa, ab = ends(ka, mid, Spline.ROCK)
+					local ba, bb = ends(mid, kb, Spline.ROCK)
+					shadeTop(ka, mid, aa, ab)
+					shadeTop(mid, kb, ba, bb)
+				elseif cf and size and size.X > 0.15 and size.Y > 0.25 and size.Z > 0.15 then
+					plain(`RockShadeTop_{tag}_{ka}`, size, cf, T.RockColour, Enum.Material.Slate)
+				end
 			end
 			local function shade(ka: number, kb: number, kind: number)
 				local rock = kind == Spline.ROCK
@@ -1029,18 +1104,28 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 					-- a cliff's depth wanders along the road (T-185): the box's foot stands at the
 					-- shallower end's, and a little above it, so it never shows below the face
 					local footY = math.max(fa.Y, fb.Y) + 2 + 0.02 * (pa[1].Y - fa.Y)
-					fa = Vector3.new(fa.X, footY, fa.Z)
-					fb = Vector3.new(fb.X, footY, fb.Z)
+					fa = Vector3.new(pa[1].X, footY, pa[1].Z)
+					fb = Vector3.new(pb[1].X, footY, pb[1].Z)
 				end
 				local foot = (fa + fb) * 0.5
 				local top = (ta + tb) * 0.5
 				local along = ((fb + tb) - (fa + ta)) * 0.5
 				local up = top - foot
 				local len, height = along.Magnitude, up.Magnitude
-				if len < 1e-3 or height < 1e-3 then
+				if len < 1e-3 or height < 1e-3 or up.Y <= 0.25 then
+					if kb - ka > 1 then
+						local mid = (ka + kb) // 2
+						shade(ka, mid, kind)
+						shade(mid, kb, kind)
+					end
 					return
 				end
-				local x = along / len
+				-- Profiles stand upright across the plan curve. Pitching a tall caster
+				-- along the grade tipped its upper end into another cross-section and
+				-- forced a safe fit to throw away most of its foot/length on steep roads.
+				local planAlong = Vector3.new(along.X, 0, along.Z)
+				if planAlong.Magnitude < 1e-3 then return end
+				local x = planAlong.Unit
 				local y = (up - x * up:Dot(x)).Unit
 				-- the face's normal, pointing at the road: the road's side of the foot (x turned
 				-- round with it, so the frame stays right-handed)
@@ -1063,17 +1148,37 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 					-- as long as its top's own stretch (T-193): on the outside of a bend the longer
 					-- edge, so neighbours overlap up a tall face; on the inside the shorter, so it stays
 					-- out of a neighbour where the profiles fan in; and short of the body's ends (T-189)
-					local short, shift = fitEnds(ka, kb, kind, (tb - ta).Magnitude)
-					local centre = (foot + top) * 0.5 - y * ((shadeBack + gap) * 0.5) - toRoad * (back + shadeThick * 0.5) + along / len * shift
+					local short, shift = fitEnds(ka, kb, kind, ((tb - ta) * Vector3.new(1, 0, 1)).Magnitude)
+					local centre = (foot + top) * 0.5 - y * ((shadeBack + gap) * 0.5) - toRoad * (back + shadeThick * 0.5) + planAlong.Unit * shift
 					local cf = CFrame.fromMatrix(centre, x, y, toRoad)
-					plain(`RockShade_{tag}_{ka}`, Vector3.new(short, math.max(1, height + shadeBack - gap), shadeThick), cf, T.RockColour, Enum.Material.Slate)
+					local desired = Vector3.new(short, math.max(0, height + shadeBack - gap), shadeThick)
+					local fitted, size = Shadow.fit(cf, desired, facePlanes(ka, kb, side, kind), -toRoad)
+					if kb - ka > 1 and (not size or size.X < desired.X * 0.65 or size.Y < desired.Y * 0.7) then
+						local mid = (ka + kb) // 2
+						shade(ka, mid, kind)
+						shade(mid, kb, kind)
+						return
+					elseif fitted and size and size.X > 0.15 and size.Y > 0.25 and size.Z > 0.15 then
+						plain(`RockShade_{tag}_{ka}`, size, fitted, T.RockColour, Enum.Material.Slate)
+					end
+					if up.Y > shadeBack * 2 + T.RoadShadeSink then
+						footShade(ka, kb)
+					end
 					shadeTop(ka, kb, pa, pb)
 				else
 					-- behind the face is the road's side: inside the drop, under the grass
-					local short, shift = fitEnds(ka, kb, kind, math.max((fb - fa).Magnitude, (tb - ta).Magnitude))
-					local centre = (foot + top) * 0.5 + toRoad * (shadeBack + shadeThick * 0.5) + along / len * shift
+					local short, shift = fitEnds(ka, kb, kind, math.max(((fb - fa) * Vector3.new(1, 0, 1)).Magnitude, ((tb - ta) * Vector3.new(1, 0, 1)).Magnitude))
+					local centre = (foot + top) * 0.5 + toRoad * (shadeBack + shadeThick * 0.5) + planAlong.Unit * shift
 					local cf = CFrame.fromMatrix(centre, x, y, toRoad)
-					plain(`CliffShade_{tag}_{ka}`, Vector3.new(short, height, shadeThick), cf, T.CliffColour, Enum.Material.Slate)
+					local desired = Vector3.new(short, height, shadeThick)
+					local fitted, size = Shadow.fit(cf, desired, facePlanes(ka, kb, side, kind), toRoad)
+					if kb - ka > 1 and (not size or size.X < desired.X * 0.65 or size.Y < desired.Y * 0.7) then
+						local mid = (ka + kb) // 2
+						shade(ka, mid, kind)
+						shade(mid, kb, kind)
+					elseif fitted and size and size.X > 0.15 and size.Y > 0.25 and size.Z > 0.15 then
+						plain(`CliffShade_{tag}_{ka}`, size, fitted, T.CliffColour, Enum.Material.Slate)
+					end
 				end
 			end
 			local k0, kind0 = nil, nil
@@ -1105,54 +1210,56 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 			end
 		end
 
-		-- THE ROAD'S SURFACE, tarmac and runoff, casts through a flat box under each
-		-- `RoadShadeStep` of it: `RoadShadeSink` below the lowest point of the surface it
-		-- covers, so nothing at the road's edge (a gravel strip, a raised lip) is pierced,
-		-- and 1 stud in from the runoff's outer edge. A leg of road above another now
-		-- shades it, and no light comes up through the road.
+		-- The roof is below EVERY actual road vertex in this frame, including the
+		-- bevel. Every point of a rendered triangle is a convex combination of those
+		-- vertices, so this one bound certifies its whole surface without extending a
+		-- steep bevel's plane across unrelated tarmac/grass. Footprint planes still
+		-- follow every intermediate cut where bank/runoff can narrow.
 		do
-			local roadStep, sink, thick = T.RoadShadeStep, T.RoadShadeSink, T.RoadShadeThickness
-			local function under(ka: number, kb: number)
+			local function under(ka: number, kb: number, first: number, last: number, tag: string)
 				local sa, sb = cuts[ka], cuts[kb]
-				local c = Vector3.new(spline:terrainXYZ((sa + sb) * 0.5, 0))
+				local c = Vector3.new(spline:terrainXYZ((sa + sb) / 2, 0))
 				local chord = Vector3.new(spline:terrainXYZ(sb, 0)) - Vector3.new(spline:terrainXYZ(sa, 0))
-				if chord.Magnitude < 1e-3 then
-					return
-				end
+				if chord.Magnitude < 1e-3 then return end
 				local x = chord.Unit
-				local n = spline:terrainNormal((sa + sb) * 0.5, 0)
+				local n = spline:terrainNormal((sa + sb) / 2, 0)
 				local y = (n - x * n:Dot(x)).Unit
 				local z = x:Cross(y)
-				-- across: only as wide as the surface is at both ends AND the middle, so on a
-				-- bend (where the arc bows out of its chord) the box stays under the surface;
-				-- along: from end to end of the centre line, a stud over each end
 				local x0, x1, z0, z1, top = math.huge, -math.huge, -math.huge, math.huge, math.huge
-				for _, s in { sa, (sa + sb) * 0.5, sb } do
-					local wL = half + spline:runoffAt(s, -1) - 1
-					local wR = half + spline:runoffAt(s, 1) - 1
-					local zs = {}
-					for _, d in { -wL, -half, 0, half, wR } do
-						local p = Vector3.new(spline:terrainXYZ(s, d)) - c
-						table.insert(zs, p:Dot(z))
-						top = math.min(top, p:Dot(y))
-						if d == 0 then
-							x0, x1 = math.min(x0, p:Dot(x)), math.max(x1, p:Dot(x))
-						end
+				local planes = {}
+				endPlanes(planes, ka, kb)
+				for k = ka, kb do
+					local row = surfaceRows[k]
+					local za, zb = (row[first] - c):Dot(z), (row[last] - c):Dot(z)
+					z0, z1 = math.max(z0, math.min(za, zb)), math.min(z1, math.max(za, zb))
+					for j = first, last do
+						local p = row[j] - c
+						x0, x1, top = math.min(x0, p:Dot(x)), math.max(x1, p:Dot(x)), math.min(top, p:Dot(y))
 					end
-					z0 = math.max(z0, math.min(zs[1], zs[5]))
-					z1 = math.min(z1, math.max(zs[1], zs[5]))
+					if k < kb then
+						local nextRow = surfaceRows[k + 1]
+						Shadow.edge(planes, row[first], nextRow[first], (row[last] + nextRow[last]) / 2)
+						Shadow.edge(planes, row[last], nextRow[last], (row[first] + nextRow[first]) / 2)
+					end
 				end
-				if z1 - z0 < 1 then
-					return
+				if z1 - z0 < 0.25 then return end
+				table.insert(planes, { n = y, d = y:Dot(c) + top })
+				local thick = T.RoadShadeThickness
+				local centre = c + x * ((x0 + x1) / 2) + y * (top - T.RoadShadeSink - thick / 2) + z * ((z0 + z1) / 2)
+				local desired = Vector3.new(x1 - x0, thick, z1 - z0)
+				local cf, size = Shadow.fit(CFrame.fromMatrix(centre, x, y, z), desired, planes)
+				if kb - ka > 1 and (not size or size.X < desired.X * 0.65 or size.Z < desired.Z * 0.7) then
+					local mid = (ka + kb) // 2
+					under(ka, mid, first, last, tag)
+					under(mid, kb, first, last, tag)
+				elseif cf and size and size.X > 0.15 and size.Y > 0.15 and size.Z > 0.25 then
+					plain(`RoadShade_{tag}_{ka}`, size, cf, T.CliffColour, Enum.Material.Slate)
 				end
-				top -= sink
-				local centre = c + x * ((x0 + x1) * 0.5) + y * (top - thick * 0.5) + z * ((z0 + z1) * 0.5)
-				plain(`RoadShade_{ka}`, Vector3.new(x1 - x0 + 2, thick, z1 - z0), CFrame.fromMatrix(centre, x, y, z), T.CliffColour, Enum.Material.Slate)
 			end
 			local k0 = 1
 			for k = 2, #cuts do
-				if k == #cuts or cuts[k] - cuts[k0] >= roadStep then
-					under(k0, k)
+				if k == #cuts or cuts[k] - cuts[k0] >= T.RoadShadeStep then
+					under(k0, k, 1, #surfaceRows[k0], "Road")
 					k0 = k
 				end
 			end

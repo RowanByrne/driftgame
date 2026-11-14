@@ -2,6 +2,8 @@
 
 2026-11-14. Feature T-201, branch `feature/glass-settings`, DR-Lane1 only.
 
+Closeout: the user approved T-208 and the conductor merged it to Main on 2026-11-14. The combined lane 5 check recorded 21 source modules matched/compiled, Settings 12/12 and FxTests 101/101, with playtest stopped. The user then explicitly requested closing T-201. The selected settings shipped in T-208; no migration step remains. Physical gamepad delivery remains unverified. The checks below preserve the original lane-review record.
+
 ## Scope and result
 
 The selected A / Smoked glass shell is working with the user's first batch, Steering and UI. The view uses native panes/text/controls and a client-only whole-scene blur. The P row is an accurate keyboard-shortcut explanation rather than a touch toggle that would hide its own route back. The lane build awaits the user's visual approval. Physical gamepad delivery remains unverified.
