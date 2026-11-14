@@ -90,7 +90,9 @@ function SplineRoadController:_on(message: any)
 				return
 			end
 		end
-		local ok, built = pcall(SplineGen.replay, message.sections, { x = o.x, y = o.y, z = o.z, yaw = o.yaw })
+		-- the mountain's uphill heading, for the hillside between the legs (T-190)
+		local fall = if type(message.fall) == "number" and message.fall == message.fall then message.fall else nil
+		local ok, built = pcall(SplineGen.replay, message.sections, { x = o.x, y = o.y, z = o.z, yaw = o.yaw }, fall)
 		if not ok then
 			stats.bad += 1
 			warn(`[SplineRoad] the road would not replay: {built}`)
