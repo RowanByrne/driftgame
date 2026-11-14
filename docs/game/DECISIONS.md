@@ -68,3 +68,5 @@ The user's decisions about this game, so they aren't reopened later. Before prop
 - 2026-11-14: Tyre marks must retain their width as the car's slide angle changes; fix the tapering shown on the tarmac without changing the approved driving feel (T-207, C-21737d).
 
 - 2026-11-14: Every game code change, including a small fix, is built and checked by a lane worker, then presented for the user's lane test. The conductor merges only after the card is approved. Apply this to T-206 and T-207; keep T-205's already-completed Main merge (PROJECT.md Game-only rules, C-1ed8fd).
+
+- 2026-11-14: Road biomes categorise the existing terrain style: steep cliffs retain one uphill mountain side and one downhill drop, never a ridge with drops on both sides. Make the categories shorter and change more often, blending smoothly within road sections independently of switchbacks. The first field and small-cliff profile drawings are suitable. This corrects the original brief's two-sided-cliff interpretation and replaces layout v1; the user: "we are not majorly redesigning the style of the terrain we already have, just creating categories to fit it into" (T-203/T-204).

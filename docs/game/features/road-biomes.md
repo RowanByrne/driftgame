@@ -1,16 +1,16 @@
 # Feature: Road biomes
 
-**Status:** plan approved 2026-11-14; layout proposal v1 awaiting review (T-204). **Owner task:** T-203, built step by step in lane 2 on `feature/linked-biomes`.
+**Status:** plan approved 2026-11-14; revised layout v2 awaiting review after the user's correction (T-204). **Owner task:** T-203, built step by step in lane 2 on `feature/linked-biomes`.
 
 ## Goal
 
 Break up the almost constant cliffs with distinct stretches of Japanese mountain road: steep cliffs, smaller cliffs and open fields. The road moves back and forth between them through continuous terrain, so the player feels a change of place rather than a new scenery choice at every bend.
 
-The user's brief (2026-11-14) is steep cliffs on both sides with lots of guardrails and tight, twisty road; small cliffs with a drop on one side and a semi-steep to smooth terrain ramp on the other; and mostly flat fields with a slight dip down the mountain. This extends `mountain-road.md`, `mountain-direction.md` and the **As built** sections of `continuous-mountain.md`.
+The user clarified the brief on 2026-11-14: "we are not majorly redesigning the style of the terrain we already have, just creating categories to fit it into." Steep cliffs keep today's uphill mountain and downhill cliff. Small cliffs have a smaller downhill drop and a semi-steep to smooth rising bank uphill; fields are mostly flat with a slight fall down the mountain. Categories change frequently and blend while driving within an existing road section; switchbacks do not mark their boundaries. This extends `mountain-road.md`, `mountain-direction.md` and the **As built** sections of `continuous-mountain.md`.
 
 ## How it plays
 
-1. Start the same endless run. Long, linked terrain stretches are chosen from the run's seed and shared by everyone on that road.
+1. Start the same endless run. Shorter linked terrain categories are chosen from the run's seed and shared by everyone on that road, independently of road-section and switchback boundaries.
 2. Fields open the view and the land beside the road. Smaller-cliff sections bring back a one-sided drop and a rising hillside. Steep stretches feel more exposed, with tighter road and substantially more protection at hazardous edges.
 3. Grass, terrain slope, cliff height and road rhythm blend between those settings over a real stretch of road. The road never teleports to a new elevation or swaps a field straight into a vertical wall.
 4. The sequence keeps returning to gentler terrain; steep cliffs become an occasional contrast rather than the permanent setting.
@@ -20,11 +20,11 @@ The user's brief (2026-11-14) is steep cliffs on both sides with lots of guardra
 
 | Biome | Terrain | Road and protection |
 |---|---|---|
-| Steep cliffs | **Plan interpretation:** occasional ridge-like stretches with exposed drops on both sides, joined back into the mountain at their ends | Tight and twisty within the existing drivable radius, grade and bank limits. More guardrail runs, with each exposed side assessed independently |
+| Steep cliffs | Today's tall uphill mountain/rock face and deep downhill cliff, retaining the current shaping and safe fitting | Tight and twisty within the existing drivable radius, grade and bank limits. More guardrail runs protecting actual exposed edges |
 | Small cliffs | A smaller drop on the downhill side; a semi-steep bank easing into a smoother rising slope on the other | Mixed bends with breathing room. Rails follow actual exposed edges and bends, with fewer runs than steep cliffs |
 | Fields | Broad, mostly flat grass with a gentle fall in the mountain's downhill direction; no mandatory cliff immediately past the runoff | More open, sweeping road with fewer barriers. Grass retains its current grip and score behaviour |
 
-The interpretation of steep cliffs is stated on the plan for review: both-side drops imply a ridge, rather than the current uphill rock wall/downhill drop. The global mountain direction still makes sense; a ridge is a local terrain form, not a random flip of the fall line.
+The user rejected the two-drop ridge interpretation in v1. Keep the existing mountain shape and compass direction: one side uphill, the other downhill. This feature categorises and blends the terrain already in the game, with fields and gentler banks reducing how often tall cliffs dominate.
 
 ## Left out
 
@@ -41,8 +41,8 @@ Starting proposals, not measured tuning; keep the values in `Shared/Config/Splin
 | Item | Starting proposal |
 |---|---|
 | Long-run distance mix | Fields 45%, small cliffs 35%, steep cliffs 20%; gentler terrain remains the majority |
-| Established stretch length | About 1,600-3,200 studs, subject to fitting a coherent terrain/road transition |
-| Transition length | About 300-600 studs, long enough to blend the terrain and road parameters |
+| Category stretch length | Propose 400-900 studs from one boundary to the next; this includes the adjoining transition halves |
+| Transition length | Propose 180 studs centred on a category boundary, independent of road-section and switchback endpoints |
 | Same-biome repeats | Join them into one stretch or choose another; no pointless repeated boundary |
 | Field slope | A slight downhill fall, first try 2-6 degrees beside the road; fit safely between existing road legs |
 
@@ -92,21 +92,29 @@ None added; original generated scenery and the game's existing approved material
 
 Use the existing grass, gravel, rock, guardrail and mountain palette. No new texture uploads or sound work in this feature. Before building, show a representative route sketch and the three terrain cross-sections with their transition distances; the user approves the layout. Block it out in the feature lane, then get the user's drive-through approval before final scenery tuning, following `WORLD-BUILDING.md`.
 
-## Layout proposal v1 (T-204)
+## Revised layout v2 (T-204)
 
-Review drawings: [representative route](../../../assets/reference/road-biomes/route-v1.png)
-and [terrain cross-sections](../../../assets/reference/road-biomes/profiles-v1.png).
+Review drawings: [representative route](../../../assets/reference/road-biomes/route-v2.png)
+and [terrain cross-sections](../../../assets/reference/road-biomes/profiles-v2.png).
 The source beside them rebuilds both drawings with Pillow; these are design diagrams,
 not output from the road generator or measured drive results.
 
-The route sketch shows one 12,000-stud example: fields for 2,400 studs, small cliffs
-for 2,100, steep ridge for 2,400, small cliffs for 2,100, then fields for 3,000.
-Its nominal distance mix is 45% fields, 35% small cliffs and 20% steep ridges.
-It illustrates contrast and return to open terrain, rather than a five-leg loop the
-generator must repeat. Boundaries can land within a leg, not just at a hairpin.
+The user rejected v1's long, switchback-to-switchback drawing and two-drop ridge.
+The first two cross-sections were accepted as suitable; retain their field and small
+cliff shapes. The revised third profile shows the existing tall uphill rock face
+and deep downhill cliff. The v1 images remain only as superseded review history.
 
-Proposed established stretches vary from 1,600 to 3,200 studs. A transition occupies
-480 studs, centred on its boundary, with 240 studs on either side. Use a continuous
+The revised route shows one 4,000-stud example on a continuous road: fields 600,
+small cliffs 700, steep cliffs 400, fields 600, small cliffs 700, steep cliffs 400,
+then fields 600. Its nominal mix is 45% fields, 35% small cliffs and 20% steep
+cliffs. This is an example rather than a repeating pattern. Grey markers show
+arbitrary existing road-section ends independently of the category boundaries.
+They illustrate that blends can begin and finish partway through a section or bend.
+
+Proposed category stretches vary from 400 to 900 studs **boundary to boundary**.
+A transition occupies 180 studs, centred on its boundary, with 90 studs on either
+side. This leaves 220-720 studs fully established between adjacent blends. It does
+not add a 180-stud transition on top of a 400-900-stud established stretch. Use a continuous
 smooth blend, with a flat derivative at both ends, for terrain parameters. Road
 preference changes over the same interval while curvature/grade/bank keep their own
 existing easing limits. Count transition distance by its biome weights (half to each
@@ -115,8 +123,8 @@ the next stretch with a seed-derived, distance-deficit schedule rather than rero
 scenery per bend. All six directed transitions remain possible. Measure the resulting
 mix over long seeds before claiming the target is met.
 
-At an illustrative 100 studs/s, an established stretch takes 16-32 seconds, the
-transition 4.8 seconds and the pictured route two minutes. This pace is below the
+At an illustrative 100 studs/s, category boundaries arrive every 4-9 seconds, a
+transition takes 1.8 seconds and the pictured route 40 seconds. This pace is below the
 stock cars' top speeds (150-215 studs/s); it is not a measured average. Actual bends
 and drifts take longer.
 
@@ -124,13 +132,19 @@ and drifts take longer.
 |---|---|---|
 | Fields | 80 studs of gently sloping grass past each asphalt edge (210 studs across including the road); about 3.5 degrees down the mountain, easing from the road's bank. Visible outer banks delimit supported ground | Mostly sweeping bends and breathing room. Few rails unless a real nearby hazard remains |
 | Small cliffs | About 20 studs of runoff, a smooth-to-semi-steep uphill bank rising roughly 15-35 studs, and a 25-50-stud drop downhill | Mixed bends. Rails protect exposed bends; a gentle bank is ground rather than an invisible wall |
-| Steep ridges | About 10-20 studs of runoff per side, then exposed drops of roughly 80-160 studs on both sides. Join back into the ordinary mountain at the ends | More tight bends within today's limits; much more guardrail coverage, assessing each side independently |
+| Steep cliffs | Preserve today's tall uphill mountain/rock profile and deep downhill drop, with the same runoff and local clearance fitting. Current grand faces can reach 140-220 studs uphill and up to 200 studs downhill; these are existing maxima, not a new target forced everywhere | Prefer tighter bends within today's limits, with much more rail coverage at actual exposed edges |
 
 These are blockout targets for review, not minimums that overrule safe fitting. Close
 road legs and tight turns may reduce widths/heights; the visible ground must show
 that reduction. Tight gravel cliff edges can still occur where fully protected, but
 fields must not inherit random cliffs or tree walls immediately beside the asphalt.
 No new tree or prop art is needed. Leave field sightlines open.
+
+Keep the existing profile topology, mountain joins, grandeur/turnaround reductions
+and neighbouring-road caps. A category smoothly adjusts the scale and slope of those
+forms. It does not replace the mountain with a new terrain style or require a
+switchback at a category change. Bend selection is a gentle preference: its existing
+curvature, grade and bank safety easing can outlast the shorter terrain blend.
 
 The field is finite, not an invisible plane. The broad, gently sloped part ends in a
 drawn outer bank/rim; a real drop has no supporting floor. Any steep uphill boundary
@@ -170,13 +184,13 @@ before road/rail dressing and final tuning.
 - Deterministic schedule/profile tests: same seed and section history give the same biomes, terrain and joins; rejected turn previews do not consume state; late join and streamed replay match. Measure the three biome proportions and actual stretch lengths over several long seeds.
 - Exercise all six directed transitions between the three biomes, both sides of the road, valley floors/passes, recovery climbs, hairpins and nearby parallel road legs. Adjacent chunk contexts must agree on shared height and normals without a new visible seam.
 - Field and bank fixtures: wheel ground height/normal matches visible terrain; cross the road edge and transition at slow and high speed, stop on a bank, re-enter from grass and get out/walk/get back in. No invisible cliff or wall where the land is traversable, and no invisible floor over a real drop.
-- Verify field extent/projection, off-road progress, closing barrier, falling and respawn. Leaving one road leg's field must not jump to another leg or advance the run illegitimately. Validate rail geometry and collision on both exposed sides, including transitions and tight bends.
+- Verify field extent/projection, off-road progress, closing barrier, falling and respawn. Leaving one road leg's field must not jump to another leg or advance the run illegitimately. Validate rail geometry and collision on actual exposed edges, including transitions and tight bends.
 - Check the mesh-unavailable fallback, day/night readability, fixed triangle/mesh budgets and streamed build/frame cost on representative steep, gentle and field stretches. Existing road/turn, hillside, mesh, world, streaming, body/suspension and run checks still apply; record pre-existing failures separately.
 - Source-gate the changed scripts, run quiet lane playtests, inspect the console and stop every playtest. Use numbers and debug profiles to prove behaviour; at most three visual screenshots per task. The user drives each biome and the joins in the feature lane before merge.
 
 ## Planned steps
 
-1. **Sketch biomes and linked stretches** - route/cross-section sketch, distribution and transition plan; the user reviews the ridge interpretation and approves the layout.
+1. **Sketch biomes and linked stretches** - route/cross-section sketch, distribution and transition plan; the user reviews shorter categories of the existing terrain and approves the layout.
 2. **Build shared biome terrain** - deterministic section contract/schedule, efficient shared ground, continuous profiles and the lane blockout, with matching car/walking/fallback support.
 3. **Shape roads and rails by biome** - safe changes to bend rhythm and hazard-based guardrails; dress the chosen profiles with existing scenery.
 4. **Check and tune long biome runs** - every transition, replay, off-road behaviour, long-run distribution, streaming budgets and representative user drives.
@@ -185,6 +199,6 @@ The feature's own agent owns these sequential steps and reserves its lane after 
 
 ## Open questions
 
-- The plan treats cliffs on both sides as a ridge with two exposed drops; the user can revise that interpretation before the layout is built.
-- Exact field width, small-cliff height, ridge profile and rail coverage are settled against the layout sketch and measured blockout. They are not permission to widen the tarmac or change grass handling.
+- The steep category keeps the current uphill mountain/downhill drop; the user explicitly rejected a two-drop ridge. No terrain style redesign is authorised.
+- The first two v1 side profiles are suitable. Exact safe field extent, small-cliff fitting and rail coverage are settled in the measured blockout. They are not permission to widen the tarmac or change grass handling.
 - Initial distribution and stretch/transition lengths above are proposed tuning, to be adjusted by the user's drive.

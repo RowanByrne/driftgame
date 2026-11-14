@@ -9,7 +9,7 @@ Every task in progress and the files it owns, so parallel sessions and workers n
 
 | Branch | Lane | Files owned | Since |
 |---|---|---|---|
-| `feature/linked-biomes` (T-203, sketch T-204) | 2 | `docs/game/features/road-biomes.md`; `assets/reference/road-biomes/*` (new) | 2026-11-14 |
+| `feature/linked-biomes` (T-203, sketch T-204) | 2 | `docs/game/features/road-biomes.md`; `assets/reference/road-biomes/*` (new); `docs/game/DECISIONS.md` (append T-203 clarification only) | 2026-11-14 |
 | `agent/consistent-tyre-mark-width` (T-207) | 3 | `src/StarterPlayerScripts/Drift/Wheels.luau`, `src/ServerScriptService/Tests/FxTests.luau`, `docs/game/features/car-fx.md` | 2026-11-14 |
 | `agent/contained-shadow-blocks` (T-206) | 4 | `src/ReplicatedStorage/Shared/Road/SplineMesh.luau`, `src/ReplicatedStorage/Shared/Road/SplineShadow.luau` (new, if needed), `src/ServerScriptService/Tests/SplineMeshTests.luau`, `docs/game/features/mountain-road.md` | 2026-11-14 |
 
