@@ -2,7 +2,7 @@
 
 This game's code as built: what each module does and where things are registered. The rules every game follows are in docs/workflow/CODING.md; what other code relies on (data, remotes, tags, attributes, events) is in `CONTRACTS.md` and `EVENT-CATALOG.md`. Started in the Foundation phase; update it in the same commit as the code it describes. Replace each prompt with the answer.
 
-**Where it stands:** only the prototype skeleton and the drift prototype exist. The rest of the foundation kit (DataService, PlayerData, Sounds, the UI kit, notifications, analytics, live config, the admin console) is deliberately not built yet: the prototype's only job is to prove the drift feel (`ROADMAP.md` "Next"). It is built before anything that saves, sells or scores.
+**Where it stands:** the drift prototype and the run, score, garage and admin systems listed below are implemented. The foundation kit remains incomplete: `DataService` and `PlayerData` are not built, and other gaps are identified in the registries. Settings UI work is on its feature branch. The current phase is recorded in `PROJECT.md`.
 
 ## Overview
 
