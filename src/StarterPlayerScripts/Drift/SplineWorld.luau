@@ -78,6 +78,7 @@ export type SplineWorld = Model.World & {
 	stats: Stats,
 	setClosing: (s: number?) -> (),
 	locate: (pos: Vector3) -> (number?, number?),
+	resetHint: () -> (),
 	destroy: () -> (),
 }
 
@@ -86,7 +87,7 @@ function SplineWorld.new(spline: Spline.Spline, base: Model.World?): SplineWorld
 	local R = Config.Road
 	local T = Config.Spline.Terrain
 	local half = R.Width * 0.5
-	local reach = half + T.RunoffMax + REACH_PAST_EDGE
+	local reach = half + math.max(T.RunoffMax,if spline:hasBiomeGround() then Config.Spline.Biomes.Width[1] else 0) + REACH_PAST_EDGE
 	local rayTop = C.GroundRayUp
 	local rayBottom = C.GroundRayUp - C.GroundRayLength
 	-- the car's box, as `Drift/World` has it: its body, not its track
@@ -122,6 +123,12 @@ function SplineWorld.new(spline: Spline.Spline, base: Model.World?): SplineWorld
 		local s, d
 		if hint then
 			s, d = spline:projectFrom(x, z, hint)
+			-- A field is owned by this road leg. Falling beyond it must not attach
+			-- the car to another nearby leg through a wider grid search.
+			if spline:hasBiomeGround() then
+				if s and d and math.abs(d)<=reach then return s,d end
+				return nil,nil
+			end
 		end
 		if not s or not d or math.abs(d) > reach then
 			stats.searches += 1
@@ -143,6 +150,9 @@ function SplineWorld.new(spline: Spline.Spline, base: Model.World?): SplineWorld
 
 	function self.setClosing(s: number?)
 		self.closing = s
+	end
+	function self.resetHint()
+		self.hint=nil
 	end
 
 	------------------------------------------------------------------ the ground
@@ -248,7 +258,7 @@ function SplineWorld.new(spline: Spline.Spline, base: Model.World?): SplineWorld
 		if kind == Spline.CLIFF then
 			return false
 		end
-		local height = if kind == Spline.ROCK then T.RockHeight[1] else T.HedgeHeight
+		local height = spline:boundaryHeight(s,side)
 		return standsBeside(s, side * (half + spline:runoffAt(s, side)), height, carY)
 	end
 

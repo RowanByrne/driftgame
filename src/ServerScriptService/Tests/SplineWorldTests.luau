@@ -679,4 +679,72 @@ function Tests.run(which: { string }?, ...)
 	return { passed = passed, total = #checks, checks = checks }
 end
 
+-- Shared biome ground, without a mesh yardstick or any placed geometry. The parts
+-- and mesh comparison follows once the complete visual blockout is enabled.
+function Tests.biomes()
+	local old=Config.Spline.Biomes.GroundEnabled
+	Config.Spline.Biomes.GroundEnabled=true
+	local ok,result=xpcall(function()
+		local SplineWorld=require(DriftFolder.SplineWorld)
+		local Biome=require(ReplicatedStorage.Shared.Road.SplineBiome)
+		local Profile=require(ReplicatedStorage.Shared.Road.SplineProfile)
+		local D=Config.Drift
+		local checks={}
+		local function check(name,pass,detail)table.insert(checks,{name=name,ok=pass,detail=detail})end
+		local function fixture(kind,width,left,right)
+			local sp=Spline.new({x=0,y=0,z=0,yaw=0})
+			sp.fall=math.pi*.5
+			sp:append({len=1200,k={1200,0},g={1200,0},b={1200,0},rl={1200,width},rr={1200,width},
+				el={1200,Spline.ROCK},er={1200,Spline.CLIFF},bm={0,kind,0},hl={320,left,1200,left},hr={320,right,1200,right}})
+			local world=SplineWorld.new(sp)
+			world.hint=500
+			return sp,world
+		end
+		local field,fw=fixture(Biome.FIELD,80,4.7,-4.7)
+		local function pose(sp,s,d)
+			return Vector3.new(sp:terrainXYZ(s,d))+Vector3.yAxis*D.RideHeight
+		end
+		local hits,worst=0,0
+		for _,d in {-100,-80,-60,-30,0,30,60,80,100} do
+			local pos=pose(field,500,d)
+			local hit=fw.probe(pos)
+			if hit then hits+=1;worst=math.max(worst,math.abs(hit.y-(pos.Y-D.RideHeight))) end
+		end
+		check("all of the finite field supports the car at its shared height",hits==9 and worst<1e-6,`{hits} probes; largest height difference {worst}`)
+		local noWalls=true
+		for _,side in {-1,1} do
+			local safe=fw.sweep(pose(field,500,side*60),pose(field,500,side*90),0)
+			noWalls=noWalls and safe==nil
+		end
+		check("the old runoff edge leaves no invisible field wall",noWalls,"crossed the former edge on both sides inside the actual field")
+		check("a real downhill field rim has no invisible floor",fw.probe(pose(field,500,111))==nil,"support ends beyond the drawn outer rim")
+		check("the finite uphill field has no hidden plane beyond its bank",fw.probe(pose(field,500,-111))==nil,"both extents are finite")
+		local boundary=fw.sweep(pose(field,500,-96),pose(field,500,-115),0)
+		check("the outer uphill rock still stops the car",boundary~=nil,"wall stands at the actual field boundary, not the old runoff")
+		local bank,bw=fixture(Biome.SMALL,60,25,0)
+		local pos=pose(bank,500,-70)
+		local hit=bw.probe(pos)
+		local safe=bw.sweep(pose(bank,500,-45),pos,0)
+		check("a low uphill bank is traversable ground",hit~=nil and hit.surface=="grass" and safe==nil and hit.y>5,"a probe and sweep cross onto the bank")
+		local n=bank:terrainNormal(500,-70)
+		local slope=math.sqrt(n.X*n.X+n.Z*n.Z)/n.Y
+		check("bank normals follow its real slope within the support limit",slope>0.1 and slope<=Config.Spline.Biomes.BankMaxSlope+0.01,`cross slope {slope}`)
+		local face=Profile.profile(bank,500,-1,Spline.ROCK)
+		local endY=bank:terrainY(500,-85)
+		check("the structural mountain begins on the shared bank height",math.abs(face[1].Y-endY)<1e-6 and face[5].Y-endY<=10+1e-6,`bank {endY}, face starts {face[1].Y}`)
+		local snapshot=bank:terrainY(500,-70)
+		bank:append({len=100,k={100,0},g={100,0},b={100,0}})
+		check("appending road cannot change already occupied ground",bank:terrainY(500,-70)==snapshot,"serialized lift and width tracks remain unchanged")
+		bw.resetHint()
+		local found=bw.locate(pose(bank,900,0))
+		check("an explicit placement reset permits road lookup again",found~=nil and math.abs(found-900)<1e-4,"respawns clear leg ownership before locating")
+		local passed=0
+		for _,c in checks do if c.ok then passed+=1 end end
+		return {passed=passed,total=#checks,checks=checks}
+	end,debug.traceback)
+	Config.Spline.Biomes.GroundEnabled=old
+	if not ok then return {passed=0,total=1,checks={{name="shared biome ground fixture completes",ok=false,detail=result}}} end
+	return result
+end
+
 return Tests

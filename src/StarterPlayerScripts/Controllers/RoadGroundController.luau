@@ -154,6 +154,10 @@ local function locate(spline: any, x: number, z: number, reach: number): (number
 	local s, d
 	if hint then
 		s, d = spline:projectFrom(x, z, hint)
+		if spline:hasBiomeGround() then
+			if s and d and math.abs(d)<=reach then hint=s;return s,d end
+			return nil,nil
+		end
 	end
 	if not s or not d or math.abs(d) > reach then
 		s, d = spline:project(x, z, reach)
@@ -314,7 +318,7 @@ local function plan(spline: any, sc: number, dc: number, closingS: number?): { [
 				local a, b, kind = span[1], span[2], span[3]
 				local wa, wb = spline:runoffAt(a, side), spline:runoffAt(b, side)
 				local key = `{tag}{n}:{g}`
-				if kind == Spline.CLIFF then
+				if kind == Spline.CLIFF or spline:hasBiomeGround() then
 					-- ground to the lip and not a hair past it: whole tiles as far as the
 					-- narrowest the grass gets here, then the rest in strips
 					local wMin = math.min(wa, wb, spline:runoffAt((a + b) * 0.5, side))
@@ -328,6 +332,10 @@ local function plan(spline: any, sc: number, dc: number, closingS: number?): { [
 						local sb = a + (b - a) * i / strips
 						local w = math.min(spline:runoffAt(sa, side), spline:runoffAt(sb, side))
 						grass(`l{key}:{i}`, sa, sb, full * PIECE, w)
+					end
+					if kind~=Spline.CLIFF then
+						local height=spline:boundaryHeight((a+b)*.5,side)
+						if height>0 then wall(`w{key}`,"wall",a,b,side,half+wa,half+wb,ROCK_THICK,height,Enum.Material.Rock) end
 					end
 				else
 					-- ground out under the wall, then the wall on the grass's outer edge
@@ -359,10 +367,20 @@ local function plan(spline: any, sc: number, dc: number, closingS: number?): { [
 		local wider = math.max(spline:runoffAt(closingS, -1), spline:runoffAt(closingS, 1)) + T.EdgeDepth
 		local wide = R.Width + 2 * wider
 		local bankRise = wide * 0.5 * math.abs(math.tan(spline:bankAt(closingS)))
-		local height = CLOSING_WALL + 2 * bankRise
+		local bottom=y-SINK-bankRise
+		local top=y+CLOSING_WALL+bankRise
+		if spline:hasBiomeGround() then
+			for _,side in {-1,1} do
+				local edge=half+spline:runoffAt(closingS,side)
+				for t=0,1,.25 do
+					local ground=spline:terrainY(closingS,side*edge*t)
+					bottom,top=math.min(bottom,ground-SINK),math.max(top,ground+CLOSING_WALL)
+				end
+			end
+		end
 		want.closing = {
-			size = Vector3.new(wide, height + SINK, 1),
-			cf = CFrame.new(x, y + (CLOSING_WALL - SINK) * 0.5, z) * CFrame.Angles(0, spline:yawAt(closingS), 0) * CFrame.new(0, 0, 0.5),
+			size = Vector3.new(wide, top-bottom, 1),
+			cf = CFrame.new(x, (bottom+top)*.5, z) * CFrame.Angles(0, spline:yawAt(closingS), 0) * CFrame.new(0, 0, 0.5),
 			material = Enum.Material.SmoothPlastic,
 			kind = "closing",
 		}
@@ -427,7 +445,7 @@ local function frame()
 		return
 	end
 	local R = Config.Road
-	local reach = R.Width * 0.5 + Config.Spline.Terrain.RunoffMax + ACROSS
+	local reach = R.Width * 0.5 + math.max(Config.Spline.Terrain.RunoffMax,if spline:hasBiomeGround() then Config.Spline.Biomes.Width[1] else 0) + ACROSS
 	local pos = root.Position
 	local s, d = locate(spline, pos.X, pos.Z, reach)
 	if not s or not d then
@@ -464,6 +482,11 @@ function RoadGroundController:Start()
 		end
 	end)
 	Net.event("CarSpawn").OnClientEvent:Connect(function()
+		hint=nil
+		clear()
+	end)
+	Net.event("CarRespawn").OnClientEvent:Connect(function()
+		hint=nil
 		clear()
 	end)
 	-- Before the drift step (`Input + 1`), so a car that starts driving this frame has

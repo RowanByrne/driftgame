@@ -1,4 +1,5 @@
 --!strict
+--!native
 -- Spline: the spline road's curve, as pure maths (features/spline-road.md, T-132).
 -- No instances, no Workspace, no service: the server, every client and the tests all run
 -- the same arithmetic on the same knots.
@@ -76,6 +77,8 @@ export type Section = {
 	gv: { number }?, -- groves {side, seed, ...}: trees on that side's runoff, the whole section (T-183)
 	gd: { number }?, -- grandeur knots {ds, g, ...}, g -1..1 (below 0: lower rock, T-189), the last at `len` (T-185)
 	bm: { number }?, -- biome records {absoluteBoundary, destinationKind, blendLength, ...} (T-203)
+	hl: { number }?, -- signed outer-bank lift knots {ds, height}, left (T-203)
+	hr: { number }?, -- right; carry previous height if absent
 }
 
 -- The edge kinds, as they go over the wire.
@@ -130,6 +133,8 @@ export type Spline = typeof(setmetatable(
 		groveR: Groves,
 		grand: Track?, -- the rock and cliff faces' grandeur (T-185), made on the first section
 		biomes: { number }?, -- immutable absolute transition records; nil uses legacy terrain
+		liftL: Track,
+		liftR: Track,
 		-- the mountain's uphill heading (a yaw), fixed for the road (T-166): set by whoever
 		-- makes the road (`SplineGen`), nil on a road with no mountain. The hillside's slope
 		-- reads it (`Road/SplineHill`, T-190)
@@ -257,6 +262,8 @@ function Spline.new(origin: Origin?): Spline
 		groveR = { a = {}, b = {}, seed = {} },
 		grand = nil,
 		biomes = nil :: { number }?,
+		liftL = newTrack(0, true),
+		liftR = newTrack(0, true),
 		fall = nil :: number?,
 	}, Spline)
 	return self
@@ -442,6 +449,21 @@ end
 -- refused before any of it is laid, so a half-appended section never exists.
 local function checkTerrain(self: Spline, sec: Section)
 	local len = sec.len
+	for index, knots in {sec.hl,sec.hr} do
+		if knots then
+			local C=Config.Spline.Biomes
+			local track=if index==1 then self.liftL else self.liftR
+			assert(#knots>=2 and #knots%2==0 and math.abs(knots[#knots-1]-len)<1e-6,"Spline: bank height knots must end at the section's end")
+			local last,value=0,track.v[#track.v]
+			local limit=math.max(C.BankRise,C.Width[1]*math.tan(math.rad(C.FieldSlope)))
+			for j=1,#knots,2 do
+				local at,h=knots[j],knots[j+1]
+				assert(at==at and h==h and at>last and at<=len and math.abs(h)<=limit+1e-6,"Spline: finite bank heights in order and inside the profile envelope")
+				assert(math.abs(h-value)<=C.GroundHeightRate*(at-last)+1e-6,"Spline: bank height changes too quickly")
+				last,value=at,h
+			end
+		end
+	end
 	for _, knots in { sec.rl, sec.rr } do
 		if knots then
 			assert(#knots >= 2 and #knots % 2 == 0 and math.abs(knots[#knots - 1] - len) < 1e-6, "Spline: runoff knots must end at the section's end")
@@ -541,6 +563,8 @@ function Spline.append(self: Spline, sec: Section)
 	local grand = self.grand :: Track
 	appendTrack(grand, nil, s0, sec.gd or { sec.len, grand.v[#grand.v] })
 	self.biomes = Biome.commit(self.biomes, biomeAdditions)
+	appendTrack(self.liftL,nil,s0,sec.hl or {sec.len,self.liftL.v[#self.liftL.v]})
+	appendTrack(self.liftR,nil,s0,sec.hr or {sec.len,self.liftR.v[#self.liftR.v]})
 	self.length = s1
 	self.sections += 1
 	local step = self.step
@@ -676,6 +700,22 @@ function Spline.biomeAt(self: Spline, s: number): (number?, number?, number)
 	return Biome.at(self.biomes, s)
 end
 
+function Spline.hasBiomeGround(self:Spline):boolean
+	return self.biomes~=nil and Config.Spline.Biomes.GroundEnabled
+end
+
+function Spline.edgeLiftAt(self:Spline,s:number,side:number):number
+	return (valueAt(if side<0 then self.liftL else self.liftR,s))
+end
+
+function Spline.boundaryHeight(self:Spline,s:number,side:number):number
+	local kind=self:edgeAt(s,side)
+	if kind==Spline.CLIFF then return 0 end
+	local old=if kind==Spline.ROCK then Config.Spline.Terrain.RockHeight[1] else Config.Spline.Terrain.HedgeHeight
+	if not self:hasBiomeGround() then return old end
+	return Biome.mix(self.biomes,s,Config.Spline.Biomes.SolidHeight,old)
+end
+
 -- How grand the rock and cliff faces are at `s`, 0..1 (T-185): eased between the knots.
 function Spline.grandAt(self: Spline, s: number): number
 	local t = self.grand
@@ -806,7 +846,18 @@ local function groundY(self: Spline, s: number, d: number): (number, number, num
 	else
 		off = e - e * e / (2 * w)
 	end
-	return self:heightAt(s) + side * tb * (half + off), e, w
+	local lift=0
+	if self:hasBiomeGround() then
+		local start=lipWidth(w)
+		local span=math.max(w-start,1e-6)
+		local u=math.clamp((e-start)/span,0,1)
+		-- u^2(2-u) begins tangent to the road shoulder and reaches the outer
+		-- bank with a gentle slope. Its maximum derivative is4/3.
+		local maximum=0.75*Config.Spline.Biomes.BankMaxSlope*span
+		local height=math.clamp(self:edgeLiftAt(s,side),-maximum,maximum)
+		lift=height*u*u*(2-u)
+	end
+	return self:heightAt(s) + side * tb * (half + off) + lift, e, w
 end
 
 function Spline.terrainY(self: Spline, s: number, d: number): number
@@ -878,6 +929,7 @@ function Spline.groundKind(self: Spline, s: number, d: number): number?
 		-- the road's bevel down to the grass is gravel too (T-184)
 		return if a - half <= lipWidth(w) or self:gravelAt(s, side) then Spline.GRAVEL else Spline.GRASS
 	end
+	if self:hasBiomeGround() then return nil end
 	if self:edgeAt(s, side) == Spline.CLIFF then
 		return nil
 	end

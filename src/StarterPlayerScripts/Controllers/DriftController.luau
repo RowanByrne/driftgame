@@ -408,6 +408,7 @@ function DriftController:_attach(car: Model, spawnCFrame: CFrame)
 	self.rigAskedAt = os.clock()
 	self.rigWarned = false
 	self.runner = Sim.newRunner(spawnCFrame)
+	if self.world and (self.world :: any).resetHint then (self.world :: any).resetHint() end
 	self.remoteCars:SetOwnCar(car)
 	self.wheels:Cut()
 	self.engineSound:Cut()
@@ -498,6 +499,7 @@ function DriftController:_placeAt(cf: CFrame)
 	end
 	self.runner = Sim.newRunner(cf)
 	self.respawns += 1
+	if self.world and (self.world :: any).resetHint then (self.world :: any).resetHint() end
 	-- Everything off BEFORE the car is put down. A trail that is still enabled across a
 	-- jump draws one straight black line from where the car was to where it now is,
 	-- across the whole world (T-062). The sounds are cut with them: a squeal that was

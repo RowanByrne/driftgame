@@ -576,6 +576,7 @@ function SplineGen._terrain(self: Gen, sec: Spline.Section)
 	-- stream at all, so it changes nothing else the road chooses
 	sec.gd = self:_grand(sec)
 	if self.biomes and Config.Spline.Biomes.GroundEnabled and tag~="Start" then self:_fitGround(sec) end
+	if self.biomes and Config.Spline.Biomes.GroundEnabled then self:_groundHeights(sec) end
 	self.turning = nil
 end
 
@@ -1327,6 +1328,59 @@ function SplineGen._registerGround(self:Gen,s0:number,s1:number)
 		self.corridors:add(cell)
 		previous=nextRow
 		s+=cs
+	end
+end
+
+-- Signed bank lifts are serialized independently of the distant hill. They carry
+-- smoothly across section/edge-kind changes and cannot move when another leg arrives.
+function SplineGen._groundHeights(self:Gen,sec:Spline.Section)
+	local sp=self.spline
+	local s0=sp.length
+	local C,T=Config.Spline.Biomes,Config.Spline.Terrain
+	local half=Config.Road.Width*.5
+	local _,_,yaw0,k0=sp:tip()
+	local function curvature(u:number):number
+		local at,k=0,k0
+		for i=1,#sec.k,2 do
+			if u<=sec.k[i] then return k+(sec.k[i+1]-k)*(u-at)/math.max(sec.k[i]-at,1e-9) end
+			at,k=sec.k[i],sec.k[i+1]
+		end
+		return k
+	end
+	for _,side in {-1,1} do
+		local widths=if side<0 then sec.rl :: {number} else sec.rr :: {number}
+		local edges=if side<0 then sec.el :: {number} else sec.er :: {number}
+		local function target(u:number):number
+			local from,width=0,sp:runoffRaw(s0,side)
+			for i=1,#widths,2 do
+				if u<=widths[i] then
+					local t=math.clamp((u-from)/math.max(widths[i]-from,1e-9),0,1)
+					width+=(widths[i+1]-width)*t*t*(3-2*t)
+					break
+				end
+				from,width=widths[i],widths[i+1]
+			end
+			local k=curvature(u)
+			if k~=0 and (k>0)==(side<0) then width=math.max(0,math.min(width,T.InsideShare/math.abs(k)-half)) end
+			local kind=edges[#edges]
+			for i=1,#edges,2 do if u<=edges[i] then kind=edges[i+1];break end end
+			local across=math.sin(yawAlong(yaw0,k0,sec.k,u)-self.fall)^2
+			local sign=if kind==Spline.ROCK then 1 else -1
+			local bevel=math.min(T.RoadLipWidth,width*T.LipShare)
+			local field=sign*math.tan(math.rad(C.FieldSlope))*math.max(0,width-bevel)*across
+			local bank=if kind==Spline.ROCK then C.BankRise*across else 0
+			return Biome.mix(self.biomes and self.biomes.list,s0+u,{field,bank,0},0)
+		end
+		local out={}
+		local last,value=0,sp:edgeLiftAt(s0,side)
+		local u=math.min(C.GroundHeightKnot,sec.len)
+		while true do
+			value=math.clamp(target(u),value-C.GroundHeightRate*(u-last),value+C.GroundHeightRate*(u-last))
+			table.insert(out,u);table.insert(out,value)
+			if u>=sec.len then break end
+			last,u=u,math.min(u+C.GroundHeightKnot,sec.len)
+		end
+		if side<0 then sec.hl=out else sec.hr=out end
 	end
 end
 

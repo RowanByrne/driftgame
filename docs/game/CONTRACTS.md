@@ -382,3 +382,36 @@ by section identity and start distance; it is consumed before the real carve and
 is never added to a network section. Rejected previews cannot change live cells,
 schedule streams or this cache. Shared height/normal/boundary consumers follow in
 the same terrain step before this construction switch is enabled for review.
+
+### Shared bank surface and finite boundaries
+
+`Spline.Section.hl/hr` optionally carry signed outer-bank lift as eased
+`{ds,height,...}` knots, ending at `len`. They start from the previous section's
+value (zero before any), carry forward if absent, stay within the configured
+field/bank envelope and change no faster than `GroundHeightRate` between knots.
+Validation happens before appending any track. The server derives them from the
+continuous biome phase, fitted width, existing uphill/downhill side and fall line.
+They carry through a side change without a height jump. Clients replay these
+numbers rather than regenerating bank choices.
+
+When biome ground is enabled, `terrainY/terrainXYZ/terrainNormal/groundKind` include
+the same bank surface used for car probes, walking tiles and drawing. The gravel
+bevel retains its previous height/material/normal convention. Past its foot,
+`u^2(2-u)` eases into the signed outer-bank lift, clamped to `BankMaxSlope` with
+the actual fitted width. A field gently falls down the mountain; the lower uphill
+bank is traversable grass. Grip and score multipliers are unchanged.
+
+| Module | API | Contract |
+|---|---|---|
+| `Road/Spline` | `hasBiomeGround()`, `edgeLiftAt(s,side)` | Whether this road uses the complete biome-ground construction switch, and the replayed signed bank-lift track. A road without biome records retains the previous surface semantics |
+| `Road/Spline` | `boundaryHeight(s,side)` | Shared solid-boundary height at the supported strip's outer edge. Cliffs have no wall; rock/hedge legacy defaults remain on older roads. The field/bank wall is at the actual extent, not at the former runoff width |
+| `Drift/SplineWorld` | `resetHint()` | Clear road-leg ownership on an explicit placement/respawn. Biome-ground lookups with a valid hint stay on that leg and do not fall back to a wider grid search onto another nearby leg |
+
+Both sides of a biome field have finite support. `groundKind` returns nil past
+the fitted strip, and the drawn outer bank/face/drop marks that limit. Car and
+walking support end at the same extent. Walking walls use the same low boundary,
+and its closing barrier covers the bank heights. `DriftController` clears the
+projection hint on legitimate attach/placement; walking clears its hint on car
+spawn/respawn. The structural profile retains its existing topology and is only
+scaled down for fields/small cliffs; its first point stands on the shared bank.
+Distant hillside caps do not rescale the occupied bank surface.
