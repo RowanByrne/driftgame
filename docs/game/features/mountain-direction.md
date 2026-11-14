@@ -173,3 +173,12 @@ The fall line, the legs and the turnarounds, and the descent.
 - **Low past a turn** (the user, 2026-11-13): after the mountain changes sides the uphill side
   stays hedge for `Terrain.UphillLowAfterTurn` (400) studs, since the leg you came down is right
   above. The drop side keeps its cliff. **Replaced by T-189** (DECISIONS.md 2026-11-13): no hedges; the edges change sides at one point, where the heading crosses the fall line, and the uphill side is rock right away, drawn low where the leg above leaves no room (`mountain-road.md` "One mountain through the turns").
+
+### Continuous-mountain turn fitting (T-199)
+
+Sharp planned turns now include their easing to straight and a 260-stud straight continuation,
+with the bank easing flat. The hillside check sees that real next-leg influence before accepting
+the turn. This adds the short straight to the effective spacing of double hairpins and switchback
+gaps beyond the bare ranges above. The descending grade bias and grade anticipation at a valley
+floor/pass retain the same limits and periodic climbs. See `continuous-mountain.md` for results,
+preferred limits and the bounded fallback.

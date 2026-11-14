@@ -41,6 +41,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Config = require(ReplicatedStorage.Shared.Config)
 local Spline = require(script.Parent.Spline)
+local SplineTurnFit = require(script.Parent.SplineTurnFit)
 
 local SplineGen = {}
 SplineGen.__index = SplineGen
@@ -62,6 +63,10 @@ export type Stats = {
 	doubles: number,
 	sideways: number,
 	straightens: number,
+	hillChecked: number,
+	hillRejected: number,
+	hillRelaxed: number,
+	hillTurns: number,
 	turnsRefused: number, -- a planned turn that would have crowded old road, run on and retried
 	climbs: number, -- times the descent bottomed out and a climb began
 	cliffSwaps: number, -- times the mountain changed sides
@@ -84,6 +89,7 @@ export type Item = {
 	tag: string?,
 	window: number?,
 	started: boolean?,
+	hillRetries: number?, -- bounded location retries for terrain fit (T-190)
 }
 
 export type Gen = typeof(setmetatable(
@@ -116,6 +122,7 @@ export type Gen = typeof(setmetatable(
 		prng: Random, -- the plan's own stream
 		plan: { Item },
 		turns: { { any } }, -- every planned turn laid, {s0, s1, what}: the server's record, for tests
+	turnFits: {any}, -- accepted preflight measurements, server only
 		aim: number, -- the heading random sections keep near...
 		limit: number, -- ...and how far off it they may go
 		upSign: number, -- which way off `aim` (1 left, -1 right) is up the slope; 0 none
@@ -149,6 +156,11 @@ local function sign(x: number): number
 	return if x > 0 then 1 elseif x < 0 then -1 else 0
 end
 
+-- A fitted turn ends straight; its held bend still determines its outside and carved apex.
+local function bendCurvature(knots: {number}): number
+	for j=#knots,2,-2 do if knots[j]~=0 then return knots[j] end end
+	return 0
+end
 -- The planned turns the mountain changes sides through: a turnaround, by either of the
 -- switchback's two bends, and the double hairpin's two.
 local TURNAROUNDS = { turnaround = true, switchbackOut = true, double = true, doubleOut = true }
@@ -197,6 +209,7 @@ function SplineGen.new(seed: number, origin: Spline.Origin?, clearOverride: numb
 		prng = Random.new((seed * 13 + 4099) % 2 ^ 31),
 		plan = {},
 		turns = {},
+		turnFits = {},
 		aim = spline.origin.yaw,
 		limit = math.rad(Config.Spline.HeadingLimit),
 		upSign = 0,
@@ -231,6 +244,10 @@ function SplineGen.new(seed: number, origin: Spline.Origin?, clearOverride: numb
 			sideways = 0,
 			straightens = 0,
 			turnsRefused = 0,
+			hillChecked = 0,
+			hillRejected = 0,
+			hillRelaxed = 0,
+			hillTurns = 0,
 			climbs = 0,
 			cliffSwaps = 0,
 			tight = 0,
@@ -456,7 +473,7 @@ function SplineGen._terrain(self: Gen, sec: Spline.Section)
 	local runMin, runMax = T.KRailRun[1], T.KRailRun[2]
 	local kr: { number } = {}
 	if bend then
-		local kEnd = sec.k[#sec.k]
+		local kEnd = bendCurvature(sec.k)
 		local outside = if kEnd > 0 then 1 else -1 -- a left turn's outside is the right
 		if len >= runMin and r:NextNumber() < T.KRailBendChance then
 			local run = math.clamp(len * 0.8, runMin, math.min(runMax, len))
@@ -553,7 +570,7 @@ function SplineGen._carve(self: Gen, sec: Spline.Section)
 		return
 	end
 	local k = sec.k
-	local kEnd = k[#k]
+	local kEnd = bendCurvature(k)
 	if kEnd == 0 or 1 / math.abs(kEnd) > T.CarvedMaxRadius + 1e-6 then
 		return
 	end
@@ -565,15 +582,15 @@ function SplineGen._carve(self: Gen, sec: Spline.Section)
 	local inside = if kEnd > 0 then -1 else 1 -- a left turn's inside is the left
 	-- the held arc: the run of the section at the bend's own curvature
 	local _, _, _, kv = self.spline:tip()
-	local holdFrom: number?, at = nil, 0
+	local holdFrom: number?, holdTo: number?, at = nil, nil, 0
 	for j = 1, #k, 2 do
 		if math.abs(kv - kEnd) < 1e-12 and math.abs(k[j + 1] - kEnd) < 1e-12 then
-			holdFrom = at
-			break
+			holdFrom = holdFrom or at
+			holdTo = k[j]
 		end
 		at, kv = k[j], k[j + 1]
 	end
-	if not holdFrom or len - holdFrom < 20 then
+	if not holdFrom or not holdTo or holdTo - holdFrom < 20 then
 		return
 	end
 	local function all(list: { number }, kind: number, a: number, b: number): boolean
@@ -586,7 +603,7 @@ function SplineGen._carve(self: Gen, sec: Spline.Section)
 		end
 		return true
 	end
-	local hold = math.min(T.CarvedHold[1] + (T.CarvedHold[2] - T.CarvedHold[1]) * r:NextNumber(), (len - holdFrom) * 0.5)
+	local hold = math.min(T.CarvedHold[1] + (T.CarvedHold[2] - T.CarvedHold[1]) * r:NextNumber(), (holdTo - holdFrom) * 0.5)
 	local gap, rate = T.CarvedGap, T.CarvedRate
 	local old = if inside < 0 then sec.rl else sec.rr
 	-- never on a grove's side (T-183); a tight edge (T-181) is on the cliff side, the other
@@ -607,11 +624,11 @@ function SplineGen._carve(self: Gen, sec: Spline.Section)
 	local eOut = math.max(T.CarvedEase, (vEnd - gap) / rate)
 	-- the apex is the middle of the held arc, or as near it as the easing allows (a bend
 	-- is short: often the rock meets the road late, toward the exit)
-	local lo, hi = math.max(eIn, holdFrom), len - eOut - hold
+	local lo, hi = math.max(eIn, holdFrom), math.min(holdTo - hold, len - eOut - hold)
 	if lo > hi + 1e-6 then
 		return
 	end
-	local b = math.min(math.max((holdFrom + len - hold) * 0.5, lo), hi)
+	local b = math.min(math.max((holdFrom + holdTo - hold) * 0.5, lo), hi)
 	local c = b + hold
 	-- the rock all along the inside, the drop on the outside through the apex
 	if not all(if inside < 0 then sec.el else sec.er, Spline.ROCK, 0, len) or not all(if inside < 0 then sec.er else sec.el, Spline.CLIFF, b, c) then
@@ -1081,7 +1098,7 @@ end
 -- it would reach by the end, plus what it would take to level off from there, must stay
 -- inside `MinHeight..MaxHeight` of where the road began -- or, on a descent, of where the
 -- band's centre has dropped to by the end of the section (T-166).
-local function pickGrade(self: Gen, g0: number, y0: number, len: number): { number }
+local function pickGrade(self: Gen, g0: number, y0: number, len: number, descendingTurn: boolean?, nextMove: number?): { number }
 	local C = Config.Spline
 	local gMax = math.tan(math.rad(C.MaxGrade))
 	local rate = C.MaxGradeRate
@@ -1094,9 +1111,12 @@ local function pickGrade(self: Gen, g0: number, y0: number, len: number): { numb
 			y += 0.5 * (g + knots[j + 1]) * (knots[j] - s)
 			s, g = knots[j], knots[j + 1]
 		end
-		-- and what levelling off from gEnd would add
+		-- and what easing gEnd to the moving band's grade would add
 		-- (on a descent the band goes on moving while the road levels off)
-		return y + sign(gEnd) * gEnd * gEnd / (2 * rate) - (self.spline.origin.y + self:_centreAfter(len + math.abs(gEnd) / rate))
+		local after = nextMove or move
+		local stop = math.abs(gEnd - after) / rate
+		local centre = if nextMove then self:_centreAfter(len) + after * stop else self:_centreAfter(len + stop)
+		return y + .5 * (gEnd + after) * stop - (self.spline.origin.y + centre)
 	end
 	local gt: number
 	if self.rng:NextNumber() < C.KeepGradeChance then
@@ -1105,6 +1125,12 @@ local function pickGrade(self: Gen, g0: number, y0: number, len: number): { numb
 		-- centred on the way the band is moving (T-166), so the local ups and downs stay but
 		-- the road follows the descent, and climbs hard when the band climbs
 		gt = math.clamp(move + (self.rng:NextNumber() * 2 - 1) * gMax, -gMax, gMax)
+	end
+	if nextMove then
+		-- Start easing before the valley floor/pass, while the height band waits.
+		gt = nextMove
+	elseif descendingTurn and move < 0 then
+		gt = math.min(gt, -C.Mountain.TurnDescentGrade)
 	end
 	local e = ends(gt)
 	if e > C.MaxHeight or e < C.MinHeight then
@@ -1353,54 +1379,116 @@ function SplineGen._planLeg(self: Gen)
 	end
 end
 
--- A planned turn, built to land on its heading: the turn eases in from the road's present
--- curvature, holds, and (with the easing the next section will need to straighten out)
--- leaves the road on `item.to`. "done" if there is nothing to turn; nil if every radius
--- tried would crowd old road or could not land on the heading.
+-- Detached tables prevent speculative append/terrain choices from touching live state.
+local function copyTables(value: any): any
+	if type(value) ~= "table" then return value end
+	local out=table.clone(value)
+	for k,v in value do if type(v)=="table" then out[k]=copyTables(v) end end
+	return out
+end
+
+-- Plan samples are immutable before the candidate; overlay them instead of copying an
+-- hour of road for each radius. Hash buckets are copied on first read, before append
+-- can add to one. All other tracks/spans are small mutable tables and get their own copy.
+local function forkSpline(source: Spline.Spline): Spline.Spline
+	local out=table.clone(source)
+	for k,v in source do
+		if type(v)=="table" and k~="X" and k~="Z" and k~="hash" then out[k]=copyTables(v) end
+	end
+	out.X=setmetatable({}, {__index=source.X})
+	out.Z=setmetatable({}, {__index=source.Z})
+	out.hash=setmetatable({}, {__index=function(t,key)
+		local old=source.hash[key]
+		if old then local bucket=table.clone(old);rawset(t,key,bucket);return bucket end
+		return nil
+	end})
+	return out
+end
+-- Decorate and append to a detached copy, using cloned scenery streams. The real
+-- generator consumes these draws only after a turn has been selected. Global s, the
+-- incoming curvature/grade/bank, edge hysteresis and valley flips are all preserved.
+function SplineGen._fitTurn(self: Gen, sec: Spline.Section, item: Item)
+	local preview=table.clone(self)
+	preview.spline=forkSpline(self.spline)
+	preview.stats=table.clone(self.stats)
+	preview.runoff=table.clone(self.runoff)
+	preview.flips=table.clone(self.flips)
+	preview.plan=table.clone(self.plan)
+	if preview.plan[1]==item then table.remove(preview.plan,1) end
+	preview.turning=item.what
+	preview.trng=self.trng:Clone(); preview.grng=self.grng:Clone()
+	preview.xrng=self.xrng:Clone(); preview.crng=self.crng:Clone()
+	local proposed=copyTables(sec)
+	preview:_terrain(proposed)
+	preview:_carve(proposed)
+	preview.spline:append(proposed)
+	return SplineTurnFit.measure(preview.spline,self.spline.length,preview.spline.length,self.flip,preview.flips)
+end
+
+-- A planned turn lands on its heading and keeps the crossing/escape safety checks.
+-- Sharp turns sample the final candidate hillside. Try the clear radii, choose the best
+-- fit, or run on and try again at a new location. Location retries are bounded: when no
+-- shape fits there either, retain the least obstructed clear turn and report that limit.
 function SplineGen._turn(self: Gen, item: Item): (Spline.Section | string)?
-	local C = Config.Spline
-	local M = C.Mountain
+	local C, M = Config.Spline, Config.Spline.Mountain
 	local sp = self.spline
 	local _, _, yaw0, k0, g0, b0, y0 = sp:tip()
-	local dir = item.dir :: number
-	local to = item.to :: number
-	local needed = (dir * (to - yaw0)) % (2 * math.pi)
-	if needed > 2 * math.pi - math.rad(20) then
-		needed -= 2 * math.pi -- already a little past it
-	end
-	if needed < math.rad(3) then
-		return "done"
-	end
-	local range = item.radius :: { number }
-	for try = 1, M.TurnTries do
-		-- the planned radii first, then anything down to the tightest bend allowed
-		local lo = if try > M.TurnTries // 2 then math.min(C.MinRadius, range[1]) else range[1]
-		local radius = lo * (range[2] / lo) ^ self.rng:NextNumber()
-		local kt = dir / radius
-		local esc = 0.5 * math.abs(kt) * transition(kt, 0)
-		local knots, len = curvatureKnots(k0, kt, dir * (needed - esc), nil)
-		self.stats.tries += 1
+	local dir, to = item.dir :: number, item.to :: number
+	local needed = (dir * (to-yaw0)) % (2*math.pi)
+	if needed>2*math.pi-math.rad(20) then needed-=2*math.pi end
+	if needed<math.rad(3) then return "done" end
+	local range=item.radius :: {number}
+	local fit = M.TurnChecks and needed>=math.rad(M.TurnCheckAngle)
+	local totalTries = if fit then M.TurnFitTries else M.TurnTries
+	local best: Spline.Section? = nil
+	local reading: any = nil
+	for try=1,totalTries do
+		local lo=if try>totalTries//2 then math.min(C.MinRadius,range[1]) else range[1]
+		local radius=lo*(range[2]/lo)^self.rng:NextNumber()
+		local kt=dir/radius
+		local esc=.5*math.abs(kt)*transition(kt,0)
+		local knots,len=curvatureKnots(k0,kt,dir*(needed-esc),nil)
+		self.stats.tries+=1
 		if knots then
-			local yawEnd = yawAfter(yaw0, k0, knots) + dir * esc
-			if math.abs(wrap(yawEnd - to)) < math.rad(3) then
-				if self:_clear(withEscape(knots, kt)) then
-					local T = transition(k0, kt)
-					local flat = self.rng:NextNumber() < C.UnbankedChance
-					return {
-						len = len,
-						k = knots,
-						g = pickGrade(self, g0, y0, len),
-						b = pickBank(kt, radius, b0, math.min(T, len), len, flat),
-						tag = item.tag,
-					}
+			local yawEnd=yawAfter(yaw0,k0,knots)+dir*esc
+			if math.abs(wrap(yawEnd-to))<math.rad(3) then
+				local emitted = if fit then withEscape(knots,kt) else knots
+				local emittedLen = emitted[#emitted-1]
+				if self:_clear(withEscape(emitted,if fit then 0 else kt)) then
+					local T=transition(k0,kt)
+					local flat=self.rng:NextNumber()<C.UnbankedChance
+					local nextMove = if self.flipWanted and TURNAROUNDS[item.what] then (if self.climbing then self.drift else M.ClimbRate * self.sense) else nil
+					local bank=pickBank(kt,radius,b0,math.min(T,len),len,flat)
+					if fit then
+						-- Make the safe continuation real road, so its effect on the hill is
+						-- present during fitting and cannot change just after the turn arrives.
+						local tail=ramp(bank[#bank],0,math.rad(C.MaxBankRate)/1.5,0,emittedLen-len)
+						for j=1,#tail,2 do table.insert(bank,len+tail[j]);table.insert(bank,tail[j+1]) end
+					end
+					local sec={len=emittedLen,k=emitted,g=pickGrade(self,g0,y0,emittedLen,fit and self.flip>0,nextMove),b=bank,tag=item.tag}
+					if not fit then return sec end
+					local r=self:_fitTurn(sec,item)
+					self.stats.hillChecked+=1
+					if not r.ok then self.stats.hillRejected+=1 end
+					if not reading or (r.ok and not reading.ok) or (r.ok==reading.ok and r.score<reading.score) then best,reading=sec,r end
+				else
+					self.stats.rejectedCrowded+=1
 				end
-				self.stats.rejectedCrowded += 1
 			end
 		end
 	end
+	if best and reading then
+		if not reading.ok and (item.hillRetries or 0)<M.TurnLocationRetries then
+			item.hillRetries=(item.hillRetries or 0)+1
+			return nil
+		end
+		table.insert(self.turnFits,{s0=sp.length,s1=sp.length+best.len,what=item.what,view=reading.view,cut=reading.cut,fill=reading.fill,retries=item.hillRetries or 0,relaxed=not reading.ok})
+		self.stats.hillTurns+=1
+		if not reading.ok then self.stats.hillRelaxed+=1 end
+		return best
+	end
 	return nil
 end
-
 -- The next planned turn, or a bend that first brings the road back near the heading the
 -- turn is planned from. nil when it is refused: the stretch before it then runs on.
 function SplineGen._planned(self: Gen, item: Item): Spline.Section?
@@ -1549,9 +1637,11 @@ function SplineGen.step(self: Gen): Spline.Section?
 		if #self.recent > C.RecentBends then
 			table.remove(self.recent, 1)
 		end
-		self.lastDir = sign(chosen.k[#chosen.k])
+		for j = #chosen.k, 2, -2 do
+			if chosen.k[j] ~= 0 then self.lastDir = sign(chosen.k[j]); break end
+		end
 	end
-	self.lastWasBend = bend
+	self.lastWasBend = bend and chosen.k[#chosen.k] ~= 0
 	local ms = (os.clock() - t0) * 1000
 	st.totalMs += ms
 	st.worstMs = math.max(st.worstMs, ms)

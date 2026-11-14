@@ -131,6 +131,18 @@ local Spline = {
 		-- before it runs on this far and it is tried again.
 		RetryAfter = 120, -- studs
 		TurnTries = 6, -- radii tried for one planned turn before it is refused
+		-- Fit sharp turns to the same hill the client draws (T-190). Clear radii are
+		-- ranked by excess rock ahead and by cutting/fill at the runoff's sides.
+		TurnChecks = true,
+		TurnFitTries = 3, -- fixed terrain-preview budget per sharp turn
+		TurnCheckAngle = 60, -- degrees: smaller heading corrections keep the old path
+		TurnViewDistances = { 50, 100, 150 }, -- horizontal checks from three places round a turn
+		TurnViewExcess = 15, -- studs above the eye plus the natural uphill plane
+		TurnSideReach = 20, -- studs beyond runoff for the sideways checks
+		TurnMaxCut = 90, -- studs: a very deep cutting near a turn
+		TurnMaxFill = 120, -- studs: an outsized embankment/drop near a turn
+		TurnLocationRetries = 2, -- run on RetryAfter and retry before taking the best clear fit
+		TurnDescentGrade = 0.025, -- downhill grade target in a descending turn, band safety wins
 		-- THE DESCENT: the height band (`MinHeight..MaxHeight`) moves with the road, its centre
 		-- dropping this much per stud of road, so the grade still goes up and down locally but
 		-- the run works its way down. 1 in 25 is about 2.3 degrees net.
@@ -305,6 +317,7 @@ local Spline = {
 		KRailSpacer = 0.4, -- studs, the block holding the beam off a post
 		KRailSpliceEvery = 2, -- posts between two splices of the beam, each with its bolts
 		KRailSpliceBolts = 2, -- bolt heads drawn at a splice (0: none)
+		KRailChordTolerance = 0.04, -- studs: margin for changing curvature and beam end pieces
 		KRailStep = 12, -- studs, the longest straight piece of beam (bends cut it finer)
 		-- TIGHT CLIFF EDGES (T-181): the user, 2026-11-13, "some cliff edges should be barrier
 		-- rails that are right on the edge of the asphalt with less than 3 or 4 studs of gravel

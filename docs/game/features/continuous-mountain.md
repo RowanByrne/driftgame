@@ -1,6 +1,6 @@
 # Feature: One continuous mountain
 
-**Status:** building (`T-190`, lane 5, branch `feature/continuous-mountain`). The user approved the plan on 2026-11-13. Step 1, the mountain as one surface (`T-194`), is built and waiting for the user's drive; see "As built" at the end, which says where it differs from the first guesses below. Step 2, the turn checks, is not started. **Owner task:** `T-190`.
+**Status:** building (`T-190`, lane 5, branch `feature/continuous-mountain`). The user approved the plan on 2026-11-13. Step 1, the mountain as one surface (`T-194`), is built and waiting for the user's drive; see "As built" at the end, which says where it differs from the first guesses below. Step 2, the turn checks (`T-199`), is built; final lane verification is recorded below. **Owner task:** `T-190`.
 
 ## Goal
 
@@ -218,3 +218,91 @@ solver, including the chunk being built. Three regression fixtures pass. Streami
 at 100 studs/s: 6 240 frames, mean 8.33 ms, p99 10.39 ms, worst 27.93 ms (one over 20 ms),
 five meshes alive, no fallback, 36 redraws and a worst build work slice of 4.56 ms. This redraws
 more often than the earlier shortcut (10), in exchange for keeping the streamed ground current.
+
+## As built (step 2, T-199)
+
+### Fit the turn and the start of the next leg together
+
+Before accepting a sharp planned turn (60 degrees or more), the generator tries up to three
+crossing-safe radii against the same hillside the client draws. Each candidate includes its
+curvature easing and a **260-stud straight continuation**, ending unbanked on the intended
+heading. That continuation is real road, not a guess: it is sent to the client with the turn.
+The next escape is checked too. A double hairpin's reversed stretch and a switchback's gap are
+therefore longer than their bare plan ranges by this short straight. The carved apex remains
+inside the held curve, and its rail still follows that curve's outside.
+
+The build first tried looking at the curve alone. That passed the road tests but did not improve
+the final views: when the next leg arrived it changed the hillside's caps and ownership. Including
+the real continuation fixed that mismatch. Earlier failed comparisons are retained in the task notes.
+
+### What is checked
+
+- A detached candidate gets the actual runoff, edges, grandeur, carved apex and valley/pass flip,
+  using cloned scenery random streams. Rejected previews change none of the live road or streams.
+  `SplineProfile` is the original face profile shared unchanged with the mesh.
+- At entry, 45 degrees from the fall line and nearest the fall line, fifteen horizontal height
+  samples look 50, 100 and 150 studs ahead and 20 studs past both runoff edges. The preferred
+  limits are 15 studs of **excess** over the driver's eye plus the natural rising plane, a
+  90-stud cutting and 120-stud fill/drop. A climbing mountain may still rise ahead naturally.
+- A passing shape always beats a failing one, then the least obstructed shape wins. If none
+  fits, the leg runs on and tries at another location, at most twice. After that the best
+  crossing-safe shape is kept and explicitly counted as a relaxed fit. Crossing and escape
+  safety are never relaxed. `gen.turnFits` keeps the measurements; all limits are config.
+- Descending turns aim down while respecting the height band. The grade guard now eases toward
+  the moving band's grade, and begins easing before a valley floor or pass: a newly climbing
+  band must not run ahead of a road still pitched downhill. Periodic climbs remain.
+
+No new Section fields or remotes. The renderer/car use the same replay as before; no car or tyre
+physics changed. The rail's chord allowance is 0.04 studs, keeping a newly selected tight bend's
+beam inside the existing alignment tolerance.
+
+### Checks and limits
+
+The road, turn-preview/replay, mesh, streaming, body and spring suites pass. The final source gate
+matched and compiled all eight changed source modules. The two old world-normal approximation
+failures recorded in step 1 remain outside this change.
+
+Two old assertions needed accurate fixtures: compare the lip's normal at the **same point** with
+and without lip height (different points can have different normals on narrow runoff), and only
+call a facing road "above" when its edge is higher. Recorded counterexample, seed 101 at s 11568:
+own edge Y -80.2223, neighbour -83.4648, crest -73.2484. That is a low ridge facing a road 3.2425
+studs below, not a face pushing through a road above. The no-hillside-over-road check is unchanged.
+
+The user still needs to drive it. **Low banks remain walls to the car, and ground drawn below a
+cliff lip does not catch it.** Trees on the open hillside remain out of scope.
+### Final before/after sightlines
+
+Three seeds (31337, 101, 2024), 12 000 studs each, with the **same** surface and grade safety;
+only turn fitting/its continuation disabled versus enabled. Measured after later legs exist.
+Excess means more than 15 studs above the eye plus the natural uphill plane at any of the three
+sample positions; this definition did not change to make the result pass.
+
+| Turn group | Excess before | Excess after | Worst excess before / after |
+|---|---|---|---|
+| Descending | 0/5 | 0/4 | 13.7 / 3.0 studs |
+| Climbing | 1/6 | 0/5 | 20.6 / 9.4 studs |
+| Valley floor or pass | 3/6 | 1/3 | 38.4 / 37.1 studs |
+| All | 4/17 | 1/12 | |
+
+Raw rising ground remains visible: at entry / 45 degrees round / pointing along the fall line,
+climbing turns go from 1/6, 3/6, 5/6 to 0/5, 3/5, 5/5, with the tallest rise down from 50 to
+36 studs. Floors/passes go from 0/6, 1/6, 2/6 to 1/3, 1/3, 3/3, tallest 34 to 36 studs:
+the far bank of the valley still rises ahead. Descending turns remain 0/5 at all three points
+before and 0/4 after. The user must judge those natural climbing/valley views.
+
+81 candidate fits, 39 outside preferred limits, eight location retries and two relaxed fits
+(including a sideways turn). This is a bounded preference, not a promise of an open view at
+every turn. Spline 64/64, turn 9/9, hillside 9/9, mesh 17/17, streaming 3/3, body 8/8 and
+suspension 9/9. The full sampled road suite keeps each generator step under its 20 ms bound.
+Hill seams: 972, worst 1.9 studs apart, none above 4; zero of 12 000 hillside vertices over
+road ground; zero of 47 rock faces under a genuinely higher road poke above its allowance.
+
+Clean streamed client replay (server-chosen sections, no client terrain generation), 5 200 studs
+at 100 studs/s: 6 241 frames, mean 8.33 ms, p99 10.52 ms, worst 12.97 ms, none over 20 ms.
+Five road meshes settled, six at most including a build, zero fallback; 36 redraws, worst work
+slice 4.51 ms. The earlier timing run overlapped the CPU-heavy baseline comparison and is
+retained in task notes as confounded; it is not used for this frame result.
+
+Current-car smoke on the new hairpin: 360 heartbeats, s 1964 to 2006.9, 31.4 studs/s,
+no airborne samples, worst ride-height error 0.035 studs, maximum pitch 3.32 and roll 3.16
+degrees, drawn gap zero; five meshes and no fallback. Console checked; playtest stopped.

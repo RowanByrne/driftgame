@@ -27,6 +27,10 @@ local function fmt(x: number, p: number?): string
 	return string.format("%." .. tostring(p or 1) .. "f", x)
 end
 
+local function isAbove(ownEdge: number, otherEdge: number): boolean
+	return otherEdge >= ownEdge
+end
+
 local function run(check)
 	local H = Config.Spline.Hill
 	local half = Config.Road.Width * 0.5
@@ -133,11 +137,11 @@ local function run(check)
 							local _, so, d = SplineHill.heightAt(ctx, edge.X, edge.Z)
 							local theirSide = if d and d < 0 then -1 else 1
 							if so and d and math.abs(so - s) > 30 and sp:edgeAt(so, theirSide) == Spline.CLIFF then
-								facingRock += 1
 								local crest = ray.st.yEnd[i]
 								local w = half + sp:runoffAt(so, theirSide)
 								local theirEdge = sp:terrainY(so, theirSide * w)
-								if crest > math.max(theirEdge, ray.st.y0[i]) + H.MinRock + 0.5 then
+								if isAbove(ray.st.y0[i], theirEdge) then facingRock += 1 end
+								if isAbove(ray.st.y0[i], theirEdge) and crest > theirEdge + H.MinRock + 0.5 then
 									aboveLeg += 1
 								end
 							end
@@ -211,6 +215,11 @@ local function run(check)
 		now.turns[1] > 0,
 		`turnarounds with ground more than {WALL} studs over the eye within 150 studs straight ahead, off the road; "before" is with every face at full height through the turn. {table.concat(rows, ". ")}`
 	)
+	-- Recorded seed101 s11568: the facing road is BELOW this bank, so it is a
+	-- valley ridge, not a rock face pushing through a road above it.
+	check("higher and lower facing roads are distinguished",
+		not isAbove(-80.2222562481471,-83.4647787961352) and isAbove(-83.4647787961352,-80.2222562481471),
+		"seed101 s11568: own edge -80.2223, neighbour -83.4648 (3.2425 lower), crest -73.2484; reverse heights is an above-road case")
 end
 
 -- 5. THE VIEW AHEAD IN A TURNAROUND, tallied into `into`.

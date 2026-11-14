@@ -31,6 +31,7 @@ end
 local function road(seed: number, length: number)
 	local gen = SplineGen.new(seed)
 	gen:extendTo(length)
+	task.wait() -- long preview suites hand Studio a frame between roads
 	return gen
 end
 
@@ -617,11 +618,15 @@ function parts.terrain(check)
 			for _, d in { half + lw, half + lw + rng:NextNumber() * (w - lw), half + w } do
 				worstLip = math.max(worstLip, math.abs(baseY(side * d) - sp:terrainY(s, side * d) - T.RoadLip))
 			end
-			-- (not on a runoff narrowed to a few studs, as at a carved apex: there the ground's
-			-- normal turns a few degrees across the narrow strip, 3.3 measured. More carved apexes since T-189,
-			-- with rock on every uphill side, put one of the sampled points there)
-			if w >= 6 then
-				lipNormal = math.min(lipNormal, sp:terrainNormal(s, side * (half + lw * 0.5)):Dot(sp:terrainNormal(s, side * (half + lw + 0.05))))
+			-- Compare the same point: the normal can legitimately turn across narrow runoff.
+			do
+				local d = side * (half + lw * .5)
+				local raised = sp:terrainNormal(s, d)
+				local lip = T.RoadLip
+				T.RoadLip = 0
+				local unraised = sp:terrainNormal(s, d)
+				T.RoadLip = lip
+				lipNormal = math.min(lipNormal, raised:Dot(unraised))
 			end
 		end
 		n += 1
@@ -632,8 +637,8 @@ function parts.terrain(check)
 	check("the grass meets the tarmac with no gap: the step starts at its edge", worstJoin < 1e-3, `worst {string.format("%.1e", worstJoin)} studs`)
 	check(
 		"the road stands RoadLip above its grass",
-		worstLip < 1e-6 and lipNormal > 0.999,
-		`grass off {T.RoadLip} studs below the unraised ground by {string.format("%.1e", worstLip)} at worst, past a gravel bevel up to {T.RoadLipWidth} across; the bevel's normal to the car against the grass at its foot, dot {fmt(lipNormal, 4)} at worst (1: the forces never read it as a slope)`
+		worstLip < 1e-6 and lipNormal > 1 - 1e-6,
+		`grass off {T.RoadLip} studs below the unraised ground by {string.format("%.1e", worstLip)} at worst, past a gravel bevel up to {T.RoadLipWidth} across; the bevel's normal to the car with and without the road lip, dot {fmt(lipNormal, 4)} at worst (1: the forces never read it as a slope)`
 	)
 	check("the grass leaves the road at its bank and eases flat", worstSlope < 0.01 and worstFlat < 0.01, `slope at the tarmac's edge off the bank's by {fmt(worstSlope, 4)}; at the grass's outer edge {fmt(worstFlat, 4)} (flat is 0)`)
 
@@ -681,6 +686,7 @@ function parts.twist(check)
 		for i = 1, HEALTH_SEEDS do
 			local gen = SplineGen.new(1000 + i * 37, nil, clear)
 			gen:extendTo(HEALTH_LENGTH)
+			task.wait()
 			local sp = gen.spline
 			hairpins += gen.stats.kinds.Hairpin or 0
 			rejected += gen.stats.rejectedCrowded
@@ -1072,32 +1078,30 @@ function parts.grand(check)
 	)
 	check("a client's replay has the same grandeur", differ == 0, `{differ} samples differ`)
 
-	-- the grandeur changes nothing else the road chooses
-	local was = T.GrandNear
-	T.GrandNear = 1e9
-	local ok, flat = pcall(road, 31337, 8000)
-	T.GrandNear = was
-	local same = ok
-	if ok then
-		local a = road(31337, 8000)
-		same = #a.sections == #flat.sections
-		for i = 1, math.min(#a.sections, #flat.sections) do
-			local x, y = a.sections[i], flat.sections[i]
-			for _, key in { "k", "g", "b", "rl", "rr", "el", "er", "kr", "gv", "gl" } do
-				local p, q = x[key] or {}, y[key] or {}
-				if #p ~= #q then
-					same = false
-				else
-					for j = 1, #p do
-						if p[j] ~= q[j] then
-							same = false
-						end
-					end
+	-- Scenery RNG isolation without the terrain-dependent route selector. With fitting
+	-- enabled, changing face heights is intentionally allowed to change the chosen turn.
+	local savedChecks=Config.Spline.Mountain.TurnChecks
+	Config.Spline.Mountain.TurnChecks=false
+	local was=T.GrandNear
+	T.GrandNear=1e9
+	local ok,flat=pcall(road,31337,8000)
+	T.GrandNear=was
+	local normalOk,a=pcall(road,31337,8000)
+	Config.Spline.Mountain.TurnChecks=savedChecks
+	local same=ok and normalOk
+	if same then
+		same=#a.sections==#flat.sections
+		for i=1,math.min(#a.sections,#flat.sections) do
+			local x,y=a.sections[i],flat.sections[i]
+			for _,key in {"k","g","b","rl","rr","el","er","kr","gv","gl"} do
+				local p,q=x[key] or {},y[key] or {}
+				if #p~=#q then same=false else
+					for j=1,#p do if p[j]~=q[j] then same=false end end
 				end
 			end
 		end
 	end
-	check("the grandeur changes nothing else the road chooses", same, "seed 31337, 8000 studs, with and without grand faces: every curve, runoff, edge, K-rail and grove knot the same")
+	check("grandeur keeps its random stream separate when terrain fitting is disabled",same,"seed 31337, 8000 studs, with and without grand faces: every curve and scenery choice identical")
 end
 
 function Tests.run(which: { string }?, ...)
