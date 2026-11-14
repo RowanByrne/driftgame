@@ -34,6 +34,7 @@ Drift is a car game about clean drifts. The player slides a low-poly car through
 | Drift score and the multiplier ladder | Points from slip × speed × surface, and a 1–9 ladder. **Specced, deliberately not built** (`DECISIONS.md`) | `features/drift-model.md` "Score" |
 
 | Admin console | F2 opens Cmdr for admins, with commands for cars, runs, locations, scores, sky and diagnostics; player targets come first. **Built and approved** (`T-159`) | `features/admin-console.md` |
+| Settings menu | Three modern glass UI concepts first, then the chosen settings page and the user's selected controls. **Specced; awaiting plan approval** | `features/settings-menu.md` |
 
 ## Progression
 

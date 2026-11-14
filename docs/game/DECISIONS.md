@@ -58,3 +58,5 @@ The user's decisions about this game, so they aren't reopened later. Before prop
 - 2026-11-13: Use Codex with GPT-6.1 Sol while Claude credits are exhausted: conductor and feature leads at ultra; light workers high, standard workers xhigh, heavy workers ultra (C-62103e).
 
 - 2026-11-14: Keyboard P hides and restores the game UI for the current session (T-200). The user: "add a button to hide the UI if i press P on keyboard." It leaves driving input and Roblox controls available and ignores P while typing; no new on-screen button or other-device shortcut was requested.
+
+- 2026-11-14: Start UI concepts with the settings page: clean modern glass panes, fogginess, semi-transparency and tiles, inspired by Assetto Corsa EVO and Assetto Corsa Rally. The user asked to "draft concepts" because they have existing controls to move into settings; the final style and the first batch of controls are still unpicked (features/settings-menu.md, C-aa8b43).

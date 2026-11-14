@@ -35,6 +35,8 @@ No references yet — the user's call: "not yet, for now we keep it simple". Add
 
 Set in the UI phase's style step (UI.md).
 
+**Settings brief (2026-11-14; no style picked yet):** the user requested clean modern UI, glass panes, fogginess, semi-transparency and tiles, with Assetto Corsa EVO and Assetto Corsa Rally as style references. Draft three directions on the settings page first, then build the user's pick. This is a settings concept brief, not approved UI art or a restyle of every screen (`features/settings-menu.md`).
+
 **Style references:** > The approved UI references, as mocks of this game's screens.
 
 **Colour tokens.** Components use these names, never raw colours.
