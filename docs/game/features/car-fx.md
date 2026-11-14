@@ -510,7 +510,7 @@ they decide *whether* a wheel marks; the surface decides *what* it leaves.
   on the threshold cannot chatter it. It uses its own wider attachment pair, 0.04 studs higher.
   Switching emission leaves already-laid marks on earlier parts of the path to fade normally;
   it does not clear or recolour them. The existing `Enabled` switches and zero minimum segment
-  length are kept, with no attachment changes or new bridge between the two trail types.
+  length are kept, and the trail instances and attachments are reused across switches.
 - **The slip that decides the trench is the car's,** not the wheel's: the fronts only mark past 30°
   anyway, so on grass a front that marks always cuts a trench.
 - **The debris is thrown back** off a 60° tilt on the trench's left attachment, falls under its own
@@ -565,6 +565,24 @@ and counts **52 → 52**.
   hysteresis held at 27° and dropped at 24° (green now resumes at that point, `T-205`); the dirt ramp
   0.00 / 0.13 / 0.50 / 0.87 / 1.00; smoke 1.75/s one frame back on tarmac and 21.00/s, its full
   rate, half a second later; two wheels on grass and two on tarmac each doing their own).
+
+
+**Exclusive grass marks checked** (`T-205`, `DR-Lane3`, quiet playtest, 2026-11-14):
+
+- `FxTests`: **97 checks pass**. All trail alternatives now count in both the diagnostic and
+  the 1 000-frame mixed-surface invariant: at most **1** enabled per wheel, **0** marking states
+  with none enabled, and **52 → 52** instances. The added crossing regression checks **44**
+  grass wheel-frames with **0** simultaneous green/brown emissions.
+- A moving client fixture covered **150 Heartbeats / 150 studs** and **531** grass-marking
+  wheel-frames: green at 20°/29.9°, brown at 30.1°/45°, brown held back through
+  29.9°/27°/25.1°, green again at 24.9°/24°. **0** doubles, **0** missing enabled
+  trails, **0** cached/instance mismatches. Mixed grass/tarmac/gravel, one wheel lifted,
+  airborne, closed throttle, disabled effects and `Cut` all kept their marking gates.
+- The same **52** instances, trail identities, attachment references and **5 s** lifetimes
+  survived the switches. No `Clear` or attachment replacement was added, so earlier marks
+  retain their normal fade. Enabled-state checks do not measure rendered joins or segment
+  gaps; no screenshot was needed for the emission fix. The exact 30° radian round-trip can
+  fall fractionally below 30°, as before; tuning and comparisons are unchanged.
 
 ## UI
 
