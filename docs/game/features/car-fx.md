@@ -586,15 +586,18 @@ and counts **64 → 64**.
   fall fractionally below 30°, as before; tuning and comparisons are unchanged.
 
 
-## Consistent mark width through a slide (`T-207`)
+## Limited mark thinning through a slide (`T-207`)
 
 The user, 2026-11-14: *"tyre marks change thickness depending on slide angle - that doesn't
 really make sense, pls fix."* The previous endpoints stayed across the car: a 1.2-stud span
 projected to 0.85 studs at 45°, 0.60 at 60° and almost zero at 90° of slip.
 
 Each wheel now puts its mark endpoints perpendicular to its own rendered contact path,
-projected onto the ground plane. The endpoints stay centred at the same contact and use the
-configured 1.2-stud width (green, gravel and tarmac) or 1.9-stud trench width. The render pose
+projected onto the ground plane. The endpoints stay centred at the same contact. Following
+the user's lane feedback and clarification **"25% width"**, the natural angle-dependent width
+now returns, capped by `Marks.MinWidthRatio = 0.25`: normal 1.2-stud marks (green, gravel and
+tarmac) narrow to **0.3 studs**, and 1.9-stud trenches to **0.475 studs**. The share is the
+absolute body-right projection across that wheel's actual path, floored at one quarter. The render pose
 includes yaw extrapolation between simulation steps, banking, wheel lift and cancellation of
 the body's sprung pitch/roll and cosmetic lean. First-frame fallback uses world velocity plus
 the contact's yaw motion; at rest the last valid span is kept. Endpoint ordering stays continuous
@@ -606,10 +609,11 @@ Three fixed particle-source attachments per wheel keep the previous source posit
 `FxT_<Wheel>_L_Emitter` for clippings/dirt. Trails keep the original four endpoints. The anchors
 add 12 once-created instances per car: **64 total at one smoking surface**, with none created
 or destroyed while driving; `Clear` removes all of them. Smoke/debris rates, gates and fades,
-the exclusive green/brown rule, trail lifetimes and material widths are unchanged.
+the exclusive green/brown rule, trail lifetimes and normal material widths are unchanged.
 
 
-**Checked in `DR-Lane3`, 2026-11-14:** `FxTests` **100/100 pass**. Its geometry sweep covers
+**First constant-width lane review, superseded by the quarter-width floor above:**
+`FxTests` **100/100 pass** in `DR-Lane3`, 2026-11-14. Its geometry sweep covers
 **1 248 wheel-frames** across straight motion, both turn/slip signs, 45°, 60°, near/exact 90°,
 banking, sprung pitch/roll, ground and car up differing, render substeps, rest and reversal.
 Maximum cross-path width error **0.00000157 studs**, centre/source error **0.0000021 studs**,

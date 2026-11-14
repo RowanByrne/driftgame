@@ -28,8 +28,9 @@ return {
 	Marks = {
 		Seconds = 5, -- s of `Trail.Lifetime`. How long a mark stays on the road, and
 		-- therefore how much of a corner you can still see behind you
-		Width = 1.2, -- studs between the two attachments. A little under the tyre, which
-		-- is `Config.Drift.WheelWidth` wide
+		Width = 1.2, -- normal width in studs. A little under `Config.Drift.WheelWidth`.
+		MinWidthRatio = 0.25, -- minimum share of each material width during a slide (T-207).
+		-- User, 2026-11-14: narrow down to 25% width, not 25% thinner.
 		Lift = 0.25, -- studs the attachments sit ABOVE the contact patch. OURS, and
 		-- MEASURED rather than chosen. A trail drawn exactly in the road's
 		-- surface z-fights with it, so there has to be some.

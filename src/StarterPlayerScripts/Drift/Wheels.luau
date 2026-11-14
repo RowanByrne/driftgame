@@ -45,8 +45,8 @@
 --
 -- The patches are taken back through the body's full local transform each frame, so
 -- the lean and sprung pitch/roll move neither their ground centres nor particle sources.
--- T-207 also turns each mark's span across its wheel's actual rendered ground travel:
--- fixed body-X endpoints projected to Width*cos(slip), vanishing when fully sideways.
+-- T-207 turns each span across its wheel's actual rendered ground travel and restores
+-- the natural body-X projection, capped at Marks.MinWidthRatio so it cannot disappear.
 -- Contact-centre deltas include yaw and Render's substep; velocity/yaw is the first-frame
 -- fallback and endpoint order stays continuous through reversal. Particle sources have
 -- their own fixed anchors so turning a ribbon does not move its smoke or debris.
@@ -784,7 +784,10 @@ function Wheels.Update(self: Wheels, state: DriftModel.State?, input: any, dt: n
 			span = -span -- the same undirected width, with no endpoint swap on reversing
 		end
 		w.previousPatch, w.span = centre, span
-		local localSpan = road:VectorToObjectSpace(span)
+		-- Keep the original angle-dependent projection until the configured floor,
+		-- while spanning across the path avoids an unbounded 1/cos expansion sideways.
+		local ratio = math.clamp(math.abs(road.RightVector:Dot(span)), Config.Fx.Marks.MinWidthRatio, 1)
+		local localSpan = road:VectorToObjectSpace(span) * ratio
 		local trench = (w.patchC + w.patchD) * 0.5 + lift
 		w.a.Position = unbody:PointToWorldSpace(patch - localSpan * half)
 		w.b.Position = unbody:PointToWorldSpace(patch + localSpan * half)

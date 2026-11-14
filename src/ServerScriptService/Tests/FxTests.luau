@@ -601,16 +601,17 @@ function Tests.run(opts)
 		w:Attach(rig)
 		check("attaching again builds nothing", w:CountInstances() == want, `{w:CountInstances()} instances`)
 
-		-- T-207: measure width ACROSS THE ACTUAL CONTACT PATH, not attachment distance.
+		-- T-207: measure capped natural width ACROSS THE ACTUAL CONTACT PATH.
 		-- The former body-X span still measured Width end-to-end while shrinking to
-		-- Width*cos(slip) on the road. Use coherent world velocity and Render.apply
+		-- Width*cos(slip) on the road. Preserve that thinning only down to MinWidthRatio.
+		-- Use coherent world velocity and Render.apply
 		-- so suspension, banking, yaw and the renderer's remainder are all exercised.
 		rig.lift = {}
 		local widthError, centreError, emitterError, planeError, diagnosticError, flips = 0, 0, 0, 0, 0, 0
 		local geometryFrames = 0
 		local function geometry(s, steps, remA, remB, change)
 			w:Cut()
-			local previous, spans = {}, {}
+			local previous, spans, acrosses = {}, {}, {}
 			for frame = 1, steps do
 				if change then change(s, frame) end
 				if frame > 1 then
@@ -637,17 +638,21 @@ function Tests.run(opts)
 					local span = wheel.b.WorldPosition - wheel.a.WorldPosition
 					local trenchSpan = wheel.d.WorldPosition - wheel.c.WorldPosition
 					planeError = math.max(planeError, math.abs(span:Dot(s.groundUp)), math.abs(trenchSpan:Dot(s.groundUp)))
+					local across
 					if path.Magnitude > 1e-4 then
-						local across = path.Unit:Cross(s.groundUp).Unit
-						-- Ignore the very first yawing frame: its fallback is instantaneous
-						-- velocity+r*offset, whereas following frames have a measured chord.
-						if frame > 1 or s.r == 0 then
-							widthError = math.max(widthError, math.abs(math.abs(span:Dot(across)) - F.Marks.Width),
-								math.abs(math.abs(trenchSpan:Dot(across)) - F.Ground.Grass.TrenchMark.Width))
-						end
+						across = path.Unit:Cross(s.groundUp).Unit
+						acrosses[wheel.index] = across
 					else
-						widthError = math.max(widthError, math.abs(span.Magnitude - F.Marks.Width),
-							math.abs(trenchSpan.Magnitude - F.Ground.Grass.TrenchMark.Width))
+						across = acrosses[wheel.index] or road.RightVector
+					end
+					-- The former body-X ribbon projected across this measured path is the
+					-- natural width. Retain it above the floor; sideways must not collapse.
+					local natural = math.abs(road:VectorToWorldSpace(Vector3.xAxis):Dot(across))
+					local ratio = math.max(F.Marks.MinWidthRatio, natural)
+					-- Ignore the first yawing frame's instantaneous fallback vs chord.
+					if frame > 1 or s.r == 0 then
+						widthError = math.max(widthError, math.abs(math.abs(span:Dot(across)) - F.Marks.Width * ratio),
+							math.abs(math.abs(trenchSpan:Dot(across)) - F.Ground.Grass.TrenchMark.Width * ratio))
 					end
 					if spans[wheel.index] and span:Dot(spans[wheel.index]) < -1e-5 then flips += 1 end
 					previous[wheel.index], spans[wheel.index] = expected, span
@@ -680,16 +685,35 @@ function Tests.run(opts)
 			s.velocity = Vector3.new(-math.sin(s.slip), 0, -math.cos(s.slip)) * s.u
 		end)
 		check(
-			"marks keep their configured width across the actual path, including sideways and banked turns",
+			"marks retain natural thinning across the actual path with the configured sideways floor",
 			widthError < 1e-4 and planeError < 1e-4,
-			string.format("%d wheel-frames; max cross-path width error %.2e, out-of-plane %.2e studs; old 60deg body-X width %.3f instead of %.3f",
-				geometryFrames, widthError, planeError, F.Marks.Width * math.cos(math.rad(60)), F.Marks.Width)
+			string.format("%d wheel-frames; max cross-path width error %.2e, out-of-plane %.2e studs; natural 60deg %.3f studs; sideways floor %.3f",
+				geometryFrames, widthError, planeError, F.Marks.Width * math.cos(math.rad(60)), F.Marks.Width * F.Marks.MinWidthRatio)
 		)
 		check(
 			"turning mark spans preserves patch centres and fixed smoke/debris sources",
 			centreError < 1e-4 and emitterError < 1e-4 and diagnosticError < 1e-4,
 			string.format("max patch-centre error %.2e, particle-source error %.2e, diagnostic residual %.2e studs", centreError, emitterError, diagnosticError)
 		)
+		local angleError, floorError = 0, 0
+		for _, deg in { 0, -45, 45, -60, 60, -75, 75, -89.9, 89.9, -90, 90 } do
+			w:Cut()
+			local s = stateWith({ slipDeg = deg, speed = 70, throttle = 1 })
+			s.velocity = Vector3.new(-math.sin(s.slip), 0, -math.cos(s.slip)) * 70
+			Render.apply(rig, s)
+			w:Update(s, { handbrake = true }, 1 / 60)
+			local expected = math.max(math.abs(math.cos(math.rad(deg))), F.Marks.MinWidthRatio)
+			for _, wheel in w.wheels do
+				local width = (wheel.b.WorldPosition - wheel.a.WorldPosition).Magnitude
+				angleError = math.max(angleError, math.abs(width - F.Marks.Width * expected))
+				if math.abs(deg) == 90 then
+					floorError = math.max(floorError, math.abs(width - F.Marks.Width * F.Marks.MinWidthRatio))
+				end
+			end
+		end
+		check("flat marks follow the natural angle curve and bottom out at one quarter width",
+			angleError < 1e-4 and floorError < 1e-4 and F.Marks.MinWidthRatio == 0.25,
+			string.format("angle error %.2e, sideways floor error %.2e studs; width 1.2 -> 0.3, trench 1.9 -> 0.475", angleError, floorError))
 		check("mark endpoints stay ordered through turns and rest fallback", flips == 0, `{flips} endpoint flips`)
 		w:Cut()
 
