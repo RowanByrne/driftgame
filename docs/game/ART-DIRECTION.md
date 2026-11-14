@@ -37,7 +37,7 @@ Set in the UI phase's style step (UI.md).
 
 **Settings brief (2026-11-14; no style picked yet):** the user requested clean modern UI, glass panes, fogginess, semi-transparency and tiles, with Assetto Corsa EVO and Assetto Corsa Rally as style references. Draft three directions on the settings page first, then build the user's pick. This is a settings concept brief, not approved UI art or a restyle of every screen (`features/settings-menu.md`).
 
-**Style references:** > The approved UI references, as mocks of this game's screens.
+**Settings style reference (T-201, 2026-11-14):** A / Smoked glass, the left column of `assets/reference/settings-menu-concepts-01.png`. Dark charcoal glass, softly fogged gameplay, quiet off-white type, warm orange selections, rounded panes and tiles. Wide settings pages use a left category rail; compact pages reflow into category chips and stacked/scrolling content. This approves settings only; other menus keep their current look. Native Roblox surfaces and text reproduce the material; the real blur scope and opacity are checked in lane 1 before calling the page ready. B and C on the comparison sheet are unpicked.
 
 **Colour tokens.** Components use these names, never raw colours.
 
