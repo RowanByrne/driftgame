@@ -238,7 +238,8 @@ still the reference's, converted, except the two marked **ours**.
 | `Gates.MinMarkSpeed` | 15 studs/s | — | **Ours (T-151).** A wheel only *starts* marking (and smoking) at or above this. Pulling away from rest with a finger held, the slip angle is noise on a velocity of a stud or two a second: measured in `DR-Lane3`, the rears marked from 0.1 studs/s and chattered up to ~14. A wheel already marking ignores it and runs down to `StopSlipDegrees`, so a drift that slows keeps its mark. The handbrake keeps its own floor |
 | `Gates.MaxSlipDegrees` | 180 | — | The angle the smoke rate is full at. This is the reference's `slip / π` written in degrees. **Note it is not the squeal's 90°:** at 90° of slip — a car fully sideways — the smoke is only at 34/s of its 60, which is a tuning question for the user's eye, not a bug |
 | `Marks.Seconds` | 5 | `MarkSeconds` | `Trail.Lifetime` |
-| `Marks.Width` | 1.2 studs | `MarkWidth` | The gap between the two attachments. A little under the tyre's 1.6 |
+| `Marks.Width` | 1.2 studs | `MarkWidth` | Normal width before angle-dependent thinning. A little under the tyre's 1.6 |
+| `Marks.MinWidthRatio` | 0.25 | Ours (`T-207`, user clarification) | Minimum share of each normal material width; a quarter-width floor, not 25% thinner |
 | `Smoke.RateMin`, `Smoke.RateMax` | 8, 60 /s | `SmokeRateMin/Max` | `ParticleEmitter.Rate`, lerped by `slip / Gates.MaxSlipDegrees` |
 
 Added in round two, and all of them ours — see the sections below for the measurements behind each:
@@ -629,6 +630,24 @@ and `Cut`. At its world height of 3 000 studs, contact/source error stayed below
 (float precision); old trails and lifetimes survived, motion history reset on `Cut`, the count
 stayed **64**, and `Clear` left **0** descendants. All car sounds were silent. Console review
 found only existing Studio plugin/MCP connection messages; the playtest was stopped.
+
+
+**Quarter-width revision checked in `DR-Lane3`, 2026-11-14:** `FxTests` **101/101 pass**.
+The same 1 248 geometry wheel-frames now compare against the natural body-right projection
+until capped, with maximum error **0.00000240 studs**. Explicit flat angles follow **1.2** at
+straight, **0.8485** at 45°, **0.60** at 60° and the **0.30** floor sideways, for both signs.
+The corresponding trench floor is **0.475**. Bank, sprung pitch/roll, ground/car up differing,
+render remainder, rest/reversal, source positions, grass exclusivity and the **64 → 64**
+allocation sweep still pass.
+
+The moving client fixture passed **104 Heartbeats / 416 wheel-frames**. Minimum measured
+ordinary/trench widths were **0.299991 / 0.474986 studs**; maximum error against the natural
+projection or floor was **0.000083 studs**. It found **0** endpoint flips, simultaneous green/brown
+emissions or wrong per-wheel gate states; retained particle/contact sources within **0.000245**
+studs at world height 3 000; preserved lifetimes; reset motion history on `Cut`; and left **0**
+descendants after cleanup. The effects-off branch checks no emission and excludes inactive
+geometry from visible-width measurements. Console review found only existing Studio plugin/MCP
+messages, and the quiet playtest was stopped. Lane 3 is retained for another user review.
 
 ## UI
 

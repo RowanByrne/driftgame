@@ -22,7 +22,7 @@
 
 return {
 	-- ------------------------------------------------------------------ tyre marks
-	-- The black line a sliding wheel leaves. Per wheel: two `Attachment`s `Width` apart at
+	-- The black line a sliding wheel leaves. Per wheel: two attachments up to `Width` apart at
 	-- the contact patch, and one `Trail` PER BAND strung between them -- enabled and
 	-- disabled, never created or destroyed while driving (features/car-fx.md "The budget").
 	Marks = {
