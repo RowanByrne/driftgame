@@ -9,6 +9,7 @@ Every task in progress and the files it owns, so parallel sessions and workers n
 
 | Branch | Lane | Files owned | Since |
 |---|---|---|---|
+| `feature/linked-biomes` (T-203, sketch T-204) | 2 | `docs/game/features/road-biomes.md`; `assets/reference/road-biomes/*` (new) | 2026-11-14 |
 
 ## Notes between sessions
 
