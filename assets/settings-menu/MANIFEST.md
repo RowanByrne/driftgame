@@ -4,7 +4,7 @@ Owner: T-201; concept step T-202; feature branch `feature/glass-settings`, lane 
 
 ## Round 1 — 2026-11-14
 
-**Status:** candidate; awaiting the user's visual choice. No candidate is uploaded or wired into the game. The source image and generated sheet live in the project folder's `art/generated/settings-menu/`, outside git.
+**Status:** A / Smoked glass approved by the user on 2026-11-14. The unchanged comparison sheet is kept at `assets/reference/settings-menu-concepts-01.png`; only its A column is the approved direction. No image is uploaded or used as shipping UI. Source candidates remain in the project folder's `art/generated/settings-menu/`, outside git.
 
 | File | Role | Size | SHA-256 | Status |
 |---|---|---|---|---|
@@ -53,5 +53,5 @@ Component strip in each column: show one matching panel tile, button, slider and
 
 ## Pick
 
-Pending. Record the user's words, copy the chosen reference unchanged into `assets/reference/`, and update the settings spec, art direction and decisions before building the page.
+2026-11-14: Rocco answer **"A: Smoked glass"**; the user then said **"i picked a. continue"**. Build A's dark rounded panes, left category rail on wide screens, warm orange selection, and stacked compact layouts. B and C are unpicked. The reference was copied unchanged; the reference SHA-256 matches the candidate above.
 

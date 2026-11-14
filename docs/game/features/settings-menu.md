@@ -1,6 +1,6 @@
 # Feature: Settings menu
 
-**Status:** in progress; plan approved 2026-11-14, style concepts being drafted. **Owner task:** T-201, branch `feature/glass-settings`, lane 1; first step T-202.
+**Status:** in progress; plan approved 2026-11-14, A / Smoked glass selected. **Owner task:** T-201, branch `feature/glass-settings`, lane 1; concept step T-202 complete.
 
 ## Goal
 
@@ -106,6 +106,6 @@ All steps belong to the feature's own agent and its reserved lane after the plan
 
 ## Open questions
 
-- Which of the three visual directions, or combination, should become the settings style? Asked with the concepts.
+- Style settled 2026-11-14: **A / Smoked glass**, the dark rounded panes, warm orange accents and left rail in `assets/reference/settings-menu-concepts-01.png`. The other two directions are unpicked.
 - Which existing controls does the user want moved first, and which belong in a developer-only section? Asked with a concrete catalogue after the visual pick.
 - Exact opening shortcut, category names and supported device layouts are settled with the shell; current behaviour and occupied controls must be checked first.
