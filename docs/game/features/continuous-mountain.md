@@ -210,3 +210,11 @@ Shared endpoints from adjacent chunk contexts: 288 samples across the same three
 0 studs apart. A live car starting at s 1800 stayed grounded for 360 heartbeat samples,
 reached s 1845 at 32.5 studs/s, worst ride-height error 0.035 studs; five meshes, no fallback.
 The playtest was stopped. The known visual/physical edge mismatch remains.
+
+The restart review also found a streaming race: road arriving while a first chunk was still
+building could escape its redraw check. A new nearby station can change face caps and meeting
+heights without shortening a ray. Redraw now covers the same gathered station cells as the hill
+solver, including the chunk being built. Three regression fixtures pass. Streaming 5 200 studs
+at 100 studs/s: 6 240 frames, mean 8.33 ms, p99 10.39 ms, worst 27.93 ms (one over 20 ms),
+five meshes alive, no fallback, 36 redraws and a worst build work slice of 4.56 ms. This redraws
+more often than the earlier shortcut (10), in exchange for keeping the streamed ground current.

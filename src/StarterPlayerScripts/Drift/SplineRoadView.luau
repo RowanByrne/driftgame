@@ -88,9 +88,9 @@ function SplineRoadView.new(spline: Spline.Spline, parent: Instance?): View
 	}, SplineRoadView)
 end
 
--- Has road laid since a chunk was drawn come beside it, near enough to end one of its
--- hillside's rays sooner (`Road/SplineHill`)? Marks such chunks stale. Cheap: a few points of
--- the new road against a few cross-sections of each chunk.
+-- A new station can change a face cap or meeting height without shortening its ray.
+-- Invalidate any chunk whose gathered station cells gained road, including one still
+-- being built. Its old mesh stays up until the replacement is complete.
 function SplineRoadView._checkNewRoad(self: View)
 	local spline = self.spline
 	local from, to = self.checkedTo, spline.length
@@ -99,64 +99,44 @@ function SplineRoadView._checkNewRoad(self: View)
 	end
 	self.checkedTo = to
 	local H = Config.Spline.Hill
-	local L = Config.Spline.Mesh.ChunkLength
-	local reach = Config.Road.Width * 0.5 + Config.Spline.Terrain.GroveRunoff[2] + H.Reach
-	local function points(a: number, b: number): { number }
-		local out = {}
-		for s = a, b, 32 do
-			local x, z = spline:planAt(s)
-			table.insert(out, x)
-			table.insert(out, z)
-		end
-		return out
+	local L, cell = Config.Spline.Mesh.ChunkLength, spline.cell
+	local fresh = {}
+	for s = math.floor(from / H.StationStep) * H.StationStep, to, H.StationStep do
+		local x, z = spline:planAt(s)
+		table.insert(fresh, { math.floor(x / cell), math.floor(z / cell) })
 	end
-	local fresh = points(from, to)
+	local candidates: { [number]: boolean } = {}
 	for i in self.chunks do
-		if not self.stale[i] and (self.builtAt[i] or to) < to then
+		candidates[i] = true
+	end
+	if self.building then
+		candidates[self.building] = true
+	end
+	for i in candidates do
+		if not self.stale[i] and self.builtAt[i] and self.builtAt[i] < to then
 			local s0, s1 = i * L, math.min((i + 1) * L, to)
-			-- the road the chunk already knew between its own end and the old end of the road:
-			-- most new road is further off than that along every ray, and changes nothing
-			local known = points(math.min(s1 + 32, from), from)
-			local hit = false
+			local minX, maxX, minZ, maxZ = math.huge, -math.huge, math.huge, -math.huge
 			local s = s0
-			while not hit do
-				local x, z = spline:planAt(s)
-				local yaw = spline:yawAt(s)
-				local rx, rz = math.cos(yaw), -math.sin(yaw)
-				-- where a ray from here, to each side, is as near a point as its own road
-				local function nearest(list: { number }, limit: { [number]: number }): boolean
-					local sooner = false
-					for j = 1, #list, 2 do
-						local qx, qz = list[j] - x, list[j + 1] - z
-						local across = qx * rx + qz * rz
-						if math.abs(across) > 1 then
-							local side = if across > 0 then 1 else -1
-							local t = (qx * qx + qz * qz) / (2 * math.abs(across))
-							if t < limit[side] - 3 then
-								limit[side] = t
-								sooner = true
-							end
-						end
-					end
-					return sooner
-				end
-				local limit = { [-1] = reach, [1] = reach }
-				nearest(known, limit)
-				if nearest(fresh, limit) then
-					hit = true
-				end
+			while true do
+				local x, z = spline:planAt(math.min(s, s1))
+				minX, maxX = math.min(minX, x), math.max(maxX, x)
+				minZ, maxZ = math.min(minZ, z), math.max(maxZ, z)
 				if s >= s1 then
 					break
 				end
-				s = math.min(s + 48, s1)
+				s += 16
 			end
-			if hit then
-				self.stale[i] = true
+			local loX, hiX = math.floor((minX - H.Gather) / cell), math.floor((maxX + H.Gather) / cell)
+			local loZ, hiZ = math.floor((minZ - H.Gather) / cell), math.floor((maxZ + H.Gather) / cell)
+			for _, q in fresh do
+				if q[1] >= loX and q[1] <= hiX and q[2] >= loZ and q[2] <= hiZ then
+					self.stale[i] = true
+					break
+				end
 			end
 		end
 	end
 end
-
 -- THE CLOSING BARRIER (T-136): a wall across the road and its runoff at `s`, the piece
 -- road's colour and see-through, drawn here because the server builds nothing.
 -- `Drift/SplineWorld` is what makes it solid.
