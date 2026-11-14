@@ -9,6 +9,7 @@ Every task in progress and the files it owns, so parallel sessions and workers n
 
 | Branch | Lane | Files owned | Since |
 |---|---|---|---|
+| `feature/glass-settings` (T-201, first step T-202) | 1 | `docs/game/features/settings-menu.md`; `assets/settings-menu/MANIFEST.md` (new); `assets/reference/settings-menu-*` (new, approved references only) | 2026-11-14 |
 
 ## Notes between sessions
 

@@ -1,6 +1,6 @@
 # Feature: Settings menu
 
-**Status:** specced; awaiting the user's plan approval. **Owner task:** the Workboard plan linked to this spec; Rocco assigns its feature agent after approval.
+**Status:** in progress; plan approved 2026-11-14, style concepts being drafted. **Owner task:** T-201, branch `feature/glass-settings`, lane 1; first step T-202.
 
 ## Goal
 
