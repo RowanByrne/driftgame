@@ -1,6 +1,6 @@
 # Feature: Road biomes
 
-**Status:** plan approved 2026-11-14; revised layout v2 awaiting review after the user's correction (T-204). **Owner task:** T-203, built step by step in lane 2 on `feature/linked-biomes`.
+**Status:** layout approved with the user's gradual-transition and semi-random-length requirements on 2026-11-14 (T-204); shared terrain implementation next. **Owner task:** T-203, built step by step in lane 2 on `feature/linked-biomes`.
 
 ## Goal
 
@@ -41,14 +41,23 @@ Starting proposals, not measured tuning; keep the values in `Shared/Config/Splin
 | Item | Starting proposal |
 |---|---|
 | Long-run distance mix | Fields 45%, small cliffs 35%, steep cliffs 20%; gentler terrain remains the majority |
-| Category stretch length | Propose 400-900 studs from one boundary to the next; this includes the adjoining transition halves |
-| Transition length | Propose 180 studs centred on a category boundary, independent of road-section and switchback endpoints |
+| Category stretch length | Seeded semi-random lengths within configured minimum/maximum bounds, starting at 400-900 studs between boundaries; do not repeat the sketch's lengths |
+| Transition length | At least the proposed 180 studs, centred on a category boundary and lengthened where needed for a gradual physical profile change. Reserve enough space for the transition before choosing the next one |
 | Same-biome repeats | Join them into one stretch or choose another; no pointless repeated boundary |
 | Field slope | A slight downhill fall, first try 2-6 degrees beside the road; fit safely between existing road legs |
 
 The mix is a distance target, not a blind per-section coin toss. Measure actual proportions across long seeded roads, including how transitions are counted, rather than claiming the configured weights are the resulting mix.
 
 Use a seeded biome schedule with stable endpoints and an explicit transition parameter. Independent scenery changes must not unpredictably reroll later biome choices. Turn previews clone all relevant random/schedule state, so rejected candidates do not change the final sequence. Server-chosen section data and late-join snapshots contain what clients need to replay the same result.
+
+The user approved the corrected layout with two requirements: terrain must actually
+transition gradually from hills to steep cliffs, and each category's length must be
+semi-random within minimum/maximum bounds. Randomise lengths independently from bend
+and scenery choices using a seed-derived stream. Do not cycle fixed lengths, evenly
+alternate the categories or reroll a length during a rejected turn preview. The
+sketch is explanatory only. A minimum blend distance is not permission to turn a
+low bank into a tall cliff too rapidly: limit the rate of physical profile change,
+reserve the required transition space and avoid a second transition interrupting it.
 
 Retain the fall line, rare deliberate turnarounds, periodic recovery climbs and height safety. Biomes bias the road's bend mix, radii, spacing and rail coverage; they do not bypass curvature/grade easing, no-crossing, terrain turn fitting or the escape test. A field need not make the whole run level, and a steep biome must not force an unsafe hairpin.
 
@@ -111,10 +120,13 @@ cliffs. This is an example rather than a repeating pattern. Grey markers show
 arbitrary existing road-section ends independently of the category boundaries.
 They illustrate that blends can begin and finish partway through a section or bend.
 
-Proposed category stretches vary from 400 to 900 studs **boundary to boundary**.
-A transition occupies 180 studs, centred on its boundary, with 90 studs on either
-side. This leaves 220-720 studs fully established between adjacent blends. It does
-not add a 180-stud transition on top of a 400-900-stud established stretch. Use a continuous
+Category stretches are sampled semi-randomly between configured minimum and maximum,
+starting at 400-900 studs **boundary to boundary**. The 180-stud blend in v2 is a
+starting minimum, not a fixed duration for every terrain change. A stronger profile
+change must receive enough distance to meet the profile-rate limit. Reserve that
+distance when placing transitions; do not overlap or interrupt a reshaping cliff.
+For the minimum 180-stud case, 90 studs each side leaves 220-720 studs fully
+established. Longer blends use correspondingly more of the available stretch. Use a continuous
 smooth blend, with a flat derivative at both ends, for terrain parameters. Road
 preference changes over the same interval while curvature/grade/bank keep their own
 existing easing limits. Count transition distance by its biome weights (half to each
@@ -123,8 +135,9 @@ the next stretch with a seed-derived, distance-deficit schedule rather than rero
 scenery per bend. All six directed transitions remain possible. Measure the resulting
 mix over long seeds before claiming the target is met.
 
-At an illustrative 100 studs/s, category boundaries arrive every 4-9 seconds, a
-transition takes 1.8 seconds and the pictured route 40 seconds. This pace is below the
+At an illustrative 100 studs/s, the initial 400-900-stud boundaries arrive every 4-9
+seconds and the minimum 180-stud transition takes 1.8 seconds; longer physical
+transitions take longer. The pictured route is 40 seconds. This pace is below the
 stock cars' top speeds (150-215 studs/s); it is not a measured average. Actual bends
 and drifts take longer.
 
@@ -175,8 +188,9 @@ otherwise visibly flat field.
   budget. Near-ground fidelity takes priority over far scenery. The renderer must
   use a visible supported-ground fallback when EditableMesh is unavailable.
 
-No runtime section, API, analytics or physics change is made in this sketch step.
-Layout approval precedes the shared terrain blockout; the user drives that blockout
+The user approved this direction with gradual-transition and semi-random-length
+requirements. No runtime section, API, analytics or physics change is made in this
+sketch step. The user drives the shared terrain blockout
 before road/rail dressing and final tuning.
 
 ## Testing
@@ -201,4 +215,4 @@ The feature's own agent owns these sequential steps and reserves its lane after 
 
 - The steep category keeps the current uphill mountain/downhill drop; the user explicitly rejected a two-drop ridge. No terrain style redesign is authorised.
 - The first two v1 side profiles are suitable. Exact safe field extent, small-cliff fitting and rail coverage are settled in the measured blockout. They are not permission to widen the tarmac or change grass handling.
-- Initial distribution and stretch/transition lengths above are proposed tuning, to be adjusted by the user's drive.
+- Category lengths must be seeded semi-random within bounds, and terrain transitions physically gradual. Initial mix, limits and transition-rate tuning are adjusted by the user's blockout drive.
