@@ -408,7 +408,6 @@ local Spline = {
 		FaceRise = { 5, 10 }, -- the smaller outer faces beyond the supported field/bank
 		FaceDrop = { 5, 35 },
 		SolidHeight = { 4, 4, 4 }, -- stable blocking foot; taller mountain scenery can be capped
-		OuterRailAngle = 45, -- protect finite ground where rock/drop swap through a flat face
 		CorridorRate = 0.2, -- width change between fitted knots; smoothstep peaks at 1.5x
 		CorridorKnot = 32,
 		CorridorMargin = 2, -- conservative allowance for curvature between 8-stud cells

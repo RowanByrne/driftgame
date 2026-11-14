@@ -1,6 +1,6 @@
 # Feature: Road biomes
 
-**Status:** layout approved with the user's gradual-transition and semi-random-length requirements on 2026-11-14 (T-204); shared terrain blockout ready for the lane drive-through (T-209). **Owner task:** T-203, built step by step in lane 2 on `feature/linked-biomes`.
+**Status:** layout approved with the user's gradual-transition and semi-random-length requirements on 2026-11-14 (T-204); shared terrain blockout corrected after the lane drive-through and ready for another look (T-209). **Owner task:** T-203, built step by step in lane 2 on `feature/linked-biomes`.
 
 ## Goal
 
@@ -219,7 +219,7 @@ The feature's own agent owns these sequential steps and reserves its lane after 
 
 ### Shared terrain blockout (T-209)
 
-The seeded schedule, fitted finite field/bank corridors and serialized signed bank heights now drive car, walking, mesh and parts-fallback ground. Supported extents stay frozen as neighbours stream in. Existing distant mountain joins remain; a low rock foot marks the uphill extent and short outer guardrails protect flat side swaps. The normal mesh uses finer near-ground rows and grass strips while keeping one mesh per chunk. The fallback includes finite grass, bevels, faces and joined hills, built in bounded slices. Road rhythm and biome-specific rail density are still the next step.
+The seeded schedule, fitted finite field/bank corridors and serialized signed bank heights now drive car, walking, mesh and parts-fallback ground. Supported extents stay frozen as neighbours stream in. Existing distant mountain joins remain; a low rock foot marks the uphill extent. The added outer field rails and their collision were removed after the user drive-through; only the existing road-edge guardrails remain. The normal mesh uses finer near-ground rows and grass strips while keeping one mesh per chunk. The fallback includes finite grass, bevels, faces and joined hills, built in bounded slices. Road rhythm and biome-specific rail density are still the next step.
 
 Per-runner projection and recovery stay on the accepted road leg. Grass does not move the streaming window; returning to asphalt cannot convert a field shortcut into an unbounded progress jump. Lane verification includes actual emitted mesh triangles and fallback wedge rays, all six transitions, ownership beside a nearer road leg, and explicit placement resets.
 

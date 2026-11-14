@@ -650,7 +650,7 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 						tri(ia[i], ia[i + 1], ib[i], pa[i], pa[i + 1], pb[i], colour, facing)
 						tri(ia[i + 1], ib[i + 1], ib[i], pa[i + 1], pb[i + 1], pb[i], colour, facing)
 					end
-					if spline:hasBiomeGround() and kind==Spline.ROCK and not spline:outerRailAt((a+b)*.5) then
+					if spline:hasBiomeGround() and kind==Spline.ROCK then
 						local ta,tb=Boundary.toeRow(spline,a,side),Boundary.toeRow(spline,b,side)
 						local ai,bi={},{}
 						for j=1,3 do ai[j]=em:AddVertex(ta[j]-centre);bi[j]=em:AddVertex(tb[j]-centre) end

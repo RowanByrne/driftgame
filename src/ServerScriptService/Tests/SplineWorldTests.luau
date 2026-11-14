@@ -721,6 +721,10 @@ function Tests.biomes()
 		check("the finite uphill field has no hidden plane beyond its bank",fw.probe(pose(field,500,-111))==nil,"both extents are finite")
 		local boundary=fw.sweep(pose(field,500,-96),pose(field,500,-115),0)
 		check("the outer uphill rock still stops the car",boundary~=nil,"wall stands at the actual field boundary, not the old runoff")
+  -- A former flat-side-swap mask must add neither a rail nor a wall.
+  field.fall=0
+  local free=fw.sweep(pose(field,500,96),pose(field,500,115),0)
+  check("no extra barrier blocks the downhill field edge",free==nil and field:boundaryHeight(500,1)==0,"only existing asphalt rails and natural uphill rock remain")
 		local bank,bw=fixture(Biome.SMALL,60,25,0)
 		local pos=pose(bank,500,-70)
 		local hit=bw.probe(pos)

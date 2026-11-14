@@ -140,4 +140,4 @@ Named spots come from `PlaygroundService:GetSpot(name)`, never from coordinates 
 
 `StreamingEnabled` is **off**: the playground is small and the car moves fast enough that streaming in surfaces under it would be felt as the ground failing a ray.
 
-- T-203 shared ground drawing: `Road/SplineSurfaceCuts` refines supported terrain rows; `SplineParts` provides a time-sliced terrain fallback; `SplineBoundary` supplies stable low rock feet and outer protection at side swaps without changing distant mountain joins. Walking inherits the car's accepted road leg; RoadService keeps one accepted projection per runner and earns biome progress only on asphalt.
+- T-203 shared ground drawing: `Road/SplineSurfaceCuts` refines supported terrain rows; `SplineParts` provides a time-sliced terrain fallback; `SplineBoundary` supplies stable low rock feet and existing asphalt-edge rails in the parts fallback without changing distant mountain joins. Walking inherits the car's accepted road leg; RoadService keeps one accepted projection per runner and earns biome progress only on asphalt.

@@ -37,9 +37,8 @@ function Tests.run()
 					-- far mountain, so later neighbouring legs cannot remove it.
 					local height=math.max(math.abs(pts[5].Y-pts[1].Y),if spline:edgeAt(s,side)==Spline.ROCK then 4 else 0)
 					local declared=spline:boundaryHeight(s,side)
-					local rail=spline:outerRailAt(s)
-					local gap=if declared>0 then declared-height else math.max(0,1-height)
-					if rail or gap<=.01 then covered+=1 else
+					local gap=if declared>0 then declared-height else 0
+					if gap<=.01 then covered+=1 else
 						worst=math.max(worst,gap)
 						if declared>0 then lowRock+=1 else flatDrop+=1 end
 					end
@@ -48,7 +47,7 @@ function Tests.run()
 				end
 			end
 		end
-		check("every finite boundary is a visible face/drop or outer rail",covered==total,`{covered}/{total}; uncovered rock {lowRock}, drop {flatDrop}, largest gap {worst}`)
+		check("uphill rock keeps its visible foot without adding downhill walls",covered==total,`{covered}/{total}; uncovered rock {lowRock}, drop {flatDrop}, largest gap {worst}`)
 		-- Samples actual wedge top faces, including each field/bank interior and bevel.
 		local missing,worstError,samples,partCount,maxSlice=0,0,0,0,0
 		local params=RaycastParams.new();params.FilterType=Enum.RaycastFilterType.Include;params.FilterDescendantsInstances={folder}
@@ -72,13 +71,12 @@ function Tests.run()
 		end
 		check("fallback wedges follow the supported terrain",missing==0 and worstError<=.2,`{samples} interior rays, {missing} missing, largest height error {worstError}`)
 		check("fallback build yields within a bounded slice",maxSlice<16,`{partCount} parts across three 96-stud samples; worst slice {maxSlice} ms`)
-		local runs=Boundary.runs(spline,0,480)
-		local before=table.clone(runs)
-		gen:extendTo(15000)
-		local after=Boundary.runs(spline,0,480)
-		local stable=#before==#after
-		for i,v in before do stable=stable and math.abs(v-after[i])<1e-6 end
-		check("new neighbours cannot move outer protection",stable,`{#runs/2} runs in first chunk`)
+  local before=Boundary.toeRow(spline,300,-1)
+  gen:extendTo(15000)
+  local after=Boundary.toeRow(spline,300,-1)
+  local stable=true
+  for i,v in before do stable=stable and (v-after[i]).Magnitude<1e-6 end
+  check("new neighbours cannot move the natural rock foot",stable,"serialized width and bank height remain fixed")
 		-- An asymmetric field can be closer to the next leg's centre line while
 		-- still belonging to the first leg. Gameplay must keep its accepted arc.
 		local sp=Spline.new({x=0,y=0,z=0,yaw=0})
@@ -115,10 +113,6 @@ function Tests.run()
 		local rim=workspace:Raycast(Vector3.new(tip.X,top.Y+8,tip.Z),-Vector3.yAxis*12,params)
 		check("the stable rock foot is actually drawn to its solid height",rim~=nil and math.abs(rim.Position.Y-top.Y-4)<.06,`drawn rise {rim and rim.Position.Y-top.Y}`)
 		rock:Destroy()
-		local brief=Spline.new({x=0,y=0,z=0,yaw=math.pi/4+.00012});brief.fall=0
-		brief:append({len=6,k={2,-.0001,4,.0001,6,0},g={6,0},b={6,0},bm={0,1,0}})
-		local short=Boundary.runs(brief,0,6)
-		check("a brief rail-angle crossing cannot disappear between samples",#short==2 and short[1]>2 and short[2]<4,`rail endpoints {short[1]}, {short[2]}`)
 		local passed=0;for _,c in checks do if c.ok then passed+=1 end end
 		return {passed=passed,total=#checks,checks=checks}
 	end,debug.traceback)

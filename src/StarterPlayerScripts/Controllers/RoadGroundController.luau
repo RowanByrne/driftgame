@@ -381,7 +381,7 @@ local function plan(spline: any, sc: number, dc: number, closingS: number?): { [
 						local w = math.min(spline:runoffAt(sa, side), spline:runoffAt(sb, side))
 						grass(`l{key}:{i}`, sa, sb, full * PIECE, w)
 					end
-					if kind~=Spline.CLIFF or spline:outerRailAt((a+b)*.5) then
+					if kind~=Spline.CLIFF then
 						local height=spline:boundaryHeight((a+b)*.5,side)
 						if height>0 then wall(`w{key}`,"wall",a,b,side,half+wa,half+wb,ROCK_THICK,height,Enum.Material.Rock) end
 					end

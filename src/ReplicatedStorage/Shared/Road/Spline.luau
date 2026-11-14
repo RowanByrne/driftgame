@@ -708,15 +708,7 @@ function Spline.edgeLiftAt(self:Spline,s:number,side:number):number
 	return (valueAt(if side<0 then self.liftL else self.liftR,s))
 end
 
--- A side swap flattens the distant hillside. A short visible outer rail marks
--- the supported corridor there. Geometry alone fixes it before later road arrives.
-function Spline.outerRailAt(self:Spline,s:number):boolean
-	return self:hasBiomeGround() and self.fall~=nil
-		and math.abs(math.sin(self:yawAt(s)-(self.fall :: number)))<=math.sin(math.rad(Config.Spline.Biomes.OuterRailAngle))
-end
-
 function Spline.boundaryHeight(self:Spline,s:number,side:number):number
-	if self:outerRailAt(s) then return Config.Spline.Terrain.KRailHeight end
 	local kind=self:edgeAt(s,side)
 	if kind==Spline.CLIFF then return 0 end
 	local old=if kind==Spline.ROCK then Config.Spline.Terrain.RockHeight[1] else Config.Spline.Terrain.HedgeHeight
