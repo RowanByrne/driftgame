@@ -359,3 +359,26 @@ introduction, an omitted field carries the previously published records forward.
 This contract commit introduces schedule/replay data. Physical ground and drawn
 profile changes remain within the unapproved T-209 terrain build until their shared
 definition and lane checks are complete; no driving feel or analytics change.
+
+### Frozen supported corridor construction
+
+`Config.Spline.Biomes.GroundEnabled` remains false while the matching surface,
+walking and renderer blockout is assembled. When enabled, the server fits the
+existing per-side `rl/rr` width tracks to finite supported strips. Their existing
+meaning (studs past the asphalt) and inside-curvature clipping remain unchanged.
+The original centre-line clearance/escape check is retained; additional strip
+checks protect committed wide ground from subsequent road and escape candidates.
+
+| Module | API | Contract |
+|---|---|---|
+| `Road/SplineCorridor` | `row(s,x,z,yaw,k,left,right)`, `cell(a,b,boundsOnly?)` | Short plan strip with absolute left/right centre-line extents, clipped on the inside of a bend. Cells retain world corners and arc-distance endpoints after old curve samples retire. Nonconvex collision cells are refused; a bounds-only cell is for conservative broadphase lookup |
+| `Road/SplineCorridor` | `new()`, index `add(cell)`, `clear(cell,separation,gap)`, `near(cell,separation,gap)` | Spatially bounded, read-only queries over frozen cells. Non-neighbour cells retain the existing along-road separation rule. `clear` uses actual quad edges and returns `(clear, conflictingCell?, visited, tested)`. `near` supplies conservative AABB candidates for repeated fitting without rescanning history |
+| `Road/SplineCorridor` | `reserve(outgoingRunoff,distance)` | Minimum future runoff envelope includes the taper from outgoing width, the old widest ordinary runoff and a conservative smoothstep overshoot allowance. It is reserved before accepting the current section |
+| `Road/SplineCorridor` | `fit(frames,sectionEnd,incoming,desired,oldIndex,separation)` | Returns left/right eased width tracks and reduction factors, or nil if the minimum footprint cannot fit. Includes at least the full escape. Checks actual final widened cells against each other, old cells and a trial-dependent reserved continuation. Cached search envelopes use the maximum of baseline and wanted widths, including tight edges below the normal minimum. Constrained results are rounded inward |
+
+These are generator-only footprints, not extra physical parts or per-wheel scans.
+`SplineGen.preparedGround` is an internal, one-section selected-preview cache keyed
+by section identity and start distance; it is consumed before the real carve and
+is never added to a network section. Rejected previews cannot change live cells,
+schedule streams or this cache. Shared height/normal/boundary consumers follow in
+the same terrain step before this construction switch is enabled for review.

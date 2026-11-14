@@ -42,6 +42,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Config = require(ReplicatedStorage.Shared.Config)
 local Spline = require(script.Parent.Spline)
 local Biome = require(script.Parent.SplineBiome)
+local Corridor = require(script.Parent.SplineCorridor)
 local SplineTurnFit = require(script.Parent.SplineTurnFit)
 
 local SplineGen = {}
@@ -99,6 +100,8 @@ export type Gen = typeof(setmetatable(
 		rng: Random,
 		seed: number,
 		biomes: Biome.Schedule?,
+		corridors: Corridor.Index,
+		preparedGround: {section:Spline.Section,s0:number,left:{number},right:{number}}?,
 		sections: { Spline.Section },
 		recent: { string },
 		lastDir: number,
@@ -192,6 +195,8 @@ function SplineGen.new(seed: number, origin: Spline.Origin?, clearOverride: numb
 		rng = Random.new(seed),
 		seed = seed,
 		biomes = if Config.Spline.Biomes.Enabled then Biome.new(seed) else nil,
+		corridors = Corridor.new(),
+		preparedGround = nil,
 		sections = {},
 		recent = {},
 		lastDir = 0,
@@ -305,6 +310,16 @@ function SplineGen._terrain(self: Gen, sec: Spline.Section)
 	local r = self.trng
 	local len = sec.len
 	local tag = sec.tag
+	local fieldFree, steepOnly = true, true
+	if self.biomes and Config.Spline.Biomes.GroundEnabled then
+		for u=0,len,16 do
+			local s=self.spline.length+u
+			fieldFree=fieldFree and Biome.mix(self.biomes.list,s,{1,0,0},0)<0.01
+			steepOnly=steepOnly and Biome.mix(self.biomes.list,s,{0,0,1},1)>0.99
+		end
+		fieldFree=fieldFree and Biome.mix(self.biomes.list,self.spline.length+len,{1,0,0},0)<0.01
+		steepOnly=steepOnly and Biome.mix(self.biomes.list,self.spline.length+len,{0,0,1},1)>0.99
+	end
 	local bend = tag ~= "Straight" and tag ~= "Escape" and tag ~= "Start"
 	local function between(range: { number }): number
 		return range[1] + (range[2] - range[1]) * r:NextNumber()
@@ -326,7 +341,7 @@ function SplineGen._terrain(self: Gen, sec: Spline.Section)
 			gMost = math.max(gMost, math.abs(sec.g[j]))
 		end
 		local flat = kMost <= 1 / T.GroveMinRadius and gMost <= math.tan(math.rad(T.GroveMaxGrade))
-		if tag ~= "Start" and len >= T.GroveMinLength and flat and roll < T.GroveChance then
+		if fieldFree and tag ~= "Start" and len >= T.GroveMinLength and flat and roll < T.GroveChance then
 			local first = if pick < 0.5 then -1 else 1
 			grove[first] = seed
 			if both < T.GroveBothChance then
@@ -514,7 +529,7 @@ function SplineGen._terrain(self: Gen, sec: Spline.Section)
 		local x = self.xrng
 		local roll, uWidth, uCore, uAt = x:NextNumber(), x:NextNumber(), x:NextNumber(), x:NextNumber()
 		local side = if edgeOver(1, 0, len) == Spline.CLIFF and not grove[1] then 1 elseif edgeOver(-1, 0, len) == Spline.CLIFF and not grove[-1] then -1 else 0
-		if side ~= 0 and roll < T.TightChance then
+		if steepOnly and side ~= 0 and roll < T.TightChance then
 			local w0, w1 = startRun[side], self.runoff[side]
 			local wt = T.TightRunoff[1] + (T.TightRunoff[2] - T.TightRunoff[1]) * uWidth
 			local rampIn = math.max(T.TightRamp, math.abs(w0 - wt) / T.TightRate)
@@ -560,6 +575,7 @@ function SplineGen._terrain(self: Gen, sec: Spline.Section)
 	-- GRAND CLIFFS (T-185): how grand its rock and cliff faces are drawn, from no random
 	-- stream at all, so it changes nothing else the road chooses
 	sec.gd = self:_grand(sec)
+	if self.biomes and Config.Spline.Biomes.GroundEnabled and tag~="Start" then self:_fitGround(sec) end
 	self.turning = nil
 end
 
@@ -571,6 +587,12 @@ end
 -- Its own random stream, so no other choice moves. After `_terrain`, before the commit.
 function SplineGen._carve(self: Gen, sec: Spline.Section)
 	local T = Config.Spline.Terrain
+	if self.biomes and Config.Spline.Biomes.GroundEnabled then
+		for u=0,sec.len,16 do
+			if Biome.mix(self.biomes.list,self.spline.length+u,{0,0,1},1)<0.99 then return end
+		end
+		if Biome.mix(self.biomes.list,self.spline.length+sec.len,{0,0,1},1)<0.99 then return end
+	end
 	local tag = sec.tag
 	if tag == "Straight" or tag == "Escape" or tag == "Start" or not (sec.rl and sec.rr and sec.el and sec.er) then
 		return
@@ -674,7 +696,9 @@ function SplineGen.replay(sections: { Spline.Section }, origin: Spline.Origin?, 
 end
 
 function SplineGen._commit(self: Gen, sec: Spline.Section)
+	local s0=self.spline.length
 	self.spline:append(sec)
+	if self.biomes and Config.Spline.Biomes.GroundEnabled then self:_registerGround(s0,self.spline.length) end
 	table.insert(self.sections, sec)
 	local st = self.stats
 	st.sections += 1
@@ -863,7 +887,7 @@ end
 -- the spline itself, and a step always ends exactly on an emit, so the points emitted are
 -- exactly the points the road's own grid will hold once it is laid (T-140: a check that
 -- sampled 4 studs off them passed a hairpin it later failed, and the road boxed itself in).
-local function walk(x: number, z: number, yaw0: number, k0: number, knots: { number }, every: number, first: number, emit: (number, number, number) -> boolean?): boolean
+local function walk(x: number, z: number, yaw0: number, k0: number, knots: { number }, every: number, first: number, emit: (number, number, number, number?, number?) -> boolean?, includeKnots: boolean?): boolean
 	local step = Config.Spline.SampleStep
 	local j = 1
 	local sA, kA, yawA = 0, k0, yaw0
@@ -891,11 +915,14 @@ local function walk(x: number, z: number, yaw0: number, k0: number, knots: { num
 		x += h * (-math.sin(y0) - 4 * math.sin(ym) - math.sin(y1))
 		z += h * (-math.cos(y0) - 4 * math.cos(ym) - math.cos(y1))
 		s = s1
-		if s >= nextEmit - 1e-9 then
-			if emit(s, x, z) == false then
+		local onGrid=s>=nextEmit-1e-9
+		if onGrid or (includeKnots and s>=knots[j]-1e-9) then
+			local interval=knots[j]-sA
+			local k=if interval>0 then kA+(knots[j+1]-kA)*(s-sA)/interval else knots[j+1]
+			if emit(s, x, z, y1, k) == false then
 				return false
 			end
-			nextEmit += every
+			if onGrid then nextEmit += every end
 		end
 	end
 	return true
@@ -1176,7 +1203,7 @@ function SplineGen._clear(self: Gen, knots: { number }): boolean
 	-- `CheckStep` of s), so a section's points here are the ones it will be filed with
 	local cs = Config.Spline.CheckStep
 	local first = cs * (math.floor(s0 / cs + 1e-9) + 1) - s0
-	return walk(x0, z0, yaw0, k0, knots, cs, first, function(u, x, z)
+	local roadClear=walk(x0, z0, yaw0, k0, knots, cs, first, function(u, x, z)
 		local s = s0 + u
 		if sp:crowded(x, z, s, clear, sep) then
 			return false
@@ -1193,6 +1220,7 @@ function SplineGen._clear(self: Gen, knots: { number }): boolean
 		own[n + 1], own[n + 2], own[n + 3] = s, x, z
 		return true
 	end)
+	return roadClear and (not self.biomes or not Config.Spline.Biomes.GroundEnabled or self:_groundClear(knots))
 end
 
 -- Append the escape to a section's curvature knots: ease to straight, then run straight.
@@ -1207,6 +1235,99 @@ local function withEscape(knots: { number }, kt: number): { number }
 	table.insert(out, len + Te + Config.Spline.EscapeLength)
 	table.insert(out, 0)
 	return out
+end
+
+-- Minimum ground that a future section/escape needs, including a continuous taper
+-- from the preceding field. Keep the original centre-line clearance unchanged.
+function SplineGen._groundFrames(self:Gen, knots:{number}):{Corridor.Row}
+	local sp=self.spline
+	local x,z,yaw,k=sp:tip()
+	local s0=sp.length
+	local half=Config.Road.Width*.5
+	local left,right=sp:runoffRaw(s0,-1),sp:runoffRaw(s0,1)
+	local function row(u:number,px:number,pz:number,heading:number,curvature:number):Corridor.Row
+		return Corridor.row(s0+u,px,pz,heading,curvature,
+			half+Corridor.reserve(left,u),half+Corridor.reserve(right,u))
+	end
+	local out={row(0,x,z,yaw,k)}
+	local cs=Config.Spline.CheckStep
+	local first=cs*(math.floor(s0/cs+1e-9)+1)-s0
+	walk(x,z,yaw,k,knots,cs,first,function(u,px,pz,heading,curvature)
+		table.insert(out,row(u,px,pz,heading :: number,curvature :: number))
+		return true
+	end,true)
+	return out
+end
+
+function SplineGen._groundClear(self:Gen, knots:{number}):boolean
+	local frames=self:_groundFrames(knots)
+	local own=Corridor.new()
+	local gap=Config.Spline.ClearanceGap+Config.Spline.Biomes.CorridorMargin
+	for i=2,#frames do
+		local cell=Corridor.cell(frames[i-1],frames[i])
+		if not cell or not self.corridors:clear(cell,self.separation,gap) or not own:clear(cell,self.separation,gap) then return false end
+		own:add(cell)
+	end
+	return true
+end
+
+function SplineGen._fitGround(self:Gen,sec:Spline.Section)
+	local sp=self.spline
+	local s0=sp.length
+	local prepared=self.preparedGround
+	self.preparedGround=nil
+	if prepared and prepared.section==sec and prepared.s0==s0 then
+		sec.rl,sec.rr=prepared.left,prepared.right
+		self.runoff[-1],self.runoff[1]=prepared.left[#prepared.left],prepared.right[#prepared.right]
+		return
+	end
+	local C=Config.Spline.Biomes
+	local oldL,oldR=sec.rl :: {number},sec.rr :: {number}
+	local incoming={sp:runoffRaw(s0,-1),sp:runoffRaw(s0,1)}
+	local function oldWidth(s:number,side:number):number
+		local list=if side<0 then oldL else oldR
+		local at,value=0,incoming[if side<0 then 1 else 2]
+		for i=1,#list,2 do
+			if s-s0<=list[i] then
+				local u=math.clamp((s-s0-at)/math.max(list[i]-at,1e-9),0,1)
+				return value+(list[i+1]-value)*u*u*(3-2*u)
+			end
+			at,value=list[i],list[i+1]
+		end
+		return value
+	end
+	local function desired(s:number,side:number):number
+		local edge=if side<0 then sec.el :: {number} else sec.er :: {number}
+		local kind=edge[#edge]
+		for i=1,#edge,2 do if s-s0<=edge[i] then kind=edge[i+1];break end end
+		local small=if kind==Spline.ROCK then C.BankWidth else C.Width[2]
+		return Biome.mix(self.biomes and self.biomes.list,s,{C.Width[1],small,oldWidth(s,side)},oldWidth(s,side))
+	end
+	local frames=self:_groundFrames(withEscape(sec.k,sec.k[#sec.k]))
+	local left,right=Corridor.fit(frames,s0+sec.len,incoming,desired,self.corridors,self.separation)
+	assert(left and right,"SplineGen: accepted geometry cannot fit its minimum supported ground")
+	sec.rl,sec.rr=left,right
+	self.runoff[-1],self.runoff[1]=left[#left],right[#right]
+end
+
+function SplineGen._registerGround(self:Gen,s0:number,s1:number)
+	local sp=self.spline
+	local half=Config.Road.Width*.5
+	local function at(s:number):Corridor.Row
+		local x,z=sp:planAt(s)
+		return Corridor.row(s,x,z,sp:yawAt(s),sp:curvatureAt(s),half+sp:runoffAt(s,-1),half+sp:runoffAt(s,1))
+	end
+	local cs=Config.Spline.CheckStep
+	local previous=at(s0)
+	local s=cs*(math.floor(s0/cs+1e-9)+1)
+	while previous.s<s1-1e-9 do
+		local nextRow=at(math.min(s,s1))
+		local cell=Corridor.cell(previous,nextRow)
+		assert(cell,"SplineGen: supported ground cell folded")
+		self.corridors:add(cell)
+		previous=nextRow
+		s+=cs
+	end
 end
 
 -- One random candidate: a bend or a straight, its curvature knots, and whether its
@@ -1427,9 +1548,10 @@ function SplineGen._fitTurn(self: Gen, sec: Spline.Section, item: Item)
 	preview.xrng=self.xrng:Clone(); preview.crng=self.crng:Clone()
 	local proposed=copyTables(sec)
 	preview:_terrain(proposed)
+	local ground=if self.biomes and Config.Spline.Biomes.GroundEnabled then {left=table.clone(proposed.rl :: {number}),right=table.clone(proposed.rr :: {number})} else nil
 	preview:_carve(proposed)
 	preview.spline:append(proposed)
-	return SplineTurnFit.measure(preview.spline,self.spline.length,preview.spline.length,self.flip,preview.flips)
+	return SplineTurnFit.measure(preview.spline,self.spline.length,preview.spline.length,self.flip,preview.flips),ground
 end
 
 -- A planned turn lands on its heading and keeps the crossing/escape safety checks.
@@ -1448,6 +1570,7 @@ function SplineGen._turn(self: Gen, item: Item): (Spline.Section | string)?
 	local fit = M.TurnChecks and needed>=math.rad(M.TurnCheckAngle)
 	local totalTries = if fit then M.TurnFitTries else M.TurnTries
 	local best: Spline.Section? = nil
+	local bestGround:any=nil
 	local reading: any = nil
 	for try=1,totalTries do
 		local lo=if try>totalTries//2 then math.min(C.MinRadius,range[1]) else range[1]
@@ -1474,10 +1597,10 @@ function SplineGen._turn(self: Gen, item: Item): (Spline.Section | string)?
 					end
 					local sec={len=emittedLen,k=emitted,g=pickGrade(self,g0,y0,emittedLen,fit and self.flip>0,nextMove),b=bank,tag=item.tag}
 					if not fit then return sec end
-					local r=self:_fitTurn(sec,item)
+					local r,ground=self:_fitTurn(sec,item)
 					self.stats.hillChecked+=1
 					if not r.ok then self.stats.hillRejected+=1 end
-					if not reading or (r.ok and not reading.ok) or (r.ok==reading.ok and r.score<reading.score) then best,reading=sec,r end
+					if not reading or (r.ok and not reading.ok) or (r.ok==reading.ok and r.score<reading.score) then best,reading,bestGround=sec,r,ground end
 				else
 					self.stats.rejectedCrowded+=1
 				end
@@ -1492,6 +1615,7 @@ function SplineGen._turn(self: Gen, item: Item): (Spline.Section | string)?
 		table.insert(self.turnFits,{s0=sp.length,s1=sp.length+best.len,what=item.what,view=reading.view,cut=reading.cut,fill=reading.fill,retries=item.hillRetries or 0,relaxed=not reading.ok})
 		self.stats.hillTurns+=1
 		if not reading.ok then self.stats.hillRelaxed+=1 end
+		if bestGround then self.preparedGround={section=best,s0=sp.length,left=bestGround.left,right=bestGround.right} end
 		return best
 	end
 	return nil

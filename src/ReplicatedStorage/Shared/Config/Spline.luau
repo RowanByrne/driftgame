@@ -385,6 +385,7 @@ local Spline = {
 	-- the feasible random minimum reserves both adjoining half-blends and a plateau.
 	Biomes = {
 		Enabled = true,
+		GroundEnabled = false, -- enabled with the complete matching ground/mesh blockout
 		Length = { 400, 900 }, -- studs, boundary to boundary
 		Weights = { 0.45, 0.35, 0.20 }, -- fields, small cliffs, steep cliffs; distance targets
 		ChoiceJitter = 0.1, -- keep every different category possible while correcting deficits
@@ -398,6 +399,14 @@ local Spline = {
 		RiseRate = 0.7, -- maximum blend contribution to profile height change per road stud
 		DropRate = 0.7,
 		WidthRate = 0.35,
+		BankWidth = 60, -- supported uphill bank in a small-cliff category
+		BankRise = 25,
+		BankMaxSlope = 0.5,
+		CorridorRate = 0.2, -- width change between fitted knots; smoothstep peaks at 1.5x
+		CorridorKnot = 32,
+		CorridorMargin = 2, -- conservative allowance for curvature between 8-stud cells
+		CorridorFitIterations = 5, -- conservatively round a constrained field inward
+		CorridorSideIterations = 4,
 	},
 
 	-- --------------------------------------------------------------- the grass's texture
