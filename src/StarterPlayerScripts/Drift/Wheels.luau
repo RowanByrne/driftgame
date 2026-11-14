@@ -965,10 +965,11 @@ function Wheels.DebugState(self: Wheels, state: DriftModel.State?, input: any)
 			-- This IS the bug, in one number: before the fix the attachment sat here and
 			-- the mark went with it, up to six tenths of a stud under a road with five
 			-- hundredths of clearance.
-			leanOffsetY = w.a.Position.Y - w.patchA.Y,
+			leanOffsetY = w.sourceA.Position.Y - w.patchA.Y,
 			-- Undo the full body-local offset on the fixed source, not the turning mark
 			-- endpoint. Include suspension lift so pitch / roll do not fake a residual.
-			patchResidualY = Wheels.applyRoll(w.a.Position, com, cosR, sinR).Y - w.patchA.Y,
+			patchResidualY = bodyLocal:PointToWorldSpace(w.sourceA.Position).Y
+				- w.patchA.Y - (if state.wheelLift then state.wheelLift[w.index] or 0 else 0),
 		})
 	end
 	return out
