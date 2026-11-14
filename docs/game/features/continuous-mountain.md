@@ -1,6 +1,6 @@
 # Feature: One continuous mountain
 
-**Status:** approved and merged (`T-190`, steps `T-194` and `T-199`). The user approved both steps after the lane drive on 2026-11-13; the conductor checked and merged the build on 2026-11-14. See "As built" for measured behavior and remaining limits. **Owner task:** `T-190` (complete).
+**Status:** approved and merged (`T-190`, steps `T-194` and `T-199`). The user approved both steps on 2026-11-13; the conductor checked and merged the build on 2026-11-14. See "As built" for measured behavior and remaining limits. **Owner task:** `T-190` (complete).
 
 ## Goal
 

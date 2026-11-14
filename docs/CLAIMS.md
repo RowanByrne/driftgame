@@ -9,7 +9,6 @@ Every task in progress and the files it owns, so parallel sessions and workers n
 
 | Branch | Lane | Files owned | Since |
 |---|---|---|---|
-| agent/hide-ui-p (T-200) | 2 | src/StarterPlayerScripts/Controllers/UiVisibilityController.luau (new); docs/game/SETTINGS.md; docs/game/UI-INVENTORY.md; docs/game/DECISIONS.md | 2026-11-13 |
 
 ## Notes between sessions
 
