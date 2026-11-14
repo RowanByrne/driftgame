@@ -456,6 +456,72 @@ side (where "height" applies most) and the cliff drop on the downhill side.
   boxes 0; cliff boxes 4 on tight bends, unchanged. Rays from the road to a 25 and 45-degree sun
   through rock meet a box 86% and 85% of the time (88% before).
 
+### Contained shadow casters (T-206)
+
+The older setback/overlap fits and their protrusion measurements above are superseded.
+`RockShade_*`, `RockShadeTop_*`, `CliffShade_*` and `RoadShade_*` remain opaque, casting,
+non-colliding plain Parts. Their fit now uses the exact vertex rows and triangle diagonals
+rendered in this chunk, including the hillside's interpolated face caps. No terrain, collision,
+car, remote or generator shape changes.
+
+Each face caster must fit inside inward halfspaces of the rendered face/top, its footprint
+and upright cross-section ends. The whole oriented box's support is checked against every
+plane, with 0.12 studs of clearance to cover mesh quantization. The fit first finds a feasible
+inward translation bounded by those planes; it then trims the box, subdivides poor spans at
+actual mesh cuts, and omits collapsed/no-room spans. An inverted cliff foot/lip is rejected
+before taking a magnitude. Cliff columns start under the lip and stay within the actual runoff
+footprint, including narrow caps. Face frames stand upright along the plan curve: pitching a
+tall box along the road's grade used to tip its height into another cross-section. Planar
+lengths also keep taper height differences from becoming fictitious box length.
+
+A separately fitted short caster covers the rock's foot where the conservative full-height
+intersection would lose it to an upper jag's extended plane. It stays within the vertical
+footprint of the actual first face strip and below both of that strip's triangle planes;
+non-upward patches are omitted. The main face and top casters remain. A road caster is below
+the minimum projection of **every** actual road-row vertex,
+including the bevel, and inside every intermediate footprint edge. Every triangle point is a
+convex combination of those vertices, so this certifies its roof without extending a steep
+bevel's plane across the entire road. Shared face/top planes are cached during a chunk build.
+
+`SplineMeshTests.runShadows` reads the mesh back after Roblox's quantization, checks all eight
+corners and a 3-by-3 face grid on every generated caster, and checks exact triangle/box
+intersection on all 13 separating axes, including vertical end caps and side faces. The latter
+prevents a higher road from masking a local side protrusion in a highest-ground-only check.
+It also measures ten-degree sun rays through rendered rock at least 25 studs tall, reports
+low-cap/hillside rays separately, and asserts opaque casting and the existing frame-slice bound.
+
+Measured in DR-Lane4 on seeds 31337, 101 and 2024, 12 000 studs each (78 chunks):
+12 071 casters, 313 846 corner/face samples and 2 886 824 triangle/box pairs, with zero exposed
+samples or face crossings. The sweep includes 957 tight-bend spans, 3 476 capped rock spans,
+16 edge transitions and 370 spans with banked narrow runoff. It blocks 2 179 of 2 422
+ten-degree rays through rendered rock at least 25 studs tall (90%); including low caps and
+hillside hits, 2 544 of 3 286 rays are blocked. Thin caps may have no safe caster room, and
+these figures do not promise a shadow at every sun angle. All nine shadow checks and all
+three streaming invalidation checks pass. No added mesh: the same eight-mesh ceiling remains.
+
+The original failing regression includes seed 101, chunk 480..960, `CliffShade_L_21` over
+s 630..636, 71.115 studs exposed against the actual mesh. Seed 31337, chunk 6240..6720,
+had a rock caster 17.945 studs exposed; seed 101, chunk 5760..6240, a road caster 42.539.
+The separate matched nine-chunk comparison is 262/271 ten-degree tall-rock rays blocked
+before and 234/271 after (96.7% to 86.3%), with 148 triangle/box crossings before and zero
+after. Shadow coverage is reduced where conservative fitting leaves less room. This is a
+different fixture length from the full 78-chunk sweep above.
+
+Live client road-window check, server-chosen seed 31337: debug placement moves the actual car
+5 200 studs at 100 studs/s through its normal renderer. 6 235 Heartbeats, 8.341 ms mean,
+10.901 ms p99, 18.066 ms worst, none above 20 ms; zero missing current chunks and no fallback.
+Five meshes including a build at most; worst build work slice 6.001 ms. The road is replayed
+before travel in this check; the separate invalidation tests cover later sections arriving.
+A physical 360-Heartbeat drive at the start goes from s 100 to 138.33 at 27.55 studs/s,
+with zero airborne samples, ride-height error below 0.001 studs and zero drawn gap.
+
+**Remaining measured failure:** the existing 40 ms whole-chunk build check fails. The final
+8 078-stud mesh suite passes 16/17: 27.93 ms mean, 48.33 ms worst total build work; its worst
+frame pays 5.96 ms, below the unchanged 9 ms bound. Earlier isolated runs reached 41.47 and
+40.13 ms, and the final 78-chunk shadow sweep reached 46.638 ms with a 6.664 ms worst slice.
+These aggregate figures are reported separately from frame cost; the threshold is not relaxed.
+The user reviews this fix in Lane4 before any merge to Main.
+
 ### One mountain through the turns (no hedges)
 
 T-189. With no hedge to hide the change of sides, the mountain is joined through each turnaround:
