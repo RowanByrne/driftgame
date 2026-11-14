@@ -302,9 +302,9 @@ return {
 	--   * the tarmac smoke (both layers) FADES OUT over `FadeSeconds` when the wheel leaves
 	--     tarmac, and back in when it returns -- a rate scaled by a per-wheel mix, not a switch
 	--   * on grass the mark is a flattened-grass line (`Grass.FlatMark`), and above
-	--     `Grass.TrenchSlipDegrees` of slip a wider brown TRENCH (`Grass.TrenchMark`) is laid
-	--     ON TOP of it. Layered, never swapped: the flat line runs unbroken underneath, so the
-	--     trench starting or ending is a brown line appearing over a green one, not a hole
+	--     `Grass.TrenchSlipDegrees` of slip a wider brown TRENCH (`Grass.TrenchMark`) replaces
+	--     it (T-205). Each marking wheel emits green OR brown, never both; hysteresis keeps
+	--     the choice steady, while marks already laid behind the car fade normally
 	--   * on grass, `Grass.Clippings` (green bits) are kicked up behind the wheel, and
 	--     `Grass.Dirt` (brown clods) blends in around the trench threshold
 	--   * on gravel, a pale scuff mark and a tan dust cloud (`Gravel`). Kept to one emitter
