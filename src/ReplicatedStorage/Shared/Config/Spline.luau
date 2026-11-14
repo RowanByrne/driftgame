@@ -380,6 +380,26 @@ local Spline = {
 		TrunkColour = Color3.fromRGB(92, 70, 52),
 	},
 
+	-- Short terrain categories along the existing mountain (T-203). Lengths are drawn
+	-- independently of bends/scenery. Strong profile changes get longer transitions;
+	-- the feasible random minimum reserves both adjoining half-blends and a plateau.
+	Biomes = {
+		Enabled = true,
+		Length = { 400, 900 }, -- studs, boundary to boundary
+		Weights = { 0.45, 0.35, 0.20 }, -- fields, small cliffs, steep cliffs; distance targets
+		ChoiceJitter = 0.1, -- keep every different category possible while correcting deficits
+		MinBlend = 180,
+		MaxBlend = 600,
+		PlateauMin = 100, -- fully established ground between neighbouring blends
+		-- Maximum profile envelopes, also used to reserve enough transition distance.
+		Rise = { 5, 35, 220 }, -- studs uphill, field / small / current steep envelope
+		Drop = { 5, 50, 200 }, -- studs downhill
+		Width = { 80, 20, 40 }, -- studs past the asphalt, before local safe fitting
+		RiseRate = 0.7, -- maximum blend contribution to profile height change per road stud
+		DropRate = 0.7,
+		WidthRate = 0.35,
+	},
+
 	-- --------------------------------------------------------------- the grass's texture
 	-- The user, 2026-11-13: "give grass it's own texture" (T-187), then picked a painted
 	-- grass tile from four looks (DECISIONS.md). One image every chunk shares

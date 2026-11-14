@@ -50,6 +50,7 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Config = require(ReplicatedStorage.Shared.Config)
+local Biome = require(script.Parent.SplineBiome)
 
 local Spline = {}
 Spline.__index = Spline
@@ -74,6 +75,7 @@ export type Section = {
 	gl: { number }?, -- gravel runoff runs {ds0, ds1, side, ...}, as `kr` (T-181)
 	gv: { number }?, -- groves {side, seed, ...}: trees on that side's runoff, the whole section (T-183)
 	gd: { number }?, -- grandeur knots {ds, g, ...}, g -1..1 (below 0: lower rock, T-189), the last at `len` (T-185)
+	bm: { number }?, -- biome records {absoluteBoundary, destinationKind, blendLength, ...} (T-203)
 }
 
 -- The edge kinds, as they go over the wire.
@@ -127,6 +129,7 @@ export type Spline = typeof(setmetatable(
 		groveL: Groves,
 		groveR: Groves,
 		grand: Track?, -- the rock and cliff faces' grandeur (T-185), made on the first section
+		biomes: { number }?, -- immutable absolute transition records; nil uses legacy terrain
 		-- the mountain's uphill heading (a yaw), fixed for the road (T-166): set by whoever
 		-- makes the road (`SplineGen`), nil on a road with no mountain. The hillside's slope
 		-- reads it (`Road/SplineHill`, T-190)
@@ -253,6 +256,7 @@ function Spline.new(origin: Origin?): Spline
 		groveL = { a = {}, b = {}, seed = {} },
 		groveR = { a = {}, b = {}, seed = {} },
 		grand = nil,
+		biomes = nil :: { number }?,
 		fall = nil :: number?,
 	}, Spline)
 	return self
@@ -512,6 +516,7 @@ function Spline.append(self: Spline, sec: Section)
 		assert(#knots >= 2 and math.abs(knots[#knots - 1] - sec.len) < 1e-6, "Spline: every track must end on a knot at the section's end")
 	end
 	checkTerrain(self, sec)
+	local biomeAdditions = Biome.validate(self.biomes, sec.bm, s0)
 	appendTrack(self.curv, self.yawK, s0, sec.k)
 	appendTrack(self.grade, self.yK, s0, sec.g)
 	appendTrack(self.bank, nil, s0, sec.b)
@@ -535,6 +540,7 @@ function Spline.append(self: Spline, sec: Section)
 	end
 	local grand = self.grand :: Track
 	appendTrack(grand, nil, s0, sec.gd or { sec.len, grand.v[#grand.v] })
+	self.biomes = Biome.commit(self.biomes, biomeAdditions)
 	self.length = s1
 	self.sections += 1
 	local step = self.step
@@ -663,6 +669,11 @@ function Spline.edgeAt(self: Spline, s: number, side: number): number
 		end
 	end
 	return sp.t[lo]
+end
+
+-- Terrain category phase, evaluated over the original absolute transition interval.
+function Spline.biomeAt(self: Spline, s: number): (number?, number?, number)
+	return Biome.at(self.biomes, s)
 end
 
 -- How grand the rock and cliff faces are at `s`, 0..1 (T-185): eased between the knots.

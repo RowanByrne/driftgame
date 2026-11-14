@@ -69,6 +69,9 @@ local function validSection(sec: any): boolean
 	if sec.gv ~= nil and not numbers(sec.gv, 2) then
 		return false
 	end
+	if sec.bm ~= nil and not numbers(sec.bm, 3) then
+		return false
+	end
 	return true
 end
 

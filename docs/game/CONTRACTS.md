@@ -324,3 +324,38 @@ Cmdr owns its remotes outside `Shared/Net`, under `ReplicatedStorage.CmdrClient`
 | `CmdrController:Act` | `(action, ...) -> reply`: this client's car/score action |
 | `CmdrController.onlyMe` | `(players?) -> boolean`: omitted, empty, or only the local player |
 | `CmdrController:Show`, `Hide`, `DebugState` | Console visibility and debug state, including the most recent targeted action |
+
+## Biome section schedule (T-203, terrain step in progress)
+
+`Spline.Section.bm` is an optional flat list of absolute-distance triples
+`{ boundaryS, destinationKind, blendLength, ... }`. Category IDs are 1 Fields,
+2 Small cliffs and 3 Steep cliffs. The initial record is `{0, initialKind, 0}`.
+Subsequent records describe the original complete transition interval centred on
+`boundaryS`; they are not clipped or re-eased at road-section boundaries. A section
+publishes a transition before the first point of its blend is emitted. It may repeat
+known records needed as context, including a boundary beyond the section end whose
+blend already begins inside the section. Repeated records must match exactly.
+
+The existing `rl/rr/el/er/kr/gl/gv/gd` meanings remain unchanged. No new remote:
+`RoadSpline` and `SplineTest` carry the optional `bm` field in their sections.
+`SplineRoadController` validates finite numeric triples and `Spline.append` checks
+their semantics before appending any curve or terrain. Unknown IDs, conflicting
+repeats, out-of-order boundaries, lengths outside configured bounds, insufficient
+transition distance, overlapping transitions without an established plateau and a
+new transition reaching backwards into already-emitted road are refused whole.
+Biome scheduling must begin with the first road section. A road without `bm` keeps
+the previous terrain behaviour explicitly (`spline.biomes == nil`); after schedule
+introduction, an omitted field carries the previously published records forward.
+
+| Module | API | Contract |
+|---|---|---|
+| `Road/SplineBiome` | `new(seed)`; schedule `clone()`, `extend(s)`, `records(s0,s1)` | Server schedule with independent seed-derived length and category streams, distance-deficit category choice and no equal neighbours. Length draws use the feasible interval within `Config.Spline.Biomes.Length`, reserving both adjoining half-blends plus `PlateauMin`. Clone copies records, counters and both random streams. Clients replay published records |
+| `Road/SplineBiome` | `blendLength(from,to)` | At least `MinBlend` and enough for `1.5 * abs(parameter change) / maximum rate` for each rise/drop/width envelope. Cubic smoothstep has maximum derivative 1.5. Impossible budgets fail instead of silently shortening the transition |
+| `Road/SplineBiome` | `merge(known?, additions?, alreadyEmittedS)` | Validates without mutating either input and returns combined records. Invalid input cannot alter already-emitted terrain |
+| `Road/SplineBiome` | `validate(known?, additions?, alreadyEmittedS)`, `commit(known?, pending?)` | Runtime replay validates a small new suffix without mutation, then appends it only after the whole section validates. Existing records are append-only; no full-history copy per section. `merge` is the pure snapshot/test convenience |
+| `Road/Spline` | `biomeAt(s)` | Returns `(fromKind?, toKind?, alpha)`. One global cubic smoothstep over the original transition endpoints; zero derivative at entry/exit, no reset at section cuts. Legacy roads return `(nil,nil,0)` |
+| `Road/SplineBiome` | `at(records?,s)`, `mix(records?,s,values,legacy)` | Shared phase lookup and numeric parameter interpolation; no instances, world state or per-query schedule generation |
+
+This contract commit introduces schedule/replay data. Physical ground and drawn
+profile changes remain within the unapproved T-209 terrain build until their shared
+definition and lane checks are complete; no driving feel or analytics change.

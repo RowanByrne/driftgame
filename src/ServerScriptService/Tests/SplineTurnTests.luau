@@ -9,10 +9,14 @@ local Tests={}
 local function hashState(g)
 	local out={g.spline.length,#g.spline.curv.s,#g.spline.grade.s,#g.spline.bank.s,#g.flips,g.uphill,g.flip,g.lastGrand}
 	for _,r in {g.trng,g.grng,g.xrng,g.crng} do table.insert(out,r:Clone():NextNumber()) end
+	if g.biomes then
+		table.insert(out,g.biomes.lengthRng:Clone():NextNumber())
+		table.insert(out,g.biomes.choiceRng:Clone():NextNumber())
+	end
 	local n,sum=0,0
 	for _,bucket in g.spline.hash do for _,v in bucket do n+=1;sum+=v end end
 	table.insert(out,n);table.insert(out,sum)
-	return game:GetService("HttpService"):JSONEncode({summary=out,curv=g.spline.curv,grade=g.spline.grade,bank=g.spline.bank,edgeL=g.spline.edgeL,edgeR=g.spline.edgeR,runL=g.spline.runL,runR=g.spline.runR,runoff=g.runoff,inBand=g.inBand,crossAt=g.crossAt,flipDone=g.flipDone})
+	return game:GetService("HttpService"):JSONEncode({summary=out,biomeRecords=g.spline.biomes,biomePlan=g.biomes and {g.biomes.list,g.biomes.distance,g.biomes.total},curv=g.spline.curv,grade=g.spline.grade,bank=g.spline.bank,edgeL=g.spline.edgeL,edgeR=g.spline.edgeR,runL=g.spline.runL,runR=g.spline.runR,runoff=g.runoff,inBand=g.inBand,crossAt=g.crossAt,flipDone=g.flipDone})
 end
 function Tests.run()
 	local checks={}

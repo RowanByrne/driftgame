@@ -41,6 +41,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Config = require(ReplicatedStorage.Shared.Config)
 local Spline = require(script.Parent.Spline)
+local Biome = require(script.Parent.SplineBiome)
 local SplineTurnFit = require(script.Parent.SplineTurnFit)
 
 local SplineGen = {}
@@ -97,6 +98,7 @@ export type Gen = typeof(setmetatable(
 		spline: Spline.Spline,
 		rng: Random,
 		seed: number,
+		biomes: Biome.Schedule?,
 		sections: { Spline.Section },
 		recent: { string },
 		lastDir: number,
@@ -189,6 +191,7 @@ function SplineGen.new(seed: number, origin: Spline.Origin?, clearOverride: numb
 		spline = spline,
 		rng = Random.new(seed),
 		seed = seed,
+		biomes = if Config.Spline.Biomes.Enabled then Biome.new(seed) else nil,
 		sections = {},
 		recent = {},
 		lastDir = 0,
@@ -295,6 +298,9 @@ end
 
 -- Choose a section's runoff, edges and K-rails, and write them into it.
 function SplineGen._terrain(self: Gen, sec: Spline.Section)
+	if self.biomes then
+		sec.bm = self.biomes:records(self.spline.length, self.spline.length + sec.len)
+	end
 	local T = Config.Spline.Terrain
 	local r = self.trng
 	local len = sec.len
@@ -1409,6 +1415,7 @@ end
 -- incoming curvature/grade/bank, edge hysteresis and valley flips are all preserved.
 function SplineGen._fitTurn(self: Gen, sec: Spline.Section, item: Item)
 	local preview=table.clone(self)
+	preview.biomes=if self.biomes then self.biomes:clone() else nil
 	preview.spline=forkSpline(self.spline)
 	preview.stats=table.clone(self.stats)
 	preview.runoff=table.clone(self.runoff)
