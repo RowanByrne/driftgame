@@ -62,3 +62,7 @@ The user's decisions about this game, so they aren't reopened later. Before prop
 - 2026-11-14: Start UI concepts with the settings page: clean modern glass panes, fogginess, semi-transparency and tiles, inspired by Assetto Corsa EVO and Assetto Corsa Rally. The user asked to "draft concepts" because they have existing controls to move into settings; the final style and the first batch of controls are still unpicked (features/settings-menu.md, C-aa8b43).
 
 - 2026-11-14: Tone down the constant cliffs by linking road biomes: steep cliffs on both sides with lots of guardrails and tight bends, smaller one-sided cliffs with a smoother rising bank opposite, and mostly flat fields sloping gently down the mountain. This requests a replacement for the always-rock-uphill/cliff-downhill scenery rule; its layout, distribution and transitions are proposed for approval in features/road-biomes.md (C-ea75df).
+
+- 2026-11-14: A grass tyre mark is green or brown per wheel, never both emitting together. Brown replaces green at the existing trench threshold and green returns below its hysteresis threshold; old marks fade normally. This replaces the deliberate layered trench in T-188 (T-205, features/car-fx.md).
+
+- 2026-11-14: Tyre marks must retain their width as the car's slide angle changes; fix the tapering shown on the tarmac without changing the approved driving feel (T-207, C-21737d).
