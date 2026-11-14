@@ -703,8 +703,9 @@ function DriftController._settle(state, world): any
 		s.velocity = Vector3.zero
 		s.r, s.u, s.v, s.vy, s.slip = 0, 0, 0, 0, 0
 		s.drifting, s.braking, s.gripAccel = false, false, 0
-		s.tiltRate = Vector2.zero
 	end
+	s.strut = table.clone(state.strut)
+	s.heave, s.tiltRate = 0, Vector2.zero
 	still()
 	for i = 1, SETTLE_MAX do
 		local y, up, b = s.position.Y, s.up, s.body
@@ -726,6 +727,7 @@ function DriftController._settle(state, world): any
 	-- the springs' last speeds are below a hundred-thousandth: at rest is at rest
 	local b = s.body
 	b.vz, b.vp, b.vq, b.kick = 0, 0, 0, 0
+	s.heave, s.tiltRate = 0, Vector2.zero
 	s.supportCache = nil
 	return s
 end
@@ -757,14 +759,16 @@ local function standing(cf: CFrame, rest: any?)
 	local runner = Sim.newRunner(cf)
 	local s = runner.state
 	if rest and (rest.position - cf.Position).Magnitude < 0.05 then
-		s.up, s.surfaceUp = rest.up, rest.surfaceUp
+		s.up, s.groundUp = rest.up, rest.groundUp
+		s.height = rest.height
+		s.strut = table.clone(rest.strut)
 		s.travel = table.clone(rest.travel)
 		s.wheelLift = table.clone(rest.wheelLift)
 		s.body = table.clone(rest.body)
 		s.groundY, s.fallFrom = rest.groundY, rest.fallFrom
 		s.floor = rest.floor
 	elseif cf.UpVector.Y > 0.5 then
-		s.up = cf.UpVector
+		s.up, s.groundUp = cf.UpVector, cf.UpVector
 	end
 	return runner
 end
@@ -897,6 +901,13 @@ function DriftController:DebugState()
 		lateralSpeed = s.v,
 		yawRate = s.r, -- rad/s, and it IS the finger times MaxSteeringSpeed
 		verticalSpeed = s.vy,
+		-- the body on its springs (T-196): its real vertical speed, and its pitch (nose up +)
+		-- and roll (right side up +) with their rates
+		heave = s.heave,
+		pitchDeg = math.deg((Suspension.tiltOf(s.yaw, s.up))),
+		rollDeg = math.deg((select(2, Suspension.tiltOf(s.yaw, s.up)))),
+		tiltRate = s.tiltRate,
+		groundUp = s.groundUp,
 		slipDeg = math.deg(s.slip), -- + means the car is travelling out to its LEFT
 		steer = s.steer, -- the finger: a share of the car's maximum rate of turn
 		throttle = s.throttle, -- eased in over FullThrottleSeconds; never an input

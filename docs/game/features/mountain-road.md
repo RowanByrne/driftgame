@@ -268,15 +268,14 @@ wide."*
   `GripGravel` / `ScoreGravel` (0.5, the same as grass for now), it is drawn as one more strip
   each side in `GravelColour`, flat-shaded on its own slope, and walking it sounds as Pebble.
 - **To the car it is no wall, and no slope for the forces.** `probe` gives the bevel's height,
-  so a wheel rolls down it, and the grass's own normal. Every spline hit (tarmac, gravel, grass)
-  is marked `stepped`, and there the drawn car tips onto the plane through its four wheels: the
-  model takes the part of that plane the wheels' mean normal misses, past
-  `Config.Drift.Suspension.StepTiltDead` (0.02 of slope). **The forces don't see it:** grip
-  and gravity keep the ground's own normal (`State.surfaceUp` while the two differ), and the
-  climb still reads the normals. The bevel changes what you see and what the springs do, never
-  the line or the speed. On smooth tarmac and grass nothing passes the dead band, so there the
-  car is exactly the approved car.
-- **Measured (seed 31337, offline runs of the model on the curve, at 1 stud with a 3-stud bevel):**
+  so a wheel rolls down it, and the grass's own normal. **Since `T-196` the car's body takes
+  the bevel on its four springs** (`features/car-body-physics.md`): a wheel that drops down it
+  hangs, the car tips that way, and a wheel coming back up it pushes its corner up. Nothing is
+  special to the bevel; `Hit.stepped` and the plane through the wheels (`T-184`) are gone.
+  **The forces still don't see it:** grip, drive and gravity act in the ground's own frame
+  (`State.groundUp`, which follows the normals), and the climb still reads the normals. The
+  bevel changes what the body does, never the line or the speed.
+- **Measured before `T-196`, with the drawn tilt (seed 31337, offline runs of the model on the curve, at 1 stud with a 3-stud bevel).** The lean and ride numbers are the old ones; the line and speed still match (`SplineWorldTests`, `BodyTests`):
   - **Tail over the edge.** A slide at 42 studs/s with the tail running out over the bevel and
     back: the drawn car leans up to 4.3° off the ground (5.5° at 1.2 studs, 7.2° with the
     first 1.5 step). The rear wheel over the edge hangs at full droop (travel 0), then is pushed

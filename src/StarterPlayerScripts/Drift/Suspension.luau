@@ -2,7 +2,7 @@
 -- Suspension: the car's four wheels on their springs, and its floor on whatever it lands on
 -- (docs/game/features/car-v2.md "Rules and numbers", T-095).
 --
--- TWO LAYERS, and only the second one is ever drawn-only.
+-- THREE PARTS: the floor solve, the body riding its four springs, and the wheels as drawn.
 --
 --   THE FLOOR, in the simulation. `Drift/Model` asks this module, and only when a wheel has
 --   run out of travel -- its ground is further below it than the wheel can hang -- or when
@@ -17,12 +17,14 @@
 --   user approved (DECISIONS.md, 2026-11-03). `DriftTests`, `TrajectoryTests` and
 --   `JitterTests` say so with the numbers they always had.
 --
---   THE SPRINGS, drawn. `step` runs at the end of every model step, after the pose is
---   settled, and nothing in the model reads what it writes: each wheel's travel (how far
---   up its hub is pushed), each wheel's drawn lift, and a small sprung offset of the body
---   on top of the car's frame -- heave, pitch and roll -- that follows the plane the four
---   wheels are actually standing on and takes the load on landing. `Drift/Render` draws all
---   of it; `pack` / `unpack` carry the lifts to other players.
+--   THE BODY ON ITS SPRINGS, in the simulation (`ride`, T-196,
+--   features/car-body-physics.md). The body's height, pitch and roll are real motion: four
+--   springs push, gravity pulls. On flat ground every spring sits exactly where it rests
+--   and nothing moves; the drift model's own forces never read any of it.
+--
+--   THE WHEELS, drawn (`draw`). After the pose is settled: each wheel's travel (how far up
+--   its hub is pushed) and its drawn lift. `Drift/Render` draws them; `pack` / `unpack`
+--   carry the lifts to other players.
 --
 -- THE FLOOR SOLVE IS A RIGID CAR DROPPED ON POINTS. Every support -- a wheel's contact at
 -- ride height, a floor point, and the place an edge crosses the floor's outline -- must
@@ -755,172 +757,298 @@ function Suspension.contacts(
 end
 
 --------------------------------------------------------------------------------
--- The springs, drawn
+-- The body on its four springs (T-196, features/car-body-physics.md)
 --------------------------------------------------------------------------------
 
 function Suspension.newBody(): Body
 	return { z = 0, p = 0, q = 0, vz = 0, vp = 0, vq = 0, kick = 0 }
 end
 
-local function spring(x: number, v: number, target: number, dt: number): (number, number)
+-- Scratch for `ride`: each corner's height at the pose the step ends on, and how fast the
+-- ground under it is climbing. Module-level so a step allocates nothing.
+local cornerH = table.create(4, 0)
+local cornerRise = table.create(4, 0)
+
+-- Which wheels reach their ground, by `draw`'s last look: FL, FR, RL, RR. Read by
+-- `Drift/Model` straight after it calls `draw`, for `wheelsDown`.
+local touching = table.create(4, false)
+Suspension.touching = touching
+
+-- ONE STEP OF THE BODY'S REAL VERTICAL MOTION: its height, its pitch and its roll, each with
+-- a speed, pushed by four springs and pulled by gravity. This is the layer on top of the
+-- drift model (`Drift/Model` header): the model decides where the car goes across the
+-- ground, and this decides how the body sits and flies over it. Nothing here is special to a
+-- kerb, a ledge or a ramp -- each is only ground under a wheel.
+--
+--   * EACH WHEEL is a spring and a damper between the body's corner and the ground under it.
+--     `x` is how far the strut is pushed up from where it sits on the flat (`Rest`): it can
+--     drop `Rest` below that (full droop: past it the wheel is in the air and pushes nothing)
+--     and rise `Travel - Rest` above it (the bump stop, which is hard).
+--   * THE SPRING carries a quarter of the car at `x = 0`, so a car at rest sits exactly at
+--     ride height: its push is written as the DIFFERENCE from that quarter (`e`), and on
+--     flat ground every `e` is exactly zero -- the body does not move at all there.
+--   * THE DAMPER works on how fast the strut is closing, no faster than `DamperMaxSpeed`:
+--     a kerb is a step, and a damper asked to close a third of a stud in one step would
+--     throw the corner. Real ones blow off the same way -- and, like real ones, it resists
+--     being pushed up less than it resists dropping back (`DamperBump`): the first is what
+--     passes a bump on to the body, the second is what stops the body bouncing after it.
+--   * DOWNFORCE presses the car on to its springs as well as gravity (`press`, studs/s^2), and
+--     the springs are wound up to carry it, so the ride height does not change with speed --
+--     but a crest has to beat both before a wheel leaves the road.
+--   * PITCH AND ROLL take each spring's push at its lever (half the wheelbase, half the
+--     track) against the body's inertia (`Config.Drift.Body`, from the car's size).
+--   * IN THE AIR nothing pushes: the body falls and keeps turning at whatever rate it left
+--     with (`AirDamping` bleeds it, 0 is not at all).
+--   * THE BUMP STOPS AND THE LIMITS are hard: no wheel is pushed past the top of its travel
+--     (the corner is lifted off it and stopped, without a bounce), and the body never tips
+--     more than `MaxPitch` / `MaxRoll` off the ground's own frame, so it cannot go over.
+--
+-- `flying`: the model had the car in the air last step, so `vel.Y` is the body's own
+-- vertical speed with gravity already in it; otherwise `vel.Y` is the slope's climb, and
+-- gravity is taken here. Mutates `s.height`, `s.heave`, `s.tiltRate`, `s.up`, `s.strut`;
+-- returns the new height.
+function Suspension.ride(s: any, hits: { any }, vel: Vector3, dt: number, flying: boolean, press: number): number
+	local C = Config.Drift
 	local P = S()
-	local acc = P.Stiffness * (target - x) - P.Damping * v
-	v += acc * dt
-	return x + v * dt, v
+	local B = C.Body
+	local rest, give = P.Rest, P.Travel - P.Rest
+	local k4, c4 = P.Stiffness * 0.25, P.Damping * 0.25
+	local halfBase, halfTrack = C.Wheelbase * 0.5, C.TrackWidth * 0.5
+	local kp2 = math.max(B.PitchInertia * C.BodyLength * C.BodyLength / 12, EPS)
+	local kr2 = math.max(B.RollInertia * C.BodyWidth * C.BodyWidth / 12, EPS)
+	local pre = (C.Gravity + press) * 0.25
+	local maxRate = B.DamperMaxSpeed
+	local bump = B.DamperBump
+	local ride = C.RideHeight
+	local yaw = s.yaw
+	local strut = s.strut
+
+	-- The height is kept as a full-precision number: a Vector3 is a float, and a mile up a
+	-- mountain a float moves in steps bigger than a spring's last settling. Whoever moved
+	-- the car (a respawn, a teleport) moved `position`, and that wins.
+	local y: number = s.height
+	if Vector3.new(0, y, 0).Y ~= s.position.Y then
+		y = s.position.Y
+	end
+
+	---------------------------------------------------------------- the pose it has moved to
+	-- FIRST the body moves at the speeds it had, THEN the springs are read: the ground rays
+	-- are where the car is NOW, so the body has to be too. Read the other way round, a car
+	-- climbing a hill rides a step's worth of climb above its wheels.
+	--
+	-- The tilt's rates are the car's own (pitch about its right, roll about its nose), and
+	-- the car has just turned: the same turning in the world is a different pair now.
+	local heave: number = s.heave
+	local ra, rb = s.tiltRate.X, s.tiltRate.Y
+	local turn = s.r * dt
+	if turn ~= 0 and (ra ~= 0 or rb ~= 0) then
+		local ct, st = math.cos(turn), math.sin(turn)
+		ra, rb = ra * ct - rb * st, rb * ct + ra * st
+	end
+	y += heave * dt
+	local up: Vector3 = s.up
+	local ground: Vector3 = s.groundUp
+	local a, b = 0, 0
+	local angled = ra ~= 0 or rb ~= 0 or up ~= ground
+	local turned = false
+	if angled then
+		a, b = Suspension.tiltOf(yaw, up)
+		if ra ~= 0 or rb ~= 0 then
+			a += ra * dt
+			b += rb * dt
+			turned = true
+			up = Suspension.upOf(yaw, a, b)
+		end
+	end
+
+	---------------------------------------------------------------- the springs' push
+	local fwd, right, u = basis(yaw, up)
+	local uy = math.max(u.Y, 0.3)
+	local sumE, sumP, sumQ = 0, 0, 0
+	local any, level = false, true
+	local worst = 0 -- how far the deepest wheel is past its bump stop, studs of height
+	for i = 1, 4 do
+		local hit = hits[i]
+		local e = -pre
+		local x = -rest
+		local h = y + right.Y * (SIDE[i] * halfTrack) - u.Y * ride + fwd.Y * (FRONT[i] * halfBase)
+		cornerH[i] = h
+		if hit then
+			local d = (hit.y - h) / uy
+			if math.abs(d) < 1e-6 then
+				d = 0
+			end
+			if d > -rest then
+				x = math.min(d, give)
+				local rate = math.clamp((x - strut[i]) / dt, -maxRate, maxRate)
+				e = math.max(-pre, k4 * x + (if rate > 0 then c4 * bump else c4) * rate)
+				any = true
+				worst = math.max(worst, hit.y - h - give * uy)
+			end
+		end
+		if x ~= 0 then
+			level = false
+		end
+		strut[i] = x
+		sumE += e
+		sumP += e * FRONT[i]
+		sumQ += e * SIDE[i]
+	end
+
+	if any then
+		heave = if flying then vel.Y + (sumE + 4 * pre) * dt else heave + sumE * dt
+		ra += sumP * halfBase / kp2 * dt
+		rb += sumQ * halfTrack / kr2 * dt
+	else
+		heave = if flying then vel.Y else heave - 4 * pre * dt
+		if B.AirDamping > 0 then
+			local keep = math.exp(-B.AirDamping * dt)
+			ra *= keep
+			rb *= keep
+		end
+	end
+	heave = math.max(heave, -C.TerminalFall)
+	-- At rest is at rest: every strut exactly where it sits on the flat and nothing moving
+	-- faster than a spring's last ten-thousandth.
+	if level and any and math.abs(heave) < 1e-4 and math.abs(ra) < 1e-5 and math.abs(rb) < 1e-5 then
+		heave, ra, rb = 0, 0, 0
+	end
+
+	---------------------------------------------------------------- the bump stops
+	-- Any wheel past the top of its travel has its corner lifted off it, and stopped from
+	-- closing on its ground any further. A corner is moved by the body's height, pitch and
+	-- roll together, each by its share (the lighter an axis is to move, the more of the lift
+	-- it takes); twice round, because lifting one corner moves the other three.
+	if worst > 0 then
+		local flat = math.sqrt(vel.X * vel.X + vel.Z * vel.Z)
+		for i = 1, 4 do
+			local hit = hits[i]
+			local rise = 0
+			if hit then
+				local n = hit.normal
+				if n.Y > 0.7 then
+					rise = math.clamp(-(n.X * vel.X + n.Z * vel.Z) / n.Y, -flat, flat)
+				end
+			end
+			cornerRise[i] = rise
+		end
+		local limit = give * uy
+		local dy, da, db = 0, 0, 0
+		for _ = 1, 2 do
+			for i = 1, 4 do
+				local hit = hits[i]
+				if not hit then
+					continue
+				end
+				local lf, ls = FRONT[i] * halfBase, SIDE[i] * halfTrack
+				local w = 1 + lf * lf / kp2 + ls * ls / kr2
+				local pen = hit.y - cornerH[i] - limit
+				if pen > 0 then
+					local lam = pen / w
+					dy += lam
+					da += lam * lf / kp2
+					db += lam * ls / kr2
+					for j = 1, 4 do
+						cornerH[j] += lam * (1 + lf * (FRONT[j] * halfBase) / kp2 + ls * (SIDE[j] * halfTrack) / kr2)
+					end
+				end
+				if pen > -1e-4 then
+					local closing = cornerRise[i] - (heave + ra * lf + rb * ls)
+					if closing > 0 then
+						local dv = closing / w
+						heave += dv
+						ra += dv * lf / kp2
+						rb += dv * ls / kr2
+					end
+				end
+			end
+		end
+		y += dy
+		if da ~= 0 or db ~= 0 then
+			if not angled then
+				a, b = Suspension.tiltOf(yaw, up)
+				angled = true
+			end
+			a += da
+			b += db
+			turned = true
+		end
+	end
+
+	---------------------------------------------------------------- the limits
+	if angled then
+		local ag, bg = Suspension.tiltOf(yaw, ground)
+		local maxA, maxB = math.rad(B.MaxPitch), math.rad(B.MaxRoll)
+		if a > ag + maxA then
+			a, turned = ag + maxA, true
+			ra = math.min(ra, 0)
+		elseif a < ag - maxA then
+			a, turned = ag - maxA, true
+			ra = math.max(ra, 0)
+		end
+		if b > bg + maxB then
+			b, turned = bg + maxB, true
+			rb = math.min(rb, 0)
+		elseif b < bg - maxB then
+			b, turned = bg - maxB, true
+			rb = math.max(rb, 0)
+		end
+		if turned then
+			s.up = Suspension.upOf(yaw, a, b)
+		end
+	end
+
+	s.height = y
+	s.heave = heave
+	if ra ~= s.tiltRate.X or rb ~= s.tiltRate.Y then
+		s.tiltRate = if ra == 0 and rb == 0 then Vector2.zero else Vector2.new(ra, rb)
+	end
+	return y
 end
 
--- One step of the drawn suspension, after the model has settled the pose. Mutates the
--- state's `travel`, `wheelLift` and `body` in place and allocates nothing.
---
--- `hits` are the model's own four ground rays this step. A wheel is ON THE GROUND when its
--- ground is within its hang of where it sits; its travel is then whatever puts it there
--- (pushed up at once, dropped no faster than `DropTime`), and the body's offset springs
--- toward the plane the touching wheels are on. With nothing under it a wheel falls to the
--- bottom of its travel in `DropTime`, and hangs there.
-function Suspension.step(s: any, hits: { any }, dt: number, vyBefore: number)
+-- WHERE EACH WHEEL IS DRAWN, after the pose is settled: its travel (pushed up at once to
+-- wherever its ground is, dropped no faster than `DropTime`, hanging at the bottom with
+-- nothing under it) and its lift off the car's frame. The body itself is the car's frame --
+-- it IS what rides the springs (`ride`) -- so its drawn offset is only how much lower than
+-- stock this car sits (`rideDrop`, T-109). `hits` are the model's four ground rays, or the
+-- treads while the floor solve runs; `y` is the car's height. Mutates `travel`, `wheelLift`,
+-- `body` and `Suspension.touching`; allocates nothing.
+function Suspension.draw(s: any, hits: { any }, y: number, dt: number)
 	local C = Config.Drift
 	local P = S()
 	local travel, lift, body = s.travel, s.wheelLift, s.body
 	local fwd, right, u = basis(s.yaw, s.up)
 	local uy = math.max(u.Y, 0.3)
 	local rest, full = P.Rest, P.Travel
-	local dropRate = full / math.max(P.DropTime, EPS)
+	local fall = full / math.max(P.DropTime, EPS) * dt
 	local halfBase, halfTrack = C.Wheelbase * 0.5, C.TrackWidth * 0.5
-	-- On the floor solve the car's frame IS where it rests, so the body is not sprung off it.
-	local holdBody = s.airborne or s.hanging
+	local ride = C.RideHeight
 
-	-- Where each wheel's ground is, up the car's own axis from where a wheel at `Rest` would
-	-- touch: positive is a bump to climb, negative a dip to drop into.
-	local g1, g2, g3, g4 = 0, 0, 0, 0
-	local t1, t2, t3, t4 = false, false, false, false
-	local count = 0
+	body.z, body.p, body.q = -Suspension.rideDrop(s.floor), 0, 0
+	body.vz, body.vp, body.vq, body.kick = 0, 0, 0, 0
+
 	for i = 1, 4 do
 		local hit = hits[i]
-		local g = 0
-		local touching = false
-		if hit and not s.airborne then
-			local p = Suspension.wheelContact(i)
-			local h = s.position.Y + right.Y * p.X + u.Y * p.Y - fwd.Y * p.Z
-			g = (hit.y - h) / uy
+		local t = travel[i]
+		local down = false
+		if hit then
+			local h = y + right.Y * (SIDE[i] * halfTrack) - u.Y * ride + fwd.Y * (FRONT[i] * halfBase)
+			local g = (hit.y - h) / uy
 			if math.abs(g) < 1e-6 then
 				g = 0
 			end
-			touching = g >= -rest - P.ReachSlack
-		end
-		if i == 1 then
-			g1, t1 = g, touching
-		elseif i == 2 then
-			g2, t2 = g, touching
-		elseif i == 3 then
-			g3, t3 = g, touching
-		else
-			g4, t4 = g, touching
-		end
-		if touching then
-			count += 1
-		end
-	end
-
-	-- What the body springs toward: the plane through the touching wheels.
-	local zT, pT, qT = 0, 0, 0
-	if count > 0 and not holdBody then
-		local sum = (if t1 then g1 else 0) + (if t2 then g2 else 0) + (if t3 then g3 else 0) + (if t4 then g4 else 0)
-		zT = sum / count
-		local nf = (if t1 then 1 else 0) + (if t2 then 1 else 0)
-		local nr = (if t3 then 1 else 0) + (if t4 then 1 else 0)
-		if nf > 0 and nr > 0 then
-			local front = ((if t1 then g1 else 0) + (if t2 then g2 else 0)) / nf
-			local rear = ((if t3 then g3 else 0) + (if t4 then g4 else 0)) / nr
-			pT = (front - rear) / (2 * halfBase)
-		end
-		local nl = (if t1 then 1 else 0) + (if t3 then 1 else 0)
-		local nrt = (if t2 then 1 else 0) + (if t4 then 1 else 0)
-		if nl > 0 and nrt > 0 then
-			local leftG = ((if t1 then g1 else 0) + (if t3 then g3 else 0)) / nl
-			local rightG = ((if t2 then g2 else 0) + (if t4 then g4 else 0)) / nrt
-			qT = (rightG - leftG) / (2 * halfTrack)
-		end
-		local tilt = math.tan(math.rad(P.MaxBodyTilt))
-		zT = math.clamp(zT, -full, full)
-		pT = math.clamp(pT, -tilt, tilt)
-		qT = math.clamp(qT, -tilt, tilt)
-	end
-	-- And sitting lower or higher than stock, whatever the wheels are doing (T-109). Only
-	-- the BODY: the wheels below take `zDyn`, the body's offset without it, so they stay on
-	-- the road with the travel they always had.
-	local drop = Suspension.rideDrop(s.floor)
-	zT -= drop
-
-	-- Taking the load: a change in the car's vertical speed while it is on the ground --
-	-- a landing, the foot of a ramp, a crest -- throws the body against its springs.
-	--
-	-- The model calls a car landed while it is still settling the last of the way down on to
-	-- its wheels, so a jolt that arrives before any wheel touches is held until one does:
-	-- the body takes the load when the tyres do.
-	if holdBody then
-		body.kick = 0
-	else
-		local dvy = s.velocity.Y - vyBefore
-		if dvy ~= 0 then
-			body.kick -= dvy * P.LandingSquash
-		end
-		if count > 0 and body.kick ~= 0 then
-			body.vz += body.kick
-			body.kick = 0
-		end
-	end
-
-	body.z, body.vz = spring(body.z, body.vz, zT, dt)
-	body.p, body.vp = spring(body.p, body.vp, pT, dt)
-	body.q, body.vq = spring(body.q, body.vq, qT, dt)
-
-	-- The bump stops: no touching wheel is pushed past the top of its travel, so the body
-	-- is lifted off any that would be.
-	local lowest = -math.huge
-	for i = 1, 4 do
-		local touching = if i == 1 then t1 elseif i == 2 then t2 elseif i == 3 then t3 else t4
-		if touching then
-			local g = if i == 1 then g1 elseif i == 2 then g2 elseif i == 3 then g3 else g4
-			local c = body.p * FRONT[i] * halfBase + body.q * SIDE[i] * halfTrack
-			lowest = math.max(lowest, g + rest - full - c)
-		end
-	end
-	if body.z + drop < lowest then
-		body.z = lowest - drop
-		if body.vz < 0 then
-			body.vz = 0
-		end
-	end
-	if math.abs(body.z + drop) < 1e-7 and math.abs(body.vz) < 1e-7 then
-		body.z, body.vz = -drop, 0
-	end
-	if math.abs(body.p) < 1e-9 and math.abs(body.vp) < 1e-9 then
-		body.p, body.vp = 0, 0
-	end
-	if math.abs(body.q) < 1e-9 and math.abs(body.vq) < 1e-9 then
-		body.q, body.vq = 0, 0
-	end
-
-	-- Each wheel's travel, then where it is drawn: up from the car's frame by the body's
-	-- offset over it plus its own travel off `Rest`.
-	local fall = dropRate * dt
-	for i = 1, 4 do
-		local touching = if i == 1 then t1 elseif i == 2 then t2 elseif i == 3 then t3 else t4
-		local g = if i == 1 then g1 elseif i == 2 then g2 elseif i == 3 then g3 else g4
-		local c = body.z + drop + body.p * FRONT[i] * halfBase + body.q * SIDE[i] * halfTrack
-		local t = travel[i]
-		if touching then
-			local want = math.clamp(rest + g - c, 0, full)
-			if want >= t then
-				t = want
-			else
-				t = math.max(want, t - fall)
+			down = g >= -rest - P.ReachSlack
+			if down then
+				local want = math.clamp(rest + g, 0, full)
+				t = if want >= t then want else math.max(want, t - fall)
 			end
-		else
+		end
+		if not down then
 			t = math.max(0, t - fall)
 		end
+		touching[i] = down
 		travel[i] = t
-		local l = c + t - rest
+		local l = t - rest
 		lift[i] = if math.abs(l) < 1e-6 then 0 else l
 	end
 end
