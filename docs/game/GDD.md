@@ -35,6 +35,7 @@ Drift is a car game about clean drifts. The player slides a low-poly car through
 
 | Admin console | F2 opens Cmdr for admins, with commands for cars, runs, locations, scores, sky and diagnostics; player targets come first. **Built and approved** (`T-159`) | `features/admin-console.md` |
 | Settings menu | Three modern glass UI concepts first, then the chosen settings page and the user's selected controls. **Specced; awaiting plan approval** | `features/settings-menu.md` |
+| Road biomes | Linked steep-cliff, smaller-cliff and field stretches, with gentler terrain most of the time and matching ground, bends and rails. **Specced; awaiting plan approval** | `features/road-biomes.md` |
 
 ## Progression
 

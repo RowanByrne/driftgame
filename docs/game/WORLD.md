@@ -4,6 +4,8 @@ This game's world and map: its areas, how players get around, and the named spot
 
 ## Overview
 
+**Current endless-road direction:** the road is on one continuous mountain, with a fixed fall line and periodic recovery climbs (`features/continuous-mountain.md`, **As built**). Its current generated edges are uphill rock and downhill cliff. The requested next change is three linked biomes - steep cliffs, smaller cliffs and fields - with gentler terrain forming most of the run (`features/road-biomes.md`, awaiting plan approval). That plan also makes traversable fields/banks physically match their drawn ground; the current wider hillside is still visual. The older prototype-world measurements below describe those separate test areas, not the biome build.
+
 There is no map yet. There are **three separate worlds**, none of which is the map, each built a different way and each with a different job. They share one Y: every surface in the game tops out at Y = 0 -- except the road, which descends as it is generated (`features/road-elevation.md`). **A fall is therefore measured from the last ground the car touched, not from a world height** (`T-067`): `Config.Drift.FallBelowSurface`, which on flat ground at Y = 0 is the same comparison the old absolute number made. `Config.Playground.FallY` is still absolute and still right for the plate.
 
 ### The three worlds, and where each is
