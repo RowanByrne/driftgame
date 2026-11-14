@@ -8,7 +8,9 @@ Everything about how a player controls and sets up the game: the controls on eve
 
 | Action | Keyboard and mouse | Gamepad | Touch | Available |
 |---|---|---|---|---|
-| | | | | |
+| Hide / restore game UI | `P` | No shortcut | No shortcut | Keyboard shortcut requested by the user (T-200); ignored while typing or while the Roblox menu is open |
+
+The UI starts shown each session. Press `P` again to restore the current game UI; menus closed or disabled while hidden stay closed. Driving input and Roblox chat, menus and touch controls stay available. This is a keyboard convenience shortcut, with no new on-screen button or saved setting.
 
 ## Settings menu
 
