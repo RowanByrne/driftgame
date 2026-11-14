@@ -98,12 +98,7 @@ local function terrain(spline:Spline.Spline,s0:number,s1:number,parent:Instance,
 		prev,prevD=pts,ds;tick()
 	end
 	-- Far scenery is coarser; its joins and face caps remain the existing hill's.
-	local faces={s0,s1}
-	for s=math.ceil(s0/16)*16,s1-1e-6,16 do if s>s0+1e-6 then table.insert(faces,s) end end
-	for _,edge in {spline.edgeL,spline.edgeR} do
-		for _,s in edge.e do if s>s0 and s<s1 then table.insert(faces,s) end end
-	end
-	table.sort(faces)
+	local faces=cuts -- face feet share the supported ground's exact polyline
 	local hill=Hill.context(spline,s0,s1,Profile.profile,tick)
 	for k=1,#faces-1 do
 		local a,b=faces[k],faces[k+1]
@@ -113,7 +108,7 @@ local function terrain(spline:Spline.Spline,s0:number,s1:number,parent:Instance,
 			local ra,rb=Hill.ray(hill,a,side),Hill.ray(hill,b,side)
 			local pa=Profile.profile(spline,a,side,kind,Hill.cap(ra))
 			local pb=Profile.profile(spline,b,side,kind,Hill.cap(rb))
-			for j=1,#pa-1 do
+			for j=1,(if kind==Spline.ROCK then #pa-2 else #pa-1) do
 				quad(`Face_{side}_{k}_{j}`,pa[j],pa[j+1],pb[j+1],pb[j],if kind==Spline.ROCK then T.RockColour else T.CliffColour,Enum.Material.Slate)
 			end
 			Hill.finish(hill,ra);Hill.finish(hill,rb)
@@ -122,6 +117,8 @@ local function terrain(spline:Spline.Spline,s0:number,s1:number,parent:Instance,
 				local fa,fb=j/4,(j+1)/4
 				quad(`Hill_{side}_{k}_{j}`,Hill.at(ra,ea+(ra.clip-ea)*fa),Hill.at(ra,ea+(ra.clip-ea)*fb),Hill.at(rb,eb+(rb.clip-eb)*fb),Hill.at(rb,eb+(rb.clip-eb)*fa),Config.Spline.Hill.Colour,Enum.Material.Grass)
 			end
+			local skirt=Config.Spline.Hill.Skirt
+			quad(`Skirt_{side}_{k}`,Hill.at(ra,ra.clip),Hill.at(ra,ra.clip+skirt),Hill.at(rb,rb.clip+skirt),Hill.at(rb,rb.clip),Config.Spline.Hill.Colour,Enum.Material.Grass)
 		end
 	end
 	flush();batch:Destroy()

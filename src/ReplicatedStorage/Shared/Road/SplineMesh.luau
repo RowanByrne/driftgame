@@ -54,6 +54,8 @@ local GrassTexture = require(script.Parent.GrassTexture)
 local Spline = require(script.Parent.Spline)
 local SplineGrove = require(script.Parent.SplineGrove)
 local SplineHill = require(script.Parent.SplineHill)
+local SurfaceCuts = require(script.Parent.SplineSurfaceCuts)
+local Boundary = require(script.Parent.SplineBoundary)
 local Shadow = require(script.Parent.SplineShadow)
 
 local SplineMesh = {}
@@ -89,6 +91,7 @@ export type Options = {
 	forceFail: boolean?, -- Studio tests: behave as a device that cannot make a mesh
 	sliceMs: number?, -- ms of building a frame (`Mesh.SliceMs`); math.huge builds it in one go
 	hill: boolean?, -- false: no hillside past the faces, and no caps on them (the road as before T-190)
+	tick: (() -> ())?, -- internal near-ground planning slice
 }
 
 export type Stats = {
@@ -105,6 +108,9 @@ function SplineMesh.sections(spline: Spline.Spline, s0: number, s1: number, opts
 	local tol = o.tolerance or M.Tolerance
 	local maxStep = o.maxStep or M.MaxStep
 	local minStep = o.minStep or M.MinStep
+	if spline:hasBiomeGround() then
+		return SurfaceCuts.sections(spline,s0,s1,tol,maxStep,minStep,o.across or M.Across,16,o.tick)
+	end
 	local half = Config.Road.Width * 0.5
 	local out = { s0 }
 	local s = s0
@@ -309,7 +315,9 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 	end
 	local half = R.Width * 0.5
 	local across = o.across or M.Across
-	local cuts = SplineMesh.sections(spline, s0, s1, o)
+	local cutOptions=table.clone(o)
+	cutOptions.tick=slice
+	local cuts = SplineMesh.sections(spline, s0, s1, cutOptions)
 	local cx, cy, cz = spline:surfaceXYZ((s0 + s1) * 0.5, 0)
 	local centre = Vector3.new(cx, cy, cz)
 
@@ -335,7 +343,7 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 		-- the grass, `Spline:lipWidthAt` across (`RoadLipWidth`), sloping down `RoadLip` to the
 		-- grass, in the gravel's colour. It is shaded FLAT across (its own normal), so it reads
 		-- as an angled shoulder; the tarmac and the grass either side keep their smooth normals.
-		local RUNOFF_STRIPS = 2
+		local RUNOFF_STRIPS = if spline:hasBiomeGround() then 16 else 2
 		local TT = Config.Spline.Terrain
 		local tarmacColour = road.em:AddColor(R.Colours.Road, 1)
 		local grassColour = road.em:AddColor(TT.GrassColour, 1)
@@ -371,6 +379,9 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 			local row, norm, pts = {}, {}, {}
 			local wL, wR = spline:runoffAt(s, -1), spline:runoffAt(s, 1)
 			local ds = {}
+			if spline:hasBiomeGround() then
+				ds=SurfaceCuts.offsets(spline,s,across,RUNOFF_STRIPS)
+			else
 			for j = 0, RUNOFF_STRIPS - 1 do
 				table.insert(ds, -half - wL * (1 - j / RUNOFF_STRIPS))
 			end
@@ -381,6 +392,7 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 			table.insert(ds, half + spline:lipWidthAt(s, 1))
 			for j = 1, RUNOFF_STRIPS do
 				table.insert(ds, half + wR * j / RUNOFF_STRIPS)
+			end
 			end
 			local uv: { [number]: number }? = if grassImage then {} else nil
 			for j, d in ds do
@@ -637,6 +649,16 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 						local facing = outward * -e.Y + Vector3.yAxis * e:Dot(outward)
 						tri(ia[i], ia[i + 1], ib[i], pa[i], pa[i + 1], pb[i], colour, facing)
 						tri(ia[i + 1], ib[i + 1], ib[i], pa[i + 1], pb[i + 1], pb[i], colour, facing)
+					end
+					if spline:hasBiomeGround() and kind==Spline.ROCK and not spline:outerRailAt((a+b)*.5) then
+						local ta,tb=Boundary.toeRow(spline,a,side),Boundary.toeRow(spline,b,side)
+						local ai,bi={},{}
+						for j=1,3 do ai[j]=em:AddVertex(ta[j]-centre);bi[j]=em:AddVertex(tb[j]-centre) end
+						road.vertices+=6
+						for j=1,2 do
+							tri(ai[j],ai[j+1],bi[j],ta[j],ta[j+1],tb[j],faceColours.rock,-outward)
+							tri(ai[j+1],bi[j+1],bi[j],ta[j+1],tb[j+1],tb[j],faceColours.rock,-outward)
+						end
 					end
 					if kinds[k - 1] ~= kind then
 						cap(ra, a, -1)

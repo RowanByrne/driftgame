@@ -202,12 +202,34 @@ end
 -- Gameplay lookup belongs to one runner. A broad field must never reacquire a
 -- different leg when its current projection fails or leaves supported ground.
 function SplineSequence.locateOwned(self:Sequence,position:Vector3,hint:number,maxAdvance:number?):(number?,number,number,number?)
-	local s,d=self.spline:projectFrom(position.X,position.Z,hint)
-	if not s or not d or math.abs(s-hint)>(maxAdvance or 160)
-		or self.spline:groundKind(s,d)==nil then return nil,0,math.huge,nil end
+	local limit=math.min(maxAdvance or 160,640)
+	local function attempt(seed:number):(number?,number?)
+		local s,d=self.spline:projectFrom(position.X,position.Z,seed)
+		if not s or not d or math.abs(s-hint)>limit or self.spline:groundKind(s,d)==nil then return nil,nil end
+		local y=self.spline:terrainY(s,d)
+		if position.Y<y-8 or position.Y>y+40 then return nil,nil end
+		return s,d
+	end
+	local s,d=attempt(hint)
+	-- A delayed server tick can cover more than one Newton solve's range.
+	-- Search a bounded arc interval around the last accepted leg, never the grid.
+	if not s and limit>128 then
+		for offset=128,limit,128 do
+			s,d=attempt(hint+offset);if s then break end
+			s,d=attempt(hint-offset);if s then break end
+		end
+	end
+	if not s or not d then return nil,0,math.huge,nil end
 	local piece=self:pieceAtS(s)
 	if not piece then return nil,0,math.huge,nil end
 	return piece.n,(s-piece.s0)/math.max(piece.length,1e-6),math.abs(d),s
+end
+
+-- Off-road travel cannot postpone an arc-length shortcut until re-entry. Give
+-- ordinary drifting its small chord/sampling allowance, but cap any catch-up
+-- by the actual plan distance driven since the last earned asphalt position.
+function SplineSequence.reentryS(self:Sequence,anchor:number,travel:number,s:number):number
+	return math.min(s,anchor+math.max(0,travel)*1.05+8)
 end
 
 -- The same flags `Road/Generator.progress` hands back.

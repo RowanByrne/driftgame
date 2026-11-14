@@ -3,6 +3,7 @@
 -- curve against the whole supported bank rather than only the asphalt edges.
 local Config=require(game.ReplicatedStorage.Shared.Config)
 local Spline=require(script.Parent.Spline)
+local Boundary=require(script.Parent.SplineBoundary)
 local Cuts={}
 
 function Cuts.offsets(spline:Spline.Spline,s:number,across:number,grass:number):{number}
@@ -44,7 +45,11 @@ function Cuts.sections(spline:Spline.Spline,s0:number,s1:number,tolerance:number
 		table.insert(out,s)
 		if yieldFn then yieldFn() end
 	end
-	return out
+	for _,at in Boundary.points(spline,s0,s1) do table.insert(out,at) end
+	table.sort(out)
+	local unique={}
+	for _,at in out do if #unique==0 or at-unique[#unique]>1e-6 then table.insert(unique,at) end end
+	return unique
 end
 
 return Cuts

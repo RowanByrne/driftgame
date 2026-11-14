@@ -43,6 +43,7 @@ local RunService = game:GetService("RunService")
 local Config = require(ReplicatedStorage.Shared.Config)
 local Net = require(ReplicatedStorage.Shared.Net)
 local Spline = require(ReplicatedStorage.Shared.Road.Spline)
+local Boundary = require(ReplicatedStorage.Shared.Road.SplineBoundary)
 
 local DriftFolder = script.Parent.Parent:WaitForChild("Drift")
 local Driver = require(DriftFolder:WaitForChild("Driver")) :: any
@@ -85,6 +86,7 @@ local player = Players.LocalPlayer
 local folder: Folder? = nil
 local parts: { [string]: BasePart } = {}
 local hint: number? = nil
+local ownedSpline:any=nil
 local lastKey = ""
 local stats = {
 	rebuilds = 0,
@@ -264,16 +266,31 @@ local function plan(spline: any, sc: number, dc: number, closingS: number?): { [
 		if math.max(near, far) < lo - 1 or math.min(near, far) > hi + 1 then
 			return
 		end
-		local ax, _, az = spline:terrainXYZ(a, side * (innerA + thick * 0.5))
-		local bx, _, bz = spline:terrainXYZ(b, side * (innerB + thick * 0.5))
+		local ax, _, az = spline:terrainXYZ(a, side * innerA)
+		local bx, _, bz = spline:terrainXYZ(b, side * innerB)
 		local pa = Vector3.new(ax, spline:terrainY(a, side * innerA), az)
 		local pb = Vector3.new(bx, spline:terrainY(b, side * innerB), bz)
+		if spline:hasBiomeGround() and b-a>.125 then
+			local sm=(a+b)*.5
+			local innerM=if kind=="wall" then half+spline:runoffAt(sm,side) else (innerA+innerB)*.5
+			local pm=Vector3.new(spline:terrainXYZ(sm,side*innerM))
+			if (pm-(pa+pb)*.5).Magnitude>.05 then
+				wall(key.."a",kind,a,sm,side,innerA,innerM,thick,height,material)
+				wall(key.."b",kind,sm,b,side,innerM,innerB,thick,height,material)
+				return
+			end
+		end
 		local chord = pb - pa
 		local len = chord.Magnitude
 		if len < 1e-3 then
 			return
 		end
-		local mid = (pa + pb) * 0.5 + Vector3.yAxis * ((height - SINK) * 0.5)
+		local outward=Vector3.new(-chord.Z,0,chord.X).Unit
+		local yaw=spline:yawAt((a+b)*.5)
+		if outward:Dot(Vector3.new(side*math.cos(yaw),0,-side*math.sin(yaw)))<0 then outward=-outward end
+		-- Thickness is normal to the taper's chord, not to the asphalt. Offset
+		-- along that same normal so the inner face cannot protrude onto grass.
+		local mid = (pa + pb) * 0.5 + outward*(thick*.5) + Vector3.yAxis * ((height - SINK) * 0.5)
 		want[key] = {
 			size = Vector3.new(thick, height + SINK, len + OVERLAP),
 			cf = CFrame.lookAt(mid, mid + chord, Vector3.yAxis),
@@ -285,6 +302,12 @@ local function plan(spline: any, sc: number, dc: number, closingS: number?): { [
 	-- the stretches of [s0, s1] with one edge kind each on `side`: an edge changes only at
 	-- a section's end, found to a few hundredths of a stud
 	local function edgeSpans(s0: number, s1: number, side: number): { { number } }
+		if spline:hasBiomeGround() then
+			local out={}
+			local points=Boundary.points(spline,s0,s1)
+			for i=1,#points-1 do table.insert(out,{points[i],points[i+1],spline:edgeAt((points[i]+points[i+1])*.5,side)}) end
+			return out
+		end
 		local k0, k1 = spline:edgeAt(s0, side), spline:edgeAt(s1, side)
 		if k0 == k1 then
 			return { { s0, s1, k0 } }
@@ -439,6 +462,7 @@ local function apply(want: { [string]: Spec })
 			parts[key] = p
 		end
 		local part = p :: BasePart
+		part:SetAttribute("GroundKind",spec.kind)
 		if part.Size ~= spec.size then
 			part.Size = spec.size
 		end
@@ -461,6 +485,7 @@ end
 
 local function frame()
 	local spline, closingS = SplineRoadController:Road()
+	if spline~=ownedSpline then ownedSpline=spline;hint=nil;clear() end
 	local root = if spline then walkingRoot() else nil
 	stats.out = root ~= nil
 	if not spline or not root then

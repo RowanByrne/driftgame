@@ -190,12 +190,23 @@ function SplineRoadView.SetClosing(self: View, s: number?)
 	p.CFrame = CFrame.new(x, (bottom+top)*.5, z) * CFrame.Angles(0, spline:yawAt(s), 0) * CFrame.new(0, 0, 0.5)
 end
 
-local function removeChunk(chunk: Instance)
+local function removeChunkNow(chunk:Instance)
 	if chunk:IsA("Model") then
 		SplineMesh.destroy(chunk)
 	else
+		-- Fallback batches contain at most192parts. Releasing one huge tree at
+		-- once costs a whole frame even though it was built in small slices.
+		local started=os.clock()
+		for _,child in chunk:GetChildren() do
+			child:Destroy()
+			if os.clock()-started>=Config.Spline.Mesh.SliceMs/1000 then task.wait();started=os.clock() end
+		end
 		chunk:Destroy()
 	end
+end
+
+local function removeChunk(chunk:Instance)
+	if chunk:IsA("Model") then SplineMesh.destroy(chunk) else task.spawn(removeChunkNow,chunk) end
 end
 
 function SplineRoadView._build(self: View, i: number)
@@ -205,42 +216,54 @@ function SplineRoadView._build(self: View, i: number)
 	self.builtAt[i] = self.spline.length
 	self.stale[i] = nil
 	local t0 = os.clock()
-	local model, info = SplineMesh.build(self.spline, s0, s1, self.folder, { forceFail = self.forceFallback })
-	local chunk: Instance
-	if model then
-		chunk = model
-		self.triangles += info.triangles
-		self.lastSliceMs = info.sliceMs or 0
-		self.worstSliceMs = math.max(self.worstSliceMs, self.lastSliceMs)
-		self.lastSlices = info.slices or 1
-	else
-		-- this device cannot make the mesh: draw the chunk as parts instead
-		self.fallbacks += 1
-		self.lastError = info
-		local folder = Instance.new("Folder")
-		folder.Name = `Chunk_{math.floor(s0)}_parts`
-		local _,stats=SplineParts.build(self.spline, s0, s1, folder, { step = Config.Spline.Mesh.FallbackStep, queryable = false, barriers = false,terrain=true,cancelled=function()return self.dead end })
-		self.lastSliceMs=stats.sliceMs
-		self.worstSliceMs=math.max(self.worstSliceMs,stats.sliceMs)
-		self.lastSlices=stats.slices
-		folder:SetAttribute("Fallback", true)
-		folder.Parent = self.folder
-		chunk = folder
-	end
-	if not self.dead then
-		local sliceStart=os.clock()
-		SplineBoundary.build(self.spline,s0,s1,chunk,function()
-			if os.clock()-sliceStart>=Config.Spline.Mesh.SliceMs/1000 then task.wait();sliceStart=os.clock() end
-		end,not model)
-	end
-	local ms = (os.clock() - t0) * 1000
-	self.lastMs = ms
-	self.worstMs = math.max(self.worstMs, ms)
-	self.built += 1
-	if self.dead then
-		removeChunk(chunk)
-		return
-	end
+ local staging=Instance.new("Folder")
+ local chunk:Instance?=nil
+ local mesh=false
+ local info:any=nil
+ local boundaryWorst,boundarySlices=0,0
+ local ok,err=xpcall(function()
+  local model,details=SplineMesh.build(self.spline,s0,s1,staging,{forceFail=self.forceFallback})
+  info=details
+  if model then
+   chunk=model;mesh=true
+  else
+   self.fallbacks+=1;self.lastError=tostring(details)
+   -- Mesh-unavailable devices see small batches arrive as they are ready.
+   -- Parenting a completed15,000-part tree caused a100ms frame by itself.
+   -- Keep any previous chunk until all replacement batches are complete.
+   local folder=Instance.new("Folder");folder.Name=`Chunk_{math.floor(s0)}_parts`;folder.Parent=self.folder;chunk=folder
+   local _,stats=SplineParts.build(self.spline,s0,s1,folder,{step=Config.Spline.Mesh.FallbackStep,queryable=false,barriers=false,terrain=true,cancelled=function()return self.dead end})
+   info=stats;folder:SetAttribute("Fallback",true)
+  end
+  local sliceStart=os.clock()
+  SplineBoundary.build(self.spline,s0,s1,chunk :: Instance,function()
+   if self.dead then error("terrain build cancelled") end
+   local elapsed=(os.clock()-sliceStart)*1000
+   if elapsed>=Config.Spline.Mesh.SliceMs then
+    boundaryWorst=math.max(boundaryWorst,elapsed);boundarySlices+=1
+    task.wait();sliceStart=os.clock()
+   end
+  end,not mesh,not mesh)
+  boundaryWorst=math.max(boundaryWorst,(os.clock()-sliceStart)*1000)
+ end,debug.traceback)
+ if not ok or self.dead then
+  if chunk then removeChunk(chunk) end
+  staging:Destroy()
+  if not ok and not self.dead then error(err) end
+  return
+ end
+ local completed=chunk :: Instance
+ local publishStart=os.clock()
+ if completed.Parent~=self.folder then completed.Parent=self.folder end
+ boundaryWorst=math.max(boundaryWorst,(os.clock()-publishStart)*1000)
+ staging:Destroy()
+ self.lastSliceMs=math.max(info.sliceMs or 0,boundaryWorst)
+ self.worstSliceMs=math.max(self.worstSliceMs,self.lastSliceMs)
+ self.lastSlices=(info.slices or 1)+boundarySlices
+ self.triangles+=info.triangles or 0
+ local ms=(os.clock()-t0)*1000
+ self.lastMs=ms;self.worstMs=math.max(self.worstMs,ms);self.built+=1
+ local chunk=completed
 	-- a chunk rebuilt to more road replaces the old one only now it is whole (T-193), so the
 	-- road never has a hole while the new one is built over several frames
 	local old = self.chunks[i]
@@ -345,12 +368,18 @@ end
 
 function SplineRoadView.Destroy(self: View)
 	self.dead = true
-	for i, chunk in self.chunks do
-		removeChunk(chunk)
-		self.chunks[i] = nil
-	end
 	self.closing = nil
-	self.folder:Destroy()
+	table.clear(self.chunks)
+	local folder=self.folder
+	-- Give the next view its EditableMesh slots before any fallback drain yields.
+	local remaining={}
+	for _,child in folder:GetChildren() do
+		if child:IsA("Model") then SplineMesh.destroy(child) else table.insert(remaining,child) end
+	end
+	task.spawn(function()
+		for _,child in remaining do removeChunkNow(child) end
+		folder:Destroy()
+	end)
 end
 
 function SplineRoadView.DebugState(self: View)

@@ -385,7 +385,7 @@ local Spline = {
 	-- the feasible random minimum reserves both adjoining half-blends and a plateau.
 	Biomes = {
 		Enabled = true,
-		GroundEnabled = false, -- enabled with the complete matching ground/mesh blockout
+		GroundEnabled = true, -- enabled with the complete matching ground/mesh blockout
 		Length = { 400, 900 }, -- studs, boundary to boundary
 		Weights = { 0.45, 0.35, 0.20 }, -- fields, small cliffs, steep cliffs; distance targets
 		ChoiceJitter = 0.1, -- keep every different category possible while correcting deficits

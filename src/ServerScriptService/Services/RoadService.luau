@@ -352,12 +352,12 @@ end
 -- on it. With nobody in a run at all (a test driving the road with no player) every car is
 -- read, exactly as before.
 local function makeRunner(from:string,cf:CFrame)
-	local entry={from=from,since=os.clock(),n=1,t=0,told=nil,position=cf.Position,acceptedS=nil}
+	local entry={from=from,since=os.clock(),n=1,t=0,told=nil,position=cf.Position,acceptedPosition=cf.Position,acceptedS=nil,roadAnchorS=nil,travel=0}
 	if generator and splineRun() then
 		local s=generator.spline:project(cf.X,cf.Z,Config.Road.Width)
 		local piece=s and generator:pieceAtS(s)
 		if s and piece then
-			entry.acceptedS=s;entry.n=piece.n;entry.t=(s-piece.s0)/piece.length
+			entry.acceptedS=s;entry.roadAnchorS=s;entry.n=piece.n;entry.t=(s-piece.s0)/piece.length
 		end
 	end
 	return entry
@@ -397,11 +397,13 @@ local function readCars(): (Vector3?, number?, any)
 		end
 		local entry = userId and runners[userId]
 		local n,t,lateral,s
+		local moved=0
 		local owned=splineRun() and generator.spline:hasBiomeGround() and entry~=nil
 		if owned then
 			if entry.acceptedS then
-				local moved=if entry.position then (at-entry.position).Magnitude else 0
-				n,t,lateral,s=generator:locateOwned(at,entry.acceptedS,math.min(160,math.max(12,moved*3+8)))
+				local previous=entry.acceptedPosition or entry.position
+				if previous then local delta=at-previous;moved=Vector2.new(delta.X,delta.Z).Magnitude end
+				n,t,lateral,s=generator:locateOwned(at,entry.acceptedS,math.min(640,math.max(12,moved*3+8)))
 			end
 		else
 			n,t,lateral=generator:locate(at)
@@ -412,7 +414,15 @@ local function readCars(): (Vector3?, number?, any)
 			-- never one the client sent.
 			entry.position = at
 			if n then
-				if owned then entry.acceptedS=s end
+				if owned then
+					entry.acceptedS=s;entry.acceptedPosition=at;entry.travel=(entry.travel or 0)+moved
+					if lateral<=Config.Road.Width*.5 then
+						local credit=generator:reentryS(entry.roadAnchorS or s,entry.travel,s)
+						local piece=generator:pieceAtS(credit)
+						if piece then n,t=piece.n,(credit-piece.s0)/piece.length end
+						if math.abs(credit-s)<.001 then entry.roadAnchorS=s;entry.travel=0 end
+					end
+				end
 				-- Grass preserves ownership, but advances neither recovery nor the window.
 				if not owned or lateral<=Config.Road.Width*.5 then entry.n, entry.t = n, t end
 			end
@@ -489,7 +499,7 @@ function RoadService:Start()
 				local at=cars:BelievedPosition(player.UserId)
 				local s=at and generator.spline:project(at.X,at.Z,Config.Road.Width)
 				if s then
-					entry.acceptedS=s;entry.position=at
+					entry.acceptedS=s;entry.position=at;entry.acceptedPosition=at;entry.roadAnchorS=s;entry.travel=0
 					local piece=generator:pieceAtS(s)
 					if piece then entry.n,entry.t=piece.n,(s-piece.s0)/piece.length end
 				end

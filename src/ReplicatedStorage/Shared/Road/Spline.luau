@@ -901,7 +901,9 @@ function Spline.terrainNormal(self: Spline, s: number, d: number): Vector3
 	if math.abs(d) <= Config.Road.Width * 0.5 then
 		return self:normalAt(s, d)
 	end
-	local e = 0.5
+	-- Narrow supported banks must not average their normal with the flat,
+	-- unsupported extension beyond the lip.
+	local e = if self:hasBiomeGround() then 0.05 else 0.5
 	local function at(sa: number, da: number): (number, number, number)
 		local x, z = self:planAt(sa)
 		local yaw = self:yawAt(sa)

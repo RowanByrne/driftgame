@@ -56,6 +56,7 @@ local function envelope(model)
 	end
 	local function height(p)
 		local top = -math.huge
+		local normal=nil
 		for _, t in bins[key(p.X, p.Z)] or {} do
 			if math.abs(t.det) <= 1e-7 then continue end
 			local a, b, c = t.a, t.b, t.c
@@ -63,10 +64,14 @@ local function envelope(model)
 			local u = (dx * (c.Z - a.Z) - dz * (c.X - a.X)) / t.det
 			local v = ((b.X - a.X) * dz - (b.Z - a.Z) * dx) / t.det
 			if u >= -1e-5 and v >= -1e-5 and u + v <= 1 + 1e-5 then
-				top = math.max(top, a.Y + u * (b.Y - a.Y) + v * (c.Y - a.Y))
+				local y=a.Y + u * (b.Y - a.Y) + v * (c.Y - a.Y)
+				if y>top then
+					top=y;normal=(b-a):Cross(c-a).Unit
+					if normal.Y<0 then normal=-normal end
+				end
 			end
 		end
-		return top
+		return top,normal
 	end
 	local function nearby(part)
 		local lo, hi = Vector3.one * math.huge, -Vector3.one * math.huge
@@ -681,6 +686,64 @@ function Tests.run()
 		end
 	end
 	return { passed = passed, total = #checks, checks = checks }
+end
+
+function Tests.biomes()
+	local old=Config.Spline.Biomes.GroundEnabled
+	Config.Spline.Biomes.GroundEnabled=true
+	local folder=Instance.new("Folder");folder.Name="__BiomeMeshTest";folder.Parent=workspace
+	local active=nil
+	local ok,result=xpcall(function()
+		local gen=SplineGen.new(203);gen:extendTo(12000)
+		local spline=gen.spline
+		local records=spline.biomes
+		local pairs,chunks={},{}
+		for i=4,#records,3 do
+			local pair=`{records[i-2]}>{records[i+1]}`
+			if not pairs[pair] then pairs[pair]=true;chunks[math.floor(records[i]/480)]=true end
+		end
+		local built,missing,samples,maxError,maxNormal,maxTriangles,maxSlice,work=0,0,0,0,0,0,0,0
+		local normalAt="none"
+		for chunk in chunks do
+			local s0,s1=chunk*480,math.min((chunk+1)*480,spline.length)
+			local info
+			active,info=SplineMesh.build(spline,s0,s1,folder)
+			assert(active,tostring(info))
+			built+=1;maxTriangles=math.max(maxTriangles,info.triangles);maxSlice=math.max(maxSlice,info.sliceMs);work=math.max(work,info.ms)
+			local height=envelope(active)
+			for s=s0+1.17,s1-1,9.31 do
+				for _,side in {-1,1} do
+					local w=spline:runoffAt(s,side)
+					for _,u in {.06,.24,.47,.73,.94} do
+						local d=side*(Config.Road.Width*.5+w*u)
+						local p=Vector3.new(spline:terrainXYZ(s,d))
+						local y,n=height(p)
+						if y==-math.huge then missing+=1 else
+							maxError=math.max(maxError,math.abs(y-p.Y))
+							if w*u>spline:lipWidthAt(s,side)+.5 and n then
+								local delta=math.deg(math.acos(math.clamp(n:Dot(spline:terrainNormal(s,d)),-1,1)))
+								if delta>maxNormal then maxNormal=delta;normalAt=`s={s}, d={d}, width={w}` end
+							end
+						end
+						samples+=1
+					end
+				end
+				task.wait()
+			end
+			SplineMesh.destroy(active);active=nil
+		end
+		local checks={
+			{name="actual mesh interiors match supported terrain through all transitions",ok=built==6 and missing==0 and maxError<.15,detail=`{built} transition chunks, {samples} samples, missing {missing}, largest height error {maxError}`},
+			{name="bank triangle normals follow the shared surface",ok=maxNormal<5,detail=`largest normal difference {maxNormal} degrees at {normalAt}`},
+			{name="near-ground detail keeps one mesh and bounded chunks",ok=maxTriangles<20000 and maxSlice<20,detail=`largest chunk {maxTriangles} triangles, slice {maxSlice} ms, aggregate work {work} ms`},
+		}
+		local passed=0;for _,c in checks do if c.ok then passed+=1 end end
+		return {passed=passed,total=#checks,checks=checks}
+	end,debug.traceback)
+	if active then SplineMesh.destroy(active) end
+	folder:Destroy();Config.Spline.Biomes.GroundEnabled=old
+	if not ok then return {passed=0,total=1,checks={{name="biome mesh fixture completes",ok=false,detail=result}}} end
+	return result
 end
 
 return Tests

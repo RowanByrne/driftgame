@@ -101,6 +101,10 @@ function Tests.run()
 		check("leaving finite ground never acquires another leg",seq:locateOwned(off,300)==nil,"no broad fallback after support ends")
 		local other=Vector3.new(sp:terrainXYZ(600+turn+300,0))
 		check("a different runner can hold a different leg",seq:locateOwned(other,600+turn+300)==3,"the sequence has no shared mutable ownership hint")
+		local catchup=Vector3.new(sp:terrainXYZ(500,0))
+		check("a delayed tick catches up within the same bounded road arc",seq:locateOwned(catchup,100,640)==1,"a 400-stud tick does not permanently freeze the accepted hint")
+		check("asphalt re-entry cannot defer a field shortcut",seq:reentryS(100,100,400)<220,"300studs of arc skipped by100studs of travel cannot become full progress on re-entry")
+		check("ordinary off-road drift can rejoin without losing progress",seq:reentryS(100,100,200)==200,"normal travel covers its projected advance")
 		local rock=Instance.new("Folder");rock.Parent=folder
 		Boundary.build(sp,280,320,rock)
 		for _,p in rock:GetDescendants() do if p:IsA("BasePart") then p.CanQuery=true end end
@@ -111,6 +115,10 @@ function Tests.run()
 		local rim=workspace:Raycast(Vector3.new(tip.X,top.Y+8,tip.Z),-Vector3.yAxis*12,params)
 		check("the stable rock foot is actually drawn to its solid height",rim~=nil and math.abs(rim.Position.Y-top.Y-4)<.06,`drawn rise {rim and rim.Position.Y-top.Y}`)
 		rock:Destroy()
+		local brief=Spline.new({x=0,y=0,z=0,yaw=math.pi/4+.00012});brief.fall=0
+		brief:append({len=6,k={2,-.0001,4,.0001,6,0},g={6,0},b={6,0},bm={0,1,0}})
+		local short=Boundary.runs(brief,0,6)
+		check("a brief rail-angle crossing cannot disappear between samples",#short==2 and short[1]>2 and short[2]<4,`rail endpoints {short[1]}, {short[2]}`)
 		local passed=0;for _,c in checks do if c.ok then passed+=1 end end
 		return {passed=passed,total=#checks,checks=checks}
 	end,debug.traceback)
@@ -118,4 +126,36 @@ function Tests.run()
 	if not ok then return {passed=0,total=1,checks={{name="terrain drawing fixture completes",ok=false,detail=result}}} end
 	return result
 end
+function Tests.lifecycle()
+	local View=require(game.StarterPlayer.StarterPlayerScripts.Drift.SplineRoadView)
+	local Mesh=require(RS.Shared.Road.SplineMesh)
+	local gen=Gen.new(203);gen:extendTo(1500)
+	local view=View.new(gen.spline)
+	view.forceFallback=true;view:_start(0)
+	local deadline=os.clock()+15
+	while view.building and os.clock()<deadline do task.wait() end
+	local built=view:DebugState()
+	local checks={{name="a complete forced fallback is published in bounded slices",ok=built.chunks==1 and built.fallbackParts>0 and built.worstSliceMs<20,detail=game:GetService("HttpService"):JSONEncode(built)}}
+	-- Put a real mesh behind an earlier fallback folder. Its slot must be freed
+	-- synchronously, before the large folder's retirement first yields.
+	local model,info=Mesh.build(gen.spline,480,576,view.folder)
+	if model then
+		view:Destroy()
+		table.insert(checks,{name="destroy frees every mesh before draining parts",ok=model.Parent==nil,detail="fallback folder inserted before the real mesh"})
+	else
+		view:Destroy()
+		table.insert(checks,{name="a real mesh is available for the lifetime check",ok=false,detail=tostring(info)})
+	end
+	deadline=os.clock()+15
+	while view.folder.Parent and os.clock()<deadline do task.wait() end
+	table.insert(checks,{name="fallback retirement releases its whole tree",ok=view.folder.Parent==nil,detail="bounded child batches finish after destroy"})
+	local cancelled=View.new(gen.spline);cancelled.forceFallback=true;cancelled:_start(0)
+	task.wait(.1);cancelled:Destroy()
+	deadline=os.clock()+15
+	while (cancelled.building or cancelled.folder.Parent) and os.clock()<deadline do task.wait() end
+	table.insert(checks,{name="cancelling a partly built fallback leaves no pending view",ok=cancelled.building==nil and cancelled.folder.Parent==nil,detail="build stopped before the full480-stud chunk was ready"})
+	local passed=0;for _,c in checks do if c.ok then passed+=1 end end
+	return {passed=passed,total=#checks,checks=checks}
+end
+
 return Tests
