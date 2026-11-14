@@ -10,7 +10,6 @@ Every task in progress and the files it owns, so parallel sessions and workers n
 | Branch | Lane | Files owned | Since |
 |---|---|---|---|
 | `feature/linked-biomes` (T-203, terrain T-209) | 2 | `docs/game/features/road-biomes.md`; `assets/reference/road-biomes/*`; `docs/game/DECISIONS.md` (append T-203 only); `docs/game/CONTRACTS.md` and `ARCHITECTURE.md` (biome entries); `src/ReplicatedStorage/Shared/Config/Spline.luau`; `src/ReplicatedStorage/Shared/Road/SplineBiome.luau` (new), `Spline.luau`, `SplineGen.luau`; `src/StarterPlayerScripts/Controllers/SplineRoadController.luau`; `src/ServerScriptService/Tests/SplineBiomeTests.luau` (new), `SplineTurnTests.luau` | 2026-11-14 |
-| `agent/contained-shadow-blocks` (T-206) | 4 | `src/ReplicatedStorage/Shared/Road/SplineMesh.luau`, `src/ReplicatedStorage/Shared/Road/SplineShadow.luau` (new, if needed), `src/ServerScriptService/Tests/SplineMeshTests.luau`, `docs/game/features/mountain-road.md` | 2026-11-14 |
 
 ## Notes between sessions
 

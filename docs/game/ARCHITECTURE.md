@@ -87,6 +87,12 @@ Three fixed emitter anchors per wheel keep smoke, dust, grass and dirt at their 
 
 `FxTests` checks projected width through both slip signs, near-sideways motion, banks, sprung pitch/roll, moving/rest/reverse transitions, fixed particle sources, gates and allocation cleanup. Lane3 also measured a moving client fixture; the measured result and visual review boundary are recorded in `features/car-fx.md`.
 
+## Terrain shadow casters (T-206)
+
+`Road/SplineMesh` uses the internal `Road/SplineShadow` helper to fit opaque, non-solid shadow boxes inside the rendered road, rock and cliff bounds. It rejects collapsed/inverted spans and fits, trims or subdivides candidates where the terrain leaves less room. The road/car ground and collision maths are unchanged.
+
+`SplineMeshTests.runShadows` checks the actual rendered mesh through caster surface samples, exact triangle/box intersections and qualified low-sun coverage rays. The approved T-206 build retains two measured flags: whole-chunk build work exceeds the unchanged 40 ms guard, and matched low-sun shadow coverage is lower. Per-frame/streaming checks passed. The measurements and review repro are recorded in `features/mountain-road.md` and the task log; do not describe the suite as entirely passing.
+
 ## Registries
 
 Where each kind of thing is listed in code, so nothing gets scattered.
