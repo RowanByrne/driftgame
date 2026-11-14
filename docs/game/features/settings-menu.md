@@ -1,6 +1,6 @@
 # Feature: Settings menu
 
-**Status:** in progress; plan approved 2026-11-14, A / Smoked glass selected. **Owner task:** T-201, branch `feature/glass-settings`, lane 1; concept step T-202 complete.
+**Status:** approved and merged to Main, 2026-11-14; feature closed at the user's request. **Task:** T-201, delivered through T-202 and T-208. The selected settings were connected during the page build; the planned migration step is complete with T-208.
 
 ## Goal
 
@@ -104,10 +104,10 @@ One combined comparison sheet for the three directions, following the UI concept
 
 All steps belong to the feature's own agent and its reserved lane after the plan is approved. They are sequential; the conductor handles only the final merge request.
 
-## Open questions
+## Settled decisions
 
 - Style settled 2026-11-14: **A / Smoked glass**, the dark rounded panes, warm orange accents and left rail in `assets/reference/settings-menu-concepts-01.png`. The other two directions are unpicked.
-- First batch settled 2026-11-14: **Steering and UI** (C-3effee): Dynamic/Centred, sensitivity 1–10 and the existing P shortcut. The developer tuner, camera tuning and test tools remain separate. The live path accompanies the shell so its controls work when the user tries it; the final migration step verifies this batch after the shell's lane review.
+- First batch settled 2026-11-14: **Steering and UI** (C-3effee): Dynamic/Centred, sensitivity 1–10 and the existing P shortcut. The developer tuner, camera tuning and test tools remain separate. This batch shipped with the approved T-208 page and passed the conductor's combined merge check; no separate migration work remains.
 - Shell entry: Settings button or M / gamepad R3 while driving; Back/X, Backspace or gamepad B closes. Steering and Interface categories; wide left rail, horizontal compact tabs, two control columns in short landscape, one scrolling column in portrait or larger text. Walking and garage entry are excluded from this first driving shell.
 
 ## First shell implementation
