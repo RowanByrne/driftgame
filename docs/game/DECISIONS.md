@@ -66,3 +66,5 @@ The user's decisions about this game, so they aren't reopened later. Before prop
 - 2026-11-14: A grass tyre mark is green or brown per wheel, never both emitting together. Brown replaces green at the existing trench threshold and green returns below its hysteresis threshold; old marks fade normally. This replaces the deliberate layered trench in T-188 (T-205, features/car-fx.md).
 
 - 2026-11-14: Tyre marks must retain their width as the car's slide angle changes; fix the tapering shown on the tarmac without changing the approved driving feel (T-207, C-21737d).
+
+- 2026-11-14: Every game code change, including a small fix, is built and checked by a lane worker, then presented for the user's lane test. The conductor merges only after the card is approved. Apply this to T-206 and T-207; keep T-205's already-completed Main merge (PROJECT.md Game-only rules, C-1ed8fd).
