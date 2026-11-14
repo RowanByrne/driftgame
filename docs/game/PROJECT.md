@@ -15,6 +15,7 @@ This game's details, loaded into every agent session: keep it short, and put des
 | Update log | No |
 | Lanes | 8 (lane1 to lane8) |
 | Lync port base | `34870` |
+| Game code review | Lane first |
 
 ## Places
 
@@ -39,6 +40,7 @@ Each PC that works on this game, and how many lanes it opens: `lane1` up to that
 
 ## Game-only rules
 
+- **Game code goes through a worker and through lane review.** The conductor scopes and assigns each game code fix to a worker in a free lane at the appropriate tier, including small fixes. It may handle plans, claims, docs, and errands. Have the worker build and check the change, then use `set -Status ready -Where lane` with steps for the user to try. Keep that lane on the task branch until the user approves the card. Merge and update Main only after that approval. A send-back goes to the worker for another check in the lane. This overrides the small-change and merge-before-testing defaults in `CONDUCTOR.md`.
 - Agent choice (2026-11-13): Codex on `gpt-6.1-sol`, ultra effort, for the conductor and feature leads. Workers also use `gpt-6.1-sol`: light = high, standard = xhigh, heavy = ultra. This overrides the template's model defaults while Claude credits are exhausted. Use explicit model and effort overrides when starting workers; the template's worker launcher still has its older defaults.
 
 ## Current focus

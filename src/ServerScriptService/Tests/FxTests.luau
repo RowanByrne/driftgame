@@ -608,9 +608,11 @@ function Tests.run(opts)
 						here += 1
 					end
 				end
-				-- The off-road marks (T-188). The trench is a layer OVER the grass line and
-				-- is not one of the alternatives, so it is not counted.
+				-- Every off-road alternative counts, including the trench (T-205).
 				if wheel.ground.flat.trail.Enabled then
+					here += 1
+				end
+				if wheel.ground.trench.trail.Enabled then
 					here += 1
 				end
 				if wheel.ground.gravel.trail.Enabled then
@@ -656,7 +658,9 @@ function Tests.run(opts)
 			local _, perWheel = litTrails()
 			worstPerWheel = math.max(worstPerWheel, perWheel)
 			for _, wheel in w.wheels do
-				local drawn = wheel.ground.flat.trail.Enabled or wheel.ground.gravel.trail.Enabled
+				local drawn = wheel.ground.flat.trail.Enabled
+					or wheel.ground.trench.trail.Enabled
+					or wheel.ground.gravel.trail.Enabled
 				for _, fx in wheel.fx do
 					drawn = drawn or fx.trail.Enabled
 				end
@@ -672,9 +676,7 @@ function Tests.run(opts)
 			after == before and bodyAfter == bodyBefore,
 			`before {before}, after {after}; under the body {bodyBefore} -> {bodyAfter}; {flips} gate flips in those frames`
 		)
-		-- ONE TRAIL PER WHEEL, EVER. The darkness ladder used to put several between the
-		-- same two attachments and switch between them, which is where the breaks in the
-		-- user's marks came from; with one there is nothing to switch.
+		-- Only one trail may emit per wheel, including green versus brown on grass.
 		check(
 			"never more than one of a wheel's trails drawing",
 			worstPerWheel <= 1,
@@ -814,14 +816,14 @@ function Tests.run(opts)
 				and not rl.ground.dirt.emitter.Enabled,
 			string.format("clippings %.1f/s, mix %.2f", rl.ground.clippings.emitter.Rate, rl.mixGrass)
 		)
-		-- Past the trench threshold: the trench is a LAYER, so the flat line keeps drawing.
+		-- Past the trench threshold: brown replaces green, while dirt still sprays (T-205).
 		local grass45 = stateWith({ slipDeg = 45, speed = 70, throttle = 1, surface = "grass" })
 		for _ = 1, 10 do
 			w:Update(grass45, { handbrake = false }, DT)
 		end
 		check(
-			"at a high angle on grass: the trench over the flat line, and dirt sprays",
-			rl.ground.flat.trail.Enabled
+			"at a high angle on grass: only the trench, and dirt sprays",
+			not rl.ground.flat.trail.Enabled
 				and rl.ground.trench.trail.Enabled
 				and rl.ground.dirt.emitter.Enabled
 				and rl.ground.dirt.emitter.Rate > 0,
@@ -833,13 +835,41 @@ function Tests.run(opts)
 		)
 		-- Hysteresis: 27 deg keeps the trench (stop is 25), 24 drops it.
 		w:Update(stateWith({ slipDeg = 27, speed = 70, throttle = 1, surface = "grass" }), { handbrake = false }, DT)
-		local held = rl.ground.trench.trail.Enabled
+		local held = rl.ground.trench.trail.Enabled and not rl.ground.flat.trail.Enabled
 		w:Update(stateWith({ slipDeg = 24, speed = 70, throttle = 1, surface = "grass" }), { handbrake = false }, DT)
 		local dropped = not rl.ground.trench.trail.Enabled and rl.ground.flat.trail.Enabled
 		check(
-			"the trench has hysteresis, and the flat line survives it ending",
+			"the trench has hysteresis, and green resumes only after it ends",
 			held and dropped and Wheels.trenchOn(30, false) and not Wheels.trenchOn(29.9, false),
-			`held at 27 {held}, dropped at 24 with the grass line still drawing {dropped}`
+			`brown only at 27 {held}, green only at 24 {dropped}`
+		)
+		-- T-205: exercise both switch directions on every wheel, including the fronts
+		-- forced to mark at low slip by the handbrake. Check actual Trail.Enabled too,
+		-- not just the trench state: the old layering passed hysteresis on its own.
+		w:Cut()
+		local exclusive, snapshots, grassFrames, doubles = true, {}, 0, 0
+		for _, sample in {
+			{ 20, false }, { 29.9, false }, { 30.1, true }, { 45, true },
+			{ 29.9, true }, { 27, true }, { 25.1, true }, { 24.9, false },
+			{ 27, false }, { 30.1, true }, { 24, false },
+		} do
+			local s = stateWith({ slipDeg = sample[1], speed = 70, throttle = 1, surface = "grass" })
+			w:Update(s, { handbrake = true }, DT)
+			local snapshot = w:DebugState(s, { handbrake = true })
+			for _, wheel in snapshot.wheels do
+				grassFrames += 1
+				if wheel.grassMark and wheel.trenchMark then
+					doubles += 1
+				end
+				exclusive = exclusive and wheel.emitting and wheel.lit == 1
+					and wheel.trenchMark == sample[2] and wheel.grassMark == not sample[2]
+			end
+			table.insert(snapshots, `{sample[1]}:{if sample[2] then "brown" else "green"}`)
+		end
+		check(
+			"each grass-marking wheel emits exactly one colour through both hysteresis crossings",
+			exclusive,
+			`{grassFrames} wheel-frames, {doubles} doubles; {table.concat(snapshots, ", ")}`
 		)
 		-- The dirt is a smooth ramp, not a step.
 		local shares = {}

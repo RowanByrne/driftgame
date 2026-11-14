@@ -94,8 +94,8 @@
 -- On grass and gravel the tarmac smoke fades out over `Ground.FadeSeconds` -- its rate scaled
 -- by a per-wheel mix, not switched -- and debris fades in: grass clippings, and brown dirt
 -- blending in as the slip grows; on gravel a dust cloud. The grass mark is a flattened green
--- line with a brown TRENCH laid over it past `Grass.TrenchSlipDegrees` -- a layer, not a
--- swap, because a swap is a hole (see the darkness ramp below).
+-- line OR a brown trench past `Grass.TrenchSlipDegrees`, with hysteresis (T-205).
+-- Only one grass mark emits per wheel; already-laid marks keep their normal lifetime.
 --
 -- NOTHING IS CREATED OR DESTROYED WHILE DRIVING. 52 instances per car at one smoking
 -- surface -- 4 wheels x (2 Attachments + 1 Trail + 2 ParticleEmitters, and the off-road
@@ -659,10 +659,9 @@ local function write(fx: SurfaceFx, on: boolean, smoking: boolean, diffuseRate: 
 	end
 end
 
--- Everything off, now, and remembered as off. Used when the car JUMPS -- a spawn, a
--- respawn, a teleport -- because a trail that is still enabled across a jump draws one
--- straight black line from where the car was to where it now is, right across the world.
--- The heat is cleared with it: a car that has just been put down has cold tyres.
+-- Stop or resume this mark without clearing the segments already behind the car.
+-- Keep its trail and attachments across switches, so old history keeps its lifetime
+-- instead of being erased or recoloured when the other grass mark takes over.
 local function writeMark(m: MarkFx, on: boolean)
 	if m.on ~= on then
 		m.on = on
@@ -692,6 +691,8 @@ local function groundOff(g: GroundFx)
 	writeKick(g.dust, 0)
 end
 
+-- Everything off and remembered as off. Used when the car jumps (spawn, respawn or
+-- teleport), so no enabled trail draws across the jump. The tyres are put back cold too.
 function Wheels.Cut(self: Wheels)
 	for _, w in self.wheels do
 		w.heat = 0
@@ -802,10 +803,10 @@ function Wheels.Update(self: Wheels, state: DriftModel.State?, input: any, dt: n
 			write(fx, emit and fx.surface == surface, smoking, diffuseRate * m, stylizedRate * m)
 		end
 
-		-- Off the road. The flat grass line runs whenever the wheel marks on grass; the
-		-- trench is a LAYER over it, so starting or stopping it never leaves a hole.
+		-- Off the road. Each grass-marking wheel chooses green OR brown using the
+		-- existing trench hysteresis; never emit both at the same contact patch (T-205).
 		local g = w.ground
-		writeMark(g.flat, emit and grass)
+		writeMark(g.flat, emit and grass and not w.trench)
 		writeMark(g.trench, emit and grass and w.trench)
 		writeMark(g.gravel, emit and gravel)
 		writeKick(g.clippings, if emit then clipBase * w.mixGrass else 0)
@@ -874,9 +875,8 @@ function Wheels.DebugState(self: Wheels, state: DriftModel.State?, input: any)
 		-- `lit` is how many of this wheel's trails are actually drawing. It is 1 while the
 		-- wheel marks and 0 otherwise -- and **0 WHILE `emitting` IS TRUE IS A GAP IN THE
 		-- MARK**, which is the number the band ladder was removed over. Keep it.
-		-- Since T-188 a wheel marking on grass or gravel draws an off-road trail, and the trench
-		-- is a layer over the flat grass line, so it is not counted here: `lit` is still 1
-		-- while marking on any surface.
+		-- Count every alternative, including the trench (T-205), so a double grass mark
+		-- reports 2 instead of being hidden from this readout.
 		local emitting, lit = w.marking, 0
 		for _, fx in w.fx do
 			if fx.trail.Enabled then
@@ -885,6 +885,9 @@ function Wheels.DebugState(self: Wheels, state: DriftModel.State?, input: any)
 		end
 		local g = w.ground
 		if g.flat.trail.Enabled then
+			lit += 1
+		end
+		if g.trench.trail.Enabled then
 			lit += 1
 		end
 		if g.gravel.trail.Enabled then
