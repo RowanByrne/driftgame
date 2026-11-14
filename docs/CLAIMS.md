@@ -9,7 +9,7 @@ Every task in progress and the files it owns, so parallel sessions and workers n
 
 | Branch | Lane | Files owned | Since |
 |---|---|---|---|
-| `agent/exclusive-grass-marks` (T-205) | 3 | `src/StarterPlayerScripts/Drift/Wheels.luau`, `src/ServerScriptService/Tests/FxTests.luau`, `docs/game/features/car-fx.md` | 2026-11-14 |
+| `agent/exclusive-grass-marks` (T-205) | 3 | `src/StarterPlayerScripts/Drift/Wheels.luau`, `src/ServerScriptService/Tests/FxTests.luau`, `src/ReplicatedStorage/Shared/Config/Fx.luau` (comments only), `docs/game/features/car-fx.md` | 2026-11-14 |
 
 ## Notes between sessions
 
