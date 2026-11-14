@@ -2,7 +2,7 @@
 
 This game's code as built: what each module does and where things are registered. The rules every game follows are in docs/workflow/CODING.md; what other code relies on (data, remotes, tags, attributes, events) is in `CONTRACTS.md` and `EVENT-CATALOG.md`. Started in the Foundation phase; update it in the same commit as the code it describes. Replace each prompt with the answer.
 
-**Where it stands:** the drift prototype and the run, score, garage and admin systems listed below are implemented. The foundation kit remains incomplete: `DataService` and `PlayerData` are not built, and other gaps are identified in the registries. Settings UI work is on its feature branch. The current phase is recorded in `PROJECT.md`.
+**Where it stands:** the game remains a prototype, with the drift, run, score, garage and admin systems listed below implemented. T-201 supplies the first small native UI kit for settings. DataService, PlayerData, a general Sounds API, notifications, analytics and live config remain unbuilt. The prototype garage uses its documented throwaway development store; it is not a player-profile foundation. The current phase is recorded in `PROJECT.md`.
 
 ## Overview
 
@@ -33,7 +33,8 @@ The car is **not** driven by Roblox's physics (`DECISIONS.md`, 2026-11-03). Its 
 | `DriftController` | The drift model: the fixed-step simulation that moves the local player's car | `DebugState()`, `DebugDrive(inputs, seconds)` |
 | `ScoreController` | The endless run's score, on the client: steps `Drift/Score` on every simulation step while the server says this player is in a run (`features/endless-score.md`) | `View()`, `DebugState()` |
 | `CarInputController` | Steering, drift and brake input across keyboard, touch and gamepad | `DebugState()` |
-| `UiVisibilityController` | Session keyboard shortcut: P hides and restores game UI while driving input remains active; ignores typing and the Roblox menu (`T-200`) | `Toggle()`, `DebugState() -> {hidden, toggles, suppressed, bound}` |
+| `UiVisibilityController` | Session P shortcut plus owner-aware HUD suppression for menus; preserves screen visibility ownership (`T-200`, T-201) | `Toggle()`, `Changed(hidden)`, `SetOverlayHidden(owner, on, exceptions?)`, `DebugState()` |
+| `SettingsController` | Smoked-glass driving settings, session pointer preferences, menu/focus lifecycle and client scene blur (T-201) | `Open()`, `Close()`, `DebugState()`, `DebugAction()`, `DebugFixture()`, `DebugNavigate()`, Studio layout methods below |
 | `CarCameraController` | The reference game's in-game camera: it looks at the car from a fixed radius, swings that place round as the car turns, and leans it toward the travel as the slip opens. **A touch of roll and a speed shake since `T-072`** -- both applied to the rendered camera only, downstream of the stepped targets, so neither can reach the feedback loop. Still no zoom and no position smoothing: those were the predecessor camera the user rejected. Its targets run on their own fixed step (`CamTargetStep`), interpolated between, so every frame rate puts the camera in the same place | `Release()`, `Follow()`, `DebugState()`, `DebugProbe(opts)`, `DebugShakeProbe(opts)`, `DebugRecord(seconds)` |
 | `SkyController` | The sky and the day-night cycle (`features/day-night.md`, `T-144`): works the moment out from the server's clock, asks `Shared/DayNight` for its look and sets this client's Lighting, atmosphere, clouds and colour grading, and the cliffs' haze in the road mesh (`SplineMesh.setHaze`). Nothing is sent; the server sets no lighting | `DebugState()`, `DebugLook(t)`, `DebugKeyTimes()`, `DebugHold(t)`, `DebugSpeed(k, t?)`, `DebugResume()` |
 | `RoadGroundController` | Solid ground for the local avatar while it is out of the car on the spline road (`T-154`, `features/mountain-road.md` "Walking on the road"): a patch of invisible anchored tiles over tarmac and grass, walls at rock faces, hedges, crash barriers and the closing barrier, nothing past a cliff's lip. Client-only `Workspace.RoadGround`, never tagged `DriftSurface`, and gone whenever the car is driven | `DebugState()`, `DebugPoint(s, d)` |
@@ -42,6 +43,17 @@ The car is **not** driven by Roblox's physics (`DECISIONS.md`, 2026-11-03). Its 
 | `CmdrController` | F2 admin console, command dispatch, and targeted client car/score actions | `Run(text)`, `Act(action, ...)`, `onlyMe(players?)`, `Show()`, `Hide()`, `DebugState()` |
 
 ## Shared modules
+
+### Settings UI kit (client, T-201)
+
+The first small UI kit is implemented for settings; the broader foundation remains incomplete. `UI/Theme` owns semantic surface, type, selection and focus tokens; `UI/Create` creates native instances; `UI/Layers` owns the settings DisplayOrder; `UI/Glass` supplies panel/label/button and transparency handling. Buttons expose Normal/Hover/Pressed/Selected/Focus/Disabled state attributes. Disabled buttons are non-interactable and non-selectable. No generated image, atlas or baked text is required.
+
+`Settings/SettingsView` implements `new(parent)`, `setData(snapshot)`, `show()`, `hide()`, `describe()`, `setLayoutOffset(name, Vector2)` and `destroy()`, with `ActionRequested` for `open`, `close`, `category`, `mode` and `sensitivity`. Its fixtures cover steering, centred mode, interface, long copy and largest text/opaque panes. Global pointer listeners are disconnected by destroy and drags end on hide, window focus loss, resize or input-type change.
+
+`UI/Dev/LayoutDrag` is copied unchanged from the template. In Studio, `SettingsController:DebugDrag(on, "items" or "groups")`, `DebugSnap(on)`, `DebugExportLayout()` and `DebugResetLayout()` expose the page's whole-widget layout handles and exports. This page-specific preview is available through the existing debug bridge; a general UI-preview browser/admin command remains unbuilt.
+
+`UI/MenuInput` tracks independent input owners. Car input, camera zoom, car entry, garage entry, tuner and the legacy debug/trajectory bindings consult that ownership. Settings avoids the walking camera by opening only while driving, closes for car/avatar respawn and garage entry, yields to the console, and suspends for P or Roblox's menu. `CarInputController:SetSettings/GetSettings` is the intentional runtime preference API; the older Studio-only overrides remain available for existing tests.
+
 
 > The modules in `src/ReplicatedStorage/Shared/` that other code requires.
 

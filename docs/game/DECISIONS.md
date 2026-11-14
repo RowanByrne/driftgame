@@ -63,6 +63,8 @@ The user's decisions about this game, so they aren't reopened later. Before prop
 
 - 2026-11-14: Settings uses **A / Smoked glass**: dark rounded glass panes, warm orange selection and the wide left category rail, with reflowed compact layouts. The user picked "A: Smoked glass" on the comparison sheet and said "i picked a. continue" (T-201/T-202). The first batch of controls is still a separate choice.
 
+- 2026-11-14: The first settings batch is **Steering and UI**, chosen from the concrete catalogue (C-3effee, T-201): steering mode and sensitivity, plus the existing keyboard P shortcut. Tuner, camera tuning and test tools keep their separate entries and permissions. Values remain session-only.
+
 - 2026-11-14: Tone down the constant cliffs by linking road biomes: steep cliffs on both sides with lots of guardrails and tight bends, smaller one-sided cliffs with a smoother rising bank opposite, and mostly flat fields sloping gently down the mountain. This requests a replacement for the always-rock-uphill/cliff-downhill scenery rule; its layout, distribution and transitions are proposed for approval in features/road-biomes.md (C-ea75df).
 
 - 2026-11-14: A grass tyre mark is green or brown per wheel, never both emitting together. Brown replaces green at the existing trench threshold and green returns below its hysteresis threshold; old marks fade normally. This replaces the deliberate layered trench in T-188 (T-205, features/car-fx.md).

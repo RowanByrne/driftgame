@@ -115,14 +115,19 @@ end
 function DragControl:TravelPx(sensitivity: number?): number
 	local C = Config.Drift
 	local width = self:_screen()
-	local s = sensitivity or self._sensitivity or C.Sensitivity
+	local s = sensitivity or self._sensitivity or self.sessionSensitivity or C.Sensitivity
 	local t = clamp((s - 1) / 9, 0, 1)
 	local share = C.SliderWidthMax + (C.SliderWidthMin - C.SliderWidthMax) * t
 	return math.max(share * width * 0.5, 1)
 end
 
 function DragControl:Mode(): string
-	return self._mode or Config.Drift.InputMode
+	return self._mode or self.sessionMode or Config.Drift.InputMode
+end
+
+function DragControl:SetSettings(mode, sensitivity)
+	self.sessionMode, self.sessionSensitivity = mode, sensitivity
+	self:_lift()
 end
 
 -- Where the middle of the travel sits on screen this frame, in gui pixels.
@@ -283,7 +288,7 @@ function DragControl:DebugState()
 		down = self._pointer ~= nil,
 		pointer = if self._pointer and self._pointer.UserInputType then self._pointer.UserInputType.Name else "none",
 		mode = self:Mode(),
-		sensitivity = self._sensitivity or Config.Drift.Sensitivity,
+		sensitivity = self._sensitivity or self.sessionSensitivity or Config.Drift.Sensitivity,
 		steer = self.steer,
 		travelPx = self:TravelPx(),
 		centreX = self:CentreX(),

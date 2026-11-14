@@ -886,7 +886,7 @@ end
 
 -- Whether the wheel is the drift camera's right now: driving, and no other view has it.
 function CarCameraController:_zoomLive(): boolean
-	return self.driving == true and self.view == nil
+	return self.driving == true and self.view == nil and not (self._input and self._input:IsMenuBlocked())
 end
 
 -- Whether a notch at this screen point belongs to a scrolling list instead.
