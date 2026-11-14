@@ -303,6 +303,7 @@ The five simulation parts (`Body`, `WheelFL`…`WheelRR`, at `wheelOffsets()`) a
 
 ## Admin console (T-159)
 
+
 Cmdr owns its remotes outside `Shared/Net`, under `ReplicatedStorage.CmdrClient`, moved there from `ServerStorage.Cmdr` by `CmdrService`.
 
 | Name | Type | Direction | Payload and checks |
@@ -324,3 +325,22 @@ Cmdr owns its remotes outside `Shared/Net`, under `ReplicatedStorage.CmdrClient`
 | `CmdrController:Act` | `(action, ...) -> reply`: this client's car/score action |
 | `CmdrController.onlyMe` | `(players?) -> boolean`: omitted, empty, or only the local player |
 | `CmdrController:Show`, `Hide`, `DebugState` | Console visibility and debug state, including the most recent targeted action |
+
+## Settings page (T-201)
+
+Client-owned session UI. No new remotes, persistent data keys, analytics events or server permissions.
+
+| API | Contract |
+|---|---|
+| `CarInputController:GetSettings()` | Returns a copy `{mode: "dynamic" or "centred", sensitivity: integer 1..10}`; starts from Config.Drift defaults (dynamic, 5), survives car/avatar respawns for this session |
+| `CarInputController:SetSettings(mode?, sensitivity?)` | Nil leaves that field alone. Rejects an unknown mode, non-number, NaN or sensitivity outside 1..10 atomically; rounds valid numeric sensitivity to an integer. Returns boolean success. Applies to the pointer owner, never the model tune or keyboard/stick gain |
+| `CarInputController:IsMenuBlocked()` | Shared client menu ownership, including Roblox's menu; independent of actual driving/standing mode |
+| `UI/MenuInput.SetBlocked(owner, on)`, `IsBlocked()`, `Changed(blocked)` | Each owner releases only itself. Settings and an open console own separate blocks. A block neutralizes steering, ends pointer/pan input and prevents brake toggles; it preserves the brake latch and true driving mode |
+| `UiVisibilityController.Changed(hidden)` | Emitted when keyboard P changes the global session UI state |
+| `UiVisibilityController:SetOverlayHidden(owner, on, exceptions?)` | Suppresses other game visual roots without changing their owners' Enabled/Visible flags. Exceptions are ScreenGui names; settings excludes `Settings` and Studio `LayoutDrag`. Global P still suppresses the settings roots. Overlay and P suppression share the same scale registry, so neither leaves a second scale behind |
+| `SettingsController:Open()`, `Close()` | Driving-only page, refused during typing, global UI hiding, Roblox menu, garage visit or visible console. M/R3 toggle; Back/X, Backspace/B close. Closing through B waits for its release before rearming driving |
+| `SettingsController:DebugState()`, `DebugAction(action, value?)` | State/geometry plus the same action route as the view, for lane checks |
+| `SettingsController:DebugFixture(name?)` | Studio-only snapshot preview; names in SettingsView.fixtures. Nil returns to live session values; fixture edits do not change live preferences |
+| `SettingsController:DebugNavigate(name)` | Studio-only invocation of an actual navigation handler (`Toggle`, `Close`, `Next`, `Previous`, `Left`, `Right`, `Activate`) when an input tool cannot deliver that key |
+
+`PlayerGui.Settings` is one ScreenGui at `UI/Layers.Settings = 36`, Sibling order. Its `OpenSettings` entry and `Modal.Pane` are the visual roots. `Lighting.SettingsFog` is a client-only full-scene BlurEffect, enabled only while the modal is effective; reduced transparency decreases its strength and zero transparency turns it off. No UI artwork is uploaded.

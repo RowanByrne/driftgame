@@ -53,7 +53,7 @@ Known starting points for the concept and that catalogue:
 
 | Control or tool | Existing status | Boundary for this feature |
 |---|---|---|
-| Steering mode and sensitivity | Already specified in `drift-model.md`: dynamic or centred, default dynamic; sensitivity 1-10, default 5. `Drift/DragControl.luau` implements them, but the available controller settings hook is Studio-only | Good candidates for real personal settings, if the user includes them. Give them an intentional runtime API; do not call a Studio debug hook in the live page |
+| Steering mode and sensitivity | Dynamic or centred, default dynamic; sensitivity 1-10, default 5. `Drift/DragControl.luau` implements pointer response. T-208 adds validated `CarInputController:SetSettings/GetSettings` session APIs | Selected by the user; the page calls the runtime API, never its Studio debug hook |
 | Hide/restore game UI | Keyboard P, session-only (`SETTINGS.md`, T-200) | Preserve it; a hidden menu must not strand a modal input block or change a setting through a stale drag |
 | Camera controls | Existing camera/controller owns the view and its inputs | Catalogue supported controls and ask which should move; do not turn all camera tuning constants into settings |
 | Car tuner, readouts, trajectory and admin commands | Developer tools with their existing access rules | Keep those rules and entry points unless the user explicitly selects a development section; never expose server-wide actions as personal preferences |
@@ -68,7 +68,7 @@ Existing server-owned actions keep their current remotes, validation and access 
 
 ## Contracts
 
-No data keys, remotes or public APIs change in this planning commit. Implementation records component/controller APIs, layer ownership, input blocking and any changed existing setting contract in the same commit as code. Shared contracts needed by later steps go first as a small checked commit.
+No server data keys or remotes change. `CONTRACTS.md` records the runtime session-setting API, shared menu-input ownership, HUD overlay suppression, settings lifecycle and layer/blur ownership with the implementation. Later screens must use those ownership APIs rather than taking over the real driving/standing state.
 
 ## Analytics
 
@@ -107,5 +107,11 @@ All steps belong to the feature's own agent and its reserved lane after the plan
 ## Open questions
 
 - Style settled 2026-11-14: **A / Smoked glass**, the dark rounded panes, warm orange accents and left rail in `assets/reference/settings-menu-concepts-01.png`. The other two directions are unpicked.
-- Which existing controls does the user want moved first, and which belong in a developer-only section? Asked with a concrete catalogue after the visual pick.
-- Exact opening shortcut, category names and supported device layouts are settled with the shell; current behaviour and occupied controls must be checked first.
+- First batch settled 2026-11-14: **Steering and UI** (C-3effee): Dynamic/Centred, sensitivity 1–10 and the existing P shortcut. The developer tuner, camera tuning and test tools remain separate. The live path accompanies the shell so its controls work when the user tries it; the final migration step verifies this batch after the shell's lane review.
+- Shell entry: Settings button or M / gamepad R3 while driving; Back/X, Backspace or gamepad B closes. Steering and Interface categories; wide left rail, horizontal compact tabs, two control columns in short landscape, one scrolling column in portrait or larger text. Walking and garage entry are excluded from this first driving shell.
+
+## First shell implementation
+
+The page uses native Roblox panes and controls with no image uploads. Its BlurEffect softens the **whole 3D scene** while the modal is active; it does not blur individual GUI regions. The other HUD is suppressed through UiVisibilityController's owner-aware overlay API, preserving each owner's Enabled/Visible flags. Hide/restore P suspends the modal, input ownership and blur coherently. The selected design's toggle for showing UI becomes the existing keyboard P keycap/instructions: a touch toggle would hide its own route back. No new cross-device hide shortcut is introduced.
+
+The controller delegates the two real personal values to CarInputController's validated session API. It does not alter Config, saved car tunes, server remotes or the driving model. A settings view renders snapshots and emits actions; its fixtures and Studio layout drag/export methods are documented in ARCHITECTURE.md. Lane verification and limitations are in `docs/archive/settings-menu-shell-checks.md`.

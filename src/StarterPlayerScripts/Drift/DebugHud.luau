@@ -315,12 +315,14 @@ function DebugHud.new()
 	self.actionNext = "DriftDebugNextCar"
 	self.actionFold = "DriftDebugFoldStats"
 	ContextActionService:BindAction(self.actionNext, function(_, state)
+		if require(script.Parent.Parent.UI.MenuInput).IsBlocked() then return Enum.ContextActionResult.Pass end
 		if state == Enum.UserInputState.Begin then
 			self:AskForNextCar()
 		end
 		return Enum.ContextActionResult.Sink
 	end, false, Enum.KeyCode.F4, Enum.KeyCode.DPadRight)
 	ContextActionService:BindAction(self.actionFold, function(_, state)
+		if require(script.Parent.Parent.UI.MenuInput).IsBlocked() then return Enum.ContextActionResult.Pass end
 		if state == Enum.UserInputState.Begin then
 			self:ToggleStats()
 		end

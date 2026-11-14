@@ -51,6 +51,7 @@ local Cars = require(ReplicatedStorage.Shared.Cars)
 local Config = require(ReplicatedStorage.Shared.Config)
 local Garage = require(ReplicatedStorage.Shared.Cars.Garage)
 local Net = require(ReplicatedStorage.Shared.Net)
+local MenuInput = require(script.Parent.Parent:WaitForChild("UI"):WaitForChild("MenuInput"))
 
 if not Config.Drift.Tuner then
 	return
@@ -768,6 +769,7 @@ local function endDrag()
 		sendTune(true) -- the server ends the drag holding the final number
 	end
 end
+MenuInput.Changed:Connect(function(blocked) if blocked then endDrag() end end)
 
 -- P can collapse the panel while a slider is held; finish before its track shrinks.
 panel:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
@@ -1012,6 +1014,7 @@ Tuner.refresh = refreshSliders -- what a slider move calls; the garage list is u
 --------------------------------------------------------------------------------
 
 function Tuner.setOpen(open: boolean)
+	if open and MenuInput.IsBlocked() then return end
 	Tuner.open = open
 	panel.Visible = open
 	panel.Active = open -- CLOSED MEANS CLOSED: an invisible Active frame would still

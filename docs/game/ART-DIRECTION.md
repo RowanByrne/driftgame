@@ -43,27 +43,27 @@ Set in the UI phase's style step (UI.md).
 
 | Token | Value | Role |
 |---|---|---|
-| `Surface.Primary` | | Main panel surface |
-| `Surface.Secondary` | | Secondary surface |
-| `Text.Primary` | | Text on dark surfaces |
-| `Text.OnLight` | | Text on light surfaces |
-| `Action.Primary` | | Primary buttons, important selections |
-| `Focus` | | Focus and selection outline |
+| `Surface.Primary` | `#14191d` (`Theme.Color.Surface`) | Main settings glass |
+| `Surface.Secondary` | `#232a2f` (`Theme.Color.Tile`) | Inset tiles and controls |
+| `Text.Primary` | `#f4f5f4` (`Theme.Color.Text`) | Text on dark surfaces |
+| `Text.OnLight` | `#171b1e` (`Theme.Color.OnAccent`) | Text on orange selected controls |
+| `Action.Primary` | `#f29e52` (`Theme.Color.Accent`) | Important selections and slider fill |
+| `Focus` | White, 3 px native rim | Focus indicator, without a glow |
 | `Error` | | Errors (always with an icon or label too) |
-| `Disabled` | | Disabled controls |
+| `Disabled` | `#737c83` | Unavailable component state, with interaction disabled |
 
 **Fonts.** Checked in Studio at the smallest size, numbers and punctuation included.
 
 | Role | Font | Checked |
 |---|---|---|
-| Headings | | |
-| Body and controls | | |
-| Numbers | | |
+| Headings | Gotham Bold | Settings, lane 1, 2026-11-14 |
+| Body and controls | Gotham Medium | Native 16 px secondary / 18 px body at smallest tested layouts; 2026-11-14 |
+| Numbers | Gotham Medium / Bold | Sensitivity 1–10 and range punctuation checked; 2026-11-14 |
 
-**Input icons:** > The icon set used for every input prompt (keyboard, mouse, gamepad, touch): its name, licence, and where its atlas and manifest live in `assets/`.
+**Settings input hints:** native P keycap and labelled controls. No generated icon atlas or new outside art is used.
 
 **Rules of the look:**
-> What the UI does and doesn't do. For example: how decorated the HUD is compared with full menus, where ornament goes, how restrained transitions are.
+Settings uses native rounded surfaces, a fine rim and quiet interiors. Text and targets stay native. Scene fog is a client-only BlurEffect over the entire 3D scene; it is not localized pane refraction. Other game HUD is put away while the modal is active. No animations are needed for this first page; all transitions are instant and interruptible. Accent-filled selections use dark text for contrast. These tokens currently apply only to settings.
 
 ## Do and don't
 

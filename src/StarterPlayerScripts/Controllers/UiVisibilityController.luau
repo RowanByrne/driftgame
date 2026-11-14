@@ -4,6 +4,7 @@
 local Players = game:GetService("Players")
 local GuiService = game:GetService("GuiService")
 local UserInputService = game:GetService("UserInputService")
+local Signal = require(game:GetService("ReplicatedStorage").Shared.Signal)
 
 local UiVisibilityController = {}
 
@@ -30,9 +31,36 @@ local function visualRoot(object, playerGui)
 end
 
 function UiVisibilityController:Init()
+	self.Changed = Signal.new()
 	self.hidden = false
 	self.toggles = 0
 	self.suppressed = {}
+	self.overlays = {}
+end
+
+function UiVisibilityController:_wanted(object)
+	if self.hidden then return true end
+	local screen = object.Parent
+	while screen and not screen:IsA("ScreenGui") do screen = screen.Parent end
+	for _, exceptions in self.overlays do
+		if screen and not exceptions[screen.Name] then return true end
+	end
+	return false
+end
+
+function UiVisibilityController:_refresh()
+	if not self.playerGui then return end
+	for _, object in self.playerGui:GetDescendants() do
+		if visualRoot(object, self.playerGui) then
+			if self:_wanted(object) then self:_suppress(object) else self:_restore(object) end
+		end
+	end
+end
+
+-- Menus put the other HUD away without changing any screen owner's Enabled/Visible flags.
+function UiVisibilityController:SetOverlayHidden(owner, on, exceptions)
+	self.overlays[owner] = if on then (exceptions or {}) else nil
+	self:_refresh()
 end
 
 function UiVisibilityController:_suppress(object)
@@ -87,15 +115,8 @@ function UiVisibilityController:Toggle()
 	end
 	self.hidden = not self.hidden
 	self.toggles += 1
-	if self.hidden then
-		for _, object in self.playerGui:GetDescendants() do
-			self:_suppress(object)
-		end
-	else
-		for object in self.suppressed do
-			self:_restore(object)
-		end
-	end
+	self.Changed:Fire(self.hidden)
+	self:_refresh()
 	return self.hidden
 end
 
@@ -105,7 +126,7 @@ function UiVisibilityController:Start()
 	end
 	self.playerGui = Players.LocalPlayer:WaitForChild("PlayerGui")
 	self.playerGui.DescendantAdded:Connect(function(object)
-		if self.hidden then
+		if self:_wanted(object) then
 			self:_suppress(object)
 		end
 	end)

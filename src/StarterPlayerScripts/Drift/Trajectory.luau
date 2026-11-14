@@ -337,6 +337,7 @@ end
 -- without editing the config. Bound next to the readout's own F3/F4/F5 (Drift/DebugHud).
 function Trajectory:BindToggle()
 	ContextActionService:BindAction(TOGGLE_ACTION, function(_, inputState)
+		if require(script.Parent.Parent.UI.MenuInput).IsBlocked() then return Enum.ContextActionResult.Pass end
 		if inputState == Enum.UserInputState.Begin then
 			self:Toggle()
 		end
