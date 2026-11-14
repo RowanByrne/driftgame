@@ -16,6 +16,14 @@ or a thumb on it also hauls the car round. And `Instance.new("ScreenGui")` still
 legacy `Global` `ZIndexBehavior`, where a child does not draw above its parent: set
 `ZIndexBehavior = Sibling` or the text comes out painted over, a bug this game has already had once.
 
+## Session UI shortcut (T-200)
+
+`Controllers/UiVisibilityController.luau` binds keyboard `P` through the Input Action System. One press hides the game's screen UI and another restores it. A focused TextBox or the Roblox menu prevents toggling. No new screen or button is added; gamepad and touch have no new shortcut.
+
+Visual roots under game ScreenGuis are reduced below a pixel with a temporary UIScale. ScreenGui `Enabled` and GuiObject `Visible` remain owned by each screen, so menu changes and UI created while hidden restore to their current state. Existing root scales are preserved, including changes made while hidden. Roblox chat, bubble chat and touch controls, CoreGui, and the `DriftControls.DragArea` driving pad are excluded. Collapsing the tuner ends an active slider drag before further pointer movement can alter the tune.
+
+Lane2 verification (2026-11-14): actual P hides all 21 game visual roots below one pixel; the driving pad stays 1234 x 592. Actual P while typing makes no toggle. Ten hide/restore cycles leave one binding, no suppression scales and no suppressed roots. A new root, a removed root, changed Visible/Enabled flags, a changed existing scale (0.75 to 0.8) and avatar respawn restore correctly. Keyboard steer reads 0.75 and a 200-pixel mouse drag reads 0.365 while hidden; two brake presses toggle twice. Both tuner slider types retain their value after P and pointer movement. Two changed scripts matched disk and compiled before the quiet playtest; console checked and playtest stopped. No new layout or art needs approval.
+
 ## Layouts
 
 > The layouts this game supports and how each is chosen: from the input type and the measured screen, never a guess at the device (UI.md "Layouts per device"). Delete the rows the game doesn't support.

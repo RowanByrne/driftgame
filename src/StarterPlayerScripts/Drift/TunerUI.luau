@@ -769,6 +769,13 @@ local function endDrag()
 	end
 end
 
+-- P can collapse the panel while a slider is held; finish before its track shrinks.
+panel:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
+	if panel.AbsoluteSize.X < 1 then
+		endDrag()
+	end
+end)
+
 UserInputService.InputEnded:Connect(function(input)
 	-- Only the pointer that could have started it: every key release comes through here
 	-- too, and a drag that ends because somebody let go of a steering key is a slider
