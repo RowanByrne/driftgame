@@ -187,7 +187,8 @@ function Cuts.refine(spline:any,hill:any,positions:{number},rows:{{Vector3}},ini
 	for i=1,#initial-1 do visit(initial[i],initial[i+1]) end
 	-- A bank can occupy part of the hill's ownership domain even at the finest
 	-- road row. Retain the hill outside that bank, lower new join vertices just
-	-- behind its actual surface, and keep hidden below-bank pieces. This closes
+	-- behind its actual surface. Hidden hill pieces inside the bank are omitted.
+	-- A small plan margin covers the later Vector3 packing. This closes
 	-- the join rather than cutting an exposed vertical edge into the scenery.
 	local function halfspace(polygon:{Vector3},distance:(Vector3)->number,inside:boolean):{Vector3}
 		local out={}
@@ -229,7 +230,7 @@ function Cuts.refine(spline:any,hill:any,positions:{number},rows:{{Vector3}},ini
 			if tick and index%8==0 then tick() end
 		end
 	end
-	local function trim(a:Vector3,b:Vector3,c:Vector3):({{Vector3}}?,boolean)
+	local function trim(a:Vector3,b:Vector3,c:Vector3):({{Vector3}}?,boolean,string?)
 		local x0,x1,z0,z1=bounds({a,b,c})
 		local polygons={{a,b,c}}
 		local changed=false
@@ -241,7 +242,7 @@ function Cuts.refine(spline:any,hill:any,positions:{number},rows:{{Vector3}},ini
 				local out={}
 				local function add(p:Vector3,intersection:boolean?)
 					local near,inside=false,true
-					for _,distance in planes do local d=distance(p);near=near or math.abs(d)<.01;inside=inside and d>-.01 end
+					for _,distance in planes do local d=distance(p);near=near or math.abs(d)<.021;inside=inside and d>-.021 end
 					local lower=near and inside and p.Y>height(p)+1e-4
 					if intersection and not lower then return end
 					if lower then
@@ -266,7 +267,7 @@ function Cuts.refine(spline:any,hill:any,positions:{number},rows:{{Vector3}},ini
 				end
 				return out
 			end
-			if not above(a,b,c,pa,pb,pc) then
+			if not Cuts.overlap(a,b,c,{pa,pb,pc}) then
 				local anchored,points={},0
 				for index,polygon in polygons do
 					local nextPolygon=anchor(polygon);points+=#nextPolygon
@@ -288,19 +289,16 @@ function Cuts.refine(spline:any,hill:any,positions:{number},rows:{{Vector3}},ini
 			for index,polygon in polygons do
 				if tick and index%16==0 then tick() end
 				local intrudes=false
-				for j=2,#polygon-1 do if above(polygon[1],polygon[j],polygon[j+1],pa,pb,pc) then intrudes=true;break end end
+				for j=2,#polygon-1 do if Cuts.overlap(polygon[1],polygon[j],polygon[j+1],{pa,pb,pc}) then intrudes=true;break end end
 				if not intrudes then append(anchor(polygon));if overflow then return end;continue end
 				changed=true
 				local inside=polygon
 				for _,distance in planes do
-					local outside=halfspace(inside,distance,false)
+					local function protectedDistance(p:Vector3):number return distance(p)+.01 end
+					local outside=halfspace(inside,protectedDistance,false)
 					append(anchor(outside));if overflow then return end
-					inside=halfspace(inside,distance,true)
+					inside=halfspace(inside,protectedDistance,true)
 					if #inside<3 then break end
-				end
-				if #inside>=3 then
-					local below=halfspace(inside,function(p:Vector3):number return height(p)-.2-p.Y end,true)
-					append(below);if overflow then return end
 				end
 			end
 			polygons=nextPolygons
@@ -319,7 +317,7 @@ function Cuts.refine(spline:any,hill:any,positions:{number},rows:{{Vector3}},ini
 			for j=1,#polygon do
 			local pa,pb,pc=centre,polygon[j],polygon[j%#polygon+1]
 			if not Cuts.collapsed(pa,pb,pc) then
-				if occludes(pa,pb,pc) then return nil,true end
+				if occludes(pa,pb,pc) then return nil,true,`recertification at {pa}; {pb}; {pc}` end
 				table.insert(triangles,{pa,pb,pc})
 			end
 		end end

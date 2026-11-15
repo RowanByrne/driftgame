@@ -837,7 +837,7 @@ function Tests.hillRobustness()
 		local clipped,changed=trim(Vector3.new(1999,0,-.2),Vector3.new(2001,0,-.2),Vector3.new(2001,0,-.8))
 		local anchored,peak,insideSafe=false,false,clipped~=nil
 		for _,triangle in clipped or {} do for _,p in triangle do
-			if math.abs(p.X-2000)<.002 then anchored=anchored or p.Y<-1000.1 end
+			if math.abs(p.X-2000)<.021 then anchored=anchored or p.Y<-1000.1 end
 			peak=peak or p.X>2000.9 and math.abs(p.Y)<.001
 			insideSafe=insideSafe and (p.X>=1999.999 or p.Y<-1000.1)
 		end end

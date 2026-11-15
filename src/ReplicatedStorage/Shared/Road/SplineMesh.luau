@@ -729,8 +729,8 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 				local function ground(a: number?, b: number?, c: number?, pa: Vector3, pb: Vector3, pc: Vector3)
 					if HillCuts.collapsed(pa,pb,pc) then return end
 					if hillTrimmer then
-						local triangles,changed=hillTrimmer(pa,pb,pc)
-						if not triangles then uncertifiedHill=true;error("unsafe terminal hillside repair") end
+						local triangles,changed,failure=hillTrimmer(pa,pb,pc)
+						if not triangles then uncertifiedHill=true;error(`unsafe terminal hillside repair: {failure or "fragmentation budget"}`) end
 						if changed then
 							if road.triangles+#triangles>19000 then error("unsafe terminal hillside repair budget") end
 							hillTrimmedTriangles+=1
