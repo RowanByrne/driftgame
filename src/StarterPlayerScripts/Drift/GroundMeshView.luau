@@ -76,6 +76,8 @@ export type View = typeof(setmetatable(
 		-- for the frame-time checks: when each grid swapped in, and its level, and the
 		-- clock time of each slice's yield
 		events: { { number } },
+		paused: boolean, -- Studio checks only: build nothing
+		slices: { number }, -- how long each slice of building took, ms (the last 4 000)
 	},
 	GroundMeshView
 ))
@@ -209,6 +211,8 @@ function GroundMeshView.new(spline: any, parent: Instance?): View
 		worstApplyMs = 0,
 		vertices = 0,
 		events = {},
+		paused = false,
+		slices = {},
 	}, GroundMeshView)
 	return self
 end
@@ -250,6 +254,9 @@ function GroundMeshView._fill(self: View, level: Level, copy: Copy, cx: number, 
 		if now - sliceStart > budget then
 			work += now - sliceStart
 			self.worstSliceMs = math.max(self.worstSliceMs, (now - sliceStart) * 1000)
+			if #self.slices < 4000 then
+				table.insert(self.slices, (now - sliceStart) * 1000)
+			end
 			task.wait()
 			slices += 1
 			sliceStart = os.clock()
@@ -430,7 +437,7 @@ end
 
 function GroundMeshView._run(self: View)
 	self.running = true
-	while not self.dead do
+	while not self.dead and not self.paused do
 		self:_checkNewRoad()
 		local level = self:_wanted()
 		if not level then
@@ -483,7 +490,7 @@ end
 
 -- Each frame, with the car's position.
 function GroundMeshView.Update(self: View, x: number, z: number)
-	if self.dead or self.failed then
+	if self.dead or self.failed or self.paused then
 		return
 	end
 	self.carX, self.carZ = x, z
@@ -540,6 +547,8 @@ function GroundMeshView.DebugState(self: View)
 		applyMs = self.applyMs,
 		worstApplyMs = self.worstApplyMs,
 		events = self.events,
+		slices = self.slices,
+		paused = self.paused,
 	}
 end
 

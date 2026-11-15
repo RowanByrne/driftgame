@@ -354,10 +354,13 @@ function DriftController:DebugHorizon(resetCost: boolean?)
 end
 
 -- The ground-first trial's drawn ground (T-218), when this run has one.
-function DriftController:DebugGroundView()
+function DriftController:DebugGroundView(paused: boolean?)
 	local view = self.groundView
 	if not view then
 		return { on = false }
+	end
+	if paused ~= nil then
+		view.paused = paused -- Studio checks: stop building, to time the rest
 	end
 	local out = view:DebugState()
 	out.on = true
