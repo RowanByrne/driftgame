@@ -463,15 +463,35 @@ local Spline = {
 	-- only between runs, so the game and `main` stay as they are.
 	Ground = {
 		Mode = "current", -- "current" | "mesh" | "terrain"
-		-- THE MOUNTAIN, h(x, z): a plane rising `Slope` studs per stud up the fall line, through
-		-- the road's start, plus ridges and gullies: {studs across, studs either way} per
-		-- octave of noise, `Stretch` times longer down the fall line than across it, so they
-		-- run down the mountain. A pure function of the seed and the place
-		-- 0.12, about 7 degrees: no steeper than the road may descend (`MaxGrade`, 8), or a
-		-- road heading down the mountain falls behind it (0.2 left one 113 studs above it)
-		Slope = 0.12,
-		Octaves = { { 900, 45 }, { 450, 22 }, { 180, 7 } },
-		Stretch = 1.8,
+		-- THE MOUNTAIN, h(x, z), through the road's start. A pure function of the seed and the
+		-- place. Since T-228 (the user: "sections where it gets very steep for several thousand
+		-- studs, and sections where it's quite shallow ... big ridges that carve in and
+		-- promontories that stick out"), and the road follows whatever it is (T-227):
+		-- BELTS down the fall line: going down, a shallow BENCH (`Bench` studs of fall line at a
+		-- slope from `Low`), a ramp (`Ramp` studs, eased), a steep SCARP (`Scarp` studs at a
+		-- slope from `High`), a ramp, the next bench; each one's sizes from the seed. The road
+		-- spends about as long on a scarp as on a bench: it loses height at its own rate, and a
+		-- scarp is short but tall. Laid out `BeltsUp` studs up the fall line from the start and
+		-- `BeltsDown` down, every `BeltStep`; past them, straight on. The belts curve across the
+		-- mountain, up to `BeltWarp[1]` studs up or down it over `BeltWarp[2]` across.
+		BeltBench = { 2000, 4000 }, -- studs of fall line
+		BeltScarp = { 250, 600 }, -- studs of fall line
+		BeltRamp = 300, -- studs of fall line
+		BeltLow = { 0.03, 0.09 }, -- slope: about 2 to 5 degrees
+		BeltHigh = { 0.5, 0.75 }, -- slope: about 27 to 37 degrees
+		BeltsUp = 10000, -- studs of fall line
+		BeltsDown = 60000,
+		BeltStep = 16, -- studs
+		BeltWarp = { 300, 4000 }, -- studs
+		-- RIDGES AND GULLIES on the belts: {studs across, studs either way, kind} per octave of
+		-- noise, `Stretch` times longer down the fall line than across it, so they run down the
+		-- mountain. "ridge": sharp crests, promontories standing out; "gully": V-shaped, carving
+		-- in; none, rounded. Their height is scaled by how steep the belt is there: `ReliefLow`
+		-- of it where the belt's slope is `ReliefSlopes[1]` or less, all of it from `[2]`
+		Octaves = { { 1400, 80, "ridge" }, { 600, 35, "gully" }, { 220, 8 } },
+		Stretch = 2.5,
+		ReliefLow = 0.25,
+		ReliefSlopes = { 0.05, 0.6 },
 		-- THE MOUNTAIN LEADS, THE ROAD FOLLOWS (T-226, features/road-on-the-slope.md). In a
 		-- ground run the road reads everything from h alone, with no height band, descent rate
 		-- or fixed heading of its own, so changing h changes the road with no road code touched.

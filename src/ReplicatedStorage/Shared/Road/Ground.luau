@@ -3,10 +3,11 @@
 -- Road/Ground: the ground-first mountain (features/ground-trial.md, T-218). Pure maths, no
 -- instances: the same on the server and on every client.
 --
--- THE MOUNTAIN COMES FIRST. One height function of world position, `h(x, z)`: a plane
--- falling along the fall line (`Ground.Slope`), with broad seeded ridges and gullies on it
--- that run down the mountain (`Ground.Octaves`, stretched along the fall line). It depends
--- on the seed's origin and fall line alone, so every device has the same mountain.
+-- THE MOUNTAIN COMES FIRST. One height function of world position, `h(x, z)`: belts down
+-- the fall line, shallow benches and steep scarps (`Ground.Belt...`, T-228), with broad
+-- seeded ridges and gullies on them that run down the mountain (`Ground.Octaves`, stretched
+-- along the fall line), taller where the belt is steeper. It depends on the seed's origin
+-- and fall line alone, so every device has the same mountain.
 --
 -- THE ROAD IS PRESSED INTO IT (`at`). Under the road and its runoff the ground sits just
 -- below their surface (`Ground.Under`). Past the runoff's outer edge it blends back to `h`
@@ -33,7 +34,7 @@ local Spline = require(script.Parent.Spline)
 
 local Ground = {}
 
-export type Octave = { size: number, amp: number, a: number, b: number, c: number }
+export type Octave = { size: number, amp: number, a: number, b: number, c: number, kind: string? }
 
 export type Field = {
 	seed: number,
@@ -42,10 +43,18 @@ export type Field = {
 	oz: number,
 	ux: number, -- uphill, a unit vector in plan
 	uz: number,
-	slope: number,
+	slope: number, -- the belt's slope at the start (for what still wants one number)
 	stretch: number,
 	oct: { Octave },
-	zero: number, -- the relief at the origin, taken off so the road starts on the plane
+	-- the belts (T-228): the slope every `step` studs of fall line from `u0` up, and the
+	-- height there, from the start's
+	belt: { number },
+	beltH: { number },
+	u0: number,
+	step: number,
+	warp: { number }, -- {studs, studs across, noise offset, noise offset}
+	baseZero: number, -- the belts' height at the start, taken off so the start is on them
+	zero: number, -- the relief at the origin, taken off so the road starts on the mountain
 	mode: string?, -- on a client: how it is drawn, "mesh" or "terrain"
 }
 
@@ -102,8 +111,41 @@ end
 -- The mountain: h(x, z)
 --------------------------------------------------------------------------------
 
+-- The belts down the fall line (T-228): going down from `BeltsUp`, a bench, a ramp, a scarp,
+-- a ramp, and so on, each one's sizes from the seed's own stream. Returns the slope every
+-- `BeltStep` studs, lowest first, and the u of the first.
+local function belts(rng: Random): ({ number }, number)
+	local G = Config.Spline.Ground
+	local step = G.BeltStep
+	local n = math.floor((G.BeltsUp + G.BeltsDown) / step) + 1
+	local down: { number } = table.create(n)
+	local function between(r: { number }): number
+		return r[1] + (r[2] - r[1]) * rng:NextNumber()
+	end
+	while #down < n do
+		local lo, hi = between(G.BeltLow), between(G.BeltHigh)
+		for _, seg in { { between(G.BeltBench), lo, lo }, { G.BeltRamp, lo, hi }, { between(G.BeltScarp), hi, hi }, { G.BeltRamp, hi, lo } } do
+			local count = math.max(1, math.floor(seg[1] / step))
+			for j = 0, count - 1 do
+				if #down >= n then
+					break
+				end
+				local t = j / count
+				t = t * t * (3 - 2 * t)
+				table.insert(down, seg[2] + (seg[3] - seg[2]) * t)
+			end
+		end
+	end
+	-- lowest first
+	local up: { number } = table.create(n)
+	for i = n, 1, -1 do
+		table.insert(up, down[i])
+	end
+	return up, G.BeltsUp - (n - 1) * step
+end
+
 -- The field for a road: its origin and its fall line (the uphill heading, as a yaw: forward
--- is (-sin, -cos)), and offsets into the noise from the seed.
+-- is (-sin, -cos)), the belts, and offsets into the noise, all from the seed.
 function Ground.field(seed: number, origin: Spline.Origin, fall: number): Field
 	local G = Config.Spline.Ground
 	local rng = Random.new((seed * 29 + 5153) % 2 ^ 31)
@@ -112,10 +154,20 @@ function Ground.field(seed: number, origin: Spline.Origin, fall: number): Field
 		table.insert(oct, {
 			size = o[1],
 			amp = o[2],
+			kind = o[3],
 			a = rng:NextNumber() * 4096,
 			b = rng:NextNumber() * 4096,
 			c = rng:NextNumber() * 256 + 0.5, -- never a whole number: math.noise is 0 on the lattice
 		})
+	end
+	local warp = { G.BeltWarp[1], G.BeltWarp[2], rng:NextNumber() * 4096, rng:NextNumber() * 256 + 0.5 }
+	local belt, u0 = belts(Random.new((seed * 31 + 7177) % 2 ^ 31))
+	-- the height up the belts: the slope's integral (it is straight between two samples)
+	local step = G.BeltStep
+	local beltH = table.create(#belt)
+	beltH[1] = 0
+	for i = 2, #belt do
+		beltH[i] = beltH[i - 1] + 0.5 * (belt[i - 1] + belt[i]) * step
 	end
 	local f: Field = {
 		seed = seed,
@@ -124,38 +176,98 @@ function Ground.field(seed: number, origin: Spline.Origin, fall: number): Field
 		oz = origin.z,
 		ux = -math.sin(fall),
 		uz = -math.cos(fall),
-		slope = G.Slope,
+		slope = 0,
 		stretch = G.Stretch,
 		oct = oct,
+		belt = belt,
+		beltH = beltH,
+		u0 = u0,
+		step = step,
+		warp = warp,
+		baseZero = 0,
 		zero = 0,
 	}
+	f.baseZero = Ground.base(f, origin.x, origin.z) - origin.y
+	f.slope = Ground.beltSlope(f, origin.x, origin.z)
 	f.zero = Ground.relief(f, origin.x, origin.z)
 	return f
 end
 
--- The plane: the mountain without its relief. The road's height follows this.
+-- Where (x, z) is on the belts: up the fall line, after their curve across the mountain.
+local function beltU(f: Field, x: number, z: number): (number, number)
+	local dx, dz = x - f.ox, z - f.oz
+	local u = dx * f.ux + dz * f.uz -- up the mountain
+	local v = dx * f.uz - dz * f.ux -- across it
+	local w = f.warp
+	return u + w[1] * 2 * math.noise(v / w[2] + w[3], w[4], 0.37), v
+end
+
+-- The belts' slope and height at a u (between two samples the slope is straight, so the
+-- height is its integral, smooth); past either end, straight on.
+local function beltAt(f: Field, u: number): (number, number)
+	local belt, H = f.belt, f.beltH
+	local q = (u - f.u0) / f.step
+	local n = #belt
+	if q <= 0 then
+		return belt[1], H[1] + belt[1] * q * f.step
+	elseif q >= n - 1 then
+		return belt[n], H[n] + belt[n] * (q - (n - 1)) * f.step
+	end
+	local i = math.floor(q)
+	local t = (q - i) * f.step
+	local s0, s1 = belt[i + 1], belt[i + 2]
+	local k = (s1 - s0) / f.step
+	return s0 + k * t, H[i + 1] + s0 * t + 0.5 * k * t * t
+end
+
+-- The mountain without its ridges and gullies: the belts.
 function Ground.base(f: Field, x: number, z: number): number
-	return f.oy + f.slope * ((x - f.ox) * f.ux + (z - f.oz) * f.uz)
+	local u = beltU(f, x, z)
+	local _, y = beltAt(f, u)
+	return f.oy + y - f.baseZero
+end
+
+-- How steep the belt is at (x, z), up the fall line.
+function Ground.beltSlope(f: Field, x: number, z: number): number
+	local u = beltU(f, x, z)
+	return (beltAt(f, u))
 end
 
 -- The ridges and gullies: noise in the fall line's own frame, stretched along it so they
--- run down the mountain.
-function Ground.relief(f: Field, x: number, z: number): number
+-- run down the mountain, as tall as the belt there (its slope `bs`) is steep (T-228).
+local function reliefAt(f: Field, x: number, z: number, bs: number): number
+	local G = Config.Spline.Ground
 	local dx, dz = x - f.ox, z - f.oz
 	local u = dx * f.ux + dz * f.uz -- up the mountain
 	local v = dx * f.uz - dz * f.ux -- across it
 	local y = 0
 	for _, o in f.oct do
-		y += o.amp * 2 * math.noise(u / (o.size * f.stretch) + o.a, v / o.size + o.b, o.c)
+		local n = math.noise(u / (o.size * f.stretch) + o.a, v / o.size + o.b, o.c)
+		if o.kind == "ridge" then
+			y += o.amp * (1 - 4 * math.abs(n))
+		elseif o.kind == "gully" then
+			y += o.amp * (4 * math.abs(n) - 1)
+		else
+			y += o.amp * 2 * n
+		end
 	end
-	return y - f.zero
+	local r = G.ReliefSlopes
+	local m = math.clamp((bs - r[1]) / (r[2] - r[1]), 0, 1)
+	m = m * m * (3 - 2 * m)
+	return y * (G.ReliefLow + (1 - G.ReliefLow) * m) - f.zero
+end
+
+function Ground.relief(f: Field, x: number, z: number): number
+	return reliefAt(f, x, z, (beltAt(f, (beltU(f, x, z)))))
 end
 
 function Ground.h(f: Field, x: number, z: number): number
-	return Ground.base(f, x, z) + Ground.relief(f, x, z)
+	local bs, by = beltAt(f, (beltU(f, x, z)))
+	return f.oy + by - f.baseZero + reliefAt(f, x, z, bs)
 end
 
--- The plane's grade along a heading (a yaw): how fast `base` rises going that way.
+-- The belt's grade at the start along a heading (a yaw); kept for what still wants the
+-- mountain as one plane.
 function Ground.grade(f: Field, yaw: number): number
 	return f.slope * (-math.sin(yaw) * f.ux - math.cos(yaw) * f.uz)
 end

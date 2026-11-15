@@ -46,7 +46,7 @@ local function run(check, opts)
 		end
 		check("h is a pure function of the seed and the place", same == 200, `{same} of 200`)
 		check("another seed is another mountain", differ > 150, `{differ} of 200 differ`)
-		check("the road's start sits on the plane", math.abs(Ground.h(a, o.x, o.z) - o.y) < 1e-6, fmt(Ground.h(a, o.x, o.z) - o.y, 6))
+		check("the road's start sits on the mountain", math.abs(Ground.h(a, o.x, o.z) - o.y) < 1e-6, fmt(Ground.h(a, o.x, o.z) - o.y, 6))
 		-- the relief's range over 4 km by 4 km
 		local lo, hi = math.huge, -math.huge
 		for x = -2000, 2000, 25 do
@@ -55,10 +55,19 @@ local function run(check, opts)
 				lo, hi = math.min(lo, r), math.max(hi, r)
 			end
 		end
-		check("relief: ridges and gullies of tens of studs", hi - lo > 40 and hi - lo < 260, `{fmt(lo)} to {fmt(hi)}`)
-		-- the plane rises up the fall line
-		local up = Ground.base(a, o.x + a.ux * 100, o.z + a.uz * 100) - Ground.base(a, o.x, o.z)
-		check("the plane rises Slope up the fall line", math.abs(up - G.Slope * 100) < 1e-6, fmt(up, 3))
+		check("relief: ridges and gullies of tens of studs", hi - lo > 40 and hi - lo < 400, `{fmt(lo)} to {fmt(hi)}`)
+		-- the belts rise up the fall line, steep and shallow (T-228)
+		local up = Ground.base(a, o.x + a.ux * 2000, o.z + a.uz * 2000) - Ground.base(a, o.x, o.z)
+		local least, most = math.huge, 0
+		for u = -20000, 5000, 50 do
+			local sl = Ground.beltSlope(a, o.x + a.ux * u, o.z + a.uz * u)
+			least, most = math.min(least, sl), math.max(most, sl)
+		end
+		check(
+			"the belts rise up the fall line, shallow and steep",
+			up > 0 and least <= G.BeltLow[2] and most >= G.BeltHigh[1],
+			`{fmt(up)} studs up over 2 000; slopes {fmt(math.deg(math.atan(least)))} to {fmt(math.deg(math.atan(most)))} degrees`
+		)
 	end
 
 	-- "current" lays exactly the road it always has
