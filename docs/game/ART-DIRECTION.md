@@ -10,11 +10,18 @@ How this game looks. The world part is set in Production, before the first art r
 
 ## References
 
-No references yet — the user's call: "not yet, for now we keep it simple". Added here when the first ones are approved; images come through ART-PIPELINE.md.
+**Environment mood (the user's concept art, 2026-11-15):** "this is the vibes I want to be able to create with this project." The target for the environment work that follows better road and terrain generation. Mood references only: the look to aim for in low poly, not pixels to copy (ART-PIPELINE.md), and the car in them is the reference car, not approved art.
 
-| Image | What we take |
+| Image (`assets/reference/environment-mood/`) | What we take |
 |---|---|
-| | |
+| `autumn-maple-cliffs.png` | Switchbacks cut into pale cliffs, red-orange maple canopy, river gorge below, snow peaks over a cloud sea; leaves kicked up by the drift |
+| `waterfall-gorge-rain.png` | Road on a ledge over a tiered waterfall and white water, rock tunnel, moss and ferns, wet road with god rays |
+| `sakura-shrine-dusk.png` | Purple-pink dusk, cherry blossom and tall cedars, stone retaining wall, torii and steps up the bank, rusty guardrail, switchbacks stacked down the valley |
+| `moonlit-pampas-ridge.png` | Open grassy ridge at night, full moon, wind-blown pampas grass, windswept pines, valley fog, low road posts instead of rails |
+| `rainy-forest-night.png` | Heavy rain in a dark cedar forest, one sodium streetlamp and a convex corner mirror, reflections on the wet road, creek below |
+| `snow-pass-sunset.png` | High snowy pass at sunset, alpenglow peaks, cloud sea filling the valleys, golden larches, snow spray off the rear tyres |
+
+Across all six: a guardrailed mountain road on the edge of a big drop, a far layered vista with fog or cloud between the ridges, one strong weather or time of day per scene, and something the drift throws up (smoke, leaves, petals, spray, snow).
 
 ## World
 
