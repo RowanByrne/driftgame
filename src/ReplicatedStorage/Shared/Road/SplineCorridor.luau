@@ -10,9 +10,9 @@ Index.__index = Index
 
 export type Row = {s:number, x:number, z:number, yaw:number, k:number, rx:number, rz:number, left:number, right:number}
 export type Cell = {s0:number, s1:number, x:number, z:number, radius:number,
-	minX:number, maxX:number, minZ:number, maxZ:number, p:{number}}
+	minX:number, maxX:number, minZ:number, maxZ:number, p:{number},infield:boolean?}
 export type Index = typeof(setmetatable({} :: {
-	buckets:{[number]:{Cell}}, reach:number, count:number, minS:number, maxS:number,
+	buckets:{[number]:{Cell}}, reach:number, count:number, minS:number, maxS:number,infields:number,
 }, Index))
 
 function Corridor.row(s:number, x:number, z:number, yaw:number, k:number, left:number, right:number): Row
@@ -53,6 +53,7 @@ function Corridor.cell(a:Row, b:Row, boundsOnly:boolean?): Cell?
 end
 
 function Corridor.overlap(a:Cell, b:Cell, gap:number): boolean
+	if a.infield or b.infield then gap=0 end
 	if a.maxX+gap<=b.minX or b.maxX+gap<=a.minX or a.maxZ+gap<=b.minZ or b.maxZ+gap<=a.minZ then return false end
 	for _, polygon in {a.p,b.p} do
 		for i=1,7,2 do
@@ -78,7 +79,7 @@ local function key(x:number,z:number):number
 end
 
 function Corridor.new():Index
-	return setmetatable({buckets={},reach=0,count=0,minS=math.huge,maxS=-math.huge},Index)
+	return setmetatable({buckets={},reach=0,count=0,minS=math.huge,maxS=-math.huge,infields=0},Index)
 end
 
 -- A decreasing smoothstep track can sit slightly above its linear taper between
@@ -97,13 +98,14 @@ function Index.add(self:Index, cell:Cell)
 	table.insert(bucket,cell)
 	self.reach=math.max(self.reach,cell.radius)
 	self.count+=1
+	if cell.infield then self.infields+=1 end
 	local s=(cell.s0+cell.s1)*.5
 	self.minS,self.maxS=math.min(self.minS,s),math.max(self.maxS,s)
 end
 
 function Index.clear(self:Index, cell:Cell, separation:number, gap:number):(boolean,Cell?,number,number)
 	local s=(cell.s0+cell.s1)*.5
-	if self.count==0 or (math.abs(s-self.minS)<=separation and math.abs(s-self.maxS)<=separation) then return true,nil,0,0 end
+	if self.count==0 or (not cell.infield and self.infields==0 and math.abs(s-self.minS)<=separation and math.abs(s-self.maxS)<=separation) then return true,nil,0,0 end
 	local size=Config.Spline.HashCell
 	local reach=self.reach+gap
 	local visited,tests=0,0
@@ -113,7 +115,7 @@ function Index.clear(self:Index, cell:Cell, separation:number, gap:number):(bool
 			if bucket then
 				for _,old in bucket do
 					visited+=1
-					if math.abs(s-(old.s0+old.s1)*.5)>separation then
+					if cell.infield or old.infield or math.abs(s-(old.s0+old.s1)*.5)>separation then
 						tests+=1
 						if Corridor.overlap(cell,old,gap) then return false,old,visited,tests end
 					end
@@ -129,7 +131,7 @@ end
 function Index.near(self:Index, cell:Cell, separation:number, gap:number):{Cell}
 	local out={}
 	local s=(cell.s0+cell.s1)*.5
-	if self.count==0 or (math.abs(s-self.minS)<=separation and math.abs(s-self.maxS)<=separation) then return out end
+	if self.count==0 or (not cell.infield and self.infields==0 and math.abs(s-self.minS)<=separation and math.abs(s-self.maxS)<=separation) then return out end
 	local size=Config.Spline.HashCell
 	local reach=self.reach+gap
 	for x=math.floor((cell.minX-reach)/size),math.floor((cell.maxX+reach)/size) do
@@ -137,7 +139,7 @@ function Index.near(self:Index, cell:Cell, separation:number, gap:number):{Cell}
 			local bucket=self.buckets[key(x,z)]
 			if bucket then
 				for _,old in bucket do
-					if math.abs(s-(old.s0+old.s1)*.5)>separation
+					if (cell.infield or old.infield or math.abs(s-(old.s0+old.s1)*.5)>separation)
 						and cell.maxX+gap>old.minX and old.maxX+gap>cell.minX
 						and cell.maxZ+gap>old.minZ and old.maxZ+gap>cell.minZ then table.insert(out,old) end
 				end

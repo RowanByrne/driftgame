@@ -1720,7 +1720,7 @@ end
 local function forkSpline(source: Spline.Spline): Spline.Spline
 	local out=table.clone(source)
 	for k,v in source do
-		if type(v)=="table" and k~="X" and k~="Z" and k~="hash" then out[k]=copyTables(v) end
+		if type(v)=="table" and k~="X" and k~="Z" and k~="hash" and k~="infields" then out[k]=copyTables(v) end
 	end
 	out.X=setmetatable({}, {__index=source.X})
 	out.Z=setmetatable({}, {__index=source.Z})

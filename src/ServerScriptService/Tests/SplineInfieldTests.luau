@@ -118,4 +118,98 @@ function Tests.run(_self,subject)
 	return {passed=passed,total=#checks,checks=checks}
 end
 
+function Tests.planner(_self,subjects)
+	local road=game.ReplicatedStorage.Shared.Road
+	local Spline=subjects and subjects.Spline or require(road.Spline)
+	local Planner=subjects and subjects.Planner or require(road.SplineInfieldPlanner)
+	local Infield=subjects and subjects.Infield or DefaultInfield
+	local Corridor=subjects and subjects.Corridor or require(road.SplineCorridor)
+	local cfg=require(game.ReplicatedStorage.Shared.Config)
+	local saved=cfg.Spline.Biomes.GroundEnabled
+	cfg.Spline.Biomes.GroundEnabled=true
+	local ok,result=xpcall(function()
+		local checks={}
+		local function check(name,pass,detail)table.insert(checks,{name=name,ok=pass,detail=detail})end
+		local function fixture(rise)
+			local sp=Spline.new({x=0,y=50,z=-20000,yaw=0});sp.fall=math.pi*.5
+			local sections={}
+			local function append(sec)table.insert(sections,sec);sp:append(sec)end
+			local function section(length,knots,left,right,bank)
+				return {len=length,k=knots,g={length,0},b={length,0},rl={length,16},rr={length,16},
+					el={length,left},er={length,right},hl={length,bank},hr={length,0}}
+			end
+			local a=section(512,{512,0},Spline.ROCK,Spline.CLIFF,rise);a.bm={0,1,0};append(a)
+			local length=math.pi*100+20
+			append(section(length,{20,.01,length-20,.01,length,0},Spline.ROCK,Spline.CLIFF,0))
+			local b0=sp.length
+			append(section(320,{320,0},Spline.CLIFF,Spline.ROCK,0))
+			return sp,b0,sections
+		end
+		local sp,b0,sections=fixture(20)
+		local patches,cells=Planner.plan(sp,128,480,b0,sp.length)
+		check("a level turnaround uses actual tarmac height despite different frozen bank lifts",#patches>0 and #cells>0,
+			`{#patches} frozen patches and {#cells} reserved cells; bank difference20studs`)
+		local floor=Infield.new()
+		for _,patch in patches do Infield.add(floor,patch) end
+		local sampleCount=0;local largest=0;local endBlend=true
+		for _,patch in patches do
+			endBlend=endBlend and patch.rows[1].weight==0 and patch.rows[#patch.rows].weight==0
+			for _,r in patch.rows do
+				if r.weight>.99 then
+					local p=Infield.columns(r)[6];local hit=Infield.sample(floor,p[1],p[3])
+					if hit then sampleCount+=1;largest=math.max(largest,math.abs(hit.y-(r.a[2]+r.b[2])*.5)) end
+				end
+			end
+		end
+		check("the eligible middle has low shared ground and stored end transitions",sampleCount>0 and largest<2 and endBlend,
+			`{sampleCount} full-strength middle rows; bank-average error{largest}`)
+		local oldX,oldY,oldZ=sp:terrainXYZ(300,-41)
+		sp:addInfields(patches)
+		local x,y,z=sp:terrainXYZ(300,-41)
+		check("publishing field terrain never changes an occupied bank",oldX==x and oldY==y and oldZ==z and sp.infieldRevision==1,
+			"old bank height, position and route tracks stay exact")
+		local replay=Spline.new(sp.origin);replay.fall=sp.fall
+		for i,sec in sections do local copy=table.clone(sec);if i==#sections then copy.ip=patches end;replay:append(copy) end
+		check("serialized newer-section fields replay the same frozen support",#replay.infields.triangles==#sp.infields.triangles
+			and replay.infieldRevision==1,"both legs and final floor heights arrive in plain section data")
+		if patches[1] then
+			local moved={}
+			for _,r in patches[1].rows do
+				local q=table.clone(r);q.a={r.a[1]+1000,r.a[2],r.a[3]};q.b={r.b[1]+1000,r.b[2],r.b[3]};table.insert(moved,q)
+			end
+			local one,two=Infield.patch("atomic one",moved),Infield.patch("atomic two",moved)
+			local count=#sp.infields.triangles
+			local accepted=pcall(function()sp:addInfields({one,two})end)
+			check("a later invalid patch cannot partially publish a batch",not accepted and #sp.infields.triangles==count
+				and sp.infields.patches["atomic one"]==nil and sp.infieldRevision==1,"geometry and revision remain unchanged together")
+			local beforeLength,beforeKnots=sp.length,#sp.curv.s
+			local sec=table.clone(sections[#sections]);sec.ip={one,two}
+			local appended=pcall(function()sp:append(sec)end)
+			check("invalid section fields fail before any route tracks append",not appended and sp.length==beforeLength
+				and #sp.curv.s==beforeKnots and #sp.infields.triangles==count,"the section and its fields publish together")
+		end
+		local blocked=Corridor.new()
+		-- A narrow unrelated arm crosses the interior of the proposed field.
+		blocked:add(Corridor.cell(Corridor.row(300,-100,-20200,0,0,10,10),Corridor.row(308,-100,-20500,0,0,10,10)))
+		local another,b=fixture(20)
+		local refused=Planner.plan(another,128,480,b,another.length,blocked)
+		check("a connector cannot cover an occupied road inside either attached arc range",#refused==0,
+			"positive-area overlap is refused even when the obstacle has an attached arm's arc")
+		local patch=patches[1]
+		if patch then
+			local protected=Corridor.new();for _,cell in cells do protected:add(cell) end
+			local middle=patch.rows[math.ceil(#patch.rows*.5)]
+			local p=Infield.columns(middle)[6]
+			local candidate=Corridor.cell(Corridor.row(middle.sa,p[1],p[3]-2,0,0,2,2),Corridor.row(middle.sa+4,p[1],p[3]+2,0,0,2,2))
+			check("future adjacent sections cannot use arc separation to cross reserved field ground",not protected:clear(candidate,100000,0),
+				"connector reservations have no generic neighbouring-section exemption")
+		end
+		local passed=0;for _,c in checks do if c.ok then passed+=1 end end
+		return {passed=passed,total=#checks,checks=checks}
+	end,debug.traceback)
+	cfg.Spline.Biomes.GroundEnabled=saved
+	if not ok then return {passed=0,total=1,checks={{name="planner fixture completes",ok=false,detail=result}}} end
+	return result
+end
+
 return Tests

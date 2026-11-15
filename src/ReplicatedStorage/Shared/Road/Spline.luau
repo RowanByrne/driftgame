@@ -52,6 +52,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Config = require(ReplicatedStorage.Shared.Config)
 local Biome = require(script.Parent.SplineBiome)
+local Infield = require(script.Parent.SplineInfield)
 
 local Spline = {}
 Spline.__index = Spline
@@ -79,6 +80,7 @@ export type Section = {
 	bm: { number }?, -- biome records {absoluteBoundary, destinationKind, blendLength, ...} (T-203)
 	hl: { number }?, -- signed outer-bank lift knots {ds, height}, left (T-203)
 	hr: { number }?, -- right; carry previous height if absent
+	ip: { Infield.Patch }?, -- frozen paired-bank terrain, published by the newer section
 }
 
 -- The edge kinds, as they go over the wire.
@@ -135,6 +137,8 @@ export type Spline = typeof(setmetatable(
 		biomes: { number }?, -- immutable absolute transition records; nil uses legacy terrain
 		liftL: Track,
 		liftR: Track,
+		infields: Infield.Index?,
+		infieldRevision: number?,
 		-- the mountain's uphill heading (a yaw), fixed for the road (T-166): set by whoever
 		-- makes the road (`SplineGen`), nil on a road with no mountain. The hillside's slope
 		-- reads it (`Road/SplineHill`, T-190)
@@ -534,6 +538,13 @@ end
 function Spline.append(self: Spline, sec: Section)
 	local s0 = self.length
 	local s1 = s0 + sec.len
+	if sec.ip then
+		local pending=Infield.new()
+		for _,patch in sec.ip do
+			if self.infields then Infield.add(self.infields,patch,true) end
+			Infield.add(pending,patch)
+		end
+	end
 	for _, knots in { sec.k, sec.g, sec.b } do
 		assert(#knots >= 2 and math.abs(knots[#knots - 1] - sec.len) < 1e-6, "Spline: every track must end on a knot at the section's end")
 	end
@@ -576,6 +587,29 @@ function Spline.append(self: Spline, sec: Section)
 	end
 	self.lastSample = i
 	addCheckPoints(self, s1)
+	if sec.ip then self:addInfields(sec.ip) end
+end
+
+function Spline.addInfields(self:Spline,patches:{Infield.Patch})
+	if #patches==0 then return end
+	local index=self.infields or Infield.new()
+	local pending=Infield.new()
+	for _,patch in patches do
+		Infield.add(index,patch,true)
+		Infield.add(pending,patch)
+	end
+	local added=false
+	for _,patch in patches do if Infield.add(index,patch) then added=true end end
+	self.infields=index
+	if added then self.infieldRevision=(self.infieldRevision or 0)+1 end
+end
+
+function Spline.infieldAt(self:Spline,x:number,z:number,low:number?,high:number?):Infield.Hit?
+	return if self.infields then Infield.sample(self.infields,x,z,low,high) else nil
+end
+
+function Spline.infieldOpening(self:Spline,s:number,side:number):number
+	return if self.infields then Infield.opening(self.infields,s,side) else 0
 end
 
 -- Forget the plan samples behind `s`. Knots, heading and height are kept -- they are a few

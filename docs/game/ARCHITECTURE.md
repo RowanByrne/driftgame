@@ -149,6 +149,15 @@ Named spots come from `PlaygroundService:GetSpot(name)`, never from coordinates 
 - T-213 braking horizon: the grade envelope certifies a complete continuation through the next centre clamp, including one just after the section. Three bounded-rate future paths preserve early/late braking choices; each is checked independently with both bounds from that path. Both current and recovery phase clamps are included. All grade fallbacks and the final escape are certified. Constructed near-floor/top, reversed-sense, zero/opposite-grade and infeasible-escape fixtures extend `gradeRules`; no player-observed natural-seed failure is claimed.
 - `DebugSplineBiomeRoadTests:brakingIntegration()` exercises actual ordinary/protected/final-escape choices on near-clamp states. It independently integrates emitted Spline height/grade tracks and locates extrema by derivative bisection. Paused floor/pass recovery covers both mountain senses, all continuation knot orders/rates, the next clamp and real commit-once lifecycle.
 
+## Near-level switchback ground (work in progress)
+
+T-212 near-level groundwork: `SplineInfield` indexes immutable paired-bank
+triangles independently of accepted route ownership. `SplineInfieldPlanner`
+freezes final columns and end blends from known opposed arms; hard Corridor
+reservations protect them from later road. `SplineInfieldTests.run()` and
+`planner()` cover numeric support, steep ends, serialization and atomic batches.
+The producer/gameplay hooks are still disabled pending integrated lane checks.
+
 ## Native baked-shadow trial (Studio only)
 
 `BakedShadowTrialController` lazily loads `Drift/BakedShadowTrial` only in Studio

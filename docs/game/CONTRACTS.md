@@ -522,7 +522,7 @@ render origin before Vector3 packing. Short slope collars precede the flat middl
 `contactS`, both bank arcs, cross-gap fraction and patch ID. It never changes a
 caller's accepted route or earned progress. `opening(index,s,side,taper?)` is indexed
 by arc/side and fades inside the real supported interval. Row weight affects the
-bank opening only; published floor geometry is always real support.
+bank opening only; supported floor geometry remains real regardless of that mask.
 `triangles(index,s0,s1,origin?)` returns each arc owner's exact rendering half.
 An optional row `floor` freezes eleven final cross-section heights, using
 `columns(row)` to share the bank collars and middle topology. Its endpoints
@@ -533,6 +533,25 @@ Explicit section openings interpolate their stored weight once, without a
 second analytic taper. Their producer must freeze the geometry's same end fade.
 Generation reservations, car/walking boundaries, complete nearby rendering,
 retirement and actual ownership/progress integration remain required before use.
+
+`Spline.Section.ip` carries frozen patches on the newer section. `Spline.append`
+validates the entire batch before route tracks change; `addInfields(patches)`
+also validates a complete batch before geometry/openings/revision publication.
+`infieldAt(x,z,low?,high?)` and `infieldOpening(s,side)` expose indexed lookups.
+Turn-fit forks share the immutable published index rather than copying historical
+triangles; they do not publish new fields.
+
+`SplineInfieldPlanner.plan(spline,a0,a1,b0,b1,corridors?)` accepts known opposed
+approach/departure arms. It caps both searches, uses real facing tarmac heights
+for the near-level policy and frozen bank positions/slopes for the floor.
+Final columns blend the visual Hill baseline through stored end fades. Missing
+baseline samples, positive-area overlap with any occupied road, folds and old
+field overlap are refused. A retained steep collar keeps its bank opening closed.
+It returns patches and hard `SplineCorridor.Cell.infield` reservations. Those
+cells receive no generic arc-separation exemption, including on spatial queries.
+Generation and gameplay hooks remain disabled (`Biomes.Infield.Enabled=false`)
+until complete drawing, physical contacts and retirement are verified together.
+
 ## Studio-only baked shadow trial (T-214)
 
 `workspace.__baked_shadow_trial=true` explicitly opts a Studio client into the

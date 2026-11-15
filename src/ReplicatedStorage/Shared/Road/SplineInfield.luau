@@ -107,7 +107,7 @@ end
 
 -- Triangles share a fixed midline, with optional bank collars. Rendering and physical
 -- contacts use these exact triangles, including a twisted pair of bank edges.
-function Infield.add(index:Index,patch:Patch):boolean
+function Infield.add(index:Index,patch:Patch,validateOnly:boolean?):boolean
 	patch=Infield.patch(patch.id,patch.rows)
 	local previous=index.patches[patch.id]
 	if previous then
@@ -190,6 +190,7 @@ function Infield.add(index:Index,patch:Patch):boolean
 		end
 	end
 	-- Validation is complete before the index acquires any of the patch.
+	if validateOnly then return true end
 	index.patches[patch.id]=patch
 	for _,triangle in pending do
 		table.insert(index.triangles,triangle)
