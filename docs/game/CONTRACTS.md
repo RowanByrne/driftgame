@@ -474,3 +474,20 @@ terrain hidden below ground are permitted. Both sides have solved rays/caps at i
 cuts. It never changes the spline, support widths or chunk endpoints. Mesh statistics expose
 `hillRefinedRays`, `hillPlanTests`, `hillPlanExact` and `hillUnsafe`. `traceFaces=true` adds
 test-only face provenance; `groveColourIds` identifies only generated decorative faces.
+
+## Studio-only baked shadow trial (T-214)
+
+`workspace.__baked_shadow_trial=true` explicitly opts a Studio client into the
+isolated native mesh-shadow comparison. A missing/false flag, or a published
+client, never starts the trial: no native conversion, fixture UI, camera or input
+override. Clear this Edit attribute after using the trial so idle lanes show the
+normal game. The controller permits one start per Play; a stopped trial requires
+a fresh Play, preventing late native results from touching a replacement run.
+
+`BakedShadowTrialController` exposes `DebugState`, `DebugTerrain(mode)`,
+`DebugSelect(scene, mode, sun)`, `DebugMeasure` and `DebugStop` through the existing
+Studio client DebugBridge. Terrain modes are `live`, `baked` and `reference`;
+selection uses `panel`/`terrain` and `front`/`back`/`high` lighting. All trial
+resources and overrides are cleaned on stop. This adds no remote or player data.
+The production renderer is unchanged; cold bake stalls and static-colour haze
+remain integration requirements in the archived T-214 report.
