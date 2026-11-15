@@ -59,12 +59,16 @@ function Corridor.overlap(a:Cell, b:Cell, gap:number): boolean
 	for _, polygon in {a.p,b.p} do
 		for i=1,7,2 do
 			local j=(i+1)%8+1
+			-- Anchor each projection to this edge. Identical shared bank edges
+			-- then have zero thickness even far from the world origin.
+			local ox,oz=polygon[i],polygon[i+1]
 			local nx,nz=polygon[j+1]-polygon[i+1],polygon[i]-polygon[j]
 			local length=math.sqrt(nx*nx+nz*nz)
 			if length>1e-7 then
 				local amin,amax,bmin,bmax=math.huge,-math.huge,math.huge,-math.huge
 				for k=1,7,2 do
-					local av,bv=a.p[k]*nx+a.p[k+1]*nz,b.p[k]*nx+b.p[k+1]*nz
+					local av=(a.p[k]-ox)*nx+(a.p[k+1]-oz)*nz
+					local bv=(b.p[k]-ox)*nx+(b.p[k+1]-oz)*nz
 					amin,amax=math.min(amin,av),math.max(amax,av)
 					bmin,bmax=math.min(bmin,bv),math.max(bmax,bv)
 				end

@@ -25,6 +25,31 @@ function Tests.run()
 	check("actual offset widths preserve the current tight hairpin",not Corridor.overlap(start,finish,20),"radius75: inward edges45fromtheircentres,60-stud gap; outward fields do not count inward")
 	local crossing=straight(2000,0,0,math.pi*.5,25,25)
 	check("rotated crossing strips still overlap",Corridor.overlap(field,crossing,0),"separating-axis test includes both polygons")
+	-- A real generated bank pair whose identical shared edge acquired a tiny
+	-- artificial width when SAT projected absolute world coordinates.
+	local fp={-1116.4084350573385,-22495.71672579342,-1115.5996945670522,-22497.09486698874,
+		-1164.1371703365692,-22489.178965185514,-1164.1737064154736,-22488.249605419758}
+	local rp={-1164.1371703365692,-22489.178965185514,-1353.6938231257482,-22554.205385841757,
+		-1354.235469807915,-22553.449301632845,-1164.1737064154736,-22488.249605419758}
+	local function polygon(values,dx,dz)
+		local p={};local minX,maxX,minZ,maxZ=math.huge,-math.huge,math.huge,-math.huge
+		for i=1,7,2 do
+			local x,z=values[i]+dx,values[i+1]+dz;p[i],p[i+1]=x,z
+			minX,maxX=math.min(minX,x),math.max(maxX,x);minZ,maxZ=math.min(minZ,z),math.max(maxZ,z)
+		end
+		return {p=p,minX=minX,maxX=maxX,minZ=minZ,maxZ=maxZ,infield=true}
+	end
+	local shared,entered=true,true
+	for _,offset in {0,65536,-1048576} do
+		local f,r=polygon(fp,offset,-offset),polygon(rp,offset,-offset)
+		shared=shared and not Corridor.overlap(f,r,0) and not Corridor.overlap(r,f,0)
+		-- Move the road a tiny positive distance through the shared edge.
+		-- This must still be rejected: the fix introduces no clearance epsilon.
+		local intruder=polygon(rp,offset+1e-7,-offset)
+		entered=entered and Corridor.overlap(f,intruder,0) and Corridor.overlap(intruder,f,0)
+	end
+	check("identical curved bank edges can touch far from the origin",shared,"actual generated polygons, both orders, three world offsets")
+	check("tiny positive bank overlaps remain forbidden",entered,"a 1e-7-stud intrusion still overlaps; no SAT tolerance added")
 	local index=Corridor.new()
 	index:add(field)
 	local clear=index:clear(near,236,20)
