@@ -108,6 +108,37 @@ local function overlaps(a:Triangle,b:Triangle):boolean
 	return true
 end
 
+-- Touching published fields must share the entire frozen edge height, including
+-- end-column creases. Positive-area overlap alone cannot detect a vertical step.
+local function compatibleTouch(a:Triangle,b:Triangle):boolean
+	local aa,bb={a.a.p,a.b.p,a.c.p},{b.a.p,b.b.p,b.c.p}
+	for _,axis in {1,3} do
+		local alo,ahi,blo,bhi=math.huge,-math.huge,math.huge,-math.huge
+		for _,p in aa do alo=math.min(alo,p[axis]);ahi=math.max(ahi,p[axis]) end
+		for _,p in bb do blo=math.min(blo,p[axis]);bhi=math.max(bhi,p[axis]) end
+		if ahi<blo-1e-7 or bhi<alo-1e-7 then return true end
+	end
+	for i,p in aa do
+		local q=aa[i%3+1];local dx,dz=q[1]-p[1],q[3]-p[3];local length2=dx*dx+dz*dz
+		local length=math.sqrt(length2)
+		for j,r in bb do
+			local s=bb[j%3+1]
+			if math.abs((r[1]-p[1])*dz-(r[3]-p[3])*dx)>1e-7*length
+				or math.abs((s[1]-p[1])*dz-(s[3]-p[3])*dx)>1e-7*length then continue end
+			local ur=((r[1]-p[1])*dx+(r[3]-p[3])*dz)/length2
+			local us=((s[1]-p[1])*dx+(s[3]-p[3])*dz)/length2
+			local lo,hi=math.max(0,math.min(ur,us)),math.min(1,math.max(ur,us))
+			if (hi-lo)*length<=1e-7 then continue end
+			for _,u in {lo,hi} do
+				local y=p[2]+(q[2]-p[2])*u
+				local other=r[2]+(s[2]-r[2])*(u-ur)/(us-ur)
+				if math.abs(y-other)>1e-5 then return false end
+			end
+		end
+	end
+	return true
+end
+
 -- Triangles share a fixed midline, with optional bank collars. Rendering and physical
 -- contacts use these exact triangles, including a twisted pair of bank edges.
 function Infield.add(index:Index,patch:Patch,validateOnly:boolean?):boolean
@@ -181,6 +212,7 @@ function Infield.add(index:Index,patch:Patch,validateOnly:boolean?):boolean
 				local old=index.triangles[id]
 				if seen[old] then continue end;seen[old]=true
 				assert(not overlaps(triangle,old),"infield would change an already published support domain")
+				assert(compatibleTouch(triangle,old),"touching infields have different frozen edge heights")
 			end
 			for _,old in staged[k] or {} do
 				if seen[old] then continue end;seen[old]=true

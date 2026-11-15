@@ -676,8 +676,16 @@ keep the published triangle footprints. `triangle(context,a,b,c)` subtracts
 those masks from numeric scenery points, preserves the source 3D plane/winding
 and supports vertical faces. Fragmentation/nonfinite failures are explicit.
 `intersectsBox(context,cframe,size)` uses the entire projected oriented box,
-including tilted axes, for later caster rejection. These are checked standalone
-helpers; actual perimeter seam capture/stitching and live drawing remain unfinished.
+including tilted axes, for later caster rejection. `perimeter(context)` retains
+the exact frozen end-column heights and affine retirement contours, removes
+shared internal boundaries, and snapshots the selected patch identities.
+`newCapture(context,limit?)` / `capture(capture,a,b,c,material)` record finite
+retained exterior source traces and coplanar wall faces. Opened bank edges use
+their authoritative supported bank instead of restoring old mountain walls.
+Fragment limits reject the complete proposed capture. Touching published
+infields must agree along their frozen shared edge heights; a mismatch is
+rejected atomically before support publication. These remain standalone
+helpers; seam assembly and live drawing integration are unfinished.
 
 ## Studio-only baked shadow trial (T-214)
 

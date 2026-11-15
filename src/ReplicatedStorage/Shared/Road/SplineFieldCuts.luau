@@ -9,7 +9,13 @@ export type Point={number}
 type Polygon={Point}
 type Plane={x:number,z:number,nx:number,nz:number}
 type Mask={points:Polygon,planes:{Plane},x0:number,x1:number,z0:number,z1:number,patch:string}
-export type Context={masks:{Mask},hash:{[string]:{number}},cell:number,maxPolygons:number,maxVertices:number,tick:(()->())?}
+export type Edge={a:Point,b:Point,nx:number,nz:number,patch:string,kind:string}
+type PatchSelection={patch:any}
+export type Context={masks:{Mask},hash:{[string]:{number}},cell:number,maxPolygons:number,maxVertices:number,tick:(()->())?,
+	patches:{PatchSelection},index:any,first:number?,edges:{Edge}?,edgeHash:{[string]:{number}}?}
+export type Trace={u0:number,u1:number,y0:number,y1:number,material:any}
+export type Copy={edge:number,points:Polygon,material:any}
+export type Capture={context:Context,lines:{[number]:{Trace}},copies:{Copy},count:number,limit:number}
 
 local EPS=1e-8
 local fullCache=setmetatable({}, {__mode="k"}) :: any
@@ -72,7 +78,8 @@ end
 function Cuts.context(index:any,selection:{[string]:boolean}?,first:number?,options:any?):Context
 	local o=options or {}
 	local context:Context={masks={},hash={},cell=if index then index.cell else 128,
-		maxPolygons=o.maxPolygons or 512,maxVertices=o.maxVertices or 2048,tick=o.tick}
+		maxPolygons=o.maxPolygons or 512,maxVertices=o.maxVertices or 2048,tick=o.tick,
+		patches={},index=index,first=first,edges=nil,edgeHash=nil}
 	if not index then return context end
 	local ids={};for id in index.patches do if not selection or selection[id] then table.insert(ids,id) end end;table.sort(ids)
 	local function append(m:Mask)
@@ -86,6 +93,7 @@ function Cuts.context(index:any,selection:{[string]:boolean}?,first:number?,opti
 	for _,id in ids do
 		local patch=index.patches[id];local rows=patch.rows
 		if first and first>=rows[1].sb then continue end
+		table.insert(context.patches,{patch=patch})
 		if not first or first<=rows[1].sa then
 			for _,m in patchMasks(index,patch) do append(m) end
 		else
@@ -147,6 +155,181 @@ local function halfspace(polygon:Polygon,plane:Plane,inside:boolean):Polygon
 		previous,dp=point,d
 	end
 	return out
+end
+
+local function lerp(a:Point,b:Point,u:number):Point
+	return {a[1]+(b[1]-a[1])*u,a[2]+(b[2]-a[2])*u,a[3]+(b[3]-a[3])*u}
+end
+
+local function interval(a:Point,b:Point,planes:{Plane}):(number?,number?)
+	local lo,hi=0,1
+	for _,p in planes do
+		local da,db=distance(p,a),distance(p,b)
+		if da< -EPS and db< -EPS then return nil,nil end
+		if da<0 and db>=0 then lo=math.max(lo,da/(da-db))
+		elseif db<0 and da>=0 then hi=math.min(hi,da/(da-db)) end
+		if hi-lo<EPS then return nil,nil end
+	end
+	return lo,hi
+end
+
+-- Only the finite union perimeter can receive a join. Row divisions and
+-- touching patches are internal, even when their triangulations differ.
+function Cuts.perimeter(context:Context):{Edge}
+	if context.edges then return context.edges end
+	local raw:{Edge}={}
+	local first=context.first
+	local selected={}
+	local function append(a:Point,b:Point,qa:number,qb:number,id:string,kind:string,sign:number,nx:number?,nz:number?)
+		local low,high=0,1
+		if first then
+			if qa<first and qb<first then return end
+			if qa<first then low=(first-qa)/(qb-qa) elseif qb<first then high=(first-qa)/(qb-qa) end
+		end
+		local aa,bb=lerp(a,b,low),lerp(a,b,high)
+		local dx,dz=bb[1]-aa[1],bb[3]-aa[3];local length=math.sqrt(dx*dx+dz*dz)
+		if length<EPS then return end
+		local outwardX,outwardZ=sign*dz/length,-sign*dx/length
+		-- Closing's Vector3 normal chooses the side only. Recompute the plane
+		-- from its double-precision chord so a coplanar wall stays coplanar.
+		if nx and nz and outwardX*nx+outwardZ*nz<0 then outwardX=-outwardX;outwardZ=-outwardZ end
+		table.insert(raw,{a=aa,b=bb,nx=outwardX,nz=outwardZ,patch=id,kind=kind})
+	end
+	for _,item in context.patches do
+		local patch=item.patch;local rows=patch.rows;selected[patch.id]=true
+		local triangle=context.index.triangles[context.index.byPatch[patch.id][1]]
+		local sign=if triangle.det>0 then 1 else -1
+		for i=1,#rows-1 do
+			local a,b=rows[i],rows[i+1]
+			append(a.a,b.a,a.sa,b.sa,patch.id,"bank",sign)
+			append(b.b,a.b,b.sb,a.sb,patch.id,"bank",sign)
+		end
+		for _,spec in {{row=rows[1],reverse=true,kind="start"},{row=rows[#rows],reverse=false,kind="end"}} do
+			local row=spec.row;local columns=Infield.columns(row)
+			local dx,dz=row.b[1]-row.a[1],row.b[3]-row.a[3];local length2=dx*dx+dz*dz
+			for i=1,#columns-1 do
+				local a,b=columns[i],columns[i+1]
+				local ua=((a[1]-row.a[1])*dx+(a[3]-row.a[3])*dz)/length2
+				local ub=((b[1]-row.a[1])*dx+(b[3]-row.a[3])*dz)/length2
+				local qa,qb=row.sa+(row.sb-row.sa)*ua,row.sa+(row.sb-row.sa)*ub
+				if spec.reverse then append(b,a,qb,qa,patch.id,spec.kind,sign)
+				else append(a,b,qa,qb,patch.id,spec.kind,sign) end
+			end
+		end
+		if context.tick then context.tick() end
+	end
+	if first then
+		for _,edge in Infield.closing(context.index,first) do
+			if selected[edge.patch] then append(edge.a,edge.b,first,first,edge.patch,"retired",1,-edge.normal.X,-edge.normal.Z) end
+		end
+	end
+	local edges:{Edge}={};local hash={}
+	for n,edge in raw do
+		local x0,x1,z0,z1=bounds({edge.a,edge.b})
+		local covered={}
+		for _,id in candidates(context,x0,x1,z0,z1) do
+			local m=context.masks[id]
+			if m.patch==edge.patch then continue end
+			local lo,hi=interval(edge.a,edge.b,m.planes)
+			if not lo or not hi then continue end
+			local p=lerp(edge.a,edge.b,(lo+hi)*.5);local outwardInside=true
+			for _,plane in m.planes do
+				local d=distance(plane,p)
+				if d< -EPS or math.abs(d)<=EPS and plane.nx*edge.nx+plane.nz*edge.nz< -EPS then outwardInside=false;break end
+			end
+			if outwardInside then table.insert(covered,{lo,hi}) end
+		end
+		table.sort(covered,function(a,b)return a[1]<b[1] end)
+		local keep={};local cursor=0
+		for _,span in covered do
+			if span[1]>cursor+EPS then table.insert(keep,{cursor,span[1]}) end
+			cursor=math.max(cursor,span[2])
+		end
+		if cursor<1-EPS then table.insert(keep,{cursor,1}) end
+		for _,span in keep do
+			local piece=table.freeze({a=table.freeze(lerp(edge.a,edge.b,span[1])),b=table.freeze(lerp(edge.a,edge.b,span[2])),
+				nx=edge.nx,nz=edge.nz,patch=edge.patch,kind=edge.kind})
+			table.insert(edges,piece);assert(#edges<=8192,"field perimeter fragmentation limit")
+			local id=#edges;local ax,bx,az,bz=bounds({piece.a,piece.b})
+			for x=math.floor(ax/context.cell),math.floor(bx/context.cell) do for z=math.floor(az/context.cell),math.floor(bz/context.cell) do
+				local key=`{x}:{z}`;hash[key]=hash[key] or {};table.insert(hash[key],id)
+			end end
+		end
+		if context.tick and n%16==0 then context.tick() end
+	end
+	context.edgeHash=hash;context.edges=table.freeze(edges)
+	return context.edges :: {Edge}
+end
+
+function Cuts.newCapture(context:Context,limit:number?):Capture
+	Cuts.perimeter(context)
+	return {context=context,lines={},copies={},count=0,limit=limit or 65536}
+end
+
+-- Capture the actual source face before subtracting it. Bank edges deliberately
+-- have no scenery seam: the supported bank is already their authoritative join.
+function Cuts.capture(capture:Capture,a:Point,b:Point,c:Point,material:any):(boolean,string?)
+	local source={a,b,c}
+	for _,p in source do if #p~=3 or not finite(p[1]) or not finite(p[2]) or not finite(p[3]) then return false,"non-finite scenery triangle" end end
+	if not valid(source) then return true,nil end
+	local context=capture.context;local edges=Cuts.perimeter(context)
+	local x0,x1,z0,z1=bounds(source);local seen={};local ids={}
+	for x=math.floor((x0-EPS)/context.cell),math.floor((x1+EPS)/context.cell) do
+		for z=math.floor((z0-EPS)/context.cell),math.floor((z1+EPS)/context.cell) do
+			for _,id in (context.edgeHash :: any)[`{x}:{z}`] or {} do if not seen[id] then seen[id]=true;table.insert(ids,id) end end
+		end
+	end
+	local projected=mask(source,"")
+	local det=(b[1]-a[1])*(c[3]-a[3])-(b[3]-a[3])*(c[1]-a[1])
+	for n,id in ids do
+		local edge=edges[id]
+		if edge.kind=="bank" then continue end
+		local dx,dz=edge.b[1]-edge.a[1],edge.b[3]-edge.a[3];local length2=dx*dx+dz*dz
+		local function u(p:Point):number return ((p[1]-edge.a[1])*dx+(p[3]-edge.a[3])*dz)/length2 end
+		local function trace(lo:number,hi:number,y0:number,y1:number)
+			capture.lines[id]=capture.lines[id] or {}
+			table.insert(capture.lines[id],{u0=lo,u1=hi,y0=y0,y1=y1,material=material});capture.count+=1
+		end
+		if projected then
+			local lo,hi=interval(edge.a,edge.b,projected.planes)
+			if lo and hi then
+				local midpoint=lerp(edge.a,edge.b,(lo+hi)*.5);local outsideSource=true
+				for _,plane in projected.planes do
+					local d=distance(plane,midpoint)
+					if d< -EPS or math.abs(d)<=EPS and plane.nx*edge.nx+plane.nz*edge.nz< -EPS then outsideSource=false;break end
+				end
+				if not outsideSource then continue end
+				local function height(t:number):number
+					local p=lerp(edge.a,edge.b,t);local px,pz=p[1]-a[1],p[3]-a[3]
+					local v=(px*(c[3]-a[3])-pz*(c[1]-a[1]))/det
+					local w=((b[1]-a[1])*pz-(b[3]-a[3])*px)/det
+					return a[2]+v*(b[2]-a[2])+w*(c[2]-a[2])
+				end
+				trace(lo,hi,height(lo),height(hi))
+			end
+		else
+			-- A coplanar exterior wall has zero plan area. Keep its finite removed
+			-- face as well as its upper outline; outline-only loses the wall below.
+			local coplanar=true
+			for _,p in source do if math.abs((p[1]-edge.a[1])*edge.nx+(p[3]-edge.a[3])*edge.nz)>1e-7 then coplanar=false;break end end
+			if not coplanar then continue end
+			local length=math.sqrt(length2)
+			local clipped=halfspace(source,{x=edge.a[1],z=edge.a[3],nx=dx/length,nz=dz/length},true)
+			clipped=halfspace(clipped,{x=edge.b[1],z=edge.b[3],nx= -dx/length,nz= -dz/length},true)
+			if not valid(clipped) then continue end
+			for i=2,#clipped-1 do
+				table.insert(capture.copies,{edge=id,points={clipped[1],clipped[i],clipped[i+1]},material=material});capture.count+=1
+			end
+			for i,p in clipped do
+				local q=clipped[i%#clipped+1];local up,uq=u(p),u(q)
+				if math.abs(up-uq)<EPS then continue end
+				if up<uq then trace(up,uq,p[2],q[2]) else trace(uq,up,q[2],p[2]) end
+			end
+		end
+		if capture.count>capture.limit then return false,"field seam capture limit" end
+		if context.tick and n%16==0 then context.tick() end
+	end
+	return true,nil
 end
 
 local function difference(polygon:Polygon,m:Mask):({Polygon},boolean)
