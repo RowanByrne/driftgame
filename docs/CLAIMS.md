@@ -22,3 +22,4 @@ T-203/T-212 also owns `src/StarterPlayerScripts/Drift/Trajectory.luau` and `src/
 
 
 
+T-203/T-212 also owns new `src/ReplicatedStorage/Shared/Road/SplineFieldCuts.luau` and `src/ServerScriptService/Tests/SplineFieldCutsTests.luau` for shared finite field-footprint subtraction and actual cut-edge seam data. Ordinary supported bank/tarmac geometry and retained physical low rock feet stay authoritative.
