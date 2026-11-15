@@ -78,6 +78,7 @@ Cold startup remains a failure/risk. Across source-gated fixture revisions:
 |2, invalid sun/receiver alignment |1391.42ms |4559.43ms |2218.82ms |
 |3, controlled front/back proof |2958.36ms |9.61ms |2341.09ms |
 |4, final bounded benchmark |388.28ms |5356.91ms |5010.77ms |
+|6, final property/cleanup smoke only |5446.22ms |95.05ms |2531.31ms |
 
 The invalid geometry fixtures do not prove shadows; their actual API costs remain
 recorded. None of these cold observations is called a production budget pass or
@@ -105,6 +106,14 @@ build itself measured141.638ms aggregate /6.288ms slice in this session (existin
 3ms slice target and40ms whole-chunk guard remain unchanged). The extra native
 work is not a claim to fix those pre-existing render flags. The five-resident
 benchmark was run once, with no repeat-until-pass or threshold relaxation.
+
+Final code smoke at`04e21f7` repeated the readback (17,556/17,556 matches), checked
+the baked terrain's Opaque Content and DoubleSided=true, and exercised all three
+modes:1live Part/0blockers,1baked Part/0blockers,165reference Parts/144blockers.
+Stop removed the fixture/UI and cleared input; calling Start again was refused,
+with native call count unchanged4→4. The flag-off session5 made zero native calls.
+Final source build work159.953ms/slice7.280ms remains above the same3ms slice target
+and40ms aggregate guard. No second lifecycle/performance benchmark was run.
 
 Both injected post-native cancellation points (after conversion and after mesh
 creation) return no published MeshPart/Content, and their temporary references are
@@ -155,7 +164,7 @@ await; streamed new-neighbour caps and stale chunks still need the feature owner
 real lifecycle. Failure/device fallback, cold stalls, retained Content/release,
 textures, distant geometry and full road streaming need production validation.
 No device/Player, exhaustive shadow coverage, natural full-run or performance
-acceptance is claimed. Prior accepted T-206 generation/shadow-coverage and T-210/
+acceptance is claimed. Prior accepted T-206 aggregate-build/shadow-coverage and T-210/
 T-213 generation/render timing flags remain in force.
 
 The native API is documented in the [May18 full-release announcement](https://devforum.roblox.com/t/full-release-introducing-createdatamodelcontent-convert-editable-mesh-and-image-data-into-static-content/4541898/1).
