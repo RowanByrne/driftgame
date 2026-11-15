@@ -455,6 +455,40 @@ local Spline = {
 		Colour = Color3.fromRGB(78, 122, 60), -- the open hillside: a shade under the runoff's grass
 	},
 
+	-- --------------------------------------------------------------- the ground-first trial
+	-- (features/ground-trial.md, T-218.) The ground BUILT FIRST, as one mountain the road is
+	-- cut into (`Road/Ground`), two ways to compare: "mesh", our own grid meshes, or
+	-- "terrain", Roblox's Terrain. "current" is the ground as it is today (the hillside
+	-- above). OFF BY DEFAULT: a run takes the mode set with the console's `ground` command,
+	-- only between runs, so the game and `main` stay as they are.
+	Ground = {
+		Mode = "current", -- "current" | "mesh" | "terrain"
+		-- THE MOUNTAIN, h(x, z): a plane rising `Slope` studs per stud up the fall line, through
+		-- the road's start, plus ridges and gullies: {studs across, studs either way} per
+		-- octave of noise, `Stretch` times longer down the fall line than across it, so they
+		-- run down the mountain. A pure function of the seed and the place
+		Slope = 0.2, -- about 11 degrees, as the hillside's
+		Octaves = { { 900, 45 }, { 450, 22 }, { 180, 7 } },
+		Stretch = 1.8,
+		-- THE ROAD FOLLOWS THE PLANE: in a ground run the road's height band is centred on the
+		-- plane under the road's end (`SplineGen`), this far either way, in place of
+		-- `MinHeight..MaxHeight` round a descent; no climbs. The relief is what it cuts through
+		Band = 40, -- studs
+		-- THE CUT: under the road and its runoff the ground sits this far below their surface,
+		-- and past the runoff's outer edge it blends back to h over this many studs, at about
+		-- `BlendAngle`, never shorter than `BlendMin` or longer than `BlendMax`
+		Under = 0.25, -- studs
+		BlendMin = 20, -- studs
+		BlendMax = 60,
+		BlendAngle = 45, -- degrees
+		RockAngle = 45, -- degrees: ground steeper than this is drawn as rock
+		-- how a point hears the road: each station (every `CheckStep` studs) answers for the
+		-- points within `Look` studs of square beside it, and of two stretches the nearer
+		-- edge wins over `Soft` studs, so the line between them has no seam
+		Look = 16, -- studs
+		Soft = 3, -- studs
+	},
+
 	-- --------------------------------------------------------------- the mesh (step 3)
 	-- What each device draws (`Road/SplineMesh`, `Drift/SplineRoadView`). Purely visual.
 	Mesh = {

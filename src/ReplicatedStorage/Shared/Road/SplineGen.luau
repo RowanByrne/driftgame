@@ -42,6 +42,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Config = require(ReplicatedStorage.Shared.Config)
 local Spline = require(script.Parent.Spline)
 local SplineTurnFit = require(script.Parent.SplineTurnFit)
+local Ground = require(script.Parent.Ground)
 
 local SplineGen = {}
 SplineGen.__index = SplineGen
@@ -116,6 +117,9 @@ export type Gen = typeof(setmetatable(
 		flipWanted: boolean,
 		flipDone: boolean, -- it changed in the section being laid
 		flips: { { number } }, -- every change, {s, flip}: the server's record, for tests
+		-- THE GROUND-FIRST TRIAL (T-218): the mountain the road is cut into, in a "mesh" or
+		-- "terrain" run; nil in a "current" one. The band follows its plane, with no climbs
+		ground: Ground.Field?,
 		band: { number }, -- the centre's knots, {s, centre, ...}: what the band was, for tests
 		legSide: number, -- which way across the slope the current leg runs (1 or -1)
 		tilt: number?, -- the next leg's tilt, chosen with the turnaround onto it
@@ -182,7 +186,7 @@ function SplineGen.limits(clearOverride: number?): (number, number)
 	return clear, sep
 end
 
-function SplineGen.new(seed: number, origin: Spline.Origin?, clearOverride: number?): Gen
+function SplineGen.new(seed: number, origin: Spline.Origin?, clearOverride: number?, groundMode: string?): Gen
 	local clear, sep = SplineGen.limits(clearOverride)
 	local spline = Spline.new(origin)
 	local self = setmetatable({
@@ -260,6 +264,10 @@ function SplineGen.new(seed: number, origin: Spline.Origin?, clearOverride: numb
 	local q = if self.prng:NextNumber() < 0.5 then -1 else 1
 	self.fall = wrap(spline.origin.yaw + q * math.rad(M.FallLineTurn))
 	spline.fall = self.fall -- for the hillside's slope (T-190)
+	if groundMode == "mesh" or groundMode == "terrain" then
+		self.ground = Ground.field(seed, spline.origin, self.fall)
+		spline.ground = self.ground
+	end
 	self.legSide = -q
 	self.sense = if self.mode == "ascent" then -1 else 1
 	self.drift = if self.mode == "descent" then -M.DescentRate elseif self.mode == "ascent" then M.DescentRate else 0
@@ -680,6 +688,15 @@ function SplineGen._commit(self: Gen, sec: Spline.Section)
 	local M = Config.Spline.Mountain
 	local move = self:_bandRate()
 	local c = self.centre + move * sec.len
+	if self.ground then
+		-- a ground run (T-218): the band's centre is the mountain's plane under the road's
+		-- end. No climbs: the mountain never changes sides
+		local x, z = self.spline:planAt(self.spline.length)
+		self.centre = Ground.base(self.ground, x, z) - self.spline.origin.y
+		table.insert(self.band, self.spline.length)
+		table.insert(self.band, self.centre)
+		return
+	end
 	-- (T-190) the climb, and the descent after it, begin where the road next heads straight
 	-- along the fall line -- the middle of a hairpin, as a rule -- because there the mountain
 	-- changes sides (`_terrain`): the valley's floor, and the pass. Until then the band
@@ -709,6 +726,11 @@ end
 
 -- How the height band's centre moves per stud of road just now.
 function SplineGen._bandRate(self: Gen): number
+	if self.ground then
+		-- the plane's grade along the road's heading at its end, inside what the road may climb
+		local gMax = math.tan(math.rad(Config.Spline.MaxGrade))
+		return math.clamp(Ground.grade(self.ground, self.spline:yawAt(self.spline.length)), -gMax, gMax)
+	end
 	if self.flipWanted then
 		return 0 -- at the floor or the top, waiting for the turn the mountain changes sides in
 	end
@@ -755,7 +777,7 @@ end
 function SplineGen._centreAfter(self: Gen, ds: number): number
 	local M = Config.Spline.Mountain
 	local c = self.centre + self:_bandRate() * ds
-	if self.drift == 0 or self.flipWanted then
+	if self.drift == 0 or self.flipWanted or self.ground then
 		return c
 	end
 	if self.climbing then
@@ -1133,12 +1155,17 @@ local function pickGrade(self: Gen, g0: number, y0: number, len: number, descend
 		gt = math.min(gt, -C.Mountain.TurnDescentGrade)
 	end
 	local e = ends(gt)
-	if e > C.MaxHeight or e < C.MinHeight then
+	-- a ground run's band is narrower, round the mountain's plane (T-218)
+	local lo, hi = C.MinHeight, C.MaxHeight
+	if self.ground then
+		lo, hi = -C.Ground.Band, C.Ground.Band
+	end
+	if e > hi or e < lo then
 		-- head back toward the middle of the band
-		local back = if e > C.MaxHeight then -1 else 1
+		local back = if e > hi then -1 else 1
 		gt = back * (0.3 + 0.7 * self.rng:NextNumber()) * gMax
 		e = ends(gt)
-		if e > C.MaxHeight or e < C.MinHeight then
+		if e > hi or e < lo then
 			gt = back * gMax
 		end
 	end
@@ -1393,7 +1420,7 @@ end
 local function forkSpline(source: Spline.Spline): Spline.Spline
 	local out=table.clone(source)
 	for k,v in source do
-		if type(v)=="table" and k~="X" and k~="Z" and k~="hash" then out[k]=copyTables(v) end
+		if type(v)=="table" and k~="X" and k~="Z" and k~="hash" and k~="ground" then out[k]=copyTables(v) end
 	end
 	out.X=setmetatable({}, {__index=source.X})
 	out.Z=setmetatable({}, {__index=source.Z})
