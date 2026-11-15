@@ -10,6 +10,7 @@ export type Token={s:number,patchId:string,road:any}
 export type Options={limit:number?,first:number?,closing:number?,low:number?,high:number?,peer:Token?,creditS:number?}
 export type Hit={ownerS:number,contactS:number,d:number?,routeD:number,y:number,normal:Vector3,kind:number,
 	peer:Token?,source:string,closingS:number?}
+export type State={ownerS:number,anchorS:number,travel:number,position:Vector3,peer:Token?,physicalS:number,d:number?,kind:number}
 
 local function finite(x:number):boolean return x==x and math.abs(x)<math.huge end
 
@@ -23,6 +24,29 @@ function Contact.credit(anchor:number,travel:number,target:number):number
 	return math.min(target,anchor+math.max(0,travel)*1.05+8)
 end
 
+function Contact.copyState(state:State?):State?
+	if not state then return nil end
+	return {ownerS=state.ownerS,anchorS=state.anchorS,travel=state.travel,position=state.position,
+		peer=Contact.copy(state.peer),physicalS=state.physicalS,d=state.d,kind=state.kind}
+end
+
+-- Only an actual actor center may commit this returned state. Ray, footprint
+-- and prediction callers resolve against a snapshot instead of advancing it.
+-- live means the caller checked a real retained physical road piece.
+function Contact.advance(state:State?,hit:Hit,position:Vector3,asphalt:boolean,live:boolean):(State,number?)
+	local owner=hit.ownerS
+	local anchor=if state then state.anchorS else owner
+	local travel=if state then state.travel else 0
+	if state then local d=position-state.position;travel+=math.sqrt(d.X*d.X+d.Z*d.Z) end
+	local peer=Contact.copy(hit.peer)
+	local credit=if asphalt then Contact.credit(anchor,travel,hit.contactS) else nil
+	if asphalt and live and credit and math.abs(credit-hit.contactS)<.001 then
+		owner,anchor,travel,peer=hit.contactS,hit.contactS,0,nil
+	end
+	return {ownerS=owner,anchorS=anchor,travel=travel,position=position,peer=peer,
+		physicalS=hit.contactS,d=hit.d,kind=hit.kind},credit
+end
+
 function Contact.resolve(sp:any,x:number,z:number,owner:number?,options:Options?):Hit?
 	if owner==nil or not finite(owner) then return nil end
 	local o=options or {}
@@ -33,21 +57,21 @@ function Contact.resolve(sp:any,x:number,z:number,owner:number?,options:Options?
 	local index=sp.infields
 	local peer=o.peer
 	if peer and (peer.road~=sp or typeof(peer.s)~="number" or not finite(peer.s) or not index or not index.patches[peer.patchId]) then peer=nil end
-	local initial=sp:infieldContact(x,z,owner,o.low,o.high,limit,math.max(first,o.closing or 0))
-	if initial and initial.closingS and initial.closingS<first then initial=nil end
-	local patch=if peer then index.patches[peer.patchId] elseif initial then index.patches[initial.patch] else nil
+	local patch=if peer then index.patches[peer.patchId] else nil
 	local function bank(which:any,s:number):string?
 		if not which then return nil end
 		local a,b=which.rows[1],which.rows[#which.rows]
-		local function distance(low:number,high:number):number return math.max(low-s,s-high,0) end
-		local da,db=distance(a.sa,b.sa),distance(b.sb,a.sb)
+		local da,db=math.max(a.sa-s,s-b.sa,0),math.max(b.sb-s,s-a.sb,0)
 		return if da==db then nil elseif da<db then "A" else "B"
 	end
-	local guards=if index then index.closing[math.floor(owner/index.cell)] or {} else {}
 	local function mayOwn(s:number):boolean
 		if peer then return false end -- only the caller's real credit check may hand off a retained peer
 		if o.creditS and finite(o.creditS) and s<=o.creditS+.001 then return true end
-		for _,which in guards do if bank(which,s)~=bank(which,owner) then return false end end
+		if index then
+			for arc=math.floor(math.min(owner,s)/index.cell),math.floor(math.max(owner,s)/index.cell) do
+				for _,which in index.closing[arc] or {} do if bank(which,s)~=bank(which,owner) then return false end end
+			end
+		end
 		return true
 	end
 	local function native(seed:number,history:number,owned:boolean):Hit?
@@ -98,7 +122,8 @@ function Contact.resolve(sp:any,x:number,z:number,owner:number?,options:Options?
 		end
 		return nil
 	end
-	if initial then
+	local initial=sp:infieldContact(x,z,owner,o.low,o.high,limit,math.max(first,o.closing or 0))
+	if initial and (not initial.closingS or initial.closingS>=first) then
 		return {ownerS=initial.ownerS,contactS=initial.contactS,d=initial.d,routeD=initial.routeD,
 			y=initial.y,normal=initial.normal,kind=initial.kind,
 			peer={s=initial.contactS,patchId=initial.patch,road=sp},source="field",closingS=initial.closingS}

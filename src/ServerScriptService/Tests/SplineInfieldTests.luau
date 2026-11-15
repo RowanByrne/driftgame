@@ -4,7 +4,8 @@ assert(game:GetService("RunService"):IsStudio(),"SplineInfieldTests is Studio on
 local DefaultInfield=require(game.ReplicatedStorage.Shared.Road.SplineInfield)
 local Tests={}
 
-local function fixture(Spline,rise)
+local function fixture(Spline,rise,radius)
+	radius=radius or 100
 	local sp=Spline.new({x=0,y=50,z=-20000,yaw=0});sp.fall=math.pi*.5
 	local sections={}
 	local function append(sec)table.insert(sections,sec);sp:append(sec)end
@@ -13,8 +14,8 @@ local function fixture(Spline,rise)
 			el={length,left},er={length,right},hl={length,bank},hr={length,0}}
 	end
 	local a=section(512,{512,0},Spline.ROCK,Spline.CLIFF,rise);a.bm={0,1,0};append(a)
-	local length=math.pi*100+20
-	append(section(length,{20,.01,length-20,.01,length,0},Spline.ROCK,Spline.CLIFF,0))
+	local length=math.pi*radius+20
+	append(section(length,{20,1/radius,length-20,1/radius,length,0},Spline.ROCK,Spline.CLIFF,0))
 	local b0=sp.length
 	append(section(320,{320,0},Spline.CLIFF,Spline.ROCK,0))
 	return sp,b0,sections
@@ -445,6 +446,23 @@ function Tests.contacts(_self,subjects)
 		check("a peer token comes from a real known field connection",acquired and acquired.peer and acquired.contactS==row.sb
 			and math.abs(acquired.ownerS-row.sa)<1e-6 and acquired.kind==sp.TARMAC,
 			"physical asphalt is recognized without replacing accepted A")
+		local position=Vector3.new(px,py,pz)
+		local state,credit=Contact.advance(nil,acquired,position,true,true)
+		check("an actual center commit preserves unpaid shortcut debt",state.ownerS==row.sa and state.peer~=nil
+			and state.anchorS==row.sa and state.travel==0 and credit<acquired.contactS,
+			"physical B becomes tracked while the original asphalt anchor remains A")
+		local copied=Contact.copyState(state);copied.peer.s+=1
+		check("actor and prediction state copies cannot share a mutable token",copied~=state and copied.peer~=state.peer
+			and state.peer.s==acquired.contactS,"independent histories keep the same immutable spline identity")
+		local paid=Contact.copyState(state);paid.travel=(acquired.contactS-row.sa-8)/1.05+1
+		local adopted=Contact.advance(paid,acquired,position,true,true)
+		local refused=Contact.advance(paid,acquired,position,true,false)
+		check("only sufficient travel and a live credited road permit a peer handoff",adopted.ownerS==acquired.contactS
+			and adopted.anchorS==acquired.contactS and adopted.peer==nil and adopted.travel==0
+			and refused.ownerS==row.sa and refused.peer~=nil and refused.travel==paid.travel,
+			"an unavailable live target keeps the full anchor and debt")
+		check("committing another history never changes its input snapshot",state.ownerS==row.sa and state.peer.s==acquired.contactS
+			and state.travel==0 and paid.peer~=adopted.peer,"state advances return new records")
 		local distant=nil
 		for _,r in patch.rows do if r.weight==1 and math.abs(r.sb-acquired.peer.s)>24 then distant=r;break end end
 		local boundedFloor=true
@@ -478,6 +496,13 @@ function Tests.contacts(_self,subjects)
 		local credited=resolve(beforePeer,ownerEnd,nil,640,{creditS=beforePeer})
 		check("wide owned retries cannot bypass the known peer's credit gate",wide==nil and credited and math.abs(credited.ownerS-beforePeer)<1e-5,
 			`wide={wide and wide.ownerS}, credited={credited and credited.ownerS}, target={beforePeer}; explicit credit is required`)
+		local narrow,narrowB=fixture(Spline,0,70)
+		local narrowFields=Planner.plan(narrow,400,480,narrowB,narrow.length);narrow:addInfields(narrowFields)
+		local escaped=narrowFields[1].rows[1].sb+33
+		local nx,ny,nz=narrow:surfaceXYZ(escaped,0)
+		local unapproved=Contact.resolve(narrow,nx,nz,300,{low=ny-1,high=ny+1,limit=640})
+		check("ownership guards cover the entire retry interval across bucket boundaries",unapproved==nil,
+			"neither a pre-field owner nor a post-field query can hide the known turnaround between them")
 		local last=resolve(outside,row.sa,acquired.peer,640)
 		local token=Contact.copy(last.peer)
 		local before=token.s

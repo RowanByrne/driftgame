@@ -600,6 +600,13 @@ guards also cover owned retries when the queried point lies beyond the patch.
 An optional trusted `creditS` permits a credit-complete native handoff; actual
 live credited-piece checks remain the caller's responsibility. Individual patch
 approach/departure arc ranges are disjoint by contract.
+Owned retry guards cover the whole bounded interval between history and the
+candidate, including fields whose endpoints lie in different arc buckets.
+`copyState` copies owner, anchor, real travel, center position and peer token.
+`advance(state,hit,position,asphalt,live)` returns a new actual-center state and
+optional capped credit. Only asphalt, a real live physical piece and credit
+equal to physical arc can clear a retained peer/reset its anchor. The input
+snapshot is never changed. Prediction must advance its own copied world.
 
 `SplineMesh.buildInfield(spline,x,z,radius,parent,opts?)` builds one complete
 nearby field mesh, with exact frozen normals and origin-relative positions.
