@@ -1684,8 +1684,11 @@ function SplineGen._planLeg(self: Gen)
 	local nextGd = if self.ground then between(G.LegGrade) else nil
 	local nextLeg: Slope? = if self.ground then { kind = "leg", side = -side, gd = nextGd } else nil
 	if r:NextNumber() < M.TurnaroundSwitchbackChance then
-		turn("turnaround", down, turnDir, M.SwitchbackRadius, "Switchback", aim, downhill("fall"))
-		stretch(between(M.SwitchbackGap), "gap", down, math.rad(10), downhill("fall"))
+		-- (a ground run's gap runs as straight down as the road can follow, T-228: on a steep
+		-- scarp, straight down left it 200 studs above the mountain; there the switchback is,
+		-- in effect, a hairpin)
+		turn("turnaround", down, turnDir, M.SwitchbackRadius, "Switchback", aim, downhill("down"))
+		stretch(between(M.SwitchbackGap), "gap", down, math.rad(10), downhill("down"))
 		turn("switchbackOut", nextAim, turnDir, M.SwitchbackRadius, "Switchback", down, nextLeg)
 	else
 		turn("turnaround", nextAim, turnDir, M.HairpinRadius, "Hairpin", aim, nextLeg)

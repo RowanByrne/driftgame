@@ -520,7 +520,7 @@ local Spline = {
 		LegGrade = { 0.035, 0.07 }, -- descent per stud of road along a leg: 2 to 4 degrees
 		LegTiltMax = 75, -- degrees off straight across
 		FollowGrade = 0.9,
-		AimMinLimit = 12, -- degrees
+		AimMinLimit = 5, -- degrees (12 let a road on a 40-degree scarp stray to a 13-degree grade)
 		DownhillBias = 0.01,
 		-- THE CUT: under the road and its runoff the ground sits this far below their surface,
 		-- and past the runoff's outer edge it blends back to h, never over more than `BlendMax`
