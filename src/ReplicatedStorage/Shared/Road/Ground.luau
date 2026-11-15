@@ -339,21 +339,12 @@ function Ground.at(ctx: Context, x: number, z: number): (number, number, number,
 					local l = dx * st.fx + dz * st.fz
 					if l > -look and l < look then
 						local d = dx * st.rx + dz * st.rz
-						-- how far along the road the point is square to (further than `l` on the
-						-- inside of a bend, less on its outside) and how far out from it there,
-						-- taking the bend as an arc (T-226: a ground run's steeper grades show the
-						-- straight-line guess on the inside of a tight bend)
-						local ds = l
-						local k = st.k
-						if k > 1e-6 or k < -1e-6 then
-							local c = math.max(1 + k * d, 0.2)
-							local kl = k * l
-							ds = math.atan2(kl, c) / k
-							d = (math.sqrt(c * c + kl * kl) - 1) / k
-						end
 						local w = if d < 0 then st.wl else st.wr
 						local e = math.abs(d) - w
 						if e < bMax then
+							-- how far along the road the point is square to: further than `l` on
+							-- the inside of a bend, less on its outside
+							local ds = l / math.max(1 + st.k * d, 0.2)
 							local T, bw
 							if e <= 0 then
 								e = 0
