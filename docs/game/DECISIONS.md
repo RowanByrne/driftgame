@@ -101,3 +101,5 @@ The user's decisions about this game, so they aren't reopened later. Before prop
 - 2026-11-15: The user's six concept paintings are the environment target: "this is the vibes I want to be able to create with this project." Environments like them are the focus after better road and terrain generation. Kept in `assets/reference/environment-mood/` and described in ART-DIRECTION.md "References" (C-f41e13).
 
 - 2026-11-15: The ground-first trial goes on with option 1, our own mesh, over Roblox Terrain: Terrain blurs worse far away and its distance detail is the engine's. Next, sharper ground along the road ahead (not only round the car) and a distance slider in settings (T-225; `features/ground-trial.md` "The pick") (C-5449ea).
+
+- 2026-11-15: Opus 5.5 runs everything: conductor, feature agents and every worker tier; no Fable (C-4d022a).
