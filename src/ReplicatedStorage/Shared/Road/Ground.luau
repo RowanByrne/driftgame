@@ -240,7 +240,7 @@ local function station(spline: Spline.Spline, s: number, x: number, z: number): 
 	return st
 end
 
-local CELL = 64 -- studs: a point looks at 25 cells round it (32: 81, measured slower)
+local CELL = 64 -- studs: a point looks at the 25 cells round it (at 32, 81)
 
 local function key(cx: number, cz: number): number
 	return (cx + 1048576) * 2097152 + (cz + 1048576)
