@@ -710,13 +710,19 @@ return {
 	-- the travel never moves, and on a smooth road it moves far slower than this.
 	--
 	-- THE LANDING is the car having had no wheel on the ground for `LandAirTime` and then
-	-- touching down falling at `LandMinSpeed` or more. It plays INSTEAD of the clunks: every
+	-- touching down, having fallen at `LandMinSpeed` or more. It plays INSTEAD of the clunks: every
 	-- wheel's clunk is held off for `LandQuiet` after it.
 	Suspension = {
-		ClunkRate = 6, -- studs/s of a wheel's travel closing that is a knock. Under this,
-		-- silence
-		ClunkRateForMax = 30, -- studs/s at which a clunk is at `ClunkMaxVolume`. A kerb hit at
-		-- speed shoves the wheel its whole travel in a step or two
+		ClunkRate = 12, -- studs/s of a wheel's travel closing that is a knock. Under this,
+		-- silence. A wheel is pushed up to its ground in ONE step (1/120 s), so this is a
+		-- 0.1-stud step in the ground. MEASURED in DR-Lane1 (T-223): the playground's
+		-- kerbs (0.25 to 0.6 studs) close at 30 to 46; the hill road's straight at 93 to
+		-- 117 studs/s closes at 0, and the crease where it turns at 9
+		ClunkRateForMax = 60, -- studs/s (a 0.5-stud step) at which a clunk is at
+		-- `ClunkMaxVolume`
+		ClunkSpeedForFull = 80, -- studs/s of the car's speed at which a clunk is at full
+		-- volume; slower, it is quieter in proportion...
+		ClunkSlowShare = 0.35, -- ...down to this share of it
 		ClunkMinVolume = 0.08, -- the clunk just over `ClunkRate`
 		ClunkMaxVolume = 0.30, -- at `ClunkRateForMax`. Under the squeal's 0.40 and the
 		-- engine's 0.45 (AUDIO.md "Mix": everything else under both)

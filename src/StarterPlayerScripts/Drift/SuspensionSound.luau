@@ -10,13 +10,17 @@
 --   THE CLUNK. A wheel that is down and whose travel CLOSED faster than `ClunkRate` this
 --   step has been shoved up: a bump, a kerb, or the catch at the end of a drop (a wheel is
 --   drawn falling no faster than `DropTime`, so the drop itself is silent and only the catch
---   is fast). Volume by how fast, from `ClunkMinVolume` to `ClunkMaxVolume`. Each wheel then
---   waits `ClunkCooldown`, and no two clunks are closer than `ClunkGap` -- so two wheels
---   hitting one kerb in one moment are one knock, at the harder one's volume. On flat ground
---   the travel never moves; on a smooth road it moves far slower than the threshold.
+--   is fast). A wheel is pushed up to its ground AT ONCE, so the closing is the step's
+--   height over one step, whatever the car's speed: the volume is that, from
+--   `ClunkMinVolume` to `ClunkMaxVolume`, times the car's speed as a share of
+--   `ClunkSpeedForFull` (never under `ClunkSlowShare`) -- the same kerb is a tap at walking
+--   pace and a knock at speed. Each wheel then waits `ClunkCooldown`, and no two clunks are
+--   closer than `ClunkGap` -- so two wheels hitting one kerb in one moment are one knock, at
+--   the harder one's volume. On flat ground the travel never moves; on a smooth road it
+--   moves far slower than the threshold.
 --
 --   THE LANDING. No wheel down for at least `LandAirTime`, then one touches: the car has
---   landed, falling at whatever its vertical speed was on the last step in the air. At
+--   landed, falling at the fastest its vertical speed reached in the air. At
 --   `LandMinSpeed` or more the landing plays, by that speed; at any speed, no wheel clunks
 --   for `LandQuiet` after it, so the four catches of a landing never stack on top of it.
 --
@@ -68,7 +72,7 @@ export type SuspensionSound = typeof(setmetatable(
 		readyAt: { number }, -- per wheel: the clock at which it may clunk again
 		gapUntil: number, -- the clock before which no wheel clunks (`ClunkGap`, `LandQuiet`)
 		airTime: number, -- s with no wheel down, so far
-		airSpeed: number, -- studs/s falling, on the last step in the air
+		airSpeed: number, -- studs/s, the fastest fall of this time in the air
 		lastClip: number,
 		-- the readout (`DebugState`, `ResetMeasure`)
 		clunks: number,
@@ -90,15 +94,16 @@ local function lerp(a: number, b: number, t: number): number
 	return a + (b - a) * t
 end
 
--- The clunk's volume for a wheel closing at `rate` studs/s, before the master: 0 under the
--- threshold. Pure, for the readout and the tests.
-function SuspensionSound.clunkVolume(rate: number): number
+-- The clunk's volume for a wheel closing at `rate` studs/s on a car going `speed` studs/s,
+-- before the master: 0 under the threshold. Pure, for the readout and the tests.
+function SuspensionSound.clunkVolume(rate: number, speed: number): number
 	local S = Config.Fx.Suspension
 	if rate < S.ClunkRate then
 		return 0
 	end
 	local t = clamp01((rate - S.ClunkRate) / math.max(S.ClunkRateForMax - S.ClunkRate, 1e-6))
-	return lerp(S.ClunkMinVolume, S.ClunkMaxVolume, t)
+	local share = math.clamp(speed / math.max(S.ClunkSpeedForFull, 1e-6), S.ClunkSlowShare, 1)
+	return lerp(S.ClunkMinVolume, S.ClunkMaxVolume, t) * share
 end
 
 -- The landing's volume for a touchdown falling at `speed` studs/s, before the master.
@@ -287,9 +292,12 @@ function SuspensionSound.Step(self: SuspensionSound, dt: number, state: DriftMod
 	end
 
 	-- THE LANDING, first: when it plays, it is the only sound of this moment.
+	-- The FASTEST fall of the air, not the last step's: the step a wheel reaches its bump
+	-- stop, the stop takes the closing speed out of the body (`Suspension.ride`) before the
+	-- model counts that wheel as down, so the last airborne step already reads near zero.
 	if not anyDown then
 		self.airTime += dt
-		self.airSpeed = math.max(0, -s.velocity.Y)
+		self.airSpeed = math.max(self.airSpeed, -s.velocity.Y)
 	else
 		if self.airTime >= S.LandAirTime then
 			local volume = SuspensionSound.landingVolume(self.airSpeed)
@@ -309,6 +317,7 @@ function SuspensionSound.Step(self: SuspensionSound, dt: number, state: DriftMod
 			self.gapUntil = math.max(self.gapUntil, now + S.LandQuiet)
 		end
 		self.airTime = 0
+		self.airSpeed = 0
 	end
 
 	-- THE CLUNKS: the hardest-closing wheel of this step that is free to clunk, if any.
@@ -331,11 +340,12 @@ function SuspensionSound.Step(self: SuspensionSound, dt: number, state: DriftMod
 		end
 	end
 	if bestWheel > 0 then
-		local volume = SuspensionSound.clunkVolume(bestRate)
+		local speed = DriftModel.speed(state)
+		local volume = SuspensionSound.clunkVolume(bestRate, speed)
 		self.clunks += 1
 		self.readyAt[bestWheel] = now + S.ClunkCooldown
 		self.gapUntil = math.max(self.gapUntil, now + S.ClunkGap)
-		self.lastClunk = { at = now, wheel = bestWheel, rate = bestRate, volume = volume }
+		self.lastClunk = { at = now, wheel = bestWheel, rate = bestRate, speed = speed, volume = volume }
 		self:_playClunk(volume)
 	end
 
