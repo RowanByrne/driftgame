@@ -803,8 +803,9 @@ function parts.mountain(check)
 		`{flips} changes of direction across the slope, {badFlips} outside a hairpin, switchback or double hairpin`
 	)
 	check(
+		-- long traverses, occasional turnarounds (T-215): about 1.4 per 10 000 studs measured
 		"legs, turnarounds and detours (measured)",
-		legs * per >= 2 and legs * per <= 8,
+		turnarounds * per >= 0.8 and turnarounds * per <= 2.5,
 		`per 10 000 studs: {fmt(legs * per, 1)} legs, {fmt(turnarounds * per, 1)} turnarounds, {fmt(doubles * per, 2)} double hairpins, {fmt(sideways * per, 2)} sideways stretches, {fmt(straightens * per, 1)} straightening bends, {fmt(refused * per, 2)} turns refused and retried`
 	)
 	check(
