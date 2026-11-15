@@ -5,11 +5,15 @@ local Config = require(game.ReplicatedStorage.Shared.Config)
 local Spline = require(script.Parent.Spline)
 local Hill = require(script.Parent.SplineHill)
 local Profile = require(script.Parent.SplineProfile)
+local Ground = require(script.Parent.Ground)
 local Fit = {}
 export type Reading = {ok:boolean, score:number, view:number, cut:number, fill:number, samples:number}
 function Fit.measure(sp: Spline.Spline, s0:number, s1:number, startFlip:number, flips:{{number}}): Reading
 	local M, H = Config.Spline.Mountain, Config.Spline.Hill
-	local ctx = Hill.context(sp, s0, s1, Profile.profile)
+	-- a ground run (T-218) checks the mountain the road is cut into, not today's hillside
+	local field = sp.mountain
+	local ctx = if field then nil else Hill.context(sp, s0, s1, Profile.profile)
+	local slope = if field then field.slope else H.Slope
 	local half = Config.Road.Width * .5
 	local view, cut, fill, samples = 0, 0, 0, 0
 	local cross, least, diagonal = s0, math.huge, nil
@@ -25,18 +29,27 @@ function Fit.measure(sp: Spline.Spline, s0:number, s1:number, startFlip:number, 
 		local eye = sp:heightAt(s)+5
 		local flip = startFlip
 		for _, f in flips do if f[1]<=s then flip=f[2] end end
-		local rising = math.max(0, flip * (-fx*math.sin(sp.fall or 0)-fz*math.cos(sp.fall or 0))) * H.Slope
+		local rising = math.max(0, flip * (-fx*math.sin(sp.fall or 0)-fz*math.cos(sp.fall or 0))) * slope
 		for _, dist in M.TurnViewDistances do
-			local y,so,d = Hill.heightAt(ctx,x+fx*dist,z+fz*dist)
-			if y and so and d and math.abs(d)>half+sp:runoffAt(so,if d<0 then -1 else 1) then
-				view=math.max(view,y-eye-rising*dist)
+			if field then
+				-- the ground as drawn, off any road and its runoff
+				local y,a = Ground.query(field,sp,x+fx*dist,z+fz*dist)
+				if a<1 then
+					view=math.max(view,y-eye-rising*dist)
+				end
+			else
+				local y,so,d = Hill.heightAt(ctx :: any,x+fx*dist,z+fz*dist)
+				if y and so and d and math.abs(d)>half+sp:runoffAt(so,if d<0 then -1 else 1) then
+					view=math.max(view,y-eye-rising*dist)
+				end
 			end
 			samples+=1
 		end
 		for _,side in {-1,1} do
 			local w=half+sp:runoffAt(s,side)
 			local d=side*(w+M.TurnSideReach)
-			local y=Hill.heightAt(ctx,x+rx*d,z+rz*d)
+			-- a ground run: the mountain itself there, so the depth of the cut or the fill
+			local y=if field then Ground.h(field,x+rx*d,z+rz*d) else Hill.heightAt(ctx :: any,x+rx*d,z+rz*d)
 			if y then
 				local delta=y-sp:terrainY(s,side*w)
 				cut=math.max(cut,delta);fill=math.max(fill,-delta)

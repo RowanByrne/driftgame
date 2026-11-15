@@ -28,7 +28,7 @@ Every command is open to whoever can use the console (above); there are no level
 - **Optional, defaulting to you** (`[players]`) where the targets are the only argument, or everything after them is optional: `respawn`, `start-run`, `end-run`, `unstuck`, `garage-out`, `get-out`, `get-in`, `speed`, `score-reset`. So `respawn` alone respawns you; `respawn all` respawns everyone. With a second argument the target has to be there: `speed me 90`, `start-run me 555`.
 - **One player, optional** (`[player]`) for reading: `where`, `run-info`, `whoami`.
 - **Your own screen only, no target:** `time`, `time-pause`, `time-resume`, `time-speed`, `readout`, `trajectory`, `zoom`, `horizon`, `score` (reading), `counts`, `stats`. They change or read one client's view, and reaching another player's screen for a look isn't worth a round trip.
-- **The whole server, no target:** `seed`, `road-mode`, `barriers`.
+- **The whole server, no target:** `seed`, `road-mode`, `ground`, `barriers`.
 
 "Client" below means the player's own client does it: your own when you target only yourself; otherwise the server sends each target's client a `DriftAction` and replies "Sent ... to names" (the effect shows on their screen).
 
@@ -39,6 +39,7 @@ Every command is open to whoever can use the console (above); there are no level
 | Run | `run-info [player]` (`runinfo`) | Road up or not, seed, mode, drivers, the player's piece and distance | Server |
 | Run | `seed [n]` | Shows the seed; with `n`, lays the road again from that seed and puts everyone who was on it back at its start (no road up: starts one for you) | Server |
 | Run | `road-mode [spline\|pieces]` (`roadmode`) | Shows or sets the next run's road; only between runs | Server |
+| Run | `ground [current\|mesh\|terrain]` | The ground-first trial (T-218, `ground-trial.md`): shows or sets the ground the next spline run is drawn with, and says the ground of the road that is up; only between runs | Server |
 | Run | `respawn [players]` | Puts cars back now, no cooldown: on the road in a run (never behind the closing barrier), else the world's spawn | Server |
 | Teleport | `tp <players> <place> [studs]` | `road` joins the run or puts them back on it; `road <studs>` goes that far along the spline road (**Studio only**); `playground`, `track`, `garage` (drives in), `hill` (the test hill's top), any playground spot by name (`Spawn`, `OpenGround`, `PillarRun`, `DistrictGate`, `Boulevard`, `TightAlley`, `CircleCentre`, `RampBase`, `HillBase`, `HillTop`), or **another player's name** (beside their car; on their road if they're in a run). Leaving the road ends that player's run first | Server |
 | Teleport | `tp-to <players> <x> <y> <z> [heading]` (`tpto`) | Puts cars at a point, facing a heading in degrees (0 faces -Z) | Server |
