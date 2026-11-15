@@ -503,12 +503,28 @@ local Spline = {
 		AimMinLimit = 12, -- degrees
 		DownhillBias = 0.01,
 		-- THE CUT: under the road and its runoff the ground sits this far below their surface,
-		-- and past the runoff's outer edge it blends back to h over this many studs, at about
-		-- `BlendAngle`, never shorter than `BlendMin` or longer than `BlendMax`
+		-- and past the runoff's outer edge it blends back to h, never over more than `BlendMax`
+		-- studs; how steeply, from the side slope (`BlendAngles`, below; 45 degrees and at least
+		-- 20 studs until T-228)
 		Under = 0.25, -- studs
-		BlendMin = 20, -- studs
-		BlendMax = 60,
-		BlendAngle = 45, -- degrees
+		BlendMax = 60, -- studs
+		-- WHAT IS BESIDE THE ROAD FROM THE SIDE SLOPE (T-228, features/road-on-the-slope.md): how
+		-- steep h is across the road, from h `SideSpan` studs either side of the centre line,
+		-- read as 0 under `SlopeShallow` degrees, 1 over `SlopeSteep`, eased between. From it:
+		-- the runoff, `RunoffWide` studs on shallow ground to `RunoffThin` on steep (a width
+		-- every `RunoffSlopeEvery` studs, changing no faster than a quarter of a stud a stud);
+		-- and the cut or fill past the runoff's edge, at `BlendAngles` (shallow, steep) and no
+		-- narrower than `BlendMins`: a slight lip and drop on shallow ground, a wall uphill and
+		-- a drop downhill on steep. Their heights are what it takes to lay the road and its
+		-- runoff flat into that slope
+		SideSpan = 48, -- studs
+		SlopeShallow = 8, -- degrees
+		SlopeSteep = 30, -- degrees
+		RunoffWide = 40, -- studs
+		RunoffThin = 12, -- studs
+		RunoffSlopeEvery = 32, -- studs
+		BlendAngles = { 30, 65 }, -- degrees: shallow, steep
+		BlendMins = { 20, 6 }, -- studs: shallow, steep
 		RockAngle = 45, -- degrees: ground steeper than this is drawn as rock
 		-- how a point hears the road: each station (every `CheckStep` studs) answers for the
 		-- points within `Look` studs of square beside it, and of two stretches the nearer

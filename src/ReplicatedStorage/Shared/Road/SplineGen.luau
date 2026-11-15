@@ -357,6 +357,20 @@ function SplineGen._terrain(self: Gen, sec: Spline.Section)
 		end
 	end
 
+	-- A GROUND RUN'S RUNOFF (T-228): from the mountain's side slope, wide on shallow ground
+	-- and thin on steep (`_slopeRunoff`), not at random. A grove only where it is shallow the
+	-- whole way: its wide runoff on a steep slope would be a deep cut
+	local slope = if self.ground and tag ~= "Start" then self:_slopeRunoff(sec) else nil
+	if slope then
+		local G = Config.Spline.Ground
+		for _, kn in slope do
+			if kn[2] < G.RunoffWide - 1 then
+				grove[-1], grove[1] = nil, nil
+				break
+			end
+		end
+	end
+
 	-- THE RUNOFF: a width every `RunoffKnotEvery` studs, each side on its own, never
 	-- changing faster than a quarter of a stud per stud, so the grass's edge never runs at
 	-- the car faster than about 14 degrees (smoothstep's steepest is 1.5 times that)
@@ -367,6 +381,19 @@ function SplineGen._terrain(self: Gen, sec: Spline.Section)
 		end
 		local out = {}
 		local prev, prevAt = self.runoff[side], 0
+		if slope then
+			for _, kn in slope do
+				local at = kn[1]
+				local w = if grove[side] then between(T.GroveRunoff) else kn[2]
+				local most = 0.25 * (at - prevAt)
+				w = math.clamp(w, prev - most, prev + most)
+				table.insert(out, at)
+				table.insert(out, w)
+				prev, prevAt = w, at
+			end
+			self.runoff[side] = prev
+			return out
+		end
 		local range = if grove[side] then T.GroveRunoff else { T.RunoffMin, T.RunoffMax }
 		local function knot(at: number)
 			local w = between(range)
@@ -934,6 +961,32 @@ local function walk(x: number, z: number, yaw0: number, k0: number, knots: { num
 		end
 	end
 	return true
+end
+
+-- A ground run's runoff along a section, from the mountain's side slope (T-228): {ds, width}
+-- every `RunoffSlopeEvery` studs or so, the last at its end, the width `RunoffWide` on
+-- shallow ground to `RunoffThin` on steep (`Ground.steepness`). The same both sides.
+function SplineGen._slopeRunoff(self: Gen, sec: Spline.Section): { { number } }
+	local G = Config.Spline.Ground
+	local f = self.ground :: Ground.Field
+	local len = sec.len
+	local n = math.max(1, math.ceil(len / G.RunoffSlopeEvery - 1e-9))
+	local x0, z0, yaw0, k0 = self.spline:tip()
+	local out: { { number } } = {}
+	walk(x0, z0, yaw0, k0, sec.k, len / n, len / n, function(u, x, z)
+		if #out < n then
+			local yaw = yawAlong(yaw0, k0, sec.k, u)
+			local q = Ground.steepness(f, x, z, math.cos(yaw), -math.sin(yaw))
+			table.insert(out, { if #out == n - 1 then len else u, G.RunoffWide + (G.RunoffThin - G.RunoffWide) * q })
+		end
+		return true
+	end)
+	if #out == 0 then
+		table.insert(out, { len, self.runoff[1] })
+	elseif out[#out][1] < len then
+		out[#out][1] = len
+	end
+	return out
 end
 
 --------------------------------------------------------------------------------

@@ -323,6 +323,13 @@ function Tests.profile(_, opts)
 		offGroundLaid = 0,
 		sections = 0,
 		perSeed = {},
+		-- by the mountain's slope across the road (T-228): stations, and the mean runoff, wall
+		-- (uphill ground `out` past the edge, above it) and drop (downhill, below it)
+		bySlope = {
+			shallow = { n = 0, runoff = 0, wall = 0, drop = 0 },
+			middle = { n = 0, runoff = 0, wall = 0, drop = 0 },
+			steep = { n = 0, runoff = 0, wall = 0, drop = 0 },
+		},
 	}
 	for _, seed in seeds do
 		local t0 = os.clock()
@@ -369,6 +376,19 @@ function Tests.profile(_, opts)
 				local d = side * (w + out)
 				above[side] = Ground.h(field, x + rx * d, z + rz * d) - sp:terrainY(s, side * w)
 			end
+			do
+				local G = Config.Spline.Ground
+				local D = G.SideSpan
+				local hl = Ground.h(field, x - rx * D, z - rz * D)
+				local hr = Ground.h(field, x + rx * D, z + rz * D)
+				local deg = math.deg(math.atan(math.abs(hr - hl) / (2 * D)))
+				local up = if hr > hl then 1 else -1
+				local bin = res.bySlope[if deg < G.SlopeShallow then "shallow" elseif deg > G.SlopeSteep then "steep" else "middle"]
+				bin.n += 1
+				bin.runoff += (sp:runoffAt(s, -1) + sp:runoffAt(s, 1)) * 0.5
+				bin.wall += above[up]
+				bin.drop += -above[-up]
+			end
 			if above[-1] > edge and above[1] > edge then
 				res.trench += 1
 				mine.trench += 1
@@ -384,6 +404,12 @@ function Tests.profile(_, opts)
 	table.sort(cuts)
 	local function pct(p: number): number
 		return cuts[math.clamp(math.floor(#cuts * p + 0.5), 1, #cuts)] or 0
+	end
+	for _, bin in res.bySlope do
+		local n = math.max(bin.n, 1)
+		bin.runoff /= n
+		bin.wall /= n
+		bin.drop /= n
 	end
 	res.cutMedian = pct(0.5)
 	res.cutP95 = pct(0.95)

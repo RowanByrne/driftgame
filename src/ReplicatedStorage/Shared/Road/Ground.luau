@@ -10,8 +10,10 @@
 --
 -- THE ROAD IS PRESSED INTO IT (`at`). Under the road and its runoff the ground sits just
 -- below their surface (`Ground.Under`). Past the runoff's outer edge it blends back to `h`
--- over `BlendMin..BlendMax` studs: a CUT where the mountain is above the edge, a FILL where
--- it is below. Between two legs it is simply `h`, with nothing to negotiate.
+-- over at most `BlendMax` studs: a CUT where the mountain is above the edge, a FILL where
+-- it is below, as steep as the mountain is across the road there (`Ground.steepness`,
+-- T-228): a slight lip and drop on shallow ground, a wall and a drop on steep. Between two
+-- legs it is simply `h`, with nothing to negotiate.
 --
 -- HOW THE BLEND IS TAKEN, so it has no seams: every station of road near a point (the
 -- points the road files for its no-crossing test, every `CheckStep` studs) gives its own
@@ -65,6 +67,9 @@ export type Station = {
 	wr: number,
 	rl: number, -- the runoff alone, left
 	rr: number,
+	steep: number, -- how steep the mountain is across the road here, 0 to 1 (T-228)
+	bmin: number, -- so the cut or fill past its runoff: no narrower than this...
+	tanA: number, -- ...at about this slope
 	-- the centre line `HEIGHT_STEP` studs apart, from `HEIGHT_REACH` before the station to as
 	-- far after it: its height, where it is and which way it heads. A ground run's grade
 	-- changes often and steeply (T-226), so how far along the road a point beside the station
@@ -249,7 +254,18 @@ local function surface(st: Station, d: number, ds: number?): number
 end
 Ground._surface = surface
 
-local function station(spline: Spline.Spline, s: number, x: number, z: number): Station
+-- How steep the mountain is across a road at (x, z) heading right along (rx, rz): 0 on
+-- shallow ground (under `SlopeShallow`), 1 on steep (over `SlopeSteep`), eased between
+-- (T-228). The road's runoff and the cut and fill beside it both read this.
+function Ground.steepness(f: Field, x: number, z: number, rx: number, rz: number): number
+	local G = Config.Spline.Ground
+	local D = G.SideSpan
+	local t = math.abs(Ground.h(f, x + rx * D, z + rz * D) - Ground.h(f, x - rx * D, z - rz * D)) / (2 * D)
+	local u = math.clamp((math.deg(math.atan(t)) - G.SlopeShallow) / (G.SlopeSteep - G.SlopeShallow), 0, 1)
+	return u * u * (3 - 2 * u)
+end
+
+local function station(spline: Spline.Spline, s: number, x: number, z: number, field: Field): Station
 	local mine = kept[spline]
 	if not mine then
 		mine = {}
@@ -283,8 +299,17 @@ local function station(spline: Spline.Spline, s: number, x: number, z: number): 
 		wr = half + rr,
 		rl = rl,
 		rr = rr,
+		steep = Ground.steepness(field, x, z, math.cos(yaw), -math.sin(yaw)),
+		bmin = 0,
+		tanA = 1,
 		spline = spline,
 	}
+	do
+		local G = Config.Spline.Ground
+		local q = st.steep
+		st.bmin = G.BlendMins[1] + (G.BlendMins[2] - G.BlendMins[1]) * q
+		st.tanA = math.tan(math.rad(G.BlendAngles[1] + (G.BlendAngles[2] - G.BlendAngles[1]) * q))
+	end
 	if s < spline.length - KEEP_SHORT then
 		mine[s] = st
 	end
@@ -338,7 +363,7 @@ function Ground.context(field: Field, spline: Spline.Spline, x0: number, z0: num
 					local s, x, z = list[j], list[j + 1], list[j + 2]
 					if s >= first and not seen[s] and x >= x0 - reach and x <= x1 + reach and z >= z0 - reach and z <= z1 + reach then
 						seen[s] = true
-						local st = station(spline, s, x, z)
+						local st = station(spline, s, x, z, field)
 						local k = key(math.floor(x / CELL), math.floor(z / CELL))
 						local cellList = ctx.grid[k]
 						if not cellList then
@@ -371,8 +396,8 @@ function Ground.at(ctx: Context, x: number, z: number): (number, number, number,
 	local hp = Ground.h(field, x, z)
 	local reach = Ground.reach()
 	local look, soft = G.Look, G.Soft
-	local bMin, bMax = G.BlendMin, G.BlendMax
-	local tanA = math.tan(math.rad(G.BlendAngle))
+	-- (each station's own blend, from the mountain's side slope there: T-228)
+	local bMax = G.BlendMax
 	-- Running sums, rescaled whenever a nearer edge turns up (a soft minimum). What is
 	-- averaged is each station's distance past its edge, its blend width and its target:
 	-- the blend is taken once, from the averaged distance, so where neighbouring stations
@@ -412,10 +437,10 @@ function Ground.at(ctx: Context, x: number, z: number): (number, number, number,
 							if e <= 0 then
 								e = 0
 								T = surface(st, d, ds) - G.Under
-								bw = bMin
+								bw = st.bmin
 							else
 								T = surface(st, if d < 0 then -w else w, ds) - G.Under
-								bw = math.clamp(math.abs(hp - T) / tanA, bMin, bMax)
+								bw = math.clamp(math.abs(hp - T) / st.tanA, st.bmin, bMax)
 							end
 							local q = l / look
 							local wl = (1 - q * q)
