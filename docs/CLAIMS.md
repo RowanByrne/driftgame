@@ -29,3 +29,5 @@ T-203/T-212 also owns new `src/StarterPlayerScripts/Drift/SplineFieldView.luau` 
 T-203/T-212 also owns `src/ReplicatedStorage/Shared/Road/GrassTexture.luau` only to expose the cached image's actual plain-pixel multiplier for mixed Mesh/Parts seam colour transfer. Existing image pixels and approved terrain colours remain unchanged.
 
 2026-11-15: T-203/T-212 service scope expanded by the conductor for prepared bounded generation and startup safety. Driving forces, controls, UI and admin files are not added to this claim; request exact additional files if a preparing-result contract needs them.
+
+2026-11-15: T-203/T-212 additionally owns `src/ReplicatedStorage/Shared/Road/SplineTurnFit.luau` only for optional cooperative checkpoint forwarding into Hill context/height work during detached candidate fitting. Geometry and fit thresholds remain unchanged.
