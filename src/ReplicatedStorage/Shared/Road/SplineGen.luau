@@ -1372,7 +1372,10 @@ function SplineGen._slopeAim(self: Gen, slope: Slope): (number, number, number, 
 	elseif slope.kind == "down" then
 		t = steepest
 	else
-		t = if S > 1e-9 then math.asin(math.min((slope.gd or 0) / S, 1)) else math.pi * 0.5
+		-- steeper on steeper ground (T-228): legs stacked on a scarp spread apart sooner, and
+		-- the road no longer boxes itself in under the leg above
+		local gd = math.min((slope.gd or 0) + G.LegGradeSteep * S, gFollow * 0.95)
+		t = if S > 1e-9 then math.asin(math.min(gd / S, 1)) else math.pi * 0.5
 		t = math.min(t, math.rad(G.LegTiltMax))
 	end
 	local hx, hz = cx * math.cos(t) + dx * math.sin(t), cz * math.cos(t) + dz * math.sin(t)

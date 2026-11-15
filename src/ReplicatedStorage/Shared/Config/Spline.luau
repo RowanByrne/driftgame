@@ -518,6 +518,7 @@ local Spline = {
 		AimAt = { 60, 180 }, -- studs ahead
 		AimSpan = 60, -- studs
 		LegGrade = { 0.035, 0.07 }, -- descent per stud of road along a leg: 2 to 4 degrees
+		LegGradeSteep = 0.1, -- plus this much of h's slope there (T-228), to `FollowGrade` at most
 		LegTiltMax = 75, -- degrees off straight across
 		FollowGrade = 0.9,
 		-- A SHARP PLANNED TURN (a hairpin, a switchback) that would leave the road more than
