@@ -472,10 +472,36 @@ local Spline = {
 		Slope = 0.12,
 		Octaves = { { 900, 45 }, { 450, 22 }, { 180, 7 } },
 		Stretch = 1.8,
-		-- THE ROAD FOLLOWS THE PLANE: in a ground run the road's height band is centred on the
-		-- plane under the road's end (`SplineGen`), this far either way, in place of
-		-- `MinHeight..MaxHeight` round a descent; no climbs. The relief is what it cuts through
-		Band = 40, -- studs
+		-- THE MOUNTAIN LEADS, THE ROAD FOLLOWS (T-226, features/road-on-the-slope.md). In a
+		-- ground run the road reads everything from h alone, with no height band, descent rate
+		-- or fixed heading of its own, so changing h changes the road with no road code touched.
+		-- ITS HEIGHT: each section's grade is the one whose road best fits h along its centre
+		-- line (every `FollowStep` studs), and `FollowAhead` studs on past its end (counted
+		-- `FollowAheadWeight` as much), within the grade and vertical-curve limits. h is taken
+		-- as the mean of five points `FollowRadius` apart, so the road ignores the smallest bumps
+		-- chosen a piece of `FollowSegment` studs at a time. A random bend that would still leave
+		-- the road more than `FollowMaxOff` off h gives way to one that follows it
+		FollowStep = 8, -- studs
+		FollowSegment = 64, -- studs
+		FollowMaxOff = 10, -- studs
+		FollowAhead = 160, -- studs
+		FollowAheadWeight = 0.5,
+		FollowRadius = 16, -- studs
+		-- ITS ANGLE ACROSS THE MOUNTAIN: from h's slope where the road is heading (the gradient
+		-- `AimSpan` studs across, at each of `AimAt` studs ahead), a leg heads across the local
+		-- fall line, tilted down it just enough to descend `LegGrade` (one per leg, from the
+		-- plan's stream): nearly across where h is steep, more directly down where it is gentle,
+		-- at most `LegTiltMax` off across (straight down the fall line is a sideways stretch's).
+		-- Its bends may stray no further down the slope than keeps the grade within
+		-- `FollowGrade` of `MaxGrade` (never under `AimMinLimit`), so the road can follow h there.
+		-- `DownhillBias` adds the plane's own downhill to h's slope, so flat ground has a way down
+		AimAt = { 60, 180 }, -- studs ahead
+		AimSpan = 60, -- studs
+		LegGrade = { 0.035, 0.07 }, -- descent per stud of road along a leg: 2 to 4 degrees
+		LegTiltMax = 75, -- degrees off straight across
+		FollowGrade = 0.9,
+		AimMinLimit = 12, -- degrees
+		DownhillBias = 0.01,
 		-- THE CUT: under the road and its runoff the ground sits this far below their surface,
 		-- and past the runoff's outer edge it blends back to h over this many studs, at about
 		-- `BlendAngle`, never shorter than `BlendMin` or longer than `BlendMax`

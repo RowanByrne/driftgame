@@ -65,6 +65,17 @@ export type Station = {
 	wr: number,
 	rl: number, -- the runoff alone, left
 	rr: number,
+	-- the centre line `HEIGHT_STEP` studs apart, from `HEIGHT_REACH` before the station to as
+	-- far after it: its height, where it is and which way it heads. A ground run's grade
+	-- changes often and steeply (T-226), so how far along the road a point beside the station
+	-- is, and the height there, are read from these, not carried on from the station alone
+	-- (made the first time a point needs them: a turn's check asks few points of many stations)
+	ys: { number }?,
+	cxs: { number }?,
+	czs: { number }?,
+	fxs: { number }?,
+	fzs: { number }?,
+	spline: Spline.Spline,
 }
 
 export type Context = {
@@ -169,11 +180,50 @@ end
 -- runoff easing flat (as `Spline.terrainY`, from the station's numbers).
 -- `ds` studs along the road from the station: its height and bank carried on (to second
 -- order), since a point beside a bend may be square to road some way along from it.
+local HEIGHT_STEP = 8 -- studs
+local HEIGHT_REACH = 64 -- studs
+local HEIGHT_MID = HEIGHT_REACH // HEIGHT_STEP + 1
+
+-- The centre line kept round a station (`ys`...), made the first time it is asked for.
+local function line(st: Station): Station
+	if st.ys then
+		return st
+	end
+	local spline = st.spline
+	local n = 2 * HEIGHT_MID - 1
+	local ys, cxs, czs, fxs, fzs = table.create(n), table.create(n), table.create(n), table.create(n), table.create(n)
+	local first = spline.firstSample * spline.step
+	for i = 1, n do
+		local at = st.s + (i - HEIGHT_MID) * HEIGHT_STEP
+		-- past either end of the road (or of what is kept of it), carried on straight
+		local c = math.clamp(at, first, spline.length)
+		local cyaw = spline:yawAt(c)
+		local cfx, cfz = -math.sin(cyaw), -math.cos(cyaw)
+		local cx, cz = spline:planAt(c)
+		ys[i] = spline:heightAt(c) + (at - c) * spline:gradeAt(c)
+		cxs[i] = cx + (at - c) * cfx
+		czs[i] = cz + (at - c) * cfz
+		fxs[i] = cfx
+		fzs[i] = cfz
+	end
+	st.ys, st.cxs, st.czs, st.fxs, st.fzs = ys, cxs, czs, fxs, fzs
+	return st
+end
+
 local function surface(st: Station, d: number, ds: number?): number
 	local half = Config.Road.Width * 0.5
 	local yc, tb = st.yc, st.tb
 	if ds then
-		yc += ds * (st.g + 0.5 * st.gr * ds)
+		local q = ds / HEIGHT_STEP + HEIGHT_MID
+		local i = math.floor(q)
+		local ys = line(st).ys :: { number }
+		if i >= 1 and i < #ys then
+			-- between two of the heights kept round the station (a straight line between them
+			-- is within a hundredth of a stud of the road at the steepest change of grade)
+			yc = ys[i] + (ys[i + 1] - ys[i]) * (q - i)
+		else
+			yc += ds * (st.g + 0.5 * st.gr * ds)
+		end
 		tb += ds * st.tbr
 	end
 	local a = math.abs(d)
@@ -233,11 +283,37 @@ local function station(spline: Spline.Spline, s: number, x: number, z: number): 
 		wr = half + rr,
 		rl = rl,
 		rr = rr,
+		spline = spline,
 	}
 	if s < spline.length - KEEP_SHORT then
 		mine[s] = st
 	end
 	return st
+end
+
+-- How far along the road from a station the point (x, z) is square to, from the centre line
+-- kept round it (`cxs`...), starting from the guess `ds0`; nil if not within them.
+local function along(st: Station, x: number, z: number, ds0: number): number?
+	line(st)
+	local cxs, czs, fxs, fzs = st.cxs :: { number }, st.czs :: { number }, st.fxs :: { number }, st.fzs :: { number }
+	local n = #cxs
+	local function g(i: number): number
+		return (x - cxs[i]) * fxs[i] + (z - czs[i]) * fzs[i]
+	end
+	local j = math.clamp(math.floor(ds0 / HEIGHT_STEP) + HEIGHT_MID, 1, n - 1)
+	local gj, gk = g(j), g(j + 1)
+	while gj < 0 and j > 1 do
+		j -= 1
+		gk, gj = gj, g(j)
+	end
+	while gk >= 0 and j < n - 1 do
+		j += 1
+		gj, gk = gk, g(j + 1)
+	end
+	if gj < 0 or gk >= 0 then
+		return nil
+	end
+	return (j - HEIGHT_MID + gj / (gj - gk)) * HEIGHT_STEP
 end
 
 local CELL = 64 -- studs: a point looks at the 25 cells round it (at 32, 81)
@@ -320,7 +396,18 @@ function Ground.at(ctx: Context, x: number, z: number): (number, number, number,
 						if e < bMax then
 							-- how far along the road the point is square to: further than `l` on
 							-- the inside of a bend, less on its outside
-							local ds = l / math.max(1 + st.k * d, 0.2)
+							local c = 1 + st.k * d
+							local ds = l / math.max(c, 0.2)
+							-- from the centre line itself where the point is not right by the
+							-- centre of a tight bend (eased in over `c` 0.15 to 0.3, so nothing
+							-- jumps): the guess above is off by studs far out on a wide runoff,
+							-- which a steep grade turns into height (T-226)
+							if c > 0.15 then
+								local found = along(st, x, z, ds)
+								if found then
+									ds += (found - ds) * smooth(math.min((c - 0.15) / 0.15, 1))
+								end
+							end
 							local T, bw
 							if e <= 0 then
 								e = 0
