@@ -19,9 +19,6 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Config = require(ReplicatedStorage.Shared.Config)
 local Builder = require(script.Parent.Builder)
 local Spline = require(script.Parent.Spline)
-local SurfaceCuts = require(script.Parent.SplineSurfaceCuts)
-local Profile = require(script.Parent.SplineProfile)
-local Hill = require(script.Parent.SplineHill)
 
 local SplineParts = {}
 
@@ -30,106 +27,15 @@ export type Options = {
 	queryable: boolean?, -- solid to rays and sweeps, and tagged as road (default false)
 	barriers: boolean?, -- build the side barriers (default true)
 	yieldEvery: number?, -- slices between task.wait()s; nil never yields
-	terrain: boolean?, -- finite grass, banks and mountains, for the visual fallback
-	sliceMs: number?,
-	cancelled: (() -> boolean)?,
 }
 
 local function point(spline: Spline.Spline, s: number, d: number): Vector3
 	return Vector3.new(spline:surfaceXYZ(s, d))
 end
 
-local function terrain(spline:Spline.Spline,s0:number,s1:number,parent:Instance,o:Options):({BasePart},any)
-	local R,T=Config.Road,Config.Spline.Terrain
-	local out:{BasePart}={}
-	local budget=(o.sliceMs or Config.Spline.Mesh.SliceMs)/1000
-	local started=os.clock()
-	local sliceStart,worst,slices=started,0,1
-	local batch=Instance.new("Folder");batch.Name="TerrainSlices"
-	local function flush()
-		if #batch:GetChildren()>0 then batch.Parent=parent else batch:Destroy() end
-		batch=Instance.new("Folder");batch.Name="TerrainSlices"
-	end
-	local function tick()
-		if o.cancelled and o.cancelled() then batch:Destroy();error("terrain build cancelled") end
-		local now=os.clock()
-		if now-sliceStart>=budget or #batch:GetChildren()>=192 then
-			flush()
-			worst=math.max(worst,os.clock()-sliceStart)
-			task.wait();sliceStart=os.clock();slices+=1
-		end
-	end
-	local triangles=0
-	local function tri(name:string,a:Vector3,b:Vector3,c:Vector3,colour:Color3,mat:Enum.Material,surface:string?)
-		if (b-a):Cross(c-a).Magnitude<1e-7 then return end
-		local made={}
-		Builder.triangleSlab(name,a,b,c,.15,colour,mat,batch,made :: any)
-		for _,p in made do
-			p.CanCollide=false;p.CanTouch=false;p.CanQuery=o.queryable==true
-			if o.queryable and surface then
-				p:AddTag(Config.Drift.SurfaceTag);p:SetAttribute(Config.Drift.SurfaceAttribute,surface)
-			end
-			table.insert(out,p)
-		end
-		triangles+=1;tick()
-	end
-	local function quad(name:string,a:Vector3,b:Vector3,c:Vector3,d:Vector3,colour:Color3,mat:Enum.Material,surface:string?)
-		tri(name.."a",a,b,c,colour,mat,surface)
-		tri(name.."b",a,c,d,colour,mat,surface)
-	end
-	local across,grass=4,10
-	local cuts=SurfaceCuts.sections(spline,s0,s1,.12,12,1,across,grass,tick)
-	local prev,prevD=nil,nil
-	for k,s in cuts do
-		local ds=SurfaceCuts.offsets(spline,s,across,grass)
-		local pts={}
-		for j,d in ds do pts[j]=Vector3.new(spline:terrainXYZ(s,d)) end
-		if prev and prevD then
-			for j=1,#ds-1 do
-				local tarmac=j>grass+1 and j<=grass+1+across
-				local bevel=j==grass+1 or j==grass+across+2
-				local side=if j<grass+2 then -1 else 1
-				local gravel=bevel or (not tarmac and spline:gravelAt((s+cuts[k-1])*.5,side))
-				local colour=if tarmac then R.Colours.Road elseif gravel then T.GravelColour else T.GrassColour
-				local mat=if tarmac then R.RoadMaterial elseif gravel then Enum.Material.Pebble else Enum.Material.Grass
-				quad(`Ground_{k}_{j}`,prev[j],prev[j+1],pts[j+1],pts[j],colour,mat,if tarmac then R.SurfaceTarmac else "grass")
-			end
-		end
-		prev,prevD=pts,ds;tick()
-	end
-	-- Far scenery is coarser; its joins and face caps remain the existing hill's.
-	local faces=cuts -- face feet share the supported ground's exact polyline
-	local hill=Hill.context(spline,s0,s1,Profile.profile,tick)
-	for k=1,#faces-1 do
-		local a,b=faces[k],faces[k+1]
-		if b-a<1e-5 then continue end
-		for _,side in {-1,1} do
-			local kind=spline:edgeAt((a+b)*.5,side)
-			local ra,rb=Hill.ray(hill,a,side),Hill.ray(hill,b,side)
-			local pa=Profile.profile(spline,a,side,kind,Hill.cap(ra))
-			local pb=Profile.profile(spline,b,side,kind,Hill.cap(rb))
-			for j=1,(if kind==Spline.ROCK then #pa-2 else #pa-1) do
-				quad(`Face_{side}_{k}_{j}`,pa[j],pa[j+1],pb[j+1],pb[j],if kind==Spline.ROCK then T.RockColour else T.CliffColour,Enum.Material.Slate)
-			end
-			Hill.finish(hill,ra);Hill.finish(hill,rb)
-			local ea,eb=Hill.faceEnd(ra),Hill.faceEnd(rb)
-			for j=0,3 do
-				local fa,fb=j/4,(j+1)/4
-				quad(`Hill_{side}_{k}_{j}`,Hill.at(ra,ea+(ra.clip-ea)*fa),Hill.at(ra,ea+(ra.clip-ea)*fb),Hill.at(rb,eb+(rb.clip-eb)*fb),Hill.at(rb,eb+(rb.clip-eb)*fa),Config.Spline.Hill.Colour,Enum.Material.Grass)
-			end
-			local skirt=Config.Spline.Hill.Skirt
-			quad(`Skirt_{side}_{k}`,Hill.at(ra,ra.clip),Hill.at(ra,ra.clip+skirt),Hill.at(rb,rb.clip+skirt),Hill.at(rb,rb.clip),Config.Spline.Hill.Colour,Enum.Material.Grass)
-		end
-	end
-	flush();batch:Destroy()
-	worst=math.max(worst,os.clock()-sliceStart)
-	return out,{triangles=triangles,sliceMs=worst*1000,slices=slices,ms=(os.clock()-started)*1000}
-end
-
 -- Lay road from s0 to s1 under `parent`. Returns the parts made.
-function SplineParts.build(spline: Spline.Spline, s0: number, s1: number, parent: Instance, opts: Options?): ({ BasePart },any)
+function SplineParts.build(spline: Spline.Spline, s0: number, s1: number, parent: Instance, opts: Options?): { BasePart }
 	local o: Options = opts or {}
-	if o.terrain then return terrain(spline,s0,s1,parent,o) end
 	local R = Config.Road
 	local D = Config.Drift
 	local step = o.step or 4

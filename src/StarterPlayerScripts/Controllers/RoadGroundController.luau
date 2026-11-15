@@ -43,7 +43,6 @@ local RunService = game:GetService("RunService")
 local Config = require(ReplicatedStorage.Shared.Config)
 local Net = require(ReplicatedStorage.Shared.Net)
 local Spline = require(ReplicatedStorage.Shared.Road.Spline)
-local Boundary = require(ReplicatedStorage.Shared.Road.SplineBoundary)
 
 local DriftFolder = script.Parent.Parent:WaitForChild("Drift")
 local Driver = require(DriftFolder:WaitForChild("Driver")) :: any
@@ -86,7 +85,6 @@ local player = Players.LocalPlayer
 local folder: Folder? = nil
 local parts: { [string]: BasePart } = {}
 local hint: number? = nil
-local ownedSpline:any=nil
 local lastKey = ""
 local stats = {
 	rebuilds = 0,
@@ -156,10 +154,6 @@ local function locate(spline: any, x: number, z: number, reach: number): (number
 	local s, d
 	if hint then
 		s, d = spline:projectFrom(x, z, hint)
-		if spline:hasBiomeGround() then
-			if s and d and math.abs(d)<=reach then hint=s;return s,d end
-			return nil,nil
-		end
 	end
 	if not s or not d or math.abs(d) > reach then
 		s, d = spline:project(x, z, reach)
@@ -189,7 +183,7 @@ local function plan(spline: any, sc: number, dc: number, closingS: number?): { [
 	-- `slope` tile lies along the chord from its inner edge to its outer one instead of on
 	-- the ground's normal: the road's step down to the grass (T-184), a ramp an avatar walks
 	-- up rather than a ledge it has to jump
-	local function tile(key: string, s0: number, s1: number, d0: number, d1: number, material: Enum.Material, slope: boolean?, depth: number?)
+	local function tile(key: string, s0: number, s1: number, d0: number, d1: number, material: Enum.Material, slope: boolean?)
 		if d1 - d0 < 0.05 or s1 - s0 < 0.05 or d1 < lo or d0 > hi then
 			return
 		end
@@ -220,31 +214,6 @@ local function plan(spline: any, sc: number, dc: number, closingS: number?): { [
 		if r.Magnitude < 1e-4 then
 			return
 		end
-		-- Refine a fixed tile only where a bank/turn needs it. The avatar never
-		-- changes the lattice, and no broad tangent box bridges a curved bank.
-		if spline:hasBiomeGround() and not slope and (depth or 0)<5 then
-			local alongError,acrossError=0,0
-			for _,sa in {s0,s1} do
-				for _,da in {d0,d1} do
-					local px,py,pz=spline:terrainXYZ(sa,da)
-					local error=math.abs(py-(y-(n.X*(px-x)+n.Z*(pz-z))/n.Y))
-					if error>0.08 then
-						alongError=math.max(alongError,math.abs(s1-s0))
-						acrossError=math.max(acrossError,math.abs(d1-d0))
-					end
-				end
-			end
-			if math.max(alongError,acrossError)>0 then
-				if acrossError>alongError then
-					tile(key.."a",s0,s1,d0,dm,material,slope,(depth or 0)+1)
-					tile(key.."b",s0,s1,dm,d1,material,slope,(depth or 0)+1)
-				else
-					tile(key.."a",s0,sm,d0,d1,material,slope,(depth or 0)+1)
-					tile(key.."b",sm,s1,d0,d1,material,slope,(depth or 0)+1)
-				end
-				return
-			end
-		end
 		want[key] = {
 			size = Vector3.new(across + OVERLAP, THICK, math.max(along(d0), along(d1)) + OVERLAP),
 			cf = CFrame.fromMatrix(Vector3.new(x, y, z) - n * (THICK * 0.5), r.Unit, n),
@@ -266,31 +235,16 @@ local function plan(spline: any, sc: number, dc: number, closingS: number?): { [
 		if math.max(near, far) < lo - 1 or math.min(near, far) > hi + 1 then
 			return
 		end
-		local ax, _, az = spline:terrainXYZ(a, side * innerA)
-		local bx, _, bz = spline:terrainXYZ(b, side * innerB)
+		local ax, _, az = spline:terrainXYZ(a, side * (innerA + thick * 0.5))
+		local bx, _, bz = spline:terrainXYZ(b, side * (innerB + thick * 0.5))
 		local pa = Vector3.new(ax, spline:terrainY(a, side * innerA), az)
 		local pb = Vector3.new(bx, spline:terrainY(b, side * innerB), bz)
-		if spline:hasBiomeGround() and b-a>.125 then
-			local sm=(a+b)*.5
-			local innerM=if kind=="wall" then half+spline:runoffAt(sm,side) else (innerA+innerB)*.5
-			local pm=Vector3.new(spline:terrainXYZ(sm,side*innerM))
-			if (pm-(pa+pb)*.5).Magnitude>.05 then
-				wall(key.."a",kind,a,sm,side,innerA,innerM,thick,height,material)
-				wall(key.."b",kind,sm,b,side,innerM,innerB,thick,height,material)
-				return
-			end
-		end
 		local chord = pb - pa
 		local len = chord.Magnitude
 		if len < 1e-3 then
 			return
 		end
-		local outward=Vector3.new(-chord.Z,0,chord.X).Unit
-		local yaw=spline:yawAt((a+b)*.5)
-		if outward:Dot(Vector3.new(side*math.cos(yaw),0,-side*math.sin(yaw)))<0 then outward=-outward end
-		-- Thickness is normal to the taper's chord, not to the asphalt. Offset
-		-- along that same normal so the inner face cannot protrude onto grass.
-		local mid = (pa + pb) * 0.5 + outward*(thick*.5) + Vector3.yAxis * ((height - SINK) * 0.5)
+		local mid = (pa + pb) * 0.5 + Vector3.yAxis * ((height - SINK) * 0.5)
 		want[key] = {
 			size = Vector3.new(thick, height + SINK, len + OVERLAP),
 			cf = CFrame.lookAt(mid, mid + chord, Vector3.yAxis),
@@ -302,12 +256,6 @@ local function plan(spline: any, sc: number, dc: number, closingS: number?): { [
 	-- the stretches of [s0, s1] with one edge kind each on `side`: an edge changes only at
 	-- a section's end, found to a few hundredths of a stud
 	local function edgeSpans(s0: number, s1: number, side: number): { { number } }
-		if spline:hasBiomeGround() then
-			local out={}
-			local points=Boundary.points(spline,s0,s1)
-			for i=1,#points-1 do table.insert(out,{points[i],points[i+1],spline:edgeAt((points[i]+points[i+1])*.5,side)}) end
-			return out
-		end
 		local k0, k1 = spline:edgeAt(s0, side), spline:edgeAt(s1, side)
 		if k0 == k1 then
 			return { { s0, s1, k0 } }
@@ -366,7 +314,7 @@ local function plan(spline: any, sc: number, dc: number, closingS: number?): { [
 				local a, b, kind = span[1], span[2], span[3]
 				local wa, wb = spline:runoffAt(a, side), spline:runoffAt(b, side)
 				local key = `{tag}{n}:{g}`
-				if kind == Spline.CLIFF or spline:hasBiomeGround() then
+				if kind == Spline.CLIFF then
 					-- ground to the lip and not a hair past it: whole tiles as far as the
 					-- narrowest the grass gets here, then the rest in strips
 					local wMin = math.min(wa, wb, spline:runoffAt((a + b) * 0.5, side))
@@ -380,10 +328,6 @@ local function plan(spline: any, sc: number, dc: number, closingS: number?): { [
 						local sb = a + (b - a) * i / strips
 						local w = math.min(spline:runoffAt(sa, side), spline:runoffAt(sb, side))
 						grass(`l{key}:{i}`, sa, sb, full * PIECE, w)
-					end
-					if kind~=Spline.CLIFF then
-						local height=spline:boundaryHeight((a+b)*.5,side)
-						if height>0 then wall(`w{key}`,"wall",a,b,side,half+wa,half+wb,ROCK_THICK,height,Enum.Material.Rock) end
 					end
 				else
 					-- ground out under the wall, then the wall on the grass's outer edge
@@ -415,20 +359,10 @@ local function plan(spline: any, sc: number, dc: number, closingS: number?): { [
 		local wider = math.max(spline:runoffAt(closingS, -1), spline:runoffAt(closingS, 1)) + T.EdgeDepth
 		local wide = R.Width + 2 * wider
 		local bankRise = wide * 0.5 * math.abs(math.tan(spline:bankAt(closingS)))
-		local bottom=y-SINK-bankRise
-		local top=y+CLOSING_WALL+bankRise
-		if spline:hasBiomeGround() then
-			for _,side in {-1,1} do
-				local edge=half+spline:runoffAt(closingS,side)
-				for t=0,1,.25 do
-					local ground=spline:terrainY(closingS,side*edge*t)
-					bottom,top=math.min(bottom,ground-SINK),math.max(top,ground+CLOSING_WALL)
-				end
-			end
-		end
+		local height = CLOSING_WALL + 2 * bankRise
 		want.closing = {
-			size = Vector3.new(wide, top-bottom, 1),
-			cf = CFrame.new(x, (bottom+top)*.5, z) * CFrame.Angles(0, spline:yawAt(closingS), 0) * CFrame.new(0, 0, 0.5),
+			size = Vector3.new(wide, height + SINK, 1),
+			cf = CFrame.new(x, y + (CLOSING_WALL - SINK) * 0.5, z) * CFrame.Angles(0, spline:yawAt(closingS), 0) * CFrame.new(0, 0, 0.5),
 			material = Enum.Material.SmoothPlastic,
 			kind = "closing",
 		}
@@ -462,7 +396,6 @@ local function apply(want: { [string]: Spec })
 			parts[key] = p
 		end
 		local part = p :: BasePart
-		part:SetAttribute("GroundKind",spec.kind)
 		if part.Size ~= spec.size then
 			part.Size = spec.size
 		end
@@ -485,7 +418,6 @@ end
 
 local function frame()
 	local spline, closingS = SplineRoadController:Road()
-	if spline~=ownedSpline then ownedSpline=spline;hint=nil;clear() end
 	local root = if spline then walkingRoot() else nil
 	stats.out = root ~= nil
 	if not spline or not root then
@@ -495,12 +427,8 @@ local function frame()
 		return
 	end
 	local R = Config.Road
-	local reach = R.Width * 0.5 + math.max(Config.Spline.Terrain.RunoffMax,if spline:hasBiomeGround() then Config.Spline.Biomes.Width[1] else 0) + ACROSS
+	local reach = R.Width * 0.5 + Config.Spline.Terrain.RunoffMax + ACROSS
 	local pos = root.Position
-	if not hint and spline:hasBiomeGround() then
-		local carSpline,carHint=DriftController:SplineHint()
-		if carSpline==spline then hint=carHint end
-	end
 	local s, d = locate(spline, pos.X, pos.Z, reach)
 	if not s or not d then
 		stats.located = false
@@ -536,11 +464,6 @@ function RoadGroundController:Start()
 		end
 	end)
 	Net.event("CarSpawn").OnClientEvent:Connect(function()
-		hint=nil
-		clear()
-	end)
-	Net.event("CarRespawn").OnClientEvent:Connect(function()
-		hint=nil
 		clear()
 	end)
 	-- Before the drift step (`Input + 1`), so a car that starts driving this frame has
