@@ -133,7 +133,7 @@ export type Spline = typeof(setmetatable(
 		fall: number?,
 		-- the ground-first trial's mountain (`Road/Ground`, T-218): set in a "mesh" or
 		-- "terrain" run, by the generator and by a client's replay; nil otherwise
-		ground: any?,
+		mountain: any?,
 	},
 	Spline
 ))
@@ -257,7 +257,7 @@ function Spline.new(origin: Origin?): Spline
 		groveR = { a = {}, b = {}, seed = {} },
 		grand = nil,
 		fall = nil :: number?,
-		ground = nil :: any?,
+		mountain = nil :: any?,
 	}, Spline)
 	return self
 end

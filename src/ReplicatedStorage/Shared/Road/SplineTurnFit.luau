@@ -11,7 +11,7 @@ export type Reading = {ok:boolean, score:number, view:number, cut:number, fill:n
 function Fit.measure(sp: Spline.Spline, s0:number, s1:number, startFlip:number, flips:{{number}}): Reading
 	local M, H = Config.Spline.Mountain, Config.Spline.Hill
 	-- a ground run (T-218) checks the mountain the road is cut into, not today's hillside
-	local field = sp.ground
+	local field = sp.mountain
 	local ctx = if field then nil else Hill.context(sp, s0, s1, Profile.profile)
 	local slope = if field then field.slope else H.Slope
 	local half = Config.Road.Width * .5

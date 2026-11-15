@@ -266,7 +266,7 @@ function SplineGen.new(seed: number, origin: Spline.Origin?, clearOverride: numb
 	spline.fall = self.fall -- for the hillside's slope (T-190)
 	if groundMode == "mesh" or groundMode == "terrain" then
 		self.ground = Ground.field(seed, spline.origin, self.fall)
-		spline.ground = self.ground
+		spline.mountain = self.ground
 	end
 	self.legSide = -q
 	self.sense = if self.mode == "ascent" then -1 else 1
@@ -1420,7 +1420,7 @@ end
 local function forkSpline(source: Spline.Spline): Spline.Spline
 	local out=table.clone(source)
 	for k,v in source do
-		if type(v)=="table" and k~="X" and k~="Z" and k~="hash" and k~="ground" then out[k]=copyTables(v) end
+		if type(v)=="table" and k~="X" and k~="Z" and k~="hash" and k~="mountain" then out[k]=copyTables(v) end
 	end
 	out.X=setmetatable({}, {__index=source.X})
 	out.Z=setmetatable({}, {__index=source.Z})

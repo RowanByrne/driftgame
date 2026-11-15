@@ -114,7 +114,7 @@ local function run(check, opts)
 		gen:extendTo(length)
 		local sp = gen.spline
 		local field = gen.ground
-		check(`seed {seed}: a ground run carries its mountain`, field ~= nil and sp.ground == field)
+		check(`seed {seed}: a ground run carries its mountain`, field ~= nil and sp.mountain == field)
 		if not field then
 			continue
 		end
@@ -141,7 +141,7 @@ local function run(check, opts)
 
 		-- a client's replay, with its own field from the start message's numbers
 		local copy = SplineGen.replay(gen.sections, sp.origin, gen.fall)
-		copy.ground = Ground.field(seed, copy.origin, gen.fall)
+		copy.mountain = Ground.field(seed, copy.origin, gen.fall)
 
 		-- box by box along the road, as a chunk would be drawn
 		local step = 400
@@ -154,7 +154,7 @@ local function run(check, opts)
 			local ctx = Ground.context(field, sp, x0, z0, x1, z1)
 			totals.ctxMs += (os.clock() - t0) * 1000
 			totals.ctxN += 1
-			local cctx = Ground.context(copy.ground, copy, x0, z0, x1, z1)
+			local cctx = Ground.context(copy.mountain, copy, x0, z0, x1, z1)
 
 			-- no ground above the road's surface or its runoff, and the edge meets it
 			for s = s0, s0 + step, 8 do

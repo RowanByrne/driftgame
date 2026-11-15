@@ -104,7 +104,7 @@ function SplineRoadController:_on(message: any)
 		-- the ground-first trial (T-218): the same mountain the server laid the road on
 		groundMode = if Ground.valid(message.ground) then message.ground else "current"
 		if groundMode ~= "current" and fall and type(message.seed) == "number" then
-			built.ground = Ground.field(message.seed, built.origin, fall)
+			built.mountain = Ground.field(message.seed, built.origin, fall)
 		else
 			groundMode = "current"
 		end
