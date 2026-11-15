@@ -1,6 +1,6 @@
 # Feature: Ground-first mountain trial
 
-**Status:** building (`T-218`): plan approved 2026-11-15; step 1 (`T-219`, the shared shape and road cut) and step 2 (`T-220`, option 1, our own mesh) built. **Owner task:** `T-218`.
+**Status:** building (`T-218`): plan approved 2026-11-15; step 1 (`T-219`, the shared shape and road cut) step 2 (`T-220`, option 1, our own mesh) and step 3 (`T-224`, option 2, Roblox Terrain) built; awaiting the user's pick. **Owner task:** `T-218`.
 
 ## Goal
 
@@ -120,3 +120,31 @@ The binding limit for this option. A client holds only so many mesh vertices: ab
 - **To the car nothing changed:** on the uphill side it still meets an invisible wall at the runoff's edge, where the rock face was, and on the downhill side it still falls past the edge, where the drop was, though ground is now drawn there.
 - A ground run only descends (step 1), and the cuts can be very deep (up to 140 studs).
 - Fine detail reaches 256 studs round the car; past that the 32-stud grid's road margins are wider (a 20-stud ditch).
+
+## As built (step 3, T-224): option 2, Roblox Terrain
+
+`Drift/GroundTerrainView` writes it; numbers in `Config.Spline.Ground` (`Terrain...`, `DrawTo`, `KeepTo`). Console: `ground terrain`, then `start-run`. The road is drawn as in option 1 (no faces, a skirt).
+
+- **The same ground written as Roblox's smooth terrain** on the client, in 256-stud chunks of 4-stud voxels, nearest the car first, out to 768 studs, cleared past 1 024, and rewritten when new road comes into one. Grass, rock past 45 degrees (Roblox's own textures, tinted to the programmer colours), dirt under the grass. Solid 8 studs under each chunk's lowest point.
+- **Round the road** it sinks 2.5 studs under the road and runoff and is held that far below the edge within 6 studs of it (smooth terrain rounds off between voxels). Checked: of 1 134 rays down onto the tarmac and runoff over the first 1 000 studs, none hit terrain above the road; the highest is 0.55 studs below it.
+- Its colours are put back, and every voxel it wrote cleared, when the run ends (checked: none left round the start).
+
+### What it costs (measured, DR-Lane3)
+
+- **Each write costs the next frame 16 to 34 ms, whatever its size** (64, 128 or 256 studs), so chunks are 256 studs (not the planned 128) and at least 0.1 s apart. The script's part is small: a chunk is worked out in under 30 ms, at most 4.2 ms a frame, and written in under 10 ms.
+- **The terrain itself costs frames by how much of it there is, more while the camera moves.** With a ring out to 1 024 studs and nothing being written: 15 ms a frame standing still and 34 ms moving, on a busy PC; with it cleared, 12 ms. So it reaches 768 studs, not 1 024 like option 1; the horizon covers the rest.
+- **Streaming 5 000 studs at 100 studs a second,** seed 31337, back to back in one session: today's ground, mean 9.3 ms, p99 21.8, 72 of 5 392 frames over 20 ms; terrain, mean 10.7 ms, p99 29.7, 190 of 4 653 over 20 (worst 308). 142 chunks written, 105 cleared; the first ring (28 chunks) took 6.4 s.
+
+## The two side by side
+
+| | Option 1, our own mesh | Option 2, Roblox Terrain |
+|---|---|---|
+| Look | Smooth-shaded grid, two greens and rock grey on Roblox's grass material | Roblox's terrain grass and rock textures, voxel-smooth |
+| Drawn to | About 1 000 studs (8-stud detail to 256) | 768 studs (4-stud voxels throughout) |
+| Frames, streaming at 100 studs/s | +0.6 ms mean; slow frames 1.6% vs 0.9% | +1.5 ms mean; slow frames 4.1% vs 1.3% |
+| Standing still | No measurable cost | About 15 ms a frame with a 1 024 ring (busy PC) |
+| Budget | 16 400 mesh vertices of a client's ~35 000; the road copied to fixed-size meshes to fit | No mesh budget; memory in voxels |
+| Near the road | Cutting starts a cell (8 studs) out, a shallow ditch | Cutting starts within 6 studs |
+| Later work on top (walls, rails, trees) | Our own geometry: anything | Terrain tools, and the car could later drive on it |
+
+Both: the car still meets an invisible wall at the uphill runoff edge and falls past the downhill one (its maths is unchanged), a ground run only descends, and the cuts can be up to 140 studs deep.

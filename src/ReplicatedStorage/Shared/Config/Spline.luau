@@ -517,6 +517,29 @@ local Spline = {
 		GrassColours = { Color3.fromRGB(86, 132, 62), Color3.fromRGB(70, 116, 54) },
 		GroundRockColour = Color3.fromRGB(116, 110, 102),
 		UVStuds = 48, -- studs one tile of the ground's material covers
+
+		-- OPTION 2, ROBLOX TERRAIN ("terrain", `Drift/GroundTerrainView`): the same ground written
+		-- as Roblox's own terrain on this device, in square chunks of `TerrainChunk` studs (4-stud
+		-- voxels), nearest the car first, out to `DrawTo`, and cleared past `KeepTo`. A chunk is
+		-- rewritten when new road comes into it. Under the road and runoff it sinks
+		-- `TerrainSink` (smooth terrain rounds off between voxels), and within `TerrainClamp` of
+		-- a runoff's edge it is held that far below the edge. Solid `TerrainDepth` studs under
+		-- the chunk's lowest point. Grass, rock past `RockAngle`; programmer colours below
+		-- 256, not 128: each write costs the next frame about the same whatever its size (16 to
+		-- 34 ms, measured), so fewer, bigger writes
+		TerrainChunk = 256, -- studs
+		-- 768, not 1 024 as option 1: terrain costs frames by how much of it there is, more as the
+		-- camera moves (measured: a 1 024 ring, nothing being written, 15 ms a frame standing and
+		-- 34 moving on a busy PC). The horizon covers the rest
+		DrawTo = 768, -- studs from the car
+		KeepTo = 1024, -- studs
+		TerrainSink = 2.5, -- studs
+		TerrainClamp = 6, -- studs
+		TerrainDepth = 8, -- studs
+		TerrainSliceMs = 2, -- ms of building a frame (a chunk's one write can overrun it)
+		TerrainWriteGap = 0.1, -- seconds at least between two writes, so their slow frames never bunch up
+		TerrainGrassColour = Color3.fromRGB(86, 132, 62),
+		TerrainRockColour = Color3.fromRGB(116, 110, 102),
 	},
 
 	-- --------------------------------------------------------------- the mesh (step 3)

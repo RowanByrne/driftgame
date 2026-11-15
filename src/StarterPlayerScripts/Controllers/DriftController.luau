@@ -52,6 +52,7 @@ local World = require(DriftFolder.World)
 local SplineWorld = require(DriftFolder.SplineWorld)
 local SplineRoadView = require(DriftFolder.SplineRoadView)
 local GroundMeshView = require(DriftFolder.GroundMeshView)
+local GroundTerrainView = require(DriftFolder.GroundTerrainView)
 local HorizonView = require(DriftFolder.HorizonView)
 
 local CarInputController = require(script.Parent.CarInputController)
@@ -320,9 +321,12 @@ function DriftController:UseSpline(spline: any?)
 	self.splineClosing = nil
 	if spline then
 		self.splineView = SplineRoadView.new(spline)
-		-- the ground-first trial (T-218): option 1 draws the mountain as its own meshes
+		-- the ground-first trial (T-218): option 1 draws the mountain as its own meshes,
+		-- option 2 writes it as Roblox's terrain
 		if spline.mountain and spline.mountain.mode == "mesh" then
 			self.groundView = GroundMeshView.new(spline)
+		elseif spline.mountain and spline.mountain.mode == "terrain" then
+			self.groundView = GroundTerrainView.new(spline)
 		end
 		-- the mountains round the run, at the height of the road's start (T-150)
 		self.horizon = HorizonView.new(spline.origin.y)
@@ -357,7 +361,8 @@ function DriftController:DebugHorizon(resetCost: boolean?)
 	return out
 end
 
--- The ground-first trial's drawn ground (T-218), when this run has one.
+-- The ground-first trial's drawn ground (T-218), when this run has one: option 1's grids
+-- or option 2's terrain chunks.
 function DriftController:DebugGroundView(paused: boolean?)
 	local view = self.groundView
 	if not view then
