@@ -31,9 +31,9 @@ sample step.
 
 | | Store id | Name, creator | Length | Steadiness | Tonality | Seam | Level match | Store file SHA-256 | Preview SHA-256 | Status |
 |---|---|---|---|---|---|---|---|---|---|---|
-| A | `136328830019913` | "Gravel Skid Loop v2", f1rstn1ghtkn1ght. Described as "tyres sliding sideways on gravel, loop" | 7.30 s | 0.14 | 15.2 dB | 1.1x | +3.6 dB | `8C46A8A0DF58E0AC2C7DE020DFF742041BCB349B3F3DD84AA30DC2490FC889D4` | `AE46AF144C6C1001A10EB941EB17AA2832F69FB0FF8391A0BEE90722F2EF900D` | candidate |
-| B | `113023380554627` | "dirt", clean_chips0. Stereo. Its loudness swells and dips more than A's | 7.65 s | 0.38 | 16.3 dB | 1.8x | +13.1 dB | `5C2DD3AA02C7A1FB0215346558D07E260AF1F3D15340C907FC744A635F313BEC` | `3AB546108C56BD31EAE7667F4C01759D49945D12E251395480C34A4E5D389DA6` | candidate |
-| C | `134976342848304` | "WheelsSandstone", shzexi9e3ca. A wheel rolling on rough ground more than a slide; its seam jumps (10.7x) and its tail is quieter than its head, so a faint tick each 3.7 s is possible | 3.68 s | 0.26 | 13.0 dB | 10.7x | +14.8 dB | `02092695D39196B2F915EE4CDBBF9D6A175448BC9A8A2C9F01D3CE0FE76210EE` | `AB3DB0D40EA5D4D3476A31919882BC56A9CA721901275D457AC0A9A8BD9A2174` | candidate |
+| A | `136328830019913` | "Gravel Skid Loop v2", f1rstn1ghtkn1ght. Described as "tyres sliding sideways on gravel, loop" | 7.30 s | 0.14 | 15.2 dB | 1.1x | +3.6 dB | `8C46A8A0DF58E0AC2C7DE020DFF742041BCB349B3F3DD84AA30DC2490FC889D4` | `AE46AF144C6C1001A10EB941EB17AA2832F69FB0FF8391A0BEE90722F2EF900D` | rejected |
+| B | `113023380554627` | "dirt", clean_chips0. Stereo. Its loudness swells and dips more than A's | 7.65 s | 0.38 | 16.3 dB | 1.8x | +13.1 dB | `5C2DD3AA02C7A1FB0215346558D07E260AF1F3D15340C907FC744A635F313BEC` | `3AB546108C56BD31EAE7667F4C01759D49945D12E251395480C34A4E5D389DA6` | **approved** |
+| C | `134976342848304` | "WheelsSandstone", shzexi9e3ca. A wheel rolling on rough ground more than a slide; its seam jumps (10.7x) and its tail is quieter than its head, so a faint tick each 3.7 s is possible | 3.68 s | 0.26 | 13.0 dB | 10.7x | +14.8 dB | `02092695D39196B2F915EE4CDBBF9D6A175448BC9A8A2C9F01D3CE0FE76210EE` | `AB3DB0D40EA5D4D3476A31919882BC56A9CA721901275D457AC0A9A8BD9A2174` | rejected |
 
 Reference: today's squeal, `124978127809544` ("tyre_slide", knightracers), preview SHA-256
 `3BA7085273E5C05BB95CAAF4173E089600C98E7630F34030C729C945D271412C`.
@@ -54,4 +54,13 @@ Reference: today's squeal, `124978127809544` ("tyre_slide", knightracers), previ
 
 ## The pick
 
-Waiting on the user (T-222).
+**B, "dirt" (`113023380554627`), picked by the user on 2026-11-15.** Their answer on the card: "B: Loose
+dirt". A and C are rejected. A Creator Store pick, so there is no master in git and nothing is
+uploaded: the id is in `Config.Fx.Skid.SoundIds.dirt`.
+
+**Its level in game, measured:** `ClipVolume.dirt` = **3.2**, not the 4.5 that matches the squeal's
+average loudness. B swells and dips (its 100 ms loudness spans 15 dB), and at 4.5 its loudest 100 ms
+at the top of the curve is -15.9 dBFS, over the engine bed (-17.4 dBFS: loops at RMS 0.16, volume
+0.84). At 3.2 its loudest moment is level with the squeal's (-18.8 dBFS), its average 3 dB under the
+squeal's, and its sample peak -6.8 dBFS. The instance volume tops out at 0.34 x 3.2 = 1.09, far under
+Roblox's cap of 10.
