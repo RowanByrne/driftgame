@@ -69,11 +69,13 @@ export type Station = {
 	-- far after it: its height, where it is and which way it heads. A ground run's grade
 	-- changes often and steeply (T-226), so how far along the road a point beside the station
 	-- is, and the height there, are read from these, not carried on from the station alone
-	ys: { number },
-	cxs: { number },
-	czs: { number },
-	fxs: { number },
-	fzs: { number },
+	-- (made the first time a point needs them: a turn's check asks few points of many stations)
+	ys: { number }?,
+	cxs: { number }?,
+	czs: { number }?,
+	fxs: { number }?,
+	fzs: { number }?,
+	spline: Spline.Spline,
 }
 
 export type Context = {
@@ -182,13 +184,39 @@ local HEIGHT_STEP = 8 -- studs
 local HEIGHT_REACH = 48 -- studs
 local HEIGHT_MID = HEIGHT_REACH // HEIGHT_STEP + 1
 
+-- The centre line kept round a station (`ys`...), made the first time it is asked for.
+local function line(st: Station): Station
+	if st.ys then
+		return st
+	end
+	local spline = st.spline
+	local n = 2 * HEIGHT_MID - 1
+	local ys, cxs, czs, fxs, fzs = table.create(n), table.create(n), table.create(n), table.create(n), table.create(n)
+	local first = spline.firstSample * spline.step
+	for i = 1, n do
+		local at = st.s + (i - HEIGHT_MID) * HEIGHT_STEP
+		-- past either end of the road (or of what is kept of it), carried on straight
+		local c = math.clamp(at, first, spline.length)
+		local cyaw = spline:yawAt(c)
+		local cfx, cfz = -math.sin(cyaw), -math.cos(cyaw)
+		local cx, cz = spline:planAt(c)
+		ys[i] = spline:heightAt(c) + (at - c) * spline:gradeAt(c)
+		cxs[i] = cx + (at - c) * cfx
+		czs[i] = cz + (at - c) * cfz
+		fxs[i] = cfx
+		fzs[i] = cfz
+	end
+	st.ys, st.cxs, st.czs, st.fxs, st.fzs = ys, cxs, czs, fxs, fzs
+	return st
+end
+
 local function surface(st: Station, d: number, ds: number?): number
 	local half = Config.Road.Width * 0.5
 	local yc, tb = st.yc, st.tb
 	if ds then
 		local q = ds / HEIGHT_STEP + HEIGHT_MID
 		local i = math.floor(q)
-		local ys = st.ys
+		local ys = line(st).ys :: { number }
 		if i >= 1 and i < #ys then
 			-- between two of the heights kept round the station (a straight line between them
 			-- is within a hundredth of a stud of the road at the steepest change of grade)
@@ -255,26 +283,8 @@ local function station(spline: Spline.Spline, s: number, x: number, z: number): 
 		wr = half + rr,
 		rl = rl,
 		rr = rr,
-		ys = table.create(2 * HEIGHT_MID - 1),
-		cxs = table.create(2 * HEIGHT_MID - 1),
-		czs = table.create(2 * HEIGHT_MID - 1),
-		fxs = table.create(2 * HEIGHT_MID - 1),
-		fzs = table.create(2 * HEIGHT_MID - 1),
+		spline = spline,
 	}
-	local first = spline.firstSample * spline.step
-	for i = 1, 2 * HEIGHT_MID - 1 do
-		local at = s + (i - HEIGHT_MID) * HEIGHT_STEP
-		-- past either end of the road (or of what is kept of it), carried on straight
-		local c = math.clamp(at, first, spline.length)
-		local cyaw = spline:yawAt(c)
-		local cfx, cfz = -math.sin(cyaw), -math.cos(cyaw)
-		local cx, cz = spline:planAt(c)
-		st.ys[i] = spline:heightAt(c) + (at - c) * spline:gradeAt(c)
-		st.cxs[i] = cx + (at - c) * cfx
-		st.czs[i] = cz + (at - c) * cfz
-		st.fxs[i] = cfx
-		st.fzs[i] = cfz
-	end
 	if s < spline.length - KEEP_SHORT then
 		mine[s] = st
 	end
@@ -284,7 +294,8 @@ end
 -- How far along the road from a station the point (x, z) is square to, from the centre line
 -- kept round it (`cxs`...), starting from the guess `ds0`; nil if not within them.
 local function along(st: Station, x: number, z: number, ds0: number): number?
-	local cxs, czs, fxs, fzs = st.cxs, st.czs, st.fxs, st.fzs
+	line(st)
+	local cxs, czs, fxs, fzs = st.cxs :: { number }, st.czs :: { number }, st.fxs :: { number }, st.fzs :: { number }
 	local n = #cxs
 	local function g(i: number): number
 		return (x - cxs[i]) * fxs[i] + (z - czs[i]) * fzs[i]
