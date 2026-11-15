@@ -345,7 +345,17 @@ The paired banks now share actual accepted road-cell and terrain-track stations.
 Extra rows bound curved-bank sag without altering frozen global road footprints.
 A finite curve/chord gap can provide grass support only where the outward bank
 ray enters that opening's supported triangle and its retained closure scalar.
-Natural generation, walking collider/render agreement and final timing remain
-gates before enabling this. Historical blockout timings above do not establish
-a pass for the final terrain: whole-mesh and generation timing flags from the
-wider T-212 trials remain open.
+The frozen candidate was checked in Lane5 on2026-11-15. Three actual Roblox
+150k descent runs published23 connectors with matching cold replay, no missing
+sampled support, no caught publication errors and no later-road overlaps.
+Bounded ascent/traverse runs also completed; they published no connectors, so
+they do not prove natural connector coverage in those modes. Real Mesh/Parts
+replacement, colours, retired walking slabs and staged cancellation pass.
+
+Performance still blocks enabling it: large optional field plans stalled for
+1–4.1seconds against20ms. The separate whole-mesh check also exceeded40ms
+(mean42.16, worst57.45), a live Mesh slice reached9.51ms against9, and complete
+Parts teardown took331ms. The corrected fallback publication was6.83ms within
+its9ms guard. Offline bounds and early-clearance improvements are being checked;
+those have not yet cleared the live gates. Historical blockout timings above do
+not establish a pass for this final terrain.

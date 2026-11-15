@@ -162,6 +162,14 @@ function Tests.run(_self,subject)
 	Infield.add(Infield.new(),shallow,true);mutableRows[2].b={-40,2,-20}
 	check("a shallow frozen caller cannot reuse stale compiled geometry",not pcall(function()Infield.add(Infield.new(),shallow)end),
 		"only the module's own deep frozen canonical patches acquire a topology certificate")
+	local measured=Infield.new(16);local measuredPatch=Infield.patch("profiled floor",rows(0,2));local counters={}
+	Infield.add(measured,measuredPatch,nil,counters)
+	local reconciled=counters.triangles==4 and counters.rows==2 and counters.self.pairs>0
+		and counters.self.pairs==counters.self.boxSkips+counters.self.sat and counters.old.pairs==0
+	local duplicate=Infield.add(measured,measuredPatch,nil,counters)
+	check("per-call profiling cannot retain stale self work on an idempotent replay",reconciled and not duplicate and counters.duplicate
+		and counters.cached and counters.self.pairs==0 and counters.old.pairs==0 and Infield.sample(measured,20,-10).y==1,
+		"fresh pair counts reconcile; reusing the record for a duplicate clears its work without changing support")
 	local collarRows=rows(25,25)
 	for _,row in collarRows do row.da=.3;row.db=.3 end
 	local collar=Infield.new();Infield.add(collar,Infield.patch("collar",collarRows))

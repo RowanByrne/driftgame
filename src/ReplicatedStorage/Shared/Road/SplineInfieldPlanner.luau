@@ -56,12 +56,15 @@ function Planner.plan(sp:any,a0:number,a1:number,b0:number,b1:number,corridors:C
 		if math.abs(da)>.5+1e-6 or math.abs(db)>.5+1e-6 then return nil end
 		return {sa=sa,sb=sb,sideA=sideA,sideB=sideB,a={x,y,z},b={xx,yy,zz},weight=weight,da=math.clamp(da,-.5,.5),db=math.clamp(db,-.5,.5)}
 	end
+	-- Every departure probe searches the same frozen approach stations.
+	local approach={}
+	for s=a0,a1,32 do local x,z=sp:planAt(s);table.insert(approach,{s=s,x=x,z=z}) end
 	local function row(sb:number):Infield.Row?
 		local bx,bz=sp:planAt(sb)
 		local best,seed=math.huge,nil
-		for s=a0,a1,32 do
-			local x,z=sp:planAt(s);local d=(x-bx)^2+(z-bz)^2
-			if d<best then best,seed=d,s end
+		for _,point in approach do
+			local d=(point.x-bx)^2+(point.z-bz)^2
+			if d<best then best,seed=d,point.s end
 		end
 		if not seed then return nil end
 		local sa,d=sp:projectFrom(bx,bz,seed)
@@ -241,11 +244,25 @@ function Planner.plan(sp:any,a0:number,a1:number,b0:number,b1:number,corridors:C
 		for i=#backward,1,-1 do table.insert(rows,backward[i]) end
 		local common=refine(rows);if not common then continue end;rows=common
 		local precise=refinedGround(rows);if not precise then continue end
-		ctx=ctx or Hill.context(sp,a0,b1,Profile.draw,nil,true)
 		local start,ending=rows[1],rows[#rows]
 		local length=math.min(ending.sa-start.sa,start.sb-ending.sb)
 		local fade=math.min(C.EndBlend,length*.25)
 		if length<C.MinSpan then continue end
+		-- XZ reservations do not depend on floor heights or opening weights.
+		-- Decline occupied geometry before constructing any hillside baseline.
+		local reserved={};local clear=true
+		for i=1,#rows-1 do
+			local cell=Planner.cell(rows[i],rows[i+1]);table.insert(reserved,cell)
+			if corridors then
+				for _,old in corridors:near(cell,0,0) do
+					if not known[old] and Corridor.overlap(cell,old,0) then clear=false;break end
+				end
+			end
+			if clear then for _,old in precise:near(cell,0,0) do if Corridor.overlap(cell,old,0) then clear=false;break end end end
+			if not clear then break end
+		end
+		if not clear then continue end
+		ctx=ctx or Hill.context(sp,a0,b1,Profile.draw,nil,true)
 		local baselineValid=true
 		for _,r in rows do
 			local distance=math.min(r.sa-start.sa,ending.sa-r.sa,start.sb-r.sb,r.sb-ending.sb)
@@ -275,20 +292,6 @@ function Planner.plan(sp:any,a0:number,a1:number,b0:number,b1:number,corridors:C
 				end
 			end
 		end
-		local reserved={};local clear=true
-		for i=1,#rows-1 do
-			local cell=Planner.cell(rows[i],rows[i+1]);table.insert(reserved,cell)
-			if corridors then
-				for _,old in corridors:near(cell,0,0) do
-					-- The attached banks may touch this boundary, but no occupied
-					-- ground, including a bulge in either arm, may enter its interior.
-					if not known[old] and Corridor.overlap(cell,old,0) then clear=false;break end
-				end
-			end
-			if clear then for _,old in precise:near(cell,0,0) do if Corridor.overlap(cell,old,0) then clear=false;break end end end
-			if not clear then break end
-		end
-		if not clear then continue end
 		local id=`infield:{start.sa}:{ending.sa}:{ending.sb}:{start.sb}`
 		local patch=Infield.patch(id,rows)
 		local ok=pcall(function()

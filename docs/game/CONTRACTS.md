@@ -883,6 +883,21 @@ to `Spline.addInfields`; direct additions also normalize their batch once.
 Every existing preflight/validation/publication check remains. Received sections
 reuse their own certified topology without sharing the sender's cache or mutable
 wire tables, and the incoming section data is never rewritten.
+Compiled triangles retain immutable XZ bounds over their actual three vertices.
+Disjoint/touching bounds skip the unchanged triangle overlap SAT; cross-patch
+height compatibility still checks every possible touch within its existing
+1e-7 margin. `SplineInfield.add(index,patch,validateOnly?,profile?)` optionally
+fills a diagnostic record for a validation traversal: rows/triangles, cache and
+destination spacing, plus separate self/old pair, box-skip and exact-SAT counts.
+The record is caller-owned, never serialized and never changes a decision.
+Reinserting the identical canonical patch remains an immediate idempotent no-op.
+
+Planner XZ reservations, precise attached-bank checks and minimum span are
+checked before constructing the hillside baseline. Those checks use the same
+frozen bank positions and strict SAT and cannot depend on final floor height or
+opening weight. The coarse approach search also reuses the same ordered frozen
+seed positions across departure probes; its seed choices and projection remain
+unchanged.
 `SplineInfieldTests.curvedBanks`
 checks contact, credit, finite ends and retirement; actual collider/render and
 natural-generation proof remain required before enabling generated fields.

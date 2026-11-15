@@ -11,7 +11,8 @@ export type Point={number}
 export type Row={sa:number,sb:number,sideA:number,sideB:number,a:Point,b:Point,weight:number,da:number?,db:number?,floor:{number}?}
 export type Patch={id:string,rows:{Row}}
 type Vertex={p:Point,t:number,u:number,q:number}
-type Triangle={a:Vertex,b:Vertex,c:Vertex,normal:Vector3,det:number,patch:string,sa0:number,sa1:number,sb0:number,sb1:number,supported:boolean}
+type Triangle={a:Vertex,b:Vertex,c:Vertex,normal:Vector3,det:number,patch:string,sa0:number,sa1:number,sb0:number,sb1:number,supported:boolean,
+	minX:number,maxX:number,minZ:number,maxZ:number}
 type Opening={patch:Patch,bank:string,first:number,last:number}
 type Compiled={triangles:{Triangle},banks:{A:{Triangle},B:{Triangle}}}
 -- Only patch() can certify a deeply frozen canonical input. Cached geometry
@@ -107,32 +108,41 @@ local function keys(index:{cell:number},triangle:Triangle):{string}
 	return out
 end
 
-local function overlaps(a:Triangle,b:Triangle):boolean
-	local aa,bb={a.a.p,a.b.p,a.c.p},{b.a.p,b.b.p,b.c.p}
-	local ox,oz=aa[1][1],aa[1][3]
-	for _,polygon in {aa,bb} do for i,p in polygon do
-		local q=polygon[i%3+1]
-		local nx,nz=-(q[3]-p[3]),q[1]-p[1]
-		local length=math.sqrt(nx*nx+nz*nz)
-		if length<1e-10 then continue end
-		local alo,ahi,blo,bhi=math.huge,-math.huge,math.huge,-math.huge
-		for _,v in aa do local d=(v[1]-ox)*nx+(v[3]-oz)*nz;alo=math.min(alo,d);ahi=math.max(ahi,d) end
-		for _,v in bb do local d=(v[1]-ox)*nx+(v[3]-oz)*nz;blo=math.min(blo,d);bhi=math.max(bhi,d) end
-		if math.min(ahi,bhi)-math.max(alo,blo)<=1e-7*length then return false end
-	end end
-	return true
+local function separated(a:Triangle,b:Triangle,p:Point,q:Point,ox:number,oz:number):boolean
+	local nx,nz=-(q[3]-p[3]),q[1]-p[1]
+	local length=math.sqrt(nx*nx+nz*nz)
+	if length<1e-10 then return false end
+	local aa,ab,ac=a.a.p,a.b.p,a.c.p
+	local ba,bb,bc=b.a.p,b.b.p,b.c.p
+	local a0=(aa[1]-ox)*nx+(aa[3]-oz)*nz
+	local a1=(ab[1]-ox)*nx+(ab[3]-oz)*nz
+	local a2=(ac[1]-ox)*nx+(ac[3]-oz)*nz
+	local b0=(ba[1]-ox)*nx+(ba[3]-oz)*nz
+	local b1=(bb[1]-ox)*nx+(bb[3]-oz)*nz
+	local b2=(bc[1]-ox)*nx+(bc[3]-oz)*nz
+	return math.min(math.max(a0,a1,a2),math.max(b0,b1,b2))-math.max(math.min(a0,a1,a2),math.min(b0,b1,b2))<=1e-7*length
+end
+
+local function overlaps(a:Triangle,b:Triangle,counts:any?):boolean
+	if counts then counts.pairs+=1 end
+	if a.maxX<=b.minX or b.maxX<=a.minX or a.maxZ<=b.minZ or b.maxZ<=a.minZ then
+		if counts then counts.boxSkips+=1 end
+		return false
+	end
+	if counts then counts.sat+=1 end
+	local aa,ab,ac=a.a.p,a.b.p,a.c.p
+	local ba,bb,bc=b.a.p,b.b.p,b.c.p
+	local ox,oz=aa[1],aa[3]
+	-- Same six axes, order, origin and tolerance; no pair-local vertex arrays.
+	return not (separated(a,b,aa,ab,ox,oz) or separated(a,b,ab,ac,ox,oz) or separated(a,b,ac,aa,ox,oz)
+		or separated(a,b,ba,bb,ox,oz) or separated(a,b,bb,bc,ox,oz) or separated(a,b,bc,ba,ox,oz))
 end
 
 -- Touching published fields must share the entire frozen edge height, including
 -- end-column creases. Positive-area overlap alone cannot detect a vertical step.
 local function compatibleTouch(a:Triangle,b:Triangle):boolean
+	if a.maxX<b.minX-1e-7 or b.maxX<a.minX-1e-7 or a.maxZ<b.minZ-1e-7 or b.maxZ<a.minZ-1e-7 then return true end
 	local aa,bb={a.a.p,a.b.p,a.c.p},{b.a.p,b.b.p,b.c.p}
-	for _,axis in {1,3} do
-		local alo,ahi,blo,bhi=math.huge,-math.huge,math.huge,-math.huge
-		for _,p in aa do alo=math.min(alo,p[axis]);ahi=math.max(ahi,p[axis]) end
-		for _,p in bb do blo=math.min(blo,p[axis]);bhi=math.max(bhi,p[axis]) end
-		if ahi<blo-1e-7 or bhi<alo-1e-7 then return true end
-	end
 	for i,p in aa do
 		local q=aa[i%3+1];local dx,dz=q[1]-p[1],q[3]-p[3];local length2=dx*dx+dz*dz
 		local length=math.sqrt(length2)
@@ -156,9 +166,18 @@ end
 
 -- Triangles share a fixed midline, with optional bank collars. Rendering and physical
 -- contacts use these exact triangles, including a twisted pair of bank edges.
-function Infield.add(index:Index,patch:Patch,validateOnly:boolean?):boolean
+function Infield.add(index:Index,patch:Patch,validateOnly:boolean?,profile:any?):boolean
 	patch=Infield.canonical(patch)
+	local compiled=compiledOf[patch]
+	local selfCounts,oldCounts=nil,nil
+	if profile then
+		profile.rows=#patch.rows;profile.cached=compiled~=nil;profile.validateOnly=validateOnly==true;profile.duplicate=false
+		profile.destinationTriangles=#index.triangles;profile.cell=index.cell;profile.triangles=if compiled then #compiled.triangles else 0
+		selfCounts={pairs=0,boxSkips=0,sat=0};oldCounts={pairs=0,boxSkips=0,sat=0}
+		profile.self=selfCounts;profile.old=oldCounts
+	end
 	local previous=index.patches[patch.id]
+	if previous==patch then if profile then profile.duplicate=true end;return false end
 	if previous then
 		assert(#previous.rows==#patch.rows,"conflicting infield identity")
 		for i,row in patch.rows do
@@ -168,9 +187,9 @@ function Infield.add(index:Index,patch:Patch,validateOnly:boolean?):boolean
 			assert((row.floor~=nil)==(old.floor~=nil),"conflicting infield identity")
 			if row.floor and old.floor then for j=1,11 do assert(row.floor[j]==old.floor[j],"conflicting infield identity") end end
 		end
+		if profile then profile.duplicate=true end
 		return false
 	end
-	local compiled=compiledOf[patch]
 	local pending:{Triangle}=if compiled then compiled.triangles else {}
 	local banks:{A:{Triangle},B:{Triangle}}=if compiled then compiled.banks else {A={},B={}}
 	if not compiled then
@@ -218,11 +237,14 @@ function Infield.add(index:Index,patch:Patch,validateOnly:boolean?):boolean
 				-- Explicit end sections may retain an existing steep hillside. They
 				-- are visible terrain, never a hidden driveable/walkable floor.
 				assert(normal.Y>.01 and (a.floor or b.floor or normal.Y>.8),"infield surface is too steep")
-				table.insert(pending,table.freeze({a=x,b=y,c=z,normal=normal,det=det,patch=patch.id,sa0=a.sa,sa1=b.sa,sb0=a.sb,sb1=b.sb,supported=normal.Y>.8}))
+				table.insert(pending,table.freeze({a=x,b=y,c=z,normal=normal,det=det,patch=patch.id,sa0=a.sa,sa1=b.sa,sb0=a.sb,sb1=b.sb,supported=normal.Y>.8,
+					minX=math.min(x.p[1],y.p[1],z.p[1]),maxX=math.max(x.p[1],y.p[1],z.p[1]),
+					minZ=math.min(x.p[3],y.p[3],z.p[3]),maxZ=math.max(x.p[3],y.p[3],z.p[3])}))
 			end end
 			banks.A[i]=pending[firstTriangle];banks.B[i]=pending[#pending]
 		end
 	end
+	if profile then profile.triangles=#pending end
 	local staged:{[string]:{Triangle}}={}
 	local validationGrid={cell=math.min(index.cell,32)}
 	local byTriangle:{[Triangle]:{string}}={}
@@ -233,7 +255,7 @@ function Infield.add(index:Index,patch:Patch,validateOnly:boolean?):boolean
 			for _,id in index.hash[k] or {} do
 				local old=index.triangles[id]
 				if seen[old] then continue end;seen[old]=true
-				assert(not overlaps(triangle,old),"infield would change an already published support domain")
+				assert(not overlaps(triangle,old,oldCounts),"infield would change an already published support domain")
 				assert(compatibleTouch(triangle,old),"touching infields have different frozen edge heights")
 			end
 		end
@@ -242,7 +264,7 @@ function Infield.add(index:Index,patch:Patch,validateOnly:boolean?):boolean
 			for _,k in localBuckets do
 				for _,old in staged[k] or {} do
 					if seen[old] then continue end;seen[old]=true
-					assert(not overlaps(triangle,old),"infield strip overlaps itself")
+					assert(not overlaps(triangle,old,selfCounts),"infield strip overlaps itself")
 				end
 			end
 			for _,k in localBuckets do
