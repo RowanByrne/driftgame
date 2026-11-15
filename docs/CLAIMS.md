@@ -9,6 +9,7 @@ Every task in progress and the files it owns, so parallel sessions and workers n
 
 | Branch | Lane | Files owned | Since |
 |---|---|---|---|
+| `agent/engine-start-sound` | lent | `src/StarterPlayerScripts/Drift/EngineSound.luau`, `src/StarterPlayerScripts/Drift/RoadHud.luau`, `src/ReplicatedStorage/Shared/Config/Fx.luau` (engine block only), `docs/game/AUDIO.md`, `docs/game/features/engine-sound.md`, `assets/audio/sfx-engine-start/*` (new) | 2026-11-15 (T-221) |
 
 ## Notes between sessions
 
