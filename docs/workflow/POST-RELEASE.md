@@ -42,7 +42,7 @@ Anything found is fixed in the next release, not by editing the live game.
 
 - **Branches:** merged `agent/*` branches are deleted, locally and on GitHub (`git branch -r --merged origin/main`).
 - **Claims:** finished claims are gone from `docs/CLAIMS.md`.
-- **Lanes:** every idle lane is on the new `main` ("refresh", CONDUCTOR.md).
+- **Checkouts:** none left in `work\` from tasks that shipped ("refresh", CONDUCTOR.md).
 - **Release record:** the row in `live/RELEASES.md` and the `release/<date>` tag are pushed.
 
 ## Report

@@ -1,24 +1,26 @@
 <#
 .SYNOPSIS
-  Starts one worker in a lane with Codex or Gemini CLI, in the background (docs\workflow\MODELS.md "Workers by agent").
+  Starts one worker in its task's checkout with Codex or Gemini CLI, in the background (docs\workflow\MODELS.md "Workers by agent").
   Claude Code doesn't use this: its workers are subagents.
 
 .DESCRIPTION
-  The conductor writes the task (CONDUCTOR.md "A round", step 3) to a brief file, then runs this once per lane; the
-  workers run side by side. Each worker runs non-interactively in its lane's folder with the tier's model, and its
-  final message, the report, lands in ..\scratch\workers\laneN-report.md when it finishes. Its full output goes in
-  laneN-log.txt beside it. Wait for one with Wait-Process -Id <pid>.
+  The conductor writes the task (CONDUCTOR.md "A round", step 3) to a brief file, then runs this once per task; the
+  workers run side by side. Each worker runs non-interactively in its task's checkout (work\<name>, made by
+  rocco.ps1 work) with the tier's model, and its final message, the report, lands in
+  ..\scratch\workers\<name>-report.md when it finishes. Its full output goes in <name>-log.txt beside it.
+  -Lane N in place of -Checkout starts it in lanes\laneN: a game that still gives each task a lane. Wait for one with Wait-Process -Id <pid>.
 
-  Workers run without the agent's sandbox: Codex's Windows sandbox can't write the lane's git data (it sits in
-  repo\.git, outside the lane), so a sandboxed worker can't commit. Each worker still works only in its own lane,
+  Workers run without the agent's sandbox: Codex's Windows sandbox can't write a checkout's git data (it sits in
+  repo\.git, outside the checkout), so a sandboxed worker can't commit. Each worker still works only in its own checkout,
   under the rules in WORKER.md.
 
 .EXAMPLE
-  powershell -ExecutionPolicy Bypass -File tools\start-worker.ps1 -Agent codex -Lane 2 -Tier heavy -Brief ..\scratch\workers\lane2-brief.md
+  powershell -ExecutionPolicy Bypass -File tools\start-worker.ps1 -Agent codex -Checkout ..\work\agent-trade-window -Tier heavy -Brief ..\scratch\workers\agent-trade-window-brief.md
 #>
 param(
 	[Parameter(Mandatory = $true)] [ValidateSet('codex', 'gemini')] [string]$Agent,
-	[Parameter(Mandatory = $true)] [int]$Lane,
+	[string]$Checkout, # the task's checkout: a folder in work\
+	[int]$Lane,        # or, where each task still gets a lane, its number
 	[Parameter(Mandatory = $true)] [ValidateSet('heavy', 'standard', 'light')] [string]$Tier,
 	[Parameter(Mandatory = $true)] [string]$Brief,
 	[switch]$DryRun # print what would run, and start nothing
@@ -33,13 +35,15 @@ $Models = @{
 
 $repo = Split-Path $PSScriptRoot -Parent
 $game = Split-Path $repo -Parent
-$laneDir = Join-Path $game "lanes\lane$Lane"
-if (-not (Test-Path (Join-Path $laneDir '.git'))) { throw "No lane $Lane at $laneDir (LANES.md)." }
+if ([bool]$Checkout -eq [bool]$Lane) { throw 'Give -Checkout (the task''s folder in work\) or -Lane (its number), one of them.' }
+$laneDir = if ($Checkout) { (Resolve-Path $Checkout).Path.TrimEnd('\') } else { Join-Path $game "lanes\lane$Lane" }
+if (-not (Test-Path (Join-Path $laneDir '.git'))) { throw "No checkout at $laneDir (LANES.md)." }
+$name = Split-Path $laneDir -Leaf
 $briefPath = (Resolve-Path $Brief).Path
 $out = Join-Path $game 'scratch\workers'
 New-Item -ItemType Directory -Force $out | Out-Null
-$report = Join-Path $out "lane$Lane-report.md"
-$log = Join-Path $out "lane$Lane-log.txt"
+$report = Join-Path $out "$name-report.md"
+$log = Join-Path $out "$name-log.txt"
 Remove-Item -LiteralPath $report, $log -ErrorAction SilentlyContinue
 $model, $effort = $Models[$Agent][$Tier]
 $q = { param($s) "'" + ("$s" -replace "'", "''") + "'" }
@@ -60,7 +64,7 @@ if ($Agent -eq 'codex') {
 	if (-not $DryRun -and -not (Get-Command gemini -ErrorAction SilentlyContinue)) { throw 'Gemini CLI isn''t installed on this PC.' }
 	# Headless: tools that would ask are refused, so yolo approves them; the lane is trusted for its MCP servers. The
 	# answer is the "response" field of the JSON output.
-	$json = Join-Path $out "lane$Lane-output.json"
+	$json = Join-Path $out "$name-output.json"
 	$run = "`$env:GEMINI_CLI_TRUST_WORKSPACE = 'true'`n" +
 		"Get-Content -LiteralPath $(& $q $briefPath) -Raw | gemini -m $model --approval-mode=yolo -o json -p 'Follow the brief above.' 2> $(& $q $log) | Out-File -Encoding utf8 $(& $q $json)`n" +
 		"try { [IO.File]::WriteAllText($(& $q $report), (Get-Content -LiteralPath $(& $q $json) -Raw | ConvertFrom-Json).response) } catch { }"
@@ -70,6 +74,6 @@ $text = "Set-Location -LiteralPath $(& $q $laneDir)`n$run`n"
 if ($DryRun) { Write-Output $text; return }
 $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($text))
 $process = Start-Process powershell -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', $encoded -WindowStyle Hidden -PassThru
-Write-Output "Lane $Lane worker started: $Agent, $model$(if ($effort) { " ($effort)" }), process $($process.Id)."
+Write-Output "Worker started in ${name}: $Agent, $model$(if ($effort) { " ($effort)" }), process $($process.Id)."
 Write-Output "Report when it finishes: $report"
 Write-Output "Wait for it: Wait-Process -Id $($process.Id)"

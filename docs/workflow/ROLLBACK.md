@@ -17,8 +17,8 @@ A bad change to how data is saved isn't rolled back: it's fixed forward with a m
 When `main` breaks (it doesn't play, or a merge brought in something wrong), back the change out with a new commit. Never reset or force-push `main`.
 
 1. **Find what brought it in:** `git log --first-parent --oneline -15` lists main's own commits and merges, newest first.
-2. **Revert it, in a lane** (CONDUCTOR.md "Checking in a lane"): in an idle lane on a detached `origin/main`, `git -C <lane> revert -m 1 <merge>` for a merged branch (`-m 1` keeps main's side), or `git -C <lane> revert <commit>` for a plain commit. Revert the newest first when there are several.
-3. **Check** the lane's place plays again (quiet playtest, console), then push it to `main` from the lane, `git pull` in `repo\`, and refresh the idle lanes (CONDUCTOR.md "Refresh" step 4).
+2. **Revert it, in a checkout** (CONDUCTOR.md "Checking before main"): a card for the rollback, and its checkout (`rocco.ps1 work T-040 -Branch agent/rollback-<what>`). There, on a detached `origin/main`, `git -C <checkout> revert -m 1 <merge>` for a merged branch (`-m 1` keeps main's side), or `git -C <checkout> revert <commit>` for a plain commit. Revert the newest first when there are several.
+3. **Check** it plays again in a lane (`rocco.ps1 borrow T-040`, then a quiet playtest and the console), then push it to `main` from the checkout, and `git pull` in `repo\`.
 4. **Tell the user** what was backed out and why. The task goes back to Up next on the Workboard, with what broke in its note.
 5. **Landing it again:** the branch's commits are already in main's history, so merging the branch again changes nothing. Start the fix from a new branch off `main`, revert the revert there (`git revert <the revert commit>`), fix it, and merge that branch as usual.
 
