@@ -136,8 +136,8 @@ checks only tested cancellation after native returns. They did not protect the
 source during an outstanding native clone, conversion or MeshPart creation.
 `DebugStop` could destroy that source while the native call still used it. This
 is a separate defect in the explicitly opted-in prototype. The trial flag was
-absent in the two reported terrain-lane Studio crashes; this finding does not
-attribute either crash to the trial.
+absent in the reported terrain-lane Studio crashes; this finding does not
+attribute those crashes to the trial.
 
 Each trial session now owns its native results and holds a source lifetime lease
 for every job, acquired before scheduling it. Stop immediately marks the session
@@ -201,7 +201,7 @@ fallback, haze and device checks.
 
 ## Reproduce in a trial lane
 
-To reproduce, explicitly set the lane Edit attribute `workspace.__baked_shadow_trial=true` before starting. The conductor clears this flag after the checked trial so idle lanes return to the normal game. Press Play in DR-Lane3; wait for the labelled
+To reproduce, explicitly set the lane Edit attribute `workspace.__baked_shadow_trial=true` before starting. The conductor clears this flag after the checked trial so idle lanes return to the normal game. Press Play in that trial lane; wait for the labelled
 panel comparison. Use Low front, Low back and Higher sun. Terrain: baked lazily
 builds the real snapshot; Terrain: live and Terrain: boxes compare the same
 geometry/camera with no blockers or the original blockers. The raised controls
