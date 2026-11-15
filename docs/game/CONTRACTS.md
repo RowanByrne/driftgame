@@ -578,8 +578,7 @@ alone do not prove complete live field retirement.
 `Spline.infieldContact` separates physical `contactS/d/kind` from `ownerS` and
 the deliberately off-asphalt `routeD`. Car and Sequence fixtures use it before
 bounded retries can acquire a peer leg. Partial bank feet have finite depth in
-the car world instead of an infinite blocked half-plane. Real runner
-credit/handoff integration is not complete yet.
+the car world instead of an infinite blocked half-plane.
 
 `SplineContact.resolve(spline,x,z,owner,options?)` is a read-only contact resolver.
 Options contain physical ray bounds, movement limit, retained first arc, closing
@@ -591,8 +590,8 @@ retirement; a retired history cannot acquire it afresh. `copy(token)` creates
 independent tracking data. Auxiliary probes never commit it. `credit` shares
 the existing1.05times travel plus8stud re-entry formula with SplineSequence;
 only a real live credited piece may update route progress. The resolver is
-checked groundwork; actual server runner and walking tracker commits remain to
-be connected before enabling generated fields.
+checked integration; walking tracker commits, complete shared drawing and
+generation publication remain to be connected before enabling generated fields.
 Field movement is bounded using the token bank's corresponding row coordinate,
 so a legitimate cross-gap contact can change physical bank without jumping along
 it. While a token is retained, no resolver result adopts an owner. Known-pair
@@ -619,6 +618,17 @@ DriftController commits after each FixedStep and draws around physical contact;
 Trajectory owns one fork per prediction, commits every completed predicted
 center and disposes that fork even on errors. Local handoff is projection
 bookkeeping; server retained-piece checks alone authorize earned progress.
+
+`SplineSequence.locateOwned(position,hint,limit?,peer?,creditS?)` keeps its first
+four ownership returns and adds a fifth physical `SplineContact.Hit`. Physical
+contact may remain valid when the original owner's piece has retired. RoadService
+stores tokens per runner, updates real supported movement before credit refusal,
+and uses physical asphalt to repay the existing capped allowance. Only
+`pieceAtS(credit)` authorizes progress, recovery or leader/window movement.
+Unavailable credit keeps the previous earned piece and the full debt. A token
+clears only at a credit-complete live asphalt handoff or an explicit server
+placement; it is never read from a client. Studio-only `DebugContact(userId)`
+returns copied numeric contact, credit and progress observations for checks.
 
 `SplineMesh.buildInfield(spline,x,z,radius,parent,opts?)` builds one complete
 nearby field mesh, with exact frozen normals and origin-relative positions.

@@ -202,30 +202,15 @@ end
 
 -- Gameplay lookup belongs to one runner. A broad field must never reacquire a
 -- different leg when its current projection fails or leaves supported ground.
-function SplineSequence.locateOwned(self:Sequence,position:Vector3,hint:number,maxAdvance:number?):(number?,number,number,number?)
-	local limit=math.min(maxAdvance or 160,640)
-	local function attempt(seed:number):(number?,number?)
-		local s,d=self.spline:projectFrom(position.X,position.Z,seed)
-		if not s or not d or math.abs(s-hint)>limit or self.spline:groundKind(s,d)==nil then return nil,nil end
-		local y=self.spline:terrainY(s,d)
-		if position.Y<y-8 or position.Y>y+40 then return nil,nil end
-		return s,d
-	end
-	local field=self.spline:infieldContact(position.X,position.Z,hint,position.Y-40,position.Y+8,limit,self.starts[self.first])
-	local s,d
-	if field then s,d=field.ownerS,field.routeD else s,d=attempt(hint) end
-	-- A delayed server tick can cover more than one Newton solve's range.
-	-- Search a bounded arc interval around the last accepted leg, never the grid.
-	if not s and limit>128 then
-		for offset=128,limit,128 do
-			s,d=attempt(hint+offset);if s then break end
-			s,d=attempt(hint-offset);if s then break end
-		end
-	end
-	if not s or not d then return nil,0,math.huge,nil end
-	local piece=self:pieceAtS(s)
-	if not piece then return nil,0,math.huge,nil end
-	return piece.n,(s-piece.s0)/math.max(piece.length,1e-6),math.abs(d),s
+function SplineSequence.locateOwned(self:Sequence,position:Vector3,hint:number,maxAdvance:number?,peer:Contact.Token?,creditS:number?):(number?,number,number,number?,Contact.Hit?)
+	local hit=Contact.resolve(self.spline,position.X,position.Z,hint,{limit=maxAdvance,
+		low=position.Y-40,high=position.Y+8,first=self.starts[self.first],peer=peer,creditS=creditS})
+	if not hit then return nil,0,math.huge,nil,nil end
+	local piece=self:pieceAtS(hit.ownerS)
+	-- Physical support can remain live after the original credit anchor retires.
+	-- The caller still needs a real credited piece before publishing progress.
+	if not piece then return nil,0,math.huge,hit.ownerS,hit end
+	return piece.n,(hit.ownerS-piece.s0)/math.max(piece.length,1e-6),math.abs(hit.routeD),hit.ownerS,hit
 end
 
 -- Off-road travel cannot postpone an arc-length shortcut until re-entry. Give

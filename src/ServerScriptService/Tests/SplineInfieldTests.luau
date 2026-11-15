@@ -727,6 +727,97 @@ function Tests.worldTracking(_self,subjects)
 	return result
 end
 
+function Tests.server()
+	local road=game.ReplicatedStorage.Shared.Road
+	local Spline,Planner=require(road.Spline),require(road.SplineInfieldPlanner)
+	local cfg=require(game.ReplicatedStorage.Shared.Config)
+	local live=require(game.ServerScriptService.Services.RoadService)
+	assert(not live:HasRoad(),"Stop the live road before the isolated field progress check")
+	local saved=cfg.Spline.Biomes.GroundEnabled;cfg.Spline.Biomes.GroundEnabled=true
+	local holder=Instance.new("Folder");holder.Name="__FieldServerTest";holder.Parent=game.ServerStorage
+	local copy=game.ServerScriptService.Services.RoadService:Clone();copy.Parent=holder
+	local service=require(copy)
+	local car=nil
+	local ok,result=xpcall(function()
+		local checks={};local function check(name,pass,detail)table.insert(checks,{name=name,ok=pass,detail=detail})end
+		service:SetMode("spline");service:Generate(203)
+		local seq=service:DebugGenerator();local sp,b0,sections=fixture(Spline,20)
+		local patches=Planner.plan(sp,128,480,b0,sp.length);sp:addInfields(patches)
+		for _=1,cfg.Road.BehindPieces+cfg.Road.AheadPieces+12 do
+			local sec=table.clone(sections[3]);table.insert(sections,sec);sp:append(sec)
+		end
+		seq.spline=sp;seq.gen.spline=sp;seq.gen.sections=sections
+		seq.first=1;seq.last=0;seq.starts={};seq.pieces={};seq.destroyed=0;seq.furthestN=1;seq.furthestT=0;seq:_adopt()
+		local id=-2032121;assert(service:DebugJoin(id))
+		car=Instance.new("Model");car.Name="FieldProgressFixture";car:SetAttribute("UserId",id)
+		local body=Instance.new("Part");body.Anchored=true;body.CanCollide=false;body.CanQuery=false;body.Transparency=1
+		body.Parent=car;car.PrimaryPart=body;car.Parent=workspace:FindFirstChild("Cars") or workspace
+		local row=patches[1].rows[math.ceil(#patches[1].rows*.5)]
+		local function point(s)local x,y,z=sp:surfaceXYZ(s,0);return Vector3.new(x,y+cfg.Drift.RideHeight,z)end
+		local function put(p)car:PivotTo(CFrame.new(p));return service:DebugTick()end
+		local a,b=point(row.sa),point(row.sb);put(a)
+		local anchor=service:DebugContact(id);local missing,grassError=0,0
+		for i=1,math.ceil((b-a).Magnitude) do
+			local p=a:Lerp(b,i/math.ceil((b-a).Magnitude))
+			local floor=sp:infieldAt(p.X,p.Z)
+			if floor then p=Vector3.new(p.X,floor.y+cfg.Drift.RideHeight,p.Z) end
+			put(p)
+			local contact=service:DebugContact(id)
+			if contact.position~=p then missing+=1 end
+			if floor and i<(b-a).Magnitude-50 then grassError=math.max(grassError,math.abs(contact.n-anchor.n),math.abs(contact.t-anchor.t)) end
+			if i%32==0 then task.wait() end
+		end
+		local crossed=service:DebugContact(id)
+		local crossedS=seq.starts[crossed.n]+crossed.t*sections[crossed.n].len
+		local allowed=seq:reentryS(anchor.anchorS,crossed.travel,row.sb)
+		check("the real server tracks supported field movement without awarding grass progress",missing==0 and grassError<1e-5
+			and crossed.peerS~=nil and crossed.anchorS==anchor.anchorS and crossed.ownerS<500,
+			`missing supported centers{missing}, grass progress error{grassError}, physical{crossed.physicalS}, owner{crossed.ownerS}`)
+		check("physical peer asphalt publishes only live capped credit",math.abs(crossedS-allowed)<.05 and crossedS<row.sb-100,
+			`earned{crossedS}, allowed{allowed}, physical{row.sb}`)
+		local target=patches[1].rows[1].sb+32;local continued=true
+		for s=row.sb+1,target,1 do
+			put(point(s));local c=service:DebugContact(id)
+			continued=continued and c.peerS~=nil and c.ownerS<500 and math.abs(c.physicalS-s)<.05
+			if math.floor(s)%32==0 then task.wait() end
+		end
+		put(point(target));local before=service:DebugContact(id)
+		check("the server retains the acquired physical road beyond the frozen patch",continued and before.peerS~=nil,
+			"leaving field geometry cannot lose support or erase unpaid travel")
+		seq:trimBefore(3)
+		local retired=put(point(target));local held=service:DebugContact(id)
+		for _=1,4 do put(point(target)) end
+		local waiting=service:DebugContact(id)
+		check("retired owner credit cannot fall through to a live physical peer piece",seq:pieceAtS(seq:reentryS(held.anchorS,held.travel,target))==nil
+			and held.n==before.n and held.t==before.t and held.peerS~=nil and held.physicalS>=seq.starts[seq.first],
+			`first arc{seq.starts[seq.first]}, anchor{held.anchorS}, physical{held.physicalS}, earned piece{held.n}`)
+		check("stationary physical peer contact neither earns nor forgets missing credit",waiting.travel==held.travel
+			and waiting.ownerS==held.ownerS and waiting.peerS==held.peerS and waiting.n==held.n and waiting.t==held.t,
+			"repeated actual server ticks keep both debt and physical support")
+		local resumed=false;local capped=true
+		for i=1,256 do
+			local s=target+i;put(point(s));local c=service:DebugContact(id)
+			if c.n>=seq.first then
+				resumed=true;local earned=seq.starts[c.n]+c.t*sections[c.n].len
+				capped=capped and math.abs(earned-seq:reentryS(held.anchorS,c.travel,s))<.05 and earned<s
+			end
+			if i%32==0 then task.wait() end
+		end
+		check("real peer-road travel resumes at the first available capped piece",resumed and capped,
+			"the missing-credit branch retains travel until real live credited road becomes available")
+		for i=255,0,-1 do put(point(target+i));if i%32==0 then task.wait() end end
+		local adopted=service:DebugContact(id)
+		check("only a paid live asphalt handoff clears the server's physical peer",adopted.peerS==nil
+			and math.abs(adopted.ownerS-target)<.05 and adopted.anchorS==adopted.ownerS and adopted.travel==0,
+			`owner{adopted.ownerS}, anchor{adopted.anchorS}, travel{adopted.travel}, peer{adopted.peerS}`)
+		local passed=0;for _,c in checks do if c.ok then passed+=1 end end
+		return {passed=passed,total=#checks,checks=checks}
+	end,debug.traceback)
+	service:Stop();if car then car:Destroy() end;holder:Destroy();cfg.Spline.Biomes.GroundEnabled=saved
+	if not ok then return {passed=0,total=1,checks={{name="server field progress fixture completes",ok=false,detail=result}}} end
+	return result
+end
+
 function Tests.render()
 	local road=game.ReplicatedStorage.Shared.Road
 	local Spline,Planner,Infield=require(road.Spline),require(road.SplineInfieldPlanner),require(road.SplineInfield)

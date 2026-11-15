@@ -46,6 +46,7 @@ local Generator = require(ReplicatedStorage.Shared.Road.Generator)
 local Net = require(ReplicatedStorage.Shared.Net)
 local Pieces = require(ReplicatedStorage.Shared.Road.Pieces)
 local SplineSequence = require(ReplicatedStorage.Shared.Road.SplineSequence)
+local SplineContact = require(ReplicatedStorage.Shared.Road.SplineContact)
 
 local RoadService = {}
 -- Below PlaygroundService (100) and TrackService: this one builds nothing until asked,
@@ -396,14 +397,15 @@ local function readCars(): (Vector3?, number?, any)
 			continue
 		end
 		local entry = userId and runners[userId]
-		local n,t,lateral,s
+		local n,t,lateral,s,contact
 		local moved=0
 		local owned=splineRun() and generator.spline:hasBiomeGround() and entry~=nil
 		if owned then
 			if entry.acceptedS then
 				local previous=entry.acceptedPosition or entry.position
 				if previous then local delta=at-previous;moved=Vector2.new(delta.X,delta.Z).Magnitude end
-				n,t,lateral,s=generator:locateOwned(at,entry.acceptedS,math.min(640,math.max(12,moved*3+8)))
+				local credit=generator:reentryS(entry.roadAnchorS or entry.acceptedS,(entry.travel or 0)+moved,math.huge)
+				n,t,lateral,s,contact=generator:locateOwned(at,entry.acceptedS,math.min(640,math.max(12,moved*3+8)),entry.physicalPeer,credit)
 			end
 		else
 			n,t,lateral=generator:locate(at)
@@ -413,24 +415,30 @@ local function readCars(): (Vector3?, number?, any)
 			-- server has already agreed to. This is the number the HUD is told, and it is
 			-- never one the client sent.
 			entry.position = at
-			if n then
-				if owned then
-					entry.acceptedS=s;entry.acceptedPosition=at;entry.travel=(entry.travel or 0)+moved
-					if lateral<=Config.Road.Width*.5 then
-						local credit=generator:reentryS(entry.roadAnchorS or s,entry.travel,s)
-						local piece=generator:pieceAtS(credit)
-						if not piece then
-							-- Another runner can retire the earned road while this car is
-							-- on grass. Keep its ownership/travel, but never substitute
-							-- the raw reentry for unavailable credit or forgive that debt.
-							continue
-						end
-						n,t=piece.n,(credit-piece.s0)/piece.length
-						if math.abs(credit-s)<.001 then entry.roadAnchorS=s;entry.travel=0 end
+			if owned and contact then
+				entry.acceptedS=contact.ownerS;entry.acceptedPosition=at;entry.travel=(entry.travel or 0)+moved
+				entry.physicalPeer=SplineContact.copy(contact.peer);entry.physicalS=contact.contactS
+				if contact.kind==generator.spline.TARMAC then
+					local credit=generator:reentryS(entry.roadAnchorS or contact.ownerS,entry.travel,contact.contactS)
+					local piece=generator:pieceAtS(credit)
+					if not piece then
+						-- Another runner can retire the earned road while this car is
+						-- on grass. Keep its ownership/travel, but never substitute
+						-- the raw reentry for unavailable credit or forgive that debt.
+						continue
 					end
+					n,t=piece.n,(credit-piece.s0)/piece.length
+					lateral=math.abs(contact.d or 0)
+					if math.abs(credit-contact.contactS)<.001 then
+						entry.acceptedS=contact.contactS;entry.roadAnchorS=contact.contactS;entry.travel=0;entry.physicalPeer=nil
+					end
+					entry.n,entry.t=n,t
+				else
+					-- Grass preserves ownership, but advances neither recovery nor the window.
+					n=nil
 				end
-				-- Grass preserves ownership, but advances neither recovery nor the window.
-				if not owned or lateral<=Config.Road.Width*.5 then entry.n, entry.t = n, t end
+			elseif n and not owned then
+				entry.n,entry.t=n,t
 			end
 		end
 		if n and (not owned or lateral<=Config.Road.Width*.5) and (bestN == nil or n > bestN) then
@@ -502,6 +510,7 @@ function RoadService:Start()
 		cars.CarMoved:Connect(function(player)
 			local entry=runners[player.UserId]
 			if entry and generator and splineRun() then
+				entry.physicalPeer=nil;entry.physicalS=nil
 				local at=cars:BelievedPosition(player.UserId)
 				local s=at and generator.spline:project(at.X,at.Z,Config.Road.Width)
 				if s then
@@ -1184,6 +1193,15 @@ function RoadService:DebugTick()
 	assert(RunService:IsStudio(), "DebugTick is Studio only")
 	tick()
 	return self:DebugState()
+end
+
+function RoadService:DebugContact(userId:number)
+	assert(RunService:IsStudio(),"DebugContact is Studio only")
+	local entry=runners[userId]
+	if not entry then return nil end
+	return {ownerS=entry.acceptedS,anchorS=entry.roadAnchorS,travel=entry.travel,position=entry.acceptedPosition,
+		physicalS=entry.physicalS,peerS=entry.physicalPeer and entry.physicalPeer.s,
+		peerPatch=entry.physicalPeer and entry.physicalPeer.patchId,n=entry.n,t=entry.t}
 end
 
 -- Studio only: the stage timings (T-085). `on` nil reads the switch, true or false sets
