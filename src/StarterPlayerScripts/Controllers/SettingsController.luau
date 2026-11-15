@@ -14,6 +14,7 @@ local CarInput = require(script.Parent.CarInputController)
 local Visibility = require(script.Parent.UiVisibilityController)
 local Garage = require(script.Parent.GarageController)
 local Cmdr = require(script.Parent.CmdrController)
+local GroundDetail = require(script.Parent.Parent:WaitForChild("Drift"):WaitForChild("GroundDetail"))
 local Settings = { Priority = -10 }
 
 function Settings:Init()
@@ -47,6 +48,12 @@ function Settings:_draw()
 	if not self.view then return end
 	local data = if self.fixture then table.clone(self.fixture) else CarInput:GetSettings()
 	data.category = self.category
+	if not self.fixture then
+		-- Graphics: the ground's detail, this device's own (T-225)
+		data.groundDetail = GroundDetail.get()
+		data.groundNames = {}
+		for i = 1, GroundDetail.count() do data.groundNames[i] = GroundDetail.name(i) end
+	end
 	self.view:setData(data)
 end
 
@@ -110,7 +117,14 @@ function Settings:_action(action, value)
 	if not self.effective then return end
 	if action == "close" then self:Close()
 	elseif action == "category" then
-		if value == "steering" or value == "interface" then self.category = value; self:_draw() end
+		if value == "steering" or value == "interface" or value == "graphics" then self.category = value; self:_draw() end
+	elseif action == "groundDetail" then
+		if self.fixture then
+			if type(value) == "number" then self.fixture.groundDetail = value end
+		elseif GroundDetail.set(value) then
+			self.changes += 1
+		end
+		self:_draw()
 	elseif action == "mode" or action == "sensitivity" then
 		if self.fixture then
 			self.fixture[if action == "mode" then "mode" else "sensitivity"] = value
@@ -149,7 +163,7 @@ function Settings:Start()
 	self:_bind(menu, "Previous", {Enum.KeyCode.Up, Enum.KeyCode.DPadUp}, function() self.view:focus(-1) end)
 	for name, direction in {Left = -1, Right = 1} do
 		self:_bind(menu, name, {Enum.KeyCode[name], Enum.KeyCode["DPad" .. name]}, function()
-			if GuiService.SelectedObject == self.view.slider then self.view:nudge(direction) else self.view:focus(direction) end
+			if not self.view:nudgeSelected(direction) then self.view:focus(direction) end
 		end)
 	end
 	self:_bind(menu, "Activate", {Enum.KeyCode.Return}, function() self.view:activateSelected() end)
@@ -195,7 +209,8 @@ function Settings:DebugState()
 	return {open = self.open, effective = self.effective, blocked = MenuInput.IsBlocked(), opens = self.opens,
 		closes = self.closes, changes = self.changes, blur = self.blur and self.blur.Enabled,
 		blurSize = self.blur and self.blur.Size, category = self.category, fixture = self.fixture ~= nil,
-		values = CarInput:GetSettings(), view = self.view and self.view:describe()}
+		values = CarInput:GetSettings(), groundDetail = GroundDetail.get(), groundDetailName = GroundDetail.name(),
+		view = self.view and self.view:describe()}
 end
 function Settings:DebugAction(action, value) self:_action(action, value); return self:DebugState() end
 function Settings:DebugFixture(name)
