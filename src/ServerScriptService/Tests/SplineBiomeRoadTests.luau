@@ -380,6 +380,65 @@ function Tests.gradeRules()
 	local _,high=g:_gradeEnvelope(.1,g.spline.origin.y+C.Mountain.ClimbTop+C.MaxHeight-6,{40,.1},false)
 	check("reaching the top reserves braking to a stopped band",g:_postBandRate(40,false)==0 and high>C.MaxHeight,
 		`counterexample is rejected: highest relative height {high}, limit {C.MaxHeight}`)
+	for _,sense in {-1,1} do
+		for _,climbing in {false,true} do
+			g=Gen.new(203);g.sense=sense;g.drift=-C.Mountain.DescentRate*sense;g.climbing=climbing;g.flipWanted=false
+			local move=(if climbing then C.Mountain.ClimbRate else -C.Mountain.DescentRate)*sense
+			local length=if climbing then 5 else 20
+			local boundary=(if climbing then C.Mountain.ClimbTop else C.Mountain.DescentFloor)*sense
+			g.centre=boundary-move*(length+5)
+			local relative=if move<0 then C.MinHeight+.01 else C.MaxHeight-.01
+			local y=g.spline.origin.y+g.centre+relative
+			local lo,hi=g:_gradeEnvelope(move,y,{length,move},false)
+			check(`sense {sense}, climb {tostring(climbing)}: clamp just beyond section reserves a full stop`,
+				g:_postBandRate(length,false)==move and (lo<C.MinHeight or hi>C.MaxHeight),
+				`band still moves at emitted end; future certified bounds [{lo},{hi}] reject the old accepted {relative}`)
+		end
+		-- Stopping immediately at zero can overshoot the other height limit while
+		-- the band continues moving. A legal moving-then-stopping path must remain
+		-- available, rather than causing unnecessary candidate rejection.
+		for _,incoming in {0,.02*sense,-.01*sense} do
+			g=Gen.new(203);g.sense=sense;g.drift=-.04*sense;g.climbing=false;g.flipWanted=false
+			local move=-.04*sense
+			local length,delay=20,40
+			g.centre=C.Mountain.DescentFloor*sense-move*(length+delay)
+			local endRelative=158.8*sense
+			local y=g.spline.origin.y+g.centre+endRelative-(incoming-move)*length
+			local lo,hi=g:_gradeEnvelope(incoming,y,{length,incoming},false)
+			check(`sense {sense}, incoming {incoming}: moving-first continuation remains feasible`,lo>=C.MinHeight-1e-6 and hi<=C.MaxHeight+1e-6,
+				`bounds [{lo},{hi}] include the zero/opposite-grade hold through the future clamp`)
+		end
+		g=Gen.new(203);g.sense=sense;g.drift=-.04*sense;g.climbing=false;g.flipWanted=false
+		local move=-.04*sense
+		g.centre=C.Mountain.DescentFloor*sense-move*120
+		local y=g.spline.origin.y+g.centre+159.99*sense
+		local lo,hi=g:_gradeEnvelope(move,y,{20,move},false)
+		check(`sense {sense}: later braking preserves a safe state at the opposite band edge`,lo>=C.MinHeight and hi<=C.MaxHeight,
+			`bounds [{lo},{hi}]; immediate or early braking would reject this state`)
+	end
+	g=Gen.new(203);g.mode="traverse";g.centre=0;g.drift=0;g.groupSign=nil
+	local sp=g.spline
+	local _,_,_,_,initial,_,y=sp:tip()
+	local length=10000
+	local target=sp.origin.y+C.MinHeight-1
+	local peak=2*(target-y)/length-.5*initial
+	sp:append({len=length,k={length,0},g={length*.5,peak,length,0},b={length,0}})
+	local before=sp.length
+	local clear=g:_clear({C.EscapeLength,0})
+	local rejectedHeight=false
+	for _=1,C.CandidateTries do
+		local candidate,why=g:_candidate()
+		if candidate then break end
+		if why=="height" then rejectedHeight=true;break end
+	end
+	-- Isolate the final escape after independently exercising real candidates.
+	-- The straight plan is clear, so a crowding stall cannot satisfy this check.
+	g._candidate=function()return nil,"height" end
+	local escapes=g.stats.escapes
+	local emitted=g:step()
+	check("an infeasible start cannot emit an unchecked full-grade escape",clear and rejectedHeight and emitted==nil
+		and sp.length==before and g.stats.stalled and g.stats.escapes==escapes+1,
+		`out-of-band fixture: clear plan {clear}, real height rejection {rejectedHeight}, final escape attempted {g.stats.escapes-escapes}`)
 	for _,climbing in {false,true} do
 		g=Gen.new(203);g.climbing=climbing;g.flipWanted=true;g.sideFlipApplied=true;g.groupSign=if climbing then 1 else -1
 		local _,_,yaw=g.spline:tip()
