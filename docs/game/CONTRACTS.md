@@ -805,6 +805,27 @@ tests on2026-11-15. Their cause remains unproven. Destroying registered MeshPart
 consumers before EditableMeshes removes one unsafe lifetime ordering; passing
 functional tests is not evidence that delayed native stability is resolved.
 
+T-212 opt-in generation candidate: with `Biomes.Infield.Enabled`, `SplineGen`
+binds each accepted planned maneuver to its exact section and starting distance
+before decoration. Its live commit appends road and registers actual supported
+ground before optional field planning; sections publish only afterward. A private
+identity pairs the two halves of one Switchback. Each double hairpin forms two
+separate possible field pairs. Approach bounds include the actual inbound-arm
+start and retained first; departure starts after the final curvature-easing
+interval, including any existing straight tail. A pending pair freezes once its
+bounded departure is known or before the next real planned curve starts.
+
+All ready intents for a section share one batch. Planning sees accepted ground,
+existing hard reservations and a temporary copy of the current tip's promised
+escape. Validated field reservations use copy-on-write corridor buckets; one
+non-yielding publication adds frozen support, swaps hard reservations and attaches
+one frozen `sec.ip` array before section publication. A declined/failed optional
+field leaves accepted road intact. No RNG draws or driving rules change.
+`SplineInfieldTests:generator()` covers identity/ranges/grouping/batch publication,
+actual frozen replay, escape-only refusal and optional failure isolation.
+`gen.infieldStats` records attempts, patches, refusals and planning cost. The
+default remains disabled pending actual natural-generation and timing checks.
+
 ## Studio-only baked shadow trial (T-214)
 
 `workspace.__baked_shadow_trial=true` explicitly opts a Studio client into the

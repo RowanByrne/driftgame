@@ -1060,4 +1060,85 @@ function Tests.render()
 	return result
 end
 
+function Tests.generator(_self,subjects)
+	local road=game.ReplicatedStorage.Shared.Road
+	local Gen=subjects and subjects.Gen or require(road.SplineGen)
+	local Spline=subjects and subjects.Spline or require(road.Spline)
+	local Corridor=subjects and subjects.Corridor or require(road.SplineCorridor)
+	local cfg=require(game.ReplicatedStorage.Shared.Config)
+	local C=cfg.Spline.Biomes;local saved,savedGround=C.Infield.Enabled,C.GroundEnabled
+	C.Infield.Enabled=true;C.GroundEnabled=true
+	local ok,result=xpcall(function()
+		local checks={};local function check(name,pass,detail)table.insert(checks,{name=name,ok=not not pass,detail=detail})end
+		local observed={};local sp={length=500,tip=function()return 0,0,0,0 end}
+		local state=setmetatable({spline=sp,biomes={},infieldArmStart=80,
+			_publishInfields=function(_,section,intents)if #intents>0 then table.insert(observed,{section=section,intents=intents})end end},Gen)
+		local section={len=400,k={20,.01,120,.01,140,0,400,0}}
+		state:_prepareInfield(section,{what="turnaround",tag="Hairpin"})
+		local marker=state.preparedInfield
+		check("a field maneuver includes final easing and its existing straight tail is departure",marker.section==section and marker.s0==500 and marker.a1==500 and marker.b0==640,
+			"the last nonzero knot at620 is followed by easing to640; departure starts at640, before section end900")
+		sp.length=900;state:_infields(section,500,marker)
+		check("short known departures stay pending without publishing a moving taper",state.infieldPending and state.infieldPending.b0==640 and #observed==0,
+			"publication waits for the bounded arm or next accepted maneuver")
+		local nextSection={};sp.length=2100
+		state:_infields(nextSection,900,{what="double",tag="Hairpin",a1=1000,b0=1050})
+		check("two ready arm pairs share one publication batch",#observed==1 and #observed[1].intents==2
+			and observed[1].intents[1].b1==1000 and observed[1].intents[2].pending.a0==640,
+			"the older departure ends at the new curve start; a short back arm cannot reach behind its real start")
+		observed={};state.infieldPending=nil;state.infieldArmStart=2000
+		local group={};sp.length=2500
+		state:_infields({},2200,{what="turnaround",tag="Switchback",a1=2200,b0=2300,group=group})
+		check("the first switchback half never creates an opposite-arm field",state.infieldTurn and not state.infieldPending and #observed==0,
+			"the original approach is retained across the gap")
+		sp.length=2800;state:_infields({},2500,{what="switchbackOut",tag="Switchback",a1=2500,b0=2600,group={}})
+		check("a different switchback finisher cannot borrow an older approach",state.infieldTurn==nil and state.infieldPending==nil,
+			"matching names and tags do not replace pair identity")
+		state.infieldTurn={a0=2000,a1=2200,group=group}
+		state:_infields({},2800,{what="switchbackOut",tag="Switchback",group=group})
+		check("an uncurved finisher still consumes its pair marker",state.infieldTurn==nil and state.infieldPending==nil,
+			"a tiny-angle completion cannot leak a group into a later turn")
+		state.infieldTurn={a0=2000,a1=2200,group=group}
+		state:_infields({},2800,{what="switchbackOut",tag="Switchback",a1=2500,b0=2600,group=group})
+		check("a complete switchback pairs the original approach with the final exit",state.infieldPending and state.infieldPending.a0==2000
+			and state.infieldPending.a1==2200 and state.infieldPending.b0==2600,"both ninety-degree halves form one field pair")
+
+		local function liveFixture()
+			local curve,b0,sections=fixture(Spline,20)
+			local owner=setmetatable({spline=curve,biomes={},corridors=Corridor.new(),infieldStats={planned=0,published=0,declined=0,lastMs=0,worstMs=0}},Gen)
+			owner:_registerGround(0,curve.length)
+			return owner,curve,b0,sections
+		end
+		local owner,curve,b0,sections=liveFixture();local final=sections[#sections]
+		owner:_publishInfields(final,{{pending={a0=128,a1=480,b0=b0},b1=curve.length}})
+		check("live publication attaches one validated batch and hard reservations together",final.ip and #final.ip>0 and table.isfrozen(final.ip)
+			and curve.infieldRevision==1 and owner.corridors.infields>0,"accepted ground was registered before optional field planning")
+		if final.ip then
+			local replay=Gen.replay(sections,curve.origin,curve.fall)
+			local row=final.ip[1].rows[math.ceil(#final.ip[1].rows*.5)]
+			local point=DefaultInfield.columns(row)[6]
+			local a,b=curve:infieldAt(point[1],point[3]),replay:infieldAt(point[1],point[3])
+			check("serialized publication replays the exact frozen support",a and b and math.abs(a.y-b.y)<1e-6
+				and #curve.infields.triangles==#replay.infields.triangles,"clients append the published section without replanning")
+		else check("serialized publication replays the exact frozen support",false,"the publication needed for replay was missing")
+		end
+		local declined,other,otherB=liveFixture();local before=declined.corridors
+		local rowA=Corridor.row(other.length,other.origin.x-80,other.origin.z-350,0,0,20,20)
+		local rowB=Corridor.row(other.length+32,other.origin.x-80,other.origin.z-382,0,0,20,20)
+		declined._groundFrames=function()return {rowA,rowB}end
+		local noPublication={}
+		declined:_publishInfields(noPublication,{{pending={a0=128,a1=480,b0=otherB},b1=other.length}})
+		check("optional fields cannot occupy the current tip's promised escape",noPublication.ip==nil and other.infields==nil
+			and declined.corridors==before,"a temporary escape-only planning obstacle declines the field without persisting future road")
+		local invalid={};owner:_publishInfields(invalid,{{pending={a1=480,b0=b0},b1=curve.length}})
+		check("an optional field failure leaves accepted road and published indexes intact",invalid.ip==nil and owner.infieldStats.lastError~=nil
+			and curve.length>0 and curve.infieldRevision==1,"invalid optional input does not rewind the accepted road or partially publish a batch")
+		local passed=0;for _,c in checks do if c.ok then passed+=1 end end
+		return {passed=passed,total=#checks,checks=checks}
+	end,debug.traceback)
+	C.Infield.Enabled=saved;C.GroundEnabled=savedGround
+	if not ok then return {passed=0,total=1,checks={{name="generated field publication fixture completes",ok=false,detail=result}}} end
+	return result
+end
+
 return Tests

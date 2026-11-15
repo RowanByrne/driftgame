@@ -46,6 +46,7 @@ local Biome = require(script.Parent.SplineBiome)
 local Style = require(script.Parent.SplineRoadStyle)
 local GradePolicy = require(script.Parent.SplineGradePolicy)
 local Corridor = require(script.Parent.SplineCorridor)
+local InfieldPlanner = require(script.Parent.SplineInfieldPlanner)
 local SplineTurnFit = require(script.Parent.SplineTurnFit)
 
 local SplineGen = {}
@@ -95,6 +96,7 @@ export type Item = {
 	window: number?,
 	started: boolean?,
 	hillRetries: number?, -- bounded location retries for terrain fit (T-190)
+	fieldGroup:any?, -- private identity shared only by a paired switchback
 }
 
 export type Gen = typeof(setmetatable(
@@ -105,6 +107,11 @@ export type Gen = typeof(setmetatable(
 		biomes: Biome.Schedule?,
 		corridors: Corridor.Index,
 		preparedGround: {section:Spline.Section,s0:number,left:{number},right:{number}}?,
+		preparedInfield: any,
+		infieldTurn: any,
+		infieldPending: any,
+		infieldArmStart: number,
+		infieldStats: any,
 		sections: { Spline.Section },
 		recent: { string },
 		lastDir: number,
@@ -204,6 +211,11 @@ function SplineGen.new(seed: number, origin: Spline.Origin?, clearOverride: numb
 		biomes = if Config.Spline.Biomes.Enabled then Biome.new(seed) else nil,
 		corridors = Corridor.new(),
 		preparedGround = nil,
+		preparedInfield = nil,
+		infieldTurn = nil,
+		infieldPending = nil,
+		infieldArmStart = 0,
+		infieldStats = {planned=0,published=0,declined=0,lastMs=0,worstMs=0,lastError=nil},
 		sections = {},
 		recent = {},
 		lastDir = 0,
@@ -720,12 +732,15 @@ end
 
 function SplineGen._commit(self: Gen, sec: Spline.Section)
 	local s0=self.spline.length
+	local fieldTurn=self.preparedInfield
+	self.preparedInfield=nil
 	local gradePlan=self.preparedGrade
 	self.preparedGrade=nil
 	local chosenGrade=gradePlan and gradePlan.section==sec and gradePlan.s0==s0
 	if chosenGrade and gradePlan.startSign~=nil then self.groupSign=gradePlan.startSign end
 	self.spline:append(sec)
 	if self.biomes and Config.Spline.Biomes.GroundEnabled then self:_registerGround(s0,self.spline.length) end
+	self:_infields(sec,s0,if fieldTurn and fieldTurn.section==sec and fieldTurn.s0==s0 then fieldTurn else nil)
 	table.insert(self.sections, sec)
 	local st = self.stats
 	st.sections += 1
@@ -1482,6 +1497,124 @@ function SplineGen._registerGround(self:Gen,s0:number,s1:number)
 	end
 end
 
+-- Bind maneuver geometry to the selected section before terrain decoration
+-- clears `turning`. The last easing interval belongs to the curve even when
+-- its arrival knot is zero; a following straight tail is already departure.
+function SplineGen._prepareInfield(self:Gen,sec:Spline.Section,item:Item)
+	local s0=self.spline.length
+	local _,_,_,incoming=self.spline:tip()
+	local start,ending=nil,nil
+	local at,k=0,incoming
+	for j=1,#sec.k,2 do
+		local finish,nextK=sec.k[j],sec.k[j+1]
+		if math.abs(k)>1e-10 or math.abs(nextK)>1e-10 then
+			start=start or at;ending=finish
+		end
+		at,k=finish,nextK
+	end
+	self.preparedInfield={section=sec,s0=s0,what=item.what,tag=item.tag,group=item.fieldGroup,
+		a1=if start then s0+start else nil,b0=if ending then s0+ending else nil}
+end
+
+-- All planning is detached. A rejected connector does not reject an accepted
+-- road. Only after the complete batch validates do its index, hard footprint
+-- reservations and serialized patches become visible, without a yield.
+local function withCorridorCells(index:Corridor.Index,cells:{Corridor.Cell}):Corridor.Index
+	local staged=table.clone(index)
+	staged.buckets=table.clone(index.buckets)
+	local copied={};local size=Config.Spline.HashCell
+	for _,cell in cells do
+		local key=(math.floor(cell.x/size)+1048576)*2097152+math.floor(cell.z/size)+1048576
+		if not copied[key] then
+			local old=staged.buckets[key]
+			if old then staged.buckets[key]=table.clone(old) end
+			copied[key]=true
+		end
+		staged:add(cell)
+	end
+	return staged
+end
+
+function SplineGen._publishInfields(self:Gen,sec:Spline.Section,intents:{any})
+	if #intents==0 then return end
+	local began=os.clock();local stats=self.infieldStats
+	stats.planned+=#intents
+	local published=false
+	local ok,why=pcall(function()
+		local first=self.spline.firstSample*self.spline.step
+		local _,_,_,k=self.spline:tip();local ease=transition(k,0)
+		local length=ease+Config.Spline.EscapeLength
+		local frames=self:_groundFrames(if ease>0 then {ease,0,length,0} else {length,0})
+		local escape={}
+		for i=2,#frames do
+			local cell=Corridor.cell(frames[i-1],frames[i]);assert(cell,"next escape ground folded")
+			table.insert(escape,cell)
+		end
+		-- The current tip's promised escape is a temporary planning obstacle,
+		-- not a permanent reservation for road that may never be chosen.
+		local planning=withCorridorCells(self.corridors,escape)
+		local patches,cells={},{}
+		for _,intent in intents do
+			local pending=intent.pending
+			local a0=math.max(first,pending.a0,pending.a1-Config.Spline.Biomes.Infield.ArmLength)
+			local batch,reserved=InfieldPlanner.plan(self.spline,a0,pending.a1,pending.b0,intent.b1,planning)
+			for _,patch in batch do table.insert(patches,patch) end
+			for _,cell in reserved do table.insert(cells,cell) end
+			planning=withCorridorCells(planning,reserved)
+		end
+		if #patches==0 then return end
+		local staged=withCorridorCells(self.corridors,cells)
+		local serialized=table.freeze(patches)
+		assert(not sec.ip,"a section already owns a field publication")
+		self.spline:addInfields(serialized)
+		self.corridors=staged
+		sec.ip=serialized
+		stats.published+=#patches;published=true
+	end)
+	if not published then stats.declined+=1 end
+	stats.lastError=if ok then nil else tostring(why)
+	stats.lastMs=(os.clock()-began)*1000;stats.worstMs=math.max(stats.worstMs,stats.lastMs)
+end
+
+function SplineGen._infields(self:Gen,sec:Spline.Section,s0:number,maneuver:any)
+	local C=Config.Spline.Biomes
+	if not self.biomes or not C.GroundEnabled or not C.Infield.Enabled then
+		self.infieldTurn=nil;self.infieldPending=nil;self.infieldArmStart=self.spline.length;return
+	end
+	local intents={}
+	local pending=self.infieldPending
+	-- Publish once, after the bounded departure is known or before another
+	-- planned maneuver enters it. Never extend a previously frozen end taper.
+	local curved=maneuver and maneuver.a1 and maneuver.b0
+	local known=if curved then maneuver.a1 else self.spline.length
+	if pending and (known>=pending.b0+C.Infield.ArmLength or curved) then
+		self.infieldPending=nil
+		table.insert(intents,{pending=pending,b1=math.min(known,pending.b0+C.Infield.ArmLength)})
+	end
+	if maneuver then
+		local what,tag=maneuver.what,maneuver.tag
+		if what=="switchbackOut" then
+			local initial=self.infieldTurn;self.infieldTurn=nil
+			if curved and initial and initial.group~=nil and initial.group==maneuver.group then
+				self.infieldPending={a0=initial.a0,a1=initial.a1,b0=maneuver.b0}
+			end
+		elseif what=="turnaround" and tag=="Switchback" then
+			self.infieldTurn=if curved then {a0=self.infieldArmStart,a1=maneuver.a1,group=maneuver.group} else nil
+		elseif (what=="turnaround" and tag=="Hairpin") or what=="double" or what=="doubleOut" then
+			self.infieldTurn=nil
+			if curved then self.infieldPending={a0=self.infieldArmStart,a1=maneuver.a1,b0=maneuver.b0} end
+		elseif what~="gradeApproach" and what~="straighten" then self.infieldTurn=nil end
+		if curved then self.infieldArmStart=maneuver.b0 end
+	end
+	-- A fitted section can contain the entire departure budget itself.
+	pending=self.infieldPending
+	if pending and self.spline.length>=pending.b0+C.Infield.ArmLength then
+		self.infieldPending=nil
+		table.insert(intents,{pending=pending,b1=pending.b0+C.Infield.ArmLength})
+	end
+	self:_publishInfields(sec,intents)
+end
+
 -- Signed bank lifts are serialized independently of the distant hill. They carry
 -- smoothly across section/edge-kind changes and cannot move when another leg arrives.
 function SplineGen._groundHeights(self:Gen,sec:Spline.Section)
@@ -1638,8 +1771,8 @@ function SplineGen._planLeg(self: Gen)
 	local function stretch(len: number, what: string, a: number?, lim: number?)
 		table.insert(plan, { turn = false, what = what, aim = a or aim, limit = lim or limit, left = len })
 	end
-	local function turn(what: string, to: number, dir: number, radius: { number }, tag: string, window: number)
-		table.insert(plan, { turn = true, what = what, to = to, dir = dir, radius = radius, tag = tag, window = window })
+	local function turn(what: string, to: number, dir: number, radius: { number }, tag: string, window: number,fieldGroup:any?)
+		table.insert(plan, { turn = true, what = what, to = to, dir = dir, radius = radius, tag = tag, window = window,fieldGroup=fieldGroup })
 	end
 
 	local events = {}
@@ -1693,9 +1826,10 @@ function SplineGen._planLeg(self: Gen)
 	local nextTilt = math.rad(between(M.LegTilt))
 	local nextAim = self:_legAim(-side, nextTilt)
 	if r:NextNumber() < M.TurnaroundSwitchbackChance then
-		turn("turnaround", down, turnDir, M.SwitchbackRadius, "Switchback", aim)
+		local fieldGroup={}
+		turn("turnaround", down, turnDir, M.SwitchbackRadius, "Switchback", aim,fieldGroup)
 		stretch(between(M.SwitchbackGap), "gap", down, math.rad(10))
-		turn("switchbackOut", nextAim, turnDir, M.SwitchbackRadius, "Switchback", down)
+		turn("switchbackOut", nextAim, turnDir, M.SwitchbackRadius, "Switchback", down,fieldGroup)
 	else
 		turn("turnaround", nextAim, turnDir, M.HairpinRadius, "Hairpin", aim)
 	end
@@ -1873,6 +2007,7 @@ function SplineGen._planned(self: Gen, item: Item): Spline.Section?
 		if typeof(fix) == "table" then
 			st.straightens += 1
 			self.turning = "straighten"
+			self:_prepareInfield(fix :: Spline.Section,{what="straighten"})
 			return fix :: Spline.Section
 		end
 	end
@@ -1883,6 +2018,7 @@ function SplineGen._planned(self: Gen, item: Item): Spline.Section?
 		if prepare then
 			self.preparedGrade={section=prepare,s0=self.spline.length,startSign=direction,finish=false}
 			self.turning="gradeApproach"
+			self:_prepareInfield(prepare,{what="gradeApproach"})
 			return prepare
 		end
 		st.turnsRefused+=1
@@ -1902,6 +2038,7 @@ function SplineGen._planned(self: Gen, item: Item): Spline.Section?
 			end
 			if typeof(sec) == "table" then
 				local s0 = self.spline.length
+				self:_prepareInfield(sec :: Spline.Section,item)
 				if protected then
 					local paired=item.what=="double" or (item.what=="turnaround" and item.tag=="Switchback")
 					self.preparedGrade={section=sec,s0=s0,startSign=direction,finish=not paired}
@@ -1910,6 +2047,7 @@ function SplineGen._planned(self: Gen, item: Item): Spline.Section?
 				self.turning = item.what
 				return sec :: Spline.Section
 			end
+			if item.what=="switchbackOut" then self.infieldTurn=nil end
 			return nil
 		end
 	end
