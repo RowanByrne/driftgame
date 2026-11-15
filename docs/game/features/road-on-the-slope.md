@@ -41,6 +41,8 @@ Between those, the sizes slide smoothly with the slope. Deep cuts on both sides 
 
 Starting values, in `Config.Spline.Ground`, tuned in the lane:
 
+- **The mountain leads, the road follows** (the user, 2026-11-15: "going forward I can make changes to the mountain mesh generation which will result in the road generation changing accordingly"). The road reads everything it needs from h alone: no separate plane, height band or descent rate of its own. Change h (its slope, ridges, gullies) and the road's line and height change with it, with no road code touched.
+- **The road chooses its angle across the mountain:** where h is steep along the way it is heading, it turns more across the slope (traverses, then switches back), and where h is gentle it can run more directly downhill, so that following the surface keeps its grade within the drivable limit. The angle comes from the local fall line and steepness of h, not a fixed heading.
 - **The road hugs h:** the road's target height is h along its centre line, smoothed over a few hundred studs so it stays drivable (within today's grade and vertical-curve limits). Climbs are allowed where the mountain rises, so a run no longer only descends. Measured target: the centre line within about 6 studs of h over most of a run, and cut or fill at the centre line over 20 studs rare (under 5% of stations).
 - **Side slope:** at each road station, the mountain's slope across the road (from h either side, over about 40 to 60 studs), as an angle. Steep from about 30 degrees, shallow under about 8.
 - **Runoff from the slope:** wide (about 40 studs) on shallow ground, thin (about 12) on steep, eased between.
