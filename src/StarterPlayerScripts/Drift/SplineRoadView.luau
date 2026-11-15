@@ -127,8 +127,8 @@ function SplineRoadView._checkNewRoad(self: View)
 				end
 				s += 16
 			end
-			local loX, hiX = math.floor((minX - H.Gather) / cell), math.floor((maxX + H.Gather) / cell)
-			local loZ, hiZ = math.floor((minZ - H.Gather) / cell), math.floor((maxZ + H.Gather) / cell)
+			local loX, hiX = math.floor((minX - H.DrawGather) / cell), math.floor((maxX + H.DrawGather) / cell)
+			local loZ, hiZ = math.floor((minZ - H.DrawGather) / cell), math.floor((maxZ + H.DrawGather) / cell)
 			for _, q in fresh do
 				if q[1] >= loX and q[1] <= hiX and q[2] >= loZ and q[2] <= hiZ then
 					self.stale[i] = true

@@ -249,15 +249,20 @@ end
 -- relative to the part (measured: not re-centred), while its Size -- and so what Roblox culls
 -- it by -- is the bounding box. So the vertices are moved to be centred on their own box
 -- first, and the part is put where that box is.
-local function toPart(b: Builder, name: string, colour: Color3, material: Enum.Material, texture: EditableImage?): MeshPart
+local function toPart(b: Builder, name: string, colour: Color3, material: Enum.Material, texture: EditableImage?, tick:(()->())?): MeshPart
 	local lo, hi = Vector3.one * math.huge, -Vector3.one * math.huge
-	for _, v in b.em:GetVertices() do
+	local ids=b.em:GetVertices()
+	local positions={}
+	for index, v in ids do
 		local p = b.em:GetPosition(v)
+		positions[index]=p
 		lo, hi = lo:Min(p), hi:Max(p)
+		if tick and index%128==0 then tick() end
 	end
 	local mid = (lo + hi) * 0.5
-	for _, v in b.em:GetVertices() do
-		b.em:SetPosition(v, b.em:GetPosition(v) - mid)
+	for index, v in ids do
+		b.em:SetPosition(v, positions[index] - mid)
+		if tick and index%128==0 then tick() end
 	end
 	local ok, part = pcall(function()
 		return AssetService:CreateMeshPartAsync(Content.fromObject(b.em), {
@@ -320,7 +325,9 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 	local across = o.across or M.Across
 	local cutOptions=table.clone(o)
 	cutOptions.tick=slice
+	local surfaceStarted=os.clock()-paused
 	local cuts = SplineMesh.sections(spline, s0, s1, cutOptions)
+	local surfacePlanMs=(os.clock()-paused-surfaceStarted)*1000
 	local cx, cy, cz = spline:surfaceXYZ((s0 + s1) * 0.5, 0)
 	local centre = Vector3.new(cx, cy, cz)
 
@@ -458,7 +465,8 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 		-- where its ground ends. The faces below are drawn to their caps, and past them the
 		-- ground carries on to the next leg
 		local H = Config.Spline.Hill
-		local hill = if o.hill ~= false then SplineHill.context(spline, s0, s1, SplineMesh.profile, slice) else nil
+		local hillStarted=os.clock()-paused
+		local hill = if o.hill ~= false then SplineHill.context(spline, s0, s1, SplineMesh.profile, slice, true) else nil
 		local rays: { [number]: { SplineHill.Ray } } = { [-1] = {}, [1] = {} }
 		local caps: { [number]: { number } } = { [-1] = {}, [1] = {} }
 		local hillTriangles = 0
@@ -510,6 +518,7 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 				end
 			end
 		end
+		local hillPlanMs=(os.clock()-paused-hillStarted)*1000
 
 		-- THE FACES OF THE MOUNTAINSIDE, in the same mesh: a client may hold only eight
 		-- EditableMeshes and the road's window uses six, so the faces cannot have meshes of
@@ -699,27 +708,13 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 			if hill then
 				local sideRays = rays[side]
 				local hk = rayCuts
-				local shades: { [number]: number } = {}
+				local hillColour = em:AddColor(H.Colour, 1)
 				local function ground(a: number, b: number, c: number, pa: Vector3, pb: Vector3, pc: Vector3)
 					local n = (pb - pa):Cross(pc - pa)
 					if n.Magnitude < 1e-9 then
 						return
 					end
-					local colour
-					if math.abs(n.Unit.Y) < H.SteepRock then
-						colour = faceColours.rock
-					else
-						-- a few greens, by the blotch at the face's middle
-						local mid = (pa + pb + pc) / 3
-						local level = math.floor((GrassTexture.blotch(mid.X, mid.Z) - 1) * 12 + 0.5)
-						colour = shades[level]
-						if not colour then
-							local g, kk = H.Colour, 1 + level / 12
-							colour = em:AddColor(Color3.new(math.min(1, g.R * kk), math.min(1, g.G * kk), math.min(1, g.B * kk)), 1)
-							shades[level] = colour
-						end
-					end
-					tri(a, b, c, pa, pb, pc, colour, Vector3.yAxis)
+					tri(a, b, c, pa, pb, pc, hillColour, Vector3.yAxis)
 					hillTriangles += 1
 				end
 				local hillRows: { [number]: { pts: { Vector3 }, ids: { number } } } = {}
@@ -736,7 +731,7 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 					for j, share in H.Rings do
 						pts[j] = SplineHill.at(ray, t0f + span * share)
 					end
-					table.insert(pts, SplineHill.at(ray, t0f + span + H.Skirt))
+					table.insert(pts, SplineHill.at(ray, SplineHill.skirtEnd(spline,ray)))
 					for j, p in pts do
 						ids[j] = em:AddVertex(p - centre)
 						if vertexOrigins then vertexOrigins[ids[j]]={kind="hill",side=side,s=cuts[k],ring=j} end
@@ -806,7 +801,9 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 		model:SetAttribute("S1", s1)
 		-- white, so the vertex colours are what show
 		slice()
-		local roadPart = toPart(road, "Road", Color3.new(1, 1, 1), R.RoadMaterial, grassImage)
+		local partStarted=os.clock()-paused
+		local roadPart = toPart(road, "Road", Color3.new(1, 1, 1), R.RoadMaterial, grassImage,slice)
+		local meshPartMs=(os.clock()-paused-partStarted)*1000
 		roadPart.Parent = model
 		slice()
 		local parts = 0
@@ -1418,7 +1415,11 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 			hillPlanTests=hillPlan.tests,
 			hillPlanExact=hillPlan.exact,
 			hillUnsafe=hillPlan.terminal,
+			hillTerminalFolds=hillPlan.terminalFolds or 0,
 			stations = if hill then #hill.stations else 0,
+			surfacePlanMs=surfacePlanMs,
+			hillPlanMs=hillPlanMs,
+			meshPartMs=meshPartMs,
 			ms = 0,
 		}
 		return { model = model, stats = stats, meshes = { road.em } }

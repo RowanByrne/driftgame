@@ -99,7 +99,7 @@ local function terrain(spline:Spline.Spline,s0:number,s1:number,parent:Instance,
 	end
 	-- Far scenery is coarser; its joins and face caps remain the existing hill's.
 	local faces=cuts -- face feet share the supported ground's exact polyline
-	local hill=Hill.context(spline,s0,s1,Profile.profile,tick)
+	local hill=Hill.context(spline,s0,s1,Profile.profile,tick,true)
 	for k=1,#faces-1 do
 		local a,b=faces[k],faces[k+1]
 		if b-a<1e-5 then continue end
@@ -117,8 +117,7 @@ local function terrain(spline:Spline.Spline,s0:number,s1:number,parent:Instance,
 				local fa,fb=j/4,(j+1)/4
 				quad(`Hill_{side}_{k}_{j}`,Hill.at(ra,ea+(ra.clip-ea)*fa),Hill.at(ra,ea+(ra.clip-ea)*fb),Hill.at(rb,eb+(rb.clip-eb)*fb),Hill.at(rb,eb+(rb.clip-eb)*fa),Config.Spline.Hill.Colour,Enum.Material.Grass)
 			end
-			local skirt=Config.Spline.Hill.Skirt
-			quad(`Skirt_{side}_{k}`,Hill.at(ra,ra.clip),Hill.at(ra,ra.clip+skirt),Hill.at(rb,rb.clip+skirt),Hill.at(rb,rb.clip),Config.Spline.Hill.Colour,Enum.Material.Grass)
+			quad(`Skirt_{side}_{k}`,Hill.at(ra,ra.clip),Hill.at(ra,Hill.skirtEnd(spline,ra)),Hill.at(rb,Hill.skirtEnd(spline,rb)),Hill.at(rb,rb.clip),Config.Spline.Hill.Colour,Enum.Material.Grass)
 		end
 	end
 	flush();batch:Destroy()

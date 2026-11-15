@@ -7,6 +7,13 @@ local Hill=require(script.Parent.SplineHill)
 local Spline=require(script.Parent.Spline)
 local Cuts={}
 
+-- Check the parameterized patch before Mesh flips its drawn normal upwards.
+-- Edge fans run the opposite way from rings and the central fan.
+function Cuts.folded(a:Vector3,b:Vector3,c:Vector3,side:number,edgeFan:boolean?):boolean
+	local determinant=(b.X-a.X)*(c.Z-a.Z)-(b.Z-a.Z)*(c.X-a.X)
+	return determinant*side*(if edgeFan then 1 else -1)<-1e-4
+end
+
 local function bounds(points:{Vector3}):(number,number,number,number)
 	local x0,x1,z0,z1=math.huge,-math.huge,math.huge,-math.huge
 	for _,p in points do x0=math.min(x0,p.X);x1=math.max(x1,p.X);z0=math.min(z0,p.Z);z1=math.max(z1,p.Z) end
@@ -84,7 +91,7 @@ function Cuts.refine(spline:any,hill:any,positions:{number},rows:{{Vector3}},ini
 		local x0,x1,z0,z1=bounds(quad)
 		table.insert(cells,{a=a,b=b,quad=quad,x0=x0,x1=x1,z0=z0,z1=z1})
 	end
-	local stats={added=0,tests=0,exact=0,terminal=0}
+	local stats={added=0,tests=0,exact=0,terminal=0,terminalFolds=0}
 	local rings:any={[-1]={},[1]={}}
 	local function rayAt(k:number,side:number)
 		if not rays[side][k] then
@@ -101,7 +108,7 @@ function Cuts.refine(spline:any,hill:any,positions:{number},rows:{{Vector3}},ini
 		local span=math.max(0,ray.clip-start)
 		local points={}
 		for _,share in H.Rings do table.insert(points,Hill.at(ray,start+span*share)) end
-		table.insert(points,Hill.at(ray,start+span+H.Skirt))
+		table.insert(points,Hill.at(ray,Hill.skirtEnd(spline,ray)))
 		rings[side][k]=points
 		return points
 	end
@@ -119,7 +126,7 @@ function Cuts.refine(spline:any,hill:any,positions:{number},rows:{{Vector3}},ini
 		end
 		return false
 	end
-	local function unsafe(ka:number,kb:number):boolean
+	local function unsafe(ka:number,kb:number):(boolean,boolean?)
 		stats.tests+=1
 		for _,side in {-1,1} do
 			local kind=spline:edgeAt((positions[ka]+positions[ka+1])*.5,side)
@@ -136,10 +143,14 @@ function Cuts.refine(spline:any,hill:any,positions:{number},rows:{{Vector3}},ini
 			end
 			local middle=(ka+kb+1)//2
 			for k=ka,kb-1 do
-				if occludes(foot(k),foot(k+1),if k<middle then A[1] else B[1]) then return true end
+				local a,b,c=foot(k),foot(k+1),if k<middle then A[1] else B[1]
+				if Cuts.folded(a,b,c,side,true) then return true,true end
+				if occludes(a,b,c) then return true end
 			end
+			if Cuts.folded(foot(middle),A[1],B[1],side) then return true,true end
 			if occludes(foot(middle),A[1],B[1]) then return true end
 			for j=1,#A-1 do
+				if Cuts.folded(A[j],A[j+1],B[j],side) or Cuts.folded(A[j+1],B[j+1],B[j],side) then return true,true end
 				if occludes(A[j],A[j+1],B[j]) or occludes(A[j+1],B[j+1],B[j]) then return true end
 			end
 		end
@@ -147,7 +158,7 @@ function Cuts.refine(spline:any,hill:any,positions:{number},rows:{{Vector3}},ini
 	end
 	local result={initial[1]}
 	local function visit(a:number,b:number)
-		local bad=unsafe(a,b)
+		local bad,folded=unsafe(a,b)
 		if tick then tick() end
 		if bad and b>a+1 then
 			local mid=(a+b)//2;stats.added+=1
@@ -156,7 +167,7 @@ function Cuts.refine(spline:any,hill:any,positions:{number},rows:{{Vector3}},ini
 			rayAt(mid,-1);rayAt(mid,1)
 			visit(a,mid);visit(mid,b)
 		else
-			if bad then stats.terminal+=1 end
+			if bad then stats.terminal+=1;if folded then stats.terminalFolds+=1 end end
 			table.insert(result,b)
 		end
 	end

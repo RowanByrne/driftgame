@@ -24,15 +24,20 @@ function Cuts.sections(spline:Spline.Spline,s0:number,s1:number,tolerance:number
 	local s=s0
 	while s<s1-1e-6 do
 		local b=math.min(s1,s+maxStep)
+		local da=Cuts.offsets(spline,s,across,grass)
+		local left:{Vector3}={}
 		while b-s>minStep+1e-6 do
-			local da,db=Cuts.offsets(spline,s,across,grass),Cuts.offsets(spline,b,across,grass)
+			local db=Cuts.offsets(spline,b,across,grass)
+			local right:{Vector3}={}
 			local valid=true
 			for _,t in {.25,.5,.75} do
 				local m=s+(b-s)*t
 				local dm=Cuts.offsets(spline,m,across,grass)
 				for j=1,#dm do
-					local a=Vector3.new(spline:terrainXYZ(s,da[j]))
-					local c=Vector3.new(spline:terrainXYZ(b,db[j]))
+					local a=left[j]
+					if not a then a=Vector3.new(spline:terrainXYZ(s,da[j]));left[j]=a end
+					local c=right[j]
+					if not c then c=Vector3.new(spline:terrainXYZ(b,db[j]));right[j]=c end
 					local p=Vector3.new(spline:terrainXYZ(m,dm[j]))
 					if (p-a:Lerp(c,t)).Magnitude>tolerance then valid=false;break end
 				end
