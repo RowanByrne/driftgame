@@ -1,7 +1,9 @@
 --!strict
+--!native
 -- Pure rock/cliff profiles shared by generation checks and the mesh (T-190).
 local Config = require(game.ReplicatedStorage.Shared.Config)
 local Spline = require(script.Parent.Spline)
+local Biome = require(script.Parent.SplineBiome)
 local SplineProfile = {}
 local function wave(s: number, a: number, b: number): number
 	-- two slow sines with no common period: 0..1, smooth, the same everywhere
@@ -107,6 +109,17 @@ function SplineProfile.profile(spline: Spline.Spline, s: number, side: number, k
 			{ reach * 0.7 + jagSize * (wave(s * 1.9 + 31, 8, 5) - 0.5), -drop * 0.62 },
 			{ reach, -drop },
 		}
+	end
+	if spline:hasBiomeGround() then
+		local C=Config.Spline.Biomes
+		local height=math.abs(pts[5][2])
+		local values=if kind==Spline.ROCK then C.FaceRise else C.FaceDrop
+		local target=math.min(height,Biome.mix(spline.biomes,s,{values[1],values[2],height},height))
+		local f=if height>1e-6 then target/height else 1
+		for _,p in pts do
+			p[1]*=if kind==Spline.ROCK then f else math.sqrt(f)
+			p[2]*=f
+		end
 	end
 	-- no taller than its cap: the room there is between this leg and the next (T-190)
 	if cap then

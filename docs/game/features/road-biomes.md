@@ -1,6 +1,6 @@
 # Feature: Road biomes
 
-**Status:** layout approved with the user's gradual-transition and semi-random-length requirements on 2026-11-14 (T-204); shared terrain implementation next. **Owner task:** T-203, built step by step in lane 2 on `feature/linked-biomes`.
+**Status:** layout approved with the user's gradual-transition and semi-random-length requirements on 2026-11-14 (T-204); shared terrain blockout corrected after the lane drive-through and ready for another look (T-209). **Owner task:** T-203, built step by step in lane 2 on `feature/linked-biomes`.
 
 ## Goal
 
@@ -216,3 +216,13 @@ The feature's own agent owns these sequential steps and reserves its lane after 
 - The steep category keeps the current uphill mountain/downhill drop; the user explicitly rejected a two-drop ridge. No terrain style redesign is authorised.
 - The first two v1 side profiles are suitable. Exact safe field extent, small-cliff fitting and rail coverage are settled in the measured blockout. They are not permission to widen the tarmac or change grass handling.
 - Category lengths must be seeded semi-random within bounds, and terrain transitions physically gradual. Initial mix, limits and transition-rate tuning are adjusted by the user's blockout drive.
+
+### Shared terrain blockout (T-209)
+
+The seeded schedule, fitted finite field/bank corridors and serialized signed bank heights now drive car, walking, mesh and parts-fallback ground. Supported extents stay frozen as neighbours stream in. Existing distant mountain joins remain; a low rock foot marks the uphill extent. The added outer field rails and their collision were removed after the user drive-through; only the existing road-edge guardrails remain. The normal mesh uses finer near-ground rows and grass strips while keeping one mesh per chunk. The fallback includes finite grass, bevels, faces and joined hills, built in bounded slices. Road rhythm and biome-specific rail density are still the next step.
+
+Per-runner projection and recovery stay on the accepted road leg. Grass does not move the streaming window; returning to asphalt cannot convert a field shortcut into an unbounded progress jump. Lane verification includes actual emitted mesh triangles and fallback wedge rays, all six transitions, ownership beside a nearer road leg, and explicit placement resets.
+
+Blockout measurements: all six directed transitions have matching emitted mesh ground (largest sampled height error0.043studs; normal difference2.32degrees), and fallback wedge rays differ by at most0.052studs in the sampled fixtures. Generation keeps its existing20ms budget on the checked runs. A forced full-window fallback initially exposed a102ms publication hitch; progressive192-part batches and sliced retirement replace that single large publication. Broader seed and performance tuning remains step4.
+
+The corrected forced fallback measured5.1ms worst slices for a complete480-stud chunk; its cancellation, bounded retirement and immediate mesh-slot release checks pass. In the live client, three forced fallback chunks measured5.8ms worst slices. Walking at the former narrowing-bank failure now differs from drawn/shared ground by0.001stud. All agent playtests are stopped before handoff.

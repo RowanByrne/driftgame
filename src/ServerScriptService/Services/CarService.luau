@@ -733,7 +733,7 @@ function CarService:Respawn(player: Player, to: CFrame?): CFrame?
 		if road and type(road.InRun) == "function" and type(road.SafeStart) == "function" then
 			local ok, inRun = pcall(road.InRun, road, player)
 			if ok and inRun then
-				local got, onRoad = pcall(road.SafeStart, road, believed)
+				local got, onRoad = pcall(road.SafeStart, road, believed, player)
 				if got and typeof(onRoad) == "CFrame" then
 					cf = onRoad
 				end

@@ -351,14 +351,26 @@ end
 -- 20 000 studs away and would locate nowhere anyway, but saying so is cheaper than relying
 -- on it. With nobody in a run at all (a test driving the road with no player) every car is
 -- read, exactly as before.
-local function readCars(): (Vector3?, number?)
+local function makeRunner(from:string,cf:CFrame)
+	local entry={from=from,since=os.clock(),n=1,t=0,told=nil,position=cf.Position,acceptedPosition=cf.Position,acceptedS=nil,roadAnchorS=nil,travel=0}
+	if generator and splineRun() then
+		local s=generator.spline:project(cf.X,cf.Z,Config.Road.Width)
+		local piece=s and generator:pieceAtS(s)
+		if s and piece then
+			entry.acceptedS=s;entry.roadAnchorS=s;entry.n=piece.n;entry.t=(s-piece.s0)/piece.length
+		end
+	end
+	return entry
+end
+
+local function readCars(): (Vector3?, number?, any)
 	local folder = workspace:FindFirstChild("Cars")
 	if not folder then
 		return nil, nil
 	end
 	local cars = carService()
 	local onlyRunners = runnerCount > 0
-	local bestPos, bestN = nil, nil
+	local bestPos, bestN, bestProgress = nil, nil, nil
 	for _, car in folder:GetChildren() do
 		if not car:IsA("Model") then
 			continue
@@ -383,32 +395,54 @@ local function readCars(): (Vector3?, number?)
 		if not at then
 			continue
 		end
-		local n, t = generator:locate(at)
 		local entry = userId and runners[userId]
+		local n,t,lateral,s
+		local moved=0
+		local owned=splineRun() and generator.spline:hasBiomeGround() and entry~=nil
+		if owned then
+			if entry.acceptedS then
+				local previous=entry.acceptedPosition or entry.position
+				if previous then local delta=at-previous;moved=Vector2.new(delta.X,delta.Z).Magnitude end
+				n,t,lateral,s=generator:locateOwned(at,entry.acceptedS,math.min(640,math.max(12,moved*3+8)))
+			end
+		else
+			n,t,lateral=generator:locate(at)
+		end
 		if entry then
 			-- Each runner's own place in the run, measured here from the position the
 			-- server has already agreed to. This is the number the HUD is told, and it is
 			-- never one the client sent.
 			entry.position = at
 			if n then
-				entry.n, entry.t = n, t
+				if owned then
+					entry.acceptedS=s;entry.acceptedPosition=at;entry.travel=(entry.travel or 0)+moved
+					if lateral<=Config.Road.Width*.5 then
+						local credit=generator:reentryS(entry.roadAnchorS or s,entry.travel,s)
+						local piece=generator:pieceAtS(credit)
+						if piece then n,t=piece.n,(credit-piece.s0)/piece.length end
+						if math.abs(credit-s)<.001 then entry.roadAnchorS=s;entry.travel=0 end
+					end
+				end
+				-- Grass preserves ownership, but advances neither recovery nor the window.
+				if not owned or lateral<=Config.Road.Width*.5 then entry.n, entry.t = n, t end
 			end
 		end
-		if n and (bestN == nil or n > bestN) then
+		if n and (not owned or lateral<=Config.Road.Width*.5) and (bestN == nil or n > bestN) then
 			bestPos, bestN = at, n
+			bestProgress=if owned then generator:progressAt(n,t,lateral) else nil
 		end
 	end
-	return bestPos, bestN
+	return bestPos, bestN, bestProgress
 end
 
 local function tick()
 	if not RoadService.Running or not generator then
 		return
 	end
-	local pos, n = readCars()
+	local pos, n, acceptedProgress = readCars()
 	if pos and n then
 		leader, leaderN = pos, n
-		lastProgress = generator:progress(pos)
+		lastProgress = acceptedProgress or generator:progress(pos)
 	end
 	window(leaderN)
 	moveClosingBarrier()
@@ -456,6 +490,22 @@ function RoadService:Start()
 	Players.PlayerRemoving:Connect(function(player)
 		self:_leave(player.UserId)
 	end)
+	-- Only an actual server placement resets a runner's leg ownership.
+	local cars=carService()
+	if cars and cars.CarMoved then
+		cars.CarMoved:Connect(function(player)
+			local entry=runners[player.UserId]
+			if entry and generator and splineRun() then
+				local at=cars:BelievedPosition(player.UserId)
+				local s=at and generator.spline:project(at.X,at.Z,Config.Road.Width)
+				if s then
+					entry.acceptedS=s;entry.position=at;entry.acceptedPosition=at;entry.roadAnchorS=s;entry.travel=0
+					local piece=generator:pieceAtS(s)
+					if piece then entry.n,entry.t=piece.n,(s-piece.s0)/piece.length end
+				end
+			end
+		end)
+	end
 
 	task.spawn(function()
 		ticking = true
@@ -552,7 +602,7 @@ function RoadService:StartRun(player: Player): CFrame?
 	-- On the roster BEFORE the car moves: `CarService:Respawn` asks this service where a
 	-- runner belongs, and a player who is not on the roster yet would be sent to the world
 	-- they are standing in instead of onto the road.
-	runners[player.UserId] = { from = from, since = os.clock(), n = 1, t = 0, told = nil }
+	runners[player.UserId] = makeRunner(from,cf)
 	runnerCount += 1
 	-- The whole spline road so far, BEFORE the car is put on it: the client must have the
 	-- ground before it lands on it (T-136).
@@ -923,13 +973,16 @@ end
 --
 -- A fall does NOT end a run, and nothing in this function can end one: it returns a place
 -- on the road, and that is all it does.
-function RoadService:SafeStart(position: Vector3?): CFrame?
+function RoadService:SafeStart(position: Vector3?,player:Player?): CFrame?
 	if not generator then
 		return nil
 	end
 	local C = Config.Road
 	local want = nil
-	if position then
+	local entry=player and runners[player.UserId]
+	if entry and splineRun() and generator.spline:hasBiomeGround() then
+		want=entry.n
+	elseif position then
 		want = generator:locate(position)
 	end
 	want = want or windowCentre
@@ -1111,7 +1164,7 @@ function RoadService:DebugJoin(userId: number)
 	if not cf then
 		return nil
 	end
-	runners[userId] = { from = Config.Drift.StartWorld, since = os.clock(), n = 1, t = 0, told = nil }
+	runners[userId] = makeRunner(Config.Drift.StartWorld,cf)
 	runnerCount += 1
 	return cf
 end

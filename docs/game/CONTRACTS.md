@@ -327,6 +327,97 @@ Cmdr owns its remotes outside `Shared/Net`, under `ReplicatedStorage.CmdrClient`
 | `CmdrController.onlyMe` | `(players?) -> boolean`: omitted, empty, or only the local player |
 | `CmdrController:Show`, `Hide`, `DebugState` | Console visibility and debug state, including the most recent targeted action |
 
+## Biome section schedule (T-203, terrain step in progress)
+
+`Spline.Section.bm` is an optional flat list of absolute-distance triples
+`{ boundaryS, destinationKind, blendLength, ... }`. Category IDs are 1 Fields,
+2 Small cliffs and 3 Steep cliffs. The initial record is `{0, initialKind, 0}`.
+Subsequent records describe the original complete transition interval centred on
+`boundaryS`; they are not clipped or re-eased at road-section boundaries. A section
+publishes a transition before the first point of its blend is emitted. It may repeat
+known records needed as context, including a boundary beyond the section end whose
+blend already begins inside the section. Repeated records must match exactly.
+
+The existing `rl/rr/el/er/kr/gl/gv/gd` meanings remain unchanged. No new remote:
+`RoadSpline` and `SplineTest` carry the optional `bm` field in their sections.
+`SplineRoadController` validates finite numeric triples and `Spline.append` checks
+their semantics before appending any curve or terrain. Unknown IDs, conflicting
+repeats, out-of-order boundaries, lengths outside configured bounds, insufficient
+transition distance, overlapping transitions without an established plateau and a
+new transition reaching backwards into already-emitted road are refused whole.
+Biome scheduling must begin with the first road section. A road without `bm` keeps
+the previous terrain behaviour explicitly (`spline.biomes == nil`); after schedule
+introduction, an omitted field carries the previously published records forward.
+
+| Module | API | Contract |
+|---|---|---|
+| `Road/SplineBiome` | `new(seed)`; schedule `clone()`, `extend(s)`, `records(s0,s1)` | Server schedule with independent seed-derived length and category streams, distance-deficit category choice and no equal neighbours. Length draws use the feasible interval within `Config.Spline.Biomes.Length`, reserving both adjoining half-blends plus `PlateauMin`. Clone copies records, counters and both random streams. Clients replay published records |
+| `Road/SplineBiome` | `blendLength(from,to)` | At least `MinBlend` and enough for `1.5 * abs(parameter change) / maximum rate` for each rise/drop/width envelope. Cubic smoothstep has maximum derivative 1.5. Impossible budgets fail instead of silently shortening the transition |
+| `Road/SplineBiome` | `merge(known?, additions?, alreadyEmittedS)` | Validates without mutating either input and returns combined records. Invalid input cannot alter already-emitted terrain |
+| `Road/SplineBiome` | `validate(known?, additions?, alreadyEmittedS)`, `commit(known?, pending?)` | Runtime replay validates a small new suffix without mutation, then appends it only after the whole section validates. Existing records are append-only; no full-history copy per section. `merge` is the pure snapshot/test convenience |
+| `Road/Spline` | `biomeAt(s)` | Returns `(fromKind?, toKind?, alpha)`. One global cubic smoothstep over the original transition endpoints; zero derivative at entry/exit, no reset at section cuts. Legacy roads return `(nil,nil,0)` |
+| `Road/SplineBiome` | `at(records?,s)`, `mix(records?,s,values,legacy)` | Shared phase lookup and numeric parameter interpolation; no instances, world state or per-query schedule generation |
+
+This contract commit introduces schedule/replay data. Physical ground and drawn
+profile changes remain within the unapproved T-209 terrain build until their shared
+definition and lane checks are complete; no driving feel or analytics change.
+
+### Frozen supported corridor construction
+
+`Config.Spline.Biomes.GroundEnabled` remains false while the matching surface,
+walking and renderer blockout is assembled. When enabled, the server fits the
+existing per-side `rl/rr` width tracks to finite supported strips. Their existing
+meaning (studs past the asphalt) and inside-curvature clipping remain unchanged.
+The original centre-line clearance/escape check is retained; additional strip
+checks protect committed wide ground from subsequent road and escape candidates.
+
+| Module | API | Contract |
+|---|---|---|
+| `Road/SplineCorridor` | `row(s,x,z,yaw,k,left,right)`, `cell(a,b,boundsOnly?)` | Short plan strip with absolute left/right centre-line extents, clipped on the inside of a bend. Cells retain world corners and arc-distance endpoints after old curve samples retire. Nonconvex collision cells are refused; a bounds-only cell is for conservative broadphase lookup |
+| `Road/SplineCorridor` | `new()`, index `add(cell)`, `clear(cell,separation,gap)`, `near(cell,separation,gap)` | Spatially bounded, read-only queries over frozen cells. Non-neighbour cells retain the existing along-road separation rule. `clear` uses actual quad edges and returns `(clear, conflictingCell?, visited, tested)`. `near` supplies conservative AABB candidates for repeated fitting without rescanning history |
+| `Road/SplineCorridor` | `reserve(outgoingRunoff,distance)` | Minimum future runoff envelope includes the taper from outgoing width, the old widest ordinary runoff and a conservative smoothstep overshoot allowance. It is reserved before accepting the current section |
+| `Road/SplineCorridor` | `fit(frames,sectionEnd,incoming,desired,oldIndex,separation)` | Returns left/right eased width tracks and reduction factors, or nil if the minimum footprint cannot fit. Includes at least the full escape. Checks actual final widened cells against each other, old cells and a trial-dependent reserved continuation. Cached search envelopes use the maximum of baseline and wanted widths, including tight edges below the normal minimum. Constrained results are rounded inward |
+
+These are generator-only footprints, not extra physical parts or per-wheel scans.
+`SplineGen.preparedGround` is an internal, one-section selected-preview cache keyed
+by section identity and start distance; it is consumed before the real carve and
+is never added to a network section. Rejected previews cannot change live cells,
+schedule streams or this cache. Shared height/normal/boundary consumers follow in
+the same terrain step before this construction switch is enabled for review.
+
+### Shared bank surface and finite boundaries
+
+`Spline.Section.hl/hr` optionally carry signed outer-bank lift as eased
+`{ds,height,...}` knots, ending at `len`. They start from the previous section's
+value (zero before any), carry forward if absent, stay within the configured
+field/bank envelope and change no faster than `GroundHeightRate` between knots.
+Validation happens before appending any track. The server derives them from the
+continuous biome phase, fitted width, existing uphill/downhill side and fall line.
+They carry through a side change without a height jump. Clients replay these
+numbers rather than regenerating bank choices.
+
+When biome ground is enabled, `terrainY/terrainXYZ/terrainNormal/groundKind` include
+the same bank surface used for car probes, walking tiles and drawing. The gravel
+bevel retains its previous height/material/normal convention. Past its foot,
+`u^2(2-u)` eases into the signed outer-bank lift, clamped to `BankMaxSlope` with
+the actual fitted width. A field gently falls down the mountain; the lower uphill
+bank is traversable grass. Grip and score multipliers are unchanged.
+
+| Module | API | Contract |
+|---|---|---|
+| `Road/Spline` | `hasBiomeGround()`, `edgeLiftAt(s,side)` | Whether this road uses the complete biome-ground construction switch, and the replayed signed bank-lift track. A road without biome records retains the previous surface semantics |
+| `Road/Spline` | `boundaryHeight(s,side)` | Shared solid-boundary height at the supported strip's outer edge. Cliffs have no wall; rock/hedge legacy defaults remain on older roads. The field/bank wall is at the actual extent, not at the former runoff width |
+| `Drift/SplineWorld` | `resetHint()` | Clear road-leg ownership on an explicit placement/respawn. Biome-ground lookups with a valid hint stay on that leg and do not fall back to a wider grid search onto another nearby leg |
+
+Both sides of a biome field have finite support. `groundKind` returns nil past
+the fitted strip, and the drawn outer bank/face/drop marks that limit. Car and
+walking support end at the same extent. Walking walls use the same low boundary,
+and its closing barrier covers the bank heights. `DriftController` clears the
+projection hint on legitimate attach/placement; walking clears its hint on car
+spawn/respawn. The structural profile retains its existing topology and is only
+scaled down for fields/small cliffs; its first point stands on the shared bank.
+Distant hillside caps do not rescale the occupied bank surface.
+
 ## Settings page (T-201)
 
 Client-owned session UI. No new remotes, persistent data keys, analytics events or server permissions.
@@ -345,3 +436,15 @@ Client-owned session UI. No new remotes, persistent data keys, analytics events 
 | `SettingsController:DebugNavigate(name)` | Studio-only invocation of an actual navigation handler (`Toggle`, `Close`, `Next`, `Previous`, `Left`, `Right`, `Activate`) when an input tool cannot deliver that key |
 
 `PlayerGui.Settings` is one ScreenGui at `UI/Layers.Settings = 36`, Sibling order. Its `OpenSettings` entry and `Modal.Pane` are the visual roots. `Lighting.SettingsFog` is a client-only full-scene BlurEffect, enabled only while the modal is effective; reduced transparency decreases its strength and zero transparency turns it off. No UI artwork is uploaded.
+
+### Supported biome boundaries and ownership (T-203)
+
+Active biome ground retains a visible four-stud low rock foot on the uphill outer edge, independent of distant hillside caps. Cliffs have no outer wall. The user removed the added outer field guardrails in T-209; their geometry, angle mask and car/walking collision overrides are deleted. Only existing `kr` asphalt-edge guardrails remain. `boundaryHeight` supplies the natural rock/cliff car and walking limit. The distant mountain keeps its existing caps and joins.
+
+`DriftController:SplineHint()` hands walking the current spline identity and accepted car arc. Rebuilding a world for the same spline preserves that hint; actual placements reset it. Walking refines fixed tiles to within 0.08 studs of their shared tangent plane where banks need smaller tiles. Outer walking walls offset their thickness along the taper chord normal and refine curved chords, keeping their inner face out of supported grass. Added bank lift shares its cross-slope budget with the existing road bank.
+
+`SplineSequence:locateOwned(position,hint,maxAdvance?)` projects only from that runner's accepted arc, refuses unsupported ground and excessive arc movement, and never searches a neighbouring leg on failure. `progressAt(n,t,lateral)` consumes that accepted projection. Grass updates ownership but does not advance biome run progress, the streaming window or recovery. Re-entry credit is capped by actual plan distance driven from the last earned asphalt arc (5% chord allowance plus eight studs), preventing a postponed field shortcut. Failed projections retain the last accepted position; delayed ticks use bounded arc-only catch-up, never a global leg search. RoadService seeds ownership from server placements and hands CarService recovery the runner's last accepted road piece, clamped ahead of the closing barrier. Generic `locate`/`PieceAt` remain nonmutating world queries.
+
+Ground, face feet and natural rock geometry share the existing edge-span endpoints. Mesh chunks include the low foot in their one mesh; parts fallback draws the same form as wedges. Mesh chunks remain hidden until complete. The parts fallback publishes small batches progressively while retaining any previous chunk until replacement is complete; publishing one completed large tree caused a100ms frame. Cancellation and retirement release bounded batches. Publication/terrain work is included in slice statistics.
+
+`SplineSurfaceCuts` samples the entire supported cross-section, including bevel feet and banks. `SplineParts.build(...,{terrain=true,sliceMs=...,cancelled=...})` draws finite ground and capped outer faces/hills as ordinary visual wedges with bounded batches and yielding; the second return contains triangle and slice statistics. The original tarmac-only yardstick call remains supported.

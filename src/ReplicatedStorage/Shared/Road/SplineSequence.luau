@@ -187,7 +187,7 @@ end
 -- unsigned. nil off the road altogether -- further from the centre line than the road, the
 -- widest runoff and a margin (T-140), or not over live road at all.
 function SplineSequence.locate(self: Sequence, position: Vector3): (number?, number, number)
-	local reach = Config.Road.Width * 0.5 + Config.Spline.Terrain.RunoffMax + 30
+	local reach = Config.Road.Width * 0.5 + math.max(Config.Spline.Terrain.RunoffMax,if self.spline:hasBiomeGround() then Config.Spline.Biomes.Width[1] else 0) + 30
 	local s, d = self.spline:project(position.X, position.Z, reach)
 	if not s or not d then
 		return nil, 0, math.huge
@@ -199,13 +199,52 @@ function SplineSequence.locate(self: Sequence, position: Vector3): (number?, num
 	return piece.n, (s - piece.s0) / math.max(piece.length, 1e-6), math.abs(d)
 end
 
+-- Gameplay lookup belongs to one runner. A broad field must never reacquire a
+-- different leg when its current projection fails or leaves supported ground.
+function SplineSequence.locateOwned(self:Sequence,position:Vector3,hint:number,maxAdvance:number?):(number?,number,number,number?)
+	local limit=math.min(maxAdvance or 160,640)
+	local function attempt(seed:number):(number?,number?)
+		local s,d=self.spline:projectFrom(position.X,position.Z,seed)
+		if not s or not d or math.abs(s-hint)>limit or self.spline:groundKind(s,d)==nil then return nil,nil end
+		local y=self.spline:terrainY(s,d)
+		if position.Y<y-8 or position.Y>y+40 then return nil,nil end
+		return s,d
+	end
+	local s,d=attempt(hint)
+	-- A delayed server tick can cover more than one Newton solve's range.
+	-- Search a bounded arc interval around the last accepted leg, never the grid.
+	if not s and limit>128 then
+		for offset=128,limit,128 do
+			s,d=attempt(hint+offset);if s then break end
+			s,d=attempt(hint-offset);if s then break end
+		end
+	end
+	if not s or not d then return nil,0,math.huge,nil end
+	local piece=self:pieceAtS(s)
+	if not piece then return nil,0,math.huge,nil end
+	return piece.n,(s-piece.s0)/math.max(piece.length,1e-6),math.abs(d),s
+end
+
+-- Off-road travel cannot postpone an arc-length shortcut until re-entry. Give
+-- ordinary drifting its small chord/sampling allowance, but cap any catch-up
+-- by the actual plan distance driven since the last earned asphalt position.
+function SplineSequence.reentryS(self:Sequence,anchor:number,travel:number,s:number):number
+	return math.min(s,anchor+math.max(0,travel)*1.05+8)
+end
+
 -- The same flags `Road/Generator.progress` hands back.
 function SplineSequence.progress(self: Sequence, position: Vector3)
 	local n, t, lateral = self:locate(position)
 	if not n then
 		return nil
 	end
-	local forward = n > self.furthestN or (n == self.furthestN and t > self.furthestT + 1e-9)
+	return self:progressAt(n,t,lateral)
+end
+
+-- Consume an already accepted projection; no second nearest-leg lookup.
+function SplineSequence.progressAt(self:Sequence,n:number,t:number,lateral:number)
+	local onRoad=lateral<=Config.Road.Width*.5
+	local forward = (not self.spline:hasBiomeGround() or onRoad) and (n > self.furthestN or (n == self.furthestN and t > self.furthestT + 1e-9))
 	if forward then
 		self.furthestN, self.furthestT = n, t
 	end
@@ -213,7 +252,7 @@ function SplineSequence.progress(self: Sequence, position: Vector3)
 		n = n,
 		t = t,
 		lateral = lateral,
-		onRoad = lateral <= Config.Road.Width * 0.5,
+		onRoad = onRoad,
 		forwardOnNewRoad = forward,
 		backwards = n < self.furthestN - 1,
 		furthestN = self.furthestN,
