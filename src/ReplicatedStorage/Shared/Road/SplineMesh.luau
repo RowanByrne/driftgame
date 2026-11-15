@@ -153,6 +153,7 @@ SplineMesh.profile = require(script.Parent.SplineProfile).profile
 type Builder = {
 	em: EditableMesh,
 	centre: Vector3,
+	fixed: boolean?, -- copied into a fixed-size mesh when done (a ground run, T-218)
 	vertices: number,
 	triangles: number,
 	grassTriangles: number,
@@ -253,6 +254,19 @@ local function toPart(b: Builder, name: string, colour: Color3, material: Enum.M
 	for _, v in b.em:GetVertices() do
 		b.em:SetPosition(v, b.em:GetPosition(v) - mid)
 	end
+	-- A GROUND RUN'S ROAD (T-218) is copied into a fixed-size mesh, which costs a device's
+	-- mesh budget by its size, not by what a growable one holds back (measured: the ground's
+	-- grids pushed growable road chunks out of the budget). The growable one goes
+	if b.fixed then
+		local okCopy, copy = pcall(function()
+			return AssetService:CreateEditableMeshAsync(Content.fromObject(b.em), { FixedSize = true })
+		end)
+		if okCopy and copy then
+			hazeOf[b.em] = nil
+			b.em:Destroy()
+			b.em = copy
+		end
+	end
 	local ok, part = pcall(function()
 		return AssetService:CreateMeshPartAsync(Content.fromObject(b.em), {
 			CollisionFidelity = Enum.CollisionFidelity.Box,
@@ -327,6 +341,7 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 	if not made then
 		return nil, tostring(road)
 	end
+	road.fixed = o.ground
 	local ok, built = pcall(function()
 		-- ONE EDITABLEMESH A CHUNK, AND IT STAYS ALIVE WITH IT. A MeshPart made from one is
 		-- drawn from it: let it go and the part draws nothing (measured -- the road vanished).
