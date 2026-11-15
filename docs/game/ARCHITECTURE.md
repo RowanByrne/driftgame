@@ -148,3 +148,13 @@ Named spots come from `PlaygroundService:GetSpot(name)`, never from coordinates 
 - T-210 bank joins: `Road/SplineHillCuts` refines coarse hill rays when their actual fan/ring/skirt triangles would protrude above the chunk's supported ground. XZ overlap and clipped triangle-plane comparisons preserve harmless hidden overlaps. New cuts get both sides' rays/caps before face emission. The mesh reports refined and terminal-unsafe spans; test-only face origins and exact grove colour IDs distinguish terrain from foliage. `SplineMeshTests.biomes()` also measures neighboring chunk terrain together. `SplineGroundDrawTests.run()` casts from above every fallback wedge, including all six transitions and the original narrowing-bank regression.
 - T-213 braking horizon: the grade envelope certifies a complete continuation through the next centre clamp, including one just after the section. Three bounded-rate future paths preserve early/late braking choices; each is checked independently with both bounds from that path. Both current and recovery phase clamps are included. All grade fallbacks and the final escape are certified. Constructed near-floor/top, reversed-sense, zero/opposite-grade and infeasible-escape fixtures extend `gradeRules`; no player-observed natural-seed failure is claimed.
 - `DebugSplineBiomeRoadTests:brakingIntegration()` exercises actual ordinary/protected/final-escape choices on near-clamp states. It independently integrates emitted Spline height/grade tracks and locates extrema by derivative bisection. Paused floor/pass recovery covers both mountain senses, all continuation knot orders/rates, the next clamp and real commit-once lifecycle.
+
+## Native baked-shadow trial (Studio only)
+
+`BakedShadowTrialController` lazily loads `Drift/BakedShadowTrial` only in Studio
+with `workspace.__baked_shadow_trial=true`. The isolated comparison demonstrates
+live versus runtime-baked mesh shadows and bounded Content creation/retirement;
+it does not switch the production terrain renderer. The controller handles its
+own camera, sky and input overrides and restores them on stop. Normal lanes keep
+the flag unset. See [the measured trial](../archive/baked-terrain-shadow-trial.md)
+for actual rendered proof, cold-stall failures and production handoff limits.
