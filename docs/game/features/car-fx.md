@@ -649,6 +649,51 @@ descendants after cleanup. The effects-off branch checks no emission and exclude
 geometry from visible-width measurements. Console review found only existing Studio plugin/MCP
 messages, and the quiet playtest was stopped. Lane 3 is retained for another user review.
 
+## Suspension sounds (`T-223`)
+
+The user, 2026-11-15: *"also find some suspension clunking noises we can play when the wheels
+work up and down. also a big clunky one for when the car lands from a jump."*
+
+`Drift/SuspensionSound`, made beside `SkidSound` in `DriftController` and stepped from its
+simulation-step hook (120 a second, so it is the same at every frame rate). It reads the model
+and never writes to it: each wheel's drawn `travel`, `wheelsDown`, and the car's vertical
+`velocity`. `Drift/Suspension` is untouched. The player's own car only: another player's car
+arrives as packed wheel lifts per packet, not as steps, and stays silent.
+
+- **Clunk:** a wheel that is down and whose travel *closes* faster than `ClunkRate` (12 studs/s)
+  in a step has been shoved up: a bump, a kerb, or the catch after a drop (a wheel is drawn
+  falling no faster than `DropTime`, so the drop itself is silent). A wheel is pushed up to its
+  ground in one step, so the closing is the step's height times 120, whatever the speed: the
+  volume is that (0.08 to 0.30 across 12 to 60 studs/s) times the car's speed as a share of
+  80 studs/s, never under 0.35 of it. A wheel then waits 0.18 s, and no two clunks are closer
+  than 0.05 s, so two wheels on one kerb are one knock. Each clunk is one of the three slices
+  of clunk D, never the one just played, at 1 ± 0.08 speed, on three voices round-robin.
+- **Landing:** no wheel down for at least 0.25 s, then a touchdown, having fallen at 8 studs/s
+  or more at its fastest in the air: landing F, 0.15 to 0.38 across 8 to 45 studs/s. The
+  fastest fall, not the last step's: the step a wheel reaches its bump stop, the stop takes the
+  speed out of the body before the model counts the wheel as down. It stops any clunk still
+  ringing, and no wheel clunks for 0.35 s after any landing, soft or not.
+- **Mix:** through the 0.85 master, a clunk peaks at 0.255 and a landing at 0.323: under the
+  squeal's 0.340 and the engine's 0.45 (AUDIO.md "Mix").
+
+Every number is `Config.Fx.Suspension`. The sounds and how they were cut are in
+`assets/audio/sfx-suspension/MANIFEST.md`.
+
+**Measured** in quiet playtests in `DR-Lane1` and `DR-Lane4` (T-223), through
+`DriftController:DebugSound` and `DebugSoundMeasure`:
+
+| Run | Clunks | Landings | Notes |
+|---|---|---|---|
+| Flat open ground, straight, 6 s up to 130 studs/s | 0 | 0 | Travel never moved: fastest closing 0.00 |
+| Hill road straight (x = 190), 93 to 117 studs/s, about 430 studs | 0 | 0 | The crease where the road turns closes at 9 studs/s, under the threshold |
+| The playground's kerb lane (KerbLeft, KerbAcross, KerbRight, sloped kerb), 54 to 72 studs/s | 7 | 0 | Closing 30 to 48 studs/s, volumes 0.13 to 0.21, at least 0.1 s apart; the front pair on KerbAcross was one knock |
+| Dropped from 30 studs | 0 | 1 | Fell at 44.4 studs/s, volume 0.376; 8 clunks held off |
+| Dropped from 8 studs | 0 | 1 | Fell at 20.5 studs/s, volume 0.227 |
+| Off the playground's ramp at 91 studs/s | 2 at the ramp's foot | 1 | 1.06 s in the air, fell at 28.8, volume 0.279; 8 clunks held off |
+
+No errors or warnings from these scripts. The instances were never played (quiet), so the
+loudness against the engine and squeal is the user's to judge in a lane.
+
 ## UI
 
 None. The effects are on the car.

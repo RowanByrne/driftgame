@@ -184,11 +184,15 @@ function SuspensionSound.Attach(self: SuspensionSound, rig: any): boolean
 	local S = Config.Fx.Suspension
 	if #S.Clunks > 0 then
 		for i = 1, math.max(S.Voices, 1) do
-			table.insert(self.voices, newSound(string.format(S.ClunkName, i), body))
+			local sound = newSound(string.format(S.ClunkName, i), body)
+			-- The id now, so the file is loading before the first knock rather than on it.
+			sound.SoundId = S.Clunks[(i - 1) % #S.Clunks + 1].Id
+			table.insert(self.voices, sound)
 		end
 	end
 	if S.Landing then
 		self.landing = newSound(S.LandingName, body)
+		self.landing.SoundId = S.Landing.Id
 	end
 	self.body = body
 	return true

@@ -26,19 +26,35 @@ Both are one-shots, 3D, on the car's body; mono.
 
 | | Preview | Store id | Name (Pro Sound Effects, Roblox audio partner) | Slices: start s, length s | SHA-256 of preview | Status |
 |---|---|---|---|---|---|---|
-| A | `clunk-A-ronk-2-9120399974.ogg` | `9120399974` | Vehicle Suspension 2 (SFX): "Metal Ronk, Creaks, Various Versions", 20.0 s | 1.827, 0.116; 3.271, 0.189; 17.848, 0.128. Dull (centroid about 750 Hz), the three at the same level | `a6aefa068984b4c12b8a97466bd233c5ae172ef6afc6f0e523bcf1a9b062eaad` | candidate |
-| B | `clunk-B-ronk-3-9120400025.ogg` | `9120400025` | Vehicle Suspension 3 (SFX): "Metal Ronk, Creaks, Various Versions", 35.9 s | 3.095, 0.169; 3.636, 0.179; 4.482, 0.159. Dull (700 to 1,200 Hz); the third is 12 dB quieter in the file, so its noise is lifted with it | `e288273d3ccfbfb354647ea4623ef299eaa4e902639f0a8cc57d806b8a17eab7` | candidate |
-| C | `clunk-C-hits-twists-3-9120400369.ogg` | `9120400369` | Vehicle Suspension 3 (SFX): "Hits, Twists, Creaky, Hollow Metal", 7.6 s | 3.331, 0.35; 5.683, 0.35; 6.938, 0.35. Brighter and louder (3 to 4 kHz), hollow metal, rings past 0.35 s so it is cut there | `27c7018055226d1f0cddc1eff6d4be1529ab26f2ba5c4a743637781be3425cf5` | candidate |
-| D | `clunk-D-ronk-1-9120399954.ogg` | `9120399954` | Vehicle Suspension 1 (SFX): "Metal Ronk, Creaks, Various Versions", 7.1 s | 0.726, 0.289; 1.108, 0.198; 4.452, 0.176. Mixed: one bright, two dull | `a0e9b609b33b77486a3acae8838700e783dd6444ddd26fad8d368f3c2e271964` | candidate |
+| A | `clunk-A-ronk-2-9120399974.ogg` | `9120399974` | Vehicle Suspension 2 (SFX): "Metal Ronk, Creaks, Various Versions", 20.0 s | 1.827, 0.116; 3.271, 0.189; 17.848, 0.128. Dull (centroid about 750 Hz), the three at the same level | `a6aefa068984b4c12b8a97466bd233c5ae172ef6afc6f0e523bcf1a9b062eaad` | rejected |
+| B | `clunk-B-ronk-3-9120400025.ogg` | `9120400025` | Vehicle Suspension 3 (SFX): "Metal Ronk, Creaks, Various Versions", 35.9 s | 3.095, 0.169; 3.636, 0.179; 4.482, 0.159. Dull (700 to 1,200 Hz); the third is 12 dB quieter in the file, so its noise is lifted with it | `e288273d3ccfbfb354647ea4623ef299eaa4e902639f0a8cc57d806b8a17eab7` | rejected |
+| C | `clunk-C-hits-twists-3-9120400369.ogg` | `9120400369` | Vehicle Suspension 3 (SFX): "Hits, Twists, Creaky, Hollow Metal", 7.6 s | 3.331, 0.35; 5.683, 0.35; 6.938, 0.35. Brighter and louder (3 to 4 kHz), hollow metal, rings past 0.35 s so it is cut there | `27c7018055226d1f0cddc1eff6d4be1529ab26f2ba5c4a743637781be3425cf5` | rejected |
+| D | `clunk-D-ronk-1-9120399954.ogg` | `9120399954` | Vehicle Suspension 1 (SFX): "Metal Ronk, Creaks, Various Versions", 7.1 s | 0.726, 0.289; 1.108, 0.198; 4.452, 0.176. Mixed: one bright, two dull | `a0e9b609b33b77486a3acae8838700e783dd6444ddd26fad8d368f3c2e271964` | **picked** by the user 2026-11-15 ("D: mixed"); in `Config.Fx.Suspension.Clunks`, Gains 2.6, 9.7, 22.3 |
 
 ## Landing candidates
 
 | | Preview | Store id | Name (Pro Sound Effects) | Slice: start s, length s | SHA-256 of preview | Status |
 |---|---|---|---|---|---|---|
-| A | `land-A-vehicle-impact-2-9120386657.ogg` | `9120386657` | Vehicle Impact 2 (SFX): "Body Thumps, Hits, Against Car Metal", 2.6 s | 0.304, 0.229. The file's first, loudest hit | `bdaceb2fb6e6fa164116ab5adcdd09f174c7bc52451439b882d80cda633c8ba4` | candidate |
-| B | `land-B-metal-impacts-2-9116695115.ogg` | `9116695115` | Metal Impacts 2 (SFX): "Stabbing Interior Vehicle Floor, Rattling, Vibrating", 2.3 s | 0.891, 0.219. Low (about 900 Hz) | `9ca6319a5be9e99f26a5e12f5a591761289f51e1b4956a47facdf48350f0c71e` | candidate |
-| C | `land-C-hits-twists-3-9120400369.ogg` | `9120400369` | Vehicle Suspension 3 (SFX): "Hits, Twists, Creaky, Hollow Metal", 7.6 s | 0.182, 0.6. The suspension set's big first hit, with some of its creak; cut at 0.6 s | `6b1476c6d4e7ec2facac70c0358c42979235815eca8f5e1fbffaea41f2b3d4be` | candidate |
-| D | `land-D-metal-impacts-6-9116699196.ogg` | `9116699196` | Metal Impacts 6 (SFX): "Interior Vehicle Floor, Deep Rumbling Hits, Thudding", 2.1 s | 0.449, 0.285 | `668ee5608569a617cd6ca5e54b04166da5c8c65fe4cc7c5922ccd1e6c59db915` | candidate |
+| A | `land-A-vehicle-impact-2-9120386657.ogg` | `9120386657` | Vehicle Impact 2 (SFX): "Body Thumps, Hits, Against Car Metal", 2.6 s | 0.304, 0.229. The file's first, loudest hit | `bdaceb2fb6e6fa164116ab5adcdd09f174c7bc52451439b882d80cda633c8ba4` | rejected |
+| B | `land-B-metal-impacts-2-9116695115.ogg` | `9116695115` | Metal Impacts 2 (SFX): "Stabbing Interior Vehicle Floor, Rattling, Vibrating", 2.3 s | 0.891, 0.219. Low (about 900 Hz) | `9ca6319a5be9e99f26a5e12f5a591761289f51e1b4956a47facdf48350f0c71e` | rejected |
+| C | `land-C-hits-twists-3-9120400369.ogg` | `9120400369` | Vehicle Suspension 3 (SFX): "Hits, Twists, Creaky, Hollow Metal", 7.6 s | 0.182, 0.6. The suspension set's big first hit, with some of its creak; cut at 0.6 s | `6b1476c6d4e7ec2facac70c0358c42979235815eca8f5e1fbffaea41f2b3d4be` | rejected |
+| D | `land-D-metal-impacts-6-9116699196.ogg` | `9116699196` | Metal Impacts 6 (SFX): "Interior Vehicle Floor, Deep Rumbling Hits, Thudding", 2.1 s | 0.449, 0.285 | `668ee5608569a617cd6ca5e54b04166da5c8c65fe4cc7c5922ccd1e6c59db915` | rejected |
+
+## Landing candidates, second round
+
+The user turned down all four landings above on 2026-11-15 ("None of these"). The conductor's
+brief for the second round: heavier, chunkier, a bottoming-out clunk with the car's weight in it,
+still dry and short. Found with "car dropped heavy impact", "truck bounce heavy clunk" and
+"vehicle chassis slam"; cut the same way.
+
+| | Preview | Store id | Name (Pro Sound Effects) | Slice: start s, length s | SHA-256 of preview | Status |
+|---|---|---|---|---|---|---|
+| E | `land-E-tire-truck-body-3-9113433414.ogg` | `9113433414` | Bicycle Tire Impact Truck Body 3 (SFX): "Mountain Bike Hitting Truck Body, Booming Hits, Resonant", 3.0 s | 1.439, 0.389 | `f99ddeaa99a40048d8d2e9a18424a2cc08dd66c8907f6fd5307fea4088f035ed` | rejected |
+| F | `land-F-fuselage-clunk-3-9125661444.ogg` | `9125661444` | Metal Bangs Shaking Large Aircraft Fuselage 3 (SFX): "Massive Booming Clunk, Banging, Bouncing, Rattling", 2.6 s, stereo | 0.127, 0.5 (cut at 0.5 s) | `aa395fd115b75c6f95bbe6699dcfb7acc66b41a2798c322859a861076552e1d5` | **picked** by the user 2026-11-15 ("F: massive clunk"); in `Config.Fx.Suspension.Landing`, Gain 0.84 |
+| G | `land-G-clunk-D-pitched-down-9120399954.ogg` | `9120399954` | Clunk D's first knock, played at 0.75 speed | 0.704, 0.45 | `ac888b105e088866fd8c0728d56c9cbff3d2adeb4541f7e10462db0808910d10` | rejected |
+
+Left out: "Vehicle Impact 3 (SFX)" (`9120386928`), the same body-thump set as the rejected A;
+"Metal Crash" and "Dumpster Bangs", long ringing tails.
 
 ## How they were found and cut
 
