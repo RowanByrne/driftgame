@@ -27,7 +27,7 @@ Main is `places\DR-Main.rbxl`, served from `repo\` on the port base: always merg
 |---|---|---|---|
 | | | | |
 
-**Studio crashes on large live syncs (2026-11-15):** Studio 0.747 crashes (native null-read, same site every time) about 1-3 s after Lync pushes an edit of a large road source file (`SplineGen`, `SplineMesh` and the like) into an open place: six lane crashes and one Main crash that day. Opening a place with the code already on disk has not crashed. Save Main before pulling a change to those files into `repo\`, and expect to reopen a lane (`rocco.ps1 lanes`) after one.
+**Studio crashes on large live syncs (2026-11-15):** Studio 0.747 crashes (native null-read, same site every time) about 1-3 s after Lync pushes an edit of a large road source file (`SplineGen`, `SplineMesh` and the like) into an open place: six lane crashes and one Main crash that day. Opening a place with the code already on disk has not crashed. Save Main before pulling a change to those files into `repo\`. A lane on loan whose place went down is opened again by `rocco.ps1 sync <task>`; wait for it, and check its fingerprint.
 
 **Hands-off places:** none yet. Places agents must never inspect, playtest, attach Lync to or change, such as the user's Team Create map.
 
@@ -42,7 +42,8 @@ Each PC that works on this game, and how many lanes it opens: `lane1` up to that
 
 ## Game-only rules
 
-- **Game code goes through a worker and through lane review.** The conductor scopes and assigns each game code fix to a worker in a free lane at the appropriate tier, including small fixes. It may handle plans, claims, docs, and errands. Have the worker build and check the change, then use `set -Status ready -Where lane` with steps for the user to try. Keep that lane on the task branch until the user approves the card. Merge and update Main only after that approval. A send-back goes to the worker for another check in the lane. This overrides the small-change and merge-before-testing defaults in `CONDUCTOR.md`.
+- **Game code goes through a worker and through lane review.** The conductor scopes and assigns each game code fix to a worker at the appropriate tier, including small fixes, each in a checkout of its own (`rocco.ps1 work`; LANES.md "Lending a lane"). It may handle plans, claims, docs, and errands. The worker builds the change, tests it in a lane it borrows, and keeps that lane. Then use `set -Status ready -Where lane` with steps for the user to try: Rocco holds a lane on the task's commit for them, and the card says which (or offers Load into a lane when none is free). Merge and update Main only after that approval (CONDUCTOR.md "Checking before main"). A send-back goes to the worker, which borrows a lane again for its next check. This overrides the small-change and merge-before-testing defaults in `CONDUCTOR.md`.
+- **Lanes are lent (2026-11-15).** Nobody works in a lane any more: a task's code is written in its checkout in `work\`, and a lane only ever shows a commit (LANES.md). Never save a lane's place, and build nothing by hand in one. A place that doesn't match the fingerprint `borrow` prints is reported, not worked around. Both of this PC's lanes matched on the day of the switch.
 - Agent choice (2026-11-13): Codex on `gpt-6.1-sol`, ultra effort, for the conductor and feature leads. Workers also use `gpt-6.1-sol`: light = high, standard = xhigh, heavy = ultra. This overrides the template's model defaults while Claude credits are exhausted. Use explicit model and effort overrides when starting workers; the template's worker launcher still has its older defaults.
 
 
