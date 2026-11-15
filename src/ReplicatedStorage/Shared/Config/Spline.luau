@@ -531,7 +531,7 @@ local Spline = {
 		TurnMaxOff = 20, -- studs
 		TurnRetries = 6,
 		AimMinLimit = 5, -- degrees (12 let a road on a 40-degree scarp stray to a 13-degree grade)
-		DownhillBias = 0.01,
+		DownhillBias = 0.05, -- (0.01 let the aim swing round on a near-flat bench and the road box itself in, T-228)
 		-- THE CUT: under the road and its runoff the ground sits this far below their surface,
 		-- and past the runoff's outer edge it blends back to h, never over more than `BlendMax`
 		-- studs; how steeply, from the side slope (`BlendAngles`, below; 45 degrees and at least
