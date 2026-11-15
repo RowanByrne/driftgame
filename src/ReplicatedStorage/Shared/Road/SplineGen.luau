@@ -1577,17 +1577,19 @@ function SplineGen._publishInfields(self:Gen,sec:Spline.Section,intents:{any})
 	stats.lastMs=(os.clock()-began)*1000;stats.worstMs=math.max(stats.worstMs,stats.lastMs)
 end
 
-function SplineGen._infields(self:Gen,sec:Spline.Section,s0:number,maneuver:any)
+-- Collect metadata using an explicit candidate end. This does not append road,
+-- solve a floor or publish any support; it can also run on detached metadata.
+function SplineGen._infieldIntents(self:Gen,ending:number,maneuver:any):{any}
 	local C=Config.Spline.Biomes
 	if not self.biomes or not C.GroundEnabled or not C.Infield.Enabled then
-		self.infieldTurn=nil;self.infieldPending=nil;self.infieldArmStart=self.spline.length;return
+		self.infieldTurn=nil;self.infieldPending=nil;self.infieldArmStart=ending;return {}
 	end
 	local intents={}
 	local pending=self.infieldPending
 	-- Publish once, after the bounded departure is known or before another
 	-- planned maneuver enters it. Never extend a previously frozen end taper.
 	local curved=maneuver and maneuver.a1 and maneuver.b0
-	local known=if curved then maneuver.a1 else self.spline.length
+	local known=if curved then maneuver.a1 else ending
 	if pending and (known>=pending.b0+C.Infield.ArmLength or curved) then
 		self.infieldPending=nil
 		table.insert(intents,{pending=pending,b1=math.min(known,pending.b0+C.Infield.ArmLength)})
@@ -1611,11 +1613,15 @@ function SplineGen._infields(self:Gen,sec:Spline.Section,s0:number,maneuver:any)
 	end
 	-- A fitted section can contain the entire departure budget itself.
 	pending=self.infieldPending
-	if pending and self.spline.length>=pending.b0+C.Infield.ArmLength then
+	if pending and ending>=pending.b0+C.Infield.ArmLength then
 		self.infieldPending=nil
 		table.insert(intents,{pending=pending,b1=pending.b0+C.Infield.ArmLength})
 	end
-	self:_publishInfields(sec,intents)
+	return intents
+end
+
+function SplineGen._infields(self:Gen,sec:Spline.Section,s0:number,maneuver:any)
+	self:_publishInfields(sec,self:_infieldIntents(self.spline.length,maneuver))
 end
 
 -- Signed bank lifts are serialized independently of the distant hill. They carry
