@@ -500,3 +500,29 @@ separate `hillTerminalOriginal` and `hillTrimmedTriangles` from remaining `hillU
 ground and capped profile faces while omitting uncertified outer hills. Ordinary
 device failures retain the full fallback. Its stats expose `hillsOmitted`.
 Far Parts use no extra EditableMesh slots or shadow-casting surfaces.
+
+The finite bank has a `Hill.DrawEdgePad` rendering underlap (currently0.125stud).
+`SplineProfile.draw` / `SplineMesh.drawProfile` put structural faces beyond that
+underlap; the raw generation profile and physical support widths are unchanged.
+Visual Hill contexts keep the same pad in their station widths and use a separate
+station cache. Near-ground row refinement can continue below the old1stud minimum
+to1/32stud at difficult bank-width changes. This protects the true bank curve from
+the small inscribed-edge slivers of a finite mesh.
+
+Near-level infield groundwork (T-212, not yet connected to generation or gameplay):
+`Road/SplineInfield.patch(id, rows)` canonicalizes immutable numeric rows containing
+opposed monotone bank arcs `sa/sb`, roadside signs, XYZ triples `a/b`, opening
+`weight`, and optional outward slopes `da/db`. `new(cell?)` / `add(index, patch)`
+build a bounded spatial index. Registration is atomic, rejects whole-strip folds,
+self-overlap, later overlapping support and conflicting IDs; identical replay is
+idempotent. Coordinates retain numeric precision through contact and subtract a
+render origin before Vector3 packing. Short slope collars precede the flat middle.
+
+`sample(index,x,z,lowY?,highY?)` returns height/normal and a separate physical
+`contactS`, both bank arcs, cross-gap fraction and patch ID. It never changes a
+caller's accepted route or earned progress. `opening(index,s,side,taper?)` is indexed
+by arc/side and fades inside the real supported interval. Row weight affects the
+bank opening only; published floor geometry is always real support.
+`triangles(index,s0,s1,origin?)` returns each arc owner's exact rendering half.
+Generation reservations, car/walking boundaries, complete nearby rendering,
+retirement and actual ownership/progress integration remain required before use.
