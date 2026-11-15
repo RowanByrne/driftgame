@@ -10,7 +10,7 @@ The same in every game; changed only through the template (AGENTS.md "Template-o
 |---|---|
 | `WORKFLOW.md` | The phases from pitch to live, and their gates |
 | `CONDUCTOR.md` | Work rounds: planning, claims, workers, merging, "refresh" |
-| `LANES.md` | Lanes, their places and ports, Lync, how many lanes a PC opens |
+| `LANES.md` | Lanes and lending them to tasks, a task's checkout, places and ports, Lync, how many lanes a PC opens |
 | `MODELS.md` | Your agent (Claude Code, Codex, Gemini CLI, ...), and which model runs each job |
 | `CODING.md` | Code layout, the foundation kit, server and saving rules |
 | `TESTING.md` | Studio tools, playtests, measuring, automated tests |
@@ -32,7 +32,7 @@ The same in every game; changed only through the template (AGENTS.md "Template-o
 | `WORKSTATION.md` | Where projects live, setting up a PC, backups |
 | `NEW-PROJECT.md` | Starting a game from the template, or bringing one in |
 | `SETUP.md` | Turning the onboarding answers into the docs: a new game, more detail, a game brought in |
-| `WORKER.md` | The brief for a worker: one task in one lane, for any agent |
+| `WORKER.md` | The brief for a worker: one task in its own checkout, tested in a borrowed lane, for any agent |
 | `TEMPLATE.md` | Which files are the template's and which the game's, releasing the template, and taking a release into a game |
 
 ## game/: what this game is

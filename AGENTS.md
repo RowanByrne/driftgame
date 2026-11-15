@@ -13,7 +13,8 @@ The project folder sits in a RoDev folder next to `template\` and `_tools\` (WOR
 ```
 <Game>\
   repo\          this repo (origin = this game on GitHub, template = rodev_template)
-  lanes\laneN\   worker checkouts of this repo, one per lane (docs/workflow/LANES.md)
+  lanes\laneN\   the lanes: checkouts of this repo that Studio places stay open on, lent to a task to test in (docs/workflow/LANES.md)
+  work\<name>\   a task's own checkout of this repo, where its agent writes code
   places\        Studio places: <CODE>-Main.rbxl is served from repo\, <CODE>-LaneN.rbxl from lanes\laneN
   art\           art in progress (docs/workflow/ART-PIPELINE.md)
   backups\       place snapshots before risky edits
@@ -32,9 +33,9 @@ The project folder sits in a RoDev folder next to `template\` and `_tools\` (WOR
 | Plays the game and says go or no-go at each phase gate (WORKFLOW.md) | Proves work by measuring, and says what to look at |
 | Picks art and sounds from candidates | Generates candidates, uploads only what the user picked, sets the asset ids |
 | Publishes to players, never the agent, and changes Creator Dashboard settings (or asks the agent to, in the browser) | Runs the pre-publish checks, writes update notes when asked, records dashboard settings in `live/EXPERIENCE.md` |
-| Opens the lanes (Rocco's Lanes, which starts Lync with no windows; or `tools\serve-all.bat`) | Probes lanes before use; starts a Lync that isn't serving only when needed (LANES.md) |
+| Opens the lanes (Rocco's Lanes, which starts Lync with no windows; or `tools\serve-all.bat`) | Borrows a lane to test in, and checks its place holds the commit; starts a Lync that isn't serving only when needed (LANES.md) |
 
-The main session is the **conductor**: it plans, hands tasks to **workers** in lanes, and merges their work (CONDUCTOR.md). A worker follows `docs/workflow/WORKER.md`.
+The main session is the **conductor**: it plans, hands tasks to **workers**, each in a checkout of its own, and merges their work (CONDUCTOR.md). A worker follows `docs/workflow/WORKER.md`.
 
 ## Talking to the user
 
@@ -56,7 +57,7 @@ Then stop.
 **Git**
 - Never `reset --hard`, `checkout --` / `restore`, `clean`, `stash` or force-push to get a clean tree. Commit changes you understand; show the user anything unexplained or half-done and ask before committing it.
 - Merge, don't rebase, into `main`, and `git pull` right before pushing it. Never rewrite `main`.
-- Workers commit to `agent/<task-slug>` branches in their lane. Only the conductor merges into `main` (CONDUCTOR.md).
+- Workers commit to `agent/<task-slug>` branches in their own checkout, never in a lane. Only the conductor merges into `main` (CONDUCTOR.md).
 - **Claims:** check `docs/CLAIMS.md` before editing. Don't touch files another task owns, and keep other sessions' uncommitted changes.
 - Commit messages end with your Co-Authored-By line, naming the agent and the model you run as, like `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`. Use your own agent's usual line.
 
@@ -67,8 +68,8 @@ Then stop.
 
 **Studio**
 - Studio is reached through the Roblox Studio MCP, registered in your agent as `Roblox_Studio` (WORKSTATION.md). Without it, say so and work without Studio. Read TESTING.md before using its tools.
-- Use only the place you were given (match its name in `list_roblox_studios`, which lists only this PC's open places), and never touch the hands-off places listed in PROJECT.md. Mark every playtest you start quiet, and never leave one running.
-- **The Main place is the user's:** they playtest there. Check your work in a lane's place, never in Main, and don't change Main unless they ask (TESTING.md). Code reaches `main` only after it's checked in a lane (CONDUCTOR.md "Checking in a lane").
+- Use only the place of the lane you've borrowed, while you hold it (match its name in `list_roblox_studios`, which lists only this PC's open places), and never touch the hands-off places listed in PROJECT.md. Mark every playtest you start quiet, and never leave one running.
+- **The Main place is the user's:** they playtest there. Check your work in a lane's place, never in Main, and don't change Main unless they ask (TESTING.md). Code reaches `main` only after it's checked in a lane (CONDUCTOR.md "Checking before main").
 - Prove behaviour with numbers: positions, sizes, counts, debug state, logs. Screenshot only to answer "does this look right?", at most 3 per task, and leave the final look to the user.
 
 **Art**
@@ -78,7 +79,7 @@ Then stop.
 
 | The user says | Do |
 |---|---|
-| "refresh" | Sync with GitHub both ways and move every idle lane to the latest `main` (CONDUCTOR.md "Refresh") |
+| "refresh" | Sync with GitHub both ways, and merge what's finished (CONDUCTOR.md "Refresh") |
 | "about to publish" | The pre-publish checks, and update notes if the game has an update log (RELEASING.md) |
 | "update notes" | RELEASING.md "Update notes" |
 | "set up the game" | Turn the onboarding answers in `docs/game/ONBOARDING.md` into the docs (SETUP.md) |
@@ -94,10 +95,10 @@ Every doc, with what it holds, is in `docs/README.md`. Read the workflow doc bef
 | `docs/workflow/WORKFLOW.md` | Starting a phase, or unsure what the current phase allows |
 | `docs/workflow/CONDUCTOR.md` | Planning, spawning workers, merging, "refresh", the Workboard |
 | `docs/workflow/ROLLBACK.md` | Something that went out broke: code on main, a publish, a config, the map |
-| `docs/workflow/WORKER.md` | Working on a task in a lane |
+| `docs/workflow/WORKER.md` | Working on a task: your checkout, and testing in a lane |
 | `docs/workflow/MODELS.md` | Which agent and model runs what; setting up an agent |
 | `docs/workflow/SETUP.md` | Turning the onboarding answers into the docs |
-| `docs/workflow/LANES.md` | Adding a lane, Lync problems |
+| `docs/workflow/LANES.md` | Lending lanes, a task's checkout, adding a lane, Lync problems |
 | `docs/workflow/CODING.md` | Writing any Luau |
 | `docs/workflow/TESTING.md` | Before using Studio tools or starting a playtest |
 | `docs/workflow/ANALYTICS.md` | Adding or changing analytics events |

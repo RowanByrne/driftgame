@@ -3,6 +3,7 @@
 	"permissions": {
 		"additionalDirectories": [
 			"../lanes/",
+			"../work/",
 			"../places/",
 			"../art/",
 			"../backups/",

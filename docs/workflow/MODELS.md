@@ -9,8 +9,8 @@ Each PC picks its agent in Rocco's Settings ("Your agent"). Rocco opens it for o
 | Agent | Opened in `repo\` with | Workers | Where it keeps MCP servers |
 |---|---|---|---|
 | Claude Code | `claude` | Subagents, one per tier: `.claude/agents/roblox-dev-*.md` | `~/.claude.json`, `mcpServers` |
-| Codex | `codex` | Their own sessions, one per lane ("Workers by agent") | `~/.codex/config.toml`, `[mcp_servers.<name>]` |
-| Gemini CLI | `gemini` | Their own sessions, one per lane ("Workers by agent") | `~/.gemini/settings.json`, `mcpServers` |
+| Codex | `codex` | Their own sessions, one per task ("Workers by agent") | `~/.codex/config.toml`, `[mcp_servers.<name>]` |
+| Gemini CLI | `gemini` | Their own sessions, one per task ("Workers by agent") | `~/.gemini/settings.json`, `mcpServers` |
 
 Another agent works too if it reads `AGENTS.md` (or can be pointed at it), runs PowerShell, and can use MCP servers for Studio. Add it to this table and to Rocco's agent list (Rocco's `server/agents.ps1`).
 
@@ -60,21 +60,21 @@ Gemini's names are aliases that follow what each account can use. Codex's reason
 Every worker gets the same prompt, beginning "Follow docs/workflow/WORKER.md" (CONDUCTOR.md "A round", step 3), and reports in its last message. The conductor reads the reports, then merges.
 
 - **Claude Code:** the conductor spawns the tier's subagent (`roblox-dev-heavy`, `-standard` or `-light`), several in parallel.
-- **Codex and Gemini CLI:** each worker is its own run of the agent, in its lane's folder. Write each prompt to `..\scratch\workers\laneN-brief.md`, then start one worker per lane from `repo\`:
+- **Codex and Gemini CLI:** each worker is its own run of the agent, in its task's checkout (`rocco.ps1 work` made it, and printed its folder). Write each prompt to `..\scratch\workers\<name>-brief.md`, then start one worker per task from `repo\`:
   ```
-  powershell -ExecutionPolicy Bypass -File tools\start-worker.ps1 -Agent codex -Lane 2 -Tier heavy -Brief ..\scratch\workers\lane2-brief.md
+  powershell -ExecutionPolicy Bypass -File tools\start-worker.ps1 -Agent codex -Checkout ..\work\agent-trade-window -Tier heavy -Brief ..\scratch\workers\agent-trade-window-brief.md
   ```
-  It returns at once with the worker's process id; start the next lane's straight away. `Wait-Process -Id <id>` waits for one. The report lands in `..\scratch\workers\laneN-report.md`, and the full output in `laneN-log.txt` beside it.
-  - **What it runs for Codex:** `codex exec -C <lane> -m <model> -c model_reasoning_effort=<effort> --dangerously-bypass-approvals-and-sandbox -c mcp_servers.Roblox_Studio.default_tools_approval_mode=approve -c mcp_servers.Roblox_Studio.tool_timeout_sec=600 -o <report> -`, with the brief on stdin. Codex's Windows sandbox can't write a lane's git data (it lives in `repo\.git`, outside the lane), so a sandboxed worker can't commit: workers run without it, each in its own lane. Its Studio tools are approved up front, since nobody is there to answer them. `codex exec` loads the MCP servers from `~/.codex/config.toml`.
-  - **What it runs for Gemini CLI:** `gemini -m <model> --approval-mode=yolo -o json -p "Follow the brief above."` in the lane's folder, with the brief on stdin and `GEMINI_CLI_TRUST_WORKSPACE=true` so the lane's MCP servers connect. In headless mode a tool that would ask is refused, hence `yolo`. The report is the `response` field of the JSON output.
+  It returns at once with the worker's process id; start the next task's straight away. `Wait-Process -Id <id>` waits for one. The report lands in `..\scratch\workers\<name>-report.md`, named for the checkout's folder, and the full output in `<name>-log.txt` beside it. (`-Lane 2` in place of `-Checkout` starts it in a lane's folder: a game that still gives each task a lane.)
+  - **What it runs for Codex:** `codex exec -C <checkout> -m <model> -c model_reasoning_effort=<effort> --dangerously-bypass-approvals-and-sandbox -c mcp_servers.Roblox_Studio.default_tools_approval_mode=approve -c mcp_servers.Roblox_Studio.tool_timeout_sec=600 -o <report> -`, with the brief on stdin. Codex's Windows sandbox can't write a checkout's git data (it lives in `repo\.git`, outside the checkout), so a sandboxed worker can't commit: workers run without it, each in its own checkout. Its Studio tools are approved up front, since nobody is there to answer them. `codex exec` loads the MCP servers from `~/.codex/config.toml`.
+  - **What it runs for Gemini CLI:** `gemini -m <model> --approval-mode=yolo -o json -p "Follow the brief above."` in the checkout's folder, with the brief on stdin and `GEMINI_CLI_TRUST_WORKSPACE=true` so its MCP servers connect. In headless mode a tool that would ask is refused, hence `yolo`. The report is the `response` field of the JSON output.
   - **Not tried yet** with a real worker on this setup. If a flag has changed, `codex exec --help` or `gemini --help` shows the new one: fix the script and this section together, in the template.
-- **By hand:** open the agent in the lane's folder and give it the prompt.
+- **By hand:** open the agent in the task's checkout and give it the prompt.
 
 ## Setting up an agent
 
 - **Sign in** with your subscription.
 - **The Roblox Studio MCP**, registered as `Roblox_Studio`, where the agent keeps MCP servers (table above; WORKSTATION.md).
-- **Folders next to `repo\`:** agents work in `..\lanes`, `..\places`, `..\art`, `..\backups`, `..\scratch`, the template's checkout and Rocco (`..\..\_tools\rocco`). Claude Code is allowed in by `.claude/settings.json`. Others: allow them in the agent's own settings, or say yes when it asks.
+- **Folders next to `repo\`:** agents work in `..\work`, `..\lanes`, `..\places`, `..\art`, `..\backups`, `..\scratch`, the template's checkout and Rocco (`..\..\_tools\rocco`). Claude Code is allowed in by `.claude/settings.json`. Others: allow them in the agent's own settings, or say yes when it asks.
 - **Pick it in Rocco's Settings.**
 
 ## Changing a model
