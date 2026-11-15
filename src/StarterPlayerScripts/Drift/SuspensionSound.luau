@@ -234,7 +234,8 @@ local function play(sound: Sound, clip: Clip, volume: number, speed: number)
 	end
 	sound.PlaybackRegion = NumberRange.new(clip.Start, clip.Start + clip.Length)
 	sound.PlaybackSpeed = speed * (clip.Speed or 1)
-	sound.Volume = volume * (clip.Gain or 1) * Config.Fx.Suspension.Volume
+	-- Roblox caps a Sound's Volume at 10; said here rather than left to the engine.
+	sound.Volume = math.min(volume * (clip.Gain or 1) * Config.Fx.Suspension.Volume, 10)
 	sound.TimePosition = clip.Start
 	sound:Play()
 end

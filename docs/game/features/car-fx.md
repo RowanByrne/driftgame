@@ -664,17 +664,20 @@ arrives as packed wheel lifts per packet, not as steps, and stays silent.
   in a step has been shoved up: a bump, a kerb, or the catch after a drop (a wheel is drawn
   falling no faster than `DropTime`, so the drop itself is silent). A wheel is pushed up to its
   ground in one step, so the closing is the step's height times 120, whatever the speed: the
-  volume is that (0.08 to 0.30 across 12 to 60 studs/s) times the car's speed as a share of
+  volume is that (0.16 to 0.60 across 12 to 60 studs/s) times the car's speed as a share of
   80 studs/s, never under 0.35 of it. A wheel then waits 0.18 s, and no two clunks are closer
   than 0.05 s, so two wheels on one kerb are one knock. Each clunk is one of the three slices
   of clunk D, never the one just played, at 1 ± 0.08 speed, on three voices round-robin.
 - **Landing:** no wheel down for at least 0.25 s, then a touchdown, having fallen at 8 studs/s
-  or more at its fastest in the air: landing F, 0.15 to 0.38 across 8 to 45 studs/s. The
+  or more at its fastest in the air: landing F, 0.30 to 0.76 across 8 to 45 studs/s. The
   fastest fall, not the last step's: the step a wheel reaches its bump stop, the stop takes the
   speed out of the body before the model counts the wheel as down. It stops any clunk still
   ringing, and no wheel clunks for 0.35 s after any landing, soft or not.
-- **Mix:** through the 0.85 master, a clunk peaks at 0.255 and a landing at 0.323: under the
-  squeal's 0.340 and the engine's 0.45 (AUDIO.md "Mix").
+- **Mix:** through the 0.85 master, a clunk peaks at 0.51 and a landing at 0.646: **over** the
+  squeal's 0.340 and the engine's 0.45. They were 0.255 and 0.323, under both as AUDIO.md
+  "Mix" asks; the user tried that in a lane and asked to "make both louder" (2026-11-15), so
+  both were doubled. The quietest clunk slice is clamped at Roblox's Volume cap of 10 near
+  the top.
 
 Every number is `Config.Fx.Suspension`. The sounds and how they were cut are in
 `assets/audio/sfx-suspension/MANIFEST.md`.
@@ -691,8 +694,8 @@ Every number is `Config.Fx.Suspension`. The sounds and how they were cut are in
 | Dropped from 8 studs | 0 | 1 | Fell at 20.5 studs/s, volume 0.227 |
 | Off the playground's ramp at 91 studs/s | 2 at the ramp's foot | 1 | 1.06 s in the air, fell at 28.8, volume 0.279; 8 clunks held off |
 
-No errors or warnings from these scripts. The instances were never played (quiet), so the
-loudness against the engine and squeal is the user's to judge in a lane.
+No errors or warnings from these scripts. The volumes in the table are the first round's; the
+logic and counts are the same after the doubling.
 
 ## UI
 

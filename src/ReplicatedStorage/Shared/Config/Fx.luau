@@ -723,9 +723,13 @@ return {
 		ClunkSpeedForFull = 80, -- studs/s of the car's speed at which a clunk is at full
 		-- volume; slower, it is quieter in proportion...
 		ClunkSlowShare = 0.35, -- ...down to this share of it
-		ClunkMinVolume = 0.08, -- the clunk just over `ClunkRate`
-		ClunkMaxVolume = 0.30, -- at `ClunkRateForMax`. Under the squeal's 0.40 and the
-		-- engine's 0.45 (AUDIO.md "Mix": everything else under both)
+		ClunkMinVolume = 0.16, -- the clunk just over `ClunkRate`
+		ClunkMaxVolume = 0.60, -- at `ClunkRateForMax`. DOUBLED from 0.08 / 0.30 at the
+		-- user's word after trying it in a lane (2026-11-15: "make both louder"). Through
+		-- the master the peak is 0.51: OVER the squeal's 0.340 and the engine's 0.45, so the
+		-- AUDIO.md "Mix" rule (everything else under both) no longer holds for it, by the
+		-- user's choice. The quietest slice (Gain 22.3) reaches Roblox's Volume cap of 10
+		-- near the top and is clamped there
 		ClunkCooldown = 0.18, -- s before the same wheel may clunk again
 		ClunkGap = 0.05, -- s between any two clunks: a pair of wheels hitting one kerb in the
 		-- same moment is one knock, at the harder one's volume
@@ -737,8 +741,9 @@ return {
 		-- touchdown is soft and silent (the clunks are still held off)
 		LandSpeedForMax = 45, -- studs/s falling at which the landing is at `LandMaxVolume`.
 		-- A 30-stud drop lands at about 46 studs/s (gravity is 35 studs/s^2)
-		LandMinVolume = 0.15,
-		LandMaxVolume = 0.38, -- through the master, 0.32: just under the squeal's peak
+		LandMinVolume = 0.30,
+		LandMaxVolume = 0.76, -- DOUBLED from 0.15 / 0.38 with the clunk (2026-11-15). Through
+		-- the master, 0.646: over the squeal and the engine, by the user's choice
 		LandQuiet = 0.35, -- s after a landing that no wheel clunks
 
 		Volume = 0.85, -- the master (AUDIO.md "Mix"), as the squeal's and the scrape's
