@@ -327,6 +327,13 @@ respawn or run stop. Actual avatar exit, walking, jump and both field endpoints
 retain support without changing the parked car's debt. Retained drawing and
 colliders clip the same frozen closure scalar.
 
+Immediate walking support also verifies the current accepted field revision and
+actual collider availability before reuse. A new disjoint patch inside an older
+floor's radius receives new support without yielding; failed warm attempts never
+certify that older coverage. Dense accepted geometry can reduce the immediate
+radius within the existing triangle cap, with support rechecked each walking
+frame while the full floor builds.
+
 Generated connectors remain disabled. Ordinary scenery subtraction, exact end
 stitching, the single nearby field-view mesh and atomic generation publication
 still need integration and full-run checks. Historical blockout timings above

@@ -96,6 +96,11 @@ local fieldEpoch=0
 local fieldRequest:any=nil
 local fieldBuilding=false
 local fieldSliceMs:number?=nil
+local fieldWarmBound:number?=nil
+local supportHeld:BasePart?=nil
+local supportVelocity:Vector3?=nil
+local supportSpin:Vector3?=nil
+local supportRecovery=false
 local lastKey = ""
 local stats = {
 	rebuilds = 0,
@@ -133,12 +138,29 @@ local function newPart(): BasePart
 	return p
 end
 
+local function releaseSupport()
+	local root=supportHeld
+	if root and root.Parent then
+		local car=DriftController:Car()
+		local current=Driver.rootOf(player.Character)
+		local seated=current==root and (DriftController:IsDriving() or (car and Driver.driverOf(car)==player.UserId))
+		if not seated then
+			root.Anchored=false
+			root.AssemblyLinearVelocity=supportVelocity or Vector3.zero
+			root.AssemblyAngularVelocity=supportSpin or Vector3.zero
+		end
+	end
+	supportHeld=nil;supportVelocity=nil;supportSpin=nil;supportRecovery=false
+end
+
 local function resetWalking()
+	releaseSupport()
 	if walkingWorld then walkingWorld.destroy() end
 	walkingWorld=nil;walkingActor=nil;groundHit=nil
 end
 
 local function clear()
+	releaseSupport()
 	fieldEpoch+=1;fieldRequest=nil
 	if fieldFloor then fieldFloor:Destroy();fieldFloor=nil end
 	stats.fieldParts=0
@@ -159,7 +181,7 @@ end
 local function walkingRoot(): BasePart?
 	local character = player.Character
 	local root = Driver.rootOf(character)
-	if not root or root.Anchored then
+	if not root or (root.Anchored and root~=supportHeld) then
 		return nil
 	end
 	if DriftController:IsDriving() then
@@ -172,23 +194,33 @@ local function walkingRoot(): BasePart?
 	return root
 end
 
-local function requestField(spline:any,pos:Vector3,actor:BasePart)
+local function warmField(spline:any,pos:Vector3)
 	if not spline.infields then return end
-	local W=Config.Spline.Biomes.Infield.Walking
 	local first=spline.firstSample*spline.step
 	if fieldFloor and (not fieldFloor:IsDescendantOf(workspace) or fieldFloor:GetAttribute("InfieldFirst")~=first) then
 		fieldFloor:Destroy();fieldFloor=nil;stats.fieldParts=0
 	end
-	-- The first exit into a field needs real ground before a sliced build can
-	-- finish. This small exact neighbourhood is bounded and cannot yield.
-	local covered=fieldFloor and math.abs(pos.X-(fieldFloor:GetAttribute("InfieldX") :: number))<=(fieldFloor:GetAttribute("InfieldRadius") :: number)-2
-		and math.abs(pos.Z-(fieldFloor:GetAttribute("InfieldZ") :: number))<=(fieldFloor:GetAttribute("InfieldRadius") :: number)-2
-	if not covered then
-		local model,info=SplineParts.buildInfield(spline,pos.X,pos.Z,W.WarmRadius,folder :: Folder,
-			{supportedOnly=true,collidable=true,queryable=true,first=first,noYield=true,maxTriangles=W.WarmTriangles})
-		if model then local old=fieldFloor;fieldFloor=model;if old then old:Destroy() end;stats.fieldParts=info.parts
-		elseif info~="empty" then stats.fieldFailure=tostring(info) end
+	local model,info=SplineParts.warmInfield(spline,pos.X,pos.Z,folder :: Folder,fieldFloor,{maxTriangles=fieldWarmBound})
+	if model~=fieldFloor then
+		local old=fieldFloor;fieldFloor=model;if old then old:Destroy() end
+		stats.fieldParts=info.parts or 0
 	end
+	stats.fieldFailure=if info.ready then "" else info.failure
+	if info.ready then releaseSupport()
+	elseif walkingActor then
+		if supportHeld~=walkingActor then
+			releaseSupport();supportHeld=walkingActor
+			supportVelocity=walkingActor.AssemblyLinearVelocity;supportSpin=walkingActor.AssemblyAngularVelocity
+		end
+		walkingActor.Anchored=true
+		if supportRecovery then DriftController:_askForRespawn() end
+	end
+end
+
+local function requestField(spline:any,pos:Vector3,actor:BasePart)
+	if not spline.infields then return end
+	local W=Config.Spline.Biomes.Infield.Walking
+	warmField(spline,pos)
 	fieldRequest={spline=spline,position=pos,actor=actor,epoch=fieldEpoch,
 		first=spline.firstSample*spline.step,revision=spline.infieldRevision,parent=folder}
 	if fieldBuilding then return end
@@ -220,7 +252,10 @@ local function requestField(spline:any,pos:Vector3,actor:BasePart)
 				elseif ok and info=="empty" then
 					if fieldFloor then fieldFloor:Destroy();fieldFloor=nil end
 					stats.fieldParts=0;stats.fieldFailure=""
-				else stats.fieldFailure=tostring(if ok then info else model) end
+				else
+					stats.fieldFailure=tostring(if ok then info else model)
+					if supportHeld then supportRecovery=true;DriftController:_askForRespawn() end
+				end
 			end
 			staging:Destroy()
 		end
@@ -587,6 +622,7 @@ local function frame()
 	local fieldKey=if spline.infields then `/{spline.infieldRevision}/{spline.firstSample}/{math.floor(pos.X/PIECE)}/{math.floor(pos.Z/PIECE)}` else ""
 	local key = `{n}/{band}/{laid}/{closingKey}{fieldKey}`
 	if key == lastKey then
+		if folder and folder.Parent then warmField(spline,pos) end
 		return
 	end
 	lastKey = key
@@ -665,6 +701,7 @@ function RoadGroundController:DebugState()
 		fieldWorstMs=stats.fieldWorstMs,
 		fieldFailure=stats.fieldFailure,
 		fieldBuilding=fieldBuilding,
+		holdingForGround=supportHeld~=nil,
 		ownerS=walkingWorld and walkingWorld.hint,
 		anchorS=walkingWorld and walkingWorld.contactState and walkingWorld.contactState.anchorS,
 		travel=walkingWorld and walkingWorld.contactState and walkingWorld.contactState.travel,
@@ -680,6 +717,13 @@ function RoadGroundController:DebugFieldBudget(sliceMs:number?)
 	fieldSliceMs=if sliceMs then math.clamp(sliceMs,.001,Config.Spline.Mesh.SliceMs) else nil
 	lastKey=""
 	return fieldSliceMs
+end
+
+function RoadGroundController:DebugWarmBound(triangles:number?)
+	assert(RunService:IsStudio(),"DebugWarmBound is Studio only")
+	fieldWarmBound=if triangles then math.clamp(triangles,1,Config.Spline.Biomes.Infield.Walking.WarmTriangles) else nil
+	clear()
+	return fieldWarmBound
 end
 
 -- A point on the road's ground for a test to walk to, `d` studs right of the centre line at

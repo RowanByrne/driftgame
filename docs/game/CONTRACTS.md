@@ -642,6 +642,20 @@ or normals. Field Parts use exact local-coordinate wedges without the ordinary
 road builder's outward expansion; collidable floors extend down by the configured
 walking thickness. A bounded `noYield/maxTriangles` option supplies immediate
 walking support while the larger sliced build is pending.
+`SplineParts.warmInfield(spline,x,z,parent,old?,opts?)` certifies reuse against
+the current accepted revision/retained first, footprint and a real supported
+collider ray at the frozen height. New support is built without yielding; dense
+neighbourhoods shrink their immediate radius while keeping the triangle cap.
+A failed attempt never certifies old spatial coverage. Walking rechecks this
+support between ordinary spatial rebuilds, so a smaller warm patch follows the
+actual avatar until the full replacement is ready.
+Certification includes supported points over the avatar's footprint and a
+movement margin; the immediate radius cannot shrink below that safe neighbourhood.
+If no bounded immediate build succeeds, the controller temporarily holds its
+own walking root until a real full collider is ready. Clear/seat/respawn paths
+release that hold without unanchoring a server-seated root. A full-build failure
+uses the existing car recovery request. Studio-only `DebugWarmBound` injects a
+small triangle bound to exercise this failure/recovery path.
 
 RoadGroundController owns an independent SplineWorld for each walking root and
 copies the parked car's contact once. Actual avatar centers commit it; ground

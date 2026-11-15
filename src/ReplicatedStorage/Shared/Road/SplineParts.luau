@@ -289,7 +289,64 @@ function SplineParts.buildInfield(spline:Spline.Spline,x:number,z:number,radius:
 	end,debug.traceback)
 	if not ok then batch:Destroy();model:Destroy();return nil,tostring(err) end
 	worst=math.max(worst,os.clock()-sliceStart)
+	model:SetAttribute("InfieldParts",count)
 	return model,{triangles=triangles,parts=count,ms=(os.clock()-started-paused)*1000,sliceMs=worst*1000,slices=slices}
+end
+
+-- Immediate support is about accepted geometry, not just a model's radius.
+-- A newer disjoint patch can arrive inside an older model's nominal box.
+function SplineParts.warmInfield(spline:any,x:number,z:number,parent:Instance,old:Model?,opts:any?):(Model?,any)
+	local o=opts or {};local W=Config.Spline.Biomes.Infield.Walking
+	local first=spline.firstSample*spline.step
+	local floors={}
+	if spline.infields then
+		for _,dx in {-W.WarmFootprint,0,W.WarmFootprint} do for _,dz in {-W.WarmFootprint,0,W.WarmFootprint} do
+			local floor=Infield.sample(spline.infields,x+dx,z+dz)
+			if floor and floor.closingS>=first then table.insert(floors,{x=x+dx,z=z+dz,y=floor.y}) end
+		end end
+	end
+	if #floors==0 then return old,{ready=true,reused=true,needed=false} end
+	local params=RaycastParams.new();params.FilterType=Enum.RaycastFilterType.Include
+	local function supported(model:Model):boolean
+		params.FilterDescendantsInstances={model}
+		for _,floor in floors do
+			local found=false
+			for _,offset in {{0,0},{.005,0},{-.005,0},{0,.005},{0,-.005}} do
+				local hit=workspace:Raycast(Vector3.new(floor.x+offset[1],floor.y+1,floor.z+offset[2]),Vector3.new(0,-2,0),params)
+				-- Adjacent triangles can win a shared crease. A tiny ray whisker
+				-- covers packing hairlines, far smaller than an avatar's foot.
+				if hit and hit.Normal.Y>.8 and math.abs(hit.Position.Y-floor.y)<=W.SupportTolerance then found=true;break end
+			end
+			if not found then return false end
+		end
+		return true
+	end
+	if old and old:IsDescendantOf(parent) and old:GetAttribute("InfieldFirst")==first
+		and old:GetAttribute("InfieldRevision")==spline.infieldRevision then
+		local radius=old:GetAttribute("InfieldRadius") :: number
+		local margin=W.WarmFootprint+W.WarmMotionMargin
+		if math.abs(x-(old:GetAttribute("InfieldX") :: number))<=radius-margin
+			and math.abs(z-(old:GetAttribute("InfieldZ") :: number))<=radius-margin and supported(old) then
+			return old,{ready=true,reused=true,needed=true,parts=old:GetAttribute("InfieldParts")}
+		end
+	end
+	local radius=W.WarmRadius;local failure="immediate field support is unavailable"
+	repeat
+		local model,info=SplineParts.buildInfield(spline,x,z,radius,parent,{supportedOnly=true,collidable=true,queryable=true,
+			first=first,noYield=true,maxTriangles=o.maxTriangles or W.WarmTriangles,cancelled=o.cancelled})
+		if model then
+			if info.parts>0 and supported(model) then
+				info.ready=true;info.needed=true;info.reused=false;info.radius=radius
+				return model,info
+			end
+			model:Destroy();failure="immediate field wedges do not cover their physical center"
+		else failure=tostring(info) end
+		if o.cancelled and o.cancelled() then break end
+		if radius<=W.WarmMinRadius then break end
+		radius=math.max(W.WarmMinRadius,radius*.5)
+	until false
+	-- A failed attempt does not certify the old radius or the new revision.
+	return old,{ready=false,reused=true,needed=true,failure=failure}
 end
 
 return SplineParts

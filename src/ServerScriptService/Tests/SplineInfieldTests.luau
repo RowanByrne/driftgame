@@ -842,6 +842,69 @@ function Tests.server()
 	return result
 end
 
+function Tests.warmSupport()
+	local road=game.ReplicatedStorage.Shared.Road
+	local Infield,Parts=require(road.SplineInfield),require(road.SplineParts)
+	local folder=Instance.new("Folder");folder.Name="__ImmediateFieldSupport";folder.Parent=workspace
+	local ok,result=xpcall(function()
+		local checks={};local function check(name,pass,detail)table.insert(checks,{name=name,ok=pass,detail=detail})end
+		local function patch(id,x,z,rows,spacing,arc)
+			local out={}
+			for i=0,rows do table.insert(out,{sa=arc+i*spacing,sb=arc+1000-i*spacing,sideA=1,sideB=-1,
+				a={x,10,z-i*spacing},b={x+40,10,z-i*spacing},weight=1}) end
+			return Infield.patch(id,out)
+		end
+		local function floorAt(model,x,z)
+			local params=RaycastParams.new();params.FilterType=Enum.RaycastFilterType.Include;params.FilterDescendantsInstances={model}
+			local hit=workspace:Raycast(Vector3.new(x,11,z),Vector3.new(0,-2,0),params)
+			return hit and hit.Normal.Y>.8 and math.abs(hit.Position.Y-10)<.02
+		end
+		local sp={infields=Infield.new(),infieldRevision=1,firstSample=0,step=4}
+		Infield.add(sp.infields,patch("original support",0,0,2,10,100))
+		local old,oldInfo=Parts.buildInfield(sp,20,-10,160,folder,{supportedOnly=true,collidable=true,queryable=true,noYield=true})
+		assert(old,tostring(oldInfo))
+		Infield.add(sp.infields,patch("new nearby support",50,0,2,10,200));sp.infieldRevision+=1
+		local oldMiss=not floorAt(old,60,-10)
+		local yielded=false;task.defer(function()yielded=true end)
+		local immediate,info=Parts.warmInfield(sp,60,-10,folder,old)
+		check("new revision inside an old radius has an actual collider before a sliced build can yield",oldMiss and immediate~=old
+			and info.ready and not info.reused and not yielded and floorAt(immediate,60,-10)
+			and immediate:GetAttribute("InfieldRevision")==2 and info.slices==1,
+			`old radius160 did not contain the new triangles; immediate parts{info.parts}, time{info.ms}ms`)
+		local again,reused=Parts.warmInfield(sp,61,-10,folder,immediate)
+		check("only matching revision and real successful support may reuse a floor",again==immediate and reused.ready and reused.reused
+			and floorAt(again,61,-10),"coverage is checked against the real colliders as well as the build footprint")
+		Infield.add(sp.infields,patch("support after a failed warm attempt",100,0,2,10,300));sp.infieldRevision+=1
+		local failed,failure=Parts.warmInfield(sp,110,-10,folder,old,{maxTriangles=1})
+		check("a failed warm attempt cannot certify an old floor's radius or revision",failed==old and not failure.ready
+			and old:GetAttribute("InfieldRevision")==1 and not floorAt(old,110,-10),failure.failure)
+		local retried,retry=Parts.warmInfield(sp,110,-10,folder,failed)
+		check("a subsequent attempt supplies missing new support immediately",retry.ready and retried~=old and not yielded
+			and retried:GetAttribute("InfieldRevision")==3 and floorAt(retried,110,-10),
+			"failed support never becomes cached coverage")
+		local dense={infields=Infield.new(),infieldRevision=1,firstSample=0,step=4}
+		Infield.add(dense.infields,patch("old sparse patch",-50,0,2,16,500))
+		local sparse,why=Parts.buildInfield(dense,-30,-16,100,folder,{supportedOnly=true,collidable=true,queryable=true,noYield=true})
+		assert(sparse,tostring(why))
+		Infield.add(dense.infields,patch("accepted dense new patch",0,0,64,.5,600));dense.infieldRevision+=1
+		local warmed,denseInfo=Parts.warmInfield(dense,20,-16,folder,sparse)
+		check("dense accepted support shrinks its immediate neighbourhood within the same allocation bound",denseInfo.ready
+			and denseInfo.radius<8 and denseInfo.triangles<=96 and denseInfo.slices==1 and not yielded and floorAt(warmed,20,-16),
+			`radius{denseInfo.radius}, triangles{denseInfo.triangles}, parts{denseInfo.parts}, time{denseInfo.ms}ms`)
+		local footMissing=0
+		for _,dx in {-2,0,2} do for _,dz in {-2,0,2} do if not floorAt(warmed,20.75+dx,-16+dz) then footMissing+=1 end end end
+		local moved,movement=Parts.warmInfield(dense,20.75,-16,folder,warmed)
+		check("the smallest warm floor covers real foot colliders across seams and the next movement",denseInfo.radius==4
+			and footMissing==0 and moved==warmed and movement.ready and movement.reused and not yielded,
+			`nine footprint rays after0.75stud movement across a column/row seam; missing{footMissing}`)
+		local passed=0;for _,c in checks do if c.ok then passed+=1 end end
+		return {passed=passed,total=#checks,checks=checks}
+	end,debug.traceback)
+	folder:Destroy()
+	if not ok then return {passed=0,total=1,checks={{name="new-field immediate support fixture completes",ok=false,detail=result}}} end
+	return result
+end
+
 function Tests.retirement()
 	local road=game.ReplicatedStorage.Shared.Road
 	local Spline,Planner,Infield=require(road.Spline),require(road.SplineInfieldPlanner),require(road.SplineInfield)

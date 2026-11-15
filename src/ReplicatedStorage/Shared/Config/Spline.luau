@@ -420,7 +420,8 @@ local Spline = {
 			HeadingDot = -.65,
 			Facing = .65,
 			EndBlend = 64,
-			Walking = { Radius=52, WarmRadius=8, WarmTriangles=96, Thickness=2 },
+			Walking = { Radius=52, WarmRadius=8, WarmMinRadius=4, WarmFootprint=2, WarmMotionMargin=1,
+				WarmTriangles=96, Thickness=2, SupportTolerance=.02 },
 		},
 		FaceRise = { 5, 10 }, -- the smaller outer faces beyond the supported field/bank
 		FaceDrop = { 5, 35 },
