@@ -877,10 +877,12 @@ insertion still checks the destination's current published triangles, matching
 touching heights, and destination hash spacing. Prevalidation never publishes
 data or certifies compatibility with an index that changes later.
 `SplineInfield.canonical(patch)` returns a module-certified canonical patch or
-copies raw numeric data through the validating factory. `Spline.addInfields`
-normalizes a batch once before its existing validation/publication passes, so
-received sections can reuse their own certified topology without sharing the
-sender's cache or mutable wire tables.
+copies raw numeric data through the validating factory. `Spline.append`
+normalizes received patches before preflight and passes that same local batch
+to `Spline.addInfields`; direct additions also normalize their batch once.
+Every existing preflight/validation/publication check remains. Received sections
+reuse their own certified topology without sharing the sender's cache or mutable
+wire tables, and the incoming section data is never rewritten.
 `SplineInfieldTests.curvedBanks`
 checks contact, credit, finite ends and retirement; actual collider/render and
 natural-generation proof remain required before enabling generated fields.

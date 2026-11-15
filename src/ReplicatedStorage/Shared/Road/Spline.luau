@@ -541,9 +541,12 @@ end
 function Spline.append(self: Spline, sec: Section)
 	local s0 = self.length
 	local s1 = s0 + sec.len
+	local acceptedInfields:{Infield.Patch}?=nil
 	if sec.ip then
+		acceptedInfields={}
 		local pending=Infield.new()
 		for _,patch in sec.ip do
+			patch=Infield.canonical(patch);table.insert(acceptedInfields,patch)
 			if self.infields then Infield.add(self.infields,patch,true) end
 			Infield.add(pending,patch)
 		end
@@ -590,7 +593,7 @@ function Spline.append(self: Spline, sec: Section)
 	end
 	self.lastSample = i
 	addCheckPoints(self, s1)
-	if sec.ip then self:addInfields(sec.ip) end
+	if acceptedInfields then self:addInfields(acceptedInfields) end
 end
 
 function Spline.addInfields(self:Spline,patches:{Infield.Patch})
