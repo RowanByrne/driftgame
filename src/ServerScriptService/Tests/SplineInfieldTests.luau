@@ -104,6 +104,9 @@ function Tests.run(_self,subject)
 		"no partial cells survive an invalid pairing")
 	local reversed=rows(0,0);reversed[2].sb=920
 	check("pairing cannot reverse halfway along an opposed bank",not pcall(function()Infield.patch("reversed",reversed)end),"old arc must move monotonically backwards")
+	local crossed=rows(0,0);crossed[2].sa=890;crossed[2].sb=880
+	check("approach and departure ownership ranges cannot overlap",not pcall(function()Infield.patch("crossed ranges",crossed)end),
+		"the frozen pair retains two disjoint route histories")
 	local loop={
 		{sa=0,sb=60,sideA=1,sideB=-1,a={0,0,0},b={0,0,10},weight=1},
 		{sa=10,sb=50,sideA=1,sideB=-1,a={10,0,0},b={10,0,10},weight=1},
@@ -442,6 +445,15 @@ function Tests.contacts(_self,subjects)
 		check("a peer token comes from a real known field connection",acquired and acquired.peer and acquired.contactS==row.sb
 			and math.abs(acquired.ownerS-row.sa)<1e-6 and acquired.kind==sp.TARMAC,
 			"physical asphalt is recognized without replacing accepted A")
+		local distant=nil
+		for _,r in patch.rows do if r.weight==1 and math.abs(r.sb-acquired.peer.s)>24 then distant=r;break end end
+		local boundedFloor=true
+		if distant then
+			local p=Infield.columns(distant)[6]
+			boundedFloor=Contact.resolve(sp,p[1],p[3],row.sa,{low=p[2]-1,high=p[2]+1,peer=acquired.peer,limit=12})==nil
+		end
+		check("retained field rows obey the same physical movement bound",distant and boundedFloor,
+			"cross-gap bank changes remain legal, but distant rows cannot advance the token")
 		local all=true;local count=0
 		for _,target in {patch.rows[#patch.rows].sb-32,patch.rows[1].sb+32} do
 			local token=Contact.copy(acquired.peer)
@@ -460,6 +472,12 @@ function Tests.contacts(_self,subjects)
 		local outside=patch.rows[1].sb+32
 		check("a missing token cannot reacquire remote peer road",resolve(outside,row.sa,nil)==nil,
 			"retention cannot become a new global road search")
+		local ownerEnd=patch.rows[#patch.rows].sa
+		local beforePeer=patch.rows[#patch.rows].sb-32
+		local wide=resolve(beforePeer,ownerEnd,nil,640)
+		local credited=resolve(beforePeer,ownerEnd,nil,640,{creditS=beforePeer})
+		check("wide owned retries cannot bypass the known peer's credit gate",wide==nil and credited and math.abs(credited.ownerS-beforePeer)<1e-5,
+			`wide={wide and wide.ownerS}, credited={credited and credited.ownerS}, target={beforePeer}; explicit credit is required`)
 		local last=resolve(outside,row.sa,acquired.peer,640)
 		local token=Contact.copy(last.peer)
 		local before=token.s
@@ -481,19 +499,25 @@ function Tests.contacts(_self,subjects)
 		local departure=sp.length;sp:append(sections[#sections])
 		local more=Planner.plan(sp,turnStart-480,turnStart-32,departure,sp.length)
 		sp:addInfields(more)
-		local chained=false
+		local chained=false;local chainToken=nil
 		if #more>0 then
 			local nextRow=more[1].rows[math.ceil(#more[1].rows*.5)]
 			local history=Contact.copy(token)
 			for s=token.s+1,nextRow.sa,1 do local hit=resolve(s,row.sa,history,12);if not hit then history=nil;break end;history=Contact.copy(hit.peer) end
 			if history then
-				local p=Infield.columns(nextRow)[6]
-				local hit=Contact.resolve(sp,p[1],p[3],row.sa,{low=p[2]-1,high=p[2]+1,limit=160,peer=history})
+				local a,b=nextRow.a,nextRow.b
+				local x,z=a[1]+(b[1]-a[1])*.1,a[3]+(b[3]-a[3])*.1
+				local floor=Infield.sample(sp.infields,x,z)
+				local hit=Contact.resolve(sp,x,z,row.sa,{low=floor.y-1,high=floor.y+1,limit=160,peer=history})
 				chained=hit and hit.peer.patchId==more[1].id and hit.ownerS==row.sa and hit.kind==sp.GRASS
+				chainToken=hit and Contact.copy(hit.peer)
 			end
 		end
 		check("an authorized physical leg can enter its next real field without erasing debt",chained,
 			"connection acquisition follows physical B while accepted ownership stays on original A")
+		local backward=chainToken and resolve(row.sb,ownerEnd,chainToken,640)
+		check("chaining fields cannot reclassify original A debt as owned B asphalt",backward and backward.ownerS==ownerEnd
+			and backward.peer~=nil and backward.source=="peer","native contact remains physical until the caller approves a credit-complete handoff")
 		sp:trim(b0+16)
 		local retained=resolve(outside,row.sa,token,12)
 		check("physical B survives retirement of old A ownership",retained and retained.contactS>=sp.firstSample*sp.step
@@ -501,7 +525,7 @@ function Tests.contacts(_self,subjects)
 		local a,b=row.a,row.b
 		local x,z=a[1]+(b[1]-a[1])*.95,a[3]+(b[3]-a[3])*.95
 		local floor=Infield.sample(sp.infields,x,z)
-		local liveFloor=Contact.resolve(sp,x,z,row.sa,{low=floor.y-1,high=floor.y+1,peer=token,limit=160})
+		local liveFloor=Contact.resolve(sp,x,z,row.sa,{low=floor.y-1,high=floor.y+1,peer=acquired.peer,limit=160})
 		local fresh=Contact.resolve(sp,x,z,row.sa,{low=floor.y-1,high=floor.y+1,limit=160})
 		check("already acquired field support follows the real retained closure domain",liveFloor and floor.closingS>=sp.firstSample*sp.step
 			and liveFloor.kind==sp.GRASS and fresh==nil,"retained support remains real; retired history cannot acquire it anew")

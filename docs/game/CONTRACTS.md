@@ -593,6 +593,13 @@ the existing1.05times travel plus8stud re-entry formula with SplineSequence;
 only a real live credited piece may update route progress. The resolver is
 checked groundwork; actual runner/client/walking tracker commits remain to be
 connected before enabling generated fields.
+Field movement is bounded using the token bank's corresponding row coordinate,
+so a legitimate cross-gap contact can change physical bank without jumping along
+it. While a token is retained, no resolver result adopts an owner. Known-pair
+guards also cover owned retries when the queried point lies beyond the patch.
+An optional trusted `creditS` permits a credit-complete native handoff; actual
+live credited-piece checks remain the caller's responsibility. Individual patch
+approach/departure arc ranges are disjoint by contract.
 
 `SplineMesh.buildInfield(spline,x,z,radius,parent,opts?)` builds one complete
 nearby field mesh, with exact frozen normals and origin-relative positions.

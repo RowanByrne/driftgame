@@ -7,7 +7,7 @@ local Config=require(game.ReplicatedStorage.Shared.Config)
 local Contact={}
 
 export type Token={s:number,patchId:string,road:any}
-export type Options={limit:number?,first:number?,closing:number?,low:number?,high:number?,peer:Token?}
+export type Options={limit:number?,first:number?,closing:number?,low:number?,high:number?,peer:Token?,creditS:number?}
 export type Hit={ownerS:number,contactS:number,d:number?,routeD:number,y:number,normal:Vector3,kind:number,
 	peer:Token?,source:string,closingS:number?}
 
@@ -36,18 +36,24 @@ function Contact.resolve(sp:any,x:number,z:number,owner:number?,options:Options?
 	local initial=sp:infieldContact(x,z,owner,o.low,o.high,limit,math.max(first,o.closing or 0))
 	if initial and initial.closingS and initial.closingS<first then initial=nil end
 	local patch=if peer then index.patches[peer.patchId] elseif initial then index.patches[initial.patch] else nil
-	local function bank(s:number):string?
-		if not patch then return nil end
-		local a,b=patch.rows[1],patch.rows[#patch.rows]
+	local function bank(which:any,s:number):string?
+		if not which then return nil end
+		local a,b=which.rows[1],which.rows[#which.rows]
 		local function distance(low:number,high:number):number return math.max(low-s,s-high,0) end
 		local da,db=distance(a.sa,b.sa),distance(b.sb,a.sb)
 		return if da==db then nil elseif da<db then "A" else "B"
 	end
-	local ownerBank=bank(owner)
+	local guards=if index then index.closing[math.floor(owner/index.cell)] or {} else {}
+	local function mayOwn(s:number):boolean
+		if peer then return false end -- only the caller's real credit check may hand off a retained peer
+		if o.creditS and finite(o.creditS) and s<=o.creditS+.001 then return true end
+		for _,which in guards do if bank(which,s)~=bank(which,owner) then return false end end
+		return true
+	end
 	local function native(seed:number,history:number,owned:boolean):Hit?
 		local s,d=sp:projectFrom(x,z,seed)
 		if not s or not d or s<first or s>sp.length or math.abs(s-history)>limit then return nil end
-		if owned and patch and bank(s)~=ownerBank then return nil end
+		if owned and not mayOwn(s) then return nil end
 		local kind=sp:groundKind(s,d)
 		if kind==nil then return nil end
 		local y=sp:terrainY(s,d)
@@ -58,10 +64,12 @@ function Contact.resolve(sp:any,x:number,z:number,owner:number?,options:Options?
 	end
 	-- Exact occupied ground keeps priority at its original bank. Recognized
 	-- opposite-leg Newton convergence cannot silently change route ownership.
-	if owner>=first then local owned=native(owner,owner,true);if owned then return owned end end
+	if owner>=first and not peer then local owned=native(owner,owner,true);if owned then return owned end end
 	if peer then
 		local floor=Infield.sample(index,x,z,o.low,o.high)
-		if floor and floor.patch==peer.patchId and floor.closingS>=first then
+		local physicalBank=bank(patch,peer.s)
+		local rowArc=if floor and physicalBank then (if physicalBank=="A" then floor.sa else floor.sb) else nil
+		if floor and floor.patch==peer.patchId and floor.closingS>=first and rowArc and math.abs(rowArc-peer.s)<=limit then
 			local physical=floor.contactS
 			if physical<first then physical=if floor.sb>=first then floor.sb else floor.sa end
 			local d=nil
@@ -88,6 +96,7 @@ function Contact.resolve(sp:any,x:number,z:number,owner:number?,options:Options?
 			return {ownerS=owner,contactS=joined.contactS,d=joined.d,routeD=offRoad,y=joined.y,normal=joined.normal,
 				kind=joined.kind,peer={s=joined.contactS,patchId=joined.patch,road=sp},source="field",closingS=joined.closingS}
 		end
+		return nil
 	end
 	if initial then
 		return {ownerS=initial.ownerS,contactS=initial.contactS,d=initial.d,routeD=initial.routeD,

@@ -36,6 +36,7 @@ end
 function Infield.patch(id:string,rows:{Row}):Patch
 	assert(id~="","an infield needs a stable identity")
 	assert(#rows>=2 and #rows<=512,"an infield needs 2..512 boundary rows")
+	assert(rows[#rows].sa<rows[#rows].sb,"infield approach and departure arc ranges must be disjoint")
 	local copy={}
 	for i,row in rows do
 		assert(finite(row.sa) and finite(row.sb) and row.weight>=0 and row.weight<=1,"invalid infield row")
