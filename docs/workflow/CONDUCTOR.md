@@ -25,7 +25,7 @@ The user hands over work and follows it in Rocco's Workboard, and the conductor 
 5. **Check, then push.** Check the merged build in that lane's place, then push it to `main` from the lane, so Main gets exactly the build you checked. When it doesn't play, fix it in the lane first, or drop the merge: nothing was pushed, so `main` never had it.
 6. **Refresh lanes.** Move every idle lane to the new `main` ("Refresh" step 4), so every place shows the merged game.
 7. **Clean up.** Remove the round's lines from `docs/CLAIMS.md` and push. Delete the merged `agent/*` branches, locally and on GitHub.
-8. **Report** to the user, short (AGENTS.md "Talking to the user"): what merged and what to try in the Main place, then anything flagged: problems workers raised, follow-ups, decisions needed. On the Workboard, each merged task goes to To test, with what to try.
+8. **Report** to the user, short (AGENTS.md "Talking to the user"): what merged and what to try in the Main place, then anything flagged: problems workers raised, follow-ups, decisions needed. On the Workboard, each merged task goes to To test, with what to try, except one the user already tested and approved in its lane (`[merge]`): it stays done.
 
 ### Checking in a lane
 
@@ -61,16 +61,19 @@ Rocco's Workboard (`tools\rocco.bat`) is where the user hands over work and foll
 
 | `list` shows | The user | You |
 |---|---|---|
-| `[plan]` | Sent a note: a bug, tweak, idea or feature | Take it on as "Taking a note on" says, below. A setup card Rocco queued (its note starts "Follow docs/workflow/SETUP.md") is done as its note says |
+| `[plan]` | Sent a note as a card (before messages), or Rocco queued a setup card | Take it on as "Taking a message on" says, below, with the note as the card. A setup card (its note starts "Follow docs/workflow/SETUP.md") is done as its note says |
 | `[question]` | Asked something | `reply T-012 -Text "..."`, short. It shows under their note box |
 | `[approved]` | Approved a feature plan | A task per step: `new -Title "..." -Plan T-020 [-After T-021]` (`-After`: it needs that done first). Then `clear T-020` |
 | `[revise]` | Asked for changes to a plan | Change its spec, then `set T-020 -Summary "..." -Steps ...`, then `clear` |
 | `[answer]` | Answered a Stuck task's question | Carry on with their answer (to the worker, if one asked), and `set -Status working` |
 | `C-… [answer]` | Answered a question you asked them ("Talking to the user") | Carry on with it, then `clear C-…` |
-| `C-… [message]` | Wrote to you, or replied to one of your messages | `show C-…` if it's cut short, act on it, then `clear C-…` |
+| `C-… [message]` | Wrote to you: a bug, tweak, idea, feature or question, or a reply to one of your messages | `show C-…` (its screenshots, and what they said it is), take it on as "Taking a message on" says, below, then `clear C-…` |
+| `C-… [message]` from Rocco itself (`show` says so) | Clicked Fix lanes: a lane with work in it went down (its place closed in Studio, or its Lync stopped), and Rocco is opening it again | Check that lane's place is open and syncing (`rocco.ps1 lanes` opens what isn't), have its worker redo what failed while it was down, then `clear C-…` |
+| `C-… [message]` from a feature's agent (`show` says so) | Nothing: an agent of their approved feature wrote to you with `rocco.ps1 tell` | Do what it needs of you (merge its approved branch, a lane, a file to claim), then `clear C-…`. Answer it with `rocco.ps1 tell T-020 -Text "..."`, never through Rocco's API or the user's chat |
+| `[stop]`, `[resume]`, `[restart]`, `[assign]` | Stepped in on a task from its card: Pause, Resume, Start again, or a lane or worker picked for it | Do what `show T-012` says for it: stop its worker and keep its branch; hand it out again; stop its worker and start a fresh one from what it left; or move it. Then `clear` |
 | `[reopen]` | Tested it: not right yet | Their words are the last `you` line in `show`. Fix it as a task again: with the worker that built it, if it's still there (below) |
 | `[followup]` | Added to a task while it ran | Fold it in, or pass it to the worker (below); then `clear`. A question about it ("are you stuck?"): answer on its card with `reply T-012 -Text "..."`, which leaves the card where it is. Never `set -Status ready` to answer: ready means built and checked |
-| `[merge]` | Approved a feature they tested in a lane | Merge its branch ("A round", step 4), then `clear` |
+| `[merge]` | Approved a feature they tested in a lane, or one with nothing to test approved itself | Merge its branch ("A round", step 4), then `clear`. It's done, so don't `set` it ready again (`set` refuses) |
 | `[cancel]` | Deleted a task while it ran, or before its branch merged (its status is `removed`) | Stop its worker, if one is on it (a worker hears it from `set` too). In its lane, commit what it left to its branch, so nothing is lost, then put the lane back on main: `git -C <lane> switch --detach origin/main`. Don't merge the branch, and leave it there in case they change their mind. Take its row out of `docs/CLAIMS.md` and push. What's already in `main` stays; if they want it out, they'll say. Then `clear` |
 | `[lane]` | Nothing: a task you parked for a lane (below), and that lane is free now | Start it there: `set T-012 -Status working -Lane 2 ...`, as `list` says |
 
@@ -78,19 +81,23 @@ Rocco's Workboard (`tools\rocco.bat`) is where the user hands over work and foll
 
 **Every lane busy:** park the task with `set T-012 -ForLane` (or `new -ForLane`), never with words alone in `-Waiting`. It stays in Up next, its card tells the user whether a lane is free, and `wait` hands it back as `[lane]` the moment one is: nothing depends on you remembering it.
 
-**Taking a note on** (`[plan]`):
-1. **First, before anything else:** `set T-034 -Title "..." -Status working -Step "..."`, so the card leaves Up next the moment you start, whether you do it or a worker will (spawning adds its lane). The title is a few words that name it, like "Keep the baseplate in playtests": the card shows one line (50 characters at most), and the user's own words stay under it. A note that has to wait for something else: `set T-034 -Title "..." -Waiting "After the trade window"` instead.
-2. **Split it by what it asks, not by how it arrived.** Several unrelated requests in one note are a task each: the note itself (retitled) for the first, and `new -Title "..." -Note "<their words for it>"` for each of the rest.
-3. **Plan each one as a round.** A feature plan is for **one feature** that takes several tasks to build, or has choices the user should OK first. Never use one to group unrelated requests. Write its spec in `docs/game/features/` first, then `plan -Title "..." -Summary "..." -Steps "title\|lane\|tier",... -Spec docs/game/features/<name>.md`, then `set <note> -Status removed`. The summary says what they'll get, what's left out, and any choice you made that they might not expect; nothing is built until they approve. Anything smaller is just its task.
+**Taking a message on** (`C-… [message]`). A message carries no card: the user sees it in the chat, and a card shows under it only when work comes of it. What they said it is (the note box's Fix, Ask or Feature) is in `show`; go with it unless it's plainly something else, and say so.
+1. **No card for what isn't work.** A question: answer it in the chat. Something to do that changes nothing in the game (open the lanes, start Studio, push main, run the checks): do it, and say what you did. Then `clear C-…`.
+2. **A card for each piece of work, from the message, as you start it:** `new -Title "..." -From C-…`, then at once `set T-034 -Status working -Step "..."`, whether you do it or a worker will (spawning adds its lane). The card gets their words and screenshots, and the chat shows it under their message. The title is a few words that name it, like "Keep the baseplate in playtests": the card shows one line (50 characters at most), and the user's own words stay under it. Work that has to wait for something else: `new ... -From C-… -Waiting "After the trade window"`, and leave it in Up next.
+3. **Split it by what it asks, not by how it arrived.** Several unrelated requests in one message are a card each, each `-From` it, with `-Note "<their words for it>"`.
+4. **Plan each one as a round.** A feature plan is for **one feature** that takes several tasks to build, or has choices the user should OK first. Never use one to group unrelated requests. Write its spec in `docs/game/features/` first, then `plan -Title "..." -Summary "..." -Steps "title\|lane\|tier",... -Spec docs/game/features/<name>.md -From C-…`. The summary says what they'll get, what's left out, and any choice you made that they might not expect; nothing is built until they approve. Anything smaller is just its task.
+
+A note that came as a card (`[plan]`, from before messages) is taken on the same way, with the note as the card: `set T-034 -Title "..." -Status working -Step "..."` as you start it; a question, `reply T-034 -Answer -Text "..."`, and an errand, `reply T-034 -Done -Text "..."`, close it with no card kept; a feature, `plan ...`, then `set T-034 -Status removed`.
 
 **Through a round:**
 - **Spawning:** `set T-012 -Status working -Lane 3 -Branch agent/<slug> -Step "Starting"`, and give the worker its id. Workers add their own steps, progress and questions.
 - **Work you do yourself:** `set -Status working -Step "..."` as you start, and `log` what matters.
-- **Merged and checked:** `set T-012 -Status ready -Where main -Summary "what changed" -Test "Drive a lap","Drift the hairpin"`. The summary is a sentence or two on what changed, and the test the few steps to try in the Main place, 30 words each: the card's hover shows them whole. The detail goes in `log`, and a choice for the user is a question ("Talking to the user"), not a line in the summary. A feature the user should try before it merges stays on its branch: `-Where lane`, and the test is in that lane's place. Approving it asks you to merge it (`[merge]`).
+- **Merged and checked:** `set T-012 -Status ready -Where main -Summary "what changed" -Test "Drive a lap","Drift the hairpin"`. The summary is a sentence or two on what changed, and the test the few steps to try in the Main place, 30 words each: the card's hover shows them whole. The detail goes in `log`, and a choice for the user is a question ("Talking to the user"), not a line in the summary. A feature the user should try before it merges stays on its branch: `-Where lane`, and the test is in that lane's place. Approving it asks you to merge it (`[merge]`), and it stays done through the merge.
+- **Nothing for the user to try yet** (groundwork a later step makes visible, a record of their pick, agents' own tools): add `-NothingToTest` to `set -Status ready`, with `-Test` saying why. The card approves itself, as their Approve would, and a step waiting on it can start. When it can be tried, even with some setting up (two players), it's a test: say what to try. `set` refuses a test that starts "Nothing to..." without it.
 - **The user's questions while a task runs** (`ask` from a worker, or from you) turn its card Stuck until they answer. Options are a few words each, with what each means in the question (WORKER.md): the card shows two lines of an option at most.
 - **Things you notice outside the task:** `suggest -Title "..." -Summary "why"`. The user queues or dismisses them.
 
-The user approves a task, never you: don't set one `done`. Only a setup card skips the user's OK: it approves itself as it turns ready (SETUP.md), since it only fills in docs from their own answers. A plan always waits for them.
+The user approves a task, never you: don't set one `done`. Only two kinds of card skip the user's OK, approving themselves as they turn ready: a setup card (SETUP.md), since it only fills in docs from their own answers, and one with nothing for them to try (`-NothingToTest`, above). A plan always waits for them.
 
 ## Talking to the user
 

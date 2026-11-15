@@ -42,6 +42,7 @@ A lane is created once per game, but opened per PC. A lane that exists costs onl
 - **The user starts Lync.** If the conductor must restart one (it isn't serving, so the place doesn't sync), `..\..\_tools\rocco\rocco.ps1 lanes` starts whichever of this PC's servers aren't running, detached from your shell. Without Rocco, a server started from an agent's shell dies with that shell, so start it detached:
   `Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = 'cmd.exe /K "<checkout>\tools\serve.bat"' }`
   After a restart, Studio's Lync plugin may wait on **Resume** until the user clicks it.
+- **A lane that goes down.** Rocco watches each lane with work in it: when its Lync stops, its place closes in Studio (a crash, or closed by mistake), or a feature's own agent in it stops, the lane turns red in its sidebar and the user is told. **Fix lanes** opens again what's missing, as `rocco.ps1 lanes` does (clearing the lock a crashed Studio leaves behind), and tells the agent with work there (a `[message]` from Rocco). A lane with nothing in it is just shown as not open: closing one is the user's call.
 
 ## Add a lane
 
