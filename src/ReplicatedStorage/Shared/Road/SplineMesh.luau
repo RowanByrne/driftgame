@@ -54,6 +54,7 @@ local GrassTexture = require(script.Parent.GrassTexture)
 local Spline = require(script.Parent.Spline)
 local SplineGrove = require(script.Parent.SplineGrove)
 local SplineHill = require(script.Parent.SplineHill)
+local HillCuts = require(script.Parent.SplineHillCuts)
 local SurfaceCuts = require(script.Parent.SplineSurfaceCuts)
 local Boundary = require(script.Parent.SplineBoundary)
 local Shadow = require(script.Parent.SplineShadow)
@@ -92,6 +93,7 @@ export type Options = {
 	sliceMs: number?, -- ms of building a frame (`Mesh.SliceMs`); math.huge builds it in one go
 	hill: boolean?, -- false: no hillside past the faces, and no caps on them (the road as before T-190)
 	tick: (() -> ())?, -- internal near-ground planning slice
+	traceFaces: boolean?, -- test-only nominal source rows for terrain triangles
 }
 
 export type Stats = {
@@ -99,6 +101,7 @@ export type Stats = {
 	vertices: number,
 	triangles: number,
 	ms: number,
+	groveColourIds: {[number]:boolean}?, -- decorative faces, never terrain sample hits
 }
 
 -- The cross-sections of [s0, s1], placed where the surface needs them.
@@ -464,6 +467,7 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 		-- this one's last), and wherever an edge changes kind (its faces come down to nothing
 		-- there). The cuts between take their caps from the rays either side
 		local rayCuts: { number } = {}
+		local hillPlan={added=0,tests=0,exact=0,terminal=0}
 		if hill then
 			local need = { [1] = true, [#cuts] = true }
 			local last = 1
@@ -492,6 +496,9 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 					slice()
 				end
 			end
+			if spline:hasBiomeGround() then
+				rayCuts,hillPlan=HillCuts.refine(spline,hill,cuts,surfaceRows,rayCuts,rays,caps,SplineMesh.profile,slice)
+			end
 			for n = 1, #rayCuts - 1 do
 				local a, b = rayCuts[n], rayCuts[n + 1]
 				for k = a + 1, b - 1 do
@@ -509,6 +516,9 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 		-- their own. Between each pair of cuts, on each side whose edge is a rock face or a
 		-- cliff, a few quads of the profile `SplineMesh.profile` gives, flat-shaded.
 		local em = road.em
+		local vertexOrigins:any=if o.traceFaces then {} else nil
+		local faceOrigins:any=if o.traceFaces then {} else nil
+		local traceKind="face"
 		-- FLAT-SHADED BUT SHARED: a face's normal and colour are set per face, so the
 		-- vertices of a row are shared by every face that touches them (a third of the
 		-- vertices, and a third of the cost, of a vertex per corner)
@@ -522,6 +532,7 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 				n = -n
 			end
 			local f = em:AddTriangle(a, b, c)
+			if faceOrigins then faceOrigins[f]={kind=traceKind,a=vertexOrigins[a],b=vertexOrigins[b],c=vertexOrigins[c]} end
 			local nid = em:AddNormal(n.Unit)
 			em:SetFaceNormals(f, { nid, nid, nid })
 			em:SetFaceColors(f, { colour, colour, colour })
@@ -550,6 +561,7 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 				local ids = table.create(#pts)
 				for i, p in pts do
 					ids[i] = em:AddVertex(p - centre)
+					if vertexOrigins then vertexOrigins[ids[i]]={kind="face",side=side,s=cuts[k],point=i} end
 				end
 				road.vertices += #pts
 				row = { pts = pts, ids = ids, kind = kind }
@@ -727,6 +739,7 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 					table.insert(pts, SplineHill.at(ray, t0f + span + H.Skirt))
 					for j, p in pts do
 						ids[j] = em:AddVertex(p - centre)
+						if vertexOrigins then vertexOrigins[ids[j]]={kind="hill",side=side,s=cuts[k],ring=j} end
 					end
 					road.vertices += #pts
 					row = { pts = pts, ids = ids }
@@ -741,6 +754,7 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 						-- the fan from the faces' ends (their fifth point, on every cut) to the
 						-- first ring's two vertices
 						local m = (ka + kb + 1) // 2
+						traceKind="hill fan"
 						for i = ka, kb - 1 do
 							local fa, fb = rowAt(i, kind), rowAt(i + 1, kind)
 							local far = if i < m then A else B
@@ -748,6 +762,7 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 						end
 						local fm = rowAt(m, kind)
 						ground(fm.ids[5], A.ids[1], B.ids[1], fm.pts[5], A.pts[1], B.pts[1])
+						traceKind="hill ring"
 						for j = 1, #A.pts - 1 do
 							ground(A.ids[j], A.ids[j + 1], B.ids[j], A.pts[j], A.pts[j + 1], B.pts[j])
 							ground(A.ids[j + 1], B.ids[j + 1], B.ids[j], A.pts[j + 1], B.pts[j + 1], B.pts[j])
@@ -756,6 +771,7 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 					slice()
 				end
 			end
+			traceKind="face"
 		end
 
 		-- THE GROVES (T-183): trees and bushes on a widened runoff, in this same mesh, so a
@@ -764,6 +780,7 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 		-- frame like the rest (T-193): `slice()` between the triangles
 		slice()
 		local groveColours: { [Color3]: number } = {}
+		traceKind="grove"
 		local trianglesBefore, treeT0 = road.triangles, os.clock()
 		local trees = SplineGrove.draw(spline, s0, s1, {
 			vertex = function(p: Vector3): number
@@ -1382,6 +1399,8 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 			start += interval
 		end
 
+		local groveColourIds:{[number]:boolean}={}
+		for _,id in groveColours do groveColourIds[id]=true end
 		local stats = {
 			sections = #cuts,
 			vertices = road.vertices,
@@ -1391,8 +1410,14 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 			parts = parts,
 			trees = trees,
 			treeTriangles = road.triangles - trianglesBefore,
+			groveColourIds = groveColourIds, -- exact provenance for ground measurements
+			faceOrigins = faceOrigins,
 			treeMs = treeMs,
 			hillTriangles = hillTriangles,
+			hillRefinedRays=hillPlan.added,
+			hillPlanTests=hillPlan.tests,
+			hillPlanExact=hillPlan.exact,
+			hillUnsafe=hillPlan.terminal,
 			stations = if hill then #hill.stations else 0,
 			ms = 0,
 		}

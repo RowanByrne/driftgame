@@ -51,26 +51,44 @@ function Tests.run()
 		-- Samples actual wedge top faces, including each field/bank interior and bevel.
 		local missing,worstError,samples,partCount,maxSlice=0,0,0,0,0
 		local params=RaycastParams.new();params.FilterType=Enum.RaycastFilterType.Include;params.FilterDescendantsInstances={folder}
-		for _,s0 in {200,1600,2800} do
+		local starts={200,1600,2800,480} -- includes the former hill chord at s509.1
+		local transitions={}
+		for i=4,#spline.biomes,3 do
+			local pair=`{spline.biomes[i-2]}>{spline.biomes[i+1]}`
+			if not transitions[pair] then transitions[pair]=true;table.insert(starts,math.max(0,spline.biomes[i]-48)) end
+		end
+		for _,s0 in starts do
 			local chunk=Instance.new("Folder");chunk.Parent=folder
 			local parts,stats=Parts.build(spline,s0,s0+96,chunk,{terrain=true,queryable=true,sliceMs=3})
 			partCount+=#parts;maxSlice=math.max(maxSlice,stats.sliceMs)
+			local castTop,castBottom=-math.huge,math.huge
+			for _,part in parts do
+				local radius=part.Size.Magnitude*.5
+				castTop=math.max(castTop,part.Position.Y+radius+1)
+				castBottom=math.min(castBottom,part.Position.Y-radius-1)
+			end
+			local function measure(p:Vector3)
+				-- Start above ALL local geometry: a lobe above the old two-stud
+				-- ray origin must be measured rather than silently missed.
+				local hit=workspace:Raycast(Vector3.new(p.X,castTop,p.Z),Vector3.yAxis*(castBottom-castTop),params)
+				if not hit then missing+=1 else worstError=math.max(worstError,math.abs(hit.Position.Y-p.Y)) end
+				samples+=1
+			end
+			if s0==480 then measure(Vector3.new(spline:terrainXYZ(509.1,-99.58941785777432))) end
 			for s=s0+1.3,s0+95,7.1 do
 				for _,side in {-1,1} do
 					local w=spline:runoffAt(s,side)
 					for _,u in {.03,.15,.33,.57,.81,.97} do
 						local d=side*(half+w*u)
 						local p=Vector3.new(spline:terrainXYZ(s,d))
-						local hit=workspace:Raycast(p+Vector3.yAxis*2,-Vector3.yAxis*4,params)
-						if not hit then missing+=1 else worstError=math.max(worstError,math.abs(hit.Position.Y-p.Y)) end
-						samples+=1
+						measure(p)
 					end
 				end
 			end
 			chunk:Destroy()
 		end
-		check("fallback wedges follow the supported terrain",missing==0 and worstError<=.2,`{samples} interior rays, {missing} missing, largest height error {worstError}`)
-		check("fallback build yields within a bounded slice",maxSlice<16,`{partCount} parts across three 96-stud samples; worst slice {maxSlice} ms`)
+		check("fallback wedges follow the supported terrain",missing==0 and worstError<=.2,`{samples} rays from above every wedge, {missing} missing, largest height error {worstError}`)
+		check("fallback build yields within a bounded slice",maxSlice<16,`{partCount} parts across {#starts} 96-stud samples; worst slice {maxSlice} ms`)
   local before=Boundary.toeRow(spline,300,-1)
   gen:extendTo(15000)
   local after=Boundary.toeRow(spline,300,-1)
