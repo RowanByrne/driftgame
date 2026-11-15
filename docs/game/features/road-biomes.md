@@ -352,8 +352,15 @@ Bounded ascent/traverse runs also completed; they published no connectors, so
 they do not prove natural connector coverage in those modes. Real Mesh/Parts
 replacement, colours, retired walking slabs and staged cancellation pass.
 
-Performance still blocks enabling it: large optional field plans stalled for
-1–4.1seconds against20ms. The separate whole-mesh check also exceeded40ms
+Field planning no longer stalls the server (2026-11-15). The generator is private
+to the road sequence and runs a few ms a frame; a section goes live only once
+finished, whole (CONTRACTS "Bounded generation"). In Lane2 the same seeds lay
+identical road pumped or all at once, and steps of 95–279ms became frames of at
+most 4.5–9.8ms; a run starts in a few frames with no hitch. Clients check an
+arriving field a slice a frame and match the server exactly. Late joiners still
+replay the whole road at once, which includes cold field checks.
+
+Rendering performance still blocks enabling it. The separate whole-mesh check exceeded40ms
 (mean42.16, worst57.45), a live Mesh slice reached9.51ms against9, and complete
 Parts teardown took331ms. The corrected fallback publication was6.83ms within
 its9ms guard. Offline bounds and early-clearance improvements are being checked;
