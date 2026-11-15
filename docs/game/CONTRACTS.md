@@ -524,6 +524,13 @@ caller's accepted route or earned progress. `opening(index,s,side,taper?)` is in
 by arc/side and fades inside the real supported interval. Row weight affects the
 bank opening only; published floor geometry is always real support.
 `triangles(index,s0,s1,origin?)` returns each arc owner's exact rendering half.
+An optional row `floor` freezes eleven final cross-section heights, using
+`columns(row)` to share the bank collars and middle topology. Its endpoints
+must equal the immutable banks. Explicit sections may retain steep existing
+terrain at an end; triangles with normal.Y<=0.8 remain visible but provide no
+physical floor. Ordinary implicit connectors still reject any such triangle.
+Explicit section openings interpolate their stored weight once, without a
+second analytic taper. Their producer must freeze the geometry's same end fade.
 Generation reservations, car/walking boundaries, complete nearby rendering,
 retirement and actual ownership/progress integration remain required before use.
 ## Studio-only baked shadow trial (T-214)

@@ -79,6 +79,25 @@ function Tests.run(_self,subject)
 	local middle=Infield.sample(collar,20,-10)
 	check("short collars preserve incoming bank slope before the flat middle",angle<5 and middle.y<27 and math.abs(middle.normal.Y-1)<1e-6
 		and Infield.sample(collar,0,-10).y==25 and Infield.sample(collar,40,-10).y==25,`bank normal gap {angle} degrees; middle height {middle.y}`)
+	local explicitRows=rows(0,2)
+	for _,row in explicitRows do
+		local heights={};for _,p in Infield.columns(row) do table.insert(heights,p[2]) end;row.floor=heights
+		row.weight=.3
+	end
+	local explicitPatch=Infield.patch("explicit",explicitRows)
+	explicitRows[1].floor[6]=999
+	local explicit=Infield.new();Infield.add(explicit,explicitPatch)
+	check("explicit end sections freeze exactly the same final floor columns",Infield.sample(explicit,20,-10).y==1
+		and #Infield.triangles(explicit,100,120)==10 and explicitPatch.rows[1].floor[6]==1,
+		"final numeric columns are shared by support and drawing")
+	check("explicit section openings use the stored geometry blend once",math.abs(Infield.opening(explicit,100,1)-.3)<1e-8
+		and math.abs(Infield.opening(explicit,110,1)-.3)<1e-8,"no extra analytic fade changes the frozen end blend")
+	local steepRows=rows(0,0)
+	for _,row in steepRows do row.floor={0,20,20,20,20,20,20,20,20,20,0} end
+	local steep=Infield.new();Infield.add(steep,Infield.patch("retained terrain",steepRows))
+	check("a retained steep end face is drawn without invisible physical support",Infield.sample(steep,.1,-10)==nil
+		and #Infield.triangles(steep,100,120)==10 and Infield.sample(steep,20,-10).y==20,
+		"only triangles within the original supported slope limit provide ground")
 	local high=Infield.new();Infield.add(high,Infield.patch("high",{
 		{sa=100,sb=900,sideA=1,sideB=-1,a={50000,100,-20000},b={50040,102,-20000},weight=1},
 		{sa=120,sb=880,sideA=1,sideB=-1,a={50000,100,-20020},b={50040,102,-20020},weight=1},

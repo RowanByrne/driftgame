@@ -8,10 +8,10 @@ export type Point={number}
 -- weight masks a bank opening; the supplied final floor is always real support.
 -- da/db are frozen outward bank slopes. Short collars meet those slopes before
 -- reaching the nearly flat middle, without moving either bank endpoint.
-export type Row={sa:number,sb:number,sideA:number,sideB:number,a:Point,b:Point,weight:number,da:number?,db:number?}
+export type Row={sa:number,sb:number,sideA:number,sideB:number,a:Point,b:Point,weight:number,da:number?,db:number?,floor:{number}?}
 export type Patch={id:string,rows:{Row}}
 type Vertex={p:Point,t:number,u:number}
-type Triangle={a:Vertex,b:Vertex,c:Vertex,normal:Vector3,det:number,patch:string,sa0:number,sa1:number,sb0:number,sb1:number}
+type Triangle={a:Vertex,b:Vertex,c:Vertex,normal:Vector3,det:number,patch:string,sa0:number,sa1:number,sb0:number,sb1:number,supported:boolean}
 type Opening={patch:Patch,bank:string,first:number,last:number}
 export type Index={cell:number,patches:{[string]:Patch},triangles:{Triangle},hash:{[string]:{number}},openings:{[string]:{Opening}}}
 export type Hit={y:number,normal:Vector3,patch:string,contactS:number,sa:number,sb:number,across:number}
@@ -43,9 +43,34 @@ function Infield.patch(id:string,rows:{Row}):Patch
 			assert(row.sa>rows[i-1].sa and row.sb<rows[i-1].sb,"infield pairing must be monotone and opposed")
 			assert(row.sideA==rows[i-1].sideA and row.sideB==rows[i-1].sideB,"infield cannot switch boundary sides")
 		end
-		table.insert(copy,table.freeze({sa=row.sa,sb=row.sb,sideA=row.sideA,sideB=row.sideB,a=copyPoint(row.a),b=copyPoint(row.b),weight=row.weight,da=row.da or 0,db=row.db or 0}))
+		local floor=nil
+		if row.floor then
+			assert(#row.floor==11,"an explicit infield section needs eleven heights")
+			floor={};for _,y in row.floor do assert(finite(y),"invalid infield height");table.insert(floor,y) end
+			assert(math.abs(floor[1]-row.a[2])<1e-8 and math.abs(floor[11]-row.b[2])<1e-8,"infield cannot move a bank")
+			floor=table.freeze(floor)
+		end
+		table.insert(copy,table.freeze({sa=row.sa,sb=row.sb,sideA=row.sideA,sideB=row.sideB,a=copyPoint(row.a),b=copyPoint(row.b),weight=row.weight,da=row.da or 0,db=row.db or 0,floor=floor}))
 	end
 	return table.freeze({id=id,rows=table.freeze(copy)})
+end
+
+-- The planner freezes final heights in these same eleven columns. The short
+-- collars preserve an occupied bank's slope; the broad middle stays low poly.
+function Infield.columns(row:Row):{Point}
+	local a,b=row.a,row.b
+	local gap=math.sqrt((b[1]-a[1])^2+(b[3]-a[3])^2)
+	assert(gap>.01,"infield has no clear gap")
+	local reach=math.min(6,gap*.2)
+	local out={}
+	local function vertex(u:number,y:number)
+		local i=#out+1
+		table.insert(out,{a[1]+(b[1]-a[1])*u,if row.floor then row.floor[i] else y,a[3]+(b[3]-a[3])*u})
+	end
+	for j=0,4 do local v=j/4;vertex(reach*v/gap,a[2]+(row.da or 0)*reach*(v-.5*v*v)) end
+	vertex(.5,(a[2]+(row.da or 0)*reach*.5+b[2]+(row.db or 0)*reach*.5)*.5)
+	for j=4,0,-1 do local v=j/4;vertex(1-reach*v/gap,b[2]+(row.db or 0)*reach*(v-.5*v*v)) end
+	return out
 end
 
 function Infield.new(cell:number?):Index
@@ -91,13 +116,15 @@ function Infield.add(index:Index,patch:Patch):boolean
 			local old=previous.rows[i]
 			for _,name in {"sa","sb","sideA","sideB","weight","da","db"} do assert((row :: any)[name]==(old :: any)[name],"conflicting infield identity") end
 			for _,name in {"a","b"} do for j=1,3 do assert((row :: any)[name][j]==(old :: any)[name][j],"conflicting infield identity") end end
+			assert((row.floor~=nil)==(old.floor~=nil),"conflicting infield identity")
+			if row.floor and old.floor then for j=1,11 do assert(row.floor[j]==old.floor[j],"conflicting infield identity") end end
 		end
 		return false
 	end
 	local pending:{Triangle}={}
 	local sign:number?=nil
 	local collars=false
-	for _,row in patch.rows do if math.abs(row.da or 0)+math.abs(row.db or 0)>1e-8 then collars=true;break end end
+	for _,row in patch.rows do if row.floor or math.abs(row.da or 0)+math.abs(row.db or 0)>1e-8 then collars=true;break end end
 	local function cross(row:Row,t:number):{Vertex}
 		local a,b=row.a,row.b
 		local gap=math.sqrt((b[1]-a[1])^2+(b[3]-a[3])^2)
@@ -108,9 +135,10 @@ function Infield.add(index:Index,patch:Patch):boolean
 			table.insert(out,table.freeze({p=table.freeze({a[1]+(b[1]-a[1])*u,y,a[3]+(b[3]-a[3])*u}),t=t,u=u}))
 		end
 		if collars then
-			for j=0,4 do local v=j/4;vertex(reach*v/gap,a[2]+(row.da or 0)*reach*(v-.5*v*v)) end
-			vertex(.5,(a[2]+(row.da or 0)*reach*.5+b[2]+(row.db or 0)*reach*.5)*.5)
-			for j=4,0,-1 do local v=j/4;vertex(1-reach*v/gap,b[2]+(row.db or 0)*reach*(v-.5*v*v)) end
+			for _,p in Infield.columns(row) do
+				local u=math.sqrt((p[1]-a[1])^2+(p[3]-a[3])^2)/gap
+				vertex(u,p[2])
+			end
 		else
 			vertex(0,a[2]);vertex(.5,(a[2]+b[2])*.5);vertex(1,b[2])
 		end
@@ -134,8 +162,10 @@ function Infield.add(index:Index,patch:Patch):boolean
 			sign=orientation
 			local normal=Vector3.new(dx,dy,dz):Cross(Vector3.new(ex,ey,ez)).Unit
 			if normal.Y<0 then normal=-normal end
-			assert(normal.Y>.8,"infield surface is too steep")
-			table.insert(pending,table.freeze({a=x,b=y,c=z,normal=normal,det=det,patch=patch.id,sa0=a.sa,sa1=b.sa,sb0=a.sb,sb1=b.sb}))
+			-- Explicit end sections may retain an existing steep hillside. They
+			-- are visible terrain, never a hidden driveable/walkable floor.
+			assert(normal.Y>.01 and (a.floor or b.floor or normal.Y>.8),"infield surface is too steep")
+			table.insert(pending,table.freeze({a=x,b=y,c=z,normal=normal,det=det,patch=patch.id,sa0=a.sa,sa1=b.sa,sb0=a.sb,sb1=b.sb,supported=normal.Y>.8}))
 		end end
 	end
 	local staged:{[string]:{Triangle}}={}
@@ -190,6 +220,7 @@ function Infield.sample(index:Index,x:number,z:number,low:number?,high:number?):
 	local best:Hit?=nil
 	for _,id in index.hash[key(x,z,index.cell)] or {} do
 		local triangle=index.triangles[id]
+		if not triangle.supported then continue end
 		local a,b,c=triangle.a,triangle.b,triangle.c
 		local dx,dz=x-a.p[1],z-a.p[3]
 		local u=(dx*(c.p[3]-a.p[3])-dz*(c.p[1]-a.p[1]))/triangle.det
@@ -223,8 +254,10 @@ function Infield.opening(index:Index,s:number,side:number,taper:number?):number
 		local sa,sb=if bank=="A" then a.sa else a.sb,if bank=="A" then b.sa else b.sb
 		local u=math.clamp((s-sa)/(sb-sa),0,1)
 		local weight=a.weight+(b.weight-a.weight)*u
+		-- Explicit geometry already contains its frozen end blend. Do not
+		-- apply a second, different fade to its physical bank opening.
 		local fade=math.max(1e-6,math.min(taper or 64,(finish-start)*.25))
-		local t=math.clamp(math.min(s-start,finish-s)/fade,0,1)
+		local t=if a.floor and b.floor then 1 else math.clamp(math.min(s-start,finish-s)/fade,0,1)
 		amount=math.max(amount,weight*t*t*(3-2*t))
 	end
 	return amount
