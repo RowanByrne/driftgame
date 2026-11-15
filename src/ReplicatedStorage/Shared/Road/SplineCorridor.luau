@@ -10,10 +10,9 @@ Index.__index = Index
 
 export type Row = {s:number, x:number, z:number, yaw:number, k:number, rx:number, rz:number, left:number, right:number}
 export type Cell = {s0:number, s1:number, x:number, z:number, radius:number,
-	minX:number, maxX:number, minZ:number, maxZ:number, p:{number},infield:boolean?,road:boolean?}
+	minX:number, maxX:number, minZ:number, maxZ:number, p:{number}}
 export type Index = typeof(setmetatable({} :: {
-	buckets:{[number]:{Cell}}, reach:number, count:number, minS:number, maxS:number,infields:number,
-	roads:{[number]:{Cell}},
+	buckets:{[number]:{Cell}}, reach:number, count:number, minS:number, maxS:number,
 }, Index))
 
 function Corridor.row(s:number, x:number, z:number, yaw:number, k:number, left:number, right:number): Row
@@ -54,21 +53,16 @@ function Corridor.cell(a:Row, b:Row, boundsOnly:boolean?): Cell?
 end
 
 function Corridor.overlap(a:Cell, b:Cell, gap:number): boolean
-	if a.infield or b.infield then gap=0 end
 	if a.maxX+gap<=b.minX or b.maxX+gap<=a.minX or a.maxZ+gap<=b.minZ or b.maxZ+gap<=a.minZ then return false end
 	for _, polygon in {a.p,b.p} do
 		for i=1,7,2 do
 			local j=(i+1)%8+1
-			-- Anchor each projection to this edge. Identical shared bank edges
-			-- then have zero thickness even far from the world origin.
-			local ox,oz=polygon[i],polygon[i+1]
 			local nx,nz=polygon[j+1]-polygon[i+1],polygon[i]-polygon[j]
 			local length=math.sqrt(nx*nx+nz*nz)
 			if length>1e-7 then
 				local amin,amax,bmin,bmax=math.huge,-math.huge,math.huge,-math.huge
 				for k=1,7,2 do
-					local av=(a.p[k]-ox)*nx+(a.p[k+1]-oz)*nz
-					local bv=(b.p[k]-ox)*nx+(b.p[k+1]-oz)*nz
+					local av,bv=a.p[k]*nx+a.p[k+1]*nz,b.p[k]*nx+b.p[k+1]*nz
 					amin,amax=math.min(amin,av),math.max(amax,av)
 					bmin,bmax=math.min(bmin,bv),math.max(bmax,bv)
 				end
@@ -84,7 +78,7 @@ local function key(x:number,z:number):number
 end
 
 function Corridor.new():Index
-	return setmetatable({buckets={},roads={},reach=0,count=0,minS=math.huge,maxS=-math.huge,infields=0},Index)
+	return setmetatable({buckets={},reach=0,count=0,minS=math.huge,maxS=-math.huge},Index)
 end
 
 -- A decreasing smoothstep track can sit slightly above its linear taper between
@@ -103,31 +97,13 @@ function Index.add(self:Index, cell:Cell)
 	table.insert(bucket,cell)
 	self.reach=math.max(self.reach,cell.radius)
 	self.count+=1
-	if cell.infield then self.infields+=1 end
-	if cell.road then
-		local arc=math.floor(cell.s0/size);local roadBucket=self.roads[arc]
-		if not roadBucket then roadBucket={};self.roads[arc]=roadBucket end
-		table.insert(roadBucket,cell)
-	end
 	local s=(cell.s0+cell.s1)*.5
 	self.minS,self.maxS=math.min(self.minS,s),math.max(self.maxS,s)
 end
 
--- Only actual accepted ground is tagged `road`; provisional envelopes and
--- field reservations cannot acquire this provenance. Its cells are <=CheckStep.
-function Index.roadCells(self:Index,first:number,last:number):{Cell}
-	local out={};local size=Config.Spline.HashCell
-	for arc=math.floor((first-Config.Spline.CheckStep)/size),math.floor(last/size) do
-		for _,cell in self.roads[arc] or {} do
-			if cell.s1>first and cell.s0<last then table.insert(out,cell) end
-		end
-	end
-	return out
-end
-
 function Index.clear(self:Index, cell:Cell, separation:number, gap:number):(boolean,Cell?,number,number)
 	local s=(cell.s0+cell.s1)*.5
-	if self.count==0 or (not cell.infield and self.infields==0 and math.abs(s-self.minS)<=separation and math.abs(s-self.maxS)<=separation) then return true,nil,0,0 end
+	if self.count==0 or (math.abs(s-self.minS)<=separation and math.abs(s-self.maxS)<=separation) then return true,nil,0,0 end
 	local size=Config.Spline.HashCell
 	local reach=self.reach+gap
 	local visited,tests=0,0
@@ -137,7 +113,7 @@ function Index.clear(self:Index, cell:Cell, separation:number, gap:number):(bool
 			if bucket then
 				for _,old in bucket do
 					visited+=1
-					if cell.infield or old.infield or math.abs(s-(old.s0+old.s1)*.5)>separation then
+					if math.abs(s-(old.s0+old.s1)*.5)>separation then
 						tests+=1
 						if Corridor.overlap(cell,old,gap) then return false,old,visited,tests end
 					end
@@ -153,7 +129,7 @@ end
 function Index.near(self:Index, cell:Cell, separation:number, gap:number):{Cell}
 	local out={}
 	local s=(cell.s0+cell.s1)*.5
-	if self.count==0 or (not cell.infield and self.infields==0 and math.abs(s-self.minS)<=separation and math.abs(s-self.maxS)<=separation) then return out end
+	if self.count==0 or (math.abs(s-self.minS)<=separation and math.abs(s-self.maxS)<=separation) then return out end
 	local size=Config.Spline.HashCell
 	local reach=self.reach+gap
 	for x=math.floor((cell.minX-reach)/size),math.floor((cell.maxX+reach)/size) do
@@ -161,7 +137,7 @@ function Index.near(self:Index, cell:Cell, separation:number, gap:number):{Cell}
 			local bucket=self.buckets[key(x,z)]
 			if bucket then
 				for _,old in bucket do
-					if (cell.infield or old.infield or math.abs(s-(old.s0+old.s1)*.5)>separation)
+					if math.abs(s-(old.s0+old.s1)*.5)>separation
 						and cell.maxX+gap>old.minX and old.maxX+gap>cell.minX
 						and cell.maxZ+gap>old.minZ and old.maxZ+gap>cell.minZ then table.insert(out,old) end
 				end
@@ -175,11 +151,8 @@ end
 -- Both ends of every 8-stud cell are tested, using the actual eased
 -- width track, not just the chosen knots. A uniform reduction preserves its taper;
 -- each side can then reopen independently wherever the other side was the limit.
--- `tick`, when given, is called between bounded pieces of the search: a private
--- generator may suspend there. The fitted widths do not depend on it.
 function Corridor.fit(frames:{Row}, sectionEnd:number, incoming:{number}, desired:(number,number)->number,
-	old:Index, separation:number, tick:(()->())?):({number}?,{number}?,{number}?)
-	local checkpoint:()->()=tick or function() end
+	old:Index, separation:number):({number}?,{number}?,{number}?)
 	local C=Config.Spline.Biomes
 	local half=Config.Road.Width*.5
 	local gap=Config.Spline.ClearanceGap+C.CorridorMargin
@@ -256,7 +229,6 @@ function Corridor.fit(frames:{Row}, sectionEnd:number, incoming:{number}, desire
 	for i=2,#frames do
 		local a=if i-1==seam then seamEnvelope else envelopes[i-1]
 		local envelope=Corridor.cell(a,envelopes[i],true) :: Cell
-		if i%16==0 then checkpoint() end
 		guards[i-1]=old:near(envelope,separation,gap)
 		local peers={}
 		for _,cell in same:near(envelope,separation,gap) do table.insert(peers,ids[cell]) end
@@ -265,7 +237,6 @@ function Corridor.fit(frames:{Row}, sectionEnd:number, incoming:{number}, desire
 		same:add(envelope)
 	end
 	local function clear(left:number,right:number):boolean
-		checkpoint()
 		local rows={}
 		for i=1,#frames do rows[i]=rowAt(i,left,right) end
 		local reservedSeam=rowAt(seam,left,right,true)

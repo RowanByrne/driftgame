@@ -52,7 +52,6 @@ function GrassTexture.plainCorners(px: buffer, size: number)
 end
 
 local image: EditableImage? = nil
-local imagePlainScale=1
 local state = "none" -- "none", "making", "done"
 local buildMs = 0
 
@@ -77,7 +76,6 @@ function GrassTexture.get(): EditableImage?
 		local size = img.Size.X
 		local px = img:ReadPixelsBuffer(Vector2.zero, img.Size)
 		GrassTexture.plainCorners(px, size)
-		imagePlainScale=buffer.readu8(px,0)/255
 		img:WritePixelsBuffer(Vector2.zero, img.Size, px)
 		return img
 	end)
@@ -89,11 +87,6 @@ function GrassTexture.get(): EditableImage?
 	end
 	state = "done"
 	return image
-end
-
--- Captured at the actual image bake, independent of later config changes.
-function GrassTexture.plainScale(usingImage:EditableImage?):number
-	return if usingImage then imagePlainScale else 1
 end
 
 -- A grass vertex's UV: world studs over `TileStuds`, shifted by a whole number of tiles

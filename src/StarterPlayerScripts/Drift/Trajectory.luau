@@ -112,61 +112,50 @@ function Trajectory.predict(s: Model.State, input: Model.Input, opts): Predictio
 	-- line without a number here knowing it happened.
 	local target = lengths * C.BodyLength
 	local world = opts.world or World.flat(groundUnder(s))
-	local owned=false
-	if world.fork then world=world.fork();owned=true end
-	local ok,prediction=pcall(function()
 
-		-- The copy, and a copy of the input too: holding the player's own table would let a
-		-- later input edit reach into a prediction that is already running.
-		local sim = copyState(s)
-		local held: Model.Input = { steer = input.steer or 0, handbrake = input.handbrake == true }
+	-- The copy, and a copy of the input too: holding the player's own table would let a
+	-- later input edit reach into a prediction that is already running.
+	local sim = copyState(s)
+	local held: Model.Input = { steer = input.steer or 0, handbrake = input.handbrake == true }
 
-		local points: { Vector3 } = { sim.position }
-		local last = sim.position
-		local travelled, sinceMark = 0, 0
-		local steps, stopped = 0, false
+	local points: { Vector3 } = { sim.position }
+	local last = sim.position
+	local travelled, sinceMark = 0, 0
+	local steps, stopped = 0, false
 
-		while steps < maxSteps do
-			Model.step(sim, held, step, world)
-			if owned and world.locate then world.locate(sim.position) end
-			steps += 1
-			local moved = (sim.position - last).Magnitude
-			last = sim.position
-			travelled += moved
-			sinceMark += moved
-			if sinceMark >= spacing then
-				points[#points + 1] = sim.position
-				sinceMark = 0
-			end
-			if travelled >= target then
-				break
-			end
-			if Model.speed(sim) < minSpeed then
-				stopped = true
-				break
-			end
-		end
-
-		-- The tail end, so the line always reaches where the walk actually stopped.
-		if sinceMark > 1e-3 then
+	while steps < maxSteps do
+		Model.step(sim, held, step, world)
+		steps += 1
+		local moved = (sim.position - last).Magnitude
+		last = sim.position
+		travelled += moved
+		sinceMark += moved
+		if sinceMark >= spacing then
 			points[#points + 1] = sim.position
+			sinceMark = 0
 		end
-
-		return {
-			points = points,
-			length = travelled,
-			steps = steps,
-			seconds = steps * step,
-			endSpeed = Model.speed(sim),
-			stopped = stopped,
-		}
-	end)
-	if owned and world.destroy then
-		local cleaned,why=pcall(world.destroy)
-		if ok and not cleaned then error(why,0) end
+		if travelled >= target then
+			break
+		end
+		if Model.speed(sim) < minSpeed then
+			stopped = true
+			break
+		end
 	end
-	if not ok then error(prediction,0) end
-	return prediction
+
+	-- The tail end, so the line always reaches where the walk actually stopped.
+	if sinceMark > 1e-3 then
+		points[#points + 1] = sim.position
+	end
+
+	return {
+		points = points,
+		length = travelled,
+		steps = steps,
+		seconds = steps * step,
+		endSpeed = Model.speed(sim),
+		stopped = stopped,
+	}
 end
 
 --------------------------------------------------------------------------------

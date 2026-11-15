@@ -171,8 +171,6 @@ function DriftController:Init()
 	-- and this fires 120 times a second.
 	self.stepListeners = {}
 	self._onStep = function(state)
-		local world=self.world
-		if world and world.locate then world.locate(state.position) end
 		local step = Config.Drift.FixedStep
 		for _, fn in self.stepListeners do
 			fn(step, state)
@@ -282,10 +280,7 @@ function DriftController:_rebuildWorld()
 	-- (features/spline-road.md, T-134). Off it, exactly the world it always was.
 	if self.spline then
 		local sw = SplineWorld.new(self.spline, live)
-		if old and old.spline==self.spline then
-			sw.hint=old.hint;sw.physicalS=old.physicalS
-			if old.contactSnapshot then sw.restoreContact(old.contactSnapshot()) end
-		end
+		if old and old.spline==self.spline then sw.hint=old.hint end
 		sw.setClosing(self.splineClosing)
 		self.world = sw
 	else
@@ -415,7 +410,6 @@ function DriftController:_attach(car: Model, spawnCFrame: CFrame)
 	self.rigWarned = false
 	self.runner = Sim.newRunner(spawnCFrame)
 	if self.world and (self.world :: any).resetHint then (self.world :: any).resetHint() end
-	if self.world and (self.world :: any).locate then (self.world :: any).locate(spawnCFrame.Position) end
 	self.remoteCars:SetOwnCar(car)
 	self.wheels:Cut()
 	self.engineSound:Cut()
@@ -507,7 +501,6 @@ function DriftController:_placeAt(cf: CFrame)
 	self.runner = Sim.newRunner(cf)
 	self.respawns += 1
 	if self.world and (self.world :: any).resetHint then (self.world :: any).resetHint() end
-	if self.world and (self.world :: any).locate then (self.world :: any).locate(cf.Position) end
 	-- Everything off BEFORE the car is put down. A trail that is still enabled across a
 	-- jump draws one straight black line from where the car was to where it now is,
 	-- across the whole world (T-062). The sounds are cut with them: a squeal that was
@@ -561,15 +554,14 @@ function DriftController:_frame(dt: number)
 	local steps = Sim.advance(self.runner, dt, input, self.world, self._onStep)
 	local state = self.runner.state
 
-	-- Contact history commits at each completed simulation center above. Drawing
-	-- follows physical support even while accepted progress still owes an older leg.
+	-- The spline road is drawn round where the car is along it (T-135). `locate` also puts
+	-- the world's lookup hint back on the car after anything else has asked it elsewhere.
 	if self.splineView then
 		local w: any = self.world
-		local along=w and w.physicalS or nil
-		if not along and w and w.locate then local owner,_,physical=w.locate(state.position);along=physical or owner end
+		local along = if w and w.locate then w.locate(state.position) else nil
 		-- off the road altogether (falling, far out): keep what is drawn
 		if along then
-			self.splineView:Update(along,state.position)
+			self.splineView:Update(along)
 		end
 	end
 
@@ -899,28 +891,7 @@ end
 -- Hand walking the car's accepted road leg, including when parked far onto grass.
 function DriftController:SplineHint()
 	local world = self.world
-	return self.spline,world and world.hint or nil,world and world.contactSnapshot and world.contactSnapshot() or nil
-end
-
-function DriftController:DrawWalkingSpline(spline,physicalS:number,position:Vector3?)
-	if self.spline==spline and self.splineView and not self:IsDriving() then self.splineView:Update(physicalS,position) end
-end
-
--- Studio fixtures may establish an explicit accepted leg at the actual car
--- center. Observations stay numeric so they can cross the debug bridge's VM.
-function DriftController:DebugSplineContact(ownerS:number?)
-	assert(RunService:IsStudio(),"DebugSplineContact is Studio only")
-	local world=self.world;local state=self:CurrentState()
-	if not world or not world.contactSnapshot or not state then return nil end
-	if ownerS~=nil then
-		assert(ownerS==ownerS and ownerS>=0 and ownerS<=self.spline.length,"invalid contact fixture owner")
-		world.resetHint();world.hint=ownerS;world.locate(state.position)
-	end
-	local contact=world.contactSnapshot()
-	if not contact then return nil end
-	return {ownerS=contact.ownerS,anchorS=contact.anchorS,travel=contact.travel,position=contact.position,
-		physicalS=contact.physicalS,kind=contact.kind,peerS=contact.peer and contact.peer.s,
-		peerPatch=contact.peer and contact.peer.patchId}
+	return self.spline, world and world.hint or nil
 end
 
 -- The model's full state, for tests and agent playtests.
@@ -1184,7 +1155,6 @@ function DriftController:DebugTeleport(cf: CFrame)
 	end
 	if self.world and self.world.resetHint then self.world.resetHint() end
 	self.runner = Sim.newRunner(cf)
-	if self.world and self.world.locate then self.world.locate(cf.Position) end
 	self.wheels:Cut()
 	self.engineSound:Cut()
 	self.skidSound:Cut()

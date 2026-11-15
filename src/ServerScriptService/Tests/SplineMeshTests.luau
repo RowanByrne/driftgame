@@ -37,18 +37,6 @@ local function envelope(model,excludedColours)
 	local function key(x, z)
 		return `{math.floor(x / step)}:{math.floor(z / step)}`
 	end
-	local function add(a,b,c,face,colour)
-		local det=(b.X-a.X)*(c.Z-a.Z)-(b.Z-a.Z)*(c.X-a.X)
-		if (b-a):Cross(c-a).Magnitude<=1e-7 then return end
-		local rock=Config.Spline.Terrain.RockColour
-		local t={a=a,b=b,c=c,det=det,face=face,colour=colour,rock=math.abs(colour.R-rock.R)+math.abs(colour.G-rock.G)+math.abs(colour.B-rock.B)<.001}
-		table.insert(triangles,t)
-		for x=math.floor(math.min(a.X,b.X,c.X)/step),math.floor(math.max(a.X,b.X,c.X)/step) do
-			for z=math.floor(math.min(a.Z,b.Z,c.Z)/step),math.floor(math.max(a.Z,b.Z,c.Z)/step) do
-				local k=`{x}:{z}`;bins[k]=bins[k] or {};table.insert(bins[k],t)
-			end
-		end
-	end
 	for _, f in em:GetFaces() do
 		local decorative=false
 		if excludedColours then
@@ -57,20 +45,21 @@ local function envelope(model,excludedColours)
 		if decorative then excluded+=1;continue end
 		local ids = em:GetFaceVertices(f)
 		local a, b, c = positions[ids[1]], positions[ids[2]], positions[ids[3]]
-		add(a,b,c,f,em:GetColor(em:GetFaceColors(f)[1]))
-	end
-	-- All eight faces of each actual wedge, including growth/thickness/clamping.
-	-- A distant primitive must not hide an intrusion above the supported bank.
-	local far=model:FindFirstChild("FarGround")
-	if far then for _,p in far:GetChildren() do
-		if not p:IsA("WedgePart") then continue end
-		local h=p.Size*.5;local v={}
-		for i,point in {Vector3.new(h.X,-h.Y,h.Z),Vector3.new(h.X,h.Y,h.Z),Vector3.new(h.X,-h.Y,-h.Z),
-			Vector3.new(-h.X,-h.Y,h.Z),Vector3.new(-h.X,h.Y,h.Z),Vector3.new(-h.X,-h.Y,-h.Z)} do v[i]=p.CFrame:PointToWorldSpace(point) end
-		for _,face in {{1,2,3},{4,6,5},{1,4,5},{1,5,2},{2,5,6},{2,6,3},{3,6,4},{3,4,1}} do
-			add(v[face[1]],v[face[2]],v[face[3]],p.Name,p.Color)
+		local det = (b.X - a.X) * (c.Z - a.Z) - (b.Z - a.Z) * (c.X - a.X)
+		if (b - a):Cross(c - a).Magnitude > 1e-7 then
+			local colour = em:GetColor(em:GetFaceColors(f)[1])
+			local rock = Config.Spline.Terrain.RockColour
+			local t = { a = a, b = b, c = c, det = det, face=f, colour=colour, rock = math.abs(colour.R - rock.R) + math.abs(colour.G - rock.G) + math.abs(colour.B - rock.B) < 0.001 }
+			table.insert(triangles, t)
+			for x = math.floor(math.min(a.X, b.X, c.X) / step), math.floor(math.max(a.X, b.X, c.X) / step) do
+				for z = math.floor(math.min(a.Z, b.Z, c.Z) / step), math.floor(math.max(a.Z, b.Z, c.Z) / step) do
+					local k = `{x}:{z}`
+					bins[k] = bins[k] or {}
+					table.insert(bins[k], t)
+				end
+			end
 		end
-	end end
+	end
 	local function height(p)
 		local top = -math.huge
 		local normal=nil
@@ -170,7 +159,6 @@ function Tests.runShadows(_self, options)
 	local allRays, allShaded = 0, 0
 	local cases = { tight = 0, capped = 0, transition = 0, bankedNarrow = 0 }
 	local intersections, pairs, firstIntersection = 0, 0, "none"
-	local misses={}
 	local folder = Instance.new("Folder")
 	folder.Name, folder.Parent = "__ShadowContainmentTest", workspace
 	local ok, err = pcall(function()
@@ -191,12 +179,12 @@ function Tests.runShadows(_self, options)
 				parts += info.parts
 				work = math.max(work, info.ms)
 				sliceMs = math.max(sliceMs, info.sliceMs)
-				local height, triangles, nearby, positions = envelope(model,info.groveColourIds)
+				local height, triangles, nearby, positions = envelope(model)
 				local cuts = SplineMesh.sections(gen.spline, chunk * L, math.min((chunk + 1) * L, gen.spline.length))
 				local actualHeights = { [-1] = {}, [1] = {} }
 				for _, side in { -1, 1 } do
 					for k, s in cuts do
-						local p = SplineMesh.drawProfile(gen.spline, s, side, 1)
+						local p = SplineMesh.profile(gen.spline, s, side, 1)
 						local delta = p[4] - p[1]
 						local share = 0
 						for _, point in positions do
@@ -213,7 +201,7 @@ function Tests.runShadows(_self, options)
 						local curvature = gen.spline:curvatureAt(s)
 						if kind == 1 and math.abs(curvature) > 1 / Config.Spline.Terrain.TightRockRadius and (curvature > 0) == (side < 0) then cases.tight += 1 end
 						if kind == 1 then
-							local natural = SplineMesh.drawProfile(gen.spline, cuts[k], side, 1)
+							local natural = SplineMesh.profile(gen.spline, cuts[k], side, 1)
 							if actualHeights[side][k] < (natural[4].Y - natural[1].Y) * 0.9 then cases.capped += 1 end
 						end
 						if k > 1 and kind ~= gen.spline:edgeAt((cuts[k - 1] + cuts[k]) / 2, side) then cases.transition += 1 end
@@ -230,7 +218,7 @@ function Tests.runShadows(_self, options)
 						pairs += 1
 						if crossesFace(p, triangle) then
 							intersections += 1
-							if firstIntersection=="none" then firstIntersection = `{seed} chunk {chunk} {p.Name}; face {triangle.face}, colour {triangle.colour}` end
+							firstIntersection = `{seed} chunk {chunk} {p.Name}`
 						end
 					end
 					counts[kind] = (counts[kind] or 0) + 1
@@ -262,25 +250,19 @@ function Tests.runShadows(_self, options)
 						local k = 1
 						while k < #cuts - 1 and cuts[k + 1] < s do k += 1 end
 						local tall = math.min(actualHeights[side][k], actualHeights[side][k + 1]) >= 25
-						local p = SplineMesh.drawProfile(gen.spline, s, side, 1)
+						local p = SplineMesh.profile(gen.spline, s, side, 1)
 						local origin = p[1] + Vector3.yAxis * 2
 						local yaw = gen.spline:yawAt(s)
 						local direction = Vector3.new(side * math.cos(yaw), math.tan(math.rad(10)), -side * math.sin(yaw))
 						if not rayTerrain(origin, direction, triangles, (p[5] - p[1]).Magnitude + 20) then continue end
 						allRays += 1
 						if tall then sunRays += 1 end
-						local blocked=false
 						for _, caster in casters do
 							if rayBox(origin, direction, caster) then
-								blocked=true
 								allShaded += 1
 								if tall then shaded += 1 end
 								break
 							end
-						end
-						if tall and not blocked then
-							misses[tostring(seed)]=misses[tostring(seed)] or {}
-							if #misses[tostring(seed)]<8 then table.insert(misses[tostring(seed)],{chunk=chunk,s=s,side=side,from=tostring(origin),direction=tostring(direction),rowA=cuts[k],rowB=cuts[k+1]}) end
 						end
 					end
 				end
@@ -302,7 +284,7 @@ function Tests.runShadows(_self, options)
 	table.insert(checks, { name = "shadow sweep includes bends, caps, transitions and banked narrow runoff", ok = cases.tight > 0 and cases.capped > 0 and cases.transition > 0 and cases.bankedNarrow > 0, detail = game.HttpService:JSONEncode(cases) })
 	local passed = 0
 	for _, c in checks do if c.ok then passed += 1 end end
-	return { passed = passed, total = #checks, checks = checks,misses=misses }
+	return { passed = passed, total = #checks, checks = checks }
 end
 
 function Tests.run()
@@ -713,225 +695,6 @@ function Tests.run()
 	return { passed = passed, total = #checks, checks = checks }
 end
 
-function Tests.farGround()
-	local Spline=require(ReplicatedStorage.Shared.Road.Spline)
-	local H=Config.Spline.Hill
-	local saved={reach=H.DrawReach,gather=H.DrawGather,ground=Config.Spline.Biomes.GroundEnabled}
-	local folder=Instance.new("Folder");folder.Name="__FarGroundTest";folder.Parent=workspace
-	local active=nil
-	local ok,result=xpcall(function()
-		Config.Spline.Biomes.GroundEnabled=true
-		local sp=Spline.new({x=0,y=80,z=-20000,yaw=0});sp.fall=math.pi*.5
-		sp:append({len=2000,k={2000,0},g={2000,0},b={2000,0},rl={2000,80},rr={2000,80},el={2000,Spline.ROCK},er={2000,Spline.CLIFF},bm={0,1,0}})
-		local info;active,info=SplineMesh.build(sp,700,1180,folder,{traceFaces=true});assert(active,tostring(info))
-		local em=active.Road.MeshContent.Object
-		local colours,faces={},0
-		for face,origin in info.faceOrigins do
-			if not string.find(origin.kind,"hill",1,true) then continue end
-			for _,id in em:GetFaceColors(face) do colours[tostring(em:GetColor(id))]=true end
-			faces+=1
-		end
-		local count=0;for _ in colours do count+=1 end
-		local far=active.FarGround
-		local clean=true
-		for _,p in far:GetChildren() do clean=clean and not p.CastShadow and not p.CanCollide and not p.CanQuery and not p.CanTouch end
-		local measure=envelope(active,info.groveColourIds)
-		local covered=0
-		for _,side in {-1,1} do
-			local p=Vector3.new(sp:terrainXYZ(940,side*(Config.Road.Width*.5+80+H.DrawReach-25)))
-			if measure(p)>-math.huge then covered+=1 end
-		end
-		local meshes=0;for _,p in active:GetDescendants() do if p:IsA("MeshPart") then meshes+=1 end end
-		local size=active.Road.MeshSize
-		local checks={
-			{name="far ground reaches twice the original distance on both open sides",ok=H.DrawReach==2*H.Reach and covered==2 and info.farParts>0,
-				detail=`{covered}/2 samples at {H.DrawReach-25} studs past the supported edge; {info.farParts} coarse parts`},
-			{name="one legal-size EditableMesh holds the core",ok=meshes==1 and math.max(size.X,size.Y,size.Z)<=2048,
-				detail=`{meshes} mesh; core extents {size}; distant ground uses no extra EditableMesh slots`},
-			{name="far ground uses one colour and preserves the existing lighting/collision behavior",ok=faces>0 and count==1 and clean,
-				detail=`{faces} core hill faces, {count} colour; far parts are non-solid and do not add shadow casters: {clean}`},
-		}
-		SplineMesh.destroy(active);active=nil
-		local function same(a,b)
-			if type(a)~=type(b) then return false end
-			if type(a)~="table" then return a==b end
-			for k,v in a do if not same(v,b[k]) then return false end end
-			for k in b do if a[k]==nil then return false end end
-			return true
-		end
-		H.DrawReach,H.DrawGather=H.Reach,H.Gather
-		local before=SplineGen.new(203);before:extendTo(6000)
-		H.DrawReach,H.DrawGather=saved.reach,saved.gather
-		local after=SplineGen.new(203);after:extendTo(6000)
-		table.insert(checks,{name="visible reach does not reroute or redecorate the approved road",ok=same(before.sections,after.sections),
-			detail=`seed203, {#after.sections} sections; all section geometry, ground, biomes and scenery data compared exactly`})
-		local passed=0;for _,item in checks do if item.ok then passed+=1 end end
-		return {passed=passed,total=#checks,checks=checks}
-	end,debug.traceback)
-	if active then SplineMesh.destroy(active) end
-	folder:Destroy();H.DrawReach,H.DrawGather=saved.reach,saved.gather;Config.Spline.Biomes.GroundEnabled=saved.ground
-	return if ok then result else {passed=0,total=1,checks={{name="far ground fixture completes",ok=false,detail=result}}}
-end
-
-function Tests.hillRobustness()
-	local Hill=require(ReplicatedStorage.Shared.Road.SplineHill)
-	local Cuts=require(ReplicatedStorage.Shared.Road.SplineHillCuts)
-	local Spline=require(ReplicatedStorage.Shared.Road.Spline)
-	local saved=Config.Spline.Biomes.GroundEnabled
-	Config.Spline.Biomes.GroundEnabled=true
-	local folder=Instance.new("Folder");folder.Name="__HillRobustness";folder.Parent=workspace
-	local active=nil
-	local ok,result=xpcall(function()
-		local checks={}
-		local function check(name,pass,detail)table.insert(checks,{name=name,ok=pass,detail=detail})end
-		for _,side in {-1,1} do
-			local a,b,c=Vector3.zero,Vector3.new(side*20,0,0),Vector3.new(0,0,-10)
-			check(`side {side}: proper ground and real fold stay distinct`,not Cuts.collapsed(a,b,c) and not Cuts.folded(a,b,c,side)
-				and Cuts.folded(a,c,b,side),"reversed finite footprint is still rejected")
-			local smallA,smallB,smallC=Vector3.zero,Vector3.new(side*.006,0,0),Vector3.new(0,0,-.006)
-			check(`side {side}: small resolvable folds are rejected`,not Cuts.collapsed(smallA,smallB,smallC)
-				and not Cuts.folded(smallA,smallB,smallC,side) and Cuts.folded(smallA,smallC,smallB,side),
-				"finite footprint below the former fixed area cutoff")
-			local sp=Spline.new({x=0,y=0,z=0,yaw=0})
-			sp:append({len=1000,k={1,-side/75,1000,-side/75},g={1000,0},b={1000,0}})
-			local centre={st={s=200},side=side,clip=75}
-			local facing={st={s=200},side=side,clip=60}
-			local outside={st={s=200},side=-side,clip=75}
-			check(`side {side}: inside skirts stop at the bend centre`,Hill.skirtEnd(sp,centre)<=75+1e-8
-				and Hill.skirtEnd(sp,facing)==60+Config.Spline.Hill.Skirt and Hill.skirtEnd(sp,outside)==75+Config.Spline.Hill.Skirt,
-				"only the centre-crossing overlap is shortened")
-		end
-		local a,b,c=Vector3.new(4515.73828125,-115.117668,-20236.787109375),
-			Vector3.new(4517.07763671875,-117.05075,-20250.3828125),Vector3.new(4518.47900390625,-124.28023,-20264.603515625)
-		check("rounded bend-centre fins have no resolvable ground footprint",Cuts.collapsed(a,b,c),
-			"observed seed203 span9437.5..9440.5; paper triangle is omitted, not turned into an upright wall")
-		local invalid=Spline.new({x=0,y=0,z=0,yaw=0})
-		invalid.fall=math.pi*.5
-		invalid:append({len=1,k={1,4},g={1,0},b={1,0},rl={1,12},rr={1,12},el={1,Spline.ROCK},er={1,Spline.CLIFF},bm={0,1,0}})
-		local reason,hint
-		active,reason,hint=SplineMesh.build(invalid,0,1,folder)
-		check("an uncertifiable terminal hillside fails closed",active==nil and hint and hint.omitHills==true and string.find(tostring(reason),"unsafe terminal hillside span",1,true)~=nil,
-			`deliberately impossible bend; build returned {reason}`)
-		if active then SplineMesh.destroy(active);active=nil end
-		local valid=Spline.new({x=0,y=0,z=0,yaw=0})
-		valid.fall=math.pi*.5
-		valid:append({len=200,k={200,0},g={200,0},b={200,0},rl={200,12},rr={200,12},el={200,Spline.ROCK},er={200,Spline.CLIFF},bm={0,1,0}})
-		local hill=Hill.context(valid,0,1,SplineMesh.drawProfile,nil,true)
-		local empty=Hill.ray(hill,0,-1)
-		local endAt=Hill.faceEnd(empty)
-		empty.clip=endAt-.5;empty.meet=1000
-		local emptyPoints=Hill.drawRings(valid,empty)
-		local endpoint=SplineMesh.drawProfile(valid,0,-1,Spline.ROCK,Hill.cap(empty))[5]
-		local emptyGap=0;for _,point in emptyPoints do emptyGap=math.max(emptyGap,(point-endpoint).Magnitude) end
-		check("an occupied radial domain collapses to the profile endpoint",emptyGap<.002,
-			`no outer ground exists behind the bank; largest endpoint gap {emptyGap}`)
-		local rays,caps={[-1]={},[1]={}},{[-1]={},[1]={}}
-		for _,side in {-1,1} do for k,s in {0,1} do
-			rays[side][k]=Hill.ray(hill,s,side);caps[side][k]=Hill.cap(rays[side][k])
-		end end
-		local rows={{Vector3.new(-2000,-1000,0),Vector3.new(2000,-1000,0)},
-			{Vector3.new(-2000,-1000,-1),Vector3.new(2000,-1000,-1)}}
-		local _,occlusion,trim=Cuts.refine(valid,hill,{0,1},rows,{1,2},rays,caps,SplineMesh.drawProfile)
-		check("terminal bank occlusion is detected without a fold",occlusion.terminal==1 and occlusion.terminalFolds==0,
-			`{occlusion.terminal} unsafe, {occlusion.terminalFolds} folded; correctly wound hills above a synthetic supported plane`)
-		local clipped,changed=trim(Vector3.new(1999,0,-.2),Vector3.new(2001,0,-.2),Vector3.new(2001,0,-.8))
-		local anchored,peak,insideSafe=false,false,clipped~=nil
-		for _,triangle in clipped or {} do for _,p in triangle do
-			if math.abs(p.X-2000)<.021 then anchored=anchored or p.Y<-1000.1 end
-			peak=peak or p.X>2000.9 and math.abs(p.Y)<.001
-			insideSafe=insideSafe and (p.X>=1999.999 or p.Y<-1000.1)
-		end end
-		check("terminal repairs join the bank while retaining the outer hill",changed and anchored and peak and insideSafe,
-			"new boundary vertices sit behind the bank; untouched outside summit remains")
-		local touching,touchChanged=trim(Vector3.new(2000,0,-.2),Vector3.new(2001,0,-.2),Vector3.new(2000,0,-.8))
-		local joined=touching~=nil
-		for _,triangle in touching or {} do for _,p in triangle do
-			if math.abs(p.X-2000)<.002 then joined=joined and p.Y<-1000.1 end
-		end end
-		check("an adjoining hill triangle shares the lowered bank edge",touchChanged and joined,
-			"a triangle touching the bank receives the same boundary heights as its clipped neighbour")
-		local long,longChanged=trim(Vector3.new(2000,0,1),Vector3.new(2001,0,-.5),Vector3.new(2000,0,-2))
-		local ends={[0]=false,[-1]=false}
-		for _,triangle in long or {} do for _,p in triangle do
-			if math.abs(p.X-2000)<.002 then for z in ends do if math.abs(p.Z-z)<.002 and p.Y<-1000.1 then ends[z]=true end end end
-		end end
-		check("long touching edges split at both bank limits",longChanged and ends[0] and ends[-1],
-			"neither original endpoint lies on the finite bank; new shared boundary vertices close the join")
-		local oldRay=rays[1][2]
-		local foldedRay=table.clone(oldRay);foldedRay.st=table.clone(oldRay.st);foldedRay.st.rx=-foldedRay.st.rx
-		rays[1][2]=foldedRay
-		local _,hiddenFold,hiddenRepair=Cuts.refine(valid,hill,{0,1},rows,{1,2},rays,caps,SplineMesh.drawProfile)
-		rays[1][2]=oldRay
-		check("an early bank occlusion cannot hide a later finite fold",hiddenFold.terminalFolds==1 and hiddenRepair==nil,
-			"both sides are checked for winding before a terminal bank repair is allowed")
-		local fallback,stats=require(ReplicatedStorage.Shared.Road.SplineParts).build(valid,0,24,folder,{terrain=true,omitHills=hint and hint.omitHills})
-		local ground,faces,hills=0,0,0
-		for _,part in fallback do
-			if string.find(part.Name,"Ground_",1,true)==1 then ground+=1 end
-			if string.find(part.Name,"Face_",1,true)==1 then faces+=1 end
-			if string.find(part.Name,"Hill_",1,true)==1 then hills+=1 end
-		end
-		check("unsafe-hill fallback retains supported ground and capped faces",stats.hillsOmitted and ground>0 and faces>0 and hills==0,
-			`{ground} ground, {faces} capped face, {hills} hill parts; typed mesh failure hint propagated`)
-		for _,part in fallback do part:Destroy() end
-		active,reason=SplineMesh.build(valid,0,96,folder)
-		check("a valid mesh can build immediately after terminal rejection",active~=nil,tostring(reason))
-		if active then SplineMesh.destroy(active);active=nil end
-		local passed=0;for _,item in checks do if item.ok then passed+=1 end end
-		return {passed=passed,total=#checks,checks=checks}
-	end,debug.traceback)
-	if active then SplineMesh.destroy(active) end
-	folder:Destroy();Config.Spline.Biomes.GroundEnabled=saved
-	return if ok then result else {passed=0,total=1,checks={{name="hill robustness fixture completes",ok=false,detail=result}}}
-end
-
-function Tests.surfaceRows()
-	local C=Config.Spline.Biomes
-	local saved=C.GroundEnabled
-	local ok,result=xpcall(function()
-		C.GroundEnabled=true
-		local g=SplineGen.new(203);g:extendTo(12000)
-		local sp=g.spline
-		local at={0,219.95,220,220.05,509.1,511.95,512,512.05,sp.length}
-		for s=100,sp.length-1,317 do table.insert(at,s) end
-		for i=4,#sp.biomes,3 do
-			for _,s in {sp.biomes[i]-sp.biomes[i+2]*.5,sp.biomes[i],sp.biomes[i]+sp.biomes[i+2]*.5} do
-				for _,d in {-.05,0,.05} do if s+d>=0 and s+d<=sp.length then table.insert(at,s+d) end end
-			end
-		end
-		local checks={}
-		for _,enabled in {true,false} do
-			C.GroundEnabled=enabled
-			local gap,normal,samples=0,0,0
-			local optional=true
-			for _,direction in {1,-1} do for index=1,#at do
-				local s=at[if direction>0 then index else #at-index+1]
-				local ds=require(ReplicatedStorage.Shared.Road.SplineSurfaceCuts).offsets(sp,s,4,16)
-				local half=Config.Road.Width*.5
-				for _,side in {-1,1} do for _,d in {0,.001,sp:lipWidthAt(s,side),sp:runoffAt(s,side)} do
-					for _,shift in {-.001,.001} do table.insert(ds,side*(half+d+shift)) end
-				end end
-				local origin=Vector3.new(41,7,-20200)
-				local points,norms,relative=sp:terrainRow(s,ds,true,origin)
-				local plain,none,localNone=sp:terrainRow(s,ds,false)
-				optional=optional and #none==0 and #localNone==0
-				for j,d in ds do
-					local x,y,z=sp:terrainXYZ(s,d)
-					gap=math.max(gap,(points[j]-Vector3.new(x,y,z)).Magnitude,(relative[j]-Vector3.new(x-origin.X,y-origin.Y,z-origin.Z)).Magnitude,(plain[j]-points[j]).Magnitude)
-					normal=math.max(normal,(norms[j]-sp:terrainNormal(s,d)).Magnitude);samples+=1
-				end
-				if index%16==0 then task.wait() end
-			end end
-			table.insert(checks,{name=`bulk ground rows equal scalar queries, biome ground {tostring(enabled)}`,ok=gap<1e-7 and normal<1e-7 and optional,
-				detail=`{samples} forward/reverse samples at knots, road edges, bevels, banks and transitions; point/relative gap {gap}, normal gap {normal}, optional outputs empty {optional}`})
-		end
-		local passed=0;for _,c in checks do if c.ok then passed+=1 end end
-		return {passed=passed,total=#checks,checks=checks}
-	end,debug.traceback)
-	C.GroundEnabled=saved
-	return if ok then result else {passed=0,total=1,checks={{name="bulk row fixture completes",ok=false,detail=result}}}
-end
-
 function Tests.biomes(_self,options)
 	options=options or {}
 	local old=Config.Spline.Biomes.GroundEnabled
@@ -939,8 +702,7 @@ function Tests.biomes(_self,options)
 	local folder=Instance.new("Folder");folder.Name="__BiomeMeshTest";folder.Parent=workspace
 	local active=nil
 	local ok,result=xpcall(function()
-		local seed=options.seed or 203
-		local gen=SplineGen.new(seed);gen:extendTo(options.length or 12000)
+		local gen=SplineGen.new(203);gen:extendTo(12000)
 		local spline=gen.spline
 		local records=spline.biomes
 		local pairs,chunks={},{}
@@ -948,7 +710,6 @@ function Tests.biomes(_self,options)
 			local pair=`{records[i-2]}>{records[i+1]}`
 			if not pairs[pair] then pairs[pair]=true;chunks[math.floor(records[i]/480)]=true end
 		end
-		local pairCount=0;for _ in pairs do pairCount+=1 end
 		if options.chunk then chunks={[options.chunk]=true} end
 		local built,missing,samples,maxError,maxNormal,maxTriangles,maxSlice,work=0,0,0,0,0,0,0,0
 		local normalAt="none"
@@ -980,8 +741,7 @@ function Tests.biomes(_self,options)
 			excluded+=skipped;expectedExcluded+=info.treeTriangles
 			refined+=info.hillRefinedRays or 0;unsafe+=info.hillUnsafe or 0
 			local neighbourHeights={}
-			for near=chunk-(options.windowRadius or 1),chunk+(options.windowRadius or 1) do
-				if near==chunk then continue end
+			for _,near in {chunk-1,chunk+1} do
 				if near<0 or near*480>=spline.length then continue end
 				local other,stats=SplineMesh.build(spline,near*480,math.min((near+1)*480,spline.length),folder)
 				assert(other,tostring(stats))
@@ -992,7 +752,7 @@ function Tests.biomes(_self,options)
 			for s=s0+1.17,s1-1,9.31 do
 				for _,side in {-1,1} do
 					local w=spline:runoffAt(s,side)
-					for _,u in {.06,.24,.47,.73,.94,.98,.999,.9999} do
+					for _,u in {.06,.24,.47,.73,.94} do
 						local d=side*(Config.Road.Width*.5+w*u)
 						local p=Vector3.new(spline:terrainXYZ(s,d))
 						local y,n,triangle=height(p)
@@ -1003,7 +763,7 @@ function Tests.biomes(_self,options)
 						if y==-math.huge then missing+=1 else
 							local error=math.abs(y-p.Y)
 							if error>maxError then maxError=error;errorAt=describe(s,d,w,p,y,triangle) end
-							if u<=.94 and w*u>spline:lipWidthAt(s,side)+.5 and n then
+							if w*u>spline:lipWidthAt(s,side)+.5 and n then
 								local delta=math.deg(math.acos(math.clamp(n:Dot(spline:terrainNormal(s,d)),-1,1)))
 								if delta>maxNormal then maxNormal=delta;normalAt=describe(s,d,w,p,y,triangle) end
 							end
@@ -1017,8 +777,8 @@ function Tests.biomes(_self,options)
 		end
 		local checks={
 			{name="coarse hillside chords stay below supported ground",ok=unsafe==0,detail=`{refined} added hill rays, {unsafe} terminal unsafe spans`},
-			{name="terrain measurements exclude only known decorative grove faces",ok=(options.requireDecorations==false or excluded>0) and excluded==expectedExcluded,detail=`{excluded} excluded, exactly {expectedExcluded} generated tree/bush triangles; all terrain faces remain measured`},
-			{name="actual mesh interiors match supported terrain through all transitions",ok=(options.chunk~=nil or pairCount==6) and built>0 and missing==0 and maxError<.15,detail=`seed {seed}, {pairCount} directed transitions in {built} chunks; window radius {options.windowRadius or 1}; {samples} samples, missing {missing}, largest height error {maxError}; {errorAt}`},
+			{name="terrain measurements exclude only known decorative grove faces",ok=excluded>0 and excluded==expectedExcluded,detail=`{excluded} excluded, exactly {expectedExcluded} generated tree/bush triangles; all terrain faces remain measured`},
+			{name="actual mesh interiors match supported terrain through all transitions",ok=built==(if options.chunk then 1 else 6) and missing==0 and maxError<.15,detail=`{built} transition chunks, {samples} samples, missing {missing}, largest height error {maxError}; {errorAt}`},
 			{name="bank triangle normals follow the shared surface",ok=maxNormal<5,detail=`largest normal difference {maxNormal} degrees at {normalAt}`},
 			{name="near-ground detail keeps one mesh and bounded chunks",ok=maxTriangles<20000 and maxSlice<20,detail=`largest chunk {maxTriangles} triangles, slice {maxSlice} ms, aggregate work {work} ms`},
 		}

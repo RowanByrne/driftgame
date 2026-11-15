@@ -52,13 +52,9 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Config = require(ReplicatedStorage.Shared.Config)
 local Biome = require(script.Parent.SplineBiome)
-local Infield = require(script.Parent.SplineInfield)
 
 local Spline = {}
 Spline.__index = Spline
-local closingCache=setmetatable({}, {__mode="k"}) :: {[any]:any}
-
-export type ClosingPanel={a:{number},b:{number},normal:Vector3,bottom:number,top:number,depth:number,field:boolean}
 
 export type Origin = { x: number, y: number, z: number, yaw: number }
 
@@ -83,7 +79,6 @@ export type Section = {
 	bm: { number }?, -- biome records {absoluteBoundary, destinationKind, blendLength, ...} (T-203)
 	hl: { number }?, -- signed outer-bank lift knots {ds, height}, left (T-203)
 	hr: { number }?, -- right; carry previous height if absent
-	ip: { Infield.Patch }?, -- frozen paired-bank terrain, published by the newer section
 }
 
 -- The edge kinds, as they go over the wire.
@@ -140,8 +135,6 @@ export type Spline = typeof(setmetatable(
 		biomes: { number }?, -- immutable absolute transition records; nil uses legacy terrain
 		liftL: Track,
 		liftR: Track,
-		infields: Infield.Index?,
-		infieldRevision: number?,
 		-- the mountain's uphill heading (a yaw), fixed for the road (T-166): set by whoever
 		-- makes the road (`SplineGen`), nil on a road with no mountain. The hillside's slope
 		-- reads it (`Road/SplineHill`, T-190)
@@ -538,22 +531,9 @@ local function checkTerrain(self: Spline, sec: Section)
 	end
 end
 
-local installInfields:(Spline,{Infield.Patch},boolean)->()
-
 function Spline.append(self: Spline, sec: Section)
 	local s0 = self.length
 	local s1 = s0 + sec.len
-	local acceptedInfields:{Infield.Patch}?=nil
-	if sec.ip then
-		acceptedInfields={}
-		local pending=Infield.new()
-		for i,patch in sec.ip do
-			patch=Infield.canonical(patch);table.insert(acceptedInfields,patch)
-			if self.infields then Infield.add(self.infields,patch,true) end
-			-- the batch's later patches are checked against the earlier ones
-			Infield.add(pending,patch,i==#sec.ip)
-		end
-	end
 	for _, knots in { sec.k, sec.g, sec.b } do
 		assert(#knots >= 2 and math.abs(knots[#knots - 1] - sec.len) < 1e-6, "Spline: every track must end on a knot at the section's end")
 	end
@@ -596,132 +576,6 @@ function Spline.append(self: Spline, sec: Section)
 	end
 	self.lastSample = i
 	addCheckPoints(self, s1)
-	-- the preflight above already checked these against this index and each other;
-	-- every final add still repeats all of its own destination guards
-	if acceptedInfields and #acceptedInfields>0 then installInfields(self,acceptedInfields,true) end
-end
-
-function Spline.addInfields(self:Spline,patches:{Infield.Patch})
-	Spline.addInfieldsSliced(self,patches,nil)
-end
-
--- The same batch, whose readonly checks may suspend at `tick` (a private generator's
--- own spline only): the index is rechecked after every checkpoint, and the adds that
--- change it run afterwards, together, without suspending.
-function Spline.addInfieldsSliced(self:Spline,patches:{Infield.Patch},tick:(()->())?)
-	if #patches==0 then return end
-	local normalized={}
-	for _,patch in patches do table.insert(normalized,Infield.canonical(patch)) end
-	if tick then
-		local index=self.infields or Infield.new()
-		local pending=Infield.new()
-		for i,patch in normalized do
-			Infield.validate(index,patch,tick)
-			Infield.validate(pending,patch,tick)
-			if i<#normalized then Infield.add(pending,patch) end
-		end
-		installInfields(self,normalized,true)
-		return
-	end
-	installInfields(self,normalized,false)
-end
-
--- One atomic batch: every patch is checked before any is added, unless the caller
--- has just made exactly those checks against this same unchanged index.
-function installInfields(self:Spline,normalized:{Infield.Patch},preflighted:boolean)
-	local index=self.infields or Infield.new()
-	if not preflighted then
-		local pending=Infield.new()
-		for i,patch in normalized do
-			Infield.add(index,patch,true)
-			Infield.add(pending,patch,i==#normalized)
-		end
-	end
-	local added=false
-	for _,patch in normalized do if Infield.add(index,patch) then added=true end end
-	self.infields=index
-	if added then self.infieldRevision=(self.infieldRevision or 0)+1 end
-end
-
-function Spline.infieldAt(self:Spline,x:number,z:number,low:number?,high:number?):Infield.Hit?
-	return if self.infields then Infield.sample(self.infields,x,z,low,high) else nil
-end
-
-function Spline.infieldOpening(self:Spline,s:number,side:number):number
-	return if self.infields then Infield.opening(self.infields,s,side) else 0
-end
-
-function Spline.closingPanels(self:Spline,s:number):{ClosingPanel}
-	local revision=self.infieldRevision or 0
-	local cached=closingCache[self]
-	if cached and cached.s==s and cached.revision==revision and cached.first==self.firstSample and cached.length==self.length then return cached.panels end
-	local R,T=Config.Road,Config.Spline.Terrain
-	local out={}
-	if s>=self.firstSample*self.step and s<=self.length then
-		local x,y,z=self:surfaceXYZ(s,0)
-		local yaw=self:yawAt(s)
-		local width=R.Width*.5+math.max(self:runoffAt(s,-1),self:runoffAt(s,1))+T.EdgeDepth
-		local bankRise=width*math.abs(math.tan(self:bankAt(s)))
-		local bottom,top=y-R.Thickness-bankRise,y+R.BarrierHeight+bankRise
-		if self:hasBiomeGround() then for _,side in {-1,1} do
-			local edge=R.Width*.5+self:runoffAt(s,side)
-			for u=0,1,.25 do local ground=self:terrainY(s,side*edge*u);bottom=math.min(bottom,ground-R.Thickness);top=math.max(top,ground+R.BarrierHeight) end
-		end end
-		table.insert(out,table.freeze({a=table.freeze({x-width*math.cos(yaw),y,z+width*math.sin(yaw)}),
-			b=table.freeze({x+width*math.cos(yaw),y,z-width*math.sin(yaw)}),normal=Vector3.new(-math.sin(yaw),0,-math.cos(yaw)),
-			bottom=bottom,top=top,depth=1,field=false}))
-	end
-	if self.infields then
-		for _,line in Infield.closing(self.infields,s) do
-			table.insert(out,table.freeze({a=table.freeze(table.clone(line.a)),b=table.freeze(table.clone(line.b)),normal=line.normal,bottom=math.min(line.a[2],line.b[2])-R.Thickness,
-				top=math.max(line.a[2],line.b[2])+R.BarrierHeight,depth=1,field=true}))
-		end
-	end
-	table.freeze(out)
-	closingCache[self]={s=s,revision=revision,first=self.firstSample,length=self.length,panels=out}
-	return out
-end
-
--- Physical contacts and accepted route position are deliberately separate.
--- The known opposite bank remains physically reachable, without a grid search
--- or an asphalt-progress claim on the other leg.
-function Spline.infieldContact(self:Spline,x:number,z:number,hint:number?,low:number?,high:number?,limit:number?,closing:number?):any
-	local index=self.infields
-	if not index or hint==nil then return nil end
-	local first=math.max(self.firstSample*self.step,closing or 0)
-	if hint<first-1e-7 then return nil end
-	local advance=math.min(limit or 160,640)
-	local half=Config.Road.Width*.5
-	local hit=Infield.sample(index,x,z,low,high)
-	if hit then
-		local patch=index.patches[hit.patch]
-		local owner=Infield.route(hit,hint,advance,patch)
-		if owner and owner>=first then
-			local side=if owner==hit.sa then patch.rows[1].sideA else patch.rows[1].sideB
-			local physical=hit.contactS
-			if physical<self.firstSample*self.step then physical=if hit.sb>=self.firstSample*self.step then hit.sb else hit.sa end
-			local d=nil
-			if physical>=self.firstSample*self.step then local _;_,d=self:projectFrom(x,z,physical) end
-			return {y=hit.y,normal=hit.normal,ownerS=owner,contactS=physical,kind=Spline.GRASS,
-				routeD=side*(half+1),d=d,patch=hit.patch,closingS=hit.closingS}
-		end
-	end
-	for _,link in Infield.links(index,hint) do
-		if Infield.opening(index,hint,link.ownerSide)<=0 then continue end
-		local liveFirst=math.max(link.peerFirst,self.firstSample*self.step)
-		if liveFirst>link.peerLast then continue end
-		local s,d=self:projectFrom(x,z,math.clamp(link.peerS,liveFirst,link.peerLast))
-		if not s or not d or s<liveFirst or s>link.peerLast then continue end
-		local kind=self:groundKind(s,d,first)
-		if kind==nil then continue end
-		local owner=Infield.pair(link.patch,if link.bank=="A" then "B" else "A",s)
-		if not owner or owner<first or math.abs(owner-hint)>advance then continue end
-		local y=self:terrainY(s,d)
-		if (low and y<low) or (high and y>high) then continue end
-		return {y=y,normal=if kind==Spline.TARMAC then self:normalAt(s,d) else self:terrainNormal(s,d),ownerS=owner,contactS=s,kind=kind,
-			routeD=link.ownerSide*(half+1),d=d,patch=link.patch.id}
-	end
-	return nil
 end
 
 -- Forget the plan samples behind `s`. Knots, heading and height are kept -- they are a few
@@ -859,7 +713,7 @@ function Spline.boundaryHeight(self:Spline,s:number,side:number):number
 	if kind==Spline.CLIFF then return 0 end
 	local old=if kind==Spline.ROCK then Config.Spline.Terrain.RockHeight[1] else Config.Spline.Terrain.HedgeHeight
 	if not self:hasBiomeGround() then return old end
-	return Biome.mix(self.biomes,s,Config.Spline.Biomes.SolidHeight,old)*(1-self:infieldOpening(s,side))
+	return Biome.mix(self.biomes,s,Config.Spline.Biomes.SolidHeight,old)
 end
 
 -- How grand the rock and cliff faces are at `s`, 0..1 (T-185): eased between the knots.
@@ -976,26 +830,15 @@ end
 -- The ground's height as if the road were not raised: the grass following the bank and
 -- easing flat. `terrainNormal` reads its slope from this, so the step is a step to the car
 -- and the walking tiles, never a slope that tilts the grass beside it.
-type TerrainFrame={x:number,z:number,y:number,cos:number,sin:number,tb:number,wl:number,wr:number,hl:number,hr:number,biome:boolean}
-
-local function terrainFrame(self:Spline,s:number):TerrainFrame
-	local x,z=self:planAt(s)
-	local yaw=self:yawAt(s)
-	local biome=self:hasBiomeGround()
-	return {x=x,z=z,y=self:heightAt(s),cos=math.cos(yaw),sin=math.sin(yaw),tb=math.tan(self:bankAt(s)),
-		wl=self:runoffAt(s,-1),wr=self:runoffAt(s,1),
-		hl=if biome then self:edgeLiftAt(s,-1) else 0,hr=if biome then self:edgeLiftAt(s,1) else 0,biome=biome}
-end
-
-local function groundY(self: Spline, s: number, d: number, frame:TerrainFrame?): (number, number, number)
+local function groundY(self: Spline, s: number, d: number): (number, number, number)
 	local half = Config.Road.Width * 0.5
-	local tb = if frame then frame.tb else math.tan(self:bankAt(s))
+	local tb = math.tan(self:bankAt(s))
 	local a = math.abs(d)
 	if a <= half then
-		return (if frame then frame.y else self:heightAt(s)) + d * tb, 0, 0
+		return self:heightAt(s) + d * tb, 0, 0
 	end
 	local side = if d < 0 then -1 else 1
-	local w = if frame then (if side<0 then frame.wl else frame.wr) else self:runoffAt(s, side)
+	local w = self:runoffAt(s, side)
 	local e = a - half
 	local off
 	if e >= w then
@@ -1004,7 +847,7 @@ local function groundY(self: Spline, s: number, d: number, frame:TerrainFrame?):
 		off = e - e * e / (2 * w)
 	end
 	local lift=0
-	if (if frame then frame.biome else self:hasBiomeGround()) then
+	if self:hasBiomeGround() then
 		local start=lipWidth(w)
 		local span=math.max(w-start,1e-6)
 		local u=math.clamp((e-start)/span,0,1)
@@ -1012,10 +855,10 @@ local function groundY(self: Spline, s: number, d: number, frame:TerrainFrame?):
 		-- bank with a gentle slope. Its maximum derivative is4/3.
 		-- The road's remaining bank and the added rise share the slope budget.
 		local maximum=0.75*math.max(0,Config.Spline.Biomes.BankMaxSlope-math.abs(tb))*span
-		local height=math.clamp(if frame then (if side<0 then frame.hl else frame.hr) else self:edgeLiftAt(s,side),-maximum,maximum)
+		local height=math.clamp(self:edgeLiftAt(s,side),-maximum,maximum)
 		lift=height*u*u*(2-u)
 	end
-	return (if frame then frame.y else self:heightAt(s)) + side * tb * (half + off) + lift, e, w
+	return self:heightAt(s) + side * tb * (half + off) + lift, e, w
 end
 
 function Spline.terrainY(self: Spline, s: number, d: number): number
@@ -1074,41 +917,10 @@ function Spline.terrainNormal(self: Spline, s: number, d: number): Vector3
 	return n.Unit
 end
 
--- Same scalar ground and finite-difference normal, sampled across a whole row.
--- Widths, bank, height and plan coordinates are looked up once per station,
--- rather than again for every vertex and every normal's neighboring point.
-function Spline.terrainRow(self:Spline,s:number,offsets:{number},withNormals:boolean?,origin:Vector3?):({Vector3},{Vector3},{Vector3})
-	local frame=terrainFrame(self,s)
-	local normals=withNormals~=false
-	local e=if frame.biome then .05 else .5
-	local left=if normals then terrainFrame(self,s-e) else nil
-	local right=if normals then terrainFrame(self,s+e) else nil
-	local points,norms,relative={},{},{}
-	for j,d in offsets do
-		local y,edge,width=groundY(self,s,d,frame)
-		local x,z=frame.x+d*frame.cos,frame.z-d*frame.sin
-		y-=lipDrop(edge,width)
-		points[j]=Vector3.new(x,y,z)
-		if origin then relative[j]=Vector3.new(x-origin.X,y-origin.Y,z-origin.Z) end
-		if not normals then continue end
-		if math.abs(d)<=Config.Road.Width*.5 then norms[j]=self:normalAt(s,d);continue end
-		local a,b=left :: TerrainFrame,right :: TerrainFrame
-		local ax,az=a.x+d*a.cos,a.z-d*a.sin
-		local bx,bz=b.x+d*b.cos,b.z-d*b.sin
-		local ay,by=groundY(self,s-e,d,a),groundY(self,s+e,d,b)
-		local cx,cz=frame.x+(d-e)*frame.cos,frame.z-(d-e)*frame.sin
-		local dx,dz=frame.x+(d+e)*frame.cos,frame.z-(d+e)*frame.sin
-		local cy,dy=groundY(self,s,d-e,frame),groundY(self,s,d+e,frame)
-		local n=Vector3.new(dx-cx,dy-cy,dz-cz):Cross(Vector3.new(bx-ax,by-ay,bz-az))
-		norms[j]=if n.Magnitude<1e-9 then Vector3.yAxis else (if n.Y<0 then -n else n).Unit
-	end
-	return points,norms,relative
-end
-
 -- What is underfoot at (s, d): TARMAC, GRASS, GRAVEL (the runoff in a gravel run), or nil
 -- past a cliff's lip, where there is nothing. Past a rock face or a hedge the grass carries
 -- on under it.
-function Spline.groundKind(self: Spline, s: number, d: number,fieldFirst:number?): number?
+function Spline.groundKind(self: Spline, s: number, d: number): number?
 	local half = Config.Road.Width * 0.5
 	local a = math.abs(d)
 	if a <= half then
@@ -1119,13 +931,6 @@ function Spline.groundKind(self: Spline, s: number, d: number,fieldFirst:number?
 	if a - half <= w then
 		-- the road's bevel down to the grass is gravel too (T-184)
 		return if a - half <= lipWidth(w) or self:gravelAt(s, side) then Spline.GRAVEL else Spline.GRASS
-	end
-	local excess=a-half-w
-	local C=Config.Spline.Biomes.Infield
-	if self.infields and excess<=C.BankContactPad then
-		local x,y,z=self:terrainXYZ(s,side*(half+w));local yaw=self:yawAt(s)
-		if Infield.bankGap(self.infields,s,side,x,y,z,side*math.cos(yaw),-side*math.sin(yaw),excess,
-			C.BankContactPad,C.BankSag,math.max(self.firstSample*self.step,fieldFirst or 0)) then return Spline.GRASS end
 	end
 	if self:hasBiomeGround() then return nil end
 	if self:edgeAt(s, side) == Spline.CLIFF then

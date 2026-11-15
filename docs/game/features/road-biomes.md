@@ -1,6 +1,6 @@
 # Feature: Road biomes
 
-**Status:** layout, shared terrain, road/rail and consistent-grade checkpoints approved (T-204/T-209/T-210), with the isolated future-braking correction approved in T-213. Final distant-terrain, reach, join and streaming work is in progress in T-212. **Owner task:** T-203, built step by step in lane 2 on `feature/linked-biomes`.
+**Status:** layout approved with the user's gradual-transition and semi-random-length requirements on 2026-11-14 (T-204); shared terrain blockout approved after removing outer field rails (T-209); road/rail and consistent-grade checkpoint checked for lane review (T-210). **Owner task:** T-203, built step by step in lane 2 on `feature/linked-biomes`.
 
 ## Goal
 
@@ -281,24 +281,6 @@ Fold these into steps 3/4 without reopening the approved T-209 checkpoint:
 - Double the terrain reach on both sides. Cliffs need not grow taller; use coarse distant ground.
 - Retain and verify the lighting-block correction alongside the revised terrain.
 
-The user added a specific near-level switchback rule (C-bb5b19 forwarding
-C-d8ba9f, 2026-11-14): flatten the land between nearby approach/exit legs when
-their actual elevations are similar. Do not force opposing uphill/downhill
-profiles to form a ridge there. Fit the shared ground to the real road/bank
-edges and available space; blend into the ordinary mountain join as the height
-difference grows. Car, walking, normal drawing and fallback must agree, and
-crossing grass still earns no asphalt progress. The carved-apex feature remains.
-Initial fitting thresholds are to be measured in Lane2; this is part of T-212.
-
-T-215 follows the user's traverse drawing (C-6361cd forwarding C-666d71,
-2026-11-14): longer runs across the slope, with cliffs, fields and tight/twisty
-sections within each run, then an occasional actual turnaround. Measure completed
-turnarounds per distance and actual traverse lengths, including mandatory leg
-limits, optional double hairpins and phase-recovery turns. Changing a bend's
-direction-alternation probability alone does not satisfy this requirement.
-Keep the approved grade envelope, clearance, replay, bank safety and independent
-biome schedule. Trial cadence is selected from measured accepted roads in Lane2.
-
 The separate retired-runner progress correction T-211 is approved and merged with
 the approved terrain. T-210 includes that Main integration; the remaining terrain
 look, reach and streaming tuning is tracked in T-212.
@@ -316,61 +298,3 @@ Per-runner projection and recovery stay on the accepted road leg. Grass does not
 Blockout measurements: all six directed transitions have matching emitted mesh ground (largest sampled height error0.043studs; normal difference2.32degrees), and fallback wedge rays differ by at most0.052studs in the sampled fixtures. Generation keeps its existing20ms budget on the checked runs. A forced full-window fallback initially exposed a102ms publication hitch; progressive192-part batches and sliced retirement replace that single large publication. Broader seed and performance tuning remains step4.
 
 The corrected forced fallback measured5.1ms worst slices for a complete480-stud chunk; its cancellation, bounded retirement and immediate mesh-slot release checks pass. In the live client, three forced fallback chunks measured5.8ms worst slices. Walking at the former narrowing-bank failure now differs from drawn/shared ground by0.001stud. All agent playtests are stopped before handoff.
-
-### Near-level connector integration in progress (T-212)
-
-Frozen paired-bank fields now have one shared triangle floor and separate physical
-contact/earned progress. Car, prediction, server credit and walking integrations
-are checked in Lane2. Walking copies the parked car's history once, uses exact
-nearby colliders and immediate local support, and cancels stale work on re-entry,
-respawn or run stop. Actual avatar exit, walking, jump and both field endpoints
-retain support without changing the parked car's debt. Retained drawing and
-colliders clip the same frozen closure scalar.
-
-Immediate walking support also verifies the current accepted field revision and
-actual collider availability before reuse. A new disjoint patch inside an older
-floor's radius receives new support without yielding; failed warm attempts never
-certify that older coverage. Dense accepted geometry can reduce the immediate
-radius within the existing triangle cap, with support rechecked each walking
-frame while the full floor builds.
-
-Generated connectors remain disabled. Ordinary scenery subtraction, exact end
-stitching, a nearby complete-field view and atomic generation publication are
-implemented. The live view uses the actual published road scenery and changes
-its matching field seams in the same publication. Offline scheduling checks
-cover cancellation, retirement and the global mesh limit; actual forced-fallback
-publication timing still needs the final candidate checked in Studio.
-
-The paired banks now share actual accepted road-cell and terrain-track stations.
-Extra rows bound curved-bank sag without altering frozen global road footprints.
-A finite curve/chord gap can provide grass support only where the outward bank
-ray enters that opening's supported triangle and its retained closure scalar.
-The frozen candidate was checked in Lane5 on2026-11-15. Three actual Roblox
-150k descent runs published23 connectors with matching cold replay, no missing
-sampled support, no caught publication errors and no later-road overlaps.
-Bounded ascent/traverse runs also completed; they published no connectors, so
-they do not prove natural connector coverage in those modes. Real Mesh/Parts
-replacement, colours, retired walking slabs and staged cancellation pass.
-
-Field planning no longer stalls the server (2026-11-15). The generator is private
-to the road sequence and runs a few ms a frame; a section goes live only once
-finished, whole (CONTRACTS "Bounded generation"). In Lane2 the same seeds lay
-identical road pumped or all at once, and steps of 95–279ms became frames of at
-most 4.5–9.8ms; a run starts in a few frames with no hitch. Clients check an
-arriving field a slice a frame and match the server exactly. Late joiners still
-replay the whole road at once, which includes cold field checks.
-
-Rendering performance still blocks enabling it. The separate whole-mesh check exceeded40ms
-(mean42.16, worst57.45), a live Mesh slice reached9.51ms against9, and complete
-Parts teardown took331ms. The corrected fallback publication was6.83ms within
-its9ms guard. Offline bounds and early-clearance improvements are being checked;
-those have not yet cleared the live gates. Historical blockout timings above do
-not establish a pass for this final terrain.
-
-Offline validation now proves simple actual field boundaries before falling
-back to triangle-pair checks, and reuses exact immutable row geometry and hash
-keys. Independent comparisons retain every section, field vertex, contact
-parameter and random-stream state. A saved431-row field's cold validation fell
-to about33ms in the command-line runtime. Whole field planning still spends
-most of its time solving the original hillside at blended ends; these offline
-figures do not clear the20ms Studio gate.

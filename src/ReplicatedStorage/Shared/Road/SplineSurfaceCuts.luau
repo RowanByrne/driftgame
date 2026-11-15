@@ -16,39 +16,30 @@ function Cuts.offsets(spline:Spline.Spline,s:number,across:number,grass:number):
 	for j=0,across do table.insert(ds,-half+2*half*j/across) end
 	table.insert(ds,half+lr)
 	for j=1,grass do table.insert(ds,half+lr+(wr-lr)*j/grass) end
-	if spline:hasBiomeGround() then ds[1]-=Config.Spline.Hill.DrawEdgePad;ds[#ds]+=Config.Spline.Hill.DrawEdgePad end
 	return ds
 end
 
 function Cuts.sections(spline:Spline.Spline,s0:number,s1:number,tolerance:number,maxStep:number,minStep:number,across:number,grass:number,yieldFn:(()->())?):{number}
 	local out={s0}
-	local hardMin=math.min(minStep,1/32) -- steep bank-width changes must still satisfy the row test
-	local rows:{[number]:{Vector3}}={}
-	local function sample(at:number):{Vector3}
-		local row=rows[at]
-		if not row then row=spline:terrainRow(at,Cuts.offsets(spline,at,across,grass),false);rows[at]=row end
-		return row
-	end
 	local s=s0
 	while s<s1-1e-6 do
 		local b=math.min(s1,s+maxStep)
-		local left=sample(s)
-		while b-s>hardMin+1e-6 do
-			local right=sample(b)
+		while b-s>minStep+1e-6 do
+			local da,db=Cuts.offsets(spline,s,across,grass),Cuts.offsets(spline,b,across,grass)
 			local valid=true
 			for _,t in {.25,.5,.75} do
 				local m=s+(b-s)*t
-				local middle=sample(m)
-				for j=1,#middle do
-					local a=left[j]
-					local c=right[j]
-					local p=middle[j]
+				local dm=Cuts.offsets(spline,m,across,grass)
+				for j=1,#dm do
+					local a=Vector3.new(spline:terrainXYZ(s,da[j]))
+					local c=Vector3.new(spline:terrainXYZ(b,db[j]))
+					local p=Vector3.new(spline:terrainXYZ(m,dm[j]))
 					if (p-a:Lerp(c,t)).Magnitude>tolerance then valid=false;break end
 				end
 				if not valid then break end
 			end
 			if valid then break end
-			b=math.max(s+hardMin,(s+b)*.5)
+			b=math.max(s+minStep,(s+b)*.5)
 		end
 		s=math.min(b,s1)
 		table.insert(out,s)
