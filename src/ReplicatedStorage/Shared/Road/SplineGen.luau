@@ -1788,14 +1788,17 @@ function SplineGen._turn(self: Gen, item: Item): (Spline.Section | string)?
 		if knots then
 			local yawEnd=yawAfter(yaw0,k0,knots)+dir*esc
 			if math.abs(wrap(yawEnd-to))<math.rad(3) then
-				local emitted = if fit then withEscape(knots,kt) else knots
+				-- (a ground run's turn ends where it ends, T-228: its fixed run-out, on a steep scarp,
+				-- left the road stranded above the mountain for a kilometre; the mountain leads after it)
+				local runOut = fit and not self.ground
+				local emitted = if runOut then withEscape(knots,kt) else knots
 				local emittedLen = emitted[#emitted-1]
-				if self:_clear(withEscape(emitted,if fit then 0 else kt)) then
+				if self:_clear(withEscape(emitted,if runOut then 0 else kt)) then
 					local T=transition(k0,kt)
 					local flat=self.rng:NextNumber()<C.UnbankedChance
 					local nextMove = if self.flipWanted and TURNAROUNDS[item.what] then (if self.climbing then self.drift else M.ClimbRate * self.sense) else nil
 					local bank=pickBank(kt,radius,b0,math.min(T,len),len,flat)
-					if fit then
+					if runOut then
 						-- Make the safe continuation real road, so its effect on the hill is
 						-- present during fitting and cannot change just after the turn arrives.
 						local tail=ramp(bank[#bank],0,math.rad(C.MaxBankRate)/1.5,0,emittedLen-len)
