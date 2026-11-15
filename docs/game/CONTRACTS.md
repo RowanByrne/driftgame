@@ -917,6 +917,14 @@ frozen triangle bucket keys by destination cell spacing. These caches contain
 no destination index or mutable index state; every insertion repeats all
 current-index checks. `profile.keysCached` reports that geometry-only reuse.
 
+`SplineMesh.build` keeps profile rows by side/kind/cut, protected toe rows by
+side/cut, and raw rail coordinates/heights/directions within that build only.
+Face attributes remain per-face; these caches do not change emitted triangles
+or introduce an extra Vector3/CFrame rounding step. Statistics expose reuse
+counts and `surfaceEmitWorkMs`, `terrainEmitWorkMs`, `treeWorkMs`, `partsWorkMs`
+and `parentWorkMs`. These phase times exclude frame waits, like existing
+`surfacePlanMs`, `hillPlanMs` and total `ms`; legacy `treeMs` retains wall time.
+
 Planner XZ reservations, precise attached-bank checks and minimum span are
 checked before constructing the hillside baseline. Those checks use the same
 frozen bank positions and strict SAT and cannot depend on final floor height or
