@@ -1343,8 +1343,12 @@ function SplineGen._slopeAim(self: Gen, slope: Slope): (number, number, number, 
 	local C = Config.Spline
 	local G, M = C.Ground, C.Mountain
 	local f = self.ground :: Ground.Field
-	local x, z, yaw = self.spline:tip()
+	local x, z, yaw, _, _, _, y = self.spline:tip()
 	local fx, fz = -math.sin(yaw), -math.cos(yaw)
+	-- CATCHING UP (T-228): a road above the mountain heads more across it (even a little up
+	-- it), so the mountain comes back up to it; one below heads more down it. The road's own
+	-- grade can't do it alone: it may fall 8 degrees at most, a scarp falls 30 and more
+	local catch = (y - followH(f, x, z, G.FollowRadius)) * G.CatchUp
 	local gx, gz = 0, 0
 	for _, a in G.AimAt do
 		local ax, az = gradient(f, x + fx * a, z + fz * a, G.AimSpan)
@@ -1366,17 +1370,24 @@ function SplineGen._slopeAim(self: Gen, slope: Slope): (number, number, number, 
 	-- the furthest off across the road can head and still keep its grade followable
 	local gFollow = math.tan(math.rad(C.MaxGrade)) * G.FollowGrade
 	local steepest = if S > gFollow then math.asin(gFollow / S) else math.pi * 0.5
+	-- the tilt down the slope off straight across that makes the mountain fall `gd` a stud
+	-- along the road (negative: up it)
+	local function tilt(gd: number): number
+		if S <= 1e-9 then
+			return if gd >= 0 then math.pi * 0.5 else -math.pi * 0.5
+		end
+		return math.asin(math.clamp(gd / S, -1, 1))
+	end
 	local t
 	if slope.kind == "fall" then
 		t = math.pi * 0.5
 	elseif slope.kind == "down" then
-		t = steepest
+		t = math.clamp(tilt(gFollow * 0.95 - catch), -steepest, steepest)
 	else
 		-- steeper on steeper ground (T-228): legs stacked on a scarp spread apart sooner, and
 		-- the road no longer boxes itself in under the leg above
 		local gd = math.min((slope.gd or 0) + G.LegGradeSteep * S, gFollow * 0.95)
-		t = if S > 1e-9 then math.asin(math.min(gd / S, 1)) else math.pi * 0.5
-		t = math.min(t, math.rad(G.LegTiltMax))
+		t = math.clamp(tilt(gd - catch), -steepest, math.rad(G.LegTiltMax))
 	end
 	local hx, hz = cx * math.cos(t) + dx * math.sin(t), cz * math.cos(t) + dz * math.sin(t)
 	local aim = math.atan2(-hx, -hz)
