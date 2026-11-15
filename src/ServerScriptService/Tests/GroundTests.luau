@@ -259,6 +259,105 @@ local function run(check, opts)
 	)
 end
 
+-- ROAD ON THE SLOPE (features/road-on-the-slope.md, T-226): how the road sits on the
+-- mountain, measured the same way before and after. Every `step` studs along each seed's
+-- road: the cut (+) or fill (-) at the centre line, h less the road; and each side's
+-- ground `out` studs past the runoff's edge against the edge's own height. A TRENCH
+-- station has that ground over `edge` studs above the edge on both sides; a CAUSEWAY one
+-- under it by as much on both. Also the steepest grade and grade change laid.
+--   DebugBridge:Invoke("DebugGroundTests", "profile", { seeds = {...}, length = 5000 })
+function Tests.profile(_, opts)
+	opts = opts or {}
+	local seeds = opts.seeds or SEEDS
+	local length = opts.length or LENGTH
+	local step = opts.step or 16
+	local out = opts.out or 20
+	local edge = opts.edge or 8
+	local half = Config.Road.Width * 0.5
+	local cuts: { number } = {}
+	local res = {
+		seeds = #seeds,
+		stations = 0,
+		trench = 0,
+		causeway = 0,
+		within6 = 0,
+		over20 = 0,
+		cutWorst = 0,
+		fillWorst = 0,
+		gradeWorst = 0,
+		gradeRateWorst = 0,
+		climbStuds = 0,
+		genMs = 0,
+		genWorstMs = 0,
+		stalled = 0,
+		turnarounds = 0,
+		relaxed = 0,
+		perSeed = {},
+	}
+	for _, seed in seeds do
+		local t0 = os.clock()
+		local gen = SplineGen.new(seed, nil, nil, "mesh")
+		gen:extendTo(length)
+		res.genMs += (os.clock() - t0) * 1000
+		res.genWorstMs = math.max(res.genWorstMs, gen.stats.worstMs)
+		res.turnarounds += gen.stats.turnarounds
+		res.relaxed += gen.stats.hillRelaxed
+		if gen.stats.stalled then
+			res.stalled += 1
+		end
+		local sp, field = gen.spline, gen.ground
+		local mine = { seed = seed, trench = 0, causeway = 0, stations = 0, drop = sp:heightAt(math.min(length, sp.length)) - sp:heightAt(0) }
+		local lastG = sp:gradeAt(0)
+		for s = step, math.min(length, sp.length), step do
+			local x, z = sp:planAt(s)
+			local y = sp:heightAt(s)
+			local cut = Ground.h(field, x, z) - y
+			table.insert(cuts, math.abs(cut))
+			res.cutWorst = math.max(res.cutWorst, cut)
+			res.fillWorst = math.max(res.fillWorst, -cut)
+			if math.abs(cut) <= 6 then
+				res.within6 += 1
+			end
+			if math.abs(cut) > 20 then
+				res.over20 += 1
+			end
+			local g = sp:gradeAt(s)
+			res.gradeWorst = math.max(res.gradeWorst, math.abs(g))
+			res.gradeRateWorst = math.max(res.gradeRateWorst, math.abs(g - lastG) / step)
+			if g > 0 then
+				res.climbStuds += step
+			end
+			lastG = g
+			local yaw = sp:yawAt(s)
+			local rx, rz = math.cos(yaw), -math.sin(yaw)
+			local above = {}
+			for _, side in { -1, 1 } do
+				local w = half + sp:runoffAt(s, side)
+				local d = side * (w + out)
+				above[side] = Ground.h(field, x + rx * d, z + rz * d) - sp:terrainY(s, side * w)
+			end
+			if above[-1] > edge and above[1] > edge then
+				res.trench += 1
+				mine.trench += 1
+			elseif above[-1] < -edge and above[1] < -edge then
+				res.causeway += 1
+				mine.causeway += 1
+			end
+			res.stations += 1
+			mine.stations += 1
+		end
+		table.insert(res.perSeed, mine)
+	end
+	table.sort(cuts)
+	local function pct(p: number): number
+		return cuts[math.clamp(math.floor(#cuts * p + 0.5), 1, #cuts)] or 0
+	end
+	res.cutMedian = pct(0.5)
+	res.cutP95 = pct(0.95)
+	res.gradeWorstDeg = math.deg(math.atan(res.gradeWorst))
+	return res
+end
+
 function Tests.run(_, opts)
 	local checks = {}
 	local function check(name: string, ok: boolean, detail: string?)
