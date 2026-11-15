@@ -339,4 +339,76 @@ function Tests.contacts()
 	return {passed=passed,total=#checks,checks=checks}
 end
 
+function Tests.gradeAudit(_self,options)
+	assert(game:GetService("RunService"):IsStudio())
+	options=options or {}
+	local seeds=options.seeds or {31337,101,2024,203,8080}
+	local length=options.length or 30000
+	local buffer=options.buffer or 40
+	local out={roads={},protected=0,reversals=0,zeros={},stalls=0,lowest=math.huge,bandLo=math.huge,bandHi=-math.huge,worstMs=0}
+	for _,seed in seeds do
+		local g=generate(seed,length);local sp=g.spline
+		local ranges,curveEnds={},{}
+		local s0,k0=0,0
+		for _,sec in g.sections do
+			local from,last=0,0
+			for j=1,#sec.k,2 do
+				if math.abs(k0)>1e-8 or math.abs(sec.k[j+1])>1e-8 then last=sec.k[j] end
+				from,k0=sec.k[j],sec.k[j+1]
+			end
+			curveEnds[s0]=s0+last
+			if sec.tag=="Hairpin" or sec.tag=="Switchback" then table.insert(ranges,{a=s0-buffer,b=s0+last+buffer,tag=sec.tag}) end
+			s0+=sec.len
+		end
+		-- A double or switchback is protected across its connecting gap as well.
+		local doubleStart,switchStart
+		for _,turn in g.turns do
+			if turn[3]=="double" then doubleStart=turn[1]
+			elseif turn[3]=="doubleOut" and doubleStart then
+				table.insert(ranges,{a=doubleStart-buffer,b=(curveEnds[turn[1]] or turn[2])+buffer,tag="Double maneuver"});doubleStart=nil
+			elseif turn[3]=="turnaround" then switchStart=turn[1]
+			elseif turn[3]=="switchbackOut" and switchStart then
+				table.insert(ranges,{a=switchStart-buffer,b=(curveEnds[turn[1]] or turn[2])+buffer,tag="Switchback maneuver"});switchStart=nil
+			end
+		end
+		local bad={}
+		for _,range in ranges do
+			local a,b=math.max(0,range.a),math.min(length,range.b)
+			local lo,hi=sp:gradeAt(a),sp:gradeAt(a)
+			local endGrade=sp:gradeAt(b);lo=math.min(lo,endGrade);hi=math.max(hi,endGrade)
+			for i,s in sp.grade.s do
+				if s>a and s<b then lo=math.min(lo,sp.grade.v[i]);hi=math.max(hi,sp.grade.v[i]) end
+			end
+			out.protected+=1
+			if lo < -1e-6 and hi > 1e-6 then
+				out.reversals+=1;if #bad<20 then table.insert(bad,{s0=a,s1=b,tag=range.tag,minGrade=lo,maxGrade=hi}) end
+			end
+		end
+		-- Exact nonzero-to-nonzero sign changes also detect zero plateaus.
+		local previousSign,previousS,previousG=0,0,0
+		for i,s in sp.grade.s do
+			local value=sp.grade.v[i]
+			local sign=if value>1e-6 then 1 elseif value< -1e-6 then -1 else 0
+			if sign~=0 then
+				if previousSign~=0 and sign~=previousSign then
+					local at=previousS-previousG*(s-previousS)/(value-previousG)
+					if #out.zeros<100 then table.insert(out.zeros,{seed=seed,s=at,from=previousS,to=s}) end
+				end
+				previousSign,previousS,previousG=sign,s,value
+			end
+		end
+		local lo,hi,lowest=math.huge,-math.huge,math.huge
+		for s=0,math.min(length,sp.length),8 do
+			local y=sp:heightAt(s);local relative=y-sp.origin.y-g:bandAt(s)
+			lo=math.min(lo,relative);hi=math.max(hi,relative);lowest=math.min(lowest,y)
+		end
+		if g.stats.stalled then out.stalls+=1 end
+		out.bandLo=math.min(out.bandLo,lo);out.bandHi=math.max(out.bandHi,hi);out.lowest=math.min(out.lowest,lowest)
+		out.worstMs=math.max(out.worstMs,g.stats.worstMs)
+		table.insert(out.roads,{seed=seed,length=sp.length,climbs=g.stats.climbs,protected=#ranges,violations=bad,bandLo=lo,bandHi=hi,lowest=lowest})
+	end
+	out.consistent=out.reversals==0 and out.protected>0 and out.stalls==0
+	return out
+end
+
 return Tests
