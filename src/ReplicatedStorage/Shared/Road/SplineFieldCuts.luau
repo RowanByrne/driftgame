@@ -16,6 +16,7 @@ export type Context={masks:{Mask},hash:{[string]:{number}},cell:number,maxPolygo
 export type Trace={u0:number,u1:number,y0:number,y1:number,material:any}
 export type Copy={edge:number,points:Polygon,material:any}
 export type Capture={context:Context,lines:{[number]:{Trace}},copies:{Copy},count:number,limit:number}
+export type Seam={points:Polygon,material:any,edge:number,copy:boolean,twoSided:boolean}
 
 local EPS=1e-8
 local fullCache=setmetatable({}, {__mode="k"}) :: any
@@ -348,6 +349,139 @@ local function difference(polygon:Polygon,m:Mask):({Polygon},boolean)
 	end
 	if not valid(inside) then return {polygon},false end
 	return outside,true
+end
+
+-- Join actual retained scenery to the frozen field without changing either.
+-- Every face lives in a finite perimeter plane; copies and ribbons share one
+-- union so repeated caps cannot leave coincident faces or a missing lower wall.
+function Cuts.stitch(capture:Capture,options:any?):({Seam}?,string?)
+	local o=options or {};local context=capture.context;local edges=Cuts.perimeter(context)
+	local output:{Seam}={};local work=0
+	local function charge()
+		work+=1
+		if work>(o.maxWork or 262144) then error("field seam work limit",0) end
+		if context.tick and work%32==0 then context.tick() end
+	end
+	local function subtract(polygon:Polygon,masks:{Mask}):{Polygon}
+		local polygons={polygon}
+		for _,m in masks do
+			local nextPolygons={};local count=0
+			for _,p in polygons do
+				charge();local pieces=difference(p,m)
+				for _,piece in pieces do
+					count+=#piece
+					if #nextPolygons>=context.maxPolygons or count>context.maxVertices then error("field seam fragmentation limit",0) end
+					table.insert(nextPolygons,piece)
+				end
+			end
+			polygons=nextPolygons
+			if #polygons==0 then break end
+		end
+		return polygons
+	end
+	local function localPoint(edge:Edge,p:Point):Point
+		local dx,dz=edge.b[1]-edge.a[1],edge.b[3]-edge.a[3]
+		return {((p[1]-edge.a[1])*dx+(p[3]-edge.a[3])*dz)/(dx*dx+dz*dz),0,p[2]}
+	end
+	local function emit(edgeId:number,polygon:Polygon,material:any,copy:boolean,outward:number?)
+		local edge=edges[edgeId]
+		for i=2,#polygon-1 do
+			local triangle={}
+			for _,p in {polygon[1],polygon[i],polygon[i+1]} do
+				local point=lerp(edge.a,edge.b,p[1]);point[2]=p[3];table.insert(triangle,point)
+			end
+			if not valid(triangle) then continue end
+			if outward then
+				local a,b,c=triangle[1],triangle[2],triangle[3]
+				local nx=(b[2]-a[2])*(c[3]-a[3])-(b[3]-a[3])*(c[2]-a[2])
+				local nz=(b[1]-a[1])*(c[2]-a[2])-(b[2]-a[2])*(c[1]-a[1])
+				if (nx*edge.nx+nz*edge.nz)*outward<0 then triangle[2],triangle[3]=triangle[3],triangle[2] end
+			end
+			if #output>=(o.maxTriangles or 65536) then error("field seam triangle limit",0) end
+			table.insert(output,{points=triangle,material=material,edge=edgeId,copy=copy,twoSided=copy})
+			charge()
+		end
+	end
+	local ok,why=pcall(function()
+		local copiesByEdge={}
+		for _,copy in capture.copies do
+			copiesByEdge[copy.edge]=copiesByEdge[copy.edge] or {}
+			if #copiesByEdge[copy.edge]>=(o.maxCopies or 512) then error("field seam raw copy limit",0) end
+			table.insert(copiesByEdge[copy.edge],copy);charge()
+		end
+		for id,edge in edges do
+			local copyMasks={}
+			for _,copy in copiesByEdge[id] or {} do
+				local polygon={};for _,p in copy.points do table.insert(polygon,localPoint(edge,p)) end
+				local m=mask(polygon,"")
+				if not m then continue end
+				for _,piece in subtract(polygon,copyMasks) do emit(id,piece,copy.material,true,nil) end
+				table.insert(copyMasks,m);charge()
+			end
+			local lines={}
+			local raw=capture.lines[id] or {}
+			if #raw>(o.maxLines or 512) then error("field seam raw line limit",0) end
+			for i,line in raw do local copy:any=table.clone(line);copy.order=i;table.insert(lines,copy);charge() end
+			table.sort(lines,function(a,b)
+				if a.u0~=b.u0 then return a.u0<b.u0 end
+				if a.u1~=b.u1 then return a.u1<b.u1 end
+				if a.y0~=b.y0 then return a.y0>b.y0 end
+				if a.y1~=b.y1 then return a.y1>b.y1 end
+				return a.order<b.order
+			end)
+			local unique={}
+			for _,line in lines do
+				if not finite(line.u0) or not finite(line.u1) or not finite(line.y0) or not finite(line.y1)
+					or line.u0< -EPS or line.u1>1+EPS or line.u1-line.u0<=EPS then error("invalid finite field seam trace",0) end
+				local previous=unique[#unique]
+				if previous and math.abs(previous.u0-line.u0)<EPS and math.abs(previous.u1-line.u1)<EPS
+					and math.abs(previous.y0-line.y0)<EPS and math.abs(previous.y1-line.y1)<EPS then continue end
+				table.insert(unique,line);charge()
+			end
+			if #unique>(o.maxLines or 512) then error("field seam line limit",0) end
+			local breaks={0,1};local functions={}
+			local floorSlope=edge.b[2]-edge.a[2];local floorBase=edge.a[2]
+			for _,line in unique do
+				local slope=(line.y1-line.y0)/(line.u1-line.u0);local base=line.y0-slope*line.u0
+				table.insert(functions,{slope=slope,base=base,line=line})
+				table.insert(breaks,line.u0);table.insert(breaks,line.u1)
+				if math.abs(slope-floorSlope)>EPS then
+					local u=(floorBase-base)/(slope-floorSlope)
+					if u>line.u0+EPS and u<line.u1-EPS then table.insert(breaks,u) end
+				end
+			end
+			for i,a in functions do for j=i+1,#functions do
+				charge();local b=functions[j];local lo,hi=math.max(a.line.u0,b.line.u0),math.min(a.line.u1,b.line.u1)
+				if hi-lo<=EPS or math.abs(a.slope-b.slope)<=EPS then continue end
+				local u=(b.base-a.base)/(a.slope-b.slope)
+				if u>lo+EPS and u<hi-EPS then table.insert(breaks,u) end
+				if #breaks>(o.maxBreaks or 4096) then error("field seam breakpoint limit",0) end
+			end end
+			table.sort(breaks);local ordered={}
+			for _,u in breaks do if #ordered==0 or u-ordered[#ordered]>EPS then table.insert(ordered,u) end end
+			if #ordered>(o.maxBreaks or 4096) then error("field seam breakpoint limit",0) end
+			for i=1,#ordered-1 do
+				local lo,hi=ordered[i],ordered[i+1];local middle=(lo+hi)*.5;local winner=nil;local height=-math.huge
+				for _,f in functions do
+					charge()
+					if middle<f.line.u0 or middle>f.line.u1 then continue end
+					local y=f.base+f.slope*middle
+					if y>height+EPS then winner=f;height=y end
+				end
+				if not winner then continue end
+				local a,b={lo,0,floorBase+floorSlope*lo},{hi,0,floorBase+floorSlope*hi}
+				local c,d={hi,0,winner.base+winner.slope*hi},{lo,0,winner.base+winner.slope*lo}
+				local outward=if height>floorBase+floorSlope*middle then -1 else 1
+				for _,triangle in {{a,b,c},{a,c,d}} do
+					if not valid(triangle) then continue end
+					for _,piece in subtract(triangle,copyMasks) do emit(id,piece,winner.line.material,false,outward) end
+				end
+			end
+			if context.tick then context.tick() end
+		end
+	end)
+	if not ok then return nil,tostring(why) end
+	return output,nil
 end
 
 -- Preserve each original triangle's 3D plane/winding, including vertical faces.

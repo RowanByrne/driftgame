@@ -233,6 +233,80 @@ function Tests.run(_self,subjects)
 	}))end)
 	check("touching fields cannot publish unequal frozen end heights",not accepted and #touching.triangles==oldCount and touching.patches["raised middle"]==nil,
 		"matching bank endpoints cannot hide a raised center step; rejection remains atomic")
+	local stitchIndex=Infield.new(8)
+	Infield.add(stitchIndex,Infield.patch("stitch",{
+		{sa=100,sb=200,sideA=1,sideB=-1,a={-1,.75,1},b={1,.75,1},weight=1},
+		{sa=102,sb=198,sideA=1,sideB=-1,a={-1,.75,-1},b={1,.75,-1},weight=1},
+	}))
+	local stitchContext=Cuts.context(stitchIndex);local seamEdges=Cuts.perimeter(stitchContext)
+	local seamId=nil;for id,e in seamEdges do if e.kind=="start" then seamId=id;break end end
+	local e=seamEdges[seamId];local edx,edz=e.b[1]-e.a[1],e.b[3]-e.a[3];local edgeLength=math.sqrt(edx*edx+edz*edz)
+	local function seamPoint(u,y)return {e.a[1]+edx*u,y,e.a[3]+edz*u}end
+	local function seamU(p)return ((p[1]-e.a[1])*edx+(p[3]-e.a[3])*edz)/(edgeLength*edgeLength)end
+	local function seamArea(seams)local ts={};for _,s in seams do table.insert(ts,s.points) end;return area(ts)end
+	local function seamFixture(lines,copies)
+		local cap=Cuts.newCapture(stitchContext);cap.lines[seamId]=lines or {};cap.copies=copies or {};return cap
+	end
+	local envelope=seamFixture({{u0=0,u1=1,y0=0,y1=1,material="up"},{u0=0,u1=1,y0=1,y1=0,material="down"}})
+	local stitched,stitchReason=Cuts.stitch(envelope);assert(stitched,stitchReason)
+	local splits={};local wrongNormal=0
+	for _,s in stitched do
+		local a,b,c=s.points[1],s.points[2],s.points[3]
+		for _,p in s.points do splits[math.round(seamU(p)*100)]=true end
+		local u=(seamU(a)+seamU(b)+seamU(c))/3;local height=math.max(u,1-u)
+		local nx=(b[2]-a[2])*(c[3]-a[3])-(b[3]-a[3])*(c[2]-a[2])
+		local nz=(b[1]-a[1])*(c[2]-a[2])-(b[2]-a[2])*(c[1]-a[1])
+		if (nx*e.nx+nz*e.nz)*(if height>.75 then -1 else 1)<=0 then wrongNormal+=1 end
+	end
+	check("seams split at source-envelope and field-height crossings",splits[25] and splits[50] and splits[75]
+		and wrongNormal==0 and math.abs(seamArea(stitched)-.125*edgeLength)<1e-8,
+		`{#stitched} triangles; wrong exposed normals{wrongNormal}; area{seamArea(stitched)}`)
+	local below=Cuts.stitch(seamFixture({{u0=0,u1=1,y0=0,y1=0,material="low"}}))
+	check("source terrain below a field retains its full downward skirt",math.abs(seamArea(below)-.75*edgeLength)<1e-8,
+		"the source envelope is independent of the frozen field height")
+	local gap=Cuts.stitch(seamFixture({{u0=0,u1=.25,y0=1,y1=1,material="left"},{u0=.75,u1=1,y0=1,y1=1,material="right"}}))
+	local bridged=false
+	for _,s in gap do for _,p in s.points do local u=seamU(p);if u>.25+1e-8 and u<.75-1e-8 then bridged=true end end end
+	check("seams never extrapolate across missing source intervals",not bridged and math.abs(seamArea(gap)-.125*edgeLength)<1e-8,
+		"two finite source intervals leave their middle unfilled")
+	local zero=Cuts.stitch(seamFixture({{u0=0,u1=1,y0=.75,y1=.75,material="flat"}}))
+	check("matching heights do not emit degenerate seam triangles",#zero==0,"a zero-height join contributes no geometry")
+	local copyPoints={seamPoint(0,.75),seamPoint(1,.75),seamPoint(0,1.75)}
+	local repeated=seamFixture({{u0=0,u1=1,y0=1.75,y1=1.75,material="roof"}},
+		{{edge=seamId,points=copyPoints,material="wall"},{edge=seamId,points={copyPoints[3],copyPoints[2],copyPoints[1]},material="duplicate"}})
+	local united=Cuts.stitch(repeated);local localTriangles={};local copiesArea=0;local copyVisibility=true
+	for _,s in united do
+		local tri={};for _,p in s.points do table.insert(tri,{seamU(p),0,p[2]}) end;table.insert(localTriangles,tri)
+		if s.copy then copiesArea+=area({s.points});copyVisibility=copyVisibility and s.twoSided==true end
+	end
+	local copyOverlap,copyMissing=0,0
+	for ix=0,79 do for iy=0,79 do
+		local u,y=(ix+.37)/80,.75+(iy+.61)/80;local count=0
+		for _,tri in localTriangles do if contains({tri},u,y) then count+=1 end end
+		if count>1 then copyOverlap+=1 elseif count==0 then copyMissing+=1 end
+	end end
+	check("coplanar copies and ribbons form one union without duplicate faces",math.abs(seamArea(united)-edgeLength)<1e-8
+		and math.abs(copiesArea-edgeLength*.5)<1e-8 and copyOverlap==0 and copyMissing==0,
+		`6400 seam-plane probes; overlap{copyOverlap}, missing{copyMissing}, total area{seamArea(united)}`)
+	check("unioned coplanar closures retain their two-sided visibility intent",copiesArea>0 and copyVisibility,
+		"a renderer must draw the single union face from both sides")
+	local tied=Cuts.stitch(seamFixture({{u0=0,u1=1,y0=2,y1=2,material="first"},{u0=0,u1=1,y0=2,y1=2,material="second"}}))
+	local firstWins=true;for _,s in tied do firstWins=firstWins and s.material=="first" end
+	check("coincident source traces select a deterministic first material",#tied>0 and firstWins,"equal geometry cannot flicker between source materials")
+	local many={};for i=1,64 do table.insert(many,{u0=0,u1=1,y0=i,y1=i,material="parallel"}) end
+	local overWork,workReason=Cuts.stitch(seamFixture(many),{maxWork=1000})
+	check("seam work is bounded even when source lines never cross",overWork==nil and workReason=="field seam work limit",
+		"pair comparisons and envelope scans count against the same explicit work bound")
+	local duplicates={};for i=1,600 do table.insert(duplicates,{u0=0,u1=1,y0=2,y1=2,material="same"}) end
+	local overRaw,rawReason=Cuts.stitch(seamFixture(duplicates))
+	check("duplicate-heavy seam input is bounded before cloning and sorting",overRaw==nil and rawReason=="field seam raw line limit",
+		"deduplication cannot hide unbounded preparatory work")
+	local overTriangles,triReason=Cuts.stitch(envelope,{maxTriangles=1})
+	check("seam output overflow rejects the complete geometry",overTriangles==nil and triReason=="field seam triangle limit",
+		"a partial seam is never returned as a successful mesh")
+	local invalidTrace,traceReason=Cuts.stitch(seamFixture({{u0=0,u1=1,y0=0/0,y1=2,material="bad"}}))
+	check("nonfinite seam traces fail before publication",invalidTrace==nil and traceReason=="invalid finite field seam trace",
+		"invalid envelope inputs cannot leak nonfinite vertices")
 	local passed=0;for _,c in checks do if c.ok then passed+=1 end end
 	return {passed=passed,total=#checks,checks=checks}
 end

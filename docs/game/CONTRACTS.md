@@ -685,7 +685,14 @@ their authoritative supported bank instead of restoring old mountain walls.
 Fragment limits reject the complete proposed capture. Touching published
 infields must agree along their frozen shared edge heights; a mismatch is
 rejected atomically before support publication. These remain standalone
-helpers; seam assembly and live drawing integration are unfinished.
+helpers. `stitch(capture,options?)` assembles the actual source upper envelope
+against each linear frozen perimeter edge, splits at source/source and
+source/field crossings, preserves downward skirts, and never bridges source
+gaps. Coplanar source faces and new ribbons form one non-overlapping union.
+Returned copied faces carry `twoSided=true`; renderers must preserve that
+visibility when opposite legacy cap faces collapse into one geometric face.
+Raw input, pair work, breakpoints, fragments and output all have explicit
+failure bounds. Live drawing integration remains unfinished.
 
 ## Studio-only baked shadow trial (T-214)
 
