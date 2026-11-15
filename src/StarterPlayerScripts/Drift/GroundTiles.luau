@@ -160,12 +160,17 @@ function GroundTiles.select(want: Want): ({ Leaf }, { [number]: Leaf })
 			end
 		end
 	end
-	-- the neediest first, while there is room for its three more
+	-- of the tiles that want splitting, the nearest the car first, while there is room for
+	-- its three more: so when the budget runs out, what stays coarse is what is furthest
+	local dists: { number } = {}
+	for i, nd in leaves do
+		dists[i] = distTo(nd.x0, nd.z0, nd.side, x, z)
+	end
 	while #leaves + 3 <= want.tiles do
-		local best, bi = 1, 0
+		local best, bi = math.huge, 0
 		for i, n in needs do
-			if n > best then
-				best, bi = n, i
+			if n > 1 and dists[i] < best then
+				best, bi = dists[i], i
 			end
 		end
 		if bi == 0 then
@@ -174,11 +179,12 @@ function GroundTiles.select(want: Want): ({ Leaf }, { [number]: Leaf })
 		local nd = leaves[bi]
 		local kids = GroundTiles.children(nd)
 		local last = #leaves
-		leaves[bi], needs[bi] = leaves[last], needs[last]
-		leaves[last], needs[last] = nil :: any, nil :: any
+		leaves[bi], needs[bi], dists[bi] = leaves[last], needs[last], dists[last]
+		leaves[last], needs[last], dists[last] = nil :: any, nil :: any, nil :: any
 		for _, c in kids do
 			table.insert(leaves, c)
 			table.insert(needs, need(c, want))
+			table.insert(dists, distTo(c.x0, c.z0, c.side, x, z))
 		end
 	end
 	local map: { [number]: Leaf } = {}
