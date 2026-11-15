@@ -756,10 +756,17 @@ return {
 			{ Id = "rbxassetid://9120399954", Start = 1.108, Length = 0.198, Gain = 9.7 },
 			{ Id = "rbxassetid://9120399954", Start = 4.452, Length = 0.176, Gain = 22.3 },
 		} :: { { Id: string, Start: number, Length: number, Gain: number, Speed: number? } },
-		-- NOT PICKED YET: the user turned down the first four landing candidates on
-		-- 2026-11-15 ("None of these"); a second set is on the card. Nil: no landing sound,
-		-- and the clunks are still held off at a landing
-		Landing = nil :: { Id: string, Start: number, Length: number, Gain: number, Speed: number? }?,
+		-- LANDING F, picked by the user 2026-11-15 ("F: massive clunk") after turning down a
+		-- first four: the first hit of Pro Sound Effects' "Metal Bangs Shaking Large Aircraft
+		-- Fuselage 3 (SFX)", Creator Store, by id. Nil would be no landing sound, with the
+		-- clunks still held off at a landing
+		Landing = { Id = "rbxassetid://9125661444", Start = 0.127, Length = 0.5, Gain = 0.84 } :: {
+			Id: string,
+			Start: number,
+			Length: number,
+			Gain: number,
+			Speed: number?,
+		}?,
 
 		RollOffMin = 12, -- studs, as the squeal's
 		RollOffMax = 150, -- studs
