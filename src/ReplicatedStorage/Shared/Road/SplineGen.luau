@@ -1158,18 +1158,29 @@ local function pickKind(self: Gen, s0: number): any
 	return C.Bends[#C.Bends]
 end
 
--- Certify the section and a complete continuation through the next band clamp.
--- Every fallback uses the same exact envelope; no last full-grade choice may
--- bypass stopping reserve or the emitted section's height limits.
-local function pickGrade(self: Gen, g0: number, y0: number, len: number, descendingTurn: boolean?): { number }?
+-- The grade a section heads for, keeping the road's height inside its band: the height
+-- it would reach by the end, plus what it would take to level off from there, must stay
+-- inside `MinHeight..MaxHeight` of where the road began -- or, on a descent, of where the
+-- band's centre has dropped to by the end of the section (T-166).
+local function pickGrade(self: Gen, g0: number, y0: number, len: number, descendingTurn: boolean?): { number }
 	local C = Config.Spline
 	local gMax = math.tan(math.rad(C.MaxGrade))
 	local rate = C.MaxGradeRate
 	local move = self:_bandRate()
-	local function evaluate(gt:number):({number}?,number,number)
-		local knots = ramp(g0,gt,rate,0,len)
-		local low,high=self:_gradeEnvelope(g0,y0,knots,false)
-		return if low>=C.MinHeight-1e-6 and high<=C.MaxHeight+1e-6 then knots else nil,low,high
+	local function ends(gt: number): number
+		local knots, gEnd = ramp(g0, gt, rate, 0, len)
+		-- the height at the section's end: integrate the ramp
+		local y, s, g = y0, 0, g0
+		for j = 1, #knots, 2 do
+			y += 0.5 * (g + knots[j + 1]) * (knots[j] - s)
+			s, g = knots[j], knots[j + 1]
+		end
+		-- and what easing gEnd to the moving band's grade would add
+		-- (on a descent the band goes on moving while the road levels off)
+		local after = self:_postBandRate(len,false)
+		local stop = math.abs(gEnd - after) / rate
+		local centre = self:_centreAfter(len + stop)
+		return y + .5 * (gEnd + after) * stop - (self.spline.origin.y + centre)
 	end
 	local gt: number
 	if self.rng:NextNumber() < C.KeepGradeChance then
@@ -1187,25 +1198,18 @@ local function pickGrade(self: Gen, g0: number, y0: number, len: number, descend
 		return if direction==nil then value elseif direction==0 then 0 elseif direction>0 then math.max(0,value) else math.min(0,value)
 	end
 	gt=locked(gt)
-	local knots,low,high=evaluate(gt)
-	if knots then return knots end
-	local back=if high>C.MaxHeight then -1 else 1
-	knots=evaluate(locked(back*(.3+.7*self.rng:NextNumber())*gMax))
-	if knots then return knots end
-	-- Every fallback is certified by the same envelope, including the full-grade
-	-- extreme that used to return unchecked after the first two choices failed.
-	for _,goal in {back*gMax,0,move,-back*gMax} do
-		knots=evaluate(locked(goal));if knots then return knots end
+	local e = ends(gt)
+	if e > C.MaxHeight or e < C.MinHeight then
+		-- head back toward the middle of the band
+		local back = if e > C.MaxHeight then -1 else 1
+		gt = locked(back * (0.3 + 0.7 * self.rng:NextNumber()) * gMax)
+		e = ends(gt)
+		if e > C.MaxHeight or e < C.MinHeight then
+			gt = locked(back * gMax)
+		end
 	end
-	local lower,upper=locked(-gMax),locked(gMax)
-	if upper-lower<1e-9 then return nil end
-	for _=1,18 do
-		local middle=(lower+upper)*.5
-		knots,low,high=evaluate(middle)
-		if knots then return knots end
-		if low<C.MinHeight then lower=middle else upper=middle end
-	end
-	return nil
+	local knots = ramp(g0, gt, rate, 0, len)
+	return knots
 end
 
 function SplineGen._phaseGrade(self:Gen):number
@@ -1245,31 +1249,18 @@ function SplineGen._gradeEnvelope(self:Gen,g0:number,y0:number,knots:{number},re
 	local length=knots[#knots-1]
 	local move=self:_bandRate()
 	local after=self:_postBandRate(length,recovery)
+	local envelope=table.clone(knots)
+	local stop=math.abs(knots[#knots]-after)/C.MaxGradeRate
+	if stop>1e-7 then table.insert(envelope,length+stop);table.insert(envelope,after) end
 	local cuts={length}
 	if move~=0 and self.drift~=0 and not self.flipWanted then
 		local boundary=(if self.climbing then C.Mountain.ClimbTop else C.Mountain.DescentFloor)*self.sense
 		table.insert(cuts,(boundary-self.centre)/move)
 	end
-	local centreEnd=self:_centreAfter(length)
-	local boundary=(if (if recovery then not self.climbing else self.climbing) then C.Mountain.ClimbTop else C.Mountain.DescentFloor)*self.sense
-	local delay=if after~=0 and self.drift~=0 then math.max(0,(boundary-centreEnd)/after) else nil
-	if delay then table.insert(cuts,length+delay) end
 	local function centre(u:number):number
-		if recovery and u>length then
-			return centreEnd+after*(if delay then math.min(u-length,delay) else u-length)
-		end
-		return self:_centreAfter(u)
+		return if recovery and u>length then self:_centreAfter(length)+after*(u-length) else self:_centreAfter(u)
 	end
-	local bestLow,bestHigh,bestCost=0,0,math.huge
-	for _,tail in GradePolicy.continuations(knots[#knots],after,C.MaxGradeRate,delay) do
-		local envelope=table.clone(knots)
-		for i,value in tail do table.insert(envelope,if i%2==1 then length+value else value) end
-		local low,high=GradePolicy.bounds(g0,y0,envelope,self.spline.origin.y,centre,{0,move,after},cuts)
-		local cost=math.max(0,C.MinHeight-low)+math.max(0,high-C.MaxHeight)
-		if cost<bestCost then bestLow,bestHigh,bestCost=low,high,cost end
-		if cost<=1e-6 then break end
-	end
-	return bestLow,bestHigh
+	return GradePolicy.bounds(g0,y0,envelope,self.spline.origin.y,centre,{0,move,after},cuts)
 end
 
 -- Only the truly straight tail may change grade sign. Check every relative-height
@@ -1290,7 +1281,7 @@ function SplineGen._curveGrade(self:Gen,g0:number,y0:number,protected:number,len
 		return if lo>=C.MinHeight-1e-6 and hi<=C.MaxHeight+1e-6 then knots else nil,lo,hi
 	end
 	local proposed=pickGrade(self,g0,y0,protected)
-	local profile=if proposed then evaluate(proposed[#proposed]) else nil
+	local profile=evaluate(proposed[#proposed])
 	if profile then return profile end
 	profile=evaluate(0);if profile then return profile end
 	local maximum=math.tan(math.rad(C.MaxGrade))
@@ -1595,12 +1586,10 @@ function SplineGen._candidate(self: Gen): (Spline.Section?, string?)
 		for i,v in GradePolicy.ramp(bank[#bank],0,math.rad(C.MaxBankRate)/1.5,length-len) do table.insert(bank,if i%2==1 then len+v else v) end
 		return {len=length,k=emitted,g=grade,b=bank,tag=tag},nil
 	end
-	local grade=pickGrade(self,g0,y0,len)
-	if not grade then return nil,"height" end
 	return {
 		len = len,
 		k = knots,
-		g = grade,
+		g = pickGrade(self, g0, y0, len),
 		b = pickBank(kt, radius, b0, math.min(T, len), len, flat),
 		tag = tag,
 	},
@@ -1993,16 +1982,10 @@ function SplineGen.step(self: Gen): Spline.Section?
 		if not self:_clear(withEscape(knots, 0)) then
 			st.cornered += 1
 		end
-		local grade=pickGrade(self,g0,y0,len)
-		if not grade then
-			st.stalled=true
-			warn(`SplineGen: no height-safe escape at {math.floor(sp.length)} studs (seed {self.seed})`)
-			return nil
-		end
 		sec = {
 			len = len,
 			k = knots,
-			g = grade,
+			g = pickGrade(self, g0, y0, len),
 			b = pickBank(0, nil, b0, math.min(Te, len), len, true),
 			tag = "Escape",
 		}

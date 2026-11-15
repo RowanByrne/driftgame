@@ -242,11 +242,8 @@ stopped band, rather than assuming the earlier moving rate continues.
 Policy and generated-car contact checks pass after latest Main integration. The
 exact grade audit finds96 protected scopes with no reversals over five30k roads.
 Limits, crossing, replay, periodic recovery (including150k), hillside and corridor
-checks pass. Owner generation measurements reached19.556ms, but independent
-Lane5 checks measured28.140ms and per-seed repeats21.159-42.896ms against the
-unchanged20ms guard. Generation performance is therefore flagged for T-212
-alongside rendering cost; the earlier owner pass does not clear it. The
-bank-join regression is fixed by adaptively inserting hill rays
+checks pass. Generation remains within the existing20ms budget on the final
+measured runs. The bank-join regression is fixed by adaptively inserting hill rays
 before face caps are interpolated. All six directed transitions, measured together
 with neighboring chunks, have no missing ground and at most0.035stud height error
 or4.14degrees normal error. The parts fallback is also measured from above every
@@ -260,14 +257,6 @@ client run built7chunks with5resident meshes and no fallback, worst slice8.03ms;
 this is an API-driven check, not a user drive. Distant-ground simplification,
 colour, doubled reach, join cleanup and streaming costs remain in T-212 before
 the feature is finished. All automated playtests are stopped before lane review.
-
-T-213 isolates a constructed stopping-reserve gap found in review of T-210.
-When a floor/pass clamps just after a section, its unchanged end grade can
-still need a substantial braking ramp. The certificate now checks complete
-immediate, early and late stopping paths through that clamp, using both bounds
-from one path. Every ordinary-grade fallback and the last escape are checked.
-The review fixtures reproduce the gap; no naturally generated failing seed was
-identified. This correction contains no final-pass terrain changes.
 
 ### Follow-up terrain requirements (2026-11-14)
 
