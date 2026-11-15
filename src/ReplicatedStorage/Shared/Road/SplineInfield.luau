@@ -296,7 +296,7 @@ end
 
 -- Return whole nearby triangles: rendering must not lose the opposite half
 -- merely because its road leg lies outside the ordinary arc-length window.
-function Infield.near(index:Index,x:number,z:number,radius:number,supportedOnly:boolean?):{Triangle}
+function Infield.near(index:Index,x:number,z:number,radius:number,supportedOnly:boolean?,first:number?):{Triangle}
 	local ids={}
 	for cx=math.floor((x-radius)/index.cell),math.floor((x+radius)/index.cell) do
 		for cz=math.floor((z-radius)/index.cell),math.floor((z+radius)/index.cell) do
@@ -311,7 +311,26 @@ function Infield.near(index:Index,x:number,z:number,radius:number,supportedOnly:
 		local a,b,c=t.a.p,t.b.p,t.c.p
 		if math.max(a[1],b[1],c[1])<x-radius or math.min(a[1],b[1],c[1])>x+radius
 			or math.max(a[3],b[3],c[3])<z-radius or math.min(a[3],b[3],c[3])>z+radius then continue end
-		table.insert(out,t)
+		if not first or math.min(t.a.q,t.b.q,t.c.q)>=first then table.insert(out,t);continue end
+		if math.max(t.a.q,t.b.q,t.c.q)<=first then continue end
+		-- Retirement cuts the exact same affine triangle scalar as the physical
+		-- floor and closing panels. Keep numeric doubles until the final builder.
+		local vertices={t.a,t.b,t.c};local clipped:{Vertex}={}
+		for i,v in vertices do
+			local w=vertices[i%3+1]
+			if v.q>=first then table.insert(clipped,v) end
+			if (v.q-first)*(w.q-first)<0 then
+				local u=(first-v.q)/(w.q-v.q)
+				table.insert(clipped,{p={v.p[1]+(w.p[1]-v.p[1])*u,v.p[2]+(w.p[2]-v.p[2])*u,v.p[3]+(w.p[3]-v.p[3])*u},
+					t=v.t+(w.t-v.t)*u,u=v.u+(w.u-v.u)*u,q=first})
+			end
+		end
+		for i=2,#clipped-1 do
+			local a,b,c=clipped[1],clipped[i],clipped[i+1]
+			local det=(b.p[1]-a.p[1])*(c.p[3]-a.p[3])-(b.p[3]-a.p[3])*(c.p[1]-a.p[1])
+			if math.abs(det)<1e-8 then continue end
+			local cut=table.clone(t);cut.a=a;cut.b=b;cut.c=c;cut.det=det;table.insert(out,cut)
+		end
 	end
 	return out
 end

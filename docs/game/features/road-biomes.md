@@ -316,3 +316,19 @@ Per-runner projection and recovery stay on the accepted road leg. Grass does not
 Blockout measurements: all six directed transitions have matching emitted mesh ground (largest sampled height error0.043studs; normal difference2.32degrees), and fallback wedge rays differ by at most0.052studs in the sampled fixtures. Generation keeps its existing20ms budget on the checked runs. A forced full-window fallback initially exposed a102ms publication hitch; progressive192-part batches and sliced retirement replace that single large publication. Broader seed and performance tuning remains step4.
 
 The corrected forced fallback measured5.1ms worst slices for a complete480-stud chunk; its cancellation, bounded retirement and immediate mesh-slot release checks pass. In the live client, three forced fallback chunks measured5.8ms worst slices. Walking at the former narrowing-bank failure now differs from drawn/shared ground by0.001stud. All agent playtests are stopped before handoff.
+
+### Near-level connector integration in progress (T-212)
+
+Frozen paired-bank fields now have one shared triangle floor and separate physical
+contact/earned progress. Car, prediction, server credit and walking integrations
+are checked in Lane2. Walking copies the parked car's history once, uses exact
+nearby colliders and immediate local support, and cancels stale work on re-entry,
+respawn or run stop. Actual avatar exit, walking, jump and both field endpoints
+retain support without changing the parked car's debt. Retained drawing and
+colliders clip the same frozen closure scalar.
+
+Generated connectors remain disabled. Ordinary scenery subtraction, exact end
+stitching, the single nearby field-view mesh and atomic generation publication
+still need integration and full-run checks. Historical blockout timings above
+do not establish a pass for the final terrain: whole-mesh and generation timing
+flags from the wider T-212 trials remain open.

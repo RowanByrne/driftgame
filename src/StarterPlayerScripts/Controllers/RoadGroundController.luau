@@ -44,9 +44,11 @@ local Config = require(ReplicatedStorage.Shared.Config)
 local Net = require(ReplicatedStorage.Shared.Net)
 local Spline = require(ReplicatedStorage.Shared.Road.Spline)
 local Boundary = require(ReplicatedStorage.Shared.Road.SplineBoundary)
+local SplineParts = require(ReplicatedStorage.Shared.Road.SplineParts)
 
 local DriftFolder = script.Parent.Parent:WaitForChild("Drift")
 local Driver = require(DriftFolder:WaitForChild("Driver")) :: any
+local SplineWorld = require(DriftFolder:WaitForChild("SplineWorld"))
 
 local DriftController = require(script.Parent.DriftController) :: any
 local SplineRoadController = require(script.Parent.SplineRoadController) :: any
@@ -85,8 +87,15 @@ type Spec = { size: Vector3, cf: CFrame, material: Enum.Material, kind: string }
 local player = Players.LocalPlayer
 local folder: Folder? = nil
 local parts: { [string]: BasePart } = {}
-local hint: number? = nil
 local ownedSpline:any=nil
+local walkingWorld:any=nil
+local walkingActor:BasePart?=nil
+local groundHit:any=nil
+local fieldFloor:Model?=nil
+local fieldEpoch=0
+local fieldRequest:any=nil
+local fieldBuilding=false
+local fieldSliceMs:number?=nil
 local lastKey = ""
 local stats = {
 	rebuilds = 0,
@@ -102,6 +111,11 @@ local stats = {
 	s = 0,
 	d = 0,
 	out = false,
+	fieldParts=0,
+	fieldBuilds=0,
+	fieldMs=0,
+	fieldWorstMs=0,
+	fieldFailure="",
 }
 
 local function newPart(): BasePart
@@ -119,10 +133,17 @@ local function newPart(): BasePart
 	return p
 end
 
+local function resetWalking()
+	if walkingWorld then walkingWorld.destroy() end
+	walkingWorld=nil;walkingActor=nil;groundHit=nil
+end
+
 local function clear()
-	if next(parts) == nil then
-		return
-	end
+	fieldEpoch+=1;fieldRequest=nil
+	if fieldFloor then fieldFloor:Destroy();fieldFloor=nil end
+	stats.fieldParts=0
+	lastKey=""
+	if next(parts)==nil then return end
 	for _, p in parts do
 		p:Destroy()
 	end
@@ -151,24 +172,60 @@ local function walkingRoot(): BasePart?
 	return root
 end
 
--- Where along and across the road a point is: from the last answer when there is one.
-local function locate(spline: any, x: number, z: number, reach: number): (number?, number?)
-	local s, d
-	if hint then
-		s, d = spline:projectFrom(x, z, hint)
-		if spline:hasBiomeGround() then
-			if s and d and math.abs(d)<=reach then hint=s;return s,d end
-			return nil,nil
+local function requestField(spline:any,pos:Vector3,actor:BasePart)
+	if not spline.infields then return end
+	local W=Config.Spline.Biomes.Infield.Walking
+	local first=spline.firstSample*spline.step
+	if fieldFloor and (not fieldFloor:IsDescendantOf(workspace) or fieldFloor:GetAttribute("InfieldFirst")~=first) then
+		fieldFloor:Destroy();fieldFloor=nil;stats.fieldParts=0
+	end
+	-- The first exit into a field needs real ground before a sliced build can
+	-- finish. This small exact neighbourhood is bounded and cannot yield.
+	local covered=fieldFloor and math.abs(pos.X-(fieldFloor:GetAttribute("InfieldX") :: number))<=(fieldFloor:GetAttribute("InfieldRadius") :: number)-2
+		and math.abs(pos.Z-(fieldFloor:GetAttribute("InfieldZ") :: number))<=(fieldFloor:GetAttribute("InfieldRadius") :: number)-2
+	if not covered then
+		local model,info=SplineParts.buildInfield(spline,pos.X,pos.Z,W.WarmRadius,folder :: Folder,
+			{supportedOnly=true,collidable=true,queryable=true,first=first,noYield=true,maxTriangles=W.WarmTriangles})
+		if model then local old=fieldFloor;fieldFloor=model;if old then old:Destroy() end;stats.fieldParts=info.parts
+		elseif info~="empty" then stats.fieldFailure=tostring(info) end
+	end
+	fieldRequest={spline=spline,position=pos,actor=actor,epoch=fieldEpoch,
+		first=spline.firstSample*spline.step,revision=spline.infieldRevision,parent=folder}
+	if fieldBuilding then return end
+	fieldBuilding=true
+	task.spawn(function()
+		while fieldRequest do
+			local request=fieldRequest;fieldRequest=nil
+			local staging=Instance.new("Folder")
+			local function cancelled()
+				local currentRoad=SplineRoadController:Road()
+				return request.epoch~=fieldEpoch or request.spline~=ownedSpline or request.spline~=currentRoad or request.actor~=walkingActor
+					or request.parent~=folder or not request.parent:IsDescendantOf(workspace)
+					or walkingRoot()~=request.actor or request.first~=request.spline.firstSample*request.spline.step
+					or request.revision~=request.spline.infieldRevision
+			end
+			local ok,model,info=pcall(SplineParts.buildInfield,request.spline,request.position.X,request.position.Z,
+				W.Radius,staging,{supportedOnly=true,collidable=true,queryable=true,
+					first=request.first,cancelled=cancelled,sliceMs=fieldSliceMs})
+			if not cancelled() then
+				if ok and model then
+					local current=request.actor.Position
+					if math.abs(current.X-request.position.X)<=W.Radius-2 and math.abs(current.Z-request.position.Z)<=W.Radius-2 then
+						model.Parent=request.parent
+						local old=fieldFloor;fieldFloor=model
+						if old then old:Destroy() end
+						stats.fieldParts=info.parts;stats.fieldBuilds+=1;stats.fieldMs=info.ms
+						stats.fieldWorstMs=math.max(stats.fieldWorstMs,info.sliceMs);stats.fieldFailure=""
+					end
+				elseif ok and info=="empty" then
+					if fieldFloor then fieldFloor:Destroy();fieldFloor=nil end
+					stats.fieldParts=0;stats.fieldFailure=""
+				else stats.fieldFailure=tostring(if ok then info else model) end
+			end
+			staging:Destroy()
 		end
-	end
-	if not s or not d or math.abs(d) > reach then
-		s, d = spline:project(x, z, reach)
-	end
-	if not s or not d or math.abs(d) > reach then
-		return nil, nil
-	end
-	hint = s
-	return s, d
+		fieldBuilding=false
+	end)
 end
 
 local function dist(ax: number, ay: number, az: number, bx: number, by: number, bz: number): number
@@ -329,7 +386,7 @@ local function plan(spline: any, sc: number, dc: number, closingS: number?, worl
 	local tarmacW = R.Width / tarmacPieces
 	for n = nc - ROWS_EACH_WAY, nc + ROWS_EACH_WAY do
 		local s0, s1 = n * ROW, (n + 1) * ROW
-		if s0 < 0 or s1 > spline.length then
+		if s0 < spline.firstSample*spline.step or s1 > spline.length then
 			continue -- off the start of the road, or past the end of what is laid
 		end
 		-- the tarmac
@@ -496,28 +553,31 @@ end
 
 local function frame()
 	local spline, closingS = SplineRoadController:Road()
-	if spline~=ownedSpline then ownedSpline=spline;hint=nil;clear() end
+	if spline~=ownedSpline then ownedSpline=spline;resetWalking();clear() end
 	local root = if spline then walkingRoot() else nil
 	stats.out = root ~= nil
 	if not spline or not root then
-		hint = nil
+		resetWalking()
 		stats.located = false
 		clear()
 		return
 	end
-	local R = Config.Road
-	local reach = R.Width * 0.5 + math.max(Config.Spline.Terrain.RunoffMax,if spline:hasBiomeGround() then Config.Spline.Biomes.Width[1] else 0) + ACROSS
 	local pos = root.Position
-	if not hint and spline:hasBiomeGround() then
-		local carSpline,carHint=DriftController:SplineHint()
-		if carSpline==spline then hint=carHint end
+	if walkingActor~=root then
+		resetWalking();clear();walkingActor=root;walkingWorld=SplineWorld.new(spline)
+		local carSpline,carHint,contact=DriftController:SplineHint()
+		if carSpline==spline then walkingWorld.hint=carHint;walkingWorld.restoreContact(contact) end
 	end
-	local s, d = locate(spline, pos.X, pos.Z, reach)
-	if not s or not d then
+	walkingWorld.setClosing(closingS)
+	local owner,_,physical,lateral=walkingWorld.locate(pos)
+	local s,d=physical or owner,lateral or 0
+	if not s then
 		stats.located = false
 		clear()
 		return
 	end
+	groundHit=walkingWorld.probe(pos)
+	DriftController:DrawWalkingSpline(spline,s)
 	stats.located, stats.s, stats.d = true, s, d
 	local n = math.floor(s / ROW)
 	local band = math.floor(d / PIECE)
@@ -533,6 +593,7 @@ local function frame()
 	stats.rebuilds += 1
 	local t0 = os.clock()
 	apply(plan(spline, s, d, closingS,pos))
+	requestField(spline,pos,root)
 	local ms = (os.clock() - t0) * 1000
 	stats.rebuildMs = ms
 	stats.worstMs = math.max(stats.worstMs, ms)
@@ -544,15 +605,16 @@ function RoadGroundController:Start()
 	-- Back in the car, or handed a car: the ground goes at once, before anything drives.
 	Net.event("CarEnter").OnClientEvent:Connect(function(ok)
 		if ok == true then
+			resetWalking()
 			clear()
 		end
 	end)
 	Net.event("CarSpawn").OnClientEvent:Connect(function()
-		hint=nil
+		resetWalking()
 		clear()
 	end)
 	Net.event("CarRespawn").OnClientEvent:Connect(function()
-		hint=nil
+		resetWalking()
 		clear()
 	end)
 	-- Before the drift step (`Input + 1`), so a car that starts driving this frame has
@@ -570,8 +632,8 @@ function RoadGroundController:DebugState()
 	local root = Driver.rootOf(player.Character)
 	local surface, kind, aboveSurface = nil, nil, nil
 	if spline and root and stats.located then
-		surface = spline:terrainY(stats.s, stats.d)
-		local k = spline:groundKind(stats.s, stats.d)
+		surface = if groundHit then groundHit.y else spline:terrainY(stats.s,stats.d)
+		local k = if walkingWorld and walkingWorld.contactState then walkingWorld.contactState.kind else spline:groundKind(stats.s,stats.d)
 		kind = if k == Spline.TARMAC then "tarmac" elseif k == Spline.GRASS then "grass" elseif k == Spline.GRAVEL then "gravel" else "none"
 		aboveSurface = root.Position.Y - Driver.rootAboveFeet(player.Character) - surface
 	end
@@ -597,11 +659,27 @@ function RoadGroundController:DebugState()
 		worstMs = stats.worstMs,
 		clears = stats.clears,
 		created = stats.created,
+		fieldParts=stats.fieldParts,
+		fieldBuilds=stats.fieldBuilds,
+		fieldMs=stats.fieldMs,
+		fieldWorstMs=stats.fieldWorstMs,
+		fieldFailure=stats.fieldFailure,
+		fieldBuilding=fieldBuilding,
+		ownerS=walkingWorld and walkingWorld.hint,
+		anchorS=walkingWorld and walkingWorld.contactState and walkingWorld.contactState.anchorS,
+		travel=walkingWorld and walkingWorld.contactState and walkingWorld.contactState.travel,
 		edgeL = spline and stats.located and spline:edgeAt(stats.s, -1) or nil,
 		edgeR = spline and stats.located and spline:edgeAt(stats.s, 1) or nil,
 		runoffL = spline and stats.located and spline:runoffAt(stats.s, -1) or nil,
 		runoffR = spline and stats.located and spline:runoffAt(stats.s, 1) or nil,
 	}
+end
+
+function RoadGroundController:DebugFieldBudget(sliceMs:number?)
+	assert(RunService:IsStudio(),"DebugFieldBudget is Studio only")
+	fieldSliceMs=if sliceMs then math.clamp(sliceMs,.001,Config.Spline.Mesh.SliceMs) else nil
+	lastKey=""
+	return fieldSliceMs
 end
 
 -- A point on the road's ground for a test to walk to, `d` studs right of the centre line at

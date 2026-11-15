@@ -902,6 +902,27 @@ function DriftController:SplineHint()
 	return self.spline,world and world.hint or nil,world and world.contactSnapshot and world.contactSnapshot() or nil
 end
 
+function DriftController:DrawWalkingSpline(spline,physicalS:number)
+	if self.spline==spline and self.splineView and not self:IsDriving() then self.splineView:Update(physicalS) end
+end
+
+-- Studio fixtures may establish an explicit accepted leg at the actual car
+-- center. Observations stay numeric so they can cross the debug bridge's VM.
+function DriftController:DebugSplineContact(ownerS:number?)
+	assert(RunService:IsStudio(),"DebugSplineContact is Studio only")
+	local world=self.world;local state=self:CurrentState()
+	if not world or not world.contactSnapshot or not state then return nil end
+	if ownerS~=nil then
+		assert(ownerS==ownerS and ownerS>=0 and ownerS<=self.spline.length,"invalid contact fixture owner")
+		world.resetHint();world.hint=ownerS;world.locate(state.position)
+	end
+	local contact=world.contactSnapshot()
+	if not contact then return nil end
+	return {ownerS=contact.ownerS,anchorS=contact.anchorS,travel=contact.travel,position=contact.position,
+		physicalS=contact.physicalS,kind=contact.kind,peerS=contact.peer and contact.peer.s,
+		peerPatch=contact.peer and contact.peer.patchId}
+end
+
 -- The model's full state, for tests and agent playtests.
 function DriftController:DebugState()
 	local s = self:CurrentState()

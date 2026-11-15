@@ -212,20 +212,55 @@ function SplineParts.build(spline: Spline.Spline, s0: number, s1: number, parent
 	return out
 end
 
+-- A field's finite perimeter and retirement cut must not inherit the ordinary
+-- road slab's outward triangle growth. Split in local coordinates before packing.
+local function infieldSlab(t:any,thickness:number,parent:Instance,name:string):{BasePart}
+	local a,b,c=t.a.p,t.b.p,t.c.p
+	local origin=Vector3.new(a[1],a[2],a[3])
+	local U,V,W=Vector3.zero,Vector3.new(b[1]-a[1],b[2]-a[2],b[3]-a[3]),Vector3.new(c[1]-a[1],c[2]-a[2],c[3]-a[3])
+	local ab,bc,ca=(V-U).Magnitude,(W-V).Magnitude,(U-W).Magnitude
+	if bc>=ab and bc>=ca then U,V,W=V,W,U elseif ca>=ab and ca>=bc then U,V,W=W,U,V end
+	local edge=V-U;local length=edge.Magnitude
+	if length<.001 then return {} end
+	local along=edge/length;local distance=(W-U):Dot(along)
+	local foot=U+along*distance;local rise=W-foot;local height=rise.Magnitude
+	if height<.001 then return {} end
+	local up=rise/height;local normal=along:Cross(up)
+	if normal.Y<0 then normal=-normal end
+	local out={}
+	local function wedge(suffix:string,direction:Vector3,width:number)
+		if width<.001 then return end
+		local u,pdir,ly,lz
+		if direction:Cross(up):Dot(normal)>0 then u,pdir,ly,lz=up,direction,height,width
+		else u,pdir,ly,lz=direction,up,width,height end
+		local centre=foot+u*(ly*.5)+pdir*(lz*.5)-normal*(thickness*.5)
+		local p=Instance.new("WedgePart");p.Name=name..suffix;p.Anchored=true
+		p.Size=Vector3.new(thickness,ly,lz);p.CFrame=CFrame.new(origin)*CFrame.fromMatrix(centre,normal,u)
+		p.Color=Config.Spline.Terrain.GrassColour;p.Material=Enum.Material.Grass;p.Parent=parent
+		table.insert(out,p)
+	end
+	wedge("a",-along,distance);wedge("b",along,length-distance)
+	return out
+end
+
 function SplineParts.buildInfield(spline:Spline.Spline,x:number,z:number,radius:number,parent:Instance,opts:any?):(Model?,any)
 	local o=opts or {}
 	local started=os.clock()
 	if not spline.infields then return nil,"empty" end
-	local selected=Infield.near(spline.infields,x,z,radius,o.supportedOnly)
+	local selected=Infield.near(spline.infields,x,z,radius,o.supportedOnly,o.first or spline.firstSample*spline.step)
 	if #selected==0 then return nil,"empty" end
+	if o.maxTriangles and #selected>o.maxTriangles then return nil,"infield warm support exceeds its triangle bound" end
 	local model=Instance.new("Model");model.Name="InfieldParts";model:SetAttribute("Infield",true)
 	model:SetAttribute("InfieldRevision",spline.infieldRevision or 0)
+	model:SetAttribute("InfieldFirst",o.first or spline.firstSample*spline.step)
+	model:SetAttribute("InfieldX",x);model:SetAttribute("InfieldZ",z);model:SetAttribute("InfieldRadius",radius)
 	local batch=Instance.new("Folder");batch.Name="FieldSlices"
 	local sliceStart=started
 	local paused,worst,slices,count,triangles=0,0,1,0,0
 	local budget=(o.sliceMs or Config.Spline.Mesh.SliceMs)/1000
 	local function tick()
 		if o.cancelled and o.cancelled() then error("infield Parts build cancelled") end
+		if o.noYield then return end
 		local now=os.clock()
 		if now-sliceStart>=budget or #batch:GetChildren()>=192 then
 			batch.Parent=model
@@ -239,12 +274,10 @@ function SplineParts.buildInfield(spline:Spline.Spline,x:number,z:number,radius:
 		local T=Config.Spline.Terrain
 		for i,t in selected do
 			tick()
-			local a,b,c=t.a.p,t.b.p,t.c.p
-			local made={}
+			local made=infieldSlab(t,if o.collidable then Config.Spline.Biomes.Infield.Walking.Thickness else .1,batch,`Infield_{i}`)
 			local colour=if t.supported then T.GrassColour else T.RockColour
-			Builder.triangleSlab(`Infield_{i}`,Vector3.new(a[1],a[2],a[3]),Vector3.new(b[1],b[2],b[3]),Vector3.new(c[1],c[2],c[3]),
-				.1,colour,if t.supported then Enum.Material.Grass else Enum.Material.Slate,batch,made :: any)
 			for _,p in made do
+				p.Color=colour;p.Material=if t.supported then Enum.Material.Grass else Enum.Material.Slate
 				p.CanCollide=o.collidable==true and t.supported;p.CanTouch=false;p.CanQuery=o.queryable==true
 				p.CastShadow=o.collidable~=true
 				if o.collidable then p.Transparency=1 end

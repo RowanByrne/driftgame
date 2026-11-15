@@ -1548,7 +1548,7 @@ function SplineMesh.buildInfield(spline:Spline.Spline,x:number,z:number,radius:n
 	if o.forceFail then return nil,"forced infield mesh failure" end
 	local began=os.clock()
 	if not spline.infields then return nil,"empty" end
-	local selected=Infield.near(spline.infields,x,z,radius)
+	local selected=Infield.near(spline.infields,x,z,radius,nil,o.first or spline.firstSample*spline.step)
 	if #selected==0 then return nil,"empty" end
 	local paused,slices,worst=0,1,0
 	local sliceStart=began

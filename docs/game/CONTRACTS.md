@@ -590,7 +590,7 @@ retirement; a retired history cannot acquire it afresh. `copy(token)` creates
 independent tracking data. Auxiliary probes never commit it. `credit` shares
 the existing1.05times travel plus8stud re-entry formula with SplineSequence;
 only a real live credited piece may update route progress. The resolver is
-checked integration; walking tracker commits, complete shared drawing and
+checked integration; complete shared scenery clipping, live field drawing and
 generation publication remain to be connected before enabling generated fields.
 Field movement is bounded using the token bank's corresponding row coordinate,
 so a legitimate cross-gap contact can change physical bank without jumping along
@@ -618,6 +618,8 @@ DriftController commits after each FixedStep and draws around physical contact;
 Trajectory owns one fork per prediction, commits every completed predicted
 center and disposes that fork even on errors. Local handoff is projection
 bookkeeping; server retained-piece checks alone authorize earned progress.
+`DebugSplineContact(ownerS?)` is Studio-only numeric contact observation and
+explicit owner setup at the actual car center for lane fixtures.
 
 `SplineSequence.locateOwned(position,hint,limit?,peer?,creditS?)` keeps its first
 four ownership returns and adds a fifth physical `SplineContact.Hit`. Physical
@@ -634,8 +636,24 @@ returns copied numeric contact, credit and progress observations for checks.
 nearby field mesh, with exact frozen normals and origin-relative positions.
 `SplineParts.buildInfield` draws the same triangles in sliced batches; optional
 `supportedOnly/collidable/queryable` support the walking-ground integration.
-Both builders cancel without publishing partial models. The ordinary road View,
-hill/face clipping and walking controller still require integration before use.
+Both builders cancel without publishing partial models. Their indexed nearby
+selection clips q below the retained first arc without changing frozen heights
+or normals. Field Parts use exact local-coordinate wedges without the ordinary
+road builder's outward expansion; collidable floors extend down by the configured
+walking thickness. A bounded `noYield/maxTriangles` option supplies immediate
+walking support while the larger sliced build is pending.
+
+RoadGroundController owns an independent SplineWorld for each walking root and
+copies the parked car's contact once. Actual avatar centers commit it; ground
+debugging uses frozen physical probes, and visible road follows physical contact.
+The controller applies the current closing before locating. Nearby field
+colliders stage outside Workspace, coalesce movement requests, retain valid old
+ground until replacement and refresh immediate local support if necessary.
+Clears cancel by epoch even without ordinary tiles; publication rechecks root,
+spline, walking status, retained first and revision. Retained-first changes
+remove stale field colliders immediately. Studio-only `DebugFieldBudget(ms?)`
+can force multi-frame builds for exit, movement and cancellation checks.
+The ordinary road View and hill/face clipping still require integration before use.
 
 ## Studio-only baked shadow trial (T-214)
 

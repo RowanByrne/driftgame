@@ -70,6 +70,23 @@ function Tests.run(_self,subject)
 		"forward and inverse pairing use the same frozen rows")
 	check("nearby ground includes both physical halves independently of the road window",#Infield.near(index,20,-10,30)==4,
 		"a world-space query returns complete nearby ground")
+	local retained=Infield.near(index,20,-10,30,true,600)
+	local clipped=true;local covered,expectedCount,wrong=0,0,0
+	for _,t in retained do for _,v in {t.a,t.b,t.c} do clipped=clipped and v.q>=600 and math.abs(v.p[2]-v.p[1]*.05)<1e-8 end end
+	for x=.25,39.75,.5 do for z=-19.75,-.25,.5 do
+		local expected=Infield.sample(index,x,z).closingS>=600
+		local found=false
+		for _,t in retained do
+			local a,b,c=t.a.p,t.b.p,t.c.p
+			local dx,dz=x-a[1],z-a[3]
+			local u=(dx*(c[3]-a[3])-dz*(c[1]-a[1]))/t.det
+			local v=((b[1]-a[1])*dz-(b[3]-a[3])*dx)/t.det
+			if u>= -1e-8 and v>= -1e-8 and u+v<=1+1e-8 then found=true;break end
+		end
+		if expected then expectedCount+=1 end;if found then covered+=1 end;if found~=expected then wrong+=1 end
+	end end
+	check("retained field drawing clips the exact physical closing scalar",clipped and wrong==0 and covered==expectedCount and covered>0,
+		`{covered} retained points, {wrong} domain mismatches; all clipped vertices preserve the original plane`)
 	local contours=Infield.closing(index,500)
 	local contourLength,contourError=0,0
 	for _,line in contours do
@@ -632,6 +649,13 @@ function Tests.worldTracking(_self,subjects)
 			and crossed.anchorS==anchor.anchorS and crossed.ownerS<500 and math.abs(crossed.physicalS-row.sb)<.05,
 			"view contact follows B while asphalt credit remains anchored on A")
 		local before=w.contactSnapshot()
+		local blocked=world();blocked.restoreContact(anchor);blocked.setClosing(row.sa+1)
+		local retainedClosing=w.fork();retainedClosing.setClosing(row.sa+1)
+		local middle=Infield.columns(row)[6];local middlePoint=Vector3.new(middle[1],middle[2]+cfg.Drift.RideHeight,middle[3])
+		check("current closing refuses fresh copied ownership but retains authorized physical ground",blocked.probe(middlePoint)==nil
+			and retainedClosing.probe(middlePoint)~=nil,
+			"a walking-style copy applies the current closing before initial field acquisition")
+		retainedClosing.destroy()
 		for _=1,4 do
 			w.probe(point(row.sb+24));w.sweep(point(row.sb),point(row.sb+12),sp:yawAt(row.sb))
 			w.penetration(point(row.sb+12),sp:yawAt(row.sb))
@@ -815,6 +839,75 @@ function Tests.server()
 	end,debug.traceback)
 	service:Stop();if car then car:Destroy() end;holder:Destroy();cfg.Spline.Biomes.GroundEnabled=saved
 	if not ok then return {passed=0,total=1,checks={{name="server field progress fixture completes",ok=false,detail=result}}} end
+	return result
+end
+
+function Tests.retirement()
+	local road=game.ReplicatedStorage.Shared.Road
+	local Spline,Planner,Infield=require(road.Spline),require(road.SplineInfieldPlanner),require(road.SplineInfield)
+	local Mesh,Parts=require(road.SplineMesh),require(road.SplineParts)
+	local cfg=require(game.ReplicatedStorage.Shared.Config)
+	local saved=cfg.Spline.Biomes.GroundEnabled;cfg.Spline.Biomes.GroundEnabled=true
+	local folder=Instance.new("Folder");folder.Name="__RetainedFieldTest";folder.Parent=workspace
+	local mesh=nil
+	local ok,result=xpcall(function()
+		local checks={};local function check(name,pass,detail)table.insert(checks,{name=name,ok=pass,detail=detail})end
+		local sp,b0=fixture(Spline,20);sp:addInfields(Planner.plan(sp,128,480,b0,sp.length));sp:trim(600)
+		local first=sp.firstSample*sp.step
+		local row=sp.infields.patches[next(sp.infields.patches)].rows[18]
+		local centre=Infield.columns(row)[6]
+		local selected=Infield.near(sp.infields,centre[1],centre[3],600,true,first)
+		local all=Infield.near(sp.infields,centre[1],centre[3],600,nil,first)
+		local info;mesh,info=Mesh.buildInfield(sp,centre[1],centre[3],600,folder)
+		assert(mesh,tostring(info))
+		local part=mesh.Infield;local em=part.MeshContent.Object;local below=0
+		for _,id in em:GetVertices() do
+			local p=part.CFrame:PointToWorldSpace(em:GetPosition(id));local floor=Infield.sample(sp.infields,p.X,p.Z)
+			if floor and floor.closingS<first-.05 then below+=1 end
+		end
+		check("the real retained mesh ends at the same frozen q contour",#em:GetFaces()==#all and below==0,
+			`{#em:GetFaces()} retained faces; vertices behind the retained contour{below}`)
+		Mesh.destroy(mesh);mesh=nil
+		local model,stats=Parts.buildInfield(sp,centre[1],centre[3],600,folder,{supportedOnly=true,collidable=true,queryable=true})
+		assert(model,tostring(stats));task.wait()
+		local params=RaycastParams.new();params.FilterType=Enum.RaycastFilterType.Include;params.FilterDescendantsInstances={model}
+		local missing,error,samples=0,0,0
+		for i,t in selected do
+			local a,b,c=t.a.p,t.b.p,t.c.p
+			for _,weights in {{1/3,1/3,1/3},{.2,.3,.5},{.5,.3,.2}} do
+				local x,y,z=0,0,0
+				for j,p in {a,b,c} do x+=p[1]*weights[j];y+=p[2]*weights[j];z+=p[3]*weights[j] end
+				local hit=workspace:Raycast(Vector3.new(x,10000,z),Vector3.new(0,-20000,0),params)
+				if not hit or hit.Normal.Y<=.8 then missing+=1 else error=math.max(error,math.abs(hit.Position.Y-y)) end
+				samples+=1
+			end
+			if i%32==0 then task.wait() end
+		end
+		check("exact collidable slabs cover the complete retained supported floor",missing==0 and error<.02,
+			`{samples} rays, missing{missing}, height error{error}, {stats.parts} wedges, slice{stats.sliceMs}ms`)
+		local leaked,tested=0,0
+		for i,panel in Infield.closing(sp.infields,first) do
+			local a,b=panel.a,panel.b
+			local x,z=(a[1]+b[1])*.5-panel.normal.X*.1,(a[3]+b[3])*.5-panel.normal.Z*.1
+			local hit=workspace:Raycast(Vector3.new(x,10000,z),Vector3.new(0,-20000,0),params)
+			if hit and hit.Normal.Y>.8 then leaked+=1 end;tested+=1
+			if i%32==0 then task.wait() end
+		end
+		check("actual walking slabs add no supported floor beyond the retirement edge",tested>0 and leaked==0,
+			`{tested} rays0.1stud beyond the contour; supported leaks{leaked}`)
+		local t=selected[math.ceil(#selected*.5)];local a,b,c=t.a.p,t.b.p,t.c.p
+		local x,z=(a[1]+b[1]+c[1])/3,(a[3]+b[3]+c[3])/3
+		local W=cfg.Spline.Biomes.Infield.Walking
+		local warm,warmInfo=Parts.buildInfield(sp,x,z,W.WarmRadius,folder,{supportedOnly=true,collidable=true,queryable=true,
+			noYield=true,maxTriangles=W.WarmTriangles})
+		check("the first walking floor publishes a bounded non-yielding neighbourhood",warm and warmInfo.slices==1
+			and warmInfo.triangles<=W.WarmTriangles and warm.Parent==folder,
+			`warm triangles{warmInfo and warmInfo.triangles}, time{warmInfo and warmInfo.ms}ms`)
+		local passed=0;for _,c in checks do if c.ok then passed+=1 end end
+		return {passed=passed,total=#checks,checks=checks}
+	end,debug.traceback)
+	if mesh then Mesh.destroy(mesh) end;folder:Destroy();cfg.Spline.Biomes.GroundEnabled=saved
+	if not ok then return {passed=0,total=1,checks={{name="retained drawing fixture completes",ok=false,detail=result}}} end
 	return result
 end
 
