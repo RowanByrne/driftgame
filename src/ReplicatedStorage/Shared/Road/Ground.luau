@@ -65,6 +65,10 @@ export type Station = {
 	wr: number,
 	rl: number, -- the runoff alone, left
 	rr: number,
+	-- the centre line's height `HEIGHT_STEP` studs apart, from `HEIGHT_REACH` before the
+	-- station to as far after it: a ground run's grade changes often (T-226), so the height
+	-- beside the station is read from these, not carried on from its grade
+	ys: { number },
 }
 
 export type Context = {
@@ -169,11 +173,24 @@ end
 -- runoff easing flat (as `Spline.terrainY`, from the station's numbers).
 -- `ds` studs along the road from the station: its height and bank carried on (to second
 -- order), since a point beside a bend may be square to road some way along from it.
+local HEIGHT_STEP = 8 -- studs
+local HEIGHT_REACH = 32 -- studs
+local HEIGHT_MID = HEIGHT_REACH // HEIGHT_STEP + 1
+
 local function surface(st: Station, d: number, ds: number?): number
 	local half = Config.Road.Width * 0.5
 	local yc, tb = st.yc, st.tb
 	if ds then
-		yc += ds * (st.g + 0.5 * st.gr * ds)
+		local q = ds / HEIGHT_STEP + HEIGHT_MID
+		local i = math.floor(q)
+		local ys = st.ys
+		if i >= 1 and i < #ys then
+			-- between two of the heights kept round the station (a straight line between them
+			-- is within a hundredth of a stud of the road at the steepest change of grade)
+			yc = ys[i] + (ys[i + 1] - ys[i]) * (q - i)
+		else
+			yc += ds * (st.g + 0.5 * st.gr * ds)
+		end
 		tb += ds * st.tbr
 	end
 	local a = math.abs(d)
@@ -233,7 +250,14 @@ local function station(spline: Spline.Spline, s: number, x: number, z: number): 
 		wr = half + rr,
 		rl = rl,
 		rr = rr,
+		ys = table.create(2 * HEIGHT_MID - 1),
 	}
+	for i = 1, 2 * HEIGHT_MID - 1 do
+		local at = s + (i - HEIGHT_MID) * HEIGHT_STEP
+		-- past either end of the road, carried on from its grade there
+		local c = math.clamp(at, 0, spline.length)
+		st.ys[i] = spline:heightAt(c) + (at - c) * spline:gradeAt(c)
+	end
 	if s < spline.length - KEEP_SHORT then
 		mine[s] = st
 	end
