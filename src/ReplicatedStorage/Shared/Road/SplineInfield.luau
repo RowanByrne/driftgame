@@ -22,6 +22,7 @@ type Compiled={triangles:{Triangle},banks:{A:{Triangle},B:{Triangle}},grids:{[nu
 -- proves that patch's own topology, never compatibility with a mutable index.
 local canonical:{[Patch]:boolean}=setmetatable({},{__mode="k"})
 local compiledOf:{[Patch]:Compiled}=setmetatable({},{__mode="k"})
+local mutations:{[any]:number}=setmetatable({},{__mode="k"})
 export type Index={cell:number,patches:{[string]:Patch},triangles:{Triangle},hash:{[string]:{number}},openings:{[string]:{Opening}},closing:{[number]:{Patch}},byPatch:{[string]:{number}},
 	patchHash:{[string]:{string}},patchBounds:{[string]:{number}},bankTriangles:{[string]:{A:{Triangle},B:{Triangle}}}}
 export type Hit={y:number,normal:Vector3,patch:string,contactS:number,sa:number,sb:number,across:number,closingS:number}
@@ -102,16 +103,18 @@ end
 
 local function key(x:number,z:number,cell:number):string return `{math.floor(x/cell)}:{math.floor(z/cell)}` end
 
-local function boxKeys(cell:number,minX:number,maxX:number,minZ:number,maxZ:number):{string}
+local function boxKeys(cell:number,minX:number,maxX:number,minZ:number,maxZ:number,tick:(()->())?):{string}
 	local out={}
 	for x=math.floor(minX/cell),math.floor(maxX/cell) do
-		for z=math.floor(minZ/cell),math.floor(maxZ/cell) do table.insert(out,`{x}:{z}`) end
+		for z=math.floor(minZ/cell),math.floor(maxZ/cell) do
+			table.insert(out,`{x}:{z}`);if tick and #out%64==0 then tick() end
+		end
 	end
 	return out
 end
 
-local function keys(index:{cell:number},triangle:Triangle):{string}
-	return boxKeys(index.cell,triangle.minX,triangle.maxX,triangle.minZ,triangle.maxZ)
+local function keys(index:{cell:number},triangle:Triangle,tick:(()->())?):{string}
+	return boxKeys(index.cell,triangle.minX,triangle.maxX,triangle.minZ,triangle.maxZ,tick)
 end
 
 local function projectionBounds(group:Group,axis:Axis):(number,number)
@@ -207,7 +210,7 @@ local function orientation(a:Point,b:Point,c:Point):number?
 	return bilinearSign(ax,az,bx,bz,true)
 end
 
-local function simpleBoundary(groups:{Group},triangles:{Triangle},cell:number,counts:any?):boolean
+local function simpleBoundary(groups:{Group},triangles:{Triangle},cell:number,counts:any?,tick:(()->())?):boolean
 	local function refuse(reason:string):boolean
 		if counts then counts.boundaryFallback=reason end
 		return false
@@ -215,6 +218,7 @@ local function simpleBoundary(groups:{Group},triangles:{Triangle},cell:number,co
 	if #groups==0 then return refuse("no compiled rows") end
 	local n=#groups[1].points//2
 	for i,group in groups do
+		if tick then tick() end
 		if #group.points~=2*n then return refuse("different column counts") end
 		if i>1 then for j=1,n do
 			local a,b=groups[i-1].points[n+j],group.points[j]
@@ -222,7 +226,8 @@ local function simpleBoundary(groups:{Group},triangles:{Triangle},cell:number,co
 		end end
 	end
 	local sign=nil
-	for _,triangle in triangles do
+	for i,triangle in triangles do
+		if tick and i%64==0 then tick() end
 		local here=orientation(triangle.a.p,triangle.b.p,triangle.c.p)
 		if not here or (sign and here~=sign) then return refuse("uncertain triangle orientation") end
 		sign=here
@@ -236,6 +241,7 @@ local function simpleBoundary(groups:{Group},triangles:{Triangle},cell:number,co
 	if counts then counts.boundarySegments=size end
 	-- A shared endpoint is permitted only for actual cyclic neighbours.
 	for i,current in ring do
+		if tick and i%32==0 then tick() end
 		local previous,nextPoint=ring[(i-2)%size+1],ring[i%size+1]
 		if counts then counts.boundaryAdjacency+=1 end
 		if orientation(previous,current,nextPoint) then continue end
@@ -245,13 +251,16 @@ local function simpleBoundary(groups:{Group},triangles:{Triangle},cell:number,co
 		end
 	end
 	local staged:{[string]:{Edge}}={}
+	local visits=0
 	for i,a in ring do
+		if tick then tick() end
 		local b=ring[i%size+1]
 		if a[1]==b[1] and a[3]==b[3] then return refuse("zero boundary edge") end
 		local edge:Edge={id=i,a=a,b=b,minX=math.min(a[1],b[1]),maxX=math.max(a[1],b[1]),minZ=math.min(a[3],b[3]),maxZ=math.max(a[3],b[3])}
-		local buckets=boxKeys(cell,edge.minX,edge.maxX,edge.minZ,edge.maxZ)
+		local buckets=boxKeys(cell,edge.minX,edge.maxX,edge.minZ,edge.maxZ,tick)
 		local seen:{[Edge]:boolean}={}
 		for _,k in buckets do for _,old in staged[k] or {} do
+			if tick then visits+=1;if visits%64==0 then tick() end end
 			if seen[old] then continue end;seen[old]=true
 			local distance=i-old.id
 			if distance==1 or distance==size-1 then continue end
@@ -309,23 +318,28 @@ local function overlaps(a:Triangle,b:Triangle,counts:any?):boolean
 		or separated(a,b,ba,bb,ox,oz) or separated(a,b,bb,bc,ox,oz) or separated(a,b,bc,ba,ox,oz))
 end
 
-local function validateSelf(groups:{Group},triangles:{Triangle},cell:number,counts:any?)
-	if simpleBoundary(groups,triangles,cell,counts) then return end
+local function validateSelf(groups:{Group},triangles:{Triangle},cell:number,counts:any?,tick:(()->())?)
+	if simpleBoundary(groups,triangles,cell,counts,tick) then return end
 	local staged:{[string]:{Group}}={}
+	local visits=0
 	for _,group in groups do
+		if tick then tick() end
 		-- Preserve the old triangle proof inside each row and between adjacent
 		-- rows. This also preserves accepted concave cells and changing collars.
 		for i=group.first,group.last do for j=group.first,i-1 do
+			if tick then visits+=1;if visits%64==0 then tick() end end
 			assert(not overlaps(triangles[i],triangles[j],counts),"infield strip overlaps itself")
 		end end
-		local buckets=boxKeys(cell,group.minX,group.maxX,group.minZ,group.maxZ)
+		local buckets=boxKeys(cell,group.minX,group.maxX,group.minZ,group.maxZ,tick)
 		local seen:{[Group]:boolean}={}
 		for _,k in buckets do for _,old in staged[k] or {} do
+			if tick then tick() end
 			if seen[old] then continue end;seen[old]=true
 			if counts then counts.groupPairs+=1 end
 			if group.row-old.row>1 and groupsSeparate(group,old,counts) then continue end
 			if counts then counts.groupFallbacks+=1 end
 			for i=group.first,group.last do for j=old.first,old.last do
+				if tick then visits+=1;if visits%64==0 then tick() end end
 				assert(not overlaps(triangles[i],triangles[j],counts),"infield strip overlaps itself")
 			end end
 		end end
@@ -364,7 +378,7 @@ end
 
 -- Triangles share a fixed midline, with optional bank collars. Rendering and physical
 -- contacts use these exact triangles, including a twisted pair of bank edges.
-function Infield.add(index:Index,patch:Patch,validateOnly:boolean?,profile:any?):boolean
+local function add(index:Index,patch:Patch,validateOnly:boolean?,profile:any?,tick:(()->())?):boolean
 	local began=if profile then os.clock() else 0
 	patch=Infield.canonical(patch)
 	local compiled=compiledOf[patch]
@@ -428,6 +442,7 @@ function Infield.add(index:Index,patch:Patch,validateOnly:boolean?,profile:any?)
 			return out
 		end
 		for i=1,#patch.rows-1 do
+			if tick then tick() end
 			local firstTriangle=#pending+1
 			local a,b=patch.rows[i],patch.rows[i+1]
 			local pa,pb,qa,qb=a.a,b.a,a.b,b.b
@@ -461,13 +476,17 @@ function Infield.add(index:Index,patch:Patch,validateOnly:boolean?,profile:any?)
 	local oldStarted=if profile then os.clock() else 0
 	local cachedGrid=if compiled then compiled.grids[index.cell] else nil
 	local byTriangle:{[Triangle]:{string}}=cachedGrid or {}
+	local visits=0
 	if profile then profile.keysCached=cachedGrid~=nil end
-	for _,triangle in pending do
+	for i,triangle in pending do
+		if tick and i%32==0 then tick() end
 		local seen:{[Triangle]:boolean}={}
 		local buckets=byTriangle[triangle]
-		if not buckets then buckets=table.freeze(keys(index,triangle));byTriangle[triangle]=buckets end
+		if not buckets then buckets=table.freeze(keys(index,triangle,tick));byTriangle[triangle]=buckets end
 		for _,k in buckets do
+			if tick then visits+=1;if visits%64==0 then tick() end end
 			for _,id in index.hash[k] or {} do
+				if tick then visits+=1;if visits%64==0 then tick() end end
 				local old=index.triangles[id]
 				if seen[old] then continue end;seen[old]=true
 				assert(not overlaps(triangle,old,oldCounts),"infield would change an already published support domain")
@@ -478,7 +497,7 @@ function Infield.add(index:Index,patch:Patch,validateOnly:boolean?,profile:any?)
 	if profile then profile.oldMs=(os.clock()-oldStarted)*1000;profile.phase="self" end
 	local selfStarted=if profile then os.clock() else 0
 	if not compiled then
-		validateSelf(groups,pending,math.min(index.cell,32),selfCounts)
+		validateSelf(groups,pending,math.min(index.cell,32),selfCounts,tick)
 		banks=table.freeze({A=table.freeze(banks.A),B=table.freeze(banks.B)})
 		compiledOf[patch]=table.freeze({triangles=table.freeze(pending),banks=banks,grids={[index.cell]=table.freeze(byTriangle)}})
 	elseif not cachedGrid then
@@ -487,6 +506,7 @@ function Infield.add(index:Index,patch:Patch,validateOnly:boolean?,profile:any?)
 	if profile then profile.selfMs=(os.clock()-selfStarted)*1000;profile.phase="validated";profile.ms=(os.clock()-began)*1000 end
 	-- Validation is complete before the index acquires any of the patch.
 	if validateOnly then return true end
+	assert(not tick,"yielding field work cannot publish support")
 	local publishStarted=if profile then os.clock() else 0
 	index.patches[patch.id]=patch
 	index.bankTriangles[patch.id]=banks
@@ -530,7 +550,32 @@ function Infield.add(index:Index,patch:Patch,validateOnly:boolean?,profile:any?)
 		end
 	end
 	if profile then profile.publishMs=(os.clock()-publishStarted)*1000;profile.phase="published";profile.ms=(os.clock()-began)*1000 end
+	mutations[index]=(mutations[index] or 0)+1
 	return true
+end
+
+-- Ordinary registration retains its nonyielding atomic publication boundary.
+function Infield.add(index:Index,patch:Patch,validateOnly:boolean?,profile:any?):boolean
+	return add(index,patch,validateOnly,profile,nil)
+end
+
+-- A private planner may suspend a readonly traversal. Recheck after the caller
+-- returns from every checkpoint, including a coroutine resume: a later obstacle
+-- in an already visited bucket must never inherit an earlier validation.
+function Infield.validate(index:Index,patch:Patch,tick:(()->())?):boolean
+	local version=mutations[index] or 0
+	local cell,hash,triangles,patches=index.cell,index.hash,index.triangles,index.patches
+	local function unchanged()
+		assert((mutations[index] or 0)==version and index.cell==cell and index.hash==hash
+			and index.triangles==triangles and index.patches==patches,"infield index changed during validation")
+	end
+	local function checkpoint()
+		if tick then tick() end
+		unchanged()
+	end
+	local result=add(index,patch,true,nil,if tick then checkpoint else nil)
+	unchanged()
+	return result
 end
 
 -- Selection gathers patch identities before touching their compiled triangles.

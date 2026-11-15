@@ -23,6 +23,7 @@ end
 
 function Tests.run(_self,subject)
 	local Infield=subject or DefaultInfield
+	local raise=error
 	local checks={}
 	local function check(name,ok,detail)table.insert(checks,{name=name,ok=ok,detail=detail})end
 	local function rows(y0,y1)
@@ -229,6 +230,56 @@ function Tests.run(_self,subject)
 	check("geometric bucket keys reuse only matching destination spacing",not gridFirst.keysCached and gridAgain.keysCached
 		and gridFirst.cell==17 and gridAgain.cell==17 and Infield.sample(gridDestination,20,-10).y==1,
 		"keys depend on frozen geometry and spacing; current destination compatibility is still checked")
+	local function empty(destination:any):boolean
+		for _,name in {"patches","triangles","hash","openings","closing","byPatch","patchHash","patchBounds","bankTriangles"} do
+			if next(destination[name])~=nil then return false end
+		end
+		return true
+	end
+	local sliced=Infield.new(17);local slicedPatch=Infield.patch("readonly sliced validation",rows(4,6))
+	local checkpoints,private=0,true
+	local worker=coroutine.create(function()
+		return Infield.validate(sliced,slicedPatch,function()
+			checkpoints+=1;private=private and empty(sliced);coroutine.yield()
+		end)
+	end)
+	local resumed,validated=true,false
+	for _=1,100 do
+		local ok,result=coroutine.resume(worker);resumed=resumed and ok
+		if not ok or coroutine.status(worker)=="dead" then validated=ok and result==true;break end
+	end
+	check("suspended validation never exposes partial support",resumed and validated and checkpoints>2 and private and empty(sliced),
+		`{checkpoints} readonly checkpoints; every published index container stays empty`)
+	local warmed={};Infield.add(sliced,slicedPatch,nil,warmed)
+	check("completed readonly validation warms only exact immutable geometry",warmed.cached and warmed.keysCached
+		and Infield.sample(sliced,20,-10).y==5,"the later ordinary nonyielding add still performs destination checks before publication")
+	local abandoned=Infield.new();local abandonedPatch=Infield.patch("cancelled readonly validation",rows(0,0))
+	local stop={};local calls=0
+	local continued,why=pcall(function()Infield.validate(abandoned,abandonedPatch,function()
+		calls+=1;if calls==3 then raise(stop,0) end
+	end)end)
+	local abandonedEmpty=empty(abandoned);local after={};Infield.add(abandoned,abandonedPatch,nil,after)
+	check("abandoning a cold validation leaves no partial index or topology certificate",not continued and why==stop and abandonedEmpty
+		and not after.cached and Infield.sample(abandoned,20,-10)~=nil,
+		`checkpoints{calls}, continued{continued}, same error{why==stop}, reason{tostring(why)}, empty{abandonedEmpty}, cached{after.cached}`)
+	local changing=Infield.new();local candidate=Infield.patch("changed readonly destination",rows(0,0))
+	local obstacleRows=rows(0,0);for _,r in obstacleRows do r.a[1]+=1000;r.b[1]+=1000 end
+	local obstacle=Infield.patch("late readonly obstacle",obstacleRows);local changed=false
+	local stable,changedWhy=pcall(function()Infield.validate(changing,candidate,function()
+		if not changed then changed=true;Infield.add(changing,obstacle) end
+	end)end)
+	check("a yielded scan cannot certify an index changed in a visited bucket",not stable and changed
+		and string.find(tostring(changedWhy),"index changed during validation",1,true)~=nil
+		and changing.patches[candidate.id]==nil and changing.patches[obstacle.id]==obstacle and #changing.triangles==4,
+		"an insertion stamp is checked after every callback; the new caller-owned obstacle is retained")
+	local newGrid=Infield.new(1);local gridCalls=0
+	local gridFinished=pcall(function()Infield.validate(newGrid,slicedPatch,function()
+		gridCalls+=1;if gridCalls==3 then raise(stop,0) end
+	end)end)
+	local gridRetry={};Infield.add(newGrid,slicedPatch,true,gridRetry)
+	check("interrupted new-spacing keys never become a partial cached grid",not gridFinished and gridCalls==3 and empty(newGrid)
+		and gridRetry.cached and not gridRetry.keysCached,
+		"a warm topology's new destination grid is installed only after its complete readonly traversal succeeds")
 	local collarRows=rows(25,25)
 	for _,row in collarRows do row.da=.3;row.db=.3 end
 	local collar=Infield.new();Infield.add(collar,Infield.patch("collar",collarRows))

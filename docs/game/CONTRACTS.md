@@ -917,6 +917,18 @@ frozen triangle bucket keys by destination cell spacing. These caches contain
 no destination index or mutable index state; every insertion repeats all
 current-index checks. `profile.keysCached` reports that geometry-only reuse.
 
+`SplineInfield.validate(index,patch,tick?)` runs the same guards without changing
+any published index container. Its optional checkpoints may suspend a private
+planner during compilation, key/old-index scans and self-validation. Successful
+ordinary insertions advance a private weak mutation stamp; validation rechecks
+that stamp, spacing and container identities after every checkpoint and before
+return. A changed destination aborts the traversal. Complete immutable geometry
+may remain cached, but interrupted compilation never becomes a certificate.
+Callers retain the same canonical patch to reuse it, and still call ordinary
+`add` at publication. `add` has no yielding callback and repeats all current
+destination guards before its atomic mutation tail. Cached insertion, setup
+and final commit remain uninterrupted work that must be measured separately.
+
 `SplineMesh.build` keeps profile rows by side/kind/cut, protected toe rows by
 side/cut, and raw rail coordinates/heights/directions within that build only.
 Face attributes remain per-face; these caches do not change emitted triangles
