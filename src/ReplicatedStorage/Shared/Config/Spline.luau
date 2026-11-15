@@ -143,7 +143,6 @@ local Spline = {
 		TurnMaxFill = 120, -- studs: an outsized embankment/drop near a turn
 		TurnLocationRetries = 2, -- run on RetryAfter and retry before taking the best clear fit
 		TurnDescentGrade = 0.025, -- downhill grade target in a descending turn, band safety wins
-		HairpinGradeBuffer = 40, -- same grade sign before/after the curved maneuver
 		-- THE DESCENT: the height band (`MinHeight..MaxHeight`) moves with the road, its centre
 		-- dropping this much per stud of road, so the grade still goes up and down locally but
 		-- the run works its way down. 1 in 25 is about 2.3 degrees net.
@@ -414,28 +413,6 @@ local Spline = {
 		CorridorMargin = 2, -- conservative allowance for curvature between 8-stud cells
 		CorridorFitIterations = 5, -- conservatively round a constrained field inward
 		CorridorSideIterations = 4,
-		-- Gentle preferences inside the existing curvature/grade/heading limits.
-		Road = {
-			Enabled = true,
-			StraightChance = { 0.55, 0.4, 0.25 },
-			SwitchbackChance = { 0.25, 0.45, 0.65 },
-			Weights = {
-				Hairpin = { 0.55, 1, 1.7 },
-				Tight = { 0.55, 1, 1.75 },
-				Medium = { 1.05, 1, 1.05 },
-				Sweeper = { 2.2, 1, 0.55 },
-			},
-		},
-		-- Existing asphalt-edge guardrails only; never fence the outer field.
-		Rails = {
-			Enabled = true,
-			Density = 1,
-			Chance = { 0.08, 0.45, 0.9 },
-			RunShare = { 0.4, 0.65, 0.9 },
-			Reach = 80, -- exposed drop within this distance past the asphalt
-			InsideFactor = 0.55,
-			StraightFactor = 0.6,
-		},
 	},
 
 	-- --------------------------------------------------------------- the grass's texture

@@ -1,6 +1,6 @@
 # Feature: The mountain has a direction
 
-**Status:** built (`T-166`); consistent-grade update in lane 2 (`T-210`). **Owner task:** `T-166`.
+**Status:** building (`T-166`): steps 1 and 2 built in lane 1, being driven. **Owner task:** `T-166`.
 
 ## Goal
 
@@ -158,11 +158,9 @@ The fall line, the legs and the turnarounds, and the descent.
   lowest point is Y -396. The descent itself measures 36 studs per 1 000.
 - **A climb is the far side of a valley** (T-190, `continuous-mountain.md` "A climb is the far
   side of a valley"): while the road climbs, each new leg is higher than the one before, so the
-  mountain is on the other side of the road. Terrain changes sides where the road points
-  along the fall line inside a turnaround, and the rock and the drop keep their sides through
-  that one turn. T-210 defers the vertical phase until the complete maneuver's outgoing
-  straight, keeping the height band paused through its consistent-grade curve and gap.
-  "The cliff side follows from the heading" above holds on
+  mountain is on the other side of the road. The climb, and the descent after it, begin where
+  the road next points along the fall line inside a turnaround, and the rock and the drop keep
+  their sides through that one turn. "The cliff side follows from the heading" above holds on
   the way down; on a climb it is the other way round.
 - **No hairpin in the first 1 500 studs** (`Bends.Hairpin.minS`), as before.
 
@@ -181,6 +179,6 @@ The fall line, the legs and the turnarounds, and the descent.
 Sharp planned turns now include their easing to straight and a 260-stud straight continuation,
 with the bank easing flat. The hillside check sees that real next-leg influence before accepting
 the turn. This adds the short straight to the effective spacing of double hairpins and switchback
-gaps beyond the bare ranges above. T-210 replaces mid-turn grade anticipation with a signed
-curve and straight grade transition; the same limits and periodic climbs remain. See `continuous-mountain.md` for results,
+gaps beyond the bare ranges above. The descending grade bias and grade anticipation at a valley
+floor/pass retain the same limits and periodic climbs. See `continuous-mountain.md` for results,
 preferred limits and the bounded fallback.

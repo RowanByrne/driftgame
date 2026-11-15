@@ -1,6 +1,6 @@
 # Feature: Road biomes
 
-**Status:** layout approved with the user's gradual-transition and semi-random-length requirements on 2026-11-14 (T-204); shared terrain blockout approved after removing outer field rails (T-209); road/rail and consistent-grade checkpoint checked for lane review (T-210). **Owner task:** T-203, built step by step in lane 2 on `feature/linked-biomes`.
+**Status:** layout approved with the user's gradual-transition and semi-random-length requirements on 2026-11-14 (T-204); shared terrain blockout corrected after the lane drive-through and ready for another look (T-209). **Owner task:** T-203, built step by step in lane 2 on `feature/linked-biomes`.
 
 ## Goal
 
@@ -212,67 +212,6 @@ before road/rail dressing and final tuning.
 The feature's own agent owns these sequential steps and reserves its lane after plan approval. The conductor handles the final merge request.
 
 ## Open questions
-
-### Road and rail implementation checkpoint (T-210)
-
-Regular bend weights, straight choices and bend-direction choices blend with the same
-centred biome phase. Fields prefer sweeping bends; steep stretches prefer tighter
-bends. Mandatory mountain planning, curvature/radius limits, grade/bank limits and
-clearance checks remain in force. Final same-seed 150000-stud measurements show
-regular field heading change114degrees/1000studs versus steep182, with tight-bend
-distance5.2% versus19.9%. Existing-rail coverage of eligible exposed ground is4.3%
-in fields versus35.3% in steep stretches; no sampled rail extends into broad fields
-or non-cliff ground, and no mandatory gravel protection is missing.
-
-Only the existing asphalt-edge guardrail is used. Discretionary runs are clipped to
-actual fitted CLIFF spans within80studs of the asphalt, excluding groves; broad
-fields receive no discretionary rail. Density is higher on steep exposed edges,
-and the final roll uses the placed run's local biome phase. Mandatory tight gravel
-protection stays covered at zero discretionary density. A separate fixed-draw RNG
-keeps density changes from altering road geometry, other scenery or later seeds.
-
-Hairpins and switchbacks keep one grade sign through their curved portions and
-40-stud buffers. Paired bends retain that sign across the connecting gap. A clear
-approach straight prepares the grade when needed; reversal happens in the truly
-straight outgoing continuation. The mountain still changes sides at its fall-line
-crossing, but the height band pauses until the whole maneuver and its straight
-grade transition finish. Both floor and top reserve enough room to brake to a
-stopped band, rather than assuming the earlier moving rate continues.
-
-Policy and generated-car contact checks pass after latest Main integration. The
-exact grade audit finds96 protected scopes with no reversals over five30k roads.
-Limits, crossing, replay, periodic recovery (including150k), hillside and corridor
-checks pass. Generation remains within the existing20ms budget on the final
-measured runs. The bank-join regression is fixed by adaptively inserting hill rays
-before face caps are interpolated. All six directed transitions, measured together
-with neighboring chunks, have no missing ground and at most0.035stud height error
-or4.14degrees normal error. The parts fallback is also measured from above every
-local wedge, so protrusions cannot hide above a short ray origin.
-
-Rendering performance remains flagged for T-212: the whole-road mesh test passes
-15/17 checks, with mean158.38ms/worst219.96ms aggregate chunk work versus the
-unchanged40ms guard, and a9.98ms worst slice versus9ms. This exceeds the older
-T-206 accepted aggregate overrun; that approval does not waive these checks. A live
-client run built7chunks with5resident meshes and no fallback, worst slice8.03ms;
-this is an API-driven check, not a user drive. Distant-ground simplification,
-colour, doubled reach, join cleanup and streaming costs remain in T-212 before
-the feature is finished. All automated playtests are stopped before lane review.
-
-### Follow-up terrain requirements (2026-11-14)
-
-The user reviewed the blockout in four pictures (C-330666 forwarding C-e1ae58).
-Fold these into steps 3/4 without reopening the approved T-209 checkpoint:
-
-- Reduce tessellation with distance from the road; far terrain should be visibly low poly.
-- Remove explicit far-ground colour blotches. Keep lighting-based face shading.
-- Clean up the terrain joining the two legs of hairpins, including protruding wall lobes.
-- Keep each hairpin inside a consistent uphill, downhill or flat run. Do not turn a descent into a climb at the hairpin; this supersedes the previous mid-turn grade reversal.
-- Double the terrain reach on both sides. Cliffs need not grow taller; use coarse distant ground.
-- Retain and verify the lighting-block correction alongside the revised terrain.
-
-The separate retired-runner progress correction T-211 is approved and merged with
-the approved terrain. T-210 includes that Main integration; the remaining terrain
-look, reach and streaming tuning is tracked in T-212.
 
 - The steep category keeps the current uphill mountain/downhill drop; the user explicitly rejected a two-drop ridge. No terrain style redesign is authorised.
 - The first two v1 side profiles are suitable. Exact safe field extent, small-cliff fitting and rail coverage are settled in the measured blockout. They are not permission to widen the tarmac or change grass handling.
