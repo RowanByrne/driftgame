@@ -27,6 +27,8 @@ Main is `places\DR-Main.rbxl`, served from `repo\` on the port base: always merg
 |---|---|---|---|
 | | | | |
 
+**Studio crashes on large live syncs (2026-11-15):** Studio 0.747 crashes (native null-read, same site every time) about 1-3 s after Lync pushes an edit of a large road source file (`SplineGen`, `SplineMesh` and the like) into an open place: six lane crashes and one Main crash that day. Opening a place with the code already on disk has not crashed. Save Main before pulling a change to those files into `repo\`, and expect to reopen a lane (`rocco.ps1 lanes`) after one.
+
 **Hands-off places:** none yet. Places agents must never inspect, playtest, attach Lync to or change, such as the user's Team Create map.
 
 ## Workstations
