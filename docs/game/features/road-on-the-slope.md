@@ -1,6 +1,6 @@
 # Feature: Road on the slope
 
-**Status:** plan approved 2026-11-15; step 1 (`T-227`) built, in a lane for the user; step 2 next. Builds on the mesh ground picked in `ground-trial.md`. **Owner task:** `T-226` (feature), branch `feature/road-on-the-slope`.
+**Status:** plan approved 2026-11-15; step 1 (`T-227`) approved and merged; step 2 (`T-228`) built, in a lane for the user. Builds on the mesh ground picked in `ground-trial.md`. **Owner task:** `T-226` (feature), branch `feature/road-on-the-slope`.
 
 ## Goal
 
@@ -113,3 +113,48 @@ On 12 other seeds over 8 000 studs (6 000 stations): 3 trench and 14 causeway st
 
 - **A ground run still works its way down** (the mountain is a plane falling at 7 degrees): about 190 to 340 studs per 5 000. A run past roughly 8 000 studs can reach Roblox's fall-kill height (-500), as before. A mountain that rises again (in h) would bring climbs back; that is mountain generation, not road.
 - The runoff is still random (12 to 40 studs, groves wider): step 2 takes it from the side slope.
+
+## As built (step 2, T-228): a steeper, varied mountain; runoff, walls and drops from the slope
+
+Asked mid-step (`DECISIONS.md` 2026-11-15): today's mountain was never steeper than 24 degrees, so the steep look could not appear; the user chose real angles and a steeper, more varied mountain, "sections where it gets very steep for several thousand studs, and sections where it's quite shallow ... big ridges that carve in and promontories that stick out".
+
+**The mountain** (`Road/Ground`, `Config.Spline.Ground` `Belt...`, `Octaves`, `Relief...`):
+- **Belts down the fall line:** going down, a shallow bench (2 000 to 4 000 studs of fall line at 2 to 5 degrees), a 300-stud eased ramp, a steep scarp (250 to 600 studs at 24 to 31 degrees), a ramp, the next bench; each one's sizes from the seed. The belts curve across the mountain by up to 300 studs. 27 to 37-degree scarps were tried first: the road could not keep up on them.
+- **Ridges and gullies:** three octaves stretched 2.5 times down the fall line: sharp-crested ridges (promontories, 1 400 studs across, 80 tall), V-shaped gullies (600 across, 35 deep), and 8-stud detail; scaled by how steep the belt is (a quarter of that on a bench).
+- Measured over 6 km by 6 km: the belts' slope runs from 2 to 29 degrees; with the ridges, the ground beside the road is steep (over 30 degrees) at 17% of stations, shallow (under 8) at 44%.
+
+**The road on it** (`Road/SplineGen`), on top of step 1:
+- A leg descends faster on steeper ground (`LegGradeSteep`), so legs stacked on a scarp spread apart.
+- **Catching up:** a road above the mountain heads more across it (never up it), one below more down it (`CatchUp`): its own grade (8 degrees at most) cannot keep up with a scarp alone.
+- A switchback's middle runs as steeply down as the road can follow, not straight down (straight down a scarp left the road 200 studs above it).
+- A sharp planned turn that would leave the road more than 20 studs off the mountain is laid further on, up to 6 times (`TurnMaxOff`, `TurnRetries`).
+- On a near-flat bench the mountain's own downhill counts for more (`DownhillBias` 0.05): at 0.01 the aim swung round and the road boxed itself in.
+- The turn checks read how the mountain rises ahead from the mountain itself, not one plane's slope.
+
+**Beside the road:**
+- **Runoff from the side slope** (h 48 studs either side): 40 studs on shallow ground (under 8 degrees across) to 12 on steep (over 30), eased between, a width every 32 studs, changing no faster than a quarter of a stud a stud. Groves only where the whole section is shallow.
+- **The cut or fill past the runoff's edge** from the same slope: at 30 degrees and at least 20 studs wide on shallow ground, at 65 degrees and at least 6 studs on steep, after a 1.5-stud flat foot. Its height is what it takes to lay the road flat into that slope.
+
+### Measured (DR-Lane2)
+
+20 seeds (1 to 20), 8 000 studs each, every 16 studs (10 000 stations), by the slope across the road:
+
+| | Stations | Runoff | Uphill wall | Downhill drop |
+|---|---|---|---|---|
+| Shallow (under 8 degrees) | 4 388 | 39.0 studs | 2.9 | 5.2 |
+| Middle | 3 865 | 18.3 | 18.2 | 35.1 |
+| Steep (over 30) | 1 747 | 11.2 | 34.4 | 40.4 |
+
+(Wall and drop: the mountain 20 studs past each runoff edge, above or below the edge.) Before step 2, on step 1's mountain, there were no steep stations at all, and the runoff was 27 studs on shallow ground and 25 on middle, at random.
+
+- On the new mountain: trench 56 (0.6%), causeway 627 (6.3%), centre line over 20 studs off h 991 (9.9%), median 0.8, within 6 studs 79%. No seed stalled. Steepest grade 8 degrees, grade change at most 0.0015 a stud.
+- Seeds 31337, 101, 2024 (5 000 studs, GroundTests): 2 trench and 11 causeway of 936; 48 over 20 studs (5.1%).
+- GroundTests 21 of 23. **Two fail:** over 20 studs off h is 5.1% (the limit is 5%); and 1 point of 18 870 on the runoff has the ground 0.006 studs above the surface (the drawn mesh sits at least 1.3 studs below it: checked live). SplineTurnTests 9 of 9. SplineTests 63 of 64: "a section costs little" read a 23.7 ms worst step on today's road, untouched by this work; it read the same during step 1 on this busy PC.
+- Live, `ground mesh` then a run: the client drew the same road and ground, no seams (504 tile pairs), the ground at least 1.3 studs under the road over 3 808 points, no errors. Generator worst step 11 ms; the ground's maths 1.6 microseconds a point.
+
+### Known
+
+- **The road can't fully follow the steepest scarps.** About 6% of the road is still on a causeway, mostly at hairpins and switchbacks on scarps: mid-turn the road heads straight down a 25 to 35-degree slope and can only fall 8 degrees. Real roads put hairpins on spurs and benches; the turn retries move them only 120 studs at a time.
+- Small changes reshuffle every road on this mountain, so the numbers are judged on 20 seeds, not 3.
+- A mesh run still works its way down overall and reaches Roblox's fall-kill height (-500) sooner on a steeper mountain: scarps hold the road longer, but it still loses 2 to 6.5 degrees' worth of height a stud.
+- On the drawn mesh, a wall or drop begins about a cell (8 studs) past the runoff's edge, as before (the mesh holds vertices near the road below it).
