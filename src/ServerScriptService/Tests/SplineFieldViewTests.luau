@@ -235,4 +235,106 @@ function Tests.runtime(_self,options)
 	return result
 end
 
+function Tests.materials()
+	local root=game.ReplicatedStorage.Shared.Road
+	local Infield,Cuts,Mesh,Parts,Texture=require(root.SplineInfield),require(root.SplineFieldCuts),require(root.SplineMesh),require(root.SplineParts),require(root.GrassTexture)
+	local cfg=require(game.ReplicatedStorage.Shared.Config);local T=cfg.Spline.Terrain
+	local oldHaze=Mesh.haze();local oldShade=cfg.Spline.Grass.Shade
+	local folder=Instance.new("Folder");folder.Name="__T212MixedMaterials";folder.Parent=workspace
+	local meshes={}
+	local ok,result=xpcall(function()
+		local checks={};local function check(name,pass,detail)table.insert(checks,{name=name,ok=not not pass,detail=detail})end
+		local image=Texture.get();assert(image,"mixed textured seam fixture needs the real grass image")
+		local scale=Texture.plainScale(image)
+		cfg.Spline.Grass.Shade=.2
+		check("source texture scale follows the baked pixel, not changed config",math.abs(Texture.plainScale(image)-scale)<1e-9
+			and math.abs(scale-math.floor(oldShade*255+.5)/255)<1e-9,`actual cached plain multiplier{scale}`)
+		cfg.Spline.Grass.Shade=oldShade
+		local index=Infield.new(32)
+		Infield.add(index,Infield.patch("paint",{
+			{sa=100,sb=500,sideA=1,sideB=-1,a={30000,0,-20000},b={30020,0,-20000},weight=1},
+			{sa=120,sb=480,sideA=1,sideB=-1,a={30000,0,-20020},b={30020,0,-20020},weight=1},
+		}))
+		local sp={infields=index,firstSample=0,step=2,infieldRevision=1};local plan=Cuts.plan(index,{paint=true},0,1)
+		local function seams(material)
+			return {{points={{30000,0,-20000},{30020,0,-20000},{30020,10,-20000}},material=material}}
+		end
+		local function mesh(material)
+			local model,why=Mesh.buildInfield(sp,0,0,1,folder,{plan=plan,seams=seams(material)})
+			assert(model,tostring(why));table.insert(meshes,model);return model
+		end
+		local function parts(material)
+			local model,why=Parts.buildInfield(sp,0,0,1,folder,{plan=plan,seams=seams(material)})
+			assert(model,tostring(why));return model
+		end
+		local function errorColour(a,b)return math.max(math.abs(a.R-b.R),math.abs(a.G-b.G),math.abs(a.B-b.B))end
+		local function actualMeshColour(model)
+			local em=model.Infield.MeshContent.Object
+			for _,face in em:GetFaces() do
+				for _,vertex in em:GetFaceVertices(face) do
+					if model.Infield.CFrame:PointToWorldSpace(em:GetPosition(vertex)).Y>1 then return em:GetColor(em:GetFaceColors(face)[1]) end
+				end
+			end
+			error("fixture seam face missing")
+		end
+		local function actualPartsColour(model)
+			for _,p in model:GetDescendants() do if p:IsA("BasePart") and string.find(p.Name,"InfieldSeam",1,true) then return p.Color end end
+			error("fixture seam Parts missing")
+		end
+		local fromMesh={colour=T.RockColour,textureScale=scale}
+		local fromParts={colour=T.RockColour,textureScale=1}
+		local fallback=parts(fromMesh);local textured=mesh(fromParts)
+		local expected=Color3.new(T.RockColour.R*scale,T.RockColour.G*scale,T.RockColour.B*scale)
+		check("a field-only Parts fallback keeps the source Mesh colour",errorColour(actualPartsColour(fallback),expected)<1e-6,
+			"actual seam wedges include the captured source's baked texture multiplier")
+		local actual=actualMeshColour(textured);actual=Color3.new(actual.R*scale,actual.G*scale,actual.B*scale)
+		check("a successful field Mesh keeps a Parts road source colour",errorColour(actual,T.RockColour)<1e-6,
+			"actual seam vertex colour compensates for the destination texture")
+		local token={colour=T.HazeColour,textureScale=scale,haze="haze"}
+		local hp,hm=parts(token),mesh(token);local sky=Color3.new(.2,.3,.4);Mesh.setHaze(sky)
+		local pc,mc=actualPartsColour(hp),actualMeshColour(hm)
+		check("mixed seam haze follows later sky changes in both renderers",errorColour(pc,Color3.new(sky.R*scale,sky.G*scale,sky.B*scale))<1e-6
+			and errorColour(mc,sky)<1e-6,"existing Parts and Mesh seam colours both update, with their source scale preserved")
+		check("an unrepresentable texture conversion is explicit",not pcall(function()Parts.seamColour({colour=Color3.new(1,1,1),textureScale=1},.1)end),
+			"the Mesh builder can fall back rather than silently clipping the source colour")
+		local passed=0;for _,c in checks do if c.ok then passed+=1 end end
+		return {passed=passed,total=#checks,checks=checks}
+	end,debug.traceback)
+	cfg.Spline.Grass.Shade=oldShade;Mesh.setHaze(oldHaze)
+	for _,model in meshes do Mesh.destroy(model) end
+	folder:Destroy()
+	if not ok then return {passed=0,total=1,checks={{name="mixed material fixture completes",ok=false,detail=result}}} end
+	return result
+end
+
+function Tests.toeCuts()
+	local Boundary=require(game.ReplicatedStorage.Shared.Road.SplineBoundary)
+	local sp={edgeL={e={}},edgeR={e={}},infields=nil}
+	function sp:runoffAt()return 16 end
+	function sp:terrainXYZ(s,d)return d,50,-s end
+	function sp:yawAt()return 0 end
+	function sp:infieldOpening()return 0 end
+	local flat=Boundary.toeCuts(sp,0,480,1)
+	local error=0
+	for i=1,#flat-1 do
+		local a,b=Boundary.toeRow(sp,flat[i],1),Boundary.toeRow(sp,flat[i+1],1)
+		for s=flat[i],flat[i+1],4 do
+			for j,p in Boundary.toeRow(sp,s,1) do error=math.max(error,(p-a[j]:Lerp(b[j],(s-flat[i])/(flat[i+1]-flat[i]))).Magnitude) end
+		end
+	end
+	function sp:infieldOpening(s)return s/32 end
+	local twisted=Boundary.toeCuts(sp,0,32,1)
+	function sp:infieldOpening()return 0 end
+	local hard=4+5e-7;sp.edgeL.e={hard}
+	local split=Boundary.toeCuts(sp,0,32,1);local hasHard=false
+	for _,s in split do hasHard=hasHard or s==hard end
+	local checks={
+		{name="coplanar straight rock feet drop redundant rings without moving their surface",ok=#flat<60 and error<1e-6,detail=`old121 rings, new{#flat}, old ring displacement{error}`},
+		{name="linear strands with a changing peak cannot hide strip twist",ok=#twisted==9,detail=`{#twisted} rings retain every original four-stud triangle despite zero strand sag`},
+		{name="near-grid deduplication preserves the exact hard terrain boundary",ok=hasHard,detail=`hard edge{hard} is retained instead of the adjacent soft grid cut4`},
+	}
+	local passed=0;for _,c in checks do if c.ok then passed+=1 end end
+	return {passed=passed,total=#checks,checks=checks}
+end
+
 return Tests

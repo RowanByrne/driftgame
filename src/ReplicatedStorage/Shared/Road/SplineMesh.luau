@@ -75,7 +75,7 @@ end
 -- THE CLIFFS' HAZE follows the sky (features/day-night.md, T-144): the colour ids each live
 -- mesh drew its haze with, so `setHaze` can recolour every drawn chunk in place, and the
 -- colour new chunks are drawn with.
-local hazeOf: { [EditableMesh]: { haze: number, mid: number } } = setmetatable({}, { __mode = "k" }) :: any
+local hazeOf: { [EditableMesh]: { haze: number, mid: number, converted: {any}? } } = setmetatable({}, { __mode = "k" }) :: any
 local hazeColour: Color3? = nil -- nil: `Config.Spline.Terrain.HazeColour`
 
 -- THE HAZARD PANEL's diagonal stripes (T-149), as one gradient stepping sharply between its
@@ -402,6 +402,7 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 		-- (loaded once, the first time a chunk asks: not that chunk's cost)
 		local g0 = os.clock()
 		local grassImage = GrassTexture.get()
+		local sourceScale=GrassTexture.plainScale(grassImage)
 		local g1 = os.clock()
 		if g1 - g0 > 0.001 then
 			-- it waited on the asset: not work, and the frame's slice starts afresh (T-193)
@@ -569,7 +570,7 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 		local sourceMaterials={}
 		local function material(colour:number):any
 			local value=sourceMaterials[colour]
-			if not value then value=table.freeze({colour=em:GetColor(colour)});sourceMaterials[colour]=value end
+			if not value then value=table.freeze({colour=em:GetColor(colour),textureScale=sourceScale});sourceMaterials[colour]=value end
 			return value
 		end
 		local function source(pa:Vector3,pb:Vector3,pc:Vector3,paint:any):any
@@ -632,8 +633,8 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 			faceColours[name] = em:AddColor(c, 1)
 		end
 		local cliffMid = em:AddColor(T.CliffColour:Lerp(haze, 0.5), 1)
-		sourceMaterials[faceColours.haze]=table.freeze({colour=haze,haze="haze"})
-		sourceMaterials[cliffMid]=table.freeze({colour=T.CliffColour:Lerp(haze,.5),haze="mid"})
+		sourceMaterials[faceColours.haze]=table.freeze({colour=haze,haze="haze",textureScale=sourceScale})
+		sourceMaterials[cliffMid]=table.freeze({colour=T.CliffColour:Lerp(haze,.5),haze="mid",textureScale=sourceScale})
 		hazeOf[em] = { haze = faceColours.haze, mid = cliffMid }
 		local faceRows: { [number]: { [number]: { [number]: { Vector3 } } } } = { [-1] = {}, [1] = {} }
 		for _, side in { -1, 1 } do
@@ -790,10 +791,11 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 				local sideRays = rays[side]
 				local hk = rayCuts
 				local hillColour = em:AddColor(H.Colour, 1)
+				local farMaterial=table.freeze({colour=H.Colour,textureScale=if grassImage then Config.Spline.Grass.Shade else 1})
 				local function farGround(pa:Vector3,pb:Vector3,pc:Vector3)
 					if (pb-pa):Cross(pc-pa).Y<0 then pb,pc=pc,pb end
 					if scenery or fieldContext then
-						local points=source(pa,pb,pc,material(hillColour))
+						local points=source(pa,pb,pc,farMaterial)
 						if fieldContext then
 							local pieces,changed,why=FieldCuts.triangle(fieldContext,points[1],points[2],points[3])
 							if not pieces then error(`field far scenery cut failed: {why}`) end
@@ -1681,6 +1683,7 @@ function SplineMesh.buildInfield(spline:Spline.Spline,x:number,z:number,radius:n
 		tick();b=newBuilder(centre)
 		local build=b :: Builder
 		local image=GrassTexture.get()
+		local targetScale=GrassTexture.plainScale(image)
 		tick()
 		local T=Config.Spline.Terrain
 		local baseU,baseV=GrassTexture.base(centre)
@@ -1688,7 +1691,8 @@ function SplineMesh.buildInfield(spline:Spline.Spline,x:number,z:number,radius:n
 		local rock=build.em:AddColor(T.RockColour,1)
 		local fieldHaze=hazeColour or T.HazeColour
 		local hazeId=build.em:AddColor(fieldHaze,1);local midId=build.em:AddColor(T.CliffColour:Lerp(fieldHaze,.5),1)
-		hazeOf[build.em]={haze=hazeId,mid=midId}
+		local converted={}
+		hazeOf[build.em]={haze=hazeId,mid=midId,converted=converted}
 		for _,t in selected do
 			local vertices,uvs,colours={},{},{}
 			local normal=build.em:AddNormal(t.normal)
@@ -1716,9 +1720,11 @@ function SplineMesh.buildInfield(spline:Spline.Spline,x:number,z:number,radius:n
 			if normal.Magnitude<1e-9 then continue end
 			local n=build.em:AddNormal(normal.Unit);local vertices={}
 			local material=seam.material
-			local colour=if typeof(material)=="Color3" then material elseif type(material)=="table" and typeof(material.colour)=="Color3" then material.colour else T.RockColour
-			local paint=if type(material)=="table" and material.haze=="haze" then hazeId
-				elseif type(material)=="table" and material.haze=="mid" then midId else build.em:AddColor(colour,1)
+			local colour=SplineParts.seamColour(material,targetScale,hazeColour or T.HazeColour)
+			local paint=build.em:AddColor(colour,1)
+			if type(material)=="table" and material.haze then
+				table.insert(converted,{id=paint,material=material,scale=targetScale})
+			end
 			for _,p in seam.points do table.insert(vertices,build.em:AddVertex(Vector3.new(p[1]-centre.X,p[2]-centre.Y,p[3]-centre.Z))) end
 			local face=build.em:AddTriangle(vertices[1],vertices[2],vertices[3])
 			build.em:SetFaceNormals(face,{n,n,n});build.em:SetFaceColors(face,{paint,paint,paint});build.em:SetFaceUVs(face,{plain,plain,plain})
@@ -1755,6 +1761,7 @@ function SplineMesh.setHaze(colour: Color3): number
 		local ok = pcall(function()
 			em:SetColor(ids.haze, colour)
 			em:SetColor(ids.mid, cliff:Lerp(colour, 0.5))
+			for _,entry in ids.converted or {} do em:SetColor(entry.id,SplineParts.seamColour(entry.material,entry.scale,colour)) end
 		end)
 		if ok then
 			count += 1
@@ -1762,6 +1769,7 @@ function SplineMesh.setHaze(colour: Color3): number
 			hazeOf[em] = nil -- destroyed
 		end
 	end
+	SplineParts.setHaze(colour)
 	return count
 end
 

@@ -116,6 +116,47 @@ function Boundary.toeRow(spline:Spline.Spline,s:number,side:number):{Vector3}
  return {p,p+right*2+Vector3.yAxis*(4*(1-spline:infieldOpening(s,side))),p+right*3}
 end
 
+-- Remove only redundant straight, coplanar rings from the existing four-stud
+-- geometry. Linear strands alone are insufficient: a changing peak twists a
+-- strip, so its endpoint quad must also remain planar. Opening knots are hard.
+function Boundary.toeCuts(spline:Spline.Spline,s0:number,s1:number,side:number,yieldFn:(()->())?):{number}
+	local hard=Boundary.points(spline,s0,s1);local fixed={};local cuts=table.clone(hard)
+	for _,s in hard do fixed[s]=true end
+	for s=math.ceil(s0/4)*4,s1-1e-6,4 do if s>s0 then table.insert(cuts,s) end end
+	table.sort(cuts)
+	local unique={}
+	for _,s in cuts do
+		if #unique==0 or s-unique[#unique]>1e-6 then table.insert(unique,s)
+		elseif fixed[s] and not fixed[unique[#unique]] then unique[#unique]=s end
+	end
+	local rows={};local function row(i:number):{Vector3}
+		if not rows[i] then rows[i]=Boundary.toeRow(spline,unique[i],side) end
+		return rows[i]
+	end
+	local function redundant(a:number,b:number):boolean
+		local A,B=row(a),row(b)
+		for j=1,2 do
+			local n=(A[j+1]-A[j]):Cross(B[j]-A[j])
+			if n.Magnitude<1e-8 or math.abs(n.Unit:Dot(B[j+1]-A[j]))>1e-5 then return false end
+		end
+		for k=a+1,b-1 do
+			if fixed[unique[k]] then return false end
+			local t=(unique[k]-unique[a])/(unique[b]-unique[a])
+			for j,p in row(k) do if (p-A[j]:Lerp(B[j],t)).Magnitude>1e-5 then return false end end
+		end
+		return true
+	end
+	local out={unique[1]};local a=1
+	while a<#unique do
+		local b=a+1
+		while b<#unique and unique[b+1]-unique[a]<=Config.Spline.Mesh.ChunkLength+1e-6 and redundant(a,b+1) do
+			b+=1;if yieldFn then yieldFn() end
+		end
+		table.insert(out,unique[b]);a=b
+	end
+	return out
+end
+
 function Boundary.build(spline:Spline.Spline,s0:number,s1:number,parent:Instance,yieldFn:(()->())?,roadRails:boolean?,toeParts:boolean?,hiddenToes:{BasePart}?):number
 	local T=Config.Spline.Terrain
 	local half=Config.Road.Width*.5
@@ -132,9 +173,7 @@ function Boundary.build(spline:Spline.Spline,s0:number,s1:number,parent:Instance
 		-- is fitted nearly flat against another leg. It marks the same four-stud
 		-- solid limit and never depends on a later hillside rebuild.
   if spline:hasBiomeGround() and toeParts~=false then
-   local cuts=Boundary.points(spline,s0,s1)
-   for s=math.ceil(s0/4)*4,s1-1e-6,4 do if s>s0 then table.insert(cuts,s) end end
-   table.sort(cuts)
+   local cuts=Boundary.toeCuts(spline,s0,s1,side,yieldFn)
    for i=1,#cuts-1 do
     local a,b=cuts[i],cuts[i+1]
     if b-a<1e-6 then continue end

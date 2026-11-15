@@ -751,6 +751,11 @@ may overlap its replacement while the shared sliced retirement queue drains it.
 Opening-dependent low rock feet are included in the source visibility array for
 both ordinary fallback chunks and peer strips; old closed feet cannot linger
 after their newly open field publishes.
+`SplineBoundary.toeCuts` removes only redundant rings from the former four-stud
+toe geometry: every omitted old vertex must match endpoint interpolation within
+1e-5, both endpoint strips must be planar, all opening/edge knots remain hard,
+and merged spans cannot exceed one draw chunk. Twisted or nonlinear strips keep
+the former cuts. This reduces visibility work without changing the nominal foot.
 This avoids synchronous registration/removal of a complete fallback chunk.
 Peer strips draw
 supported road, existing rails and physical feet outside published main arc
@@ -775,6 +780,19 @@ old/new field meshes fit the eight-mesh guard. The first actual forced-Parts
 check exposed a105ms publication stall from whole-root registration/removal;
 the staged-visibility replacement still requires actual lane validation. Full
 View lifecycle and generated publication remain pending.
+
+Actual captured scenery materials now include `{colour,textureScale,haze?}`.
+`GrassTexture.plainScale(image?)` returns the plain pixel multiplier cached at the
+real image bake (currently125/255), or1 without an image. Captured far Parts keep
+their existing raw config shade multiplier. Field Parts use resolved source RGB
+times source scale; field Mesh seam vertex colours compensate for the destination
+plain multiplier. Missing scale retains legacy fixture behaviour. Unsupported
+colour ranges explicitly refuse the Mesh build instead of clipping colours.
+`SplineParts.seamColour` shares this conversion; `SplineMesh.setHaze` forwards sky
+changes to weakly registered seam Parts and updates converted Mesh colour IDs
+while preserving their source scale. Pending new seam colours read the latest
+sky after yields. `SplineFieldViewTests.materials()` checks real mixed output,
+later haze updates and cached-pixel identity. These changes await lane validation.
 
 ## Studio-only baked shadow trial (T-214)
 

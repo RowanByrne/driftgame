@@ -27,6 +27,34 @@ local Infield = require(script.Parent.SplineInfield)
 local FieldCuts = require(script.Parent.SplineFieldCuts)
 
 local SplineParts = {}
+local hazeColour:Color3?=nil
+local hazeParts:{[BasePart]:{token:string,scale:number}}=setmetatable({}, {__mode="k"}) :: any
+
+function SplineParts.seamColour(material:any,targetScale:number?,haze:Color3?):Color3
+	local T=Config.Spline.Terrain
+	local colour=if typeof(material)=="Color3" then material
+		elseif type(material)=="table" and typeof(material.colour)=="Color3" then material.colour else T.RockColour
+	local scale=1
+	if type(material)=="table" then
+		local sky=haze or hazeColour or T.HazeColour
+		if material.haze=="haze" then colour=sky elseif material.haze=="mid" then colour=T.CliffColour:Lerp(sky,.5) end
+		if material.textureScale~=nil then
+			assert(material.textureScale>=0 and material.textureScale<=1,"invalid source texture scale")
+			assert((targetScale or 1)>0,"target texture cannot represent seam colour")
+			scale=material.textureScale/(targetScale or 1)
+		end
+	end
+	colour=Color3.new(colour.R*scale,colour.G*scale,colour.B*scale)
+	assert(colour.R<=1+1e-6 and colour.G<=1+1e-6 and colour.B<=1+1e-6,"field seam colour exceeds target representation")
+	return colour
+end
+
+function SplineParts.setHaze(colour:Color3)
+	hazeColour=colour
+	for part,value in hazeParts do
+		part.Color=SplineParts.seamColour({haze=value.token,textureScale=value.scale})
+	end
+end
 
 export type Options = {
 	step: number?, -- studs between cross-sections (default 4)
@@ -85,7 +113,7 @@ local function terrain(spline:Spline.Spline,s0:number,s1:number,parent:Instance,
 			if scenery then
 				if #scenery>=24576 then batch:Destroy();error("field scenery source limit") end
 				for _,p in points do table.freeze(p) end
-				table.insert(scenery,table.freeze({points=table.freeze(points),material=table.freeze({colour=colour}),kind=name}))
+				table.insert(scenery,table.freeze({points=table.freeze(points),material=table.freeze({colour=colour,textureScale=1}),kind=name}))
 			end
 			if fieldContext then
 				local changed,why
@@ -356,9 +384,12 @@ function SplineParts.buildInfield(spline:Spline.Spline,x:number,z:number,radius:
 			local t={a={p=seam.points[1]},b={p=seam.points[2]},c={p=seam.points[3]}}
 			local made=infieldSlab(t,.1,batch,`InfieldSeam_{i}`)
 			local material=seam.material
-			local colour=if typeof(material)=="Color3" then material elseif type(material)=="table" and typeof(material.colour)=="Color3" then material.colour else T.RockColour
+			local colour=SplineParts.seamColour(material)
 			for _,p in made do
 				p.Color=colour;p.Material=Enum.Material.Slate;p.CanCollide=false;p.CanTouch=false;p.CanQuery=o.queryable==true
+				if type(material)=="table" and material.haze then
+					hazeParts[p]={token=material.haze,scale=material.textureScale or 1}
+				end
 				if o.hiddenSeams then p.Transparency=1;table.insert(hidden,p) end
 				p.CastShadow=true;count+=1
 			end
