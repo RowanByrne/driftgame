@@ -98,6 +98,9 @@ function SplineRoadView._checkNewRoad(self: View)
 		return
 	end
 	self.checkedTo = to
+	if self.spline.mountain then
+		return -- a ground-first run (T-218): no hillside in the chunks, nothing to redraw
+	end
 	local H = Config.Spline.Hill
 	local L, cell = Config.Spline.Mesh.ChunkLength, spline.cell
 	local fresh = {}
@@ -194,7 +197,8 @@ function SplineRoadView._build(self: View, i: number)
 	self.builtAt[i] = self.spline.length
 	self.stale[i] = nil
 	local t0 = os.clock()
-	local model, info = SplineMesh.build(self.spline, s0, s1, self.folder, { forceFail = self.forceFallback })
+	-- a ground-first run (T-218): the road without its faces, the ground drawn apart
+	local model, info = SplineMesh.build(self.spline, s0, s1, self.folder, { forceFail = self.forceFallback, ground = self.spline.mountain ~= nil })
 	local chunk: Instance
 	if model then
 		chunk = model
