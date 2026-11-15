@@ -1,6 +1,6 @@
 # Feature: Ground-first mountain trial
 
-**Status:** building (`T-218`): plan approved 2026-11-15; step 1 (`T-219`, the shared shape and road cut) step 2 (`T-220`, option 1, our own mesh) and step 3 (`T-224`, option 2, Roblox Terrain) built; awaiting the user's pick. **Owner task:** `T-218`.
+**Status:** picked 2026-11-15: **option 1, our own mesh** (`T-218` done). Next: sharper ground in the distance and along the road ahead, with a player slider (`T-225`, "The pick" below). **Owner task:** `T-225`.
 
 ## Goal
 
@@ -148,3 +148,13 @@ The binding limit for this option. A client holds only so many mesh vertices: ab
 | Later work on top (walls, rails, trees) | Our own geometry: anything | Terrain tools, and the car could later drive on it |
 
 Both: the car still meets an invisible wall at the uphill runoff edge and falls past the downhill one (its maths is unchanged), a ground run only descends, and the cuts can be up to 140 studs deep.
+
+## The pick (2026-11-15)
+
+The user drove both and picked **option 1, our own mesh**: "they aren't bad but not perfect either ... i think mesh is what im leaning towards", then "mesh". What they saw: the ground sharpens as you come close. In the mesh that is our own two grids (8 studs within about 250 studs of the car, 32 beyond), so it is tunable; Roblox Terrain's distance detail is the engine's and is not. The mesh is drawn at `RenderFidelity.Precise` already.
+
+Asked for next (`T-225`):
+- **Higher detail along the road itself, not only round the car,** "so far ahead of u, near the road, it's still good looking. cause you are always staring ahead of u".
+- **A slider for the distance** in the settings menu, so PC can look further and sharper while phones keep a lighter setup.
+
+Still after that, on top of the mesh: the touge kit (walls, guardrails, forest, props), seasons and a new backdrop. A ground run is still switched on from the console (`ground mesh`); making it the game's ground is a later step.

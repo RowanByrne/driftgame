@@ -9,6 +9,7 @@ Every task in progress and the files it owns, so parallel sessions and workers n
 
 | Branch | Lane | Files owned | Since |
 |---|---|---|---|
+| `agent/ground-detail-ahead` | lent | `src/StarterPlayerScripts/Drift/GroundMeshView.luau`, `src/ReplicatedStorage/Shared/Config/Spline.luau` (`Ground` block only), `src/ReplicatedStorage/Shared/Road/Ground.luau`, `src/StarterPlayerScripts/Settings/SettingsView.luau`, `src/StarterPlayerScripts/Controllers/SettingsController.luau`, `docs/game/features/ground-trial.md`, `docs/game/features/settings-menu.md`, `docs/game/SETTINGS.md` | 2026-11-15 (T-225) |
 
 ## Notes between sessions
 
