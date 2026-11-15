@@ -241,8 +241,12 @@ function Tests.planner(_self,subjects)
 				check("the real car crosses a certified opening without a hidden bank wall",not stopped and not pushed and depth==0,
 					`sweep={tostring(stopped)}, push={tostring(pushed)}, depth={depth}; opening={sp:infieldOpening(midRow.sa,midRow.sideA)}`)
 				world.setClosing(midRow.sa+1)
-				check("the real car cannot reacquire a field using retired ownership",world.probe(pos)==nil,
+				check("acquired field support does not vanish before the visible closing contour",world.probe(pos)~=nil,
+					"physical retention remains separate from old owner credit")
+				local fresh=subjects.World.new(sp);fresh.hint=midRow.sa;fresh.setClosing(midRow.sa+1)
+				check("the real car cannot reacquire a field using retired ownership",fresh.probe(pos)==nil,
 					"closure is checked before opposite-bank support")
+				fresh.destroy()
 				world.destroy()
 			end
 			if subjects and subjects.Sequence then
@@ -563,6 +567,163 @@ function Tests.contacts(_self,subjects)
 	end,debug.traceback)
 	cfg.Spline.Biomes.GroundEnabled=saved
 	if not ok then return {passed=0,total=1,checks={{name="retained contact fixture completes",ok=false,detail=result}}} end
+	return result
+end
+
+function Tests.worldTracking(_self,subjects)
+	local road=game.ReplicatedStorage.Shared.Road
+	local Spline=subjects and subjects.Spline or require(road.Spline)
+	local Planner=subjects and subjects.Planner or require(road.SplineInfieldPlanner)
+	local Infield=subjects and subjects.Infield or DefaultInfield
+	local World=subjects and subjects.World or require(game.StarterPlayer.StarterPlayerScripts.Drift.SplineWorld)
+	local cfg=require(game.ReplicatedStorage.Shared.Config)
+	local saved=cfg.Spline.Biomes.GroundEnabled;cfg.Spline.Biomes.GroundEnabled=true
+	local owned={}
+	local ok,result=xpcall(function()
+		local checks={};local function check(name,pass,detail)table.insert(checks,{name=name,ok=pass,detail=detail})end
+		local sp,b0,sections=fixture(Spline,20)
+		local patches=Planner.plan(sp,128,480,b0,sp.length);sp:addInfields(patches);sp:append(sections[#sections])
+		local patch=patches[1];local row=patch.rows[math.ceil(#patch.rows*.5)]
+		local destroyed=0
+		local base={probe=function()return nil end,sweep=function()return nil end,penetration=function()return nil end,
+			edge=function()return nil end,destroy=function()destroyed+=1 end}
+		local function world()
+			local w=World.new(sp,base);table.insert(owned,w);return w
+		end
+		local function point(s)
+			local x,y,z=sp:surfaceXYZ(s,0);return Vector3.new(x,y+cfg.Drift.RideHeight,z)
+		end
+		local function same(a,b)
+			if a==nil or b==nil then return a==b end
+			for _,k in {"ownerS","anchorS","travel","position","physicalS","d","kind"} do if a[k]~=b[k] then return false end end
+			return (a.peer==nil and b.peer==nil) or (a.peer and b.peer and a.peer.s==b.peer.s
+				and a.peer.patchId==b.peer.patchId and a.peer.road==b.peer.road)
+		end
+		local w=world();local a,b=point(row.sa),point(row.sb)
+		w.probe(b);w.sweep(b,b+Vector3.xAxis,sp:yawAt(row.sb));w.penetration(b,sp:yawAt(row.sb))
+		check("bootstrap queries cannot choose the actor's initial road",w.hint==nil and w.physicalS==nil and w.contactSnapshot()==nil,
+			"only an explicit actor center establishes contact history")
+		w.locate(a)
+		local anchor=w.contactSnapshot()
+		local floorCount,missing,maxHeight,maxNormal=0,0,0,0
+		local distance=(b-a).Magnitude
+		for i=0,math.ceil(distance) do
+			local p=a:Lerp(b,i/math.ceil(distance))
+			local floor=Infield.sample(sp.infields,p.X,p.Z)
+			local expected=nil;local normal=nil
+			for _,s in {row.sa,row.sb} do
+				local ss,d=sp:projectFrom(p.X,p.Z,s)
+				local kind=ss and d and sp:groundKind(ss,d)
+				if kind~=nil and kind~=false then expected=sp:terrainY(ss,d);normal=if kind==sp.TARMAC then sp:normalAt(ss,d) else sp:terrainNormal(ss,d);break end
+			end
+			if expected==nil and floor then expected=floor.y;normal=floor.normal end
+			assert(expected~=nil,"crossing fixture leaves real ground")
+			p=Vector3.new(p.X,expected+cfg.Drift.RideHeight,p.Z)
+			local hit=w.probe(p);local owner,_,physical=w.locate(p)
+			if not hit or not owner or not physical then missing+=1 else
+				maxHeight=math.max(maxHeight,math.abs(hit.y-expected));maxNormal=math.max(maxNormal,(hit.normal-normal).Magnitude)
+			end
+			floorCount+=1
+		end
+		local crossed=w.contactSnapshot()
+		check("real center tracking crosses both field banks without a support gap",missing==0 and maxHeight<.02 and maxNormal<.001,
+			`{floorCount} one-stud centers; missing{missing}, height{maxHeight}, normal{maxNormal}`)
+		check("the actual world retains route debt while reporting physical peer road",crossed and crossed.peer~=nil
+			and crossed.anchorS==anchor.anchorS and crossed.ownerS<500 and math.abs(crossed.physicalS-row.sb)<.05,
+			"view contact follows B while asphalt credit remains anchored on A")
+		local before=w.contactSnapshot()
+		for _=1,4 do
+			w.probe(point(row.sb+24));w.sweep(point(row.sb),point(row.sb+12),sp:yawAt(row.sb))
+			w.penetration(point(row.sb+12),sp:yawAt(row.sb))
+		end
+		check("rays and car footprint queries do not move actual contact history",same(before,w.contactSnapshot()),
+			"future queries leave owner, physical peer, anchor and travel unchanged")
+		local continued=true;local steps=0
+		for _,target in {patch.rows[#patch.rows].sb-32,patch.rows[1].sb+32} do
+			local clone=w.fork();local direction=if target<row.sb then -1 else 1;local s=row.sb
+			while math.abs(s-target)>1e-6 do
+				s+=direction*math.min(1,math.abs(target-s))
+				local p=point(s);local hit=clone.probe(p);local owner,_,physical=clone.locate(p)
+				continued=continued and hit~=nil and hit.surface=="tarmac" and owner~=nil and owner<500 and physical~=nil and math.abs(physical-s)<.05
+				steps+=1
+			end
+			clone.destroy()
+		end
+		check("actual peer centers continue beyond both frozen field ends",continued and steps>64,
+			`{steps} completed centers; shared base destroys{destroyed}`)
+		check("prediction world forks own independent closures and histories",same(before,w.contactSnapshot()) and destroyed==0,
+			"fork commits and disposal leave actual state and shared base alive")
+		local later,laterB=fixture(Spline,20)
+		local delayed=World.new(later);table.insert(owned,delayed)
+		delayed.locate(a)
+		local x,y,z=later:terrainXYZ(row.sa,row.sideA*(cfg.Road.Width*.5+5))
+		local grass=Vector3.new(x,y+cfg.Drift.RideHeight,z);delayed.locate(grass)
+		local debt=delayed.contactSnapshot()
+		later:addInfields(Planner.plan(later,128,480,laterB,later.length))
+		local unchanged=same(debt,delayed.contactSnapshot());delayed.locate(grass)
+		local arrived=delayed.contactSnapshot()
+		check("the first published field preserves an existing grass travel budget",unchanged and debt.travel>0
+			and arrived.anchorS==debt.anchorS and arrived.travel==debt.travel,
+			"contact tracking starts before field publication and cannot forgive prior off-road movement")
+		if subjects and subjects.Trajectory and subjects.Model then
+			local Model,Trajectory=subjects.Model,subjects.Trajectory
+			local yaw=sp:yawAt(row.sb)
+			local sim=Model.new(CFrame.new(b)*CFrame.Angles(0,yaw,0));sim.velocity=Model.axes(yaw)*80
+			local actual=table.clone(sim);for k,v in actual do if type(v)=="table" then actual[k]=table.clone(v) end end
+			local predicted=Trajectory.predict(sim,{steer=0,handbrake=false},{world=w,step=cfg.Drift.FixedStep,maxSteps=120,lengths=100,minSpeed=-1})
+			local immutable=same(before,w.contactSnapshot())
+			local twin=w.fork()
+			for _=1,predicted.steps do Model.step(actual,{steer=0,handbrake=false},cfg.Drift.FixedStep,twin);twin.locate(actual.position) end
+			local error=(predicted.points[#predicted.points]-actual.position).Magnitude
+			check("spline prediction matches completed actual steps without touching live contact",immutable and destroyed==0
+				and predicted.steps==120 and error<.001 and same(before,w.contactSnapshot()),
+				`{predicted.steps} identical FixedSteps on peer B; end error{error}; base destroys{destroyed}`)
+			twin.destroy()
+			if subjects.Sim then
+				local reference=nil;local referenceContact=nil;local stable=true;local runs=0
+				for _,fps in {30,60,120} do for _,forecast in {false,true} do
+					local driveWorld=w.fork();local runner=subjects.Sim.newRunner(CFrame.new(b)*CFrame.Angles(0,yaw,0))
+					runner.state.velocity=Model.axes(yaw)*80
+					for _=1,fps do
+						subjects.Sim.advance(runner,1/fps,{steer=0,handbrake=false},driveWorld,function(center)driveWorld.locate(center.position)end)
+						if forecast then Trajectory.predict(runner.state,{steer=0},{world=driveWorld,maxSteps=8,lengths=100,minSpeed=-1}) end
+					end
+					local contact=driveWorld.contactSnapshot()
+					if reference then stable=stable and (reference-runner.state.position).Magnitude<.001 and same(referenceContact,contact)
+					else reference=runner.state.position;referenceContact=contact end
+					stable=stable and runner.totalSteps==120 and contact.peer~=nil and contact.anchorS==before.anchorS
+					runs+=1;driveWorld.destroy()
+				end end
+				check("prediction leaves fixed-step driving and contact debt identical at every frame rate",stable and same(before,w.contactSnapshot())
+					and destroyed==0,`{runs} drives at30/60/120FPS, with and without forecasts; every contact field agrees`)
+			end
+		end
+		local replacement=world();replacement.restoreContact(w.contactSnapshot())
+		check("world replacement preserves debt with an independent token",same(w.contactSnapshot(),replacement.contactSnapshot())
+			and w.contactState~=replacement.contactState and w.contactState.peer~=replacement.contactState.peer,
+			"the same spline may continue its contact history across a live-world rebuild")
+		replacement.resetHint()
+		check("explicit placement clears both physical and credited contact history",replacement.contactSnapshot()==nil
+			and replacement.hint==nil and replacement.physicalS==nil,"respawn can establish a new authoritative starting point")
+		local retired=w.fork();local fresh=world();fresh.hint=before.ownerS
+		sp:trim(b0+16)
+		local retained=retired.probe(b);local retainedOwner,_,retainedS=retired.locate(b)
+		check("acquired peer ground survives original owner retirement",retained and retained.surface=="tarmac"
+			and retainedOwner==before.ownerS and retainedS>=sp.firstSample*sp.step and fresh.probe(b)==nil,
+			"a retained physical token survives; an old initial hint cannot acquire the same remote bank")
+		retired.destroy()
+		local paid=before;paid.travel=(row.sb-paid.anchorS-8)/1.05+1
+		w.restoreContact(paid);w.locate(b)
+		local adopted=w.contactSnapshot()
+		check("a completed real travel budget hands off only on live peer asphalt",adopted.ownerS==adopted.physicalS
+			and adopted.peer==nil and adopted.anchorS==adopted.ownerS and adopted.travel==0,
+			"contact becomes ordinary owned B only after the existing re-entry allowance is paid")
+		local passed=0;for _,c in checks do if c.ok then passed+=1 end end
+		return {passed=passed,total=#checks,checks=checks}
+	end,debug.traceback)
+	for _,w in owned do w.destroy() end
+	cfg.Spline.Biomes.GroundEnabled=saved
+	if not ok then return {passed=0,total=1,checks={{name="actual world tracking fixture completes",ok=false,detail=result}}} end
 	return result
 end
 

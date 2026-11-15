@@ -33,7 +33,7 @@ end
 -- Only an actual actor center may commit this returned state. Ray, footprint
 -- and prediction callers resolve against a snapshot instead of advancing it.
 -- live means the caller checked a real retained physical road piece.
-function Contact.advance(state:State?,hit:Hit,position:Vector3,asphalt:boolean,live:boolean):(State,number?)
+function Contact.advance(state:State?,hit:{ownerS:number,contactS:number,d:number?,kind:number,peer:Token?},position:Vector3,asphalt:boolean,live:boolean):(State,number?)
 	local owner=hit.ownerS
 	local anchor=if state then state.anchorS else owner
 	local travel=if state then state.travel else 0
@@ -97,9 +97,20 @@ function Contact.resolve(sp:any,x:number,z:number,owner:number?,options:Options?
 			local physical=floor.contactS
 			if physical<first then physical=if floor.sb>=first then floor.sb else floor.sa end
 			local d=nil
-			if physical>=first then local _;_,d=sp:projectFrom(x,z,physical) end
+			local y,normal,kind=floor.y,floor.normal,sp.GRASS
+			if physical>=first then
+				local projected;projected,d=sp:projectFrom(x,z,physical)
+				if projected and d and math.abs(projected-physical)<=limit then
+					local original=sp:groundKind(projected,d)
+					if original~=nil then
+						physical=projected;kind=original;y=sp:terrainY(projected,d)
+						normal=if kind==sp.TARMAC then sp:normalAt(projected,d) else sp:terrainNormal(projected,d)
+					end
+				end
+			end
+			if (o.low and y<o.low) or (o.high and y>o.high) then return nil end
 			return {ownerS=Infield.route(floor,owner,limit,patch) or owner,contactS=physical,d=d,routeD=offRoad,
-				y=floor.y,normal=floor.normal,kind=sp.GRASS,peer={s=physical,patchId=peer.patchId,road=sp},source="field",closingS=floor.closingS}
+				y=y,normal=normal,kind=kind,peer={s=physical,patchId=peer.patchId,road=sp},source="field",closingS=floor.closingS}
 		end
 		-- A genuine acquisition authorizes bounded continuation along that real
 		-- road, including beyond either end of the original field patch.

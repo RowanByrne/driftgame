@@ -41,6 +41,7 @@ local Config = require(ReplicatedStorage.Shared.Config)
 local Spline = require(ReplicatedStorage.Shared.Road.Spline)
 local SplineGrove = require(ReplicatedStorage.Shared.Road.SplineGrove)
 local Boundary = require(ReplicatedStorage.Shared.Road.SplineBoundary)
+local Contact = require(ReplicatedStorage.Shared.Road.SplineContact)
 local Model = require(script.Parent.Model)
 
 local SplineWorld = {}
@@ -75,15 +76,20 @@ export type SplineWorld = Model.World & {
 	spline: Spline.Spline,
 	base: Model.World?,
 	hint: number?,
+	physicalS: number?,
+	contactState: Contact.State?,
 	closing: number?,
 	stats: Stats,
 	setClosing: (s: number?) -> (),
-	locate: (pos: Vector3) -> (number?, number?),
+	locate: (pos: Vector3) -> (number?, number?,number?,number?),
 	resetHint: () -> (),
+	contactSnapshot: () -> Contact.State?,
+	restoreContact: (state:Contact.State?) -> (),
+	fork: () -> any,
 	destroy: () -> (),
 }
 
-function SplineWorld.new(spline: Spline.Spline, base: Model.World?): SplineWorld
+function SplineWorld.new(spline: Spline.Spline, base: Model.World?, ownsBase:boolean?): SplineWorld
 	local C = Config.Drift
 	local R = Config.Road
 	local T = Config.Spline.Terrain
@@ -100,6 +106,8 @@ function SplineWorld.new(spline: Spline.Spline, base: Model.World?): SplineWorld
 		spline = spline,
 		base = base,
 		hint = nil,
+		physicalS = nil,
+		contactState = nil,
 		closing = nil,
 		stats = {
 			probes = 0,
@@ -140,35 +148,92 @@ function SplineWorld.new(spline: Spline.Spline, base: Model.World?): SplineWorld
 		end
 		return s, d
 	end
+	local function contactAt(pos:Vector3):Contact.Hit?
+		local state=self.contactState
+		local owner=if state then state.ownerS else self.hint
+		if owner==nil then
+			local s,d=locate(pos.X,pos.Z,nil)
+			if not s or not d then return nil end
+			local kind=spline:groundKind(s,d)
+			if kind==nil then return nil end
+			local y=spline:terrainY(s,d)
+			if y-pos.Y<rayBottom or y-pos.Y>rayTop then return nil end
+			return {ownerS=s,contactS=s,d=d,routeD=d,y=y,kind=kind,
+				normal=if kind==Spline.TARMAC then spline:normalAt(s,d) else spline:terrainNormal(s,d),source="owned"}
+		end
+		local moved=0
+		if state then local delta=pos-state.position;moved=math.sqrt(delta.X*delta.X+delta.Z*delta.Z) end
+		return Contact.resolve(spline,pos.X,pos.Z,owner,{low=pos.Y+rayBottom,high=pos.Y+rayTop,
+			first=spline.firstSample*spline.step,closing=self.closing,peer=state and state.peer or nil,
+			limit=if state then math.clamp(moved*3+8,12,640) else 160,
+			creditS=if state then Contact.credit(state.anchorS,state.travel+moved,math.huge) else nil})
+	end
 
-	function self.locate(pos: Vector3): (number?, number?)
+	function self.locate(pos: Vector3): (number?, number?,number?,number?)
+		if spline.infields then
+			local hit=contactAt(pos)
+			if not hit then return nil,nil end
+			local state=Contact.advance(self.contactState,hit,pos,hit.kind==Spline.TARMAC,hit.contactS>=spline.firstSample*spline.step)
+			self.contactState=state;self.hint=state.ownerS;self.physicalS=state.physicalS
+			return state.ownerS,hit.routeD,state.physicalS,hit.d
+		end
 		local s, d = locate(pos.X, pos.Z, self.hint)
-		local hit=spline:infieldContact(pos.X,pos.Z,self.hint,pos.Y+rayBottom,pos.Y+rayTop,160,self.closing)
-		if hit and (not s or not d or spline:groundKind(s,d)==nil or math.abs(s-hit.ownerS)>1) then s,d=hit.ownerS,hit.routeD end
 		if s then
 			self.hint = s
 		end
-		return s, d
+		if s and d then
+			local kind=spline:groundKind(s,d)
+			if kind~=nil then
+				local y=spline:terrainY(s,d)
+				if y-pos.Y>=rayBottom and y-pos.Y<=rayTop then
+					self.contactState=Contact.advance(self.contactState,{ownerS=s,contactS=s,d=d,kind=kind},pos,
+						kind==Spline.TARMAC,s>=spline.firstSample*spline.step)
+				end
+			end
+		end
+		self.physicalS=s
+		return s,d,s,d
 	end
 
 	function self.setClosing(s: number?)
 		self.closing = s
 	end
 	function self.resetHint()
-		self.hint=nil
+		self.hint=nil;self.physicalS=nil;self.contactState=nil
+	end
+	function self.contactSnapshot():Contact.State?
+		return Contact.copyState(self.contactState)
+	end
+	function self.restoreContact(state:Contact.State?)
+		if state and state.peer and state.peer.road~=spline then return end
+		self.contactState=Contact.copyState(state)
+		if state then self.hint=state.ownerS;self.physicalS=state.physicalS end
+	end
+	function self.fork()
+		local copy=SplineWorld.new(spline,base,false) :: any
+		copy.hint=self.hint;copy.physicalS=self.physicalS;copy.restoreContact(self.contactState);copy.setClosing(self.closing)
+		return copy
 	end
 
 	------------------------------------------------------------------ the ground
 	function self.probe(pos: Vector3): Model.Hit?
 		stats.probes += 1
+		if spline.infields then
+			local hit=contactAt(pos)
+			if hit then
+				stats.hits+=1
+				if hit.kind==Spline.TARMAC then return {y=hit.y,normal=hit.normal,grip=C.GripTarmac,score=C.ScoreTarmac,surface="tarmac"} end
+				if hit.kind==Spline.GRAVEL then stats.gravel+=1;return {y=hit.y,normal=hit.normal,grip=C.GripGravel,score=C.ScoreGravel,surface="gravel"} end
+				stats.grass+=1;return {y=hit.y,normal=hit.normal,grip=C.GripGrass,score=C.ScoreGrass,surface="grass"}
+			end
+			if base then return base.probe(pos) end
+			return nil
+		end
 		local s, d = locate(pos.X, pos.Z, self.hint)
-		local field=spline:infieldContact(pos.X,pos.Z,self.hint,pos.Y+rayBottom,pos.Y+rayTop,160,self.closing)
-		if field and s and math.abs(s-field.ownerS)>1 then s,d=nil,nil end
-		local overCliff=false
 		if s and d then
 			local kind = spline:groundKind(s, d)
 			if kind == nil then
-				overCliff=true
+				stats.overCliff+=1
 			else
 				self.hint = s
 				local y = spline:terrainY(s, d)
@@ -189,18 +254,6 @@ function SplineWorld.new(spline: Spline.Spline, base: Model.World?): SplineWorld
 				end
 			end
 		end
-		if field then
-			self.hint=field.ownerS
-			stats.hits+=1
-			local kind=field.kind
-			if kind==Spline.TARMAC then return {y=field.y,normal=field.normal,grip=C.GripTarmac,score=C.ScoreTarmac,surface="tarmac"} end
-			if kind==Spline.GRAVEL then
-				stats.gravel+=1;return {y=field.y,normal=field.normal,grip=C.GripGravel,score=C.ScoreGravel,surface="gravel"}
-			end
-			stats.grass+=1
-			return {y=field.y,normal=field.normal,grip=C.GripGrass,score=C.ScoreGrass,surface="grass"}
-		end
-		if overCliff then stats.overCliff+=1 end
 		if base then
 			return base.probe(pos)
 		end
@@ -214,9 +267,10 @@ function SplineWorld.new(spline: Spline.Spline, base: Model.World?): SplineWorld
 	-- the ground's own normal; flat in the air, as there.
 	local function boxReach(pos: Vector3, yaw: number): (number, number)
 		local flatFwd, flatRight = Model.axes(yaw)
-		local s, d = locate(pos.X, pos.Z, self.hint)
-		local field=if not s or not d or not spline:groundKind(s,d)
-			then spline:infieldContact(pos.X,pos.Z,self.hint,pos.Y+rayBottom,pos.Y+rayTop,160,self.closing) else nil
+		local s,d
+		if not spline.infields then s,d=locate(pos.X,pos.Z,self.hint) end
+		local field=if spline.infields then contactAt(pos) else nil
+		if spline.infields and not field then return bw,bl end
 		if (not s or not d or not spline:groundKind(s,d)) and not field then return bw,bl end
 		local y=if field then field.y else spline:terrainY(s :: number,d :: number)
 		if pos.Y - (y + C.RideHeight) > C.AirborneMargin then
@@ -306,11 +360,8 @@ function SplineWorld.new(spline: Spline.Spline, base: Model.World?): SplineWorld
 	-- and the runoff either side, to the edges.
 	local CLOSING_DEPTH = 1
 	local function physicalLocate(x:number,z:number,y:number,hint:number?):(number?,number?)
-		local s,d=locate(x,z,hint)
-		if s and d and spline:groundKind(s,d)~=nil then return s,d end
-		local hit=spline:infieldContact(x,z,self.hint,y+rayBottom,y+rayTop,160,self.closing)
-		if hit and hit.d then return hit.contactS,hit.d end
-		return s,d
+		if spline.infields then local hit=contactAt(Vector3.new(x,y,z));return if hit then hit.contactS else nil,if hit then hit.d else nil end
+		return locate(x,z,hint)
 	end
 	local function closingMargin(x: number, z: number): (number?, Vector3?)
 		local sc = self.closing
@@ -401,7 +452,8 @@ function SplineWorld.new(spline: Spline.Spline, base: Model.World?): SplineWorld
 		if hint then
 			local hw, hl = boxReach(from, yaw)
 			local fwd, right = Model.axes(yaw)
-			local m0, m1, n = SplineGrove.sweep(spline, hint, from, to, fwd, right, hw, hl, bh)
+			local physical=if spline.infields then contactAt(from) else nil
+			local m0, m1, n = SplineGrove.sweep(spline,if physical then physical.contactS else hint,from,to,fwd,right,hw,hl,bh)
 			if m0 and m1 and n then
 				consider(m0, m1, n, KIND_TREE)
 			end
@@ -502,7 +554,8 @@ function SplineWorld.new(spline: Spline.Spline, base: Model.World?): SplineWorld
 		if hint then
 			local hw, hl = boxReach(pos, yaw)
 			local fwd, right = Model.axes(yaw)
-			local depth, n = SplineGrove.push(spline, hint, pos, fwd, right, hw, hl, bh, PENETRATION_MARGIN)
+			local physical=if spline.infields then contactAt(pos) else nil
+			local depth, n = SplineGrove.push(spline,if physical then physical.contactS else hint,pos,fwd,right,hw,hl,bh,PENETRATION_MARGIN)
 			if n then
 				take(depth, n)
 			end
@@ -531,8 +584,9 @@ function SplineWorld.new(spline: Spline.Spline, base: Model.World?): SplineWorld
 	end
 
 	function self.destroy()
+		self.contactState=nil;self.physicalS=nil
 		local b: any = base
-		if b and b.destroy then
+		if ownsBase~=false and b and b.destroy then
 			b.destroy()
 		end
 	end

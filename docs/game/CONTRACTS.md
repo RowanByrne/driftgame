@@ -591,8 +591,8 @@ retirement; a retired history cannot acquire it afresh. `copy(token)` creates
 independent tracking data. Auxiliary probes never commit it. `credit` shares
 the existing1.05times travel plus8stud re-entry formula with SplineSequence;
 only a real live credited piece may update route progress. The resolver is
-checked groundwork; actual runner/client/walking tracker commits remain to be
-connected before enabling generated fields.
+checked groundwork; actual server runner and walking tracker commits remain to
+be connected before enabling generated fields.
 Field movement is bounded using the token bank's corresponding row coordinate,
 so a legitimate cross-gap contact can change physical bank without jumping along
 it. While a token is retained, no resolver result adopts an owner. Known-pair
@@ -607,6 +607,18 @@ candidate, including fields whose endpoints lie in different arc buckets.
 optional capped credit. Only asphalt, a real live physical piece and credit
 equal to physical arc can clear a retained peer/reset its anchor. The input
 snapshot is never changed. Prediction must advance its own copied world.
+
+`SplineWorld.locate(center)` commits actual center travel and returns the
+existing owner/distance followed by physical arc/lateral contact. Ground and
+footprint queries are read-only, including before the first committed center.
+`contactSnapshot/restoreContact` copy histories across worlds on the same
+spline; `resetHint` clears owner and physical history for explicit placement.
+`fork()` creates private closures, buffers, statistics and copied contact state,
+sharing read-only spline/base queries without owning base disposal.
+DriftController commits after each FixedStep and draws around physical contact;
+Trajectory owns one fork per prediction, commits every completed predicted
+center and disposes that fork even on errors. Local handoff is projection
+bookkeeping; server retained-piece checks alone authorize earned progress.
 
 `SplineMesh.buildInfield(spline,x,z,radius,parent,opts?)` builds one complete
 nearby field mesh, with exact frozen normals and origin-relative positions.

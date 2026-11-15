@@ -246,6 +246,49 @@ end
 
 --------------------------------------------------------------------------------
 
+function TrajectoryTests.isolation(_self,subjects)
+	if not subjects then load() end
+	local model=if subjects then subjects.Model else Model
+	local trajectory=if subjects then subjects.Trajectory else Trajectory
+	local worldModule=if subjects then subjects.World else World
+	local checks={}
+	local state=model.new(startCF(TEST_YAW));state.velocity=model.axes(TEST_YAW)*80
+	local before=copyState(state)
+	local forks,commits,disposed,sourceDisposed=0,0,0,0
+	local source=worldModule.flat(0)
+	source.destroy=function()sourceDisposed+=1 end
+	source.fork=function()
+		forks+=1
+		local copy=worldModule.flat(0)
+		copy.locate=function()commits+=1 end
+		copy.destroy=function()disposed+=1 end
+		return copy
+	end
+	local prediction=trajectory.predict(state,{steer=.2},{world=source,maxSteps=24,lengths=100,minSpeed=-1})
+	local immutable=sameState(before,state)
+	check(checks,"a prediction owns exactly one world and commits every completed center",forks==1 and commits==prediction.steps
+		and disposed==1 and sourceDisposed==0 and immutable,
+		`forks{forks}, completed centers{commits}/{prediction.steps}, copies disposed{disposed}, source disposed{sourceDisposed}`)
+	local sentinel={injected="prediction query failure"}
+	source.fork=function()
+		forks+=1
+		local copy=worldModule.flat(0)
+		copy.probe=function()error(sentinel,0)end
+		copy.destroy=function()disposed+=1 end
+		return copy
+	end
+	local ok,why=pcall(trajectory.predict,state,{steer=0},{world=source,maxSteps=1})
+	check(checks,"a failed prediction disposes its world and preserves the original failure",not ok and why==sentinel
+		and forks==2 and disposed==2 and sourceDisposed==0 and sameState(before,state),
+		"an injected ground-query error releases only its copied world")
+	local ordinary=worldModule.flat(0);ordinary.destroy=function()sourceDisposed+=1 end
+	trajectory.predict(state,{steer=0},{world=ordinary,maxSteps=1})
+	check(checks,"ordinary supplied worlds remain caller-owned",sourceDisposed==0,
+		"the existing flat and workspace world paths do not acquire disposal ownership")
+	local passed=0;for _,c in checks do if c.ok then passed+=1 end end
+	return {passed=passed,total=#checks,checks=checks}
+end
+
 function TrajectoryTests:run()
 	load()
 	local checks = {}
