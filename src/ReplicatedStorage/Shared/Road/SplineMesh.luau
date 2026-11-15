@@ -1548,7 +1548,10 @@ function SplineMesh.buildInfield(spline:Spline.Spline,x:number,z:number,radius:n
 	if o.forceFail then return nil,"forced infield mesh failure" end
 	local began=os.clock()
 	if not spline.infields then return nil,"empty" end
-	local selected=Infield.near(spline.infields,x,z,radius,nil,o.first or spline.firstSample*spline.step)
+	local first=o.first or spline.firstSample*spline.step
+	if o.plan and (o.plan.identity~=spline.infields or o.plan.first~=first) then return nil,"field coverage belongs to another road or retained first" end
+	local selected=if o.plan then o.plan.triangles else Infield.near(spline.infields,x,z,radius,nil,first)
+	local seams=o.seams or {}
 	if #selected==0 then return nil,"empty" end
 	local paused,slices,worst=0,1,0
 	local sliceStart=began
@@ -1560,11 +1563,20 @@ function SplineMesh.buildInfield(spline:Spline.Spline,x:number,z:number,radius:n
 			worst=math.max(worst,now-sliceStart)
 			local before=os.clock();task.wait();local after=os.clock()
 			paused+=after-before;slices+=1;sliceStart=after
+			if o.cancelled and o.cancelled() then error("infield build cancelled") end
 		end
 	end
 	local lo,hi={math.huge,math.huge,math.huge},{-math.huge,-math.huge,-math.huge}
 	for i,t in selected do
 		for _,v in {t.a,t.b,t.c} do for j=1,3 do lo[j]=math.min(lo[j],v.p[j]);hi[j]=math.max(hi[j],v.p[j]) end end
+		if i%128==0 then local bounded,why=pcall(tick);if not bounded then return nil,tostring(why) end end
+	end
+	for i,seam in seams do
+		if #seam.points~=3 then return nil,"invalid field seam triangle" end
+		for _,p in seam.points do for j=1,3 do
+			if #p~=3 or p[j]~=p[j] or math.abs(p[j])==math.huge then return nil,"invalid field seam point" end
+			lo[j]=math.min(lo[j],p[j]);hi[j]=math.max(hi[j],p[j])
+		end end
 		if i%128==0 then local bounded,why=pcall(tick);if not bounded then return nil,tostring(why) end end
 	end
 	for j=1,3 do if hi[j]-lo[j]>2048 then return nil,"infield view exceeds the mesh bounds" end end
@@ -1602,15 +1614,31 @@ function SplineMesh.buildInfield(spline:Spline.Spline,x:number,z:number,radius:n
 			if t.supported then build.grassTriangles+=1 end
 			tick()
 		end
+		for _,seam in seams do
+			local a,c,d=seam.points[1],seam.points[2],seam.points[3]
+			local normal=Vector3.new(c[1]-a[1],c[2]-a[2],c[3]-a[3]):Cross(Vector3.new(d[1]-a[1],d[2]-a[2],d[3]-a[3]))
+			if normal.Magnitude<1e-9 then continue end
+			local n=build.em:AddNormal(normal.Unit);local vertices={}
+			local material=seam.material
+			local colour=if typeof(material)=="Color3" then material elseif type(material)=="table" and typeof(material.colour)=="Color3" then material.colour else T.RockColour
+			local paint=build.em:AddColor(colour,1)
+			for _,p in seam.points do table.insert(vertices,build.em:AddVertex(Vector3.new(p[1]-centre.X,p[2]-centre.Y,p[3]-centre.Z))) end
+			local face=build.em:AddTriangle(vertices[1],vertices[2],vertices[3])
+			build.em:SetFaceNormals(face,{n,n,n});build.em:SetFaceColors(face,{paint,paint,paint});build.em:SetFaceUVs(face,{plain,plain,plain})
+			build.vertices+=3;build.triangles+=1;tick()
+		end
 		mp=toPart(build,"Infield",Color3.new(1,1,1),Enum.Material.SmoothPlastic,image,tick)
+		local fieldPart=mp :: MeshPart
+		fieldPart.DoubleSided=true -- unioned legacy closure copies retain both visible sides
 		tick()
 		model=Instance.new("Model");model.Name="Infield"
 		(mp :: MeshPart).Parent=model
-		model:SetAttribute("Infield",true);model:SetAttribute("InfieldRevision",spline.infieldRevision or 0)
+		model:SetAttribute("Infield",true);model:SetAttribute("InfieldRevision",if o.plan then o.plan.revision else spline.infieldRevision or 0)
+		model:SetAttribute("InfieldCoverage",if o.plan then o.plan.key else "near")
 		model.Parent=parent
 		meshesOf[model]={build.em}
 		worst=math.max(worst,os.clock()-sliceStart)
-		return {triangles=build.triangles,vertices=build.vertices,grassTriangles=build.grassTriangles,
+		return {triangles=build.triangles,vertices=build.vertices,grassTriangles=build.grassTriangles,seamTriangles=#seams,
 			ms=(os.clock()-began-paused)*1000,sliceMs=worst*1000,slices=slices}
 	end,debug.traceback)
 	if not ok then

@@ -632,8 +632,8 @@ clears only at a credit-complete live asphalt handoff or an explicit server
 placement; it is never read from a client. Studio-only `DebugContact(userId)`
 returns copied numeric contact, credit and progress observations for checks.
 
-`SplineMesh.buildInfield(spline,x,z,radius,parent,opts?)` builds one complete
-nearby field mesh, with exact frozen normals and origin-relative positions.
+`SplineMesh.buildInfield(spline,x,z,radius,parent,opts?)` builds one nearby field
+mesh, with exact frozen normals and origin-relative positions.
 `SplineParts.buildInfield` draws the same triangles in sliced batches; optional
 `supportedOnly/collidable/queryable` support the walking-ground integration.
 Both builders cancel without publishing partial models. Their indexed nearby
@@ -642,6 +642,13 @@ or normals. Field Parts use exact local-coordinate wedges without the ordinary
 road builder's outward expansion; collidable floors extend down by the configured
 walking thickness. A bounded `noYield/maxTriangles` option supplies immediate
 walking support while the larger sliced build is pending.
+Both builders accept `opts.plan` from `SplineFieldCuts.plan` for complete shared
+coverage instead of a radius subset, and `opts.seams` for actual source-edge
+joins. They reject a different road identity or retained first. The mesh checks
+combined floor/seam bounds before allocation and is double-sided to retain
+copied closure visibility. Parts seams are visual only; walking floors keep
+their separate nearby supported-only selection. Cancellation is rechecked
+immediately after each yield.
 `SplineParts.warmInfield(spline,x,z,parent,old?,opts?)` certifies reuse against
 the current accepted revision/retained first, footprint and a real supported
 collider ray at the frozen height. New support is built without yielding; dense
@@ -693,6 +700,19 @@ Returned copied faces carry `twoSided=true`; renderers must preserve that
 visibility when opposite legacy cap faces collapse into one geometric face.
 Raw input, pair work, breakpoints, fragments and output all have explicit
 failure bounds. Live drawing integration remains unfinished.
+
+`SplineInfield.select(index,selection?,first?,supportedOnly?,tick?)` visits
+complete chosen patch identities and applies the same exact retirement cut as
+`near`, freezing new clipped vertices. `SplineFieldCuts.plan(index,selection,
+first,revision?,options?)` shares those retained visual triangles, matching
+masks, precomputed finite perimeter and bounds. Empty/unknown/fully retired
+choices and oversized coverage return explicit reasons. Plan geometry is
+nested immutable and contains no active build callback. `key` is scoped to
+the exact index reference `identity`; stitched mesh lifetimes must additionally
+track the source terrain version. `forBuild(plan,tick?,options?)` gives each
+consumer isolated execution callbacks and fragmentation limits over that
+geometry. A discarded retirement sliver cannot retain a perimeter without
+surviving mask coverage.
 
 ## Studio-only baked shadow trial (T-214)
 

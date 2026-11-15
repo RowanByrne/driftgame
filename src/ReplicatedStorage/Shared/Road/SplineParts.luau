@@ -247,12 +247,19 @@ function SplineParts.buildInfield(spline:Spline.Spline,x:number,z:number,radius:
 	local o=opts or {}
 	local started=os.clock()
 	if not spline.infields then return nil,"empty" end
-	local selected=Infield.near(spline.infields,x,z,radius,o.supportedOnly,o.first or spline.firstSample*spline.step)
+	local first=o.first or spline.firstSample*spline.step
+	if o.plan and (o.plan.identity~=spline.infields or o.plan.first~=first) then return nil,"field coverage belongs to another road or retained first" end
+	local selected=if o.plan then o.plan.triangles else Infield.near(spline.infields,x,z,radius,o.supportedOnly,first)
+	if o.plan and o.supportedOnly then
+		local supported={};for _,t in selected do if t.supported then table.insert(supported,t) end end;selected=supported
+	end
+	local seams=if o.collidable or o.supportedOnly then {} else o.seams or {}
 	if #selected==0 then return nil,"empty" end
 	if o.maxTriangles and #selected>o.maxTriangles then return nil,"infield warm support exceeds its triangle bound" end
 	local model=Instance.new("Model");model.Name="InfieldParts";model:SetAttribute("Infield",true)
-	model:SetAttribute("InfieldRevision",spline.infieldRevision or 0)
-	model:SetAttribute("InfieldFirst",o.first or spline.firstSample*spline.step)
+	model:SetAttribute("InfieldRevision",if o.plan then o.plan.revision else spline.infieldRevision or 0)
+	model:SetAttribute("InfieldCoverage",if o.plan then o.plan.key else "near")
+	model:SetAttribute("InfieldFirst",first)
 	model:SetAttribute("InfieldX",x);model:SetAttribute("InfieldZ",z);model:SetAttribute("InfieldRadius",radius)
 	local batch=Instance.new("Folder");batch.Name="FieldSlices"
 	local sliceStart=started
@@ -268,11 +275,13 @@ function SplineParts.buildInfield(spline:Spline.Spline,x:number,z:number,radius:
 			worst=math.max(worst,os.clock()-sliceStart)
 			local before=os.clock();task.wait();local after=os.clock()
 			paused+=after-before;sliceStart=after;slices+=1
+			if o.cancelled and o.cancelled() then error("infield Parts build cancelled") end
 		end
 	end
 	local ok,err=xpcall(function()
 		local T=Config.Spline.Terrain
 		for i,t in selected do
+			if o.supportedOnly and not t.supported then continue end
 			tick()
 			local made=infieldSlab(t,if o.collidable then Config.Spline.Biomes.Infield.Walking.Thickness else .1,batch,`Infield_{i}`)
 			local colour=if t.supported then T.GrassColour else T.RockColour
@@ -285,12 +294,24 @@ function SplineParts.buildInfield(spline:Spline.Spline,x:number,z:number,radius:
 			end
 			triangles+=1
 		end
+		for i,seam in seams do
+			tick()
+			local t={a={p=seam.points[1]},b={p=seam.points[2]},c={p=seam.points[3]}}
+			local made=infieldSlab(t,.1,batch,`InfieldSeam_{i}`)
+			local material=seam.material
+			local colour=if typeof(material)=="Color3" then material elseif type(material)=="table" and typeof(material.colour)=="Color3" then material.colour else T.RockColour
+			for _,p in made do
+				p.Color=colour;p.Material=Enum.Material.Slate;p.CanCollide=false;p.CanTouch=false;p.CanQuery=o.queryable==true
+				p.CastShadow=true;count+=1
+			end
+			triangles+=1
+		end
 		tick();batch.Parent=model;model.Parent=parent
 	end,debug.traceback)
 	if not ok then batch:Destroy();model:Destroy();return nil,tostring(err) end
 	worst=math.max(worst,os.clock()-sliceStart)
 	model:SetAttribute("InfieldParts",count)
-	return model,{triangles=triangles,parts=count,ms=(os.clock()-started-paused)*1000,sliceMs=worst*1000,slices=slices}
+	return model,{triangles=triangles,parts=count,seamTriangles=#seams,ms=(os.clock()-started-paused)*1000,sliceMs=worst*1000,slices=slices}
 end
 
 -- Immediate support is about accepted geometry, not just a model's radius.

@@ -17,6 +17,7 @@ export type Trace={u0:number,u1:number,y0:number,y1:number,material:any}
 export type Copy={edge:number,points:Polygon,material:any}
 export type Capture={context:Context,lines:{[number]:{Trace}},copies:{Copy},count:number,limit:number}
 export type Seam={points:Polygon,material:any,edge:number,copy:boolean,twoSided:boolean}
+export type Plan={selection:{[string]:boolean},triangles:{any},context:Context,first:number,revision:number,key:string,lo:Point,hi:Point,identity:any}
 
 local EPS=1e-8
 local fullCache=setmetatable({}, {__mode="k"}) :: any
@@ -42,7 +43,7 @@ local function mask(points:Polygon,id:string):Mask?
 	for i,a in points do
 		local b,c=points[i%#points+1],points[(i+1)%#points+1]
 		local dx,dz=b[1]-a[1],b[3]-a[3];local length=math.sqrt(dx*dx+dz*dz)
-		if length<EPS or sign*(dx*(c[3]-b[3])-dz*(c[1]-b[1]))<=EPS then return nil end
+		if length<EPS or #points>3 and sign*(dx*(c[3]-b[3])-dz*(c[1]-b[1]))<=EPS then return nil end
 		table.insert(planes,table.freeze({x=a[1],z=a[3],nx= -sign*dz/length,nz=sign*dx/length}))
 	end
 	local x0,x1,z0,z1=bounds(points)
@@ -98,17 +99,50 @@ function Cuts.context(index:any,selection:{[string]:boolean}?,first:number?,opti
 		if not first or first<=rows[1].sa then
 			for _,m in patchMasks(index,patch) do append(m) end
 		else
-			local points={};for _,row in rows do table.insert(points,row.a);table.insert(points,row.b) end
-			local x0,x1,z0,z1=bounds(points)
-			local x,z=(x0+x1)*.5,(z0+z1)*.5;local radius=math.max(x1-x0,z1-z0)*.5+1
-			for _,t in Infield.near(index,x,z,radius,nil,first) do
-				if t.patch~=id then continue end
+			for _,t in Infield.select(index,{[id]=true},first,nil,context.tick) do
 				local m=mask({t.a.p,t.b.p,t.c.p},id)
 				if m then append(m) end
 			end
 		end
 		if context.tick then context.tick() end
 	end
+	for _,bucket in context.hash do table.freeze(bucket) end
+	table.freeze(context.hash);table.freeze(context.masks);table.freeze(context.patches)
+	return context
+end
+
+-- One complete coverage choice drives every visible field representation and
+-- every scenery subtraction. The plan contains no active build's callback.
+function Cuts.plan(index:any,selection:{[string]:boolean},first:number,revision:number?,options:any?):(Plan?,string?)
+	local o=options or {}
+	if not index then return nil,"empty" end
+	if not finite(first) then return nil,"invalid field coverage first" end
+	for id,enabled in selection do if enabled and not index.patches[id] then return nil,"unknown field patch" end end
+	local selected=Infield.select(index,selection,first,nil,o.tick)
+	if #selected==0 then return nil,"empty" end
+	if #selected>(o.maxTriangles or 16384) then return nil,"field coverage triangle limit" end
+	local ids={};local lo,hi={math.huge,math.huge,math.huge},{-math.huge,-math.huge,-math.huge}
+	for i,t in selected do
+		ids[t.patch]=true
+		for _,v in {t.a,t.b,t.c} do for j=1,3 do lo[j]=math.min(lo[j],v.p[j]);hi[j]=math.max(hi[j],v.p[j]) end end
+		if o.tick and i%128==0 then o.tick() end
+	end
+	for j=1,3 do if hi[j]-lo[j]>math.min(2048,o.maxExtent or 2048) then return nil,"field coverage exceeds the mesh bounds" end end
+	local geometry=Cuts.context(index,ids,first,o)
+	Cuts.perimeter(geometry)
+	geometry.tick=nil;geometry.index=nil
+	for _,bucket in geometry.edgeHash :: any do table.freeze(bucket) end
+	table.freeze(geometry.edgeHash :: any);table.freeze(geometry)
+	local names={};for id in ids do table.insert(names,id) end;table.sort(names)
+	local key={`{revision or 0}/{first}`};for _,id in names do table.insert(key,`{#id}:{id}`) end
+	return table.freeze({selection=table.freeze(ids),triangles=table.freeze(selected),context=geometry,first=first,
+		revision=revision or 0,key=table.concat(key,"/"),lo=table.freeze(lo),hi=table.freeze(hi),identity=index}),nil
+end
+
+function Cuts.forBuild(plan:Plan,tick:(()->())?,options:any?):Context
+	local context=table.clone(plan.context);local o=options or {}
+	context.tick=tick
+	context.maxPolygons=o.maxPolygons or context.maxPolygons;context.maxVertices=o.maxVertices or context.maxVertices
 	return context
 end
 
@@ -227,12 +261,12 @@ function Cuts.perimeter(context:Context):{Edge}
 	local edges:{Edge}={};local hash={}
 	for n,edge in raw do
 		local x0,x1,z0,z1=bounds({edge.a,edge.b})
-		local covered={}
+		local covered={};local own={}
 		for _,id in candidates(context,x0,x1,z0,z1) do
 			local m=context.masks[id]
-			if m.patch==edge.patch then continue end
 			local lo,hi=interval(edge.a,edge.b,m.planes)
 			if not lo or not hi then continue end
+			if m.patch==edge.patch then table.insert(own,{lo,hi});continue end
 			local p=lerp(edge.a,edge.b,(lo+hi)*.5);local outwardInside=true
 			for _,plane in m.planes do
 				local d=distance(plane,p)
@@ -241,12 +275,22 @@ function Cuts.perimeter(context:Context):{Edge}
 			if outwardInside then table.insert(covered,{lo,hi}) end
 		end
 		table.sort(covered,function(a,b)return a[1]<b[1] end)
-		local keep={};local cursor=0
-		for _,span in covered do
-			if span[1]>cursor+EPS then table.insert(keep,{cursor,span[1]}) end
-			cursor=math.max(cursor,span[2])
+		table.sort(own,function(a,b)return a[1]<b[1] end)
+		local merged={}
+		for _,span in own do
+			local previous=merged[#merged]
+			if previous and span[1]<=previous[2]+EPS then previous[2]=math.max(previous[2],span[2]) else table.insert(merged,{span[1],span[2]}) end
 		end
-		if cursor<1-EPS then table.insert(keep,{cursor,1}) end
+		local keep={}
+		for _,range in merged do
+			local cursor=range[1]
+			for _,span in covered do
+				if span[2]<=cursor or span[1]>=range[2] then continue end
+				if span[1]>cursor+EPS then table.insert(keep,{cursor,math.min(span[1],range[2])}) end
+				cursor=math.min(range[2],math.max(cursor,span[2]))
+			end
+			if cursor<range[2]-EPS then table.insert(keep,{cursor,range[2]}) end
+		end
 		for _,span in keep do
 			local piece=table.freeze({a=table.freeze(lerp(edge.a,edge.b,span[1])),b=table.freeze(lerp(edge.a,edge.b,span[2])),
 				nx=edge.nx,nz=edge.nz,patch=edge.patch,kind=edge.kind})

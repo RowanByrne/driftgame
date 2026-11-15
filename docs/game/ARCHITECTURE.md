@@ -160,14 +160,24 @@ triangles independently of accepted route ownership. `SplineInfieldPlanner`
 freezes final columns and end blends from known opposed arms; hard Corridor
 reservations protect them from later road. `SplineInfieldTests.run()` and
 `planner()` cover numeric support, steep ends, serialization and atomic batches.
-The producer/gameplay hooks are still disabled pending integrated lane checks.
+Generated publication remains disabled pending complete live drawing checks.
 `SplineInfieldTests.render()` checks both actual field halves, physics against
 read-back mesh triangles and high-origin fallback wedge rays, plus cancellation.
 The field builders are not yet managed by the live View. The closing helper uses
 one frozen scalar across both bank arcs. Car collision, visible Parts and walking
 box specs consume the same finite panels, including end caps; `closing()` checks
 real car passage, actual visible geometry and cache refresh through arrival and
-retirement. Retained physical-peer continuity remains integration work.
+retirement. Car, prediction, server credit and walking physical-peer continuity
+are checked; live field-view publication remains integration work.
+
+`SplineFieldCuts` shares finite scenery subtraction, actual retained source-edge
+capture and bounded seam envelopes. Its complete-patch coverage plan freezes
+retained triangles, matching masks and finite perimeter; each builder receives
+private execution callbacks. Mesh and Parts field builders accept that same
+plan plus the assembled seams. One double-sided field mesh retains copied cap
+visibility, and final bounds include seam heights. `SplineFieldCutsTests.run()`
+checks pure geometry and coverage; `render()` checks actual mesh read-back,
+distant floor/vertical seam Parts rays, identity refusal and cancellation.
 
 ## Native baked-shadow trial (Studio only)
 

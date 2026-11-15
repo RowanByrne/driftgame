@@ -307,8 +307,159 @@ function Tests.run(_self,subjects)
 	local invalidTrace,traceReason=Cuts.stitch(seamFixture({{u0=0,u1=1,y0=0/0,y1=2,material="bad"}}))
 	check("nonfinite seam traces fail before publication",invalidTrace==nil and traceReason=="invalid finite field seam trace",
 		"invalid envelope inputs cannot leak nonfinite vertices")
+	local sliver=Infield.new(8)
+	Infield.add(sliver,Infield.patch("sliver",{
+		{sa=100,sb=900,sideA=1,sideB=-1,a={0,0,0},b={40,0,0},weight=1},
+		{sa=120,sb=899.9999999,sideA=1,sideB=-1,a={0,0,20},b={40,0,20},weight=1},
+	}))
+	local sliverContext=Cuts.context(sliver,nil,899.99999999)
+	check("discarded retirement slivers cannot leave a ghost perimeter",#sliverContext.masks==0 and #Cuts.perimeter(sliverContext)==0,
+		"perimeter coverage is filtered through the exact surviving mask triangles")
+	local complete=Infield.new(32);local longRows={}
+	for i=0,7 do table.insert(longRows,{sa=100+i*64,sb=2000-i*64,sideA=1,sideB=-1,a={-20,0,-i*64},b={20,0,-i*64},weight=1}) end
+	Infield.add(complete,Infield.patch("long",longRows))
+	local nearby=Infield.near(complete,0,0,1)
+	local plan,planReason=Cuts.plan(complete,{long=true},100,3);assert(plan,planReason)
+	check("a coverage plan retains a complete selected field beyond the query radius",#nearby<#plan.triangles and #plan.triangles==#complete.triangles
+		and plan.hi[3]-plan.lo[3]==448 and #plan.context.masks==7,
+		`near subset{#nearby}; complete frozen triangles{#plan.triangles}`)
+	local retiredPlan=Cuts.plan(complete,{long=true},1000.125,4)
+	local floorTriangles={};for _,t in retiredPlan.triangles do table.insert(floorTriangles,{t.a.p,t.b.p,t.c.p}) end
+	local maskTriangles={};for _,m in retiredPlan.context.masks do for i=2,#m.points-1 do table.insert(maskTriangles,{m.points[1],m.points[i],m.points[i+1]}) end end
+	local coverageMismatch=0
+	for ix=0,39 do for iz=0,79 do
+		local x,z=-20+(ix+.37),-(iz+.61)*5.6
+		if contains(floorTriangles,x,z)~=contains(maskTriangles,x,z) then coverageMismatch+=1 end
+	end;if ix%8==0 then task.wait() end end
+	check("one retained coverage plan gives drawing and subtraction identical domains",coverageMismatch==0,
+		`3200 fractional-q probes, mismatches{coverageMismatch}`)
+	local frozenPlan=not pcall(function()retiredPlan.selection.long=false end)
+		and not pcall(function()retiredPlan.triangles[1].a.p[1]+=1 end)
+		and not pcall(function()retiredPlan.context.masks[1]=nil end)
+		and not pcall(function()retiredPlan.context.edges[1].a[1]+=1 end)
+	check("coverage geometry freezes nested retained points, masks and perimeter",frozenPlan,"builders cannot change a shared plan while yielding")
+	local tickA,tickB=0,0
+	local buildA=Cuts.forBuild(retiredPlan,function()tickA+=1 end,{maxPolygons=9})
+	local buildB=Cuts.forBuild(retiredPlan,function()tickB+=1 end,{maxPolygons=17})
+	buildA.tick();buildB.tick();buildB.tick()
+	check("each builder has isolated callbacks and budgets over shared frozen geometry",tickA==1 and tickB==2
+		and buildA.maxPolygons==9 and buildB.maxPolygons==17 and buildA.masks==buildB.masks
+		and retiredPlan.context.tick==nil and retiredPlan.context.index==nil,
+		"a fallback cannot inherit another job's cancellation callback")
+	local empty,emptyReason=Cuts.plan(complete,{},100,3)
+	local unknown,unknownReason=Cuts.plan(complete,{missing=true},100,3)
+	local gone,goneReason=Cuts.plan(complete,{long=true},3000,3)
+	check("empty, unknown and fully retired coverage choices are explicit",empty==nil and emptyReason=="empty"
+		and unknown==nil and unknownReason=="unknown field patch" and gone==nil and goneReason=="empty",
+		"empty selection never becomes all patches and unknown IDs never disappear silently")
+	local steepEnds=Infield.new(8)
+	Infield.add(steepEnds,Infield.patch("steep",{
+		{sa=100,sb=300,sideA=1,sideB=-1,a={-1,0,1},b={1,0,1},weight=1,floor=floor},
+		{sa=102,sb=298,sideA=1,sideB=-1,a={-1,0,-1},b={1,0,-1},weight=1,floor=floor},
+	}))
+	local visualPlan=Cuts.plan(steepEnds,{steep=true},100,1);local unsupported=0
+	for _,t in visualPlan.triangles do if not t.supported then unsupported+=1 end end
+	check("visual coverage includes unsupported frozen end faces",unsupported>0 and #visualPlan.triangles==#steepEnds.triangles,
+		"only walking colliders filter support; visual masks retain the whole selected field")
+	local hugeIndex=Infield.new(128);local hugeRows={}
+	for i=0,39 do table.insert(hugeRows,{sa=100+i*64,sb=20000-i*64,sideA=1,sideB=-1,a={-20,0,-i*64},b={20,0,-i*64},weight=1}) end
+	Infield.add(hugeIndex,Infield.patch("too long",hugeRows))
+	local oversized,oversizedReason=Cuts.plan(hugeIndex,{["too long"]=true},100,1,{maxExtent=9000})
+	check("field coverage cannot bypass the hard mesh extent bound",oversized==nil and oversizedReason=="field coverage exceeds the mesh bounds",
+		"even a caller's larger extent option cannot allow a mesh wider than2048")
+	local identityPlan=Cuts.plan(index,{one=true},100,3)
+	check("coverage identity is scoped to its exact road index",plan.identity==complete and identityPlan.identity==index and plan.identity~=identityPlan.identity,
+		"matching revisions and patch names from another road cannot reuse a plan")
 	local passed=0;for _,c in checks do if c.ok then passed+=1 end end
 	return {passed=passed,total=#checks,checks=checks}
+end
+
+function Tests.render()
+	local root=game.ReplicatedStorage.Shared.Road
+	local Infield,Cuts,Mesh,Parts=require(root.SplineInfield),require(root.SplineFieldCuts),require(root.SplineMesh),require(root.SplineParts)
+	local cfg=require(game.ReplicatedStorage.Shared.Config)
+	local folder=Instance.new("Folder");folder.Name="__T212PlannedFieldRender";folder.Parent=workspace
+	local mesh,parts=nil,nil
+	local ok,result=xpcall(function()
+		local checks={};local function check(name,pass,detail)table.insert(checks,{name=name,ok=pass,detail=detail})end
+		local index=Infield.new(32);local rows={}
+		for i=0,7 do table.insert(rows,{sa=100+i*64,sb=2000-i*64,sideA=1,sideB=-1,
+			a={29980,50,-20000-i*64},b={30020,50,-20000-i*64},weight=1}) end
+		Infield.add(index,Infield.patch("complete",rows))
+		local sp={infields=index,firstSample=0,step=2,infieldRevision=7}
+		local plan=Cuts.plan(index,{complete=true},0,7)
+		local capture=Cuts.newCapture(plan.context)
+		local roof={{29970,60,-20020},{30030,60,-20020},{30030,60,-19980},{29970,60,-19980}}
+		for _,t in {{roof[1],roof[2],roof[3]},{roof[1],roof[3],roof[4]}} do
+			local captured,why=Cuts.capture(capture,t[1],t[2],t[3],cfg.Spline.Terrain.RockColour);assert(captured,why)
+		end
+		local seams,reason=Cuts.stitch(capture);assert(seams,reason)
+		local info;mesh,info=Mesh.buildInfield(sp,30000,-20000,1,folder,{plan=plan,seams=seams})
+		assert(mesh,tostring(info));local part=mesh.Infield;local em=part.MeshContent.Object
+		check("actual planned field and all end seams share one double-sided mesh",#mesh:GetChildren()==1 and part.DoubleSided
+			and #em:GetFaces()==#plan.triangles+#seams and info.seamTriangles==#seams and #seams>0
+			and mesh:GetAttribute("InfieldCoverage")==plan.key,
+			`{#plan.triangles} complete floor faces +{#seams} seam faces; radius1 did not truncate coverage`)
+		local ground={};local seamHeightError=0;local seamFaces=0
+		for _,face in em:GetFaces() do
+			local points={};for _,id in em:GetFaceVertices(face) do table.insert(points,part.CFrame:PointToWorldSpace(em:GetPosition(id))) end
+			local n=(points[2]-points[1]):Cross(points[3]-points[1]).Unit
+			if math.abs(n.Y)>.8 then table.insert(ground,points) else
+				seamFaces+=1
+				for _,p in points do seamHeightError=math.max(seamHeightError,math.abs(p.Z+20000),math.max(50-p.Y,p.Y-60,0)) end
+			end
+		end
+		local missing,heightError=0,0
+		for _,t in plan.triangles do
+			local a,b,c=t.a.p,t.b.p,t.c.p;local x,z=(a[1]+b[1]+c[1])/3,(a[3]+b[3]+c[3])/3;local found=false
+			for _,p in ground do
+				local aa,bb,cc=p[1],p[2],p[3];local bx,bz,cx,cz=bb.X-aa.X,bb.Z-aa.Z,cc.X-aa.X,cc.Z-aa.Z
+				local det=bx*cz-bz*cx;local dx,dz=x-aa.X,z-aa.Z
+				local u,v=(dx*cz-dz*cx)/det,(bx*dz-bz*dx)/det
+				if u>= -1e-6 and v>= -1e-6 and u+v<=1+1e-6 then
+					found=true;heightError=math.max(heightError,math.abs(aa.Y+u*(bb.Y-aa.Y)+v*(cc.Y-aa.Y)-50));break
+				end
+			end
+			if not found then missing+=1 end
+		end
+		check("actual mesh retains distant plan floor and exact finite seam endpoints",missing==0 and heightError<.02 and seamFaces==#seams and seamHeightError<.02,
+			`{#plan.triangles} floor centroids; missing{missing}; floor error{heightError}; seam error{seamHeightError}`)
+		Mesh.destroy(mesh);mesh=nil
+		parts,info=Parts.buildInfield(sp,30000,-20000,1,folder,{plan=plan,seams=seams,queryable=true})
+		assert(parts,tostring(info));task.wait()
+		local params=RaycastParams.new();params.FilterType=Enum.RaycastFilterType.Include;params.FilterDescendantsInstances={parts}
+		local floor=workspace:Raycast(Vector3.new(30003.37,100,-20410.33),Vector3.new(0,-100,0),params)
+		local front=workspace:Raycast(Vector3.new(30001.37,55,-19999),Vector3.new(0,0,-2),params)
+		local back=workspace:Raycast(Vector3.new(30001.37,55,-20001),Vector3.new(0,0,2),params)
+		local colliders=0;for _,p in parts:GetDescendants() do if p:IsA("BasePart") and p.CanCollide then colliders+=1 end end
+		check("Parts fallback retains the same complete floor and seams from both sides",floor and math.abs(floor.Position.Y-50)<.02
+			and front and back and math.abs(front.Position.Z+20000)<.15 and math.abs(back.Position.Z+20000)<.15
+			and colliders==0 and info.triangles==#plan.triangles+#seams and parts:GetAttribute("InfieldCoverage")==plan.key,
+			`distant floor{floor~=nil}, seam front{front~=nil}/back{back~=nil}, colliders{colliders}, Parts{info.parts}`)
+		parts:Destroy();parts=nil
+		local tooHigh={{points={{29980,50,-20000},{30020,50,-20000},{30000,3000,-20000}},material=cfg.Spline.Terrain.RockColour}}
+		local refused,why=Mesh.buildInfield(sp,30000,-20000,1,folder,{plan=plan,seams=tooHigh})
+		check("combined seam bounds are checked before allocating a field mesh",refused==nil and why=="infield view exceeds the mesh bounds" and #folder:GetChildren()==0,
+			"a bounded floor cannot hide an oversized copied wall")
+		local other={infields=Infield.new(32),firstSample=0,step=2,infieldRevision=7}
+		local wrongRoad,wrongWhy=Mesh.buildInfield(other,30000,-20000,1,folder,{plan=plan,seams=seams})
+		local wrongFirst,firstWhy=Parts.buildInfield(sp,30000,-20000,1,folder,{plan=plan,first=1})
+		check("renderers refuse a coverage plan for another road or retained first",not wrongRoad and not wrongFirst and #folder:GetChildren()==0
+			and string.find(wrongWhy,"another road")~=nil and string.find(firstWhy,"retained first")~=nil,"stale plan identity cannot publish either representation")
+		local calls=0
+		local cancelled,cancelWhy=Mesh.buildInfield(sp,30000,-20000,1,folder,{plan=plan,seams=seams,sliceMs=.001,
+			cancelled=function()calls+=1;return calls>=2 end})
+		local partCalls=0
+		local cancelledParts,partsWhy=Parts.buildInfield(sp,30000,-20000,1,folder,{plan=plan,seams=seams,sliceMs=.001,
+			cancelled=function()partCalls+=1;return partCalls>=2 end})
+		check("cancelled planned field jobs publish no partial mesh or Parts",not cancelled and not cancelledParts and #folder:GetChildren()==0
+			and string.find(cancelWhy,"cancelled")~=nil and string.find(partsWhy,"cancelled")~=nil,"cancellation is rechecked immediately after yielding")
+		local passed=0;for _,c in checks do if c.ok then passed+=1 end end
+		return {passed=passed,total=#checks,checks=checks}
+	end,debug.traceback)
+	if mesh then Mesh.destroy(mesh) end;if parts then parts:Destroy() end;folder:Destroy()
+	if not ok then return {passed=0,total=1,checks={{name="planned field renderer fixture completes",ok=false,detail=result}}} end
+	return result
 end
 
 return Tests
