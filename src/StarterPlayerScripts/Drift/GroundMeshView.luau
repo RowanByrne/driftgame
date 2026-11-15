@@ -70,7 +70,7 @@ export type View = typeof(setmetatable(
 		worstMs: number,
 		worstSliceMs: number,
 		lastSlices: number,
-		applyMs: number, -- the frame that writes a whole grid
+		applyMs: number, -- the write into the hidden copy, start to end (frames between included)
 		worstApplyMs: number,
 		vertices: number,
 	},
@@ -335,8 +335,7 @@ function GroundMeshView._fill(self: View, level: Level, copy: Copy, cx: number, 
 		end
 		slice()
 	end
-	work += os.clock() - sliceStart
-	-- the write, in one frame
+	-- the write, into the hidden copy, a slice at a time like the rest
 	local w0 = os.clock()
 	for k = 1, n * n do
 		local p = positions[k]
@@ -344,12 +343,16 @@ function GroundMeshView._fill(self: View, level: Level, copy: Copy, cx: number, 
 		em:SetNormal(copy.nrm[k], normals[k])
 		em:SetColor(copy.col[k], colours[k])
 		em:SetUV(copy.uv[k], Vector2.new((p.X + cx) / uvStuds, (p.Z + cz) / uvStuds))
+		if k % 256 == 0 then
+			slice()
+		end
 	end
 	copy.part.CFrame = CFrame.new(cx, cy, cz)
+	work += os.clock() - sliceStart
 	local applyMs = (os.clock() - w0) * 1000
 	self.applyMs = applyMs
 	self.worstApplyMs = math.max(self.worstApplyMs, applyMs)
-	self.lastMs = work * 1000 + applyMs
+	self.lastMs = work * 1000
 	self.worstMs = math.max(self.worstMs, self.lastMs)
 	self.lastSlices = slices
 	return heights
@@ -432,8 +435,8 @@ function GroundMeshView._run(self: View)
 		local li = level.index
 		local coarser = self.levels[li + 1]
 		local finer = self.levels[li - 1]
-		-- copies: two for every level but the coarsest (filled while the other shows)
-		local want = if coarser then 2 else 1
+		-- two copies a level: one filled, hidden, while the other shows
+		local want = 2
 		while #level.copies < want do
 			local copy = makeCopy(level, `Ground_{li}_{#level.copies + 1}`)
 			if not copy then
@@ -447,7 +450,7 @@ function GroundMeshView._run(self: View)
 		local snapTo = if coarser then coarser.spacing else level.spacing
 		local cx, cz = snap(self.carX, snapTo), snap(self.carZ, snapTo)
 		level.stale = false
-		local target = if want == 2 then (if level.shown == 1 then 2 else 1) else 1
+		local target = if level.shown == 1 then 2 else 1
 		local copy = level.copies[target]
 		local heights = self:_fill(level, copy, cx, cz, coarser, finer)
 		if not heights or self.dead then

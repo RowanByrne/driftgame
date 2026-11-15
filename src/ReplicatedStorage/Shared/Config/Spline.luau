@@ -500,13 +500,13 @@ local Spline = {
 		-- car, each one fixed-size mesh, `Cells` across at `Spacing` studs, recentred (snapped to
 		-- the next level's spacing) once the car is `Recentre` studs from its middle. A client
 		-- holds only so many mesh vertices (about 35 000 in Studio, the road's included), so
-		-- these are lean: 4 225 and 3 969. The finer grid lies over a hole in the coarser one,
+		-- these are lean: 4 225 and 3 969 (each twice: one shows while the other is filled). The finer grid lies over a hole in the coarser one,
 		-- its rim taking the coarser one's heights so they meet without a crack.
 		-- `Clamp`: a vertex this near a runoff's edge is held below it (a triangle reaching
 		-- over the road from a cutting must not cover it), so a cutting starts about a cell
 		-- out from the edge; and every vertex sinks `GridSink` studs under the road and runoff
 		Levels = {
-			{ Spacing = 8, Cells = 64, Recentre = 64, Clamp = 12 },
+			{ Spacing = 8, Cells = 64, Recentre = 96, Clamp = 12 },
 			{ Spacing = 32, Cells = 62, Recentre = 256, Clamp = 20 },
 		},
 		GridSink = 1.25, -- studs
