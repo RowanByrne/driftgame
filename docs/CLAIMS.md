@@ -9,25 +9,8 @@ Every task in progress and the files it owns, so parallel sessions and workers n
 
 | Branch | Lane | Files owned | Since |
 |---|---|---|---|
-| `feature/linked-biomes` (T-203, final terrain T-212) | 2 | `docs/game/WORLD.md` (biome overview only), `docs/game/features/road-biomes.md`, `mountain-direction.md`, `continuous-mountain.md`; `assets/reference/road-biomes/*`; `docs/game/DECISIONS.md` (append T-203 only); `docs/game/CONTRACTS.md` and `ARCHITECTURE.md` (biome entries); `src/ReplicatedStorage/Shared/Config/Spline.luau`; `src/ReplicatedStorage/Shared/Road/SplineBiome.luau`, `SplineRoadStyle.luau` (new), `SplineGradePolicy.luau` (new), `SplineHillCuts.luau` (new), `SplineCorridor.luau` (new), `SplineInfield.luau` (new), `Spline.luau`, `SplineGen.luau`, `SplineProfile.luau`, `SplineHill.luau`, `SplineSequence.luau`, `SplineMesh.luau`, `SplineParts.luau`, `SplineBoundary.luau` (new), `SplineSurfaceCuts.luau` (new); `src/StarterPlayerScripts/Drift/SplineWorld.luau`, `SplineRoadView.luau`; `src/StarterPlayerScripts/Controllers/SplineRoadController.luau`, `RoadGroundController.luau`, `DriftController.luau` (projection hint on placement and walking handoff only); `src/ServerScriptService/Tests/SplineTests.luau`, `SplineHillTests.luau`, `SplineBiomeTests.luau`, `SplineCorridorTests.luau` (new), `SplineInfieldTests.luau` (new), `SplineTurnTests.luau`, `SplineWorldTests.luau`, `SplineGroundDrawTests.luau` (new), `SplineMeshTests.luau`, `SplineBiomeRoadTests.luau` (new); `src/ServerScriptService/Services/RoadService.luau` (runner projection/progress/recovery; bounded generation, committed-window adoption, Stop and startup road readiness only), `CarService.luau` (runner identity/recovery and entry/respawn road-readiness gates only); `src/ServerScriptService/Tests/RoadProgressTests.luau` (preserve progress/reset checks; bounded generation/readiness regression proof) | 2026-11-14 |
-
 
 ## Notes between sessions
 
-T-203/T-212 additionally owns new `src/ReplicatedStorage/Shared/Road/SplineInfieldPlanner.luau` for frozen near-level paired-bank planning; its checks extend the already claimed `SplineInfieldTests.luau`.
-T-203/T-212 also owns new `src/ReplicatedStorage/Shared/Road/SplineContact.luau`; its small `DriftController.luau` integration includes copying physical contact state across world rebuilds, drawing around physical contact, and handing copied state to walking. Driving forces and controls remain outside this change.
-T-203/T-212 also owns `src/StarterPlayerScripts/Drift/Trajectory.luau` and `src/ServerScriptService/Tests/TrajectoryTests.luau` only for prediction-world isolation: one copied spline world per prediction, predicted-center commits and cleanup. Prediction distance/controls and driving forces remain unchanged.
-
 > A short note for another session or PC that can't be said in a commit, such as "lane 3 has unpushed work, ask before refreshing it". Date it, say who it's for, and remove it once it's been seen.
 
-
-
-T-203/T-212 also owns new `src/ReplicatedStorage/Shared/Road/SplineFieldCuts.luau` and `src/ServerScriptService/Tests/SplineFieldCutsTests.luau` for shared finite field-footprint subtraction and actual cut-edge seam data. Ordinary supported bank/tarmac geometry and retained physical low rock feet stay authoritative.
-
-T-203/T-212 also owns new `src/StarterPlayerScripts/Drift/SplineFieldView.luau` and `src/ServerScriptService/Tests/SplineFieldViewTests.luau` for live complete-field coverage, actual-source paired publication, peer-road visibility and bounded replacement/cancellation checks.
-
-T-203/T-212 also owns `src/ReplicatedStorage/Shared/Road/GrassTexture.luau` only to expose the cached image's actual plain-pixel multiplier for mixed Mesh/Parts seam colour transfer. Existing image pixels and approved terrain colours remain unchanged.
-
-2026-11-15: T-203/T-212 service scope expanded by the conductor for prepared bounded generation and startup safety. Driving forces, controls, UI and admin files are not added to this claim; request exact additional files if a preparing-result contract needs them.
-
-2026-11-15: T-203/T-212 additionally owns `src/ReplicatedStorage/Shared/Road/SplineTurnFit.luau` only for optional cooperative checkpoint forwarding into Hill context/height work during detached candidate fitting. Geometry and fit thresholds remain unchanged.

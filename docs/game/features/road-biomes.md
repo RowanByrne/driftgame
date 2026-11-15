@@ -1,6 +1,6 @@
 # Feature: Road biomes
 
-**Status:** specced; awaiting the user's plan approval. **Owner task:** the Workboard plan linked to this spec; Rocco assigns its feature agent after approval.
+**Status:** built as T-203, then rolled back on 2026-11-15 at the user's request (`DECISIONS.md`); none of it is in the game. This is the spec as first written. The built work is on the `feature/linked-biomes` branch.
 
 ## Goal
 
