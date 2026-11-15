@@ -745,10 +745,21 @@ return {
 
 		-- The sounds: Creator Store audio by id, each a SLICE of its file played through
 		-- `PlaybackRegion` (assets/audio/sfx-suspension/MANIFEST.md). `Gain` evens out the
-		-- slices' levels in their files. EMPTY UNTIL THE USER PICKS: no clip, no sound and no
-		-- error, and the detection still runs and counts.
-		Clunks = {} :: { { Id: string, Start: number, Length: number, Gain: number } },
-		Landing = nil :: { Id: string, Start: number, Length: number, Gain: number }?,
+		-- slices' levels in their files (each brought to the same peak); `Speed`, if given,
+		-- is the clip's own playback speed. No clip: no sound and no error, and the detection
+		-- still runs and counts.
+		--
+		-- CLUNK D, picked by the user 2026-11-15 ("D: mixed"): three knocks out of Pro Sound
+		-- Effects' "Vehicle Suspension 1 (SFX)" (Metal Ronk, Creaks), Creator Store, by id
+		Clunks = {
+			{ Id = "rbxassetid://9120399954", Start = 0.726, Length = 0.289, Gain = 2.6 },
+			{ Id = "rbxassetid://9120399954", Start = 1.108, Length = 0.198, Gain = 9.7 },
+			{ Id = "rbxassetid://9120399954", Start = 4.452, Length = 0.176, Gain = 22.3 },
+		} :: { { Id: string, Start: number, Length: number, Gain: number, Speed: number? } },
+		-- NOT PICKED YET: the user turned down the first four landing candidates on
+		-- 2026-11-15 ("None of these"); a second set is on the card. Nil: no landing sound,
+		-- and the clunks are still held off at a landing
+		Landing = nil :: { Id: string, Start: number, Length: number, Gain: number, Speed: number? }?,
 
 		RollOffMin = 12, -- studs, as the squeal's
 		RollOffMax = 150, -- studs

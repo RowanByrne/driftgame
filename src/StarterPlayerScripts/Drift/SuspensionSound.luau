@@ -54,7 +54,7 @@ end)()
 
 local WHEELS = 4
 
-type Clip = { Id: string, Start: number, Length: number, Gain: number }
+type Clip = { Id: string, Start: number, Length: number, Gain: number, Speed: number? }
 
 local SuspensionSound = {}
 SuspensionSound.__index = SuspensionSound
@@ -229,7 +229,7 @@ local function play(sound: Sound, clip: Clip, volume: number, speed: number)
 		sound.SoundId = clip.Id
 	end
 	sound.PlaybackRegion = NumberRange.new(clip.Start, clip.Start + clip.Length)
-	sound.PlaybackSpeed = speed
+	sound.PlaybackSpeed = speed * (clip.Speed or 1)
 	sound.Volume = volume * (clip.Gain or 1) * Config.Fx.Suspension.Volume
 	sound.TimePosition = clip.Start
 	sound:Play()
