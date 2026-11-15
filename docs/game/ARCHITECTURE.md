@@ -219,6 +219,10 @@ unverified; generated fields remain disabled.
 with `workspace.__baked_shadow_trial=true`. The isolated comparison demonstrates
 live versus runtime-baked mesh shadows and bounded Content creation/retirement;
 it does not switch the production terrain renderer. The controller handles its
-own camera, sky and input overrides and restores them on stop. Normal lanes keep
+own camera, sky and input overrides and restores them on stop. Session job leases
+keep native sources alive through cancellation and dispose late results before
+configuration. Stop hides immediately; `DebugState().lifetime` exposes the
+deferred drain. `BakedShadowTrial.runCancellationTests()` exercises suspended
+native-call substitutes through the same lifetime and bake sequence. Normal lanes keep
 the flag unset. See [the measured trial](../archive/baked-terrain-shadow-trial.md)
 for actual rendered proof, cold-stall failures and production handoff limits.

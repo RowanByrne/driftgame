@@ -887,6 +887,11 @@ a fresh Play, preventing late native results from touching a replacement run.
 `DebugSelect(scene, mode, sun)`, `DebugMeasure` and `DebugStop` through the existing
 Studio client DebugBridge. Terrain modes are `live`, `baked` and `reference`;
 selection uses `panel`/`terrain` and `front`/`back`/`high` lighting. All trial
-resources and overrides are cleaned on stop. This adds no remote or player data.
+overrides and visible fixtures are released immediately on stop. Native jobs
+retain their sources and metadata until outstanding calls finish, then drain
+owned resources exactly once, with MeshPart consumers retired before source
+meshes. `DebugState().lifetime` reports `closed`, `drained`, `jobs`, `pending`,
+`operations`, `owned` and `errors`; pending work must drain before cleanup is
+considered complete. This adds no remote or player data.
 The production renderer is unchanged; cold bake stalls and static-colour haze
 remain integration requirements in the archived T-214 report.
