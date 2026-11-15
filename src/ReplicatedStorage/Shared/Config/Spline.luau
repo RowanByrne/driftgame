@@ -521,7 +521,7 @@ local Spline = {
 		LegGradeSteep = 0.1, -- plus this much of h's slope there (T-228), to `FollowGrade` at most
 		-- less this much a stud for every stud the road is above h where it is (more if below):
 		-- a road left above the mountain turns across it until the mountain is back
-		CatchUp = 1 / 150,
+		CatchUp = 1 / 100,
 		LegTiltMax = 75, -- degrees off straight across
 		FollowGrade = 0.9,
 		-- A SHARP PLANNED TURN (a hairpin, a switchback) that would leave the road more than
@@ -555,6 +555,7 @@ local Spline = {
 		RunoffSlopeEvery = 32, -- studs
 		BlendAngles = { 30, 65 }, -- degrees: shallow, steep
 		BlendMins = { 20, 6 }, -- studs: shallow, steep
+		BlendFoot = 1.5, -- studs past the runoff's edge, flat, before the cut or fill begins
 		RockAngle = 45, -- degrees: ground steeper than this is drawn as rock
 		-- how a point hears the road: each station (every `CheckStep` studs) answers for the
 		-- points within `Look` studs of square beside it, and of two stretches the nearer

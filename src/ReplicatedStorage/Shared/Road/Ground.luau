@@ -588,7 +588,9 @@ function Ground.at(ctx: Context, x: number, z: number): (number, number, number,
 		return hp, 0, math.huge, hp
 	end
 	local e, bw, T = swe / sw, swb / sw, swT / sw
-	local t = e / bw
+	-- (a flat foot of `BlendFoot` first, T-228: a wall at 65 degrees right at the edge
+	-- rose over the runoff where neighbouring stations disagree a little about the edge)
+	local t = math.max(e - G.BlendFoot, 0) / bw
 	if t >= 1 then
 		return hp, 0, e, T
 	end
