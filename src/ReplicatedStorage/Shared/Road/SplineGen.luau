@@ -73,6 +73,8 @@ export type Stats = {
 	cliffSwaps: number, -- times the mountain changed sides
 	tight: number, -- tight cliff edges laid: gravel and a rail at the lip (T-181)
 	carved: number, -- bends whose inside rock face was carved to the tarmac's edge (T-182)
+	offGround: number, -- a ground run: candidates passed over for leaving the road off h (T-226)
+	offGroundLaid: number, -- ...and sections laid off it all the same, none following it
 }
 
 -- One step of the plan: a STRETCH of random sections kept within `limit` of `aim` for
@@ -268,6 +270,8 @@ function SplineGen.new(seed: number, origin: Spline.Origin?, clearOverride: numb
 			cliffSwaps = 0,
 			tight = 0,
 			carved = 0,
+			offGround = 0,
+			offGroundLaid = 0,
 		},
 	}, SplineGen)
 	-- THE FALL LINE: the start heading turned `FallLineTurn` to a side chosen from the seed,
@@ -288,6 +292,10 @@ function SplineGen.new(seed: number, origin: Spline.Origin?, clearOverride: numb
 	self.uphill = if math.sin(spline.origin.yaw - self.fall) > 0 then 1 else -1
 	local L = Config.Spline.StartStraight
 	local start: Spline.Section = { len = L, k = { L, 0 }, g = { L, 0 }, b = { L, 0 }, tag = "Start" }
+	if self.ground then
+		-- a ground run's start straight follows the mountain too (T-226), level where it begins
+		start.g = (self:_followGrade(start.k, 0, spline.origin.y))
+	end
 	self:_terrain(start)
 	self:_commit(start)
 	return self
@@ -1158,12 +1166,14 @@ local function rampRise(u: number, ga: number, gb: number, rate: number): number
 	return ga * L + 0.5 * a * L * L + gb * (u - L)
 end
 
--- A ground run's grade for a section whose curvature knots are `knots`: the one whose road
--- best fits h along it (least squares), and on `FollowAhead` past its end, where the road is
--- taken to carry on as straight and to ease toward h's own grade there. The grade eases from
--- `g0` at `MaxGradeRate` and never passes `MaxGrade`, as every section's does, so the road
--- stays drivable; it cuts or fills only where h changes faster than that allows.
-function SplineGen._followGrade(self: Gen, knots: { number }, g0: number, y0: number): { number }
+-- A ground run's grade for a section whose curvature knots are `knots`, and the furthest
+-- its centre line then is from h (studs). Chosen a piece at a time, `FollowSegment` studs
+-- each: the grade whose road best fits h over that piece (least squares), and on
+-- `FollowAhead` past it (counted `FollowAheadWeight` as much), where the road is taken to ease
+-- on toward h's own grade there; past the section's end it is taken to carry on straight.
+-- The grade eases at `MaxGradeRate` and never passes `MaxGrade`, as every section's does, so
+-- the road stays drivable: it cuts or fills only where h changes faster than that allows.
+function SplineGen._followGrade(self: Gen, knots: { number }, g0: number, y0: number): ({ number }, number)
 	local C = Config.Spline
 	local G = C.Ground
 	local f = self.ground :: Ground.Field
@@ -1182,55 +1192,95 @@ function SplineGen._followGrade(self: Gen, knots: { number }, g0: number, y0: nu
 		return true
 	end)
 	if #us == 0 then
-		return ramp(g0, 0, rate, 0, len)
+		return ramp(g0, 0, rate, 0, len), 0
 	end
-	-- h's own grade over the look ahead, which the road eases toward past the section
-	local iEnd = 1
-	for i, u in us do
-		if u <= len then
-			iEnd = i
-		end
-	end
-	local gAhead = if #us > iEnd and us[#us] > us[iEnd] then (hs[#hs] - hs[iEnd]) / (us[#us] - us[iEnd]) else g0
-	gAhead = math.clamp(gAhead, -gMax, gMax)
 	local wAhead = G.FollowAheadWeight
-	local function cost(gt: number): number
-		local reach = math.min(math.abs(gt - g0), rate * len)
-		local gEnd = g0 + sign(gt - g0) * reach
-		local yEnd = rampRise(len, g0, gEnd, rate)
-		local sum = 0
+	local seg = G.FollowSegment
+	local out: { number } = {}
+	local yA, gA, a = y0, g0, 0
+	local worst = 0
+	while a < len - 1e-6 do
+		local b = math.min(a + seg, len)
+		if len - b < seg * 0.5 then
+			b = len
+		end
+		-- the samples this piece answers for, and h's own grade over the look past it
+		local i0, iB, i1 = nil, nil, nil
 		for i, u in us do
-			local y, w
-			if u <= len then
-				y, w = rampRise(u, g0, gEnd, rate), 1
-			else
-				y, w = yEnd + rampRise(u - len, gEnd, gAhead, rate), wAhead
+			if u > a + 1e-6 and not i0 then
+				i0 = i
 			end
-			local e = y0 + y - hs[i]
-			sum += w * e * e
+			if u <= b + 1e-6 then
+				iB = i
+			end
+			if u <= b + ahead + 1e-6 then
+				i1 = i
+			end
 		end
-		return sum
-	end
-	-- a coarse sweep, then a finer one round the best
-	local best, bestCost = 0, math.huge
-	local n = 40
-	for i = 0, n do
-		local gt = -gMax + 2 * gMax * i / n
-		local c = cost(gt)
-		if c < bestCost then
-			best, bestCost = gt, c
+		local hB = if iB then hs[iB] else yA
+		local uB = if iB then us[iB] else a
+		local gAhead = if i1 and iB and us[i1] > uB then (hs[i1] - hB) / (us[i1] - uB) else gA
+		gAhead = math.clamp(gAhead, -gMax, gMax)
+		local span = b - a
+		local function cost(gt: number): number
+			local gB = gA + sign(gt - gA) * math.min(math.abs(gt - gA), rate * span)
+			local yB = yA + rampRise(span, gA, gB, rate)
+			local sum = 0
+			if i0 and i1 then
+				for i = i0, i1 do
+					local u = us[i]
+					local y, w
+					if u <= b + 1e-6 then
+						y, w = yA + rampRise(u - a, gA, gB, rate), 1
+					else
+						y, w = yB + rampRise(u - b, gB, gAhead, rate), wAhead
+					end
+					local e = y - hs[i]
+					sum += w * e * e
+				end
+			end
+			return sum
 		end
-	end
-	local d = 2 * gMax / n
-	local centre = best
-	for i = -10, 10 do
-		local gt = math.clamp(centre + d * i / 10, -gMax, gMax)
-		local c = cost(gt)
-		if c < bestCost then
-			best, bestCost = gt, c
+		-- a coarse sweep, then a finer one round the best
+		local best, bestCost = gA, math.huge
+		local n = 32
+		for i = 0, n do
+			local gt = -gMax + 2 * gMax * i / n
+			local c = cost(gt)
+			if c < bestCost then
+				best, bestCost = gt, c
+			end
 		end
+		local d = 2 * gMax / n
+		local centre = best
+		for i = -8, 8 do
+			local gt = math.clamp(centre + d * i / 8, -gMax, gMax)
+			local c = cost(gt)
+			if c < bestCost then
+				best, bestCost = gt, c
+			end
+		end
+		-- the piece's knots: ease to the grade, then hold it (or as far as the piece allows)
+		local L = math.abs(best - gA) / rate
+		local gB
+		if L > 1e-6 and L < span - 1e-6 then
+			table.insert(out, a + L)
+			table.insert(out, best)
+			gB = best
+		else
+			gB = gA + sign(best - gA) * math.min(math.abs(best - gA), rate * span)
+		end
+		table.insert(out, b)
+		table.insert(out, gB)
+		if i0 and iB then
+			for i = i0, iB do
+				worst = math.max(worst, math.abs(yA + rampRise(us[i] - a, gA, gB, rate) - hs[i]))
+			end
+		end
+		yA += rampRise(span, gA, gB, rate)
+		gA, a = gB, b
 	end
-	return ramp(g0, best, rate, 0, len)
+	return out, worst
 end
 
 -- A ground run's heading for a stretch or a planned turn, from the mountain's slope where
@@ -1288,7 +1338,7 @@ end
 
 local function pickGrade(self: Gen, g0: number, y0: number, len: number, descendingTurn: boolean?, nextMove: number?, path: { number }?): { number }
 	if self.ground and path then
-		return self:_followGrade(path, g0, y0)
+		return (self:_followGrade(path, g0, y0))
 	end
 	local C = Config.Spline
 	local gMax = math.tan(math.rad(C.MaxGrade))
@@ -1398,7 +1448,7 @@ end
 
 -- One random candidate: a bend or a straight, its curvature knots, and whether its
 -- heading (with its escape) stays inside the limit.
-function SplineGen._candidate(self: Gen): (Spline.Section?, string?)
+function SplineGen._candidate(self: Gen): (Spline.Section?, string?, number?)
 	local C = Config.Spline
 	local rng = self.rng
 	local sp = self.spline
@@ -1463,14 +1513,23 @@ function SplineGen._candidate(self: Gen): (Spline.Section?, string?)
 	end
 	local T = transition(k0, kt)
 	local flat = rng:NextNumber() < C.UnbankedChance
+	-- a ground run (T-226): the grade follows the mountain, and how far off it the road
+	-- still ends up goes back with the candidate, so one that follows it can be preferred
+	local g, off
+	if self.ground then
+		g, off = self:_followGrade(knots, g0, y0)
+	else
+		g = pickGrade(self, g0, y0, len)
+	end
 	return {
 		len = len,
 		k = knots,
-		g = pickGrade(self, g0, y0, len, nil, nil, knots),
+		g = g,
 		b = pickBank(kt, radius, b0, math.min(T, len), len, flat),
 		tag = tag,
 	},
-		nil
+		nil,
+		off
 end
 
 --------------------------------------------------------------------------------
@@ -1813,10 +1872,18 @@ function SplineGen.step(self: Gen): Spline.Section?
 			end
 		end
 	end
+	-- a ground run (T-226): a candidate that leaves the road more than `FollowMaxOff` off the
+	-- mountain gives way to one that follows it; if none does, the one nearest it is laid
+	local nearest: Spline.Section?, nearestOff = nil, math.huge
 	for _ = 1, if planned then 0 else C.CandidateTries do
 		st.tries += 1
-		local cand, why = self:_candidate()
-		if cand then
+		local cand, why, off = self:_candidate()
+		if cand and off and off > C.Ground.FollowMaxOff then
+			st.offGround += 1
+			if off < nearestOff then
+				nearest, nearestOff = cand, off
+			end
+		elseif cand then
 			sec = cand
 			break
 		elseif why == "crowded" then
@@ -1824,6 +1891,10 @@ function SplineGen.step(self: Gen): Spline.Section?
 		else
 			st.rejectedHeading += 1
 		end
+	end
+	if not sec and nearest then
+		sec = nearest
+		st.offGroundLaid += 1
 	end
 	if not sec then
 		-- the escape: checked when the section before this one was accepted

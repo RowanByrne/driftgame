@@ -312,6 +312,9 @@ function Tests.profile(_, opts)
 		stalled = 0,
 		turnarounds = 0,
 		relaxed = 0,
+		offGround = 0,
+		offGroundLaid = 0,
+		sections = 0,
 		perSeed = {},
 	}
 	for _, seed in seeds do
@@ -322,6 +325,9 @@ function Tests.profile(_, opts)
 		res.genWorstMs = math.max(res.genWorstMs, gen.stats.worstMs)
 		res.turnarounds += gen.stats.turnarounds
 		res.relaxed += gen.stats.hillRelaxed
+		res.offGround += gen.stats.offGround or 0
+		res.offGroundLaid += gen.stats.offGroundLaid or 0
+		res.sections += #gen.sections
 		if gen.stats.stalled then
 			res.stalled += 1
 		end

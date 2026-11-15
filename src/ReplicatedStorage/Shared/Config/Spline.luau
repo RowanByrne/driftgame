@@ -479,7 +479,11 @@ local Spline = {
 		-- line (every `FollowStep` studs), and `FollowAhead` studs on past its end (counted
 		-- `FollowAheadWeight` as much), within the grade and vertical-curve limits. h is taken
 		-- as the mean of five points `FollowRadius` apart, so the road ignores the smallest bumps
+		-- chosen a piece of `FollowSegment` studs at a time. A random bend that would still leave
+		-- the road more than `FollowMaxOff` off h gives way to one that follows it
 		FollowStep = 8, -- studs
+		FollowSegment = 64, -- studs
+		FollowMaxOff = 10, -- studs
 		FollowAhead = 160, -- studs
 		FollowAheadWeight = 0.5,
 		FollowRadius = 16, -- studs
