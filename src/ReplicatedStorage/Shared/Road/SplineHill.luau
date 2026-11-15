@@ -71,6 +71,8 @@ export type Ray = {
 
 export type Context = {
 	spline: Spline.Spline,
+	reach: number,
+	pad: number,
 	stations: { Station },
 	profile: (Spline.Spline, number, number, number) -> { Vector3 },
 	tick: () -> (),
@@ -121,16 +123,18 @@ end
 -- one chunk to the next: most of a chunk's stations were its neighbour's too. Only stations
 -- well short of the road's end, where nothing the road lays later can change them.
 local kept: { [Spline.Spline]: { [number]: Station } } = setmetatable({}, { __mode = "k" }) :: any
+local keptVisual: { [Spline.Spline]: { [number]: Station } } = setmetatable({}, { __mode = "k" }) :: any
 local KEEP_SHORT = 700 -- studs: past how far an edge's change, or a tight bend, is looked for
 
 -- A station at `s`, whose plan position is (x, z).
 local function station(ctx: Context, s: number, x: number, z: number): Station
 	local H = Config.Spline.Hill
 	local spline = ctx.spline
-	local mine = kept[spline]
+	local cache=if ctx.pad~=0 then keptVisual else kept
+	local mine = cache[spline]
 	if not mine then
 		mine = {}
-		kept[spline] = mine
+		cache[spline] = mine
 	end
 	local old = mine[s]
 	if old then
@@ -154,7 +158,7 @@ local function station(ctx: Context, s: number, x: number, z: number): Station
 		taper = { 0, 0 },
 	}
 	for i, side in { -1, 1 } do
-		local w = half + spline:runoffAt(s, side)
+		local w = half + spline:runoffAt(s, side)+ctx.pad
 		local kind = spline:edgeAt(s, side)
 		st.w[i] = w
 		st.y0[i] = spline:terrainY(s, side * w)
@@ -181,7 +185,7 @@ end
 -- centre line, and the facing station that set it, if one did.
 local function clipOf(ctx: Context, s: number, x: number, z: number, dx: number, dz: number, w: number): (number, Station?, number)
 	local H = Config.Spline.Hill
-	local best = w + H.Reach
+	local best = w + ctx.reach
 	-- the nearest FACING stretch, whether or not it is what ends the ground (on the inside
 	-- of a hairpin the bend's own centre may come a little sooner than the other arm)
 	local bestFacing = best
@@ -239,7 +243,7 @@ local function exact(ctx: Context, st: Station, i: number, side: number, clip: n
 		hint = s2
 		local x2, z2 = spline:planAt(s2)
 		local qx, qz = x2 - st.x, z2 - st.z
-		local delta = half + spline:runoffAt(s2, if d2 < 0 then -1 else 1) - st.w[i]
+		local delta = half + spline:runoffAt(s2, if d2 < 0 then -1 else 1)+ctx.pad - st.w[i]
 		local den = 2 * (qx * dx + qz * dz + delta)
 		local num = qx * qx + qz * qz - delta * delta
 		if den <= 1e-6 or num <= 0 then
@@ -266,10 +270,10 @@ local function solve(ctx: Context, st: Station, precise: boolean?)
 		local c = math.huge
 		local clip, q, dist, byFacing = clipOf(ctx, st.s, st.x, st.z, side * st.rx, side * st.rz, st.w[i])
 		if precise and q and byFacing then
-			clip = math.min(exact(ctx, st, i, side, clip, q), st.w[i] + H.Reach)
+			clip = math.min(exact(ctx, st, i, side, clip, q), st.w[i] + ctx.reach)
 		end
 		clips[i] = clip
-		mets[i] = clip < st.w[i] + H.Reach - 1e-6
+		mets[i] = clip < st.w[i] + ctx.reach - 1e-6
 		if kind == Spline.ROCK or kind == Spline.CLIFF then
 			local sgn = if kind == Spline.ROCK then 1 else -1
 			-- never reaching past its own ground: on the inside of a bend, where the ground
@@ -341,9 +345,9 @@ end
 -- Gather the stations round [s0, s1] of the road. `profile` is `SplineMesh.profile` (handed
 -- in: that module requires this one). `tick`, if given, is called now and then through the
 -- long loops, so a build can hand the frame back.
-function SplineHill.context(spline: Spline.Spline, s0: number, s1: number, profile: (Spline.Spline, number, number, number) -> { Vector3 }, tick: (() -> ())?): Context
+function SplineHill.context(spline: Spline.Spline, s0: number, s1: number, profile: (Spline.Spline, number, number, number) -> { Vector3 }, tick: (() -> ())?, visual: boolean?): Context
 	local H = Config.Spline.Hill
-	local ctx: Context = { spline = spline, stations = {}, profile = profile, tick = tick or function() end, cuts = {} }
+	local ctx: Context = { spline = spline, reach = if visual then H.DrawReach else H.Reach, pad=if visual and spline:hasBiomeGround() then H.DrawEdgePad else 0, stations = {}, profile = profile, tick = tick or function() end, cuts = {} }
 	local minX, maxX, minZ, maxZ = math.huge, -math.huge, math.huge, -math.huge
 	local u = s0
 	while true do
@@ -355,7 +359,7 @@ function SplineHill.context(spline: Spline.Spline, s0: number, s1: number, profi
 		end
 		u += 16
 	end
-	local pad = H.Gather
+	local pad = if visual then H.DrawGather else H.Gather
 	local cell = spline.cell
 	local step = H.StationStep
 	local first = spline.firstSample * spline.step
@@ -370,8 +374,8 @@ function SplineHill.context(spline: Spline.Spline, s0: number, s1: number, profi
 					end
 				end
 			end
+			ctx.tick()
 		end
-		ctx.tick()
 	end
 	return ctx
 end
@@ -452,7 +456,7 @@ function SplineHill.finish(ctx: Context, ray: Ray)
 	-- a ray that only just meets another stretch, at the end of its reach, eases into what
 	-- it would be alone
 	-- (by its distance past the edge, which is the same from both sides of the line)
-	local near = math.clamp((H.Reach - (ray.clip - st.w[i])) / H.MeetOver, 0, 1)
+	local near = math.clamp((ctx.reach - (ray.clip - st.w[i])) / H.MeetOver, 0, 1)
 	ray.meet = alone + (met - alone) * near
 end
 
@@ -515,6 +519,40 @@ end
 -- Where a ray's face ends: studs from the centre line.
 function SplineHill.faceEnd(ray: Ray): number
 	return (ray.st.tEnd :: { number })[idx(ray.side)]
+end
+
+-- A seam overlap must not continue through the centre of an inside bend: the
+-- offset surface reverses there, producing a folded skirt however finely cut.
+function SplineHill.skirtEnd(spline:Spline.Spline,ray:Ray):number
+	local finish=ray.clip+Config.Spline.Hill.Skirt
+	local k=spline:curvatureAt(ray.st.s)
+	if k*ray.side < -1e-10 then finish=math.max(ray.clip,math.min(finish,1/math.abs(k))) end
+	return finish
+end
+
+-- One shared radial topology for the planner, mesh and parts fallback. Points
+-- through coreCount stay in the chunk's single EditableMesh. The remaining
+-- coarse ground can exceed its size limit without taking more mesh slots.
+function SplineHill.drawRings(spline:Spline.Spline,ray:Ray):({Vector3},number)
+	local H=Config.Spline.Hill
+	local start=SplineHill.faceEnd(ray)
+	if ray.clip<=start then
+		-- A neighbouring bank can occupy the whole radial domain. Hill.at clamps
+		-- to clip, whose meeting height belongs behind this profile's endpoint.
+		-- There is no hillside here: keep the shared endpoint instead of a fin.
+		local st,side=ray.st,ray.side
+		local point=Vector3.new(st.x+side*st.rx*start,(st.yEnd :: {number})[idx(side)],st.z+side*st.rz*start)
+		return table.create(#H.Rings+2,point),#H.Rings
+	end
+	local edge=ray.st.w[idx(ray.side)]
+	local core=math.max(start,math.min(ray.clip,edge+H.CoreReach))
+	local span=math.max(0,core-start)
+	local points={}
+	for _,share in H.Rings do table.insert(points,SplineHill.at(ray,start+span*share)) end
+	local count=#points
+	table.insert(points,SplineHill.at(ray,ray.clip))
+	table.insert(points,SplineHill.at(ray,SplineHill.skirtEnd(spline,ray)))
+	return points,count
 end
 
 return SplineHill

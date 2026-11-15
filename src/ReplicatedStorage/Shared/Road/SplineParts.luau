@@ -22,8 +22,40 @@ local Spline = require(script.Parent.Spline)
 local SurfaceCuts = require(script.Parent.SplineSurfaceCuts)
 local Profile = require(script.Parent.SplineProfile)
 local Hill = require(script.Parent.SplineHill)
+local HillCuts = require(script.Parent.SplineHillCuts)
+local Infield = require(script.Parent.SplineInfield)
+local FieldCuts = require(script.Parent.SplineFieldCuts)
 
 local SplineParts = {}
+local hazeColour:Color3?=nil
+local hazeParts:{[BasePart]:{token:string,scale:number}}=setmetatable({}, {__mode="k"}) :: any
+
+function SplineParts.seamColour(material:any,targetScale:number?,haze:Color3?):Color3
+	local T=Config.Spline.Terrain
+	local colour=if typeof(material)=="Color3" then material
+		elseif type(material)=="table" and typeof(material.colour)=="Color3" then material.colour else T.RockColour
+	local scale=1
+	if type(material)=="table" then
+		local sky=haze or hazeColour or T.HazeColour
+		if material.haze=="haze" then colour=sky elseif material.haze=="mid" then colour=T.CliffColour:Lerp(sky,.5) end
+		if material.textureScale~=nil then
+			assert(material.textureScale>=0 and material.textureScale<=1,"invalid source texture scale")
+			assert((targetScale or 1)>0,"target texture cannot represent seam colour")
+			scale=material.textureScale/(targetScale or 1)
+		end
+	end
+	colour=Color3.new(colour.R*scale,colour.G*scale,colour.B*scale)
+	assert(colour.R<=1+1e-6 and colour.G<=1+1e-6 and colour.B<=1+1e-6,"field seam colour exceeds target representation")
+	return colour
+end
+
+function SplineParts.setHaze(colour:Color3)
+	hazeColour=colour
+	for part,value in hazeParts do
+		if part.Parent==nil then hazeParts[part]=nil
+		else part.Color=SplineParts.seamColour({haze=value.token,textureScale=value.scale}) end
+	end
+end
 
 export type Options = {
 	step: number?, -- studs between cross-sections (default 4)
@@ -31,8 +63,14 @@ export type Options = {
 	barriers: boolean?, -- build the side barriers (default true)
 	yieldEvery: number?, -- slices between task.wait()s; nil never yields
 	terrain: boolean?, -- finite grass, banks and mountains, for the visual fallback
+	omitHills: boolean?, -- retain supported ground/capped faces after a hill certification failure
 	sliceMs: number?,
 	cancelled: (() -> boolean)?,
+	fieldPlan: FieldCuts.Plan?,
+	captureScenery: boolean?,
+	groundOnly: boolean?, -- supported asphalt/lip/banks without new mountain scenery
+	sceneryParent: Instance?, -- optional detached layer for paired source publication
+	hiddenScenery: {BasePart}?, -- live staged scenery, invisible until its companion commits
 }
 
 local function point(spline: Spline.Spline, s: number, d: number): Vector3
@@ -46,8 +84,9 @@ local function terrain(spline:Spline.Spline,s0:number,s1:number,parent:Instance,
 	local started=os.clock()
 	local sliceStart,worst,slices=started,0,1
 	local batch=Instance.new("Folder");batch.Name="TerrainSlices"
+	local batchParent=parent
 	local function flush()
-		if #batch:GetChildren()>0 then batch.Parent=parent else batch:Destroy() end
+		if #batch:GetChildren()>0 then batch.Parent=batchParent else batch:Destroy() end
 		batch=Instance.new("Folder");batch.Name="TerrainSlices"
 	end
 	local function tick()
@@ -57,21 +96,49 @@ local function terrain(spline:Spline.Spline,s0:number,s1:number,parent:Instance,
 			flush()
 			worst=math.max(worst,os.clock()-sliceStart)
 			task.wait();sliceStart=os.clock();slices+=1
+			if o.cancelled and o.cancelled() then batch:Destroy();error("terrain build cancelled") end
 		end
 	end
-	local triangles=0
+	local triangles,skippedHillTriangles=0,0
+	if o.fieldPlan and o.fieldPlan.identity~=spline.infields then batch:Destroy();error("field coverage belongs to another road") end
+	local fieldContext=if o.fieldPlan then FieldCuts.forBuild(o.fieldPlan,tick) else nil
+	local scenery:any=if o.captureScenery or fieldContext then {} else nil
+	local fieldCutTriangles=0
 	local function tri(name:string,a:Vector3,b:Vector3,c:Vector3,colour:Color3,mat:Enum.Material,surface:string?)
 		if (b-a):Cross(c-a).Magnitude<1e-7 then return end
-		local made={}
-		Builder.triangleSlab(name,a,b,c,.15,colour,mat,batch,made :: any)
-		for _,p in made do
-			p.CanCollide=false;p.CanTouch=false;p.CanQuery=o.queryable==true
-			if o.queryable and surface then
-				p:AddTag(Config.Drift.SurfaceTag);p:SetAttribute(Config.Drift.SurfaceAttribute,surface)
+		local side=tonumber(string.match(name,"^Hill_([%-]?%d+)_"))
+		if side and (HillCuts.collapsed(a,b,c) or HillCuts.folded(a,b,c,side)) then skippedHillTriangles+=1;return end
+		local pieces=nil
+		if not surface and (scenery or fieldContext) then
+			local points={{a.X,a.Y,a.Z},{b.X,b.Y,b.Z},{c.X,c.Y,c.Z}}
+			if scenery then
+				if #scenery>=24576 then batch:Destroy();error("field scenery source limit") end
+				for _,p in points do table.freeze(p) end
+				table.insert(scenery,table.freeze({points=table.freeze(points),material=table.freeze({colour=colour,textureScale=1}),kind=name}))
 			end
-			table.insert(out,p)
+			if fieldContext then
+				local changed,why
+				pieces,changed,why=FieldCuts.triangle(fieldContext,points[1],points[2],points[3])
+				if not pieces then batch:Destroy();error(`field Parts scenery cut failed: {why}`) end
+				if changed then fieldCutTriangles+=1 end
+			else pieces={points} end -- captured sources must match the actual finite primitive hull
 		end
-		triangles+=1;tick()
+		local function emit(points:{{number}}?)
+			local made={}
+			if points then made=SplineParts.exactTriangle(points,.15,batch,name,colour,mat)
+			else Builder.triangleSlab(name,a,b,c,.15,colour,mat,batch,made :: any) end
+			for _,p in made do
+				p.CanCollide=false;p.CanTouch=false;p.CanQuery=o.queryable==true
+				if not surface and o.hiddenScenery then p.Transparency=1;table.insert(o.hiddenScenery,p) end
+				if o.queryable and surface then
+					p:AddTag(Config.Drift.SurfaceTag);p:SetAttribute(Config.Drift.SurfaceAttribute,surface)
+				end
+				table.insert(out,p)
+			end
+			triangles+=1;tick()
+		end
+		if pieces then for _,points in pieces do emit(points) end else emit(nil) end
+		tick() -- wholly removed faces still consume clipping work and must yield
 	end
 	local function quad(name:string,a:Vector3,b:Vector3,c:Vector3,d:Vector3,colour:Color3,mat:Enum.Material,surface:string?)
 		tri(name.."a",a,b,c,colour,mat,surface)
@@ -97,33 +164,40 @@ local function terrain(spline:Spline.Spline,s0:number,s1:number,parent:Instance,
 		end
 		prev,prevD=pts,ds;tick()
 	end
+	if o.groundOnly then
+		flush();batch:Destroy();worst=math.max(worst,os.clock()-sliceStart)
+		return out,{triangles=triangles,groundOnly=true,sliceMs=worst*1000,slices=slices,ms=(os.clock()-started)*1000}
+	end
+	if o.sceneryParent then flush();batchParent=o.sceneryParent end
 	-- Far scenery is coarser; its joins and face caps remain the existing hill's.
 	local faces=cuts -- face feet share the supported ground's exact polyline
-	local hill=Hill.context(spline,s0,s1,Profile.profile,tick)
+	local hill=Hill.context(spline,s0,s1,Profile.draw,tick,true)
 	for k=1,#faces-1 do
 		local a,b=faces[k],faces[k+1]
 		if b-a<1e-5 then continue end
 		for _,side in {-1,1} do
 			local kind=spline:edgeAt((a+b)*.5,side)
 			local ra,rb=Hill.ray(hill,a,side),Hill.ray(hill,b,side)
-			local pa=Profile.profile(spline,a,side,kind,Hill.cap(ra))
-			local pb=Profile.profile(spline,b,side,kind,Hill.cap(rb))
+			local pa=Profile.draw(spline,a,side,kind,Hill.cap(ra))
+			local pb=Profile.draw(spline,b,side,kind,Hill.cap(rb))
 			for j=1,(if kind==Spline.ROCK then #pa-2 else #pa-1) do
 				quad(`Face_{side}_{k}_{j}`,pa[j],pa[j+1],pb[j+1],pb[j],if kind==Spline.ROCK then T.RockColour else T.CliffColour,Enum.Material.Slate)
 			end
+			if o.omitHills then continue end
 			Hill.finish(hill,ra);Hill.finish(hill,rb)
-			local ea,eb=Hill.faceEnd(ra),Hill.faceEnd(rb)
-			for j=0,3 do
-				local fa,fb=j/4,(j+1)/4
-				quad(`Hill_{side}_{k}_{j}`,Hill.at(ra,ea+(ra.clip-ea)*fa),Hill.at(ra,ea+(ra.clip-ea)*fb),Hill.at(rb,eb+(rb.clip-eb)*fb),Hill.at(rb,eb+(rb.clip-eb)*fa),Config.Spline.Hill.Colour,Enum.Material.Grass)
+			local A,B=Hill.drawRings(spline,ra),Hill.drawRings(spline,rb)
+			quad(`Hill_{side}_{k}_foot`,pa[5],A[1],B[1],pb[5],Config.Spline.Hill.Colour,Enum.Material.Grass)
+			for j=1,#A-1 do
+				if j==#A-1 and ra.free and rb.free then continue end
+				quad(`Hill_{side}_{k}_{j}`,A[j],A[j+1],B[j+1],B[j],Config.Spline.Hill.Colour,Enum.Material.Grass)
 			end
-			local skirt=Config.Spline.Hill.Skirt
-			quad(`Skirt_{side}_{k}`,Hill.at(ra,ra.clip),Hill.at(ra,ra.clip+skirt),Hill.at(rb,rb.clip+skirt),Hill.at(rb,rb.clip),Config.Spline.Hill.Colour,Enum.Material.Grass)
 		end
 	end
 	flush();batch:Destroy()
 	worst=math.max(worst,os.clock()-sliceStart)
-	return out,{triangles=triangles,sliceMs=worst*1000,slices=slices,ms=(os.clock()-started)*1000}
+	return out,{triangles=triangles,skippedHillTriangles=skippedHillTriangles,hillsOmitted=o.omitHills==true,
+		scenery=if scenery then table.freeze(scenery) else nil,fieldCutTriangles=fieldCutTriangles,
+		sliceMs=worst*1000,slices=slices,ms=(os.clock()-started)*1000}
 end
 
 -- Lay road from s0 to s1 under `parent`. Returns the parts made.
@@ -205,6 +279,189 @@ function SplineParts.build(spline: Spline.Spline, s0: number, s1: number, parent
 	end
 	folder.Parent = parent
 	return out
+end
+
+-- A field's finite perimeter and retirement cut must not inherit the ordinary
+-- road slab's outward triangle growth. Split in local coordinates before packing.
+local function infieldSlab(t:any,thickness:number,parent:Instance,name:string):{BasePart}
+	local a,b,c=t.a.p,t.b.p,t.c.p
+	local origin=Vector3.new(a[1],a[2],a[3])
+	local U,V,W=Vector3.zero,Vector3.new(b[1]-a[1],b[2]-a[2],b[3]-a[3]),Vector3.new(c[1]-a[1],c[2]-a[2],c[3]-a[3])
+	local ab,bc,ca=(V-U).Magnitude,(W-V).Magnitude,(U-W).Magnitude
+	if bc>=ab and bc>=ca then U,V,W=V,W,U elseif ca>=ab and ca>=bc then U,V,W=W,U,V end
+	local edge=V-U;local length=edge.Magnitude
+	if length<.001 then return {} end
+	local along=edge/length;local distance=(W-U):Dot(along)
+	local foot=U+along*distance;local rise=W-foot;local height=rise.Magnitude
+	if height<.001 then return {} end
+	local up=rise/height;local normal=along:Cross(up)
+	if normal.Y<0 then normal=-normal end
+	local out={}
+	local function wedge(suffix:string,direction:Vector3,width:number)
+		if width<.001 then return end
+		local u,pdir,ly,lz
+		if direction:Cross(up):Dot(normal)>0 then u,pdir,ly,lz=up,direction,height,width
+		else u,pdir,ly,lz=direction,up,width,height end
+		local centre=foot+u*(ly*.5)+pdir*(lz*.5)-normal*(thickness*.5)
+		local p=Instance.new("WedgePart");p.Name=name..suffix;p.Anchored=true
+		p.Size=Vector3.new(thickness,ly,lz);p.CFrame=CFrame.new(origin)*CFrame.fromMatrix(centre,normal,u)
+		p.Color=Config.Spline.Terrain.GrassColour;p.Material=Enum.Material.Grass;p.Parent=parent
+		table.insert(out,p)
+	end
+	wedge("a",-along,distance);wedge("b",along,length-distance)
+	return out
+end
+
+-- Visual triangles on a finite cut must not grow back across that cut.
+function SplineParts.exactTriangle(points:{{number}},thickness:number,parent:Instance,name:string,colour:Color3,material:Enum.Material):{BasePart}
+	local made=infieldSlab({a={p=points[1]},b={p=points[2]},c={p=points[3]}},thickness,parent,name)
+	for _,p in made do p.Color=colour;p.Material=material;p.CanCollide=false;p.CanTouch=false;p.CanQuery=false end
+	return made
+end
+
+function SplineParts.buildInfield(spline:Spline.Spline,x:number,z:number,radius:number,parent:Instance,opts:any?):(Model?,any)
+	local o=opts or {}
+	local started=os.clock()
+	if not spline.infields then return nil,"empty" end
+	local first=o.first or spline.firstSample*spline.step
+	if o.plan and (o.plan.identity~=spline.infields or o.plan.first~=first) then return nil,"field coverage belongs to another road or retained first" end
+	local selected=if o.plan then o.plan.triangles else Infield.near(spline.infields,x,z,radius,o.supportedOnly,first)
+	if o.plan and o.supportedOnly then
+		local supported={};for _,t in selected do if t.supported then table.insert(supported,t) end end;selected=supported
+	end
+	local seams=if o.collidable or o.supportedOnly then {} else o.seams or {}
+	if #selected==0 then return nil,"empty" end
+	if o.maxTriangles and #selected>o.maxTriangles then return nil,"infield warm support exceeds its triangle bound" end
+	local model=Instance.new("Model");model.Name="InfieldParts";model:SetAttribute("Infield",true)
+	local hidden={}
+	if o.onModel then o.onModel(model,hidden) end
+	model:SetAttribute("InfieldRevision",if o.plan then o.plan.revision else spline.infieldRevision or 0)
+	model:SetAttribute("InfieldCoverage",if o.plan then o.plan.key else "near")
+	model:SetAttribute("InfieldFirst",first)
+	model:SetAttribute("InfieldX",x);model:SetAttribute("InfieldZ",z);model:SetAttribute("InfieldRadius",radius)
+	local batch=Instance.new("Folder");batch.Name="FieldSlices"
+	local batchParent:Instance=model
+	if o.incrementalFloor then model.Parent=parent end
+	local seamParent=o.seamParent
+	if o.hiddenSeams then seamParent=Instance.new("Folder");seamParent.Name="FieldSeams";seamParent.Parent=model end
+	local function flush()
+		if #batch:GetChildren()>0 then batch.Parent=batchParent else batch:Destroy() end
+		batch=Instance.new("Folder");batch.Name="FieldSlices"
+	end
+	local sliceStart=started
+	local paused,worst,slices,count,triangles=0,0,1,0,0
+	local budget=(o.sliceMs or Config.Spline.Mesh.SliceMs)/1000
+	local function tick()
+		if o.cancelled and o.cancelled() then error("infield Parts build cancelled") end
+		if o.noYield then return end
+		local now=os.clock()
+		if now-sliceStart>=budget or #batch:GetChildren()>=192 then
+			flush()
+			worst=math.max(worst,os.clock()-sliceStart)
+			local before=os.clock();task.wait();local after=os.clock()
+			paused+=after-before;sliceStart=after;slices+=1
+			if o.cancelled and o.cancelled() then error("infield Parts build cancelled") end
+		end
+	end
+	local ok,err=xpcall(function()
+		local T=Config.Spline.Terrain
+		for i,t in selected do
+			if o.supportedOnly and not t.supported then continue end
+			tick()
+			local made=infieldSlab(t,if o.collidable then Config.Spline.Biomes.Infield.Walking.Thickness else .1,batch,`Infield_{i}`)
+			local colour=if t.supported then T.GrassColour else T.RockColour
+			for _,p in made do
+				p.Color=colour;p.Material=if t.supported then Enum.Material.Grass else Enum.Material.Slate
+				p.CanCollide=o.collidable==true and t.supported;p.CanTouch=false;p.CanQuery=o.queryable==true
+				p.CastShadow=o.collidable~=true
+				if o.collidable then p.Transparency=1 end
+				count+=1
+			end
+			triangles+=1
+		end
+		if seamParent then flush();batchParent=seamParent end
+		for i,seam in seams do
+			tick()
+			local t={a={p=seam.points[1]},b={p=seam.points[2]},c={p=seam.points[3]}}
+			local made=infieldSlab(t,.1,batch,`InfieldSeam_{i}`)
+			local material=seam.material
+			local colour=SplineParts.seamColour(material)
+			for _,p in made do
+				p.Color=colour;p.Material=Enum.Material.Slate;p.CanCollide=false;p.CanTouch=false;p.CanQuery=o.queryable==true
+				if type(material)=="table" and material.haze then
+					hazeParts[p]={token=material.haze,scale=material.textureScale or 1}
+				end
+				if o.hiddenSeams then p.Transparency=1;table.insert(hidden,p) end
+				p.CastShadow=true;count+=1
+			end
+			triangles+=1
+		end
+		tick();flush();batch:Destroy();model.Parent=parent
+	end,debug.traceback)
+	if not ok then
+		batch:Destroy()
+		if o.dispose then o.dispose(model) else model:Destroy() end
+		return nil,tostring(err)
+	end
+	worst=math.max(worst,os.clock()-sliceStart)
+	model:SetAttribute("InfieldParts",count)
+	return model,{triangles=triangles,parts=count,seamTriangles=#seams,ms=(os.clock()-started-paused)*1000,sliceMs=worst*1000,slices=slices}
+end
+
+-- Immediate support is about accepted geometry, not just a model's radius.
+-- A newer disjoint patch can arrive inside an older model's nominal box.
+function SplineParts.warmInfield(spline:any,x:number,z:number,parent:Instance,old:Model?,opts:any?):(Model?,any)
+	local o=opts or {};local W=Config.Spline.Biomes.Infield.Walking
+	local first=spline.firstSample*spline.step
+	local floors={}
+	if spline.infields then
+		for _,dx in {-W.WarmFootprint,0,W.WarmFootprint} do for _,dz in {-W.WarmFootprint,0,W.WarmFootprint} do
+			local floor=Infield.sample(spline.infields,x+dx,z+dz)
+			if floor and floor.closingS>=first then table.insert(floors,{x=x+dx,z=z+dz,y=floor.y}) end
+		end end
+	end
+	if #floors==0 then return old,{ready=true,reused=true,needed=false} end
+	local params=RaycastParams.new();params.FilterType=Enum.RaycastFilterType.Include
+	local function supported(model:Model):boolean
+		params.FilterDescendantsInstances={model}
+		for _,floor in floors do
+			local found=false
+			for _,offset in {{0,0},{.005,0},{-.005,0},{0,.005},{0,-.005}} do
+				local hit=workspace:Raycast(Vector3.new(floor.x+offset[1],floor.y+1,floor.z+offset[2]),Vector3.new(0,-2,0),params)
+				-- Adjacent triangles can win a shared crease. A tiny ray whisker
+				-- covers packing hairlines, far smaller than an avatar's foot.
+				if hit and hit.Normal.Y>.8 and math.abs(hit.Position.Y-floor.y)<=W.SupportTolerance then found=true;break end
+			end
+			if not found then return false end
+		end
+		return true
+	end
+	if old and old:IsDescendantOf(parent) and old:GetAttribute("InfieldFirst")==first
+		and old:GetAttribute("InfieldRevision")==spline.infieldRevision then
+		local radius=old:GetAttribute("InfieldRadius") :: number
+		local margin=W.WarmFootprint+W.WarmMotionMargin
+		if math.abs(x-(old:GetAttribute("InfieldX") :: number))<=radius-margin
+			and math.abs(z-(old:GetAttribute("InfieldZ") :: number))<=radius-margin and supported(old) then
+			return old,{ready=true,reused=true,needed=true,parts=old:GetAttribute("InfieldParts")}
+		end
+	end
+	local radius=W.WarmRadius;local failure="immediate field support is unavailable"
+	repeat
+		local model,info=SplineParts.buildInfield(spline,x,z,radius,parent,{supportedOnly=true,collidable=true,queryable=true,
+			first=first,noYield=true,maxTriangles=o.maxTriangles or W.WarmTriangles,cancelled=o.cancelled})
+		if model then
+			if info.parts>0 and supported(model) then
+				info.ready=true;info.needed=true;info.reused=false;info.radius=radius
+				return model,info
+			end
+			model:Destroy();failure="immediate field wedges do not cover their physical center"
+		else failure=tostring(info) end
+		if o.cancelled and o.cancelled() then break end
+		if radius<=W.WarmMinRadius then break end
+		radius=math.max(W.WarmMinRadius,radius*.5)
+	until false
+	-- A failed attempt does not certify the old radius or the new revision.
+	return old,{ready=false,reused=true,needed=true,failure=failure}
 end
 
 return SplineParts

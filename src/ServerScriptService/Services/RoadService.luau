@@ -46,6 +46,7 @@ local Generator = require(ReplicatedStorage.Shared.Road.Generator)
 local Net = require(ReplicatedStorage.Shared.Net)
 local Pieces = require(ReplicatedStorage.Shared.Road.Pieces)
 local SplineSequence = require(ReplicatedStorage.Shared.Road.SplineSequence)
+local SplineContact = require(ReplicatedStorage.Shared.Road.SplineContact)
 
 local RoadService = {}
 -- Below PlaygroundService (100) and TrackService: this one builds nothing until asked,
@@ -100,6 +101,12 @@ local lastProgress = nil :: any
 -- wherever `StartWorld` happens to say.
 local runners: { [number]: any } = {}
 local runnerCount = 0
+-- A spline road still being laid for its first runner (T-212): `StartRun` waits for it
+-- rather than laying it all in one frame. `starting` holds the players waiting on it, so
+-- a second press while they wait does nothing.
+local preparing = nil :: any
+local starting: { [number]: boolean } = {}
+local pumpWarnedAt = -math.huge
 
 --------------------------------------------------------------------------------
 -- The window
@@ -235,14 +242,28 @@ end
 -- road would otherwise drag the window backwards and ask for pieces that no longer exist.
 -- So the window follows the furthest the run has reached, which is also why the closing
 -- barrier behind it cannot be pushed back by turning round.
-local function window(centre: number)
+--
+-- THE SPLINE ROAD IS LAID ELSEWHERE (T-212): its generator runs a few ms a frame on
+-- Heartbeat (`pump`), and the window only takes what is finished (`request`). `now` lays
+-- it here and at once instead -- for `Generate`, the debug moves and the tests -- and so
+-- does a runner reaching the last piece there is, because a hitch beats no road.
+local function window(centre: number, now: boolean?)
 	local C = Config.Road
 	local on = profiling()
 	local startedAt = if on then os.clock() else 0
 	windowCentre = math.max(windowCentre, centre)
 	centre = windowCentre
 	local genAt = if on then os.clock() else 0
-	local added = generator:extendTo(centre + C.AheadPieces)
+	local added
+	if splineRun() and not now then
+		added = generator:request(centre + C.AheadPieces)
+		if runnerCount > 0 and generator.last < centre + C.MinAheadPieces then
+			added = generator:extendTo(centre + C.MinAheadPieces)
+			RoadService.urgentLays = (RoadService.urgentLays or 0) + 1
+		end
+	else
+		added = generator:extendTo(centre + C.AheadPieces)
+	end
 	local genMs = if on then (os.clock() - genAt) * 1000 else 0
 	local before = profile.builtEver
 	if splineRun() then
@@ -396,14 +417,15 @@ local function readCars(): (Vector3?, number?, any)
 			continue
 		end
 		local entry = userId and runners[userId]
-		local n,t,lateral,s
+		local n,t,lateral,s,contact
 		local moved=0
 		local owned=splineRun() and generator.spline:hasBiomeGround() and entry~=nil
 		if owned then
 			if entry.acceptedS then
 				local previous=entry.acceptedPosition or entry.position
 				if previous then local delta=at-previous;moved=Vector2.new(delta.X,delta.Z).Magnitude end
-				n,t,lateral,s=generator:locateOwned(at,entry.acceptedS,math.min(640,math.max(12,moved*3+8)))
+				local credit=generator:reentryS(entry.roadAnchorS or entry.acceptedS,(entry.travel or 0)+moved,math.huge)
+				n,t,lateral,s,contact=generator:locateOwned(at,entry.acceptedS,math.min(640,math.max(12,moved*3+8)),entry.physicalPeer,credit)
 			end
 		else
 			n,t,lateral=generator:locate(at)
@@ -413,24 +435,30 @@ local function readCars(): (Vector3?, number?, any)
 			-- server has already agreed to. This is the number the HUD is told, and it is
 			-- never one the client sent.
 			entry.position = at
-			if n then
-				if owned then
-					entry.acceptedS=s;entry.acceptedPosition=at;entry.travel=(entry.travel or 0)+moved
-					if lateral<=Config.Road.Width*.5 then
-						local credit=generator:reentryS(entry.roadAnchorS or s,entry.travel,s)
-						local piece=generator:pieceAtS(credit)
-						if not piece then
-							-- Another runner can retire the earned road while this car is
-							-- on grass. Keep its ownership/travel, but never substitute
-							-- the raw reentry for unavailable credit or forgive that debt.
-							continue
-						end
-						n,t=piece.n,(credit-piece.s0)/piece.length
-						if math.abs(credit-s)<.001 then entry.roadAnchorS=s;entry.travel=0 end
+			if owned and contact then
+				entry.acceptedS=contact.ownerS;entry.acceptedPosition=at;entry.travel=(entry.travel or 0)+moved
+				entry.physicalPeer=SplineContact.copy(contact.peer);entry.physicalS=contact.contactS
+				if contact.kind==generator.spline.TARMAC then
+					local credit=generator:reentryS(entry.roadAnchorS or contact.ownerS,entry.travel,contact.contactS)
+					local piece=generator:pieceAtS(credit)
+					if not piece then
+						-- Another runner can retire the earned road while this car is
+						-- on grass. Keep its ownership/travel, but never substitute
+						-- the raw reentry for unavailable credit or forgive that debt.
+						continue
 					end
+					n,t=piece.n,(credit-piece.s0)/piece.length
+					lateral=math.abs(contact.d or 0)
+					if math.abs(credit-contact.contactS)<.001 then
+						entry.acceptedS=contact.contactS;entry.roadAnchorS=contact.contactS;entry.travel=0;entry.physicalPeer=nil
+					end
+					entry.n,entry.t=n,t
+				else
+					-- Grass preserves ownership, but advances neither recovery nor the window.
+					n=nil
 				end
-				-- Grass preserves ownership, but advances neither recovery nor the window.
-				if not owned or lateral<=Config.Road.Width*.5 then entry.n, entry.t = n, t end
+			elseif n and not owned then
+				entry.n,entry.t=n,t
 			end
 		end
 		if n and (not owned or lateral<=Config.Road.Width*.5) and (bestN == nil or n > bestN) then
@@ -502,6 +530,7 @@ function RoadService:Start()
 		cars.CarMoved:Connect(function(player)
 			local entry=runners[player.UserId]
 			if entry and generator and splineRun() then
+				entry.physicalPeer=nil;entry.physicalS=nil
 				local at=cars:BelievedPosition(player.UserId)
 				local s=at and generator.spline:project(at.X,at.Z,Config.Road.Width)
 				if s then
@@ -523,6 +552,26 @@ function RoadService:Start()
 			end
 		end
 	end)
+
+	-- The spline road's generator, a few ms every frame (T-212)
+	RunService.Heartbeat:Connect(function()
+		RoadService:_pump()
+	end)
+end
+
+-- One frame's generation. More when the road ahead of the leader is running short.
+function RoadService:_pump()
+	local gen = generator
+	if not RoadService.Running or not gen or not splineRun() then
+		return
+	end
+	local P = Config.Spline.Pump
+	local urgent = gen.last < windowCentre + Config.Road.UrgentAheadPieces
+	local ok, err = pcall(gen.pump, gen, if urgent then P.UrgentBudgetMs else P.BudgetMs, P.Lead)
+	if not ok and os.clock() - pumpWarnedAt > 5 then
+		pumpWarnedAt = os.clock()
+		warn(`[Road] laying the road failed: {err}`)
+	end
 end
 
 --------------------------------------------------------------------------------
@@ -560,7 +609,7 @@ end
 -- came from is read BEFORE they are moved, because once they are on the road
 -- `CarService:WorldAt` will quite correctly say they are on the road.
 function RoadService:StartRun(player: Player): CFrame?
-	if runners[player.UserId] then
+	if runners[player.UserId] or starting[player.UserId] then
 		return nil -- already in it; a second press is the END press, not a restart
 	end
 
@@ -594,7 +643,25 @@ function RoadService:StartRun(player: Player): CFrame?
 
 	local fresh = not self:HasRoad()
 	if fresh then
-		self:Generate()
+		if mode == "spline" then
+			self:_prepare()
+		else
+			self:Generate()
+		end
+	end
+	-- A spline road still being laid: wait for its first window, a few frames, rather
+	-- than freeze the server laying it at once. Anyone pressing start meanwhile waits too.
+	if preparing then
+		local mine = generator
+		starting[player.UserId] = true
+		local ready = self:_awaitRoad()
+		starting[player.UserId] = nil
+		if not ready or player.Parent == nil then
+			if fresh and generator == mine and runnerCount <= 0 and next(starting) == nil then
+				self:Stop()
+			end
+			return nil
+		end
 	end
 
 	local cf = self:JoinCFrame()
@@ -755,6 +822,52 @@ end
 -- Start a run. The seed is the server's: the same seed is the same road, which is what
 -- makes a run reproducible, a ghost possible and a score checkable later.
 function RoadService:Generate(seed: number?): CFrame
+	self:_setUp(seed)
+	window(1, true)
+	moveClosingBarrier()
+	local spawn = self:SpawnCFrame()
+	leader = spawn.Position
+	return spawn
+end
+
+-- A spline road whose first window is laid over the next frames by the pump (T-212).
+-- `_awaitRoad` waits for it.
+function RoadService:_prepare(seed: number?)
+	self:_setUp(seed)
+	preparing = generator
+end
+
+-- Wait for the road being prepared to have its first window: true when it has (or has
+-- stopped growing), false if the road went away meanwhile. After `StartTimeout` the rest
+-- is laid at once, so a start can be slow but never refused for want of road.
+function RoadService:_awaitRoad(): boolean
+	local mine = generator
+	local deadline = os.clock() + Config.Spline.Pump.StartTimeout
+	while generator == mine and preparing == mine do
+		mine:request(1 + Config.Road.AheadPieces)
+		if mine.last >= 1 + Config.Road.AheadPieces or mine.gen.stats.stalled then
+			break
+		end
+		if os.clock() >= deadline then
+			RoadService.slowStarts = (RoadService.slowStarts or 0) + 1
+			break
+		end
+		task.wait()
+	end
+	if generator ~= mine then
+		return false
+	end
+	if preparing == mine then
+		preparing = nil
+		window(1, true)
+		moveClosingBarrier()
+		leader = self:SpawnCFrame().Position
+	end
+	return true
+end
+
+-- A new road's state, with nothing laid but its start.
+function RoadService:_setUp(seed: number?)
 	self:Stop()
 	local chosen = seed or (DateTime.now().UnixTimestampMillis % 2 ^ 31)
 	if mode == "spline" then
@@ -779,11 +892,6 @@ function RoadService:Generate(seed: number?): CFrame
 	if not splineRun() then
 		closing = Builder.closingBarrier(folder)
 	end
-	window(1)
-	moveClosingBarrier()
-	local spawn = self:SpawnCFrame()
-	leader = spawn.Position
-	return spawn
 end
 
 -- Tear the road down. Leaves no folder and no parts behind.
@@ -816,6 +924,7 @@ function RoadService:Stop()
 	end
 	RoadService.Root = nil
 	generator = nil
+	preparing = nil
 	lastProgress = nil
 	leaderN = 1
 	windowCentre = 1
@@ -849,7 +958,7 @@ function RoadService:_tellRunners(message: any)
 end
 
 function RoadService:_sendNewSections()
-	local sections = generator.gen.sections
+	local sections = generator.sections
 	if #sections <= sentLast then
 		return
 	end
@@ -874,11 +983,13 @@ function RoadService:_sendAll(player: Player)
 		kind = "start",
 		seed = generator.seed,
 		origin = { x = o.x, y = o.y, z = o.z, yaw = o.yaw },
-		sections = generator.gen.sections,
+		-- exactly what the other runners have been sent: the pump may have finished more,
+		-- and those go to everyone together in the next "more"
+		sections = table.move(generator.sections, 1, sentLast, 1, {}),
 		closing = sentClosing,
 		-- the mountain's direction (T-166): the uphill heading and "descent" / "ascent" /
 		-- "traverse". The sections already carry everything drawn; this is for the view
-		fall = generator.gen.fall,
+		fall = generator.spline.fall,
 		mode = generator.gen.mode,
 	})
 end
@@ -1128,6 +1239,9 @@ function RoadService:DebugState()
 	report.ended = self.ended or 0
 	report.barriersOn = railsOn
 	report.safeStart = self:SafeStart(nil)
+	report.preparing = preparing ~= nil
+	report.urgentLays = RoadService.urgentLays or 0
+	report.slowStarts = RoadService.slowStarts or 0
 	return report
 end
 
@@ -1184,6 +1298,15 @@ function RoadService:DebugTick()
 	assert(RunService:IsStudio(), "DebugTick is Studio only")
 	tick()
 	return self:DebugState()
+end
+
+function RoadService:DebugContact(userId:number)
+	assert(RunService:IsStudio(),"DebugContact is Studio only")
+	local entry=runners[userId]
+	if not entry then return nil end
+	return {ownerS=entry.acceptedS,anchorS=entry.roadAnchorS,travel=entry.travel,position=entry.acceptedPosition,
+		physicalS=entry.physicalS,peerS=entry.physicalPeer and entry.physicalPeer.s,
+		peerPatch=entry.physicalPeer and entry.physicalPeer.patchId,n=entry.n,t=entry.t}
 end
 
 -- Studio only: the stage timings (T-085). `on` nil reads the switch, true or false sets
@@ -1262,7 +1385,7 @@ function RoadService:DebugAdvance(position: Vector3)
 		leader, leaderN = position, progress.n
 		lastProgress = progress
 	end
-	window(leaderN)
+	window(leaderN, true)
 	moveClosingBarrier()
 	return progress
 end
@@ -1275,7 +1398,7 @@ function RoadService:DebugAdvanceTo(n: number)
 		return nil
 	end
 	leaderN = math.max(1, n)
-	window(leaderN)
+	window(leaderN, true)
 	moveClosingBarrier()
 	return generator:report()
 end

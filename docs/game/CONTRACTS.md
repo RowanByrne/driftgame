@@ -210,9 +210,9 @@ The five simulation parts (`Body`, `WheelFL`…`WheelRR`, at `wheelOffsets()`) a
 | `Road/SplineTurnFit` | `measure` | `(spline, s0, s1, startFlip, flips) -> {ok, score, view, cut, fill, samples}` | Fifteen horizontal height samples on a fully decorated candidate turn (`T-199`): three positions, forward at 50/100/150 studs and sideways beyond both runoff edges. `view` is excess height above the eye plus the natural rising plane. Preferred limits are in `Config.Spline.Mountain`; this is a geometry check, not a collision query |
 | `Road/SplineGen` | `turnFits` / `stats.hillChecked` / `stats.hillRejected` / `stats.hillTurns` / `stats.hillRelaxed` | server-only readings / counters | Accepted terrain checks (`T-199`), each `{s0,s1,what,view,cut,fill,retries,relaxed}`. A fitted sharp turn includes its curvature easing and 260-stud straight continuation, ending unbanked on its planned heading; that emitted geometry is included in the preflight. Up to three radii are ranked, passing shapes first; after two refused locations the least-obstructed crossing-safe shape may exceed preferred terrain limits (`relaxed=true`). Neither crossing nor escape checks are bypassed. No new remote or Section fields |
 | `Drift/SplineRoadView` | `new` / `Update` / `SetClosing` / `Destroy` / `DebugState` | `(spline, parent?) -> View` / `(self, s)` / `(self, s?)` / `(self)` / `(self) -> {...}` | The chunks round the car on this device (`T-135`), one built at a time, a parts fallback where a mesh cannot be made. In `Workspace.SplineRoad` |
-| `Road/SplineSequence` | `new` / `extendTo` / `piece` / `trimBefore` / `locate` / `progress` / `poseOn` / `startOf` / `report` | `(seed, origin?) -> Sequence` / `(self, n) -> { Piece }` / `(self, n) -> Piece?` / `(self, n) -> { number }` / `(self, pos) -> (n?, t, lateral)` / `(self, pos) -> Progress?` / `(self, piece, into, lift) -> CFrame` / `(self, n) -> s?` / `(self) -> {...}` | The spline road in `Road/Generator`'s shape, one section as one piece (`T-136`), so `RoadService` drives it with its own window, progress and respawn code. A `Piece` is `{ n, s0, s1, length, kind, id, minX, maxX, minZ, maxZ, section }`; `gen.sections` is what goes to clients |
+| `Road/SplineSequence` | `new` / `extendTo` / `request` / `pump` / `pending` / `piece` / `trimBefore` / `locate` / `progress` / `poseOn` / `startOf` / `report` | `(seed, origin?) -> Sequence` / `(self, n) -> { Piece }` / `(self, n) -> { Piece }` / `(self, budgetMs, lead) -> ()` / `(self) -> (waiting, stepOpen)` / `(self, n) -> Piece?` / `(self, n) -> { number }` / `(self, pos) -> (n?, t, lateral)` / `(self, pos) -> Progress?` / `(self, piece, into, lift) -> CFrame` / `(self, n) -> s?` / `(self) -> {...}` | The spline road in `Road/Generator`'s shape, one section as one piece (`T-136`), so `RoadService` drives it with its own window, progress and respawn code. A `Piece` is `{ n, s0, s1, length, kind, id, minX, maxX, minZ, maxZ, section }`. **Bounded generation (T-212):** `gen` and `gen.spline` are private; `spline` is the public road and `sections` its sections, which is what goes to clients. `pump` runs the generator on its own coroutine for at most `budgetMs` (plus one checkpoint's overshoot) toward `lead` sections past the last ask, then publishes finished sections up to the ask; `request(n)` publishes what is finished without generating; `extendTo(n)` finishes at once (tests, debug moves, a runner on the last piece). See "Bounded generation" below |
 | `RoadService` | `Mode` / `SetMode` | `() -> "pieces" \| "spline"` / `(want) -> string` | Which road the next run lays (`T-136`); `SetMode` does nothing while a road is up. The default is `Config.Road.Mode` |
-| `SplineRoadController` | `DebugState` | `() -> { on, length, sections, counts }` | The run's spline road on this client, replayed from `RoadSpline` and handed to `DriftController` (`T-136`) |
+| `SplineRoadController` | `DebugState` | `() -> { on, length, sections, queued, counts }` | The run's spline road on this client, replayed from `RoadSpline` and handed to `DriftController` (`T-136`) |
 | `SplineRoadController` | `Road` | `() -> (Spline?, number?)` | The client's live spline road and the closing barrier's `s`; `nil, nil` with no run. Read it, never change it (`T-154`) |
 | `RoadGroundController` | `DebugState` / `DebugPoint` | `() -> { out, located, s, d, kind, surface, aboveSurface, parts, ground, walls, rails, closing, rebuilds, rebuildMs, worstMs, clears, created, edgeL, edgeR, runoffL, runoffR }` / `(s, d) -> { point, length, edgeL, edgeR, runoffL, runoffR, kRailL, kRailR }` | Solid ground for our own walking avatar on the spline road (`T-154`) |
 | `DriftController` | `UseSpline` / `SetSplineRails` / `DebugSpline` / `DebugSplineView` | `(spline: Spline?) -> ()` / `(on: boolean) -> ()` / `() -> { on, s, d, rideError, bankDeg, gradeDeg, radius, rails, stats }` / `(forceFallback: boolean?) -> {...}` | Drive on a spline road (the client's own replayed copy) and draw it round the car, or `nil` to go back to the parts world; its side barriers, which also vanish from the drawing; where the car is on it; the drawn chunks (`T-134`, `T-135`) |
@@ -265,7 +265,7 @@ The five simulation parts (`Body`, `WheelFL`…`WheelRR`, at `wheelOffsets()`) a
 | `PlaygroundService` | `HasHill` / `HillTopCFrame` / `SetBarriers` / `BarriersOn` / `ToolState` | `() -> boolean` / `() -> CFrame?` / `(on: boolean) -> ()` / `() -> boolean` / `() -> { ... }` | The test hill and the two testing buttons, plus the Studio-only `DebugHill`, `DebugHillBounds`, `DebugHillLine`, `DebugBarrierReport`, `DebugTool` and `DebugClearToolLimits`. New named spots `HillBase` and `HillTop`
 | `RoadService` | `SetBarriers` / `BarriersOn` | `(on: boolean) -> ()` / `() -> boolean` | The **piece road's** guardrails off and on, for testing (`T-067`); the spline road has none (`T-140`), and no button calls it any more. It flips the walls' `CanQuery` and `CanCollide` and **never touches a slab**: the 826 road slabs stay queryable, solid and tagged `DriftSurface` either way. `CanQuery` is the one that matters -- the car's wall sweep is a Blockcast through `RaycastParams`. Studio-only `DebugBarrierReport` |
 | `RoadService` | `Generate` / `Stop` / `HasRoad` | `(seed: number?) -> CFrame` / `() -> ()` / `() -> boolean` | Lays and tears down the road itself. **The road is OFF by default** — nothing builds at `Init` or `Start`, and `Config.Drift.StartWorld` is untouched. `Generate` returns where a car starts on piece 1; the seed is the server's (its clock when none is given), and the same seed is the same road. **`Stop` empties the roster too,** because a road that does not exist has nobody on it; in normal play it is only reached once the last runner has already left. Nothing on the wire reaches either of these |
-| `RoadService` | `StartRun` / `EndRun` / `InRun` / `RunnerCount` / `RunState` | `(player) -> CFrame?` / `(player) -> CFrame?` / `(player?) -> boolean` / `() -> number` / `(player?) -> { running, inRun, players, n, furthestN }` | **The run** (`features/endless-run.md`). `StartRun` lays a road if there is none, records the world the player is in **before** moving them, puts them on the roster and moves their car through `CarService:Place`. `EndRun` takes them off, puts them back in the world they came from, and takes the road down **only if the roster is now empty** — one player ending a run can never strand another. `RunState` is what goes down `RoadRun`; the seed is deliberately not in it |
+| `RoadService` | `StartRun` / `EndRun` / `InRun` / `RunnerCount` / `RunState` | `(player) -> CFrame?` / `(player) -> CFrame?` / `(player?) -> boolean` / `() -> number` / `(player?) -> { running, inRun, players, n, furthestN }` | **The run** (`features/endless-run.md`). `StartRun` lays a road if there is none, records the world the player is in **before** moving them, puts them on the roster and moves their car through `CarService:Place`. `EndRun` takes them off, puts them back in the world they came from, and takes the road down **only if the roster is now empty** — one player ending a run can never strand another. `RunState` is what goes down `RoadRun`; the seed is deliberately not in it. On the spline road `StartRun` **yields** (T-212): a fresh road is prepared by the per-frame pump and the start waits, a few frames, for its first window (`Config.Spline.Pump.StartTimeout`, after which the rest is laid at once); a second press from a player already waiting returns nil. `Generate` stays synchronous |
 | `RoadService` | `SpawnCFrame` / `JoinCFrame` / `SafeStart` | `() -> CFrame` / `() -> CFrame?` / `(position: Vector3?) -> CFrame?` | Where a car goes on the road. `SpawnCFrame` is piece 1 (errors with no road) and is the first player of a run. `SafeStart` is **everything else**: the piece a position was last on, or the window's centre for a `nil` position, clamped to never be behind the closing barrier and never before the first piece that still exists. A fall answers with it, so a fall costs the piece you were in the middle of and not the run — `N` cannot go backwards, because `furthestN` is the generator's high-water mark and nothing here writes it. `JoinCFrame` is `SafeStart(nil)`: where a second driver lands |
 | `RoadService` | `PieceAt` / `Progress` / `Bounds` / `RunReport` | `(position) -> { n, t, lateral, kind, variant, onRoad }?` / `(position) -> Progress?` / `() -> { min, max }?` / `() -> { { userId, from, n, t, seconds, position } }` | Which piece a world position is on, where that position is in the RUN, the live window's box, and the roster. `Progress` is the server's for the same reason the seed is: a client that reports its own progress reports its own score later. `PieceAt` is also how `CarService:WorldAt` asks whether a position is on the road at all |
 | `RoadService` | `DebugState` | `() -> { running, seed, first, last, inWindow, window, counts, placed, destroyed, stalled, searchNodes, worstSearchNodes, dead, nodes, steps, planDepth, deepestRetreat, recoveries, relaxed, worstProof, forcedCalls, worstCallMs, worstCallAt, furthestN, furthestT, nextSocket, builtPieces, parts, leaderN, leader, progress, closingAt, offset, width, runners, run, asks, asksRefused, started, ended, safeStart }` | The road as it stands, the roster included. `DebugAdvance(position)`, `DebugAdvanceTo(n)`, `DebugGenerator()`, `DebugPieces()`, `DebugPress(want, userId?)`, `DebugJoin(userId)`, `DebugLeave(userId)`, `DebugTick()` and `DebugClearLimits()` sit beside it, Studio only. **The window only ever moves forward:** a piece behind the car has been destroyed and cannot be asked for again, so `DebugAdvanceTo` a smaller `n` is a no-op by design. `DebugPress` goes in at the real handler, guards and all; `DebugJoin` is a second driver with **no car behind it**, because Studio gives a test one player |
@@ -364,8 +364,8 @@ definition and lane checks are complete; no driving feel or analytics change.
 
 ### Frozen supported corridor construction
 
-`Config.Spline.Biomes.GroundEnabled` remains false while the matching surface,
-walking and renderer blockout is assembled. When enabled, the server fits the
+`Config.Spline.Biomes.GroundEnabled` is enabled with the approved matching surface,
+walking and renderer blockout. The server fits the
 existing per-side `rl/rr` width tracks to finite supported strips. Their existing
 meaning (studs past the asphalt) and inside-curvature clipping remain unchanged.
 The original centre-line clearance/escape check is retained; additional strip
@@ -375,6 +375,7 @@ checks protect committed wide ground from subsequent road and escape candidates.
 |---|---|---|
 | `Road/SplineCorridor` | `row(s,x,z,yaw,k,left,right)`, `cell(a,b,boundsOnly?)` | Short plan strip with absolute left/right centre-line extents, clipped on the inside of a bend. Cells retain world corners and arc-distance endpoints after old curve samples retire. Nonconvex collision cells are refused; a bounds-only cell is for conservative broadphase lookup |
 | `Road/SplineCorridor` | `new()`, index `add(cell)`, `clear(cell,separation,gap)`, `near(cell,separation,gap)` | Spatially bounded, read-only queries over frozen cells. Non-neighbour cells retain the existing along-road separation rule. `clear` uses actual quad edges and returns `(clear, conflictingCell?, visited, tested)`. `near` supplies conservative AABB candidates for repeated fitting without rescanning history |
+| `Road/SplineCorridor` | index `roadCells(first,last)` | Bounded arc-bucket lookup of actual accepted supported-ground cells. Only `_registerGround` tags these `road=true`; field reservations and provisional escape envelopes are excluded. Actual road cells span at most `CheckStep`. The lookup preserves stored cell identity and does not mutate footprints |
 | `Road/SplineCorridor` | `reserve(outgoingRunoff,distance)` | Minimum future runoff envelope includes the taper from outgoing width, the old widest ordinary runoff and a conservative smoothstep overshoot allowance. It is reserved before accepting the current section |
 | `Road/SplineCorridor` | `fit(frames,sectionEnd,incoming,desired,oldIndex,separation)` | Returns left/right eased width tracks and reduction factors, or nil if the minimum footprint cannot fit. Includes at least the full escape. Checks actual final widened cells against each other, old cells and a trial-dependent reserved continuation. Cached search envelopes use the maximum of baseline and wanted widths, including tight edges below the normal minimum. Constrained results are rounded inward |
 
@@ -467,13 +468,484 @@ Ground, face feet and natural rock geometry share the existing edge-span endpoin
 `SplineSurfaceCuts` samples the entire supported cross-section, including bevel feet and banks. `SplineParts.build(...,{terrain=true,sliceMs=...,cancelled=...})` draws finite ground and capped outer faces/hills as ordinary visual wedges with bounded batches and yielding; the second return contains triangle and slice statistics. The original tarmac-only yardstick call remains supported.
 
 `SplineHillCuts.refine(spline, hill, positions, surfaceRows, rayCuts, rays, caps, profile, tick?)`
-returns refined cut indices and `{added, tests, exact, terminal}`. It checks the same fan,
+returns refined cut indices, `{added, tests, exact, terminal, terminalFolds, terminalSpans}`,
+and an optional terminal bank-join repair function. It checks the same fan,
 ring and skirt topology emitted by the mesh against supported ground triangles, subdividing
 unsafe coarse spans before cap interpolation and face emission. Shared boundaries and
 terrain hidden below ground are permitted. Both sides have solved rays/caps at inserted
 cuts. It never changes the spline, support widths or chunk endpoints. Mesh statistics expose
 `hillRefinedRays`, `hillPlanTests`, `hillPlanExact` and `hillUnsafe`. `traceFaces=true` adds
 test-only face provenance; `groveColourIds` identifies only generated decorative faces.
+
+T-212 rendering helpers (lane work in progress): `Spline:terrainRow(s, offsets,
+withNormals?, origin?)` returns world points, normals and relative points. Normals
+default to enabled; `false` returns an empty normal array. Relative points are
+empty unless `origin` is supplied; origin subtraction happens before Vector3
+packing. It shares scalar ground arithmetic and the same finite-difference
+normal, with call-local row frames rather than mutable caches.
+
+`SplineHill.context(..., tick?, visual?)` keeps approved preflight reach/gather
+by default. Visual contexts use `DrawReach`/`DrawGather`. `drawRings(spline, ray)`
+returns shared radial points and the last core-mesh index; only coarse outer
+panels need Parts. `skirtEnd(spline, ray)` prevents overlap crossing an inside
+bend centre. Float-resolution collapsed ground triangles are omitted by both
+planner and emitters; real reversed footprints remain unsafe. An uncertifiable
+terminal folded span returns nil/reason and a third `{omitHills=true}` hint.
+Non-fold terminal bank overlaps can be repaired against the actual supported
+triangles: retain exterior hill polygons, anchor new boundary vertices behind
+the bank and certify every emitted triangle again. Adjoining triangles that
+only touch the bank receive the same boundary heights. Fragmentation and mesh
+face budgets are bounded; failed repair also returns the failure hint. Statistics
+separate `hillTerminalOriginal` and `hillTrimmedTriangles` from remaining `hillUnsafe`.
+`SplineRoadView` passes this to the Parts terrain fallback, which retains supported
+ground and capped profile faces while omitting uncertified outer hills. Ordinary
+device failures retain the full fallback. Its stats expose `hillsOmitted`.
+Far Parts use no extra EditableMesh slots or shadow-casting surfaces.
+
+The finite bank has a `Hill.DrawEdgePad` rendering underlap (currently0.125stud).
+`SplineProfile.draw` / `SplineMesh.drawProfile` put structural faces beyond that
+underlap; the raw generation profile and physical support widths are unchanged.
+Visual Hill contexts keep the same pad in their station widths and use a separate
+station cache. Near-ground row refinement can continue below the old1stud minimum
+to1/32stud at difficult bank-width changes. This protects the true bank curve from
+the small inscribed-edge slivers of a finite mesh.
+
+Near-level infield groundwork (T-212, not yet connected to generation or gameplay):
+`Road/SplineInfield.patch(id, rows)` canonicalizes immutable numeric rows containing
+opposed monotone bank arcs `sa/sb`, roadside signs, XYZ triples `a/b`, opening
+`weight`, and optional outward slopes `da/db`. `new(cell?)` / `add(index, patch)`
+build a bounded spatial index. Registration is atomic, rejects whole-strip folds,
+self-overlap, later overlapping support and conflicting IDs; identical replay is
+idempotent. Coordinates retain numeric precision through contact and subtract a
+render origin before Vector3 packing. Short slope collars precede the flat middle.
+
+`sample(index,x,z,lowY?,highY?)` returns height/normal and a separate physical
+`contactS`, both bank arcs, cross-gap fraction and patch ID. It never changes a
+caller's accepted route or earned progress. `opening(index,s,side,taper?)` is indexed
+by arc/side and fades inside the real supported interval. Row weight affects the
+bank opening only; supported floor geometry remains real regardless of that mask.
+`triangles(index,s0,s1,origin?)` returns each arc owner's exact rendering half.
+An optional row `floor` freezes eleven final cross-section heights, using
+`columns(row)` to share the bank collars and middle topology. Its endpoints
+must equal the immutable banks. Explicit sections may retain steep existing
+terrain at an end; triangles with normal.Y<=0.8 remain visible but provide no
+physical floor. Ordinary implicit connectors still reject any such triangle.
+Explicit section openings interpolate their stored weight once, without a
+second analytic taper. Their producer must freeze the geometry's same end fade.
+Generation reservations, car/walking boundaries, complete nearby rendering,
+retirement and actual ownership/progress integration remain required before use.
+
+`Spline.Section.ip` carries frozen patches on the newer section. `Spline.append`
+validates the entire batch before route tracks change; `addInfields(patches)`
+also validates a complete batch before geometry/openings/revision publication.
+`infieldAt(x,z,low?,high?)` and `infieldOpening(s,side)` expose indexed lookups.
+Turn-fit forks share the immutable published index rather than copying historical
+triangles; they do not publish new fields.
+
+`SplineInfieldPlanner.plan(spline,a0,a1,b0,b1,corridors?)` accepts known opposed
+approach/departure arms. It caps both searches, uses real facing tarmac heights
+for the near-level policy and frozen bank positions/slopes for the floor.
+Final columns blend the visual Hill baseline through stored end fades. Missing
+baseline samples, positive-area overlap with any occupied road, folds and old
+field overlap are refused. A retained steep collar keeps its bank opening closed.
+It returns patches and hard `SplineCorridor.Cell.infield` reservations. Those
+cells receive no generic arc-separation exemption, including on spatial queries.
+Generation and gameplay hooks remain disabled (`Biomes.Infield.Enabled=false`)
+until complete drawing, physical contacts and retirement are verified together.
+
+Further T-212 integration groundwork (still disabled): `Infield.route(hit,hint,
+limit,patch)` retains the bank range containing the accepted history before
+checking movement, rather than choosing the nearer hit arc. `pair` and `links`
+expose only known frozen bank pairings. `near` returns whole world-nearby
+triangles independently of either leg's arc drawing window.
+
+Each triangle vertex also freezes a separate closure scalar
+`q=sa+(sb-sa)*across`. `sample().closingS` interpolates vertex q barycentrically;
+it is never progress. `Infield.closing(index,s)` emits numeric finite front-edge
+segments and ahead normals from that same scalar, including s between the two
+bank arc ranges. This scalar is solely a shared physical closing boundary.
+
+`Spline.closingPanels(s)` returns immutable numeric slabs for the ordinary road
+and the field contour. The cache follows closing position, field revision,
+retained first sample and road length. `SplineBoundary.closingSpec` supplies the
+actual visual/walking CFrame and Size, including Roblox's0.05stud minimum box
+length. `closingSweep` / `closingPush` use that same finite slab and its end caps.
+The car and View consume these panels; walking selects them spatially and uses
+the same box specs. View refresh also follows field arrivals, retirement and a
+closing message received before its road. Initial-owner rejection and retained
+physical-peer support still need their separate integration; the panel checks
+alone do not prove complete live field retirement.
+
+`Spline.infieldContact` separates physical `contactS/d/kind` from `ownerS` and
+the deliberately off-asphalt `routeD`. Car and Sequence fixtures use it before
+bounded retries can acquire a peer leg. Partial bank feet have finite depth in
+the car world instead of an infinite blocked half-plane.
+
+`SplineContact.resolve(spline,x,z,owner,options?)` is a read-only contact resolver.
+Options contain physical ray bounds, movement limit, retained first arc, closing
+arc and an optional internally acquired peer token `{s,patchId,road}`. Token
+road identity must match. Real field contact authorizes bounded peer support
+beyond the original patch endpoints, and entry to a later real field, without
+changing the accepted owner. Retained support may survive an old owner's
+retirement; a retired history cannot acquire it afresh. `copy(token)` creates
+independent tracking data. Auxiliary probes never commit it. `credit` shares
+the existing1.05times travel plus8stud re-entry formula with SplineSequence;
+only a real live credited piece may update route progress. The resolver is
+checked integration; complete shared scenery clipping, live field drawing and
+generation publication remain to be connected before enabling generated fields.
+Field movement is bounded using the token bank's corresponding row coordinate,
+so a legitimate cross-gap contact can change physical bank without jumping along
+it. While a token is retained, no resolver result adopts an owner. Known-pair
+guards also cover owned retries when the queried point lies beyond the patch.
+An optional trusted `creditS` permits a credit-complete native handoff; actual
+live credited-piece checks remain the caller's responsibility. Individual patch
+approach/departure arc ranges are disjoint by contract.
+Owned retry guards cover the whole bounded interval between history and the
+candidate, including fields whose endpoints lie in different arc buckets.
+`copyState` copies owner, anchor, real travel, center position and peer token.
+`advance(state,hit,position,asphalt,live)` returns a new actual-center state and
+optional capped credit. Only asphalt, a real live physical piece and credit
+equal to physical arc can clear a retained peer/reset its anchor. The input
+snapshot is never changed. Prediction must advance its own copied world.
+
+`SplineWorld.locate(center)` commits actual center travel and returns the
+existing owner/distance followed by physical arc/lateral contact. Ground and
+footprint queries are read-only, including before the first committed center.
+`contactSnapshot/restoreContact` copy histories across worlds on the same
+spline; `resetHint` clears owner and physical history for explicit placement.
+`fork()` creates private closures, buffers, statistics and copied contact state,
+sharing read-only spline/base queries without owning base disposal.
+DriftController commits after each FixedStep and draws around physical contact;
+Trajectory owns one fork per prediction, commits every completed predicted
+center and disposes that fork even on errors. Local handoff is projection
+bookkeeping; server retained-piece checks alone authorize earned progress.
+`DebugSplineContact(ownerS?)` is Studio-only numeric contact observation and
+explicit owner setup at the actual car center for lane fixtures.
+
+`SplineSequence.locateOwned(position,hint,limit?,peer?,creditS?)` keeps its first
+four ownership returns and adds a fifth physical `SplineContact.Hit`. Physical
+contact may remain valid when the original owner's piece has retired. RoadService
+stores tokens per runner, updates real supported movement before credit refusal,
+and uses physical asphalt to repay the existing capped allowance. Only
+`pieceAtS(credit)` authorizes progress, recovery or leader/window movement.
+Unavailable credit keeps the previous earned piece and the full debt. A token
+clears only at a credit-complete live asphalt handoff or an explicit server
+placement; it is never read from a client. Studio-only `DebugContact(userId)`
+returns copied numeric contact, credit and progress observations for checks.
+
+`SplineMesh.buildInfield(spline,x,z,radius,parent,opts?)` builds one nearby field
+mesh, with exact frozen normals and origin-relative positions.
+`SplineParts.buildInfield` draws the same triangles in sliced batches; optional
+`supportedOnly/collidable/queryable` support the walking-ground integration.
+Both builders cancel without publishing partial models. Their indexed nearby
+selection clips q below the retained first arc without changing frozen heights
+or normals. Field Parts use exact local-coordinate wedges without the ordinary
+road builder's outward expansion; collidable floors extend down by the configured
+walking thickness. A bounded `noYield/maxTriangles` option supplies immediate
+walking support while the larger sliced build is pending.
+Both builders accept `opts.plan` from `SplineFieldCuts.plan` for complete shared
+coverage instead of a radius subset, and `opts.seams` for actual source-edge
+joins. They reject a different road identity or retained first. The mesh checks
+combined floor/seam bounds before allocation and is double-sided to retain
+copied closure visibility. Parts seams are visual only; walking floors keep
+their separate nearby supported-only selection. Cancellation is rechecked
+immediately after each yield.
+`SplineParts.warmInfield(spline,x,z,parent,old?,opts?)` certifies reuse against
+the current accepted revision/retained first, footprint and a real supported
+collider ray at the frozen height. New support is built without yielding; dense
+neighbourhoods shrink their immediate radius while keeping the triangle cap.
+A failed attempt never certifies old spatial coverage. Walking rechecks this
+support between ordinary spatial rebuilds, so a smaller warm patch follows the
+actual avatar until the full replacement is ready.
+Certification includes supported points over the avatar's footprint and a
+movement margin; the immediate radius cannot shrink below that safe neighbourhood.
+If no bounded immediate build succeeds, the controller temporarily holds its
+own walking root until a real full collider is ready. Clear/seat/respawn paths
+release that hold without unanchoring a server-seated root. A full-build failure
+uses the existing car recovery request. Studio-only `DebugWarmBound` injects a
+small triangle bound to exercise this failure/recovery path.
+
+RoadGroundController owns an independent SplineWorld for each walking root and
+copies the parked car's contact once. Actual avatar centers commit it; ground
+debugging uses frozen physical probes, and visible road follows physical contact.
+The controller applies the current closing before locating. Nearby field
+colliders stage outside Workspace, coalesce movement requests, retain valid old
+ground until replacement and refresh immediate local support if necessary.
+Clears cancel by epoch even without ordinary tiles; publication rechecks root,
+spline, walking status, retained first and revision. Retained-first changes
+remove stale field colliders immediately. Studio-only `DebugFieldBudget(ms?)`
+can force multi-frame builds for exit, movement and cancellation checks.
+The ordinary road View and hill/face clipping still require integration before use.
+
+`SplineFieldCuts.context(index,selection?,first?,options?)` prepares immutable
+finite field footprint masks for a chosen complete patch set. Convex uncut row
+cells share their exact quad footprint; ambiguous/concave or retained-q cuts
+keep the published triangle footprints. `triangle(context,a,b,c)` subtracts
+those masks from numeric scenery points, preserves the source 3D plane/winding
+and supports vertical faces. Fragmentation/nonfinite failures are explicit.
+`intersectsBox(context,cframe,size)` uses the entire projected oriented box,
+including tilted axes, for later caster rejection. `perimeter(context)` retains
+the exact frozen end-column heights and affine retirement contours, removes
+shared internal boundaries, and snapshots the selected patch identities.
+`newCapture(context,limit?)` / `capture(capture,a,b,c,material)` record finite
+retained exterior source traces and coplanar wall faces. Opened bank edges use
+their authoritative supported bank instead of restoring old mountain walls.
+Fragment limits reject the complete proposed capture. Touching published
+infields must agree along their frozen shared edge heights; a mismatch is
+rejected atomically before support publication. These remain standalone
+helpers. `stitch(capture,options?)` assembles the actual source upper envelope
+against each linear frozen perimeter edge, splits at source/source and
+source/field crossings, preserves downward skirts, and never bridges source
+gaps. Coplanar source faces and new ribbons form one non-overlapping union.
+Returned copied faces carry `twoSided=true`; renderers must preserve that
+visibility when opposite legacy cap faces collapse into one geometric face.
+Raw input, pair work, breakpoints, fragments and output all have explicit
+failure bounds. Live drawing integration remains unfinished.
+
+`SplineInfield.select(index,selection?,first?,supportedOnly?,tick?)` visits
+complete chosen patch identities and applies the same exact retirement cut as
+`near`, freezing new clipped vertices. `SplineFieldCuts.plan(index,selection,
+first,revision?,options?)` shares those retained visual triangles, matching
+masks, precomputed finite perimeter and bounds. Empty/unknown/fully retired
+choices and oversized coverage return explicit reasons. Plan geometry is
+nested immutable and contains no active build callback. `key` is scoped to
+the exact index reference `identity`; stitched mesh lifetimes must additionally
+track the source terrain version. `forBuild(plan,tick?,options?)` gives each
+consumer isolated execution callbacks and fragmentation limits over that
+geometry. A discarded retirement sliver cannot retain a perimeter without
+surviving mask coverage.
+
+Ordinary `SplineMesh.build` and terrain `SplineParts.build` accept
+`opts.fieldPlan` for that same finite scenery subtraction. Supported
+asphalt/lip/bank strips, groves and physical partial rock feet stay authoritative.
+The actual scenery emitted after existing hill repair is available as a bounded
+immutable `stats.scenery` cache (`points`, literal material colour/haze role,
+kind), enabled by the plan or `captureScenery=true`. Source points precede field
+subtraction so another coverage version can rebuild exact end seams.
+All five shadow-caster families subdivide/reject boxes crossing a field mask.
+Far fragments and fallback scenery use `SplineParts.exactTriangle` local slabs
+without outward triangle growth. Full openings omit a zero-height flat toe;
+partial openings split at frozen bank-row arcs in `SplineBoundary.points`,
+which also feeds supported surface cuts. Wholly removed faces still consume
+the build's yielding/cancellation budget. Terrain Parts support `groundOnly`
+to draw supported road strips without mountain scenery for off-window peers.
+Producer publication remains pending; the candidate live View contract follows.
+
+T-212 live View candidate (awaiting Studio proof): `Drift/SplineFieldView`
+selects complete nearby patches with `SplineInfield.nearPatches`, an indexed,
+sliceable patch-identity query with immutable cached bounds. It bounds candidates
+before compiling their triangles. `SplineRoadView.Update(s,position?)` receives
+the actual driving/walking center. Every committed road record owns immutable
+actual scenery, a unique source serial and its applied mask plan. One job builds
+one candidate road and its companion field from the prospective published
+source map; both source-dependent layers switch without yielding. Eviction and
+final union trimming use field-only companion jobs. Coverage retains all old
+and target road masks until their replacements publish. Oversized unions drain
+old masks before adding distant coverage.
+
+Fallback supported floors may arrive in small batches. `sceneryParent` /
+`hiddenScenery` for ordinary terrain Parts and `hiddenSeams` / `incrementalFloor`
+for field Parts register small batches in the world with source-dependent Parts
+fully transparent. The paired commit reveals only those prepared Parts. Old
+source-dependent Parts become transparent in the same commit; immutable support
+may overlap its replacement while the shared sliced retirement queue drains it.
+Opening-dependent low rock feet are included in the source visibility array for
+both ordinary fallback chunks and peer strips; old closed feet cannot linger
+after their newly open field publishes.
+Each fallback road record owns an optional `{key,folder}` physical boundary
+sibling under the View. Its clipped distance interval, accepted field revision
+and ground mode identify the complete rails/feet geometry. Source-only mountain
+redraws borrow a matching live boundary without rebuilding or changing its
+visibility. New boundaries stage all rails and feet transparent; commit reveals
+them and retires only replaced ownership. Abort destroys only newly built roots.
+Both eviction paths, failure recovery and Destroy release their boundaries.
+Ground mode is included in job validity and retry identity. Source snapshots
+still exclude physical feet, and Mesh roads retain their feet in the main mesh.
+`SplineBoundary.toeCuts` removes only redundant rings from the former four-stud
+toe geometry: every omitted old vertex must match endpoint interpolation within
+1e-5, both endpoint strips must be planar, all opening/edge knots remain hard,
+and merged spans cannot exceed one draw chunk. Twisted or nonlinear strips keep
+the former cuts. This reduces visibility work without changing the nominal foot.
+This avoids synchronous registration/removal of a complete fallback chunk.
+Peer strips draw
+supported road, existing rails and physical feet outside published main arc
+intervals; they always use the current retained first even when an older floor
+union remains visible. Captured unmasked scenery also uses exact finite slabs,
+so its cached front faces match the displayed primitives.
+
+Jobs validate source serials, residency, retained first, accepted field revision,
+road index and forced renderer mode before publication and after yields. Retry
+identities include the window; a failed companion cannot suppress a different
+eviction. If a persistent field failure leaves the current asphalt undrawn, the
+view releases its old clipped scene and restarts ordinary unmasked road drawing.
+Physics/contact/progress do not change during this visual recovery. Live field
+rendering may remain unavailable until a later source change retries it.
+
+`SplineMesh.owns(model)` / `liveMeshCount()` expose allocation ownership, including
+in-flight builders. `release(model)` frees its registered EditableMeshes without
+destroying its ordinary Parts; it first destroys every registered MeshPart
+consumer, including a partially configured part not yet parented into its model.
+Callers hide the model first and own its eventual
+destruction. The View releases mesh slots synchronously and drains retired Parts
+through one sliced retirement queue. Five resident roads, one road build and
+old/new field meshes fit the eight-mesh guard. The first actual forced-Parts
+check exposed a105ms publication stall from whole-root registration/removal;
+the staged-visibility replacement still requires actual lane validation. Full
+View lifecycle and generated publication remain pending.
+
+Actual captured scenery materials now include `{colour,textureScale,haze?}`.
+`GrassTexture.plainScale(image?)` returns the plain pixel multiplier cached at the
+real image bake (currently125/255), or1 without an image. Captured far Parts keep
+their existing raw config shade multiplier. Field Parts use resolved source RGB
+times source scale; field Mesh seam vertex colours compensate for the destination
+plain multiplier. Missing scale retains legacy fixture behaviour. Unsupported
+colour ranges explicitly refuse the Mesh build instead of clipping colours.
+`SplineParts.seamColour` shares this conversion; `SplineMesh.setHaze` forwards sky
+changes to weakly registered seam Parts and updates converted Mesh colour IDs
+while preserving their source scale. Pending new seam colours read the latest
+sky after yields. `SplineFieldViewTests.materials()` checks real mixed output,
+later haze updates, cached-pixel identity and native-consumer-first release.
+Colour comparisons allow one RGB channel step (1/255), measured independently
+on actual Part and EditableMesh colour storage. An initial stricter fixture
+failed quantization rather than a conversion mismatch. Mixed output and release
+hardening still await lane validation.
+
+Two native Studio crashes occurred minutes after completed, normally stopped
+tests on2026-11-15. Their cause remains unproven. Destroying registered MeshPart
+consumers before EditableMeshes removes one unsafe lifetime ordering; passing
+functional tests is not evidence that delayed native stability is resolved.
+
+T-212 opt-in generation candidate: with `Biomes.Infield.Enabled`, `SplineGen`
+binds each accepted planned maneuver to its exact section and starting distance
+before decoration. Its live commit appends road and registers actual supported
+ground before optional field planning; sections publish only afterward. A private
+identity pairs the two halves of one Switchback. Each double hairpin forms two
+separate possible field pairs. Approach bounds include the actual inbound-arm
+start and retained first; departure starts after the final curvature-easing
+interval, including any existing straight tail. A pending pair freezes once its
+bounded departure is known or before the next real planned curve starts.
+Grade preparation and small heading corrections remain on the same known
+approach arm; their easing cannot reset its start to the next turn's start.
+
+All ready intents for a section share one batch. Planning sees accepted ground,
+existing hard reservations and a temporary copy of the current tip's promised
+escape. Validated field reservations use copy-on-write corridor buckets; one
+non-yielding publication adds frozen support, swaps hard reservations and attaches
+one frozen `sec.ip` array before section publication. A declined/failed optional
+field leaves accepted road intact. No RNG draws or driving rules change.
+`SplineInfieldTests:generator()` covers identity/ranges/grouping/batch publication,
+actual frozen replay, escape-only refusal and optional failure isolation.
+`gen.infieldStats` records attempts, patches, refusals and planning cost. The
+default remains disabled pending actual natural-generation and timing checks.
+
+The common-bank candidate retains actual accepted Corridor-cell endpoints on
+both arms (including section ends) and track knots in bounded arc ranges. It
+maps them through the existing monotone pair map, recomputes actual bank XYZ,
+and checks quarter/midpoint bank sag against `Infield.BankSag=.002`. Those samples
+also certify the actual outward-ray chord intersection used by contact: finite
+edge parameter, positive gap within the pad, and matching chord height. Projection
+roundoff within1e-4 is normalized to an actual station before freezing. Coincident
+cross-bank events share one row with both exact stations; distinct same-bank
+events are preserved or the optional connection is refused. The512-row limit
+applies before baseline/triangle construction. Actual tagged road cells are
+verified against their stored geometry, then rebuilt at those shared stations
+in a local full-width index. Global frozen footprints are unchanged. Local
+shared-bank ground, all unrelated ground, fields and escape envelopes still use
+strict SAT; there is no erosion or generic arc-distance exception.
+Corridor SAT projects both polygons relative to the current tested edge's first
+vertex. Exact shared edges therefore retain zero width far from the origin;
+the separation inequalities and requested gap remain unchanged. Regression
+fixtures also reject positive1e-7-stud intrusions at large world offsets.
+
+`Spline.groundKind(s,d,fieldFirst?)` preserves occupied road first. Only an excess
+up to `Infield.BankContactPad=.01` can ask `SplineInfield.bankGap`: the actual
+outward bank-normal ray must intersect that opening's finite frozen chord ahead
+of the point, enter its adjacent supported compiled triangle, match edge height
+within `BankSag`, and retain interpolated edge q. A chord behind occupied ground,
+closed/steep collar, point beyond the finite endpoints, or retired scalar grants
+no support. This fills only a measured curve/chord gap, rather than extending a
+whole strip. `SplineContact` and fresh known-peer acquisition supply retained/
+closing q to this rare grass-only case; road credit and driving forces remain
+unchanged. Walking bank drawing's
+existing underlap covers the same tiny seam. `Infield.bankTriangles` is an
+immutable derived cache of the actual first/last bank triangle in each row pair,
+not additional serialized geometry. Self-validation uses a separate32-stud hash
+while the published query hash stays unchanged. A private weak cache reuses
+compiled topology only for the module's own deeply frozen canonical patches;
+raw or merely shallow-frozen caller data is always copied and validated. Every
+insertion still checks the destination's current published triangles, matching
+touching heights, and destination hash spacing. Prevalidation never publishes
+data or certifies compatibility with an index that changes later.
+`SplineInfield.canonical(patch)` returns a module-certified canonical patch or
+copies raw numeric data through the validating factory. `Spline.append`
+normalizes received patches before preflight and passes that same local batch
+to `Spline.addInfields`; direct additions also normalize their batch once.
+Every existing preflight/validation/publication check remains. Received sections
+reuse their own certified topology without sharing the sender's cache or mutable
+wire tables, and the incoming section data is never rewritten.
+Compiled triangles retain immutable XZ bounds over their actual three vertices.
+Disjoint/touching bounds skip the unchanged triangle overlap SAT; cross-patch
+height compatibility still checks every possible touch within its existing
+1e-7 margin. `SplineInfield.add(index,patch,validateOnly?,profile?)` optionally
+fills a diagnostic record for a validation traversal: rows/triangles, cache and
+destination spacing, plus separate self/old pair, box-skip and exact-SAT counts.
+The record is caller-owned, never serialized and never changes a decision.
+Reinserting the identical canonical patch remains an immediate idempotent no-op.
+Records reset their per-call counters even for duplicate insertion and include
+compile, old-index, self-validation and publication timing for diagnostics.
+
+Self-validation first attempts a proof over the compiler's fixed triangulated
+disk: shared row vertices must match exactly, every actual triangle must have a
+certified strict common orientation, and the actual outer boundary must be
+simple. Conservative binary64 sign bounds refuse uncertain, subnormal or
+nonfinite arithmetic. Touching/crossing/uncertain boundaries decline this proof
+and use the original triangle validation instead; they do not become a new
+rejection rule. A simple boundary and common orientation give degree +/-1,
+which excludes overlapping triangle interiors.
+
+The fallback groups each original row's actual compiled vertices. Exact bounds
+and outward-padded projection intervals may prove distant groups disjoint;
+outer bank corners supply axis directions only. Uncertain projections retain
+the triangle checks, including within-row and adjacent-row checks. Both proofs
+preserve concave inputs, add no contact tolerance and never replace current
+published-index overlap or touching-height checks. Diagnostics include boundary
+proof/fallback counts and row-group counters.
+
+Compilation reuses a frozen row's exact position, across-bank parameter and q
+values while creating a fresh per-cell t value. Compiled geometry may also keep
+frozen triangle bucket keys by destination cell spacing. These caches contain
+no destination index or mutable index state; every insertion repeats all
+current-index checks. `profile.keysCached` reports that geometry-only reuse.
+
+`SplineInfield.validate(index,patch,tick?)` runs the same guards without changing
+any published index container. Its optional checkpoints may suspend a private
+planner during compilation, key/old-index scans and self-validation. Successful
+ordinary insertions advance a private weak mutation stamp; validation rechecks
+that stamp, spacing and container identities after every checkpoint and before
+return. A changed destination aborts the traversal. Complete immutable geometry
+may remain cached, but interrupted compilation never becomes a certificate.
+Callers retain the same canonical patch to reuse it, and still call ordinary
+`add` at publication. `add` has no yielding callback and repeats all current
+destination guards before its atomic mutation tail. Cached insertion, setup
+and final commit remain uninterrupted work that must be measured separately.
+
+`SplineMesh.build` keeps profile rows by side/kind/cut, protected toe rows by
+side/cut, and raw rail coordinates/heights/directions within that build only.
+Face attributes remain per-face; these caches do not change emitted triangles
+or introduce an extra Vector3/CFrame rounding step. Statistics expose reuse
+counts and `surfaceEmitWorkMs`, `terrainEmitWorkMs`, `treeWorkMs`, `partsWorkMs`
+and `parentWorkMs`. These phase times exclude frame waits, like existing
+`surfacePlanMs`, `hillPlanMs` and total `ms`; legacy `treeMs` retains wall time.
+
+Planner XZ reservations, precise attached-bank checks and minimum span are
+checked before constructing the hillside baseline. Those checks use the same
+frozen bank positions and strict SAT and cannot depend on final floor height or
+opening weight. The coarse approach search also reuses the same ordered frozen
+seed positions across departure probes; its seed choices and projection remain
+unchanged.
+`SplineInfieldTests.curvedBanks`
+checks contact, credit, finite ends and retirement; actual collider/render and
+natural-generation proof remain required before enabling generated fields.
 
 ## Studio-only baked shadow trial (T-214)
 
@@ -496,3 +968,40 @@ meshes. `DebugState().lifetime` reports `closed`, `drained`, `jobs`, `pending`,
 considered complete. This adds no remote or player data.
 The production renderer is unchanged; cold bake stalls and static-colour haze
 remain integration requirements in the archived T-214 report.
+
+## Bounded generation (T-212)
+
+The server's spline generator never runs a whole step inside one frame.
+`SplineSequence` keeps it private (`gen`, `gen.spline`) and runs `gen:step()` on a
+coroutine from `RoadService`'s Heartbeat (`Config.Spline.Pump`: `BudgetMs` normally,
+`UrgentBudgetMs` when fewer than `Config.Road.UrgentAheadPieces` are left ahead,
+`Lead` sections beyond the window's ask). `SplineGen.tick`, set by the sequence,
+is its checkpoint: it suspends only from that coroutine and only once the slice is
+spent; `gen.pausedMs` keeps suspended time out of `stats`. Nothing outside the
+coroutine may read the private generator or spline while a step is open. A trim
+reaches the private spline only between steps.
+
+Checkpoints are forwarded as optional trailing `tick` arguments, none of which
+changes a result: `SplineInfieldPlanner.plan(...,corridors?,tick?)`,
+`SplineTurnFit.measure(...,flips,tick?)`, `SplineCorridor.fit(...,separation,tick?)`,
+`Spline.addInfieldsSliced(patches,tick?)` (the batch `addInfields` makes, whose
+readonly `Infield.validate` preflight may suspend; the adds that change the index
+then run together without suspending; `addInfields(patches)` is unchanged),
+and `SplineHill.context`'s existing `tick`, now also called per gathered cell.
+The same seed lays exactly the same sections pumped or all at once.
+
+A finished section becomes public by the ordinary `Spline.append`, whole, so the
+public road only ever holds complete sections; its field patches are the generator's
+own canonical patches, so their compiled geometry is reused and every destination
+guard repeats. `append` no longer repeats its own field preflight inside the install
+(the final adds keep all guards), and a batch's last patch is only validated, not
+added, into the throwaway pending index.
+
+`RoadService:_sendAll` sends exactly the sections already broadcast (`sentLast`);
+anything the pump has finished since goes to every runner in the next `more`.
+
+On the client, `SplineRoadController` lays a plain section at once as before. A
+section carrying `ip`, and every section behind it, waits in order: its patches are
+canonicalized and validated readonly a slice per Heartbeat (`Pump.BudgetMs`), then
+the section is appended whole. `more` must follow on from laid plus queued
+sections. `start`/`stop` drop the queue. `start` still replays synchronously.

@@ -64,6 +64,8 @@ function Tests.run(_self,options)
 			-- Install deterministic geometry through the existing test-only generator
 			-- access, keeping the real sequence, adoption and retirement operations.
 			seq.spline=sp;seq.gen.spline=sp;seq.gen.sections=sections
+			-- the public road is the fixture; its private generator lays nothing more (T-212)
+			seq.sections=sections;seq.gen.stats.stalled=true;seq.thread=nil;seq.target=0
 			seq.first=1;seq.last=0;seq.starts={};seq.pieces={};seq.destroyed=0
 			seq.furthestN=1;seq.furthestT=0;seq:_adopt()
 			local trailId,leadId=if owned then player.UserId else -2032111,-2032112

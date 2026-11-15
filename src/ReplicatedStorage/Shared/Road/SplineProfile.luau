@@ -141,5 +141,18 @@ function SplineProfile.profile(spline: Spline.Spline, s: number, side: number, k
 	return out
 end
 
+-- Drawn faces begin beyond the small bank underlap. The generation profile and
+-- physical bank remain unchanged; this stops steep faces entering a true bank
+-- through a sub-stud difference between its boundary curve and a drawn chord.
+function SplineProfile.draw(spline:Spline.Spline,s:number,side:number,kind:number,cap:number?):{Vector3}
+	local points=SplineProfile.profile(spline,s,side,kind,cap)
+	if spline:hasBiomeGround() then
+		local yaw=spline:yawAt(s)
+		local shift=Vector3.new(side*math.cos(yaw),0,-side*math.sin(yaw))*Config.Spline.Hill.DrawEdgePad
+		for i,p in points do points[i]=p+shift end
+	end
+	return points
+end
+
 
 return SplineProfile

@@ -17,12 +17,20 @@
 --     and a few Newton steps, wherever the road has wandered.
 --   * `lateral` is signed by the spline (+ right) but handed back unsigned, as the piece
 --     road's is; `sideOf` gives the sign to anyone who wants it.
+--   * THE GENERATOR IS PRIVATE (T-212). It lays road into its own spline, on its own
+--     coroutine, and `pump` runs it a few milliseconds a frame: a field's planning can take
+--     seconds of work and must never freeze the server. `self.spline` is the PUBLIC copy,
+--     the one everything else reads. A section reaches it only once the generator has
+--     finished it, whole, by the same `Spline.append` a client uses, so nothing ever sees
+--     road half-laid. `extendTo` still finishes the work at once, for tests and for the
+--     rare moment the road ahead has run out.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Config = require(ReplicatedStorage.Shared.Config)
 local Spline = require(script.Parent.Spline)
 local SplineGen = require(script.Parent.SplineGen)
+local Contact = require(script.Parent.SplineContact)
 
 local SplineSequence = {}
 SplineSequence.__index = SplineSequence
@@ -41,10 +49,24 @@ export type Piece = {
 	section: Spline.Section,
 }
 
+export type Pump = {
+	resumes: number, -- coroutine resumes, each one bounded slice of generation
+	steps: number, -- sections finished by the pump
+	syncSteps: number, -- sections finished at once by `extendTo`
+	lastSliceMs: number,
+	worstSliceMs: number, -- the longest single resume: the frame cost a slice really took
+	workMs: number, -- all pumped generation work
+	publishMs: number, -- the public appends, which never suspend
+	worstPublishMs: number,
+	errors: number,
+	lastError: string?,
+}
+
 export type Sequence = typeof(setmetatable(
 	{} :: {
-		gen: SplineGen.Gen,
-		spline: Spline.Spline,
+		gen: SplineGen.Gen, -- PRIVATE: only its own coroutine reads it while a step is open
+		spline: Spline.Spline, -- the public road: complete sections only
+		sections: { Spline.Section }, -- the public road's sections, in order
 		seed: number,
 		first: number,
 		last: number,
@@ -53,15 +75,23 @@ export type Sequence = typeof(setmetatable(
 		furthestN: number,
 		furthestT: number,
 		destroyed: number,
+		target: number, -- sections the window has asked to be public
+		thread: thread?, -- the generator's coroutine, while a step is open
+		deadline: number, -- os.clock() at which the open step hands the frame back
+		trimS: number?, -- a trim for the private spline, applied between steps
+		pumpStats: Pump,
 	},
 	SplineSequence
 ))
 
 function SplineSequence.new(seed: number, origin: Spline.Origin?): Sequence
 	local gen = SplineGen.new(seed, origin)
+	local public = Spline.new(gen.spline.origin)
+	public.fall = gen.spline.fall
 	local self = setmetatable({
 		gen = gen,
-		spline = gen.spline,
+		spline = public,
+		sections = {},
 		seed = seed,
 		first = 1,
 		last = 0,
@@ -70,15 +100,108 @@ function SplineSequence.new(seed: number, origin: Spline.Origin?): Sequence
 		furthestN = 1,
 		furthestT = 0,
 		destroyed = 0,
+		target = 0,
+		thread = nil,
+		deadline = math.huge,
+		trimS = nil,
+		pumpStats = {
+			resumes = 0,
+			steps = 0,
+			syncSteps = 0,
+			lastSliceMs = 0,
+			worstSliceMs = 0,
+			workMs = 0,
+			publishMs = 0,
+			worstPublishMs = 0,
+			errors = 0,
+			lastError = nil,
+		},
 	}, SplineSequence)
+	gen.tick = function()
+		self:_checkpoint()
+	end
+	self:_publish(#gen.sections)
 	self:_adopt()
 	return self
 end
 
--- Turn every section the generator has laid but this has not yet numbered into a piece.
+-- The generator's checkpoint. It hands the frame back only from the generator's own
+-- coroutine, and only once the slice is spent; anywhere else it does nothing.
+function SplineSequence._checkpoint(self: Sequence)
+	local thread = self.thread
+	if thread == nil or coroutine.running() ~= thread or os.clock() < self.deadline then
+		return
+	end
+	local at = os.clock()
+	coroutine.yield()
+	self.gen.pausedMs += (os.clock() - at) * 1000
+end
+
+-- Run the generator until one step finishes or the slice ends at `deadline`. True when
+-- the step finished (a section, or the road boxed in); false when it is suspended. A trim
+-- reaches the private spline only between steps, never under an open one.
+function SplineSequence._run(self: Sequence, deadline: number): boolean
+	local gen = self.gen
+	if not self.thread then
+		if gen.stats.stalled then
+			return true
+		end
+		if self.trimS then
+			gen.spline:trim(self.trimS)
+			self.trimS = nil
+		end
+		self.thread = coroutine.create(function()
+			return gen:step()
+		end)
+	end
+	local thread = self.thread :: thread
+	self.deadline = deadline
+	local st = self.pumpStats
+	local at = os.clock()
+	local ok, err = coroutine.resume(thread)
+	local ms = (os.clock() - at) * 1000
+	self.deadline = math.huge
+	st.resumes += 1
+	st.lastSliceMs = ms
+	st.worstSliceMs = math.max(st.worstSliceMs, ms)
+	st.workMs += ms
+	if not ok then
+		-- the step is abandoned, as a failed step always was; the next one starts afresh
+		self.thread = nil
+		st.errors += 1
+		st.lastError = tostring(err)
+		error(debug.traceback(thread, tostring(err)), 0)
+	end
+	if coroutine.status(thread) == "dead" then
+		self.thread = nil
+		return true
+	end
+	return false
+end
+
+-- Make the generator's finished sections public, in order, up to section `n`. Each is a
+-- whole `Spline.append`, which never suspends. With a `deadline`, stops once it is spent.
+function SplineSequence._publish(self: Sequence, n: number, deadline: number?)
+	local source = self.gen.sections
+	local st = self.pumpStats
+	while #self.sections < math.min(n, #source) do
+		local sec = source[#self.sections + 1]
+		local at = os.clock()
+		self.spline:append(sec)
+		table.insert(self.sections, sec)
+		local ms = (os.clock() - at) * 1000
+		st.publishMs += ms
+		st.worstPublishMs = math.max(st.worstPublishMs, ms)
+		if deadline and os.clock() >= deadline then
+			break
+		end
+	end
+end
+
+-- Turn every public section this has not yet numbered into a piece.
 function SplineSequence._adopt(self: Sequence): { Piece }
 	local added: { Piece } = {}
-	local sections = self.gen.sections
+	local sections = self.sections
 	local s = if self.last > 0 then self.pieces[self.last] and self.pieces[self.last].s1 or self:_endOf(self.last) else 0
 	for n = self.last + 1, #sections do
 		local sec = sections[n]
@@ -121,19 +244,53 @@ end
 function SplineSequence._endOf(self: Sequence, n: number): number
 	local s = 0
 	for i = 1, n do
-		s += self.gen.sections[i].len
+		s += self.sections[i].len
 	end
 	return s
 end
 
--- Lay sections until there are `n` pieces. Returns the new ones.
+-- Lay sections until there are `n` pieces, AT ONCE (a step the pump left open is finished
+-- first). For tests, debug moves and a road that has run out. Returns the new pieces.
 function SplineSequence.extendTo(self: Sequence, n: number): { Piece }
-	while #self.gen.sections < n do
-		if not self.gen:step() then
-			break -- boxed in: the road stops growing, loudly (SplineGen warns)
+	self.target = math.max(self.target, n)
+	local gen = self.gen
+	while #gen.sections < n and not gen.stats.stalled do
+		local before = #gen.sections
+		self:_run(math.huge)
+		self.pumpStats.syncSteps += #gen.sections - before
+	end
+	self:_publish(n)
+	return self:_adopt()
+end
+
+-- Ask for `n` public pieces WITHOUT generating: whatever the pump has finished goes
+-- public, up to `n`. Returns the new pieces.
+function SplineSequence.request(self: Sequence, n: number): { Piece }
+	self.target = math.max(self.target, n)
+	self:_publish(n)
+	return self:_adopt()
+end
+
+-- Spend at most `budgetMs` of this frame generating toward `lead` sections beyond what
+-- has been asked for, then make finished sections public up to the ask. A step the slice
+-- cannot finish is suspended and carries on next frame.
+function SplineSequence.pump(self: Sequence, budgetMs: number, lead: number)
+	local deadline = os.clock() + budgetMs / 1000
+	local gen = self.gen
+	while #gen.sections < self.target + lead and not gen.stats.stalled and os.clock() < deadline do
+		local before = #gen.sections
+		local finished = self:_run(deadline)
+		self.pumpStats.steps += #gen.sections - before
+		if not finished then
+			break
 		end
 	end
-	return self:_adopt()
+	self:_publish(self.target, deadline)
+end
+
+-- Sections the generator has finished that are not public yet, and whether a step is open.
+function SplineSequence.pending(self: Sequence): (number, boolean)
+	return #self.gen.sections - #self.sections, self.thread ~= nil
 end
 
 function SplineSequence.piece(self: Sequence, n: number): Piece?
@@ -158,6 +315,12 @@ function SplineSequence.trimBefore(self: Sequence, n: number): { number }
 	local p = self.pieces[self.first]
 	if p then
 		self.spline:trim(p.s0)
+		-- the private copy forgets the same samples, between steps
+		self.trimS = p.s0
+		if not self.thread then
+			self.gen.spline:trim(p.s0)
+			self.trimS = nil
+		end
 	end
 	return dropped
 end
@@ -201,35 +364,22 @@ end
 
 -- Gameplay lookup belongs to one runner. A broad field must never reacquire a
 -- different leg when its current projection fails or leaves supported ground.
-function SplineSequence.locateOwned(self:Sequence,position:Vector3,hint:number,maxAdvance:number?):(number?,number,number,number?)
-	local limit=math.min(maxAdvance or 160,640)
-	local function attempt(seed:number):(number?,number?)
-		local s,d=self.spline:projectFrom(position.X,position.Z,seed)
-		if not s or not d or math.abs(s-hint)>limit or self.spline:groundKind(s,d)==nil then return nil,nil end
-		local y=self.spline:terrainY(s,d)
-		if position.Y<y-8 or position.Y>y+40 then return nil,nil end
-		return s,d
-	end
-	local s,d=attempt(hint)
-	-- A delayed server tick can cover more than one Newton solve's range.
-	-- Search a bounded arc interval around the last accepted leg, never the grid.
-	if not s and limit>128 then
-		for offset=128,limit,128 do
-			s,d=attempt(hint+offset);if s then break end
-			s,d=attempt(hint-offset);if s then break end
-		end
-	end
-	if not s or not d then return nil,0,math.huge,nil end
-	local piece=self:pieceAtS(s)
-	if not piece then return nil,0,math.huge,nil end
-	return piece.n,(s-piece.s0)/math.max(piece.length,1e-6),math.abs(d),s
+function SplineSequence.locateOwned(self:Sequence,position:Vector3,hint:number,maxAdvance:number?,peer:Contact.Token?,creditS:number?):(number?,number,number,number?,Contact.Hit?)
+	local hit=Contact.resolve(self.spline,position.X,position.Z,hint,{limit=maxAdvance,
+		low=position.Y-40,high=position.Y+8,first=self.starts[self.first],peer=peer,creditS=creditS})
+	if not hit then return nil,0,math.huge,nil,nil end
+	local piece=self:pieceAtS(hit.ownerS)
+	-- Physical support can remain live after the original credit anchor retires.
+	-- The caller still needs a real credited piece before publishing progress.
+	if not piece then return nil,0,math.huge,hit.ownerS,hit end
+	return piece.n,(hit.ownerS-piece.s0)/math.max(piece.length,1e-6),math.abs(hit.routeD),hit.ownerS,hit
 end
 
 -- Off-road travel cannot postpone an arc-length shortcut until re-entry. Give
 -- ordinary drifting its small chord/sampling allowance, but cap any catch-up
 -- by the actual plan distance driven since the last earned asphalt position.
 function SplineSequence.reentryS(self:Sequence,anchor:number,travel:number,s:number):number
-	return math.min(s,anchor+math.max(0,travel)*1.05+8)
+	return Contact.credit(anchor,travel,s)
 end
 
 -- The same flags `Road/Generator.progress` hands back.
@@ -276,7 +426,21 @@ end
 
 function SplineSequence.report(self: Sequence): { [string]: any }
 	local st = self.gen.stats
+	local pump = self.pumpStats
+	local waiting, open = self:pending()
 	return {
+		generated = #self.gen.sections,
+		waiting = waiting,
+		stepOpen = open,
+		pumpResumes = pump.resumes,
+		pumpSteps = pump.steps,
+		syncSteps = pump.syncSteps,
+		worstSliceMs = pump.worstSliceMs,
+		lastSliceMs = pump.lastSliceMs,
+		pumpWorkMs = pump.workMs,
+		publishMs = pump.publishMs,
+		worstPublishMs = pump.worstPublishMs,
+		pumpErrors = pump.errors,
 		seed = self.seed,
 		first = self.first,
 		last = self.last,
