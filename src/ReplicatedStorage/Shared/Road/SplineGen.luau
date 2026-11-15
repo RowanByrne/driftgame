@@ -46,6 +46,7 @@ local Biome = require(script.Parent.SplineBiome)
 local Style = require(script.Parent.SplineRoadStyle)
 local GradePolicy = require(script.Parent.SplineGradePolicy)
 local Corridor = require(script.Parent.SplineCorridor)
+local Infield = require(script.Parent.SplineInfield)
 local InfieldPlanner = require(script.Parent.SplineInfieldPlanner)
 local SplineTurnFit = require(script.Parent.SplineTurnFit)
 
@@ -1536,41 +1537,49 @@ local function withCorridorCells(index:Corridor.Index,cells:{Corridor.Cell}):Cor
 	return staged
 end
 
+-- Compute a complete private result. The caller owns the single publication
+-- boundary; this function never changes the spline's published field index.
+function SplineGen._calculateInfields(self:Gen,intents:{any}):({Infield.Patch}?,Corridor.Index?)
+	local first=self.spline.firstSample*self.spline.step
+	local _,_,_,k=self.spline:tip();local ease=transition(k,0)
+	local length=ease+Config.Spline.EscapeLength
+	local frames=self:_groundFrames(if ease>0 then {ease,0,length,0} else {length,0})
+	local escape={}
+	for i=2,#frames do
+		local cell=Corridor.cell(frames[i-1],frames[i]);assert(cell,"next escape ground folded")
+		table.insert(escape,cell)
+	end
+	-- The current tip's promised escape is a temporary planning obstacle,
+	-- not a permanent reservation for road that may never be chosen.
+	local planning=withCorridorCells(self.corridors,escape)
+	local patches,cells={},{}
+	for _,intent in intents do
+		local pending=intent.pending
+		local a0=math.max(first,pending.a0,pending.a1-Config.Spline.Biomes.Infield.ArmLength)
+		local batch,reserved=InfieldPlanner.plan(self.spline,a0,pending.a1,pending.b0,intent.b1,planning)
+		for _,patch in batch do table.insert(patches,patch) end
+		for _,cell in reserved do table.insert(cells,cell) end
+		planning=withCorridorCells(planning,reserved)
+	end
+	if #patches==0 then return nil,nil end
+	local staged=withCorridorCells(self.corridors,cells)
+	local serialized=table.freeze(patches)
+	return serialized,staged
+end
+
 function SplineGen._publishInfields(self:Gen,sec:Spline.Section,intents:{any})
 	if #intents==0 then return end
 	local began=os.clock();local stats=self.infieldStats
 	stats.planned+=#intents
 	local published=false
 	local ok,why=pcall(function()
-		local first=self.spline.firstSample*self.spline.step
-		local _,_,_,k=self.spline:tip();local ease=transition(k,0)
-		local length=ease+Config.Spline.EscapeLength
-		local frames=self:_groundFrames(if ease>0 then {ease,0,length,0} else {length,0})
-		local escape={}
-		for i=2,#frames do
-			local cell=Corridor.cell(frames[i-1],frames[i]);assert(cell,"next escape ground folded")
-			table.insert(escape,cell)
-		end
-		-- The current tip's promised escape is a temporary planning obstacle,
-		-- not a permanent reservation for road that may never be chosen.
-		local planning=withCorridorCells(self.corridors,escape)
-		local patches,cells={},{}
-		for _,intent in intents do
-			local pending=intent.pending
-			local a0=math.max(first,pending.a0,pending.a1-Config.Spline.Biomes.Infield.ArmLength)
-			local batch,reserved=InfieldPlanner.plan(self.spline,a0,pending.a1,pending.b0,intent.b1,planning)
-			for _,patch in batch do table.insert(patches,patch) end
-			for _,cell in reserved do table.insert(cells,cell) end
-			planning=withCorridorCells(planning,reserved)
-		end
-		if #patches==0 then return end
-		local staged=withCorridorCells(self.corridors,cells)
-		local serialized=table.freeze(patches)
+		local serialized,staged=self:_calculateInfields(intents)
+		if not serialized then return end
 		assert(not sec.ip,"a section already owns a field publication")
 		self.spline:addInfields(serialized)
 		self.corridors=staged
 		sec.ip=serialized
-		stats.published+=#patches;published=true
+		stats.published+=#serialized;published=true
 	end)
 	if not published then stats.declined+=1 end
 	stats.lastError=if ok then nil else tostring(why)
