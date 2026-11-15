@@ -129,7 +129,77 @@ Play. Setup and native-await failures are protected by cleanup. The explicit
 flag-off session produced zero native calls, no trial folder or GUI, and no input
 override. All tests use tracked StudioTestService sessions and end back in Edit.
 
-## Reproduce in Lane3
+## Safe cancellation follow-up — T-217
+
+2026-11-15, checked in Lane5. The earlier injected `afterConvert`/`afterCreate`
+checks only tested cancellation after native returns. They did not protect the
+source during an outstanding native clone, conversion or MeshPart creation.
+`DebugStop` could destroy that source while the native call still used it. This
+is a separate defect in the explicitly opted-in prototype. The trial flag was
+absent in the two reported terrain-lane Studio crashes; this finding does not
+attribute either crash to the trial.
+
+Each trial session now owns its native results and holds a source lifetime lease
+for every job, acquired before scheduling it. Stop immediately marks the session
+off, unparents the comparison scene, removes its UI and restores camera, sky and
+input. Outstanding jobs retain their sources, copied metadata and Content until
+all awaits and instrumentation waits finish. A native return is registered before
+any further wait; a cancelled return is disposed locally before configuration or
+publication. Final cleanup destroys MeshPart consumers before source meshes,
+drops owned Content and clears the session references. The shared grass image
+remains borrowed from its normal cache. Repeated Stop and late job finalizers are
+idempotent; another Start still requires a fresh Play.
+
+Fresh source-gate checks matched and compiled both changed modules. The pure
+`BakedShadowTrial.runCancellationTests()` regression passed **41/41** checks:
+
+- Suspend success and error returns at panel mesh/part creation, source build,
+  editable clone, conversion, baked part creation and editable readback. Cancel
+  while pending, retain the source, reject stale configuration/publication, and
+  release each returned owned resource once after drain.
+- Exercise the production bake sequence's conversion/create cancellation,
+  non-success result, native failure, partial configuration failure and success.
+- Stop queued and overlapping jobs sharing a source, and stop during the
+  post-native instrumentation wait. Verify consumer-before-source destruction.
+- Verify repeated finish/Stop and cleanup exceptions cannot strand other
+  resources or keep a job lease active.
+
+These suspended calls are deterministic substitutes, not claims that the engine
+was forced to yield at every internal native boundary. One quiet tracked Play
+also exercised the actual controller and actual native APIs:
+
+| Observation | Result |
+|---|---|
+| Initial flag absent | Zero trial calls/resources, no fixture/UI or input/camera override |
+| Panel native conversion/creation | Success; Opaque Content and ready comparison |
+| Real terrain readback |17,556/17,556 matched triangles; no missing/extra triangles |
+| Position / UV / colour / bounds error |0 /0 /0 /0 |
+| Maximum normal difference |0.000824334; unchanged tolerance |
+| Stop during actual window conversion |`pending=1`, `jobs=1`, `operations.convert=1` |
+| Immediate stop |Off/stopped, fixture hidden, UI removed, input/camera released |
+| Source while that native operation remained pending |10,096 vertices still readable |
+| After operation/job drain |Owned resources, jobs, pending operations and cleanup errors all zero |
+| Released source / borrowed grass image |Source vertices0; shared image still readable |
+| Start after Stop |Refused; native call count unchanged |
+
+The real terrain's successful conversion took23.024ms wall time and MeshPart
+creation9.075ms, with associated maximum sampled frame gaps9.179ms and9.974ms.
+This was a bounded correctness smoke, not a new cold or streaming benchmark. Its
+source build still cost153.675ms aggregate /7.299ms slice, above the existing40ms
+and3ms guards. Those failures and every earlier cold-stall/performance limitation
+remain recorded. The window was stopped at its first pending conversion; the
+eleven-bake benchmark was not repeated. No new screenshots were taken.
+
+Console was inspected; it contained historical plugin/MCP noise and prior test
+warnings, with no new trial error observed. The controller drained before the
+server ended the test. The original Edit marker reported terminal success and
+`StudioTestService.EditModeActive=true`; the Edit trial flag remained absent.
+This proves tracked source ownership and cleanup for the tested paths, not
+completion of deferred engine GC work, long idle Studio stability, or a native
+crash fix. Production integration still needs its own revision, streaming,
+fallback, haze and device checks.
+
+## Reproduce in a trial lane
 
 To reproduce, explicitly set the lane Edit attribute `workspace.__baked_shadow_trial=true` before starting. The conductor clears this flag after the checked trial so idle lanes return to the normal game. Press Play in DR-Lane3; wait for the labelled
 panel comparison. Use Low front, Low back and Higher sun. Terrain: baked lazily
