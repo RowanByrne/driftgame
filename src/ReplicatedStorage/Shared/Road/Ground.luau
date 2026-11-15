@@ -65,10 +65,15 @@ export type Station = {
 	wr: number,
 	rl: number, -- the runoff alone, left
 	rr: number,
-	-- the centre line's height `HEIGHT_STEP` studs apart, from `HEIGHT_REACH` before the
-	-- station to as far after it: a ground run's grade changes often (T-226), so the height
-	-- beside the station is read from these, not carried on from its grade
+	-- the centre line `HEIGHT_STEP` studs apart, from `HEIGHT_REACH` before the station to as
+	-- far after it: its height, where it is and which way it heads. A ground run's grade
+	-- changes often and steeply (T-226), so how far along the road a point beside the station
+	-- is, and the height there, are read from these, not carried on from the station alone
 	ys: { number },
+	cxs: { number },
+	czs: { number },
+	fxs: { number },
+	fzs: { number },
 }
 
 export type Context = {
@@ -174,7 +179,7 @@ end
 -- `ds` studs along the road from the station: its height and bank carried on (to second
 -- order), since a point beside a bend may be square to road some way along from it.
 local HEIGHT_STEP = 8 -- studs
-local HEIGHT_REACH = 32 -- studs
+local HEIGHT_REACH = 48 -- studs
 local HEIGHT_MID = HEIGHT_REACH // HEIGHT_STEP + 1
 
 local function surface(st: Station, d: number, ds: number?): number
@@ -251,17 +256,53 @@ local function station(spline: Spline.Spline, s: number, x: number, z: number): 
 		rl = rl,
 		rr = rr,
 		ys = table.create(2 * HEIGHT_MID - 1),
+		cxs = table.create(2 * HEIGHT_MID - 1),
+		czs = table.create(2 * HEIGHT_MID - 1),
+		fxs = table.create(2 * HEIGHT_MID - 1),
+		fzs = table.create(2 * HEIGHT_MID - 1),
 	}
+	local first = spline.firstSample * spline.step
 	for i = 1, 2 * HEIGHT_MID - 1 do
 		local at = s + (i - HEIGHT_MID) * HEIGHT_STEP
-		-- past either end of the road, carried on from its grade there
-		local c = math.clamp(at, 0, spline.length)
+		-- past either end of the road (or of what is kept of it), carried on straight
+		local c = math.clamp(at, first, spline.length)
+		local cyaw = spline:yawAt(c)
+		local cfx, cfz = -math.sin(cyaw), -math.cos(cyaw)
+		local cx, cz = spline:planAt(c)
 		st.ys[i] = spline:heightAt(c) + (at - c) * spline:gradeAt(c)
+		st.cxs[i] = cx + (at - c) * cfx
+		st.czs[i] = cz + (at - c) * cfz
+		st.fxs[i] = cfx
+		st.fzs[i] = cfz
 	end
 	if s < spline.length - KEEP_SHORT then
 		mine[s] = st
 	end
 	return st
+end
+
+-- How far along the road from a station the point (x, z) is square to, from the centre line
+-- kept round it (`cxs`...), starting from the guess `ds0`; nil if not within them.
+local function along(st: Station, x: number, z: number, ds0: number): number?
+	local cxs, czs, fxs, fzs = st.cxs, st.czs, st.fxs, st.fzs
+	local n = #cxs
+	local function g(i: number): number
+		return (x - cxs[i]) * fxs[i] + (z - czs[i]) * fzs[i]
+	end
+	local j = math.clamp(math.floor(ds0 / HEIGHT_STEP) + HEIGHT_MID, 1, n - 1)
+	local gj, gk = g(j), g(j + 1)
+	while gj < 0 and j > 1 do
+		j -= 1
+		gk, gj = gj, g(j)
+	end
+	while gk >= 0 and j < n - 1 do
+		j += 1
+		gj, gk = gk, g(j + 1)
+	end
+	if gj < 0 or gk >= 0 then
+		return nil
+	end
+	return (j - HEIGHT_MID + gj / (gj - gk)) * HEIGHT_STEP
 end
 
 local CELL = 64 -- studs: a point looks at the 25 cells round it (at 32, 81)
@@ -344,7 +385,18 @@ function Ground.at(ctx: Context, x: number, z: number): (number, number, number,
 						if e < bMax then
 							-- how far along the road the point is square to: further than `l` on
 							-- the inside of a bend, less on its outside
-							local ds = l / math.max(1 + st.k * d, 0.2)
+							local c = 1 + st.k * d
+							local ds = l / math.max(c, 0.2)
+							-- from the centre line itself where the point is not deep inside a
+							-- tight bend (eased in over `c` 0.4 to 0.6, so nothing jumps): the
+							-- guess above is off by studs far out on a wide runoff, which a
+							-- steep grade turns into height (T-226)
+							if c > 0.4 then
+								local found = along(st, x, z, ds)
+								if found then
+									ds += (found - ds) * smooth(math.min((c - 0.4) / 0.2, 1))
+								end
+							end
 							local T, bw
 							if e <= 0 then
 								e = 0
