@@ -145,6 +145,7 @@ local function run(check, opts)
 
 		-- box by box along the road, as a chunk would be drawn
 		local step = 400
+		local tick = 0
 		for s0 = 0, sp.length - step, step do
 			local xa, za = sp:planAt(s0)
 			local xb, zb = sp:planAt(s0 + step)
@@ -200,17 +201,19 @@ local function run(check, opts)
 						totals.betweenN += 1
 						totals.betweenOff = math.max(totals.betweenOff, math.abs(y - Ground.h(field, x, z)))
 					end
-					-- no jumps: the slope over a quarter of a stud
-					local yx = Ground.at(ctx, x + 0.25, z)
-					local yz = Ground.at(ctx, x, z + 0.25)
-					local slope = math.max(math.abs(yx - y), math.abs(yz - y)) / 0.25
+					-- no jumps: nothing changes more than half a stud over a twentieth of one
+					-- (a slope of 10, far past any cut); and the steepest slope, for the record
+					local yx = Ground.at(ctx, x + 0.05, z)
+					local yz = Ground.at(ctx, x, z + 0.05)
+					local jump = math.max(math.abs(yx - y), math.abs(yz - y))
 					totals.seamsN += 1
-					totals.steepest = math.max(totals.steepest, slope)
-					if slope > 4 then
+					totals.steepest = math.max(totals.steepest, jump / 0.05)
+					if jump > 0.5 then
 						totals.seams += 1
 					end
 					-- the client's copy agrees
-					if (x + z) % 48 == 0 then
+					tick += 1
+					if tick % 4 == 0 then
 						local cy = Ground.at(cctx, x, z)
 						totals.replayN += 1
 						if math.abs(cy - y) > 1e-6 then
@@ -240,7 +243,7 @@ local function run(check, opts)
 	check(
 		"no seams: no jump anywhere on the grid",
 		totals.seams == 0,
-		`{totals.seams} of {totals.seamsN} steeper than 4 over a quarter stud; steepest {fmt(totals.steepest, 2)}`
+		`{totals.seams} of {totals.seamsN} jump half a stud; steepest slope {fmt(totals.steepest, 2)}`
 	)
 	check("a client's replay draws the same ground", totals.replayDiffer == 0, `{totals.replayDiffer} of {totals.replayN} differ`)
 	check(

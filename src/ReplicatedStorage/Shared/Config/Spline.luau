@@ -467,7 +467,9 @@ local Spline = {
 		-- the road's start, plus ridges and gullies: {studs across, studs either way} per
 		-- octave of noise, `Stretch` times longer down the fall line than across it, so they
 		-- run down the mountain. A pure function of the seed and the place
-		Slope = 0.2, -- about 11 degrees, as the hillside's
+		-- 0.12, about 7 degrees: no steeper than the road may descend (`MaxGrade`, 8), or a
+		-- road heading down the mountain falls behind it (0.2 left one 113 studs above it)
+		Slope = 0.12,
 		Octaves = { { 900, 45 }, { 450, 22 }, { 180, 7 } },
 		Stretch = 1.8,
 		-- THE ROAD FOLLOWS THE PLANE: in a ground run the road's height band is centred on the

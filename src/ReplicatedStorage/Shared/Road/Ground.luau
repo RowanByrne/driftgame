@@ -281,9 +281,13 @@ function Ground.at(ctx: Context, x: number, z: number): (number, number)
 	local look, soft = G.Look, G.Soft
 	local bMin, bMax = G.BlendMin, G.BlendMax
 	local tanA = math.tan(math.rad(G.BlendAngle))
-	-- running sums, rescaled whenever a nearer edge turns up (a soft minimum)
+	-- Running sums, rescaled whenever a nearer edge turns up (a soft minimum). What is
+	-- averaged is each station's distance past its edge, its blend width and its target:
+	-- the blend is taken once, from the averaged distance, so where neighbouring stations
+	-- disagree a little about where the edge is (a bend, a runoff changing width) the
+	-- smoothstep's flat foot absorbs it, and the ground never rises onto the runoff.
 	local emin = math.huge
-	local sw, swa, swaT = 0, 0, 0
+	local sw, swe, swb, swT = 0, 0, 0, 0
 	local cell = ctx.cell
 	local grid = ctx.grid
 	for cx = math.floor((x - reach) / cell), math.floor((x + reach) / cell) do
@@ -295,20 +299,17 @@ function Ground.at(ctx: Context, x: number, z: number): (number, number)
 					local l = dx * st.fx + dz * st.fz
 					if l > -look and l < look then
 						local d = dx * st.rx + dz * st.rz
-						local ad = math.abs(d)
 						local w = if d < 0 then st.wl else st.wr
-						local e = ad - w
+						local e = math.abs(d) - w
 						if e < bMax then
-							local a, T
+							local T, bw
 							if e <= 0 then
-								a, T = 1, surface(st, d) - G.Under
 								e = 0
+								T = surface(st, d) - G.Under
+								bw = bMin
 							else
-								local yE = if d < 0 then st.el else st.er
-								local bw = math.clamp(math.abs(hp - yE) / tanA, bMin, bMax)
-								local t = e / bw
-								a = if t >= 1 then 0 else 1 - smooth(t)
-								T = yE
+								T = if d < 0 then st.el else st.er
+								bw = math.clamp(math.abs(hp - T) / tanA, bMin, bMax)
 							end
 							local q = l / look
 							local wl = (1 - q * q)
@@ -317,26 +318,32 @@ function Ground.at(ctx: Context, x: number, z: number): (number, number)
 								if emin < math.huge then
 									local k = math.exp((e - emin) / soft)
 									sw *= k
-									swa *= k
-									swaT *= k
+									swe *= k
+									swb *= k
+									swT *= k
 								end
 								emin = e
 							end
 							local wgt = wl * math.exp((emin - e) / soft)
 							sw += wgt
-							swa += wgt * a
-							swaT += wgt * a * T
+							swe += wgt * e
+							swb += wgt * bw
+							swT += wgt * T
 						end
 					end
 				end
 			end
 		end
 	end
-	if sw <= 0 or swa <= 1e-9 then
+	if sw <= 1e-12 then
 		return hp, 0
 	end
-	local A = swa / sw
-	local T = swaT / swa
+	local e, bw, T = swe / sw, swb / sw, swT / sw
+	local t = e / bw
+	if t >= 1 then
+		return hp, 0
+	end
+	local A = 1 - smooth(t)
 	return hp + (T - hp) * A, A
 end
 
