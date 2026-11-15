@@ -984,8 +984,9 @@ reaches the private spline only between steps.
 Checkpoints are forwarded as optional trailing `tick` arguments, none of which
 changes a result: `SplineInfieldPlanner.plan(...,corridors?,tick?)`,
 `SplineTurnFit.measure(...,flips,tick?)`, `SplineCorridor.fit(...,separation,tick?)`,
-`Spline.addInfields(patches,tick?)` (readonly `Infield.validate` preflight may
-suspend; the adds that change the index then run together without suspending),
+`Spline.addInfieldsSliced(patches,tick?)` (the batch `addInfields` makes, whose
+readonly `Infield.validate` preflight may suspend; the adds that change the index
+then run together without suspending; `addInfields(patches)` is unchanged),
 and `SplineHill.context`'s existing `tick`, now also called per gathered cell.
 The same seed lays exactly the same sections pumped or all at once.
 

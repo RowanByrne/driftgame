@@ -1597,7 +1597,7 @@ function SplineGen._publishInfields(self:Gen,sec:Spline.Section,intents:{any})
 		local serialized,staged=self:_calculateInfields(intents)
 		if not serialized then return end
 		assert(not sec.ip,"a section already owns a field publication")
-		self.spline:addInfields(serialized,self.tick)
+		self.spline:addInfieldsSliced(serialized,self.tick)
 		self.corridors=staged
 		sec.ip=serialized
 		stats.published+=#serialized;published=true

@@ -601,10 +601,14 @@ function Spline.append(self: Spline, sec: Section)
 	if acceptedInfields and #acceptedInfields>0 then installInfields(self,acceptedInfields,true) end
 end
 
--- `tick`, when given, may suspend the readonly checks (a private generator's own
--- spline only): the index is rechecked after every checkpoint, and the adds that
+function Spline.addInfields(self:Spline,patches:{Infield.Patch})
+	Spline.addInfieldsSliced(self,patches,nil)
+end
+
+-- The same batch, whose readonly checks may suspend at `tick` (a private generator's
+-- own spline only): the index is rechecked after every checkpoint, and the adds that
 -- change it run afterwards, together, without suspending.
-function Spline.addInfields(self:Spline,patches:{Infield.Patch},tick:(()->())?)
+function Spline.addInfieldsSliced(self:Spline,patches:{Infield.Patch},tick:(()->())?)
 	if #patches==0 then return end
 	local normalized={}
 	for _,patch in patches do table.insert(normalized,Infield.canonical(patch)) end
