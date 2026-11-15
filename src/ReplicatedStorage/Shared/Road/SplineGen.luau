@@ -42,6 +42,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Config = require(ReplicatedStorage.Shared.Config)
 local Spline = require(script.Parent.Spline)
 local Biome = require(script.Parent.SplineBiome)
+local Style = require(script.Parent.SplineRoadStyle)
 local Corridor = require(script.Parent.SplineCorridor)
 local SplineTurnFit = require(script.Parent.SplineTurnFit)
 
@@ -134,6 +135,7 @@ export type Gen = typeof(setmetatable(
 		limitUp: number, -- the limit that way
 		lineX: number?, -- where the stretch began: its line runs from here along `aim`
 		lineZ: number?,
+		rrng: Random, -- discretionary asphalt-edge rails (T-203), independent of terrain
 		trng: Random, -- the mountainside's own stream
 		grng: Random, -- the groves' own stream (T-183), so they never change the rest
 		xrng: Random, -- the tight cliff edges' own stream (T-181), so they never change the rest
@@ -223,6 +225,7 @@ function SplineGen.new(seed: number, origin: Spline.Origin?, clearOverride: numb
 		upSign = 0,
 		limitUp = math.rad(Config.Spline.HeadingLimit),
 		trng = Random.new((seed * 7 + 1013) % 2 ^ 31),
+		rrng = Random.new((seed * 23 + 6151) % 2 ^ 31),
 		grng = Random.new((seed * 11 + 2027) % 2 ^ 31),
 		xrng = Random.new((seed * 17 + 2311) % 2 ^ 31),
 		crng = Random.new((seed * 19 + 3089) % 2 ^ 31), -- not the groves' seed: a stream of its own
@@ -577,6 +580,17 @@ function SplineGen._terrain(self: Gen, sec: Spline.Section)
 	sec.gd = self:_grand(sec)
 	if self.biomes and Config.Spline.Biomes.GroundEnabled and tag~="Start" then self:_fitGround(sec) end
 	if self.biomes and Config.Spline.Biomes.GroundEnabled then self:_groundHeights(sec) end
+ if self.biomes and Config.Spline.Biomes.GroundEnabled then
+  -- Keep the legacy trng draw path above intact; changing rail density cannot
+  -- change future widths, curve choices or turn fitting. Every section consumes
+  -- the same eight draws from the dedicated rail stream, even when ineligible.
+  local draws=table.create(8)
+  for i=1,8 do draws[i]=self.rrng:NextNumber() end
+  if Config.Spline.Biomes.Rails.Enabled then
+   local rails=Style.rails(self.spline,sec,self.biomes.list,grove,draws)
+   sec.kr=if #rails>0 then rails else nil
+  end
+ end
 	self.turning = nil
 end
 
@@ -1113,7 +1127,7 @@ local function pickKind(self: Gen, s0: number): any
 	for i, b in C.Bends do
 		local w = 0
 		if s0 >= b.minS then
-			w = (1 + most - (counts[b.name] or 0)) * b.weight
+			w = (1 + most - (counts[b.name] or 0)) * b.weight * Style.weight(self.biomes and self.biomes.list,s0,b.name)
 		end
 		weights[i] = w
 		total += w
@@ -1339,29 +1353,10 @@ function SplineGen._groundHeights(self:Gen,sec:Spline.Section)
 	local C,T=Config.Spline.Biomes,Config.Spline.Terrain
 	local half=Config.Road.Width*.5
 	local _,_,yaw0,k0=sp:tip()
-	local function curvature(u:number):number
-		local at,k=0,k0
-		for i=1,#sec.k,2 do
-			if u<=sec.k[i] then return k+(sec.k[i+1]-k)*(u-at)/math.max(sec.k[i]-at,1e-9) end
-			at,k=sec.k[i],sec.k[i+1]
-		end
-		return k
-	end
 	for _,side in {-1,1} do
-		local widths=if side<0 then sec.rl :: {number} else sec.rr :: {number}
 		local edges=if side<0 then sec.el :: {number} else sec.er :: {number}
 		local function target(u:number):number
-			local from,width=0,sp:runoffRaw(s0,side)
-			for i=1,#widths,2 do
-				if u<=widths[i] then
-					local t=math.clamp((u-from)/math.max(widths[i]-from,1e-9),0,1)
-					width+=(widths[i+1]-width)*t*t*(3-2*t)
-					break
-				end
-				from,width=widths[i],widths[i+1]
-			end
-			local k=curvature(u)
-			if k~=0 and (k>0)==(side<0) then width=math.max(0,math.min(width,T.InsideShare/math.abs(k)-half)) end
+			local width=Style.runoff(sp,sec,side,u)
 			local kind=edges[#edges]
 			for i=1,#edges,2 do if u<=edges[i] then kind=edges[i+1];break end end
 			local across=math.sin(yawAlong(yaw0,k0,sec.k,u)-self.fall)^2
@@ -1396,7 +1391,7 @@ function SplineGen._candidate(self: Gen): (Spline.Section?, string?)
 	local rel = wrap(yaw0 - self.aim)
 
 	local kt: number, knots: { number }?, len: number, radius: number?, tag: string
-	if self.lastWasBend and rng:NextNumber() < C.StraightChance then
+	if self.lastWasBend and rng:NextNumber() < Style.straightChance(self.biomes and self.biomes.list,s0) then
 		local lo, hi = C.StraightLength[1], C.StraightLength[2]
 		kt = 0
 		knots, len = curvatureKnots(k0, 0, nil, lo + (hi - lo) * rng:NextNumber())
@@ -1404,7 +1399,7 @@ function SplineGen._candidate(self: Gen): (Spline.Section?, string?)
 	else
 		local kind = pickKind(self, s0)
 		local dir: number
-		if self.lastWasBend and rng:NextNumber() < C.SwitchbackChance then
+		if self.lastWasBend and rng:NextNumber() < Style.switchbackChance(self.biomes and self.biomes.list,s0) then
 			dir = -self.lastDir
 		else
 			-- lean back toward the road's general direction the further it has strayed; on a
@@ -1599,6 +1594,7 @@ function SplineGen._fitTurn(self: Gen, sec: Spline.Section, item: Item)
 	if preview.plan[1]==item then table.remove(preview.plan,1) end
 	preview.turning=item.what
 	preview.trng=self.trng:Clone(); preview.grng=self.grng:Clone()
+	preview.rrng=self.rrng:Clone()
 	preview.xrng=self.xrng:Clone(); preview.crng=self.crng:Clone()
 	local proposed=copyTables(sec)
 	preview:_terrain(proposed)

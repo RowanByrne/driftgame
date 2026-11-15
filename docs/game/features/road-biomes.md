@@ -213,6 +213,22 @@ The feature's own agent owns these sequential steps and reserves its lane after 
 
 ## Open questions
 
+### Follow-up terrain requirements (2026-11-14)
+
+The user reviewed the blockout in four pictures (C-330666 forwarding C-e1ae58).
+Fold these into steps 3/4 without reopening the approved T-209 checkpoint:
+
+- Reduce tessellation with distance from the road; far terrain should be visibly low poly.
+- Remove explicit far-ground colour blotches. Keep lighting-based face shading.
+- Clean up the terrain joining the two legs of hairpins, including protruding wall lobes.
+- Keep each hairpin inside a consistent uphill, downhill or flat run. Do not turn a descent into a climb at the hairpin; this supersedes the previous mid-turn grade reversal.
+- Double the terrain reach on both sides. Cliffs need not grow taller; use coarse distant ground.
+- Retain and verify the lighting-block correction alongside the revised terrain.
+
+The separate retired-runner progress correction T-211 blocks the conductor's merge
+of the approved terrain. Future road/rail and terrain tuning must stay separate from
+that review.
+
 - The steep category keeps the current uphill mountain/downhill drop; the user explicitly rejected a two-drop ridge. No terrain style redesign is authorised.
 - The first two v1 side profiles are suitable. Exact safe field extent, small-cliff fitting and rail coverage are settled in the measured blockout. They are not permission to widen the tarmac or change grass handling.
 - Category lengths must be seeded semi-random within bounds, and terrain transitions physically gradual. Initial mix, limits and transition-rate tuning are adjusted by the user's blockout drive.

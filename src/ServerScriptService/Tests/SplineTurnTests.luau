@@ -9,7 +9,7 @@ local Tests={}
 local function hashState(g)
 	local out={g.spline.length,#g.spline.curv.s,#g.spline.grade.s,#g.spline.bank.s,#g.flips,g.uphill,g.flip,g.lastGrand}
 	table.insert(out,g.corridors and g.corridors.count or 0)
-	for _,r in {g.trng,g.grng,g.xrng,g.crng} do table.insert(out,r:Clone():NextNumber()) end
+	for _,r in {g.rng,g.prng,g.trng,g.grng,g.xrng,g.crng,g.rrng} do table.insert(out,r:Clone():NextNumber()) end
 	if g.biomes then
 		table.insert(out,g.biomes.lengthRng:Clone():NextNumber())
 		table.insert(out,g.biomes.choiceRng:Clone():NextNumber())

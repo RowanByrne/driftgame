@@ -413,6 +413,28 @@ local Spline = {
 		CorridorMargin = 2, -- conservative allowance for curvature between 8-stud cells
 		CorridorFitIterations = 5, -- conservatively round a constrained field inward
 		CorridorSideIterations = 4,
+		-- Gentle preferences inside the existing curvature/grade/heading limits.
+		Road = {
+			Enabled = true,
+			StraightChance = { 0.55, 0.4, 0.25 },
+			SwitchbackChance = { 0.25, 0.45, 0.65 },
+			Weights = {
+				Hairpin = { 0.55, 1, 1.7 },
+				Tight = { 0.55, 1, 1.75 },
+				Medium = { 1.05, 1, 1.05 },
+				Sweeper = { 2.2, 1, 0.55 },
+			},
+		},
+		-- Existing asphalt-edge guardrails only; never fence the outer field.
+		Rails = {
+			Enabled = true,
+			Density = 1,
+			Chance = { 0.08, 0.45, 0.9 },
+			RunShare = { 0.4, 0.65, 0.9 },
+			Reach = 80, -- exposed drop within this distance past the asphalt
+			InsideFactor = 0.55,
+			StraightFactor = 0.6,
+		},
 	},
 
 	-- --------------------------------------------------------------- the grass's texture
