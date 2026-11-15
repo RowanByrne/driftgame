@@ -9,7 +9,6 @@ Every task in progress and the files it owns, so parallel sessions and workers n
 
 | Branch | Lane | Files owned | Since |
 |---|---|---|---|
-| `agent/remove-shadow-boxes` | lent | `src/ReplicatedStorage/Shared/Road/SplineMesh.luau` (the RockShade code only), `src/ReplicatedStorage/Shared/Config/Spline.luau` (the RockShade keys only; the `Ground` block is T-226's), tests that reference RockShade, `docs/game/features/mountain-road.md` (its shadow notes) | 2026-11-15 (T-229) |
 
 ## Notes between sessions
 
