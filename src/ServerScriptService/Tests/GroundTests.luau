@@ -126,11 +126,11 @@ local function run(check, opts)
 			totals.stalled += 1
 		end
 
-		-- the road follows the plane; the relief is what it cuts through
+		-- the road follows the mountain itself (T-226)
 		for s = 0, sp.length, 20 do
 			local x, z = sp:planAt(s)
 			local y = sp:heightAt(s)
-			local off = y - Ground.base(field, x, z)
+			local off = y - Ground.h(field, x, z)
 			totals.onPlaneWorst = math.max(totals.onPlaneWorst, math.abs(off))
 			totals.onPlaneSum += math.abs(off)
 			totals.onPlaneN += 1
@@ -228,10 +228,30 @@ local function run(check, opts)
 
 	check("the generator lays every seed without stalling", totals.stalled == 0, `{totals.stalled} stalled`)
 	check(
-		"the road follows the mountain's plane",
-		totals.onPlaneWorst <= G.Band + 30,
+		"the road follows the mountain (h at the centre line)",
+		totals.onPlaneSum / math.max(totals.onPlaneN, 1) <= 6,
 		`mean {fmt(totals.onPlaneSum / math.max(totals.onPlaneN, 1))}, worst {fmt(totals.onPlaneWorst)} studs off it`
 	)
+	-- how it sits on the slope (T-226): few trenches and causeways, rarely 20 studs off h
+	do
+		local p = Tests.profile(nil, { length = length })
+		local n = math.max(p.stations, 1)
+		check(
+			"trenches and causeways are rare",
+			(p.trench + p.causeway) / n < 0.1,
+			`{p.trench} trench and {p.causeway} causeway stations of {p.stations}`
+		)
+		check(
+			"cut or fill at the centre line over 20 studs is rare",
+			p.over20 / n < 0.05,
+			`{p.over20} of {p.stations}; median {fmt(p.cutMedian)}, p95 {fmt(p.cutP95)}, within 6: {fmt(100 * p.within6 / n)}%`
+		)
+		check(
+			"the road stays drivable",
+			p.gradeWorstDeg <= Config.Spline.MaxGrade + 1e-6 and p.gradeRateWorst <= Config.Spline.MaxGradeRate + 1e-6,
+			`steepest {fmt(p.gradeWorstDeg, 2)} degrees, grade change {fmt(p.gradeRateWorst, 5)} a stud`
+		)
+	end
 	check("cuts and fills at the centre line", true, `deepest cut {fmt(totals.cutWorst)}, deepest fill {fmt(totals.fillWorst)} studs`)
 	check(
 		"no ground above the road or its runoff",
