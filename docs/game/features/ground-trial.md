@@ -1,6 +1,6 @@
 # Feature: Ground-first mountain trial
 
-**Status:** picked 2026-11-15: **option 1, our own mesh** (`T-218` done). Next: sharper ground in the distance and along the road ahead, with a player slider (`T-225`, "The pick" below). **Owner task:** `T-225`.
+**Status:** picked 2026-11-15: **option 1, our own mesh** (`T-218` done). Sharper ground along the road ahead and a "Ground detail" setting built in `T-225` ("As built (T-225)" below), waiting on the user's try in a lane. **Owner task:** `T-225`.
 
 ## Goal
 
@@ -158,3 +158,50 @@ Asked for next (`T-225`):
 - **A slider for the distance** in the settings menu, so PC can look further and sharper while phones keep a lighter setup.
 
 Still after that, on top of the mesh: the touge kit (walls, guardrails, forest, props), seasons and a new backdrop. A ground run is still switched on from the console (`ground mesh`); making it the game's ground is a later step.
+
+## As built (T-225): detail along the road, and a Ground detail setting
+
+`Drift/GroundMeshView` draws option 1 as **tiles** now, picked by `Drift/GroundTiles`; numbers in `Config.Spline.Ground` (`TileCells` to `Detail`). The two square grids are gone. Console as before: `ground mesh`, then `start-run`. The setting is in Settings, Graphics, "Ground detail" (`settings-menu.md`, `SETTINGS.md`).
+
+- **Small square tiles, as a quadtree.** Each tile is 8 by 8 cells, one fixed-size mesh of 128 triangles, 8, 16, 32, 64 or 128 studs between vertices (64 to 1 024 studs across). A tile splits into four finer ones while it is too coarse for where it is, nearest the car first, until the setting's number of tiles shows. Tiles never overlap, so there is no hole and nothing hidden under anything.
+- **Detail follows the road ahead.** Every 32 studs of the drawn road (300 behind the car to 1 600 ahead, as far as the road is drawn) asks for 8-stud ground within about 32 studs of its middle out to the setting's `Fine` distance along it, 16-stud to twice that, and never coarser than 32 studs anywhere beside drawn road. Round the car, a tile of spacing s splits while it is nearer than s times `Ratio`.
+- **The budget decides the setting.** A client holds about 81 000 mesh triangles in Studio, the road's included (measured: vertices, normals and colours don't count, only triangles). 16-cell tiles, tried first, spent most of them on corridor the road doesn't need: 8-stud ground reached about 420 studs ahead at the old ground's cost. 8-cell tiles reach about 900 for the same.
+- **No cracks.** Where a tile meets a coarser one, its edge takes the coarser one's heights (straight between its vertices), and a vertex several tiles share takes its height the coarsest one's way. Each change (four tiles for one, one for four, a new tile, one let go, tiles redrawn for new road) is built into hidden tiles a few ms a frame, then swapped in within one frame with its neighbours' edges put right in the same frame.
+- **Never over the road.** Each spacing has its own clamp and sink (`Clamps`, `Sinks`): within the clamp of a runoff's edge a vertex is held below the edge, the clamp at least a cell and a half for 8 and 16 studs, so no triangle reaching over from a cutting covers the road. Coarser tiles never lie beside drawn road.
+- **Live.** Moving the slider redraws the ground in under a second, with no rejoin. A lower setting first merges tiles (each merge may borrow one tile past the cap for a moment), then lets go of the spare ones, so the road gets the room back. If a device won't make another mesh, the ground holds what it has less 24 tiles, for the road.
+
+### The settings
+
+| | Tiles (triangles) | 8-stud ground ahead | 16-stud ahead | Round the car (8 / 16 / 32 to) | Drawn to |
+|---|---|---|---|---|---|
+| Light | 128 (16 400) | about 250 to 330 | about 330 | 128 / 256 / 512 | 1 100 |
+| Low (default on touch) | 176 (22 500) | | | 144 / 288 / 576 | 1 300 |
+| **Medium** (default on PC) | 240 (30 700) | about 850 to 920 | about 1 050 to 1 550 | 160 / 320 / 640 | 1 550 |
+| High | 290 (37 100) | about 1 200 | | 192 / 384 / 768 | 1 800 |
+| Ultra | 330 (42 200) | about 1 300 to 1 400 | about 1 300 to 1 550 | 224 / 448 / 896 | 2 100 |
+
+Past 16-stud ground, the road keeps 32-stud ground to the end of the drawn road (about 2 000 studs ahead of the car, measured) on every setting. The old ground had 8 studs within 256 of the car and 32 beyond, round the car only, at 31 700 triangles.
+
+### Measured (DR-Lane1, this PC: `WKEYSTUDIOS1680`)
+
+Streaming 5 000 studs at 100 studs a second on seed 31337, each setting from a fresh run, all in one session, then the old two-grid mesh on the same PC earlier the same day. Studio held this PC at 120 frames a second (8.33 ms) throughout, so the means show the ground costs nothing here, not how much room is left.
+
+| | Mean ms | p99 | Worst | Over 20 ms | Build ms a frame (mean) | Worst slice | Worst swap |
+|---|---|---|---|---|---|---|---|
+| Old grids (c5e5eba) | 8.33 | 10.27 | 12.4 | 0 of 6 001 | about 0.1 | 2.3 | |
+| Light | 8.33 | 10.44 | 13.6 | 0 of 5 999 | 0.16 | 2.2 | 0.40 |
+| Medium | 8.33 | 10.52 | 13.4 | 0 of 5 999 | 0.24 | 2.2 | 0.39 |
+| Ultra | 8.33 | 10.61 | 11.9 | 0 of 5 998 | 0.29 | 2.2 | 0.41 |
+
+- **Seams:** of every pair of shown tiles sharing an edge (263 to 699 pairs, 48 000 to 108 000 points a stud apart), the biggest height difference was 0.00008 studs.
+- **Over the road:** of 3 808 points on the tarmac, its edges and the runoff (300 behind to 1 600 ahead), the drawn ground was at least 1.0 studs below the road's surface everywhere, on every setting (8, 16 and 32-stud tiles each checked).
+- **The road's meshes:** no fallbacks on any setting. With Ultra's ground and the road up, 28 500 triangles of the budget were still free.
+- **Live change:** Ultra to Light settled in 0.5 s (330 tiles to 127, the pool let go to 152); Light to High in 0.8 s.
+- **Settings page:** the Graphics tab and its row measured on the wide layout (1 186 by 591), iPhone 13 Pro portrait (390 by 844; Graphics wraps to a second tab row) and iPhone 7 landscape (667 by 375; three tabs in one row, the row scrolls into view), normal and largest text: no text failures, every target 48 px.
+
+### Known
+
+- Light reaches less far than it asks (about 330 studs of 16-stud ground, not 600): its 128 tiles go first to keeping 32-stud ground beside the whole drawn road.
+- Away from the road, round the car, the ground is coarser than the old grids' on Medium and below (Medium: 8 studs to 160, 16 to 320, 32 to 640, then 64; the old grids had 8 to 256 and 32 to about 1 000): the budget goes to the road first. Away from the road the ground is smooth, broad relief, and Ratio is one number to raise.
+- On a short phone landscape the Graphics row sits below the fold of the settings page's scrolling area, as the steering rows already do.
+- A phone's mesh budget is not measured; Light and Low hold fewer triangles than the old grids did.

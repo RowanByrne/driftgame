@@ -115,3 +115,13 @@ All steps belong to the feature's own agent and its reserved lane after the plan
 The page uses native Roblox panes and controls with no image uploads. Its BlurEffect softens the **whole 3D scene** while the modal is active; it does not blur individual GUI regions. The other HUD is suppressed through UiVisibilityController's owner-aware overlay API, preserving each owner's Enabled/Visible flags. Hide/restore P suspends the modal, input ownership and blur coherently. The selected design's toggle for showing UI becomes the existing keyboard P keycap/instructions: a touch toggle would hide its own route back. No new cross-device hide shortcut is introduced.
 
 The controller delegates the two real personal values to CarInputController's validated session API. It does not alter Config, saved car tunes, server remotes or the driving model. A settings view renders snapshots and emits actions; its fixtures and Studio layout drag/export methods are documented in ARCHITECTURE.md. Lane verification and limitations are in `docs/archive/settings-menu-shell-checks.md`.
+
+## Graphics: Ground detail (T-225)
+
+A third category, **Graphics**, holds one row: **Ground detail**, a five-step slider (Light, Low, Medium, High, Ultra) with - and + beside it, the step's name on the right and "Light - Ultra" under it, like the sensitivity row. It sets how far ahead along the road, and round the car, the mesh ground stays sharp (`features/ground-trial.md` "As built (T-225)"). The user asked for it on 2026-11-15, so PC can look further while phones keep a lighter setup.
+
+- **Where it lives:** `Drift/GroundDetail` holds the value for this device and session and fires `Changed`; `SettingsController` sets it through the view's `groundDetail` action, and `Drift/GroundMeshView` redraws live on `Changed`. Nothing on the server reads it, and there is no new remote or saved data: it is session only, like the steering values.
+- **Default:** Medium on keyboard and mouse or gamepad, Low on touch (`Config.Spline.Ground.DetailDefault`, `DetailTouchDefault`).
+- **Layout:** in the wide layout the rail gets a third tab. In compact layouts the three tabs share one row while each is at least 120 px (scaled with text size), else Graphics drops to a second row and the content moves down.
+- **Input:** the tab, -, slider and + join the focus order; Left/Right nudge whichever slider has focus (`SettingsView:nudgeSelected`); Enter on - or + steps it. Mouse and touch drag the slider like the sensitivity one.
+- **Fixtures:** `graphics` and `largestGraphics` (largest text, opaque panes).
