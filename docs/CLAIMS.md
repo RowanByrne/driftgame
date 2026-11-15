@@ -11,7 +11,6 @@ Every task in progress and the files it owns, so parallel sessions and workers n
 |---|---|---|---|
 | `agent/dirt-drift-sound` | lent | `src/StarterPlayerScripts/Drift/SkidSound.luau`, `src/ReplicatedStorage/Shared/Config/Fx.luau` (skid sound block only), `assets/audio/sfx-skid-dirt/*` (new); `docs/game/AUDIO.md` (its own row in "Sounds" only), `docs/game/features/car-fx.md` (sound section only) | 2026-11-15 (T-222) |
 | `agent/suspension-sounds` | lent | `src/StarterPlayerScripts/Drift/SuspensionSound.luau` (new), `src/StarterPlayerScripts/Controllers/DriftController.luau` (only the lines that make and step the new sound), `src/StarterPlayerScripts/Drift/Suspension.luau` (read-only unless a hook is needed; ask first), `src/ReplicatedStorage/Shared/Config/Fx.luau` (new block after the skid sound block only), `assets/audio/sfx-suspension/*` (new); `docs/game/AUDIO.md` (its own rows in "Sounds" only), `docs/game/features/car-fx.md` (its own section only) | 2026-11-15 (T-223) |
-| `agent/engine-start-sound` | lent | `src/StarterPlayerScripts/Drift/EngineSound.luau`, `src/StarterPlayerScripts/Drift/RoadHud.luau`, `src/ReplicatedStorage/Shared/Config/Fx.luau` (engine block only), `docs/game/AUDIO.md`, `docs/game/features/engine-sound.md`, `assets/audio/sfx-engine-start/*` (new) | 2026-11-15 (T-221) |
 
 ## Notes between sessions
 
