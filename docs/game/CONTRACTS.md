@@ -669,6 +669,16 @@ remove stale field colliders immediately. Studio-only `DebugFieldBudget(ms?)`
 can force multi-frame builds for exit, movement and cancellation checks.
 The ordinary road View and hill/face clipping still require integration before use.
 
+`SplineFieldCuts.context(index,selection?,first?,options?)` prepares immutable
+finite field footprint masks for a chosen complete patch set. Convex uncut row
+cells share their exact quad footprint; ambiguous/concave or retained-q cuts
+keep the published triangle footprints. `triangle(context,a,b,c)` subtracts
+those masks from numeric scenery points, preserves the source 3D plane/winding
+and supports vertical faces. Fragmentation/nonfinite failures are explicit.
+`intersectsBox(context,cframe,size)` uses the entire projected oriented box,
+including tilted axes, for later caster rejection. These are checked standalone
+helpers; actual perimeter seam capture/stitching and live drawing remain unfinished.
+
 ## Studio-only baked shadow trial (T-214)
 
 `workspace.__baked_shadow_trial=true` explicitly opts a Studio client into the
