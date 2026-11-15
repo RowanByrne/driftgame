@@ -25,7 +25,10 @@ end
 
 -- Bounds describe the actual approach and departure arms, never arbitrary
 -- nearby parallel roads. All geometry must still be in the retained spline.
-function Planner.plan(sp:any,a0:number,a1:number,b0:number,b1:number,corridors:Corridor.Index?):({Infield.Patch},{Corridor.Cell})
+-- `tick`, when given, is called between bounded pieces of work. A private
+-- generator may suspend there; every value it reads belongs to that generator.
+function Planner.plan(sp:any,a0:number,a1:number,b0:number,b1:number,corridors:Corridor.Index?,tick:(()->())?):({Infield.Patch},{Corridor.Cell})
+	local checkpoint:()->()=tick or function() end
 	local patches,cells={},{}
 	local C=Config.Spline.Biomes.Infield
 	local first=sp.firstSample*sp.step
@@ -33,6 +36,7 @@ function Planner.plan(sp:any,a0:number,a1:number,b0:number,b1:number,corridors:C
 	if a1-a0<C.MinSpan or b1-b0<C.MinSpan or b0<=a1 then return patches,cells end
 	local half=Config.Road.Width*.5
 	local function pair(sa:number,sb:number):Infield.Row?
+		checkpoint()
 		local ax,az=sp:planAt(sa);local bx,bz=sp:planAt(sb)
 		local ya,yb=sp:yawAt(sa),sp:yawAt(sb)
 		local d=(bx-ax)*math.cos(ya)-(bz-az)*math.sin(ya)
@@ -211,6 +215,7 @@ function Planner.plan(sp:any,a0:number,a1:number,b0:number,b1:number,corridors:C
 		local points={A={},B={}}
 		for _,r in rows do points.A[r.sa]=r.a;points.B[r.sb]=r.b end
 		for _,old in sources do
+			checkpoint()
 			local bank=known[old];local cuts={old.s0,old.s1}
 			for s in points[bank] do if s>old.s0 and s<old.s1 then table.insert(cuts,s) end end
 			table.sort(cuts)
@@ -239,7 +244,7 @@ function Planner.plan(sp:any,a0:number,a1:number,b0:number,b1:number,corridors:C
 	end
 	local ctx=nil
 	local pending=Infield.new()
-	for _,backward in chains do
+	for chainIndex,backward in chains do
 		local rows={}
 		for i=#backward,1,-1 do table.insert(rows,backward[i]) end
 		local common=refine(rows);if not common then continue end;rows=common
@@ -252,6 +257,7 @@ function Planner.plan(sp:any,a0:number,a1:number,b0:number,b1:number,corridors:C
 		-- Decline occupied geometry before constructing any hillside baseline.
 		local reserved={};local clear=true
 		for i=1,#rows-1 do
+			checkpoint()
 			local cell=Planner.cell(rows[i],rows[i+1]);table.insert(reserved,cell)
 			if corridors then
 				for _,old in corridors:near(cell,0,0) do
@@ -262,9 +268,10 @@ function Planner.plan(sp:any,a0:number,a1:number,b0:number,b1:number,corridors:C
 			if not clear then break end
 		end
 		if not clear then continue end
-		ctx=ctx or Hill.context(sp,a0,b1,Profile.draw,nil,true)
+		ctx=ctx or Hill.context(sp,a0,b1,Profile.draw,tick,true)
 		local baselineValid=true
 		for _,r in rows do
+			checkpoint()
 			local distance=math.min(r.sa-start.sa,ending.sa-r.sa,start.sb-r.sb,r.sb-ending.sb)
 			r.weight*=smooth(distance/fade)
 			local heights={}
@@ -284,6 +291,7 @@ function Planner.plan(sp:any,a0:number,a1:number,b0:number,b1:number,corridors:C
 			return n.Magnitude>1e-8 and math.abs(n.Y)/n.Magnitude>.8
 		end
 		for i=1,#rows-1 do
+			checkpoint()
 			local a,b=Infield.columns(rows[i]),Infield.columns(rows[i+1])
 			for j=1,10 do
 				if j==5 or j==6 then continue end
@@ -294,9 +302,13 @@ function Planner.plan(sp:any,a0:number,a1:number,b0:number,b1:number,corridors:C
 		end
 		local id=`infield:{start.sa}:{ending.sa}:{ending.sb}:{start.sb}`
 		local patch=Infield.patch(id,rows)
+		-- Readonly validation may suspend; the nonyielding add then reuses the
+		-- same canonical patch's compiled geometry and repeats every guard.
 		local ok=pcall(function()
-			if sp.infields then Infield.add(sp.infields,patch,true) end
-			Infield.add(pending,patch)
+			if sp.infields then Infield.validate(sp.infields,patch,tick) end
+			Infield.validate(pending,patch,tick)
+			-- only a later chain is checked against this one
+			if chainIndex<#chains then Infield.add(pending,patch) end
 		end)
 		if not ok then continue end
 		table.insert(patches,patch)

@@ -374,8 +374,8 @@ function SplineHill.context(spline: Spline.Spline, s0: number, s1: number, profi
 					end
 				end
 			end
+			ctx.tick()
 		end
-		ctx.tick()
 	end
 	return ctx
 end

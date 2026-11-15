@@ -164,6 +164,12 @@ export type Gen = typeof(setmetatable(
 		clearance: number,
 		separation: number,
 		stats: Stats,
+		-- A private pump's checkpoint (SplineSequence): nil runs every step to completion.
+		-- It may suspend the generator's own coroutine; nothing else may read this
+		-- generator or its spline until the step returns. `pausedMs` is time spent
+		-- suspended, so `stats` record working time only.
+		tick: (() -> ())?,
+		pausedMs: number,
 	},
 	SplineGen
 ))
@@ -200,6 +206,14 @@ function SplineGen.limits(clearOverride: number?): (number, number)
 	local ratio = math.min(1, clear / (2 * rmin))
 	local sep = 2 * rmin * math.asin(ratio) + 2 * C.CheckStep
 	return clear, sep
+end
+
+-- A bounded generator's checkpoint, between whole pieces of planning work.
+function SplineGen._tick(self: Gen)
+	local tick = self.tick
+	if tick then
+		tick()
+	end
 end
 
 function SplineGen.new(seed: number, origin: Spline.Origin?, clearOverride: number?): Gen
@@ -259,6 +273,8 @@ function SplineGen.new(seed: number, origin: Spline.Origin?, clearOverride: numb
 		lastGrand = 0,
 		clearance = clear,
 		separation = sep,
+		tick = nil,
+		pausedMs = 0,
 		stats = {
 			sections = 0,
 			tries = 0,
@@ -598,8 +614,11 @@ function SplineGen._terrain(self: Gen, sec: Spline.Section)
 	end
 	-- GRAND CLIFFS (T-185): how grand its rock and cliff faces are drawn, from no random
 	-- stream at all, so it changes nothing else the road chooses
+	self:_tick()
 	sec.gd = self:_grand(sec)
+	self:_tick()
 	if self.biomes and Config.Spline.Biomes.GroundEnabled and tag~="Start" then self:_fitGround(sec) end
+	self:_tick()
 	if self.biomes and Config.Spline.Biomes.GroundEnabled then self:_groundHeights(sec) end
  if self.biomes and Config.Spline.Biomes.GroundEnabled then
   -- Keep the legacy trng draw path above intact; changing rail density cannot
@@ -740,7 +759,9 @@ function SplineGen._commit(self: Gen, sec: Spline.Section)
 	local chosenGrade=gradePlan and gradePlan.section==sec and gradePlan.s0==s0
 	if chosenGrade and gradePlan.startSign~=nil then self.groupSign=gradePlan.startSign end
 	self.spline:append(sec)
+	self:_tick()
 	if self.biomes and Config.Spline.Biomes.GroundEnabled then self:_registerGround(s0,self.spline.length) end
+	self:_tick()
 	self:_infields(sec,s0,if fieldTurn and fieldTurn.section==sec and fieldTurn.s0==s0 then fieldTurn else nil)
 	table.insert(self.sections, sec)
 	local st = self.stats
@@ -1472,7 +1493,7 @@ function SplineGen._fitGround(self:Gen,sec:Spline.Section)
 		return Biome.mix(self.biomes and self.biomes.list,s,{C.Width[1],small,previous},previous)
 	end
 	local frames=self:_groundFrames(withEscape(sec.k,sec.k[#sec.k]))
-	local left,right=Corridor.fit(frames,s0+sec.len,incoming,desired,self.corridors,self.separation)
+	local left,right=Corridor.fit(frames,s0+sec.len,incoming,desired,self.corridors,self.separation,self.tick)
 	assert(left and right,"SplineGen: accepted geometry cannot fit its minimum supported ground")
 	sec.rl,sec.rr=left,right
 	self.runoff[-1],self.runoff[1]=left[#left],right[#right]
@@ -1556,7 +1577,7 @@ function SplineGen._calculateInfields(self:Gen,intents:{any}):({Infield.Patch}?,
 	for _,intent in intents do
 		local pending=intent.pending
 		local a0=math.max(first,pending.a0,pending.a1-Config.Spline.Biomes.Infield.ArmLength)
-		local batch,reserved=InfieldPlanner.plan(self.spline,a0,pending.a1,pending.b0,intent.b1,planning)
+		local batch,reserved=InfieldPlanner.plan(self.spline,a0,pending.a1,pending.b0,intent.b1,planning,self.tick)
 		for _,patch in batch do table.insert(patches,patch) end
 		for _,cell in reserved do table.insert(cells,cell) end
 		planning=withCorridorCells(planning,reserved)
@@ -1576,7 +1597,7 @@ function SplineGen._publishInfields(self:Gen,sec:Spline.Section,intents:{any})
 		local serialized,staged=self:_calculateInfields(intents)
 		if not serialized then return end
 		assert(not sec.ip,"a section already owns a field publication")
-		self.spline:addInfields(serialized)
+		self.spline:addInfields(serialized,self.tick)
 		self.corridors=staged
 		sec.ip=serialized
 		stats.published+=#serialized;published=true
@@ -1904,7 +1925,7 @@ function SplineGen._fitTurn(self: Gen, sec: Spline.Section, item: Item)
 	local ground=if self.biomes and Config.Spline.Biomes.GroundEnabled then {left=table.clone(proposed.rl :: {number}),right=table.clone(proposed.rr :: {number})} else nil
 	preview:_carve(proposed)
 	preview.spline:append(proposed)
-	return SplineTurnFit.measure(preview.spline,self.spline.length,preview.spline.length,self.flip,preview.flips),ground
+	return SplineTurnFit.measure(preview.spline,self.spline.length,preview.spline.length,self.flip,preview.flips,self.tick),ground
 end
 
 -- A planned turn lands on its heading and keeps the crossing/escape safety checks.
@@ -1956,6 +1977,7 @@ function SplineGen._turn(self: Gen, item: Item): (Spline.Section | string)?
 	local bestGround:any=nil
 	local reading: any = nil
 	for try=1,totalTries do
+		self:_tick()
 		local lo=if try>totalTries//2 then math.min(C.MinRadius,range[1]) else range[1]
 		local radius=lo*(range[2]/lo)^self.rng:NextNumber()
 		local kt=dir/radius
@@ -2082,6 +2104,7 @@ function SplineGen.step(self: Gen): Spline.Section?
 		return nil
 	end
 	local t0 = os.clock()
+	local paused0 = self.pausedMs
 	local C = Config.Spline
 	local sec: Spline.Section? = nil
 	local planned = false
@@ -2116,6 +2139,7 @@ function SplineGen.step(self: Gen): Spline.Section?
 		end
 	end
 	for _ = 1, if planned then 0 else C.CandidateTries do
+		self:_tick()
 		st.tries += 1
 		local cand, why = self:_candidate()
 		if cand then
@@ -2186,7 +2210,8 @@ function SplineGen.step(self: Gen): Spline.Section?
 		end
 	end
 	self.lastWasBend = bend and chosen.k[#chosen.k] ~= 0
-	local ms = (os.clock() - t0) * 1000
+	-- working time: a bounded pump's suspensions are not the step's cost
+	local ms = (os.clock() - t0) * 1000 - (self.pausedMs - paused0)
 	st.totalMs += ms
 	st.worstMs = math.max(st.worstMs, ms)
 	return chosen

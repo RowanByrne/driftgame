@@ -538,6 +538,8 @@ local function checkTerrain(self: Spline, sec: Section)
 	end
 end
 
+local installInfields:(Spline,{Infield.Patch},boolean)->()
+
 function Spline.append(self: Spline, sec: Section)
 	local s0 = self.length
 	local s1 = s0 + sec.len
@@ -545,10 +547,11 @@ function Spline.append(self: Spline, sec: Section)
 	if sec.ip then
 		acceptedInfields={}
 		local pending=Infield.new()
-		for _,patch in sec.ip do
+		for i,patch in sec.ip do
 			patch=Infield.canonical(patch);table.insert(acceptedInfields,patch)
 			if self.infields then Infield.add(self.infields,patch,true) end
-			Infield.add(pending,patch)
+			-- the batch's later patches are checked against the earlier ones
+			Infield.add(pending,patch,i==#sec.ip)
 		end
 	end
 	for _, knots in { sec.k, sec.g, sec.b } do
@@ -593,18 +596,42 @@ function Spline.append(self: Spline, sec: Section)
 	end
 	self.lastSample = i
 	addCheckPoints(self, s1)
-	if acceptedInfields then self:addInfields(acceptedInfields) end
+	-- the preflight above already checked these against this index and each other;
+	-- every final add still repeats all of its own destination guards
+	if acceptedInfields and #acceptedInfields>0 then installInfields(self,acceptedInfields,true) end
 end
 
-function Spline.addInfields(self:Spline,patches:{Infield.Patch})
+-- `tick`, when given, may suspend the readonly checks (a private generator's own
+-- spline only): the index is rechecked after every checkpoint, and the adds that
+-- change it run afterwards, together, without suspending.
+function Spline.addInfields(self:Spline,patches:{Infield.Patch},tick:(()->())?)
 	if #patches==0 then return end
 	local normalized={}
 	for _,patch in patches do table.insert(normalized,Infield.canonical(patch)) end
+	if tick then
+		local index=self.infields or Infield.new()
+		local pending=Infield.new()
+		for i,patch in normalized do
+			Infield.validate(index,patch,tick)
+			Infield.validate(pending,patch,tick)
+			if i<#normalized then Infield.add(pending,patch) end
+		end
+		installInfields(self,normalized,true)
+		return
+	end
+	installInfields(self,normalized,false)
+end
+
+-- One atomic batch: every patch is checked before any is added, unless the caller
+-- has just made exactly those checks against this same unchanged index.
+function installInfields(self:Spline,normalized:{Infield.Patch},preflighted:boolean)
 	local index=self.infields or Infield.new()
-	local pending=Infield.new()
-	for _,patch in normalized do
-		Infield.add(index,patch,true)
-		Infield.add(pending,patch)
+	if not preflighted then
+		local pending=Infield.new()
+		for i,patch in normalized do
+			Infield.add(index,patch,true)
+			Infield.add(pending,patch,i==#normalized)
+		end
 	end
 	local added=false
 	for _,patch in normalized do if Infield.add(index,patch) then added=true end end

@@ -7,9 +7,11 @@ local Hill = require(script.Parent.SplineHill)
 local Profile = require(script.Parent.SplineProfile)
 local Fit = {}
 export type Reading = {ok:boolean, score:number, view:number, cut:number, fill:number, samples:number}
-function Fit.measure(sp: Spline.Spline, s0:number, s1:number, startFlip:number, flips:{{number}}): Reading
+-- `tick` is forwarded to the hillside's own checkpoints: a private generator may
+-- suspend there. The measurement and its thresholds are unchanged.
+function Fit.measure(sp: Spline.Spline, s0:number, s1:number, startFlip:number, flips:{{number}}, tick:(() -> ())?): Reading
 	local M, H = Config.Spline.Mountain, Config.Spline.Hill
-	local ctx = Hill.context(sp, s0, s1, Profile.profile)
+	local ctx = Hill.context(sp, s0, s1, Profile.profile, tick)
 	local half = Config.Road.Width * .5
 	local view, cut, fill, samples = 0, 0, 0, 0
 	local cross, least, diagonal = s0, math.huge, nil

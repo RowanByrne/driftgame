@@ -175,8 +175,11 @@ end
 -- Both ends of every 8-stud cell are tested, using the actual eased
 -- width track, not just the chosen knots. A uniform reduction preserves its taper;
 -- each side can then reopen independently wherever the other side was the limit.
+-- `tick`, when given, is called between bounded pieces of the search: a private
+-- generator may suspend there. The fitted widths do not depend on it.
 function Corridor.fit(frames:{Row}, sectionEnd:number, incoming:{number}, desired:(number,number)->number,
-	old:Index, separation:number):({number}?,{number}?,{number}?)
+	old:Index, separation:number, tick:(()->())?):({number}?,{number}?,{number}?)
+	local checkpoint:()->()=tick or function() end
 	local C=Config.Spline.Biomes
 	local half=Config.Road.Width*.5
 	local gap=Config.Spline.ClearanceGap+C.CorridorMargin
@@ -253,6 +256,7 @@ function Corridor.fit(frames:{Row}, sectionEnd:number, incoming:{number}, desire
 	for i=2,#frames do
 		local a=if i-1==seam then seamEnvelope else envelopes[i-1]
 		local envelope=Corridor.cell(a,envelopes[i],true) :: Cell
+		if i%16==0 then checkpoint() end
 		guards[i-1]=old:near(envelope,separation,gap)
 		local peers={}
 		for _,cell in same:near(envelope,separation,gap) do table.insert(peers,ids[cell]) end
@@ -261,6 +265,7 @@ function Corridor.fit(frames:{Row}, sectionEnd:number, incoming:{number}, desire
 		same:add(envelope)
 	end
 	local function clear(left:number,right:number):boolean
+		checkpoint()
 		local rows={}
 		for i=1,#frames do rows[i]=rowAt(i,left,right) end
 		local reservedSeam=rowAt(seam,left,right,true)

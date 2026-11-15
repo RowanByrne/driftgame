@@ -914,6 +914,8 @@ function Tests.server()
 			local sec=table.clone(sections[3]);table.insert(sections,sec);sp:append(sec)
 		end
 		seq.spline=sp;seq.gen.spline=sp;seq.gen.sections=sections
+		-- the public road is the fixture; its private generator lays nothing more (T-212)
+		seq.sections=sections;seq.gen.stats.stalled=true;seq.thread=nil;seq.target=0
 		seq.first=1;seq.last=0;seq.starts={};seq.pieces={};seq.destroyed=0;seq.furthestN=1;seq.furthestT=0;seq:_adopt()
 		local id=-2032121;assert(service:DebugJoin(id))
 		car=Instance.new("Model");car.Name="FieldProgressFixture";car:SetAttribute("UserId",id)

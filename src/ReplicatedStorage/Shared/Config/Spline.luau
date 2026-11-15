@@ -74,6 +74,16 @@ local Spline = {
 	-- way out is checked before the way in is taken.
 	EscapeLength = 260, -- studs of straight
 	CandidateTries = 14, -- random sections tried before taking the escape itself
+	-- BOUNDED GENERATION (T-212). The server lays road on a private copy, a few ms a frame
+	-- (`SplineSequence.pump`), ahead of what the window has asked for; a section goes
+	-- public only once it is finished. Planning one field can take seconds of work, which
+	-- must never freeze the server. A run starts once its first window of road is ready.
+	Pump = {
+		BudgetMs = 2, -- generation per server frame, normally
+		UrgentBudgetMs = 8, -- when fewer than `Config.Road.UrgentAheadPieces` are left ahead
+		Lead = 4, -- sections generated beyond what the window has asked for
+		StartTimeout = 10, -- seconds a starting run waits before laying the rest at once
+	},
 
 	-- --------------------------------------------------------------- the mountain's direction
 	-- (features/mountain-direction.md, T-166.) The mountain has ONE FALL LINE, fixed in the
