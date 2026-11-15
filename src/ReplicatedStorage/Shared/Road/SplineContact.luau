@@ -78,7 +78,7 @@ function Contact.resolve(sp:any,x:number,z:number,owner:number?,options:Options?
 		local s,d=sp:projectFrom(x,z,seed)
 		if not s or not d or s<first or s>sp.length or math.abs(s-history)>limit then return nil end
 		if owned and not mayOwn(s) then return nil end
-		local kind=sp:groundKind(s,d)
+		local kind=sp:groundKind(s,d,math.max(first,o.closing or 0))
 		if kind==nil then return nil end
 		local y=sp:terrainY(s,d)
 		if (o.low and y<o.low) or (o.high and y>o.high) then return nil end

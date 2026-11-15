@@ -335,7 +335,17 @@ radius within the existing triangle cap, with support rechecked each walking
 frame while the full floor builds.
 
 Generated connectors remain disabled. Ordinary scenery subtraction, exact end
-stitching, the single nearby field-view mesh and atomic generation publication
-still need integration and full-run checks. Historical blockout timings above
-do not establish a pass for the final terrain: whole-mesh and generation timing
-flags from the wider T-212 trials remain open.
+stitching, a nearby complete-field view and atomic generation publication are
+implemented. The live view uses the actual published road scenery and changes
+its matching field seams in the same publication. Offline scheduling checks
+cover cancellation, retirement and the global mesh limit; actual forced-fallback
+publication timing still needs the final candidate checked in Studio.
+
+The paired banks now share actual accepted road-cell and terrain-track stations.
+Extra rows bound curved-bank sag without altering frozen global road footprints.
+A finite curve/chord gap can provide grass support only where the outward bank
+ray enters that opening's supported triangle and its retained closure scalar.
+Natural generation, walking collider/render agreement and final timing remain
+gates before enabling this. Historical blockout timings above do not establish
+a pass for the final terrain: whole-mesh and generation timing flags from the
+wider T-212 trials remain open.

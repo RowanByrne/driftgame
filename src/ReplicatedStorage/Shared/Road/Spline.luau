@@ -676,7 +676,7 @@ function Spline.infieldContact(self:Spline,x:number,z:number,hint:number?,low:nu
 		if liveFirst>link.peerLast then continue end
 		local s,d=self:projectFrom(x,z,math.clamp(link.peerS,liveFirst,link.peerLast))
 		if not s or not d or s<liveFirst or s>link.peerLast then continue end
-		local kind=self:groundKind(s,d)
+		local kind=self:groundKind(s,d,first)
 		if kind==nil then continue end
 		local owner=Infield.pair(link.patch,if link.bank=="A" then "B" else "A",s)
 		if not owner or owner<first or math.abs(owner-hint)>advance then continue end
@@ -1072,7 +1072,7 @@ end
 -- What is underfoot at (s, d): TARMAC, GRASS, GRAVEL (the runoff in a gravel run), or nil
 -- past a cliff's lip, where there is nothing. Past a rock face or a hedge the grass carries
 -- on under it.
-function Spline.groundKind(self: Spline, s: number, d: number): number?
+function Spline.groundKind(self: Spline, s: number, d: number,fieldFirst:number?): number?
 	local half = Config.Road.Width * 0.5
 	local a = math.abs(d)
 	if a <= half then
@@ -1083,6 +1083,13 @@ function Spline.groundKind(self: Spline, s: number, d: number): number?
 	if a - half <= w then
 		-- the road's bevel down to the grass is gravel too (T-184)
 		return if a - half <= lipWidth(w) or self:gravelAt(s, side) then Spline.GRAVEL else Spline.GRASS
+	end
+	local excess=a-half-w
+	local C=Config.Spline.Biomes.Infield
+	if self.infields and excess<=C.BankContactPad then
+		local x,y,z=self:terrainXYZ(s,side*(half+w));local yaw=self:yawAt(s)
+		if Infield.bankGap(self.infields,s,side,x,y,z,side*math.cos(yaw),-side*math.sin(yaw),excess,
+			C.BankContactPad,C.BankSag,math.max(self.firstSample*self.step,fieldFirst or 0)) then return Spline.GRASS end
 	end
 	if self:hasBiomeGround() then return nil end
 	if self:edgeAt(s, side) == Spline.CLIFF then

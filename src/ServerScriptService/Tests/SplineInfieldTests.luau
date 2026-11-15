@@ -1060,6 +1060,88 @@ function Tests.render()
 	return result
 end
 
+function Tests.curvedBanks()
+	local road=game.ReplicatedStorage.Shared.Road
+	local Spline,Planner,Contact=require(road.Spline),require(road.SplineInfieldPlanner),require(road.SplineContact)
+	local cfg=require(game.ReplicatedStorage.Shared.Config)
+	local saved=cfg.Spline.Biomes.GroundEnabled;cfg.Spline.Biomes.GroundEnabled=true
+	local ok,result=xpcall(function()
+		local sp=Spline.new({x=30000,y=50,z=-20000,yaw=0});sp.fall=math.pi*.5
+		local function section(length,k,left,right,bank)
+			return {len=length,k=k,g={length,0},b={length,0},rl={length,16},rr={length,16},
+				el={length,left},er={length,right},hl={length,bank},hr={length,0}}
+		end
+		local a=section(512,{16,.0005,512,.0005},Spline.ROCK,Spline.CLIFF,20);a.bm={0,1,0};a.g={512,.006};sp:append(a)
+		local length=math.pi*100+20
+		local turn=section(length,{20,.01,length-20,.01,length,0},Spline.ROCK,Spline.CLIFF,0);turn.g={length,-.006};sp:append(turn)
+		local b0=sp.length;local exit=section(384,{16,-.00055,384,-.00055},Spline.CLIFF,Spline.ROCK,0);exit.g={384,-.006};sp:append(exit)
+		local patches=Planner.plan(sp,96,480,b0,sp.length);assert(#patches>0,"curved fixture has no accepted connection")
+		sp:addInfields(patches)
+		local gaps,missing,tested,nonGrass,heightError,finite=0,0,0,0,0,0
+		local closingBefore,closingAfter=0,0
+		local linked,linkedClosed=0,0
+		local unconnected,retired=0,0
+		local roadMin,roadMax=math.huge,-math.huge
+		for _,patch in patches do for i=1,#patch.rows-1 do
+			local a,b=patch.rows[i],patch.rows[i+1]
+			if math.min(a.weight,b.weight)<.9 then continue end
+			for _,bank in {"A","B"} do
+				local sa,sb=if bank=="A" then a.sa else a.sb,if bank=="A" then b.sa else b.sb
+				local side=if bank=="A" then a.sideA else a.sideB
+				local s=(sa+sb)*.5;local edge=cfg.Road.Width*.5+sp:runoffAt(s,side)
+				roadMin,roadMax=math.min(roadMin,sp:heightAt(s)),math.max(roadMax,sp:heightAt(s))
+				local px,py,pz=sp:terrainXYZ(s,side*edge)
+				local pa,pb=if bank=="A" then a.a else a.b,if bank=="A" then b.a else b.b
+				local x,z=(px+(pa[1]+pb[1])*.5)*.5,(pz+(pa[3]+pb[3])*.5)*.5
+				local projected,d=sp:projectFrom(x,z,s)
+				local inside=projected and d and math.abs(d)<=cfg.Road.Width*.5+sp:runoffAt(projected,side)
+				local floor=sp:infieldAt(x,z)
+				if not inside and not floor then
+					gaps+=1
+					if Contact.resolve(sp,x,z,s,{limit=32,closing=s-.05,low=py-2,high=py+2}) then closingBefore+=1 end
+					if not Contact.resolve(sp,x,z,s,{limit=32,closing=s+.05,low=py-2,high=py+2}) then closingAfter+=1 end
+					if bank=="A" then
+						local peer=(a.sb+b.sb)*.5
+						if sp:infieldContact(x,z,peer,py-2,py+2,32) then linked+=1 end
+						if not sp:infieldContact(x,z,peer,py-2,py+2,32,s+.05) then linkedClosed+=1 end
+					end
+				end
+				local hit=Contact.resolve(sp,x,z,s,{limit=32,low=py-2,high=py+2})
+				tested+=1;if not hit then missing+=1 else
+					if hit.kind~=Spline.GRASS then nonGrass+=1 end
+					heightError=math.max(heightError,math.abs(hit.y-py))
+				end
+				local pad=cfg.Spline.Biomes.Infield.BankContactPad
+				if sp:groundKind(s,side*(edge+pad+.001))==nil then finite+=1 end
+				if not Contact.resolve(sp,x,z,s,{limit=32,first=s+1,low=py-2,high=py+2}) then retired+=1 end
+			end
+		end end
+		for _,side in {-1,1} do
+			local s=32;local edge=cfg.Road.Width*.5+sp:runoffAt(s,side)
+			if sp:infieldOpening(s,side)==0 and sp:groundKind(s,side*(edge+.005))==nil then unconnected+=1 end
+		end
+		local checks={
+			{name="curved bank/chord gaps retain real contact on both arms",ok=tested>0 and gaps>0 and missing==0,
+				detail=`{tested} real contact probes, {gaps} midpoint gaps without the contact band, missing{missing}`},
+			{name="bank contact remains grass with bounded height error",ok=nonGrass==0 and heightError<.02,
+				detail=`non-grass contacts{nonGrass}, maximum bank height difference{heightError}`},
+			{name="curved join probes include actual changing road height",ok=roadMax-roadMin>1,detail=`road heights{roadMin} to{roadMax}`},
+			{name="the join band is finite and cannot extend unconnected roads",ok=finite==tested and unconnected==2,
+				detail=`finite bounds{finite}/{tested}, unchanged unconnected sides{unconnected}/2`},
+			{name="retired owners cannot acquire the join band",ok=retired==tested,detail=`rejected retired-owner probes{retired}/{tested}`},
+			{name="closing clips gap contact without retiring the road owner",ok=gaps>0 and closingBefore==gaps and closingAfter==gaps,
+				detail=`before/after closing{closingBefore}/{closingAfter} across{gaps} true gaps; retained owner unchanged`},
+			{name="known peer links cannot reacquire a gap behind closing",ok=linked>0 and linkedClosed==linked,
+				detail=`{linked} linked A-bank gap contacts, {linkedClosed} rejected after closing with B owner retained`},
+		}
+		local passed=0;for _,c in checks do if c.ok then passed+=1 end end
+		return {passed=passed,total=#checks,checks=checks}
+	end,debug.traceback)
+	cfg.Spline.Biomes.GroundEnabled=saved
+	if not ok then return {passed=0,total=1,checks={{name="curved bank contact fixture completes",ok=false,detail=result}}} end
+	return result
+end
+
 function Tests.generator(_self,subjects)
 	local road=game.ReplicatedStorage.Shared.Road
 	local Gen=subjects and subjects.Gen or require(road.SplineGen)
@@ -1109,19 +1191,46 @@ function Tests.generator(_self,subjects)
 
 		local function liveFixture()
 			local curve,b0,sections=fixture(Spline,20)
+			local fieldEnd=curve.length
+			local tail={len=64,k={64,0},g={64,0},b={64,0},rl={64,16},rr={64,16},
+				el={64,Spline.CLIFF},er={64,Spline.ROCK},hl={64,0},hr={64,0}}
+			curve:append(tail);table.insert(sections,tail)
 			local owner=setmetatable({spline=curve,biomes={},corridors=Corridor.new(),infieldStats={planned=0,published=0,declined=0,lastMs=0,worstMs=0}},Gen)
 			owner:_registerGround(0,curve.length)
-			return owner,curve,b0,sections
+			return owner,curve,b0,sections,fieldEnd
 		end
-		local owner,curve,b0,sections=liveFixture();local final=sections[#sections]
+		local owner,curve,b0,sections,fieldEnd=liveFixture();local final=sections[#sections]
 		local roadsBefore=#owner.corridors:roadCells(0,curve.length)
-		owner:_publishInfields(final,{{pending={a0=128,a1=480,b0=b0},b1=curve.length}})
+		local originalGround={}
+		for _,cell in owner.corridors:roadCells(0,curve.length) do originalGround[cell]=table.clone(cell.p) end
+		owner:_publishInfields(final,{{pending={a0=128,a1=480,b0=b0},b1=fieldEnd}})
 		check("live publication attaches one validated batch and hard reservations together",final.ip and #final.ip>0 and table.isfrozen(final.ip)
 			and curve.infieldRevision==1 and owner.corridors.infields>0,"accepted ground was registered before optional field planning")
 		local actualRoads=owner.corridors:roadCells(0,curve.length);local onlyAccepted=true
 		for _,cell in actualRoads do onlyAccepted=onlyAccepted and cell.road==true and not cell.infield and cell.s1<=curve.length end
 		check("accepted-road arc queries exclude fields and provisional escapes",roadsBefore>0 and #actualRoads==roadsBefore and onlyAccepted,
 			`{#actualRoads} accepted ground cells retain their identity after field publication`)
+		local unchanged,common,bankError,mandatory=true,true,0,0
+		for cell,corners in originalGround do for i,v in corners do if cell.p[i]~=v then unchanged=false end end end
+		for _,patch in final.ip or {} do
+			local stations={A={},B={}};local first,last=patch.rows[1],patch.rows[#patch.rows]
+			for _,row in patch.rows do
+				stations.A[row.sa]=true;stations.B[row.sb]=true
+				for _,bank in {"A","B"} do
+					local s,side,p=if bank=="A" then row.sa else row.sb,if bank=="A" then row.sideA else row.sideB,if bank=="A" then row.a else row.b
+					local x,y,z=curve:terrainXYZ(s,side*(cfg.Road.Width*.5+curve:runoffAt(s,side)))
+					bankError=math.max(bankError,math.abs(x-p[1]),math.abs(y-p[2]),math.abs(z-p[3]))
+				end
+			end
+			for bank,range in {A={first.sa,last.sa},B={last.sb,first.sb}} do
+				for _,cell in actualRoads do for _,s in {cell.s0,cell.s1} do
+					if s>range[1] and s<range[2] then mandatory+=1;common=common and stations[bank][s]==true end
+				end end
+			end
+		end
+		check("field tessellation preserves both actual banks and every source cell end",mandatory>0 and common and bankError<1e-8,
+			`{mandatory} source-end events; maximum bank displacement{bankError}`)
+		check("refining attached banks never rewrites frozen global road footprints",unchanged,"all original accepted cell corners retain their exact values")
 		if final.ip then
 			local replay=Gen.replay(sections,curve.origin,curve.fall)
 			local row=final.ip[1].rows[math.ceil(#final.ip[1].rows*.5)]
@@ -1131,12 +1240,22 @@ function Tests.generator(_self,subjects)
 				and #curve.infields.triangles==#replay.infields.triangles,"clients append the published section without replanning")
 		else check("serialized publication replays the exact frozen support",false,"the publication needed for replay was missing")
 		end
-		local declined,other,otherB=liveFixture();local before=declined.corridors
+		local obstructed,blocked,blockedB,_,blockedEnd=liveFixture()
+		local patch=assert(final.ip and final.ip[1],"missing publication for obstacle fixture")
+		local row=patch.rows[math.ceil(#patch.rows*.5)];local middle=DefaultInfield.columns(row)[6]
+		local obstacle=assert(Corridor.cell(Corridor.row(200,middle[1],middle[3]+2,0,0,2,2),
+			Corridor.row(204,middle[1],middle[3]-2,0,0,2,2)))
+		obstacle.road=true;obstructed.corridors:add(obstacle)
+		local blockedPublication={}
+		obstructed:_publishInfields(blockedPublication,{{pending={a0=128,a1=480,b0=blockedB},b1=blockedEnd}})
+		check("an arm-range tag cannot exempt unrelated occupied ground",blockedPublication.ip==nil and blocked.infields==nil,
+			"a road-tagged cell in the arm arc range must also match its actual bank geometry")
+		local declined,other,otherB,_,otherEnd=liveFixture();local before=declined.corridors
 		local rowA=Corridor.row(other.length,other.origin.x-80,other.origin.z-350,0,0,20,20)
 		local rowB=Corridor.row(other.length+32,other.origin.x-80,other.origin.z-382,0,0,20,20)
 		declined._groundFrames=function()return {rowA,rowB}end
 		local noPublication={}
-		declined:_publishInfields(noPublication,{{pending={a0=128,a1=480,b0=otherB},b1=other.length}})
+		declined:_publishInfields(noPublication,{{pending={a0=128,a1=480,b0=otherB},b1=otherEnd}})
 		check("optional fields cannot occupy the current tip's promised escape",noPublication.ip==nil and other.infields==nil
 			and declined.corridors==before,"a temporary escape-only planning obstacle declines the field without persisting future road")
 		local invalid={};owner:_publishInfields(invalid,{{pending={a1=480,b0=b0},b1=curve.length}})

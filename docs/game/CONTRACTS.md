@@ -838,6 +838,42 @@ actual frozen replay, escape-only refusal and optional failure isolation.
 `gen.infieldStats` records attempts, patches, refusals and planning cost. The
 default remains disabled pending actual natural-generation and timing checks.
 
+The common-bank candidate retains actual accepted Corridor-cell endpoints on
+both arms (including section ends) and track knots in bounded arc ranges. It
+maps them through the existing monotone pair map, recomputes actual bank XYZ,
+and checks quarter/midpoint bank sag against `Infield.BankSag=.002`. Those samples
+also certify the actual outward-ray chord intersection used by contact: finite
+edge parameter, positive gap within the pad, and matching chord height. Projection
+roundoff within1e-4 is normalized to an actual station before freezing. Coincident
+cross-bank events share one row with both exact stations; distinct same-bank
+events are preserved or the optional connection is refused. The512-row limit
+applies before baseline/triangle construction. Actual tagged road cells are
+verified against their stored geometry, then rebuilt at those shared stations
+in a local full-width index. Global frozen footprints are unchanged. Local
+shared-bank ground, all unrelated ground, fields and escape envelopes still use
+strict SAT; there is no erosion or generic arc-distance exception.
+Corridor SAT projects both polygons relative to the current tested edge's first
+vertex. Exact shared edges therefore retain zero width far from the origin;
+the separation inequalities and requested gap remain unchanged. Regression
+fixtures also reject positive1e-7-stud intrusions at large world offsets.
+
+`Spline.groundKind(s,d,fieldFirst?)` preserves occupied road first. Only an excess
+up to `Infield.BankContactPad=.01` can ask `SplineInfield.bankGap`: the actual
+outward bank-normal ray must intersect that opening's finite frozen chord ahead
+of the point, enter its adjacent supported compiled triangle, match edge height
+within `BankSag`, and retain interpolated edge q. A chord behind occupied ground,
+closed/steep collar, point beyond the finite endpoints, or retired scalar grants
+no support. This fills only a measured curve/chord gap, rather than extending a
+whole strip. `SplineContact` and fresh known-peer acquisition supply retained/
+closing q to this rare grass-only case; road credit and driving forces remain
+unchanged. Walking bank drawing's
+existing underlap covers the same tiny seam. `Infield.bankTriangles` is an
+immutable derived cache of the actual first/last bank triangle in each row pair,
+not additional serialized geometry. Self-validation uses a separate32-stud hash
+while the published query hash stays unchanged. `SplineInfieldTests.curvedBanks`
+checks contact, credit, finite ends and retirement; actual collider/render and
+natural-generation proof remain required before enabling generated fields.
+
 ## Studio-only baked shadow trial (T-214)
 
 `workspace.__baked_shadow_trial=true` explicitly opts a Studio client into the

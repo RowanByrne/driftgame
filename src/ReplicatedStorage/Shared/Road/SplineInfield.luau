@@ -14,7 +14,7 @@ type Vertex={p:Point,t:number,u:number,q:number}
 type Triangle={a:Vertex,b:Vertex,c:Vertex,normal:Vector3,det:number,patch:string,sa0:number,sa1:number,sb0:number,sb1:number,supported:boolean}
 type Opening={patch:Patch,bank:string,first:number,last:number}
 export type Index={cell:number,patches:{[string]:Patch},triangles:{Triangle},hash:{[string]:{number}},openings:{[string]:{Opening}},closing:{[number]:{Patch}},byPatch:{[string]:{number}},
-	patchHash:{[string]:{string}},patchBounds:{[string]:{number}}}
+	patchHash:{[string]:{string}},patchBounds:{[string]:{number}},bankTriangles:{[string]:{A:{Triangle},B:{Triangle}}}}
 export type Hit={y:number,normal:Vector3,patch:string,contactS:number,sa:number,sb:number,across:number,closingS:number}
 export type Closing={a:Point,b:Point,normal:Vector3,patch:string}
 export type Link={patch:Patch,bank:string,peerS:number,peerSide:number,peerFirst:number,peerLast:number,ownerSide:number}
@@ -79,12 +79,12 @@ end
 
 function Infield.new(cell:number?):Index
 	assert(not cell or finite(cell) and cell>0,"invalid infield index spacing")
-	return {cell=cell or 128,patches={},triangles={},hash={},openings={},closing={},byPatch={},patchHash={},patchBounds={}}
+	return {cell=cell or 128,patches={},triangles={},hash={},openings={},closing={},byPatch={},patchHash={},patchBounds={},bankTriangles={}}
 end
 
 local function key(x:number,z:number,cell:number):string return `{math.floor(x/cell)}:{math.floor(z/cell)}` end
 
-local function keys(index:Index,triangle:Triangle):{string}
+local function keys(index:{cell:number},triangle:Triangle):{string}
 	local a,b,c=triangle.a.p,triangle.b.p,triangle.c.p
 	local out={}
 	for x=math.floor(math.min(a[1],b[1],c[1])/index.cell),math.floor(math.max(a[1],b[1],c[1])/index.cell) do
@@ -157,6 +157,7 @@ function Infield.add(index:Index,patch:Patch,validateOnly:boolean?):boolean
 		return false
 	end
 	local pending:{Triangle}={}
+	local banks:{A:{Triangle},B:{Triangle}}={A={},B={}}
 	local sign:number?=nil
 	local collars=false
 	for _,row in patch.rows do if row.floor or math.abs(row.da or 0)+math.abs(row.db or 0)>1e-8 then collars=true;break end end
@@ -180,6 +181,7 @@ function Infield.add(index:Index,patch:Patch,validateOnly:boolean?):boolean
 		return out
 	end
 	for i=1,#patch.rows-1 do
+		local firstTriangle=#pending+1
 		local a,b=patch.rows[i],patch.rows[i+1]
 		local pa,pb,qa,qb=a.a,b.a,a.b,b.b
 		local function distance(x:Point,y:Point):number return math.sqrt((x[1]-y[1])^2+(x[3]-y[3])^2) end
@@ -202,8 +204,10 @@ function Infield.add(index:Index,patch:Patch,validateOnly:boolean?):boolean
 			assert(normal.Y>.01 and (a.floor or b.floor or normal.Y>.8),"infield surface is too steep")
 			table.insert(pending,table.freeze({a=x,b=y,c=z,normal=normal,det=det,patch=patch.id,sa0=a.sa,sa1=b.sa,sb0=a.sb,sb1=b.sb,supported=normal.Y>.8}))
 		end end
+		banks.A[i]=pending[firstTriangle];banks.B[i]=pending[#pending]
 	end
 	local staged:{[string]:{Triangle}}={}
+	local validationGrid={cell=math.min(index.cell,32)}
 	local byTriangle:{[Triangle]:{string}}={}
 	for _,triangle in pending do
 		local seen:{[Triangle]:boolean}={}
@@ -215,12 +219,15 @@ function Infield.add(index:Index,patch:Patch,validateOnly:boolean?):boolean
 				assert(not overlaps(triangle,old),"infield would change an already published support domain")
 				assert(compatibleTouch(triangle,old),"touching infields have different frozen edge heights")
 			end
+		end
+		local localBuckets=keys(validationGrid,triangle)
+		for _,k in localBuckets do
 			for _,old in staged[k] or {} do
 				if seen[old] then continue end;seen[old]=true
 				assert(not overlaps(triangle,old),"infield strip overlaps itself")
 			end
 		end
-		for _,k in buckets do
+		for _,k in localBuckets do
 			local bucket=staged[k];if not bucket then bucket={};staged[k]=bucket end
 			table.insert(bucket,triangle)
 		end
@@ -228,6 +235,7 @@ function Infield.add(index:Index,patch:Patch,validateOnly:boolean?):boolean
 	-- Validation is complete before the index acquires any of the patch.
 	if validateOnly then return true end
 	index.patches[patch.id]=patch
+	index.bankTriangles[patch.id]=table.freeze({A=table.freeze(banks.A),B=table.freeze(banks.B)})
 	local patchIds={};index.byPatch[patch.id]=patchIds
 	local patchKeys={};local x0,x1,z0,z1=math.huge,-math.huge,math.huge,-math.huge
 	for _,row in patch.rows do for _,p in {row.a,row.b} do
@@ -313,6 +321,49 @@ function Infield.sample(index:Index,x:number,z:number,low:number?,high:number?):
 			closingS=a.q+u*(b.q-a.q)+v*(c.q-a.q)}
 	end
 	return best
+end
+
+-- Only fill the finite gap between a true curved bank and its frozen chord.
+-- A chord behind occupied road, a closed/unsupported edge, or an unretained
+-- scalar cannot extend the road's support. No whole strip is granted.
+function Infield.bankGap(index:Index,s:number,side:number,x:number,y:number,z:number,nx:number,nz:number,
+	excess:number,pad:number,heightTolerance:number,first:number):boolean
+	if excess<=0 or excess>pad then return false end
+	for _,opening in index.openings[`{side}:{math.floor(s/index.cell)}`] or {} do
+		if s<opening.first or s>opening.last then continue end
+		local rows,bank=opening.patch.rows,opening.bank
+		local lo,hi=1,#rows
+		while lo<hi do local mid=(lo+hi+1)//2
+			if (if bank=="A" then rows[mid].sa<=s else rows[mid].sb>=s) then lo=mid else hi=mid-1 end
+		end
+		lo=math.min(lo,#rows-1)
+		local a,b=rows[lo],rows[lo+1]
+		local sa,sb=if bank=="A" then a.sa else a.sb,if bank=="A" then b.sa else b.sb
+		local t=math.clamp((s-sa)/(sb-sa),0,1)
+		local weight=a.weight+(b.weight-a.weight)*t
+		if not (a.floor and b.floor) then
+			local fade=math.max(1e-6,math.min(64,(opening.last-opening.first)*.25))
+			local f=math.clamp(math.min(s-opening.first,opening.last-s)/fade,0,1);weight*=f*f*(3-2*f)
+		end
+		if weight<=0 then continue end
+		local triangle=index.bankTriangles[opening.patch.id][bank][lo]
+		if not triangle.supported then continue end
+		local va,vb,third=if bank=="A" then triangle.a else triangle.c,triangle.b,if bank=="A" then triangle.c else triangle.a
+		local p,q=va.p,vb.p
+		local dx,dz=q[1]-p[1],q[3]-p[3]
+		local denominator=nx*dz-nz*dx
+		if math.abs(denominator)<1e-12 then continue end
+		local rx,rz=p[1]-x,p[3]-z
+		local distance=(rx*dz-rz*dx)/denominator
+		local u=(rx*nz-rz*nx)/denominator
+		if distance<excess or distance>pad or u<=0 or u>=1 then continue end
+		-- Crossing the chord must enter this actual supported triangle.
+		if (dx*(third.p[3]-p[3])-dz*(third.p[1]-p[1]))*(dx*nz-dz*nx)<=0 then continue end
+		local qEdge=va.q+(vb.q-va.q)*u
+		local edgeY=p[2]+(q[2]-p[2])*u
+		if qEdge>=first and math.abs(edgeY-y)<=heightTolerance then return true end
+	end
+	return false
 end
 
 -- Accepted ownership is selected by the caller's bounded route history, never
