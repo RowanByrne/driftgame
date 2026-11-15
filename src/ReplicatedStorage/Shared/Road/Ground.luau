@@ -181,7 +181,7 @@ end
 -- `ds` studs along the road from the station: its height and bank carried on (to second
 -- order), since a point beside a bend may be square to road some way along from it.
 local HEIGHT_STEP = 8 -- studs
-local HEIGHT_REACH = 48 -- studs
+local HEIGHT_REACH = 64 -- studs
 local HEIGHT_MID = HEIGHT_REACH // HEIGHT_STEP + 1
 
 -- The centre line kept round a station (`ys`...), made the first time it is asked for.
@@ -398,14 +398,14 @@ function Ground.at(ctx: Context, x: number, z: number): (number, number, number,
 							-- the inside of a bend, less on its outside
 							local c = 1 + st.k * d
 							local ds = l / math.max(c, 0.2)
-							-- from the centre line itself where the point is not deep inside a
-							-- tight bend (eased in over `c` 0.4 to 0.6, so nothing jumps): the
-							-- guess above is off by studs far out on a wide runoff, which a
-							-- steep grade turns into height (T-226)
-							if c > 0.4 then
+							-- from the centre line itself where the point is not right by the
+							-- centre of a tight bend (eased in over `c` 0.15 to 0.3, so nothing
+							-- jumps): the guess above is off by studs far out on a wide runoff,
+							-- which a steep grade turns into height (T-226)
+							if c > 0.15 then
 								local found = along(st, x, z, ds)
 								if found then
-									ds += (found - ds) * smooth(math.min((c - 0.4) / 0.2, 1))
+									ds += (found - ds) * smooth(math.min((c - 0.15) / 0.15, 1))
 								end
 							end
 							local T, bw
