@@ -687,14 +687,30 @@ return {
 		-- If the drift stops reading over the engine, the fix is the engine coming down,
 		-- not this going back up.
 		Volume = 0.85,
-		-- One id per surface. ONLY THE SURFACES IN `Built` GET A SOUND, so this is one
-		-- `Sound` today and a table that already has room for the second. A surface with
-		-- no id here gets no sound and no error -- the day `dirt` is laid it needs a pick
-		-- from the user, not a default.
+		-- One id per CLIP (`Clips` below; not `Built`, which is the smoke's budget). A clip
+		-- with no id here gets no sound and no error -- a clip is a pick the user makes by
+		-- ear, not a default.
 		SoundIds = {
 			tarmac = "rbxassetid://124978127809544", -- Creator Store, "tyre_slide" by
 			-- knightracers, 3.00 s. By id, nothing uploaded
+			-- dirt: the OFF-ROAD slide (T-222), waiting on the user's pick by ear
+			-- (assets/audio/sfx-skid-dirt/MANIFEST.md). Until it has an id,
+			-- grass, gravel and dirt squeal with the tarmac clip, as before
 		},
+		-- OFF THE ROAD (T-222). The clips a car carries, in order, one `Sound` each, built
+		-- whether or not the wheels ever reach that ground; a clip with no id above is
+		-- skipped. EVERY ONE OF THEM RUNS WHILE THE CAR ROLLS (the T-083 rule, for each
+		-- clip): a surface change moves their mix, never restarts one.
+		Clips = { "tarmac", "dirt" },
+		-- Which clip each ground a wheel can report slides with (`Drift/Wheels.surfaceOf`).
+		-- A ground not listed uses the clip of its own name, and a clip with no id falls
+		-- back to `Default`'s.
+		Clip = { grass = "dirt", gravel = "dirt", dirt = "dirt" },
+		-- Each clip's own level, on top of the curve and the master, so two recordings of
+		-- different loudness sit at the same place in the mix. 1 is the file as it is
+		ClipVolume = { tarmac = 1, dirt = 1 },
+		CrossfadeSeconds = 0.25, -- s for one clip to fade out and the other in at a change
+		-- of ground. Short, but not a cut
 		RollOffMin = 12, -- studs. Tighter than the engine's: a squeal is made at the road
 		RollOffMax = 150, -- studs
 	},

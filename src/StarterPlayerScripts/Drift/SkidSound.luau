@@ -3,7 +3,7 @@
 -- (docs/game/features/car-fx.md "Skid sound").
 --
 -- The squeal tells the player the back is out before the camera does, and HOW HARD it is
--- going. One `Sound` per surface in `Config.Fx.Built`, all of them alive at once, each
+-- going. One `Sound` per clip in `Config.Fx.Skid.Clips`, all of them alive at once, each
 -- one's volume LERPED rather than switched -- which is the difference between a drift
 -- that fades up and one that clicks on.
 --
@@ -46,11 +46,14 @@
 -- target, so it swells rather than clicks; `FxTests` measures the largest single-frame
 -- move across it.
 --
--- ONLY THE SURFACE THE WHEELS ARE ACTUALLY ON IS PLAYING; the others are stopped. The
--- game has one surface today (tarmac) and `dirt` specced but unbuilt, so this is one clip
--- now and a table that already has room for the second. Which surface a wheel is on is
--- `Drift/Wheels.surfaceOf` and not a second copy of that rule: the day `Drift/World`'s
--- `Hit` grows a surface name, both modules learn it at once.
+-- ONE CLIP PER KIND OF GROUND, AND ONLY THE ONE UNDER THE WHEELS IS HEARD (T-222).
+-- `Config.Fx.Skid.Clips` is the tarmac squeal and the off-road slide; grass, gravel and
+-- dirt slide with the second (`Skid.Clip`). Every clip RUNS while the car rolls -- the
+-- T-083 rule above, kept for each of them -- and a change of ground moves a per-clip MIX
+-- from one to the other over `CrossfadeSeconds`, so neither is restarted and neither cuts.
+-- A clip with no id is not built and its ground falls back to the tarmac clip, which is
+-- exactly the game before T-222. Which ground a wheel is on is `Drift/Wheels.surfaceOf`,
+-- not a second copy of that rule.
 --
 -- NOTHING IS CREATED OR DESTROYED WHILE DRIVING. One `Sound` per built surface, made once
 -- when the rig is caught, exactly as `Drift/Wheels`' sixteen are. `Update` holds no table
@@ -87,6 +90,8 @@ type SurfaceSound = {
 	surface: string,
 	sound: Sound,
 	playing: boolean, -- what was last WRITTEN, so a frame that changes nothing writes nothing
+	mix: number, -- 0 .. 1, how much of this clip is heard: 1 on its own ground, faded
+	-- toward 0 off it over `CrossfadeSeconds`
 }
 
 export type SkidSound = typeof(setmetatable(
@@ -153,24 +158,32 @@ function SkidSound.slideSpeed(state: DriftModel.State?): number
 	return DriftModel.speed(state) * math.abs(math.sin(state.slip))
 end
 
--- Which surface the car is running on -- squealing or merely rolling: the first wheel
--- that is down, through
--- `Drift/Wheels.surfaceOf`, so there is exactly one rule in the game for what a wheel is
--- standing on. `nil` when the car is airborne or has no wheel on anything.
+-- The CLIP a ground slides with: `Skid.Clip` (grass, gravel and dirt -> "dirt"), else
+-- the clip of the ground's own name, and the `Default` (tarmac) clip whenever that clip
+-- has no id -- so until the off-road clip is picked, every ground squeals as it did.
+function SkidSound.clipFor(surface: string?): string?
+	if not surface then
+		return nil
+	end
+	local S = Config.Fx.Skid
+	local clip = S.Clip[surface] or surface
+	if S.SoundIds[clip] == nil then
+		return Config.Fx.Default
+	end
+	return clip
+end
+
+-- Which clip the car is running on -- sliding or merely rolling: the first wheel that is
+-- down, through `Drift/Wheels.surfaceOf`, so there is exactly one rule in the game for
+-- what a wheel is standing on, then `clipFor`. `nil` when the car is airborne or has no
+-- wheel on anything.
 function SkidSound.surfaceOf(state: DriftModel.State?): string?
 	if not state or state.airborne then
 		return nil
 	end
 	for i, down in state.wheelsDown do
 		if down == true then
-			-- Grass and gravel have no clip of their own (T-188), so the squeal stays the
-			-- tarmac one there, exactly as before wheels knew their ground. A clip in
-			-- `Skid.SoundIds` for a surface (and that surface in `Built`) gives it its own.
-			local surface = Wheels.surfaceOf(state, i, true)
-			if surface and Config.Fx.Skid.SoundIds[surface] == nil then
-				return Config.Fx.Default
-			end
-			return surface
+			return SkidSound.clipFor(Wheels.surfaceOf(state, i, true))
 		end
 	end
 	return nil
@@ -201,13 +214,12 @@ function SkidSound.Clear(self: SkidSound)
 	self.surface = nil
 end
 
--- Build one sound per built surface, once, for the car this rig holds. Called every frame
--- and does nothing at all once it has built for a body -- the same shape
--- `Drift/Wheels:Attach` uses.
+-- Build one sound per clip, once, for the car this rig holds. Called every frame and does
+-- nothing at all once it has built for a body -- the same shape `Drift/Wheels:Attach`
+-- uses.
 --
--- A SURFACE WITH NO ID IN THE CONFIG GETS NO SOUND AND NO ERROR. `dirt` is specced and has
--- no clip, because a clip is a pick the user makes by ear and not a default an agent
--- chooses (AUDIO.md).
+-- A CLIP WITH NO ID IN THE CONFIG GETS NO SOUND AND NO ERROR, because a clip is a pick the
+-- user makes by ear and not a default an agent chooses (AUDIO.md).
 function SkidSound.Attach(self: SkidSound, rig: any): boolean
 	local body = rig and rig.body
 	if body and self.body == body then
@@ -219,7 +231,7 @@ function SkidSound.Attach(self: SkidSound, rig: any): boolean
 	end
 
 	local S = Config.Fx.Skid
-	for _, surface in Config.Fx.Built do
+	for _, surface in S.Clips do
 		local id = S.SoundIds[surface]
 		if not id then
 			continue
@@ -233,7 +245,7 @@ function SkidSound.Attach(self: SkidSound, rig: any): boolean
 		sound.RollOffMaxDistance = S.RollOffMax
 		sound.Volume = 0
 		sound.Parent = body
-		table.insert(self.sounds, { surface = surface, sound = sound, playing = false })
+		table.insert(self.sounds, { surface = surface, sound = sound, playing = false, mix = 0 })
 	end
 
 	self.body = body
@@ -276,17 +288,25 @@ function SkidSound.Update(self: SkidSound, state: DriftModel.State?, _input: any
 	end
 
 	local master = if QUIET then 0 else S.Volume
+	local fade = step / math.max(S.CrossfadeSeconds, 1e-4)
 	for _, entry in self.sounds do
-		local on = rolling and entry.surface == self.surface
-		-- The one on this surface plays and the rest are stopped. `Play` and `Stop` are
-		-- not allocations and this is written only when it changes, so a drive from one
-		-- end of the road to the other writes nothing here at all.
-		--
+		-- EVERY CLIP RUNS WHILE THE CAR ROLLS, whichever ground it is on (T-222), so a
+		-- change of ground never restarts one: it only moves the mixes. `Play` and `Stop`
+		-- are not allocations and are written only when they change.
+		local on = rolling
+		-- THE MIX: toward 1 for the clip of this ground and 0 for the rest, linearly over
+		-- `CrossfadeSeconds`. Held where it is while the car is in the air or stopped, so
+		-- a car that lands on the ground it left carries straight on.
+		if self.surface ~= nil then
+			local goal = if entry.surface == self.surface then 1 else 0
+			entry.mix = if entry.mix < goal then math.min(entry.mix + fade, goal) else math.max(entry.mix - fade, goal)
+		end
+
 		-- IN AN AGENT'S QUIET PLAYTEST THE CLIP IS NEVER STARTED AT ALL, as well as being
 		-- muted. Volume 0 is already silent; not starting it is the second lock, so a
 		-- mistake in one line of volume arithmetic cannot put sound in the user's ears.
-		-- `entry.playing` stays the LOGIC's answer either way, so a silent playtest still
-		-- shows which surface the car would be squealing on.
+		-- `entry.playing` and `entry.mix` stay the LOGIC's answer either way, so a silent
+		-- playtest still shows which clip the car would be sliding with.
 		if entry.playing ~= on then
 			entry.playing = on
 			if on and not QUIET then
@@ -295,7 +315,8 @@ function SkidSound.Update(self: SkidSound, state: DriftModel.State?, _input: any
 				entry.sound:Stop()
 			end
 		end
-		local want = if on then self.volume * master else 0
+		local level = S.ClipVolume[entry.surface] or 1
+		local want = if on then self.volume * master * level * entry.mix else 0
 		if math.abs(entry.sound.Volume - want) > 1e-5 then
 			entry.sound.Volume = want
 		end
@@ -319,6 +340,7 @@ function SkidSound.Cut(self: SkidSound)
 			entry.sound:Stop()
 		end
 		entry.sound.Volume = 0
+		entry.mix = 0
 	end
 end
 
@@ -355,7 +377,9 @@ function SkidSound.DebugState(self: SkidSound, state: DriftModel.State?)
 		table.insert(sounds, {
 			surface = entry.surface,
 			soundId = entry.sound.SoundId,
-			wants = entry.playing, -- what the LOGIC says: this is the surface, or it is not
+			wants = entry.playing, -- what the LOGIC says: running (the car rolls) or not
+			mix = entry.mix, -- 0 .. 1: how much of this clip the ground lets through
+			level = Config.Fx.Skid.ClipVolume[entry.surface] or 1,
 			playing = entry.sound.IsPlaying, -- what the instance is doing: false in a quiet test
 			volume = entry.sound.Volume, -- what the INSTANCE is at: 0 in a quiet playtest
 			loopSeconds = entry.sound.TimeLength,
