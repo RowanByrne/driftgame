@@ -225,7 +225,7 @@ local function removeChunk(chunk:Instance)
 	if hidden then
 		-- The immutable support may overlap its replacement while it drains.
 		-- Only the old source-dependent scenery must disappear at this commit.
-		for _,p in hidden do p.Transparency=1 end
+		if chunk:IsDescendantOf(Workspace) then for _,p in hidden do p.Transparency=1 end end
 	else pcall(function()chunk.Parent=nil end) end
 	if SplineMesh.owns(chunk) then SplineMesh.release(chunk :: Model) end
 	table.insert(retireQueue,chunk)
@@ -613,6 +613,9 @@ function SplineRoadView.Destroy(self: View)
 	table.clear(self.records)
 	self.fields.live=nil;table.clear(self.fields.peers)
 	local folder=self.folder
+	-- A stopped/replaced run cannot leave the old run's support visible. This
+	-- full teardown is distinct from same-spline, immutable-support replacement.
+	folder.Parent=nil
 	-- Give the next view its EditableMesh slots before any fallback drain yields.
 	for _,child in folder:GetChildren() do removeChunk(child) end
 	stageRoot(folder,{});removeChunk(folder)

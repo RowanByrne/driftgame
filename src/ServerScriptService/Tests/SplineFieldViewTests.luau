@@ -119,8 +119,18 @@ function Tests.runtime(_self,options)
 				published[record.model]=true
 				if record.model.Parent~=view.folder then note(`unparented published road {id}`) end
 				if live and live.sources[id]~=record.serial then note(`source serial mismatch {id}`) end
+				local layer=record.model:FindFirstChild("Scenery")
+				if layer then for _,p in layer:GetDescendants() do
+					if p:IsA("BasePart") and p.Transparency>=1 then note(`hidden committed source {id}`);break end
+				end end
 			end
 			if live then for id in live.sources do if not view.records[id] then note(`retired seam source {id}`) end end end
+			if live then
+				local layer=live.model:FindFirstChild("FieldSeams")
+				if layer then for _,p in layer:GetDescendants() do
+					if p:IsA("BasePart") and p.Transparency>=1 then note("hidden committed field seam");break end
+				end end
+			end
 			local function exposed(root)
 				if not root then return false end
 				for _,p in root:GetDescendants() do if p:IsA("BasePart") and p.Transparency<1 then return true end end
@@ -204,14 +214,16 @@ function Tests.runtime(_self,options)
 		check("the live replacement path stays within eight EditableMeshes",maxMeshes<=8,`actual module allocation peak{maxMeshes}`)
 		check("complete scenery and seam publication stays bounded",maxPublish<cfg.Spline.Mesh.SliceMs*3,
 			`largest synchronous publish{maxPublish}ms; unchanged guard{cfg.Spline.Mesh.SliceMs*3}ms`)
-		local debug=view:DebugState();view:Destroy()
+		local debug=view:DebugState();local destroyAt=os.clock();view:Destroy();local destroyMs=(os.clock()-destroyAt)*1000
+		check("ending a run immediately hides its entire old view",not view.folder:IsDescendantOf(workspace),
+			`full teardown{destroyMs}ms; old support is not visible during deferred destruction`)
 		local deadline=os.clock()+20
 		while (view.building or view.fieldBuilding or Mesh.liveMeshCount()>0 or view:DebugState().retiringRoots>0) and os.clock()<deadline do run.Heartbeat:Wait() end
 		check("destroy releases all real mesh slots and hidden retirement roots",Mesh.liveMeshCount()==0 and view:DebugState().retiringRoots==0 and view.folder.Parent==nil,
 			`remaining meshes{Mesh.liveMeshCount()}, retiring roots{view:DebugState().retiringRoots}`)
 		table.sort(frameMs);local passed=0;for _,c in checks do if c.ok then passed+=1 end end
 		return {passed=passed,total=#checks,checks=checks,forcedFallback=o.forceFallback==true,
-			frames=frames,heartbeatP95Ms=frameMs[math.max(1,math.ceil(#frameMs*.95))],heartbeatMaxMs=frameMs[#frameMs],debug=debug}
+			frames=frames,teardownMs=destroyMs,heartbeatP95Ms=frameMs[math.max(1,math.ceil(#frameMs*.95))],heartbeatMaxMs=frameMs[#frameMs],debug=debug}
 	end,debug.traceback)
 	if view and not view.dead then view:Destroy() end
 	local cleanupDeadline=os.clock()+20
