@@ -870,7 +870,18 @@ unchanged. Walking bank drawing's
 existing underlap covers the same tiny seam. `Infield.bankTriangles` is an
 immutable derived cache of the actual first/last bank triangle in each row pair,
 not additional serialized geometry. Self-validation uses a separate32-stud hash
-while the published query hash stays unchanged. `SplineInfieldTests.curvedBanks`
+while the published query hash stays unchanged. A private weak cache reuses
+compiled topology only for the module's own deeply frozen canonical patches;
+raw or merely shallow-frozen caller data is always copied and validated. Every
+insertion still checks the destination's current published triangles, matching
+touching heights, and destination hash spacing. Prevalidation never publishes
+data or certifies compatibility with an index that changes later.
+`SplineInfield.canonical(patch)` returns a module-certified canonical patch or
+copies raw numeric data through the validating factory. `Spline.addInfields`
+normalizes a batch once before its existing validation/publication passes, so
+received sections can reuse their own certified topology without sharing the
+sender's cache or mutable wire tables.
+`SplineInfieldTests.curvedBanks`
 checks contact, credit, finite ends and retirement; actual collider/render and
 natural-generation proof remain required before enabling generated fields.
 

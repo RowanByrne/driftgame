@@ -32,6 +32,8 @@ function Tests.run(_self,subject)
 		}
 	end
 	local source=rows(0,2)
+	check("a canonical patch identity cannot retain mutable caller data",not pcall(function()Infield.patch({},source)end),
+		"only nonempty string identities enter the frozen geometry certificate")
 	local patch=Infield.patch("fixture",source)
 	source[1].a[2]=1000;source[1].weight=0
 	check("published boundaries are independent of mutable planning data",patch.rows[1].a[2]==0 and patch.rows[1].weight==1,
@@ -137,6 +139,29 @@ function Tests.run(_self,subject)
 	check("later support cannot cover or raise occupied connector ground",not overlap and Infield.sample(index,20,-10).y==oldY and index.patches.overlap==nil,
 		"spatial reservation is checked before any new triangles or masks are published")
 	check("a repeated identity cannot hide different geometry",not pcall(function()Infield.add(index,Infield.patch("fixture",rows(1,3)))end),"identical replay is idempotent; conflicting data is refused")
+	local cached=Infield.patch("prevalidated candidate",rows(10,12))
+	local later=Infield.new(23);Infield.add(later,cached,true)
+	local unpublished=#later.triangles==0 and next(later.patches)==nil
+	Infield.add(later,patch)
+	local lateOverlap=pcall(function()Infield.add(later,cached)end)
+	check("prevalidated geometry still checks ground published afterward",unpublished and not lateOverlap
+		and #later.triangles==4 and later.patches[cached.id]==nil,"cached self-topology never certifies compatibility with a mutable index")
+	local touchingRows=rows(10,12)
+	for _,row in touchingRows do row.a[1]+=40;row.b[1]+=40 end
+	local touching=Infield.patch("cached touching step",touchingRows);Infield.add(Infield.new(),touching,true)
+	check("cached geometry still checks the height of a touching published edge",not pcall(function()Infield.add(index,touching)end)
+		and index.patches[touching.id]==nil,"an exact touching edge with a vertical step remains forbidden")
+	local allGrids=true
+	for _,spacing in {3,17,128} do
+		local alternate=Infield.new(spacing);Infield.add(alternate,patch)
+		local hit=Infield.sample(alternate,20,-10)
+		allGrids=allGrids and hit~=nil and math.abs(hit.y-1)<1e-8 and Infield.sample(alternate,40.01,-10)==nil
+	end
+	check("reused immutable geometry respects each destination lookup grid",allGrids,"same canonical floor, three different query spacings and finite outside probes")
+	local mutableRows=rows(0,2);local shallow=table.freeze({id="shallow frozen input",rows=mutableRows})
+	Infield.add(Infield.new(),shallow,true);mutableRows[2].b={-40,2,-20}
+	check("a shallow frozen caller cannot reuse stale compiled geometry",not pcall(function()Infield.add(Infield.new(),shallow)end),
+		"only the module's own deep frozen canonical patches acquire a topology certificate")
 	local collarRows=rows(25,25)
 	for _,row in collarRows do row.da=.3;row.db=.3 end
 	local collar=Infield.new();Infield.add(collar,Infield.patch("collar",collarRows))
@@ -1232,13 +1257,25 @@ function Tests.generator(_self,subjects)
 			`{mandatory} source-end events; maximum bank displacement{bankError}`)
 		check("refining attached banks never rewrites frozen global road footprints",unchanged,"all original accepted cell corners retain their exact values")
 		if final.ip then
-			local replay=Gen.replay(sections,curve.origin,curve.fall)
+			local function wireCopy(value)
+				if type(value)~="table" then return value end
+				local out={};for key,item in value do out[key]=wireCopy(item) end;return out
+			end
+			local received=wireCopy(sections)
+			local replay=Gen.replay(received,curve.origin,curve.fall)
 			local row=final.ip[1].rows[math.ceil(#final.ip[1].rows*.5)]
 			local point=DefaultInfield.columns(row)[6]
 			local a,b=curve:infieldAt(point[1],point[3]),replay:infieldAt(point[1],point[3])
 			check("serialized publication replays the exact frozen support",a and b and math.abs(a.y-b.y)<1e-6
 				and #curve.infields.triangles==#replay.infields.triangles,"clients append the published section without replanning")
-		else check("serialized publication replays the exact frozen support",false,"the publication needed for replay was missing")
+			local raw=received[#received].ip[1];local normalized=replay.infields.patches[raw.id]
+			local oldY=normalized.rows[1].a[2];raw.rows[1].a[2]=999
+			check("received numeric fields acquire independent immutable geometry",normalized~=raw and normalized~=final.ip[1]
+				and table.isfrozen(normalized.rows[1].a) and normalized.rows[1].a[2]==oldY
+				and DefaultInfield.canonical(normalized)==normalized,"raw wire tables are copied once at the batch boundary and cannot alter published support")
+		else
+			check("serialized publication replays the exact frozen support",false,"the publication needed for replay was missing")
+			check("received numeric fields acquire independent immutable geometry",false,"the publication needed for replay was missing")
 		end
 		local obstructed,blocked,blockedB,_,blockedEnd=liveFixture()
 		local patch=assert(final.ip and final.ip[1],"missing publication for obstacle fixture")

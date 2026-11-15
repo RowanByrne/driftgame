@@ -595,14 +595,16 @@ end
 
 function Spline.addInfields(self:Spline,patches:{Infield.Patch})
 	if #patches==0 then return end
+	local normalized={}
+	for _,patch in patches do table.insert(normalized,Infield.canonical(patch)) end
 	local index=self.infields or Infield.new()
 	local pending=Infield.new()
-	for _,patch in patches do
+	for _,patch in normalized do
 		Infield.add(index,patch,true)
 		Infield.add(pending,patch)
 	end
 	local added=false
-	for _,patch in patches do if Infield.add(index,patch) then added=true end end
+	for _,patch in normalized do if Infield.add(index,patch) then added=true end end
 	self.infields=index
 	if added then self.infieldRevision=(self.infieldRevision or 0)+1 end
 end

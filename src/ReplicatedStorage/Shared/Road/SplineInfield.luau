@@ -13,6 +13,11 @@ export type Patch={id:string,rows:{Row}}
 type Vertex={p:Point,t:number,u:number,q:number}
 type Triangle={a:Vertex,b:Vertex,c:Vertex,normal:Vector3,det:number,patch:string,sa0:number,sa1:number,sb0:number,sb1:number,supported:boolean}
 type Opening={patch:Patch,bank:string,first:number,last:number}
+type Compiled={triangles:{Triangle},banks:{A:{Triangle},B:{Triangle}}}
+-- Only patch() can certify a deeply frozen canonical input. Cached geometry
+-- proves that patch's own topology, never compatibility with a mutable index.
+local canonical:{[Patch]:boolean}=setmetatable({},{__mode="k"})
+local compiledOf:{[Patch]:Compiled}=setmetatable({},{__mode="k"})
 export type Index={cell:number,patches:{[string]:Patch},triangles:{Triangle},hash:{[string]:{number}},openings:{[string]:{Opening}},closing:{[number]:{Patch}},byPatch:{[string]:{number}},
 	patchHash:{[string]:{string}},patchBounds:{[string]:{number}},bankTriangles:{[string]:{A:{Triangle},B:{Triangle}}}}
 export type Hit={y:number,normal:Vector3,patch:string,contactS:number,sa:number,sb:number,across:number,closingS:number}
@@ -35,7 +40,7 @@ function Infield.strength(rise:number,gap:number,fullRise:number,maxRise:number,
 end
 
 function Infield.patch(id:string,rows:{Row}):Patch
-	assert(id~="","an infield needs a stable identity")
+	assert(type(id)=="string" and id~="","an infield needs a stable string identity")
 	assert(#rows>=2 and #rows<=512,"an infield needs 2..512 boundary rows")
 	assert(rows[#rows].sa<rows[#rows].sb,"infield approach and departure arc ranges must be disjoint")
 	local copy={}
@@ -56,7 +61,9 @@ function Infield.patch(id:string,rows:{Row}):Patch
 		end
 		table.insert(copy,table.freeze({sa=row.sa,sb=row.sb,sideA=row.sideA,sideB=row.sideB,a=copyPoint(row.a),b=copyPoint(row.b),weight=row.weight,da=row.da or 0,db=row.db or 0,floor=floor}))
 	end
-	return table.freeze({id=id,rows=table.freeze(copy)})
+	local patch=table.freeze({id=id,rows=table.freeze(copy)})
+	canonical[patch]=true
+	return patch
 end
 
 -- The planner freezes final heights in these same eleven columns. The short
@@ -75,6 +82,13 @@ function Infield.columns(row:Row):{Point}
 	vertex(.5,(a[2]+(row.da or 0)*reach*.5+b[2]+(row.db or 0)*reach*.5)*.5)
 	for j=4,0,-1 do local v=j/4;vertex(1-reach*v/gap,b[2]+(row.db or 0)*reach*(v-.5*v*v)) end
 	return out
+end
+
+-- Canonicalize once at a batch boundary, including received numeric data.
+-- The private identity mark, rather than caller-applied shallow freezing,
+-- decides whether a deeply immutable patch may be reused.
+function Infield.canonical(patch:Patch):Patch
+	return if canonical[patch] then patch else Infield.patch(patch.id,patch.rows)
 end
 
 function Infield.new(cell:number?):Index
@@ -143,7 +157,7 @@ end
 -- Triangles share a fixed midline, with optional bank collars. Rendering and physical
 -- contacts use these exact triangles, including a twisted pair of bank edges.
 function Infield.add(index:Index,patch:Patch,validateOnly:boolean?):boolean
-	patch=Infield.patch(patch.id,patch.rows)
+	patch=Infield.canonical(patch)
 	local previous=index.patches[patch.id]
 	if previous then
 		assert(#previous.rows==#patch.rows,"conflicting infield identity")
@@ -156,55 +170,58 @@ function Infield.add(index:Index,patch:Patch,validateOnly:boolean?):boolean
 		end
 		return false
 	end
-	local pending:{Triangle}={}
-	local banks:{A:{Triangle},B:{Triangle}}={A={},B={}}
-	local sign:number?=nil
-	local collars=false
-	for _,row in patch.rows do if row.floor or math.abs(row.da or 0)+math.abs(row.db or 0)>1e-8 then collars=true;break end end
-	local function cross(row:Row,t:number):{Vertex}
-		local a,b=row.a,row.b
-		local gap=math.sqrt((b[1]-a[1])^2+(b[3]-a[3])^2)
-		assert(gap>.01,"infield has no clear gap")
-		local reach=math.min(6,gap*.2)
-		local out={}
-		local function vertex(u:number,y:number)
-			table.insert(out,table.freeze({p=table.freeze({a[1]+(b[1]-a[1])*u,y,a[3]+(b[3]-a[3])*u}),t=t,u=u,q=row.sa+(row.sb-row.sa)*u}))
-		end
-		if collars then
-			for _,p in Infield.columns(row) do
-				local u=math.sqrt((p[1]-a[1])^2+(p[3]-a[3])^2)/gap
-				vertex(u,p[2])
+	local compiled=compiledOf[patch]
+	local pending:{Triangle}=if compiled then compiled.triangles else {}
+	local banks:{A:{Triangle},B:{Triangle}}=if compiled then compiled.banks else {A={},B={}}
+	if not compiled then
+		local sign:number?=nil
+		local collars=false
+		for _,row in patch.rows do if row.floor or math.abs(row.da or 0)+math.abs(row.db or 0)>1e-8 then collars=true;break end end
+		local function cross(row:Row,t:number):{Vertex}
+			local a,b=row.a,row.b
+			local gap=math.sqrt((b[1]-a[1])^2+(b[3]-a[3])^2)
+			assert(gap>.01,"infield has no clear gap")
+			local reach=math.min(6,gap*.2)
+			local out={}
+			local function vertex(u:number,y:number)
+				table.insert(out,table.freeze({p=table.freeze({a[1]+(b[1]-a[1])*u,y,a[3]+(b[3]-a[3])*u}),t=t,u=u,q=row.sa+(row.sb-row.sa)*u}))
 			end
-		else
-			vertex(0,a[2]);vertex(.5,(a[2]+b[2])*.5);vertex(1,b[2])
+			if collars then
+				for _,p in Infield.columns(row) do
+					local u=math.sqrt((p[1]-a[1])^2+(p[3]-a[3])^2)/gap
+					vertex(u,p[2])
+				end
+			else
+				vertex(0,a[2]);vertex(.5,(a[2]+b[2])*.5);vertex(1,b[2])
+			end
+			return out
 		end
-		return out
-	end
-	for i=1,#patch.rows-1 do
-		local firstTriangle=#pending+1
-		local a,b=patch.rows[i],patch.rows[i+1]
-		local pa,pb,qa,qb=a.a,b.a,a.b,b.b
-		local function distance(x:Point,y:Point):number return math.sqrt((x[1]-y[1])^2+(x[3]-y[3])^2) end
-		assert(distance(pa,pb)<=64 and distance(qa,qb)<=64,"infield row span exceeds its bounded lookup")
-		assert(distance(pa,qa)<=256 and distance(pb,qb)<=256,"infield gap exceeds its bounded lookup")
-		local A,B=cross(a,0),cross(b,1)
-		for j=1,#A-1 do for _,vertices in {{A[j],B[j],B[j+1]},{A[j],B[j+1],A[j+1]}} do
-			local x,y,z=vertices[1],vertices[2],vertices[3]
-			local dx,dy,dz=y.p[1]-x.p[1],y.p[2]-x.p[2],y.p[3]-x.p[3]
-			local ex,ey,ez=z.p[1]-x.p[1],z.p[2]-x.p[2],z.p[3]-x.p[3]
-			local det=dx*ez-dz*ex
-			assert(math.abs(det)>1e-5,"collapsed infield cell")
-			local orientation=if det>0 then 1 else -1
-			assert(not sign or sign==orientation,"folded infield cell")
-			sign=orientation
-			local normal=Vector3.new(dx,dy,dz):Cross(Vector3.new(ex,ey,ez)).Unit
-			if normal.Y<0 then normal=-normal end
-			-- Explicit end sections may retain an existing steep hillside. They
-			-- are visible terrain, never a hidden driveable/walkable floor.
-			assert(normal.Y>.01 and (a.floor or b.floor or normal.Y>.8),"infield surface is too steep")
-			table.insert(pending,table.freeze({a=x,b=y,c=z,normal=normal,det=det,patch=patch.id,sa0=a.sa,sa1=b.sa,sb0=a.sb,sb1=b.sb,supported=normal.Y>.8}))
-		end end
-		banks.A[i]=pending[firstTriangle];banks.B[i]=pending[#pending]
+		for i=1,#patch.rows-1 do
+			local firstTriangle=#pending+1
+			local a,b=patch.rows[i],patch.rows[i+1]
+			local pa,pb,qa,qb=a.a,b.a,a.b,b.b
+			local function distance(x:Point,y:Point):number return math.sqrt((x[1]-y[1])^2+(x[3]-y[3])^2) end
+			assert(distance(pa,pb)<=64 and distance(qa,qb)<=64,"infield row span exceeds its bounded lookup")
+			assert(distance(pa,qa)<=256 and distance(pb,qb)<=256,"infield gap exceeds its bounded lookup")
+			local A,B=cross(a,0),cross(b,1)
+			for j=1,#A-1 do for _,vertices in {{A[j],B[j],B[j+1]},{A[j],B[j+1],A[j+1]}} do
+				local x,y,z=vertices[1],vertices[2],vertices[3]
+				local dx,dy,dz=y.p[1]-x.p[1],y.p[2]-x.p[2],y.p[3]-x.p[3]
+				local ex,ey,ez=z.p[1]-x.p[1],z.p[2]-x.p[2],z.p[3]-x.p[3]
+				local det=dx*ez-dz*ex
+				assert(math.abs(det)>1e-5,"collapsed infield cell")
+				local orientation=if det>0 then 1 else -1
+				assert(not sign or sign==orientation,"folded infield cell")
+				sign=orientation
+				local normal=Vector3.new(dx,dy,dz):Cross(Vector3.new(ex,ey,ez)).Unit
+				if normal.Y<0 then normal=-normal end
+				-- Explicit end sections may retain an existing steep hillside. They
+				-- are visible terrain, never a hidden driveable/walkable floor.
+				assert(normal.Y>.01 and (a.floor or b.floor or normal.Y>.8),"infield surface is too steep")
+				table.insert(pending,table.freeze({a=x,b=y,c=z,normal=normal,det=det,patch=patch.id,sa0=a.sa,sa1=b.sa,sb0=a.sb,sb1=b.sb,supported=normal.Y>.8}))
+			end end
+			banks.A[i]=pending[firstTriangle];banks.B[i]=pending[#pending]
+		end
 	end
 	local staged:{[string]:{Triangle}}={}
 	local validationGrid={cell=math.min(index.cell,32)}
@@ -220,22 +237,28 @@ function Infield.add(index:Index,patch:Patch,validateOnly:boolean?):boolean
 				assert(compatibleTouch(triangle,old),"touching infields have different frozen edge heights")
 			end
 		end
-		local localBuckets=keys(validationGrid,triangle)
-		for _,k in localBuckets do
-			for _,old in staged[k] or {} do
-				if seen[old] then continue end;seen[old]=true
-				assert(not overlaps(triangle,old),"infield strip overlaps itself")
+		if not compiled then
+			local localBuckets=keys(validationGrid,triangle)
+			for _,k in localBuckets do
+				for _,old in staged[k] or {} do
+					if seen[old] then continue end;seen[old]=true
+					assert(not overlaps(triangle,old),"infield strip overlaps itself")
+				end
+			end
+			for _,k in localBuckets do
+				local bucket=staged[k];if not bucket then bucket={};staged[k]=bucket end
+				table.insert(bucket,triangle)
 			end
 		end
-		for _,k in localBuckets do
-			local bucket=staged[k];if not bucket then bucket={};staged[k]=bucket end
-			table.insert(bucket,triangle)
-		end
+	end
+	if not compiled then
+		banks=table.freeze({A=table.freeze(banks.A),B=table.freeze(banks.B)})
+		compiledOf[patch]=table.freeze({triangles=table.freeze(pending),banks=banks})
 	end
 	-- Validation is complete before the index acquires any of the patch.
 	if validateOnly then return true end
 	index.patches[patch.id]=patch
-	index.bankTriangles[patch.id]=table.freeze({A=table.freeze(banks.A),B=table.freeze(banks.B)})
+	index.bankTriangles[patch.id]=banks
 	local patchIds={};index.byPatch[patch.id]=patchIds
 	local patchKeys={};local x0,x1,z0,z1=math.huge,-math.huge,math.huge,-math.huge
 	for _,row in patch.rows do for _,p in {row.a,row.b} do
