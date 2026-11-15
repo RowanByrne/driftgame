@@ -720,6 +720,88 @@ return {
 		RollOffMin = 12, -- studs. Tighter than the engine's: a squeal is made at the road
 		RollOffMax = 150, -- studs
 	},
+	-- ------------------------------------------------------------ suspension sounds (T-223)
+	-- A clunk when a wheel's strut knocks on a bump or catches after a drop, and one bigger
+	-- thud when the car lands from a jump (features/car-fx.md "Suspension sounds",
+	-- `Drift/SuspensionSound`). Read off the model's wheel travel, never written back. The
+	-- player's own car only.
+	--
+	-- THE CLUNK is a wheel's travel CLOSING faster than `ClunkRate`: the strut being shoved up.
+	-- A wheel that drops is drawn falling no faster than `DropTime` lets it, so a drop makes no
+	-- sound of its own; the catch at the bottom of it is a closing, and clunks. On flat ground
+	-- the travel never moves, and on a smooth road it moves far slower than this.
+	--
+	-- THE LANDING is the car having had no wheel on the ground for `LandAirTime` and then
+	-- touching down, having fallen at `LandMinSpeed` or more. It plays INSTEAD of the clunks: every
+	-- wheel's clunk is held off for `LandQuiet` after it.
+	Suspension = {
+		ClunkRate = 12, -- studs/s of a wheel's travel closing that is a knock. Under this,
+		-- silence. A wheel is pushed up to its ground in ONE step (1/120 s), so this is a
+		-- 0.1-stud step in the ground. MEASURED in DR-Lane1 (T-223): the playground's
+		-- kerbs (0.25 to 0.6 studs) close at 30 to 46; the hill road's straight at 93 to
+		-- 117 studs/s closes at 0, and the crease where it turns at 9
+		ClunkRateForMax = 60, -- studs/s (a 0.5-stud step) at which a clunk is at
+		-- `ClunkMaxVolume`
+		ClunkSpeedForFull = 80, -- studs/s of the car's speed at which a clunk is at full
+		-- volume; slower, it is quieter in proportion...
+		ClunkSlowShare = 0.35, -- ...down to this share of it
+		ClunkMinVolume = 0.16, -- the clunk just over `ClunkRate`
+		ClunkMaxVolume = 0.60, -- at `ClunkRateForMax`. DOUBLED from 0.08 / 0.30 at the
+		-- user's word after trying it in a lane (2026-11-15: "make both louder"). Through
+		-- the master the peak is 0.51: OVER the squeal's 0.340 and the engine's 0.45, so the
+		-- AUDIO.md "Mix" rule (everything else under both) no longer holds for it, by the
+		-- user's choice. The quietest slice (Gain 22.3) reaches Roblox's Volume cap of 10
+		-- near the top and is clamped there
+		ClunkCooldown = 0.18, -- s before the same wheel may clunk again
+		ClunkGap = 0.05, -- s between any two clunks: a pair of wheels hitting one kerb in the
+		-- same moment is one knock, at the harder one's volume
+		PitchJitter = 0.08, -- each clunk plays 1 +- this fast, so repeats are not identical
+
+		LandAirTime = 0.25, -- s with no wheel down before a touchdown counts as a landing.
+		-- A kerb hop is shorter, and clunks instead
+		LandMinSpeed = 8, -- studs/s falling at touchdown for the landing to play. Under it a
+		-- touchdown is soft and silent (the clunks are still held off)
+		LandSpeedForMax = 45, -- studs/s falling at which the landing is at `LandMaxVolume`.
+		-- A 30-stud drop lands at about 46 studs/s (gravity is 35 studs/s^2)
+		LandMinVolume = 0.30,
+		LandMaxVolume = 0.76, -- DOUBLED from 0.15 / 0.38 with the clunk (2026-11-15). Through
+		-- the master, 0.646: over the squeal and the engine, by the user's choice
+		LandQuiet = 0.35, -- s after a landing that no wheel clunks
+
+		Volume = 0.85, -- the master (AUDIO.md "Mix"), as the squeal's and the scrape's
+
+		-- The sounds: Creator Store audio by id, each a SLICE of its file played through
+		-- `PlaybackRegion` (assets/audio/sfx-suspension/MANIFEST.md). `Gain` evens out the
+		-- slices' levels in their files (each brought to the same peak); `Speed`, if given,
+		-- is the clip's own playback speed. No clip: no sound and no error, and the detection
+		-- still runs and counts.
+		--
+		-- CLUNK D, picked by the user 2026-11-15 ("D: mixed"): three knocks out of Pro Sound
+		-- Effects' "Vehicle Suspension 1 (SFX)" (Metal Ronk, Creaks), Creator Store, by id
+		Clunks = {
+			{ Id = "rbxassetid://9120399954", Start = 0.726, Length = 0.289, Gain = 2.6 },
+			{ Id = "rbxassetid://9120399954", Start = 1.108, Length = 0.198, Gain = 9.7 },
+			{ Id = "rbxassetid://9120399954", Start = 4.452, Length = 0.176, Gain = 22.3 },
+		} :: { { Id: string, Start: number, Length: number, Gain: number, Speed: number? } },
+		-- LANDING F, picked by the user 2026-11-15 ("F: massive clunk") after turning down a
+		-- first four: the first hit of Pro Sound Effects' "Metal Bangs Shaking Large Aircraft
+		-- Fuselage 3 (SFX)", Creator Store, by id. Nil would be no landing sound, with the
+		-- clunks still held off at a landing
+		Landing = { Id = "rbxassetid://9125661444", Start = 0.127, Length = 0.5, Gain = 0.84 } :: {
+			Id: string,
+			Start: number,
+			Length: number,
+			Gain: number,
+			Speed: number?,
+		}?,
+
+		RollOffMin = 12, -- studs, as the squeal's
+		RollOffMax = 150, -- studs
+		Voices = 3, -- clunk `Sound`s on the body, played round-robin, so one clunk does not
+		-- cut the last one off. Built once, with the car
+		ClunkName = "FxClunk_%d", -- voice number
+		LandingName = "FxLanding",
+	},
 	-- ------------------------------------------------------------ floor scraping (T-097)
 	-- Sparks and a scrape while the car's floor rests on something (features/car-v2.md
 	-- "Floor scraping"). LOOKS ONLY: read off the model's `floorContacts`, never written
