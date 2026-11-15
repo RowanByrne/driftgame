@@ -339,6 +339,66 @@ function Tests.contacts()
 	return {passed=passed,total=#checks,checks=checks}
 end
 
+function Tests.gradeRules()
+	assert(game:GetService("RunService"):IsStudio())
+	local Policy=require(RS.Shared.Road.SplineGradePolicy)
+	local C=Config.Spline
+	local checks={}
+	local function check(name,ok,detail)table.insert(checks,{name=name,ok=ok,detail=detail})end
+	for _,direction in {-1,0,1} do
+		local initial,target=direction*.08,direction*.03
+		local knots=assert(Policy.profile(initial,target,C.MaxGradeRate,160,420,-direction*.1))
+		local function centre(s)return math.max(-8,-.04*s) end
+		local lo,hi=Policy.bounds(initial,17,knots,0,centre,{0,-.04},{200})
+		-- A prefix supplies the profile's nonzero incoming grade to the actual
+		-- spline. Its height is removed when comparing the independent integrals.
+		local replay=Spline.new({x=0,y=17,z=0,yaw=0})
+		replay:append({len=100,k={100,0},g={100,initial},b={100,0}})
+		local y0=replay:heightAt(100)
+		replay:append({len=420,k={420,0},g=knots,b={420,0}})
+		local gap,denseLo,denseHi=0,math.huge,-math.huge
+		local consistent=true
+		for u=0,420,.25 do
+			local y=replay:heightAt(100+u)-y0+17
+			gap=math.max(gap,math.abs(y-Policy.height(initial,17,knots,u)))
+			denseLo=math.min(denseLo,y-centre(u));denseHi=math.max(denseHi,y-centre(u))
+			if u<=160 then
+				local grade=replay:gradeAt(100+u)
+				consistent=consistent and (if direction==0 then math.abs(grade)<1e-8 else grade*direction>=-1e-8)
+			end
+		end
+		check(`grade {direction}: protected curve and height envelope match emitted maths`,consistent and gap<1e-8
+			and denseLo>=lo-1e-8 and denseHi<=hi+1e-8 and math.abs(denseLo-lo)<.001 and math.abs(denseHi-hi)<.001,
+			`integral gap {gap}; exact [{lo},{hi}], sampled [{denseLo},{denseHi}]`)
+	end
+	local g=Gen.new(203)
+	g.centre=C.Mountain.DescentFloor+1;g.climbing=false;g.flipWanted=false;g.drift=-.04;g.sense=1
+	local low=g:_gradeEnvelope(-.04,g.spline.origin.y+C.Mountain.DescentFloor+C.MinHeight+4.1,{100,-.04},false)
+	check("reaching the floor reserves braking to a stopped band",g:_postBandRate(100,false)==0 and low<C.MinHeight,
+		`counterexample is rejected: lowest relative height {low}, limit {C.MinHeight}`)
+	g.centre=C.Mountain.ClimbTop-1;g.climbing=true
+	local _,high=g:_gradeEnvelope(.1,g.spline.origin.y+C.Mountain.ClimbTop+C.MaxHeight-6,{40,.1},false)
+	check("reaching the top reserves braking to a stopped band",g:_postBandRate(40,false)==0 and high>C.MaxHeight,
+		`counterexample is rejected: highest relative height {high}, limit {C.MaxHeight}`)
+	for _,climbing in {false,true} do
+		g=Gen.new(203);g.climbing=climbing;g.flipWanted=true;g.sideFlipApplied=true;g.groupSign=if climbing then 1 else -1
+		local _,_,yaw=g.spline:tip()
+		local item={turn=true,what="switchbackOut",to=yaw,dir=1,radius=C.Mountain.SwitchbackRadius,tag="Switchback"}
+		g.plan={item}
+		local direct=g:_turn(item)
+		check(`phase {tostring(climbing)}: tiny-angle direct selection cannot complete a group`,type(direct)=="table"
+			and g.climbing==climbing and g.groupSign~=nil and g.flipWanted,"an emitted straight is required; selecting it has no lifecycle effect")
+		local sec=g:_planned(item)
+		if sec then g:_terrain(sec);g:_commit(sec) end
+		local expected=if climbing then g.drift else C.Mountain.ClimbRate*g.sense
+		check(`phase {tostring(climbing)}: chosen outgoing straight completes recovery once`,sec~=nil and g.climbing~=climbing
+			and not g.flipWanted and not g.sideFlipApplied and g.groupSign==nil and math.abs(select(5,g.spline:tip())-expected)<1e-6,
+			"phase changes only after its actual straight grade transition commits")
+	end
+	local passed=0;for _,c in checks do if c.ok then passed+=1 end end
+	return {passed=passed,total=#checks,checks=checks}
+end
+
 function Tests.gradeAudit(_self,options)
 	assert(game:GetService("RunService"):IsStudio())
 	options=options or {}

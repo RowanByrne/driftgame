@@ -150,10 +150,12 @@ The road keeps zig-zagging the same way in plan while it climbs (`mountain-direc
 side of the road. Before this the rock stayed on the compass's uphill side through a climb, about
 a third of the road, with every later leg standing above the drop of the leg before it.
 
-- The climb, and the descent after it, now begin where the road next points straight along the
+- The terrain changes sides where the road next points straight along the
   fall line inside a turnaround (a hairpin, a switchback or a double hairpin; never a sideways
   stretch). From there the rock and the drop are on the other sides (`SplineGen.flip`), and
   through that one turn they keep their sides: the valley's floor, and at the top the pass.
+  T-210 separates this terrain flip from the vertical phase: grade reversal waits for a
+  clear straight after the complete hairpin or paired maneuver, with the band paused until then.
 - The height band waits at `DescentFloor` or `ClimbTop` for that turn, and the stretches planned
   before it are cut to 250 studs so it comes soon, but no sooner than the faces already drawn
   were told a turnaround would come (`FlipClear`).
@@ -248,9 +250,12 @@ the real continuation fixed that mismatch. Earlier failed comparisons are retain
   fits, the leg runs on and tries at another location, at most twice. After that the best
   crossing-safe shape is kept and explicitly counted as a relaxed fit. Crossing and escape
   safety are never relaxed. `gen.turnFits` keeps the measurements; all limits are config.
-- Descending turns aim down while respecting the height band. The grade guard now eases toward
-  the moving band's grade, and begins easing before a valley floor or pass: a newly climbing
-  band must not run ahead of a road still pitched downhill. Periodic climbs remain.
+- T-210 keeps hairpins and paired turns in one signed grade through the curve and40-stud
+  buffers, including the connecting gap. A clear approach prepares the slope when needed.
+  Grade reversal begins after curvature has eased to zero, inside the outgoing straight.
+  The height band resumes only when that transition commits. Exact height and stopping
+  envelopes include a newly reached floor/top, where the next band rate becomes zero.
+  Periodic climbs and the existing grade/rate/height limits remain.
 
 No new Section fields or remotes. The renderer/car use the same replay as before; no car or tyre
 physics changed. The rail's chord allowance is 0.04 studs, keeping a newly selected tight bend's

@@ -449,6 +449,17 @@ If another runner retires the credited piece, re-entry preserves earned progress
 
 `Config.Spline.Biomes.Road` blends regular bend weights, straight chances and reversal chances; it does not relax radius, curvature, grade, bank, crossing or escape limits. `Biomes.Rails` rebuilds discretionary `kr` from fitted CLIFF intervals within `Reach`, excluding groves and retaining every `gl` mandatory span. `Density=0` leaves mandatory protection; `Rails.Enabled=false` retains the legacy rail-selection path. Existing `kr` triples and collision/drawing geometry are unchanged. The independent `SplineGen.rrng` consumes eight draws per active biome-ground section even if ineligible or rail policy disabled; speculative previews clone it along with all existing streams.
 
+`Mountain.HairpinGradeBuffer` (40studs) protects the grade sign before/after a hairpin's curved span. Paired switchbacks/doubles also retain that sign through gaps, retries and escapes. Preparation and reversal use crossing/escape-checked straight geometry; no curvature, grade, bank or height limit is relaxed. Terrain `flip` remains at the fall-line crossing while vertical recovery waits for the final outgoing transition. Server-only `groupSign`, `sideFlipApplied` and section-identity `preparedGrade` state never go over the wire. Ordinary `g` knots fully describe the emitted result. `SplineGradePolicy` checks exact relative-height extrema and future stopping reserve against the actual post-commit band rate, including a newly reached floor/top.
+
 Ground, face feet and natural rock geometry share the existing edge-span endpoints. Mesh chunks include the low foot in their one mesh; parts fallback draws the same form as wedges. Mesh chunks remain hidden until complete. The parts fallback publishes small batches progressively while retaining any previous chunk until replacement is complete; publishing one completed large tree caused a100ms frame. Cancellation and retirement release bounded batches. Publication/terrain work is included in slice statistics.
 
 `SplineSurfaceCuts` samples the entire supported cross-section, including bevel feet and banks. `SplineParts.build(...,{terrain=true,sliceMs=...,cancelled=...})` draws finite ground and capped outer faces/hills as ordinary visual wedges with bounded batches and yielding; the second return contains triangle and slice statistics. The original tarmac-only yardstick call remains supported.
+
+`SplineHillCuts.refine(spline, hill, positions, surfaceRows, rayCuts, rays, caps, profile, tick?)`
+returns refined cut indices and `{added, tests, exact, terminal}`. It checks the same fan,
+ring and skirt topology emitted by the mesh against supported ground triangles, subdividing
+unsafe coarse spans before cap interpolation and face emission. Shared boundaries and
+terrain hidden below ground are permitted. Both sides have solved rays/caps at inserted
+cuts. It never changes the spline, support widths or chunk endpoints. Mesh statistics expose
+`hillRefinedRays`, `hillPlanTests`, `hillPlanExact` and `hillUnsafe`. `traceFaces=true` adds
+test-only face provenance; `groveColourIds` identifies only generated decorative faces.

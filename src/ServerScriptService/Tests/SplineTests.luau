@@ -368,6 +368,10 @@ end
 -- cross-section it makes, and a client's replay of it.
 function parts.terrain(check)
 	local T = Config.Spline.Terrain
+	local B=Config.Spline.Biomes
+	local biomeGround=B.Enabled and B.GroundEnabled
+	local biomeRails=biomeGround and B.Rails.Enabled
+	local maxWidth=math.max(T.RunoffMax,T.GroveRunoff[2],if biomeGround then math.max(B.Width[1],B.BankWidth) else 0)
 	local half = Config.Road.Width * 0.5
 	local names = { "rock", "hedge", "cliff" }
 
@@ -398,7 +402,8 @@ function parts.terrain(check)
 						-- cliff edge (T-181) narrows it to `TightRunoff`; a carved apex (T-182) narrows
 						-- the rock side to `CarvedGap`, at up to `CarvedRate`
 						local carved = math.abs(w - T.CarvedGap) < 1e-9
-						if (w < (if tight then T.TightRunoff[1] else T.RunoffMin) - 1e-9 and not carved) or w > math.max(T.RunoffMax, T.GroveRunoff[2]) + 1e-9 then
+						local minWidth=if biomeGround then math.min(T.CarvedGap,T.TightRunoff[1],T.RunoffMin) else (if tight then T.TightRunoff[1] else T.RunoffMin)
+						if (w < minWidth - 1e-9 and not carved) or w > maxWidth + 1e-9 then
 							badWidth += 1
 						end
 						if prevV and not tight then
@@ -431,8 +436,13 @@ function parts.terrain(check)
 					for j = 1, #sec.kr, 3 do
 						rails += 1
 						local len = sec.kr[j + 1] - sec.kr[j]
-						if len < T.KRailRun[1] - 1e-6 or len > T.KRailRun[2] + 1e-6 then
+						if len < T.KRailRun[1] - 1e-6 or len > (if biomeRails then sec.len else T.KRailRun[2]) + 1e-6 then
 							badRails += 1
+						end
+						if biomeRails then
+							for u=sec.kr[j]+1e-4,sec.kr[j+1]-1e-4,math.max(1,len/12) do
+								if sp:edgeAt(s+u,sec.kr[j+2])~=Spline.CLIFF or sp:runoffAt(s+u,sec.kr[j+2])>=B.Rails.Reach+1e-5 then badRails+=1;break end
+							end
 						end
 						if bend and sec.kr[j + 2] == outside and outsideKind == Spline.CLIFF then
 							railsOnBendCliff += 1
@@ -544,7 +554,7 @@ function parts.terrain(check)
 	table.sort(stretches)
 	local median = stretches[math.max(1, #stretches // 2)] or 0
 	check("every section carries its mountainside", missing == 0, `{missing} sections without runoff or edges`)
-	check("runoff 12 to 40 studs (58 on a grove), and it never changes fast", badWidth == 0 and worstRate <= 0.25 + 1e-9, `{badWidth} widths outside {T.RunoffMin}..{math.max(T.RunoffMax, T.GroveRunoff[2])}; steepest change {fmt(worstRate, 3)} stud per stud between knots (limit 0.25)`)
+	check("fitted runoff stays within the supported width and easing limits", badWidth == 0 and worstRate <= (if biomeGround then B.CorridorRate else 0.25) + 1e-9, `{badWidth} invalid widths; maximum {maxWidth}; steepest change {fmt(worstRate, 3)} stud per stud between knots`)
 	check(
 		"some sharp bends carve the rock to the tarmac's edge at the apex, eased in and out",
 		carves > 0 and carveBad == 0 and carveWorstGap <= T.CarvedGap + 1e-6 and worstCarveRate <= T.CarvedRate + 1e-9,
@@ -563,8 +573,8 @@ function parts.terrain(check)
 		`{hedgePoints} points with a hedge; the two sides change at most {fmt(swapApart, 2)} studs apart (rock ends one side where it starts the other); {swapOutOfBand} changes outside the band along the fall line`
 	)
 	check(
-		"K-rails 60 to 300 studs, on most bends above a cliff",
-		badRails == 0 and rails > 0 and railsOnBendCliff >= bendsOverCliff * 0.3,
+		if biomeRails then "existing road rails stay bounded and protect actual exposed cliffs" else "K-rails 60 to 300 studs, on most bends above a cliff",
+		badRails == 0 and rails > 0 and railsOnBendCliff >= (if biomeRails then 1 else bendsOverCliff * 0.3),
 		`{rails} runs, {badRails} the wrong length; {railsOnBendCliff} of {bendsOverCliff} bends with a cliff outside have one (about half wanted)`
 	)
 	check("the inside of a bend keeps its grass short of the bend's centre", insideWorst <= T.InsideShare + 1e-6, `furthest the inside edge reaches: {fmt(insideWorst * 100, 1)}% of the way to the centre (limit {T.InsideShare * 100}%), {insideN} points on bends`)
@@ -595,7 +605,7 @@ function parts.terrain(check)
 			end
 		else
 			wallTried += 1
-			if sp:groundKind(s, dP) == Spline.GRASS then
+			if sp:groundKind(s, dP) == (if sp:hasBiomeGround() then nil else Spline.GRASS) then
 				wallGrass += 1
 			end
 		end
@@ -633,14 +643,14 @@ function parts.terrain(check)
 	end
 	check("tarmac, then grass, at the right offsets", wrongKind == 0, `{wrongKind} of {n} points read the wrong surface`)
 	check("past a cliff's lip there is nothing", cliffTried > 0 and cliffNil == cliffTried, `{cliffNil} of {cliffTried} points past a cliff found nothing under them`)
-	check("past a rock face or a hedge the ground carries on", wallTried > 0 and wallGrass == wallTried, `{wallGrass} of {wallTried}`)
+	check(if sp:hasBiomeGround() then "finite supported ground ends at the visible uphill bank" else "past a rock face or a hedge the ground carries on", wallTried > 0 and wallGrass == wallTried, `{wallGrass} of {wallTried}`)
 	check("the grass meets the tarmac with no gap: the step starts at its edge", worstJoin < 1e-3, `worst {string.format("%.1e", worstJoin)} studs`)
 	check(
 		"the road stands RoadLip above its grass",
 		worstLip < 1e-6 and lipNormal > 1 - 1e-6,
 		`grass off {T.RoadLip} studs below the unraised ground by {string.format("%.1e", worstLip)} at worst, past a gravel bevel up to {T.RoadLipWidth} across; the bevel's normal to the car with and without the road lip, dot {fmt(lipNormal, 4)} at worst (1: the forces never read it as a slope)`
 	)
-	check("the grass leaves the road at its bank and eases flat", worstSlope < 0.01 and worstFlat < 0.01, `slope at the tarmac's edge off the bank's by {fmt(worstSlope, 4)}; at the grass's outer edge {fmt(worstFlat, 4)} (flat is 0)`)
+	check(if sp:hasBiomeGround() then "grass joins the road bank and keeps a bounded supported outer slope" else "the grass leaves the road at its bank and eases flat", worstSlope < 0.01 and worstFlat < (if sp:hasBiomeGround() then B.BankMaxSlope+0.01 else 0.01), `slope at the tarmac's edge off the bank's by {fmt(worstSlope, 4)}; at the outer bank {fmt(worstFlat, 4)}`)
 
 	-- A client's replay has the same mountainside, exactly
 	local copy = SplineGen.replay(gen.sections)
@@ -718,7 +728,7 @@ function parts.mountain(check)
 	local M = C.Mountain
 	local neutral = math.sin(math.rad(M.AlongFallLine))
 	local flips, badFlips, length, drop, stalls = 0, 0, 0, 0, 0
-	local downLen, climbLen, climbs, lowest = 0, 0, 0, math.huge
+	local downLen, climbLen, pausedLen, climbs, lowest = 0, 0, 0, 0, math.huge
 	local legs, turnarounds, doubles, sideways, refused, straightens = 0, 0, 0, 0, 0, 0
 	local fallOk = 0
 	local seeds = 0
@@ -765,8 +775,10 @@ function parts.mountain(check)
 			if b[j + 1] < b[j - 1] then
 				drop += sp:heightAt(b[j - 2]) - sp:heightAt(b[j])
 				downLen += b[j] - b[j - 2]
-			else
+			elseif b[j + 1] > b[j - 1] then
 				climbLen += b[j] - b[j - 2]
+			else
+				pausedLen += b[j] - b[j - 2]
 			end
 		end
 		climbs += gen.stats.climbs
@@ -798,7 +810,7 @@ function parts.mountain(check)
 	check(
 		"the run works its way down",
 		perK >= M.DescentRate * 1000 * 0.75 and perK <= M.DescentRate * 1000 * 1.25,
-		`net drop {fmt(perK, 1)} studs per 1000 of road while descending (DescentRate is {fmt(M.DescentRate * 1000, 1)}); {climbs} climbs, {fmt(climbLen / length * 100, 1)}% of the road`
+		`net drop {fmt(perK, 1)} studs per 1000 of road while descending (DescentRate is {fmt(M.DescentRate * 1000, 1)}); {climbs} climbs, {fmt(climbLen / length * 100, 1)}% climbing and {fmt(pausedLen / length * 100, 1)}% paused`
 	)
 	-- hours of running: one very long road never sinks past the fall-kill height
 	local long = road(5151, 150000)

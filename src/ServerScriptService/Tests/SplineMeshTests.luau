@@ -27,23 +27,29 @@ end
 
 -- Independent of the shadow fitter: read back the triangles Roblox actually draws and
 -- vertically intersect them. A spatial bin keeps the face/corner sweep cheap.
-local function envelope(model)
+local function envelope(model,excludedColours)
 	local part = model.Road
 	local em = part.MeshContent.Object
 	local bins, triangles, step = {}, {}, 32
 	local positions = {}
+	local excluded=0
 	for _, v in em:GetVertices() do positions[v] = part.CFrame:PointToWorldSpace(em:GetPosition(v)) end
 	local function key(x, z)
 		return `{math.floor(x / step)}:{math.floor(z / step)}`
 	end
 	for _, f in em:GetFaces() do
+		local decorative=false
+		if excludedColours then
+			for _,id in em:GetFaceColors(f) do if excludedColours[id] then decorative=true;break end end
+		end
+		if decorative then excluded+=1;continue end
 		local ids = em:GetFaceVertices(f)
 		local a, b, c = positions[ids[1]], positions[ids[2]], positions[ids[3]]
 		local det = (b.X - a.X) * (c.Z - a.Z) - (b.Z - a.Z) * (c.X - a.X)
 		if (b - a):Cross(c - a).Magnitude > 1e-7 then
 			local colour = em:GetColor(em:GetFaceColors(f)[1])
 			local rock = Config.Spline.Terrain.RockColour
-			local t = { a = a, b = b, c = c, det = det, rock = math.abs(colour.R - rock.R) + math.abs(colour.G - rock.G) + math.abs(colour.B - rock.B) < 0.001 }
+			local t = { a = a, b = b, c = c, det = det, face=f, colour=colour, rock = math.abs(colour.R - rock.R) + math.abs(colour.G - rock.G) + math.abs(colour.B - rock.B) < 0.001 }
 			table.insert(triangles, t)
 			for x = math.floor(math.min(a.X, b.X, c.X) / step), math.floor(math.max(a.X, b.X, c.X) / step) do
 				for z = math.floor(math.min(a.Z, b.Z, c.Z) / step), math.floor(math.max(a.Z, b.Z, c.Z) / step) do
@@ -57,6 +63,7 @@ local function envelope(model)
 	local function height(p)
 		local top = -math.huge
 		local normal=nil
+		local hit=nil
 		for _, t in bins[key(p.X, p.Z)] or {} do
 			if math.abs(t.det) <= 1e-7 then continue end
 			local a, b, c = t.a, t.b, t.c
@@ -66,12 +73,12 @@ local function envelope(model)
 			if u >= -1e-5 and v >= -1e-5 and u + v <= 1 + 1e-5 then
 				local y=a.Y + u * (b.Y - a.Y) + v * (c.Y - a.Y)
 				if y>top then
-					top=y;normal=(b-a):Cross(c-a).Unit
+					top=y;normal=(b-a):Cross(c-a).Unit;hit=t
 					if normal.Y<0 then normal=-normal end
 				end
 			end
 		end
-		return top,normal
+		return top,normal,hit
 	end
 	local function nearby(part)
 		local lo, hi = Vector3.one * math.huge, -Vector3.one * math.huge
@@ -87,7 +94,7 @@ local function envelope(model)
 		end
 		return found
 	end
-	return height, triangles, nearby, positions
+	return height, triangles, nearby, positions, excluded
 end
 
 -- Exact triangle/box intersection, including side faces: a higher, unrelated road
@@ -688,7 +695,8 @@ function Tests.run()
 	return { passed = passed, total = #checks, checks = checks }
 end
 
-function Tests.biomes()
+function Tests.biomes(_self,options)
+	options=options or {}
 	local old=Config.Spline.Biomes.GroundEnabled
 	Config.Spline.Biomes.GroundEnabled=true
 	local folder=Instance.new("Folder");folder.Name="__BiomeMeshTest";folder.Parent=workspace
@@ -702,27 +710,62 @@ function Tests.biomes()
 			local pair=`{records[i-2]}>{records[i+1]}`
 			if not pairs[pair] then pairs[pair]=true;chunks[math.floor(records[i]/480)]=true end
 		end
+		if options.chunk then chunks={[options.chunk]=true} end
 		local built,missing,samples,maxError,maxNormal,maxTriangles,maxSlice,work=0,0,0,0,0,0,0,0
 		local normalAt="none"
+		local errorAt="none"
+		local excluded,expectedExcluded=0,0
+		local refined,unsafe=0,0
+		local activeOrigins=nil
+		local function describe(s,d,w,p,y,triangle)
+			local detail=`s={s}, d={d}, width={w}, expected={p.Y}, found={y}`
+			if triangle then
+				detail..=`; face={triangle.face}, colour={triangle.colour}, rock={triangle.rock}`
+				if activeOrigins and activeOrigins[triangle.face] then detail..=`; origin={game:GetService("HttpService"):JSONEncode(activeOrigins[triangle.face])}` end
+				for _,name in {"a","b","c"} do
+					local v=triangle[name]
+					local along,across=spline:project(v.X,v.Z,1500)
+					detail..=`; {name}={v} (s={along}, d={across})`
+				end
+			end
+			return detail
+		end
 		for chunk in chunks do
 			local s0,s1=chunk*480,math.min((chunk+1)*480,spline.length)
 			local info
-			active,info=SplineMesh.build(spline,s0,s1,folder)
+			active,info=SplineMesh.build(spline,s0,s1,folder,{traceFaces=options.trace==true})
 			assert(active,tostring(info))
+			activeOrigins=info.faceOrigins
 			built+=1;maxTriangles=math.max(maxTriangles,info.triangles);maxSlice=math.max(maxSlice,info.sliceMs);work=math.max(work,info.ms)
-			local height=envelope(active)
+			local height,_,_,_,skipped=envelope(active,info.groveColourIds)
+			excluded+=skipped;expectedExcluded+=info.treeTriangles
+			refined+=info.hillRefinedRays or 0;unsafe+=info.hillUnsafe or 0
+			local neighbourHeights={}
+			for _,near in {chunk-1,chunk+1} do
+				if near<0 or near*480>=spline.length then continue end
+				local other,stats=SplineMesh.build(spline,near*480,math.min((near+1)*480,spline.length),folder)
+				assert(other,tostring(stats))
+				local measure=envelope(other,stats.groveColourIds)
+				table.insert(neighbourHeights,measure)
+				SplineMesh.destroy(other)
+			end
 			for s=s0+1.17,s1-1,9.31 do
 				for _,side in {-1,1} do
 					local w=spline:runoffAt(s,side)
 					for _,u in {.06,.24,.47,.73,.94} do
 						local d=side*(Config.Road.Width*.5+w*u)
 						local p=Vector3.new(spline:terrainXYZ(s,d))
-						local y,n=height(p)
+						local y,n,triangle=height(p)
+						for _,measure in neighbourHeights do
+							local ny,nn,nt=measure(p)
+							if ny>y then y,n,triangle=ny,nn,nt end
+						end
 						if y==-math.huge then missing+=1 else
-							maxError=math.max(maxError,math.abs(y-p.Y))
+							local error=math.abs(y-p.Y)
+							if error>maxError then maxError=error;errorAt=describe(s,d,w,p,y,triangle) end
 							if w*u>spline:lipWidthAt(s,side)+.5 and n then
 								local delta=math.deg(math.acos(math.clamp(n:Dot(spline:terrainNormal(s,d)),-1,1)))
-								if delta>maxNormal then maxNormal=delta;normalAt=`s={s}, d={d}, width={w}` end
+								if delta>maxNormal then maxNormal=delta;normalAt=describe(s,d,w,p,y,triangle) end
 							end
 						end
 						samples+=1
@@ -733,7 +776,9 @@ function Tests.biomes()
 			SplineMesh.destroy(active);active=nil
 		end
 		local checks={
-			{name="actual mesh interiors match supported terrain through all transitions",ok=built==6 and missing==0 and maxError<.15,detail=`{built} transition chunks, {samples} samples, missing {missing}, largest height error {maxError}`},
+			{name="coarse hillside chords stay below supported ground",ok=unsafe==0,detail=`{refined} added hill rays, {unsafe} terminal unsafe spans`},
+			{name="terrain measurements exclude only known decorative grove faces",ok=excluded>0 and excluded==expectedExcluded,detail=`{excluded} excluded, exactly {expectedExcluded} generated tree/bush triangles; all terrain faces remain measured`},
+			{name="actual mesh interiors match supported terrain through all transitions",ok=built==(if options.chunk then 1 else 6) and missing==0 and maxError<.15,detail=`{built} transition chunks, {samples} samples, missing {missing}, largest height error {maxError}; {errorAt}`},
 			{name="bank triangle normals follow the shared surface",ok=maxNormal<5,detail=`largest normal difference {maxNormal} degrees at {normalAt}`},
 			{name="near-ground detail keeps one mesh and bounded chunks",ok=maxTriangles<20000 and maxSlice<20,detail=`largest chunk {maxTriangles} triangles, slice {maxSlice} ms, aggregate work {work} ms`},
 		}

@@ -143,6 +143,7 @@ local Spline = {
 		TurnMaxFill = 120, -- studs: an outsized embankment/drop near a turn
 		TurnLocationRetries = 2, -- run on RetryAfter and retry before taking the best clear fit
 		TurnDescentGrade = 0.025, -- downhill grade target in a descending turn, band safety wins
+		HairpinGradeBuffer = 40, -- same grade sign before/after the curved maneuver
 		-- THE DESCENT: the height band (`MinHeight..MaxHeight`) moves with the road, its centre
 		-- dropping this much per stud of road, so the grade still goes up and down locally but
 		-- the run works its way down. 1 in 25 is about 2.3 degrees net.
