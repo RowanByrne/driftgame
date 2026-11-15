@@ -173,20 +173,37 @@ function SkidSound.clipFor(surface: string?): string?
 	return clip
 end
 
--- Which clip the car is running on -- sliding or merely rolling: the first wheel that is
--- down, through `Drift/Wheels.surfaceOf`, so there is exactly one rule in the game for
--- what a wheel is standing on, then `clipFor`. `nil` when the car is airborne or has no
--- wheel on anything.
-function SkidSound.surfaceOf(state: DriftModel.State?): string?
+-- Which clip the car is running on -- sliding or merely rolling: A VOTE OF THE WHEELS THAT
+-- ARE DOWN, each through `Drift/Wheels.surfaceOf` (exactly one rule in the game for what a
+-- wheel is standing on) and `clipFor`. The clip with the most wheels wins; A TIE KEEPS
+-- `current`, the clip already playing, when it is one of the tied. Measured (T-222): by
+-- the first wheel alone, a car sliding along the road's edge crossfaded back and forth
+-- three times in 0.3 s as that one wheel flicked between tarmac and gravel. `nil` when the
+-- car is airborne or has no wheel on anything. No table: two clips, counted in locals.
+function SkidSound.surfaceOf(state: DriftModel.State?, current: string?): string?
 	if not state or state.airborne then
 		return nil
 	end
-	for i, down in state.wheelsDown do
-		if down == true then
-			return SkidSound.clipFor(Wheels.surfaceOf(state, i, true))
+	local best, bestVotes, tied = nil, 0, false
+	local clips = Config.Fx.Skid.Clips
+	for _, clip in clips do
+		local votes = 0
+		for i, down in state.wheelsDown do
+			if down == true and SkidSound.clipFor(Wheels.surfaceOf(state, i, true)) == clip then
+				votes += 1
+			end
+		end
+		if votes > bestVotes then
+			best, bestVotes, tied = clip, votes, false
+		elseif votes > 0 and votes == bestVotes then
+			tied = true
+			if clip == current then
+				best = clip
+			end
 		end
 	end
-	return nil
+	-- tied without `current` among them: the first tied clip in `Clips` order
+	return best
 end
 
 --------------------------------------------------------------------------------
@@ -265,7 +282,7 @@ function SkidSound.Update(self: SkidSound, state: DriftModel.State?, _input: any
 
 	if self.enabled then
 		self.target = SkidSound.volumeFor(state)
-		self.surface = SkidSound.surfaceOf(state)
+		self.surface = SkidSound.surfaceOf(state, self.surface)
 	else
 		self.target = 0
 		self.surface = nil
