@@ -1300,6 +1300,25 @@ function Tests.run(opts)
 				and SkidSound.surfaceOf(stateWith({ slipDeg = 45, speed = 60, airborne = true })) == nil,
 			`on the ground: {tostring(SkidSound.surfaceOf(stateWith({ slipDeg = 45, speed = 60 })))}`
 		)
+		-- T-222: the off-road clip, by a vote of the wheels, a tie keeping the clip playing
+		local function clipOn(wheels, current)
+			return SkidSound.surfaceOf(stateWith({ slipDeg = 45, speed = 60, surface = wheels }), current)
+		end
+		local offRoad = SkidSound.clipFor("grass")
+		local hasDirt = F.Skid.SoundIds.dirt ~= nil
+		local allGrass = clipOn({ "grass", "grass", "grass", "grass" })
+		local oneGravel = clipOn({ "gravel", "tarmac", "tarmac", "tarmac" })
+		local threeOff = clipOn({ "gravel", "grass", "tarmac", "grass" })
+		local tieDirt = clipOn({ "gravel", "gravel", "tarmac", "tarmac" }, offRoad)
+		local tieTarmac = clipOn({ "gravel", "gravel", "tarmac", "tarmac" }, F.Default)
+		check(
+			"off the road the wheels vote for the clip, and a tie keeps the one playing",
+			allGrass == offRoad and oneGravel == F.Default and threeOff == offRoad
+				and tieDirt == offRoad and tieTarmac == F.Default
+				and (not hasDirt or offRoad == "dirt"),
+			`grass x4 {allGrass}, gravel x1 {oneGravel}, off x3 {threeOff}, tie from {offRoad} {tieDirt}, `
+				.. `tie from {F.Default} {tieTarmac}`
+		)
 	end
 
 	----------------------------------------------------------------------------
@@ -1316,7 +1335,11 @@ function Tests.run(opts)
 		local skid = SkidSound.new()
 		local engineOk = engine:Attach(rig)
 		local skidOk = skid:Attach(rig)
-		local wantSounds = EngineSound.expectedInstances() + #F.Built -- the engine (1, or 12 layered), one squeal per built surface
+		local skidClips = 0 -- one skid Sound per clip in `Skid.Clips` that has an id (T-222)
+		for _, clip in S.Clips do
+			skidClips += if S.SoundIds[clip] then 1 else 0
+		end
+		local wantSounds = EngineSound.expectedInstances() + skidClips -- the engine (1, or 12 layered), one per skid clip
 		local soundsBefore = engine:CountInstances() + skid:CountInstances()
 		check(
 			`a rig gets exactly {wantSounds} sounds, once`,
