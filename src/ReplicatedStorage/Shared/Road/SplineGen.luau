@@ -1491,6 +1491,7 @@ function SplineGen._registerGround(self:Gen,s0:number,s1:number)
 		local nextRow=at(math.min(s,s1))
 		local cell=Corridor.cell(previous,nextRow)
 		assert(cell,"SplineGen: supported ground cell folded")
+		cell.road=true
 		self.corridors:add(cell)
 		previous=nextRow
 		s+=cs

@@ -1114,9 +1114,14 @@ function Tests.generator(_self,subjects)
 			return owner,curve,b0,sections
 		end
 		local owner,curve,b0,sections=liveFixture();local final=sections[#sections]
+		local roadsBefore=#owner.corridors:roadCells(0,curve.length)
 		owner:_publishInfields(final,{{pending={a0=128,a1=480,b0=b0},b1=curve.length}})
 		check("live publication attaches one validated batch and hard reservations together",final.ip and #final.ip>0 and table.isfrozen(final.ip)
 			and curve.infieldRevision==1 and owner.corridors.infields>0,"accepted ground was registered before optional field planning")
+		local actualRoads=owner.corridors:roadCells(0,curve.length);local onlyAccepted=true
+		for _,cell in actualRoads do onlyAccepted=onlyAccepted and cell.road==true and not cell.infield and cell.s1<=curve.length end
+		check("accepted-road arc queries exclude fields and provisional escapes",roadsBefore>0 and #actualRoads==roadsBefore and onlyAccepted,
+			`{#actualRoads} accepted ground cells retain their identity after field publication`)
 		if final.ip then
 			local replay=Gen.replay(sections,curve.origin,curve.fall)
 			local row=final.ip[1].rows[math.ceil(#final.ip[1].rows*.5)]

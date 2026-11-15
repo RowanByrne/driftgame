@@ -10,9 +10,10 @@ Index.__index = Index
 
 export type Row = {s:number, x:number, z:number, yaw:number, k:number, rx:number, rz:number, left:number, right:number}
 export type Cell = {s0:number, s1:number, x:number, z:number, radius:number,
-	minX:number, maxX:number, minZ:number, maxZ:number, p:{number},infield:boolean?}
+	minX:number, maxX:number, minZ:number, maxZ:number, p:{number},infield:boolean?,road:boolean?}
 export type Index = typeof(setmetatable({} :: {
 	buckets:{[number]:{Cell}}, reach:number, count:number, minS:number, maxS:number,infields:number,
+	roads:{[number]:{Cell}},
 }, Index))
 
 function Corridor.row(s:number, x:number, z:number, yaw:number, k:number, left:number, right:number): Row
@@ -79,7 +80,7 @@ local function key(x:number,z:number):number
 end
 
 function Corridor.new():Index
-	return setmetatable({buckets={},reach=0,count=0,minS=math.huge,maxS=-math.huge,infields=0},Index)
+	return setmetatable({buckets={},roads={},reach=0,count=0,minS=math.huge,maxS=-math.huge,infields=0},Index)
 end
 
 -- A decreasing smoothstep track can sit slightly above its linear taper between
@@ -99,8 +100,25 @@ function Index.add(self:Index, cell:Cell)
 	self.reach=math.max(self.reach,cell.radius)
 	self.count+=1
 	if cell.infield then self.infields+=1 end
+	if cell.road then
+		local arc=math.floor(cell.s0/size);local roadBucket=self.roads[arc]
+		if not roadBucket then roadBucket={};self.roads[arc]=roadBucket end
+		table.insert(roadBucket,cell)
+	end
 	local s=(cell.s0+cell.s1)*.5
 	self.minS,self.maxS=math.min(self.minS,s),math.max(self.maxS,s)
+end
+
+-- Only actual accepted ground is tagged `road`; provisional envelopes and
+-- field reservations cannot acquire this provenance. Its cells are <=CheckStep.
+function Index.roadCells(self:Index,first:number,last:number):{Cell}
+	local out={};local size=Config.Spline.HashCell
+	for arc=math.floor((first-Config.Spline.CheckStep)/size),math.floor(last/size) do
+		for _,cell in self.roads[arc] or {} do
+			if cell.s1>first and cell.s0<last then table.insert(out,cell) end
+		end
+	end
+	return out
 end
 
 function Index.clear(self:Index, cell:Cell, separation:number, gap:number):(boolean,Cell?,number,number)
