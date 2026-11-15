@@ -511,7 +511,7 @@ local Spline = {
 		},
 		GridSink = 1.25, -- studs
 		HoleSink = 300, -- studs: the coarser grid under the finer one
-		MeshSliceMs = 3, -- ms of building a frame
+		MeshSliceMs = 2, -- ms of building a frame
 		-- programmer colours, by slope: grass in two shades blotched by the relief, rock past
 		-- `RockAngle`
 		GrassColours = { Color3.fromRGB(86, 132, 62), Color3.fromRGB(70, 116, 54) },
