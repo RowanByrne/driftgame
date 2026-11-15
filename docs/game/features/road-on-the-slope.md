@@ -121,7 +121,7 @@ Asked mid-step (`DECISIONS.md` 2026-11-15): today's mountain was never steeper t
 **The mountain** (`Road/Ground`, `Config.Spline.Ground` `Belt...`, `Octaves`, `Relief...`):
 - **Belts down the fall line:** going down, a shallow bench (2 000 to 4 000 studs of fall line at 2 to 5 degrees), a 300-stud eased ramp, a steep scarp (250 to 600 studs at 24 to 31 degrees), a ramp, the next bench; each one's sizes from the seed. The belts curve across the mountain by up to 300 studs. 27 to 37-degree scarps were tried first: the road could not keep up on them.
 - **Ridges and gullies:** three octaves stretched 2.5 times down the fall line: sharp-crested ridges (promontories, 1 400 studs across, 80 tall), V-shaped gullies (600 across, 35 deep), and 8-stud detail; scaled by how steep the belt is (a quarter of that on a bench).
-- Measured over 6 km by 6 km: the belts' slope runs from 2 to 29 degrees; with the ridges, the ground beside the road is steep (over 30 degrees) at 17% of stations, shallow (under 8) at 44%.
+- Measured: down 25 000 studs of fall line the belts' slope runs from 2 to 29 degrees (seed 7); with the ridges, the mountain across the road is steep (over 30 degrees) at 17% of the road's stations and shallow (under 8) at 44% (20 seeds).
 
 **The road on it** (`Road/SplineGen`), on top of step 1:
 - A leg descends faster on steeper ground (`LegGradeSteep`), so legs stacked on a scarp spread apart.
