@@ -6,7 +6,7 @@ local AssetService=game:GetService("AssetService")
 local Players=game:GetService("Players")
 local Lighting=game:GetService("Lighting")
 local RS=game:GetService("ReplicatedStorage")
-local Trial=require(script.Parent.Parent.Drift.BakedShadowTrial)
+local Trial -- Loaded only after the Studio + explicit opt-in guard.
 local Controller={Priority=-100}
 
 local state={on=false,phase="off",checks={},calls={},resources={editable=0,baked=0},visual="unreviewed"}
@@ -166,6 +166,8 @@ local function buildTerrain(token)
 	terrainLive=source:Clone();terrainLive.Name="LiveTerrainOnly"
 	-- Only the mesh in both standalone modes: no hidden shadow casters, rails or paint Parts.
 	terrainBaked.Name="BakedTerrainOnly"
+	terrainBaked.DoubleSided=true -- the tested backface shadow needs this
+	state.terrain.doubleSided=true
 	state.terrain.standaloneParts=1;state.terrain.referenceParts=plain+blockers
 	state.bakeFrozenHaze=true;state.textureKept=source.TextureContent==terrainBaked.TextureContent
 	-- Backface/DoubleSided controls stay in the real-terrain frame. With the higher
@@ -183,16 +185,19 @@ end
 function Controller:Init() end
 function Controller:Start()
 	if not RunService:IsStudio() or workspace:GetAttribute("__baked_shadow_trial")~=true then return end
+	-- Restart is a fresh Play, never a second job racing a cancelled native await.
+	if state.phase~="off" then return end
 	generation+=1;local token=generation;state.on=true;state.phase="building"
-	sky=require(script.Parent.SkyController);camera=require(script.Parent.CarCameraController);input=require(script.Parent.CarInputController)
-	input:DebugSetInput(0,true);sky:DebugHold(60)
-	savedLight={latitude=Lighting.GeographicLatitude,ambient=Lighting.Ambient,outdoor=Lighting.OutdoorAmbient,brightness=Lighting.Brightness,exposure=Lighting.ExposureCompensation}
-	local atmosphere=Lighting:FindFirstChildOfClass("Atmosphere");if atmosphere then savedLight.density=atmosphere.Density end
-	root=Instance.new("Folder");root.Name="__BakedShadowTrial";root.Parent=workspace
-	for _,name in {"Panel","Terrain"}do local f=Instance.new("Folder");f.Name=name;f.Parent=root end
-	-- Keep folders referenced when a scene is hidden; indexing root would then fail.
-	local panelFolder,terrainFolder=root.Panel,root.Terrain
 	local ok,err=xpcall(function()
+		Trial=require(script.Parent.Parent.Drift.BakedShadowTrial)
+		sky=require(script.Parent.SkyController);camera=require(script.Parent.CarCameraController);input=require(script.Parent.CarInputController)
+		savedLight={latitude=Lighting.GeographicLatitude}
+		input:DebugSetInput(0,true);sky:DebugHold(60)
+		local atmosphere=Lighting:FindFirstChildOfClass("Atmosphere")
+		root=Instance.new("Folder");root.Name="__BakedShadowTrial";root.Parent=workspace
+		for _,name in {"Panel","Terrain"}do local f=Instance.new("Folder");f.Name=name;f.Parent=root end
+		-- Keep folders referenced when a scene is hidden.
+		local panelFolder,terrainFolder=root.Panel,root.Terrain
 		self.panelFolder=panelFolder;self.terrainFolder=terrainFolder
 		buildPanels(token);ui()
 		lightingConnection=RunService.RenderStepped:Connect(function()
