@@ -52,7 +52,8 @@ end
 function SplineParts.setHaze(colour:Color3)
 	hazeColour=colour
 	for part,value in hazeParts do
-		part.Color=SplineParts.seamColour({haze=value.token,textureScale=value.scale})
+		if part.Parent==nil then hazeParts[part]=nil
+		else part.Color=SplineParts.seamColour({haze=value.token,textureScale=value.scale}) end
 	end
 end
 
