@@ -518,7 +518,10 @@ local Spline = {
 		-- road keeps its tiles to 32 studs or finer as far as it is drawn, so the last two
 		-- never meet drawn road
 		Clamps = { 12, 24, 46, 64, 64 }, -- studs
-		GridSink = 1.25, -- studs: every vertex sinks this under the road and runoff
+		-- per spacing: every vertex sinks this under the road and runoff (and under the edge
+		-- within its clamp), more for coarser tiles, whose triangles bridge more of the road's
+		-- curve between two vertices
+		Sinks = { 1.25, 1.5, 2.5, 4, 4 }, -- studs
 		MeshSliceMs = 2, -- ms of building a frame
 		FirstSliceMs = 6, -- ms a frame while nothing is drawn yet (a run's first second)
 		Spare = 24, -- tiles built hidden, then swapped in whole, so a change never shows half done

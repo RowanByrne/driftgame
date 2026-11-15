@@ -160,22 +160,11 @@ function GroundTiles.select(want: Want): ({ Leaf }, { [number]: Leaf })
 			end
 		end
 	end
-	-- of the tiles that want splitting, the nearest the car first, while there is room for
-	-- its three more: so when the budget runs out, what stays coarse is what is furthest
 	local dists: { number } = {}
 	for i, nd in leaves do
 		dists[i] = distTo(nd.x0, nd.z0, nd.side, x, z)
 	end
-	while #leaves + 3 <= want.tiles do
-		local best, bi = math.huge, 0
-		for i, n in needs do
-			if n > 1 and dists[i] < best then
-				best, bi = dists[i], i
-			end
-		end
-		if bi == 0 then
-			break
-		end
+	local function split(bi: number)
 		local nd = leaves[bi]
 		local kids = GroundTiles.children(nd)
 		local last = #leaves
@@ -186,6 +175,43 @@ function GroundTiles.select(want: Want): ({ Leaf }, { [number]: Leaf })
 			table.insert(needs, need(c, want))
 			table.insert(dists, distTo(c.x0, c.z0, c.side, x, z))
 		end
+	end
+	-- first, whatever budget: no tile coarser than `RoadCoarsest` beside drawn road, so no
+	-- coarse triangle can reach over it (`Clamps`)
+	local coarsest, range = G.RoadCoarsest, G.RoadRange
+	local function mustSplit(nd: Leaf): boolean
+		if nd.s <= coarsest then
+			return false
+		end
+		local r = nd.s * range
+		for i = 1, #road, 3 do
+			if distTo(nd.x0, nd.z0, nd.side, road[i], road[i + 1]) < r then
+				return true
+			end
+		end
+		return false
+	end
+	local i = 1
+	while i <= #leaves and #leaves < want.tiles * 2 do
+		if mustSplit(leaves[i]) then
+			split(i) -- its children are appended, and checked in their turn
+		else
+			i += 1
+		end
+	end
+	-- then, of the tiles that want splitting, the nearest the car first, while there is room
+	-- for its three more: so when the budget runs out, what stays coarse is what is furthest
+	while #leaves + 3 <= want.tiles do
+		local best, bi = math.huge, 0
+		for k, n in needs do
+			if n > 1 and dists[k] < best then
+				best, bi = dists[k], k
+			end
+		end
+		if bi == 0 then
+			break
+		end
+		split(bi)
 	end
 	local map: { [number]: Leaf } = {}
 	for _, l in leaves do

@@ -19,9 +19,9 @@
 -- NO CRACKS. Two tiles of one spacing share their edge's vertices, worked out the same way.
 -- Where a tile meets a coarser one, its edge takes the coarser one's heights (straight lines
 -- between the coarser vertices), and a vertex several tiles share takes its height the
--- coarsest one's way (`Clamps`). So the edges agree exactly.
+-- coarsest one's way (`Clamps`, `Sinks`). So the edges agree exactly.
 --
--- ROUND THE ROAD: every vertex sinks `GridSink` under the road and its runoff, and one within
+-- ROUND THE ROAD: every vertex sinks its spacing's `Sinks` under the road and its runoff, and one within
 -- its spacing's `Clamp` of a runoff's edge is held below the edge, so no triangle reaching over
 -- from a cutting covers the road. The road's skirt (`Road/SplineMesh`, a ground run) hides the
 -- gap.
@@ -118,8 +118,10 @@ local function cells(): number
 end
 
 local clampOf: { [number]: number } = {}
+local sinkOf: { [number]: number } = {}
 for k, s in Config.Spline.Ground.Spacings do
 	clampOf[s] = Config.Spline.Ground.Clamps[k]
+	sinkOf[s] = Config.Spline.Ground.Sinks[k]
 end
 
 -- The flat tile every tile is copied from: never shown, never moved. It spans the coarsest
@@ -321,14 +323,14 @@ function GroundMeshView._slice(self: View)
 	end
 end
 
--- The height a vertex takes at (x, z) with clamp `clamp`: the ground, sunk under the road, and
--- held below the edge within `clamp` of it.
-local function vertexHeight(ctx: Ground.Context, clamp: number, x: number, z: number): number
-	local G = Config.Spline.Ground
+-- The height a vertex takes at (x, z), done the way tiles of spacing `s` do it: the ground,
+-- sunk under the road, and held below the edge within that spacing's clamp of it.
+local function vertexHeight(ctx: Ground.Context, s: number, x: number, z: number): number
 	local y, a, e, T = Ground.at(ctx, x, z)
-	y -= G.GridSink * a
-	if e < clamp then
-		y = math.min(y, T - G.GridSink)
+	local sink = sinkOf[s]
+	y -= sink * a
+	if e < clampOf[s] then
+		y = math.min(y, T - sink)
 	end
 	return y
 end
@@ -360,7 +362,7 @@ local function rimHeights(ctx: Ground.Context, leaf: Leaf, map: { [number]: Leaf
 		if sm < s then
 			sm = s
 		end
-		y = vertexHeight(ctx, clampOf[sm] or clampOf[s], x, z)
+		y = vertexHeight(ctx, sm, x, z)
 		cache[key] = y
 		return y
 	end
@@ -418,7 +420,6 @@ function GroundMeshView._fill(self: View, tile: Tile, leaf: Leaf, map: { [number
 	local s, x0, z0 = leaf.s, leaf.x0, leaf.z0
 	local ctx = Ground.context(self.field, self.spline, x0 - s, z0 - s, x0 + leaf.side + s, z0 + leaf.side + s)
 	self:_slice()
-	local clamp = clampOf[s]
 	-- every vertex and the apron, this tile's own way
 	local own = table.create(m * m)
 	for i = -1, C + 1 do
@@ -427,7 +428,7 @@ function GroundMeshView._fill(self: View, tile: Tile, leaf: Leaf, map: { [number
 		end
 		local x = x0 + i * s
 		for j = -1, C + 1 do
-			own[(i + 1) * m + (j + 1) + 1] = vertexHeight(ctx, clamp, x, z0 + j * s)
+			own[(i + 1) * m + (j + 1) + 1] = vertexHeight(ctx, s, x, z0 + j * s)
 		end
 		self:_slice()
 	end
@@ -1014,6 +1015,7 @@ function GroundMeshView.DebugSeams(self: View, roadAhead: number?)
 	local spline = self.spline
 	local half = Config.Road.Width * 0.5
 	local above, roadSamples = -math.huge, 0
+	local aboveBySpacing: { [string]: number } = {}
 	local aboveAt = nil
 	if self.along then
 		local s = math.max(self.along - 300, spline.firstSample * spline.step)
@@ -1026,6 +1028,8 @@ function GroundMeshView.DebugSeams(self: View, roadAhead: number?)
 					local tile = self:_tileAt(x, z)
 					if tile then
 						local g = surfaceAt(tile, x, z)
+						local sk = tostring((tile.leaf :: Leaf).s)
+						aboveBySpacing[sk] = math.max(aboveBySpacing[sk] or -math.huge, g - y)
 						roadSamples += 1
 						if g - y > above then
 							above = g - y
@@ -1044,6 +1048,7 @@ function GroundMeshView.DebugSeams(self: View, roadAhead: number?)
 		worstAt = worstAt,
 		roadSamples = roadSamples,
 		highestAboveRoad = above,
+		highestAboveRoadBySpacing = aboveBySpacing,
 		highestAt = aboveAt,
 	}
 end
