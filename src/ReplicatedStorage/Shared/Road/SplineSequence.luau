@@ -210,7 +210,9 @@ function SplineSequence.locateOwned(self:Sequence,position:Vector3,hint:number,m
 		if position.Y<y-8 or position.Y>y+40 then return nil,nil end
 		return s,d
 	end
-	local s,d=attempt(hint)
+	local field=self.spline:infieldContact(position.X,position.Z,hint,position.Y-40,position.Y+8,limit,self.starts[self.first])
+	local s,d
+	if field then s,d=field.ownerS,field.routeD else s,d=attempt(hint) end
 	-- A delayed server tick can cover more than one Newton solve's range.
 	-- Search a bounded arc interval around the last accepted leg, never the grid.
 	if not s and limit>128 then

@@ -23,6 +23,7 @@ local SurfaceCuts = require(script.Parent.SplineSurfaceCuts)
 local Profile = require(script.Parent.SplineProfile)
 local Hill = require(script.Parent.SplineHill)
 local HillCuts = require(script.Parent.SplineHillCuts)
+local Infield = require(script.Parent.SplineInfield)
 
 local SplineParts = {}
 
@@ -209,6 +210,53 @@ function SplineParts.build(spline: Spline.Spline, s0: number, s1: number, parent
 	end
 	folder.Parent = parent
 	return out
+end
+
+function SplineParts.buildInfield(spline:Spline.Spline,x:number,z:number,radius:number,parent:Instance,opts:any?):(Model?,any)
+	local o=opts or {}
+	local started=os.clock()
+	if not spline.infields then return nil,"empty" end
+	local selected=Infield.near(spline.infields,x,z,radius,o.supportedOnly)
+	if #selected==0 then return nil,"empty" end
+	local model=Instance.new("Model");model.Name="InfieldParts";model:SetAttribute("Infield",true)
+	model:SetAttribute("InfieldRevision",spline.infieldRevision or 0)
+	local batch=Instance.new("Folder");batch.Name="FieldSlices"
+	local sliceStart=started
+	local paused,worst,slices,count,triangles=0,0,1,0,0
+	local budget=(o.sliceMs or Config.Spline.Mesh.SliceMs)/1000
+	local function tick()
+		if o.cancelled and o.cancelled() then error("infield Parts build cancelled") end
+		local now=os.clock()
+		if now-sliceStart>=budget or #batch:GetChildren()>=192 then
+			batch.Parent=model
+			batch=Instance.new("Folder");batch.Name="FieldSlices"
+			worst=math.max(worst,os.clock()-sliceStart)
+			local before=os.clock();task.wait();local after=os.clock()
+			paused+=after-before;sliceStart=after;slices+=1
+		end
+	end
+	local ok,err=xpcall(function()
+		local T=Config.Spline.Terrain
+		for i,t in selected do
+			tick()
+			local a,b,c=t.a.p,t.b.p,t.c.p
+			local made={}
+			local colour=if t.supported then T.GrassColour else T.RockColour
+			Builder.triangleSlab(`Infield_{i}`,Vector3.new(a[1],a[2],a[3]),Vector3.new(b[1],b[2],b[3]),Vector3.new(c[1],c[2],c[3]),
+				.1,colour,if t.supported then Enum.Material.Grass else Enum.Material.Slate,batch,made :: any)
+			for _,p in made do
+				p.CanCollide=o.collidable==true and t.supported;p.CanTouch=false;p.CanQuery=o.queryable==true
+				p.CastShadow=o.collidable~=true
+				if o.collidable then p.Transparency=1 end
+				count+=1
+			end
+			triangles+=1
+		end
+		tick();batch.Parent=model;model.Parent=parent
+	end,debug.traceback)
+	if not ok then batch:Destroy();model:Destroy();return nil,tostring(err) end
+	worst=math.max(worst,os.clock()-sliceStart)
+	return model,{triangles=triangles,parts=count,ms=(os.clock()-started-paused)*1000,sliceMs=worst*1000,slices=slices}
 end
 
 return SplineParts

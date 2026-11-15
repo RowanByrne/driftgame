@@ -142,6 +142,8 @@ function SplineWorld.new(spline: Spline.Spline, base: Model.World?): SplineWorld
 
 	function self.locate(pos: Vector3): (number?, number?)
 		local s, d = locate(pos.X, pos.Z, self.hint)
+		local hit=spline:infieldContact(pos.X,pos.Z,self.hint,pos.Y+rayBottom,pos.Y+rayTop,160,self.closing)
+		if hit and (not s or not d or spline:groundKind(s,d)==nil or math.abs(s-hit.ownerS)>1) then s,d=hit.ownerS,hit.routeD end
 		if s then
 			self.hint = s
 		end
@@ -159,10 +161,13 @@ function SplineWorld.new(spline: Spline.Spline, base: Model.World?): SplineWorld
 	function self.probe(pos: Vector3): Model.Hit?
 		stats.probes += 1
 		local s, d = locate(pos.X, pos.Z, self.hint)
+		local field=spline:infieldContact(pos.X,pos.Z,self.hint,pos.Y+rayBottom,pos.Y+rayTop,160,self.closing)
+		if field and s and math.abs(s-field.ownerS)>1 then s,d=nil,nil end
+		local overCliff=false
 		if s and d then
 			local kind = spline:groundKind(s, d)
 			if kind == nil then
-				stats.overCliff += 1
+				overCliff=true
 			else
 				self.hint = s
 				local y = spline:terrainY(s, d)
@@ -183,6 +188,18 @@ function SplineWorld.new(spline: Spline.Spline, base: Model.World?): SplineWorld
 				end
 			end
 		end
+		if field then
+			self.hint=field.ownerS
+			stats.hits+=1
+			local kind=field.kind
+			if kind==Spline.TARMAC then return {y=field.y,normal=field.normal,grip=C.GripTarmac,score=C.ScoreTarmac,surface="tarmac"} end
+			if kind==Spline.GRAVEL then
+				stats.gravel+=1;return {y=field.y,normal=field.normal,grip=C.GripGravel,score=C.ScoreGravel,surface="gravel"}
+			end
+			stats.grass+=1
+			return {y=field.y,normal=field.normal,grip=C.GripGrass,score=C.ScoreGrass,surface="grass"}
+		end
+		if overCliff then stats.overCliff+=1 end
 		if base then
 			return base.probe(pos)
 		end
@@ -197,14 +214,14 @@ function SplineWorld.new(spline: Spline.Spline, base: Model.World?): SplineWorld
 	local function boxReach(pos: Vector3, yaw: number): (number, number)
 		local flatFwd, flatRight = Model.axes(yaw)
 		local s, d = locate(pos.X, pos.Z, self.hint)
-		if not s or not d or not spline:groundKind(s, d) then
-			return bw, bl
-		end
-		local y = spline:terrainY(s, d)
+		local field=if not s or not d or not spline:groundKind(s,d)
+			then spline:infieldContact(pos.X,pos.Z,self.hint,pos.Y+rayBottom,pos.Y+rayTop,160,self.closing) else nil
+		if (not s or not d or not spline:groundKind(s,d)) and not field then return bw,bl end
+		local y=if field then field.y else spline:terrainY(s :: number,d :: number)
 		if pos.Y - (y + C.RideHeight) > C.AirborneMargin then
 			return bw, bl
 		end
-		local up = spline:terrainNormal(s, d)
+		local up=if field then field.normal else spline:terrainNormal(s :: number,d :: number)
 		local right = flatFwd:Cross(up)
 		if right.Magnitude < 1e-4 then
 			return bw, bl
@@ -241,7 +258,7 @@ function SplineWorld.new(spline: Spline.Spline, base: Model.World?): SplineWorld
 	-- clear) and the way back toward the road. The runoff narrows and widens along the
 	-- road, so the wall line leans: its normal carries that lean, which is what lets a car
 	-- grind along a narrowing runoff rather than stick in it.
-	local function sideWall(s: number, d: number): (number, Vector3)
+	local function sideWall(s: number, d: number, outerFace:boolean?): (number, Vector3)
 		local side = if d >= 0 then 1 else -1
 		local edge = half + spline:runoffAt(s, side)
 		local yaw = spline:yawAt(s)
@@ -249,6 +266,9 @@ function SplineWorld.new(spline: Spline.Spline, base: Model.World?): SplineWorld
 		local fx, fz = -math.sin(yaw), -math.cos(yaw)
 		local lean = (spline:runoffAt(s + 0.5, side) - spline:runoffAt(s - 0.5, side)) / math.max(0.2, 1 + spline:curvatureAt(s) * d)
 		local n = Vector3.new(-side * rx + lean * fx, 0, -side * rz + lean * fz).Unit
+		if spline:infieldOpening(s,side)>0 and (outerFace==true or (outerFace==nil and math.abs(d)>edge+1.5)) then
+			return math.abs(d)-edge-3,-n
+		end
 		return edge - math.abs(d), n
 	end
 
@@ -284,6 +304,13 @@ function SplineWorld.new(spline: Spline.Spline, base: Model.World?): SplineWorld
 	-- the front. Measured from the front face, positive ahead. It reaches across the tarmac
 	-- and the runoff either side, to the edges.
 	local CLOSING_DEPTH = 1
+	local function physicalLocate(x:number,z:number,y:number,hint:number?):(number?,number?)
+		local s,d=locate(x,z,hint)
+		if s and d and spline:groundKind(s,d)~=nil then return s,d end
+		local hit=spline:infieldContact(x,z,self.hint,y+rayBottom,y+rayTop,160,self.closing)
+		if hit and hit.d then return hit.contactS,hit.d end
+		return s,d
+	end
 	local function closingMargin(x: number, z: number): (number?, Vector3?)
 		local sc = self.closing
 		if not sc then
@@ -332,14 +359,16 @@ function SplineWorld.new(spline: Spline.Spline, base: Model.World?): SplineWorld
 		for i = 1, 6 do
 			local x0, z0 = fromPts[i * 2 - 1], fromPts[i * 2]
 			local x1, z1 = toPts[i * 2 - 1], toPts[i * 2]
-			local s0, d0 = locate(x0, z0, hint)
-			local s1, d1 = locate(x1, z1, s0 or hint)
+			local s0, d0 = physicalLocate(x0,z0,from.Y,hint)
+			local s1, d1 = physicalLocate(x1,z1,to.Y,s0 or hint)
 			-- the same side of the road at both ends, or it is not one wall
 			if s0 and d0 and s1 and d1 and (d0 >= 0) == (d1 >= 0) then
 				local side = if d1 >= 0 then 1 else -1
 				if sideWallStands(s1, d1, to.Y) then
-					local m0 = sideWall(s0, d0)
-					local m1, n = sideWall(s1, d1)
+					local outer=nil
+					if spline:infieldOpening(s1,side)>0 then outer=math.abs(d0)>half+spline:runoffAt(s0,side)+1.5 end
+					local m0 = sideWall(s0, d0,outer)
+					local m1, n = sideWall(s1, d1,outer)
 					consider(m0, m1, n, KIND_SIDE)
 				end
 				-- a K-rail standing at both ends: whichever face the point started on
@@ -423,7 +452,7 @@ function SplineWorld.new(spline: Spline.Spline, base: Model.World?): SplineWorld
 		end
 		for i = 1, 6 do
 			local x, z = toPts[i * 2 - 1], toPts[i * 2]
-			local s, d = locate(x, z, hint)
+			local s, d = physicalLocate(x,z,pos.Y,hint)
 			if s and d then
 				local side = if d >= 0 then 1 else -1
 				if sideWallStands(s, d, pos.Y) then

@@ -4,6 +4,22 @@ assert(game:GetService("RunService"):IsStudio(),"SplineInfieldTests is Studio on
 local DefaultInfield=require(game.ReplicatedStorage.Shared.Road.SplineInfield)
 local Tests={}
 
+local function fixture(Spline,rise)
+	local sp=Spline.new({x=0,y=50,z=-20000,yaw=0});sp.fall=math.pi*.5
+	local sections={}
+	local function append(sec)table.insert(sections,sec);sp:append(sec)end
+	local function section(length,knots,left,right,bank)
+		return {len=length,k=knots,g={length,0},b={length,0},rl={length,16},rr={length,16},
+			el={length,left},er={length,right},hl={length,bank},hr={length,0}}
+	end
+	local a=section(512,{512,0},Spline.ROCK,Spline.CLIFF,rise);a.bm={0,1,0};append(a)
+	local length=math.pi*100+20
+	append(section(length,{20,.01,length-20,.01,length,0},Spline.ROCK,Spline.CLIFF,0))
+	local b0=sp.length
+	append(section(320,{320,0},Spline.CLIFF,Spline.ROCK,0))
+	return sp,b0,sections
+end
+
 function Tests.run(_self,subject)
 	local Infield=subject or DefaultInfield
 	local checks={}
@@ -40,6 +56,35 @@ function Tests.run(_self,subject)
 	local far=Infield.sample(index,39,-10)
 	check("contact can reach the opposite bank without changing the accepted route",near.contactS==110 and far.contactS==890 and owner==110,
 		"physical contact identifies each bank; the caller retains its own route")
+	check("bounded accepted ownership stays on its original bank across the field",Infield.route(far,110,160,patch)==110
+		and Infield.route(near,890,160,patch)==890 and Infield.route(far,nil,160,patch)==nil and Infield.route(far,4000,160,patch)==nil,
+		"physical bank choice cannot establish or replace route history")
+	local delayedRows=rows(0,0);delayedRows[1].sb=600;delayedRows[2].sa=500;delayedRows[2].sb=550
+	local delayedPatch=Infield.patch("delayed",delayedRows);local delayed=Infield.new();Infield.add(delayed,delayedPatch)
+	check("a delayed move cannot switch to whichever bank arc is now closer",Infield.route(Infield.sample(delayed,20,0),500,160,delayedPatch)==nil,
+		"an excessive owner-side advance is refused even if the other bank lies within the limit")
+	local links=Infield.links(index,110)
+	check("the known opposite bank is paired without a nearby-road search",#links==1 and links[1].peerS==890
+		and Infield.pair(patch,"B",890)==110 and Infield.pair(patch,"A",99)==nil,
+		"forward and inverse pairing use the same frozen rows")
+	check("nearby ground includes both physical halves independently of the road window",#Infield.near(index,20,-10,30)==4,
+		"a world-space query returns complete nearby ground")
+	local contours=Infield.closing(index,500)
+	local contourLength,contourError=0,0
+	for _,line in contours do
+		local a,b=line.a,line.b
+		contourLength+=math.sqrt((b[1]-a[1])^2+(b[3]-a[3])^2)
+		local x,z=(a[1]+b[1])*.5,(a[3]+b[3])*.5
+		local hit=Infield.sample(index,x,z)
+		contourError=math.max(contourError,math.abs(hit.closingS-500))
+	end
+	check("closure crosses a field even while its road arc lies between both bank ranges",#contours>0 and math.abs(contourLength-20)<1e-6 and contourError<1e-6,
+		`{#contours} exact triangle segments; length{contourLength}, scalar error{contourError}`)
+	local early=Infield.closing(index,110)
+	local farthest=0
+	for _,line in early do farthest=math.max(farthest,line.a[1],line.b[1]) end
+	check("a closing on the early bank leaves later peer traffic unobstructed",#early>0 and farthest<1,
+		"the connected contour returns to the finite field edge before reaching live peer asphalt")
 	check("height-limited probes reject a ceiling and a floor beyond their ray",Infield.sample(index,20,-10,2,4)==nil
 		and Infield.sample(index,20,-10,-4,0)==nil and Infield.sample(index,20,-10,0,2)~=nil,"one indexed height query, no nearest-road reacquisition")
 	check("both opposed bank openings share a smooth end taper",Infield.opening(index,110,1)==1 and Infield.opening(index,890,-1)==1
@@ -130,22 +175,7 @@ function Tests.planner(_self,subjects)
 	local ok,result=xpcall(function()
 		local checks={}
 		local function check(name,pass,detail)table.insert(checks,{name=name,ok=pass,detail=detail})end
-		local function fixture(rise)
-			local sp=Spline.new({x=0,y=50,z=-20000,yaw=0});sp.fall=math.pi*.5
-			local sections={}
-			local function append(sec)table.insert(sections,sec);sp:append(sec)end
-			local function section(length,knots,left,right,bank)
-				return {len=length,k=knots,g={length,0},b={length,0},rl={length,16},rr={length,16},
-					el={length,left},er={length,right},hl={length,bank},hr={length,0}}
-			end
-			local a=section(512,{512,0},Spline.ROCK,Spline.CLIFF,rise);a.bm={0,1,0};append(a)
-			local length=math.pi*100+20
-			append(section(length,{20,.01,length-20,.01,length,0},Spline.ROCK,Spline.CLIFF,0))
-			local b0=sp.length
-			append(section(320,{320,0},Spline.CLIFF,Spline.ROCK,0))
-			return sp,b0,sections
-		end
-		local sp,b0,sections=fixture(20)
+		local sp,b0,sections=fixture(Spline,20)
 		local patches,cells=Planner.plan(sp,128,480,b0,sp.length)
 		check("a level turnaround uses actual tarmac height despite different frozen bank lifts",#patches>0 and #cells>0,
 			`{#patches} frozen patches and {#cells} reserved cells; bank difference20studs`)
@@ -172,6 +202,58 @@ function Tests.planner(_self,subjects)
 		for i,sec in sections do local copy=table.clone(sec);if i==#sections then copy.ip=patches end;replay:append(copy) end
 		check("serialized newer-section fields replay the same frozen support",#replay.infields.triangles==#sp.infields.triangles
 			and replay.infieldRevision==1,"both legs and final floor heights arrive in plain section data")
+		local midRow=nil
+		for _,r in patches[1].rows do if r.weight==1 then midRow=r;break end end
+		if midRow then
+			local points=Infield.columns(midRow)
+			local p=points[6]
+			local a=sp:infieldContact(p[1],p[3],midRow.sa,p[2]-1,p[2]+1)
+			local b=sp:infieldContact(p[1],p[3],midRow.sb,p[2]-1,p[2]+1)
+			check("actual Spline field contacts retain each caller's accepted leg",a and b and math.abs(a.ownerS-midRow.sa)<1e-6
+				and math.abs(b.ownerS-midRow.sb)<1e-6 and a.kind==Spline.GRASS and math.abs(a.routeD)>cfg.Road.Width*.5,
+				"the same floor supplies independent route-owned grass contacts")
+			local px,py,pz=sp:surfaceXYZ(midRow.sb,0)
+			local peer=sp:infieldContact(px,pz,midRow.sa,py-1,py+1)
+			check("opposite-bank physical contact does not claim opposite-leg progress",peer and peer.kind==Spline.TARMAC
+				and math.abs(peer.contactS-midRow.sb)<1e-5 and math.abs(peer.ownerS-midRow.sa)<1e-5
+				and math.abs(peer.routeD)>cfg.Road.Width*.5,"physical road grip remains separate from route progress")
+			check("retired accepted ownership cannot transfer onto the live opposite bank",sp:infieldContact(p[1],p[3],midRow.sa,p[2]-1,p[2]+1,160,midRow.sa+1)==nil
+				and sp:infieldContact(px,pz,midRow.sa,py-1,py+1,160,midRow.sa+1)==nil,
+				"both field and known-peer paths refuse retired owner history")
+			if subjects and subjects.World then
+				local world=subjects.World.new(sp);world.hint=midRow.sa
+				local pos=Vector3.new(p[1],p[2]+cfg.Drift.RideHeight,p[3])
+				local ground=world.probe(pos)
+				local along,lateral=world.locate(pos)
+				check("the real car world finds the shared floor beyond ordinary finite banks",ground and ground.surface=="grass"
+					and math.abs(ground.y-p[2])<.02 and math.abs(world.hint-midRow.sa)<.05
+					and along and math.abs(lateral)>cfg.Road.Width*.5,"height, grip and route-owned location come from one field contact")
+				local peerGround=world.probe(Vector3.new(px,py+cfg.Drift.RideHeight,pz))
+				check("the car receives real opposite-bank grip while retaining accepted ownership",peerGround and peerGround.surface=="tarmac"
+					and math.abs(peerGround.y-py)<.02 and math.abs(world.hint-midRow.sa)<.05,"physical contact is not a route handoff")
+				local from=Vector3.new(midRow.a[1],midRow.a[2]+cfg.Drift.RideHeight,midRow.a[3])
+				local stopped=world.sweep(from,pos,sp:yawAt(midRow.sa))
+				local pushed,depth=world.penetration(pos,sp:yawAt(midRow.sa))
+				check("the real car crosses a certified opening without a hidden bank wall",not stopped and not pushed and depth==0,
+					`sweep={tostring(stopped)}, push={tostring(pushed)}, depth={depth}; opening={sp:infieldOpening(midRow.sa,midRow.sideA)}`)
+				world.setClosing(midRow.sa+1)
+				check("the real car cannot reacquire a field using retired ownership",world.probe(pos)==nil,
+					"closure is checked before opposite-bank support")
+				world.destroy()
+			end
+			if subjects and subjects.Sequence then
+				local seq=setmetatable({spline=sp,first=1,last=#sections,starts={},pieces={},furthestN=1,furthestT=0},subjects.Sequence)
+				local s=0
+				for i,sec in sections do seq.starts[i]=s;seq.pieces[i]={n=i,s0=s,s1=s+sec.len,length=sec.len};s+=sec.len end
+				local n,t,lateral,owner=seq:locateOwned(Vector3.new(p[1],p[2]+2,p[3]),midRow.sa,160)
+				local state=n and seq:progressAt(n,t,lateral)
+				local pn,pt,plateral,powner=seq:locateOwned(Vector3.new(px,py+2,pz),midRow.sa,160)
+				check("the real sequence keeps field and known-peer contacts off earned asphalt",n and pn and owner and powner
+					and math.abs(owner-midRow.sa)<.05 and math.abs(powner-midRow.sa)<.05
+					and lateral>cfg.Road.Width*.5 and plateral>cfg.Road.Width*.5 and seq.furthestT==0,
+					"both physical locations retain the original owner and advance no route progress")
+			end
+		end
 		if patches[1] then
 			local moved={}
 			for _,r in patches[1].rows do
@@ -191,7 +273,7 @@ function Tests.planner(_self,subjects)
 		local blocked=Corridor.new()
 		-- A narrow unrelated arm crosses the interior of the proposed field.
 		blocked:add(Corridor.cell(Corridor.row(300,-100,-20200,0,0,10,10),Corridor.row(308,-100,-20500,0,0,10,10)))
-		local another,b=fixture(20)
+		local another,b=fixture(Spline,20)
 		local refused=Planner.plan(another,128,480,b,another.length,blocked)
 		check("a connector cannot cover an occupied road inside either attached arc range",#refused==0,
 			"positive-area overlap is refused even when the obstacle has an attached arm's arc")
@@ -209,6 +291,92 @@ function Tests.planner(_self,subjects)
 	end,debug.traceback)
 	cfg.Spline.Biomes.GroundEnabled=saved
 	if not ok then return {passed=0,total=1,checks={{name="planner fixture completes",ok=false,detail=result}}} end
+	return result
+end
+
+function Tests.render()
+	local road=game.ReplicatedStorage.Shared.Road
+	local Spline,Planner,Infield=require(road.Spline),require(road.SplineInfieldPlanner),require(road.SplineInfield)
+	local Mesh,Parts=require(road.SplineMesh),require(road.SplineParts)
+	local cfg=require(game.ReplicatedStorage.Shared.Config)
+	local saved=cfg.Spline.Biomes.GroundEnabled;cfg.Spline.Biomes.GroundEnabled=true
+	local folder=Instance.new("Folder");folder.Name="__InfieldRenderTest";folder.Parent=workspace
+	local mesh,parts=nil,nil
+	local ok,result=xpcall(function()
+		local checks={}
+		local function check(name,pass,detail)table.insert(checks,{name=name,ok=pass,detail=detail})end
+		local sp,b0=fixture(Spline,20)
+		local patches=Planner.plan(sp,128,480,b0,sp.length);sp:addInfields(patches)
+		local row=patches[1].rows[math.ceil(#patches[1].rows*.5)]
+		local centre=Infield.columns(row)[6]
+		local info;mesh,info=Mesh.buildInfield(sp,centre[1],centre[3],600,folder)
+		assert(mesh,tostring(info))
+		local part=mesh.Infield;local em=part.MeshContent.Object
+		local faces={}
+		for _,f in em:GetFaces() do
+			local ids=em:GetFaceVertices(f)
+			local p={};for _,id in ids do table.insert(p,part.CFrame:PointToWorldSpace(em:GetPosition(id))) end
+			table.insert(faces,p)
+		end
+		local tested,missing,heightError,normalError=0,0,0,0
+		for i,t in sp.infields.triangles do
+			if not t.supported then continue end
+			local a,b,c=t.a.p,t.b.p,t.c.p
+			local x,z=(a[1]+b[1]+c[1])/3,(a[3]+b[3]+c[3])/3
+			local expected=Infield.sample(sp.infields,x,z)
+			local top,normal=-math.huge,nil
+			for _,p in faces do
+				local aa,bb,cc=p[1],p[2],p[3]
+				local bx,bz,cx,cz=bb.X-aa.X,bb.Z-aa.Z,cc.X-aa.X,cc.Z-aa.Z
+				local det=bx*cz-bz*cx
+				if math.abs(det)<1e-9 then continue end
+				local dx,dz=x-aa.X,z-aa.Z
+				local u,v=(dx*cz-dz*cx)/det,(bx*dz-bz*dx)/det
+				if u< -1e-7 or v< -1e-7 or u+v>1+1e-7 then continue end
+				local y=aa.Y+u*(bb.Y-aa.Y)+v*(cc.Y-aa.Y)
+				if y>top then top=y;normal=(bb-aa):Cross(cc-aa).Unit end
+			end
+			if not normal then missing+=1 else
+				heightError=math.max(heightError,math.abs(top-expected.y))
+				normalError=math.max(normalError,math.deg(math.acos(math.clamp(normal:Dot(expected.normal),-1,1))))
+			end
+			tested+=1;if i%32==0 then task.wait() end
+		end
+		check("actual field mesh contains both exact halves in one bounded mesh",#faces==#sp.infields.triangles and #mesh:GetChildren()==1
+			and math.max(part.Size.X,part.Size.Y,part.Size.Z)<=2048 and not part.CanCollide and not part.CanQuery,
+			`{#faces} faces, {info.vertices} vertices, size{part.Size}`)
+		check("actual field mesh agrees with the physical triangle floor",tested>0 and missing==0 and heightError<.02 and normalError<1,
+			`{tested} samples, missing{missing}, height{heightError}, normal{normalError}degrees`)
+		Mesh.destroy(mesh);mesh=nil
+		parts,info=Parts.buildInfield(sp,centre[1],centre[3],600,folder,{queryable=true})
+		assert(parts,tostring(info));task.wait()
+		local params=RaycastParams.new();params.FilterType=Enum.RaycastFilterType.Include;params.FilterDescendantsInstances={parts}
+		local rays,misses,error=0,0,0
+		for i,t in sp.infields.triangles do
+			if not t.supported then continue end
+			local a,b,c=t.a.p,t.b.p,t.c.p
+			local x,y,z=(a[1]+b[1]+c[1])/3,(a[2]+b[2]+c[2])/3,(a[3]+b[3]+c[3])/3
+			local hit=workspace:Raycast(Vector3.new(x,10000,z),Vector3.new(0,-20000,0),params)
+			if not hit then misses+=1 else error=math.max(error,math.abs(hit.Position.Y-y)) end
+			rays+=1;if i%32==0 then task.wait() end
+		end
+		check("actual Parts fallback preserves the complete finite field floor",rays>0 and misses==0 and error<.15,
+			`{rays} high-origin rays, missing{misses}, height{error}, {info.parts} Parts, slice{info.sliceMs}ms`)
+		parts:Destroy();parts=nil
+		local count=0
+		local cancelled,reason=Mesh.buildInfield(sp,centre[1],centre[3],600,folder,{cancelled=function()count+=1;return count>=10 end})
+		check("cancelled field meshes publish no partial model",not cancelled and string.find(tostring(reason),"cancelled")~=nil and #folder:GetChildren()==0,
+			"temporary mesh resources are discarded before publication")
+		count=0
+		local cancelledParts,why=Parts.buildInfield(sp,centre[1],centre[3],600,folder,{cancelled=function()count+=1;return count>=3 end})
+		check("cancelled field fallback publishes no partial model",not cancelledParts and string.find(tostring(why),"cancelled")~=nil and #folder:GetChildren()==0,
+			"staged batches are destroyed together")
+		local passed=0;for _,c in checks do if c.ok then passed+=1 end end
+		return {passed=passed,total=#checks,checks=checks}
+	end,debug.traceback)
+	if mesh then Mesh.destroy(mesh) end;if parts then parts:Destroy() end
+	folder:Destroy();cfg.Spline.Biomes.GroundEnabled=saved
+	if not ok then return {passed=0,total=1,checks={{name="field renderer fixture completes",ok=false,detail=result}}} end
 	return result
 end
 

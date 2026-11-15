@@ -612,6 +612,46 @@ function Spline.infieldOpening(self:Spline,s:number,side:number):number
 	return if self.infields then Infield.opening(self.infields,s,side) else 0
 end
 
+-- Physical contacts and accepted route position are deliberately separate.
+-- The known opposite bank remains physically reachable, without a grid search
+-- or an asphalt-progress claim on the other leg.
+function Spline.infieldContact(self:Spline,x:number,z:number,hint:number?,low:number?,high:number?,limit:number?,closing:number?):any
+	local index=self.infields
+	if not index or hint==nil then return nil end
+	local first=math.max(self.firstSample*self.step,closing or 0)
+	if hint<first-1e-7 then return nil end
+	local advance=math.min(limit or 160,640)
+	local half=Config.Road.Width*.5
+	local hit=Infield.sample(index,x,z,low,high)
+	if hit then
+		local patch=index.patches[hit.patch]
+		local owner=Infield.route(hit,hint,advance,patch)
+		if owner and owner>=first then
+			local side=if owner==hit.sa then patch.rows[1].sideA else patch.rows[1].sideB
+			local d=nil
+			if hit.contactS>=self.firstSample*self.step then local _;_,d=self:projectFrom(x,z,hit.contactS) end
+			return {y=hit.y,normal=hit.normal,ownerS=owner,contactS=hit.contactS,kind=Spline.GRASS,
+				routeD=side*(half+1),d=d,patch=hit.patch}
+		end
+	end
+	for _,link in Infield.links(index,hint) do
+		if Infield.opening(index,hint,link.ownerSide)<=0 then continue end
+		local liveFirst=math.max(link.peerFirst,self.firstSample*self.step)
+		if liveFirst>link.peerLast then continue end
+		local s,d=self:projectFrom(x,z,math.clamp(link.peerS,liveFirst,link.peerLast))
+		if not s or not d or s<liveFirst or s>link.peerLast then continue end
+		local kind=self:groundKind(s,d)
+		if kind==nil then continue end
+		local owner=Infield.pair(link.patch,if link.bank=="A" then "B" else "A",s)
+		if not owner or owner<first or math.abs(owner-hint)>advance then continue end
+		local y=self:terrainY(s,d)
+		if (low and y<low) or (high and y>high) then continue end
+		return {y=y,normal=if kind==Spline.TARMAC then self:normalAt(s,d) else self:terrainNormal(s,d),ownerS=owner,contactS=s,kind=kind,
+			routeD=link.ownerSide*(half+1),d=d,patch=link.patch.id}
+	end
+	return nil
+end
+
 -- Forget the plan samples behind `s`. Knots, heading and height are kept -- they are a few
 -- numbers per section -- and so is the hash, which is what stops the road crossing road
 -- it laid an hour ago.
@@ -747,7 +787,7 @@ function Spline.boundaryHeight(self:Spline,s:number,side:number):number
 	if kind==Spline.CLIFF then return 0 end
 	local old=if kind==Spline.ROCK then Config.Spline.Terrain.RockHeight[1] else Config.Spline.Terrain.HedgeHeight
 	if not self:hasBiomeGround() then return old end
-	return Biome.mix(self.biomes,s,Config.Spline.Biomes.SolidHeight,old)
+	return Biome.mix(self.biomes,s,Config.Spline.Biomes.SolidHeight,old)*(1-self:infieldOpening(s,side))
 end
 
 -- How grand the rock and cliff faces are at `s`, 0..1 (T-185): eased between the knots.

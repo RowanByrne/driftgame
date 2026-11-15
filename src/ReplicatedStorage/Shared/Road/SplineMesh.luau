@@ -59,6 +59,7 @@ local SurfaceCuts = require(script.Parent.SplineSurfaceCuts)
 local Boundary = require(script.Parent.SplineBoundary)
 local Shadow = require(script.Parent.SplineShadow)
 local Builder = require(script.Parent.Builder)
+local Infield = require(script.Parent.SplineInfield)
 
 local SplineMesh = {}
 
@@ -1541,9 +1542,86 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 	return result.model, result.stats
 end
 
--- Colour the foot of every cliff, in every chunk drawn and every chunk drawn from now on
--- (`Controllers/SkyController`). Each mesh is rewritten, so call it when the colour has
--- moved, not every frame. Returns how many meshes it recoloured.
+-- The complete nearby field, including the half owned by an off-window peer.
+function SplineMesh.buildInfield(spline:Spline.Spline,x:number,z:number,radius:number,parent:Instance,opts:any?):(Model?,any)
+	local o=opts or {}
+	if o.forceFail then return nil,"forced infield mesh failure" end
+	local began=os.clock()
+	if not spline.infields then return nil,"empty" end
+	local selected=Infield.near(spline.infields,x,z,radius)
+	if #selected==0 then return nil,"empty" end
+	local paused,slices,worst=0,1,0
+	local sliceStart=began
+	local budget=(o.sliceMs or Config.Spline.Mesh.SliceMs)/1000
+	local function tick()
+		if o.cancelled and o.cancelled() then error("infield build cancelled") end
+		local now=os.clock()
+		if now-sliceStart>=budget then
+			worst=math.max(worst,now-sliceStart)
+			local before=os.clock();task.wait();local after=os.clock()
+			paused+=after-before;slices+=1;sliceStart=after
+		end
+	end
+	local lo,hi={math.huge,math.huge,math.huge},{-math.huge,-math.huge,-math.huge}
+	for i,t in selected do
+		for _,v in {t.a,t.b,t.c} do for j=1,3 do lo[j]=math.min(lo[j],v.p[j]);hi[j]=math.max(hi[j],v.p[j]) end end
+		if i%128==0 then local bounded,why=pcall(tick);if not bounded then return nil,tostring(why) end end
+	end
+	for j=1,3 do if hi[j]-lo[j]>2048 then return nil,"infield view exceeds the mesh bounds" end end
+	local centre=Vector3.new((lo[1]+hi[1])*.5,(lo[2]+hi[2])*.5,(lo[3]+hi[3])*.5)
+	local b:Builder?=nil
+	local model:Model?=nil
+	local mp:MeshPart?=nil
+	local ok,result=xpcall(function()
+		tick();b=newBuilder(centre)
+		local build=b :: Builder
+		local image=GrassTexture.get()
+		tick()
+		local T=Config.Spline.Terrain
+		local baseU,baseV=GrassTexture.base(centre)
+		local plain=build.em:AddUV(Vector2.zero)
+		local rock=build.em:AddColor(T.RockColour,1)
+		for _,t in selected do
+			local vertices,uvs,colours={},{},{}
+			local normal=build.em:AddNormal(t.normal)
+			local ordered={t.a,t.b,t.c}
+			local a,c,d=t.a.p,t.b.p,t.c.p
+			if (c[1]-a[1])*(d[3]-a[3])-(c[3]-a[3])*(d[1]-a[1])>0 then ordered={t.a,t.c,t.b} end
+			for _,v in ordered do
+				local p=v.p
+				table.insert(vertices,build.em:AddVertex(Vector3.new(p[1]-centre.X,p[2]-centre.Y,p[3]-centre.Z)))
+				if t.supported then
+					local shade=GrassTexture.blotch(p[1],p[3]);local grass=T.GrassColour
+					table.insert(colours,build.em:AddColor(Color3.new(math.min(1,grass.R*shade),math.min(1,grass.G*shade),math.min(1,grass.B*shade)),1))
+					table.insert(uvs,if image then build.em:AddUV(GrassTexture.uv(p[1],p[3],baseU,baseV)) else plain)
+				else table.insert(colours,rock);table.insert(uvs,plain) end
+			end
+			local f=build.em:AddTriangle(vertices[1],vertices[2],vertices[3])
+			build.em:SetFaceNormals(f,{normal,normal,normal});build.em:SetFaceColors(f,colours);build.em:SetFaceUVs(f,uvs)
+			build.vertices+=3;build.triangles+=1
+			if t.supported then build.grassTriangles+=1 end
+			tick()
+		end
+		mp=toPart(build,"Infield",Color3.new(1,1,1),Enum.Material.SmoothPlastic,image,tick)
+		tick()
+		model=Instance.new("Model");model.Name="Infield"
+		(mp :: MeshPart).Parent=model
+		model:SetAttribute("Infield",true);model:SetAttribute("InfieldRevision",spline.infieldRevision or 0)
+		model.Parent=parent
+		meshesOf[model]={build.em}
+		worst=math.max(worst,os.clock()-sliceStart)
+		return {triangles=build.triangles,vertices=build.vertices,grassTriangles=build.grassTriangles,
+			ms=(os.clock()-began-paused)*1000,sliceMs=worst*1000,slices=slices}
+	end,debug.traceback)
+	if not ok then
+		if model then meshesOf[model]=nil;model:Destroy() elseif mp then mp:Destroy() end
+		if b then b.em:Destroy() end
+		return nil,tostring(result)
+	end
+	return model,result
+end
+
+-- Colour cliff feet in existing chunks and chunks drawn from now on.
 function SplineMesh.setHaze(colour: Color3): number
 	hazeColour = colour
 	local cliff = Config.Spline.Terrain.CliffColour

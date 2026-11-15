@@ -552,6 +552,32 @@ cells receive no generic arc-separation exemption, including on spatial queries.
 Generation and gameplay hooks remain disabled (`Biomes.Infield.Enabled=false`)
 until complete drawing, physical contacts and retirement are verified together.
 
+Further T-212 integration groundwork (still disabled): `Infield.route(hit,hint,
+limit,patch)` retains the bank range containing the accepted history before
+checking movement, rather than choosing the nearer hit arc. `pair` and `links`
+expose only known frozen bank pairings. `near` returns whole world-nearby
+triangles independently of either leg's arc drawing window.
+
+Each triangle vertex also freezes a separate closure scalar
+`q=sa+(sb-sa)*across`. `sample().closingS` interpolates vertex q barycentrically;
+it is never progress. `Infield.closing(index,s)` emits numeric finite front-edge
+segments and ahead normals from that same scalar, including s between the two
+bank arc ranges. Closing panels, retained peer state and retirement consumers
+remain to be connected; these helpers alone do not prove a closed live field.
+
+`Spline.infieldContact` separates physical `contactS/d/kind` from `ownerS` and
+the deliberately off-asphalt `routeD`. Car and Sequence fixtures use it before
+bounded retries can acquire a peer leg. Partial bank feet have finite depth in
+the car world instead of an infinite blocked half-plane. Physical peer retention
+beyond a patch and real runner credit/handoff are not complete yet.
+
+`SplineMesh.buildInfield(spline,x,z,radius,parent,opts?)` builds one complete
+nearby field mesh, with exact frozen normals and origin-relative positions.
+`SplineParts.buildInfield` draws the same triangles in sliced batches; optional
+`supportedOnly/collidable/queryable` support the walking-ground integration.
+Both builders cancel without publishing partial models. The ordinary road View,
+hill/face clipping and walking controller still require integration before use.
+
 ## Studio-only baked shadow trial (T-214)
 
 `workspace.__baked_shadow_trial=true` explicitly opts a Studio client into the

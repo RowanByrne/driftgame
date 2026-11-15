@@ -10,11 +10,13 @@ export type Point={number}
 -- reaching the nearly flat middle, without moving either bank endpoint.
 export type Row={sa:number,sb:number,sideA:number,sideB:number,a:Point,b:Point,weight:number,da:number?,db:number?,floor:{number}?}
 export type Patch={id:string,rows:{Row}}
-type Vertex={p:Point,t:number,u:number}
+type Vertex={p:Point,t:number,u:number,q:number}
 type Triangle={a:Vertex,b:Vertex,c:Vertex,normal:Vector3,det:number,patch:string,sa0:number,sa1:number,sb0:number,sb1:number,supported:boolean}
 type Opening={patch:Patch,bank:string,first:number,last:number}
-export type Index={cell:number,patches:{[string]:Patch},triangles:{Triangle},hash:{[string]:{number}},openings:{[string]:{Opening}}}
-export type Hit={y:number,normal:Vector3,patch:string,contactS:number,sa:number,sb:number,across:number}
+export type Index={cell:number,patches:{[string]:Patch},triangles:{Triangle},hash:{[string]:{number}},openings:{[string]:{Opening}},closing:{[number]:{Patch}},byPatch:{[string]:{number}}}
+export type Hit={y:number,normal:Vector3,patch:string,contactS:number,sa:number,sb:number,across:number,closingS:number}
+export type Closing={a:Point,b:Point,normal:Vector3,patch:string}
+export type Link={patch:Patch,bank:string,peerS:number,peerSide:number,peerFirst:number,peerLast:number,ownerSide:number}
 
 local function finite(n:number):boolean return n==n and math.abs(n)<math.huge end
 local function copyPoint(p:Point):Point
@@ -75,7 +77,7 @@ end
 
 function Infield.new(cell:number?):Index
 	assert(not cell or finite(cell) and cell>0,"invalid infield index spacing")
-	return {cell=cell or 128,patches={},triangles={},hash={},openings={}}
+	return {cell=cell or 128,patches={},triangles={},hash={},openings={},closing={},byPatch={}}
 end
 
 local function key(x:number,z:number,cell:number):string return `{math.floor(x/cell)}:{math.floor(z/cell)}` end
@@ -132,7 +134,7 @@ function Infield.add(index:Index,patch:Patch,validateOnly:boolean?):boolean
 		local reach=math.min(6,gap*.2)
 		local out={}
 		local function vertex(u:number,y:number)
-			table.insert(out,table.freeze({p=table.freeze({a[1]+(b[1]-a[1])*u,y,a[3]+(b[3]-a[3])*u}),t=t,u=u}))
+			table.insert(out,table.freeze({p=table.freeze({a[1]+(b[1]-a[1])*u,y,a[3]+(b[3]-a[3])*u}),t=t,u=u,q=row.sa+(row.sb-row.sa)*u}))
 		end
 		if collars then
 			for _,p in Infield.columns(row) do
@@ -192,9 +194,11 @@ function Infield.add(index:Index,patch:Patch,validateOnly:boolean?):boolean
 	-- Validation is complete before the index acquires any of the patch.
 	if validateOnly then return true end
 	index.patches[patch.id]=patch
+	local patchIds={};index.byPatch[patch.id]=patchIds
 	for _,triangle in pending do
 		table.insert(index.triangles,triangle)
 		local id=#index.triangles
+		table.insert(patchIds,id)
 		for _,k in byTriangle[triangle] do
 			local bucket=index.hash[k]
 			if not bucket then bucket={};index.hash[k]=bucket end
@@ -202,6 +206,11 @@ function Infield.add(index:Index,patch:Patch,validateOnly:boolean?):boolean
 		end
 	end
 	local first,last=patch.rows[1],patch.rows[#patch.rows]
+	local q0,q1=math.min(first.sa,last.sa,first.sb,last.sb),math.max(first.sa,last.sa,first.sb,last.sb)
+	for arc=math.floor(q0/index.cell),math.floor(q1/index.cell) do
+		local bucket=index.closing[arc];if not bucket then bucket={};index.closing[arc]=bucket end
+		table.insert(bucket,patch)
+	end
 	for _,bank in {"A","B"} do
 		local side=if bank=="A" then first.sideA else first.sideB
 		local start=if bank=="A" then first.sa else last.sb
@@ -233,9 +242,116 @@ function Infield.sample(index:Index,x:number,z:number,low:number?,high:number?):
 		local across=a.u+u*(b.u-a.u)+v*(c.u-a.u)
 		local sa=triangle.sa0+(triangle.sa1-triangle.sa0)*t
 		local sb=triangle.sb0+(triangle.sb1-triangle.sb0)*t
-		best={y=y,normal=triangle.normal,patch=triangle.patch,contactS=if across<=.5 then sa else sb,sa=sa,sb=sb,across=across}
+		best={y=y,normal=triangle.normal,patch=triangle.patch,contactS=if across<=.5 then sa else sb,sa=sa,sb=sb,across=across,
+			closingS=a.q+u*(b.q-a.q)+v*(c.q-a.q)}
 	end
 	return best
+end
+
+-- Accepted ownership is selected by the caller's bounded route history, never
+-- by which physical bank happens to be nearest across the field.
+function Infield.route(hit:Hit,hint:number?,limit:number,patch:Patch):number?
+	if hint==nil then return nil end
+	local first,last=patch.rows[1],patch.rows[#patch.rows]
+	local function distance(a:number,b:number):number return math.max(a-hint,hint-b,0) end
+	local a,b=distance(first.sa,last.sa),distance(last.sb,first.sb)
+	if a==b or math.min(a,b)>limit then return nil end
+	local owner=if a<b then hit.sa else hit.sb
+	return if math.abs(owner-hint)<=limit then owner else nil
+end
+
+function Infield.pair(patch:Patch,bank:string,s:number):number?
+	local rows=patch.rows
+	local function arc(row:Row):number return if bank=="A" then row.sa else row.sb end
+	local first,last=arc(rows[1]),arc(rows[#rows])
+	if s<math.min(first,last)-1e-7 or s>math.max(first,last)+1e-7 then return nil end
+	local lo,hi=1,#rows
+	while lo<hi do
+		local mid=(lo+hi+1)//2
+		if (if bank=="A" then arc(rows[mid])<=s else arc(rows[mid])>=s) then lo=mid else hi=mid-1 end
+	end
+	local a,b=rows[math.min(lo,#rows-1)],rows[math.min(lo+1,#rows)]
+	local u=math.clamp((s-arc(a))/(arc(b)-arc(a)),0,1)
+	local aa,bb=if bank=="A" then a.sb else a.sa,if bank=="A" then b.sb else b.sa
+	return aa+(bb-aa)*u
+end
+
+function Infield.links(index:Index,s:number):{Link}
+	local out={}
+	for _,side in {-1,1} do
+		for _,opening in index.openings[`{side}:{math.floor(s/index.cell)}`] or {} do
+			if s<opening.first or s>opening.last then continue end
+			local patch,bank=opening.patch,opening.bank
+			local peer=Infield.pair(patch,bank,s)
+			if not peer then continue end
+			local a,b=patch.rows[1],patch.rows[#patch.rows]
+			table.insert(out,{patch=patch,bank=bank,peerS=peer,ownerSide=side,
+				peerSide=if bank=="A" then a.sideB else a.sideA,
+				peerFirst=if bank=="A" then b.sb else a.sa,peerLast=if bank=="A" then a.sb else b.sa})
+		end
+	end
+	return out
+end
+
+-- Return whole nearby triangles: rendering must not lose the opposite half
+-- merely because its road leg lies outside the ordinary arc-length window.
+function Infield.near(index:Index,x:number,z:number,radius:number,supportedOnly:boolean?):{Triangle}
+	local ids={}
+	for cx=math.floor((x-radius)/index.cell),math.floor((x+radius)/index.cell) do
+		for cz=math.floor((z-radius)/index.cell),math.floor((z+radius)/index.cell) do
+			for _,id in index.hash[`{cx}:{cz}`] or {} do ids[id]=true end
+		end
+	end
+	local ordered={};for id in ids do table.insert(ordered,id) end;table.sort(ordered)
+	local out={}
+	for _,id in ordered do
+		local t=index.triangles[id]
+		if supportedOnly and not t.supported then continue end
+		local a,b,c=t.a.p,t.b.p,t.c.p
+		if math.max(a[1],b[1],c[1])<x-radius or math.min(a[1],b[1],c[1])>x+radius
+			or math.max(a[3],b[3],c[3])<z-radius or math.min(a[3],b[3],c[3])>z+radius then continue end
+		table.insert(out,t)
+	end
+	return out
+end
+
+-- A separate closure coordinate joins both road arcs continuously across the
+-- exact frozen triangles. It grants no progress or accepted route ownership.
+-- Its isoline closes the field while leaving a later live peer road open.
+function Infield.closing(index:Index,s:number):{Closing}
+	local out={};local seen={}
+	local function pointKey(p:Point):string return `{math.round(p[1]*1e5)}:{math.round(p[3]*1e5)}` end
+	for _,patch in index.closing[math.floor(s/index.cell)] or {} do
+		for _,id in index.byPatch[patch.id] do
+			local t=index.triangles[id]
+			local vertices={t.a,t.b,t.c}
+			local points={}
+			local function add(p:Point)
+				for _,old in points do if (old[1]-p[1])^2+(old[3]-p[3])^2<1e-12 then return end end
+				table.insert(points,p)
+			end
+			for i,v in vertices do
+				local w=vertices[i%3+1]
+				local a,b=v.q-s,w.q-s
+				if math.abs(a)<1e-8 then add(v.p) end
+				if a*b<0 then
+					local u=a/(a-b)
+					add({v.p[1]+(w.p[1]-v.p[1])*u,v.p[2]+(w.p[2]-v.p[2])*u,v.p[3]+(w.p[3]-v.p[3])*u})
+				end
+			end
+			if #points~=2 then continue end
+			local a,b,c=t.a,t.b,t.c
+			local dx,dz=b.p[1]-a.p[1],b.p[3]-a.p[3]
+			local ex,ez=c.p[1]-a.p[1],c.p[3]-a.p[3]
+			local normal=Vector3.new(((b.q-a.q)*ez-(c.q-a.q)*dz)/t.det,0,(dx*(c.q-a.q)-ex*(b.q-a.q))/t.det)
+			if normal.Magnitude<1e-8 then continue end
+			local ka,kb=pointKey(points[1]),pointKey(points[2])
+			local key=if ka<kb then ka.."/"..kb else kb.."/"..ka
+			if seen[key] then continue end;seen[key]=true
+			table.insert(out,{a=points[1],b=points[2],normal=normal.Unit,patch=patch.id})
+		end
+	end
+	return out
 end
 
 -- This is a boundary mask only. A caller still owns its accepted route hint;
