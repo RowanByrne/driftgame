@@ -44,6 +44,7 @@ export type Field = {
 	stretch: number,
 	oct: { Octave },
 	zero: number, -- the relief at the origin, taken off so the road starts on the plane
+	mode: string?, -- on a client: how it is drawn, "mesh" or "terrain"
 }
 
 export type Station = {
@@ -239,7 +240,7 @@ local function station(spline: Spline.Spline, s: number, x: number, z: number): 
 	return st
 end
 
-local CELL = 32
+local CELL = 64 -- studs: a point looks at the 25 cells round it (at 32, 81)
 
 local function key(cx: number, cz: number): number
 	return (cx + 1048576) * 2097152 + (cz + 1048576)
@@ -285,8 +286,10 @@ local function smooth(t: number): number
 end
 
 -- The ground's height at (x, z), and how much the road decides it there: 1 under the road
--- and its runoff, falling to 0 at the end of the blend (and wherever no road is near).
-function Ground.at(ctx: Context, x: number, z: number): (number, number)
+-- and its runoff, falling to 0 at the end of the blend (and wherever no road is near). Then
+-- how far the point is past the nearest runoff's edge (0 on the road, huge with none near),
+-- and the height the road would have the ground at there (the edge's, less `Under`).
+function Ground.at(ctx: Context, x: number, z: number): (number, number, number, number)
 	local G = Config.Spline.Ground
 	local field = ctx.field
 	local hp = Ground.h(field, x, z)
@@ -358,19 +361,19 @@ function Ground.at(ctx: Context, x: number, z: number): (number, number)
 		end
 	end
 	if sw <= 1e-12 then
-		return hp, 0
+		return hp, 0, math.huge, hp
 	end
 	local e, bw, T = swe / sw, swb / sw, swT / sw
 	local t = e / bw
 	if t >= 1 then
-		return hp, 0
+		return hp, 0, e, T
 	end
 	local A = 1 - smooth(t)
-	return hp + (T - hp) * A, A
+	return hp + (T - hp) * A, A, e, T
 end
 
 -- One point, with no context made beforehand: for the turn checks' few samples.
-function Ground.query(field: Field, spline: Spline.Spline, x: number, z: number): (number, number)
+function Ground.query(field: Field, spline: Spline.Spline, x: number, z: number): (number, number, number, number)
 	return Ground.at(Ground.context(field, spline, x, z, x, z), x, z)
 end
 

@@ -88,6 +88,10 @@ export type Options = {
 	forceFail: boolean?, -- Studio tests: behave as a device that cannot make a mesh
 	sliceMs: number?, -- ms of building a frame (`Mesh.SliceMs`); math.huge builds it in one go
 	hill: boolean?, -- false: no hillside past the faces, and no caps on them (the road as before T-190)
+	-- a ground-first run (T-218): the road, its runoff, rails and groves only -- no rock
+	-- faces, drops or hillside, which the ground drawn apart stands in for -- and a skirt
+	-- down from each runoff's outer edge to the ground
+	ground: boolean?,
 }
 
 export type Stats = {
@@ -149,6 +153,7 @@ SplineMesh.profile = require(script.Parent.SplineProfile).profile
 type Builder = {
 	em: EditableMesh,
 	centre: Vector3,
+	fixed: boolean?, -- copied into a fixed-size mesh when done (a ground run, T-218)
 	vertices: number,
 	triangles: number,
 	grassTriangles: number,
@@ -249,6 +254,19 @@ local function toPart(b: Builder, name: string, colour: Color3, material: Enum.M
 	for _, v in b.em:GetVertices() do
 		b.em:SetPosition(v, b.em:GetPosition(v) - mid)
 	end
+	-- A GROUND RUN'S ROAD (T-218) is copied into a fixed-size mesh, which costs a device's
+	-- mesh budget by its size, not by what a growable one holds back (measured: the ground's
+	-- grids pushed growable road chunks out of the budget). The growable one goes
+	if b.fixed then
+		local okCopy, copy = pcall(function()
+			return AssetService:CreateEditableMeshAsync(Content.fromObject(b.em), { FixedSize = true })
+		end)
+		if okCopy and copy then
+			hazeOf[b.em] = nil
+			b.em:Destroy()
+			b.em = copy
+		end
+	end
 	local ok, part = pcall(function()
 		return AssetService:CreateMeshPartAsync(Content.fromObject(b.em), {
 			CollisionFidelity = Enum.CollisionFidelity.Box,
@@ -283,6 +301,10 @@ end
 -- Draw [s0, s1] of the road under a new Model in `parent`. Returns the model and what it
 -- cost, or nil and the reason when this device cannot make a mesh.
 function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent: Instance, opts: Options?): (Model?, any)
+	-- every edge, as this build sees it: none in a ground run (T-218)
+	local function edgeOf(s: number, side: number): number
+		return if opts and opts.ground then 0 else spline:edgeAt(s, side)
+	end
 	local o: Options = opts or {}
 	local t0 = os.clock()
 	local paused = 0 -- seconds spent waiting for the next frame
@@ -319,6 +341,7 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 	if not made then
 		return nil, tostring(road)
 	end
+	road.fixed = o.ground
 	local ok, built = pcall(function()
 		-- ONE EDITABLEMESH A CHUNK, AND IT STAYS ALIVE WITH IT. A MeshPart made from one is
 		-- drawn from it: let it go and the part draws nothing (measured -- the road vanished).
@@ -440,7 +463,7 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 		-- where its ground ends. The faces below are drawn to their caps, and past them the
 		-- ground carries on to the next leg
 		local H = Config.Spline.Hill
-		local hill = if o.hill ~= false then SplineHill.context(spline, s0, s1, SplineMesh.profile, slice) else nil
+		local hill = if o.hill ~= false and not o.ground then SplineHill.context(spline, s0, s1, SplineMesh.profile, slice) else nil
 		local rays: { [number]: { SplineHill.Ray } } = { [-1] = {}, [1] = {} }
 		local caps: { [number]: { number } } = { [-1] = {}, [1] = {} }
 		local hillTriangles = 0
@@ -455,7 +478,7 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 			for k = 2, #cuts - 1 do
 				local changes = false
 				for _, side in { -1, 1 } do
-					if spline:edgeAt((cuts[k - 1] + cuts[k]) * 0.5, side) ~= spline:edgeAt((cuts[k] + cuts[k + 1]) * 0.5, side) then
+					if edgeOf((cuts[k - 1] + cuts[k]) * 0.5, side) ~= edgeOf((cuts[k] + cuts[k + 1]) * 0.5, side) then
 						changes = true
 					end
 				end
@@ -542,7 +565,7 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 		local T = Config.Spline.Terrain
 		local faceColours = {}
 		local haze = hazeColour or T.HazeColour
-		for name, c in { rock = T.RockColour, scrub = T.ScrubColour, cliff = T.CliffColour, haze = haze } do
+		for name, c in { rock = T.RockColour, scrub = T.ScrubColour, cliff = T.CliffColour, haze = haze, skirt = Config.Spline.Ground.SkirtColour } do
 			faceColours[name] = em:AddColor(c, 1)
 		end
 		local cliffMid = em:AddColor(T.CliffColour:Lerp(haze, 0.5), 1)
@@ -569,11 +592,35 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 			-- running on from the last chunk gets no end drawn across it)
 			local kinds = table.create(#cuts - 1)
 			for k = 1, #cuts - 1 do
-				kinds[k] = spline:edgeAt((cuts[k] + cuts[k + 1]) * 0.5, side)
+				kinds[k] = edgeOf((cuts[k] + cuts[k + 1]) * 0.5, side)
 			end
-			kinds[0] = if cuts[1] > 0 then spline:edgeAt(cuts[1] - 0.01, side) else kinds[1]
+			kinds[0] = if cuts[1] > 0 then edgeOf(cuts[1] - 0.01, side) else kinds[1]
 			local sEnd = cuts[#cuts]
-			kinds[#cuts] = if sEnd < spline.length - 0.01 then spline:edgeAt(sEnd + 0.01, side) else kinds[#cuts - 1]
+			kinds[#cuts] = if sEnd < spline.length - 0.01 then edgeOf(sEnd + 0.01, side) else kinds[#cuts - 1]
+			-- A GROUND RUN'S SKIRT (T-218): from the runoff's outer edge straight down
+			-- `Ground.Skirt`, leaning out a little, so where the ground drawn apart dips below
+			-- the edge (a ditch beside a cutting, a fill falling away) no gap shows
+			if o.ground then
+				local G = Config.Spline.Ground
+				local skirtColour = faceColours.skirt
+				local tops, bottoms = table.create(#cuts), table.create(#cuts)
+				local topP, bottomP = table.create(#cuts), table.create(#cuts)
+				for k = 1, #cuts do
+					local w = half + spline:runoffAt(cuts[k], side)
+					topP[k] = Vector3.new(spline:terrainXYZ(cuts[k], side * w))
+					bottomP[k] = Vector3.new(spline:terrainXYZ(cuts[k], side * (w + G.SkirtLean))) - Vector3.yAxis * G.Skirt
+					tops[k] = em:AddVertex(topP[k] - centre)
+					bottoms[k] = em:AddVertex(bottomP[k] - centre)
+					road.vertices += 2
+				end
+				for k = 1, #cuts - 1 do
+					local yaw = spline:yawAt((cuts[k] + cuts[k + 1]) * 0.5)
+					local outward = Vector3.new(side * math.cos(yaw), 0, -side * math.sin(yaw))
+					tri(tops[k], bottoms[k], tops[k + 1], topP[k], bottomP[k], topP[k + 1], skirtColour, outward)
+					tri(bottoms[k], bottoms[k + 1], tops[k + 1], bottomP[k], bottomP[k + 1], topP[k + 1], skirtColour, outward)
+				end
+				slice()
+			end
 			-- AN END: where a body starts or stops, its profile is closed with a fan of
 			-- triangles round its middle, facing along the road out of the body (T-185). A
 			-- cliff's is closed straight down from just past its lip (past it, so no point of
@@ -977,8 +1024,8 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 			-- box's length and how far its centre moves along a -> b.
 			local function fitEnds(ka: number, kb: number, kind: number, base: number): (number, number)
 				local a, b = cuts[ka], cuts[kb]
-				local endA = a > 0.01 and spline:edgeAt(a - 0.01, side) ~= kind
-				local endB = b < spline.length - 0.01 and spline:edgeAt(b + 0.01, side) ~= kind
+				local endA = a > 0.01 and edgeOf(a - 0.01, side) ~= kind
+				local endB = b < spline.length - 0.01 and edgeOf(b + 0.01, side) ~= kind
 				local extA, extB = if endA then -0.5 else 0.5, if endB then -0.5 else 0.5
 				return math.max(0.5, base + extA + extB), (extB - extA) * 0.5
 			end
@@ -1078,7 +1125,7 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 			end
 			local k0, kind0 = nil, nil
 			for k = 1, #cuts do
-				local kind = if k < #cuts then spline:edgeAt((cuts[k] + cuts[k + 1]) * 0.5, side) else nil
+				local kind = if k < #cuts then edgeOf((cuts[k] + cuts[k + 1]) * 0.5, side) else nil
 				local face = kind == Spline.ROCK or kind == Spline.CLIFF
 				-- (and a new box where the grandeur has moved on, so a box follows a body that
 				-- grows or shrinks fast, T-185)
@@ -1164,7 +1211,7 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 			local tag = if side < 0 then "L" else "R"
 			for k = 1, #cuts - 1 do
 				local a, b = cuts[k], cuts[k + 1]
-				if spline:edgeAt((a + b) * 0.5, side) == Spline.HEDGE then
+				if edgeOf((a + b) * 0.5, side) == Spline.HEDGE then
 					local wa, wb = half + spline:runoffAt(a, side), half + spline:runoffAt(b, side)
 					wall(`Edge_{tag}_{k}`, a, b, side, wa, wb, T.HedgeThickness, T.HedgeHeight, R.Thickness, T.HedgeColour, Enum.Material.Grass)
 				end

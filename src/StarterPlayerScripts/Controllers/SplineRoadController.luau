@@ -105,6 +105,7 @@ function SplineRoadController:_on(message: any)
 		groundMode = if Ground.valid(message.ground) then message.ground else "current"
 		if groundMode ~= "current" and fall and type(message.seed) == "number" then
 			built.mountain = Ground.field(message.seed, built.origin, fall)
+			built.mountain.mode = groundMode -- how this client draws it
 		else
 			groundMode = "current"
 		end

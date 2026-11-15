@@ -489,6 +489,34 @@ local Spline = {
 		-- edge wins over `Soft` studs, so the line between them has no seam
 		Look = 16, -- studs
 		Soft = 3, -- studs
+		-- THE ROAD IN A GROUND RUN is drawn without its rock faces, drops and hillside, and
+		-- with a skirt from each runoff's outer edge `Skirt` studs down, leaning `SkirtLean`
+		-- out, so where the ground drawn apart dips below the edge no gap shows
+		Skirt = 10, -- studs
+		SkirtLean = 1.5, -- studs
+		SkirtColour = Color3.fromRGB(70, 104, 54),
+
+		-- OPTION 1, OUR OWN MESH ("mesh", `Drift/GroundMeshView`): nested square grids round the
+		-- car, each one fixed-size mesh, `Cells` across at `Spacing` studs, recentred (snapped to
+		-- the next level's spacing) once the car is `Recentre` studs from its middle. A client
+		-- holds only so many mesh vertices (about 35 000 in Studio, the road's included), so
+		-- these are lean: 4 225 and 3 969 (each twice: one shows while the other is filled). The finer grid lies over a hole in the coarser one,
+		-- its rim taking the coarser one's heights so they meet without a crack.
+		-- `Clamp`: a vertex this near a runoff's edge is held below it (a triangle reaching
+		-- over the road from a cutting must not cover it), so a cutting starts about a cell
+		-- out from the edge; and every vertex sinks `GridSink` studs under the road and runoff
+		Levels = {
+			{ Spacing = 8, Cells = 64, Recentre = 96, Clamp = 12 },
+			{ Spacing = 32, Cells = 62, Recentre = 256, Clamp = 20 },
+		},
+		GridSink = 1.25, -- studs
+		HoleSink = 300, -- studs: the coarser grid under the finer one
+		MeshSliceMs = 2, -- ms of building a frame
+		-- programmer colours, by slope: grass in two shades blotched by the relief, rock past
+		-- `RockAngle`
+		GrassColours = { Color3.fromRGB(86, 132, 62), Color3.fromRGB(70, 116, 54) },
+		GroundRockColour = Color3.fromRGB(116, 110, 102),
+		UVStuds = 48, -- studs one tile of the ground's material covers
 	},
 
 	-- --------------------------------------------------------------- the mesh (step 3)

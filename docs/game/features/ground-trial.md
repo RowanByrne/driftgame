@@ -1,6 +1,6 @@
 # Feature: Ground-first mountain trial
 
-**Status:** building (`T-218`): plan approved 2026-11-15; step 1 (`T-219`, the shared shape and road cut) built. **Owner task:** `T-218`.
+**Status:** building (`T-218`): plan approved 2026-11-15; step 1 (`T-219`, the shared shape and road cut) and step 2 (`T-220`, option 1, our own mesh) built. **Owner task:** `T-218`.
 
 ## Goal
 
@@ -91,3 +91,32 @@ Three seeds (31337, 101, 2024), 5 000 studs each.
 - No seams: 0 of 77 082 grid points jump half a stud over a twentieth of one; the steepest slope is 4.3 (a deep cut's face).
 - The cuts are big: up to 140 studs deep and 104 studs of fill at the centre line. The relief is a number to tune once it can be seen.
 - Turn checks ran on the ground (5 sharp turns, 1 relaxed); worst generator step 7.3 ms. The maths is cheap: 0.3 ms to gather a 400-stud box's stations, 2.5 microseconds a point.
+
+## As built (step 2, T-220): option 1, our own mesh
+
+`Drift/GroundMeshView` draws it; numbers in `Config.Spline.Ground` (`Levels` and below). Console: `ground mesh`, then `start-run`.
+
+- **The road in a ground run** (`Road/SplineMesh`, `ground` option) draws its tarmac, gravel, runoff, rails and groves only: no rock faces, drops or hillside. A 10-stud skirt hangs from each runoff's outer edge, so a dip in the ground beside it shows no gap.
+- **The ground is two nested square grids round the car:** 8 studs apart over 512 by 512, and 32 studs apart over 1 984 by 1 984 (so about 1 000 studs out, not 1 200; the horizon takes over). The fine grid lies over a hole in the coarse one and takes the coarse one's heights round its rim, so they meet without a crack. Each is rebuilt round the car as it moves (every 96 and 256 studs), into a hidden copy over a few frames, then swapped in whole.
+- **Round the road** every vertex sinks 1.25 studs under the road and runoff, and one within 12 studs of a runoff's edge (20 on the coarse grid) is held below the edge, so no triangle from a cutting covers the road. So a cutting starts about a cell out from the edge, with a shallow ditch, and the skirt hides the step.
+- **Colours:** two greens blotched, rock grey past 45 degrees, on Roblox's grass material.
+
+### The mesh budget (measured, DR-Lane2 client)
+
+The binding limit for this option. A client holds only so many mesh vertices: about 35 000 to 40 000 in Studio, counting the road's. A growable mesh (the kind the road's chunks are built in) holds back far more than it uses: 7 empty ones fill the budget. A fixed-size copy costs only its size. And a mesh can't be let go once its part is made: the part then draws nothing (measured).
+
+- So each grid is a fixed-size copy of a flat grid, only its vertices moved: 4 225 and 3 969 vertices, twice each, 16 388 in all.
+- **That pushed the road out of budget** (4 of its chunks fell back to plain parts), so in a ground run each road chunk, once built, is copied into a fixed-size mesh and the growable one let go. Then no fallbacks. A copy costs 1.6 ms.
+
+### Measured (DR-Lane2)
+
+- GroundTests still pass (all 20); a point of the cut costs 1.6 microseconds.
+- **Frame time,** streaming 5 000 studs at 100 studs a second, seed 31337, the same session: today's ground, mean 8.9 ms, p99 19.4, 50 frames of 5 619 over 20 ms (worst 121); the mesh ground, mean 9.5 ms, p99 22.0, 87 of 5 274 over 20 (worst 194). This PC had other Studio places open; earlier the same check on today's ground gave none over 20, so the slow frames are partly the PC.
+- The near grid rebuilt 48 times and the far one 18; a rebuild is 15 to 19 ms of work, at most 3.7 ms in any frame. Drawing the ground costs nothing measurable: standing still, 8.4 ms a frame with it, 8.6 without.
+- No road fallbacks, no build failures, no errors in the console.
+
+### Known
+
+- **To the car nothing changed:** on the uphill side it still meets an invisible wall at the runoff's edge, where the rock face was, and on the downhill side it still falls past the edge, where the drop was, though ground is now drawn there.
+- A ground run only descends (step 1), and the cuts can be very deep (up to 140 studs).
+- Fine detail reaches 256 studs round the car; past that the 32-stud grid's road margins are wider (a 20-stud ditch).
