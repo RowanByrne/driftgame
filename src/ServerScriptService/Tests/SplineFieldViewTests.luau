@@ -268,6 +268,7 @@ function Tests.materials()
 			assert(model,tostring(why));return model
 		end
 		local function errorColour(a,b)return math.max(math.abs(a.R-b.R),math.abs(a.G-b.G),math.abs(a.B-b.B))end
+		local colourTolerance=1/255+1e-6 -- actual Part/EditableMesh colour channels store one-byte values
 		local function actualMeshColour(model)
 			local em=model.Infield.MeshContent.Object
 			for _,face in em:GetFaces() do
@@ -285,18 +286,26 @@ function Tests.materials()
 		local fromParts={colour=T.RockColour,textureScale=1}
 		local fallback=parts(fromMesh);local textured=mesh(fromParts)
 		local expected=Color3.new(T.RockColour.R*scale,T.RockColour.G*scale,T.RockColour.B*scale)
-		check("a field-only Parts fallback keeps the source Mesh colour",errorColour(actualPartsColour(fallback),expected)<1e-6,
-			"actual seam wedges include the captured source's baked texture multiplier")
+		local partsError=errorColour(actualPartsColour(fallback),expected)
+		check("a field-only Parts fallback keeps the source Mesh colour",partsError<=colourTolerance,
+			`actual seam wedge RGB error{partsError}; one-channel storage tolerance{colourTolerance}`)
 		local actual=actualMeshColour(textured);actual=Color3.new(actual.R*scale,actual.G*scale,actual.B*scale)
-		check("a successful field Mesh keeps a Parts road source colour",errorColour(actual,T.RockColour)<1e-6,
-			"actual seam vertex colour compensates for the destination texture")
+		local meshError=errorColour(actual,T.RockColour)
+		check("a successful field Mesh keeps a Parts road source colour",meshError<=colourTolerance,
+			`destination-compensated actual seam RGB error{meshError}; one-channel storage tolerance{colourTolerance}`)
 		local token={colour=T.HazeColour,textureScale=scale,haze="haze"}
 		local hp,hm=parts(token),mesh(token);local sky=Color3.new(.2,.3,.4);Mesh.setHaze(sky)
 		local pc,mc=actualPartsColour(hp),actualMeshColour(hm)
-		check("mixed seam haze follows later sky changes in both renderers",errorColour(pc,Color3.new(sky.R*scale,sky.G*scale,sky.B*scale))<1e-6
-			and errorColour(mc,sky)<1e-6,"existing Parts and Mesh seam colours both update, with their source scale preserved")
+		local pe,me=errorColour(pc,Color3.new(sky.R*scale,sky.G*scale,sky.B*scale)),errorColour(mc,sky)
+		check("mixed seam haze follows later sky changes in both renderers",pe<=colourTolerance and me<=colourTolerance,
+			`later sky Parts/Mesh RGB error{pe}/{me}; one-channel storage tolerance{colourTolerance}`)
 		check("an unrepresentable texture conversion is explicit",not pcall(function()Parts.seamColour({colour=Color3.new(1,1,1),textureScale=1},.1)end),
 			"the Mesh builder can fall back rather than silently clipping the source colour")
+		local sentinel=Instance.new("Part");sentinel.Name="OrdinaryRetirementSentinel";sentinel.Parent=hm
+		local slots=Mesh.liveMeshCount();hm.Parent=nil;Mesh.release(hm)
+		check("slot release destroys native mesh consumers before deferred ordinary Parts",Mesh.liveMeshCount()==slots-1
+			and hm:FindFirstChildWhichIsA("MeshPart")==nil and sentinel.Parent==hm and not Mesh.owns(hm),
+			"no living MeshPart keeps the released EditableMesh; ordinary support remains for sliced destruction")
 		local passed=0;for _,c in checks do if c.ok then passed+=1 end end
 		return {passed=passed,total=#checks,checks=checks}
 	end,debug.traceback)
@@ -319,7 +328,13 @@ function Tests.toeCuts()
 	for i=1,#flat-1 do
 		local a,b=Boundary.toeRow(sp,flat[i],1),Boundary.toeRow(sp,flat[i+1],1)
 		for s=flat[i],flat[i+1],4 do
-			for j,p in Boundary.toeRow(sp,s,1) do error=math.max(error,(p-a[j]:Lerp(b[j],(s-flat[i])/(flat[i+1]-flat[i]))).Magnitude) end
+			local t=(s-flat[i])/(flat[i+1]-flat[i])
+			for j,p in Boundary.toeRow(sp,s,1) do
+				local dx=(p.X-a[j].X)-(b[j].X-a[j].X)*t
+				local dy=(p.Y-a[j].Y)-(b[j].Y-a[j].Y)*t
+				local dz=(p.Z-a[j].Z)-(b[j].Z-a[j].Z)*t
+				error=math.max(error,math.sqrt(dx*dx+dy*dy+dz*dz))
+			end
 		end
 	end
 	function sp:infieldOpening(s)return s/32 end

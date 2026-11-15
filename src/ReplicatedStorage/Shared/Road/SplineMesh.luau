@@ -67,7 +67,12 @@ local SplineMesh = {}
 
 local meshesOf: { [Model]: { EditableMesh } } = setmetatable({}, { __mode = "k" }) :: any
 local liveMeshes:{[EditableMesh]:boolean}=setmetatable({}, {__mode="k"}) :: any
+local consumersOf:{[EditableMesh]:{MeshPart}}=setmetatable({}, {__mode="k"}) :: any
 local function releaseMesh(em:EditableMesh)
+	local consumers=consumersOf[em];consumersOf[em]=nil
+	-- Destroy every native consumer before its EditableMesh, including a
+	-- partially configured part that never made it into its staging model.
+	for _,part in consumers or {} do part:Destroy() end
 	liveMeshes[em]=nil
 	em:Destroy()
 end
@@ -260,6 +265,7 @@ local function newBuilder(centre: Vector3): Builder
 	-- nil is the device saying no: out of its EditableMesh budget
 	assert(em, "this device would not make an EditableMesh (out of its budget)")
 	liveMeshes[em :: EditableMesh]=true
+	consumersOf[em :: EditableMesh]={}
 	return { em = em :: EditableMesh, centre = centre, vertices = 0, triangles = 0, grassTriangles = 0, plainUV = nil, grassShade = nil }
 end
 
@@ -292,6 +298,7 @@ local function toPart(b: Builder, name: string, colour: Color3, material: Enum.M
 		part = AssetService:CreateMeshPartAsync(Content.fromObject(b.em))
 	end
 	local mp = part :: MeshPart
+	table.insert(consumersOf[b.em],mp)
 	mp.Name = name
 	mp.Anchored = true
 	mp.CanCollide = false
@@ -1616,8 +1623,8 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 	end)
 	if not ok then
 		hazeOf[road.em] = nil
-		releaseMesh(road.em) -- never leak one of the eight
 		if pendingModel then pendingModel:Destroy() end
+		releaseMesh(road.em) -- consumers are destroyed before freeing this slot
 		return nil, tostring(built),if uncertifiedHill then {omitHills=true} else nil
 	end
 	local result = built :: any

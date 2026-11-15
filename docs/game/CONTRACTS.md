@@ -773,7 +773,9 @@ rendering may remain unavailable until a later source change retries it.
 
 `SplineMesh.owns(model)` / `liveMeshCount()` expose allocation ownership, including
 in-flight builders. `release(model)` frees its registered EditableMeshes without
-destroying its ordinary Parts; callers hide the model first and own its eventual
+destroying its ordinary Parts; it first destroys every registered MeshPart
+consumer, including a partially configured part not yet parented into its model.
+Callers hide the model first and own its eventual
 destruction. The View releases mesh slots synchronously and drains retired Parts
 through one sliced retirement queue. Five resident roads, one road build and
 old/new field meshes fit the eight-mesh guard. The first actual forced-Parts
@@ -792,7 +794,16 @@ colour ranges explicitly refuse the Mesh build instead of clipping colours.
 changes to weakly registered seam Parts and updates converted Mesh colour IDs
 while preserving their source scale. Pending new seam colours read the latest
 sky after yields. `SplineFieldViewTests.materials()` checks real mixed output,
-later haze updates and cached-pixel identity. These changes await lane validation.
+later haze updates, cached-pixel identity and native-consumer-first release.
+Colour comparisons allow one RGB channel step (1/255), measured independently
+on actual Part and EditableMesh colour storage. An initial stricter fixture
+failed quantization rather than a conversion mismatch. Mixed output and release
+hardening still await lane validation.
+
+Two native Studio crashes occurred minutes after completed, normally stopped
+tests on2026-11-15. Their cause remains unproven. Destroying registered MeshPart
+consumers before EditableMeshes removes one unsafe lifetime ordering; passing
+functional tests is not evidence that delayed native stability is resolved.
 
 ## Studio-only baked shadow trial (T-214)
 

@@ -136,13 +136,24 @@ function Boundary.toeCuts(spline:Spline.Spline,s0:number,s1:number,side:number,y
 	local function redundant(a:number,b:number):boolean
 		local A,B=row(a),row(b)
 		for j=1,2 do
-			local n=(A[j+1]-A[j]):Cross(B[j]-A[j])
-			if n.Magnitude<1e-8 or math.abs(n.Unit:Dot(B[j+1]-A[j]))>1e-5 then return false end
+			local p,q,r,v=A[j],A[j+1],B[j],B[j+1]
+			local ux,uy,uz=q.X-p.X,q.Y-p.Y,q.Z-p.Z
+			local vx,vy,vz=r.X-p.X,r.Y-p.Y,r.Z-p.Z
+			local nx,ny,nz=uy*vz-uz*vy,uz*vx-ux*vz,ux*vy-uy*vx
+			local length=math.sqrt(nx*nx+ny*ny+nz*nz)
+			if length<1e-8 or math.abs(nx*(v.X-p.X)+ny*(v.Y-p.Y)+nz*(v.Z-p.Z))/length>1e-5 then return false end
 		end
 		for k=a+1,b-1 do
 			if fixed[unique[k]] then return false end
 			local t=(unique[k]-unique[a])/(unique[b]-unique[a])
-			for j,p in row(k) do if (p-A[j]:Lerp(B[j],t)).Magnitude>1e-5 then return false end end
+			for j,p in row(k) do
+				-- Relative scalar doubles do not round a small offset away when
+				-- a world-space Vector3 interpolation sits far from the origin.
+				local dx=(p.X-A[j].X)-(B[j].X-A[j].X)*t
+				local dy=(p.Y-A[j].Y)-(B[j].Y-A[j].Y)*t
+				local dz=(p.Z-A[j].Z)-(B[j].Z-A[j].Z)*t
+				if dx*dx+dy*dy+dz*dz>1e-10 then return false end
+			end
 		end
 		return true
 	end
