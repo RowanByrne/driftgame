@@ -25,3 +25,5 @@ T-203/T-212 also owns `src/StarterPlayerScripts/Drift/Trajectory.luau` and `src/
 T-203/T-212 also owns new `src/ReplicatedStorage/Shared/Road/SplineFieldCuts.luau` and `src/ServerScriptService/Tests/SplineFieldCutsTests.luau` for shared finite field-footprint subtraction and actual cut-edge seam data. Ordinary supported bank/tarmac geometry and retained physical low rock feet stay authoritative.
 
 T-203/T-212 also owns new `src/StarterPlayerScripts/Drift/SplineFieldView.luau` and `src/ServerScriptService/Tests/SplineFieldViewTests.luau` for live complete-field coverage, actual-source paired publication, peer-road visibility and bounded replacement/cancellation checks.
+
+T-203/T-212 also owns `src/ReplicatedStorage/Shared/Road/GrassTexture.luau` only to expose the cached image's actual plain-pixel multiplier for mixed Mesh/Parts seam colour transfer. Existing image pixels and approved terrain colours remain unchanged.
