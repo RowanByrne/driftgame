@@ -419,7 +419,13 @@ local function readCars(): (Vector3?, number?, any)
 					if lateral<=Config.Road.Width*.5 then
 						local credit=generator:reentryS(entry.roadAnchorS or s,entry.travel,s)
 						local piece=generator:pieceAtS(credit)
-						if piece then n,t=piece.n,(credit-piece.s0)/piece.length end
+						if not piece then
+							-- Another runner can retire the earned road while this car is
+							-- on grass. Keep its ownership/travel, but never substitute
+							-- the raw reentry for unavailable credit or forgive that debt.
+							continue
+						end
+						n,t=piece.n,(credit-piece.s0)/piece.length
 						if math.abs(credit-s)<.001 then entry.roadAnchorS=s;entry.travel=0 end
 					end
 				end
