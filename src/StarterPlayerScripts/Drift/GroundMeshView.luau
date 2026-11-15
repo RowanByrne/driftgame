@@ -497,13 +497,15 @@ function GroundMeshView._rimChanges(self: View, tile: Tile, map: { [number]: Lea
 	return changes
 end
 
--- A tile from the pool, or a new one; nil if the device will make no more.
-function GroundMeshView._take(self: View): Tile?
+-- A tile from the pool, or a new one; nil if the device will make no more. `over`: a change
+-- that lets go of more tiles than it takes may go past the cap for a moment (a lower
+-- setting turns the pool into merges, each needing one tile before it frees four).
+function GroundMeshView._take(self: View, over: boolean?): Tile?
 	local t = table.remove(self.free)
 	if t then
 		return t
 	end
-	if #self.pool >= self.cap then
+	if #self.pool >= self.cap and not over then
 		return nil
 	end
 	if not self.master then
@@ -729,7 +731,7 @@ function GroundMeshView._do(self: View, op: Op): boolean
 	-- the new tiles, hidden
 	local built: { Tile } = {}
 	for _, leaf in op.new do
-		local tile = self:_take()
+		local tile = self:_take(#op.old > #op.new)
 		if not tile then
 			for _, t in built do
 				table.insert(self.free, t)
