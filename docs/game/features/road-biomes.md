@@ -1,6 +1,6 @@
 # Feature: Road biomes
 
-**Status:** layout approved with the user's gradual-transition and semi-random-length requirements on 2026-11-14 (T-204); shared terrain blockout approved after removing outer field rails (T-209); road/rail and consistent-grade checkpoint checked for lane review (T-210). **Owner task:** T-203, built step by step in lane 2 on `feature/linked-biomes`.
+**Status:** layout, shared terrain, road/rail and consistent-grade checkpoints approved (T-204/T-209/T-210), with the isolated future-braking correction approved in T-213. Final distant-terrain, reach, join and streaming work is in progress in T-212. **Owner task:** T-203, built step by step in lane 2 on `feature/linked-biomes`.
 
 ## Goal
 
@@ -280,6 +280,24 @@ Fold these into steps 3/4 without reopening the approved T-209 checkpoint:
 - Keep each hairpin inside a consistent uphill, downhill or flat run. Do not turn a descent into a climb at the hairpin; this supersedes the previous mid-turn grade reversal.
 - Double the terrain reach on both sides. Cliffs need not grow taller; use coarse distant ground.
 - Retain and verify the lighting-block correction alongside the revised terrain.
+
+The user added a specific near-level switchback rule (C-bb5b19 forwarding
+C-d8ba9f, 2026-11-14): flatten the land between nearby approach/exit legs when
+their actual elevations are similar. Do not force opposing uphill/downhill
+profiles to form a ridge there. Fit the shared ground to the real road/bank
+edges and available space; blend into the ordinary mountain join as the height
+difference grows. Car, walking, normal drawing and fallback must agree, and
+crossing grass still earns no asphalt progress. The carved-apex feature remains.
+Initial fitting thresholds are to be measured in Lane2; this is part of T-212.
+
+T-215 follows the user's traverse drawing (C-6361cd forwarding C-666d71,
+2026-11-14): longer runs across the slope, with cliffs, fields and tight/twisty
+sections within each run, then an occasional actual turnaround. Measure completed
+turnarounds per distance and actual traverse lengths, including mandatory leg
+limits, optional double hairpins and phase-recovery turns. Changing a bend's
+direction-alternation probability alone does not satisfy this requirement.
+Keep the approved grade envelope, clearance, replay, bank safety and independent
+biome schedule. Trial cadence is selected from measured accepted roads in Lane2.
 
 The separate retired-runner progress correction T-211 is approved and merged with
 the approved terrain. T-210 includes that Main integration; the remaining terrain

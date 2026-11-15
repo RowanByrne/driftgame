@@ -222,7 +222,7 @@ function SplineRoadView._build(self: View, i: number)
  local info:any=nil
  local boundaryWorst,boundarySlices=0,0
  local ok,err=xpcall(function()
-  local model,details=SplineMesh.build(self.spline,s0,s1,staging,{forceFail=self.forceFallback})
+  local model,details,fallbackHints=SplineMesh.build(self.spline,s0,s1,staging,{forceFail=self.forceFallback})
   info=details
   if model then
    chunk=model;mesh=true
@@ -232,7 +232,7 @@ function SplineRoadView._build(self: View, i: number)
    -- Parenting a completed15,000-part tree caused a100ms frame by itself.
    -- Keep any previous chunk until all replacement batches are complete.
    local folder=Instance.new("Folder");folder.Name=`Chunk_{math.floor(s0)}_parts`;folder.Parent=self.folder;chunk=folder
-   local _,stats=SplineParts.build(self.spline,s0,s1,folder,{step=Config.Spline.Mesh.FallbackStep,queryable=false,barriers=false,terrain=true,cancelled=function()return self.dead end})
+   local _,stats=SplineParts.build(self.spline,s0,s1,folder,{step=Config.Spline.Mesh.FallbackStep,queryable=false,barriers=false,terrain=true,omitHills=fallbackHints and fallbackHints.omitHills,cancelled=function()return self.dead end})
    info=stats;folder:SetAttribute("Fallback",true)
   end
   local sliceStart=os.clock()

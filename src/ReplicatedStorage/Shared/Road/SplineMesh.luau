@@ -58,6 +58,7 @@ local HillCuts = require(script.Parent.SplineHillCuts)
 local SurfaceCuts = require(script.Parent.SplineSurfaceCuts)
 local Boundary = require(script.Parent.SplineBoundary)
 local Shadow = require(script.Parent.SplineShadow)
+local Builder = require(script.Parent.Builder)
 
 local SplineMesh = {}
 
@@ -112,7 +113,7 @@ function SplineMesh.sections(spline: Spline.Spline, s0: number, s1: number, opts
 	local maxStep = o.maxStep or M.MaxStep
 	local minStep = o.minStep or M.MinStep
 	if spline:hasBiomeGround() then
-		return SurfaceCuts.sections(spline,s0,s1,tol,maxStep,minStep,o.across or M.Across,16,o.tick)
+		return SurfaceCuts.sections(spline,s0,s1,tol,maxStep,minStep,o.across or M.Across,M.GrassAcross,o.tick)
 	end
 	local half = Config.Road.Width * 0.5
 	local out = { s0 }
@@ -154,6 +155,7 @@ end
 -- Traversed so the body is always on the right of the profile's way (out, then up and
 -- over, or out and down): each quad faces (-dUp, dOut), away from the mountain.
 SplineMesh.profile = require(script.Parent.SplineProfile).profile
+SplineMesh.drawProfile = require(script.Parent.SplineProfile).draw
 
 -- A mesh in the making: vertices relative to `centre`, with normals.
 type Builder = {
@@ -200,8 +202,7 @@ local function strip(b: Builder, rowA: { number }, normA: { number }, rowB: { nu
 		end
 		if colours then
 			local c = colours[i]
-			em:SetFaceColors(f1, { c, c, c })
-			em:SetFaceColors(f2, { c, c, c })
+			local painted=false
 			if uvA and uvB and c == grass then
 				local ua0, ua1, ub0, ub1 = uvA[i], uvA[i + 1], uvB[i], uvB[i + 1]
 				if ua0 and ua1 and ub0 and ub1 then
@@ -215,6 +216,7 @@ local function strip(b: Builder, rowA: { number }, normA: { number }, rowB: { nu
 					-- the blotches (T-187): each corner its own vertex's shade of the grass
 					local shadeOf = b.grassShade
 					if shadeOf then
+						painted=true
 						local ca0, ca1, cb0, cb1 = shadeOf[a0] or c, shadeOf[a1] or c, shadeOf[b0] or c, shadeOf[b1] or c
 						if flip then
 							em:SetFaceColors(f1, { ca0, cb0, ca1 })
@@ -232,6 +234,10 @@ local function strip(b: Builder, rowA: { number }, normA: { number }, rowB: { nu
 				local u = b.plainUV
 				em:SetFaceUVs(f1, { u, u, u })
 				em:SetFaceUVs(f2, { u, u, u })
+			end
+			if not painted then
+				em:SetFaceColors(f1, { c, c, c })
+				em:SetFaceColors(f2, { c, c, c })
 			end
 		end
 		b.triangles += 2
@@ -297,7 +303,7 @@ end
 
 -- Draw [s0, s1] of the road under a new Model in `parent`. Returns the model and what it
 -- cost, or nil and the reason when this device cannot make a mesh.
-function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent: Instance, opts: Options?): (Model?, any)
+function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent: Instance, opts: Options?): (Model?, any, {omitHills:boolean}?)
 	local o: Options = opts or {}
 	local t0 = os.clock()
 	local paused = 0 -- seconds spent waiting for the next frame
@@ -338,7 +344,10 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 	if not made then
 		return nil, tostring(road)
 	end
+	local pendingModel:Model?=nil
+	local uncertifiedHill=false
 	local ok, built = pcall(function()
+		local farTriangles={}
 		-- ONE EDITABLEMESH A CHUNK, AND IT STAYS ALIVE WITH IT. A MeshPart made from one is
 		-- drawn from it: let it go and the part draws nothing (measured -- the road vanished).
 		-- And a client may hold only EIGHT at once, whatever their size (measured in a Studio
@@ -353,7 +362,7 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 		-- the grass, `Spline:lipWidthAt` across (`RoadLipWidth`), sloping down `RoadLip` to the
 		-- grass, in the gravel's colour. It is shaded FLAT across (its own normal), so it reads
 		-- as an angled shoulder; the tarmac and the grass either side keep their smooth normals.
-		local RUNOFF_STRIPS = if spline:hasBiomeGround() then 16 else 2
+		local RUNOFF_STRIPS = if spline:hasBiomeGround() then M.GrassAcross else 2
 		local TT = Config.Spline.Terrain
 		local tarmacColour = road.em:AddColor(R.Colours.Road, 1)
 		local grassColour = road.em:AddColor(TT.GrassColour, 1)
@@ -405,11 +414,12 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 			end
 			end
 			local uv: { [number]: number }? = if grassImage then {} else nil
+			local sampled,normalVectors,relative=spline:terrainRow(s,ds,true,centre)
 			for j, d in ds do
-				local x, y, z = spline:terrainXYZ(s, d)
-				pts[j] = Vector3.new(x, y, z)
-				row[j] = road.em:AddVertex(Vector3.new(x - centre.X, y - centre.Y, z - centre.Z))
-				norm[j] = road.em:AddNormal(spline:terrainNormal(s, d))
+				local x,z=sampled[j].X,sampled[j].Z
+				pts[j] = sampled[j]
+				row[j] = road.em:AddVertex(relative[j])
+				norm[j] = road.em:AddNormal(normalVectors[j])
 				road.vertices += 1
 				-- the grass's vertices: the runoff either side, out from each bevel's foot
 				if uv and (j <= lipL or j > lipR) then
@@ -466,10 +476,12 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 		-- ground carries on to the next leg
 		local H = Config.Spline.Hill
 		local hillStarted=os.clock()-paused
-		local hill = if o.hill ~= false then SplineHill.context(spline, s0, s1, SplineMesh.profile, slice, true) else nil
+		local hill = if o.hill ~= false then SplineHill.context(spline, s0, s1, SplineMesh.drawProfile, slice, true) else nil
 		local rays: { [number]: { SplineHill.Ray } } = { [-1] = {}, [1] = {} }
 		local caps: { [number]: { number } } = { [-1] = {}, [1] = {} }
 		local hillTriangles = 0
+		local hillTrimmedTriangles=0
+		local hillTrimmer:any=nil
 		-- the cuts a ray is worked out at: `CutStep` apart at least (a hairpin's cuts are a stud
 		-- or two apart, far too many), the chunk's two ends (so the next chunk's first ray is
 		-- this one's last), and wherever an edge changes kind (its faces come down to nothing
@@ -505,7 +517,12 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 				end
 			end
 			if spline:hasBiomeGround() then
-				rayCuts,hillPlan=HillCuts.refine(spline,hill,cuts,surfaceRows,rayCuts,rays,caps,SplineMesh.profile,slice)
+				rayCuts,hillPlan,hillTrimmer=HillCuts.refine(spline,hill,cuts,surfaceRows,rayCuts,rays,caps,SplineMesh.drawProfile,slice)
+				uncertifiedHill=hillPlan.terminal~=0
+				if hillPlan.terminal~=0 and not hillTrimmer then
+					uncertifiedHill=true
+					error(`unsafe terminal hillside span ({hillPlan.terminal}, folded {hillPlan.terminalFolds or 0})`)
+				end
 			end
 			for n = 1, #rayCuts - 1 do
 				local a, b = rayCuts[n], rayCuts[n + 1]
@@ -564,7 +581,7 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 				if row and row.kind == kind then
 					return row
 				end
-				local pts = SplineMesh.profile(spline, cuts[k], side, kind, if hill then caps[side][k] else nil)
+				local pts = SplineMesh.drawProfile(spline, cuts[k], side, kind, if hill then caps[side][k] else nil)
 				faceRows[side][kind] = faceRows[side][kind] or {}
 				faceRows[side][kind][k] = pts
 				local ids = table.create(#pts)
@@ -709,12 +726,37 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 				local sideRays = rays[side]
 				local hk = rayCuts
 				local hillColour = em:AddColor(H.Colour, 1)
-				local function ground(a: number, b: number, c: number, pa: Vector3, pb: Vector3, pc: Vector3)
+				local function ground(a: number?, b: number?, c: number?, pa: Vector3, pb: Vector3, pc: Vector3)
+					if HillCuts.collapsed(pa,pb,pc) then return end
+					if hillTrimmer then
+						local triangles,changed=hillTrimmer(pa,pb,pc)
+						if not triangles then uncertifiedHill=true;error("unsafe terminal hillside repair") end
+						if changed then
+							if road.triangles+#triangles>19000 then error("unsafe terminal hillside repair budget") end
+							hillTrimmedTriangles+=1
+							for _,points in triangles do
+								if a and b and c then
+									local ids={}
+									for j,p in points do
+										ids[j]=em:AddVertex(p-centre);road.vertices+=1
+										if vertexOrigins then vertexOrigins[ids[j]]={kind="hill bank join",side=side} end
+									end
+									tri(ids[1],ids[2],ids[3],points[1],points[2],points[3],hillColour,Vector3.yAxis)
+								else table.insert(farTriangles,points) end
+								hillTriangles+=1
+							end
+							return
+						end
+					end
 					local n = (pb - pa):Cross(pc - pa)
 					if n.Magnitude < 1e-9 then
 						return
 					end
-					tri(a, b, c, pa, pb, pc, hillColour, Vector3.yAxis)
+					if a and b and c then
+						tri(a, b, c, pa, pb, pc, hillColour, Vector3.yAxis)
+					else
+						table.insert(farTriangles,{pa,pb,pc})
+					end
 					hillTriangles += 1
 				end
 				local hillRows: { [number]: { pts: { Vector3 }, ids: { number } } } = {}
@@ -725,18 +767,15 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 					end
 					local ray = sideRays[k]
 					SplineHill.finish(hill, ray)
-					local t0f = SplineHill.faceEnd(ray)
-					local span = math.max(ray.clip - t0f, 0)
-					local pts, ids = {}, {}
-					for j, share in H.Rings do
-						pts[j] = SplineHill.at(ray, t0f + span * share)
-					end
-					table.insert(pts, SplineHill.at(ray, SplineHill.skirtEnd(spline,ray)))
+					local pts, coreCount = SplineHill.drawRings(spline,ray)
+					local ids = {}
+					local near=ray.clip<=ray.st.w[if side<0 then 1 else 2]+H.CoreReach+1e-6
 					for j, p in pts do
+						if j>coreCount and not near then continue end
 						ids[j] = em:AddVertex(p - centre)
 						if vertexOrigins then vertexOrigins[ids[j]]={kind="hill",side=side,s=cuts[k],ring=j} end
+						road.vertices += 1
 					end
-					road.vertices += #pts
 					row = { pts = pts, ids = ids }
 					hillRows[k] = row
 					return row
@@ -759,6 +798,7 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 						ground(fm.ids[5], A.ids[1], B.ids[1], fm.pts[5], A.pts[1], B.pts[1])
 						traceKind="hill ring"
 						for j = 1, #A.pts - 1 do
+							if j==#A.pts-1 and sideRays[ka].free and sideRays[kb].free then continue end
 							ground(A.ids[j], A.ids[j + 1], B.ids[j], A.pts[j], A.pts[j + 1], B.pts[j])
 							ground(A.ids[j + 1], B.ids[j + 1], B.ids[j], A.pts[j + 1], B.pts[j + 1], B.pts[j])
 						end
@@ -795,6 +835,7 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 		local treeMs = (os.clock() - treeT0) * 1000
 
 		local model = Instance.new("Model")
+		pendingModel=model
 		model.Name = `Chunk_{math.floor(s0)}`
 		model:SetAttribute("Trees", trees)
 		model:SetAttribute("S0", s0)
@@ -807,6 +848,17 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 		roadPart.Parent = model
 		slice()
 		local parts = 0
+		local farFolder=Instance.new("Folder");farFolder.Name="FarGround";farFolder.Parent=model
+		-- The tile's plain corner also shades the core hillside. Match it with
+		-- uniform-colour, flat-lit wedges; no EditableMesh slots are spent here.
+		local shade=if grassImage then Config.Spline.Grass.Shade else 1
+		local farColour=Color3.new(H.Colour.R*shade,H.Colour.G*shade,H.Colour.B*shade)
+		for index,points in farTriangles do
+			local made={}
+			Builder.triangleSlab(`Far_{index}`,points[1],points[2],points[3],.15,farColour,Enum.Material.SmoothPlastic,farFolder,made :: any)
+			for _,part in made do part.CanCollide=false;part.CanTouch=false;part.CanQuery=false;part.CastShadow=false;parts+=1 end
+			slice()
+		end
 
 		local function plain(name: string, size: Vector3, cf: CFrame, colour: Color3, material: Enum.Material): Part
 			local part = Instance.new("Part")
@@ -958,9 +1010,19 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 			end
 		end
 		local planeCache: { [string]: { Shadow.Plane } } = {}
+		local function shadeSpan(ka:number,kb:number,side:number,kind:number):(number,number)
+			local rows=faceRows[side][kind]
+			-- Internal caster ends need overlap. Certify that overlap against the
+			-- actual neighbouring cell rather than imposing two inward margins at
+			-- every fine row. Real profile ends retain their closed span boundary.
+			if ka>1 and rows[ka-1] and spline:edgeAt((cuts[ka-1]+cuts[ka])*.5,side)==kind then ka-=1 end
+			if kb<#cuts and rows[kb+1] and spline:edgeAt((cuts[kb]+cuts[kb+1])*.5,side)==kind then kb+=1 end
+			return ka,kb
+		end
 		local function facePlanes(ka: number, kb: number, side: number, kind: number): { Shadow.Plane }
 			local key = `{side}:{kind}:{ka}:{kb}`
 			if planeCache[key] then return planeCache[key] end
+			ka,kb=shadeSpan(ka,kb,side,kind)
 			local planes = {}
 			endPlanes(planes, ka, kb)
 			local rows = faceRows[side][kind]
@@ -998,6 +1060,7 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 		local function footPlanes(ka: number, kb: number, side: number): { Shadow.Plane }?
 			local key = `foot:{side}:{ka}:{kb}`
 			if planeCache[key] then return planeCache[key] end
+			ka,kb=shadeSpan(ka,kb,side,Spline.ROCK)
 			local planes = {}
 			endPlanes(planes, ka, kb)
 			local rows = faceRows[side][Spline.ROCK]
@@ -1020,6 +1083,22 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 			planeCache[key] = planes
 			return planes
 		end
+		local function crossesToe(cf:CFrame,size:Vector3,a:Vector3,b:Vector3,c:Vector3):boolean
+			local pa,pb,pc=cf:PointToObjectSpace(a),cf:PointToObjectSpace(b),cf:PointToObjectSpace(c)
+			local h=size*.5+Vector3.one*.02 -- mesh recentering/packing uncertainty
+			local function separated(axis:Vector3):boolean
+				if axis.Magnitude<1e-8 then return false end
+				local x,y,z=pa:Dot(axis),pb:Dot(axis),pc:Dot(axis)
+				local reach=h.X*math.abs(axis.X)+h.Y*math.abs(axis.Y)+h.Z*math.abs(axis.Z)
+				return math.min(x,y,z)>reach or math.max(x,y,z)<-reach
+			end
+			for _,axis in {Vector3.xAxis,Vector3.yAxis,Vector3.zAxis} do if separated(axis) then return false end end
+			if separated((pb-pa):Cross(pc-pa)) then return false end
+			for _,edge in {pb-pa,pc-pb,pa-pc} do for _,axis in {Vector3.xAxis,Vector3.yAxis,Vector3.zAxis} do
+				if separated(edge:Cross(axis)) then return false end
+			end end
+			return true
+		end
 		for _, side in { -1, 1 } do
 			local tag = if side < 0 then "L" else "R"
 			local function footShade(ka: number, kb: number)
@@ -1027,7 +1106,7 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 				local along = (b[1] - a[1]) * Vector3.new(1, 0, 1)
 				if along.Magnitude < 1e-3 then return end
 				local x = along.Unit
-				local up = (a[4] + b[4] - a[1] - b[1]) / 2
+				local up = (a[2] + b[2] - a[1] - b[1]) / 2 -- proposal matches the certified first strip
 				local y = (up - x * up:Dot(x)).Unit
 				local outward = Vector3.new(side * math.cos(spline:yawAt((cuts[ka] + cuts[kb]) / 2)), 0, -side * math.sin(spline:yawAt((cuts[ka] + cuts[kb]) / 2)))
 				if x:Cross(y):Dot(outward) > 0 then x = -x end
@@ -1039,11 +1118,22 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 				local planes = footPlanes(ka, kb, side)
 				if not planes then return end
 				local cf, fit = Shadow.fit(CFrame.fromMatrix(centre, x, y, toRoad), size, planes, -toRoad)
-				if kb - ka > 1 and (not fit or fit.X < size.X * 0.85 or fit.Y < size.Y * 0.8) then
+				local toeHit=false
+				if cf and fit and spline:hasBiomeGround() then
+					local toeA,toeB=shadeSpan(ka,kb,side,Spline.ROCK)
+					for k=toeA,toeB-1 do
+						local a,b=Boundary.toeRow(spline,cuts[k],side),Boundary.toeRow(spline,cuts[k+1],side)
+						for j=1,2 do
+							if crossesToe(cf,fit,a[j],a[j+1],b[j]) or crossesToe(cf,fit,a[j+1],b[j+1],b[j]) then toeHit=true;break end
+						end
+						if toeHit then break end
+					end
+				end
+				if kb - ka > 1 and (toeHit or not fit or fit.X < size.X * 0.85 or fit.Y < size.Y * 0.8) then
 					local mid = (ka + kb) // 2
 					footShade(ka, mid)
 					footShade(mid, kb)
-				elseif cf and fit and fit.X > 0.15 and fit.Y > 0.25 and fit.Z > 0.15 then
+				elseif not toeHit and cf and fit and fit.X > 0.15 and fit.Y > 0.25 and fit.Z > 0.15 then
 					plain(`RockShade_{tag}_{ka}_Foot`, fit, cf, T.RockColour, Enum.Material.Slate)
 				end
 			end
@@ -1411,10 +1501,14 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 			faceOrigins = faceOrigins,
 			treeMs = treeMs,
 			hillTriangles = hillTriangles,
+			farTriangles=#farTriangles,
+			farParts=#farFolder:GetChildren(),
 			hillRefinedRays=hillPlan.added,
 			hillPlanTests=hillPlan.tests,
 			hillPlanExact=hillPlan.exact,
-			hillUnsafe=hillPlan.terminal,
+			hillUnsafe=0, -- every emitted repair is recertified against the bank triangles
+			hillTerminalOriginal=hillPlan.terminal,
+			hillTrimmedTriangles=hillTrimmedTriangles,
 			hillTerminalFolds=hillPlan.terminalFolds or 0,
 			stations = if hill then #hill.stations else 0,
 			surfacePlanMs=surfacePlanMs,
@@ -1427,7 +1521,8 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 	if not ok then
 		hazeOf[road.em] = nil
 		road.em:Destroy() -- never leak one of the eight
-		return nil, tostring(built)
+		if pendingModel then pendingModel:Destroy() end
+		return nil, tostring(built),if uncertifiedHill then {omitHills=true} else nil
 	end
 	local result = built :: any
 	meshesOf[result.model] = result.meshes

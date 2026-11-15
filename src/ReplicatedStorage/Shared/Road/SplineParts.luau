@@ -22,6 +22,7 @@ local Spline = require(script.Parent.Spline)
 local SurfaceCuts = require(script.Parent.SplineSurfaceCuts)
 local Profile = require(script.Parent.SplineProfile)
 local Hill = require(script.Parent.SplineHill)
+local HillCuts = require(script.Parent.SplineHillCuts)
 
 local SplineParts = {}
 
@@ -31,6 +32,7 @@ export type Options = {
 	barriers: boolean?, -- build the side barriers (default true)
 	yieldEvery: number?, -- slices between task.wait()s; nil never yields
 	terrain: boolean?, -- finite grass, banks and mountains, for the visual fallback
+	omitHills: boolean?, -- retain supported ground/capped faces after a hill certification failure
 	sliceMs: number?,
 	cancelled: (() -> boolean)?,
 }
@@ -59,9 +61,11 @@ local function terrain(spline:Spline.Spline,s0:number,s1:number,parent:Instance,
 			task.wait();sliceStart=os.clock();slices+=1
 		end
 	end
-	local triangles=0
+	local triangles,skippedHillTriangles=0,0
 	local function tri(name:string,a:Vector3,b:Vector3,c:Vector3,colour:Color3,mat:Enum.Material,surface:string?)
 		if (b-a):Cross(c-a).Magnitude<1e-7 then return end
+		local side=tonumber(string.match(name,"^Hill_([%-]?%d+)_"))
+		if side and (HillCuts.collapsed(a,b,c) or HillCuts.folded(a,b,c,side)) then skippedHillTriangles+=1;return end
 		local made={}
 		Builder.triangleSlab(name,a,b,c,.15,colour,mat,batch,made :: any)
 		for _,p in made do
@@ -99,30 +103,31 @@ local function terrain(spline:Spline.Spline,s0:number,s1:number,parent:Instance,
 	end
 	-- Far scenery is coarser; its joins and face caps remain the existing hill's.
 	local faces=cuts -- face feet share the supported ground's exact polyline
-	local hill=Hill.context(spline,s0,s1,Profile.profile,tick,true)
+	local hill=Hill.context(spline,s0,s1,Profile.draw,tick,true)
 	for k=1,#faces-1 do
 		local a,b=faces[k],faces[k+1]
 		if b-a<1e-5 then continue end
 		for _,side in {-1,1} do
 			local kind=spline:edgeAt((a+b)*.5,side)
 			local ra,rb=Hill.ray(hill,a,side),Hill.ray(hill,b,side)
-			local pa=Profile.profile(spline,a,side,kind,Hill.cap(ra))
-			local pb=Profile.profile(spline,b,side,kind,Hill.cap(rb))
+			local pa=Profile.draw(spline,a,side,kind,Hill.cap(ra))
+			local pb=Profile.draw(spline,b,side,kind,Hill.cap(rb))
 			for j=1,(if kind==Spline.ROCK then #pa-2 else #pa-1) do
 				quad(`Face_{side}_{k}_{j}`,pa[j],pa[j+1],pb[j+1],pb[j],if kind==Spline.ROCK then T.RockColour else T.CliffColour,Enum.Material.Slate)
 			end
+			if o.omitHills then continue end
 			Hill.finish(hill,ra);Hill.finish(hill,rb)
-			local ea,eb=Hill.faceEnd(ra),Hill.faceEnd(rb)
-			for j=0,3 do
-				local fa,fb=j/4,(j+1)/4
-				quad(`Hill_{side}_{k}_{j}`,Hill.at(ra,ea+(ra.clip-ea)*fa),Hill.at(ra,ea+(ra.clip-ea)*fb),Hill.at(rb,eb+(rb.clip-eb)*fb),Hill.at(rb,eb+(rb.clip-eb)*fa),Config.Spline.Hill.Colour,Enum.Material.Grass)
+			local A,B=Hill.drawRings(spline,ra),Hill.drawRings(spline,rb)
+			quad(`Hill_{side}_{k}_foot`,pa[5],A[1],B[1],pb[5],Config.Spline.Hill.Colour,Enum.Material.Grass)
+			for j=1,#A-1 do
+				if j==#A-1 and ra.free and rb.free then continue end
+				quad(`Hill_{side}_{k}_{j}`,A[j],A[j+1],B[j+1],B[j],Config.Spline.Hill.Colour,Enum.Material.Grass)
 			end
-			quad(`Skirt_{side}_{k}`,Hill.at(ra,ra.clip),Hill.at(ra,Hill.skirtEnd(spline,ra)),Hill.at(rb,Hill.skirtEnd(spline,rb)),Hill.at(rb,rb.clip),Config.Spline.Hill.Colour,Enum.Material.Grass)
 		end
 	end
 	flush();batch:Destroy()
 	worst=math.max(worst,os.clock()-sliceStart)
-	return out,{triangles=triangles,sliceMs=worst*1000,slices=slices,ms=(os.clock()-started)*1000}
+	return out,{triangles=triangles,skippedHillTriangles=skippedHillTriangles,hillsOmitted=o.omitHills==true,sliceMs=worst*1000,slices=slices,ms=(os.clock()-started)*1000}
 end
 
 -- Lay road from s0 to s1 under `parent`. Returns the parts made.

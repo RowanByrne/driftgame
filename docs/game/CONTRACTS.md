@@ -467,10 +467,36 @@ Ground, face feet and natural rock geometry share the existing edge-span endpoin
 `SplineSurfaceCuts` samples the entire supported cross-section, including bevel feet and banks. `SplineParts.build(...,{terrain=true,sliceMs=...,cancelled=...})` draws finite ground and capped outer faces/hills as ordinary visual wedges with bounded batches and yielding; the second return contains triangle and slice statistics. The original tarmac-only yardstick call remains supported.
 
 `SplineHillCuts.refine(spline, hill, positions, surfaceRows, rayCuts, rays, caps, profile, tick?)`
-returns refined cut indices and `{added, tests, exact, terminal}`. It checks the same fan,
+returns refined cut indices, `{added, tests, exact, terminal, terminalFolds, terminalSpans}`,
+and an optional terminal bank-join repair function. It checks the same fan,
 ring and skirt topology emitted by the mesh against supported ground triangles, subdividing
 unsafe coarse spans before cap interpolation and face emission. Shared boundaries and
 terrain hidden below ground are permitted. Both sides have solved rays/caps at inserted
 cuts. It never changes the spline, support widths or chunk endpoints. Mesh statistics expose
 `hillRefinedRays`, `hillPlanTests`, `hillPlanExact` and `hillUnsafe`. `traceFaces=true` adds
 test-only face provenance; `groveColourIds` identifies only generated decorative faces.
+
+T-212 rendering helpers (lane work in progress): `Spline:terrainRow(s, offsets,
+withNormals?, origin?)` returns world points, normals and relative points. Normals
+default to enabled; `false` returns an empty normal array. Relative points are
+empty unless `origin` is supplied; origin subtraction happens before Vector3
+packing. It shares scalar ground arithmetic and the same finite-difference
+normal, with call-local row frames rather than mutable caches.
+
+`SplineHill.context(..., tick?, visual?)` keeps approved preflight reach/gather
+by default. Visual contexts use `DrawReach`/`DrawGather`. `drawRings(spline, ray)`
+returns shared radial points and the last core-mesh index; only coarse outer
+panels need Parts. `skirtEnd(spline, ray)` prevents overlap crossing an inside
+bend centre. Float-resolution collapsed ground triangles are omitted by both
+planner and emitters; real reversed footprints remain unsafe. An uncertifiable
+terminal folded span returns nil/reason and a third `{omitHills=true}` hint.
+Non-fold terminal bank overlaps can be repaired against the actual supported
+triangles: retain exterior hill polygons, anchor new boundary vertices behind
+the bank and certify every emitted triangle again. Adjoining triangles that
+only touch the bank receive the same boundary heights. Fragmentation and mesh
+face budgets are bounded; failed repair also returns the failure hint. Statistics
+separate `hillTerminalOriginal` and `hillTrimmedTriangles` from remaining `hillUnsafe`.
+`SplineRoadView` passes this to the Parts terrain fallback, which retains supported
+ground and capped profile faces while omitting uncertified outer hills. Ordinary
+device failures retain the full fallback. Its stats expose `hillsOmitted`.
+Far Parts use no extra EditableMesh slots or shadow-casting surfaces.

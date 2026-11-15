@@ -72,6 +72,7 @@ export type Ray = {
 export type Context = {
 	spline: Spline.Spline,
 	reach: number,
+	pad: number,
 	stations: { Station },
 	profile: (Spline.Spline, number, number, number) -> { Vector3 },
 	tick: () -> (),
@@ -122,16 +123,18 @@ end
 -- one chunk to the next: most of a chunk's stations were its neighbour's too. Only stations
 -- well short of the road's end, where nothing the road lays later can change them.
 local kept: { [Spline.Spline]: { [number]: Station } } = setmetatable({}, { __mode = "k" }) :: any
+local keptVisual: { [Spline.Spline]: { [number]: Station } } = setmetatable({}, { __mode = "k" }) :: any
 local KEEP_SHORT = 700 -- studs: past how far an edge's change, or a tight bend, is looked for
 
 -- A station at `s`, whose plan position is (x, z).
 local function station(ctx: Context, s: number, x: number, z: number): Station
 	local H = Config.Spline.Hill
 	local spline = ctx.spline
-	local mine = kept[spline]
+	local cache=if ctx.pad~=0 then keptVisual else kept
+	local mine = cache[spline]
 	if not mine then
 		mine = {}
-		kept[spline] = mine
+		cache[spline] = mine
 	end
 	local old = mine[s]
 	if old then
@@ -155,7 +158,7 @@ local function station(ctx: Context, s: number, x: number, z: number): Station
 		taper = { 0, 0 },
 	}
 	for i, side in { -1, 1 } do
-		local w = half + spline:runoffAt(s, side)
+		local w = half + spline:runoffAt(s, side)+ctx.pad
 		local kind = spline:edgeAt(s, side)
 		st.w[i] = w
 		st.y0[i] = spline:terrainY(s, side * w)
@@ -240,7 +243,7 @@ local function exact(ctx: Context, st: Station, i: number, side: number, clip: n
 		hint = s2
 		local x2, z2 = spline:planAt(s2)
 		local qx, qz = x2 - st.x, z2 - st.z
-		local delta = half + spline:runoffAt(s2, if d2 < 0 then -1 else 1) - st.w[i]
+		local delta = half + spline:runoffAt(s2, if d2 < 0 then -1 else 1)+ctx.pad - st.w[i]
 		local den = 2 * (qx * dx + qz * dz + delta)
 		local num = qx * qx + qz * qz - delta * delta
 		if den <= 1e-6 or num <= 0 then
@@ -344,7 +347,7 @@ end
 -- long loops, so a build can hand the frame back.
 function SplineHill.context(spline: Spline.Spline, s0: number, s1: number, profile: (Spline.Spline, number, number, number) -> { Vector3 }, tick: (() -> ())?, visual: boolean?): Context
 	local H = Config.Spline.Hill
-	local ctx: Context = { spline = spline, reach = if visual then H.DrawReach else H.Reach, stations = {}, profile = profile, tick = tick or function() end, cuts = {} }
+	local ctx: Context = { spline = spline, reach = if visual then H.DrawReach else H.Reach, pad=if visual and spline:hasBiomeGround() then H.DrawEdgePad else 0, stations = {}, profile = profile, tick = tick or function() end, cuts = {} }
 	local minX, maxX, minZ, maxZ = math.huge, -math.huge, math.huge, -math.huge
 	local u = s0
 	while true do
@@ -525,6 +528,31 @@ function SplineHill.skirtEnd(spline:Spline.Spline,ray:Ray):number
 	local k=spline:curvatureAt(ray.st.s)
 	if k*ray.side < -1e-10 then finish=math.max(ray.clip,math.min(finish,1/math.abs(k))) end
 	return finish
+end
+
+-- One shared radial topology for the planner, mesh and parts fallback. Points
+-- through coreCount stay in the chunk's single EditableMesh. The remaining
+-- coarse ground can exceed its size limit without taking more mesh slots.
+function SplineHill.drawRings(spline:Spline.Spline,ray:Ray):({Vector3},number)
+	local H=Config.Spline.Hill
+	local start=SplineHill.faceEnd(ray)
+	if ray.clip<=start then
+		-- A neighbouring bank can occupy the whole radial domain. Hill.at clamps
+		-- to clip, whose meeting height belongs behind this profile's endpoint.
+		-- There is no hillside here: keep the shared endpoint instead of a fin.
+		local st,side=ray.st,ray.side
+		local point=Vector3.new(st.x+side*st.rx*start,(st.yEnd :: {number})[idx(side)],st.z+side*st.rz*start)
+		return table.create(#H.Rings+2,point),#H.Rings
+	end
+	local edge=ray.st.w[idx(ray.side)]
+	local core=math.max(start,math.min(ray.clip,edge+H.CoreReach))
+	local span=math.max(0,core-start)
+	local points={}
+	for _,share in H.Rings do table.insert(points,SplineHill.at(ray,start+span*share)) end
+	local count=#points
+	table.insert(points,SplineHill.at(ray,ray.clip))
+	table.insert(points,SplineHill.at(ray,SplineHill.skirtEnd(spline,ray)))
+	return points,count
 end
 
 return SplineHill

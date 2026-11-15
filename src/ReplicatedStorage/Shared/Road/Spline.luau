@@ -830,15 +830,26 @@ end
 -- The ground's height as if the road were not raised: the grass following the bank and
 -- easing flat. `terrainNormal` reads its slope from this, so the step is a step to the car
 -- and the walking tiles, never a slope that tilts the grass beside it.
-local function groundY(self: Spline, s: number, d: number): (number, number, number)
+type TerrainFrame={x:number,z:number,y:number,cos:number,sin:number,tb:number,wl:number,wr:number,hl:number,hr:number,biome:boolean}
+
+local function terrainFrame(self:Spline,s:number):TerrainFrame
+	local x,z=self:planAt(s)
+	local yaw=self:yawAt(s)
+	local biome=self:hasBiomeGround()
+	return {x=x,z=z,y=self:heightAt(s),cos=math.cos(yaw),sin=math.sin(yaw),tb=math.tan(self:bankAt(s)),
+		wl=self:runoffAt(s,-1),wr=self:runoffAt(s,1),
+		hl=if biome then self:edgeLiftAt(s,-1) else 0,hr=if biome then self:edgeLiftAt(s,1) else 0,biome=biome}
+end
+
+local function groundY(self: Spline, s: number, d: number, frame:TerrainFrame?): (number, number, number)
 	local half = Config.Road.Width * 0.5
-	local tb = math.tan(self:bankAt(s))
+	local tb = if frame then frame.tb else math.tan(self:bankAt(s))
 	local a = math.abs(d)
 	if a <= half then
-		return self:heightAt(s) + d * tb, 0, 0
+		return (if frame then frame.y else self:heightAt(s)) + d * tb, 0, 0
 	end
 	local side = if d < 0 then -1 else 1
-	local w = self:runoffAt(s, side)
+	local w = if frame then (if side<0 then frame.wl else frame.wr) else self:runoffAt(s, side)
 	local e = a - half
 	local off
 	if e >= w then
@@ -847,7 +858,7 @@ local function groundY(self: Spline, s: number, d: number): (number, number, num
 		off = e - e * e / (2 * w)
 	end
 	local lift=0
-	if self:hasBiomeGround() then
+	if (if frame then frame.biome else self:hasBiomeGround()) then
 		local start=lipWidth(w)
 		local span=math.max(w-start,1e-6)
 		local u=math.clamp((e-start)/span,0,1)
@@ -855,10 +866,10 @@ local function groundY(self: Spline, s: number, d: number): (number, number, num
 		-- bank with a gentle slope. Its maximum derivative is4/3.
 		-- The road's remaining bank and the added rise share the slope budget.
 		local maximum=0.75*math.max(0,Config.Spline.Biomes.BankMaxSlope-math.abs(tb))*span
-		local height=math.clamp(self:edgeLiftAt(s,side),-maximum,maximum)
+		local height=math.clamp(if frame then (if side<0 then frame.hl else frame.hr) else self:edgeLiftAt(s,side),-maximum,maximum)
 		lift=height*u*u*(2-u)
 	end
-	return self:heightAt(s) + side * tb * (half + off) + lift, e, w
+	return (if frame then frame.y else self:heightAt(s)) + side * tb * (half + off) + lift, e, w
 end
 
 function Spline.terrainY(self: Spline, s: number, d: number): number
@@ -915,6 +926,37 @@ function Spline.terrainNormal(self: Spline, s: number, d: number): Vector3
 		n = -n
 	end
 	return n.Unit
+end
+
+-- Same scalar ground and finite-difference normal, sampled across a whole row.
+-- Widths, bank, height and plan coordinates are looked up once per station,
+-- rather than again for every vertex and every normal's neighboring point.
+function Spline.terrainRow(self:Spline,s:number,offsets:{number},withNormals:boolean?,origin:Vector3?):({Vector3},{Vector3},{Vector3})
+	local frame=terrainFrame(self,s)
+	local normals=withNormals~=false
+	local e=if frame.biome then .05 else .5
+	local left=if normals then terrainFrame(self,s-e) else nil
+	local right=if normals then terrainFrame(self,s+e) else nil
+	local points,norms,relative={},{},{}
+	for j,d in offsets do
+		local y,edge,width=groundY(self,s,d,frame)
+		local x,z=frame.x+d*frame.cos,frame.z-d*frame.sin
+		y-=lipDrop(edge,width)
+		points[j]=Vector3.new(x,y,z)
+		if origin then relative[j]=Vector3.new(x-origin.X,y-origin.Y,z-origin.Z) end
+		if not normals then continue end
+		if math.abs(d)<=Config.Road.Width*.5 then norms[j]=self:normalAt(s,d);continue end
+		local a,b=left :: TerrainFrame,right :: TerrainFrame
+		local ax,az=a.x+d*a.cos,a.z-d*a.sin
+		local bx,bz=b.x+d*b.cos,b.z-d*b.sin
+		local ay,by=groundY(self,s-e,d,a),groundY(self,s+e,d,b)
+		local cx,cz=frame.x+(d-e)*frame.cos,frame.z-(d-e)*frame.sin
+		local dx,dz=frame.x+(d+e)*frame.cos,frame.z-(d+e)*frame.sin
+		local cy,dy=groundY(self,s,d-e,frame),groundY(self,s,d+e,frame)
+		local n=Vector3.new(dx-cx,dy-cy,dz-cz):Cross(Vector3.new(bx-ax,by-ay,bz-az))
+		norms[j]=if n.Magnitude<1e-9 then Vector3.yAxis else (if n.Y<0 then -n else n).Unit
+	end
+	return points,norms,relative
 end
 
 -- What is underfoot at (s, d): TARMAC, GRASS, GRAVEL (the runoff in a gravel run), or nil

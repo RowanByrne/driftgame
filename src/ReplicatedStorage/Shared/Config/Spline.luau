@@ -471,6 +471,8 @@ local Spline = {
 		Reach = 500, -- terrain preflight reach; keep approved road selection stable
 		DrawReach = 1000, -- visible ground past each road edge, twice the original reach
 		DrawGather = 2300, -- both visible reaches, supported widths and sampling margin
+		CoreReach = 500, -- keep the one EditableMesh within Roblox's 2048-stud extents
+		DrawEdgePad = 0.125, -- visual underlap covers finite-bank chords; support widths stay exact
 		-- THE SLOPE of the open hillside along the fall line. The road only drops 1 in 25, so
 		-- two legs are seldom more than this apart in height: steeper, and the ground from the
 		-- leg above would miss the leg below
@@ -509,7 +511,7 @@ local Spline = {
 		StationStep = 16, -- studs between the road's stations (a multiple of `CheckStep`)
 		Gather = 1200, -- studs round a chunk its stations are gathered from (two reaches and two runoffs)
 		CutStep = 20, -- coarse far scenery; unsafe bank chords refine independently
-		Rings = { 0.06, 0.32, 1 }, -- first open-ground ring stays near 60 studs
+		Rings = { 0.12, 0.64, 1 }, -- coarse core rings; distant ground continues as simple parts
 		Skirt = 4, -- studs a ray is drawn past its end, level, so no crack shows where two meet
 		SteepRock = 0.72, -- a face whose normal is flatter than this (its Y) is drawn as rock
 		Colour = Color3.fromRGB(78, 122, 60), -- the open hillside: a shade under the runoff's grass
@@ -526,6 +528,7 @@ local Spline = {
 		-- Strips across the road. Where the bank rolls on a grade through a bend the surface
 		-- twists, and one full-width triangle cannot follow it (6.5 degrees off, measured).
 		Across = 4,
+		GrassAcross = 8, -- bank strips; checked against the shared ground height/normal
 		-- studs of road per chunk. A chunk holds one EditableMesh while it is drawn, and a
 		-- client may hold only eight (measured), so the window round the car is kept to five
 		-- or six chunks: (Ahead + Behind) / ChunkLength + 1, plus the one being built
