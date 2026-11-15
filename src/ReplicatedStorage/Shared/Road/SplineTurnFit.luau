@@ -7,7 +7,7 @@ local Hill = require(script.Parent.SplineHill)
 local Profile = require(script.Parent.SplineProfile)
 local Ground = require(script.Parent.Ground)
 local Fit = {}
-export type Reading = {ok:boolean, score:number, view:number, cut:number, fill:number, samples:number}
+export type Reading = {ok:boolean, score:number, view:number, cut:number, fill:number, samples:number, off:number?}
 function Fit.measure(sp: Spline.Spline, s0:number, s1:number, startFlip:number, flips:{{number}}): Reading
 	local M, H = Config.Spline.Mountain, Config.Spline.Hill
 	-- a ground run (T-218) checks the mountain the road is cut into, not today's hillside

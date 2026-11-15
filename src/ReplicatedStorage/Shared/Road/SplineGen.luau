@@ -1787,9 +1787,23 @@ function SplineGen._turn(self: Gen, item: Item): (Spline.Section | string)?
 						local tail=ramp(bank[#bank],0,math.rad(C.MaxBankRate)/1.5,0,emittedLen-len)
 						for j=1,#tail,2 do table.insert(bank,len+tail[j]);table.insert(bank,tail[j+1]) end
 					end
-					local sec={len=emittedLen,k=emitted,g=pickGrade(self,g0,y0,emittedLen,fit and self.flip>0,nextMove,emitted),b=bank,tag=item.tag}
+					local g, off
+					if self.ground then
+						-- a ground run (T-228): the grade follows the mountain, and how far off it
+						-- the turn leaves the road counts in its fit, so a turn a steep scarp
+						-- would leave stranded is laid further on, where it fits
+						g, off = self:_followGrade(emitted, g0, y0)
+					else
+						g = pickGrade(self,g0,y0,emittedLen,fit and self.flip>0,nextMove)
+					end
+					local sec={len=emittedLen,k=emitted,g=g,b=bank,tag=item.tag}
 					if not fit then return sec end
 					local r=self:_fitTurn(sec,item)
+					if off then
+						r.off=off
+						if off>C.Ground.TurnMaxOff then r.ok=false end
+						r.score+=off
+					end
 					self.stats.hillChecked+=1
 					if not r.ok then self.stats.hillRejected+=1 end
 					if not reading or (r.ok and not reading.ok) or (r.ok==reading.ok and r.score<reading.score) then best,reading=sec,r end
@@ -1800,7 +1814,7 @@ function SplineGen._turn(self: Gen, item: Item): (Spline.Section | string)?
 		end
 	end
 	if best and reading then
-		if not reading.ok and (item.hillRetries or 0)<M.TurnLocationRetries then
+		if not reading.ok and (item.hillRetries or 0)<(if self.ground then C.Ground.TurnRetries else M.TurnLocationRetries) then
 			item.hillRetries=(item.hillRetries or 0)+1
 			return nil
 		end

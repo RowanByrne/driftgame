@@ -520,6 +520,12 @@ local Spline = {
 		LegGrade = { 0.035, 0.07 }, -- descent per stud of road along a leg: 2 to 4 degrees
 		LegTiltMax = 75, -- degrees off straight across
 		FollowGrade = 0.9,
+		-- A SHARP PLANNED TURN (a hairpin, a switchback) that would leave the road more than
+		-- `TurnMaxOff` studs off h is laid further on (`Mountain.RetryAfter` each time, up to
+		-- `TurnRetries` times) where it fits better: mid-turn the road heads straight down
+		-- the slope, which a steep scarp leaves it far above (T-228)
+		TurnMaxOff = 20, -- studs
+		TurnRetries = 6,
 		AimMinLimit = 5, -- degrees (12 let a road on a 40-degree scarp stray to a 13-degree grade)
 		DownhillBias = 0.01,
 		-- THE CUT: under the road and its runoff the ground sits this far below their surface,
