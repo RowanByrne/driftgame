@@ -213,6 +213,27 @@ The feature's own agent owns these sequential steps and reserves its lane after 
 
 ## Open questions
 
+### Road and rail implementation checkpoint (T-210)
+
+Regular bend weights, straight choices and reversal choices blend with the same
+centred biome phase. Fields prefer sweeping bends; steep stretches prefer tighter
+bends. Mandatory mountain planning, curvature/radius limits, grade/bank limits and
+clearance checks remain in force. Initial same-seed 150000-stud measurements show
+regular field heading change127degrees/1000studs versus steep196, with tight-bend
+distance6.6% versus21.7%; these are a checkpoint before the hairpin-grade correction.
+
+Only the existing asphalt-edge guardrail is used. Discretionary runs are clipped to
+actual fitted CLIFF spans within80studs of the asphalt, excluding groves; broad
+fields receive no discretionary rail. Density is higher on steep exposed edges,
+and the final roll uses the placed run's local biome phase. Mandatory tight gravel
+protection stays covered at zero discretionary density. A separate fixed-draw RNG
+keeps density changes from altering road geometry, other scenery or later seeds.
+
+Policy and generated-car contact checks pass after latest Main integration. The
+remaining step includes the user's consistent-grade hairpin requirement; final
+measurements and lane review follow that correction. Distant-ground simplification,
+colour, reach and join cleanup remain in the following terrain/long-run work.
+
 ### Follow-up terrain requirements (2026-11-14)
 
 The user reviewed the blockout in four pictures (C-330666 forwarding C-e1ae58).

@@ -133,11 +133,13 @@ function Style.rails(spline:Spline.Spline,sec:Spline.Section,records:{number},gr
 			pick-=candidate.weight
 			if pick<=0 then chosen=candidate;break end
 		end
-		if draws[offset+1]>=math.clamp(chosen.exposure*C.Density,0,1) then continue end
 		local available=chosen.b-chosen.a
 		local share=Biome.mix(records,s0+(chosen.a+chosen.b)*.5,C.RunShare,.65)
 		local run=math.clamp(available*share*(.85+.15*draws[offset+2]),T.KRailRun[1],math.min(T.KRailRun[2],available))
 		local start=chosen.a+(available-run)*draws[offset+4]
+		-- Roll at the placed run, so a higher-chance portion of a long eligible
+		-- interval cannot donate its probability to a distant field portion.
+		if draws[offset+1]>=math.clamp(chance(start+run*.5)*C.Density,0,1) then continue end
 		table.insert(sides[side],{start,start+run})
 	end
 	local rows={}
