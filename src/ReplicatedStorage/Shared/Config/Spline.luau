@@ -496,22 +496,47 @@ local Spline = {
 		SkirtLean = 1.5, -- studs
 		SkirtColour = Color3.fromRGB(70, 104, 54),
 
-		-- OPTION 1, OUR OWN MESH ("mesh", `Drift/GroundMeshView`): nested square grids round the
-		-- car, each one fixed-size mesh, `Cells` across at `Spacing` studs, recentred (snapped to
-		-- the next level's spacing) once the car is `Recentre` studs from its middle. A client
-		-- holds only so many mesh vertices (about 35 000 in Studio, the road's included), so
-		-- these are lean: 4 225 and 3 969 (each twice: one shows while the other is filled). The finer grid lies over a hole in the coarser one,
-		-- its rim taking the coarser one's heights so they meet without a crack.
-		-- `Clamp`: a vertex this near a runoff's edge is held below it (a triangle reaching
-		-- over the road from a cutting must not cover it), so a cutting starts about a cell
-		-- out from the edge; and every vertex sinks `GridSink` studs under the road and runoff
-		Levels = {
-			{ Spacing = 8, Cells = 64, Recentre = 96, Clamp = 12 },
-			{ Spacing = 32, Cells = 62, Recentre = 256, Clamp = 20 },
-		},
-		GridSink = 1.25, -- studs
-		HoleSink = 300, -- studs: the coarser grid under the finer one
+		-- OPTION 1, OUR OWN MESH ("mesh", `Drift/GroundMeshView`, T-220; redrawn as tiles in
+		-- T-225): the ground drawn as square TILES, each `TileCells` cells across, as a quadtree
+		-- (`Drift/GroundTiles`): a tile `Spacings[k]` studs between vertices splits into four of
+		-- the next finer while it is too coarse for how near it is to the car, or to the road
+		-- ahead (`Detail` below, the player's "Ground detail" setting). Tiles never overlap;
+		-- where a finer tile meets a coarser one its edge takes the coarser one's heights, so
+		-- the two meet without a crack.
+		-- THE BUDGET: a client holds only so many mesh triangles, about 81 000 in Studio on a PC,
+		-- the road's included (measured, T-225: 158 tiles of 512, or 38 of 2 048; vertices,
+		-- normals and colours do not count). A mesh run's road takes about 10 000, plus a
+		-- growable chunk while one is built, so the ground holds `Detail[k].Tiles` tiles of 512
+		-- triangles, plus `Spare` built hidden before a change is shown
+		TileCells = 16,
+		Spacings = { 8, 16, 32, 64 }, -- studs between vertices, finest first: tiles 128 to 1 024 studs
+		-- per spacing: a vertex this near a runoff's edge is held below it, so no triangle
+		-- reaching over from a cutting covers the road (a triangle holding a point of road has
+		-- every vertex within 1.41 cells of it); so a cutting starts about a cell out
+		Clamps = { 12, 24, 40, 80 }, -- studs
+		GridSink = 1.25, -- studs: every vertex sinks this under the road and runoff
 		MeshSliceMs = 2, -- ms of building a frame
+		FirstSliceMs = 6, -- ms a frame while nothing is drawn yet (a run's first second)
+		Spare = 12, -- tiles built hidden, then swapped in whole, so a change never shows half done
+		Hysteresis = 1.2, -- a split tile stays split until it is this much past needing it
+		RoadStep = 32, -- studs between the points of road the detail follows
+		RoadPad = 256, -- studs: tiles this near the road ahead are drawn even past `Reach`
+		ReleaseOnFail = 6, -- tiles let go if the device will not make another (room for the road)
+		-- THE PLAYER'S "GROUND DETAIL" (Settings, Graphics; docs/game/SETTINGS.md), light to far.
+		-- `Tiles`: how many may show. `Ratio`: round the car, a tile of spacing s splits while it
+		-- is nearer than s * Ratio (16: 8-stud cells within about 256 studs, 16 to 512, 32 to
+		-- 1 024). `RoadRatio`: the same round the road from `Behind` studs back to `Ahead` on
+		-- along it (6: 8-stud cells within about 96 studs of its middle). `Reach`: how far round
+		-- the car the ground is drawn at all; the horizon covers the rest
+		Detail = {
+			{ Name = "Light", Tiles = 30, Ratio = 10, RoadRatio = 5, Ahead = 400, Behind = 100, Reach = 1100 },
+			{ Name = "Low", Tiles = 44, Ratio = 13, RoadRatio = 6, Ahead = 700, Behind = 150, Reach = 1300 },
+			{ Name = "Medium", Tiles = 60, Ratio = 16, RoadRatio = 6, Ahead = 1000, Behind = 200, Reach = 1550 },
+			{ Name = "High", Tiles = 72, Ratio = 20, RoadRatio = 7, Ahead = 1300, Behind = 250, Reach = 1800 },
+			{ Name = "Ultra", Tiles = 84, Ratio = 24, RoadRatio = 8, Ahead = 1600, Behind = 300, Reach = 2100 },
+		},
+		DetailDefault = 3, -- keyboard and mouse, or gamepad
+		DetailTouchDefault = 2, -- a phone or tablet
 		-- programmer colours, by slope: grass in two shades blotched by the relief, rock past
 		-- `RockAngle`
 		GrassColours = { Color3.fromRGB(86, 132, 62), Color3.fromRGB(70, 116, 54) },

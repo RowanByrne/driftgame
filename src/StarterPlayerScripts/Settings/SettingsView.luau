@@ -15,6 +15,23 @@ local function rect(object, x, y, w, h)
 	object.Size = UDim2.fromOffset(math.floor(w), math.floor(h))
 end
 
+-- A slider: a clear button holding its track, the track's fill and a knob.
+local function makeSlider(name, parent)
+	local slider = Glass.button(name, parent, "")
+	slider.BackgroundTransparency = 1
+	slider.Rim.Transparency = 1
+	local track = Create("Frame", { Name = "Track", BackgroundColor3 = Theme.Color.Track, BorderSizePixel = 0,
+		AnchorPoint = Vector2.new(0, 0.5), Size = UDim2.new(1, 0, 0, 6), Position = UDim2.fromScale(0, 0.5) }, slider)
+	Create("UICorner", { CornerRadius = UDim.new(1, 0) }, track)
+	local fill = Create("Frame", { Name = "Fill", BackgroundColor3 = Theme.Color.Accent, BorderSizePixel = 0,
+		Size = UDim2.fromScale(0.5, 1) }, track)
+	Create("UICorner", { CornerRadius = UDim.new(1, 0) }, fill)
+	local knob = Create("Frame", { Name = "Knob", BackgroundColor3 = Theme.Color.Text, BorderSizePixel = 0,
+		AnchorPoint = Vector2.new(0.5, 0.5), Size = UDim2.fromOffset(20, 20), Position = UDim2.fromScale(0.5, 0.5) }, slider)
+	Create("UICorner", { CornerRadius = UDim.new(1, 0) }, knob)
+	return slider, track, fill, knob
+end
+
 function View.new(parent)
 	local self = setmetatable({ ActionRequested = Signal.new(), connections = {}, offsets = {}, data = {}, opened = false }, View)
 	self.gui = Create("ScreenGui", { Name = "Settings", ResetOnSpawn = false, IgnoreGuiInset = true,
@@ -40,7 +57,8 @@ function View.new(parent)
 	self.close.Activated:Connect(function() self.ActionRequested:Fire("close") end)
 	self.navSteer = Glass.button("SteeringTab", self.pane, "Steering")
 	self.navUI = Glass.button("InterfaceTab", self.pane, "Interface")
-	for _, pair in { {self.navSteer, "steering"}, {self.navUI, "interface"} } do
+	self.navGfx = Glass.button("GraphicsTab", self.pane, "Graphics")
+	for _, pair in { {self.navSteer, "steering"}, {self.navUI, "interface"}, {self.navGfx, "graphics"} } do
 		pair[1].Activated:Connect(function() self.ActionRequested:Fire("category", pair[2]) end)
 	end
 	self.scroll = Create("ScrollingFrame", { Name = "Content", BackgroundTransparency = 1, BorderSizePixel = 0,
@@ -61,18 +79,7 @@ function View.new(parent)
 	self.value.TextXAlignment = Enum.TextXAlignment.Right
 	self.minus = Glass.button("Decrease", self.steering, "-")
 	self.plus = Glass.button("Increase", self.steering, "+")
-	self.slider = Glass.button("Sensitivity", self.steering, "")
-	self.slider.BackgroundTransparency = 1
-	self.slider.Rim.Transparency = 1
-	self.track = Create("Frame", { Name = "Track", BackgroundColor3 = Theme.Color.Track, BorderSizePixel = 0,
-		AnchorPoint = Vector2.new(0, 0.5), Size = UDim2.new(1, 0, 0, 6), Position = UDim2.fromScale(0, 0.5) }, self.slider)
-	Create("UICorner", { CornerRadius = UDim.new(1, 0) }, self.track)
-	self.fill = Create("Frame", { Name = "Fill", BackgroundColor3 = Theme.Color.Accent, BorderSizePixel = 0,
-		Size = UDim2.fromScale(0.5, 1) }, self.track)
-	Create("UICorner", { CornerRadius = UDim.new(1, 0) }, self.fill)
-	self.knob = Create("Frame", { Name = "Knob", BackgroundColor3 = Theme.Color.Text, BorderSizePixel = 0,
-		AnchorPoint = Vector2.new(0.5, 0.5), Size = UDim2.fromOffset(20, 20), Position = UDim2.fromScale(0.5, 0.5) }, self.slider)
-	Create("UICorner", { CornerRadius = UDim.new(1, 0) }, self.knob)
+	self.slider, self.track, self.fill, self.knob = makeSlider("Sensitivity", self.steering)
 	self.range = Glass.label("Range", self.steering, "1                                                  10")
 	self.range.TextColor3 = Theme.Color.Secondary
 	self.note = Glass.label("Note", self.steering, "Higher sensitivity means shorter finger travel.")
@@ -81,7 +88,7 @@ function View.new(parent)
 	self.plus.Activated:Connect(function() self:nudge(1) end)
 	self.slider.InputBegan:Connect(function(input)
 		if self.opened and (input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch) then
-			self.drag = input
+			self.drag, self.dragSlider = input, self.slider
 			self:_fromX(input.Position.X)
 		end
 	end)
@@ -97,12 +104,34 @@ function View.new(parent)
 	self.uiNote = Glass.label("ShortcutNote", self.interface,
 		"Press P on a keyboard to hide or restore the game UI. Driving stays available. The shortcut waits while you type or use the Roblox menu.")
 	self.uiNote.TextColor3 = Theme.Color.Secondary
+	-- Graphics: how far ahead and round the car the ground stays sharp (T-225)
+	self.graphics = Glass.panel("GraphicsControls", self.scroll, true)
+	self.gfxHeading = Glass.label("Heading", self.graphics, "Graphics", true)
+	self.groundLabel = Glass.label("GroundLabel", self.graphics, "Ground detail")
+	self.groundValue = Glass.label("GroundValue", self.graphics, "Medium", true)
+	self.groundValue.TextXAlignment = Enum.TextXAlignment.Right
+	self.groundMinus = Glass.button("GroundDecrease", self.graphics, "-")
+	self.groundPlus = Glass.button("GroundIncrease", self.graphics, "+")
+	self.groundSlider, self.groundTrack, self.groundFill, self.groundKnob = makeSlider("GroundDetail", self.graphics)
+	self.groundRange = Glass.label("GroundRange", self.graphics, "Light - Ultra")
+	self.groundRange.TextColor3 = Theme.Color.Secondary
+	self.groundNote = Glass.label("GroundNote", self.graphics,
+		"How far ahead along the road, and around you, the ground stays sharp. Higher looks further but costs more on slower devices.")
+	self.groundNote.TextColor3 = Theme.Color.Secondary
+	self.groundMinus.Activated:Connect(function() self:nudgeGround(-1) end)
+	self.groundPlus.Activated:Connect(function() self:nudgeGround(1) end)
+	self.groundSlider.InputBegan:Connect(function(input)
+		if self.opened and (input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch) then
+			self.drag, self.dragSlider = input, self.groundSlider
+			self:_fromX(input.Position.X)
+		end
+	end)
 	self.back = Glass.button("Back", self.pane, "Back to drive")
 	self.back.Activated:Connect(function() self.ActionRequested:Fire("close") end)
 	self.session = Glass.label("Session", self.pane, "Session only")
 	self.session.TextColor3 = Theme.Color.Secondary
 	self.session.TextXAlignment = Enum.TextXAlignment.Right
-	for _, object in {self.navSteer, self.navUI, self.close, self.back, self.steering, self.interface} do object:SetAttribute("LayoutItem", object.Name) end
+	for _, object in {self.navSteer, self.navUI, self.navGfx, self.close, self.back, self.steering, self.interface, self.graphics} do object:SetAttribute("LayoutItem", object.Name) end
 	self:_connect(UserInputService.InputChanged, function(input)
 		if self.drag and self.opened and self.modal.AbsoluteSize.X > 1 then
 			if input == self.drag or (self.drag.UserInputType == Enum.UserInputType.MouseButton1 and input.UserInputType == Enum.UserInputType.MouseMovement) then self:_fromX(input.Position.X) end
@@ -121,14 +150,33 @@ function View.new(parent)
 end
 
 function View:_connect(signal, fn) table.insert(self.connections, signal:Connect(fn)) end
+function View:_groundCount() return #(self.data.groundNames or {}) > 0 and #self.data.groundNames or 5 end
 function View:_fromX(x)
-	local width = self.slider.AbsoluteSize.X
-	if width > 1 then self.ActionRequested:Fire("sensitivity", math.floor(1 + math.clamp((x - self.slider.AbsolutePosition.X) / width, 0, 1) * 9 + 0.5)) end
+	local slider = self.dragSlider or self.slider
+	local width = slider.AbsoluteSize.X
+	if width <= 1 then return end
+	local t = math.clamp((x - slider.AbsolutePosition.X) / width, 0, 1)
+	if slider == self.groundSlider then
+		local count = self:_groundCount()
+		self.ActionRequested:Fire("groundDetail", math.floor(1 + t * (count - 1) + 0.5))
+	else
+		self.ActionRequested:Fire("sensitivity", math.floor(1 + t * 9 + 0.5))
+	end
 end
 function View:nudge(delta)
 	if self.opened then self.ActionRequested:Fire("sensitivity", math.clamp((self.data.sensitivity or 5) + delta, 1, 10)) end
 end
-function View:cancelDrag() self.drag = nil end
+function View:nudgeGround(delta)
+	if self.opened then self.ActionRequested:Fire("groundDetail", math.clamp((self.data.groundDetail or 3) + delta, 1, self:_groundCount())) end
+end
+-- Left/right on a focused slider: true if one was focused.
+function View:nudgeSelected(delta)
+	local selected = GuiService.SelectedObject
+	if selected == self.slider then self:nudge(delta); return true end
+	if selected == self.groundSlider then self:nudgeGround(delta); return true end
+	return false
+end
+function View:cancelDrag() self.drag = nil; self.dragSlider = nil end
 
 function View:setData(data)
 	local changedCategory = self.data.category ~= data.category
@@ -146,12 +194,23 @@ function View:setData(data)
 	self.sensitivityLabel.Text = data.sensitivityLabel or "Pointer sensitivity"
 	self.modeNote.Text = if data.mode == "centred" then "Steer from the middle of your screen." else "Steer from where you first touch."
 	self.note.Text = data.note or "Higher sensitivity means shorter finger travel. Keyboard and gamepad steering keep their current response."
+	self.navGfx:SetAttribute("Selected", self.data.category == "graphics")
+	local count = self:_groundCount()
+	local ground = math.clamp(data.groundDetail or 3, 1, count)
+	self.groundValue.Text = if data.groundNames then data.groundNames[ground] else tostring(ground)
+	local g = (ground - 1) / math.max(count - 1, 1)
+	self.groundFill.Size = UDim2.fromScale(g, 1)
+	self.groundKnob.Position = UDim2.fromScale(g, 0.5)
+	self.groundRange.Text = if data.groundNames then data.groundNames[1] .. " - " .. data.groundNames[count] else "1 - " .. count
 	self.steering.Visible = self.data.category == "steering"
 	self.interface.Visible = self.data.category == "interface"
+	self.graphics.Visible = self.data.category == "graphics"
 	if changedCategory then
 		self:cancelDrag()
 		self.scroll.CanvasPosition = Vector2.zero
-		if GuiService.SelectedObject and GuiService.SelectedObject:IsDescendantOf(self.steering) and self.data.category == "interface" then GuiService.SelectedObject = self.navUI end
+		local selected = GuiService.SelectedObject
+		if selected and self.data.category ~= "steering" and selected:IsDescendantOf(self.steering) then GuiService.SelectedObject = if self.data.category == "graphics" then self.navGfx else self.navUI end
+		if selected and self.data.category ~= "graphics" and selected:IsDescendantOf(self.graphics) then GuiService.SelectedObject = if self.data.category == "steering" then self.navSteer else self.navUI end
 	end
 	self:_layout()
 end
@@ -166,9 +225,9 @@ function View:_layout()
 	for _, item in self.gui:GetDescendants() do
 		if item:IsA("TextLabel") or item:IsA("TextButton") then item.TextSize = fontSize end
 	end
-	for _, label in {self.subtitle, self.session, self.modeNote, self.note, self.uiNote, self.range} do label.TextSize = secondary end
+	for _, label in {self.subtitle, self.session, self.modeNote, self.note, self.uiNote, self.range, self.groundRange, self.groundNote} do label.TextSize = secondary end
 	self.title.TextSize = math.floor(30 * math.min(scale, 1.2))
-	self.heading.TextSize, self.uiHeading.TextSize = math.floor(22 * scale), math.floor(22 * scale)
+	self.heading.TextSize, self.uiHeading.TextSize, self.gfxHeading.TextSize = math.floor(22 * scale), math.floor(22 * scale), math.floor(22 * scale)
 	-- GetInsetArea rectangles share the core-UI origin. Translate into this full-screen GUI.
 	local full = GuiService:GetInsetArea(Enum.ScreenInsets.None)
 	local safe = GuiService:GetInsetArea(Enum.ScreenInsets.CoreUISafeInsets)
@@ -196,12 +255,23 @@ function View:_layout()
 	if wide then
 		rect(self.navSteer, 24, navY, 184, 56)
 		rect(self.navUI, 24, navY + 68, 184, 56)
+		rect(self.navGfx, 24, navY + 136, 184, 56)
 		contentX, contentY, contentW = 232, navY, w - 256
 	else
-		local navW = (w - 60) / 2
-		rect(self.navSteer, 24, navY, navW, 48)
-		rect(self.navUI, 36 + navW, navY, navW, 48)
-		contentX, contentY, contentW = 20, navY + 60, w - 40
+		-- three tabs in a row while each keeps room for its word; else two rows
+		local navW3 = (w - 72) / 3
+		if navW3 >= 120 * scale then
+			rect(self.navSteer, 24, navY, navW3, 48)
+			rect(self.navUI, 36 + navW3, navY, navW3, 48)
+			rect(self.navGfx, 48 + 2 * navW3, navY, navW3, 48)
+			contentX, contentY, contentW = 20, navY + 60, w - 40
+		else
+			local navW = (w - 60) / 2
+			rect(self.navSteer, 24, navY, navW, 48)
+			rect(self.navUI, 36 + navW, navY, navW, 48)
+			rect(self.navGfx, 24, navY + 60, navW, 48)
+			contentX, contentY, contentW = 20, navY + 120, w - 40
+		end
 	end
 	rect(self.scroll, contentX, contentY, contentW, math.max(48, h - contentY - 84))
 	local inner = contentW - 28
@@ -268,7 +338,22 @@ function View:_layout()
 	y = math.max(y + 18, 132 * scale)
 	label(self.uiNote, 72 * scale)
 	rect(self.interface, 0, 0, contentW, y + 10)
-	self.scroll.CanvasSize = UDim2.fromOffset(0, if self.data.category == "interface" then y + 14 else steeringH + 4)
+	local interfaceH = y + 14
+	y = 18
+	label(self.gfxHeading, 32 * scale)
+	local groundY = y
+	label(self.groundLabel, 28 * scale, inner - 124)
+	rect(self.groundValue, inner - 96, groundY, 110, math.max(28 * scale, 36))
+	rect(self.groundMinus, 14, y, 48, 48)
+	rect(self.groundSlider, 74, y, inner - 120, 48)
+	rect(self.groundPlus, inner - 34, y, 48, 48)
+	y += 60
+	label(self.groundRange, 24 * scale)
+	label(self.groundNote, 48 * scale)
+	rect(self.graphics, 0, 0, contentW, y + 8)
+	local graphicsH = y + 12
+	self.scroll.CanvasSize = UDim2.fromOffset(0, if self.data.category == "interface" then interfaceH
+		elseif self.data.category == "graphics" then graphicsH else steeringH + 4)
 	rect(self.back, 24, h - 64, math.min(200, w - 48), 48)
 	self.session.Visible = w >= 500
 	rect(self.session, w - 224, h - 60, 200, 40)
@@ -281,9 +366,11 @@ function View:_layout()
 end
 
 function View:_focusOrder()
-	local list = {self.navSteer, self.navUI}
+	local list = {self.navSteer, self.navUI, self.navGfx}
 	if self.data.category == "steering" then
 		for _, item in {self.dynamic, self.centred, self.minus, self.slider, self.plus} do table.insert(list, item) end
+	elseif self.data.category == "graphics" then
+		for _, item in {self.groundMinus, self.groundSlider, self.groundPlus} do table.insert(list, item) end
 	end
 	table.insert(list, self.back)
 	table.insert(list, self.close)
@@ -303,6 +390,9 @@ function View:activateSelected()
 	local selected = GuiService.SelectedObject
 	if selected == self.navSteer then self.ActionRequested:Fire("category", "steering")
 	elseif selected == self.navUI then self.ActionRequested:Fire("category", "interface")
+	elseif selected == self.navGfx then self.ActionRequested:Fire("category", "graphics")
+	elseif selected == self.groundMinus then self:nudgeGround(-1)
+	elseif selected == self.groundPlus then self:nudgeGround(1)
 	elseif selected == self.dynamic then self.ActionRequested:Fire("mode", "dynamic")
 	elseif selected == self.centred then self.ActionRequested:Fire("mode", "centred")
 	elseif selected == self.minus then self:nudge(-1)
