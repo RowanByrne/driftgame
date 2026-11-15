@@ -103,6 +103,7 @@ export type View = typeof(setmetatable(
 		lastSlices: number,
 		worstCommitMs: number,
 		selectMs: number,
+		totalWorkMs: number, -- all building and choosing, for the per-frame cost
 		events: { { number } },
 		slices: { number },
 	},
@@ -270,6 +271,7 @@ function GroundMeshView.new(spline: any, parent: Instance?): View
 		lastSlices = 0,
 		worstCommitMs = 0,
 		selectMs = 0,
+		totalWorkMs = 0,
 		events = {},
 		slices = {},
 	}, GroundMeshView)
@@ -596,6 +598,7 @@ function GroundMeshView._desired(self: View): { [number]: Leaf }
 		local t0 = os.clock()
 		local _, map = GroundTiles.select(self:_want())
 		self.selectMs = (os.clock() - t0) * 1000
+		self.totalWorkMs += self.selectMs
 		self.desired = map
 		self.desiredAt = at
 		self.desiredDetail = self.detail
@@ -790,6 +793,7 @@ function GroundMeshView._do(self: View, op: Op): boolean
 	self.worstCommitMs = math.max(self.worstCommitMs, (os.clock() - c0) * 1000)
 	self.work += os.clock() - self.sliceStart
 	self.lastMs = self.work * 1000
+	self.totalWorkMs += self.lastMs
 	self.worstMs = math.max(self.worstMs, self.lastMs)
 	self.ops[op.kind] += 1
 	if #self.events < 4000 then
@@ -1052,6 +1056,7 @@ function GroundMeshView.DebugState(self: View)
 		fineAhead = self:DebugReach(1, 0),
 		fineAheadCorridor = self:DebugReach(1, 40),
 		mediumAhead = self:DebugReach(2, 0),
+		seams = self:DebugSeams(GroundDetail.preset(self.detail).Ahead),
 		failed = self.failed,
 		running = self.running,
 		paused = self.paused,
@@ -1064,6 +1069,7 @@ function GroundMeshView.DebugState(self: View)
 		lastSlices = self.lastSlices,
 		worstCommitMs = self.worstCommitMs,
 		selectMs = self.selectMs,
+		totalWorkMs = self.totalWorkMs,
 		events = self.events,
 		slices = self.slices,
 	}
