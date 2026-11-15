@@ -1,4 +1,4 @@
-﻿# Feature: Road on the slope
+# Feature: Road on the slope
 
 **Status:** plan approved 2026-11-15; step 1 (`T-227`) built, in a lane for the user; step 2 next. Builds on the mesh ground picked in `ground-trial.md`. **Owner task:** `T-226` (feature), branch `feature/road-on-the-slope`.
 
