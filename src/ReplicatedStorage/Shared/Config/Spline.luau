@@ -517,6 +517,23 @@ local Spline = {
 		GrassColours = { Color3.fromRGB(86, 132, 62), Color3.fromRGB(70, 116, 54) },
 		GroundRockColour = Color3.fromRGB(116, 110, 102),
 		UVStuds = 48, -- studs one tile of the ground's material covers
+
+		-- OPTION 2, ROBLOX TERRAIN ("terrain", `Drift/GroundTerrainView`): the same ground written
+		-- as Roblox's own terrain on this device, in square chunks of `TerrainChunk` studs (4-stud
+		-- voxels), nearest the car first, out to `DrawTo`, and cleared past `KeepTo`. A chunk is
+		-- rewritten when new road comes into it. Under the road and runoff it sinks
+		-- `TerrainSink` (smooth terrain rounds off between voxels), and within `TerrainClamp` of
+		-- a runoff's edge it is held that far below the edge. Solid `TerrainDepth` studs under
+		-- the chunk's lowest point. Grass, rock past `RockAngle`; programmer colours below
+		TerrainChunk = 128, -- studs
+		DrawTo = 1024, -- studs from the car, as option 1 reaches
+		KeepTo = 1280, -- studs
+		TerrainSink = 2.5, -- studs
+		TerrainClamp = 6, -- studs
+		TerrainDepth = 8, -- studs
+		TerrainSliceMs = 2, -- ms of building a frame (a chunk's one write can overrun it)
+		TerrainGrassColour = Color3.fromRGB(86, 132, 62),
+		TerrainRockColour = Color3.fromRGB(116, 110, 102),
 	},
 
 	-- --------------------------------------------------------------- the mesh (step 3)
