@@ -5,11 +5,13 @@
 --
 -- A QUADTREE OF TILES. The coarsest tiles (`Spacings[#Spacings]` studs between vertices,
 -- `TileCells` cells across) cover everything within `Reach` of the car, and everything within
--- `RoadPad` of the road ahead. A tile splits into the four of the next finer spacing while it
--- is too coarse for where it is: nearer the car than its spacing times `Ratio`, or nearer the
--- road's middle (from `Behind` studs back to `Ahead` studs on along it) than its spacing times
--- `RoadRatio`. The neediest splits first, until `Tiles` tiles show, so a device never draws
--- more than its share of the mesh budget whatever the road does.
+-- `RoadPad` of the drawn road. A tile splits into the four of the next finer spacing while it
+-- is too coarse for where it is: nearer the car than its spacing times `Ratio`, or within
+-- `RoadRange` times its spacing of a point of road that wants finer (each point of road says
+-- how fine: 8 studs near the car, coarser further along). Of the tiles that want splitting,
+-- the nearest the car splits first, until `Tiles` tiles show, so a device never draws more
+-- than its share of the mesh budget whatever the road does, and what goes without is what
+-- is furthest away.
 --
 -- Every tile sits on one world lattice (its corner a whole number of its own sides from the
 -- origin), so a tile and its four children cover exactly the same ground, and two tiles
@@ -35,10 +37,11 @@ export type Leaf = {
 export type Want = {
 	x: number, -- the car
 	z: number,
-	road: { number }, -- x, z, x, z, ...: the points of road the detail follows
+	-- x, z, w, x, z, w, ...: the points of road the detail follows, and the spacing each
+	-- wants the ground round it finer than
+	road: { number },
 	tiles: number,
 	ratio: number,
-	roadRatio: number,
 	reach: number,
 	split: { [number]: boolean }?, -- keys of tiles split now, which stay split a little longer
 }
@@ -103,17 +106,14 @@ local function need(nd: Leaf, want: Want): number
 	local s = nd.s
 	local n = s * want.ratio / math.max(distTo(nd.x0, nd.z0, nd.side, want.x, want.z), 1)
 	local road = want.road
-	if #road > 0 then
-		local best = math.huge
-		for i = 1, #road, 2 do
-			local d = distTo(nd.x0, nd.z0, nd.side, road[i], road[i + 1])
-			if d < best then
-				best = d
+	local range = s * Config.Spline.Ground.RoadRange
+	for i = 1, #road, 3 do
+		if distTo(nd.x0, nd.z0, nd.side, road[i], road[i + 1]) < range then
+			-- splits while its spacing is twice what the road wants or more
+			local r = s / (1.99 * road[i + 2])
+			if r > n then
+				n = r
 			end
-		end
-		local r = s * want.roadRatio / math.max(best, 1)
-		if r > n then
-			n = r
 		end
 	end
 	if want.split and want.split[nd.key] then
@@ -150,7 +150,7 @@ function GroundTiles.select(want: Want): ({ Leaf }, { [number]: Leaf })
 	end
 	local pad = G.RoadPad
 	local road = want.road
-	for i = 1, #road, 2 do
+	for i = 1, #road, 3 do
 		local rx, rz = road[i], road[i + 1]
 		for ix = math.floor((rx - pad) / side), math.floor((rx + pad) / side) do
 			for iz = math.floor((rz - pad) / side), math.floor((rz + pad) / side) do

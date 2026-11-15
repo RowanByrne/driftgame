@@ -89,6 +89,7 @@ export type View = typeof(setmetatable(
 		desired: { [number]: Leaf }?,
 		desiredAt: Vector3?,
 		desiredDetail: number,
+		pending: { Op }, -- the changes still to make towards `desired`
 		lastStale: boolean,
 		sliceStart: number,
 		work: number,
@@ -258,6 +259,7 @@ function GroundMeshView.new(spline: any, parent: Instance?): View
 		desired = nil,
 		desiredAt = nil,
 		desiredDetail = 0,
+		pending = {},
 		lastStale = false,
 		sliceStart = 0,
 		work = 0,
@@ -556,19 +558,23 @@ end
 
 function GroundMeshView._want(self: View): GroundTiles.Want
 	local G = Config.Spline.Ground
+	local M = Config.Spline.Mesh
 	local P = GroundDetail.preset(self.detail)
 	local road = {}
 	local along = self.along
 	local spline = self.spline
 	if along then
+		-- as far as the road is drawn: 8 studs out to `Fine` along it, then coarser
 		local first = spline.firstSample * spline.step
-		local s0 = math.max(first, along - P.Behind)
-		local s1 = math.min(spline.length, along + P.Ahead)
+		local s0 = math.max(first, along - M.Behind)
+		local s1 = math.min(spline.length, along + M.Ahead)
 		local s = s0
 		while s <= s1 do
 			local x, z = spline:planAt(s)
+			local w = math.min(G.Spacings[1] * math.max(1, math.abs(s - along) / P.Fine), G.RoadCoarsest)
 			table.insert(road, x)
 			table.insert(road, z)
+			table.insert(road, w)
 			s += G.RoadStep
 		end
 	end
@@ -586,7 +592,6 @@ function GroundMeshView._want(self: View): GroundTiles.Want
 		road = road,
 		tiles = self:_leafBudget(),
 		ratio = P.Ratio,
-		roadRatio = P.RoadRatio,
 		reach = P.Reach,
 		split = split,
 	}
@@ -594,7 +599,8 @@ end
 
 function GroundMeshView._desired(self: View): { [number]: Leaf }
 	local at = Vector3.new(self.carX, 0, self.carZ)
-	if not self.desired or self.dirty or self.desiredDetail ~= self.detail or not self.desiredAt or (at - self.desiredAt).Magnitude > 8 then
+	local G = Config.Spline.Ground
+	if not self.desired or self.dirty or self.desiredDetail ~= self.detail or not self.desiredAt or (at - self.desiredAt).Magnitude > G.Reselect then
 		local t0 = os.clock()
 		local _, map = GroundTiles.select(self:_want())
 		self.selectMs = (os.clock() - t0) * 1000
@@ -603,15 +609,16 @@ function GroundMeshView._desired(self: View): { [number]: Leaf }
 		self.desiredAt = at
 		self.desiredDetail = self.detail
 		self.dirty = false
+		self.pending = {}
 	end
 	return self.desired :: { [number]: Leaf }
 end
 
-function GroundMeshView._nextOp(self: View): Op?
+-- Every place the shown tiles differ from the wanted ones, as one change each (the coarsest
+-- tile round it), nearest the car first. They never overlap, so they can be done in turn.
+function GroundMeshView._diff(self: View, desired: { [number]: Leaf }): { Op }
 	local G = Config.Spline.Ground
-	local desired = self:_desired()
 	local shown = self.shown
-	-- every place the two differ, as the coarsest tile round it
 	local roots: { [number]: Leaf } = {}
 	for k, leaf in desired do
 		if not shown[k] then
@@ -625,7 +632,6 @@ function GroundMeshView._nextOp(self: View): Op?
 			roots[r.key] = r
 		end
 	end
-	local room = #self.free + math.max(0, self.cap - #self.pool)
 	local list: { Op } = {}
 	for _, root in roots do
 		local old, new = {}, {}
@@ -645,6 +651,20 @@ function GroundMeshView._nextOp(self: View): Op?
 		end
 		table.insert(list, { kind = kind, old = old, new = new, region = { root } })
 	end
+	local cx, cz = self.carX, self.carZ
+	local function dist(l: Leaf): number
+		return GroundTiles.distTo(l.x0, l.z0, l.side, cx, cz)
+	end
+	table.sort(list, function(a, b)
+		return dist(a.region[1]) < dist(b.region[1])
+	end)
+	return list
+end
+
+function GroundMeshView._nextOp(self: View): Op?
+	local G = Config.Spline.Ground
+	local desired = self:_desired()
+	local room = #self.free + math.max(0, self.cap - #self.pool)
 	-- tiles to redraw for new road, between the changes
 	local stale = {}
 	for k, tile in self.tiles do
@@ -652,12 +672,14 @@ function GroundMeshView._nextOp(self: View): Op?
 			table.insert(stale, tile.leaf :: Leaf)
 		end
 	end
-	local function dist(l: Leaf): number
-		return GroundTiles.distTo(l.x0, l.z0, l.side, self.carX, self.carZ)
+	if #self.pending == 0 then
+		self.pending = self:_diff(desired)
 	end
+	local list = self.pending
 	if #stale > 0 and (self.lastStale == false or #list == 0) and room >= 1 then
+		local cx, cz = self.carX, self.carZ
 		table.sort(stale, function(a, b)
-			return dist(a) < dist(b)
+			return GroundTiles.distTo(a.x0, a.z0, a.side, cx, cz) < GroundTiles.distTo(b.x0, b.z0, b.side, cx, cz)
 		end)
 		local batch = {}
 		for i = 1, math.min(#stale, room, G.Spare) do
@@ -667,20 +689,16 @@ function GroundMeshView._nextOp(self: View): Op?
 		return { kind = "stale", old = batch, new = batch, region = batch }
 	end
 	self.lastStale = false
-	if #list == 0 then
-		return nil
-	end
-	table.sort(list, function(a, b)
-		return dist(a.region[1]) < dist(b.region[1])
-	end)
-	for _, op in list do
+	for i, op in list do
 		if #op.new <= room then
+			table.remove(list, i)
 			return op
 		end
 	end
 	-- nothing that adds tiles fits: free some first
-	for _, op in list do
+	for i, op in list do
 		if #op.new <= 1 and #op.old >= #op.new then
+			table.remove(list, i)
 			return op
 		end
 	end
@@ -1055,8 +1073,9 @@ function GroundMeshView.DebugState(self: View)
 		along = self.along,
 		fineAhead = self:DebugReach(1, 0),
 		fineAheadCorridor = self:DebugReach(1, 40),
-		mediumAhead = self:DebugReach(2, 0),
-		seams = self:DebugSeams(GroundDetail.preset(self.detail).Ahead),
+		mediumAhead = self:DebugReach(2, 40),
+		coarseAhead = self:DebugReach(3, 100),
+		seams = self:DebugSeams(Config.Spline.Mesh.Ahead),
 		failed = self.failed,
 		running = self.running,
 		paused = self.paused,
