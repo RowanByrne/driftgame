@@ -528,8 +528,11 @@ local Spline = {
 		-- 256, not 128: each write costs the next frame about the same whatever its size (16 to
 		-- 34 ms, measured), so fewer, bigger writes
 		TerrainChunk = 256, -- studs
-		DrawTo = 1024, -- studs from the car, as option 1 reaches
-		KeepTo = 1536, -- studs
+		-- 768, not 1 024 as option 1: terrain costs frames by how much of it there is, more as the
+		-- camera moves (measured: a 1 024 ring, nothing being written, 15 ms a frame standing and
+		-- 34 moving on a busy PC). The horizon covers the rest
+		DrawTo = 768, -- studs from the car
+		KeepTo = 1024, -- studs
 		TerrainSink = 2.5, -- studs
 		TerrainClamp = 6, -- studs
 		TerrainDepth = 8, -- studs
