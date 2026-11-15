@@ -1345,8 +1345,8 @@ function SplineGen._slopeAim(self: Gen, slope: Slope): (number, number, number, 
 	local f = self.ground :: Ground.Field
 	local x, z, yaw, _, _, _, y = self.spline:tip()
 	local fx, fz = -math.sin(yaw), -math.cos(yaw)
-	-- CATCHING UP (T-228): a road above the mountain heads more across it (even a little up
-	-- it), so the mountain comes back up to it; one below heads more down it. The road's own
+	-- CATCHING UP (T-228): a road above the mountain heads more across it, so the mountain
+	-- comes back up to it; one below heads more down it. The road's own
 	-- grade can't do it alone: it may fall 8 degrees at most, a scarp falls 30 and more
 	local catch = (y - followH(f, x, z, G.FollowRadius)) * G.CatchUp
 	local gx, gz = 0, 0
@@ -1382,12 +1382,13 @@ function SplineGen._slopeAim(self: Gen, slope: Slope): (number, number, number, 
 	if slope.kind == "fall" then
 		t = math.pi * 0.5
 	elseif slope.kind == "down" then
-		t = math.clamp(tilt(gFollow * 0.95 - catch), -steepest, steepest)
+		t = math.clamp(tilt(gFollow * 0.95 - catch), 0, steepest)
 	else
 		-- steeper on steeper ground (T-228): legs stacked on a scarp spread apart sooner, and
 		-- the road no longer boxes itself in under the leg above
 		local gd = math.min((slope.gd or 0) + G.LegGradeSteep * S, gFollow * 0.95)
-		t = math.clamp(tilt(gd - catch), -steepest, math.rad(G.LegTiltMax))
+		-- (never up the slope: toward the leg above, it boxed the road in after a hairpin)
+		t = math.clamp(tilt(gd - catch), 0, math.rad(G.LegTiltMax))
 	end
 	local hx, hz = cx * math.cos(t) + dx * math.sin(t), cz * math.cos(t) + dz * math.sin(t)
 	local aim = math.atan2(-hx, -hz)

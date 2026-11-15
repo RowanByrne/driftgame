@@ -520,7 +520,7 @@ local Spline = {
 		LegGrade = { 0.035, 0.07 }, -- descent per stud of road along a leg: 2 to 4 degrees
 		LegGradeSteep = 0.1, -- plus this much of h's slope there (T-228), to `FollowGrade` at most
 		-- less this much a stud for every stud the road is above h where it is (more if below):
-		-- a road left above the mountain turns across it, or up it, until the mountain is back
+		-- a road left above the mountain turns across it until the mountain is back
 		CatchUp = 1 / 150,
 		LegTiltMax = 75, -- degrees off straight across
 		FollowGrade = 0.9,
