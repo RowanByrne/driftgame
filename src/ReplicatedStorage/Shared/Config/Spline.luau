@@ -521,7 +521,7 @@ local Spline = {
 		LegGradeSteep = 0.1, -- plus this much of h's slope there (T-228), to `FollowGrade` at most
 		-- less this much a stud for every stud the road is above h where it is (more if below):
 		-- a road left above the mountain turns across it until the mountain is back
-		CatchUp = 1 / 100,
+		CatchUp = 1 / 150, -- (1 / 100 measured worse on 20 seeds, and one boxed in)
 		LegTiltMax = 75, -- degrees off straight across
 		FollowGrade = 0.9,
 		-- A SHARP PLANNED TURN (a hairpin, a switchback) that would leave the road more than
