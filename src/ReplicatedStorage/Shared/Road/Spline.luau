@@ -662,10 +662,12 @@ function Spline.infieldContact(self:Spline,x:number,z:number,hint:number?,low:nu
 		local owner=Infield.route(hit,hint,advance,patch)
 		if owner and owner>=first then
 			local side=if owner==hit.sa then patch.rows[1].sideA else patch.rows[1].sideB
+			local physical=hit.contactS
+			if physical<self.firstSample*self.step then physical=if hit.sb>=self.firstSample*self.step then hit.sb else hit.sa end
 			local d=nil
-			if hit.contactS>=self.firstSample*self.step then local _;_,d=self:projectFrom(x,z,hit.contactS) end
-			return {y=hit.y,normal=hit.normal,ownerS=owner,contactS=hit.contactS,kind=Spline.GRASS,
-				routeD=side*(half+1),d=d,patch=hit.patch}
+			if physical>=self.firstSample*self.step then local _;_,d=self:projectFrom(x,z,physical) end
+			return {y=hit.y,normal=hit.normal,ownerS=owner,contactS=physical,kind=Spline.GRASS,
+				routeD=side*(half+1),d=d,patch=hit.patch,closingS=hit.closingS}
 		end
 	end
 	for _,link in Infield.links(index,hint) do

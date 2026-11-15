@@ -578,8 +578,21 @@ alone do not prove complete live field retirement.
 `Spline.infieldContact` separates physical `contactS/d/kind` from `ownerS` and
 the deliberately off-asphalt `routeD`. Car and Sequence fixtures use it before
 bounded retries can acquire a peer leg. Partial bank feet have finite depth in
-the car world instead of an infinite blocked half-plane. Physical peer retention
-beyond a patch and real runner credit/handoff are not complete yet.
+the car world instead of an infinite blocked half-plane. Real runner
+credit/handoff integration is not complete yet.
+
+`SplineContact.resolve(spline,x,z,owner,options?)` is a read-only contact resolver.
+Options contain physical ray bounds, movement limit, retained first arc, closing
+arc and an optional internally acquired peer token `{s,patchId,road}`. Token
+road identity must match. Real field contact authorizes bounded peer support
+beyond the original patch endpoints, and entry to a later real field, without
+changing the accepted owner. Retained support may survive an old owner's
+retirement; a retired history cannot acquire it afresh. `copy(token)` creates
+independent tracking data. Auxiliary probes never commit it. `credit` shares
+the existing1.05times travel plus8stud re-entry formula with SplineSequence;
+only a real live credited piece may update route progress. The resolver is
+checked groundwork; actual runner/client/walking tracker commits remain to be
+connected before enabling generated fields.
 
 `SplineMesh.buildInfield(spline,x,z,radius,parent,opts?)` builds one complete
 nearby field mesh, with exact frozen normals and origin-relative positions.

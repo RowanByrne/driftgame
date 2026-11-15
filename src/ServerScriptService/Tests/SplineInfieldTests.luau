@@ -416,6 +416,107 @@ function Tests.closing(_self,subjects)
 	return result
 end
 
+function Tests.contacts(_self,subjects)
+	local road=game.ReplicatedStorage.Shared.Road
+	local Spline=subjects and subjects.Spline or require(road.Spline)
+	local Planner=subjects and subjects.Planner or require(road.SplineInfieldPlanner)
+	local Infield=subjects and subjects.Infield or DefaultInfield
+	local Contact=subjects and subjects.Contact or require(road.SplineContact)
+	local cfg=require(game.ReplicatedStorage.Shared.Config)
+	local saved=cfg.Spline.Biomes.GroundEnabled;cfg.Spline.Biomes.GroundEnabled=true
+	local ok,result=xpcall(function()
+		local checks={};local function check(name,pass,detail)table.insert(checks,{name=name,ok=pass,detail=detail})end
+		local sp,b0,sections=fixture(Spline,20)
+		local patches=Planner.plan(sp,128,480,b0,sp.length);sp:addInfields(patches)
+		-- The field freezes before additional real peer road arrives.
+		sp:append(sections[#sections])
+		local patch=patches[1];local row=patch.rows[math.ceil(#patch.rows*.5)]
+		local px,py,pz=sp:surfaceXYZ(row.sb,0)
+		local function resolve(s,owner,token,limit,override)
+			local x,y,z=sp:surfaceXYZ(s,0)
+			local opts={low=y-1,high=y+1,limit=limit or 12,peer=token}
+			for k,v in override or {} do opts[k]=v end
+			return Contact.resolve(sp,x,z,owner,opts)
+		end
+		local acquired=Contact.resolve(sp,px,pz,row.sa,{low=py-1,high=py+1,limit=160})
+		check("a peer token comes from a real known field connection",acquired and acquired.peer and acquired.contactS==row.sb
+			and math.abs(acquired.ownerS-row.sa)<1e-6 and acquired.kind==sp.TARMAC,
+			"physical asphalt is recognized without replacing accepted A")
+		local all=true;local count=0
+		for _,target in {patch.rows[#patch.rows].sb-32,patch.rows[1].sb+32} do
+			local token=Contact.copy(acquired.peer)
+			local direction=if target<token.s then -1 else 1
+			local s=token.s
+			while math.abs(s-target)>1e-7 do
+				s+=direction*math.min(1,math.abs(target-s))
+				local hit=resolve(s,row.sa,token)
+				if not hit then all=false;break end
+				all=all and math.abs(hit.ownerS-row.sa)<1e-6 and hit.kind==sp.TARMAC and math.abs(hit.contactS-s)<1e-5
+				token=Contact.copy(hit.peer);count+=1
+			end
+		end
+		check("physical peer contact continues past both field endpoints",all and count>64,
+			`{count} one-stud peer steps, each retaining A ownership`)
+		local outside=patch.rows[1].sb+32
+		check("a missing token cannot reacquire remote peer road",resolve(outside,row.sa,nil)==nil,
+			"retention cannot become a new global road search")
+		local last=resolve(outside,row.sa,acquired.peer,640)
+		local token=Contact.copy(last.peer)
+		local before=token.s
+		for _=1,12 do resolve(outside+24,row.sa,token,160) end
+		check("auxiliary and predicted probes never advance a retained token",token.s==before,
+			"the resolver returns copies and commits no tracking state")
+		local other=fixture(Spline,20);local otherB=512+math.pi*100+20
+		other:addInfields(Planner.plan(other,128,480,otherB,other.length));other:append(sections[#sections])
+		local x,y,z=other:surfaceXYZ(outside,0)
+		check("a token belongs to exactly one spline",Contact.resolve(other,x,z,row.sa,{low=y-1,high=y+1,peer=token,limit=12})==nil,
+			"a copied token cannot authorize another road instance")
+		check("retained physical movement remains bounded",resolve(outside+180,row.sa,token,12)==nil,
+			"a physical token does not permit an arbitrary arc jump")
+		check("retained contacts keep the physical ray's height window",resolve(outside,row.sa,token,12,{low=py+100,high=py+110})==nil,
+			"peer road cannot act as a ceiling or a distant floor")
+		local turnStart=sp.length;local length=math.pi*100+20
+		local bend=table.clone(sections[2]);bend.k={20,-.01,length-20,-.01,length,0}
+		sp:append(bend)
+		local departure=sp.length;sp:append(sections[#sections])
+		local more=Planner.plan(sp,turnStart-480,turnStart-32,departure,sp.length)
+		sp:addInfields(more)
+		local chained=false
+		if #more>0 then
+			local nextRow=more[1].rows[math.ceil(#more[1].rows*.5)]
+			local history=Contact.copy(token)
+			for s=token.s+1,nextRow.sa,1 do local hit=resolve(s,row.sa,history,12);if not hit then history=nil;break end;history=Contact.copy(hit.peer) end
+			if history then
+				local p=Infield.columns(nextRow)[6]
+				local hit=Contact.resolve(sp,p[1],p[3],row.sa,{low=p[2]-1,high=p[2]+1,limit=160,peer=history})
+				chained=hit and hit.peer.patchId==more[1].id and hit.ownerS==row.sa and hit.kind==sp.GRASS
+			end
+		end
+		check("an authorized physical leg can enter its next real field without erasing debt",chained,
+			"connection acquisition follows physical B while accepted ownership stays on original A")
+		sp:trim(b0+16)
+		local retained=resolve(outside,row.sa,token,12)
+		check("physical B survives retirement of old A ownership",retained and retained.contactS>=sp.firstSample*sp.step
+			and retained.ownerS==row.sa,"live physical support is separate from a retired earned-credit anchor")
+		local a,b=row.a,row.b
+		local x,z=a[1]+(b[1]-a[1])*.95,a[3]+(b[3]-a[3])*.95
+		local floor=Infield.sample(sp.infields,x,z)
+		local liveFloor=Contact.resolve(sp,x,z,row.sa,{low=floor.y-1,high=floor.y+1,peer=token,limit=160})
+		local fresh=Contact.resolve(sp,x,z,row.sa,{low=floor.y-1,high=floor.y+1,limit=160})
+		check("already acquired field support follows the real retained closure domain",liveFloor and floor.closingS>=sp.firstSample*sp.step
+			and liveFloor.kind==sp.GRASS and fresh==nil,"retained support remains real; retired history cannot acquire it anew")
+		local deficient=Contact.credit(row.sa,100,outside)
+		local sufficient=Contact.credit(row.sa,(outside-row.sa-8)/1.05+.001,outside)
+		check("retained physical contact grants no extra re-entry credit",deficient<outside and sufficient==outside,
+			"the existing1.05times travel plus8stud allowance remains exact")
+		local passed=0;for _,c in checks do if c.ok then passed+=1 end end
+		return {passed=passed,total=#checks,checks=checks}
+	end,debug.traceback)
+	cfg.Spline.Biomes.GroundEnabled=saved
+	if not ok then return {passed=0,total=1,checks={{name="retained contact fixture completes",ok=false,detail=result}}} end
+	return result
+end
+
 function Tests.render()
 	local road=game.ReplicatedStorage.Shared.Road
 	local Spline,Planner,Infield=require(road.Spline),require(road.SplineInfieldPlanner),require(road.SplineInfield)

@@ -23,6 +23,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Config = require(ReplicatedStorage.Shared.Config)
 local Spline = require(script.Parent.Spline)
 local SplineGen = require(script.Parent.SplineGen)
+local Contact = require(script.Parent.SplineContact)
 
 local SplineSequence = {}
 SplineSequence.__index = SplineSequence
@@ -231,7 +232,7 @@ end
 -- ordinary drifting its small chord/sampling allowance, but cap any catch-up
 -- by the actual plan distance driven since the last earned asphalt position.
 function SplineSequence.reentryS(self:Sequence,anchor:number,travel:number,s:number):number
-	return math.min(s,anchor+math.max(0,travel)*1.05+8)
+	return Contact.credit(anchor,travel,s)
 end
 
 -- The same flags `Road/Generator.progress` hands back.
