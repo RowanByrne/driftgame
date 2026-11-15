@@ -17,4 +17,3 @@ Every task in progress and the files it owns, so parallel sessions and workers n
 
 
 
-- 2026-11-14: T-213 temporarily uses T-203's generator, grade policy, biome-road tests and stopping-envelope doc entries in Lane2 on `agent/near-limit-braking`, isolated from approved checkpoint c1685bd. T-212 is queued; its understood terrain trial is saved on `feature/linked-biomes` and is not included in this correction.
