@@ -103,3 +103,5 @@ The user's decisions about this game, so they aren't reopened later. Before prop
 - 2026-11-15: The ground-first trial goes on with option 1, our own mesh, over Roblox Terrain: Terrain blurs worse far away and its distance detail is the engine's. Next, sharper ground along the road ahead (not only round the car) and a distance slider in settings (T-225; `features/ground-trial.md` "The pick") (C-5449ea).
 
 - 2026-11-15: Opus 5.5 runs everything: conductor, feature agents and every worker tier; no Fable (C-4d022a).
+
+- 2026-11-15: Remove the hidden shadow boxes under and behind the spline road (`RockShade_*`, `RockShadeTop_*`, `CliffShade_*`, `RoadShade_*`, T-178/T-185) completely, code and config; shadows will be done another way. The user: "remove the system that builds the shadow boxes under the track please - get rid of it fully. we will take a diff approach to shadows" (T-229).

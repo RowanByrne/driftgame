@@ -420,24 +420,14 @@ side (where "height" applies most) and the cliff drop on the downhill side.
   of 2 190 triangles on average, 5 meshes alive. Again on another seed, 2 400 studs from the
   start through a leg at full grandeur: 8.3, 10.4 and 14.8 (the groves' measure was 8.3, 10.5 and
   17.6).
-- **Their shadows (with T-178's hidden boxes).** A rock body casts through a `RockShade_*` box
-  behind its face, from below the foot to 2 to 6 studs under the face's top edge, set back past
-  the deepest jag, and a `RockShadeTop_*` box 3 studs under its scrub top, so a grand body's whole
-  height casts. Each box takes the lowest the body stands over its span and half a span either
-  side, is as long as its longer edge (neighbours overlap, so no light slips between them up a
-  tall face on a bend), and a new box starts where the grandeur moves on or, on the inside of a
-  tight bend, every 0.06 radians of turn. A cliff's `CliffShade_*` box reaches the face's foot,
-  kept above the shallower end. Measured on three seeds of 8 000 studs (DR-Lane5): a ray from
-  the road towards a 25-degree sun through 8 or more studs of rock meets a box 88% of the time
-  (45-degree sun: 88%); of 1 630 rock boxes, 8 have a corner more than 2 studs outside the drawn
-  body away from tight bends (5 to 8 studs, high on a grand face), and 29 on the inside of bends
-  tighter than 250 studs, where the squeezed body itself folds round the bend's centre; no cliff
-  box is out away from those bends. `RoadShade_*` tops stay under the drawn ground, the raised
-  road's bevel included (T-184): 3 810 of 3 810 corners, the highest 1.14 studs under it. A chunk
-  is now about 186 parts (78 shadow boxes) and 2 900 triangles; it builds in 11.6 to 12.7 ms on
-  average, 14.5 to 20 at worst. Driving at 80 studs a second: frames 8.4 ms mean, 10.7 to 12.1
-  p99, 5 to 11 frames in 3 500 over 20 ms where a chunk builds (12 to 18 ms each), one 144 ms
-  spike once.
+- **Their shadows: the hidden boxes are gone (T-229).** From T-178 to 2026-11-15 the faces and
+  the road's surface cast through plain boxes hidden behind and under them (`RockShade_*`,
+  `RockShadeTop_*`, `CliffShade_*`, `RoadShade_*`, about 78 of a chunk's 186 parts), because a
+  MeshPart drawn from an EditableMesh casts no shadow. The user had them removed completely on
+  2026-11-15: *"remove the system that builds the shadow boxes under the track please - get rid
+  of it fully. we will take a diff approach to shadows"*. Until that approach lands, the mesh
+  road, its rock and cliff faces cast no shadow; the hedges, guardrails, the parts road and the
+  car still do (DECISIONS.md).
 - **Built a few ms a frame (T-193).** A chunk's build hands the frame back whenever 3 ms of it
   is spent (`Mesh.SliceMs`) and carries on next frame; the chunk is put in the world only when
   all of it is done, so nothing arrives late. A chunk drawn short (the road had not reached its
@@ -449,12 +439,8 @@ side (where "height" applies most) and the cliff drop on the downhill side.
   tighter than `TightRockRadius` (250) on its side, a rock body is less grand (none at the
   tightest bend), reaches no further than `TightRockReach` (0.65, up from 0.9) of the way to the
   bend's centre, and once squeezed is no taller than `TightRockAspect` (2.5) times its reach,
-  so it no longer folds over itself where the profiles turn in. Shadow boxes there are cut every
-  0.06 radians of the tighter end, and each box is as long as its own top edge. Box corners more
-  than 2 studs outside the drawn body (three seeds): rock boxes away from tight bends 8 before,
-  1 after (4 studs); on the inside of tight bends 29 before, 7 after (11 at worst, from 47); top
-  boxes 0; cliff boxes 4 on tight bends, unchanged. Rays from the road to a 25 and 45-degree sun
-  through rock meet a box 86% and 85% of the time (88% before).
+  so it no longer folds over itself where the profiles turn in. (Its shadow-box cutting went with
+  the boxes, T-229.)
 
 ### One mountain through the turns (no hedges)
 
@@ -466,9 +452,7 @@ T-189. With no hedge to hide the change of sides, the mountain is joined through
   the inside's the other way round), each body's end is closed by its cap (T-185), and a wall in
   the plane of the join, drawn both ways, closes the space under the rock body's end from the
   cliff's face out to the body's back foot and down to the cliff's foot, so nothing shows through
-  under the rock from the drop side. The hidden shadow boxes (`RockShade_*`, `RockShadeTop_*`,
-  `CliffShade_*`) stop half a stud short of a body's end instead of reaching half a stud past it,
-  so none shows through a cap.
+  under the rock from the drop side.
 - **Low rock under the leg above.** Just past a hairpin the uphill rock is right under the leg you
   came down, and even a near-turnaround body (25-60 studs) would stand up through that road. So
   the grandeur goes **below 0, to -1** (`gd`), checked at every knot including the turnaround
