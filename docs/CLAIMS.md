@@ -15,6 +15,7 @@ Every task in progress and the files it owns, so parallel sessions and workers n
 ## Notes between sessions
 
 T-203/T-212 additionally owns new `src/ReplicatedStorage/Shared/Road/SplineInfieldPlanner.luau` for frozen near-level paired-bank planning; its checks extend the already claimed `SplineInfieldTests.luau`.
+T-203/T-212 also owns new `src/ReplicatedStorage/Shared/Road/SplineContact.luau`; its small `DriftController.luau` integration includes copying physical contact state across world rebuilds, drawing around physical contact, and handing copied state to walking. Driving forces and controls remain outside this change.
 
 > A short note for another session or PC that can't be said in a commit, such as "lane 3 has unpushed work, ask before refreshing it". Date it, say who it's for, and remove it once it's been seen.
 
