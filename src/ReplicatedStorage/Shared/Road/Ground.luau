@@ -54,14 +54,16 @@ export type Station = {
 	fz: number,
 	rx: number,
 	rz: number,
+	k: number, -- curvature
 	yc: number, -- centre-line height
-	tb: number, -- tan of the bank
+	g: number, -- grade, and how fast it changes per stud
+	gr: number,
+	tb: number, -- tan of the bank, and how fast it changes per stud
+	tbr: number,
 	wl: number, -- half the tarmac and the runoff, left
 	wr: number,
 	rl: number, -- the runoff alone, left
 	rr: number,
-	el: number, -- the runoff's outer edge's height, less `Under`, left
-	er: number,
 }
 
 export type Context = {
@@ -164,11 +166,18 @@ end
 
 -- The road's own surface at `d` across a station: the tarmac, the gravel bevel, the
 -- runoff easing flat (as `Spline.terrainY`, from the station's numbers).
-local function surface(st: Station, d: number): number
+-- `ds` studs along the road from the station: its height and bank carried on (to second
+-- order), since a point beside a bend may be square to road some way along from it.
+local function surface(st: Station, d: number, ds: number?): number
 	local half = Config.Road.Width * 0.5
+	local yc, tb = st.yc, st.tb
+	if ds then
+		yc += ds * (st.g + 0.5 * st.gr * ds)
+		tb += ds * st.tbr
+	end
 	local a = math.abs(d)
 	if a <= half then
-		return st.yc + d * st.tb
+		return yc + d * tb
 	end
 	local side = if d < 0 then -1 else 1
 	local w = if side < 0 then st.rl else st.rr
@@ -185,7 +194,7 @@ local function surface(st: Station, d: number): number
 		local lip = Config.Spline.Terrain.RoadLip
 		drop = if e >= lw then lip else lip * e / lw
 	end
-	return st.yc + side * st.tb * (half + off) - drop
+	return yc + side * tb * (half + off) - drop
 end
 Ground._surface = surface
 
@@ -200,8 +209,10 @@ local function station(spline: Spline.Spline, s: number, x: number, z: number): 
 		return old
 	end
 	local half = Config.Road.Width * 0.5
-	local under = Config.Spline.Ground.Under
 	local yaw = spline:yawAt(s)
+	local e = 2 -- studs either way, for the rates (the tracks are piecewise linear)
+	local sa, sb = math.max(s - e, 0), math.min(s + e, spline.length)
+	local span = math.max(sb - sa, 1e-6)
 	local rl, rr = spline:runoffAt(s, -1), spline:runoffAt(s, 1)
 	local st: Station = {
 		s = s,
@@ -211,17 +222,17 @@ local function station(spline: Spline.Spline, s: number, x: number, z: number): 
 		fz = -math.cos(yaw),
 		rx = math.cos(yaw),
 		rz = -math.sin(yaw),
+		k = spline:curvatureAt(s),
 		yc = spline:heightAt(s),
+		g = spline:gradeAt(s),
+		gr = (spline:gradeAt(sb) - spline:gradeAt(sa)) / span,
 		tb = math.tan(spline:bankAt(s)),
+		tbr = (math.tan(spline:bankAt(sb)) - math.tan(spline:bankAt(sa))) / span,
 		wl = half + rl,
 		wr = half + rr,
 		rl = rl,
 		rr = rr,
-		el = 0,
-		er = 0,
 	}
-	st.el = surface(st, -st.wl) - under
-	st.er = surface(st, st.wr) - under
 	if s < spline.length - KEEP_SHORT then
 		mine[s] = st
 	end
@@ -302,13 +313,16 @@ function Ground.at(ctx: Context, x: number, z: number): (number, number)
 						local w = if d < 0 then st.wl else st.wr
 						local e = math.abs(d) - w
 						if e < bMax then
+							-- how far along the road the point is square to: further than `l` on
+							-- the inside of a bend, less on its outside
+							local ds = l / math.max(1 + st.k * d, 0.2)
 							local T, bw
 							if e <= 0 then
 								e = 0
-								T = surface(st, d) - G.Under
+								T = surface(st, d, ds) - G.Under
 								bw = bMin
 							else
-								T = if d < 0 then st.el else st.er
+								T = surface(st, if d < 0 then -w else w, ds) - G.Under
 								bw = math.clamp(math.abs(hp - T) / tanA, bMin, bMax)
 							end
 							local q = l / look
