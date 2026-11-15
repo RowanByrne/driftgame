@@ -525,9 +525,11 @@ local Spline = {
 		-- `TerrainSink` (smooth terrain rounds off between voxels), and within `TerrainClamp` of
 		-- a runoff's edge it is held that far below the edge. Solid `TerrainDepth` studs under
 		-- the chunk's lowest point. Grass, rock past `RockAngle`; programmer colours below
-		TerrainChunk = 128, -- studs
+		-- 256, not 128: each write costs the next frame about the same whatever its size (16 to
+		-- 34 ms, measured), so fewer, bigger writes
+		TerrainChunk = 256, -- studs
 		DrawTo = 1024, -- studs from the car, as option 1 reaches
-		KeepTo = 1280, -- studs
+		KeepTo = 1536, -- studs
 		TerrainSink = 2.5, -- studs
 		TerrainClamp = 6, -- studs
 		TerrainDepth = 8, -- studs
