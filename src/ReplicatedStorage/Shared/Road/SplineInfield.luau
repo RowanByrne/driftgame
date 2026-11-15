@@ -13,6 +13,8 @@ export type Patch={id:string,rows:{Row}}
 type Vertex={p:Point,t:number,u:number,q:number}
 type Triangle={a:Vertex,b:Vertex,c:Vertex,normal:Vector3,det:number,patch:string,sa0:number,sa1:number,sb0:number,sb1:number,supported:boolean,
 	minX:number,maxX:number,minZ:number,maxZ:number}
+type Axis={ox:number,oz:number,nx:number,nz:number,low:number,high:number}
+type Group={row:number,first:number,last:number,points:{Point},axes:{Axis},minX:number,maxX:number,minZ:number,maxZ:number}
 type Opening={patch:Patch,bank:string,first:number,last:number}
 type Compiled={triangles:{Triangle},banks:{A:{Triangle},B:{Triangle}}}
 -- Only patch() can certify a deeply frozen canonical input. Cached geometry
@@ -99,13 +101,73 @@ end
 
 local function key(x:number,z:number,cell:number):string return `{math.floor(x/cell)}:{math.floor(z/cell)}` end
 
-local function keys(index:{cell:number},triangle:Triangle):{string}
-	local a,b,c=triangle.a.p,triangle.b.p,triangle.c.p
+local function boxKeys(cell:number,minX:number,maxX:number,minZ:number,maxZ:number):{string}
 	local out={}
-	for x=math.floor(math.min(a[1],b[1],c[1])/index.cell),math.floor(math.max(a[1],b[1],c[1])/index.cell) do
-		for z=math.floor(math.min(a[3],b[3],c[3])/index.cell),math.floor(math.max(a[3],b[3],c[3])/index.cell) do table.insert(out,`{x}:{z}`) end
+	for x=math.floor(minX/cell),math.floor(maxX/cell) do
+		for z=math.floor(minZ/cell),math.floor(maxZ/cell) do table.insert(out,`{x}:{z}`) end
 	end
 	return out
+end
+
+local function keys(index:{cell:number},triangle:Triangle):{string}
+	return boxKeys(index.cell,triangle.minX,triangle.maxX,triangle.minZ,triangle.maxZ)
+end
+
+local function projectionBounds(group:Group,axis:Axis):(number,number)
+	-- A conservative arithmetic envelope, not a geometric contact tolerance.
+	-- Uncertain/overflowing projections can only fall back to triangle SAT.
+	local x=math.max(math.abs(group.minX),math.abs(group.maxX))
+	local z=math.max(math.abs(group.minZ),math.abs(group.maxZ))
+	local error=2^-47*((x+math.abs(axis.ox))*math.abs(axis.nx)+(z+math.abs(axis.oz))*math.abs(axis.nz))
+	if not finite(error) then return -math.huge,math.huge end
+	local low,high=math.huge,-math.huge
+	for _,point in group.points do
+		local d=(point[1]-axis.ox)*axis.nx+(point[3]-axis.oz)*axis.nz
+		if not finite(d) then return -math.huge,math.huge end
+		low,high=math.min(low,d),math.max(high,d)
+	end
+	return low-error,high+error
+end
+
+local function rowGroup(A:{Vertex},B:{Vertex},row:number,first:number,last:number):Group
+	local group:Group={row=row,first=first,last=last,points={},axes={},minX=math.huge,maxX=-math.huge,minZ=math.huge,maxZ=-math.huge}
+	for _,vertices in {A,B} do for _,v in vertices do
+		local p=v.p;table.insert(group.points,p)
+		group.minX,group.maxX=math.min(group.minX,p[1]),math.max(group.maxX,p[1])
+		group.minZ,group.maxZ=math.min(group.minZ,p[3]),math.max(group.maxZ,p[3])
+	end end
+	local corners={A[1].p,B[1].p,B[#B].p,A[#A].p}
+	for i,p in corners do
+		local q=corners[i%4+1];local nx,nz=-(q[3]-p[3]),q[1]-p[1]
+		if nx*nx+nz*nz<=1e-20 then continue end
+		local axis:Axis={ox=p[1],oz=p[3],nx=nx,nz=nz,low=math.huge,high=-math.huge}
+		-- Outer edges supply axis directions only. Every ACTUAL compiled point
+		-- contributes to the envelope, including rounded collar positions.
+		axis.low,axis.high=projectionBounds(group,axis)
+		table.insert(group.axes,axis)
+	end
+	return group
+end
+
+local function axesSeparate(axes:{Axis},group:Group,counts:any?):boolean
+	for _,axis in axes do
+		if counts then counts.groupAxisTests+=1 end
+		local low,high=projectionBounds(group,axis)
+		if axis.high<low or high<axis.low then return true end
+	end
+	return false
+end
+
+local function groupsSeparate(a:Group,b:Group,counts:any?):boolean
+	if a.maxX<=b.minX or b.maxX<=a.minX or a.maxZ<=b.minZ or b.maxZ<=a.minZ then
+		if counts then counts.groupBoxSkips+=1 end
+		return true
+	end
+	if axesSeparate(a.axes,b,counts) or axesSeparate(b.axes,a,counts) then
+		if counts then counts.groupAxisSkips+=1 end
+		return true
+	end
+	return false
 end
 
 local function separated(a:Triangle,b:Triangle,p:Point,q:Point,ox:number,oz:number):boolean
@@ -138,6 +200,32 @@ local function overlaps(a:Triangle,b:Triangle,counts:any?):boolean
 		or separated(a,b,ba,bb,ox,oz) or separated(a,b,bb,bc,ox,oz) or separated(a,b,bc,ba,ox,oz))
 end
 
+local function validateSelf(groups:{Group},triangles:{Triangle},cell:number,counts:any?)
+	local staged:{[string]:{Group}}={}
+	for _,group in groups do
+		-- Preserve the old triangle proof inside each row and between adjacent
+		-- rows. This also preserves accepted concave cells and changing collars.
+		for i=group.first,group.last do for j=group.first,i-1 do
+			assert(not overlaps(triangles[i],triangles[j],counts),"infield strip overlaps itself")
+		end end
+		local buckets=boxKeys(cell,group.minX,group.maxX,group.minZ,group.maxZ)
+		local seen:{[Group]:boolean}={}
+		for _,k in buckets do for _,old in staged[k] or {} do
+			if seen[old] then continue end;seen[old]=true
+			if counts then counts.groupPairs+=1 end
+			if group.row-old.row>1 and groupsSeparate(group,old,counts) then continue end
+			if counts then counts.groupFallbacks+=1 end
+			for i=group.first,group.last do for j=old.first,old.last do
+				assert(not overlaps(triangles[i],triangles[j],counts),"infield strip overlaps itself")
+			end end
+		end end
+		for _,k in buckets do
+			local bucket=staged[k];if not bucket then bucket={};staged[k]=bucket end
+			table.insert(bucket,group)
+		end
+	end
+end
+
 -- Touching published fields must share the entire frozen edge height, including
 -- end-column creases. Positive-area overlap alone cannot detect a vertical step.
 local function compatibleTouch(a:Triangle,b:Triangle):boolean
@@ -167,17 +255,20 @@ end
 -- Triangles share a fixed midline, with optional bank collars. Rendering and physical
 -- contacts use these exact triangles, including a twisted pair of bank edges.
 function Infield.add(index:Index,patch:Patch,validateOnly:boolean?,profile:any?):boolean
+	local began=if profile then os.clock() else 0
 	patch=Infield.canonical(patch)
 	local compiled=compiledOf[patch]
 	local selfCounts,oldCounts=nil,nil
 	if profile then
 		profile.rows=#patch.rows;profile.cached=compiled~=nil;profile.validateOnly=validateOnly==true;profile.duplicate=false
 		profile.destinationTriangles=#index.triangles;profile.cell=index.cell;profile.triangles=if compiled then #compiled.triangles else 0
-		selfCounts={pairs=0,boxSkips=0,sat=0};oldCounts={pairs=0,boxSkips=0,sat=0}
+		profile.phase="compile";profile.compileMs=0;profile.oldMs=0;profile.selfMs=0;profile.publishMs=0;profile.ms=0
+		selfCounts={pairs=0,boxSkips=0,sat=0,groupPairs=0,groupBoxSkips=0,groupAxisSkips=0,groupAxisTests=0,groupFallbacks=0}
+		oldCounts={pairs=0,boxSkips=0,sat=0}
 		profile.self=selfCounts;profile.old=oldCounts
 	end
 	local previous=index.patches[patch.id]
-	if previous==patch then if profile then profile.duplicate=true end;return false end
+	if previous==patch then if profile then profile.duplicate=true;profile.phase="duplicate";profile.ms=(os.clock()-began)*1000 end;return false end
 	if previous then
 		assert(#previous.rows==#patch.rows,"conflicting infield identity")
 		for i,row in patch.rows do
@@ -187,11 +278,12 @@ function Infield.add(index:Index,patch:Patch,validateOnly:boolean?,profile:any?)
 			assert((row.floor~=nil)==(old.floor~=nil),"conflicting infield identity")
 			if row.floor and old.floor then for j=1,11 do assert(row.floor[j]==old.floor[j],"conflicting infield identity") end end
 		end
-		if profile then profile.duplicate=true end
+		if profile then profile.duplicate=true;profile.phase="duplicate";profile.ms=(os.clock()-began)*1000 end
 		return false
 	end
 	local pending:{Triangle}=if compiled then compiled.triangles else {}
 	local banks:{A:{Triangle},B:{Triangle}}=if compiled then compiled.banks else {A={},B={}}
+	local groups:{Group}={}
 	if not compiled then
 		local sign:number?=nil
 		local collars=false
@@ -242,11 +334,11 @@ function Infield.add(index:Index,patch:Patch,validateOnly:boolean?,profile:any?)
 					minZ=math.min(x.p[3],y.p[3],z.p[3]),maxZ=math.max(x.p[3],y.p[3],z.p[3])}))
 			end end
 			banks.A[i]=pending[firstTriangle];banks.B[i]=pending[#pending]
+			table.insert(groups,rowGroup(A,B,i,firstTriangle,#pending))
 		end
 	end
-	if profile then profile.triangles=#pending end
-	local staged:{[string]:{Triangle}}={}
-	local validationGrid={cell=math.min(index.cell,32)}
+	if profile then profile.triangles=#pending;profile.compileMs=(os.clock()-began)*1000;profile.phase="old" end
+	local oldStarted=if profile then os.clock() else 0
 	local byTriangle:{[Triangle]:{string}}={}
 	for _,triangle in pending do
 		local seen:{[Triangle]:boolean}={}
@@ -259,26 +351,18 @@ function Infield.add(index:Index,patch:Patch,validateOnly:boolean?,profile:any?)
 				assert(compatibleTouch(triangle,old),"touching infields have different frozen edge heights")
 			end
 		end
-		if not compiled then
-			local localBuckets=keys(validationGrid,triangle)
-			for _,k in localBuckets do
-				for _,old in staged[k] or {} do
-					if seen[old] then continue end;seen[old]=true
-					assert(not overlaps(triangle,old,selfCounts),"infield strip overlaps itself")
-				end
-			end
-			for _,k in localBuckets do
-				local bucket=staged[k];if not bucket then bucket={};staged[k]=bucket end
-				table.insert(bucket,triangle)
-			end
-		end
 	end
+	if profile then profile.oldMs=(os.clock()-oldStarted)*1000;profile.phase="self" end
+	local selfStarted=if profile then os.clock() else 0
 	if not compiled then
+		validateSelf(groups,pending,math.min(index.cell,32),selfCounts)
 		banks=table.freeze({A=table.freeze(banks.A),B=table.freeze(banks.B)})
 		compiledOf[patch]=table.freeze({triangles=table.freeze(pending),banks=banks})
 	end
+	if profile then profile.selfMs=(os.clock()-selfStarted)*1000;profile.phase="validated";profile.ms=(os.clock()-began)*1000 end
 	-- Validation is complete before the index acquires any of the patch.
 	if validateOnly then return true end
+	local publishStarted=if profile then os.clock() else 0
 	index.patches[patch.id]=patch
 	index.bankTriangles[patch.id]=banks
 	local patchIds={};index.byPatch[patch.id]=patchIds
@@ -320,6 +404,7 @@ function Infield.add(index:Index,patch:Patch,validateOnly:boolean?,profile:any?)
 			table.insert(bucket,opening)
 		end
 	end
+	if profile then profile.publishMs=(os.clock()-publishStarted)*1000;profile.phase="published";profile.ms=(os.clock()-began)*1000 end
 	return true
 end
 

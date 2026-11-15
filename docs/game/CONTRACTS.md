@@ -891,6 +891,16 @@ fills a diagnostic record for a validation traversal: rows/triangles, cache and
 destination spacing, plus separate self/old pair, box-skip and exact-SAT counts.
 The record is caller-owned, never serialized and never changes a decision.
 Reinserting the identical canonical patch remains an immediate idempotent no-op.
+Records reset their per-call counters even for duplicate insertion and include
+compile, old-index, self-validation and publication timing for diagnostics.
+
+Self-validation groups each original row's actual compiled vertices. Exact
+bounds and outward-padded projection intervals may prove distant groups
+disjoint; outer bank corners supply useful axis directions only. Numerical
+uncertainty or nonfinite projections force the unchanged triangle fallback.
+Within-row and adjacent-row triangle checks remain, and concave inputs retain
+their original validation. The coarse proof adds no contact tolerance and never
+replaces published-index overlap or touching-height checks.
 
 Planner XZ reservations, precise attached-bank checks and minimum span are
 checked before constructing the hillside baseline. Those checks use the same

@@ -134,6 +134,35 @@ function Tests.run(_self,subject)
 	}
 	check("a strip cannot double back between otherwise valid cells",not pcall(function()Infield.add(Infield.new(),Infield.patch("loop",loop))end),
 		"one orientation and spatially disjoint cells across the whole published patch")
+	local concave=Infield.new()
+	local concaveOk=pcall(function()Infield.add(concave,Infield.patch("valid concave cell",{
+		{sa=100,sb=900,sideA=1,sideB=-1,a={0,0,0},b={1,0,0},weight=1},
+		{sa=110,sb=890,sideA=1,sideB=-1,a={0,0,1},b={.6,0,.2},weight=1},
+	}))end)
+	check("a valid concave row keeps its original triangle validation",concaveOk and #concave.triangles==4
+		and Infield.sample(concave,.2,.2)~=nil,"an envelope is not a new convexity requirement")
+	local winding={}
+	for i=0,10 do
+		local angle=i*math.pi*.25
+		table.insert(winding,{sa=100+i*10,sb=1000-i*10,sideA=1,sideB=-1,
+			a={20*math.cos(angle),0,20*math.sin(angle)},b={30*math.cos(angle),0,30*math.sin(angle)},weight=1})
+	end
+	local wrapped=Infield.new();local windingCounts={}
+	local windingOk=pcall(function()Infield.add(wrapped,Infield.patch("nonadjacent winding overlap",winding),nil,windingCounts)end)
+	check("distant rows cannot hide a global strip intersection",not windingOk and #wrapped.triangles==0
+		and windingCounts.self and windingCounts.self.groupFallbacks>0 and windingCounts.self.sat>0,
+		"more than one full annulus turn has valid local cells but overlapping nonadjacent rows")
+	local collarsAtLargeOrigin={}
+	for i=0,5 do
+		local width=if i%2==0 then 20 else 60
+		table.insert(collarsAtLargeOrigin,{sa=100+i*10,sb=1000-i*10,sideA=1,sideB=-1,
+			a={65536,0,-1048576-i*10},b={65536+width,0,-1048576-i*10},weight=1,da=.2,db=.2})
+	end
+	local varied=Infield.new();local variedCounts={}
+	local variedOk=pcall(function()Infield.add(varied,Infield.patch("varying actual collar points",collarsAtLargeOrigin),nil,variedCounts)end)
+	check("row envelopes retain changing collars at large coordinates",variedOk and #varied.triangles==100
+		and variedCounts.self.groupPairs>0 and variedCounts.self.groupBoxSkips+variedCounts.self.groupAxisSkips>0
+		and Infield.sample(varied,65546,-1048581)~=nil,"actual compiled points, not nominal outer corners, bound every row")
 	local oldY=Infield.sample(index,20,-10).y
 	local overlap=pcall(function()Infield.add(index,Infield.patch("overlap",rows(10,12)))end)
 	check("later support cannot cover or raise occupied connector ground",not overlap and Infield.sample(index,20,-10).y==oldY and index.patches.overlap==nil,
