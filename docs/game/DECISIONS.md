@@ -103,3 +103,5 @@ The user's decisions about this game, so they aren't reopened later. Before prop
 - 2026-11-15: The ground-first trial goes on with option 1, our own mesh, over Roblox Terrain: Terrain blurs worse far away and its distance detail is the engine's. Next, sharper ground along the road ahead (not only round the car) and a distance slider in settings (T-225; `features/ground-trial.md` "The pick") (C-5449ea).
 
 - 2026-11-15: Opus 5.5 runs everything: conductor, feature agents and every worker tier; no Fable (C-4d022a).
+
+- 2026-11-15: What is beside the road keeps real angles (shallow under 8 degrees across the road, steep from 30), and the mountain is made steeper and more varied in this feature to match: sections very steep for several thousand studs and sections quite shallow, big ridges that carve in and promontories that stick out. Today's mountain is never steeper than 24 degrees, so the steep look could not appear. The user: "real angles, steeper mountain, and i want a more varied mountain ... it should have big ridges that carve in and promontories that stick out" (T-228, features/road-on-the-slope.md).

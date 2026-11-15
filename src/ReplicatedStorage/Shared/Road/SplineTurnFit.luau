@@ -7,7 +7,7 @@ local Hill = require(script.Parent.SplineHill)
 local Profile = require(script.Parent.SplineProfile)
 local Ground = require(script.Parent.Ground)
 local Fit = {}
-export type Reading = {ok:boolean, score:number, view:number, cut:number, fill:number, samples:number}
+export type Reading = {ok:boolean, score:number, view:number, cut:number, fill:number, samples:number, off:number?}
 function Fit.measure(sp: Spline.Spline, s0:number, s1:number, startFlip:number, flips:{{number}}): Reading
 	local M, H = Config.Spline.Mountain, Config.Spline.Hill
 	-- a ground run (T-218) checks the mountain the road is cut into, not today's hillside
@@ -30,6 +30,11 @@ function Fit.measure(sp: Spline.Spline, s0:number, s1:number, startFlip:number, 
 		local flip = startFlip
 		for _, f in flips do if f[1]<=s then flip=f[2] end end
 		local rising = math.max(0, flip * (-fx*math.sin(sp.fall or 0)-fz*math.cos(sp.fall or 0))) * slope
+		if field then
+			-- a ground run's mountain is not one plane (T-228): how it rises ahead, there
+			local e = 60
+			rising = math.max(0, (Ground.h(field,x+fx*e,z+fz*e) - Ground.h(field,x-fx*e,z-fz*e)) / (2*e))
+		end
 		for _, dist in M.TurnViewDistances do
 			if field then
 				-- the ground as drawn, off any road and its runoff

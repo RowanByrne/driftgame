@@ -463,15 +463,35 @@ local Spline = {
 	-- only between runs, so the game and `main` stay as they are.
 	Ground = {
 		Mode = "current", -- "current" | "mesh" | "terrain"
-		-- THE MOUNTAIN, h(x, z): a plane rising `Slope` studs per stud up the fall line, through
-		-- the road's start, plus ridges and gullies: {studs across, studs either way} per
-		-- octave of noise, `Stretch` times longer down the fall line than across it, so they
-		-- run down the mountain. A pure function of the seed and the place
-		-- 0.12, about 7 degrees: no steeper than the road may descend (`MaxGrade`, 8), or a
-		-- road heading down the mountain falls behind it (0.2 left one 113 studs above it)
-		Slope = 0.12,
-		Octaves = { { 900, 45 }, { 450, 22 }, { 180, 7 } },
-		Stretch = 1.8,
+		-- THE MOUNTAIN, h(x, z), through the road's start. A pure function of the seed and the
+		-- place. Since T-228 (the user: "sections where it gets very steep for several thousand
+		-- studs, and sections where it's quite shallow ... big ridges that carve in and
+		-- promontories that stick out"), and the road follows whatever it is (T-227):
+		-- BELTS down the fall line: going down, a shallow BENCH (`Bench` studs of fall line at a
+		-- slope from `Low`), a ramp (`Ramp` studs, eased), a steep SCARP (`Scarp` studs at a
+		-- slope from `High`), a ramp, the next bench; each one's sizes from the seed. The road
+		-- spends about as long on a scarp as on a bench: it loses height at its own rate, and a
+		-- scarp is short but tall. Laid out `BeltsUp` studs up the fall line from the start and
+		-- `BeltsDown` down, every `BeltStep`; past them, straight on. The belts curve across the
+		-- mountain, up to `BeltWarp[1]` studs up or down it over `BeltWarp[2]` across.
+		BeltBench = { 2000, 4000 }, -- studs of fall line
+		BeltScarp = { 250, 600 }, -- studs of fall line
+		BeltRamp = 300, -- studs of fall line
+		BeltLow = { 0.03, 0.09 }, -- slope: about 2 to 5 degrees
+		BeltHigh = { 0.45, 0.6 }, -- slope: about 24 to 31 degrees (27 to 37 left the road stranded above scarps)
+		BeltsUp = 10000, -- studs of fall line
+		BeltsDown = 60000,
+		BeltStep = 16, -- studs
+		BeltWarp = { 300, 4000 }, -- studs
+		-- RIDGES AND GULLIES on the belts: {studs across, studs either way, kind} per octave of
+		-- noise, `Stretch` times longer down the fall line than across it, so they run down the
+		-- mountain. "ridge": sharp crests, promontories standing out; "gully": V-shaped, carving
+		-- in; none, rounded. Their height is scaled by how steep the belt is there: `ReliefLow`
+		-- of it where the belt's slope is `ReliefSlopes[1]` or less, all of it from `[2]`
+		Octaves = { { 1400, 80, "ridge" }, { 600, 35, "gully" }, { 220, 8 } },
+		Stretch = 2.5,
+		ReliefLow = 0.25,
+		ReliefSlopes = { 0.05, 0.6 },
 		-- THE MOUNTAIN LEADS, THE ROAD FOLLOWS (T-226, features/road-on-the-slope.md). In a
 		-- ground run the road reads everything from h alone, with no height band, descent rate
 		-- or fixed heading of its own, so changing h changes the road with no road code touched.
@@ -498,17 +518,44 @@ local Spline = {
 		AimAt = { 60, 180 }, -- studs ahead
 		AimSpan = 60, -- studs
 		LegGrade = { 0.035, 0.07 }, -- descent per stud of road along a leg: 2 to 4 degrees
+		LegGradeSteep = 0.1, -- plus this much of h's slope there (T-228), to `FollowGrade` at most
+		-- less this much a stud for every stud the road is above h where it is (more if below):
+		-- a road left above the mountain turns across it until the mountain is back
+		CatchUp = 1 / 150, -- (1 / 100 measured worse on 20 seeds, and one boxed in)
 		LegTiltMax = 75, -- degrees off straight across
 		FollowGrade = 0.9,
-		AimMinLimit = 12, -- degrees
-		DownhillBias = 0.01,
+		-- A SHARP PLANNED TURN (a hairpin, a switchback) that would leave the road more than
+		-- `TurnMaxOff` studs off h is laid further on (`Mountain.RetryAfter` each time, up to
+		-- `TurnRetries` times) where it fits better: mid-turn the road heads straight down
+		-- the slope, which a steep scarp leaves it far above (T-228)
+		TurnMaxOff = 20, -- studs
+		TurnRetries = 6,
+		AimMinLimit = 5, -- degrees (12 let a road on a 40-degree scarp stray to a 13-degree grade)
+		DownhillBias = 0.05, -- (0.01 let the aim swing round on a near-flat bench and the road box itself in, T-228)
 		-- THE CUT: under the road and its runoff the ground sits this far below their surface,
-		-- and past the runoff's outer edge it blends back to h over this many studs, at about
-		-- `BlendAngle`, never shorter than `BlendMin` or longer than `BlendMax`
+		-- and past the runoff's outer edge it blends back to h, never over more than `BlendMax`
+		-- studs; how steeply, from the side slope (`BlendAngles`, below; 45 degrees and at least
+		-- 20 studs until T-228)
 		Under = 0.25, -- studs
-		BlendMin = 20, -- studs
-		BlendMax = 60,
-		BlendAngle = 45, -- degrees
+		BlendMax = 60, -- studs
+		-- WHAT IS BESIDE THE ROAD FROM THE SIDE SLOPE (T-228, features/road-on-the-slope.md): how
+		-- steep h is across the road, from h `SideSpan` studs either side of the centre line,
+		-- read as 0 under `SlopeShallow` degrees, 1 over `SlopeSteep`, eased between. From it:
+		-- the runoff, `RunoffWide` studs on shallow ground to `RunoffThin` on steep (a width
+		-- every `RunoffSlopeEvery` studs, changing no faster than a quarter of a stud a stud);
+		-- and the cut or fill past the runoff's edge, at `BlendAngles` (shallow, steep) and no
+		-- narrower than `BlendMins`: a slight lip and drop on shallow ground, a wall uphill and
+		-- a drop downhill on steep. Their heights are what it takes to lay the road and its
+		-- runoff flat into that slope
+		SideSpan = 48, -- studs
+		SlopeShallow = 8, -- degrees
+		SlopeSteep = 30, -- degrees
+		RunoffWide = 40, -- studs
+		RunoffThin = 12, -- studs
+		RunoffSlopeEvery = 32, -- studs
+		BlendAngles = { 30, 65 }, -- degrees: shallow, steep
+		BlendMins = { 20, 6 }, -- studs: shallow, steep
+		BlendFoot = 1.5, -- studs past the runoff's edge, flat, before the cut or fill begins
 		RockAngle = 45, -- degrees: ground steeper than this is drawn as rock
 		-- how a point hears the road: each station (every `CheckStep` studs) answers for the
 		-- points within `Look` studs of square beside it, and of two stretches the nearer

@@ -357,6 +357,20 @@ function SplineGen._terrain(self: Gen, sec: Spline.Section)
 		end
 	end
 
+	-- A GROUND RUN'S RUNOFF (T-228): from the mountain's side slope, wide on shallow ground
+	-- and thin on steep (`_slopeRunoff`), not at random. A grove only where it is shallow the
+	-- whole way: its wide runoff on a steep slope would be a deep cut
+	local slope = if self.ground and tag ~= "Start" then self:_slopeRunoff(sec) else nil
+	if slope then
+		local G = Config.Spline.Ground
+		for _, kn in slope do
+			if kn[2] < G.RunoffWide - 1 then
+				grove[-1], grove[1] = nil, nil
+				break
+			end
+		end
+	end
+
 	-- THE RUNOFF: a width every `RunoffKnotEvery` studs, each side on its own, never
 	-- changing faster than a quarter of a stud per stud, so the grass's edge never runs at
 	-- the car faster than about 14 degrees (smoothstep's steepest is 1.5 times that)
@@ -367,6 +381,19 @@ function SplineGen._terrain(self: Gen, sec: Spline.Section)
 		end
 		local out = {}
 		local prev, prevAt = self.runoff[side], 0
+		if slope then
+			for _, kn in slope do
+				local at = kn[1]
+				local w = if grove[side] then between(T.GroveRunoff) else kn[2]
+				local most = 0.25 * (at - prevAt)
+				w = math.clamp(w, prev - most, prev + most)
+				table.insert(out, at)
+				table.insert(out, w)
+				prev, prevAt = w, at
+			end
+			self.runoff[side] = prev
+			return out
+		end
 		local range = if grove[side] then T.GroveRunoff else { T.RunoffMin, T.RunoffMax }
 		local function knot(at: number)
 			local w = between(range)
@@ -936,6 +963,32 @@ local function walk(x: number, z: number, yaw0: number, k0: number, knots: { num
 	return true
 end
 
+-- A ground run's runoff along a section, from the mountain's side slope (T-228): {ds, width}
+-- every `RunoffSlopeEvery` studs or so, the last at its end, the width `RunoffWide` on
+-- shallow ground to `RunoffThin` on steep (`Ground.steepness`). The same both sides.
+function SplineGen._slopeRunoff(self: Gen, sec: Spline.Section): { { number } }
+	local G = Config.Spline.Ground
+	local f = self.ground :: Ground.Field
+	local len = sec.len
+	local n = math.max(1, math.ceil(len / G.RunoffSlopeEvery - 1e-9))
+	local x0, z0, yaw0, k0 = self.spline:tip()
+	local out: { { number } } = {}
+	walk(x0, z0, yaw0, k0, sec.k, len / n, len / n, function(u, x, z)
+		if #out < n then
+			local yaw = yawAlong(yaw0, k0, sec.k, u)
+			local q = Ground.steepness(f, x, z, math.cos(yaw), -math.sin(yaw))
+			table.insert(out, { if #out == n - 1 then len else u, G.RunoffWide + (G.RunoffThin - G.RunoffWide) * q })
+		end
+		return true
+	end)
+	if #out == 0 then
+		table.insert(out, { len, self.runoff[1] })
+	elseif out[#out][1] < len then
+		out[#out][1] = len
+	end
+	return out
+end
+
 --------------------------------------------------------------------------------
 -- Grand cliffs (T-185)
 --------------------------------------------------------------------------------
@@ -1290,8 +1343,12 @@ function SplineGen._slopeAim(self: Gen, slope: Slope): (number, number, number, 
 	local C = Config.Spline
 	local G, M = C.Ground, C.Mountain
 	local f = self.ground :: Ground.Field
-	local x, z, yaw = self.spline:tip()
+	local x, z, yaw, _, _, _, y = self.spline:tip()
 	local fx, fz = -math.sin(yaw), -math.cos(yaw)
+	-- CATCHING UP (T-228): a road above the mountain heads more across it, so the mountain
+	-- comes back up to it; one below heads more down it. The road's own
+	-- grade can't do it alone: it may fall 8 degrees at most, a scarp falls 30 and more
+	local catch = (y - followH(f, x, z, G.FollowRadius)) * G.CatchUp
 	local gx, gz = 0, 0
 	for _, a in G.AimAt do
 		local ax, az = gradient(f, x + fx * a, z + fz * a, G.AimSpan)
@@ -1313,14 +1370,25 @@ function SplineGen._slopeAim(self: Gen, slope: Slope): (number, number, number, 
 	-- the furthest off across the road can head and still keep its grade followable
 	local gFollow = math.tan(math.rad(C.MaxGrade)) * G.FollowGrade
 	local steepest = if S > gFollow then math.asin(gFollow / S) else math.pi * 0.5
+	-- the tilt down the slope off straight across that makes the mountain fall `gd` a stud
+	-- along the road (negative: up it)
+	local function tilt(gd: number): number
+		if S <= 1e-9 then
+			return if gd >= 0 then math.pi * 0.5 else -math.pi * 0.5
+		end
+		return math.asin(math.clamp(gd / S, -1, 1))
+	end
 	local t
 	if slope.kind == "fall" then
 		t = math.pi * 0.5
 	elseif slope.kind == "down" then
-		t = steepest
+		t = math.clamp(tilt(gFollow * 0.95 - catch), 0, steepest)
 	else
-		t = if S > 1e-9 then math.asin(math.min((slope.gd or 0) / S, 1)) else math.pi * 0.5
-		t = math.min(t, math.rad(G.LegTiltMax))
+		-- steeper on steeper ground (T-228): legs stacked on a scarp spread apart sooner, and
+		-- the road no longer boxes itself in under the leg above
+		local gd = math.min((slope.gd or 0) + G.LegGradeSteep * S, gFollow * 0.95)
+		-- (never up the slope: toward the leg above, it boxed the road in after a hairpin)
+		t = math.clamp(tilt(gd - catch), 0, math.rad(G.LegTiltMax))
 	end
 	local hx, hz = cx * math.cos(t) + dx * math.sin(t), cz * math.cos(t) + dz * math.sin(t)
 	local aim = math.atan2(-hx, -hz)
@@ -1631,8 +1699,11 @@ function SplineGen._planLeg(self: Gen)
 	local nextGd = if self.ground then between(G.LegGrade) else nil
 	local nextLeg: Slope? = if self.ground then { kind = "leg", side = -side, gd = nextGd } else nil
 	if r:NextNumber() < M.TurnaroundSwitchbackChance then
-		turn("turnaround", down, turnDir, M.SwitchbackRadius, "Switchback", aim, downhill("fall"))
-		stretch(between(M.SwitchbackGap), "gap", down, math.rad(10), downhill("fall"))
+		-- (a ground run's gap runs as straight down as the road can follow, T-228: on a steep
+		-- scarp, straight down left it 200 studs above the mountain; there the switchback is,
+		-- in effect, a hairpin)
+		turn("turnaround", down, turnDir, M.SwitchbackRadius, "Switchback", aim, downhill("down"))
+		stretch(between(M.SwitchbackGap), "gap", down, math.rad(10), downhill("down"))
 		turn("switchbackOut", nextAim, turnDir, M.SwitchbackRadius, "Switchback", down, nextLeg)
 	else
 		turn("turnaround", nextAim, turnDir, M.HairpinRadius, "Hairpin", aim, nextLeg)
@@ -1731,9 +1802,23 @@ function SplineGen._turn(self: Gen, item: Item): (Spline.Section | string)?
 						local tail=ramp(bank[#bank],0,math.rad(C.MaxBankRate)/1.5,0,emittedLen-len)
 						for j=1,#tail,2 do table.insert(bank,len+tail[j]);table.insert(bank,tail[j+1]) end
 					end
-					local sec={len=emittedLen,k=emitted,g=pickGrade(self,g0,y0,emittedLen,fit and self.flip>0,nextMove,emitted),b=bank,tag=item.tag}
+					local g, off
+					if self.ground then
+						-- a ground run (T-228): the grade follows the mountain, and how far off it
+						-- the turn leaves the road counts in its fit, so a turn a steep scarp
+						-- would leave stranded is laid further on, where it fits
+						g, off = self:_followGrade(emitted, g0, y0)
+					else
+						g = pickGrade(self,g0,y0,emittedLen,fit and self.flip>0,nextMove)
+					end
+					local sec={len=emittedLen,k=emitted,g=g,b=bank,tag=item.tag}
 					if not fit then return sec end
 					local r=self:_fitTurn(sec,item)
+					if off then
+						r.off=off
+						if off>C.Ground.TurnMaxOff then r.ok=false end
+						r.score+=off
+					end
 					self.stats.hillChecked+=1
 					if not r.ok then self.stats.hillRejected+=1 end
 					if not reading or (r.ok and not reading.ok) or (r.ok==reading.ok and r.score<reading.score) then best,reading=sec,r end
@@ -1744,7 +1829,7 @@ function SplineGen._turn(self: Gen, item: Item): (Spline.Section | string)?
 		end
 	end
 	if best and reading then
-		if not reading.ok and (item.hillRetries or 0)<M.TurnLocationRetries then
+		if not reading.ok and (item.hillRetries or 0)<(if self.ground then C.Ground.TurnRetries else M.TurnLocationRetries) then
 			item.hillRetries=(item.hillRetries or 0)+1
 			return nil
 		end

@@ -46,7 +46,7 @@ local function run(check, opts)
 		end
 		check("h is a pure function of the seed and the place", same == 200, `{same} of 200`)
 		check("another seed is another mountain", differ > 150, `{differ} of 200 differ`)
-		check("the road's start sits on the plane", math.abs(Ground.h(a, o.x, o.z) - o.y) < 1e-6, fmt(Ground.h(a, o.x, o.z) - o.y, 6))
+		check("the road's start sits on the mountain", math.abs(Ground.h(a, o.x, o.z) - o.y) < 1e-6, fmt(Ground.h(a, o.x, o.z) - o.y, 6))
 		-- the relief's range over 4 km by 4 km
 		local lo, hi = math.huge, -math.huge
 		for x = -2000, 2000, 25 do
@@ -55,10 +55,19 @@ local function run(check, opts)
 				lo, hi = math.min(lo, r), math.max(hi, r)
 			end
 		end
-		check("relief: ridges and gullies of tens of studs", hi - lo > 40 and hi - lo < 260, `{fmt(lo)} to {fmt(hi)}`)
-		-- the plane rises up the fall line
-		local up = Ground.base(a, o.x + a.ux * 100, o.z + a.uz * 100) - Ground.base(a, o.x, o.z)
-		check("the plane rises Slope up the fall line", math.abs(up - G.Slope * 100) < 1e-6, fmt(up, 3))
+		check("relief: ridges and gullies of tens of studs", hi - lo > 40 and hi - lo < 400, `{fmt(lo)} to {fmt(hi)}`)
+		-- the belts rise up the fall line, steep and shallow (T-228)
+		local up = Ground.base(a, o.x + a.ux * 2000, o.z + a.uz * 2000) - Ground.base(a, o.x, o.z)
+		local least, most = math.huge, 0
+		for u = -20000, 5000, 50 do
+			local sl = Ground.beltSlope(a, o.x + a.ux * u, o.z + a.uz * u)
+			least, most = math.min(least, sl), math.max(most, sl)
+		end
+		check(
+			"the belts rise up the fall line, shallow and steep",
+			up > 0 and least <= G.BeltLow[2] and most >= G.BeltHigh[1],
+			`{fmt(up)} studs up over 2 000; slopes {fmt(math.deg(math.atan(least)))} to {fmt(math.deg(math.atan(most)))} degrees`
+		)
 	end
 
 	-- "current" lays exactly the road it always has
@@ -323,6 +332,13 @@ function Tests.profile(_, opts)
 		offGroundLaid = 0,
 		sections = 0,
 		perSeed = {},
+		-- by the mountain's slope across the road (T-228): stations, and the mean runoff, wall
+		-- (uphill ground `out` past the edge, above it) and drop (downhill, below it)
+		bySlope = {
+			shallow = { n = 0, runoff = 0, wall = 0, drop = 0 },
+			middle = { n = 0, runoff = 0, wall = 0, drop = 0 },
+			steep = { n = 0, runoff = 0, wall = 0, drop = 0 },
+		},
 	}
 	for _, seed in seeds do
 		local t0 = os.clock()
@@ -369,6 +385,19 @@ function Tests.profile(_, opts)
 				local d = side * (w + out)
 				above[side] = Ground.h(field, x + rx * d, z + rz * d) - sp:terrainY(s, side * w)
 			end
+			do
+				local G = Config.Spline.Ground
+				local D = G.SideSpan
+				local hl = Ground.h(field, x - rx * D, z - rz * D)
+				local hr = Ground.h(field, x + rx * D, z + rz * D)
+				local deg = math.deg(math.atan(math.abs(hr - hl) / (2 * D)))
+				local up = if hr > hl then 1 else -1
+				local bin = res.bySlope[if deg < G.SlopeShallow then "shallow" elseif deg > G.SlopeSteep then "steep" else "middle"]
+				bin.n += 1
+				bin.runoff += (sp:runoffAt(s, -1) + sp:runoffAt(s, 1)) * 0.5
+				bin.wall += above[up]
+				bin.drop += -above[-up]
+			end
 			if above[-1] > edge and above[1] > edge then
 				res.trench += 1
 				mine.trench += 1
@@ -384,6 +413,12 @@ function Tests.profile(_, opts)
 	table.sort(cuts)
 	local function pct(p: number): number
 		return cuts[math.clamp(math.floor(#cuts * p + 0.5), 1, #cuts)] or 0
+	end
+	for _, bin in res.bySlope do
+		local n = math.max(bin.n, 1)
+		bin.runoff /= n
+		bin.wall /= n
+		bin.drop /= n
 	end
 	res.cutMedian = pct(0.5)
 	res.cutP95 = pct(0.95)
