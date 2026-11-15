@@ -380,6 +380,65 @@ function Tests.gradeRules()
 	local _,high=g:_gradeEnvelope(.1,g.spline.origin.y+C.Mountain.ClimbTop+C.MaxHeight-6,{40,.1},false)
 	check("reaching the top reserves braking to a stopped band",g:_postBandRate(40,false)==0 and high>C.MaxHeight,
 		`counterexample is rejected: highest relative height {high}, limit {C.MaxHeight}`)
+	for _,sense in {-1,1} do
+		for _,climbing in {false,true} do
+			g=Gen.new(203);g.sense=sense;g.drift=-C.Mountain.DescentRate*sense;g.climbing=climbing;g.flipWanted=false
+			local move=(if climbing then C.Mountain.ClimbRate else -C.Mountain.DescentRate)*sense
+			local length=if climbing then 5 else 20
+			local boundary=(if climbing then C.Mountain.ClimbTop else C.Mountain.DescentFloor)*sense
+			g.centre=boundary-move*(length+5)
+			local relative=if move<0 then C.MinHeight+.01 else C.MaxHeight-.01
+			local y=g.spline.origin.y+g.centre+relative
+			local lo,hi=g:_gradeEnvelope(move,y,{length,move},false)
+			check(`sense {sense}, climb {tostring(climbing)}: clamp just beyond section reserves a full stop`,
+				g:_postBandRate(length,false)==move and (lo<C.MinHeight or hi>C.MaxHeight),
+				`band still moves at emitted end; future certified bounds [{lo},{hi}] reject the old accepted {relative}`)
+		end
+		-- Stopping immediately at zero can overshoot the other height limit while
+		-- the band continues moving. A legal moving-then-stopping path must remain
+		-- available, rather than causing unnecessary candidate rejection.
+		for _,incoming in {0,.02*sense,-.01*sense} do
+			g=Gen.new(203);g.sense=sense;g.drift=-.04*sense;g.climbing=false;g.flipWanted=false
+			local move=-.04*sense
+			local length,delay=20,40
+			g.centre=C.Mountain.DescentFloor*sense-move*(length+delay)
+			local endRelative=158.8*sense
+			local y=g.spline.origin.y+g.centre+endRelative-(incoming-move)*length
+			local lo,hi=g:_gradeEnvelope(incoming,y,{length,incoming},false)
+			check(`sense {sense}, incoming {incoming}: moving-first continuation remains feasible`,lo>=C.MinHeight-1e-6 and hi<=C.MaxHeight+1e-6,
+				`bounds [{lo},{hi}] include the zero/opposite-grade hold through the future clamp`)
+		end
+		g=Gen.new(203);g.sense=sense;g.drift=-.04*sense;g.climbing=false;g.flipWanted=false
+		local move=-.04*sense
+		g.centre=C.Mountain.DescentFloor*sense-move*120
+		local y=g.spline.origin.y+g.centre+159.99*sense
+		local lo,hi=g:_gradeEnvelope(move,y,{20,move},false)
+		check(`sense {sense}: later braking preserves a safe state at the opposite band edge`,lo>=C.MinHeight and hi<=C.MaxHeight,
+			`bounds [{lo},{hi}]; immediate or early braking would reject this state`)
+	end
+	g=Gen.new(203);g.mode="traverse";g.centre=0;g.drift=0;g.groupSign=nil
+	local sp=g.spline
+	local _,_,_,_,initial,_,y=sp:tip()
+	local length=10000
+	local target=sp.origin.y+C.MinHeight-1
+	local peak=2*(target-y)/length-.5*initial
+	sp:append({len=length,k={length,0},g={length*.5,peak,length,0},b={length,0}})
+	local before=sp.length
+	local clear=g:_clear({C.EscapeLength,0})
+	local rejectedHeight=false
+	for _=1,C.CandidateTries do
+		local candidate,why=g:_candidate()
+		if candidate then break end
+		if why=="height" then rejectedHeight=true;break end
+	end
+	-- Isolate the final escape after independently exercising real candidates.
+	-- The straight plan is clear, so a crowding stall cannot satisfy this check.
+	g._candidate=function()return nil,"height" end
+	local escapes=g.stats.escapes
+	local emitted=g:step()
+	check("an infeasible start cannot emit an unchecked full-grade escape",clear and rejectedHeight and emitted==nil
+		and sp.length==before and g.stats.stalled and g.stats.escapes==escapes+1,
+		`out-of-band fixture: clear plan {clear}, real height rejection {rejectedHeight}, final escape attempted {g.stats.escapes-escapes}`)
 	for _,climbing in {false,true} do
 		g=Gen.new(203);g.climbing=climbing;g.flipWanted=true;g.sideFlipApplied=true;g.groupSign=if climbing then 1 else -1
 		local _,_,yaw=g.spline:tip()
@@ -395,6 +454,153 @@ function Tests.gradeRules()
 			and not g.flipWanted and not g.sideFlipApplied and g.groupSign==nil and math.abs(select(5,g.spline:tip())-expected)<1e-6,
 			"phase changes only after its actual straight grade transition commits")
 	end
+	local passed=0;for _,c in checks do if c.ok then passed+=1 end end
+	return {passed=passed,total=#checks,checks=checks}
+end
+
+function Tests.brakingIntegration()
+	assert(game:GetService("RunService"):IsStudio())
+	local C,Policy=Config.Spline,require(RS.Shared.Road.SplineGradePolicy)
+	local checks={}
+	local function check(name,ok,detail)table.insert(checks,{name=name,ok=ok,detail=detail})end
+	local function fixture(sense,climbing,recovery)
+		local g=Gen.new(203);g.mode="traverse";g.sense=sense;g.climbing=climbing
+		g.drift=-C.Mountain.DescentRate*sense;g.flipWanted=recovery;g.sideFlipApplied=recovery
+		local move=(if climbing then C.Mountain.ClimbRate else -C.Mountain.DescentRate)*sense
+		local boundary=(if climbing then C.Mountain.ClimbTop else C.Mountain.DescentFloor)*sense
+		local delay=if climbing then 10 else 25
+		g.centre=if recovery then boundary else boundary-move*delay
+		local relative=if recovery then 0 elseif move<0 then C.MinHeight+.01 else C.MaxHeight-.01
+		local incoming=if recovery then 0 else move
+		local sp=g.spline
+		local _,_,_,_,initial,_,y=sp:tip()
+		local length=10000
+		local target=sp.origin.y+g.centre+relative
+		local peak=2*(target-y)/length-.5*(initial+incoming)
+		local history=if g.biomes then g.biomes:records(sp.length,sp.length+length) else nil
+		sp:append({len=length,k={length,0},g={length*.5,peak,length,incoming},b={length,0},bm=history})
+		return g,incoming,target,delay,move
+	end
+	-- Independently integrate the actual Spline height track. Find extrema using
+	-- its gradeAt derivative and bisection between real knots/centre phase cuts.
+	local function measured(knots,incoming,y,centre,centreRate,phaseCuts)
+		local length=knots[#knots-1]
+		local road=Spline.new({x=0,y=y,z=0,yaw=0})
+		road:append({len=1,k={1,0},g={1,incoming},b={1,0}})
+		local offset=road:heightAt(1)-y
+		road:append({len=length,k={length,0},g=knots,b={length,0}})
+		local times={0,length};local ordered=true;local last,grade,rate=0,incoming,0
+		for i=1,#knots,2 do
+			local t=knots[i];ordered=ordered and t>last
+			rate=math.max(rate,math.abs(road:gradeAt(1+t)-grade)/math.max(t-last,1e-12))
+			last,grade=t,road:gradeAt(1+t);table.insert(times,t)
+		end
+		for _,t in phaseCuts do if t>0 and t<length then table.insert(times,t) end end
+		table.sort(times)
+		local low,high=math.huge,-math.huge
+		local function sample(t)
+			local relative=road:heightAt(1+t)-offset-centre(t)
+			low=math.min(low,relative);high=math.max(high,relative)
+		end
+		for i,t in times do
+			sample(t)
+			local finish=times[i+1]
+			if not finish or finish-t<1e-8 then continue end
+			local a,b=t,finish
+			local moving=centreRate((a+b)*.5)
+			local da,db=road:gradeAt(1+a)-moving,road:gradeAt(1+b)-moving
+			if da*db<0 then
+				for _=1,40 do
+					local middle=(a+b)*.5
+					if (road:gradeAt(1+middle)-moving)*da>0 then a=middle else b=middle end
+				end
+				sample((a+b)*.5)
+			end
+		end
+		return low,high,ordered and rate<=C.MaxGradeRate+1e-8,rate
+	end
+	local function ordinary(g,incoming,y,delay,move,knots)
+		local centre=g.spline.origin.y+g.centre
+		local extended=table.clone(knots)
+		local length=knots[#knots-1];local stop=math.abs(knots[#knots])/C.MaxGradeRate
+		if stop>1e-7 then table.insert(extended,length+stop);table.insert(extended,0) end
+		return measured(extended,incoming,y,function(t)return centre+move*math.min(t,delay)end,
+			function(t)return if t<delay then move else 0 end,{delay})
+	end
+	for _,sense in {-1,1} do for _,climbing in {false,true} do
+		local label=`sense {sense}, climb {tostring(climbing)}`
+		local g,incoming,y,delay,move=fixture(sense,climbing,false)
+		local candidate,heightRefused=nil,false
+		for _=1,C.CandidateTries do
+			local sec,why=g:_candidate()
+			if sec then candidate=sec;break end
+			heightRefused=heightRefused or why=="height"
+		end
+		local valid,detail=climbing and candidate==nil and heightRefused,"unsafe current rate refused by actual ordinary chooser"
+		if candidate then
+			local lo,hi,rates=ordinary(g,incoming,y,delay,move,candidate.g)
+			valid=not climbing and rates and lo>=C.MinHeight-1e-6 and hi<=C.MaxHeight+1e-6
+			detail=`actual {candidate.tag}: independent bounds [{lo},{hi}], rate/order {rates}`
+		end
+		check(`{label}: actual ordinary chooser handles the near clamp`,valid,detail)
+		g,incoming,y,delay,move=fixture(sense,climbing,false)
+		local grade=g:_curveGrade(incoming,y,80,340,math.sign(move),true,false)
+		valid=climbing and grade==nil;detail="protected chooser refuses an unavoidable overshoot"
+		if grade then
+			local lo,hi,rates=ordinary(g,incoming,y,delay,move,grade)
+			valid=not climbing and rates and lo>=C.MinHeight-1e-6 and hi<=C.MaxHeight+1e-6
+			detail=`protected profile independent bounds [{lo},{hi}], rate/order {rates}`
+		end
+		check(`{label}: protected curve chooser handles the near clamp`,valid,detail)
+		g,incoming,y,delay,move=fixture(sense,climbing,false)
+		local centre=g.centre;local before=g.spline.length;local escapes=g.stats.escapes
+		local clear=g:_clear({C.EscapeLength,0});g._candidate=function()return nil,"height" end
+		local sec=g:step()
+		valid=clear and g.stats.escapes==escapes+1 and (if climbing then sec==nil and g.stats.stalled and g.spline.length==before else sec~=nil)
+		detail=`clear plan {clear}, escape attempted {g.stats.escapes-escapes}, emitted {sec~=nil}`
+		if sec then
+			g.centre=centre -- independent oracle uses the captured pre-commit centre
+			local lo,hi,rates=ordinary(g,incoming,y,delay,move,sec.g)
+			valid=valid and rates and lo>=C.MinHeight-1e-6 and hi<=C.MaxHeight+1e-6
+			detail..=`; independent bounds [{lo},{hi}], rate/order {rates}`
+		end
+		check(`{label}: final escape handles the near clamp`,valid,detail)
+		g,incoming,y=fixture(sense,climbing,true)
+		local length=340
+		grade=g:_curveGrade(incoming,y,80,length,math.sign(move),true,true)
+		assert(grade,`missing recovery profile {label}`)
+		local after=(if climbing then -C.Mountain.DescentRate else C.Mountain.ClimbRate)*sense
+		local start=g.spline.origin.y+g.centre
+		local nextBoundary=(if climbing then C.Mountain.DescentFloor else C.Mountain.ClimbTop)*sense
+		local nextDelay=(nextBoundary-g.centre)/after
+		local exactLo,exactHi=g:_gradeEnvelope(incoming,y,grade,true)
+		local matched,allRates=false,true;local measuredLo,measuredHi,maximumRate=0,0,0
+		local tails=Policy.continuations(grade[#grade],after,C.MaxGradeRate,nextDelay)
+		local allTails=#tails==3
+		for _,tail in tails do
+			allTails=allTails and #tail>=2 and tail[#tail]==0 and tail[#tail-1]>=nextDelay-1e-7
+			local combined=table.clone(grade)
+			for i,value in tail do table.insert(combined,if i%2==1 then length+value else value) end
+			local lo,hi,rates,rate=measured(combined,incoming,y,
+				function(t)return start+after*math.clamp(t-length,0,nextDelay)end,
+				function(t)return if t>length and t<length+nextDelay then after else 0 end,{length,length+nextDelay})
+			allRates=allRates and rates;maximumRate=math.max(maximumRate,rate)
+			if math.abs(lo-exactLo)<1e-6 and math.abs(hi-exactHi)<1e-6 then matched=true;measuredLo,measuredHi=lo,hi end
+		end
+		check(`{label}: recovery continuation matches the real paused/opposite-phase timeline`,matched and allRates and allTails
+			and measuredLo>=C.MinHeight-1e-6 and measuredHi<=C.MaxHeight+1e-6,
+			`independent extrema [{measuredLo},{measuredHi}], certified [{exactLo},{exactHi}], maximum rate {maximumRate}; {#tails} complete zero-ending paths {allTails}`)
+		local section={len=length,k={length,0},g=grade,b={length,0},tag="Straight"}
+		g.preparedGrade={section=section,s0=g.spline.length,startSign=math.sign(move),finish=true}
+		local boundary=g.centre
+		g:_terrain(section);g:_commit(section)
+		local first=g.climbing~=climbing and not g.flipWanted and not g.sideFlipApplied and g.groupSign==nil and math.abs(g.centre-boundary)<1e-7
+		local following={len=100,k={100,0},g={100,after},b={100,0},tag="Straight"}
+		g:_terrain(following);g:_commit(following)
+		check(`{label}: a realistic paused-floor/pass recovery commits once`,first and g.climbing~=climbing and math.abs(g.centre-boundary-after*100)<1e-7,
+			`new phase moves only after the actual transition: centre {boundary} -> {g.centre}`)
+		task.wait()
+	end end
 	local passed=0;for _,c in checks do if c.ok then passed+=1 end end
 	return {passed=passed,total=#checks,checks=checks}
 end

@@ -451,6 +451,17 @@ If another runner retires the credited piece, re-entry preserves earned progress
 
 `Mountain.HairpinGradeBuffer` (40studs) protects the grade sign before/after a hairpin's curved span. Paired switchbacks/doubles also retain that sign through gaps, retries and escapes. Preparation and reversal use crossing/escape-checked straight geometry; no curvature, grade, bank or height limit is relaxed. Terrain `flip` remains at the fall-line crossing while vertical recovery waits for the final outgoing transition. Server-only `groupSign`, `sideFlipApplied` and section-identity `preparedGrade` state never go over the wire. Ordinary `g` knots fully describe the emitted result. `SplineGradePolicy` checks exact relative-height extrema and future stopping reserve against the actual post-commit band rate, including a newly reached floor/top.
 
+T-213 extends that reserve through the next floor/pass clamp even when it falls
+after the emitted section. `SplineGradePolicy.continuations(initial, move, rate,
+clampDelay?)` supplies immediate-zero, moving-then-early-braking and
+moving-then-late-braking paths. Each continues through both clamp and stop; the
+generator accepts only a complete path whose own lower and upper bounds fit.
+All centre clamp/phase cuts and grade roots are included. `_postBandRate` still
+means the actual rate immediately after the commit. Ordinary grade selection,
+protected curves and the final escape use the same certificate. An infeasible
+candidate is rejected; an infeasible last escape stops generation rather than
+emitting unchecked geometry. No section or remote fields change.
+
 Ground, face feet and natural rock geometry share the existing edge-span endpoints. Mesh chunks include the low foot in their one mesh; parts fallback draws the same form as wedges. Mesh chunks remain hidden until complete. The parts fallback publishes small batches progressively while retaining any previous chunk until replacement is complete; publishing one completed large tree caused a100ms frame. Cancellation and retirement release bounded batches. Publication/terrain work is included in slice statistics.
 
 `SplineSurfaceCuts` samples the entire supported cross-section, including bevel feet and banks. `SplineParts.build(...,{terrain=true,sliceMs=...,cancelled=...})` draws finite ground and capped outer faces/hills as ordinary visual wedges with bounded batches and yielding; the second return contains triangle and slice statistics. The original tarmac-only yardstick call remains supported.

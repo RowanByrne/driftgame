@@ -23,6 +23,28 @@ function Policy.profile(initial:number,target:number,rate:number,protected:numbe
 	return knots
 end
 
+-- Feasible continuations through the NEXT band clamp, including one that falls
+-- just beyond the proposed section. Early/late braking preserve choices near
+-- either height limit; each returned path is checked exactly by the caller.
+function Policy.continuations(initial:number,move:number,rate:number,clampDelay:number?):{{number}}
+	local toward=math.abs(move-initial)/rate
+	if clampDelay==nil then return {if toward>1e-7 then {toward,move} else {}} end
+	local stop=math.abs(initial)/rate
+	local direct={}
+	if stop>1e-7 then table.insert(direct,stop);table.insert(direct,0) end
+	if clampDelay>stop+1e-7 then table.insert(direct,clampDelay);table.insert(direct,0) end
+	local braking=math.abs(move)/rate
+	local function following(brakeAt:number):{number}
+		local out={}
+		if toward>1e-7 then table.insert(out,toward);table.insert(out,move) end
+		local start=math.max(toward,brakeAt)
+		if start>toward+1e-7 then table.insert(out,start);table.insert(out,move) end
+		if braking>1e-7 then table.insert(out,start+braking);table.insert(out,0) end
+		return out
+	end
+	return {direct,following(clampDelay-braking),following(clampDelay)}
+end
+
 function Policy.height(initial:number,y:number,knots:{number},at:number):number
 	local s,g=0,initial
 	for i=1,#knots,2 do
@@ -37,8 +59,9 @@ function Policy.height(initial:number,y:number,knots:{number},at:number):number
 	return y+g*math.max(0,at-s)
 end
 
--- centre has at most one clamp and an optional rate change at the section end.
--- Passing both rates gives all stationary relative-height points exactly.
+-- The caller supplies every centre clamp/rate-change cut and every centre
+-- rate, including a new phase after recovery. These and grade roots give all
+-- stationary relative-height points exactly, regardless of lookahead length.
 function Policy.bounds(initial:number,y:number,knots:{number},origin:number,centre:(number)->number,rates:{number},cuts:{number}?):(number,number)
 	local points={0,knots[#knots-1]}
 	for _,cut in cuts or {} do if cut>0 and cut<knots[#knots-1] then table.insert(points,cut) end end
