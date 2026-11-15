@@ -1,4 +1,4 @@
-# Feature: Road on the slope
+﻿# Feature: Road on the slope
 
 **Status:** plan approved 2026-11-15; step 1 (`T-227`) built, in a lane for the user; step 2 next. Builds on the mesh ground picked in `ground-trial.md`. **Owner task:** `T-226` (feature), branch `feature/road-on-the-slope`.
 
@@ -100,7 +100,7 @@ Seeds 31337, 101 and 2024, 5 000 studs each, every 16 studs (936 stations). Tren
 | Within 6 studs of h | 9% | 96% |
 | Over 20 studs off h | 73% | 0 |
 | Deepest cut / fill | 139.6 / 100.7 | 8.8 / 15.7 |
-| Climbing | 11% of the road | 23% |
+| Climbing | 11% of the road | 24% |
 
 On 12 other seeds over 8 000 studs (6 000 stations): 3 trench and 14 causeway stations, 10 over 20 studs off h, median 0.8, p95 6.9.
 
