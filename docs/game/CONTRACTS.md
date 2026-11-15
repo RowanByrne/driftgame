@@ -894,13 +894,28 @@ Reinserting the identical canonical patch remains an immediate idempotent no-op.
 Records reset their per-call counters even for duplicate insertion and include
 compile, old-index, self-validation and publication timing for diagnostics.
 
-Self-validation groups each original row's actual compiled vertices. Exact
-bounds and outward-padded projection intervals may prove distant groups
-disjoint; outer bank corners supply useful axis directions only. Numerical
-uncertainty or nonfinite projections force the unchanged triangle fallback.
-Within-row and adjacent-row triangle checks remain, and concave inputs retain
-their original validation. The coarse proof adds no contact tolerance and never
-replaces published-index overlap or touching-height checks.
+Self-validation first attempts a proof over the compiler's fixed triangulated
+disk: shared row vertices must match exactly, every actual triangle must have a
+certified strict common orientation, and the actual outer boundary must be
+simple. Conservative binary64 sign bounds refuse uncertain, subnormal or
+nonfinite arithmetic. Touching/crossing/uncertain boundaries decline this proof
+and use the original triangle validation instead; they do not become a new
+rejection rule. A simple boundary and common orientation give degree +/-1,
+which excludes overlapping triangle interiors.
+
+The fallback groups each original row's actual compiled vertices. Exact bounds
+and outward-padded projection intervals may prove distant groups disjoint;
+outer bank corners supply axis directions only. Uncertain projections retain
+the triangle checks, including within-row and adjacent-row checks. Both proofs
+preserve concave inputs, add no contact tolerance and never replace current
+published-index overlap or touching-height checks. Diagnostics include boundary
+proof/fallback counts and row-group counters.
+
+Compilation reuses a frozen row's exact position, across-bank parameter and q
+values while creating a fresh per-cell t value. Compiled geometry may also keep
+frozen triangle bucket keys by destination cell spacing. These caches contain
+no destination index or mutable index state; every insertion repeats all
+current-index checks. `profile.keysCached` reports that geometry-only reuse.
 
 Planner XZ reservations, precise attached-bank checks and minimum span are
 checked before constructing the hillside baseline. Those checks use the same

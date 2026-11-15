@@ -15,8 +15,9 @@ type Triangle={a:Vertex,b:Vertex,c:Vertex,normal:Vector3,det:number,patch:string
 	minX:number,maxX:number,minZ:number,maxZ:number}
 type Axis={ox:number,oz:number,nx:number,nz:number,low:number,high:number}
 type Group={row:number,first:number,last:number,points:{Point},axes:{Axis},minX:number,maxX:number,minZ:number,maxZ:number}
+type Edge={id:number,a:Point,b:Point,minX:number,maxX:number,minZ:number,maxZ:number}
 type Opening={patch:Patch,bank:string,first:number,last:number}
-type Compiled={triangles:{Triangle},banks:{A:{Triangle},B:{Triangle}}}
+type Compiled={triangles:{Triangle},banks:{A:{Triangle},B:{Triangle}},grids:{[number]:{[Triangle]:{string}}}}
 -- Only patch() can certify a deeply frozen canonical input. Cached geometry
 -- proves that patch's own topology, never compatibility with a mutable index.
 local canonical:{[Patch]:boolean}=setmetatable({},{__mode="k"})
@@ -136,7 +137,13 @@ local function rowGroup(A:{Vertex},B:{Vertex},row:number,first:number,last:numbe
 		group.minX,group.maxX=math.min(group.minX,p[1]),math.max(group.maxX,p[1])
 		group.minZ,group.maxZ=math.min(group.minZ,p[3]),math.max(group.maxZ,p[3])
 	end end
-	local corners={A[1].p,B[1].p,B[#B].p,A[#A].p}
+	return group
+end
+
+local function groupAxes(group:Group):{Axis}
+	if #group.axes>0 then return group.axes end
+	local n=#group.points//2
+	local corners={group.points[1],group.points[n+1],group.points[2*n],group.points[n]}
 	for i,p in corners do
 		local q=corners[i%4+1];local nx,nz=-(q[3]-p[3]),q[1]-p[1]
 		if nx*nx+nz*nz<=1e-20 then continue end
@@ -146,7 +153,7 @@ local function rowGroup(A:{Vertex},B:{Vertex},row:number,first:number,last:numbe
 		axis.low,axis.high=projectionBounds(group,axis)
 		table.insert(group.axes,axis)
 	end
-	return group
+	return group.axes
 end
 
 local function axesSeparate(axes:{Axis},group:Group,counts:any?):boolean
@@ -163,11 +170,113 @@ local function groupsSeparate(a:Group,b:Group,counts:any?):boolean
 		if counts then counts.groupBoxSkips+=1 end
 		return true
 	end
-	if axesSeparate(a.axes,b,counts) or axesSeparate(b.axes,a,counts) then
+	if axesSeparate(groupAxes(a),b,counts) or axesSeparate(groupAxes(b),a,counts) then
 		if counts then counts.groupAxisSkips+=1 end
 		return true
 	end
 	return false
+end
+
+local function normalArithmetic(n:number):boolean
+	return finite(n) and (n==0 or math.abs(n)>=2^-1022)
+end
+
+local function direction(a:Point,b:Point):(number?,number?)
+	local x,z=a[1]-b[1],a[3]-b[3]
+	if not normalArithmetic(x) or not normalArithmetic(z)
+		or (x==0 and a[1]~=b[1]) or (z==0 and a[3]~=b[3]) then return nil,nil end
+	return x,z
+end
+
+-- Sign only when ordinary binary64 error bounds prove it. Subnormal arithmetic
+-- and underflow are uncertain rather than a new geometric tolerance.
+local function bilinearSign(ax:number,az:number,bx:number,bz:number,cross:boolean):number?
+	local c,d=if cross then bz else bx,if cross then bx else bz
+	local p,q=ax*c,az*d
+	if not normalArithmetic(p) or not normalArithmetic(q)
+		or (p==0 and ax~=0 and c~=0) or (q==0 and az~=0 and d~=0) then return nil end
+	local value=if cross then p-q else p+q
+	local error=2^-47*(math.abs(p)+math.abs(q))
+	if not normalArithmetic(value) or not normalArithmetic(error) or math.abs(value)<=error then return nil end
+	return if value>0 then 1 else -1
+end
+
+local function orientation(a:Point,b:Point,c:Point):number?
+	local ax,az=direction(b,a);local bx,bz=direction(c,a)
+	if ax==nil or az==nil or bx==nil or bz==nil then return nil end
+	return bilinearSign(ax,az,bx,bz,true)
+end
+
+local function simpleBoundary(groups:{Group},triangles:{Triangle},cell:number,counts:any?):boolean
+	local function refuse(reason:string):boolean
+		if counts then counts.boundaryFallback=reason end
+		return false
+	end
+	if #groups==0 then return refuse("no compiled rows") end
+	local n=#groups[1].points//2
+	for i,group in groups do
+		if #group.points~=2*n then return refuse("different column counts") end
+		if i>1 then for j=1,n do
+			local a,b=groups[i-1].points[n+j],group.points[j]
+			for k=1,3 do if a[k]~=b[k] then return refuse("different shared vertices") end end
+		end end
+	end
+	local sign=nil
+	for _,triangle in triangles do
+		local here=orientation(triangle.a.p,triangle.b.p,triangle.c.p)
+		if not here or (sign and here~=sign) then return refuse("uncertain triangle orientation") end
+		sign=here
+	end
+	local ring={}
+	for j=1,n do table.insert(ring,groups[1].points[j]) end
+	for _,group in groups do table.insert(ring,group.points[2*n]) end
+	for j=2*n-1,n+1,-1 do table.insert(ring,groups[#groups].points[j]) end
+	for i=#groups-1,1,-1 do table.insert(ring,groups[i].points[n+1]) end
+	local size=#ring
+	if counts then counts.boundarySegments=size end
+	-- A shared endpoint is permitted only for actual cyclic neighbours.
+	for i,current in ring do
+		local previous,nextPoint=ring[(i-2)%size+1],ring[i%size+1]
+		if counts then counts.boundaryAdjacency+=1 end
+		if orientation(previous,current,nextPoint) then continue end
+		local ax,az=direction(previous,current);local bx,bz=direction(nextPoint,current)
+		if ax==nil or az==nil or bx==nil or bz==nil or bilinearSign(ax,az,bx,bz,false)~=-1 then
+			return refuse("uncertain adjacent boundary")
+		end
+	end
+	local staged:{[string]:{Edge}}={}
+	for i,a in ring do
+		local b=ring[i%size+1]
+		if a[1]==b[1] and a[3]==b[3] then return refuse("zero boundary edge") end
+		local edge:Edge={id=i,a=a,b=b,minX=math.min(a[1],b[1]),maxX=math.max(a[1],b[1]),minZ=math.min(a[3],b[3]),maxZ=math.max(a[3],b[3])}
+		local buckets=boxKeys(cell,edge.minX,edge.maxX,edge.minZ,edge.maxZ)
+		local seen:{[Edge]:boolean}={}
+		for _,k in buckets do for _,old in staged[k] or {} do
+			if seen[old] then continue end;seen[old]=true
+			local distance=i-old.id
+			if distance==1 or distance==size-1 then continue end
+			if counts then counts.boundaryPairs+=1 end
+			if edge.maxX<old.minX or old.maxX<edge.minX or edge.maxZ<old.minZ or old.maxZ<edge.minZ then
+				if counts then counts.boundaryBoxSkips+=1 end
+				continue
+			end
+			if counts then counts.boundaryLineTests+=1 end
+			local a1,a2=orientation(edge.a,edge.b,old.a),orientation(edge.a,edge.b,old.b)
+			if a1 and a2 and a1==a2 then continue end
+			local b1,b2=orientation(old.a,old.b,edge.a),orientation(old.a,old.b,edge.b)
+			if b1 and b2 and b1==b2 then continue end
+			return refuse("touching, crossing or uncertain boundary")
+		end end
+		for _,k in buckets do
+			local bucket=staged[k];if not bucket then bucket={};staged[k]=bucket end
+			table.insert(bucket,edge)
+		end
+	end
+	-- This is the compiler's fixed triangulated disk, with matching shared
+	-- vertices and strict common orientation. A simple actual boundary has
+	-- degree +/-1, so two triangle interiors cannot cover the same point.
+	if counts then counts.boundaryCertified=true end
+	return true
 end
 
 local function separated(a:Triangle,b:Triangle,p:Point,q:Point,ox:number,oz:number):boolean
@@ -201,6 +310,7 @@ local function overlaps(a:Triangle,b:Triangle,counts:any?):boolean
 end
 
 local function validateSelf(groups:{Group},triangles:{Triangle},cell:number,counts:any?)
+	if simpleBoundary(groups,triangles,cell,counts) then return end
 	local staged:{[string]:{Group}}={}
 	for _,group in groups do
 		-- Preserve the old triangle proof inside each row and between adjacent
@@ -261,9 +371,11 @@ function Infield.add(index:Index,patch:Patch,validateOnly:boolean?,profile:any?)
 	local selfCounts,oldCounts=nil,nil
 	if profile then
 		profile.rows=#patch.rows;profile.cached=compiled~=nil;profile.validateOnly=validateOnly==true;profile.duplicate=false
+		profile.keysCached=compiled~=nil and compiled.grids[index.cell]~=nil
 		profile.destinationTriangles=#index.triangles;profile.cell=index.cell;profile.triangles=if compiled then #compiled.triangles else 0
 		profile.phase="compile";profile.compileMs=0;profile.oldMs=0;profile.selfMs=0;profile.publishMs=0;profile.ms=0
-		selfCounts={pairs=0,boxSkips=0,sat=0,groupPairs=0,groupBoxSkips=0,groupAxisSkips=0,groupAxisTests=0,groupFallbacks=0}
+		selfCounts={pairs=0,boxSkips=0,sat=0,groupPairs=0,groupBoxSkips=0,groupAxisSkips=0,groupAxisTests=0,groupFallbacks=0,
+			boundaryCertified=false,boundarySegments=0,boundaryPairs=0,boundaryBoxSkips=0,boundaryLineTests=0,boundaryAdjacency=0,boundaryFallback=""}
 		oldCounts={pairs=0,boxSkips=0,sat=0}
 		profile.self=selfCounts;profile.old=oldCounts
 	end
@@ -288,7 +400,14 @@ function Infield.add(index:Index,patch:Patch,validateOnly:boolean?,profile:any?)
 		local sign:number?=nil
 		local collars=false
 		for _,row in patch.rows do if row.floor or math.abs(row.da or 0)+math.abs(row.db or 0)>1e-8 then collars=true;break end end
+		local rowVertices:{[Row]:{Vertex}}={}
 		local function cross(row:Row,t:number):{Vertex}
+			local previous=rowVertices[row]
+			if previous then
+				local copy={}
+				for _,v in previous do table.insert(copy,table.freeze({p=v.p,t=t,u=v.u,q=v.q})) end
+				return copy
+			end
 			local a,b=row.a,row.b
 			local gap=math.sqrt((b[1]-a[1])^2+(b[3]-a[3])^2)
 			assert(gap>.01,"infield has no clear gap")
@@ -305,6 +424,7 @@ function Infield.add(index:Index,patch:Patch,validateOnly:boolean?,profile:any?)
 			else
 				vertex(0,a[2]);vertex(.5,(a[2]+b[2])*.5);vertex(1,b[2])
 			end
+			rowVertices[row]=out
 			return out
 		end
 		for i=1,#patch.rows-1 do
@@ -339,10 +459,13 @@ function Infield.add(index:Index,patch:Patch,validateOnly:boolean?,profile:any?)
 	end
 	if profile then profile.triangles=#pending;profile.compileMs=(os.clock()-began)*1000;profile.phase="old" end
 	local oldStarted=if profile then os.clock() else 0
-	local byTriangle:{[Triangle]:{string}}={}
+	local cachedGrid=if compiled then compiled.grids[index.cell] else nil
+	local byTriangle:{[Triangle]:{string}}=cachedGrid or {}
+	if profile then profile.keysCached=cachedGrid~=nil end
 	for _,triangle in pending do
 		local seen:{[Triangle]:boolean}={}
-		local buckets=keys(index,triangle);byTriangle[triangle]=buckets
+		local buckets=byTriangle[triangle]
+		if not buckets then buckets=table.freeze(keys(index,triangle));byTriangle[triangle]=buckets end
 		for _,k in buckets do
 			for _,id in index.hash[k] or {} do
 				local old=index.triangles[id]
@@ -357,7 +480,9 @@ function Infield.add(index:Index,patch:Patch,validateOnly:boolean?,profile:any?)
 	if not compiled then
 		validateSelf(groups,pending,math.min(index.cell,32),selfCounts)
 		banks=table.freeze({A=table.freeze(banks.A),B=table.freeze(banks.B)})
-		compiledOf[patch]=table.freeze({triangles=table.freeze(pending),banks=banks})
+		compiledOf[patch]=table.freeze({triangles=table.freeze(pending),banks=banks,grids={[index.cell]=table.freeze(byTriangle)}})
+	elseif not cachedGrid then
+		compiled.grids[index.cell]=table.freeze(byTriangle)
 	end
 	if profile then profile.selfMs=(os.clock()-selfStarted)*1000;profile.phase="validated";profile.ms=(os.clock()-began)*1000 end
 	-- Validation is complete before the index acquires any of the patch.

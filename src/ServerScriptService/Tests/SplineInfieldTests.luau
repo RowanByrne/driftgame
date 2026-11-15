@@ -152,6 +152,27 @@ function Tests.run(_self,subject)
 	check("distant rows cannot hide a global strip intersection",not windingOk and #wrapped.triangles==0
 		and windingCounts.self and windingCounts.self.groupFallbacks>0 and windingCounts.self.sat>0,
 		"more than one full annulus turn has valid local cells but overlapping nonadjacent rows")
+	local closed={}
+	for i=1,9 do closed[i]=winding[i] end
+	closed[9]=table.clone(closed[9]);closed[9].a=table.clone(closed[1].a);closed[9].b=table.clone(closed[1].b)
+	local closedIndex=Infield.new();local closedCounts={}
+	local closedOk=pcall(function()Infield.add(closedIndex,Infield.patch("legacy closed seam",closed),nil,closedCounts)end)
+	check("a repeated boundary seam keeps the legacy touching decision",closedOk and not closedCounts.self.boundaryCertified
+		and closedCounts.self.pairs>0 and Infield.sample(closedIndex,25,0)~=nil,
+		"a nonsimple boundary refuses the fast proof; it does not reject an otherwise accepted touching strip")
+	local underflowFallbacks=0
+	for i,input in {
+		{{sa=100,sb=900,sideA=1,sideB=-1,a={0,0,1e-320},b={40,0,0},weight=1},
+			{sa=120,sb=880,sideA=1,sideB=-1,a={0,0,-20},b={40,0,-20},weight=1}},
+		{{sa=100,sb=900,sideA=1,sideB=-1,a={0,0,0},b={40,0,-40},weight=1},
+			{sa=120,sb=880,sideA=1,sideB=-1,a={1e-300,0,20},b={40,0,-20+2e-14},weight=1}},
+	} do
+		local tiny=Infield.new();local work={}
+		local accepted=pcall(function()Infield.add(tiny,Infield.patch(`uncertain arithmetic {i}`,input),nil,work)end)
+		if accepted and not work.self.boundaryCertified and work.self.pairs>0 and Infield.sample(tiny,20,-10) then underflowFallbacks+=1 end
+	end
+	check("subnormal differences and products use the original triangle proof",underflowFallbacks==2,
+		`{underflowFallbacks}/2 valid floors retain support while their boundary arithmetic remains uncertain`)
 	local collarsAtLargeOrigin={}
 	for i=0,5 do
 		local width=if i%2==0 then 20 else 60
@@ -161,7 +182,8 @@ function Tests.run(_self,subject)
 	local varied=Infield.new();local variedCounts={}
 	local variedOk=pcall(function()Infield.add(varied,Infield.patch("varying actual collar points",collarsAtLargeOrigin),nil,variedCounts)end)
 	check("row envelopes retain changing collars at large coordinates",variedOk and #varied.triangles==100
-		and variedCounts.self.groupPairs>0 and variedCounts.self.groupBoxSkips+variedCounts.self.groupAxisSkips>0
+		and (variedCounts.self.boundaryCertified or variedCounts.self.groupPairs>0
+			and variedCounts.self.groupBoxSkips+variedCounts.self.groupAxisSkips>0)
 		and Infield.sample(varied,65546,-1048581)~=nil,"actual compiled points, not nominal outer corners, bound every row")
 	local oldY=Infield.sample(index,20,-10).y
 	local overlap=pcall(function()Infield.add(index,Infield.patch("overlap",rows(10,12)))end)
@@ -193,12 +215,20 @@ function Tests.run(_self,subject)
 		"only the module's own deep frozen canonical patches acquire a topology certificate")
 	local measured=Infield.new(16);local measuredPatch=Infield.patch("profiled floor",rows(0,2));local counters={}
 	Infield.add(measured,measuredPatch,nil,counters)
-	local reconciled=counters.triangles==4 and counters.rows==2 and counters.self.pairs>0
+	local reconciled=counters.triangles==4 and counters.rows==2 and (counters.self.pairs>0 or counters.self.boundaryCertified)
 		and counters.self.pairs==counters.self.boxSkips+counters.self.sat and counters.old.pairs==0
+	check("a simple actual boundary avoids redundant interior pair tests",counters.self.boundaryCertified
+		and counters.self.boundarySegments==6 and counters.self.pairs==0,"the compiler's consistently oriented disk has a simple measured six-edge boundary")
 	local duplicate=Infield.add(measured,measuredPatch,nil,counters)
 	check("per-call profiling cannot retain stale self work on an idempotent replay",reconciled and not duplicate and counters.duplicate
-		and counters.cached and counters.self.pairs==0 and counters.old.pairs==0 and Infield.sample(measured,20,-10).y==1,
+		and counters.cached and counters.self.pairs==0 and not counters.self.boundaryCertified and counters.old.pairs==0 and Infield.sample(measured,20,-10).y==1,
 		"fresh pair counts reconcile; reusing the record for a duplicate clears its work without changing support")
+	local gridFirst,gridAgain={},{}
+	Infield.add(Infield.new(17),measuredPatch,true,gridFirst)
+	local gridDestination=Infield.new(17);Infield.add(gridDestination,measuredPatch,nil,gridAgain)
+	check("geometric bucket keys reuse only matching destination spacing",not gridFirst.keysCached and gridAgain.keysCached
+		and gridFirst.cell==17 and gridAgain.cell==17 and Infield.sample(gridDestination,20,-10).y==1,
+		"keys depend on frozen geometry and spacing; current destination compatibility is still checked")
 	local collarRows=rows(25,25)
 	for _,row in collarRows do row.da=.3;row.db=.3 end
 	local collar=Infield.new();Infield.add(collar,Infield.patch("collar",collarRows))

@@ -359,3 +359,11 @@ Parts teardown took331ms. The corrected fallback publication was6.83ms within
 its9ms guard. Offline bounds and early-clearance improvements are being checked;
 those have not yet cleared the live gates. Historical blockout timings above do
 not establish a pass for this final terrain.
+
+Offline validation now proves simple actual field boundaries before falling
+back to triangle-pair checks, and reuses exact immutable row geometry and hash
+keys. Independent comparisons retain every section, field vertex, contact
+parameter and random-stream state. A saved431-row field's cold validation fell
+to about33ms in the command-line runtime. Whole field planning still spends
+most of its time solving the original hillside at blended ends; these offline
+figures do not clear the20ms Studio gate.
