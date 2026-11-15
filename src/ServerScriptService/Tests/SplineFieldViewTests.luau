@@ -117,6 +117,12 @@ function Tests.runtime(_self,options)
 			for _,peer in view.fields.peers do published[peer.folder]=true end
 			for id,record in view.records do
 				published[record.model]=true
+				if record.boundary then
+					published[record.boundary.folder]=true
+					for _,p in record.boundary.folder:GetChildren() do
+						if p:IsA("BasePart") and p.Transparency>=1 then note(`hidden committed boundary {id}`);break end
+					end
+				end
 				if record.model.Parent~=view.folder then note(`unparented published road {id}`) end
 				if live and live.sources[id]~=record.serial then note(`source serial mismatch {id}`) end
 				local layer=record.model:FindFirstChild("Scenery")
@@ -137,9 +143,9 @@ function Tests.runtime(_self,options)
 				return false
 			end
 			for _,child in view.folder:GetChildren() do
-				if not published[child] and (child:GetAttribute("Fallback") or child.Name=="FieldPeerRoad") then
+				if not published[child] and (child:GetAttribute("Fallback") or child.Name=="FieldPeerRoad" or child.Name=="RoadBoundary") then
 					for _,p in child:GetChildren() do
-						if p:IsA("BasePart") and string.find(p.Name,"OuterRock",1,true) and p.Transparency<1 then early+=1 end
+						if p:IsA("BasePart") and p.Transparency<1 then early+=1 end
 					end
 				end
 				if child:GetAttribute("Fallback") and not published[child] then
@@ -195,6 +201,7 @@ function Tests.runtime(_self,options)
 			return maximum
 		end
 		local oldTop=top(view.fields.live.model);local oldBuilt=view.fields.built
+		local oldBoundaries={};for id,record in view.records do oldBoundaries[id]=record.boundary end
 		local function raised(base)
 			return function(spline,s,side,kind,cap)
 				local points=base(spline,s,side,kind,cap)
@@ -206,6 +213,10 @@ function Tests.runtime(_self,options)
 		for i in view.chunks do view.stale[i]=true end
 		settle("large actual source-height change")
 		local newTop=top(view.fields.live.model)
+		local reused,expected=0,0
+		for id,record in view.records do if oldBoundaries[id] then expected+=1;if record.boundary==oldBoundaries[id] then reused+=1 end end end
+		check("unchanged physical boundaries survive source-only mountain redraws",reused==expected,
+			`reused{reused}/{expected} complete boundary roots; mesh roads already own their feet in the mesh`)
 		check("field seams replace with a large real source change",view.fields.built>oldBuilt and newTop>oldTop+10,
 			`source-only change kept the same spline length; field top{oldTop}→{newTop}, paired fields{view.fields.built-oldBuilt}`)
 		check("every observed frame retains exact published source ownership",invalid==0,

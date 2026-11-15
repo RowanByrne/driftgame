@@ -175,7 +175,9 @@ function Boundary.build(spline:Spline.Spline,s0:number,s1:number,parent:Instance
 	local function plain(name:string,size:Vector3,cf:CFrame,colour:Color3)
 		local p=Instance.new("Part")
 		p.Name=name;p.Anchored=true;p.CanCollide=false;p.CanQuery=false;p.CanTouch=false
-		p.Material=Enum.Material.Metal;p.Color=colour;p.Size=size;p.CFrame=cf;p.Parent=parent
+		p.Material=Enum.Material.Metal;p.Color=colour;p.Size=size;p.CFrame=cf
+		if hiddenToes then p.Transparency=1;table.insert(hiddenToes,p) end
+		p.Parent=parent
 		count+=1
 		if yieldFn then yieldFn() end
 	end

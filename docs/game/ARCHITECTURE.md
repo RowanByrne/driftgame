@@ -196,9 +196,22 @@ pending meshes, and one retirement queue drains old support after hiding its sou
 geometry and freeing mesh slots. Studio-only
 `SplineFieldViewTests.run()` checks selection and transition helpers;
 `Tests:runtime({forceFallback?})` exercises real source-height replacement and bounded
-publication. Initial mesh checks passed; forced Parts found a publication stall.
-The staged-visibility fix awaits lane validation. Atomic generated
-publication remains pending, and generated fields remain disabled.
+publication. `materials()` checks real mixed renderer colours, sky updates and
+consumer-first native release; `toeCuts()` checks redundant nominal geometry.
+Fallback source-only redraws reuse a separately owned physical boundary sibling;
+all rails/feet in a replacement boundary stage hidden. New-root ownership commits
+with the road and borrowed-root cancellation preserves the published boundary.
+Mesh and colour checks passed; the latest forced Parts swap still exceeded the
+9ms guard, so boundary caching awaits lane timing proof. Two delayed native Studio
+crashes have unproven cause; functional cleanup passes do not prove stability.
+
+The opt-in Gen producer binds maneuver identities and complete known arms before
+decoration, then plans only after accepted road/ground registration. One batch
+publishes frozen support, hard reservations and `sec.ip` before section emission;
+a temporary escape envelope protects the tip's next guaranteed continuation.
+`SplineInfieldTests:generator()` checks state/range/grouping, atomic batch/replay
+and optional failure isolation. Natural enabled generation and timing remain
+unverified; generated fields remain disabled.
 
 ## Native baked-shadow trial (Studio only)
 

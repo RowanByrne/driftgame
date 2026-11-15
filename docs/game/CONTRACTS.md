@@ -751,6 +751,15 @@ may overlap its replacement while the shared sliced retirement queue drains it.
 Opening-dependent low rock feet are included in the source visibility array for
 both ordinary fallback chunks and peer strips; old closed feet cannot linger
 after their newly open field publishes.
+Each fallback road record owns an optional `{key,folder}` physical boundary
+sibling under the View. Its clipped distance interval, accepted field revision
+and ground mode identify the complete rails/feet geometry. Source-only mountain
+redraws borrow a matching live boundary without rebuilding or changing its
+visibility. New boundaries stage all rails and feet transparent; commit reveals
+them and retires only replaced ownership. Abort destroys only newly built roots.
+Both eviction paths, failure recovery and Destroy release their boundaries.
+Ground mode is included in job validity and retry identity. Source snapshots
+still exclude physical feet, and Mesh roads retain their feet in the main mesh.
 `SplineBoundary.toeCuts` removes only redundant rings from the former four-stud
 toe geometry: every omitted old vertex must match endpoint interpolation within
 1e-5, both endpoint strips must be planar, all opening/edge knots remain hard,

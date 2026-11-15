@@ -10,7 +10,7 @@ local Boundary=require(game.ReplicatedStorage.Shared.Road.SplineBoundary)
 local FieldView={}
 FieldView.__index=FieldView
 
-export type RoadRecord={model:Instance,serial:number,scenery:{any}?,mask:any,s0:number,s1:number,mesh:boolean}
+export type RoadRecord={model:Instance,serial:number,scenery:{any}?,mask:any,s0:number,s1:number,mesh:boolean,boundary:any?}
 export type FieldRecord={model:Model,mesh:boolean,plan:any,sources:{[number]:number},seams:Folder?,stats:any,forced:boolean}
 export type View=any
 

@@ -253,11 +253,12 @@ function SplineRoadView._job(self:View,i:number?,evictions:{number}?)
 	local revision=self.spline.infieldRevision or 0
 	local index=self.spline.infields
 	local forced=self.forceFallback
+	local groundEnabled=Config.Spline.Biomes.GroundEnabled
 	local function valid():boolean
 		self.peakMeshes=math.max(self.peakMeshes,SplineMesh.liveMeshCount())
 		if self.dead or self.folder.Parent==nil or self.residentEpoch~=epoch
 			or first~=self.spline.firstSample*self.spline.step or revision~=(self.spline.infieldRevision or 0)
-			or index~=self.spline.infields or forced~=self.forceFallback then return false end
+			or index~=self.spline.infields or forced~=self.forceFallback or groundEnabled~=Config.Spline.Biomes.GroundEnabled then return false end
 		if i and self.hasWindow and (i<self.windowLo or i>self.windowHi) then return false end
 		for _,removed in evictions or {} do
 			if self.hasWindow and removed>=self.windowLo and removed<=self.windowHi then return false end
@@ -287,7 +288,7 @@ end
 
 function SplineRoadView._stamp(self:View):string
 	local request=self.fields.request
-	return `{self.residentEpoch}/{self.spline.length}/{self.spline.firstSample}/{self.spline.infieldRevision or 0}/{self.forceFallback}/{self.windowLo}:{self.windowHi}/{if request then request.key else ""}/{if self.fieldTarget then self.fieldTarget.key else ""}`
+	return `{self.residentEpoch}/{self.spline.length}/{self.spline.firstSample}/{self.spline.infieldRevision or 0}/{self.forceFallback}/{Config.Spline.Biomes.GroundEnabled}/{self.windowLo}:{self.windowHi}/{if request then request.key else ""}/{if self.fieldTarget then self.fieldTarget.key else ""}`
 end
 
 function SplineRoadView._canStart(self:View,i:number):boolean
@@ -303,6 +304,7 @@ function SplineRoadView._recoverFieldFailure(self:View)
 	if old then discardField(old) end
 	for _,peer in self.fields.peers do removeChunk(peer.folder) end
 	table.clear(self.fields.peers)
+	for _,record in self.records do if record.boundary then removeChunk(record.boundary.folder) end end
 	for _,chunk in self.chunks do removeChunk(chunk) end
 	table.clear(self.chunks);table.clear(self.records);table.clear(self.builtAt);table.clear(self.short);table.clear(self.stale)
 	self.captureWanted=nil;self.residentEpoch+=1;self.fieldRecoveries+=1
@@ -339,6 +341,8 @@ function SplineRoadView._build(self: View, i: number)
 	local staging=Instance.new("Folder")
 	local chunk:Instance?=nil
 	local scenery:Folder?=nil
+	local boundary:any=nil
+	local newBoundary=false
 	local candidateField:any=nil
 	local createdPeers={}
 	local info:any=nil
@@ -367,9 +371,19 @@ function SplineRoadView._build(self: View, i: number)
 			reset();info=stats
 		end
 		if not valid() then error("road field job cancelled",0) end
-		SplineBoundary.build(self.spline,s0,s1,chunk :: Instance,tick,not mesh,not mesh,stagedRoots[chunk :: Instance])
+		if not mesh then
+			local key=`{s0}:{s1}:{self.spline.infieldRevision or 0}:{Config.Spline.Biomes.GroundEnabled}`
+			local previous=records[i] and records[i].boundary
+			if previous and previous.key==key and previous.folder.Parent==self.folder and not queuedRoots[previous.folder] then boundary=previous
+			else
+				local root=Instance.new("Folder");root.Name="RoadBoundary";root:SetAttribute("S0",s0);root:SetAttribute("S1",s1)
+				boundary=table.freeze({folder=root,key=key});newBoundary=true
+				local hidden={};stageRoot(root,hidden);root.Parent=self.folder
+				SplineBoundary.build(self.spline,s0,s1,root,tick,true,true,hidden)
+			end
+		end
 		self.sourceSerial+=1
-		local record=table.freeze({model=chunk :: Instance,serial=self.sourceSerial,scenery=info.scenery,mask=target,s0=s0,s1=s1,mesh=mesh})
+		local record=table.freeze({model=chunk :: Instance,serial=self.sourceSerial,scenery=info.scenery,mask=target,s0=s0,s1=s1,mesh=mesh,boundary=boundary})
 		local prospective=table.clone(records);prospective[i]=record
 		self.fields.forceFallback=self.forceFallback
 		local _,cover=self.fields:Coverage(prospective,target,tick)
@@ -387,7 +401,9 @@ function SplineRoadView._build(self: View, i: number)
 		local publishStart=os.clock()
 		if (chunk :: Instance).Parent~=self.folder then (chunk :: Instance).Parent=self.folder end
 		showRoot(chunk :: Instance)
+		if boundary then showRoot(boundary.folder) end
 		local old=self.chunks[i]
+		local oldBoundary=records[i] and records[i].boundary
 		self.chunks[i]=chunk :: Instance;self.records[i]=record;self.residentEpoch+=1
 		self.builtAt[i]=builtAt
 		self.chunkRetry[i]=nil
@@ -396,6 +412,7 @@ function SplineRoadView._build(self: View, i: number)
 		self.short[i]=if s1<(i+1)*L-1e-6 then s1 else nil
 		self:_publishField(candidateField,peers)
 		if old and old~=chunk then removeChunk(old) end
+		if oldBoundary and oldBoundary~=boundary then removeChunk(oldBoundary.folder) end
 		self.lastPublishMs=(os.clock()-publishStart)*1000
 		self.worstPublishMs=math.max(self.worstPublishMs,self.lastPublishMs)
 		committed=true
@@ -404,6 +421,7 @@ function SplineRoadView._build(self: View, i: number)
 		if candidateField and candidateField~=self.fields.live then discardField(candidateField) end
 		for _,peer in createdPeers do removeChunk(peer) end
 		if chunk then removeChunk(chunk) end
+		if newBoundary and boundary then removeChunk(boundary.folder) end
 	end
 	removeChunk(staging)
 	if not ok then if valid() then error(err,0) end;return end
@@ -451,9 +469,11 @@ function SplineRoadView._fieldJob(self:View,evictions:{number})
 		self:_publishField(candidateField,peers)
 		for _,i in evictions do
 			local chunk=self.chunks[i]
+			local boundary=self.records[i] and self.records[i].boundary
 			self.chunks[i]=nil;self.records[i]=nil;self.short[i]=nil;self.builtAt[i]=nil;self.stale[i]=nil
 			if self.captureWanted==i then self.captureWanted=nil end
 			if chunk then removeChunk(chunk);self.removed+=1 end
+			if boundary then removeChunk(boundary.folder) end
 		end
 		if #evictions>0 then self.residentEpoch+=1 end
 		self.lastPublishMs=(os.clock()-publishStart)*1000
@@ -518,7 +538,9 @@ function SplineRoadView.Update(self: View, s: number?,position:Vector3?)
 	if #evictions>0 then
 		if self.fields.live or masked then self:_startField(evictions);return end
 		for _,i in evictions do
+			local boundary=self.records[i] and self.records[i].boundary
 			removeChunk(self.chunks[i]);self.chunks[i]=nil;self.records[i]=nil;self.short[i]=nil;self.builtAt[i]=nil;self.stale[i]=nil
+			if boundary then removeChunk(boundary.folder) end
 			self.removed+=1
 		end
 		self.residentEpoch+=1
@@ -631,6 +653,7 @@ function SplineRoadView.DebugState(self: View)
 			parts += #chunk:GetDescendants()
 		end
 	end
+	for _,record in self.records do if record.boundary then parts+=#record.boundary.folder:GetDescendants() end end
 	return {
 		fieldBuilding=self.fieldBuilding,
 		fieldRecoveries=self.fieldRecoveries,
