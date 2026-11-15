@@ -420,6 +420,7 @@ local Spline = {
 			HeadingDot = -.65,
 			Facing = .65,
 			EndBlend = 64,
+			View = { Radius=850, Cell=128, MaxPatches=4 },
 			Walking = { Radius=52, WarmRadius=8, WarmMinRadius=4, WarmFootprint=2, WarmMotionMargin=1,
 				WarmTriangles=96, Thickness=2, SupportTolerance=.02 },
 		},

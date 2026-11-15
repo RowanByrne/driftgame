@@ -728,7 +728,43 @@ partial openings split at frozen bank-row arcs in `SplineBoundary.points`,
 which also feeds supported surface cuts. Wholly removed faces still consume
 the build's yielding/cancellation budget. Terrain Parts support `groundOnly`
 to draw supported road strips without mountain scenery for off-window peers.
-Live View ownership, coverage transitions and producer publication are pending.
+Producer publication remains pending; the candidate live View contract follows.
+
+T-212 live View candidate (awaiting Studio proof): `Drift/SplineFieldView`
+selects complete nearby patches with `SplineInfield.nearPatches`, an indexed,
+sliceable patch-identity query with immutable cached bounds. It bounds candidates
+before compiling their triangles. `SplineRoadView.Update(s,position?)` receives
+the actual driving/walking center. Every committed road record owns immutable
+actual scenery, a unique source serial and its applied mask plan. One job builds
+one candidate road and its companion field from the prospective published
+source map; both source-dependent layers switch without yielding. Eviction and
+final union trimming use field-only companion jobs. Coverage retains all old
+and target road masks until their replacements publish. Oversized unions drain
+old masks before adding distant coverage.
+
+Fallback supported floors may arrive in small batches. `sceneryParent` for
+ordinary terrain Parts and `seamParent` / `incrementalFloor` for field Parts keep
+source-dependent geometry detached until the paired commit. Peer strips draw
+supported road, existing rails and physical feet outside published main arc
+intervals; they always use the current retained first even when an older floor
+union remains visible. Captured unmasked scenery also uses exact finite slabs,
+so its cached front faces match the displayed primitives.
+
+Jobs validate source serials, residency, retained first, accepted field revision,
+road index and forced renderer mode before publication and after yields. Retry
+identities include the window; a failed companion cannot suppress a different
+eviction. If a persistent field failure leaves the current asphalt undrawn, the
+view releases its old clipped scene and restarts ordinary unmasked road drawing.
+Physics/contact/progress do not change during this visual recovery. Live field
+rendering may remain unavailable until a later source change retries it.
+
+`SplineMesh.owns(model)` / `liveMeshCount()` expose allocation ownership, including
+in-flight builders. `release(model)` frees its registered EditableMeshes without
+destroying its ordinary Parts; callers hide the model first and own its eventual
+destruction. The View releases mesh slots synchronously and drains hidden Parts
+through one sliced retirement queue. Five resident roads, one road build and
+old/new field meshes fit the eight-mesh guard. Real registration/removal costs,
+full View lifecycle and generated publication still require lane checks.
 
 ## Studio-only baked shadow trial (T-214)
 

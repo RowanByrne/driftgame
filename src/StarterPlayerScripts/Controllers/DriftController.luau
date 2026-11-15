@@ -569,7 +569,7 @@ function DriftController:_frame(dt: number)
 		if not along and w and w.locate then local owner,_,physical=w.locate(state.position);along=physical or owner end
 		-- off the road altogether (falling, far out): keep what is drawn
 		if along then
-			self.splineView:Update(along)
+			self.splineView:Update(along,state.position)
 		end
 	end
 
@@ -902,8 +902,8 @@ function DriftController:SplineHint()
 	return self.spline,world and world.hint or nil,world and world.contactSnapshot and world.contactSnapshot() or nil
 end
 
-function DriftController:DrawWalkingSpline(spline,physicalS:number)
-	if self.spline==spline and self.splineView and not self:IsDriving() then self.splineView:Update(physicalS) end
+function DriftController:DrawWalkingSpline(spline,physicalS:number,position:Vector3?)
+	if self.spline==spline and self.splineView and not self:IsDriving() then self.splineView:Update(physicalS,position) end
 end
 
 -- Studio fixtures may establish an explicit accepted leg at the actual car

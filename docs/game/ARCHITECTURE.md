@@ -163,8 +163,8 @@ reservations protect them from later road. `SplineInfieldTests.run()` and
 Generated publication remains disabled pending complete live drawing checks.
 `SplineInfieldTests.render()` checks both actual field halves, physics against
 read-back mesh triangles and high-origin fallback wedge rays, plus cancellation.
-The field builders are not yet managed by the live View. The closing helper uses
-one frozen scalar across both bank arcs. Car collision, visible Parts and walking
+The closing helper uses one frozen scalar across both bank arcs. Car collision,
+visible Parts and walking
 box specs consume the same finite panels, including end caps; `closing()` checks
 real car passage, actual visible geometry and cache refresh through arrival and
 retirement. Car, prediction, server credit and walking physical-peer continuity
@@ -184,8 +184,19 @@ preserve supported road and partial physical feet, use exact far/fallback slabs,
 and reject field-crossing caster boxes. Frozen opening-row knots split the
 visible foot so an interior weight dip cannot hide a taller physical boundary.
 `SplineFieldCutsTests.scenery()` reads actual emitted faces/Parts/casters and
-compares source planes, supported strips and foot vertices. Live field View
-ownership, source-version replacement and atomic generation remain pending.
+compares source planes, supported strips and foot vertices.
+
+The live View candidate adds `Drift/SplineFieldView`: patch-first sliced selection,
+complete old/target mask unions, actual source serials, paired road/field publication
+and supported off-window peer arms. `SplineRoadView.Update(s,position?)` follows the
+actual driver or walking root. Source-dependent fallback scenery and seams stay
+detached until their companion field is ready; supported floor batches may arrive
+incrementally. Allocation accounting includes pending meshes, and one retirement
+queue drains hidden Parts after freeing their mesh slots. Studio-only
+`SplineFieldViewTests.run()` checks selection and transition helpers;
+`runtime({forceFallback?})` exercises real source-height replacement and bounded
+publication. This candidate awaits actual lane validation. Atomic generated
+publication remains pending, and generated fields remain disabled.
 
 ## Native baked-shadow trial (Studio only)
 

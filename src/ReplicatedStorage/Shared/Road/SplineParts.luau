@@ -40,6 +40,7 @@ export type Options = {
 	fieldPlan: FieldCuts.Plan?,
 	captureScenery: boolean?,
 	groundOnly: boolean?, -- supported asphalt/lip/banks without new mountain scenery
+	sceneryParent: Instance?, -- optional detached layer for paired source publication
 }
 
 local function point(spline: Spline.Spline, s: number, d: number): Vector3
@@ -53,8 +54,9 @@ local function terrain(spline:Spline.Spline,s0:number,s1:number,parent:Instance,
 	local started=os.clock()
 	local sliceStart,worst,slices=started,0,1
 	local batch=Instance.new("Folder");batch.Name="TerrainSlices"
+	local batchParent=parent
 	local function flush()
-		if #batch:GetChildren()>0 then batch.Parent=parent else batch:Destroy() end
+		if #batch:GetChildren()>0 then batch.Parent=batchParent else batch:Destroy() end
 		batch=Instance.new("Folder");batch.Name="TerrainSlices"
 	end
 	local function tick()
@@ -89,7 +91,7 @@ local function terrain(spline:Spline.Spline,s0:number,s1:number,parent:Instance,
 				pieces,changed,why=FieldCuts.triangle(fieldContext,points[1],points[2],points[3])
 				if not pieces then batch:Destroy();error(`field Parts scenery cut failed: {why}`) end
 				if changed then fieldCutTriangles+=1 end
-			end
+			else pieces={points} end -- captured sources must match the actual finite primitive hull
 		end
 		local function emit(points:{{number}}?)
 			local made={}
@@ -135,6 +137,7 @@ local function terrain(spline:Spline.Spline,s0:number,s1:number,parent:Instance,
 		flush();batch:Destroy();worst=math.max(worst,os.clock()-sliceStart)
 		return out,{triangles=triangles,groundOnly=true,sliceMs=worst*1000,slices=slices,ms=(os.clock()-started)*1000}
 	end
+	if o.sceneryParent then flush();batchParent=o.sceneryParent end
 	-- Far scenery is coarser; its joins and face caps remain the existing hill's.
 	local faces=cuts -- face feet share the supported ground's exact polyline
 	local hill=Hill.context(spline,s0,s1,Profile.draw,tick,true)
@@ -304,6 +307,12 @@ function SplineParts.buildInfield(spline:Spline.Spline,x:number,z:number,radius:
 	model:SetAttribute("InfieldFirst",first)
 	model:SetAttribute("InfieldX",x);model:SetAttribute("InfieldZ",z);model:SetAttribute("InfieldRadius",radius)
 	local batch=Instance.new("Folder");batch.Name="FieldSlices"
+	local batchParent:Instance=model
+	if o.incrementalFloor then model.Parent=parent end
+	local function flush()
+		if #batch:GetChildren()>0 then batch.Parent=batchParent else batch:Destroy() end
+		batch=Instance.new("Folder");batch.Name="FieldSlices"
+	end
 	local sliceStart=started
 	local paused,worst,slices,count,triangles=0,0,1,0,0
 	local budget=(o.sliceMs or Config.Spline.Mesh.SliceMs)/1000
@@ -312,8 +321,7 @@ function SplineParts.buildInfield(spline:Spline.Spline,x:number,z:number,radius:
 		if o.noYield then return end
 		local now=os.clock()
 		if now-sliceStart>=budget or #batch:GetChildren()>=192 then
-			batch.Parent=model
-			batch=Instance.new("Folder");batch.Name="FieldSlices"
+			flush()
 			worst=math.max(worst,os.clock()-sliceStart)
 			local before=os.clock();task.wait();local after=os.clock()
 			paused+=after-before;sliceStart=after;slices+=1
@@ -336,6 +344,7 @@ function SplineParts.buildInfield(spline:Spline.Spline,x:number,z:number,radius:
 			end
 			triangles+=1
 		end
+		if o.seamParent then flush();batchParent=o.seamParent end
 		for i,seam in seams do
 			tick()
 			local t={a={p=seam.points[1]},b={p=seam.points[2]},c={p=seam.points[3]}}
@@ -348,9 +357,13 @@ function SplineParts.buildInfield(spline:Spline.Spline,x:number,z:number,radius:
 			end
 			triangles+=1
 		end
-		tick();batch.Parent=model;model.Parent=parent
+		tick();flush();batch:Destroy();model.Parent=parent
 	end,debug.traceback)
-	if not ok then batch:Destroy();model:Destroy();return nil,tostring(err) end
+	if not ok then
+		batch:Destroy()
+		if o.dispose then o.dispose(model) else model:Destroy() end
+		return nil,tostring(err)
+	end
 	worst=math.max(worst,os.clock()-sliceStart)
 	model:SetAttribute("InfieldParts",count)
 	return model,{triangles=triangles,parts=count,seamTriangles=#seams,ms=(os.clock()-started-paused)*1000,sliceMs=worst*1000,slices=slices}

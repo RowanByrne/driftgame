@@ -612,7 +612,7 @@ local function frame()
 		return
 	end
 	groundHit=walkingWorld.probe(pos)
-	DriftController:DrawWalkingSpline(spline,s)
+	DriftController:DrawWalkingSpline(spline,s,pos)
 	stats.located, stats.s, stats.d = true, s, d
 	local n = math.floor(s / ROW)
 	local band = math.floor(d / PIECE)

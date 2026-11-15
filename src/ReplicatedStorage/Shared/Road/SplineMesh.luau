@@ -66,6 +66,11 @@ local SplineParts = require(script.Parent.SplineParts)
 local SplineMesh = {}
 
 local meshesOf: { [Model]: { EditableMesh } } = setmetatable({}, { __mode = "k" }) :: any
+local liveMeshes:{[EditableMesh]:boolean}=setmetatable({}, {__mode="k"}) :: any
+local function releaseMesh(em:EditableMesh)
+	liveMeshes[em]=nil
+	em:Destroy()
+end
 
 -- THE CLIFFS' HAZE follows the sky (features/day-night.md, T-144): the colour ids each live
 -- mesh drew its haze with, so `setHaze` can recolour every drawn chunk in place, and the
@@ -254,6 +259,7 @@ local function newBuilder(centre: Vector3): Builder
 	local em = AssetService:CreateEditableMesh({ FixedSize = false })
 	-- nil is the device saying no: out of its EditableMesh budget
 	assert(em, "this device would not make an EditableMesh (out of its budget)")
+	liveMeshes[em :: EditableMesh]=true
 	return { em = em :: EditableMesh, centre = centre, vertices = 0, triangles = 0, grassTriangles = 0, plainUV = nil, grassShade = nil }
 end
 
@@ -796,6 +802,8 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 							slice()
 							return
 						end
+						table.insert(farTriangles,{points=points,exact=true})
+						return
 					end
 					table.insert(farTriangles,{pa,pb,pc})
 				end
@@ -1606,7 +1614,7 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 	end)
 	if not ok then
 		hazeOf[road.em] = nil
-		road.em:Destroy() -- never leak one of the eight
+		releaseMesh(road.em) -- never leak one of the eight
 		if pendingModel then pendingModel:Destroy() end
 		return nil, tostring(built),if uncertifiedHill then {omitHills=true} else nil
 	end
@@ -1732,7 +1740,7 @@ function SplineMesh.buildInfield(spline:Spline.Spline,x:number,z:number,radius:n
 	end,debug.traceback)
 	if not ok then
 		if model then meshesOf[model]=nil;model:Destroy() elseif mp then mp:Destroy() end
-		if b then hazeOf[b.em]=nil;b.em:Destroy() end
+		if b then hazeOf[b.em]=nil;releaseMesh(b.em) end
 		return nil,tostring(result)
 	end
 	return model,result
@@ -1762,17 +1770,31 @@ function SplineMesh.haze(): Color3
 	return hazeColour or Config.Spline.Terrain.HazeColour
 end
 
--- Take a chunk down, with the mesh data its parts are drawn from.
-function SplineMesh.destroy(model: Model)
+-- Release mesh slots synchronously; a view can retire the hidden ordinary
+-- Parts separately without keeping an EditableMesh alive through that drain.
+function SplineMesh.release(model:Model)
 	local meshes = meshesOf[model]
 	meshesOf[model] = nil
-	model:Destroy()
 	if meshes then
 		for _, em in meshes do
 			hazeOf[em] = nil
-			em:Destroy()
+			releaseMesh(em)
 		end
 	end
+end
+
+-- Take a chunk down, with the mesh data its parts are drawn from.
+function SplineMesh.destroy(model: Model)
+	model:Destroy()
+	SplineMesh.release(model)
+end
+
+function SplineMesh.owns(model:Instance):boolean
+	return meshesOf[model :: any]~=nil
+end
+
+function SplineMesh.liveMeshCount():number
+	local count=0;for _ in liveMeshes do count+=1 end;return count
 end
 
 return SplineMesh

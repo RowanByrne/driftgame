@@ -13,7 +13,8 @@ export type Patch={id:string,rows:{Row}}
 type Vertex={p:Point,t:number,u:number,q:number}
 type Triangle={a:Vertex,b:Vertex,c:Vertex,normal:Vector3,det:number,patch:string,sa0:number,sa1:number,sb0:number,sb1:number,supported:boolean}
 type Opening={patch:Patch,bank:string,first:number,last:number}
-export type Index={cell:number,patches:{[string]:Patch},triangles:{Triangle},hash:{[string]:{number}},openings:{[string]:{Opening}},closing:{[number]:{Patch}},byPatch:{[string]:{number}}}
+export type Index={cell:number,patches:{[string]:Patch},triangles:{Triangle},hash:{[string]:{number}},openings:{[string]:{Opening}},closing:{[number]:{Patch}},byPatch:{[string]:{number}},
+	patchHash:{[string]:{string}},patchBounds:{[string]:{number}}}
 export type Hit={y:number,normal:Vector3,patch:string,contactS:number,sa:number,sb:number,across:number,closingS:number}
 export type Closing={a:Point,b:Point,normal:Vector3,patch:string}
 export type Link={patch:Patch,bank:string,peerS:number,peerSide:number,peerFirst:number,peerLast:number,ownerSide:number}
@@ -78,7 +79,7 @@ end
 
 function Infield.new(cell:number?):Index
 	assert(not cell or finite(cell) and cell>0,"invalid infield index spacing")
-	return {cell=cell or 128,patches={},triangles={},hash={},openings={},closing={},byPatch={}}
+	return {cell=cell or 128,patches={},triangles={},hash={},openings={},closing={},byPatch={},patchHash={},patchBounds={}}
 end
 
 local function key(x:number,z:number,cell:number):string return `{math.floor(x/cell)}:{math.floor(z/cell)}` end
@@ -228,6 +229,11 @@ function Infield.add(index:Index,patch:Patch,validateOnly:boolean?):boolean
 	if validateOnly then return true end
 	index.patches[patch.id]=patch
 	local patchIds={};index.byPatch[patch.id]=patchIds
+	local patchKeys={};local x0,x1,z0,z1=math.huge,-math.huge,math.huge,-math.huge
+	for _,row in patch.rows do for _,p in {row.a,row.b} do
+		x0=math.min(x0,p[1]);x1=math.max(x1,p[1]);z0=math.min(z0,p[3]);z1=math.max(z1,p[3])
+	end end
+	index.patchBounds[patch.id]=table.freeze({x0,x1,z0,z1})
 	for _,triangle in pending do
 		table.insert(index.triangles,triangle)
 		local id=#index.triangles
@@ -236,6 +242,11 @@ function Infield.add(index:Index,patch:Patch,validateOnly:boolean?):boolean
 			local bucket=index.hash[k]
 			if not bucket then bucket={};index.hash[k]=bucket end
 			table.insert(bucket,id)
+			if not patchKeys[k] then
+				patchKeys[k]=true
+				local patches=index.patchHash[k];if not patches then patches={};index.patchHash[k]=patches end
+				table.insert(patches,patch.id)
+			end
 		end
 	end
 	local first,last=patch.rows[1],patch.rows[#patch.rows]
@@ -257,6 +268,29 @@ function Infield.add(index:Index,patch:Patch,validateOnly:boolean?):boolean
 		end
 	end
 	return true
+end
+
+-- Selection gathers patch identities before touching their compiled triangles.
+-- This avoids an unbounded triangle gather/sort merely to choose a few fields.
+function Infield.nearPatches(index:Index,x:number,z:number,radius:number,first:number?,tick:(()->())?):{[string]:number}
+	local seen={};local out={};local count,visited=0,0
+	for cx=math.floor((x-radius)/index.cell),math.floor((x+radius)/index.cell) do
+		for cz=math.floor((z-radius)/index.cell),math.floor((z+radius)/index.cell) do
+			for _,id in index.patchHash[`{cx}:{cz}`] or {} do
+				visited+=1;if tick and visited%128==0 then tick() end
+				if seen[id] then continue end;seen[id]=true
+				local patch=index.patches[id]
+				if first and first>=patch.rows[1].sb then continue end
+				local b=index.patchBounds[id]
+				local dx,dz=math.max(b[1]-x,x-b[2],0),math.max(b[3]-z,z-b[4],0)
+				if dx>radius or dz>radius then continue end
+				count+=1;assert(count<=4096,"field patch gather limit")
+				out[id]=dx*dx+dz*dz
+			end
+			if tick then tick() end
+		end
+	end
+	return out
 end
 
 function Infield.sample(index:Index,x:number,z:number,low:number?,high:number?):Hit?
