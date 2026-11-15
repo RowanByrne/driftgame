@@ -73,6 +73,9 @@ export type View = typeof(setmetatable(
 		applyMs: number, -- the write into the hidden copy, start to end (frames between included)
 		worstApplyMs: number,
 		vertices: number,
+		-- for the frame-time checks: when each grid swapped in, and its level, and the
+		-- clock time of each slice's yield
+		events: { { number } },
 	},
 	GroundMeshView
 ))
@@ -205,6 +208,7 @@ function GroundMeshView.new(spline: any, parent: Instance?): View
 		applyMs = 0,
 		worstApplyMs = 0,
 		vertices = 0,
+		events = {},
 	}, GroundMeshView)
 	return self
 end
@@ -469,6 +473,9 @@ function GroundMeshView._run(self: View)
 		if coarser then
 			self:_hole(coarser, level, oldCx, oldCz)
 		end
+		if #self.events < 2000 then
+			table.insert(self.events, { os.clock(), li })
+		end
 		task.wait()
 	end
 	self.running = false
@@ -532,6 +539,7 @@ function GroundMeshView.DebugState(self: View)
 		lastSlices = self.lastSlices,
 		applyMs = self.applyMs,
 		worstApplyMs = self.worstApplyMs,
+		events = self.events,
 	}
 end
 
