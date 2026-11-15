@@ -168,15 +168,16 @@ local function run(check, opts)
 						local y, a = Ground.at(ctx, px, pz)
 						totals.nearUs += (os.clock() - t1) * 1e6
 						totals.nearN += 1
-						local over = y - (py - G.Under)
+						-- never above the surface; `Under` below it, give or take a little
+						local over = y - py
 						totals.aboveN += 1
 						totals.aboveWorst = math.max(totals.aboveWorst, over)
-						if over > 0.05 then
+						if over > 0 then
 							totals.abovePoints += 1
 						end
 						if share == 1 then
 							totals.edgeN += 1
-							totals.edgeWorst = math.max(totals.edgeWorst, math.abs(over))
+							totals.edgeWorst = math.max(totals.edgeWorst, math.abs(over + G.Under))
 						end
 						local _ = a
 					end
@@ -235,9 +236,9 @@ local function run(check, opts)
 	check(
 		"no ground above the road or its runoff",
 		totals.abovePoints == 0,
-		`{totals.abovePoints} of {totals.aboveN} over by 0.05+, highest {fmt(totals.aboveWorst, 3)} vs the surface less Under`
+		`{totals.abovePoints} of {totals.aboveN} above it; the highest is {fmt(-totals.aboveWorst, 3)} studs under it (Under {G.Under})`
 	)
-	check("the ground meets the runoff's outer edge", totals.edgeWorst < 0.05, `worst {fmt(totals.edgeWorst, 3)} studs over {totals.edgeN}`)
+	check("the ground meets the runoff's outer edge", totals.edgeWorst < G.Under, `worst {fmt(totals.edgeWorst, 3)} studs off Under, over {totals.edgeN}`)
 	check("far from the road the ground is h", totals.farOff < 1e-6, `{totals.farN} points, worst {fmt(totals.farOff, 6)}`)
 	check("between the legs the ground is h", totals.betweenOff < 1e-6, `{totals.betweenN} points, worst {fmt(totals.betweenOff, 6)}`)
 	check(

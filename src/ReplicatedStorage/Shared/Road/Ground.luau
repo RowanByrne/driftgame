@@ -278,6 +278,8 @@ function Ground.context(field: Field, spline: Spline.Spline, x0: number, z0: num
 	return ctx
 end
 
+local FADE = 12 -- studs
+
 local function smooth(t: number): number
 	return t * t * (3 - 2 * t)
 end
@@ -337,6 +339,12 @@ function Ground.at(ctx: Context, x: number, z: number): (number, number)
 									swT *= k
 								end
 								emin = e
+							end
+							-- and fades out over the last `FADE` studs of the longest blend, so a
+							-- station leaving the reckoning moves nothing
+							local f = (bMax - e) / FADE
+							if f < 1 then
+								wl *= smooth(f)
 							end
 							local wgt = wl * math.exp((emin - e) / soft)
 							sw += wgt
