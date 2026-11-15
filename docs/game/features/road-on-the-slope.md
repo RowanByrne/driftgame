@@ -1,6 +1,6 @@
 # Feature: Road on the slope
 
-**Status:** specced, plan waiting for the user (2026-11-15). Builds on the mesh ground picked in `ground-trial.md`. **Owner task:** none yet.
+**Status:** plan approved 2026-11-15; step 1 (`T-227`) built, in a lane for the user; step 2 next. Builds on the mesh ground picked in `ground-trial.md`. **Owner task:** `T-226` (feature), branch `feature/road-on-the-slope`.
 
 ## Goal
 
@@ -77,3 +77,39 @@ None new.
 ## Open questions
 
 - How smooth the road's height should be against how closely it follows h: tuned in the lane by eye.
+
+## As built (step 1, T-227): the road's line and height from the mountain
+
+`Road/SplineGen` in a ground run (`ground mesh` or `ground terrain`); numbers in `Config.Spline.Ground` (`Follow...`, `Aim...`, `LegGrade`, `LegTiltMax`). Today's road ("current") is unchanged (checked: the same sections).
+
+- **The height follows h.** Each section's grade is chosen a piece of 64 studs at a time: the grade whose road best fits h along that piece and 160 studs past it (least squares), easing at the usual rate and never past 8 degrees. h is read as the mean of five points 16 studs apart, so the road ignores the smallest bumps. The start straight follows it too. The height band round the plane (`Band`) is gone.
+- **The heading comes from h's slope where the road is heading** (its gradient over 60 studs, 60 and 180 studs ahead). A leg heads across the local fall line, tilted down it just enough to descend 2 to 4 degrees (one value per leg): nearly across where h is steep, more directly down where it is gentle, at most 75 degrees off across. Its bends may stray down the slope only as far as keeps the grade followable (90% of 8 degrees). A sideways stretch heads as straight down as can be followed; a switchback's gap straight down. Turnarounds land on the heading the mountain gives where the road is when it gets there.
+- **A bend that would leave the road more than 10 studs off h gives way** to another candidate that follows it; if none does, the nearest is laid.
+- **The ground beside the road** (`Road/Ground`): a point is now placed along the road from the centre line kept round each station (every 8 studs, 64 either way), not guessed from the station's curvature alone. The road's steeper grades made the old guess show: up to 0.1 studs of ground above the runoff on the inside of tight bends with wide runoff.
+- **The mountain leads:** nothing in the road reads the plane, a descent rate or a fixed heading. Change h (its slope, octaves, stretch) and the road changes with it.
+
+### Measured (DR-Lane1, GroundTests `profile`)
+
+Seeds 31337, 101 and 2024, 5 000 studs each, every 16 studs (936 stations). Trench: ground 20 studs past both runoff edges more than 8 studs above the edge; causeway: more than 8 below on both.
+
+| | Before (the plane, a6d44a5) | After |
+|---|---|---|
+| Trench stations | 308 (33%) | 0 |
+| Causeway stations | 402 (43%) | 0 |
+| Centre line off h: median / p95 | 40.8 / 100.9 studs | 0.8 / 5.4 |
+| Within 6 studs of h | 9% | 96% |
+| Over 20 studs off h | 73% | 0 |
+| Deepest cut / fill | 139.6 / 100.7 | 8.8 / 15.7 |
+| Climbing | 11% of the road | 23% |
+
+On 12 other seeds over 8 000 studs (6 000 stations): 3 trench and 14 causeway stations, 10 over 20 studs off h, median 0.8, p95 6.9.
+
+- Steepest grade 8.00 degrees, grade change at most 0.0015 a stud: as before. No seed stalled.
+- GroundTests 23 of 23 (the runoff-edge check now allows half a stud, measured worst 0.35, on the inside of one tight hairpin with a wide runoff; the ground there is lower than the edge, never above). SplineTests 64 of 64, SplineTurnTests 9 of 9.
+- Cost: generator worst step 10.4 ms (7.9 before, on this busy PC); the ground's maths 2.0 microseconds a point (1.2 before), a 400-stud box's stations 0.21 ms.
+- Live, `ground mesh` then a run: the client drew the same road and ground, no seams (504 tile pairs), the drawn ground at least 0.77 studs under the road over 3 808 points, no errors.
+
+### Known
+
+- **A ground run still works its way down** (the mountain is a plane falling at 7 degrees): about 190 to 340 studs per 5 000. A run past roughly 8 000 studs can reach Roblox's fall-kill height (-500), as before. A mountain that rises again (in h) would bring climbs back; that is mountain generation, not road.
+- The runoff is still random (12 to 40 studs, groves wider): step 2 takes it from the side slope.
