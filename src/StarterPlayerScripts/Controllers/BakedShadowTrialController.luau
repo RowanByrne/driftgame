@@ -249,11 +249,12 @@ function Controller:DebugMeasure()
 	assert(state.phase=="ready" and original and not state.measuring,"terrain trial unavailable/busy")
 	state.measuring=true;state.measurement={phase="baseline"};local token=generation
 	task.spawn(function()
+		local residents
 		local ok,err=xpcall(function()
 			local baseline={};for _=1,45 do table.insert(baseline,RunService.Heartbeat:Wait()*1000)end
 			state.measurement.baseline=Trial.summary(baseline)
 			state.measurement.kind="same real terrain snapshot, five published residents, six replacements; not a streaming road run"
-			local residents=Instance.new("Folder");residents.Name="WindowCostFixture";residents.Parent=root
+			residents=Instance.new("Folder");residents.Name="WindowCostFixture";residents.Parent=root
 			local source=original.Road;local content=source.MeshContent
 			local first=#state.calls+1
 			for i=1,11 do
@@ -284,6 +285,7 @@ function Controller:DebugMeasure()
 			state.measurement.callFirst=first;state.measurement.callLast=#state.calls;state.measurement.phase="done"
 		end,debug.traceback)
 		for _,p in streamParts do p:Destroy()end;table.clear(streamParts);table.clear(streamContents)
+		if residents then residents:Destroy()end
 		state.measuring=false;if not ok then state.measurement.phase="failed";state.measurement.error=err end
 	end)
 	return {scheduled=true}
