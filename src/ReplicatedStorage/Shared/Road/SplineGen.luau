@@ -1874,10 +1874,7 @@ function SplineGen._planLeg(self: Gen)
 	end
 	self.legSide = -side
 	self.tilt = nextTilt
-	-- A leg planned while its turnaround is being laid follows the turn that changes the
-	-- mountain's side: cutting it short too would only add a needless turnaround (T-215).
-	local flipping = self.turning ~= nil and TURNAROUNDS[self.turning :: string] == true
-	if self.flipWanted and not flipping then
+	if self.flipWanted then
 		self:_hurry()
 	end
 end

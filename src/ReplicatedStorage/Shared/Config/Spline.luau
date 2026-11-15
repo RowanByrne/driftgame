@@ -104,9 +104,7 @@ local Spline = {
 		-- uphill side holds what it was, so a wiggle can't flip it (the cliff step).
 		AlongFallLine = 30, -- degrees
 		LegTilt = { 10, 25 }, -- degrees downhill off straight across
-		-- long traverses with occasional turnarounds (T-215, the user's pick 2026-11-15):
-		-- about 1.4 turnarounds per 10 000 studs, 3 600-9 000 studs between them
-		LegLength = { 7000, 10000 }, -- studs, then a turnaround
+		LegLength = { 1200, 3000 }, -- studs, then a turnaround
 		LegHeadingLimit = 60, -- degrees: no ordinary bend takes the road further off its leg
 		LegUphillLimit = 30, -- degrees, and no further off it UP the slope, toward the leg above
 		-- A turnaround: mostly a hairpin; sometimes two tight bends with a short run straight
@@ -117,7 +115,7 @@ local Spline = {
 		SwitchbackGap = { 40, 140 }, -- studs between them, heading down the slope
 		-- A DOUBLE HAIRPIN in the middle of a leg: the road runs back the way it came for a
 		-- short stretch, a level lower, then turns back onto its leg another level down.
-		DoubleHairpinChance = 0.02, -- per leg: rare, so a traverse stays one long run (T-215)
+		DoubleHairpinChance = 0.15, -- per leg
 		DoubleHairpinBack = { 150, 500 }, -- studs of the reversed stretch
 		-- A SIDEWAYS stretch in the middle of a leg: straight down (or now and then up) the
 		-- slope for a while, then back onto the leg.

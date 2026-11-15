@@ -91,5 +91,3 @@ The user's decisions about this game, so they aren't reopened later. Before prop
 - 2026-11-14: While away for the night, the user delegates approval of the already discussed T-203/T-212 terrain/joins, rarer-switchback cadence and T-214 bake trial/integration. Feature leads continue lane checks and send concrete Ready handoffs; the conductor judges and approves on the user's behalf, then checks and merges. This does not authorize publishing to players or unrelated features (C-d27741 forwarding C-b81df8).
 
 - 2026-11-15: Switch the near-level fields on in Lane 2 for the user to drive now that field planning no longer freezes the server, while the client chunk build (about 42 ms against 40) and fallback teardown (about 0.35 s) stay flagged and are worked on alongside (T-212).
-
-- 2026-11-15: Turnarounds are rare: legs of 7,000-10,000 studs and double hairpins at 2% a leg, about 1.4 turnarounds per 10,000 studs with 3,600-9,000-stud traverses between them; the leg after a mountain-side flip is no longer cut short (T-215).
