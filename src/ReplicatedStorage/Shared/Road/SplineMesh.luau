@@ -60,6 +60,8 @@ local Boundary = require(script.Parent.SplineBoundary)
 local Shadow = require(script.Parent.SplineShadow)
 local Builder = require(script.Parent.Builder)
 local Infield = require(script.Parent.SplineInfield)
+local FieldCuts = require(script.Parent.SplineFieldCuts)
+local SplineParts = require(script.Parent.SplineParts)
 
 local SplineMesh = {}
 
@@ -96,6 +98,9 @@ export type Options = {
 	hill: boolean?, -- false: no hillside past the faces, and no caps on them (the road as before T-190)
 	tick: (() -> ())?, -- internal near-ground planning slice
 	traceFaces: boolean?, -- test-only nominal source rows for terrain triangles
+	fieldPlan: FieldCuts.Plan?, -- exact matching complete field coverage
+	captureScenery: boolean?, -- retain uncut actual scenery for finite end joins
+	cancelled: (() -> boolean)?,
 }
 
 export type Stats = {
@@ -322,11 +327,20 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 		sliceStart = os.clock()
 		paused += sliceStart - now
 		slices += 1
+		if o.cancelled and o.cancelled() then error("terrain mesh build cancelled") end
 	end
 	local function slice()
+		if o.cancelled and o.cancelled() then error("terrain mesh build cancelled") end
 		if os.clock() - sliceStart >= budget then
 			yieldNow()
 		end
+	end
+	if o.fieldPlan and o.fieldPlan.identity~=spline.infields then return nil,"field coverage belongs to another road" end
+	local fieldContext=if o.fieldPlan then FieldCuts.forBuild(o.fieldPlan,slice) else nil
+	local scenery:any=if o.captureScenery or fieldContext then {} else nil
+	local fieldCutTriangles,fieldRejectedCasters=0,0
+	local function hitsField(cf:CFrame?,size:Vector3?):boolean
+		return fieldContext~=nil and cf~=nil and size~=nil and FieldCuts.intersectsBox(fieldContext,cf,size)
 	end
 	local half = R.Width * 0.5
 	local across = o.across or M.Across
@@ -348,7 +362,7 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 	local pendingModel:Model?=nil
 	local uncertifiedHill=false
 	local ok, built = pcall(function()
-		local farTriangles={}
+		local farTriangles:any={}
 		-- ONE EDITABLEMESH A CHUNK, AND IT STAYS ALIVE WITH IT. A MeshPart made from one is
 		-- drawn from it: let it go and the part draws nothing (measured -- the road vanished).
 		-- And a client may hold only EIGHT at once, whatever their size (measured in a Studio
@@ -546,20 +560,60 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 		local vertexOrigins:any=if o.traceFaces then {} else nil
 		local faceOrigins:any=if o.traceFaces then {} else nil
 		local traceKind="face"
+		local sourceMaterials={}
+		local function material(colour:number):any
+			local value=sourceMaterials[colour]
+			if not value then value=table.freeze({colour=em:GetColor(colour)});sourceMaterials[colour]=value end
+			return value
+		end
+		local function source(pa:Vector3,pb:Vector3,pc:Vector3,paint:any):any
+			local points={{pa.X,pa.Y,pa.Z},{pb.X,pb.Y,pb.Z},{pc.X,pc.Y,pc.Z}}
+			if scenery then
+				if #scenery>=24576 then error("field scenery source limit") end
+				for _,p in points do table.freeze(p) end
+				table.insert(scenery,table.freeze({points=table.freeze(points),material=paint,kind=traceKind}))
+			end
+			return points
+		end
 		-- FLAT-SHADED BUT SHARED: a face's normal and colour are set per face, so the
 		-- vertices of a row are shared by every face that touches them (a third of the
 		-- vertices, and a third of the cost, of a vertex per corner)
-		local function tri(a: number, b: number, c: number, pa: Vector3, pb: Vector3, pc: Vector3, colour: number, facing: Vector3)
+		local function tri(a: number, b: number, c: number, pa: Vector3, pb: Vector3, pc: Vector3, colour: number, facing: Vector3, protected:boolean?)
+			local sourceId:number?=nil
 			local n = (pb - pa):Cross(pc - pa)
 			if n.Magnitude < 1e-9 then
 				return
 			end
 			if n:Dot(facing) < 0 then
 				b, c = c, b
+				pb,pc=pc,pb
 				n = -n
 			end
+			if not protected and traceKind~="grove" and (scenery or fieldContext) then
+				local points=source(pa,pb,pc,material(colour))
+				sourceId=if scenery then #scenery else nil
+				if fieldContext then
+					local pieces,changed,why=FieldCuts.triangle(fieldContext,points[1],points[2],points[3])
+					if not pieces then error(`field scenery cut failed: {why}`) end
+					if changed then
+						fieldCutTriangles+=1;local normal=em:AddNormal(n.Unit)
+						for _,piece in pieces do
+							if road.triangles>=19000 then error("field mesh triangle limit") end
+							local ids={}
+							for _,p in piece do table.insert(ids,em:AddVertex(Vector3.new(p[1]-centre.X,p[2]-centre.Y,p[3]-centre.Z)));road.vertices+=1 end
+							local face=em:AddTriangle(ids[1],ids[2],ids[3])
+							em:SetFaceNormals(face,{normal,normal,normal});em:SetFaceColors(face,{colour,colour,colour})
+							if road.plainUV then em:SetFaceUVs(face,{road.plainUV,road.plainUV,road.plainUV}) end
+							if faceOrigins then faceOrigins[face]={kind=traceKind,fieldCut=true,fieldSource=sourceId} end
+							road.triangles+=1
+						end
+						slice()
+						return
+					end
+				end
+			end
 			local f = em:AddTriangle(a, b, c)
-			if faceOrigins then faceOrigins[f]={kind=traceKind,a=vertexOrigins[a],b=vertexOrigins[b],c=vertexOrigins[c]} end
+			if faceOrigins then faceOrigins[f]={kind=traceKind,a=vertexOrigins[a],b=vertexOrigins[b],c=vertexOrigins[c],protected=protected,fieldSource=sourceId} end
 			local nid = em:AddNormal(n.Unit)
 			em:SetFaceNormals(f, { nid, nid, nid })
 			em:SetFaceColors(f, { colour, colour, colour })
@@ -572,6 +626,8 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 			faceColours[name] = em:AddColor(c, 1)
 		end
 		local cliffMid = em:AddColor(T.CliffColour:Lerp(haze, 0.5), 1)
+		sourceMaterials[faceColours.haze]=table.freeze({colour=haze,haze="haze"})
+		sourceMaterials[cliffMid]=table.freeze({colour=T.CliffColour:Lerp(haze,.5),haze="mid"})
 		hazeOf[em] = { haze = faceColours.haze, mid = cliffMid }
 		local faceRows: { [number]: { [number]: { [number]: { Vector3 } } } } = { [-1] = {}, [1] = {} }
 		for _, side in { -1, 1 } do
@@ -689,14 +745,15 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 						tri(ia[i], ia[i + 1], ib[i], pa[i], pa[i + 1], pb[i], colour, facing)
 						tri(ia[i + 1], ib[i + 1], ib[i], pa[i + 1], pb[i + 1], pb[i], colour, facing)
 					end
-					if spline:hasBiomeGround() and kind==Spline.ROCK then
+					if spline:hasBiomeGround() and kind==Spline.ROCK
+						and (spline:infieldOpening(a,side)<1-1e-8 or spline:infieldOpening(b,side)<1-1e-8) then
 						local ta,tb=Boundary.toeRow(spline,a,side),Boundary.toeRow(spline,b,side)
 						local ai,bi={},{}
 						for j=1,3 do ai[j]=em:AddVertex(ta[j]-centre);bi[j]=em:AddVertex(tb[j]-centre) end
 						road.vertices+=6
 						for j=1,2 do
-							tri(ai[j],ai[j+1],bi[j],ta[j],ta[j+1],tb[j],faceColours.rock,-outward)
-							tri(ai[j+1],bi[j+1],bi[j],ta[j+1],tb[j+1],tb[j],faceColours.rock,-outward)
+							tri(ai[j],ai[j+1],bi[j],ta[j],ta[j+1],tb[j],faceColours.rock,-outward,true)
+							tri(ai[j+1],bi[j+1],bi[j],ta[j+1],tb[j+1],tb[j],faceColours.rock,-outward,true)
 						end
 					end
 					if kinds[k - 1] ~= kind then
@@ -727,6 +784,21 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 				local sideRays = rays[side]
 				local hk = rayCuts
 				local hillColour = em:AddColor(H.Colour, 1)
+				local function farGround(pa:Vector3,pb:Vector3,pc:Vector3)
+					if (pb-pa):Cross(pc-pa).Y<0 then pb,pc=pc,pb end
+					if scenery or fieldContext then
+						local points=source(pa,pb,pc,material(hillColour))
+						if fieldContext then
+							local pieces,changed,why=FieldCuts.triangle(fieldContext,points[1],points[2],points[3])
+							if not pieces then error(`field far scenery cut failed: {why}`) end
+							if changed then fieldCutTriangles+=1 end
+							for _,piece in pieces do table.insert(farTriangles,{points=piece,exact=true}) end
+							slice()
+							return
+						end
+					end
+					table.insert(farTriangles,{pa,pb,pc})
+				end
 				local function ground(a: number?, b: number?, c: number?, pa: Vector3, pb: Vector3, pc: Vector3)
 					if HillCuts.collapsed(pa,pb,pc) then return end
 					if hillTrimmer then
@@ -743,7 +815,7 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 										if vertexOrigins then vertexOrigins[ids[j]]={kind="hill bank join",side=side} end
 									end
 									tri(ids[1],ids[2],ids[3],points[1],points[2],points[3],hillColour,Vector3.yAxis)
-								else table.insert(farTriangles,points) end
+								else farGround(points[1],points[2],points[3]) end
 								hillTriangles+=1
 							end
 							return
@@ -756,7 +828,7 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 					if a and b and c then
 						tri(a, b, c, pa, pb, pc, hillColour, Vector3.yAxis)
 					else
-						table.insert(farTriangles,{pa,pb,pc})
+						farGround(pa,pb,pc)
 					end
 					hillTriangles += 1
 				end
@@ -856,7 +928,8 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 		local farColour=Color3.new(H.Colour.R*shade,H.Colour.G*shade,H.Colour.B*shade)
 		for index,points in farTriangles do
 			local made={}
-			Builder.triangleSlab(`Far_{index}`,points[1],points[2],points[3],.15,farColour,Enum.Material.SmoothPlastic,farFolder,made :: any)
+			if points.exact then made=SplineParts.exactTriangle(points.points,.15,farFolder,`Far_{index}`,farColour,Enum.Material.SmoothPlastic)
+			else Builder.triangleSlab(`Far_{index}`,points[1],points[2],points[3],.15,farColour,Enum.Material.SmoothPlastic,farFolder,made :: any) end
 			for _,part in made do part.CanCollide=false;part.CanTouch=false;part.CanQuery=false;part.CastShadow=false;parts+=1 end
 			slice()
 		end
@@ -1130,12 +1203,14 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 						if toeHit then break end
 					end
 				end
-				if kb - ka > 1 and (toeHit or not fit or fit.X < size.X * 0.85 or fit.Y < size.Y * 0.8) then
+				local fieldHit=hitsField(cf,fit)
+				if kb - ka > 1 and (fieldHit or toeHit or not fit or fit.X < size.X * 0.85 or fit.Y < size.Y * 0.8) then
 					local mid = (ka + kb) // 2
 					footShade(ka, mid)
 					footShade(mid, kb)
-				elseif not toeHit and cf and fit and fit.X > 0.15 and fit.Y > 0.25 and fit.Z > 0.15 then
+				elseif not fieldHit and not toeHit and cf and fit and fit.X > 0.15 and fit.Y > 0.25 and fit.Z > 0.15 then
 					plain(`RockShade_{tag}_{ka}_Foot`, fit, cf, T.RockColour, Enum.Material.Slate)
+				elseif fieldHit then fieldRejectedCasters+=1
 				end
 			end
 			-- A ROCK BODY'S TOP (T-185): a second box under its scrub top, from the face's top
@@ -1206,14 +1281,16 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 				centre += planAlong.Unit * shift
 				local desired = Vector3.new(short, width - trim - trimCrest, thick)
 				local cf, size = Shadow.fit(CFrame.fromMatrix(centre, x, y, z), desired, facePlanes(ka, kb, side, Spline.ROCK), z)
-				if kb - ka > 1 and (not size or size.X < desired.X * 0.65 or size.Y < desired.Y * 0.7) then
+				local fieldHit=hitsField(cf,size)
+				if kb - ka > 1 and (fieldHit or not size or size.X < desired.X * 0.65 or size.Y < desired.Y * 0.7) then
 					local mid = (ka + kb) // 2
 					local aa, ab = ends(ka, mid, Spline.ROCK)
 					local ba, bb = ends(mid, kb, Spline.ROCK)
 					shadeTop(ka, mid, aa, ab)
 					shadeTop(mid, kb, ba, bb)
-				elseif cf and size and size.X > 0.15 and size.Y > 0.25 and size.Z > 0.15 then
+				elseif not fieldHit and cf and size and size.X > 0.15 and size.Y > 0.25 and size.Z > 0.15 then
 					plain(`RockShadeTop_{tag}_{ka}`, size, cf, T.RockColour, Enum.Material.Slate)
+				elseif fieldHit then fieldRejectedCasters+=1
 				end
 			end
 			local function shade(ka: number, kb: number, kind: number)
@@ -1280,13 +1357,15 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 					local cf = CFrame.fromMatrix(centre, x, y, toRoad)
 					local desired = Vector3.new(short, math.max(0, height + shadeBack - gap), shadeThick)
 					local fitted, size = Shadow.fit(cf, desired, facePlanes(ka, kb, side, kind), -toRoad)
-					if kb - ka > 1 and (not size or size.X < desired.X * 0.65 or size.Y < desired.Y * 0.7) then
+					local fieldHit=hitsField(fitted,size)
+					if kb - ka > 1 and (fieldHit or not size or size.X < desired.X * 0.65 or size.Y < desired.Y * 0.7) then
 						local mid = (ka + kb) // 2
 						shade(ka, mid, kind)
 						shade(mid, kb, kind)
 						return
-					elseif fitted and size and size.X > 0.15 and size.Y > 0.25 and size.Z > 0.15 then
+					elseif not fieldHit and fitted and size and size.X > 0.15 and size.Y > 0.25 and size.Z > 0.15 then
 						plain(`RockShade_{tag}_{ka}`, size, fitted, T.RockColour, Enum.Material.Slate)
+					elseif fieldHit then fieldRejectedCasters+=1
 					end
 					if up.Y > shadeBack * 2 + T.RoadShadeSink then
 						footShade(ka, kb)
@@ -1299,12 +1378,14 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 					local cf = CFrame.fromMatrix(centre, x, y, toRoad)
 					local desired = Vector3.new(short, height, shadeThick)
 					local fitted, size = Shadow.fit(cf, desired, facePlanes(ka, kb, side, kind), toRoad)
-					if kb - ka > 1 and (not size or size.X < desired.X * 0.65 or size.Y < desired.Y * 0.7) then
+					local fieldHit=hitsField(fitted,size)
+					if kb - ka > 1 and (fieldHit or not size or size.X < desired.X * 0.65 or size.Y < desired.Y * 0.7) then
 						local mid = (ka + kb) // 2
 						shade(ka, mid, kind)
 						shade(mid, kb, kind)
-					elseif fitted and size and size.X > 0.15 and size.Y > 0.25 and size.Z > 0.15 then
+					elseif not fieldHit and fitted and size and size.X > 0.15 and size.Y > 0.25 and size.Z > 0.15 then
 						plain(`CliffShade_{tag}_{ka}`, size, fitted, T.CliffColour, Enum.Material.Slate)
+					elseif fieldHit then fieldRejectedCasters+=1
 					end
 				end
 			end
@@ -1375,12 +1456,14 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 				local centre = c + x * ((x0 + x1) / 2) + y * (top - T.RoadShadeSink - thick / 2) + z * ((z0 + z1) / 2)
 				local desired = Vector3.new(x1 - x0, thick, z1 - z0)
 				local cf, size = Shadow.fit(CFrame.fromMatrix(centre, x, y, z), desired, planes)
-				if kb - ka > 1 and (not size or size.X < desired.X * 0.65 or size.Z < desired.Z * 0.7) then
+				local fieldHit=hitsField(cf,size)
+				if kb - ka > 1 and (fieldHit or not size or size.X < desired.X * 0.65 or size.Z < desired.Z * 0.7) then
 					local mid = (ka + kb) // 2
 					under(ka, mid, first, last, tag)
 					under(mid, kb, first, last, tag)
-				elseif cf and size and size.X > 0.15 and size.Y > 0.15 and size.Z > 0.25 then
+				elseif not fieldHit and cf and size and size.X > 0.15 and size.Y > 0.15 and size.Z > 0.25 then
 					plain(`RoadShade_{tag}_{ka}`, size, cf, T.CliffColour, Enum.Material.Slate)
+				elseif fieldHit then fieldRejectedCasters+=1
 				end
 			end
 			local k0 = 1
@@ -1490,6 +1573,8 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 		local groveColourIds:{[number]:boolean}={}
 		for _,id in groveColours do groveColourIds[id]=true end
 		local stats = {
+			scenery=if scenery then table.freeze(scenery) else nil,
+			fieldCutTriangles=fieldCutTriangles,fieldRejectedCasters=fieldRejectedCasters,
 			sections = #cuts,
 			vertices = road.vertices,
 			triangles = road.triangles,
@@ -1593,6 +1678,9 @@ function SplineMesh.buildInfield(spline:Spline.Spline,x:number,z:number,radius:n
 		local baseU,baseV=GrassTexture.base(centre)
 		local plain=build.em:AddUV(Vector2.zero)
 		local rock=build.em:AddColor(T.RockColour,1)
+		local fieldHaze=hazeColour or T.HazeColour
+		local hazeId=build.em:AddColor(fieldHaze,1);local midId=build.em:AddColor(T.CliffColour:Lerp(fieldHaze,.5),1)
+		hazeOf[build.em]={haze=hazeId,mid=midId}
 		for _,t in selected do
 			local vertices,uvs,colours={},{},{}
 			local normal=build.em:AddNormal(t.normal)
@@ -1621,7 +1709,8 @@ function SplineMesh.buildInfield(spline:Spline.Spline,x:number,z:number,radius:n
 			local n=build.em:AddNormal(normal.Unit);local vertices={}
 			local material=seam.material
 			local colour=if typeof(material)=="Color3" then material elseif type(material)=="table" and typeof(material.colour)=="Color3" then material.colour else T.RockColour
-			local paint=build.em:AddColor(colour,1)
+			local paint=if type(material)=="table" and material.haze=="haze" then hazeId
+				elseif type(material)=="table" and material.haze=="mid" then midId else build.em:AddColor(colour,1)
 			for _,p in seam.points do table.insert(vertices,build.em:AddVertex(Vector3.new(p[1]-centre.X,p[2]-centre.Y,p[3]-centre.Z))) end
 			local face=build.em:AddTriangle(vertices[1],vertices[2],vertices[3])
 			build.em:SetFaceNormals(face,{n,n,n});build.em:SetFaceColors(face,{paint,paint,paint});build.em:SetFaceUVs(face,{plain,plain,plain})
@@ -1643,7 +1732,7 @@ function SplineMesh.buildInfield(spline:Spline.Spline,x:number,z:number,radius:n
 	end,debug.traceback)
 	if not ok then
 		if model then meshesOf[model]=nil;model:Destroy() elseif mp then mp:Destroy() end
-		if b then b.em:Destroy() end
+		if b then hazeOf[b.em]=nil;b.em:Destroy() end
 		return nil,tostring(result)
 	end
 	return model,result

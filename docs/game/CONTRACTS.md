@@ -714,6 +714,22 @@ consumer isolated execution callbacks and fragmentation limits over that
 geometry. A discarded retirement sliver cannot retain a perimeter without
 surviving mask coverage.
 
+Ordinary `SplineMesh.build` and terrain `SplineParts.build` accept
+`opts.fieldPlan` for that same finite scenery subtraction. Supported
+asphalt/lip/bank strips, groves and physical partial rock feet stay authoritative.
+The actual scenery emitted after existing hill repair is available as a bounded
+immutable `stats.scenery` cache (`points`, literal material colour/haze role,
+kind), enabled by the plan or `captureScenery=true`. Source points precede field
+subtraction so another coverage version can rebuild exact end seams.
+All five shadow-caster families subdivide/reject boxes crossing a field mask.
+Far fragments and fallback scenery use `SplineParts.exactTriangle` local slabs
+without outward triangle growth. Full openings omit a zero-height flat toe;
+partial openings split at frozen bank-row arcs in `SplineBoundary.points`,
+which also feeds supported surface cuts. Wholly removed faces still consume
+the build's yielding/cancellation budget. Terrain Parts support `groundOnly`
+to draw supported road strips without mountain scenery for off-window peers.
+Live View ownership, coverage transitions and producer publication are pending.
+
 ## Studio-only baked shadow trial (T-214)
 
 `workspace.__baked_shadow_trial=true` explicitly opts a Studio client into the

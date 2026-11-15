@@ -178,6 +178,14 @@ plan plus the assembled seams. One double-sided field mesh retains copied cap
 visibility, and final bounds include seam heights. `SplineFieldCutsTests.run()`
 checks pure geometry and coverage; `render()` checks actual mesh read-back,
 distant floor/vertical seam Parts rays, identity refusal and cancellation.
+Ordinary Mesh/terrain Parts builders also accept the plan for finite scenery
+subtraction and cache actual post-repair source triangles for end joins. They
+preserve supported road and partial physical feet, use exact far/fallback slabs,
+and reject field-crossing caster boxes. Frozen opening-row knots split the
+visible foot so an interior weight dip cannot hide a taller physical boundary.
+`SplineFieldCutsTests.scenery()` reads actual emitted faces/Parts/casters and
+compares source planes, supported strips and foot vertices. Live field View
+ownership, source-version replacement and atomic generation remain pending.
 
 ## Native baked-shadow trial (Studio only)
 

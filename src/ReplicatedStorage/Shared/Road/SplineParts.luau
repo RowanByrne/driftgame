@@ -24,6 +24,7 @@ local Profile = require(script.Parent.SplineProfile)
 local Hill = require(script.Parent.SplineHill)
 local HillCuts = require(script.Parent.SplineHillCuts)
 local Infield = require(script.Parent.SplineInfield)
+local FieldCuts = require(script.Parent.SplineFieldCuts)
 
 local SplineParts = {}
 
@@ -36,6 +37,9 @@ export type Options = {
 	omitHills: boolean?, -- retain supported ground/capped faces after a hill certification failure
 	sliceMs: number?,
 	cancelled: (() -> boolean)?,
+	fieldPlan: FieldCuts.Plan?,
+	captureScenery: boolean?,
+	groundOnly: boolean?, -- supported asphalt/lip/banks without new mountain scenery
 }
 
 local function point(spline: Spline.Spline, s: number, d: number): Vector3
@@ -60,23 +64,48 @@ local function terrain(spline:Spline.Spline,s0:number,s1:number,parent:Instance,
 			flush()
 			worst=math.max(worst,os.clock()-sliceStart)
 			task.wait();sliceStart=os.clock();slices+=1
+			if o.cancelled and o.cancelled() then batch:Destroy();error("terrain build cancelled") end
 		end
 	end
 	local triangles,skippedHillTriangles=0,0
+	if o.fieldPlan and o.fieldPlan.identity~=spline.infields then batch:Destroy();error("field coverage belongs to another road") end
+	local fieldContext=if o.fieldPlan then FieldCuts.forBuild(o.fieldPlan,tick) else nil
+	local scenery:any=if o.captureScenery or fieldContext then {} else nil
+	local fieldCutTriangles=0
 	local function tri(name:string,a:Vector3,b:Vector3,c:Vector3,colour:Color3,mat:Enum.Material,surface:string?)
 		if (b-a):Cross(c-a).Magnitude<1e-7 then return end
 		local side=tonumber(string.match(name,"^Hill_([%-]?%d+)_"))
 		if side and (HillCuts.collapsed(a,b,c) or HillCuts.folded(a,b,c,side)) then skippedHillTriangles+=1;return end
-		local made={}
-		Builder.triangleSlab(name,a,b,c,.15,colour,mat,batch,made :: any)
-		for _,p in made do
-			p.CanCollide=false;p.CanTouch=false;p.CanQuery=o.queryable==true
-			if o.queryable and surface then
-				p:AddTag(Config.Drift.SurfaceTag);p:SetAttribute(Config.Drift.SurfaceAttribute,surface)
+		local pieces=nil
+		if not surface and (scenery or fieldContext) then
+			local points={{a.X,a.Y,a.Z},{b.X,b.Y,b.Z},{c.X,c.Y,c.Z}}
+			if scenery then
+				if #scenery>=24576 then batch:Destroy();error("field scenery source limit") end
+				for _,p in points do table.freeze(p) end
+				table.insert(scenery,table.freeze({points=table.freeze(points),material=table.freeze({colour=colour}),kind=name}))
 			end
-			table.insert(out,p)
+			if fieldContext then
+				local changed,why
+				pieces,changed,why=FieldCuts.triangle(fieldContext,points[1],points[2],points[3])
+				if not pieces then batch:Destroy();error(`field Parts scenery cut failed: {why}`) end
+				if changed then fieldCutTriangles+=1 end
+			end
 		end
-		triangles+=1;tick()
+		local function emit(points:{{number}}?)
+			local made={}
+			if points then made=SplineParts.exactTriangle(points,.15,batch,name,colour,mat)
+			else Builder.triangleSlab(name,a,b,c,.15,colour,mat,batch,made :: any) end
+			for _,p in made do
+				p.CanCollide=false;p.CanTouch=false;p.CanQuery=o.queryable==true
+				if o.queryable and surface then
+					p:AddTag(Config.Drift.SurfaceTag);p:SetAttribute(Config.Drift.SurfaceAttribute,surface)
+				end
+				table.insert(out,p)
+			end
+			triangles+=1;tick()
+		end
+		if pieces then for _,points in pieces do emit(points) end else emit(nil) end
+		tick() -- wholly removed faces still consume clipping work and must yield
 	end
 	local function quad(name:string,a:Vector3,b:Vector3,c:Vector3,d:Vector3,colour:Color3,mat:Enum.Material,surface:string?)
 		tri(name.."a",a,b,c,colour,mat,surface)
@@ -101,6 +130,10 @@ local function terrain(spline:Spline.Spline,s0:number,s1:number,parent:Instance,
 			end
 		end
 		prev,prevD=pts,ds;tick()
+	end
+	if o.groundOnly then
+		flush();batch:Destroy();worst=math.max(worst,os.clock()-sliceStart)
+		return out,{triangles=triangles,groundOnly=true,sliceMs=worst*1000,slices=slices,ms=(os.clock()-started)*1000}
 	end
 	-- Far scenery is coarser; its joins and face caps remain the existing hill's.
 	local faces=cuts -- face feet share the supported ground's exact polyline
@@ -128,7 +161,9 @@ local function terrain(spline:Spline.Spline,s0:number,s1:number,parent:Instance,
 	end
 	flush();batch:Destroy()
 	worst=math.max(worst,os.clock()-sliceStart)
-	return out,{triangles=triangles,skippedHillTriangles=skippedHillTriangles,hillsOmitted=o.omitHills==true,sliceMs=worst*1000,slices=slices,ms=(os.clock()-started)*1000}
+	return out,{triangles=triangles,skippedHillTriangles=skippedHillTriangles,hillsOmitted=o.omitHills==true,
+		scenery=if scenery then table.freeze(scenery) else nil,fieldCutTriangles=fieldCutTriangles,
+		sliceMs=worst*1000,slices=slices,ms=(os.clock()-started)*1000}
 end
 
 -- Lay road from s0 to s1 under `parent`. Returns the parts made.
@@ -241,6 +276,13 @@ local function infieldSlab(t:any,thickness:number,parent:Instance,name:string):{
 	end
 	wedge("a",-along,distance);wedge("b",along,length-distance)
 	return out
+end
+
+-- Visual triangles on a finite cut must not grow back across that cut.
+function SplineParts.exactTriangle(points:{{number}},thickness:number,parent:Instance,name:string,colour:Color3,material:Enum.Material):{BasePart}
+	local made=infieldSlab({a={p=points[1]},b={p=points[2]},c={p=points[3]}},thickness,parent,name)
+	for _,p in made do p.Color=colour;p.Material=material;p.CanCollide=false;p.CanTouch=false;p.CanQuery=false end
+	return made
 end
 
 function SplineParts.buildInfield(spline:Spline.Spline,x:number,z:number,radius:number,parent:Instance,opts:any?):(Model?,any)

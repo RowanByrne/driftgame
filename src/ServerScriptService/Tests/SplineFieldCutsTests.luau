@@ -462,4 +462,144 @@ function Tests.render()
 	return result
 end
 
+function Tests.scenery()
+	local root=game.ReplicatedStorage.Shared.Road
+	local Spline,Planner,Infield,Cuts=require(root.Spline),require(root.SplineInfieldPlanner),require(root.SplineInfield),require(root.SplineFieldCuts)
+	local Mesh,Parts,Boundary=require(root.SplineMesh),require(root.SplineParts),require(root.SplineBoundary)
+	local folder=Instance.new("Folder");folder.Name="__T212CutScenery";folder.Parent=workspace
+	local models={}
+	local ok,result=xpcall(function()
+		local checks={};local function check(name,pass,detail)table.insert(checks,{name=name,ok=not not pass,detail=detail})end
+		local sp=Spline.new({x=30000,y=50,z=-20000,yaw=0});sp.fall=math.pi*.5
+		local function section(length,knots,left,right,bank)
+			return {len=length,k=knots,g={length,0},b={length,0},rl={length,16},rr={length,16},
+				el={length,left},er={length,right},hl={length,bank},hr={length,0}}
+		end
+		local a=section(512,{512,0},Spline.ROCK,Spline.CLIFF,20);a.bm={0,1,0};sp:append(a)
+		local length=math.pi*100+20
+		sp:append(section(length,{20,.01,length-20,.01,length,0},Spline.ROCK,Spline.CLIFF,0))
+		local b0=sp.length;sp:append(section(320,{320,0},Spline.CLIFF,Spline.ROCK,0))
+		local patches=Planner.plan(sp,128.875,480.875,b0,sp.length);assert(#patches>0,"fixture has no accepted field")
+		local dip=math.floor(#patches[1].rows*.5);local rows={}
+		for i,row in patches[1].rows do
+			local copy=table.clone(row)
+			if i==dip then copy.weight=0 elseif i==dip-1 or i==dip+1 then copy.weight=1 end
+			table.insert(rows,copy)
+		end
+		patches[1]=Infield.patch(patches[1].id,rows);sp:addInfields(patches)
+		local selection={};for _,p in patches do selection[p.id]=true end
+		local plan,why=Cuts.plan(sp.infields,selection,0,sp.infieldRevision);assert(plan,why)
+		local context=plan.context
+		local function containsMask(x,z)
+			for _,id in context.hash[`{math.floor(x/context.cell)}:{math.floor(z/context.cell)}`] or {} do
+				local inside=true
+				for _,plane in context.masks[id].planes do if (x-plane.x)*plane.nx+(z-plane.z)*plane.nz< -1e-6 then inside=false;break end end
+				if inside then return true end
+			end
+			return false
+		end
+		local function interior(x,z)
+			return containsMask(x-.03,z) and containsMask(x+.03,z) and containsMask(x,z-.03) and containsMask(x,z+.03)
+		end
+		local function worldFaces(model,stats)
+			local part=model.Road;local em=part.MeshContent.Object;local out={}
+			for _,face in em:GetFaces() do
+				local points={};for _,id in em:GetFaceVertices(face) do table.insert(points,part.CFrame:PointToWorldSpace(em:GetPosition(id))) end
+				table.insert(out,{points=points,origin=stats.faceOrigins[face],face=face})
+			end
+			return out,em
+		end
+		local baseline,baselineStats=Mesh.build(sp,128,480,folder,{captureScenery=true,traceFaces=true})
+		assert(baseline,tostring(baselineStats));table.insert(models,baseline)
+		local cut,cutStats=Mesh.build(sp,128,480,folder,{fieldPlan=plan,traceFaces=true})
+		assert(cut,tostring(cutStats));table.insert(models,cut)
+		local oldFaces=worldFaces(baseline,baselineStats);local faces,em=worldFaces(cut,cutStats)
+		local oldGround,newGround,oldFeet,newFeet={},{},{},{}
+		for _,pair in {{oldFaces,oldGround,oldFeet},{faces,newGround,newFeet}} do for _,face in pair[1] do
+			if not face.origin then table.insert(pair[2],face.points)
+			elseif face.origin.protected then table.insert(pair[3],face.points) end
+		end end
+		local groundError,footError=0,0
+		for _,pair in {{oldGround,newGround,"ground"},{oldFeet,newFeet,"foot"}} do
+			if #pair[1]~=#pair[2] then if pair[3]=="ground" then groundError=math.huge else footError=math.huge end;continue end
+			for i,a in pair[1] do for j,p in a do
+				local error=(p-pair[2][i][j]).Magnitude
+				if pair[3]=="ground" then groundError=math.max(groundError,error) else footError=math.max(footError,error) end
+			end end
+		end
+		check("ordinary scenery cuts preserve the supported road and physical low feet",groundError<.02 and footError<.02 and #oldGround>0 and #oldFeet>0,
+			`ground faces{#oldGround}, max displacement{groundError}; protected foot faces{#oldFeet}, displacement{footError}`)
+		local row=patches[1].rows[dip];local toe=Boundary.toeRow(sp,row.sa,row.sideA)[2]
+		local tipError=math.huge
+		for _,points in newFeet do for _,p in points do tipError=math.min(tipError,(p-toe).Magnitude) end end
+		local knots=Boundary.points(sp,128,480);local hasA,hasB=false,false
+		for _,s in knots do hasA=hasA or math.abs(s-row.sa)<1e-8;hasB=hasB or math.abs(s-row.sb)<1e-8 end
+		local peerKnots=Boundary.points(sp,b0,sp.length);for _,s in peerKnots do hasB=hasB or math.abs(s-row.sb)<1e-8 end
+		check("a local opening-weight dip keeps its physical rock foot visible",hasA and hasB and sp:infieldOpening(row.sa,row.sideA)==0 and tipError<.02,
+			`fractional row arc{row.sa}, A/B knots{hasA}/{hasB}, actual mesh tip error{tipError}`)
+		local tested,leaks,sourceInside,planeError=0,0,0,0
+		for _,source in cutStats.scenery do
+			local p=source.points;local x,z=(p[1][1]+p[2][1]+p[3][1])/3,(p[1][3]+p[2][3]+p[3][3])/3
+			if interior(x,z) then sourceInside+=1 end
+		end
+		for i,face in faces do
+			local origin=face.origin
+			if not origin or origin.protected or origin.kind=="grove" then continue end
+			local a,b,c=face.points[1],face.points[2],face.points[3]
+			for _,weights in {{1/3,1/3,1/3},{.6,.2,.2},{.2,.6,.2},{.2,.2,.6}} do
+				local p=a*weights[1]+b*weights[2]+c*weights[3]
+				if interior(p.X,p.Z) then leaks+=1 end;tested+=1
+			end
+			if origin.fieldSource then
+				local p=cutStats.scenery[origin.fieldSource].points;local u,v,w=p[1],p[2],p[3]
+				local n=Vector3.new(v[1]-u[1],v[2]-u[2],v[3]-u[3]):Cross(Vector3.new(w[1]-u[1],w[2]-u[2],w[3]-u[3])).Unit
+				for _,point in face.points do planeError=math.max(planeError,math.abs((point-Vector3.new(u[1],u[2],u[3])):Dot(n))) end
+			end
+			if i%64==0 then task.wait() end
+		end
+		check("actual emitted faces remove old hills from the complete field footprint",sourceInside>0 and cutStats.fieldCutTriangles>0 and leaks==0,
+			`old source centroids inside{sourceInside}; clipped sources{cutStats.fieldCutTriangles}; {tested} emitted probes, leaks{leaks}`)
+		check("actual clipped faces retain their original scenery planes",planeError<.02,`largest read-back source-plane error{planeError}`)
+		local casters,casterLeaks=0,0
+		for _,p in cut:GetDescendants() do if p:IsA("BasePart") and string.find(p.Name,"Shade") then
+			casters+=1;if Cuts.intersectsBox(context,p.CFrame,p.Size) then casterLeaks+=1 end
+		end end
+		check("all emitted caster boxes stay outside opened fields",casters>0 and casterLeaks==0 and cutStats.fieldRejectedCasters>0,
+			`casters{casters}, intersections{casterLeaks}, rejected terminal spans{cutStats.fieldRejectedCasters}`)
+		local sliceStart=os.clock()
+		local capture=Cuts.newCapture(Cuts.forBuild(plan,function()
+			if os.clock()-sliceStart>=.003 then task.wait();sliceStart=os.clock() end
+		end))
+		for i,source in cutStats.scenery do
+			local p=source.points;local captured,reason=Cuts.capture(capture,p[1],p[2],p[3],source.material);assert(captured,reason)
+			if i%128==0 then task.wait() end
+		end
+		local seams,seamReason=Cuts.stitch(capture);assert(seams,seamReason)
+		local field,info=Mesh.buildInfield(sp,0,0,1,folder,{plan=plan,seams=seams});assert(field,tostring(info));table.insert(models,field)
+		check("actual post-repair scenery supplies finite seams in the single field mesh",#seams>0 and info.seamTriangles==#seams
+			and #field:GetChildren()==1 and field.Infield.DoubleSided,`captured sources{#cutStats.scenery}, seam faces{#seams}, floor faces{#plan.triangles}`)
+		local partsFolder=Instance.new("Folder");partsFolder.Name="CutFallback";partsFolder.Parent=folder
+		local parts,details=Parts.build(sp,128,480,partsFolder,{terrain=true,fieldPlan=plan,queryable=true})
+		local fallbackLeaks,farTested=0,0
+		for i,p in parts do if not string.find(p.Name,"Ground",1,true) then
+			local h=p.Size*.5
+			local vertices={p.CFrame:PointToWorldSpace(Vector3.new(h.X,-h.Y,-h.Z)),p.CFrame:PointToWorldSpace(Vector3.new(h.X,-h.Y,h.Z)),p.CFrame:PointToWorldSpace(Vector3.new(h.X,h.Y,h.Z))}
+			local centre=(vertices[1]+vertices[2]+vertices[3])/3
+			if interior(centre.X,centre.Z) then fallbackLeaks+=1 end;farTested+=1
+		end;if i%128==0 then task.wait() end end
+		check("ordinary Parts scenery uses the same finite field subtraction",details.fieldCutTriangles>0 and farTested>0 and fallbackLeaks==0,
+			`{#parts} Parts, scenery probes{farTested}, leaks{fallbackLeaks}, clipped sources{details.fieldCutTriangles}`)
+		local peer=Instance.new("Folder");peer.Name="SupportedPeer";peer.Parent=folder
+		local peerParts,peerStats=Parts.build(sp,b0,b0+64,peer,{terrain=true,groundOnly=true,queryable=true})
+		local extra=0;for _,p in peerParts do if not string.find(p.Name,"Ground",1,true) then extra+=1 end end
+		check("off-window peer support can draw both banks without rebuilding mountains",peerStats.groundOnly and #peerParts>0 and extra==0,
+			`{#peerParts} supported Parts; extra scenery Parts{extra}`)
+		local passed=0;for _,c in checks do if c.ok then passed+=1 end end
+		return {passed=passed,total=#checks,checks=checks}
+	end,debug.traceback)
+	for _,m in models do Mesh.destroy(m) end;folder:Destroy()
+	if not ok then return {passed=0,total=1,checks={{name="actual scenery field clipping fixture completes",ok=false,detail=result}}} end
+	return result
+end
+
 return Tests

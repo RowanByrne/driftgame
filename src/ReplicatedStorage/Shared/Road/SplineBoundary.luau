@@ -81,6 +81,27 @@ function Boundary.points(spline:Spline.Spline,s0:number,s1:number):{number}
    if s>s0 then table.insert(points,s) end
   end
  end
+ -- Physical opening weights can change at an interior frozen field row.
+ -- Splitting there keeps a local rock-foot dip visible instead of spanning it.
+ local index=spline.infields
+ if index then
+  local seen={}
+  for _,side in {-1,1} do for cell=math.floor(s0/index.cell),math.floor(s1/index.cell) do
+   for _,opening in index.openings[`{side}:{cell}`] or {} do
+    if seen[opening] or opening.last<s0 or opening.first>s1 then continue end
+    seen[opening]=true
+    for _,row in opening.patch.rows do
+     local s=if opening.bank=="A" then row.sa else row.sb
+     if s>s0 and s<s1 then table.insert(points,s) end
+    end
+    local rows=opening.patch.rows
+    if not rows[1].floor or not rows[#rows].floor then
+     local fade=math.min(64,(opening.last-opening.first)*.25)
+     for _,s in {opening.first+fade,opening.last-fade} do if s>s0 and s<s1 then table.insert(points,s) end end
+    end
+   end
+  end end
+ end
  table.sort(points)
  local unique={}
  for _,s in points do if #unique==0 or s-unique[#unique]>1e-6 then table.insert(unique,s) end end
@@ -117,7 +138,8 @@ function Boundary.build(spline:Spline.Spline,s0:number,s1:number,parent:Instance
    for i=1,#cuts-1 do
     local a,b=cuts[i],cuts[i+1]
     if b-a<1e-6 then continue end
-    if spline:edgeAt((a+b)*.5,side)==Spline.ROCK then
+    if spline:edgeAt((a+b)*.5,side)==Spline.ROCK
+     and (spline:infieldOpening(a,side)<1-1e-8 or spline:infieldOpening(b,side)<1-1e-8) then
      local pa,pb=Boundary.toeRow(spline,a,side),Boundary.toeRow(spline,b,side)
      for j=1,2 do
       local made={}
