@@ -178,7 +178,7 @@ end
 
 -- Everything the patch should hold round (sc, dc), by key. A key names the same tile every
 -- time it is asked for, and the same key always gives the same tile.
-local function plan(spline: any, sc: number, dc: number, closingS: number?): { [string]: Spec }
+local function plan(spline: any, sc: number, dc: number, closingS: number?, worldPosition:Vector3?): { [string]: Spec }
 	local R = Config.Road
 	local T = Config.Spline.Terrain
 	local half = R.Width * 0.5
@@ -383,7 +383,8 @@ local function plan(spline: any, sc: number, dc: number, closingS: number?): { [
 					end
 					if kind~=Spline.CLIFF then
 						local height=spline:boundaryHeight((a+b)*.5,side)
-						if height>0 then wall(`w{key}`,"wall",a,b,side,half+wa,half+wb,ROCK_THICK,height,Enum.Material.Rock) end
+						if height>0 then wall(`w{key}`,"wall",a,b,side,half+wa,half+wb,
+							if spline:infieldOpening((a+b)*.5,side)>0 then 3 else ROCK_THICK,height,Enum.Material.Rock) end
 					end
 				else
 					-- ground out under the wall, then the wall on the grass's outer edge
@@ -410,7 +411,17 @@ local function plan(spline: any, sc: number, dc: number, closingS: number?): { [
 
 	-- the closing barrier: the slab the car is stopped by (`Drift/SplineWorld`), 1 stud deep
 	-- with its front face at `closingS`, across the tarmac, both runoffs and the edges
-	if closingS and closingS >= 0 and closingS <= spline.length and math.abs(closingS - sc) <= ROW * (ROWS_EACH_WAY + 1) then
+	if closingS and spline.infields then
+		local position=worldPosition or Vector3.new(spline:terrainXYZ(sc,dc))
+		local reach=ACROSS+ROW*(ROWS_EACH_WAY+1)
+		for i,panel in spline:closingPanels(closingS) do
+			local a,b=panel.a,panel.b
+			if math.max(a[1],b[1])<position.X-reach or math.min(a[1],b[1])>position.X+reach
+				or math.max(a[3],b[3])<position.Z-reach or math.min(a[3],b[3])>position.Z+reach then continue end
+			local cf,size=Boundary.closingSpec(panel)
+			want[`closing:{i}`]={cf=cf,size=size,material=Enum.Material.SmoothPlastic,kind="closing"}
+		end
+	elseif closingS and closingS >= 0 and closingS <= spline.length and math.abs(closingS - sc) <= ROW * (ROWS_EACH_WAY + 1) then
 		local x, y, z = spline:surfaceXYZ(closingS, 0)
 		local wider = math.max(spline:runoffAt(closingS, -1), spline:runoffAt(closingS, 1)) + T.EdgeDepth
 		local wide = R.Width + 2 * wider
@@ -512,15 +523,16 @@ local function frame()
 	local band = math.floor(d / PIECE)
 	-- more road only matters while the patch would reach past the end of it
 	local laid = math.min(math.floor(spline.length / ROW), n + ROWS_EACH_WAY + 1)
-	local closingKey = if closingS and math.abs(closingS - s) <= ROW * (ROWS_EACH_WAY + 1) then closingS else -1
-	local key = `{n}/{band}/{laid}/{closingKey}`
+	local closingKey = if closingS and (spline.infields or math.abs(closingS-s)<=ROW*(ROWS_EACH_WAY+1)) then closingS else -1
+	local fieldKey=if spline.infields then `/{spline.infieldRevision}/{spline.firstSample}/{math.floor(pos.X/PIECE)}/{math.floor(pos.Z/PIECE)}` else ""
+	local key = `{n}/{band}/{laid}/{closingKey}{fieldKey}`
 	if key == lastKey then
 		return
 	end
 	lastKey = key
 	stats.rebuilds += 1
 	local t0 = os.clock()
-	apply(plan(spline, s, d, closingS))
+	apply(plan(spline, s, d, closingS,pos))
 	local ms = (os.clock() - t0) * 1000
 	stats.rebuildMs = ms
 	stats.worstMs = math.max(stats.worstMs, ms)

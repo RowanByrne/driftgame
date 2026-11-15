@@ -294,6 +294,128 @@ function Tests.planner(_self,subjects)
 	return result
 end
 
+function Tests.closing(_self,subjects)
+	local road=game.ReplicatedStorage.Shared.Road
+	if not subjects then
+		local drift=game.StarterPlayer.StarterPlayerScripts.Drift
+		subjects={World=require(drift.SplineWorld),View=require(drift.SplineRoadView)}
+	end
+	local Spline=subjects and subjects.Spline or require(road.Spline)
+	local Planner=subjects and subjects.Planner or require(road.SplineInfieldPlanner)
+	local Infield=subjects and subjects.Infield or DefaultInfield
+	local Boundary=subjects and subjects.Boundary or require(road.SplineBoundary)
+	local cfg=require(game.ReplicatedStorage.Shared.Config)
+	local saved=cfg.Spline.Biomes.GroundEnabled;cfg.Spline.Biomes.GroundEnabled=true
+	local ok,result=xpcall(function()
+		local checks={};local function check(name,pass,detail)table.insert(checks,{name=name,ok=pass,detail=detail})end
+		local sp,b0,sections=fixture(Spline,20);sp:addInfields(Planner.plan(sp,128,480,b0,sp.length))
+		local panels=sp:closingPanels(600)
+		local fields,specError=0,0
+		for _,p in panels do
+			if p.field then fields+=1 end
+			local cf,size=Boundary.closingSpec(p)
+			local centre=cf.Position+p.normal*(size.Z*.5)
+			specError=math.max(specError,math.abs(centre.X-(p.a[1]+p.b[1])*.5),math.abs(centre.Z-(p.a[3]+p.b[3])*.5))
+		end
+		check("field closing panels share one cached frozen front edge",fields>0 and panels==sp:closingPanels(600) and specError<.005,
+			`{fields} field panels; front-edge packing error{specError}`)
+		check("shared closing front edges cannot be changed by a consumer",not pcall(function()panels[1].a[1]+=1 end),
+			"cached panel vertices and records are immutable")
+		local p={a={0,0,0},b={10,0,0},normal=Vector3.zAxis,bottom=-3,top=24,depth=1,field=true}
+		local front,fn=Boundary.closingSweep(p,5,2,5,-2)
+		local back,bn=Boundary.closingSweep(p,5,-2,5,2)
+		check("closing slabs stop entry from their real front and back faces",front and back and math.abs(front-.5)<1e-8
+			and math.abs(back-.25)<1e-8 and fn.Z==1 and bn.Z== -1,"one-stud depth, front0 and back-1")
+		local endpoint,en=Boundary.closingSweep(p,-5,-.5,5,-.5)
+		local diagonal,dn=Boundary.closingSweep(p,-5,-2,5,-.5)
+		check("finite closing slabs catch endpoint and diagonal entry",endpoint and diagonal and math.abs(endpoint-.5)<1e-8
+			and math.abs(diagonal-2/3)<1e-8 and en.X== -1 and dn.Z== -1,"a start beyond the segment cannot skip its end cap")
+		local depth,n=Boundary.closingPush(p,5,-.5,.05)
+		local outside=Boundary.closingPush(p,-.1,-.5,.05)
+		check("closing penetration uses the same finite slab",depth>.5 and n~=nil and outside==0,"no infinite half-plane beyond an endpoint")
+		local small=table.clone(p);small.b={.01,0,0}
+		local _,size=Boundary.closingSpec(small)
+		local push=Boundary.closingPush(small,-.019,-.5,0)
+		check("minimum Part size and physical endpoint extents agree",math.abs(size.X-.05)<1e-6 and push>0,"tiny contour segments use the same real0.05stud box")
+		local patch=next(sp.infields.patches) and sp.infields.patches[next(sp.infields.patches)]
+		local row=patch.rows[math.ceil(#patch.rows*.5)]
+		local hit=nil
+		for _,panel in panels do local t=Boundary.closingSweep(panel,row.a[1],row.a[3],row.b[1],row.b[3]);if t then hit=math.min(hit or 1,t) end end
+		check("the triangle contour closes a route across the connected field",hit~=nil and hit>0 and hit<1,"a crossing from retired A towards later B meets a real finite panel")
+		local x0,_,z0=sp:surfaceXYZ(row.sb-16,0);local x1,_,z1=sp:surfaceXYZ(row.sb+16,0)
+		local peerBlocked=false
+		for _,panel in panels do if Boundary.closingSweep(panel,x0,z0,x1,z1) then peerBlocked=true;break end end
+		check("the later live peer road remains open",not peerBlocked,"ordinary B traffic crosses neither the field contour nor the older road slab")
+		if subjects.World then
+			local world=subjects.World.new(sp);world.hint=row.sa;world.setClosing(600)
+			local from=Vector3.new(row.a[1],row.a[2]+cfg.Drift.RideHeight,row.a[3])
+			local to=Vector3.new(row.b[1],row.b[2]+cfg.Drift.RideHeight,row.b[3])
+			local stopped=world.sweep(from,to,sp:yawAt(row.sa))
+			check("the real car cannot bypass the closing through a connected field",stopped~=nil and world.stats.closingStops>0,
+				"the car's whole footprint meets the shared finite panels")
+			world.destroy()
+			local peer=subjects.World.new(sp);peer.hint=row.sb;peer.setClosing(600)
+			local by=sp:heightAt(row.sb)+cfg.Drift.RideHeight
+			check("the real later-leg car keeps ground and clear passage",peer.probe(Vector3.new(x0,by,z0))~=nil
+				and peer.sweep(Vector3.new(x0,by,z0),Vector3.new(x1,by,z1),sp:yawAt(row.sb))==nil,
+				"an older field closure does not stop native live B traffic")
+			peer.destroy()
+		end
+		if subjects.View then
+			local parent=Instance.new("Folder");parent.Name="__ClosingPanelViewTest";parent.Parent=workspace
+			local view=subjects.View.new(sp,parent);view:SetClosing(600)
+			local drawn,error=0,0
+			for i,panel in panels do
+				local part=if panel.field then view.closingFields:FindFirstChild(`ClosingField_{i}`) else view.closing
+				if not part then error=math.huge;continue end
+				local cf,size=Boundary.closingSpec(panel)
+				error=math.max(error,(part.CFrame.Position-cf.Position).Magnitude,(part.Size-size).Magnitude)
+				drawn+=1
+			end
+			check("the actual visible barrier uses the collision panel geometry",drawn==#panels and error<.005,
+				`{drawn} actual Parts, placement/size error{error}`)
+			local before=view.closingFields
+			sp.infieldRevision+=1;view.building=-1;view:Update(row.sa);view.building=nil
+			check("new field geometry refreshes closure during a pending road build",view.closingFields~=before and view.closingRevision==sp.infieldRevision,
+				"panel refresh follows field revision as well as closing messages")
+			view:SetClosing(nil);view:Destroy();parent:Destroy()
+		end
+		local future=sp.length+8
+		local pending=sp:closingPanels(future)
+		local lifecycleParent,lateView,retiringView=nil,nil,nil
+		if subjects.View then
+			lifecycleParent=Instance.new("Folder");lifecycleParent.Name="__ClosingRefreshTest";lifecycleParent.Parent=workspace
+			lateView=subjects.View.new(sp,lifecycleParent);lateView:SetClosing(future)
+			retiringView=subjects.View.new(sp,lifecycleParent);retiringView:SetClosing(600)
+		end
+		sp:append(sections[#sections])
+		check("a closing received before its road is not cached as permanently empty",#pending==0 and #sp:closingPanels(future)==1,
+			"new retained road length refreshes the base panel")
+		if lateView then
+			lateView.building=-1;lateView:Update(row.sb);lateView.building=nil
+			check("the visible barrier appears when its delayed road arrives",lateView.closing~=nil,
+				"an unchanged closing message still responds to newly available geometry")
+		end
+		sp:trim(b0+16)
+		local retired=sp:closingPanels(600);local allFrozen=#retired>0
+		for _,panel in retired do allFrozen=allFrozen and panel.field end
+		check("retired A geometry is not reconstructed to close the remaining field",allFrozen and retired~=panels,
+			"retirement invalidates the cache and the contour uses only frozen vertices")
+		if retiringView then
+			retiringView.building=-1;retiringView:Update(row.sb);retiringView.building=nil
+			check("the visible field closure refreshes when its old leg retires",retiringView.closing==nil
+				and retiringView.closingFields~=nil and retiringView.closingFirst==sp.firstSample,
+				"the retired base panel disappears while the frozen field contour remains")
+			lateView:Destroy();retiringView:Destroy();lifecycleParent:Destroy()
+		end
+		local passed=0;for _,c in checks do if c.ok then passed+=1 end end
+		return {passed=passed,total=#checks,checks=checks}
+	end,debug.traceback)
+	cfg.Spline.Biomes.GroundEnabled=saved
+	if not ok then return {passed=0,total=1,checks={{name="field closing fixture completes",ok=false,detail=result}}} end
+	return result
+end
+
 function Tests.render()
 	local road=game.ReplicatedStorage.Shared.Road
 	local Spline,Planner,Infield=require(road.Spline),require(road.SplineInfieldPlanner),require(road.SplineInfield)

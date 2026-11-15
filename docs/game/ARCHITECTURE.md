@@ -159,9 +159,11 @@ reservations protect them from later road. `SplineInfieldTests.run()` and
 The producer/gameplay hooks are still disabled pending integrated lane checks.
 `SplineInfieldTests.render()` checks both actual field halves, physics against
 read-back mesh triangles and high-origin fallback wedge rays, plus cancellation.
-The field builders are not yet managed by the live View. The closure helper uses
-one frozen scalar across both bank arcs; its finite panels and physical-peer
-continuity remain integration work.
+The field builders are not yet managed by the live View. The closing helper uses
+one frozen scalar across both bank arcs. Car collision, visible Parts and walking
+box specs consume the same finite panels, including end caps; `closing()` checks
+real car passage, actual visible geometry and cache refresh through arrival and
+retirement. Retained physical-peer continuity remains integration work.
 
 ## Native baked-shadow trial (Studio only)
 

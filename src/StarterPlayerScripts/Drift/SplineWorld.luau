@@ -40,6 +40,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Config = require(ReplicatedStorage.Shared.Config)
 local Spline = require(ReplicatedStorage.Shared.Road.Spline)
 local SplineGrove = require(ReplicatedStorage.Shared.Road.SplineGrove)
+local Boundary = require(ReplicatedStorage.Shared.Road.SplineBoundary)
 local Model = require(script.Parent.Model)
 
 local SplineWorld = {}
@@ -339,6 +340,7 @@ function SplineWorld.new(spline: Spline.Spline, base: Model.World?): SplineWorld
 		footprint(to, yaw, toPts)
 		local hint = self.hint
 		local best, bestN, bestKind = math.huge, nil :: Vector3?, 0
+		local panels=if spline.infields and self.closing then spline:closingPanels(self.closing) else nil
 		local function consider(m0: number, m1: number, n: Vector3, kind: number)
 			if m1 >= 0 then
 				return
@@ -381,14 +383,17 @@ function SplineWorld.new(spline: Spline.Spline, base: Model.World?): SplineWorld
 					end
 				end
 			end
-			local c0 = closingMargin(x0, z0)
-			local c1, cn = closingMargin(x1, z1)
-			if c0 and c1 and cn then
-				if c0 > -CLOSING_DEPTH * 0.5 then
-					consider(c0, c1, cn, KIND_CLOSING) -- in front of it (or in its front half)
-				else
-					-- behind it: its back face is the wall, facing back down the road
-					consider(-CLOSING_DEPTH - c0, -CLOSING_DEPTH - c1, -cn, KIND_CLOSING)
+			if panels then
+				for _,panel in panels do
+					local at,n=Boundary.closingSweep(panel,x0,z0,x1,z1)
+					if at and n and at<best then best,bestN,bestKind=at,n,KIND_CLOSING end
+				end
+			else
+				local c0=closingMargin(x0,z0)
+				local c1,cn=closingMargin(x1,z1)
+				if c0 and c1 and cn then
+					if c0> -CLOSING_DEPTH*.5 then consider(c0,c1,cn,KIND_CLOSING)
+					else consider(-CLOSING_DEPTH-c0,-CLOSING_DEPTH-c1,-cn,KIND_CLOSING) end
 				end
 			end
 		end
@@ -445,6 +450,7 @@ function SplineWorld.new(spline: Spline.Spline, base: Model.World?): SplineWorld
 		footprint(pos, yaw, toPts)
 		local worst, worstN = 0, nil :: Vector3?
 		local hint = self.hint
+		local panels=if spline.infields and self.closing then spline:closingPanels(self.closing) else nil
 		local function take(depth: number, n: Vector3)
 			if depth > worst then
 				worst, worstN = depth, n
@@ -482,15 +488,13 @@ function SplineWorld.new(spline: Spline.Spline, base: Model.World?): SplineWorld
 					take(depth, dir)
 				end
 			end
-			local c, cn = closingMargin(x, z)
-			-- inside the slab: out of whichever face is nearer
-			if c and cn and c < PENETRATION_MARGIN and c > -CLOSING_DEPTH - PENETRATION_MARGIN then
-				local forward = PENETRATION_MARGIN - c
-				local back = c + CLOSING_DEPTH + PENETRATION_MARGIN
-				if back < forward then
-					take(back, -cn)
-				else
-					take(forward, cn)
+			if panels then
+				for _,panel in panels do local depth,n=Boundary.closingPush(panel,x,z,PENETRATION_MARGIN);if n then take(depth,n) end end
+			else
+				local c,cn=closingMargin(x,z)
+				if c and cn and c<PENETRATION_MARGIN and c> -CLOSING_DEPTH-PENETRATION_MARGIN then
+					local forward,back=PENETRATION_MARGIN-c,c+CLOSING_DEPTH+PENETRATION_MARGIN
+					if back<forward then take(back,-cn) else take(forward,cn) end
 				end
 			end
 		end

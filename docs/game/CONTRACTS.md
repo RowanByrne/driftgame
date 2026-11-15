@@ -562,8 +562,18 @@ Each triangle vertex also freezes a separate closure scalar
 `q=sa+(sb-sa)*across`. `sample().closingS` interpolates vertex q barycentrically;
 it is never progress. `Infield.closing(index,s)` emits numeric finite front-edge
 segments and ahead normals from that same scalar, including s between the two
-bank arc ranges. Closing panels, retained peer state and retirement consumers
-remain to be connected; these helpers alone do not prove a closed live field.
+bank arc ranges. This scalar is solely a shared physical closing boundary.
+
+`Spline.closingPanels(s)` returns immutable numeric slabs for the ordinary road
+and the field contour. The cache follows closing position, field revision,
+retained first sample and road length. `SplineBoundary.closingSpec` supplies the
+actual visual/walking CFrame and Size, including Roblox's0.05stud minimum box
+length. `closingSweep` / `closingPush` use that same finite slab and its end caps.
+The car and View consume these panels; walking selects them spatially and uses
+the same box specs. View refresh also follows field arrivals, retirement and a
+closing message received before its road. Initial-owner rejection and retained
+physical-peer support still need their separate integration; the panel checks
+alone do not prove complete live field retirement.
 
 `Spline.infieldContact` separates physical `contactS/d/kind` from `ownerS` and
 the deliberately off-asphalt `routeD`. Car and Sequence fixtures use it before

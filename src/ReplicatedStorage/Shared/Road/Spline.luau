@@ -56,6 +56,9 @@ local Infield = require(script.Parent.SplineInfield)
 
 local Spline = {}
 Spline.__index = Spline
+local closingCache=setmetatable({}, {__mode="k"}) :: {[any]:any}
+
+export type ClosingPanel={a:{number},b:{number},normal:Vector3,bottom:number,top:number,depth:number,field:boolean}
 
 export type Origin = { x: number, y: number, z: number, yaw: number }
 
@@ -610,6 +613,37 @@ end
 
 function Spline.infieldOpening(self:Spline,s:number,side:number):number
 	return if self.infields then Infield.opening(self.infields,s,side) else 0
+end
+
+function Spline.closingPanels(self:Spline,s:number):{ClosingPanel}
+	local revision=self.infieldRevision or 0
+	local cached=closingCache[self]
+	if cached and cached.s==s and cached.revision==revision and cached.first==self.firstSample and cached.length==self.length then return cached.panels end
+	local R,T=Config.Road,Config.Spline.Terrain
+	local out={}
+	if s>=self.firstSample*self.step and s<=self.length then
+		local x,y,z=self:surfaceXYZ(s,0)
+		local yaw=self:yawAt(s)
+		local width=R.Width*.5+math.max(self:runoffAt(s,-1),self:runoffAt(s,1))+T.EdgeDepth
+		local bankRise=width*math.abs(math.tan(self:bankAt(s)))
+		local bottom,top=y-R.Thickness-bankRise,y+R.BarrierHeight+bankRise
+		if self:hasBiomeGround() then for _,side in {-1,1} do
+			local edge=R.Width*.5+self:runoffAt(s,side)
+			for u=0,1,.25 do local ground=self:terrainY(s,side*edge*u);bottom=math.min(bottom,ground-R.Thickness);top=math.max(top,ground+R.BarrierHeight) end
+		end end
+		table.insert(out,table.freeze({a=table.freeze({x-width*math.cos(yaw),y,z+width*math.sin(yaw)}),
+			b=table.freeze({x+width*math.cos(yaw),y,z-width*math.sin(yaw)}),normal=Vector3.new(-math.sin(yaw),0,-math.cos(yaw)),
+			bottom=bottom,top=top,depth=1,field=false}))
+	end
+	if self.infields then
+		for _,line in Infield.closing(self.infields,s) do
+			table.insert(out,table.freeze({a=table.freeze(table.clone(line.a)),b=table.freeze(table.clone(line.b)),normal=line.normal,bottom=math.min(line.a[2],line.b[2])-R.Thickness,
+				top=math.max(line.a[2],line.b[2])+R.BarrierHeight,depth=1,field=true}))
+		end
+	end
+	table.freeze(out)
+	closingCache[self]={s=s,revision=revision,first=self.firstSample,length=self.length,panels=out}
+	return out
 end
 
 -- Physical contacts and accepted route position are deliberately separate.

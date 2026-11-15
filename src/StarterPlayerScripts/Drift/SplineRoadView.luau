@@ -42,6 +42,10 @@ export type View = typeof(setmetatable(
 		triangles: number,
 		lastError: string?,
 		closing: BasePart?,
+		closingFields: Folder?,
+		closingRevision: number?,
+		closingFirst: number?,
+		closingLaid: number?,
 		closingS: number?,
 		short: { [number]: number }, -- chunk -> the road's length when it was built short
 		rebuilt: number,
@@ -79,6 +83,10 @@ function SplineRoadView.new(spline: Spline.Spline, parent: Instance?): View
 		triangles = 0,
 		lastError = nil,
 		closing = nil,
+		closingFields = nil,
+		closingRevision = nil,
+		closingFirst = nil,
+		closingLaid = nil,
 		closingS = nil,
 		short = {},
 		rebuilt = 0,
@@ -143,6 +151,10 @@ end
 -- `Drift/SplineWorld` is what makes it solid.
 function SplineRoadView.SetClosing(self: View, s: number?)
 	self.closingS = s
+	self.closingRevision=self.spline.infieldRevision or 0
+	self.closingFirst=self.spline.firstSample
+	self.closingLaid=self.spline.length
+	if self.closingFields then self.closingFields:Destroy();self.closingFields=nil end
 	if not s then
 		if self.closing then
 			self.closing:Destroy()
@@ -151,43 +163,22 @@ function SplineRoadView.SetClosing(self: View, s: number?)
 		return
 	end
 	local R = Config.Road
-	local part = self.closing
-	if not part then
-		local p = Instance.new("Part")
-		p.Name = "ClosingBarrier"
-		p.Anchored = true
-		p.CanCollide = false
-		p.CanQuery = false
-		p.CanTouch = false
-		p.CastShadow = false
-		p.Material = R.BarrierMaterial
-		p.Color = R.Colours.Closing
-		p.Transparency = R.BarrierTransparency
-		p.Parent = self.folder
-		self.closing = p
-		part = p
-	end
-	local spline = self.spline
-	local x, y, z = spline:surfaceXYZ(s, 0)
-	local height = R.BarrierHeight + R.Thickness
-	local wider = math.max(spline:runoffAt(s, -1), spline:runoffAt(s, 1)) + Config.Spline.Terrain.EdgeDepth
-	local wide = R.Width + 2 * wider
-	-- tall enough to cover the banked road edge to edge
-	local bankRise = wide * 0.5 * math.abs(math.tan(spline:bankAt(s)))
-	local p = part :: BasePart
-	local bottom,top=y-R.Thickness-bankRise,y+R.BarrierHeight+bankRise
-	if spline:hasBiomeGround() then
-		for _,side in {-1,1} do
-			local edge=R.Width*.5+spline:runoffAt(s,side)
-			for t=0,1,.25 do
-				local ground=spline:terrainY(s,side*edge*t)
-				bottom,top=math.min(bottom,ground-R.Thickness),math.max(top,ground+R.BarrierHeight)
-			end
+	local base=false
+	for i,panel in self.spline:closingPanels(s) do
+		local p=if not panel.field then self.closing else nil
+		if not p then
+			p=Instance.new("Part");p.Name=if panel.field then `ClosingField_{i}` else "ClosingBarrier"
+			p.Anchored=true;p.CanCollide=false;p.CanQuery=false;p.CanTouch=false;p.CastShadow=false
+			p.Material=R.BarrierMaterial;p.Color=R.Colours.Closing;p.Transparency=R.BarrierTransparency
+			if panel.field then
+				if not self.closingFields then local f=Instance.new("Folder");f.Name="ClosingField";f.Parent=self.folder;self.closingFields=f end
+				p.Parent=self.closingFields
+			else p.Parent=self.folder;self.closing=p end
 		end
+		local cf,size=SplineBoundary.closingSpec(panel);p.CFrame=cf;p.Size=size
+		if not panel.field then base=true end
 	end
-	p.Size = Vector3.new(wide, top-bottom, 1)
-	-- the slab `Drift/SplineWorld` makes solid: 1 stud deep, its front face at `s`
-	p.CFrame = CFrame.new(x, (bottom+top)*.5, z) * CFrame.Angles(0, spline:yawAt(s), 0) * CFrame.new(0, 0, 0.5)
+	if not base and self.closing then self.closing:Destroy();self.closing=nil end
 end
 
 local function removeChunkNow(chunk:Instance)
@@ -284,6 +275,8 @@ function SplineRoadView.Update(self: View, s: number?)
 	if self.dead then
 		return
 	end
+	if self.closingRevision~=(self.spline.infieldRevision or 0) or self.closingFirst~=self.spline.firstSample
+		or (self.closingS and (self.closingLaid or 0)<self.closingS and self.spline.length>=self.closingS) then self:SetClosing(self.closingS) end
 	local M = Config.Spline.Mesh
 	local L = M.ChunkLength
 	local at = s or 0
