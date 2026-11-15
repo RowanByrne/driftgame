@@ -189,13 +189,15 @@ compares source planes, supported strips and foot vertices.
 The live View candidate adds `Drift/SplineFieldView`: patch-first sliced selection,
 complete old/target mask unions, actual source serials, paired road/field publication
 and supported off-window peer arms. `SplineRoadView.Update(s,position?)` follows the
-actual driver or walking root. Source-dependent fallback scenery and seams stay
-detached until their companion field is ready; supported floor batches may arrive
-incrementally. Allocation accounting includes pending meshes, and one retirement
-queue drains hidden Parts after freeing their mesh slots. Studio-only
+actual driver or walking root. Source-dependent fallback scenery and seams register
+in small transparent batches, then switch visibility with their companion field;
+supported floor batches may arrive incrementally. Allocation accounting includes
+pending meshes, and one retirement queue drains old support after hiding its source
+geometry and freeing mesh slots. Studio-only
 `SplineFieldViewTests.run()` checks selection and transition helpers;
-`runtime({forceFallback?})` exercises real source-height replacement and bounded
-publication. This candidate awaits actual lane validation. Atomic generated
+`Tests:runtime({forceFallback?})` exercises real source-height replacement and bounded
+publication. Initial mesh checks passed; forced Parts found a publication stall.
+The staged-visibility fix awaits lane validation. Atomic generated
 publication remains pending, and generated fields remain disabled.
 
 ## Native baked-shadow trial (Studio only)

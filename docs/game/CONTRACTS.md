@@ -742,9 +742,14 @@ final union trimming use field-only companion jobs. Coverage retains all old
 and target road masks until their replacements publish. Oversized unions drain
 old masks before adding distant coverage.
 
-Fallback supported floors may arrive in small batches. `sceneryParent` for
-ordinary terrain Parts and `seamParent` / `incrementalFloor` for field Parts keep
-source-dependent geometry detached until the paired commit. Peer strips draw
+Fallback supported floors may arrive in small batches. `sceneryParent` /
+`hiddenScenery` for ordinary terrain Parts and `hiddenSeams` / `incrementalFloor`
+for field Parts register small batches in the world with source-dependent Parts
+fully transparent. The paired commit reveals only those prepared Parts. Old
+source-dependent Parts become transparent in the same commit; immutable support
+may overlap its replacement while the shared sliced retirement queue drains it.
+This avoids synchronous registration/removal of a complete fallback chunk.
+Peer strips draw
 supported road, existing rails and physical feet outside published main arc
 intervals; they always use the current retained first even when an older floor
 union remains visible. Captured unmasked scenery also uses exact finite slabs,
@@ -761,10 +766,12 @@ rendering may remain unavailable until a later source change retries it.
 `SplineMesh.owns(model)` / `liveMeshCount()` expose allocation ownership, including
 in-flight builders. `release(model)` frees its registered EditableMeshes without
 destroying its ordinary Parts; callers hide the model first and own its eventual
-destruction. The View releases mesh slots synchronously and drains hidden Parts
+destruction. The View releases mesh slots synchronously and drains retired Parts
 through one sliced retirement queue. Five resident roads, one road build and
-old/new field meshes fit the eight-mesh guard. Real registration/removal costs,
-full View lifecycle and generated publication still require lane checks.
+old/new field meshes fit the eight-mesh guard. The first actual forced-Parts
+check exposed a105ms publication stall from whole-root registration/removal;
+the staged-visibility replacement still requires actual lane validation. Full
+View lifecycle and generated publication remain pending.
 
 ## Studio-only baked shadow trial (T-214)
 

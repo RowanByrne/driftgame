@@ -120,20 +120,25 @@ function Tests.runtime(_self,options)
 				if live and live.sources[id]~=record.serial then note(`source serial mismatch {id}`) end
 			end
 			if live then for id in live.sources do if not view.records[id] then note(`retired seam source {id}`) end end end
+			local function exposed(root)
+				if not root then return false end
+				for _,p in root:GetDescendants() do if p:IsA("BasePart") and p.Transparency<1 then return true end end
+				return false
+			end
 			for _,child in view.folder:GetChildren() do
 				if child:GetAttribute("Fallback") and not published[child] then
-					if child:FindFirstChild("Scenery") then early+=1 end
+					if exposed(child:FindFirstChild("Scenery")) then early+=1 end
 					for _,batch in child:GetChildren() do
 						if batch.Name=="TerrainSlices" then
 							local first=batch:FindFirstChildWhichIsA("BasePart")
-							if first and not string.find(first.Name,"Ground",1,true) then early+=1 end
+							if first and first.Transparency<1 and not string.find(first.Name,"Ground",1,true) then early+=1 end
 						end
 					end
 				elseif child:GetAttribute("Infield") and (not live or child~=live.model) then
-					if child:FindFirstChild("FieldSeams") then early+=1 end
+					if exposed(child:FindFirstChild("FieldSeams")) then early+=1 end
 					for _,batch in child:GetChildren() do
 						local first=batch:FindFirstChildWhichIsA("BasePart")
-						if first and string.find(first.Name,"InfieldSeam",1,true) then early+=1 end
+						if first and first.Transparency<1 and string.find(first.Name,"InfieldSeam",1,true) then early+=1 end
 					end
 				end
 			end

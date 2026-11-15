@@ -156,6 +156,7 @@ function FieldView.PreparePeers(self:View,plan:any,records:{[number]:RoadRecord}
 			local old=self.peers[key]
 			if old and old.folder.Parent==parent then prepared[key]=old else
 				local folder=Instance.new("Folder");folder.Name="FieldPeerRoad";folder:SetAttribute("S0",s);folder:SetAttribute("S1",last)
+				if o.stageRoot then o.stageRoot(folder,{}) end
 				table.insert(created,folder);folder.Parent=parent
 				if o.beforeBuilder then o.beforeBuilder() end
 				local parts,info=Parts.build(self.spline,s,last,folder,{terrain=true,groundOnly=true,cancelled=cancelled})
@@ -200,10 +201,9 @@ function FieldView.Build(self:View,plan:any,records:{[number]:RoadRecord},parent
 	if not model then
 		if cancelled() then return nil,"field build cancelled" end
 		self.fallbacks+=1
-		if o.incrementalFloor then seamParent=Instance.new("Folder");seamParent.Name="FieldSeams" end
 		if o.beforeBuilder then o.beforeBuilder() end
 		model,info=Parts.buildInfield(self.spline,0,0,1,o.floorParent or parent,{plan=plan,first=plan.first,seams=seams,cancelled=cancelled,
-			incrementalFloor=o.incrementalFloor,seamParent=seamParent,dispose=o.dispose})
+			incrementalFloor=o.incrementalFloor,hiddenSeams=o.incrementalFloor,onModel=o.stageRoot,dispose=o.dispose})
 		if o.afterBuilder then o.afterBuilder() end
 	end
 	if not model then

@@ -41,6 +41,7 @@ export type Options = {
 	captureScenery: boolean?,
 	groundOnly: boolean?, -- supported asphalt/lip/banks without new mountain scenery
 	sceneryParent: Instance?, -- optional detached layer for paired source publication
+	hiddenScenery: {BasePart}?, -- live staged scenery, invisible until its companion commits
 }
 
 local function point(spline: Spline.Spline, s: number, d: number): Vector3
@@ -99,6 +100,7 @@ local function terrain(spline:Spline.Spline,s0:number,s1:number,parent:Instance,
 			else Builder.triangleSlab(name,a,b,c,.15,colour,mat,batch,made :: any) end
 			for _,p in made do
 				p.CanCollide=false;p.CanTouch=false;p.CanQuery=o.queryable==true
+				if not surface and o.hiddenScenery then p.Transparency=1;table.insert(o.hiddenScenery,p) end
 				if o.queryable and surface then
 					p:AddTag(Config.Drift.SurfaceTag);p:SetAttribute(Config.Drift.SurfaceAttribute,surface)
 				end
@@ -302,6 +304,8 @@ function SplineParts.buildInfield(spline:Spline.Spline,x:number,z:number,radius:
 	if #selected==0 then return nil,"empty" end
 	if o.maxTriangles and #selected>o.maxTriangles then return nil,"infield warm support exceeds its triangle bound" end
 	local model=Instance.new("Model");model.Name="InfieldParts";model:SetAttribute("Infield",true)
+	local hidden={}
+	if o.onModel then o.onModel(model,hidden) end
 	model:SetAttribute("InfieldRevision",if o.plan then o.plan.revision else spline.infieldRevision or 0)
 	model:SetAttribute("InfieldCoverage",if o.plan then o.plan.key else "near")
 	model:SetAttribute("InfieldFirst",first)
@@ -309,6 +313,8 @@ function SplineParts.buildInfield(spline:Spline.Spline,x:number,z:number,radius:
 	local batch=Instance.new("Folder");batch.Name="FieldSlices"
 	local batchParent:Instance=model
 	if o.incrementalFloor then model.Parent=parent end
+	local seamParent=o.seamParent
+	if o.hiddenSeams then seamParent=Instance.new("Folder");seamParent.Name="FieldSeams";seamParent.Parent=model end
 	local function flush()
 		if #batch:GetChildren()>0 then batch.Parent=batchParent else batch:Destroy() end
 		batch=Instance.new("Folder");batch.Name="FieldSlices"
@@ -344,7 +350,7 @@ function SplineParts.buildInfield(spline:Spline.Spline,x:number,z:number,radius:
 			end
 			triangles+=1
 		end
-		if o.seamParent then flush();batchParent=o.seamParent end
+		if seamParent then flush();batchParent=seamParent end
 		for i,seam in seams do
 			tick()
 			local t={a={p=seam.points[1]},b={p=seam.points[2]},c={p=seam.points[3]}}
@@ -353,6 +359,7 @@ function SplineParts.buildInfield(spline:Spline.Spline,x:number,z:number,radius:
 			local colour=if typeof(material)=="Color3" then material elseif type(material)=="table" and typeof(material.colour)=="Color3" then material.colour else T.RockColour
 			for _,p in made do
 				p.Color=colour;p.Material=Enum.Material.Slate;p.CanCollide=false;p.CanTouch=false;p.CanQuery=o.queryable==true
+				if o.hiddenSeams then p.Transparency=1;table.insert(hidden,p) end
 				p.CastShadow=true;count+=1
 			end
 			triangles+=1

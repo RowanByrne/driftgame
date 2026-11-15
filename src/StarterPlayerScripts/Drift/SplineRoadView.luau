@@ -209,8 +209,21 @@ end
 -- source geometry while their ordinary Parts are released in small batches.
 local retireQueue={}
 local retiring=false
+local stagedRoots=setmetatable({}, {__mode="k"})
+local queuedRoots=setmetatable({}, {__mode="k"})
+local function stageRoot(root:Instance,hidden:{BasePart})stagedRoots[root]=hidden end
+local function showRoot(root:Instance)
+	for _,p in stagedRoots[root] or {} do p.Transparency=0 end
+end
 local function removeChunk(chunk:Instance)
-	pcall(function()chunk.Parent=nil end)
+	if queuedRoots[chunk] then return end
+	queuedRoots[chunk]=true
+	local hidden=stagedRoots[chunk]
+	if hidden then
+		-- The immutable support may overlap its replacement while it drains.
+		-- Only the old source-dependent scenery must disappear at this commit.
+		for _,p in hidden do p.Transparency=1 end
+	else pcall(function()chunk.Parent=nil end) end
 	if SplineMesh.owns(chunk) then SplineMesh.release(chunk :: Model) end
 	table.insert(retireQueue,chunk)
 	if retiring then return end
@@ -221,6 +234,7 @@ local function removeChunk(chunk:Instance)
 			if SplineMesh.owns(node) then SplineMesh.destroy(node :: Model);return end
 			if node:IsA("Folder") or node:IsA("Model") then for _,child in node:GetChildren() do drain(child) end end
 			node:Destroy()
+			stagedRoots[node]=nil
 			if os.clock()-sliceStart>=Config.Spline.Mesh.SliceMs/1000 then task.wait();sliceStart=os.clock() end
 		end
 		while #retireQueue>0 do drain(table.remove(retireQueue,1)) end
@@ -298,7 +312,8 @@ function SplineRoadView._publishField(self:View,field:any,peers:any)
 	if field~=old then
 		if field then
 			if field.seams then field.seams.Parent=field.model end
-			field.model.Parent=self.folder
+			if field.model.Parent~=self.folder then field.model.Parent=self.folder end
+			showRoot(field.model)
 		end
 		self.fields.live=field
 		if old then discardField(old) end
@@ -337,11 +352,13 @@ function SplineRoadView._build(self: View, i: number)
 		if model then chunk=model;mesh=true else
 			self.fallbacks+=1;self.lastError=tostring(details)
 			local folder=Instance.new("Folder");folder.Name=`Chunk_{math.floor(s0)}_parts`;folder:SetAttribute("Fallback",true)
+			local hidden={};stageRoot(folder,hidden)
 			chunk=folder;folder.Parent=self.folder
-			if capture then scenery=Instance.new("Folder");scenery.Name="Scenery";scenery.Parent=staging end
+			if capture then scenery=Instance.new("Folder");scenery.Name="Scenery";scenery.Parent=folder end
 			flush()
 			local _,stats=SplineParts.build(self.spline,s0,s1,folder,{terrain=true,queryable=false,barriers=false,
-				omitHills=hints and hints.omitHills,fieldPlan=target,captureScenery=capture,sceneryParent=scenery,cancelled=cancelled})
+				omitHills=hints and hints.omitHills,fieldPlan=target,captureScenery=capture,sceneryParent=scenery,
+				hiddenScenery=hidden,cancelled=cancelled})
 			reset();info=stats
 		end
 		if not valid() then error("road field job cancelled",0) end
@@ -355,16 +372,16 @@ function SplineRoadView._build(self: View, i: number)
 		if fieldChanged and cover then
 			local why
 			candidateField,why=self.fields:Build(cover,prospective,staging,tick,cancelled,{incrementalFloor=true,
-				floorParent=self.folder,dispose=removeChunk,beforeBuilder=flush,afterBuilder=reset})
+				floorParent=self.folder,dispose=removeChunk,stageRoot=stageRoot,beforeBuilder=flush,afterBuilder=reset})
 			if not candidateField then error(`field companion build failed: {why}`,0) end
 		elseif not fieldChanged then candidateField=self.fields.live end
 		if not valid() then error("road field job cancelled",0) end
-		local peers=self.fields:PreparePeers(cover,prospective,self.folder,tick,cancelled,createdPeers,{beforeBuilder=flush,afterBuilder=reset})
+		local peers=self.fields:PreparePeers(cover,prospective,self.folder,tick,cancelled,createdPeers,{stageRoot=stageRoot,beforeBuilder=flush,afterBuilder=reset})
 		flush()
 		if not valid() then error("road field job cancelled",0) end
 		local publishStart=os.clock()
-		if scenery then scenery.Parent=chunk end
 		if (chunk :: Instance).Parent~=self.folder then (chunk :: Instance).Parent=self.folder end
+		showRoot(chunk :: Instance)
 		local old=self.chunks[i]
 		self.chunks[i]=chunk :: Instance;self.records[i]=record;self.residentEpoch+=1
 		self.builtAt[i]=builtAt
@@ -417,11 +434,11 @@ function SplineRoadView._fieldJob(self:View,evictions:{number})
 			while not self.forceFallback and SplineMesh.liveMeshCount()+1>8 do tick();task.wait();reset() end
 			local why
 			candidateField,why=self.fields:Build(cover,prospective,staging,tick,cancelled,{incrementalFloor=true,
-				floorParent=self.folder,dispose=removeChunk,beforeBuilder=flush,afterBuilder=reset})
+				floorParent=self.folder,dispose=removeChunk,stageRoot=stageRoot,beforeBuilder=flush,afterBuilder=reset})
 			if not candidateField then error(`field companion build failed: {why}`,0) end
 		elseif not changed then candidateField=self.fields.live end
 		if not valid() then error("road field job cancelled",0) end
-		local peers=self.fields:PreparePeers(cover,prospective,self.folder,tick,cancelled,createdPeers,{beforeBuilder=flush,afterBuilder=reset})
+		local peers=self.fields:PreparePeers(cover,prospective,self.folder,tick,cancelled,createdPeers,{stageRoot=stageRoot,beforeBuilder=flush,afterBuilder=reset})
 		flush()
 		if not valid() then error("road field job cancelled",0) end
 		local publishStart=os.clock()
@@ -593,7 +610,7 @@ function SplineRoadView.Destroy(self: View)
 	local folder=self.folder
 	-- Give the next view its EditableMesh slots before any fallback drain yields.
 	for _,child in folder:GetChildren() do removeChunk(child) end
-	folder:Destroy()
+	stageRoot(folder,{});removeChunk(folder)
 end
 
 function SplineRoadView.DebugState(self: View)
