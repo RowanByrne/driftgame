@@ -823,6 +823,8 @@ separate possible field pairs. Approach bounds include the actual inbound-arm
 start and retained first; departure starts after the final curvature-easing
 interval, including any existing straight tail. A pending pair freezes once its
 bounded departure is known or before the next real planned curve starts.
+Grade preparation and small heading corrections remain on the same known
+approach arm; their easing cannot reset its start to the next turn's start.
 
 All ready intents for a section share one batch. Planning sees accepted ground,
 existing hard reservations and a temporary copy of the current tip's promised

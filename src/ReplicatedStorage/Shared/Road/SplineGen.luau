@@ -1604,7 +1604,9 @@ function SplineGen._infields(self:Gen,sec:Spline.Section,s0:number,maneuver:any)
 			self.infieldTurn=nil
 			if curved then self.infieldPending={a0=self.infieldArmStart,a1=maneuver.a1,b0=maneuver.b0} end
 		elseif what~="gradeApproach" and what~="straighten" then self.infieldTurn=nil end
-		if curved then self.infieldArmStart=maneuver.b0 end
+		-- Grade preparation and a small heading correction remain on the same
+		-- known arm. Their easing must not erase the approach just before a turn.
+		if curved and what~="gradeApproach" and what~="straighten" then self.infieldArmStart=maneuver.b0 end
 	end
 	-- A fitted section can contain the entire departure budget itself.
 	pending=self.infieldPending

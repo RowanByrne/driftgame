@@ -1073,6 +1073,10 @@ function Tests.generator(_self,subjects)
 		local observed={};local sp={length=500,tip=function()return 0,0,0,0 end}
 		local state=setmetatable({spline=sp,biomes={},infieldArmStart=80,
 			_publishInfields=function(_,section,intents)if #intents>0 then table.insert(observed,{section=section,intents=intents})end end},Gen)
+		state:_infields({},400,{what="gradeApproach",a1=400,b0=450})
+		state:_infields({},450,{what="straighten",a1=450,b0=500})
+		check("minor preparation keeps the real approach arm without creating a field",state.infieldArmStart==80
+			and state.infieldPending==nil and #observed==0,"grade easing and heading correction cannot truncate the next approach to zero length")
 		local section={len=400,k={20,.01,120,.01,140,0,400,0}}
 		state:_prepareInfield(section,{what="turnaround",tag="Hairpin"})
 		local marker=state.preparedInfield
