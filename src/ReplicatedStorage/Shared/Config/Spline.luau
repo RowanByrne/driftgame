@@ -534,6 +534,7 @@ local Spline = {
 		TerrainClamp = 6, -- studs
 		TerrainDepth = 8, -- studs
 		TerrainSliceMs = 2, -- ms of building a frame (a chunk's one write can overrun it)
+		TerrainWriteGap = 0.1, -- seconds at least between two writes, so their slow frames never bunch up
 		TerrainGrassColour = Color3.fromRGB(86, 132, 62),
 		TerrainRockColour = Color3.fromRGB(116, 110, 102),
 	},

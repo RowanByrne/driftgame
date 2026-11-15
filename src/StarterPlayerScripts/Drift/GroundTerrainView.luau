@@ -294,7 +294,7 @@ function GroundTerrainView._run(self: View)
 			break
 		end
 		self:_write(cx, cz)
-		task.wait()
+		task.wait(Config.Spline.Ground.TerrainWriteGap)
 	end
 	self.running = false
 end
