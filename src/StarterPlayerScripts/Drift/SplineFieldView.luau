@@ -156,13 +156,14 @@ function FieldView.PreparePeers(self:View,plan:any,records:{[number]:RoadRecord}
 			local old=self.peers[key]
 			if old and old.folder.Parent==parent then prepared[key]=old else
 				local folder=Instance.new("Folder");folder.Name="FieldPeerRoad";folder:SetAttribute("S0",s);folder:SetAttribute("S1",last)
-				if o.stageRoot then o.stageRoot(folder,{}) end
+				local hidden=if o.stageRoot then {} else nil
+				if o.stageRoot then o.stageRoot(folder,hidden) end
 				table.insert(created,folder);folder.Parent=parent
 				if o.beforeBuilder then o.beforeBuilder() end
 				local parts,info=Parts.build(self.spline,s,last,folder,{terrain=true,groundOnly=true,cancelled=cancelled})
 				if o.afterBuilder then o.afterBuilder() end
 				self.peerWorst=math.max(self.peerWorst or 0,info.sliceMs or 0)
-				Boundary.build(self.spline,s,last,folder,tick,true,true)
+				Boundary.build(self.spline,s,last,folder,tick,true,true,hidden)
 				tick()
 				prepared[key]={folder=folder,s0=s,s1=last,parts=#parts,triangles=info.triangles}
 			end

@@ -116,7 +116,7 @@ function Boundary.toeRow(spline:Spline.Spline,s:number,side:number):{Vector3}
  return {p,p+right*2+Vector3.yAxis*(4*(1-spline:infieldOpening(s,side))),p+right*3}
 end
 
-function Boundary.build(spline:Spline.Spline,s0:number,s1:number,parent:Instance,yieldFn:(()->())?,roadRails:boolean?,toeParts:boolean?):number
+function Boundary.build(spline:Spline.Spline,s0:number,s1:number,parent:Instance,yieldFn:(()->())?,roadRails:boolean?,toeParts:boolean?,hiddenToes:{BasePart}?):number
 	local T=Config.Spline.Terrain
 	local half=Config.Road.Width*.5
 	local count=0
@@ -145,7 +145,10 @@ function Boundary.build(spline:Spline.Spline,s0:number,s1:number,parent:Instance
       local made={}
       Builder.triangleSlab(`OuterRock_{side}_{a}_{j}a`,pa[j],pa[j+1],pb[j+1],.1,T.RockColour,Enum.Material.Slate,parent,made :: any)
       Builder.triangleSlab(`OuterRock_{side}_{a}_{j}b`,pa[j],pb[j+1],pb[j],.1,T.RockColour,Enum.Material.Slate,parent,made :: any)
-      for _,p in made do p.CanCollide=false;p.CanQuery=false;p.CanTouch=false;count+=1 end
+      for _,p in made do
+       p.CanCollide=false;p.CanQuery=false;p.CanTouch=false;count+=1
+       if hiddenToes then p.Transparency=1;table.insert(hiddenToes,p) end
+      end
       if yieldFn then yieldFn() end
      end
     end

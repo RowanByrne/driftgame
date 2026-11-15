@@ -210,10 +210,13 @@ end
 local retireQueue={}
 local retiring=false
 local stagedRoots=setmetatable({}, {__mode="k"})
+local revealedRoots=setmetatable({}, {__mode="k"})
 local queuedRoots=setmetatable({}, {__mode="k"})
 local function stageRoot(root:Instance,hidden:{BasePart})stagedRoots[root]=hidden end
 local function showRoot(root:Instance)
+	if revealedRoots[root] then return end
 	for _,p in stagedRoots[root] or {} do p.Transparency=0 end
+	revealedRoots[root]=true
 end
 local function removeChunk(chunk:Instance)
 	if queuedRoots[chunk] then return end
@@ -235,6 +238,7 @@ local function removeChunk(chunk:Instance)
 			if node:IsA("Folder") or node:IsA("Model") then for _,child in node:GetChildren() do drain(child) end end
 			node:Destroy()
 			stagedRoots[node]=nil
+			revealedRoots[node]=nil
 			if os.clock()-sliceStart>=Config.Spline.Mesh.SliceMs/1000 then task.wait();sliceStart=os.clock() end
 		end
 		while #retireQueue>0 do drain(table.remove(retireQueue,1)) end
@@ -321,6 +325,7 @@ function SplineRoadView._publishField(self:View,field:any,peers:any)
 	end
 	local previous=self.fields.peers
 	self.fields.peers=peers
+	for _,peer in peers do showRoot(peer.folder) end
 	for key,peer in previous do if peers[key]~=peer then removeChunk(peer.folder) end end
 end
 
@@ -362,7 +367,7 @@ function SplineRoadView._build(self: View, i: number)
 			reset();info=stats
 		end
 		if not valid() then error("road field job cancelled",0) end
-		SplineBoundary.build(self.spline,s0,s1,chunk :: Instance,tick,not mesh,not mesh)
+		SplineBoundary.build(self.spline,s0,s1,chunk :: Instance,tick,not mesh,not mesh,stagedRoots[chunk :: Instance])
 		self.sourceSerial+=1
 		local record=table.freeze({model=chunk :: Instance,serial=self.sourceSerial,scenery=info.scenery,mask=target,s0=s0,s1=s1,mesh=mesh})
 		local prospective=table.clone(records);prospective[i]=record

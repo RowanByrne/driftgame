@@ -748,6 +748,9 @@ for field Parts register small batches in the world with source-dependent Parts
 fully transparent. The paired commit reveals only those prepared Parts. Old
 source-dependent Parts become transparent in the same commit; immutable support
 may overlap its replacement while the shared sliced retirement queue drains it.
+Opening-dependent low rock feet are included in the source visibility array for
+both ordinary fallback chunks and peer strips; old closed feet cannot linger
+after their newly open field publishes.
 This avoids synchronous registration/removal of a complete fallback chunk.
 Peer strips draw
 supported road, existing rails and physical feet outside published main arc

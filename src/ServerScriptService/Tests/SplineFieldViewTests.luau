@@ -114,6 +114,7 @@ function Tests.runtime(_self,options)
 			maxMeshes=math.max(maxMeshes,state.peakMeshes,state.liveMeshes);maxPublish=math.max(maxPublish,state.worstPublishMs)
 			if state.chunks>5 or state.liveMeshes>8 then note(`road/mesh budget {state.chunks}/{state.liveMeshes}`) end
 			local live=view.fields.live;local published={}
+			for _,peer in view.fields.peers do published[peer.folder]=true end
 			for id,record in view.records do
 				published[record.model]=true
 				if record.model.Parent~=view.folder then note(`unparented published road {id}`) end
@@ -126,6 +127,11 @@ function Tests.runtime(_self,options)
 				return false
 			end
 			for _,child in view.folder:GetChildren() do
+				if not published[child] and (child:GetAttribute("Fallback") or child.Name=="FieldPeerRoad") then
+					for _,p in child:GetChildren() do
+						if p:IsA("BasePart") and string.find(p.Name,"OuterRock",1,true) and p.Transparency<1 then early+=1 end
+					end
+				end
 				if child:GetAttribute("Fallback") and not published[child] then
 					if exposed(child:FindFirstChild("Scenery")) then early+=1 end
 					for _,batch in child:GetChildren() do
