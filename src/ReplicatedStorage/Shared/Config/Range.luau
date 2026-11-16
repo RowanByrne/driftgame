@@ -90,4 +90,9 @@ return {
 	-- heading further off its aim than its bends may stray, the road turns back onto it on these
 	-- radii rather than run on straight (T-242)
 	RecoverRadius = { 90, 250 }, -- studs
+	-- (T-242 trial switches, temporary)
+	AimFlip = "hyst", -- "flip" | "hyst" | "near" | "keep"
+	CurlEnd = false,
+	Recover = "turn", -- "turn" | "converge" | "none"
+	NearestBy = "worst", -- "worst" | "end"
 }
