@@ -203,6 +203,7 @@ end
 -- 4. The generator never boxes itself in, and what it costs.
 function parts.health(check)
 	local stalls, escapes, cornered, sections, worstMs, totalMs = 0, 0, 0, 0, 0, 0
+	local seedWorst = {}
 	local kinds = {}
 	local rejectsCrowded, rejectsHeading, tries = 0, 0, 0
 	local minR, maxR = math.huge, 0
@@ -216,6 +217,7 @@ function parts.health(check)
 		cornered += st.cornered
 		sections += st.sections
 		worstMs = math.max(worstMs, st.worstMs)
+		table.insert(seedWorst, st.worstMs)
 		totalMs += st.totalMs
 		rejectsCrowded += st.rejectedCrowded
 		rejectsHeading += st.rejectedHeading
@@ -237,10 +239,18 @@ function parts.health(check)
 	end
 	table.sort(mix)
 	check("never boxed in", stalls == 0, `{stalls} of {HEALTH_SEEDS} roads of {HEALTH_LENGTH} studs stalled; {escapes} escapes laid in {sections} sections, {cornered} cornered`)
+	-- WHAT A SECTION COSTS, ON THE WALL CLOCK. Until T-244 this was the single worst section of
+	-- all 20 roads under 20 ms, and that is the tail of the tail of a wall clock in Studio: the
+	-- same seeds measured three times in a row (2026-11-16) gave a mean of 2.0 ms every time,
+	-- and a worst per road of 11 to 18 ms with one road in twenty reaching 20 to 26, a
+	-- different one each time. So the check is on what does not swing: the mean, and the
+	-- median road's worst section. The single worst is still reported.
+	table.sort(seedWorst)
+	local medianWorst = seedWorst[math.max(1, math.ceil(#seedWorst / 2))] or 0
 	check(
 		"a section costs little",
-		worstMs < 20,
-		`mean {fmt(totalMs / sections, 2)} ms, worst {fmt(worstMs, 2)} ms; {tries} candidates for {sections} sections ({rejectsCrowded} too close to old road, {rejectsHeading} off heading)`
+		totalMs / math.max(sections, 1) < 4 and medianWorst < 20,
+		`mean {fmt(totalMs / sections, 2)} ms, a road's worst {fmt(medianWorst, 2)} ms (the median road), worst of all {fmt(worstMs, 2)} ms; {tries} candidates for {sections} sections ({rejectsCrowded} too close to old road, {rejectsHeading} off heading)`
 	)
 	check("bends of every radius", minR <= 80 and maxR >= 600, `radii {fmt(minR, 0)} .. {fmt(maxR, 0)} studs. Mix: {table.concat(mix, ", ")}`)
 end

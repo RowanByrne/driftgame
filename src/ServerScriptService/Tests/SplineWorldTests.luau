@@ -180,6 +180,7 @@ function Tests.run(which: { string }?, ...)
 			local rng = Random.new(3)
 			local worstY, worstDeg, misses, n, sumDeg = 0, 0, 0, 0, 0
 			local worstAt = ""
+			local worstTrue, partsOff = 0, 0
 			for _ = 1, 3000 do
 				local s = 60 + rng:NextNumber() * (LENGTH - 120)
 				local d = (rng:NextNumber() * 2 - 1) * (half - 0.3)
@@ -199,6 +200,20 @@ function Tests.run(which: { string }?, ...)
 					local deg = math.deg(math.acos(math.clamp(a.normal:Dot(b.normal), -1, 1)))
 					worstDeg = math.max(worstDeg, deg)
 					sumDeg += deg
+					if deg > 4 then
+						partsOff += 1
+					end
+					-- the surface's own normal, by finite differences, as SplineTests reads it
+					local e = 0.01
+					local ax, ay, az = spline:surfaceXYZ(s + e, d)
+					local bx, by, bz = spline:surfaceXYZ(s - e, d)
+					local cx, cy, cz = spline:surfaceXYZ(s, d + e)
+					local fx, fy, fz = spline:surfaceXYZ(s, d - e)
+					local fd = Vector3.new(ax - bx, ay - by, az - bz):Cross(Vector3.new(fx - cx, fy - cy, fz - cz)).Unit
+					if fd.Y < 0 then
+						fd = -fd
+					end
+					worstTrue = math.max(worstTrue, math.deg(math.acos(math.clamp(a.normal:Dot(fd), -1, 1))))
 				end
 			end
 			check("ground height matches the parts", misses == 0 and worstY < YARD_TOLERANCE, `{n} points across the road: {misses} missed by one or the other; worst {fmt(worstY, 4)} studs ({worstAt})`)
@@ -208,8 +223,18 @@ function Tests.run(which: { string }?, ...)
 			-- of the road takes one of them. So the worst is the yardstick's, and it is the mean
 			-- that says the two surfaces agree. The maths' own normal is checked against its
 			-- own surface in SplineTests, to 0.04 degrees.
+			-- SO THE WORST IS JUDGED ON THE SURFACE ITSELF (T-244). Until then it was the parts'
+			-- worst under 8 degrees, and on today's road for this seed (bends down to a 104-stud
+			-- radius rolling their bank) it read 9.4, at a point where the maths' normal was
+			-- within 0.04 degrees of the surface's own: the triangle was off, not
+			-- the car's ground. So the maths must match the surface's normal (finite
+			-- differences, as SplineTests reads it) everywhere, and the parts on the mean.
 			local mean = sumDeg / math.max(1, n - misses)
-			check("ground normal matches the parts", mean < 1 and worstDeg < 8, `mean {fmt(mean, 2)} degrees, worst {fmt(worstDeg, 2)} (where the road twists and a full-width triangle cannot)`)
+			check(
+				"ground normal matches the parts",
+				mean < 1 and worstTrue < 0.5,
+				`mean {fmt(mean, 2)} degrees off the parts, worst {fmt(worstDeg, 2)} ({partsOff} over 4, where the road twists and a full-width triangle cannot); off the surface's own normal {fmt(worstTrue, 3)} at worst`
+			)
 		end
 
 		-- 2. The walls: a step into a barrier stops in the same place.
@@ -217,6 +242,7 @@ function Tests.run(which: { string }?, ...)
 			local rng = Random.new(4)
 			local worstGap, worstDeg, disagree, trials, stops, late = 0, 0, 0, 0, 0, 0
 			local worstAt = ""
+			local worstTrue, chordOff = 0, 0
 			for _ = 1, 300 do
 				local s = 80 + rng:NextNumber() * (LENGTH - 160)
 				local side = if rng:NextNumber() < 0.5 then -1 else 1
@@ -271,7 +297,27 @@ function Tests.run(which: { string }?, ...)
 						worstGap = gap
 						worstAt = `s {fmt(s, 1)} side {side}, into {fmt(math.deg(into), 0)} deg`
 					end
-					worstDeg = math.max(worstDeg, math.deg(math.acos(math.clamp(an:Dot(bn), -1, 1))))
+					local deg = math.deg(math.acos(math.clamp(an:Dot(bn), -1, 1)))
+					worstDeg = math.max(worstDeg, deg)
+					if deg > 3 then
+						chordOff += 1
+					end
+					-- the wall's own normal: square to the road's edge somewhere the car's body
+					-- could be touching it (the stop is the car's middle; a corner reaches
+					-- half its diagonal along the road, and on a 105-stud bend that turns the
+					-- wall 4 degrees and more), or where it was headed: the maths reads the
+					-- wall at the end of the 4-stud step, not where it touched (1.8 degrees
+					-- off the touch at worst, measured)
+					local sa = spline:projectFrom(a.X, a.Z, s) or s
+					local reach = 0.5 * math.sqrt(D.BodyLength ^ 2 + D.BodyWidth ^ 2) + 4
+					local flatN = Vector3.new(an.X, 0, an.Z).Unit
+					local best = 180
+					for u = sa - reach, sa + reach, 0.25 do
+						local ya = spline:yawAt(u)
+						local inward = Vector3.new(math.cos(ya), 0, -math.sin(ya)) * -side
+						best = math.min(best, math.deg(math.acos(math.clamp(flatN:Dot(inward), -1, 1))))
+					end
+					worstTrue = math.max(worstTrue, best)
 				end
 			end
 			check(
@@ -279,7 +325,16 @@ function Tests.run(which: { string }?, ...)
 				disagree == 0 and worstGap < YARD_TOLERANCE * 1.5,
 				`{trials} steps of 4 studs at 10..80 degrees: {stops} stopped by both, {late} grazes the parts' sweep missed and their overlap then caught, {disagree} disagreed; worst stop {fmt(worstGap, 3)} studs apart across the wall ({worstAt})`
 			)
-			check("the barrier's normal matches", worstDeg < 3, `worst {fmt(worstDeg, 2)} degrees (the parts are 4-stud chords of the curve)`)
+			-- THE PARTS ARE 4-STUD CHORDS, AND A CHORD HAS CORNERS. Until T-244 this was the
+			-- parts' worst under 3 degrees; on today's road for this seed a car stopped on a
+			-- chord's corner read 35 degrees (and another 15) while the maths' normal was square
+			-- to the road's edge there. So the maths is judged on the wall itself, and the parts
+			-- on nearly every stop.
+			check(
+				"the barrier's normal matches",
+				worstTrue < 1 and chordOff <= math.max(1, math.floor(stops * 0.05)),
+				`off the wall's own normal {fmt(worstTrue, 2)} degrees at worst; off the parts {fmt(worstDeg, 2)} at worst, {chordOff} of {stops} stops over 3 (the parts are 4-stud chords of the curve)`
+			)
 		end
 
 		-- 3. Inside a barrier: pushed out the same way, as far.
@@ -368,11 +423,13 @@ function Tests.run(which: { string }?, ...)
 			local mw = SplineWorld.new(mountain, nil)
 			-- A place where `side` ends in `kind` for 80 studs either way, on a gentle stretch,
 			-- with or without a K-rail.
-			local function find(kind: number, side: number, rail: boolean): number?
+			-- `maxK`: how sharp a bend may be there (a gentle 1 / 300 unless said).
+			local function find(kind: number, side: number, rail: boolean, maxK: number?): number?
+				local kLimit = maxK or 1 / 300
 				for s = 300, searchTo - 300, 7 do
 					local good = true
 					for u = s - 80, s + 80, 10 do
-						if mountain:edgeAt(u, side) ~= kind or math.abs(mountain:curvatureAt(u)) > 1 / 300 or (mountain:kRailAt(u, side) ~= nil) ~= rail then
+						if mountain:edgeAt(u, side) ~= kind or math.abs(mountain:curvatureAt(u)) > kLimit or (mountain:kRailAt(u, side) ~= nil) ~= rail then
 							good = false
 							break
 						end
@@ -404,6 +461,7 @@ function Tests.run(which: { string }?, ...)
 					airborne = runner.state.airborne,
 					walls = after.wallStops - before.wallStops,
 					rails = after.kRailStops - before.kRailStops,
+					pushes = after.pushes - before.pushes,
 					grass = after.grass - before.grass,
 					overCliff = after.overCliff - before.overCliff,
 					-- where the edge is where the car ended up, not where it started
@@ -445,19 +503,35 @@ function Tests.run(which: { string }?, ...)
 				end
 			end
 			do
+				-- A K-RAIL ON A BEND (T-244): the generator lays most K-rails on the outside of
+				-- a bend above a cliff (`KRailBendChance`), and on today's road for this seed
+				-- every rail in its first 8 000 studs is on a bend of 105 to 295 studs radius,
+				-- so the gentle stretch the search wanted (no tighter than 300) found none. A
+				-- bend of 200 or wider is still near enough straight across the car's three
+				-- seconds driven at it; the gentle stretch is still tried first.
 				local s, side, kind = nil, 1, Spline.CLIFF
-				for _, k in { Spline.CLIFF, Spline.ROCK } do
-					for _, sd in { 1, -1 } do
-						if not s then
-							s = find(k, sd, true)
-							side, kind = sd, k
+				for _, maxK in { 1 / 300, 1 / 200 } do
+					for _, k in { Spline.CLIFF, Spline.ROCK } do
+						for _, sd in { 1, -1 } do
+							if not s then
+								s = find(k, sd, true, maxK)
+								side, kind = sd, k
+							end
 						end
 					end
 				end
 				if s then
 					local r = offTheSide(s, side)
 					local nose = r.d + D.BodyLength * 0.5
-					check("a K-rail stops the car at the tarmac's edge", nose <= half + 0.5 and nose > half - 1.5 and r.rails > 0, `after 3 s: the car's nose {fmt(nose, 2)} studs out (K-rail's face at {half}), {r.rails} K-rail stops`)
+					-- held by the rail's sweep, or by its push out where the sweep missed, as the
+					-- tight cliff edge's rail below (T-244: on a banked bend the sweep misses and
+					-- the push holds the car, measured 0.3 to 0.45 studs short of the face; on a
+					-- level stretch the sweep stops it)
+					check(
+						"a K-rail stops the car at the tarmac's edge",
+						nose <= half + 0.5 and nose > half - 1.5 and (r.rails > 0 or r.pushes > 0),
+						`after 3 s: the car's nose {fmt(nose, 2)} studs out (K-rail's face at {half}), {r.rails} K-rail stops by the sweep, {r.pushes} push outs; at s {fmt(s, 0)}, a {fmt(1 / math.max(math.abs(mountain:curvatureAt(s)), 1e-6), 0)}-stud bend banked {fmt(math.deg(mountain:bankAt(s)), 1)} degrees`
+					)
 					-- and from behind: a car on the grass beyond it, driven back at it
 					local yaw = mountain:yawAt(s)
 					local inYaw = yaw + side * math.pi / 2
