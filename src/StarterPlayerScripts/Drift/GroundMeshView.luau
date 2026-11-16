@@ -42,6 +42,7 @@ local Workspace = game:GetService("Workspace")
 
 local Config = require(ReplicatedStorage.Shared.Config)
 local Ground = require(ReplicatedStorage.Shared.Road.Ground)
+local GrassTexture = require(ReplicatedStorage.Shared.Road.GrassTexture)
 local GroundDetail = require(script.Parent.GroundDetail)
 local RoadBehind = require(script.Parent.RoadBehind)
 local GroundTiles = require(script.Parent.GroundTiles)
@@ -65,6 +66,8 @@ type Tile = {
 	px: { number }, -- and where, world x and z (a vertex can be moved off its grid point)
 	pz: { number },
 	normals: { Vector3 }, -- the normal each vertex is drawn with
+	colours: { Color3 }, -- and its colour
+	borrowed: { boolean }, -- shaded a coarser neighbour's way (`shadeAt`), by grid index
 	cls: { number }, -- ROAD, HELD or OPEN (below), by grid index
 	-- by cell index i * C + j + 1: its two faces' ids, and whether it is split along a-d
 	-- (its corners a (i, j), b (i + 1, j), c (i, j + 1), d (i + 1, j + 1); b-c otherwise)
@@ -118,6 +121,8 @@ export type View = typeof(setmetatable(
 		ops: { [string]: number },
 		tilesBuilt: number,
 		rimWrites: number,
+		shades: { [number]: { [number]: { any } } }, -- grid points shaded, by spacing (`shadeAt`)
+		shadesFor: { number }, -- the road's first and last s they were worked out for
 		wall: { [string]: number }, -- vertices moved onto a wall's foot, held, cells split a-d, cells left inverted
 		lastMs: number,
 		worstMs: number,
@@ -138,12 +143,26 @@ local function cells(): number
 	return Config.Spline.Ground.TileCells
 end
 
+-- WHEN THE GROUND DRAWS THE RUNOFF (T-251, `Ground.RunoffBy = "ground"`): the road's mesh
+-- stops at its bevels' feet, and the ground under the road and runoff is the runoff's own
+-- surface (`Spline:underY`), worked out exactly from the curve, not from the stations'
+-- carried-on estimate (`Ground.at`), sunk only `RunoffSinks` (none on the finest tiles):
+-- what is drawn is what the car stands on. Its edge is the exact edge too, and a vertex past
+-- it beside the road moves onto its foot over a drop as well as under a wall, so the drop
+-- starts at the edge, where the car goes over, not a cell out.
+-- (`Ground.runoffBy`, read when a view is made: one view at a time)
+local groundRunoff = false
+
 local clampOf: { [number]: number } = {}
 local sinkOf: { [number]: number } = {}
-for k, s in Config.Spline.Ground.Spacings do
-	clampOf[s] = Config.Spline.Ground.Clamps[k]
-	sinkOf[s] = Config.Spline.Ground.Sinks[k]
+local function setRunoffBy()
+	groundRunoff = Ground.runoffBy() == "ground"
+	for k, s in Config.Spline.Ground.Spacings do
+		clampOf[s] = Config.Spline.Ground.Clamps[k]
+		sinkOf[s] = if groundRunoff then Config.Spline.Ground.RunoffSinks[k] else Config.Spline.Ground.Sinks[k]
+	end
 end
+setRunoffBy()
 
 -- The flat tile every tile is copied from: never shown, never moved. It spans the coarsest
 -- tile, so every tile's bounds hold whatever it draws.
@@ -266,6 +285,8 @@ local function makeTile(master: Master): Tile?
 		px = px,
 		pz = pz,
 		normals = table.create(n * n, Vector3.yAxis),
+		colours = table.create(n * n, Color3.new(1, 1, 1)),
+		borrowed = table.create(n * n, false),
 		cls = table.create(n * n, 2),
 		faces = faces,
 		flip = table.create(C * C, false),
@@ -275,6 +296,7 @@ local function makeTile(master: Master): Tile?
 end
 
 function GroundMeshView.new(spline: any, parent: Instance?): View
+	setRunoffBy()
 	local folder = Instance.new("Folder")
 	folder.Name = "GroundMesh"
 	folder.Parent = parent or Workspace
@@ -311,6 +333,8 @@ function GroundMeshView.new(spline: any, parent: Instance?): View
 		ops = { fill = 0, split = 0, merge = 0, drop = 0, stale = 0 },
 		tilesBuilt = 0,
 		rimWrites = 0,
+		shades = {},
+		shadesFor = { 0, 0 },
 		wall = { moved = 0, held = 0, flipped = 0, inverted = 0 },
 		lastMs = 0,
 		worstMs = 0,
@@ -392,6 +416,91 @@ local function groundAt(ctx: Ground.Context, x: number, z: number): (number, num
 	return Ground.at(ctx, x, z)
 end
 
+-- THE RUNOFF'S OWN SURFACE at (x, z) (T-251): its height, and where on the road it is (s, d);
+-- nil where no road is near. Past the runoff's edge, level with the edge. Of two stretches of
+-- road near the point (two legs, the far side of a hairpin), the one whose edge it is least
+-- far past: the nearest centre line can be the other leg's, beyond a narrow runoff.
+local underEvals = 0
+local clusterS: { number } = {}
+local clusterD: { number } = {}
+local function underAt(ctx: Ground.Context, x: number, z: number): (number?, number?, number?, number?)
+	local spline = ctx.spline
+	local T = Config.Spline.Terrain
+	local half = Config.Road.Width * 0.5
+	local reach = half + math.max(T.RunoffMax, T.GroveRunoff[2]) + 24
+	underEvals += 1
+	local cell = spline.cell
+	local first = spline.firstSample * spline.step
+	local r2 = reach * reach
+	-- the nearest filed point of each stretch of road in reach (points more than `apart`
+	-- along the road from a stretch's nearest so far are another stretch)
+	local apart = 2 * reach
+	local nc = 0
+	for cx = math.floor((x - reach) / cell), math.floor((x + reach) / cell) do
+		for cz = math.floor((z - reach) / cell), math.floor((z + reach) / cell) do
+			local list = spline.hash[(cx + 1048576) * 2097152 + (cz + 1048576)] -- `Spline`'s own key
+			if list then
+				for j = 1, #list, 3 do
+					local s = list[j]
+					if s >= first then
+						local dx, dz = list[j + 1] - x, list[j + 2] - z
+						local dd = dx * dx + dz * dz
+						if dd <= r2 then
+							local found = false
+							for c = 1, nc do
+								if math.abs(clusterS[c] - s) < apart then
+									if dd < clusterD[c] then
+										clusterS[c], clusterD[c] = s, dd
+									end
+									found = true
+									break
+								end
+							end
+							if not found then
+								nc += 1
+								clusterS[nc], clusterD[nc] = s, dd
+							end
+						end
+					end
+				end
+			end
+		end
+	end
+	local bestE, bestS, bestD = math.huge, nil :: number?, nil :: number?
+	for c = 1, nc do
+		local s, d = spline:projectFrom(x, z, clusterS[c])
+		if s and d then
+			local side = if d < 0 then -1 else 1
+			local e = math.abs(d) - half - spline:runoffAt(s, side)
+			if e < bestE then
+				bestE, bestS, bestD = e, s, d
+			end
+		end
+	end
+	if not bestS or not bestD or bestE > 24 then
+		return nil, nil, nil, nil
+	end
+	return spline:underY(bestS, bestD), bestS, bestD, bestE
+end
+
+-- How near a runoff's edge (`Ground.at`'s reckoning) a point has to be for the exact one to
+-- be worked out: `Ground.at`'s edge, from the stations' straight stretches and widths eased
+-- between them, can be a stud or so off the true one, and the vertices moved onto the foot
+-- are placed by it (T-251)
+local EXACT_NEAR = 40 -- studs
+
+-- The height the road holds the ground at, `T` as `Ground.at` has it (the edge's, less
+-- `Under`), or, when the ground draws the runoff, the runoff's own surface there.
+local function edgeY(ctx: Ground.Context, x: number, z: number, T: number): number
+	if groundRunoff then
+		local y = underAt(ctx, x, z)
+		if y then
+			return y
+		end
+	end
+	return T
+end
+
 -- What a vertex is, for how its cell may be split: on the road (or the flat foot just past
 -- its edge), held below the edge, or open ground. A triangle joining ROAD to OPEN would
 -- reach up from the road over it.
@@ -430,8 +539,19 @@ local function vertexHeight(ctx: Ground.Context, s: number, x: number, z: number
 	local y, a, e, T = groundAt(ctx, x, z)
 	local sink = sinkOf[s]
 	y -= sink * a
+	if groundRunoff and e < EXACT_NEAR then
+		local uy, _, _, ue = underAt(ctx, x, z)
+		if uy and ue then
+			if ue <= 0 then
+				return uy - sink
+			elseif ue < clampOf[s] then
+				return math.min(y, uy - sink)
+			end
+			return y
+		end
+	end
 	if e < clampOf[s] then
-		y = math.min(y, T - sink)
+		y = math.min(y, edgeY(ctx, x, z, T) - sink)
 	end
 	return y
 end
@@ -458,6 +578,13 @@ local function latAt(L: Lattice, I: number, J: number): { number }
 	local r = L.at[k]
 	if not r then
 		local y, a, e, T = groundAt(L.ctx, I * L.s, J * L.s)
+		if groundRunoff and e < EXACT_NEAR then
+			-- (the exact edge: how far past it, and the runoff's surface level with it, T-251)
+			local uy, _, _, ue = underAt(L.ctx, I * L.s, J * L.s)
+			if uy and ue then
+				e, T = ue, uy
+			end
+		end
 		r = { y, a, e, T }
 		L.at[k] = r
 	end
@@ -470,6 +597,13 @@ local function edgeGradient(L: Lattice, x: number, z: number, e: number): (numbe
 	local h = 0.25
 	local _, _, ex = groundAt(L.ctx, x + h, z)
 	local _, _, ez = groundAt(L.ctx, x, z + h)
+	if groundRunoff then
+		local _, _, _, ux = underAt(L.ctx, x + h, z)
+		local _, _, _, uz = underAt(L.ctx, x, z + h)
+		if ux and uz then
+			ex, ez = ux, uz
+		end
+	end
 	local gx, gz = (ex - e) / h, (ez - e) / h
 	local g = math.sqrt(gx * gx + gz * gz)
 	if g ~= g or g < 0.3 or g == math.huge then
@@ -505,23 +639,29 @@ local function place(L: Lattice, I: number, J: number): { number }
 	local open = y - sink * a
 	p = { x, z, open, OPEN }
 	if e <= foot then
-		p = { x, z, open, ROAD }
+		p = { x, z, if groundRunoff then T - sink else open, ROAD }
 	elseif s > G.SnapUpTo then
 		-- a coarse tile, far ahead: held below the edge within its clamp, as before T-231
 		-- (moved, a 32-stud tile's ground stood 5.8 studs over a runoff's edge, measured)
 		if e < clampOf[s] then
 			p = { x, z, math.min(open, T - sink), HELD }
 		end
-	elseif e <= s + foot then
+	elseif e <= s + foot or (groundRunoff and e <= 2 * s + foot) then
+		-- (a stud along the road is not always a stud past the edge: round the inside of a
+		-- bend the runoff narrows fast, and a point a cell from the road can be more than a
+		-- cell past its edge, measured; so when the ground draws the runoff, two cells)
 		local west = latAt(L, I - 1, J)[3] <= foot
 		local east = latAt(L, I + 1, J)[3] <= foot
 		local south = latAt(L, I, J - 1)[3] <= foot
 		local north = latAt(L, I, J + 1)[3] <= foot
 		if west or east or south or north then
-			if open <= T - sink then
+			local edge = T - sink
+			if open <= edge and not groundRunoff then
 				p = { x, z, open, HELD } -- below the edge already: safe where it is
 			else
-				p = { x, z, T - sink, HELD }
+				-- (when the ground draws the runoff, a vertex over a drop is moved too, and
+				-- one that cannot move is held level with the edge: never under the runoff)
+				p = { x, z, edge, HELD }
 				if not (west and east) and not (south and north) then
 					local ux, uz, g = edgeGradient(L, x, z, e)
 					if ux and uz and g then
@@ -530,7 +670,8 @@ local function place(L: Lattice, I: number, J: number): { number }
 							move = math.min(move, reach) -- (a little short of the foot at worst)
 							local nx, nz = x - ux * move, z - uz * move
 							local y2, a2, _, T2 = groundAt(L.ctx, nx, nz)
-							p = { nx, nz, math.min(y2 - sink * a2, T2 - sink), HELD }
+							local e2 = edgeY(L.ctx, nx, nz, T2) - sink
+							p = { nx, nz, if groundRunoff then e2 else math.min(y2 - sink * a2, e2), HELD }
 						end
 					end
 				end
@@ -738,6 +879,109 @@ local function setSplit(tile: Tile, i: number, j: number, flip: boolean)
 	end
 end
 
+-- HOW A VERTEX IS SHADED: its normal from the four round it, as placed, and its colour by
+-- slope (rock past `RockAngle`), blotched by where its grid point is; when the ground draws
+-- the runoff, a vertex on the road or held at its edge in the runoff's own colour, and one on
+-- the road with the road's true normal (T-251).
+local function shadeFrom(spline: any, ctx: Ground.Context, p: { number }, x: number, z: number, xp: { number }, xm: { number }, zp: { number }, zm: { number }): (Vector3, Color3)
+	local G = Config.Spline.Ground
+	local across = Vector3.new(zp[1] - zm[1], zp[3] - zm[3], zp[2] - zm[2])
+	local along = Vector3.new(xp[1] - xm[1], xp[3] - xm[3], xp[2] - xm[2])
+	local nv = across:Cross(along)
+	nv = if nv.Magnitude > 1e-9 then nv.Unit else Vector3.yAxis
+	local colour
+	if nv.Y < math.cos(math.rad(G.RockAngle)) then
+		colour = G.GroundRockColour
+	else
+		local blotch = math.clamp(0.5 + 1.6 * math.noise(x / 70, z / 70, 3.37), 0, 1)
+		colour = G.GrassColours[1]:Lerp(G.GrassColours[2], blotch)
+	end
+	if groundRunoff and (p[4] == ROAD or p[4] == HELD) then
+		-- THE RUNOFF (T-251): its own grass, blotched as the road's runoff was, or gravel
+		-- in a gravel run; on the road, its true normal, so it shades as it did
+		local TT = Config.Spline.Terrain
+		local g = TT.GrassColour
+		local _, rs, rd = underAt(ctx, p[1], p[2])
+		if rs and rd and math.abs(rd) > Config.Road.Width * 0.5 and spline:gravelAt(rs, if rd < 0 then -1 else 1) then
+			colour = TT.GravelColour
+		else
+			local b = GrassTexture.blotch(p[1], p[2])
+			colour = Color3.new(math.min(1, g.R * b), math.min(1, g.G * b), math.min(1, g.B * b))
+		end
+		if p[4] == ROAD and rs and rd then
+			nv = spline:terrainNormal(rs, rd)
+		end
+	end
+	return nv, colour
+end
+
+-- A grid point of a spacing's lattice, shaded the way a tile of that spacing shades it when
+-- every tile round the point has that spacing.
+local function latticeShade(spline: any, L: Lattice, I: number, J: number): (Vector3, Color3)
+	return shadeFrom(spline, L.ctx, place(L, I, J), I * L.s, J * L.s, place(L, I + 1, J), place(L, I - 1, J), place(L, I, J + 1), place(L, I, J - 1))
+end
+
+-- NO LINES WHERE TILES MEET (T-251 send-back): a vertex on an edge it shares with a coarser
+-- tile is shaded as the coarser tile shades that edge, as its height already is: at a grid
+-- point of the coarsest tile touching it, that spacing's way; between two, straight between
+-- them (the coarser tile blends its normals and colours along the edge just so). Before this,
+-- each tile shaded its edge from its own grid, so the two sides of an edge met at a
+-- different normal and colour: a light or dark line along every edge between two spacings
+-- (measured: up to 13 degrees and 12 of 255 apart). `lats`: lattices made so far, by spacing.
+local function onGrid(v: number, sp: number): boolean
+	local q = v / sp
+	return math.abs(q - math.round(q)) < 1e-6
+end
+
+local function shadeAt(self: View, map: { [number]: Leaf }, lats: { [number]: { any } }, s: number, x: number, z: number): (Vector3, Color3)
+	local sm = GroundTiles.spacingAround(map, x, z)
+	if sm < s then
+		sm = s
+	end
+	if onGrid(x, sm) and onGrid(z, sm) then
+		-- (kept: a grid point is shaded the same while the road near it does not change)
+		local I, J = math.round(x / sm), math.round(z / sm)
+		local spline = self.spline
+		local span = self.shadesFor
+		if span[1] ~= spline.firstSample or span[2] ~= spline.length then
+			self.shades = {}
+			self.shadesFor = { spline.firstSample, spline.length }
+		end
+		local bySpacing = self.shades[sm]
+		if not bySpacing then
+			bySpacing = {}
+			self.shades[sm] = bySpacing
+		end
+		local kept = bySpacing[latKey(I, J)]
+		if kept then
+			return kept[1], kept[2]
+		end
+		-- a lattice of that spacing made round a point near enough (`place` and its neighbours
+		-- reach two grid points out), or a new one round this point
+		local held = lats[sm]
+		if not held or math.abs(x - held[2]) > 2 * sm or math.abs(z - held[3]) > 2 * sm then
+			local r = 5 * sm + 1
+			held = { newLattice(Ground.context(self.field, self.spline, x - r, z - r, x + r, z + r), sm), x, z }
+			lats[sm] = held
+		end
+		local nv, colour = latticeShade(self.spline, held[1] :: Lattice, I, J)
+		bySpacing[latKey(I, J)] = { nv, colour }
+		return nv, colour
+	end
+	local ax, az, bx, bz, f
+	if onGrid(x, sm) then
+		local z0 = math.floor(z / sm) * sm
+		ax, az, bx, bz, f = x, z0, x, z0 + sm, (z - z0) / sm
+	else
+		local x0 = math.floor(x / sm) * sm
+		ax, az, bx, bz, f = x0, z, x0 + sm, z, (x - x0) / sm
+	end
+	local na, ca = shadeAt(self, map, lats, sm, ax, az)
+	local nb, cb = shadeAt(self, map, lats, sm, bx, bz)
+	local nv = na * (1 - f) + nb * f
+	return if nv.Magnitude > 1e-9 then nv.Unit else Vector3.yAxis, ca:Lerp(cb, f)
+end
+
 -- Fill a hidden tile with `leaf`'s ground, given the tiles it will sit among (`map`).
 function GroundMeshView._fill(self: View, tile: Tile, leaf: Leaf, map: { [number]: Leaf }): boolean
 	local G = Config.Spline.Ground
@@ -759,6 +1003,9 @@ function GroundMeshView._fill(self: View, tile: Tile, leaf: Leaf, map: { [number
 		end
 		for j = -1, C + 1 do
 			V[(i + 1) * m + (j + 1) + 1] = place(L, I0 + i, J0 + j)
+			if groundRunoff then
+				self:_slice() -- (a point by the road works out the exact edge several times)
+			end
 		end
 		self:_slice()
 	end
@@ -790,30 +1037,29 @@ function GroundMeshView._fill(self: View, tile: Tile, leaf: Leaf, map: { [number
 	-- colours by slope
 	local cx, cz = x0 + leaf.side * 0.5, z0 + leaf.side * 0.5
 	local cy = Ground.base(self.field, cx, cz)
-	local rockY = math.cos(math.rad(G.RockAngle))
-	local g1, g2, rock = G.GrassColours[1], G.GrassColours[2], G.GroundRockColour
 	local uvStuds = G.UVStuds
 	local em = tile.em
 	local heights = tile.heights
+	local lats: { [number]: { any } } = {}
 	for i = 0, C do
 		local x = x0 + i * s
 		for j = 0, C do
 			local k = i * n + j + 1
 			local z = z0 + j * s
 			local q = (i + 1) * m + (j + 1) + 1
-			local xp, xm, zp, zm = V[q + m], V[q - m], V[q + 1], V[q - 1]
-			local across = Vector3.new(zp[1] - zm[1], zp[3] - zm[3], zp[2] - zm[2])
-			local along = Vector3.new(xp[1] - xm[1], xp[3] - xm[3], xp[2] - xm[2])
-			local nv = across:Cross(along)
-			nv = if nv.Magnitude > 1e-9 then nv.Unit else Vector3.yAxis
-			local colour
-			if nv.Y < rockY then
-				colour = rock
-			else
-				local blotch = math.clamp(0.5 + 1.6 * math.noise(x / 70, z / 70, 3.37), 0, 1)
-				colour = g1:Lerp(g2, blotch)
-			end
 			local p = P[k]
+			local nv, colour
+			local _, hi = GroundTiles.spacingRange(map, x, z)
+			local borrow = (i == 0 or i == C or j == 0 or j == C) and hi > s
+			if borrow then
+				nv, colour = shadeAt(self, map, lats, s, x, z) -- shared with a coarser tile
+			else
+				nv, colour = shadeFrom(self.spline, ctx, V[q], x, z, V[q + m], V[q - m], V[q + 1], V[q - 1])
+			end
+			tile.borrowed[k] = borrow
+			if groundRunoff then
+				self:_slice()
+			end
 			if p[4] == HELD then
 				if p[1] ~= x or p[2] ~= z then
 					self.wall.moved += 1
@@ -822,7 +1068,7 @@ function GroundMeshView._fill(self: View, tile: Tile, leaf: Leaf, map: { [number
 				end
 			end
 			em:SetPosition(tile.v[k], Vector3.new(p[1] - cx, p[3] - cy, p[2] - cz))
-			tile.px[k], tile.pz[k], heights[k], tile.cls[k], tile.normals[k] = p[1], p[2], p[3], p[4], nv
+			tile.px[k], tile.pz[k], heights[k], tile.cls[k], tile.normals[k], tile.colours[k] = p[1], p[2], p[3], p[4], nv, colour
 			em:SetNormal(tile.nrm[k], nv)
 			em:SetColor(tile.col[k], colour)
 			em:SetUV(tile.uv[k], Vector2.new(p[1] / uvStuds, p[2] / uvStuds))
@@ -842,9 +1088,10 @@ function GroundMeshView._fill(self: View, tile: Tile, leaf: Leaf, map: { [number
 	return true
 end
 
--- A shown tile's rim, worked out again among `map`: the vertices that would move ({k, x, z,
--- y, class}), and the cells beside them whose split would change ({i, j, flip}).
-function GroundMeshView._rimChanges(self: View, tile: Tile, map: { [number]: Leaf }): ({ { number } }, { { any } })
+-- A shown tile's rim, worked out again among `map`: the vertices that would move or shade
+-- differently ({k, x, z, y, class, normal, colour}), and the cells beside them whose split
+-- would change ({i, j, flip}).
+function GroundMeshView._rimChanges(self: View, tile: Tile, map: { [number]: Leaf }): ({ { any } }, { { any } })
 	local leaf = tile.leaf :: Leaf
 	local s = leaf.s
 	local C = cells()
@@ -855,15 +1102,39 @@ function GroundMeshView._rimChanges(self: View, tile: Tile, map: { [number]: Lea
 	self:_slice()
 	local changes = {}
 	local changed: { [number]: { number } } = {}
+	local I0, J0 = math.round(leaf.x0 / s), math.round(leaf.z0 / s)
+	local lats: { [number]: { any } } = {}
 	for k, p in rimPlace(L, leaf, map) do
-		if
-			math.abs(p[1] - tile.px[k]) > 1e-4
+		local moved = math.abs(p[1] - tile.px[k]) > 1e-4
 			or math.abs(p[2] - tile.pz[k]) > 1e-4
 			or math.abs(p[3] - tile.heights[k]) > 1e-4
 			or p[4] ~= tile.cls[k]
-		then
-			table.insert(changes, { k, p[1], p[2], p[3], p[4] })
+		-- and how it is shaded, as `_fill` would shade it among these tiles
+		local i, j = (k - 1) // n, (k - 1) % n
+		local x, z = leaf.x0 + i * s, leaf.z0 + j * s
+		local _, hi = GroundTiles.spacingRange(map, x, z)
+		local borrow = hi > s
+		local nv, colour = tile.normals[k], tile.colours[k]
+		local reshaded = false
+		-- (a vertex shaded its own tile's way stays so while no coarser tile touches it)
+		if borrow or tile.borrowed[k] then
+			if borrow then
+				nv, colour = shadeAt(self, map, lats, s, x, z)
+			else
+				nv, colour = latticeShade(self.spline, L, I0 + i, J0 + j)
+			end
+			local was, wasC = tile.normals[k], tile.colours[k]
+			reshaded = nv:Dot(was) < 0.99999
+				or math.abs(colour.R - wasC.R) + math.abs(colour.G - wasC.G) + math.abs(colour.B - wasC.B) > 1e-4
+		end
+		if moved or reshaded or borrow ~= tile.borrowed[k] then
+			table.insert(changes, { k, p[1], p[2], p[3], p[4], nv, colour, borrow })
+		end
+		if moved then
 			changed[k] = p
+		end
+		if groundRunoff then
+			self:_slice()
 		end
 	end
 	self:_slice()
@@ -1197,14 +1468,19 @@ function GroundMeshView._do(self: View, op: Op): boolean
 	end
 	local uvStuds = Config.Spline.Ground.UVStuds
 	for _, p in pending do
-		local tile, changes, splits = p[1] :: Tile, p[2] :: { { number } }, p[3] :: { { any } }
+		local tile, changes, splits = p[1] :: Tile, p[2] :: { { any } }, p[3] :: { { any } }
 		local leaf = tile.leaf :: Leaf
 		local cx, cz = leaf.x0 + leaf.side * 0.5, leaf.z0 + leaf.side * 0.5
 		for _, ch in changes do
-			local k, x, z, y, cls = ch[1], ch[2], ch[3], ch[4], ch[5]
+			local k, x, z, y, cls, nv, colour = ch[1], ch[2], ch[3], ch[4], ch[5], ch[6], ch[7]
 			tile.heights[k], tile.px[k], tile.pz[k], tile.cls[k] = y, x, z, cls
 			tile.em:SetPosition(tile.v[k], Vector3.new(x - cx, y - tile.cy, z - cz))
 			tile.em:SetUV(tile.uv[k], Vector2.new(x / uvStuds, z / uvStuds))
+			if nv and colour then
+				tile.normals[k], tile.colours[k], tile.borrowed[k] = nv, colour, ch[8] == true
+				tile.em:SetNormal(tile.nrm[k], nv)
+				tile.em:SetColor(tile.col[k], colour)
+			end
 			self.rimWrites += 1
 		end
 		for _, sp in splits do
@@ -1326,7 +1602,7 @@ end
 -- The drawn ground at (x, z) in a tile, as its triangles have it: its height, the triangle's
 -- own normal and the normal the renderer blends there; nil if no triangle of the tile holds
 -- it (its vertices can be moved off their grid points, up to a cell).
-local function facetAt(tile: Tile, x: number, z: number): (number?, Vector3?, Vector3?)
+local function facetAt(tile: Tile, x: number, z: number): (number?, Vector3?, Vector3?, Color3?)
 	local leaf = tile.leaf :: Leaf
 	local C = cells()
 	local n = C + 1
@@ -1334,7 +1610,7 @@ local function facetAt(tile: Tile, x: number, z: number): (number?, Vector3?, Ve
 	local gi = math.floor((x - leaf.x0) / s)
 	local gj = math.floor((z - leaf.z0) / s)
 	local px, pz, h = tile.px, tile.pz, tile.heights
-	local best, bestY, bestN, bestS = -math.huge, nil, nil, nil
+	local best, bestY, bestN, bestS, bestC = -math.huge, nil, nil, nil, nil
 	for i = math.max(gi - 1, 0), math.min(gi + 1, C - 1) do
 		for j = math.max(gj - 1, 0), math.min(gj + 1, C - 1) do
 			local t1, t2 = cellTriangles(n, i, j, tile.flip[i * C + j + 1])
@@ -1358,12 +1634,15 @@ local function facetAt(tile: Tile, x: number, z: number): (number?, Vector3?, Ve
 						local nm = tile.normals
 						local sn = nm[p] * l1 + nm[q] * l2 + nm[r] * l3
 						bestS = if sn.Magnitude > 1e-9 then sn.Unit else Vector3.yAxis
+						local cl = tile.colours
+						local ca, cb, cc = cl[p], cl[q], cl[r]
+						bestC = Color3.new(ca.R * l1 + cb.R * l2 + cc.R * l3, ca.G * l1 + cb.G * l2 + cc.G * l3, ca.B * l1 + cb.B * l2 + cc.B * l3)
 					end
 				end
 			end
 		end
 	end
-	return bestY, bestN, bestS
+	return bestY, bestN, bestS, bestC
 end
 
 local function surfaceAt(tile: Tile, x: number, z: number): number?
@@ -1421,6 +1700,26 @@ function GroundMeshView.DebugReach(self: View, level: number, side: number?): nu
 	return s - along
 end
 
+-- Sorted numbers in brief: how many, mean, p50, p90, p99, min and max.
+local function brief(list: { number })
+	if #list == 0 then
+		return { n = 0 }
+	end
+	local sorted = table.clone(list)
+	table.sort(sorted)
+	local sum = 0
+	for _, v in sorted do
+		sum += v
+	end
+	local function pct(p: number): number
+		return sorted[math.clamp(math.ceil(#sorted * p), 1, #sorted)]
+	end
+	local function r(v: number): number
+		return math.round(v * 1000) / 1000
+	end
+	return { n = #sorted, mean = r(sum / #sorted), p50 = r(pct(0.5)), p90 = r(pct(0.9)), p99 = r(pct(0.99)), min = r(sorted[1]), max = r(sorted[#sorted]) }
+end
+
 -- Where two shown tiles meet: the biggest height difference along their shared edges, sampled
 -- every stud; and the drawn ground's highest point above the road or runoff, sampled along it.
 function GroundMeshView.DebugSeams(self: View, roadAhead: number?)
@@ -1432,6 +1731,8 @@ function GroundMeshView.DebugSeams(self: View, roadAhead: number?)
 	end
 	local worst, edgePairs, samples, missing = 0, 0, 0, 0
 	local rimVertices, rimMismatch = 0, 0
+	local shadeSame = { angle = {}, colour = {} }
+	local shadeMixed = { angle = {}, colour = {} }
 	local worstAt = nil
 	for a = 1, #list do
 		local A = list[a]
@@ -1471,11 +1772,21 @@ function GroundMeshView.DebugSeams(self: View, roadAhead: number?)
 						rimMismatch = math.max(rimMismatch, dd)
 					end
 				end
+				local mixed = la.s ~= lb.s
 				for t = 0, len do
 					local f = t / len
 					local x = shared[1] + (shared[3] - shared[1]) * f
 					local z = shared[2] + (shared[4] - shared[2]) * f
-					local ya, yb = surfaceAt(A, x, z), surfaceAt(B, x, z)
+					local ya, _, sa, ca = facetAt(A, x, z)
+					local yb, _, sb, cb = facetAt(B, x, z)
+					if sa and sb and ca and cb then
+						-- (T-251 send-back: how the two sides shade and colour the same point)
+						local ang = math.deg(math.acos(math.clamp(sa:Dot(sb), -1, 1)))
+						local col = math.max(math.abs(ca.R - cb.R), math.abs(ca.G - cb.G), math.abs(ca.B - cb.B)) * 255
+						local bucket = if mixed then shadeMixed else shadeSame
+						table.insert(bucket.angle, ang)
+						table.insert(bucket.colour, col)
+					end
 					local d = if ya and yb then math.abs(ya - yb) else 0
 					if not ya or not yb then
 						missing += 1
@@ -1530,6 +1841,11 @@ function GroundMeshView.DebugSeams(self: View, roadAhead: number?)
 		highestAboveRoad = above,
 		highestAboveRoadBySpacing = aboveBySpacing,
 		highestAt = aboveAt,
+		-- across every shared edge, every stud: the angle between the normals the two sides
+		-- shade it with (degrees), and the most a colour channel differs (of 255); between tiles
+		-- of one spacing, and of two
+		shadeSame = { angle = brief(shadeSame.angle), colour = brief(shadeSame.colour) },
+		shadeMixed = { angle = brief(shadeMixed.angle), colour = brief(shadeMixed.colour) },
 	}
 end
 
@@ -1697,6 +2013,222 @@ function GroundMeshView.DebugWalls(self: View, ahead: number?, step: number?, be
 	return result
 end
 
+-- THE GROUND UNDER THE CAR WHERE IT CARRIES THE RUNOFF (T-251): every `step` studs of road
+-- from `behind` back to `ahead` on from the car, across each side from the bevel's foot to the
+-- runoff's edge every half stud, the drawn ground less what the car stands on there
+-- (`Spline:terrainY`): positive, a wheel there would sink into the drawn ground; negative, it
+-- would float over it. By tile spacing. And across the tarmac and the bevel, how far the
+-- drawn ground is below the road's surface (it must never show through), and at the edge's
+-- flat foot, half a stud past it.
+function GroundMeshView.DebugRunoffGap(self: View, ahead: number?, behind: number?, step: number?)
+	local spline = self.spline
+	local along = self.along
+	if not along then
+		return { on = false }
+	end
+	local half = Config.Road.Width * 0.5
+	local s0 = math.max(spline.firstSample * spline.step, along - (behind or 100))
+	local s1 = math.min(spline.length, along + (ahead or 100))
+	local gaps: { [string]: { number } } = {}
+	local under: { [string]: { number } } = {}
+	local foot: { [string]: { number } } = {}
+	local missing = 0
+	local worst, worstAt = 0, nil :: any
+	local trace = {}
+	local s = s0
+	while s <= s1 do
+		for _, side in { -1, 1 } do
+			local w = spline:runoffAt(s, side)
+			local lw = spline:lipWidthAt(s, side)
+			-- the road: drawn ground under the tarmac and bevel
+			for d = 0, half + lw, 2 do
+				local x, y, z = spline:terrainXYZ(s, side * math.min(d, half + lw))
+				local g, tile = self:_drawnAt(x, z)
+				if g and tile then
+					local k = tostring((tile.leaf :: Leaf).s)
+					under[k] = under[k] or {}
+					table.insert(under[k], y - g)
+				end
+			end
+			-- the runoff: from the bevel's foot to the edge
+			local d = half + lw
+			while d <= half + w + 1e-6 do
+				local x, y, z = spline:terrainXYZ(s, side * d)
+				local g, tile = self:_drawnAt(x, z)
+				if g and tile then
+					local k = tostring((tile.leaf :: Leaf).s)
+					gaps[k] = gaps[k] or {}
+					table.insert(gaps[k], g - y)
+					if math.abs(g - y) > 0.25 and #trace < 40 then
+						local dbg = {}
+						local leaf = tile.leaf :: Leaf
+						-- the cell's corners, as placed: x, z, height less the runoff's there, class
+						local ci, cj = math.floor((x - leaf.x0) / leaf.s), math.floor((z - leaf.z0) / leaf.s)
+						local nn = cells() + 1
+						for _, o in { { 0, 0 }, { 1, 0 }, { 0, 1 }, { 1, 1 } } do
+							local kk = (ci + o[1]) * nn + (cj + o[2]) + 1
+							if tile.px[kk] then
+								table.insert(dbg, string.format("%.1f,%.1f:%.2f/%d", tile.px[kk] - x, tile.pz[kk] - z, tile.heights[kk] - y, tile.cls[kk]))
+							end
+						end
+						table.insert(trace, { math.round((s - along) * 10) / 10, math.round((d - half) * 10) / 10, side, math.round((g - y) * 100) / 100, leaf.s, math.round(w * 10) / 10, table.concat(dbg, " "), math.round(x * 10) / 10, math.round(z * 10) / 10 })
+					end
+					if math.abs(g - y) > math.abs(worst) then
+						worst, worstAt = g - y, { math.round((s - along) * 10) / 10, math.round((d - half) * 10) / 10, side, (tile.leaf :: Leaf).s, math.round(w * 10) / 10 }
+					end
+				else
+					missing += 1
+				end
+				d += 0.5
+			end
+			do
+				local x, y, z = spline:terrainXYZ(s, side * (half + w + 0.5))
+				local g, tile = self:_drawnAt(x, z)
+				if g and tile then
+					local k = tostring((tile.leaf :: Leaf).s)
+					foot[k] = foot[k] or {}
+					table.insert(foot[k], g - y)
+				end
+			end
+		end
+		s += step or 2
+	end
+	local out = { on = true, runoffBy = Ground.runoffBy(), from = s0 - along, to = s1 - along, missing = missing, worst = worst, worstAt = worstAt, trace = trace, runoff = {}, belowRoad = {}, edgeFoot = {} }
+	for k, l in gaps do
+		out.runoff[k] = brief(l)
+		local abs = table.create(#l)
+		local o1, o2, o3 = 0, 0, 0
+		for i, v in l do
+			abs[i] = math.abs(v)
+			if abs[i] > 0.1 then
+				o1 += 1
+			end
+			if abs[i] > 0.2 then
+				o2 += 1
+			end
+			if abs[i] > 0.3 then
+				o3 += 1
+			end
+		end
+		out.runoff[k].abs = brief(abs)
+		out.runoff[k].over = { o1, o2, o3 } -- points off by more than 0.1, 0.2, 0.3 studs
+	end
+	for k, l in under do
+		out.belowRoad[k] = brief(l)
+	end
+	for k, l in foot do
+		out.edgeFoot[k] = brief(l)
+	end
+	return out
+end
+
+-- One drawn vertex near (x, z), and how it was placed (T-251): the shown tile's vertex nearest
+-- the point, and the same grid point worked out afresh (`Ground.at`, the exact edge, its four
+-- neighbours' distances past the edge, which spacings meet there, and where `place` puts it).
+function GroundMeshView.DebugVertexAt(self: View, x: number, z: number)
+	local tile = self:_tileAt(x, z)
+	if not tile or not tile.leaf then
+		return { found = false }
+	end
+	local leaf = tile.leaf :: Leaf
+	local s = leaf.s
+	local n = cells() + 1
+	local i, j = math.round((x - leaf.x0) / s), math.round((z - leaf.z0) / s)
+	local k = i * n + j + 1
+	local gx, gz = leaf.x0 + i * s, leaf.z0 + j * s
+	local margin = 2 * s + 1
+	local ctx = Ground.context(self.field, self.spline, gx - margin, gz - margin, gx + margin, gz + margin)
+	local L = newLattice(ctx, s)
+	local I, J = math.round(gx / s), math.round(gz / s)
+	local y, a, e, T = Ground.at(ctx, gx, gz)
+	local r = latAt(L, I, J)
+	local p = place(L, I, J)
+	local lo, hi = GroundTiles.spacingRange(self.shown, gx, gz)
+	local uy, us, ud, ue = underAt(ctx, gx, gz)
+	return {
+		found = true,
+		spacing = s,
+		grid = { gx, gz },
+		shown = { tile.px[k], tile.pz[k], tile.heights[k], tile.cls[k] },
+		placedNow = p,
+		groundAt = { y, a, e, T },
+		lattice = r,
+		under = { uy, us, ud, ue },
+		neighbours = { latAt(L, I - 1, J)[3], latAt(L, I + 1, J)[3], latAt(L, I, J - 1)[3], latAt(L, I, J + 1)[3] },
+		spacings = { lo, hi },
+		stale = tile.stale,
+	}
+end
+
+-- A DRIVE OVER THE RUNOFF (T-251): the car's own model, on the road's own world
+-- (`Drift/SplineWorld`, as the car drives it), from `start` at `speed` studs a second, the
+-- finger held as `inputs` (`Sim.Keyframe`s), for `seconds`. Every step, each wheel's contact
+-- (where its tyre touches, raised by its drawn lift): the ground the car reads there, and the
+-- drawn ground under it. What the wheel stands on less what is drawn, so positive is a wheel
+-- floating over the drawn ground and negative one sunk into it; by what the wheel is on. And
+-- what stopped the car (`SplineWorld` stats). Only where tiles are drawn: put the car there
+-- first, and let the ground build round it.
+function GroundMeshView.DebugDriveGap(self: View, start: CFrame, speed: number, inputs: { any }, seconds: number)
+	local Sim = require(script.Parent.Sim)
+	local SplineWorld = require(script.Parent.SplineWorld)
+	local Model = require(script.Parent.Model)
+	local Suspension = require(script.Parent.Suspension)
+	local world = SplineWorld.new(self.spline)
+	local runner = Sim.newRunner(start)
+	runner.state.velocity = start.LookVector * speed
+	local by: { [string]: { number } } = {}
+	local spacing: { [string]: number } = {}
+	local air, undrawn, steps = 0, 0, 0
+	local worst, worstAt = 0, nil :: any
+	local path = {}
+	local dt = Config.Drift.FixedStep
+	local t = 0
+	while t < seconds do
+		Sim.advance(runner, dt, function(time: number)
+			return Sim.inputAt(inputs, time)
+		end, world, function(st: any)
+			steps += 1
+			local cf = Model.cframe(st)
+			for i = 1, 4 do
+				local at = cf * (Suspension.wheelContact(i) + Vector3.new(0, st.wheelLift[i], 0))
+				local hit = world.probe(at)
+				if not hit then
+					air += 1
+					continue
+				end
+				local g, tile = self:_drawnAt(at.X, at.Z)
+				if not g or not tile then
+					undrawn += 1
+					continue
+				end
+				local k = hit.surface or "?"
+				by[k] = by[k] or {}
+				table.insert(by[k], hit.y - g)
+				local sk = tostring((tile.leaf :: Leaf).s)
+				spacing[sk] = (spacing[sk] or 0) + 1
+				if math.abs(hit.y - g) > math.abs(worst) then
+					local sa, da = self.spline:project(at.X, at.Z, 200)
+					worst, worstAt = hit.y - g, { t = math.round(st.time * 100) / 100, wheel = i, surface = k, s = sa, d = da }
+				end
+			end
+			if steps % 60 == 0 then
+				local sa, da = self.spline:project(st.position.X, st.position.Z, 200)
+				table.insert(path, { math.round(st.time * 10) / 10, sa and math.round(sa) or false, da and math.round(da * 10) / 10 or false, math.round(Model.speed(st)) })
+			end
+		end)
+		t += dt
+	end
+	local out = { steps = steps, wheelsInAir = air, wheelsOverNoTile = undrawn, bySpacing = spacing, worst = worst, worstAt = worstAt, path = path, stats = table.clone(world.stats), surfaces = {} }
+	for k, l in by do
+		local abs = table.create(#l)
+		for i, v in l do
+			abs[i] = math.abs(v)
+		end
+		out.surfaces[k] = { signed = brief(l), abs = brief(abs) }
+	end
+	return out
+end
+
 function GroundMeshView.DebugState(self: View)
 	local byLevel = {}
 	local count = 0
@@ -1733,6 +2265,8 @@ function GroundMeshView.DebugState(self: View)
 		rimWrites = self.rimWrites,
 		wall = self.wall,
 		groundPoints = groundEvals, -- `Ground.at` calls building tiles, every view this session
+		runoffBy = Ground.runoffBy(),
+		underPoints = underEvals, -- `underAt` calls (T-251), every view this session
 		lastMs = self.lastMs,
 		worstMs = self.worstMs,
 		worstSliceMs = self.worstSliceMs,

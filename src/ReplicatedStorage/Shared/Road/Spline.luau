@@ -767,6 +767,15 @@ function Spline.terrainY(self: Spline, s: number, d: number): number
 	return y - lipDrop(e, w)
 end
 
+-- The ground under the road when the ground mesh draws the runoff (T-251,
+-- `Ground.RunoffBy = "ground"`): the runoff's own surface, which is `terrainY` past the
+-- bevel's foot, carried on in under the bevel and the tarmac `RoadLip` below them (it has
+-- the same slope across as the road at the tarmac's edge, so it has no crease there), and
+-- level past the runoff's outer edge.
+function Spline.underY(self: Spline, s: number, d: number): number
+	return (groundY(self, s, d)) - Config.Spline.Terrain.RoadLip
+end
+
 -- How far below the tarmac's edge the ground at (s, d) has dropped: 0 on the tarmac,
 -- `RoadLip` once past the bevel.
 function Spline.lipAt(self: Spline, s: number, d: number): number
