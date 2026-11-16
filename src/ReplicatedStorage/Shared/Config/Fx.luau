@@ -318,15 +318,17 @@ return {
 	-- trail (`Drift/GroundMarks`, features/car-fx.md "Ruts cut into the ground"): one per wheel,
 	-- a cross-section every few studs, with a shaped profile -- a berm either side, a wall that
 	-- leans in and a floor -- whose normals catch the scene's light, so one wall is lit and the
-	-- other in shade, day or night. A streak texture made in code (nothing uploaded) runs along
-	-- it; its colour and alpha fade in at the start of a mark, out at the end, and dry and fade
-	-- with age. The flattened line and the rut are the same ribbon in two looks, blended over
-	-- `Ribbon.BlendSeconds` where the slide crosses the trench threshold (T-205's hysteresis).
+	-- other in shade, day or night. Its outer strips are drawn as the ground under them is (its
+	-- material, colour and normal), so it has no edge to see; its inner ones are wet mud with a
+	-- streak texture made in code (nothing uploaded). It comes in at the start of a mark, goes
+	-- at the end, and dries and fades back into the ground with age. The flattened line and the
+	-- rut are the same ribbon in two looks, blended over `Ribbon.BlendSeconds` where the slide
+	-- crosses the trench threshold (T-205's hysteresis).
 	--
 	-- THE BUDGET: the off-road layer is, per wheel, 1 Trail (gravel) + 3 Emitters, and T-207's
-	-- 3 fixed particle-source Attachments; the grass ribbon is `Ribbon.Chunks` MeshParts per
-	-- car and their folder. With the tarmac layer's 2 Attachments + 3 per smoking surface, one
-	-- smoking surface is 12 per wheel, and the ribbon a MeshPart and a SurfaceAppearance a chunk:
+	-- 3 fixed particle-source Attachments; the grass ribbon is `Ribbon.Chunks` chunks of two
+	-- MeshParts each and their folder. With the tarmac layer's 2 Attachments + 3 per smoking
+	-- surface, one smoking surface is 12 per wheel:
 	--   4 x (2 + 3 + 1 + 3 + 3) + 8 x 2 + 1 folder = 65 per car
 	-- (88 with T-265's first, trail-built ruts; 64 before T-265; 20 before T-188). All built
 	-- once, then switched or rewritten in place. `Drift/Wheels.perCar()` is the formula.
@@ -358,16 +360,16 @@ return {
 			WidthSeconds = 0.12, -- the width's T-207 narrowing is smoothed over this, so it never steps
 			TileLength = 6, -- studs of the mark one repeat of the streak texture covers
 			AgeLevels = 28, -- how many steps the drying and fading are rewritten in (0.5 s each)
-			Material = Enum.Material.SmoothPlastic, -- a little sheen: wet earth catches the light
-			Transparency = 0, -- the parts' own. The see-through is the SurfaceAppearance's
+			OuterMaterial = Enum.Material.Grass, -- the outer strips: the GROUND'S OWN material, on
+			-- its own world UVs, so where the mark meets the grass there is nothing to see
+			InnerMaterial = Enum.Material.Mud, -- the berm, walls and floor: wet, with a sheen
 
-			-- The streak texture, made in code at start (an `EditableImage`). Grey, multiplied by
-			-- the ribbon's colours: lines along the travel, flecks and clods toward the edges,
-			-- and a ragged, soft alpha edge. Nothing is uploaded.
+			-- The inner strips' streak texture, made in code at start (an `EditableImage`). Grey,
+			-- tinted by the ribbon's colours: lines along the travel, flecks and clods toward
+			-- the edges. Opaque: the mark's edges blend into the ground by colour, not alpha.
+			-- Nothing is uploaded.
 			Texture = {
-				Levels = 12, -- copies of the tile side by side, clear to solid: a segment's
-				-- opacity is which one its UVs point at (vertex alpha is not see-through)
-				Width = 64, -- pixels across the mark, in one copy
+				Width = 64, -- pixels across the mark
 				Height = 256, -- pixels along one `TileLength`; it repeats seamlessly
 				Seed = 265,
 				Base = 0.94, -- brightness between streaks
@@ -377,8 +379,6 @@ return {
 				FleckBand = 0.32, -- ...mostly within this share of the width from either edge
 				FleckLight = 1.0, -- a dry clod catching the light
 				FleckDark = 0.5, -- a wet one in shadow
-				EdgeRagged = 0.1, -- how far the soft edge wanders in and out along the mark
-				EdgeSoft = 0.12, -- how wide the edge's fade is
 			},
 		},
 
@@ -405,16 +405,19 @@ return {
 			-- half-width out from the centre, `Height` studs over `Lift` (times the look's
 			-- `HeightScale`), `Tilt` degrees the surface's normal leans TOWARD the centre (times
 			-- `TiltScale`): the inner wall leans hard, so the far wall faces the light and the
-			-- near one turns away from it, which is what reads as depth.
+			-- near one turns away from it, which is what reads as depth. `Weight`: how much the
+			-- point is the mark and not the ground -- 0 at the edge, which is drawn exactly as
+			-- the ground under it is, so the mark has no edge to see.
 			Profile = {
-				{ Offset = 1.00, Height = 0.00, Tilt = -25 }, -- the outer edge, fading to nothing
-				{ Offset = 0.74, Height = 0.10, Tilt = -8 }, -- the berm's crest: soil pushed up
-				{ Offset = 0.50, Height = 0.03, Tilt = 55 }, -- the inner wall
-				{ Offset = 0.26, Height = 0.00, Tilt = 12 }, -- the floor's edge; flat between
+				{ Offset = 1.00, Height = 0.00, Tilt = 0, Weight = 0 }, -- the outer edge: the ground
+				{ Offset = 0.72, Height = 0.10, Tilt = -10, Weight = 0.8 }, -- the berm: soil pushed up
+				{ Offset = 0.48, Height = 0.03, Tilt = 55, Weight = 1 }, -- the inner wall
+				{ Offset = 0.24, Height = 0.00, Tilt = 12, Weight = 1 }, -- the floor's edge; flat between
 			},
 
-			-- The two looks: `Opacity` (1 solid), and one entry per `Profile` point, `Colour`
-			-- when laid and `DryColour` at the end of its life. The edges' fade is the texture's.
+			-- The two looks: `Opacity`, how far the mark's colour and shape replace the ground's
+			-- (1 all the way), and one entry per `Profile` point, `Colour` when laid and
+			-- `DryColour` at the end of its life (it fades back into the ground as well).
 			FlatMark = { -- gentle slides: the grass pressed down along the travel, not torn
 				Opacity = 0.5,
 				HeightScale = 0,

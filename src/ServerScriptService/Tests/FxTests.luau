@@ -1076,45 +1076,46 @@ function Tests.run(opts)
 			local px1 = GroundMarks.texturePixels(T)
 			local px2 = GroundMarks.texturePixels(T)
 			local same = buffer.len(px1) == T.Width * T.Height * 4 and buffer.tostring(px1) == buffer.tostring(px2)
-			local edgeMax, middleMin, greyLo, greyHi = 0, 255, 255, 0
+			local alphaMin, greyLo, greyHi = 255, 255, 0
 			for y = 0, T.Height - 1 do
 				local row = y * T.Width * 4
-				edgeMax = math.max(edgeMax, buffer.readu8(px1, row + 3), buffer.readu8(px1, row + (T.Width - 1) * 4 + 3))
-				local mid = row + (T.Width // 2) * 4
-				middleMin = math.min(middleMin, buffer.readu8(px1, mid + 3))
+				for x = 0, T.Width - 1 do
+					alphaMin = math.min(alphaMin, buffer.readu8(px1, row + x * 4 + 3))
+				end
 				for x = T.Width // 4, 3 * T.Width // 4 do
 					local gval = buffer.readu8(px1, row + x * 4)
 					greyLo, greyHi = math.min(greyLo, gval), math.max(greyHi, gval)
 				end
 			end
 			check(
-				"the streak texture is made in code, the same every time, soft at the edges and streaked between",
-				same and edgeMax < 40 and middleMin == 255 and greyHi - greyLo > 40,
-				string.format("%dx%d, identical twice %s; edge alpha at most %d, middle alpha %d; greys %d..%d across the middle",
-					T.Width, T.Height, tostring(same), edgeMax, middleMin, greyLo, greyHi)
+				"the streak texture is made in code, the same every time, opaque and streaked",
+				same and alphaMin == 255 and greyHi - greyLo > 40,
+				string.format("%dx%d, identical twice %s; alpha at least %d; greys %d..%d across the middle",
+					T.Width, T.Height, tostring(same), alphaMin, greyLo, greyHi)
 			)
 
-			-- Built once: the chunks, at scale 1, textured, in their folder.
-			local parts, scaleOk, textured = 0, true, true
+			-- Built once: each chunk an outer part in the ground's own material and an inner one
+			-- with the streak texture, at scale 1, in their folder.
+			local parts, scaleOk, dressed = 0, true, true
 			if marks.folder then
 				for _, part in marks.folder:GetChildren() do
 					if part:IsA("MeshPart") then
 						parts += 1
 						scaleOk = scaleOk and math.abs(part.Size.X - 1024) < 0.5
-						-- See-through through a SurfaceAppearance (or the fallback texture).
-						local sa = part:FindFirstChildOfClass("SurfaceAppearance")
-						textured = textured and if sa
-							then sa.ColorMapContent.Object == marks.image and sa.AlphaMode == Enum.AlphaMode.Transparency
-							else part.TextureContent.Object == marks.image
+						if part.Name:find("Inner$") then
+							dressed = dressed and part.TextureContent.Object == marks.image and part.Material == RB.InnerMaterial
+						else
+							dressed = dressed and part.Material == RB.OuterMaterial
+						end
 					end
 				end
 			end
 			local made = #marks.folder:GetDescendants()
 			check(
-				"the ribbon is built once: its chunks, at scale 1, with the streak texture",
-				marks.ready and parts == RB.Chunks and scaleOk and textured
+				"the ribbon is built once: two parts a chunk, at scale 1, outer as the ground, inner streaked",
+				marks.ready and parts == RB.Chunks * 2 and scaleOk and dressed
 					and Wheels.perWheel() * #CarModel.WHEEL_NAMES + made + 1 == Wheels.perCar(),
-				`ready {marks.ready} ({marks.failed or "ok"}); {parts} MeshParts, drawn by {marks.surface}; scale 1 {scaleOk}; textured {textured}; {Wheels.perCar()} a car`
+				`ready {marks.ready} ({marks.failed or "ok"}); {parts} MeshParts; scale 1 {scaleOk}; materials and texture {dressed}; {Wheels.perCar()} a car`
 			)
 
 			-- A stand-in drawn ground: a tilted plane with long, gentle swells, so a point
@@ -1146,7 +1147,7 @@ function Tests.run(opts)
 			local frames = 0
 			for f = 0, 90 do
 				local p, across = at(f * DT2)
-				GroundMarks.Wheel(marks, 1, true, p, up, across, 1, f < 60, drawn, Wheels.onGround, DT2)
+				GroundMarks.Wheel(marks, 1, true, p, up, across, 1, f < 60, drawn, DT2)
 				GroundMarks.Age(marks, DT2)
 				frames += 1
 				local r = marks.wheels[1]
@@ -1161,7 +1162,7 @@ function Tests.run(opts)
 			local depthAfterSwitch = rMid.depth
 			local kindAfter = GroundMarks.Kind(marks, 1)
 			local endSlot = marks.wheels[1].head or marks.wheels[1].lastSlot
-			GroundMarks.Wheel(marks, 1, false, at(91 * DT2), up, Vector3.xAxis, 1, false, drawn, Wheels.onGround, DT2)
+			GroundMarks.Wheel(marks, 1, false, at(91 * DT2), up, Vector3.xAxis, 1, false, drawn, DT2)
 
 			-- The joins: every segment starts exactly where the last one ended.
 			local joinError, edgeError, widthError, turnMax, spacingMax = 0, 0, 0, 0, 0
@@ -1205,7 +1206,7 @@ function Tests.run(opts)
 			)
 
 			-- The shape: the rut's walls lean in, its berms stand up, its floor is the low line.
-			local slot = marks:DebugSlot(order[3])
+			local slot = marks:DebugSlot(order[math.max(#order // 3, 1)])
 			local pts, nrm = slot.points, slot.normals
 			local acrossDir = (pts[P] - pts[1]).Unit
 			local leftWall, rightWall = nrm[3]:Dot(acrossDir), nrm[P - 2]:Dot(acrossDir)
@@ -1216,38 +1217,41 @@ function Tests.run(opts)
 				string.format("left wall normal %.2f across, right %.2f; berm raised %s", leftWall, rightWall, tostring(bermUp))
 			)
 
-			-- Soft ends: opacity climbs over the first segments and drops on the last.
+			-- Soft ends: the mark comes in over the first segments and goes on the last.
+			local function shown(g: number): number
+				local sh = marks:DebugSlot(g).showing
+				return (sh[1] + sh[2]) * 0.5
+			end
 			local ramp = {}
 			for n = 1, math.min(5, #order) do
-				table.insert(ramp, marks:DebugSlot(order[n]).opacity)
+				table.insert(ramp, shown(order[n]))
 			end
 			local rising = true
 			for n = 2, #ramp do
 				rising = rising and ramp[n] >= ramp[n - 1]
 			end
-			local lastOpacity = marks:DebugSlot(endSlot).opacity
-			local midOpacity = marks:DebugSlot(order[math.max(#order // 3, 1)]).opacity
+			local endShown = marks:DebugSlot(endSlot).showing[2]
+			local midShown = shown(order[math.max(#order // 3, 1)])
 			check(
 				"a mark fades in at its start and out at its end, and is solid between",
-				ramp[1] <= 0.2 and rising and lastOpacity < 0.6 and midOpacity > 0.99,
-				string.format("first segments' opacity %s, last %.2f, mid-rut %.2f", fmtList(ramp), lastOpacity, midOpacity)
+				ramp[1] <= 0.2 and rising and endShown == 0 and midShown > 0.99,
+				string.format("first segments show %s, its very end %.2f, mid-rut %.2f", fmtList(ramp), endShown, midShown)
 			)
-			-- The atlas the opacity comes from: copy 0 clear, the last the tile itself.
-			local atlas = GroundMarks.atlasPixels(T)
-			local tile = GroundMarks.texturePixels(T)
-			local K = T.Levels
-			local clear, solid = true, true
-			for y = 0, T.Height - 1, 7 do
-				for x = 0, T.Width - 1, 3 do
-					local tileA = buffer.readu8(tile, (y * T.Width + x) * 4 + 3)
-					clear = clear and buffer.readu8(atlas, (y * T.Width * K + x) * 4 + 3) == 0
-					solid = solid and buffer.readu8(atlas, (y * T.Width * K + (K - 1) * T.Width + x) * 4 + 3) == tileA
-				end
+			-- The edges ARE the ground: its colour and its normal, so there is no seam to see;
+			-- the floor is the mark's own colour (the stand-in ground has no tiles, so its colour
+			-- is the runoff's grass).
+			local mid = marks:DebugSlot(order[math.max(#order // 3, 1)])
+			local grass = Config.Spline.Terrain.GrassColour
+			local function gap(a: Color3, b: Color3): number
+				return math.max(math.abs(a.R - b.R), math.abs(a.G - b.G), math.abs(a.B - b.B))
 			end
+			local edgeGap = math.max(gap(mid.colours[1], grass), gap(mid.colours[P], grass), gap(mid.colours[2 * P], grass))
+			local edgeTilt = math.max(1 - mid.normals[1]:Dot(up), 1 - mid.normals[2 * P]:Dot(up))
+			local floorGap = gap(mid.colours[P // 2], GG.TrenchMark.Points[#GG.Profile].Colour)
 			check(
-				"opacity is the texture's: an atlas of copies from clear to solid",
-				clear and solid and buffer.len(atlas) == T.Width * K * T.Height * 4,
-				`{K} copies of {T.Width}x{T.Height}; first clear {clear}, last the tile {solid}`
+				"a mark's edges are drawn as the ground is, and its floor as the mark",
+				edgeGap < 1e-3 and edgeTilt < 1e-4 and floorGap < 0.06,
+				string.format("edge colour %.4f off the ground's, normal %.1e off; floor %.3f off the rut colour (ageing has begun)", edgeGap, edgeTilt, floorGap)
 			)
 			check(
 				"rut to flattened line blends over BlendSeconds, never both at once",
@@ -1257,16 +1261,16 @@ function Tests.run(opts)
 
 			-- Ageing: it dries and fades, and goes when its life is up.
 			local probe = order[#order // 2]
-			local a0 = marks:DebugSlot(probe).opacity
+			local a0 = shown(probe)
 			GroundMarks.Age(marks, G.MarkSeconds * 0.85)
-			local a1 = marks:DebugSlot(probe).opacity
+			local a1 = shown(probe)
 			local liveMid = marks:LiveCount()
 			GroundMarks.Age(marks, G.MarkSeconds * 0.2)
 			local liveEnd = marks:LiveCount()
 			check(
 				"laid marks fade with age and go when their life is up",
 				a1 < a0 * 0.6 and liveMid > 0 and liveEnd == 0,
-				string.format("opacity %.2f fresh, %.2f at 85%% of %.0f s; %d segments then, %d after", a0, a1, G.MarkSeconds, liveMid, liveEnd)
+				string.format("showing %.2f fresh, %.2f at 85%% of %.0f s; %d segments then, %d after", a0, a1, G.MarkSeconds, liveMid, liveEnd)
 			)
 
 			-- No ground drawn, or too far to reach: the points stay on the car's plane.
@@ -1279,7 +1283,7 @@ function Tests.run(opts)
 				GroundMarks.Clear(marks)
 				for f = 0, 12 do
 					local p, across = at(f * DT2)
-					GroundMarks.Wheel(marks, 2, true, p, up, across, 1, true, if ground then ground else nil, Wheels.onGround, DT2)
+					GroundMarks.Wheel(marks, 2, true, p, up, across, 1, true, if ground then ground else nil, DT2)
 				end
 				local g = marks.wheels[2].head or marks.wheels[2].lastSlot
 				if g then
@@ -1306,7 +1310,7 @@ function Tests.run(opts)
 			for _ = 1, marks.total + 200 do
 				x += RB.Spacing
 				local p = Vector3.new(x, groundY(x, 0) + 0.5, 0)
-				GroundMarks.Wheel(marks, 3, true, p, up, Vector3.zAxis, 1, true, drawn, Wheels.onGround, DT2)
+				GroundMarks.Wheel(marks, 3, true, p, up, Vector3.zAxis, 1, true, drawn, DT2)
 				laid += 1
 			end
 			local perCall = (os.clock() - t0) / laid * 1e6
