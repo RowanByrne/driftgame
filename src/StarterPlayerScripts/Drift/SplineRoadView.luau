@@ -4,9 +4,9 @@
 --
 -- The server makes no road parts at all. Each client draws its own copy of the curve as
 -- meshes (`Road/SplineMesh`), `ChunkLength` studs at a time, from the player's "Road behind"
--- (`Drift/RoadBehind`, T-230) behind the car to `Ahead` in front, and takes chunks down as the
--- car leaves them. One chunk is built at a time, nearest the car first, so a frame never pays
--- for more than one.
+-- (`Drift/RoadBehind`, T-230) behind the car to the player's "Road ahead" (`Drift/RoadAhead`,
+-- T-263) in front, and takes chunks down as the car leaves them. One chunk is built at a time,
+-- nearest the car first, so a frame never pays for more than one.
 --
 -- OUT OF MESH BUDGET (T-230): the road ahead never pays for the road behind. A chunk that
 -- cannot be made lets the furthest chunk behind the car go and tries again, and the window
@@ -23,6 +23,7 @@ local Config = require(ReplicatedStorage.Shared.Config)
 local Spline = require(ReplicatedStorage.Shared.Road.Spline)
 local SplineMesh = require(ReplicatedStorage.Shared.Road.SplineMesh)
 local SplineParts = require(ReplicatedStorage.Shared.Road.SplineParts)
+local RoadAhead = require(script.Parent.RoadAhead)
 local RoadBehind = require(script.Parent.RoadBehind)
 
 local SplineRoadView = {}
@@ -58,6 +59,7 @@ export type View = typeof(setmetatable(
 		behindCap: number?,
 		tris: { [number]: number },
 		behindConn: any,
+		aheadConn: any, -- the player's "Road ahead" (T-263)
 	},
 	SplineRoadView
 ))
@@ -92,9 +94,16 @@ function SplineRoadView.new(spline: Spline.Spline, parent: Instance?): View
 		behindCap = nil,
 		tris = {},
 		behindConn = nil,
+		aheadConn = nil,
 	}, SplineRoadView)
 	-- a longer setting asks again, whatever the budget said before
 	self.behindConn = RoadBehind.Changed:Connect(function()
+		self.behindCap = nil
+	end)
+	-- and a shorter road ahead leaves room for the road behind again (T-263); a longer one is
+	-- built on the next `Update`, nearest the car first, and pays for itself by letting the
+	-- road behind go if it must
+	self.aheadConn = RoadAhead.Changed:Connect(function()
 		self.behindCap = nil
 	end)
 	return self
@@ -254,7 +263,8 @@ function SplineRoadView.Update(self: View, s: number?)
 	if self.behindCap then
 		lo = math.max(lo, self.here - self.behindCap)
 	end
-	local hi = math.clamp(math.floor((at + M.Ahead) / L), 0, last)
+	-- to the chunk the player's "Road ahead" reaches into (T-263), or the road's end
+	local hi = math.clamp(math.floor((at + RoadAhead.studs()) / L), 0, last)
 	for i in self.chunks do
 		if i < lo or i > hi then
 			self:_drop(i)
@@ -316,6 +326,10 @@ function SplineRoadView.Destroy(self: View)
 		self.behindConn:Disconnect()
 		self.behindConn = nil
 	end
+	if self.aheadConn then
+		self.aheadConn:Disconnect()
+		self.aheadConn = nil
+	end
 	for i, chunk in self.chunks do
 		removeChunk(chunk)
 		self.chunks[i] = nil
@@ -325,7 +339,7 @@ function SplineRoadView.Destroy(self: View)
 end
 
 function SplineRoadView.DebugState(self: View)
-	local n, meshes, parts, first = 0, 0, 0, nil
+	local n, meshes, parts, first, lastChunk = 0, 0, 0, nil, nil
 	local L = Config.Spline.Mesh.ChunkLength
 	local held = 0
 	for _, k in self.tris do
@@ -334,6 +348,7 @@ function SplineRoadView.DebugState(self: View)
 	for i, chunk in self.chunks do
 		n += 1
 		first = if first then math.min(first, i) else i
+		lastChunk = if lastChunk then math.max(lastChunk, i) else i
 		if chunk:IsA("Model") then
 			meshes += 1
 		else
@@ -363,11 +378,18 @@ function SplineRoadView.DebugState(self: View)
 		behind = RoadBehind.get(),
 		behindName = RoadBehind.name(),
 		behindStuds = RoadBehind.studs(),
+		-- the road ahead (T-263)
+		ahead = RoadAhead.get(),
+		aheadName = RoadAhead.name(),
+		aheadStuds = RoadAhead.studs(),
 		behindCap = self.behindCap,
 		squeezed = self.squeezed,
 		here = self.here,
 		firstChunk = first,
 		drawnFrom = if first then first * L else nil, -- where the drawn road starts
+		lastChunk = lastChunk,
+		-- where the drawn road ends (T-263): the last chunk's end, or the road's if it is shorter
+		drawnTo = if lastChunk then math.min((lastChunk + 1) * L, self.spline.length) else nil,
 		trianglesHeld = held, -- in the chunks drawn now
 	}
 end

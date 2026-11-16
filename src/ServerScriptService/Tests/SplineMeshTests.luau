@@ -98,8 +98,10 @@ function Tests.run()
 		local ultra = (G.Detail[#G.Detail].Tiles + G.Spare) * tileTris
 		local lines, worstShare, previous = {}, 0, 0
 		local grows = true
+		-- at the default "Road ahead" (T-263): a longer one lets the road behind go first
+		local aheadDefault = M.Ahead[M.AheadDefault].Studs
 		for _, step in M.Behind do
-			local window = math.ceil((M.Ahead + step.Studs) / L) + 1
+			local window = math.ceil((aheadDefault + step.Studs) / L) + 1
 			local cost = window * mean + math.max(GROWABLE, mean) + ultra
 			worstShare = math.max(worstShare, cost / BUDGET)
 			grows = grows and step.Studs > previous and (step.GroundTiles or 0) >= 0
@@ -116,6 +118,29 @@ function Tests.run()
 			"the defaults keep more road behind than before, less on touch",
 			pc ~= nil and touch ~= nil and pc.Studs > 300 and touch.Studs > 300 and touch.Studs <= pc.Studs and M.Behind[1].Studs == 300,
 			`PC {pc and pc.Studs}, touch {touch and touch.Studs}, shortest {M.Behind[1].Studs} (300 before T-230)`
+		)
+		-- THE ROAD AHEAD (T-263): every step, beside the shortest road behind (what a device
+		-- out of room keeps), fits the budget beside Ultra ground; the default is the 1 600
+		-- studs before T-263 (`RoadService` lays road ahead for the longest)
+		local aheadLines, aheadShare, aheadPrev, aheadGrows = {}, 0, 0, true
+		for _, step in M.Ahead do
+			local window = math.ceil((step.Studs + M.Behind[1].Studs) / L) + 1
+			local cost = window * mean + math.max(GROWABLE, mean) + ultra
+			aheadShare = math.max(aheadShare, cost / BUDGET)
+			aheadGrows = aheadGrows and step.Studs > aheadPrev and (step.GroundTiles or 0) >= 0
+			aheadPrev = step.Studs
+			table.insert(aheadLines, `{step.Name} {step.Studs}: {window} chunks, {math.floor(cost)} of {BUDGET} at worst`)
+		end
+		check(
+			"every Road ahead step fits the client's mesh budget",
+			aheadShare <= 1 and aheadGrows and #M.Ahead >= 2,
+			`{table.concat(aheadLines, "; ")}`
+		)
+		local aPc, aTouch = M.Ahead[M.AheadDefault], M.Ahead[M.AheadTouchDefault]
+		check(
+			"the Road ahead defaults are the distance before T-263",
+			aPc ~= nil and aTouch ~= nil and aPc.Studs == 1600 and aTouch.Studs <= aPc.Studs,
+			`PC {aPc and aPc.Studs}, touch {aTouch and aTouch.Studs} (1 600 before T-263)`
 		)
 
 		-- 2. Every vertex of the road surface is on the curve's surface.

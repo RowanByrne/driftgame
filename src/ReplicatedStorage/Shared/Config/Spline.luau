@@ -478,11 +478,28 @@ local Spline = {
 		-- fixed-size mesh (`Road/SplineMesh`) and costs only its own triangles: about 3 600 a
 		-- chunk on today's ground, fewer on a ground run (no faces). Only the chunk being built
 		-- is growable. The window is chunk-aligned: from the chunk `Behind` studs back to the one
-		-- `Ahead` on, so the road kept behind is `Behind` to `Behind + ChunkLength` studs.
+		-- `Ahead` on, so the road kept behind is `Behind` to `Behind + ChunkLength` studs (both
+		-- are the player's settings: `Drift/RoadBehind`, `Drift/RoadAhead`).
 		-- A device that runs out anyway lets the furthest chunk behind go before the road
 		-- ahead falls back to parts (`Drift/SplineRoadView`).
 		ChunkLength = 480,
-		Ahead = 1600, -- studs of road drawn in front of the car
+		-- THE PLAYER'S "ROAD AHEAD" (Settings, Graphics; docs/game/SETTINGS.md, T-263): how far
+		-- in front of the car the road, and the ground along it, is drawn: at least `Studs`
+		-- (chunk-aligned, so up to a chunk more). Each step on costs the chunks it adds
+		-- (`Studs / ChunkLength` more, about 3 600 triangles each) and building them once, as
+		-- they come into reach. Medium is the 1 600 studs before T-263.
+		-- `GroundTiles`: as `Behind`'s, more tiles for the ground's corridor beside the extra
+		-- road, so the sharp ground nearer the car keeps its share.
+		-- A DEVICE CAN ONLY DRAW ROAD THE SERVER HAS SENT: `Config.Road.AheadStuds`, the
+		-- server's window ahead, is at least the longest step here.
+		Ahead = {
+			{ Name = "Short", Studs = 1000, GroundTiles = 0 },
+			{ Name = "Medium", Studs = 1600, GroundTiles = 0 },
+			{ Name = "Long", Studs = 2400, GroundTiles = 16 },
+			{ Name = "Longest", Studs = 3200, GroundTiles = 32 },
+		},
+		AheadDefault = 2, -- keyboard and mouse, or gamepad: today's
+		AheadTouchDefault = 2, -- a phone or tablet: today's too
 		-- THE PLAYER'S "ROAD BEHIND" (Settings, Graphics; docs/game/SETTINGS.md, T-230): how far
 		-- the road, and on a ground run the ground along it, stays drawn behind the car. Each
 		-- step back costs the chunks it keeps (`Studs / ChunkLength` more: about 3 600 triangles

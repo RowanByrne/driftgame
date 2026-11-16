@@ -16,7 +16,8 @@
 --   * the road -- the spline road (`Road/SplineSequence`, features/spline-road.md), laid as
 --     sections and sent to the runners, who draw it and drive on its maths: the server
 --     builds no road parts (the piece road went in T-249, features/legacy-removal.md)
---   * the window -- `AheadPieces` sections laid in front of the car, `BehindPieces` kept
+--   * the window -- `AheadPieces` sections laid in front of the car (and at least the longest
+--     "Road ahead" a player may pick, T-263), `BehindPieces` kept
 --   * the closing barrier, `BarrierBehind` sections back, moving up with the car
 --   * progress -- which piece each car is on, how far along, and whether that is forward
 --     on road it has not used. The server owns this for the same reason it owns the seed:
@@ -96,11 +97,41 @@ local runnerCount = 0
 -- nothing can bring it back. A player driving back down the road would otherwise drag the
 -- window backwards. So the window follows the furthest the run has reached, which is also
 -- why the closing barrier behind it cannot be pushed back by turning round.
+--
+-- HOW FAR AHEAD (T-263): `AheadPieces` sections, and never less than the longest "Road ahead"
+-- a player may pick (`Config.Spline.Mesh.Ahead`) past the END of the leader's section, so a
+-- client can draw its whole setting from anywhere in that section. Ten sections alone left
+-- 1 087 to 1 711 studs at worst (measured over five seeds), less than the 1 600 drawn before.
+-- It costs nothing more per stud driven -- one section is still laid for every one driven --
+-- only the first window at a run's start is longer.
+local function aheadStuds(): number
+	local most = 0
+	for _, step in Config.Spline.Mesh.Ahead do
+		most = math.max(most, step.Studs)
+	end
+	return most
+end
+
 local function window(centre: number)
 	local C = Config.Road
 	windowCentre = math.max(windowCentre, centre)
 	centre = windowCentre
 	generator:extendTo(centre + C.AheadPieces)
+	local here = generator:piece(centre)
+	if here then
+		local want = here.s1 + aheadStuds()
+		while true do
+			local last = generator:piece(generator.last)
+			if not last or last.s1 >= want then
+				break
+			end
+			local before = generator.last
+			generator:extendTo(before + 1)
+			if generator.last == before then
+				break -- boxed in: the road stops growing (SplineGen warns)
+			end
+		end
+	end
 	generator:trimBefore(centre - C.BehindPieces)
 	RoadService:_sendNewSections()
 end

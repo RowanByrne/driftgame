@@ -44,6 +44,7 @@ local Config = require(ReplicatedStorage.Shared.Config)
 local Ground = require(ReplicatedStorage.Shared.Road.Ground)
 local GrassTexture = require(ReplicatedStorage.Shared.Road.GrassTexture)
 local GroundDetail = require(script.Parent.GroundDetail)
+local RoadAhead = require(script.Parent.RoadAhead)
 local RoadBehind = require(script.Parent.RoadBehind)
 local GroundTiles = require(script.Parent.GroundTiles)
 
@@ -117,6 +118,7 @@ export type View = typeof(setmetatable(
 		work: number,
 		changedConn: any,
 		behindConn: any, -- the player's "Road behind" (T-230)
+		aheadConn: any, -- the player's "Road ahead" (T-263)
 		-- measured
 		ops: { [string]: number },
 		tilesBuilt: number,
@@ -330,6 +332,7 @@ function GroundMeshView.new(spline: any, parent: Instance?): View
 		work = 0,
 		changedConn = nil,
 		behindConn = nil,
+		aheadConn = nil,
 		ops = { fill = 0, split = 0, merge = 0, drop = 0, stale = 0 },
 		tilesBuilt = 0,
 		rimWrites = 0,
@@ -357,17 +360,24 @@ function GroundMeshView.new(spline: any, parent: Instance?): View
 		self.dirty = true
 		self:_setCap()
 	end)
+	-- and the road drawn ahead of it (T-263): the corridor reaches as far as the road does
+	self.aheadConn = RoadAhead.Changed:Connect(function()
+		self.dirty = true
+		self:_setCap()
+	end)
 	return self
 end
 
--- The tiles the settings allow: the Ground detail's, and the Road behind's for the corridor
--- beside the road behind the car (T-230), so a longer road behind does not cost sharp ground
--- ahead. Never past the most tiles any Ground detail holds (Ultra's): that is what the budget
--- was measured to hold beside the road, and the furthest road behind still fits beside it.
+-- The tiles the settings allow: the Ground detail's, and the Road behind's and Road ahead's
+-- for the corridor beside the road behind the car (T-230) and past the default reach ahead
+-- (T-263), so a longer road does not cost sharp ground nearer the car. Never past the most
+-- tiles any Ground detail holds (Ultra's): that is what the budget was measured to hold beside
+-- the road, and the furthest road behind still fits beside it.
 function GroundMeshView._tiles(self: View): number
 	local detail = Config.Spline.Ground.Detail
 	local own = GroundDetail.preset(self.detail).Tiles
-	return math.max(own, math.min(own + (RoadBehind.preset().GroundTiles or 0), detail[#detail].Tiles))
+	local more = (RoadBehind.preset().GroundTiles or 0) + (RoadAhead.preset().GroundTiles or 0)
+	return math.max(own, math.min(own + more, detail[#detail].Tiles))
 end
 
 function GroundMeshView._setCap(self: View)
@@ -1224,7 +1234,6 @@ end
 
 function GroundMeshView._want(self: View): GroundTiles.Want
 	local G = Config.Spline.Ground
-	local M = Config.Spline.Mesh
 	local P = GroundDetail.preset(self.detail)
 	local road = {}
 	local along = self.along
@@ -1234,11 +1243,12 @@ function GroundMeshView._want(self: View): GroundTiles.Want
 		-- car, from where the drawn road starts (the player's "Road behind", T-230, chunk-
 		-- aligned as `Drift/SplineRoadView` draws it), so no coarse tile ever lies beside drawn
 		-- road; but past `Short`'s 300 studs back it asks only for `RoadCoarsest`, so a longer
-		-- road behind costs the corridor's few coarse tiles, not the sharp ground ahead
+		-- road behind costs the corridor's few coarse tiles, not the sharp ground ahead. Ahead,
+		-- to the player's "Road ahead" (T-263)
 		local first = spline.firstSample * spline.step
 		local near = RoadBehind.studs(1)
 		local s0 = math.max(first, RoadBehind.from(along))
-		local s1 = math.min(spline.length, along + M.Ahead)
+		local s1 = math.min(spline.length, along + RoadAhead.studs())
 		local s = s0
 		while s <= s1 do
 			local x, z = spline:planAt(s)
@@ -1583,6 +1593,9 @@ function GroundMeshView.Destroy(self: View)
 	if self.behindConn then
 		self.behindConn:Disconnect()
 	end
+	if self.aheadConn then
+		self.aheadConn:Disconnect()
+	end
 	for _, tile in self.pool do
 		tile.part:Destroy()
 		tile.em:Destroy()
@@ -1808,7 +1821,7 @@ function GroundMeshView.DebugSeams(self: View, roadAhead: number?)
 	local aboveAt = nil
 	if self.along then
 		local s = math.max(RoadBehind.from(self.along), spline.firstSample * spline.step)
-		local s1 = math.min(spline.length, self.along + (roadAhead or 1600))
+		local s1 = math.min(spline.length, self.along + (roadAhead or RoadAhead.studs()))
 		while s <= s1 do
 			for _, side in { -1, 1 } do
 				local w = spline:runoffAt(s, side)
@@ -2256,7 +2269,7 @@ function GroundMeshView.DebugState(self: View)
 		fineAheadCorridor = self:DebugReach(1, 40),
 		mediumAhead = self:DebugReach(2, 40),
 		coarseAhead = self:DebugReach(3, 100),
-		seams = self:DebugSeams(Config.Spline.Mesh.Ahead),
+		seams = self:DebugSeams(RoadAhead.studs()),
 		failed = self.failed,
 		running = self.running,
 		paused = self.paused,
