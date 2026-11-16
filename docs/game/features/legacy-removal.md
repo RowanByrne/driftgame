@@ -1,6 +1,6 @@
 # Feature: Remove the old road and ground systems
 
-**Status:** specced (plan waiting for the user's OK). **Owner task:** none yet.
+**Status:** building, plan approved 2026-11-16. Step 1 built (`T-248`), waiting on the user's try in a lane. **Owner task:** `T-247`.
 
 ## Goal
 
@@ -46,3 +46,16 @@ The three steps share `SplineGen`, `RoadService`, `SplineMesh` and `SplineRoadVi
 ## Open questions
 
 - The test hill and the Showroom go with the piece road. Say if either should be rebuilt on the spline road instead.
+
+## As built
+
+### Step 1: ground mesh only (`T-248`)
+
+- **Every run is a ground-mesh run.** The generator always makes the mountain; the client rebuilds it from the run's `seed` and `fall` (`SplineGen.replay` takes the seed) and always draws it with `GroundMeshView`. The `start` message lost `ground`; a client refuses a `start` without a numeric `seed` and `fall`.
+- **Gone:** `SplineHill`, `SplineProfile`, `GroundTerrainView`, `SplineTestService` and its remote, the TEST ONLY panel's SPLINE TEST ROAD and RUN ROAD buttons (the RUN ROAD toggle went a step early, with the service that carried it; `roadmode` still switches until step 2), the `ground` console command and type, `RoadService` `GroundMode`/`SetGroundMode`/`RunGround`, the faces, hedges, hillside and haze in `SplineMesh` (the skirt is always drawn), the hillside redraw in `SplineRoadView`, the cliff haze in `SkyController` and `Config.DayNight`, `Config.Spline.Hill`, `Ground.Mode`, the Terrain option's keys, the face-only `Terrain` keys, `TestOrigin`/`TestLength`. Tests: `SplineHillTests`, `SplineViewTests`, `SplineTests`' grand-cliffs part and its checks of the old descent planner's rules.
+- **Left for step 3:** the sections' `gd` (still made and sent, drawn by nothing) and the keys that shape it, the generator's branches for a road with no mountain, `Mountain.Mode` and the `start` message's `mode`.
+- **The road is the same:** seeds 31337, 7 and 1234 lay identical roads before and after (6 000 studs, sampled every 250).
+- **Size:** 309 scripts and 3.37 MB of source before, 301 and 3.26 MB after; what each player downloads, 1.89 MB to 1.82 MB.
+- **Frame time and memory** (Studio lane, seed 31337, a minute along the road at 80 studs/s): the ground-mesh run costs what it did (worst frame 75.9 ms before, 41.6 after; road chunk build at most 4.2 and 4.1 ms a frame); no Terrain cell written, no hedge drawn, no mesh fallback. Studio's own memory total moves by tens of MB between playtests, too much to read a change this small from.
+- **Tests:** `SplineWorldTests` drives seed 1234 now (31337's mountain road has no K-rail or wide-grass straight early on): 21 of 21. `GroundTests` belongs to `T-245` while it runs; its "current: the same road as before" check fails now and goes when that task has merged.
+
