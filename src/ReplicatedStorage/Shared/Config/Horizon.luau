@@ -75,7 +75,7 @@ return {
 			Name = "Near",
 			Radius = 2400,
 			Segments = 32, -- round the full ring
-			ArcSegments = 28, -- across the uphill arc
+			ArcSegments = 36, -- across the uphill arc
 			Height = { 70, 190 },
 			Base = -560,
 			Depth = 0.2,
@@ -92,7 +92,7 @@ return {
 			Name = "Middle",
 			Radius = 3200,
 			Segments = 28, -- round the full ring
-			ArcSegments = 24, -- across the uphill arc
+			ArcSegments = 28, -- across the uphill arc
 			Height = { 120, 250 },
 			Base = -540, -- below the valley floor, so its feet sink into it
 			Depth = 0.18,
@@ -109,7 +109,7 @@ return {
 			Name = "Far",
 			Radius = 4500,
 			Segments = 36, -- round the full ring
-			ArcSegments = 32, -- across the uphill arc
+			ArcSegments = 36, -- across the uphill arc
 			Height = { 180, 370 },
 			-- higher and steeper than the others, so its faces stay under `MaxEdge` unsplit;
 			-- the nearer layers hide its foot
