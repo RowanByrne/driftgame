@@ -10,6 +10,7 @@ Every task in progress and the files it owns, so parallel sessions and workers n
 | Branch | Lane | Files owned | Since |
 |---|---|---|---|
 | `agent/ground-carries-runoff` | lent | EXPERIMENT, not for merge until the user picks it: `src/ReplicatedStorage/Shared/Road/Ground.luau`, `src/StarterPlayerScripts/Drift/GroundMeshView.luau`, `src/StarterPlayerScripts/Drift/GroundTiles.luau`, `src/StarterPlayerScripts/Drift/SplineWorld.luau`, the runoff and skirt parts of `src/ReplicatedStorage/Shared/Road/SplineMesh.luau` and `Spline.luau` (`terrainY`), `Config/Spline.luau` `Ground` keys. Overlaps T-247's removal by design; reconciled after it lands | 2026-11-16 (T-251) |
+| `agent/sound-settings-tab` | lent | `src/StarterPlayerScripts/Settings/SettingsView.luau` (+ fixtures), `src/StarterPlayerScripts/Controllers/SettingsController.luau`, a new sound-volume module, the volume hookup in `Drift/EngineSound.luau`, `Drift/SkidSound.luau`, `Drift/SuspensionSound.luau` | 2026-11-16 (T-256) |
 
 ## Notes between sessions
 
