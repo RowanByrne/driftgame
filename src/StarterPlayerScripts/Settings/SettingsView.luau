@@ -159,7 +159,7 @@ function View.new(parent)
 	end)
 	-- Graphics: how far back the road stays drawn behind the car (T-230)
 	self.behindLabel = Glass.label("BehindLabel", self.graphics, "Road behind")
-	self.behindValue = Glass.label("BehindValue", self.graphics, "Long", true)
+	self.behindValue = Glass.label("BehindValue", self.graphics, "Short", true)
 	self.behindValue.TextXAlignment = Enum.TextXAlignment.Right
 	self.behindMinus = Glass.button("BehindDecrease", self.graphics, "-")
 	self.behindPlus = Glass.button("BehindIncrease", self.graphics, "+")
@@ -230,7 +230,7 @@ end
 
 function View:_connect(signal, fn) table.insert(self.connections, signal:Connect(fn)) end
 function View:_groundCount() return #(self.data.groundNames or {}) > 0 and #self.data.groundNames or 5 end
-function View:_behindCount() return #(self.data.behindNames or {}) > 0 and #self.data.behindNames or 5 end
+function View:_behindCount() return #(self.data.behindNames or {}) > 0 and #self.data.behindNames or 4 end
 function View:_aheadCount() return #(self.data.aheadNames or {}) > 0 and #self.data.aheadNames or 4 end
 function View:_fromX(x)
 	local slider = self.dragSlider or self.slider
@@ -260,7 +260,7 @@ function View:nudgeGround(delta)
 	if self.opened then self.ActionRequested:Fire("groundDetail", math.clamp((self.data.groundDetail or 3) + delta, 1, self:_groundCount())) end
 end
 function View:nudgeBehind(delta)
-	if self.opened then self.ActionRequested:Fire("roadBehind", math.clamp((self.data.roadBehind or 3) + delta, 1, self:_behindCount())) end
+	if self.opened then self.ActionRequested:Fire("roadBehind", math.clamp((self.data.roadBehind or 1) + delta, 1, self:_behindCount())) end
 end
 function View:nudgeAhead(delta)
 	if self.opened then self.ActionRequested:Fire("roadAhead", math.clamp((self.data.roadAhead or 2) + delta, 1, self:_aheadCount())) end
@@ -319,7 +319,7 @@ function View:setData(data)
 	self.aheadKnob.Position = UDim2.fromScale(a, 0.5)
 	self.aheadRange.Text = if data.aheadNames then data.aheadNames[1] .. " - " .. data.aheadNames[aheadCount] else "1 - " .. aheadCount
 	local behindCount = self:_behindCount()
-	local behind = math.clamp(data.roadBehind or 3, 1, behindCount)
+	local behind = math.clamp(data.roadBehind or 1, 1, behindCount)
 	self.behindValue.Text = if data.behindNames then data.behindNames[behind] else tostring(behind)
 	local b = (behind - 1) / math.max(behindCount - 1, 1)
 	self.behindFill.Size = UDim2.fromScale(b, 1)

@@ -1246,7 +1246,7 @@ function GroundMeshView._want(self: View): GroundTiles.Want
 		-- road behind costs the corridor's few coarse tiles, not the sharp ground ahead. Ahead,
 		-- to the player's "Road ahead" (T-263)
 		local first = spline.firstSample * spline.step
-		local near = RoadBehind.studs(1)
+		local near = Config.Spline.Mesh.BehindSharp
 		local s0 = math.max(first, RoadBehind.from(along))
 		local s1 = math.min(spline.length, along + RoadAhead.studs())
 		local s = s0

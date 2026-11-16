@@ -493,10 +493,10 @@ local Spline = {
 		-- A DEVICE CAN ONLY DRAW ROAD THE SERVER HAS SENT: `Config.Road.AheadStuds`, the
 		-- server's window ahead, is at least the longest step here.
 		Ahead = {
-			{ Name = "Short", Studs = 1000, GroundTiles = 0 },
-			{ Name = "Medium", Studs = 1600, GroundTiles = 0 },
-			{ Name = "Long", Studs = 2400, GroundTiles = 16 },
-			{ Name = "Longest", Studs = 3200, GroundTiles = 32 },
+			{ Name = "Short", Studs = 3000, GroundTiles = 28 },
+			{ Name = "Medium", Studs = 4800, GroundTiles = 64 },
+			{ Name = "Long", Studs = 7200, GroundTiles = 112 },
+			{ Name = "Longest", Studs = 9600, GroundTiles = 160 },
 		},
 		AheadDefault = 2, -- keyboard and mouse, or gamepad: today's
 		AheadTouchDefault = 2, -- a phone or tablet: today's too
@@ -511,14 +511,16 @@ local Spline = {
 		-- 232 at Long, 120 at Longest). So each step gives the ground that many more tiles
 		-- (128 triangles each) for its corridor, and the sharp ground ahead keeps its share.
 		Behind = {
-			{ Name = "Short", Studs = 300, GroundTiles = 0 },
-			{ Name = "Medium", Studs = 800, GroundTiles = 10 },
-			{ Name = "Long", Studs = 1300, GroundTiles = 24 },
-			{ Name = "Longer", Studs = 2000, GroundTiles = 38 },
-			{ Name = "Longest", Studs = 3000, GroundTiles = 56 },
+			{ Name = "Short", Studs = 3000, GroundTiles = 56 },
+			{ Name = "Medium", Studs = 4800, GroundTiles = 93 },
+			{ Name = "Long", Studs = 7200, GroundTiles = 143 },
+			{ Name = "Longest", Studs = 9600, GroundTiles = 193 },
 		},
-		BehindDefault = 3, -- keyboard and mouse, or gamepad
-		BehindTouchDefault = 2, -- a phone or tablet
+		BehindDefault = 1, -- keyboard and mouse, or gamepad
+		BehindTouchDefault = 1, -- a phone or tablet
+		-- the ground beside the road behind stays as sharp as ahead for this far back, and is
+		-- `Ground.RoadCoarsest` past it (it was Short's 300 studs before T-263 tripled the steps)
+		BehindSharp = 300, -- studs
 		FallbackStep = 4, -- studs between cross-sections when a device draws parts instead
 		-- A chunk is built over as many frames as it needs (T-193): its build hands the frame
 		-- back whenever this much of it has been spent, and carries on next frame. Nothing is
