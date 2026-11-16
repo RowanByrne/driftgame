@@ -228,6 +228,12 @@ function Range.saddles(r: Range, k: number, v0: number, v1: number): { { number 
 	return out
 end
 
+-- The ridge ahead of (x, z): the next crest on along the way.
+function Range.ridgeAhead(r: Range, x: number, z: number): number
+	local t, v = Range.frame(r, x, z)
+	return locate(r, t + r.shift, v) + 1
+end
+
 -- The pass the road should head for from (x, z): on the next ridge ahead, the saddle within
 -- `PassWindow` studs either way across whose height plus `PassLean` a stud off to the side is
 -- least (the lowest of the crest there, if it has no saddle in the window). Returns where it

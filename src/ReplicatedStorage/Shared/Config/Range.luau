@@ -19,10 +19,9 @@
 -- seed and the place.
 
 return {
-	-- "belts" is the T-228 mountain, one fall line, always down; "range" is this one. Step 1
-	-- builds the range with the road unchanged, so runs keep the belts until the road can
-	-- climb to a pass (step 2)
-	Shape = "belts",
+	-- "belts" is the T-228 mountain, one fall line, always down; "range" is this one, and since
+	-- T-238 the road climbs to its passes on it (`SplineGen._planRange`)
+	Shape = "range",
 
 	Spacing = 5500, -- studs between ridges, on average
 	Jitter = 1200, -- studs either way, so 3 100 to 7 900 apart
@@ -65,4 +64,19 @@ return {
 	PassWindow = 4000, -- studs
 	PassLean = 0.08,
 	PassStep = 50, -- studs between the crest's samples
+
+	-- THE ROAD TO THE PASS (`SplineGen._planRange`, T-238). Climbing a face, the road heads
+	-- straight for the pass once it can climb to it at `DirectGrade` or less, on `PassOver`
+	-- studs past it; until then it climbs in legs across the face, each ending `PassBand / 2`
+	-- studs past the pass across (`LegMin` to `LegMax` studs long), joined by turnarounds:
+	-- switchbacks stacked below the pass. Coming down, legs the same way toward the next pass.
+	-- `TowardBias` adds the way to the pass to the slope, so flat ground has a way on. On
+	-- steep ground (`Spline.Ground.SlopeSteep`) a hairpin is as tight as the road allows
+	DirectGrade = 0.07, -- 4 degrees
+	PassOver = 300, -- studs
+	PassBand = 1600, -- studs across
+	LegMin = 400, -- studs
+	LegMax = 6000, -- studs
+	TowardBias = 0.05,
+	SteepHairpinRadius = { 70, 80 }, -- studs (`Spline.MinRadius` is 70)
 }
