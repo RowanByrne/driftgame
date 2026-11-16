@@ -1753,7 +1753,12 @@ function SplineGen._planRange(self: Gen)
 		return dv - v
 	end
 	local side = self.legSide
+	-- (narrower as the road nears the pass: out at the band's edge high up, the crest rises
+	-- toward the peaks either side faster than the road can climb)
 	local half = R.PassBand * 0.5
+	if climbing then
+		half *= math.clamp((tgt.y - y) / R.BandHeight, R.BandLeast, 1)
+	end
 	if math.abs(pv - v) > half then
 		side = if across(1) * (pv - v) > 0 then 1 else -1
 	end
@@ -2215,9 +2220,14 @@ function SplineGen.step(self: Gen): Spline.Section?
 	if not planned and head and not head.turn then
 		head.left = (head.left :: number) - chosen.len
 		if head.untilV and self.ground and self.ground.range then
-			local x, z = self.spline:tip()
+			local x, z, _, _, _, _, y = self.spline:tip()
 			local _, v = Range.frame(self.ground.range, x, z)
 			if (v - head.untilV) * (head.untilDir or 1) >= 0 then
+				head.left = 0
+			end
+			-- a leg that has the road digging in, the mountain rising faster along it than the
+			-- road can climb, ends here: the turnaround comes now
+			if Ground.h(self.ground, x, z) - y > Config.Range.LegCutEnd then
 				head.left = 0
 			end
 		end
