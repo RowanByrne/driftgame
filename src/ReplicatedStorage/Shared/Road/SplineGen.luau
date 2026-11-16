@@ -102,6 +102,7 @@ export type Item = {
 	-- `untilDir` (1 or -1), whatever is left of it
 	untilV: number?,
 	untilDir: number?,
+	refused: number?, -- times this turn was refused
 }
 
 -- What a heading on the mountain is (T-226): "leg" across the local fall line, tilted down
@@ -1737,14 +1738,7 @@ function SplineGen._planRange(self: Gen)
 	local steep = where.slope >= Config.Spline.Ground.SlopeSteep
 	local radius = if steep then R.SteepHairpinRadius else M.HairpinRadius
 	local nextLeg: Slope = { kind = "leg", side = -side, gd = between(G.LegGrade), sc = sc }
-	local dir = sc * side
-	if not steep and rng:NextNumber() < M.TurnaroundSwitchbackChance then
-		turn("turnaround", dir, M.SwitchbackRadius, "Switchback", { kind = "down", side = side, sc = sc })
-		stretch(between(M.SwitchbackGap), "gap", { kind = "down", side = side, sc = sc })
-		turn("switchbackOut", dir, M.SwitchbackRadius, "Switchback", nextLeg)
-	else
-		turn("turnaround", dir, radius, "Hairpin", nextLeg)
-	end
+	turn("turnaround", sc * side, radius, "Hairpin", nextLeg)
 	self.legSide = -side
 end
 
@@ -2046,6 +2040,13 @@ function SplineGen._planned(self: Gen, item: Item): Spline.Section?
 	end
 	-- refused: run on along the stretch before it, and try again further on
 	st.turnsRefused += 1
+	-- (on the range, a turn refused `GiveUp` times is dropped with the rest of the plan, and
+	-- the way to the pass planned again from where the road has got to)
+	item.refused = (item.refused or 0) + 1
+	if self.ground and self.ground.range and item.refused >= Config.Range.GiveUp then
+		table.clear(self.plan)
+		return nil
+	end
 	table.insert(self.plan, 1, { turn = false, what = "wait", aim = self.aim, limit = self.limit, left = M.RetryAfter })
 	return nil
 end
