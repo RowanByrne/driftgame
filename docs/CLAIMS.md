@@ -11,6 +11,7 @@ Every task in progress and the files it owns, so parallel sessions and workers n
 |---|---|---|---|
 | `agent/road-behind-slider` | lent | `src/ReplicatedStorage/Shared/Config/Spline.luau` (`Mesh.Behind` and a new key beside it), `src/StarterPlayerScripts/Drift/SplineRoadView.luau`, `src/StarterPlayerScripts/Drift/GroundMeshView.luau` (its use of `Mesh.Behind`), `src/StarterPlayerScripts/Drift/RoadBehind.luau` (new), `SettingsView`/`SettingsController` (one new Graphics slider), `src/ServerScriptService/Tests/SplineMeshTests.luau`, `docs/game/CONTRACTS.md` (new rows), `docs/game/SETTINGS.md` | 2026-11-15 (T-230) |
 | `agent/ground-wall-sawtooth` | lent | `src/StarterPlayerScripts/Drift/GroundMeshView.luau` (how tiles are triangulated and their heights; not its use of `Mesh.Behind`, which is T-230's), `src/StarterPlayerScripts/Drift/GroundTiles.luau`, `Config/Spline.luau` (the ground mesh keys `Spacings` to `ReleaseOnFail` only), `src/ServerScriptService/Tests/GroundTests.luau` (new checks at the end only) | 2026-11-15 (T-231) |
+| `agent/horizon-uphill-only` | lent | `src/ReplicatedStorage/Shared/Horizon.luau`, `src/ReplicatedStorage/Shared/Config/Horizon.luau`, `src/StarterPlayerScripts/Drift/HorizonView.luau`, `src/ServerScriptService/Tests/HorizonTests.luau`, `docs/game/features/horizon.md` | 2026-11-15 (T-232) |
 
 ## Notes between sessions
 
