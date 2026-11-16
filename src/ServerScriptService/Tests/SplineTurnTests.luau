@@ -58,9 +58,11 @@ function Tests.run()
 	g._fitTurn=function() return {ok=false,score=10,view=25,cut=0,fill=0} end
 	item={turn=true,what="turnaround",to=math.pi,dir=1,radius={75,110},tag="Hairpin"}
 	local refused=0
-	for _=1,Config.Spline.Mountain.TurnLocationRetries do if g:_turn(item)==nil then refused+=1 end end
+	-- (every road is cut into the mountain since T-247, so its retries are the ground's)
+	local retries=Config.Spline.Ground.TurnRetries
+	for _=1,retries do if g:_turn(item)==nil then refused+=1 end end
 	local fallback=g:_turn(item)
-	check("a universally walled location has bounded retries",refused==Config.Spline.Mountain.TurnLocationRetries and type(fallback)=="table" and g.stats.hillRelaxed==1,`{refused} refusals, then the best clear turn`)
+	check("a universally walled location has bounded retries",refused==retries and type(fallback)=="table" and g.stats.hillRelaxed==1,`{refused} refusals, then the best clear turn`)
 	g=Gen.new(31337)
 	g._clear=function() return false end
 	g._fitTurn=function() error("unsafe curve reached terrain check") end

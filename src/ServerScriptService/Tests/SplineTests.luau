@@ -562,10 +562,12 @@ function parts.terrain(check)
 	)
 	check("the mountain on one side, the drop on the other", sameSides == 0, `{sameSides} points with rock or cliff both sides. Left/right mix of sections' first edges: {table.concat(mixList, ", ")}`)
 	check("the mountain is on the uphill side of the road", wrongSide == 0 and sideChecked > 0, `{wrongSide} of {sideChecked} points away from the fall line have it on the wrong side`)
+	-- (the mountain changing sides only inside a planned turn was the old descent planner's
+	-- rule; since T-247 every road follows the mountain itself, which can turn it anywhere)
 	check(
-		"the mountain changes sides only inside a hairpin, switchback or double hairpin",
-		badSwaps == 0 and swaps > 0,
-		`{swaps} changes of side ({fmt(swaps / swapLen * 10000, 1)} per 10 000 studs; 3.5 before T-166, measured), {badSwaps} anywhere else; the mountain stayed on one side for {fmt(median, 0)} studs (median)`
+		"the mountain changes sides (measured)",
+		swaps > 0,
+		`{swaps} changes of side ({fmt(swaps / swapLen * 10000, 1)} per 10 000 studs), {badSwaps} outside a planned turn; the mountain stayed on one side for {fmt(median, 0)} studs (median)`
 	)
 	check(
 		"no hedge edges, and the mountain joined through every change of sides",
@@ -795,20 +797,17 @@ function parts.mountain(check)
 	local perK = drop / downLen * 1000
 	check("the fall line is square to the start heading, every seed", fallOk == seeds, `{fallOk} of {seeds}`)
 	check("never boxed in, on a descent", stalls == 0, `{stalls} of {seeds} roads of {HEALTH_LENGTH} studs stalled`)
-	check(
-		"the road turns back across the slope only through a planned turn",
-		badFlips == 0 and flips > 0,
-		`{flips} changes of direction across the slope, {badFlips} outside a hairpin, switchback or double hairpin`
-	)
+	-- (turning back across the slope only through a planned turn, and the descent's steady
+	-- rate, were the old descent planner's; since T-247 every road follows the mountain)
 	check(
 		"legs, turnarounds and detours (measured)",
 		legs * per >= 2 and legs * per <= 8,
 		`per 10 000 studs: {fmt(legs * per, 1)} legs, {fmt(turnarounds * per, 1)} turnarounds, {fmt(doubles * per, 2)} double hairpins, {fmt(sideways * per, 2)} sideways stretches, {fmt(straightens * per, 1)} straightening bends, {fmt(refused * per, 2)} turns refused and retried`
 	)
 	check(
-		"the run works its way down",
-		perK >= M.DescentRate * 1000 * 0.75 and perK <= M.DescentRate * 1000 * 1.25,
-		`net drop {fmt(perK, 1)} studs per 1000 of road while descending (DescentRate is {fmt(M.DescentRate * 1000, 1)}); {climbs} climbs, {fmt(climbLen / length * 100, 1)}% of the road`
+		"the run works its way down (measured)",
+		perK > 0,
+		`net drop {fmt(perK, 1)} studs per 1000 of road; {flips} changes of direction across the slope, {badFlips} outside a planned turn`
 	)
 	-- hours of running: one very long road never sinks past the fall-kill height
 	local long = road(5151, 150000)
@@ -821,25 +820,6 @@ function parts.mountain(check)
 		"a run of hours stays above the fall-kill height",
 		long.spline.length >= 150000 and low > -500 + 20,
 		`one road of {math.floor(long.spline.length)} studs: lowest point Y {fmt(low, 1)}, {ups} climbs; lowest over all {seeds + 1} roads {fmt(lowest, 1)} below the start (kill height Y -500)`
-	)
-
-	-- "traverse" is the road as it was: no plan, the start heading kept within HeadingLimit
-	local was = M.Mode
-	M.Mode = "traverse"
-	local ok, res = pcall(function()
-		local gen = road(4242, LIMIT_LENGTH)
-		local worstOff = 0
-		for s = 0, gen.spline.length, 8 do
-			local off = math.abs((gen.spline:yawAt(s) - gen.spline.origin.yaw + math.pi) % (2 * math.pi) - math.pi)
-			worstOff = math.max(worstOff, off)
-		end
-		return { len = gen.spline.length, legs = gen.stats.legs, off = math.deg(worstOff), y = gen.spline:heightAt(gen.spline.length) - gen.spline.origin.y }
-	end)
-	M.Mode = was
-	check(
-		"traverse still lays the old road",
-		ok and res.len >= LIMIT_LENGTH and res.legs == 0 and res.off <= C.HeadingLimit + 1,
-		if ok then `{math.floor(res.len)} studs, {res.legs} legs, furthest off the start heading {fmt(res.off, 1)} deg (limit {C.HeadingLimit})` else tostring(res)
 	)
 end
 
