@@ -115,7 +115,9 @@ function Range.crest(r: Range, k: number, v: number): (number, number)
 	local rd = ridge(r, k)
 	local n = math.noise(v / R.SaddleEvery + rd.sad, 0.13, 0.77)
 	local s = smooth(math.clamp(0.5 + R.SaddleSharp * n, 0, 1))
-	return math.max(rd.peak - rd.depth * s, R.SaddleMin), s
+	-- no lower than `SaddleMin`, eased into it (a hard floor left flat crests)
+	local a, b = rd.peak - rd.depth * s, R.SaddleMin
+	return 0.5 * (a + b + math.sqrt((a - b) * (a - b) + 1600)), s
 end
 
 -- Valley k's floor (between ridge k and ridge k + 1) at `v` across.
@@ -192,19 +194,31 @@ function Range.shape(r: Range, x: number, z: number): Shape
 	return { y = y, up = up, crest = d, ridge = kc, saddle = s, floor = F, top = C }
 end
 
--- Ridge k's saddles between `v0` and `v1` across: each low point of its crest, as {v, y}.
+-- Ridge k's saddles between `v0` and `v1` across: each low point of its crest with the crest
+-- rising at least `SaddleRise` studs on both sides within `SaddleSpan`, as {v, y}.
 function Range.saddles(r: Range, k: number, v0: number, v1: number): { { number } }
-	local step = Config.Range.PassStep
+	local R = Config.Range
+	local step = R.PassStep
+	local span = math.ceil(R.SaddleSpan / step)
+	local first = v0 - span * step
+	local ys = {}
+	local n = math.floor((v1 - v0) / step) + 2 * span + 1
+	for i = 1, n do
+		ys[i] = (Range.crest(r, k, first + (i - 1) * step))
+	end
 	local out = {}
-	local prev2, prev = math.huge, math.huge
-	local v = v0 - step
-	while v <= v1 + step do
-		local y = Range.crest(r, k, v)
-		if prev < prev2 and prev <= y and v - step >= v0 and v - step <= v1 then
-			table.insert(out, { v - step, prev })
+	for i = span + 1, n - span do
+		local y = ys[i]
+		if y < ys[i - 1] and y <= ys[i + 1] then
+			local hl, hr = -math.huge, -math.huge
+			for j = 1, span do
+				hl = math.max(hl, ys[i - j])
+				hr = math.max(hr, ys[i + j])
+			end
+			if math.min(hl, hr) - y >= R.SaddleRise then
+				table.insert(out, { first + (i - 1) * step, y })
+			end
 		end
-		prev2, prev = prev, y
-		v += step
 	end
 	return out
 end
