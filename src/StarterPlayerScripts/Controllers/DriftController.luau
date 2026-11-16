@@ -360,6 +360,16 @@ function DriftController:DebugGroundWalls(ahead: number?, step: number?, behind:
 	return view:DebugWalls(ahead, step, behind)
 end
 
+-- Any of the drawn ground's own `Debug...` checks, by name (T-251: `DebugRunoffGap`,
+-- `DebugDriveGap`).
+function DriftController:DebugGround(name: string, ...)
+	local view: any = self.groundView
+	if not view or type(name) ~= "string" or name:sub(1, 5) ~= "Debug" or type(view[name]) ~= "function" then
+		return { on = false }
+	end
+	return view[name](view, ...)
+end
+
 -- The drawn road's chunks, and a way to draw them as a device with no meshes would.
 function DriftController:DebugSplineView(forceFallback: boolean?)
 	local view = self.splineView

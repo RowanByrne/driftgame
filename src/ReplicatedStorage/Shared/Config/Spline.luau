@@ -494,6 +494,19 @@ local Spline = {
 		Skirt = 10, -- studs
 		SkirtLean = 1.5, -- studs
 		SkirtColour = Color3.fromRGB(70, 104, 54),
+		-- WHO DRAWS THE RUNOFF (T-251, an experiment): "road", the road's own mesh (its grass
+		-- strips and the skirt above), or "ground", the ground mesh. With "ground" the road's
+		-- mesh stops at its gravel bevel's foot, and the ground under the road and runoff is
+		-- the runoff's own surface (`Spline:underY`, what the car stands on past the bevel),
+		-- carried in `RoadLip` under the bevel and tarmac, so the runoff flows into the cut or
+		-- fill with no seam and no skirt. Each spacing sinks `RunoffSinks` under it (the finest
+		-- none: what is drawn is what the car stands on), and its runoff vertices are coloured
+		-- `Terrain.GrassColour` (gravel in a gravel run). A short skirt, `BevelSkirt` down from
+		-- the bevel's foot, hides the step where coarse ground far ahead sits lower
+		RunoffBy = "road",
+		RunoffSinks = { 0, 0.4, 2.5, 4, 4 }, -- studs, per spacing (as `Sinks`)
+		BevelSkirt = 3, -- studs
+		BevelSkirtLean = 0.5, -- studs
 
 		-- THE MESH (`Drift/GroundMeshView`, T-220; redrawn as tiles in T-225): the ground drawn as small square TILES, each `TileCells` cells across, as a
 		-- quadtree (`Drift/GroundTiles`): a tile `Spacings[k]` studs between vertices splits into

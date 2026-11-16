@@ -320,7 +320,10 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 		-- the grass, `Spline:lipWidthAt` across (`RoadLipWidth`), sloping down `RoadLip` to the
 		-- grass, in the gravel's colour. It is shaded FLAT across (its own normal), so it reads
 		-- as an angled shoulder; the tarmac and the grass either side keep their smooth normals.
-		local RUNOFF_STRIPS = 2
+		-- (T-251: when the ground mesh draws the runoff, `Ground.RunoffBy = "ground"`, none: the
+		-- road stops at its bevels' feet)
+		local groundRunoff = Config.Spline.Ground.RunoffBy == "ground"
+		local RUNOFF_STRIPS = if groundRunoff then 0 else 2
 		local TT = Config.Spline.Terrain
 		local tarmacColour = road.em:AddColor(R.Colours.Road, 1)
 		local grassColour = road.em:AddColor(TT.GrassColour, 1)
@@ -442,17 +445,21 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 		end
 		-- from each runoff's outer edge straight down `Ground.Skirt`, leaning out a little, so
 		-- where the ground drawn apart dips below the edge (a ditch beside a cutting, a fill
-		-- falling away) no gap shows
+		-- falling away) no gap shows. When the ground draws the runoff (T-251) there is no
+		-- edge of the road's own out there: a short one, `BevelSkirt`, from each bevel's foot,
+		-- under the ground wherever it is drawn finely, in the gravel's colour
 		local T = Config.Spline.Terrain
 		local G = Config.Spline.Ground
-		local skirtColour = em:AddColor(G.SkirtColour, 1)
+		local skirtColour = em:AddColor(if groundRunoff then T.GravelColour else G.SkirtColour, 1)
+		local skirtDepth = if groundRunoff then G.BevelSkirt else G.Skirt
+		local skirtLean = if groundRunoff then G.BevelSkirtLean else G.SkirtLean
 		for _, side in { -1, 1 } do
 			local tops, bottoms = table.create(#cuts), table.create(#cuts)
 			local topP, bottomP = table.create(#cuts), table.create(#cuts)
 			for k = 1, #cuts do
-				local w = half + spline:runoffAt(cuts[k], side)
+				local w = half + (if groundRunoff then spline:lipWidthAt(cuts[k], side) else spline:runoffAt(cuts[k], side))
 				topP[k] = Vector3.new(spline:terrainXYZ(cuts[k], side * w))
-				bottomP[k] = Vector3.new(spline:terrainXYZ(cuts[k], side * (w + G.SkirtLean))) - Vector3.yAxis * G.Skirt
+				bottomP[k] = Vector3.new(spline:terrainXYZ(cuts[k], side * (w + skirtLean))) - Vector3.yAxis * skirtDepth
 				tops[k] = em:AddVertex(topP[k] - centre)
 				bottoms[k] = em:AddVertex(bottomP[k] - centre)
 				road.vertices += 2
