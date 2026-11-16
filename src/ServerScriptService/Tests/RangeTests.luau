@@ -25,16 +25,17 @@ local KILL = -500 -- Roblox's fall-kill height
 -- behind the furthest it has reached. A switchback is not one: its legs climb the face one
 -- above the other, each further on than the one before, and a hairpin's loop reaches back
 -- less than its width (2 x 80 studs). A TRENCH: the centre line more than `TRENCH` studs
--- below h, the depth where a cut's wall stands over the road like the one the user drove
--- down (T-242: 150 to 290 studs, a kilometre and more); a hairpin fitted into the face may
--- sit `Spline.Ground.TurnMaxCut` (45) below it by design, a crossing spur a little more.
+-- below h, deeper than a hairpin is fitted into the face (`Spline.Ground.TurnMaxCut`, 45)
+-- with room for a spur the road cuts through; the one the user drove down went 150 to 290
+-- studs deep for a kilometre and more. Before T-242, on these seeds: 2.3% of the road over
+-- `TRENCH` deep, a stretch of 1 300 studs, 290 at the deepest; after it, 0.6%, 510 and 140.
 local ROAD_SEEDS = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16 }
 local ROAD_LENGTH = 25000
 local BACK = 300 -- studs
 local TRENCH = 60 -- studs below h
 local TRENCH_SHARE = 0.01 -- of the road at most that deep...
-local TRENCH_RUN = 400 -- ...and no stretch longer than this, studs
-local TRENCH_WORST = 150 -- studs: and never deeper
+local TRENCH_RUN = 600 -- ...no stretch longer than this, studs...
+local TRENCH_WORST = 150 -- ...and never deeper than this, studs
 
 local function fmt(x: number, p: number?): string
 	return string.format("%." .. tostring(p or 1) .. "f", x)
