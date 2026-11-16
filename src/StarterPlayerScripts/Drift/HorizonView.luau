@@ -156,11 +156,11 @@ function HorizonView._buildFloor(self: View)
 	end
 	local sub = Instance.new("Folder")
 	sub.Name = "Floor"
-	for i, plate in Horizon.floor(H) do
+	for i, plate in Horizon.floor(H, self.uphill) do
 		local p = Instance.new("Part")
 		p.Name = `Floor_{i}`
 		p.Size = plate.size
-		p.CFrame = CFrame.new(near.anchor.Position + plate.centre)
+		p.CFrame = CFrame.new(near.anchor.Position + plate.centre) * CFrame.Angles(0, plate.yaw, 0)
 		p.Color = plate.colour
 		p.Material = H.Material
 		p.TopSurface = Enum.SurfaceType.Smooth

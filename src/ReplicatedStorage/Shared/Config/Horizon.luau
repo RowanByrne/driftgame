@@ -167,5 +167,10 @@ return {
 		Thickness = 4,
 		Colour = rgb(30, 56, 38), -- dark green
 		Shade = 0.04,
+		-- On an uphill arc (T-232) the downhill side has no ridges to hide the floor's edge, so
+		-- it reaches `Downhill` studs that way and to each side, deep in the haze, in plates
+		-- `ArcTile` across, turned square to uphill. Uphill it still stops at `Size / 2`.
+		Downhill = 6000,
+		ArcTile = 2000,
 	},
 }

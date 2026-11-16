@@ -20,7 +20,8 @@
 --   THE SNOW PEAK: a cone at a fixed bearing, only its half facing the camera, in rings:
 --   foot, shoulder, snow line, summit. The faces below the snow line are rock, above it snow.
 --
---   THE VALLEY FLOOR (`floor`): square plates under the near layer, far below the cliffs.
+--   THE VALLEY FLOOR (`floor`): square plates under the near layer, far below the cliffs;
+--   on an uphill arc, reaching much further on the open downhill side.
 --
 -- A triangle longer than `MaxEdge` on any side is halved across that side until none is,
 -- because a part may be at most 2 048 studs on a side.
@@ -238,27 +239,54 @@ function Horizon.layout(config: any, uphill: number?): Layout
 	return { layers = layers, triangles = count }
 end
 
-export type Plate = { centre: Vector3, size: Vector3, colour: Color3 }
+export type Plate = { centre: Vector3, size: Vector3, colour: Color3, yaw: number }
 
 -- The valley floor's plates, relative to the near layer's centre at the road's start height.
-function Horizon.floor(config: any): { Plate }
+-- `uphill` (a bearing, as `layout`): the downhill side is open now, with no ridges to hide the
+-- floor's edge, so the floor reaches `Downhill` studs that way (and as far to each side) in
+-- plates of `ArcTile`, turned square to uphill; uphill it still stops `Size / 2` out, behind
+-- the ridges. Each plate's `yaw` is its turn about Y (radians, as `CFrame.Angles`).
+function Horizon.floor(config: any, uphill: number?): { Plate }
 	local F = config.Floor
 	local plates: { Plate } = {}
 	if not F then
 		return plates
 	end
 	local rng = Random.new(config.Seed + 1)
-	local n: number = F.Tiles
-	local side = F.Size / n
-	for i = 0, n - 1 do
-		for j = 0, n - 1 do
-			local x = -F.Size / 2 + (i + 0.5) * side
-			local z = -F.Size / 2 + (j + 0.5) * side
+	local arc = math.rad(config.Arc or 360)
+	if uphill == nil or arc >= TAU - 1e-6 or not F.Downhill then
+		local n: number = F.Tiles
+		local side = F.Size / n
+		for i = 0, n - 1 do
+			for j = 0, n - 1 do
+				local x = -F.Size / 2 + (i + 0.5) * side
+				local z = -F.Size / 2 + (j + 0.5) * side
+				table.insert(plates, {
+					-- its top at `-Depth`
+					centre = Vector3.new(x, -F.Depth - F.Thickness / 2, z),
+					size = Vector3.new(side, F.Thickness, side),
+					colour = shade(F.Colour, rng:NextNumber(-F.Shade, F.Shade)),
+					yaw = 0,
+				})
+			end
+		end
+		return plates
+	end
+	local b = uphill :: number
+	local forward = onRing(b, 1, 0) -- uphill
+	local right = onRing(b + math.pi / 2, 1, 0)
+	local side: number = F.ArcTile
+	local along = math.ceil((F.Downhill + F.Size / 2) / side) -- from the uphill edge down
+	local across = math.ceil(2 * F.Downhill / side)
+	for i = 0, along - 1 do
+		for j = 0, across - 1 do
+			local u = F.Size / 2 - (i + 0.5) * side
+			local v = -across * side / 2 + (j + 0.5) * side
 			table.insert(plates, {
-				-- its top at `-Depth`
-				centre = Vector3.new(x, -F.Depth - F.Thickness / 2, z),
+				centre = forward * u + right * v + Vector3.new(0, -F.Depth - F.Thickness / 2, 0),
 				size = Vector3.new(side, F.Thickness, side),
 				colour = shade(F.Colour, rng:NextNumber(-F.Shade, F.Shade)),
+				yaw = -b,
 			})
 		end
 	end

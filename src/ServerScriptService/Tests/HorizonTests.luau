@@ -169,6 +169,26 @@ function Tests.run()
 		math.abs(math.deg(moved) - (H.Peak.Bearing + 180 + H.Peak.Offset)) < 1e-6,
 		string.format("%.1f", math.deg(moved))
 	)
+	-- the floor on an arc: parts that fit, reaching `Downhill` that way, and still `Size / 2`
+	-- uphill (so the ridges hide its uphill edge as before)
+	for _, uphillDeg in { 0, 217 } do
+		local uphill = math.rad(uphillDeg)
+		local up = Vector3.new(math.sin(uphill), 0, -math.cos(uphill))
+		local plates = Horizon.floor(H, uphill)
+		local big, minU, maxU, wide = 0, math.huge, -math.huge, 0
+		for _, plate in plates do
+			big = math.max(big, plate.size.X, plate.size.Z)
+			local u = plate.centre:Dot(up)
+			local half = plate.size.X / 2
+			minU, maxU = math.min(minU, u - half), math.max(maxU, u + half)
+			wide = math.max(wide, (plate.centre - up * u - Vector3.yAxis * plate.centre.Y).Magnitude + half)
+		end
+		check(
+			`uphill {uphillDeg}: floor reaches far downhill and to the sides, not further uphill`,
+			big <= 2048 and minU <= -H.Floor.Downhill and math.abs(maxU - H.Floor.Size / 2) < 1e-3 and wide >= H.Floor.Downhill,
+			string.format("%d plates, %.0f..%.0f along uphill, %.0f to the side", #plates, minU, maxU, wide)
+		)
+	end
 	check("a 360 arc is the ring", Horizon.layout(setmetatable({ Arc = 360 }, { __index = H }), 1).triangles == layout.triangles)
 
 	-- the snow peak: its bearing, its height, snow on top
