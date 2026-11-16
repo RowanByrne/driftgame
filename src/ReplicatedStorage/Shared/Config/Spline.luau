@@ -517,6 +517,12 @@ local Spline = {
 		-- `TurnRetries` times) where it fits better: mid-turn the road heads straight down
 		-- the slope, which a steep scarp leaves it far above (T-228)
 		TurnMaxOff = 20, -- studs
+		-- ON THE RANGE (T-238, DECISIONS.md 2026-11-15, hairpins hug the steep face): a
+		-- turnaround is fitted with each stud of road above h counting `TurnFill` times one
+		-- below, so it sits in a cut (a wall on its inside) rather than out on fill, and may
+		-- be up to `TurnMaxCut` studs below h where `TurnMaxOff` is the most above it
+		TurnFill = 4,
+		TurnMaxCut = 45, -- studs
 		TurnRetries = 6,
 		AimMinLimit = 5, -- degrees (12 let a road on a 40-degree scarp stray to a 13-degree grade)
 		DownhillBias = 0.05, -- (0.01 let the aim swing round on a near-flat bench and the road box itself in, T-228)

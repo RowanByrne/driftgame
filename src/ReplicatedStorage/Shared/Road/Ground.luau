@@ -32,6 +32,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Config = require(ReplicatedStorage.Shared.Config)
 local Spline = require(script.Parent.Spline)
+local Range = require(script.Parent.Range)
 
 local Ground = {}
 
@@ -57,6 +58,10 @@ export type Field = {
 	baseZero: number, -- the belts' height at the start, taken off so the start is on them
 	zero: number, -- the relief at the origin, taken off so the road starts on the mountain
 	mode: string?, -- on a client: how it is drawn, "mesh" or "terrain"
+	-- THE RANGE (T-233, `Road/Range`): in place of the belts when `Config.Range.Shape` is
+	-- "range": ridges across the way the run goes, passes, valleys
+	shape: string, -- "belts" or "range"
+	range: Range.Range?,
 }
 
 export type Station = {
@@ -152,23 +157,31 @@ local function belts(rng: Random): ({ number }, number)
 end
 
 -- The field for a road: its origin and its fall line (the uphill heading, as a yaw: forward
--- is (-sin, -cos)), the belts, and offsets into the noise, all from the seed.
-function Ground.field(seed: number, origin: Spline.Origin, fall: number): Field
+-- is (-sin, -cos)), the belts or the range (`shape`, `Config.Range.Shape` unless given), and
+-- offsets into the noise, all from the seed.
+function Ground.field(seed: number, origin: Spline.Origin, fall: number, shape: string?): Field
 	local G = Config.Spline.Ground
+	local R = Config.Range
+	local isRange = (shape or R.Shape) == "range"
 	local rng = Random.new((seed * 29 + 5153) % 2 ^ 31)
 	local oct: { Octave } = {}
-	for _, o in G.Octaves do
+	for _, o in (if isRange then R.Octaves else G.Octaves) do
 		table.insert(oct, {
 			size = o[1],
 			amp = o[2],
 			kind = o[3],
-			a = rng:NextNumber() * 4096,
-			b = rng:NextNumber() * 4096,
+			-- (the range's within 64: far from its origin math.noise steps, a tenth of a
+			-- stud every third of a stud on the finest octave)
+			a = rng:NextNumber() * (if isRange then 64 else 4096),
+			b = rng:NextNumber() * (if isRange then 64 else 4096),
 			c = rng:NextNumber() * 256 + 0.5, -- never a whole number: math.noise is 0 on the lattice
 		})
 	end
 	local warp = { G.BeltWarp[1], G.BeltWarp[2], rng:NextNumber() * 4096, rng:NextNumber() * 256 + 0.5 }
-	local belt, u0 = belts(Random.new((seed * 31 + 7177) % 2 ^ 31))
+	local belt, u0 = { 0, 0 }, 0
+	if not isRange then
+		belt, u0 = belts(Random.new((seed * 31 + 7177) % 2 ^ 31))
+	end
 	-- the height up the belts: the slope's integral (it is straight between two samples)
 	local step = G.BeltStep
 	local beltH = table.create(#belt)
@@ -184,7 +197,7 @@ function Ground.field(seed: number, origin: Spline.Origin, fall: number): Field
 		ux = -math.sin(fall),
 		uz = -math.cos(fall),
 		slope = 0,
-		stretch = G.Stretch,
+		stretch = if isRange then R.Stretch else G.Stretch,
 		oct = oct,
 		belt = belt,
 		beltH = beltH,
@@ -193,7 +206,13 @@ function Ground.field(seed: number, origin: Spline.Origin, fall: number): Field
 		warp = warp,
 		baseZero = 0,
 		zero = 0,
+		shape = if isRange then "range" else "belts",
+		range = nil,
 	}
+	if isRange then
+		-- the way on is down the old fall line
+		f.range = Range.new(seed, origin.x, origin.z, -f.ux, -f.uz)
+	end
 	f.baseZero = Ground.base(f, origin.x, origin.z) - origin.y
 	f.slope = Ground.beltSlope(f, origin.x, origin.z)
 	f.zero = Ground.relief(f, origin.x, origin.z)
@@ -227,29 +246,60 @@ local function beltAt(f: Field, u: number): (number, number)
 	return s0 + k * t, H[i + 1] + s0 * t + 0.5 * k * t * t
 end
 
--- The mountain without its ridges and gullies: the belts.
+-- The mountain without its ridges and gullies: the belts, or the range.
 function Ground.base(f: Field, x: number, z: number): number
+	local r = f.range
+	if r then
+		local t, v = Range.frame(r, x, z)
+		return f.oy + (Range.at(r, t, v)) - f.baseZero
+	end
 	local u = beltU(f, x, z)
 	local _, y = beltAt(f, u)
 	return f.oy + y - f.baseZero
 end
 
--- How steep the belt is at (x, z), up the fall line.
+-- How steep the belt is at (x, z), up the fall line (on the range, how steep its base is,
+-- over 16 studs).
 function Ground.beltSlope(f: Field, x: number, z: number): number
+	if f.range then
+		local e = 8
+		local gx = (Ground.base(f, x + e, z) - Ground.base(f, x - e, z)) / (2 * e)
+		local gz = (Ground.base(f, x, z + e) - Ground.base(f, x, z - e)) / (2 * e)
+		return math.sqrt(gx * gx + gz * gz)
+	end
 	local u = beltU(f, x, z)
 	return (beltAt(f, u))
 end
 
--- The ridges and gullies: noise in the fall line's own frame, stretched along it so they
--- run down the mountain, as tall as the belt there (its slope `bs`) is steep (T-228).
-local function reliefAt(f: Field, x: number, z: number, bs: number): number
+-- How much of the ridges and gullies there are: on the belts, as much as the belt there
+-- (its slope `q`) is steep (T-228); on the range, little on a valley floor, all of them
+-- from `ReliefRise` up a face (`q`, 0 on the floor to 1 at the crest).
+local function reliefShare(f: Field, q: number): number
+	if f.range then
+		local R = Config.Range
+		local m = math.clamp(q / R.ReliefRise, 0, 1)
+		return R.ReliefFloor + (1 - R.ReliefFloor) * m * m * (3 - 2 * m)
+	end
 	local G = Config.Spline.Ground
+	local r = G.ReliefSlopes
+	local m = math.clamp((q - r[1]) / (r[2] - r[1]), 0, 1)
+	m = m * m * (3 - 2 * m)
+	return G.ReliefLow + (1 - G.ReliefLow) * m
+end
+
+-- The ridges and gullies: noise in the fall line's own frame, stretched along it so they
+-- run down the mountain (down the range's faces too, which fall along it), `share` of them.
+local function reliefAt(f: Field, x: number, z: number, share: number): number
 	local dx, dz = x - f.ox, z - f.oz
 	local u = dx * f.ux + dz * f.uz -- up the mountain
 	local v = dx * f.uz - dz * f.ux -- across it
 	local y = 0
+	-- (on the range, each octave within its height either way: a ridge octave's trough went
+	-- three times as deep as its crest stood, holes 300 studs deep on the lower faces)
+	local cap = if f.range then 0.5 else math.huge
 	for _, o in f.oct do
 		local n = math.noise(u / (o.size * f.stretch) + o.a, v / o.size + o.b, o.c)
+		n = math.clamp(n, -cap, cap)
 		if o.kind == "ridge" then
 			y += o.amp * (1 - 4 * math.abs(n))
 		elseif o.kind == "gully" then
@@ -258,19 +308,87 @@ local function reliefAt(f: Field, x: number, z: number, bs: number): number
 			y += o.amp * 2 * n
 		end
 	end
-	local r = G.ReliefSlopes
-	local m = math.clamp((bs - r[1]) / (r[2] - r[1]), 0, 1)
-	m = m * m * (3 - 2 * m)
-	return y * (G.ReliefLow + (1 - G.ReliefLow) * m) - f.zero
+	return y * share - f.zero
 end
 
 function Ground.relief(f: Field, x: number, z: number): number
-	return reliefAt(f, x, z, (beltAt(f, (beltU(f, x, z)))))
+	local r = f.range
+	if r then
+		local t, v = Range.frame(r, x, z)
+		local _, up = Range.at(r, t, v)
+		return reliefAt(f, x, z, reliefShare(f, up))
+	end
+	return reliefAt(f, x, z, reliefShare(f, (beltAt(f, (beltU(f, x, z))))))
 end
 
 function Ground.h(f: Field, x: number, z: number): number
+	local r = f.range
+	if r then
+		local t, v = Range.frame(r, x, z)
+		local y, up = Range.at(r, t, v)
+		return f.oy + y - f.baseZero + reliefAt(f, x, z, reliefShare(f, up))
+	end
 	local bs, by = beltAt(f, (beltU(f, x, z)))
-	return f.oy + by - f.baseZero + reliefAt(f, x, z, bs)
+	return f.oy + by - f.baseZero + reliefAt(f, x, z, reliefShare(f, bs))
+end
+
+--------------------------------------------------------------------------------
+-- Where you are on the range (T-233)
+--------------------------------------------------------------------------------
+
+export type Where = {
+	kind: string, -- "pass", "ridge", "valley" or "face" ("belts" off the range)
+	height: number, -- 0 at the lowest valley floor to 1 at the highest peak the range can have
+	slope: number, -- degrees, the steepest way across h here (over 24 studs)
+	crest: number, -- studs to the nearest crest, along the way the run goes
+	ridge: number, -- which ridge that is
+	up: number, -- how far up its face, 0 on the valley floor to 1 at the crest
+	saddle: number, -- how near that ridge is to a saddle here, 0 at a peak to 1 at a saddle
+}
+
+-- Where (x, z) is on the range: a pure function of the place, the same on every device, for
+-- what later chooses the scenery from it (biomes: not built yet).
+function Ground.where(f: Field, x: number, z: number): Where
+	local e = 12
+	local gx = (Ground.h(f, x + e, z) - Ground.h(f, x - e, z)) / (2 * e)
+	local gz = (Ground.h(f, x, z + e) - Ground.h(f, x, z - e)) / (2 * e)
+	local slope = math.deg(math.atan(math.sqrt(gx * gx + gz * gz)))
+	local r = f.range
+	if not r then
+		return { kind = "belts", height = 0, slope = slope, crest = math.huge, ridge = 0, up = 0, saddle = 0 }
+	end
+	local R = Config.Range
+	local sh = Range.shape(r, x, z)
+	local lo = R.ValleyBase[1] - R.FloorVary
+	local hi = R.Peak[2]
+	local kind = "face"
+	if sh.crest <= R.PassReach and sh.saddle >= R.PassShare then
+		kind = "pass"
+	elseif sh.crest <= R.RidgeReach then
+		kind = "ridge"
+	elseif sh.up <= R.ValleyShare then
+		kind = "valley"
+	end
+	return {
+		kind = kind,
+		height = math.clamp((sh.y - lo) / (hi - lo), 0, 1),
+		slope = slope,
+		crest = sh.crest,
+		ridge = sh.ridge,
+		up = sh.up,
+		saddle = sh.saddle,
+	}
+end
+
+-- The pass ahead of (x, z) the road should head for: where it is (x, z), its height (world)
+-- and which ridge it is on; nil off the range.
+function Ground.passAhead(f: Field, x: number, z: number): (number?, number?, number?, number?)
+	local r = f.range
+	if not r then
+		return nil, nil, nil, nil
+	end
+	local px, pz, py, k = Range.passAhead(r, x, z)
+	return px, pz, f.oy + py - f.baseZero, k
 end
 
 -- The belt's grade at the start along a heading (a yaw); kept for what still wants the
