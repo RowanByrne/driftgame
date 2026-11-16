@@ -16,15 +16,23 @@
 -- frames, then swapped in within one frame, with its neighbours' edges put right in the same
 -- frame.
 --
--- NO CRACKS. Two tiles of one spacing share their edge's vertices, worked out the same way.
+-- NO CRACKS. Two tiles of one spacing share their edge's vertices, worked out the same way
+-- (moved or not: each is a function of its own grid point and its neighbours alone).
 -- Where a tile meets a coarser one, its edge takes the coarser one's heights (straight lines
 -- between the coarser vertices), and a vertex several tiles share takes its height the
 -- coarsest one's way (`Clamps`, `Sinks`). So the edges agree exactly.
 --
--- ROUND THE ROAD: every vertex sinks its spacing's `Sinks` under the road and its runoff, and one within
--- its spacing's `Clamp` of a runoff's edge is held below the edge, so no triangle reaching over
--- from a cutting covers the road. The road's skirt (`Road/SplineMesh`, a ground run) hides the
--- gap.
+-- ROUND THE ROAD: every vertex sinks its spacing's `Sinks` under the road and its runoff. No
+-- triangle may reach over the road from a cutting, so (T-231) a vertex past a runoff's edge
+-- with a neighbour on the road is MOVED onto the edge's foot (`SnapFoot`) and held below the
+-- edge there: the wall rises from a line along the road, not from a staircase of grid points
+-- (a grid point held below the edge up to a cell and a half out, as before T-231, drew each
+-- cut wall as a sawtooth wherever the road ran at an angle across the grid). Then each cell
+-- is split along the diagonal that fits the ground best, never one joining a vertex on the
+-- road to one up a wall. A vertex that cannot move (road both sides of it, or one on an edge
+-- shared with a tile of another spacing, which is worked out the old way so the two still
+-- agree) is held below the edge within its spacing's `Clamp`, as before. The road's skirt
+-- (`Road/SplineMesh`, a ground run) hides what is left of the gap.
 
 local AssetService = game:GetService("AssetService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -55,6 +63,7 @@ type Tile = {
 	px: { number }, -- and where, world x and z (a vertex can be moved off its grid point)
 	pz: { number },
 	normals: { Vector3 }, -- the normal each vertex is drawn with
+	cls: { number }, -- ROAD, HELD or OPEN (below), by grid index
 	-- by cell index i * C + j + 1: its two faces' ids, and whether it is split along a-d
 	-- (its corners a (i, j), b (i + 1, j), c (i, j + 1), d (i + 1, j + 1); b-c otherwise)
 	faces: { number },
@@ -107,6 +116,7 @@ export type View = typeof(setmetatable(
 		ops: { [string]: number },
 		tilesBuilt: number,
 		rimWrites: number,
+		wall: { [string]: number }, -- vertices moved onto a wall's foot, held, cells split a-d, cells left inverted
 		lastMs: number,
 		worstMs: number,
 		worstSliceMs: number,
@@ -254,6 +264,7 @@ local function makeTile(master: Master): Tile?
 		px = px,
 		pz = pz,
 		normals = table.create(n * n, Vector3.yAxis),
+		cls = table.create(n * n, 2),
 		faces = faces,
 		flip = table.create(C * C, false),
 		cy = 0,
@@ -298,6 +309,7 @@ function GroundMeshView.new(spline: any, parent: Instance?): View
 		ops = { fill = 0, split = 0, merge = 0, drop = 0, stale = 0 },
 		tilesBuilt = 0,
 		rimWrites = 0,
+		wall = { moved = 0, held = 0, flipped = 0, inverted = 0 },
 		lastMs = 0,
 		worstMs = 0,
 		worstSliceMs = 0,
@@ -367,8 +379,44 @@ function GroundMeshView._slice(self: View)
 	end
 end
 
--- The height a vertex takes at (x, z), done the way tiles of spacing `s` do it: the ground,
--- sunk under the road, and held below the edge within that spacing's clamp of it.
+--------------------------------------------------------------------------------
+-- Where each vertex goes, and how each cell is split (T-231)
+--------------------------------------------------------------------------------
+
+-- What a vertex is, for how its cell may be split: on the road (or the flat foot just past
+-- its edge), held below the edge, or open ground. A triangle joining ROAD to OPEN would
+-- reach up from the road over it.
+local ROAD, HELD, OPEN = 0, 1, 2
+
+-- The grid indices of a cell's two triangles, as drawn: split along b-c, or a-d if flipped.
+-- Both wound as the template winds them, to face up.
+local function cellTriangles(n: number, i: number, j: number, flip: boolean): ({ number }, { number })
+	local a, b, c, d = i * n + j + 1, (i + 1) * n + j + 1, i * n + j + 2, (i + 1) * n + j + 2
+	if flip then
+		return { a, d, b }, { a, c, d }
+	end
+	return { a, c, b }, { b, c, d }
+end
+
+-- Where (x, z) is in a triangle, in plan: its three weights (all -1 for no triangle at all).
+local function bary(x1: number, z1: number, x2: number, z2: number, x3: number, z3: number, x: number, z: number): (number, number, number)
+	local det = (z2 - z3) * (x1 - x3) + (x3 - x2) * (z1 - z3)
+	if math.abs(det) < 1e-9 then
+		return -1, -1, -1
+	end
+	local l1 = ((z2 - z3) * (x - x3) + (x3 - x2) * (z - z3)) / det
+	local l2 = ((z3 - z1) * (x - x3) + (x1 - x3) * (z - z3)) / det
+	return l1, l2, 1 - l1 - l2
+end
+
+-- Twice a triangle's area in plan: negative wound the template's way, so positive is folded over.
+local function orient(x1: number, z1: number, x2: number, z2: number, x3: number, z3: number): number
+	return (x2 - x1) * (z3 - z1) - (z2 - z1) * (x3 - x1)
+end
+
+-- The height a vertex takes at (x, z), done the way tiles of spacing `s` did it before T-231:
+-- the ground, sunk under the road, and held below the edge within that spacing's clamp of it.
+-- Still how a vertex shared with a tile of another spacing is done, so both agree on it.
 local function vertexHeight(ctx: Ground.Context, s: number, x: number, z: number): number
 	local y, a, e, T = Ground.at(ctx, x, z)
 	local sink = sinkOf[s]
@@ -379,13 +427,102 @@ local function vertexHeight(ctx: Ground.Context, s: number, x: number, z: number
 	return y
 end
 
--- The heights of a tile's rim, given the tiles round it (`map`): {grid index -> y}.
--- Along an edge that meets a coarser tile, straight between that tile's vertices; every rim
--- vertex clamped the way the coarsest tile touching it is.
-local function rimHeights(ctx: Ground.Context, leaf: Leaf, map: { [number]: Leaf }, own: { number }?): { [number]: number }
+-- THE GROUND ON ONE SPACING'S GRID: the world's grid points `s` apart (point (I, J) at
+-- x = I * s, z = J * s), each worked out once a fill and kept.
+type Lattice = {
+	ctx: Ground.Context,
+	s: number,
+	at: { [number]: { number } }, -- by point: y, a, e, T, from `Ground.at`
+	placed: { [number]: { number } }, -- by point: x, z, y, class (`place`)
+}
+
+local function latKey(I: number, J: number): number
+	return (I + 1048576) * 2097152 + (J + 1048576)
+end
+
+local function newLattice(ctx: Ground.Context, s: number): Lattice
+	return { ctx = ctx, s = s, at = {}, placed = {} }
+end
+
+local function latAt(L: Lattice, I: number, J: number): { number }
+	local k = latKey(I, J)
+	local r = L.at[k]
+	if not r then
+		local y, a, e, T = Ground.at(L.ctx, I * L.s, J * L.s)
+		r = { y, a, e, T }
+		L.at[k] = r
+	end
+	return r
+end
+
+-- Where the vertex of grid point (I, J) goes, its height and its class: {x, z, y, class}. The
+-- same in every tile of this spacing, since it reads only the point and its four neighbours.
+-- The road and open ground stay on their grid points. A point past a runoff's edge with a
+-- neighbour on the road would make a triangle from the road up to it, reaching over the
+-- road: it moves onto the edge's foot (`SnapFoot` past it), square to the edge (the way its
+-- distance from the edge falls fastest), and is held below the edge there. Where it cannot
+-- (road both sides of it, or further than `SnapMax` of a cell to go) it stays, held below the
+-- edge.
+local function place(L: Lattice, I: number, J: number): { number }
+	local key = latKey(I, J)
+	local p = L.placed[key]
+	if p then
+		return p
+	end
+	local G = Config.Spline.Ground
+	local s = L.s
+	local x, z = I * s, J * s
+	local r = latAt(L, I, J)
+	local y, a, e, T = r[1], r[2], r[3], r[4]
+	local sink = sinkOf[s]
+	local foot = G.SnapFoot
+	local open = y - sink * a
+	if e <= foot then
+		p = { x, z, open, ROAD }
+	elseif e > s + foot then
+		p = { x, z, open, OPEN } -- no neighbour can be on the road
+	else
+		local west = latAt(L, I - 1, J)[3] <= foot
+		local east = latAt(L, I + 1, J)[3] <= foot
+		local south = latAt(L, I, J - 1)[3] <= foot
+		local north = latAt(L, I, J + 1)[3] <= foot
+		if not (west or east or south or north) then
+			p = { x, z, open, OPEN }
+		else
+			p = { x, z, math.min(open, T - sink), HELD }
+			if not (west and east) and not (south and north) then
+				local h = 0.25
+				local _, _, ex = Ground.at(L.ctx, x + h, z)
+				local _, _, ez = Ground.at(L.ctx, x, z + h)
+				local gx, gz = (ex - e) / h, (ez - e) / h
+				local g = math.sqrt(gx * gx + gz * gz)
+				if g > 0.3 then
+					local move = (e - foot) / g
+					if move <= G.SnapMax * s then
+						local nx, nz = x - gx / g * move, z - gz / g * move
+						local y2, a2, _, T2 = Ground.at(L.ctx, nx, nz)
+						p = { nx, nz, math.min(y2 - sink * a2, T2 - sink), HELD }
+					end
+				end
+			end
+		end
+	end
+	L.placed[key] = p
+	return p
+end
+
+-- A tile's rim, given the tiles round it (`map`): {grid index -> {x, z, y, class}}. A vertex
+-- only tiles of this spacing touch is placed like any other (`place`), and they all agree on
+-- it. One a tile of another spacing touches stays on its grid point and takes its height the
+-- old way (`vertexHeight`), the coarsest touching tile's: along an edge that meets a coarser
+-- tile, straight between that tile's vertices. So both sides of every edge agree exactly.
+local function rimPlace(L: Lattice, leaf: Leaf, map: { [number]: Leaf }): { [number]: { number } }
+	local ctx = L.ctx
 	local C = cells()
 	local n = C + 1
 	local s, x0, z0, side = leaf.s, leaf.x0, leaf.z0, leaf.side
+	local I0, J0 = math.round(x0 / s), math.round(z0 / s)
+	local foot = Config.Spline.Ground.SnapFoot
 	local e = 0.5
 	local mid = side * 0.5
 	-- the spacing across each edge, if coarser than this tile's
@@ -410,9 +547,14 @@ local function rimHeights(ctx: Ground.Context, leaf: Leaf, map: { [number]: Leaf
 		cache[key] = y
 		return y
 	end
-	local out: { [number]: number } = {}
+	local out: { [number]: { number } } = {}
 	local function vertex(i: number, j: number)
 		local x, z = x0 + i * s, z0 + j * s
+		local lo, hi = GroundTiles.spacingRange(map, x, z)
+		if lo >= s and hi <= s then
+			out[i * n + j + 1] = place(L, I0 + i, J0 + j)
+			return
+		end
 		local S = 0
 		local along, alongStart = 0, 0
 		if i == 0 then
@@ -435,14 +577,11 @@ local function rimHeights(ctx: Ground.Context, leaf: Leaf, map: { [number]: Leaf
 				y = H(a0, z) * (1 - f) + H(a0 + S, z) * f
 			end
 		else
-			local sm = GroundTiles.spacingAround(map, x, z)
-			if sm <= s and own then
-				y = own[(i + 1) * (n + 2) + (j + 1) + 1]
-			else
-				y = H(x, z)
-			end
+			y = H(x, z)
 		end
-		out[i * n + j + 1] = y
+		local r = latAt(L, I0 + i, J0 + j)
+		local cls = if r[3] <= foot then ROAD elseif y <= r[4] - sinkOf[s] + 1e-3 then HELD else OPEN
+		out[i * n + j + 1] = { x, z, y, cls }
 	end
 	for t = 0, C do
 		vertex(0, t)
@@ -455,6 +594,77 @@ local function rimHeights(ctx: Ground.Context, leaf: Leaf, map: { [number]: Leaf
 	return out
 end
 
+-- How cell (i, j) is best split, given every vertex as placed (`P`: {x, z, y, class} by grid
+-- index): true for a-d. Never along a diagonal joining a vertex on the road to open ground;
+-- otherwise the diagonal that puts the cell's middle nearer the ground there, when the two
+-- differ there by `FitGap` or more (b-c, the template's, when they do not); and never one
+-- that folds a triangle over, if the other does not. Also whether it still folds.
+local function chooseSplit(ctx: Ground.Context, s: number, P: { { number } }, n: number, i: number, j: number): (boolean, boolean)
+	local a, b, c, d = i * n + j + 1, (i + 1) * n + j + 1, i * n + j + 2, (i + 1) * n + j + 2
+	local A, B, Cc, D = P[a], P[b], P[c], P[d]
+	local function joins(p: { number }, q: { number }): boolean
+		return (p[4] == ROAD and q[4] == OPEN) or (p[4] == OPEN and q[4] == ROAD)
+	end
+	local function folds(flip: boolean): boolean
+		local t1, t2 = cellTriangles(n, i, j, flip)
+		for _, t in { t1, t2 } do
+			local p, q, r = P[t[1]], P[t[2]], P[t[3]]
+			if orient(p[1], p[2], q[1], q[2], r[1], r[2]) > -1e-6 * s * s then
+				return true
+			end
+		end
+		return false
+	end
+	local function heightAt(flip: boolean, x: number, z: number): number?
+		local t1, t2 = cellTriangles(n, i, j, flip)
+		for _, t in { t1, t2 } do
+			local p, q, r = P[t[1]], P[t[2]], P[t[3]]
+			local l1, l2, l3 = bary(p[1], p[2], q[1], q[2], r[1], r[2], x, z)
+			if l1 >= -1e-9 and l2 >= -1e-9 and l3 >= -1e-9 then
+				return l1 * p[3] + l2 * q[3] + l3 * r[3]
+			end
+		end
+		return nil
+	end
+	local canAD, canBC = not joins(A, D), not joins(B, Cc)
+	local flip = false
+	if canAD and not canBC then
+		flip = true
+	elseif canAD == canBC then
+		local mx, mz = (A[1] + B[1] + Cc[1] + D[1]) * 0.25, (A[2] + B[2] + Cc[2] + D[2]) * 0.25
+		local yBC, yAD = heightAt(false, mx, mz), heightAt(true, mx, mz)
+		if yBC and yAD and math.abs(yBC - yAD) >= Config.Spline.Ground.FitGap then
+			local y, w = Ground.at(ctx, mx, mz)
+			local want = y - sinkOf[s] * w
+			flip = math.abs(yAD - want) < math.abs(yBC - want)
+		end
+	end
+	if folds(flip) and (if flip then canBC else canAD) and not folds(not flip) then
+		flip = not flip
+	end
+	return flip, folds(flip)
+end
+
+-- Split a tile's cell (i, j) along a-d (`flip`) or b-c, if it is not already.
+local function setSplit(tile: Tile, i: number, j: number, flip: boolean)
+	local C = cells()
+	local c = i * C + j + 1
+	if tile.flip[c] == flip then
+		return
+	end
+	tile.flip[c] = flip
+	local t1, t2 = cellTriangles(C + 1, i, j, flip)
+	local em = tile.em
+	local v, nrm, col, uv = tile.v, tile.nrm, tile.col, tile.uv
+	for q, t in { t1, t2 } do
+		local f = tile.faces[2 * (c - 1) + q]
+		em:SetFaceVertices(f, { v[t[1]], v[t[2]], v[t[3]] })
+		em:SetFaceNormals(f, { nrm[t[1]], nrm[t[2]], nrm[t[3]] })
+		em:SetFaceColors(f, { col[t[1]], col[t[2]], col[t[3]] })
+		em:SetFaceUVs(f, { uv[t[1]], uv[t[2]], uv[t[3]] })
+	end
+end
+
 -- Fill a hidden tile with `leaf`'s ground, given the tiles it will sit among (`map`).
 function GroundMeshView._fill(self: View, tile: Tile, leaf: Leaf, map: { [number]: Leaf }): boolean
 	local G = Config.Spline.Ground
@@ -462,46 +672,67 @@ function GroundMeshView._fill(self: View, tile: Tile, leaf: Leaf, map: { [number
 	local n = C + 1
 	local m = n + 2 -- with a row of apron each side, for the normals
 	local s, x0, z0 = leaf.s, leaf.x0, leaf.z0
-	local ctx = Ground.context(self.field, self.spline, x0 - s, z0 - s, x0 + leaf.side + s, z0 + leaf.side + s)
+	-- (two cells round: the apron's neighbours, and where a vertex moves to, must be inside it)
+	local margin = 2 * s + 1
+	local ctx = Ground.context(self.field, self.spline, x0 - margin, z0 - margin, x0 + leaf.side + margin, z0 + leaf.side + margin)
+	local L = newLattice(ctx, s)
+	local I0, J0 = math.round(x0 / s), math.round(z0 / s)
 	self:_slice()
-	-- every vertex and the apron, this tile's own way
-	local own = table.create(m * m)
+	-- every vertex and the apron, placed this spacing's way (the apron for the normals)
+	local V = table.create(m * m)
 	for i = -1, C + 1 do
 		if self.dead then
 			return false
 		end
-		local x = x0 + i * s
 		for j = -1, C + 1 do
-			own[(i + 1) * m + (j + 1) + 1] = vertexHeight(ctx, s, x, z0 + j * s)
+			V[(i + 1) * m + (j + 1) + 1] = place(L, I0 + i, J0 + j)
 		end
 		self:_slice()
 	end
-	local heights = table.create(n * n)
+	local P = table.create(n * n)
 	for i = 0, C do
 		for j = 0, C do
-			heights[i * n + j + 1] = own[(i + 1) * m + (j + 1) + 1]
+			P[i * n + j + 1] = V[(i + 1) * m + (j + 1) + 1]
 		end
 	end
-	for k, y in rimHeights(ctx, leaf, map, own) do
-		heights[k] = y
+	for k, p in rimPlace(L, leaf, map) do
+		P[k] = p
 	end
 	self:_slice()
-	-- normals from the tile's own heights (the apron gives the edge ones), colours by slope
+	local flips = table.create(C * C, false)
+	for i = 0, C - 1 do
+		for j = 0, C - 1 do
+			local f, folded = chooseSplit(ctx, s, P, n, i, j)
+			flips[i * C + j + 1] = f
+			if f then
+				self.wall.flipped += 1
+			end
+			if folded then
+				self.wall.inverted += 1
+			end
+		end
+	end
+	self:_slice()
+	-- normals from the vertices round each one, as placed (the apron gives the edge ones),
+	-- colours by slope
 	local cx, cz = x0 + leaf.side * 0.5, z0 + leaf.side * 0.5
 	local cy = Ground.base(self.field, cx, cz)
 	local rockY = math.cos(math.rad(G.RockAngle))
 	local g1, g2, rock = G.GrassColours[1], G.GrassColours[2], G.GroundRockColour
 	local uvStuds = G.UVStuds
 	local em = tile.em
+	local heights = tile.heights
 	for i = 0, C do
 		local x = x0 + i * s
 		for j = 0, C do
 			local k = i * n + j + 1
 			local z = z0 + j * s
 			local q = (i + 1) * m + (j + 1) + 1
-			local dydx = (own[q + m] - own[q - m]) / (2 * s)
-			local dydz = (own[q + 1] - own[q - 1]) / (2 * s)
-			local nv = Vector3.new(-dydx, 1, -dydz).Unit
+			local xp, xm, zp, zm = V[q + m], V[q - m], V[q + 1], V[q - 1]
+			local across = Vector3.new(zp[1] - zm[1], zp[3] - zm[3], zp[2] - zm[2])
+			local along = Vector3.new(xp[1] - xm[1], xp[3] - xm[3], xp[2] - xm[2])
+			local nv = across:Cross(along)
+			nv = if nv.Magnitude > 1e-9 then nv.Unit else Vector3.yAxis
 			local colour
 			if nv.Y < rockY then
 				colour = rock
@@ -509,37 +740,80 @@ function GroundMeshView._fill(self: View, tile: Tile, leaf: Leaf, map: { [number
 				local blotch = math.clamp(0.5 + 1.6 * math.noise(x / 70, z / 70, 3.37), 0, 1)
 				colour = g1:Lerp(g2, blotch)
 			end
-			em:SetPosition(tile.v[k], Vector3.new(x - cx, heights[k] - cy, z - cz))
-			tile.px[k], tile.pz[k], tile.normals[k] = x, z, nv
+			local p = P[k]
+			if p[4] == HELD then
+				if p[1] ~= x or p[2] ~= z then
+					self.wall.moved += 1
+				else
+					self.wall.held += 1
+				end
+			end
+			em:SetPosition(tile.v[k], Vector3.new(p[1] - cx, p[3] - cy, p[2] - cz))
+			tile.px[k], tile.pz[k], heights[k], tile.cls[k], tile.normals[k] = p[1], p[2], p[3], p[4], nv
 			em:SetNormal(tile.nrm[k], nv)
 			em:SetColor(tile.col[k], colour)
-			em:SetUV(tile.uv[k], Vector2.new(x / uvStuds, z / uvStuds))
+			em:SetUV(tile.uv[k], Vector2.new(p[1] / uvStuds, p[2] / uvStuds))
 		end
 		self:_slice()
 	end
+	for i = 0, C - 1 do
+		for j = 0, C - 1 do
+			setSplit(tile, i, j, flips[i * C + j + 1])
+		end
+	end
 	tile.part.CFrame = CFrame.new(cx, cy, cz)
 	tile.leaf = leaf
-	tile.heights = heights
 	tile.cy = cy
 	tile.stale = false
 	self.tilesBuilt += 1
 	return true
 end
 
--- A shown tile's rim, worked out again among `map`: the vertices that would move.
-function GroundMeshView._rimChanges(self: View, tile: Tile, map: { [number]: Leaf }): { { number } }
+-- A shown tile's rim, worked out again among `map`: the vertices that would move ({k, x, z,
+-- y, class}), and the cells beside them whose split would change ({i, j, flip}).
+function GroundMeshView._rimChanges(self: View, tile: Tile, map: { [number]: Leaf }): ({ { number } }, { { any } })
 	local leaf = tile.leaf :: Leaf
 	local s = leaf.s
-	local ctx = Ground.context(self.field, self.spline, leaf.x0 - s, leaf.z0 - s, leaf.x0 + leaf.side + s, leaf.z0 + leaf.side + s)
+	local C = cells()
+	local n = C + 1
+	local margin = 2 * s + 1
+	local ctx = Ground.context(self.field, self.spline, leaf.x0 - margin, leaf.z0 - margin, leaf.x0 + leaf.side + margin, leaf.z0 + leaf.side + margin)
+	local L = newLattice(ctx, s)
 	self:_slice()
 	local changes = {}
-	for k, y in rimHeights(ctx, leaf, map, nil) do
-		if math.abs(y - tile.heights[k]) > 1e-4 then
-			table.insert(changes, { k, y })
+	local changed: { [number]: { number } } = {}
+	for k, p in rimPlace(L, leaf, map) do
+		if
+			math.abs(p[1] - tile.px[k]) > 1e-4
+			or math.abs(p[2] - tile.pz[k]) > 1e-4
+			or math.abs(p[3] - tile.heights[k]) > 1e-4
+			or p[4] ~= tile.cls[k]
+		then
+			table.insert(changes, { k, p[1], p[2], p[3], p[4] })
+			changed[k] = p
 		end
 	end
 	self:_slice()
-	return changes
+	local splits = {}
+	if #changes > 0 then
+		local P = table.create(n * n)
+		for k = 1, n * n do
+			P[k] = changed[k] or { tile.px[k], tile.pz[k], tile.heights[k], tile.cls[k] }
+		end
+		for i = 0, C - 1 do
+			for j = 0, C - 1 do
+				local a, b, c, d = i * n + j + 1, (i + 1) * n + j + 1, i * n + j + 2, (i + 1) * n + j + 2
+				if changed[a] or changed[b] or changed[c] or changed[d] then
+					local f = chooseSplit(ctx, s, P, n, i, j)
+					if f ~= tile.flip[i * C + j + 1] then
+						table.insert(splits, { i, j, f })
+					end
+				end
+			end
+		end
+		self:_slice()
+	end
+	return changes, splits
 end
 
 -- A tile from the pool, or a new one; nil if the device will make no more. `over`: a change
@@ -811,9 +1085,9 @@ function GroundMeshView._do(self: View, op: Op): boolean
 			end
 			local tile = self.tiles[k]
 			if touching and tile then
-				local changes = self:_rimChanges(tile, future)
-				if #changes > 0 then
-					table.insert(pending, { tile, changes })
+				local changes, splits = self:_rimChanges(tile, future)
+				if #changes > 0 or #splits > 0 then
+					table.insert(pending, { tile, changes, splits })
 				end
 			end
 		end
@@ -848,18 +1122,20 @@ function GroundMeshView._do(self: View, op: Op): boolean
 		t.stale = false
 		table.insert(self.free, t)
 	end
-	local C = cells()
-	local n = C + 1
+	local uvStuds = Config.Spline.Ground.UVStuds
 	for _, p in pending do
-		local tile, changes = p[1] :: Tile, p[2] :: { { number } }
+		local tile, changes, splits = p[1] :: Tile, p[2] :: { { number } }, p[3] :: { { any } }
 		local leaf = tile.leaf :: Leaf
 		local cx, cz = leaf.x0 + leaf.side * 0.5, leaf.z0 + leaf.side * 0.5
 		for _, ch in changes do
-			local k, y = ch[1], ch[2]
-			local i, j = (k - 1) // n, (k - 1) % n
-			tile.heights[k] = y
-			tile.em:SetPosition(tile.v[k], Vector3.new(leaf.x0 + i * leaf.s - cx, y - tile.cy, leaf.z0 + j * leaf.s - cz))
+			local k, x, z, y, cls = ch[1], ch[2], ch[3], ch[4], ch[5]
+			tile.heights[k], tile.px[k], tile.pz[k], tile.cls[k] = y, x, z, cls
+			tile.em:SetPosition(tile.v[k], Vector3.new(x - cx, y - tile.cy, z - cz))
+			tile.em:SetUV(tile.uv[k], Vector2.new(x / uvStuds, z / uvStuds))
 			self.rimWrites += 1
+		end
+		for _, sp in splits do
+			setSplit(tile, sp[1], sp[2], sp[3])
 		end
 	end
 	self.shown = future
@@ -974,15 +1250,6 @@ end
 -- Checks
 --------------------------------------------------------------------------------
 
--- The grid indices of a cell's two triangles, as drawn: split along b-c, or a-d if flipped.
-local function cellTriangles(n: number, i: number, j: number, flip: boolean): ({ number }, { number })
-	local a, b, c, d = i * n + j + 1, (i + 1) * n + j + 1, i * n + j + 2, (i + 1) * n + j + 2
-	if flip then
-		return { a, d, b }, { a, c, d }
-	end
-	return { a, c, b }, { b, c, d }
-end
-
 -- The drawn ground at (x, z) in a tile, as its triangles have it: its height, the triangle's
 -- own normal and the normal the renderer blends there; nil if no triangle of the tile holds
 -- it (its vertices can be moved off their grid points, up to a cell).
@@ -1001,11 +1268,8 @@ local function facetAt(tile: Tile, x: number, z: number): (number?, Vector3?, Ve
 			for _, t in { t1, t2 } do
 				local p, q, r = t[1], t[2], t[3]
 				local x1, z1, x2, z2, x3, z3 = px[p], pz[p], px[q], pz[q], px[r], pz[r]
-				local det = (z2 - z3) * (x1 - x3) + (x3 - x2) * (z1 - z3)
-				if math.abs(det) > 1e-9 then
-					local l1 = ((z2 - z3) * (x - x3) + (x3 - x2) * (z - z3)) / det
-					local l2 = ((z3 - z1) * (x - x3) + (x1 - x3) * (z - z3)) / det
-					local l3 = 1 - l1 - l2
+				local l1, l2, l3 = bary(x1, z1, x2, z2, x3, z3, x, z)
+				do
 					local worst = math.min(l1, l2, l3) -- the most inside wins, for points on an edge
 					if worst > best and worst > -1e-6 then
 						best = worst
@@ -1036,6 +1300,29 @@ end
 function GroundMeshView._tileAt(self: View, x: number, z: number): Tile?
 	local l = GroundTiles.leafAt(self.shown, x, z)
 	return if l then self.tiles[l.key] else nil
+end
+
+-- The drawn ground at (x, z) (`facetAt`) and the tile drawing it: the tile whose square holds
+-- the point first, then any tile beside it (a vertex moved onto a wall's foot can carry a
+-- tile's triangles a little past its square).
+function GroundMeshView._drawnAt(self: View, x: number, z: number): (number?, Tile?, Vector3?, Vector3?)
+	local t = self:_tileAt(x, z)
+	if t then
+		local y, fn, sn = facetAt(t, x, z)
+		if y then
+			return y, t, fn, sn
+		end
+	end
+	for _, o in self.tiles do
+		local l = o.leaf
+		if l and o ~= t and x >= l.x0 - l.s and x <= l.x0 + l.side + l.s and z >= l.z0 - l.s and z <= l.z0 + l.side + l.s then
+			local y, fn, sn = facetAt(o, x, z)
+			if y then
+				return y, o, fn, sn
+			end
+		end
+	end
+	return nil, nil, nil, nil
 end
 
 -- How far along the road ahead of the car its middle (and points `side` studs either way of
@@ -1071,6 +1358,7 @@ function GroundMeshView.DebugSeams(self: View, roadAhead: number?)
 		end
 	end
 	local worst, edgePairs, samples, missing = 0, 0, 0, 0
+	local rimVertices, rimMismatch = 0, 0
 	local worstAt = nil
 	for a = 1, #list do
 		local A = list[a]
@@ -1096,6 +1384,20 @@ function GroundMeshView.DebugSeams(self: View, roadAhead: number?)
 			if shared then
 				edgePairs += 1
 				local len = math.max(math.abs(shared[3] - shared[1]), math.abs(shared[4] - shared[2]))
+				if la.s == lb.s then
+					-- one spacing: the very same vertices, wherever they were moved to
+					local s, n = la.s, cells() + 1
+					for t = 0, len, s do
+						local f = t / len
+						local x = shared[1] + (shared[3] - shared[1]) * f
+						local z = shared[2] + (shared[4] - shared[2]) * f
+						local ka = math.round((x - la.x0) / s) * n + math.round((z - la.z0) / s) + 1
+						local kb = math.round((x - lb.x0) / s) * n + math.round((z - lb.z0) / s) + 1
+						local dd = math.max(math.abs(A.px[ka] - B.px[kb]), math.abs(A.pz[ka] - B.pz[kb]), math.abs(A.heights[ka] - B.heights[kb]))
+						rimVertices += 1
+						rimMismatch = math.max(rimMismatch, dd)
+					end
+				end
 				for t = 0, len do
 					local f = t / len
 					local x = shared[1] + (shared[3] - shared[1]) * f
@@ -1126,10 +1428,9 @@ function GroundMeshView.DebugSeams(self: View, roadAhead: number?)
 		while s <= s1 do
 			for _, side in { -1, 1 } do
 				local w = spline:runoffAt(s, side)
-				for _, d in { 0, half, half + w * 0.5, half + w - 0.05 } do
+				for _, d in { 0, half, half + w * 0.5, half + w - 1, half + w - 0.05 } do
 					local x, y, z = spline:terrainXYZ(s, side * d)
-					local tile = self:_tileAt(x, z)
-					local g = if tile then surfaceAt(tile, x, z) else nil
+					local g, tile = self:_drawnAt(x, z)
 					if tile and g then
 						local sk = tostring((tile.leaf :: Leaf).s)
 						aboveBySpacing[sk] = math.max(aboveBySpacing[sk] or -math.huge, g - y)
@@ -1147,7 +1448,9 @@ function GroundMeshView.DebugSeams(self: View, roadAhead: number?)
 	return {
 		tilePairs = edgePairs,
 		edgeSamples = samples,
-		edgeMissing = missing, -- points on a shared edge a tile did not hold
+		edgeMissing = missing, -- points on a shared edge a tile did not hold (its vertices moved)
+		rimVertices = rimVertices, -- vertices two tiles of one spacing share
+		rimMismatch = rimMismatch, -- studs: the most two copies of one of them differ
 		worstStep = worst,
 		worstAt = worstAt,
 		roadSamples = roadSamples,
@@ -1202,8 +1505,7 @@ function GroundMeshView.DebugWalls(self: View, ahead: number?, step: number?, be
 				if q == 0 then
 					T0 = T
 				end
-				local tile = self:_tileAt(x, z)
-				local g = if tile then surfaceAt(tile, x, z) else nil
+				local g, tile = self:_drawnAt(x, z)
 				if not tile or not g then
 					ok = false
 					break
@@ -1250,8 +1552,7 @@ function GroundMeshView.DebugWalls(self: View, ahead: number?, step: number?, be
 					-- normals at the true wall's middle
 					local d = qT * DS
 					local x, z = ex + ux * d, ez + uz * d
-					local tile = self:_tileAt(x, z) :: Tile
-					local _, fn, sn = facetAt(tile, x, z)
+					local _, _, fn, sn = self:_drawnAt(x, z)
 					local h = 0.5
 					local yx1 = Ground.at(ctx, x + h, z)
 					local yx0 = Ground.at(ctx, x - h, z)
@@ -1344,6 +1645,7 @@ function GroundMeshView.DebugState(self: View)
 		ops = self.ops,
 		tilesBuilt = self.tilesBuilt,
 		rimWrites = self.rimWrites,
+		wall = self.wall,
 		lastMs = self.lastMs,
 		worstMs = self.worstMs,
 		worstSliceMs = self.worstSliceMs,

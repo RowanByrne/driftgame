@@ -260,6 +260,21 @@ function GroundTiles.spacingAround(map: { [number]: Leaf }, x: number, z: number
 	return s
 end
 
+-- The finest and the coarsest spacing among the tiles of `map` that touch the point (x, z):
+-- (math.huge, 0) if none. A vertex only tiles of one spacing touch can be moved (T-231).
+function GroundTiles.spacingRange(map: { [number]: Leaf }, x: number, z: number): (number, number)
+	local e = 0.01
+	local lo, hi = math.huge, 0
+	for _, o in { { -e, -e }, { e, -e }, { -e, e }, { e, e } } do
+		local l = GroundTiles.leafAt(map, x + o[1], z + o[2])
+		if l then
+			lo = math.min(lo, l.s)
+			hi = math.max(hi, l.s)
+		end
+	end
+	return lo, hi
+end
+
 function GroundTiles.within(outer: Leaf, inner: Leaf): boolean
 	return inner.x0 >= outer.x0 - 1e-6
 		and inner.z0 >= outer.z0 - 1e-6
