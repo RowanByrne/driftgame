@@ -280,10 +280,16 @@ local Spline = {
 	-- Distances are studs of road; "along" repeats every `PeriodStuds`.
 	Tarmac = {
 		Enabled = true, -- false: the flat tarmac and the dash parts, as before
-		Width = 256, -- pixels across (the tarmac gets all but `PlainPx` each side: 4.8 a stud)
-		Length = 1024, -- pixels along (2.1 a stud: seen at a glancing angle, it needs fewer)
-		PeriodStuds = 480, -- studs along one copy (rounded to whole `MarkInterval`s)
-		PlainPx = 8, -- plain `Grass.Shade` columns each side, where the rest of the mesh samples
+		-- THE RESOLUTION (T-268 send-back, the user: "bit higher res this time for the main
+		-- asphalt texturing"): 1 024 x 1 024, the largest EditableImage, 4 MB. Across, the tarmac
+		-- gets all but `PlainPx` each side: 19.2 pixels a stud (4.8 in the first cut); along,
+		-- 4.3 (2.1): it is seen at a glancing angle, so it needs fewer. The shorter repeat
+		-- that buys is hidden by the vertices' tone, which never repeats
+		Width = 1024, -- pixels across
+		Length = 1024, -- pixels along
+		PeriodStuds = 240, -- studs along one copy (rounded to whole `MarkInterval`s)
+		PlainPx = 32, -- plain `Grass.Shade` columns each side, where the rest of the mesh samples
+		-- (a thirty-second of the width each side, as before: still a pixel at a 32-wide mip)
 		SliceMs = 3, -- ms of painting a frame (it is painted once, as the client loads)
 		Seed = 268,
 		-- the tone of each tarmac vertex, so the period never shows as a repeat: darker by up
@@ -292,22 +298,28 @@ local Spline = {
 		Tone = 0.09,
 		ToneStuds = 200,
 		ToneHue = 0.03,
-		-- the grain: large soft mottling, painterly strokes stretched along, and fine speckle
+		-- the grain: large soft mottling, painterly strokes stretched along, a finer aggregate
+		-- octave (what the resolution is for), and speckle
 		Mottle = 0.06,
 		MottleStuds = 9,
-		Grain = 0.07,
+		Grain = 0.06,
 		GrainStuds = { 0.6, 3.5 }, -- across, along
-		Speckle = 0.035,
+		Fine = 0.05,
+		FineStuds = { 0.18, 0.6 },
+		Speckle = 0.05,
 		-- the wheel tracks: two a lane, `TrackGap` apart about its middle, `TrackWidth` wide,
 		-- `TrackDark` of the way to `TarmacWorn` in the middle, wandering `TrackWobble` either
-		-- way over `TrackWobbleStuds`; a faint oil strip between them
+		-- way over `TrackWobbleStuds`, their grain `TrackSmooth` smoother (polished); a faint
+		-- oil strip between them. Send-back (the user: "tyre marks are ugly"): broad and
+		-- faint, polish rather than stripes (0.9 dark and 3.2 wide in the first cut)
 		TrackGap = 6.4,
-		TrackWidth = 3.2,
-		TrackDark = 0.9,
+		TrackWidth = 4.5,
+		TrackDark = 0.3,
+		TrackSmooth = 0.5,
 		TrackWobble = 0.8,
 		TrackWobbleStuds = 60,
 		OilWidth = 1.2,
-		OilDark = 0.25,
+		OilDark = 0.12,
 		-- the dusty edge: `EdgeWear` studs in from each edge, with gravel specks
 		EdgeWear = 2.2,
 		Gravel = 0.35,
@@ -316,18 +328,23 @@ local Spline = {
 		-- the paint's wear (0 none, 1 worn through where the noise is highest)
 		LineWear = 0.35,
 		-- patches of newer and older tarmac, a seam round each
-		Patches = 4,
+		Patches = 2, -- a copy is 240 studs now (480 in the first cut)
 		PatchLength = { 8, 26 },
 		PatchWidth = { 6, 16 },
 		PatchSeam = 0.25,
 		-- cracks: mostly along the road `CrackEdge` in from an edge, `CrackAcross` of them across
-		Cracks = 10,
+		Cracks = 6,
+		CrackWidth = 0.12, -- studs
 		CrackLength = { 6, 26 },
 		CrackEdge = { 1, 4.5 },
 		CrackAcross = 0.15,
 		CrackDark = 0.35,
-		-- long tyre streaks: pairs of arcs through a lane, swinging up to `StreakSwing` across
-		Streaks = 4,
+		-- long tyre streaks: pairs of arcs through a lane, swinging up to `StreakSwing` across.
+		-- NONE since the send-back ("tyre marks are ugly"): painted into a texture that repeats
+		-- along the road they cannot follow its bends, so they read as stripes, and the car's
+		-- own drift marks (`Config.Fx.Marks`, near-black at half transparency) already draw
+		-- where the car really went
+		Streaks = 0,
 		StreakLength = { 40, 110 },
 		StreakSwing = 5,
 		StreakWidth = 0.6,

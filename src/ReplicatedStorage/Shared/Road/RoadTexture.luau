@@ -182,6 +182,8 @@ function RoadTexture.paint(yield: (() -> ())?): (buffer, number, number)
 
 	local mottle = layer(T.MottleStuds, T.MottleStuds * 1.6, period, width, seed + 1)
 	local grain = layer(T.GrainStuds[1], T.GrainStuds[2], period, width, seed + 2)
+	-- the aggregate: a finer octave of the grain, what the higher resolution is for (T-268)
+	local fine = layer(T.FineStuds[1], T.FineStuds[2], period, width, seed + 5)
 	local wear = layer(1.2, 6, period, width, seed + 3) -- the paint's wear, and the edge's ragged line
 	local wobble = layer(1000, T.TrackWobbleStuds, period, width, seed + 4)
 
@@ -285,8 +287,8 @@ function RoadTexture.paint(yield: (() -> ())?): (buffer, number, number)
 			end
 
 			-- grain: painterly, stretched along; smoother in the polished tracks and patches
-			local smoothK = 1 - track * 0.6 - (if inPatch then 0.4 else 0)
-			local k = 1 + sample(mottle, xs, t) * T.Mottle + sample(grain, xs, t) * T.Grain * smoothK + (rand() * 2 - 1) * T.Speckle
+			local smoothK = 1 - track * T.TrackSmooth - (if inPatch then 0.4 else 0)
+			local k = 1 + sample(mottle, xs, t) * T.Mottle + (sample(grain, xs, t) * T.Grain + sample(fine, xs, t) * T.Fine) * smoothK + (rand() * 2 - 1) * T.Speckle * smoothK
 
 			-- gravel specks on the dusty edge
 			if ed > 0.05 and rand() < T.Gravel * ed then
@@ -339,21 +341,29 @@ function RoadTexture.paint(yield: (() -> ())?): (buffer, number, number)
 	local crack = C.Crack
 	local function walk(d: number, t: number, heading: number, len: number, a: number, depth: number)
 		local seen = {}
-		local step = 0.2
+		local step = 0.5 / pxT -- half a pixel along, so a crack never skips a row
+		local rx, ry = math.max(0, math.floor(T.CrackWidth * 0.5 * pxD)), math.max(0, math.floor(T.CrackWidth * 0.5 * pxT))
+		-- the wander and the branching per stud, whatever the step (they were tuned at 0.2)
+		local jitter, branch = 0.35 * math.sqrt(step / 0.2), 0.02 * step / 0.2
 		for _ = 1, math.floor(len / step) do
-			heading += (rand() * 2 - 1) * 0.35
+			heading += (rand() * 2 - 1) * jitter
 			d += math.sin(heading) * step
 			t += math.cos(heading) * step
 			if math.abs(d) > half - 0.2 then
 				break
 			end
-			local x, y = toX(d), math.floor((t % period) * pxT)
-			local key = y * W + x
-			if not seen[key] then
-				seen[key] = true
-				blend(x, y, crack, a)
+			local cx, cy = toX(d), math.floor((t % period) * pxT)
+			-- `CrackWidth` studs wide, each pixel darkened once per crack
+			for y = cy - ry, cy + ry do
+				for x = cx - rx, cx + rx do
+					local key = (y % H) * W + x
+					if not seen[key] then
+						seen[key] = true
+						blend(x, y, crack, a)
+					end
+				end
 			end
-			if depth < 1 and rand() < 0.02 then
+			if depth < 1 and rand() < branch then
 				walk(d, t, heading + (if rand() < 0.5 then 1 else -1) * (0.8 + rand() * 0.5), 1 + rand() * 3, a * 0.8, depth + 1)
 			end
 		end
