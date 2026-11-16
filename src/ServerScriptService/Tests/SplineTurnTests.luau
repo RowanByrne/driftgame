@@ -27,9 +27,13 @@ function Tests.run()
 	check("the same detached candidate measures identically",a.view==b.view and a.cut==b.cut and a.fill==b.fill,"two previews agree")
 	local measured,worst,stalls,relaxed,checked,rejected,badEnds=0,0,0,0,0,0,0
 	local firstRoad
+	-- 24 000 studs a road, twice the 12 000 it was: T-245 doubled the range, and the road's
+	-- sharp turns come on the climbs to its passes, now twice as far apart. In 12 000 studs these
+	-- three roads met only 8 candidate turns and none outside the preferred limits, so the retry
+	-- check below had nothing to see (T-257)
 	for _,seed in {31337,101,2024} do
 		g=Gen.new(seed)
-		while g.spline.length<12000 do
+		while g.spline.length<24000 do
 			local n=#g.turnFits
 			if not g:step() then stalls+=1;break end
 			if #g.turnFits>n then

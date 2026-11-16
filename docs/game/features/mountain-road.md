@@ -335,7 +335,7 @@ bushes, etc. which should help occlude long angle views."*
 - **Where:** a section qualifies when none of it is tighter than 200 studs of radius, steeper
   than 6 degrees or shorter than 120 studs (straights, sweepers, the gentler medium bends). Then
   80% of the time one side's runoff is a **grove**, 30% of those both sides. The road averages
-  2.3 degrees down and only about a fifth of its sections qualify, so groves come in stretches.
+  2.3 degrees down and only about a fifth of its sections qualified then, so groves came in stretches. Since the range doubled (T-245), about 2% qualify (49 of 2 236 sections, measured by T-257): about 1.5 grove stretches every 10 000 studs, fewer on the long first climb.
 - **The wide runoff:** a grove side's runoff widths are drawn from 46 to 58 studs instead of 12
   to 40, eased in and out at the usual quarter of a stud per stud, so it widens over the
   section and narrows over the next. **No-crossing needs nothing new:** two stretches of road
