@@ -413,8 +413,8 @@ end
 -- road near the point (two legs, the far side of a hairpin), the one whose edge it is least
 -- far past: the nearest centre line can be the other leg's, beyond a narrow runoff.
 local underEvals = 0
-local candS: { number } = {}
-local candD: { number } = {}
+local clusterS: { number } = {}
+local clusterD: { number } = {}
 local function underAt(ctx: Ground.Context, x: number, z: number): (number?, number?, number?, number?)
 	local spline = ctx.spline
 	local T = Config.Spline.Terrain
@@ -424,7 +424,10 @@ local function underAt(ctx: Ground.Context, x: number, z: number): (number?, num
 	local cell = spline.cell
 	local first = spline.firstSample * spline.step
 	local r2 = reach * reach
-	local n = 0
+	-- the nearest filed point of each stretch of road in reach (points more than `apart`
+	-- along the road from a stretch's nearest so far are another stretch)
+	local apart = 2 * reach
+	local nc = 0
 	for cx = math.floor((x - reach) / cell), math.floor((x + reach) / cell) do
 		for cz = math.floor((z - reach) / cell), math.floor((z + reach) / cell) do
 			local list = spline.hash[(cx + 1048576) * 2097152 + (cz + 1048576)] -- `Spline`'s own key
@@ -435,50 +438,34 @@ local function underAt(ctx: Ground.Context, x: number, z: number): (number?, num
 						local dx, dz = list[j + 1] - x, list[j + 2] - z
 						local dd = dx * dx + dz * dz
 						if dd <= r2 then
-							n += 1
-							candS[n], candD[n] = s, dd
+							local found = false
+							for c = 1, nc do
+								if math.abs(clusterS[c] - s) < apart then
+									if dd < clusterD[c] then
+										clusterS[c], clusterD[c] = s, dd
+									end
+									found = true
+									break
+								end
+							end
+							if not found then
+								nc += 1
+								clusterS[nc], clusterD[nc] = s, dd
+							end
 						end
 					end
 				end
 			end
 		end
 	end
-	if n == 0 then
-		return nil, nil, nil, nil
-	end
-	-- the nearest filed point of each stretch (points more than `apart` along the road from
-	-- one already tried are another stretch)
-	local apart = 2 * reach
-	local tried: { number } = {}
 	local bestE, bestS, bestD = math.huge, nil :: number?, nil :: number?
-	while true do
-		local bi, bd = 0, math.huge
-		for i = 1, n do
-			if candD[i] < bd then
-				bi, bd = i, candD[i]
-			end
-		end
-		if bi == 0 then
-			break
-		end
-		local s0 = candS[bi]
-		candD[bi] = math.huge
-		local far = true
-		for _, t in tried do
-			if math.abs(t - s0) < apart then
-				far = false
-				break
-			end
-		end
-		if far then
-			table.insert(tried, s0)
-			local s, d = spline:projectFrom(x, z, s0)
-			if s and d then
-				local side = if d < 0 then -1 else 1
-				local e = math.abs(d) - half - spline:runoffAt(s, side)
-				if e < bestE then
-					bestE, bestS, bestD = e, s, d
-				end
+	for c = 1, nc do
+		local s, d = spline:projectFrom(x, z, clusterS[c])
+		if s and d then
+			local side = if d < 0 then -1 else 1
+			local e = math.abs(d) - half - spline:runoffAt(s, side)
+			if e < bestE then
+				bestE, bestS, bestD = e, s, d
 			end
 		end
 	end
@@ -905,6 +892,9 @@ function GroundMeshView._fill(self: View, tile: Tile, leaf: Leaf, map: { [number
 		end
 		for j = -1, C + 1 do
 			V[(i + 1) * m + (j + 1) + 1] = place(L, I0 + i, J0 + j)
+			if groundRunoff then
+				self:_slice() -- (a point by the road works out the exact edge several times)
+			end
 		end
 		self:_slice()
 	end
@@ -976,6 +966,7 @@ function GroundMeshView._fill(self: View, tile: Tile, leaf: Leaf, map: { [number
 				if p[4] == ROAD and rs and rd then
 					nv = self.spline:terrainNormal(rs, rd)
 				end
+				self:_slice()
 			end
 			if p[4] == HELD then
 				if p[1] ~= x or p[2] ~= z then
