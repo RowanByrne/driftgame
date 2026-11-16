@@ -432,6 +432,10 @@ local Spline = {
 		RoadStep = 32, -- studs
 		RoadRange = 4, -- 8-stud tiles within about 32 studs of the road's middle, 16 within 64...
 		RoadCoarsest = 32, -- studs
+		-- and far along the road (T-263), coarser still: no tile coarser than `Coarsest` beside
+		-- road `From` studs or more from the car, either way. Past about 2 400 studs a 64-stud
+		-- tile is a few pixels; at 32 the corridor of 9 600 studs each way took every tile.
+		RoadFar = { { From = 2400, Coarsest = 64 }, { From = 4800, Coarsest = 128 } },
 		RoadPad = 256, -- studs: tiles this near the drawn road are drawn even past `Reach`
 		ReleaseOnFail = 24, -- tiles let go if the device will not make another (room for the road)
 		-- THE PLAYER'S "GROUND DETAIL" (Settings, Graphics; docs/game/SETTINGS.md), light to far.
@@ -493,10 +497,10 @@ local Spline = {
 		-- A DEVICE CAN ONLY DRAW ROAD THE SERVER HAS SENT: `Config.Road.AheadStuds`, the
 		-- server's window ahead, is at least the longest step here.
 		Ahead = {
-			{ Name = "Short", Studs = 3000, GroundTiles = 28 },
-			{ Name = "Medium", Studs = 4800, GroundTiles = 64 },
-			{ Name = "Long", Studs = 7200, GroundTiles = 112 },
-			{ Name = "Longest", Studs = 9600, GroundTiles = 160 },
+			{ Name = "Short", Studs = 3000, GroundTiles = 12 },
+			{ Name = "Medium", Studs = 4800, GroundTiles = 20 },
+			{ Name = "Long", Studs = 7200, GroundTiles = 28 },
+			{ Name = "Longest", Studs = 9600, GroundTiles = 36 },
 		},
 		AheadDefault = 2, -- keyboard and mouse, or gamepad: today's
 		AheadTouchDefault = 2, -- a phone or tablet: today's too
@@ -511,16 +515,22 @@ local Spline = {
 		-- 232 at Long, 120 at Longest). So each step gives the ground that many more tiles
 		-- (128 triangles each) for its corridor, and the sharp ground ahead keeps its share.
 		Behind = {
-			{ Name = "Short", Studs = 3000, GroundTiles = 56 },
-			{ Name = "Medium", Studs = 4800, GroundTiles = 93 },
-			{ Name = "Long", Studs = 7200, GroundTiles = 143 },
-			{ Name = "Longest", Studs = 9600, GroundTiles = 193 },
+			{ Name = "Short", Studs = 3000, GroundTiles = 8 },
+			{ Name = "Medium", Studs = 4800, GroundTiles = 14 },
+			{ Name = "Long", Studs = 7200, GroundTiles = 22 },
+			{ Name = "Longest", Studs = 9600, GroundTiles = 30 },
 		},
 		BehindDefault = 1, -- keyboard and mouse, or gamepad
 		BehindTouchDefault = 1, -- a phone or tablet
 		-- the ground beside the road behind stays as sharp as ahead for this far back, and is
 		-- `Ground.RoadCoarsest` past it (it was Short's 300 studs before T-263 tripled the steps)
 		BehindSharp = 300, -- studs
+		-- FAR AWAY (T-263): a chunk wholly past `Near` of the car (ahead or behind) is drawn at
+		-- `Far`'s coarser detail, and rebuilt whole as the car comes within `Near`; a chunk drawn
+		-- whole that falls behind past it is drawn again far. That is what lets 9 600 studs each
+		-- way fit the mesh budget (measured: whole chunks alone ran out at Longest ahead).
+		Near = { Ahead = 1600, Behind = 480 }, -- studs
+		Far = { Tolerance = 0.5, MaxStep = 48, Across = 1 },
 		FallbackStep = 4, -- studs between cross-sections when a device draws parts instead
 		-- A chunk is built over as many frames as it needs (T-193): its build hands the frame
 		-- back whenever this much of it has been spent, and carries on next frame. Nothing is

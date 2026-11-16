@@ -1255,10 +1255,18 @@ function GroundMeshView._want(self: View): GroundTiles.Want
 			local w = if s < along - near
 				then G.RoadCoarsest
 				else math.min(G.Spacings[1] * math.max(1, math.abs(s - along) / P.Fine), G.RoadCoarsest)
+			-- far along the road, coarser still (T-263), and its points as far apart as that
+			-- allows (a tile's reach is `RoadRange` times its spacing)
+			local d = math.abs(s - along)
+			for _, step in G.RoadFar do
+				if d >= step.From then
+					w = math.max(w, step.Coarsest)
+				end
+			end
 			table.insert(road, x)
 			table.insert(road, z)
 			table.insert(road, w)
-			s += G.RoadStep
+			s += math.max(G.RoadStep, w * 2)
 		end
 	end
 	local split: { [number]: boolean } = {}

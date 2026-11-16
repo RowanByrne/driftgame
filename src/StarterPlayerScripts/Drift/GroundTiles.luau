@@ -185,7 +185,8 @@ function GroundTiles.select(want: Want): ({ Leaf }, { [number]: Leaf })
 		end
 		local r = nd.s * range
 		for i = 1, #road, 3 do
-			if distTo(nd.x0, nd.z0, nd.side, road[i], road[i + 1]) < r then
+			-- a point of road far from the car may allow coarser (`RoadFar`, T-263)
+			if nd.s > math.max(coarsest, road[i + 2]) and distTo(nd.x0, nd.z0, nd.side, road[i], road[i + 1]) < r then
 				return true
 			end
 		end
