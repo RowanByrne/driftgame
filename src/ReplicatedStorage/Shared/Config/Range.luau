@@ -93,6 +93,7 @@ return {
 	-- (T-242 trial switches, temporary)
 	AimFlip = "hyst", -- "flip" | "hyst" | "near" | "keep"
 	CurlEnd = false,
+	CurlMin = 0, -- studs a leg runs before a curl may end it
 	Recover = "turn", -- "turn" | "converge" | "none"
 	NearestBy = "worst", -- "worst" | "end"
 	Follow = true,

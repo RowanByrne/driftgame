@@ -1496,11 +1496,13 @@ function SplineGen._slopeAim(self: Gen, slope: Slope, refine: boolean?): (number
 		elseif mode == "hyst" then
 			swap = on < -least and oon > on
 		elseif mode == "sticky" then
+			curl = false
 			if refine then
 				local sw = (slope :: any).swapped == true
 				local ownOn, otherOn = if sw then oon else on, if sw then on else oon
 				if ownOn < -least and otherOn > least then
 					sw = not sw
+					curl = R.CurlEnd
 				end
 				(slope :: any).swapped = sw
 				swap = sw
@@ -2363,7 +2365,7 @@ function SplineGen.step(self: Gen): Spline.Section?
 					-- on the range (T-242), a leg whose level line has curled back ends after this
 					-- section, once it has run `LegMin`: the hairpin after it turns onto the next leg,
 					-- the other way along the line, which is the way on
-					if curl and item.what == "leg" and item.untilV and item.from and self.spline.length - item.from >= Config.Range.LegMin then
+					if curl and item.what == "leg" and item.untilV and item.from and self.spline.length - item.from >= ((Config.Range :: any).CurlMin or Config.Range.LegMin) then
 						item.left = 0
 						st.curls += 1
 					end
