@@ -1,6 +1,6 @@
 # Feature: Remove the old road and ground systems
 
-**Status:** building, plan approved 2026-11-16. Step 1 built (`T-248`), waiting on the user's try in a lane. **Owner task:** `T-247`.
+**Status:** building, plan approved 2026-11-16. Step 1 built (`T-248`) and step 2 built (`T-249`), each waiting on the user's try in a lane. **Owner task:** `T-247`.
 
 ## Goal
 
@@ -58,4 +58,15 @@ The three steps share `SplineGen`, `RoadService`, `SplineMesh` and `SplineRoadVi
 - **Size:** 309 scripts and 3.37 MB of source before, 301 and 3.26 MB after; what each player downloads, 1.89 MB to 1.82 MB.
 - **Frame time and memory** (Studio lane, seed 31337, a minute along the road at 80 studs/s): the ground-mesh run costs what it did (worst frame 75.9 ms before, 41.6 after; road chunk build at most 4.2 and 4.1 ms a frame); no Terrain cell written, no hedge drawn, no mesh fallback. Studio's own memory total moves by tens of MB between playtests, too much to read a change this small from.
 - **Tests:** `SplineWorldTests` drives seed 1234 now (31337's mountain road has no K-rail or wide-grass straight early on): 21 of 21. `GroundTests` belongs to `T-245` while it runs; its "current: the same road as before" check fails now and goes when that task has merged.
+
+### Step 2: the piece road, the test hill and the Showroom (`T-249`)
+
+- **Every run lays the spline road; nothing else exists.** `RoadService` lost the piece road's paths: `Road/Generator`, `Road/Builder` and `Road/Pieces` are gone, with `Mode`/`SetMode`, the guardrail switch (`SetBarriers`, `BarriersOn`, `DebugBarrierReport`), the piece timing ring (`DebugProfile`, `Config.Road.Profile`), the closing barrier part and the `Workspace.Road` folder (the spline road's closing barrier is the number sent to runners, as it was). `DebugState` reports `closingS`; `DebugPieces` lists sections (`s0`, `s1`).
+- **No client builds the piece set any more.** The one helper the spline road used, the triangle slab, moved into `Road/SplineParts` (the fallback drawing and the tests' yardstick), so loading the road no longer pulls in `Builder` and `Pieces` and their 16-variant set (about 7 ms of every client's startup, measured).
+- **The playground** lost the test hill (its pad, approach, `HillBase`/`HillTop` spots, `HasHill`, `HillTopCFrame`, `DebugHill*`), the `TestTools` remote and the TEST ONLY panel (`Drift/TestHud`, whose last button was LIFT TO HILL TOP), and `Config.Playground.HillPartBudget` and `HillPad`. A playtest still takes down an old saved `Workspace.Showroom` (`DR-Lane4` has one) so the playground is never doubled; the `Tools/Showroom` tool itself is gone.
+- **Console:** `road-mode` and `barriers` are gone, and `tp hill`, `HillBase` and `HillTop` with them.
+- **`Config.Road`** keeps only what the spline road, its window and its drawing read (122 lines, from about 1 100).
+- **Tests:** `RoadTests` goes. `PlaygroundTests` loses its hill and tool checks (46 checks). `SplineTests` loses the check that the spline's limits sat inside the piece road's. `CollisionTests` keeps the old `MaxPitchStep` as its own constant. `RunTests` is rewritten onto the spline road (`T-250`).
+- **Size:** 301 scripts and 3.26 MB of source before, 291 and 2.89 MB after; what each player downloads, 1.82 MB to 1.66 MB.
+- **Frame time:** unchanged (the piece road was not drawn in a run): a minute along seed 31337, p99 36.4 ms and worst 38.1 ms in a 30 fps-capped Studio window, as before.
 
