@@ -377,6 +377,16 @@ function DriftController:DebugGroundView(paused: boolean?)
 	return out
 end
 
+-- How well option 1's mesh follows the cut walls and drops beside the road (T-231,
+-- `GroundMeshView.DebugWalls`).
+function DriftController:DebugGroundWalls(ahead: number?, step: number?, behind: number?)
+	local view: any = self.groundView
+	if not view or not view.DebugWalls then
+		return { on = false }
+	end
+	return view:DebugWalls(ahead, step, behind)
+end
+
 -- The drawn road's chunks, and a way to draw them as a device with no meshes would.
 function DriftController:DebugSplineView(forceFallback: boolean?)
 	local view = self.splineView

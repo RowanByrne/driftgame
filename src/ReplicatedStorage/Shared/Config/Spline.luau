@@ -583,6 +583,24 @@ local Spline = {
 		-- within its clamp), more for coarser tiles, whose triangles bridge more of the road's
 		-- curve between two vertices
 		Sinks = { 1.25, 1.5, 2.5, 4, 4 }, -- studs
+		-- THE WALL'S FOOT (T-231): holding grid points below the edge out to `Clamps` drew every
+		-- cut wall as a sawtooth where the road runs at an angle across the grid. Now a vertex
+		-- past a runoff's edge with a neighbour on the road moves onto the edge, `SnapFoot`
+		-- studs past it (on the flat foot before the cut or fill), at most `SnapMax` of a cell,
+		-- and is held below the edge there, so the wall rises from a line along the road.
+		-- (`Clamps` still holds a vertex that cannot move, and one shared with a tile of another
+		-- spacing.) Each cell is split along the diagonal nearer the ground at its middle,
+		-- where the two differ there by `FitGap` studs or more, never along one joining a
+		-- vertex on the road to open ground
+		SnapFoot = 0.75, -- studs past the runoff's edge (`BlendFoot` is the flat foot's width)
+		-- (0.9 left a road running along a grid line with its wall a cell out: the vertex a
+		-- cell from the foot is up to a cell from it, measured on seed 31337)
+		SnapMax = 1, -- of a cell
+		FitGap = 0.2, -- studs
+		-- tiles this fine or finer move their vertices; coarser ones (far ahead) hold them below
+		-- the edge out to `Clamps`, as before: moved on a 32-stud tile, the drawn ground stood
+		-- 5.8 studs over a runoff's edge (measured, seed 31337)
+		SnapUpTo = 16, -- studs between vertices
 		MeshSliceMs = 2, -- ms of building a frame
 		FirstSliceMs = 6, -- ms a frame while nothing is drawn yet (a run's first second)
 		Spare = 24, -- tiles built hidden, then swapped in whole, so a change never shows half done
