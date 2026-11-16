@@ -23,8 +23,11 @@
 -- and up alike, is twice what T-238 tuned, so every face keeps its steepness and only the
 -- range grows. The spurs and gullies the road follows (`Octaves`), and everything about the
 -- road's own bends, are the size they were. The valley floors and the crests sit `LIFT`
--- (120) studs higher than twice T-238's, the start valley's floor staying the zero: doubled
--- as they were, the lowest floors came within 160 studs of the fall-kill height (-500).
+-- (200) studs higher than twice T-238's, the start valley's floor staying the zero: doubled
+-- as they were, the lowest ground came within 90 studs of the fall-kill height (-500). So
+-- the start valley lies about 200 studs lower among the others than it did, and the faces
+-- either side of it are that much taller (about a tenth: the first climb's are a little
+-- steeper); every other face is exactly twice the size.
 
 return {
 	-- "belts" is the T-228 mountain, one fall line, always down; "range" is this one, and since
@@ -35,10 +38,10 @@ return {
 	Jitter = 2400, -- studs either way, so 8 200 to 17 800 apart
 	Wobble = { 1700, 13000 }, -- studs either way, over studs across (never more than half of `Spacing - 2 * Jitter`)
 
-	-- (`LIFT` is 120: these are twice T-238's, and 120 more)
-	Peak = { 1220, 1920 }, -- studs above the start valley's floor: a ridge's peaks (before `PeakVary`)
+	-- (`LIFT` is 200: these are twice T-238's, and 200 more)
+	Peak = { 1300, 2000 }, -- studs above the start valley's floor: a ridge's peaks (before `PeakVary`)
 	SaddleDepth = { 500, 960 }, -- studs below its peaks: its saddles
-	SaddleMin = 880, -- studs above the start valley's floor: no saddle lower...
+	SaddleMin = 960, -- studs above the start valley's floor: no saddle lower...
 	SaddleEase = 80, -- ...eased into over about this many studs (a hard floor left flat crests)
 	PeakVary = { 0.2, 18000 }, -- a ridge rises and falls along its length: this share either way, over studs
 	SaddleEvery = 6000, -- studs across: about one saddle in this
@@ -48,7 +51,7 @@ return {
 	SaddleSpan = 4000, -- ...within this many studs
 
 	ValleyAt = { 0.4, 0.6 }, -- of the way from one ridge to the next
-	ValleyBase = { -100, 280 }, -- studs from the start valley's floor (twice T-238's, and `LIFT`)
+	ValleyBase = { -20, 360 }, -- studs from the start valley's floor (twice T-238's, and `LIFT`)
 	FloorVary = 120, -- studs either way along a valley...
 	FloorEvery = 12000, -- ...over studs across
 	Floor = { 0, 0.12 }, -- of each face, flat at the floor
