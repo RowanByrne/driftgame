@@ -432,6 +432,14 @@ local Spline = {
 		RoadStep = 32, -- studs
 		RoadRange = 4, -- 8-stud tiles within about 32 studs of the road's middle, 16 within 64...
 		RoadCoarsest = 32, -- studs
+		-- and far along the road (T-263), coarser still: no tile coarser than `Coarsest` beside
+		-- road `From` studs or more from the car, either way. Past about 2 400 studs a 64-stud
+		-- tile is a few pixels; at 32 the corridor of 9 600 studs each way took every tile.
+		RoadFar = { { From = 2400, Coarsest = 64 }, { From = 4800, Coarsest = 128 } },
+		-- the most tiles the Road ahead and Road behind steps may add past Ultra's own (T-263):
+		-- (45 still ran out on Ultra with both at Longest while driving: the hidden spare tiles and
+		-- a chunk being rebuilt both count)
+		CorridorMost = 20,
 		RoadPad = 256, -- studs: tiles this near the drawn road are drawn even past `Reach`
 		ReleaseOnFail = 24, -- tiles let go if the device will not make another (room for the road)
 		-- THE PLAYER'S "GROUND DETAIL" (Settings, Graphics; docs/game/SETTINGS.md), light to far.
@@ -478,30 +486,51 @@ local Spline = {
 		-- fixed-size mesh (`Road/SplineMesh`) and costs only its own triangles: about 3 600 a
 		-- chunk on today's ground, fewer on a ground run (no faces). Only the chunk being built
 		-- is growable. The window is chunk-aligned: from the chunk `Behind` studs back to the one
-		-- `Ahead` on, so the road kept behind is `Behind` to `Behind + ChunkLength` studs.
+		-- `Ahead` on, so the road kept behind is `Behind` to `Behind + ChunkLength` studs (both
+		-- are the player's settings: `Drift/RoadBehind`, `Drift/RoadAhead`).
 		-- A device that runs out anyway lets the furthest chunk behind go before the road
 		-- ahead falls back to parts (`Drift/SplineRoadView`).
 		ChunkLength = 480,
-		Ahead = 1600, -- studs of road drawn in front of the car
-		-- THE PLAYER'S "ROAD BEHIND" (Settings, Graphics; docs/game/SETTINGS.md, T-230): how far
-		-- the road, and on a ground run the ground along it, stays drawn behind the car. Each
-		-- step back costs the chunks it keeps (`Studs / ChunkLength` more: about 3 600 triangles
-		-- and 20 to 250 plain parts each on today's ground, 2 100 on a ground run) and no
-		-- building: a chunk behind was built when it was ahead. Short is the window before T-230.
-		-- `GroundTiles`: on a ground run, the ground's corridor beside the road behind needs
-		-- 32-stud tiles (no coarser tile may lie beside drawn road), and they came out of the
-		-- Ground detail's own `Tiles` (measured on Light: sharp ground ahead 400 studs at Short,
-		-- 232 at Long, 120 at Longest). So each step gives the ground that many more tiles
-		-- (128 triangles each) for its corridor, and the sharp ground ahead keeps its share.
-		Behind = {
-			{ Name = "Short", Studs = 300, GroundTiles = 0 },
-			{ Name = "Medium", Studs = 800, GroundTiles = 10 },
-			{ Name = "Long", Studs = 1300, GroundTiles = 24 },
-			{ Name = "Longer", Studs = 2000, GroundTiles = 38 },
-			{ Name = "Longest", Studs = 3000, GroundTiles = 56 },
+		-- THE PLAYER'S "ROAD AHEAD" AND "ROAD BEHIND" (Settings, Graphics; docs/game/SETTINGS.md,
+		-- T-230, T-263): how far in front of the car, and behind it, the road and the ground along
+		-- it are drawn: at least `Studs` (chunk-aligned, so up to a chunk more). THE SAME STEPS
+		-- BOTH WAYS, three times the first ones (the user's send-back, 2026-11-16: Road ahead was
+		-- 1 000 to 3 200, Road behind 300 to 3 000 in five steps). Past `Near` a chunk is drawn
+		-- at `Far`'s detail, about a quarter of a whole chunk's triangles: that is what lets
+		-- Longest both ways fit the mesh budget (measured: 41 chunks, about 14 000 triangles).
+		-- `GroundTiles`: more tiles for the ground's corridor beside the longer road (32-stud
+		-- tiles to `Ground.RoadFar`, coarser past it), so the sharp ground round the car keeps
+		-- its share; never more than `Ground.CorridorMost` past Ultra's own.
+		-- A DEVICE CAN ONLY DRAW ROAD THE SERVER HAS SENT: `RoadService` lays the longest
+		-- `Ahead` step past the end of the leader's section.
+		Ahead = {
+			{ Name = "Short", Studs = 3000, GroundTiles = 40 },
+			{ Name = "Medium", Studs = 4800, GroundTiles = 60 },
+			{ Name = "Long", Studs = 7200, GroundTiles = 80 },
+			{ Name = "Longest", Studs = 9600, GroundTiles = 100 },
 		},
-		BehindDefault = 3, -- keyboard and mouse, or gamepad
-		BehindTouchDefault = 2, -- a phone or tablet
+		AheadDefault = 2, -- Medium: three times the 1 600 before
+		AheadTouchDefault = 2, -- the same on a phone or tablet
+		-- behind: a chunk behind was built when it was ahead, so each step back costs the chunks
+		-- it keeps, not building (a whole one is drawn again far once it is past `Near`)
+		Behind = {
+			{ Name = "Short", Studs = 3000, GroundTiles = 30 },
+			{ Name = "Medium", Studs = 4800, GroundTiles = 40 },
+			{ Name = "Long", Studs = 7200, GroundTiles = 55 },
+			{ Name = "Longest", Studs = 9600, GroundTiles = 70 },
+		},
+		-- Short: three times the old 1 300 is 3 900, as near Short as Medium, and Short is cheaper
+		BehindDefault = 1, -- keyboard and mouse, or gamepad
+		BehindTouchDefault = 1, -- a phone or tablet (it was Medium, 800: three times is 2 400)
+		-- the ground beside the road behind stays as sharp as ahead for this far back, and is
+		-- `Ground.RoadCoarsest` past it (it was Short's 300 studs before T-263 tripled the steps)
+		BehindSharp = 300, -- studs
+		-- FAR AWAY (T-263): a chunk wholly past `Near` of the car (ahead or behind) is drawn at
+		-- `Far`'s coarser detail, and rebuilt whole as the car comes within `Near`; a chunk drawn
+		-- whole that falls behind past it is drawn again far. That is what lets 9 600 studs each
+		-- way fit the mesh budget (measured: whole chunks alone ran out at Longest ahead).
+		Near = { Ahead = 1600, Behind = 480 }, -- studs
+		Far = { Tolerance = 1, MaxStep = 96, Across = 1 },
 		FallbackStep = 4, -- studs between cross-sections when a device draws parts instead
 		-- A chunk is built over as many frames as it needs (T-193): its build hands the frame
 		-- back whenever this much of it has been spent, and carries on next frame. Nothing is

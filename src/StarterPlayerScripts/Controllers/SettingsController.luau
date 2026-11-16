@@ -16,6 +16,7 @@ local Garage = require(script.Parent.GarageController)
 local Cmdr = require(script.Parent.CmdrController)
 local GroundDetail = require(script.Parent.Parent:WaitForChild("Drift"):WaitForChild("GroundDetail"))
 local RoadBehind = require(script.Parent.Parent:WaitForChild("Drift"):WaitForChild("RoadBehind"))
+local RoadAhead = require(script.Parent.Parent:WaitForChild("Drift"):WaitForChild("RoadAhead"))
 local SoundLevels = require(script.Parent.Parent:WaitForChild("Drift"):WaitForChild("SoundLevels"))
 local Settings = { Priority = -10 }
 
@@ -59,6 +60,10 @@ function Settings:_draw()
 		data.roadBehind = RoadBehind.get()
 		data.behindNames = {}
 		for i = 1, RoadBehind.count() do data.behindNames[i] = RoadBehind.name(i) end
+		-- and how far ahead it is drawn (T-263)
+		data.roadAhead = RoadAhead.get()
+		data.aheadNames = {}
+		for i = 1, RoadAhead.count() do data.aheadNames[i] = RoadAhead.name(i) end
 		-- Sound: each category's volume, this device's own (T-256)
 		data.soundLevels = SoundLevels.all()
 	end
@@ -150,6 +155,13 @@ function Settings:_action(action, value, level)
 			self.changes += 1
 		end
 		self:_draw()
+	elseif action == "roadAhead" then
+		if self.fixture then
+			if type(value) == "number" then self.fixture.roadAhead = value end
+		elseif RoadAhead.set(value) then
+			self.changes += 1
+		end
+		self:_draw()
 	elseif action == "mode" or action == "sensitivity" then
 		if self.fixture then
 			self.fixture[if action == "mode" then "mode" else "sensitivity"] = value
@@ -236,6 +248,7 @@ function Settings:DebugState()
 		blurSize = self.blur and self.blur.Size, category = self.category, fixture = self.fixture ~= nil,
 		values = CarInput:GetSettings(), groundDetail = GroundDetail.get(), groundDetailName = GroundDetail.name(),
 		roadBehind = RoadBehind.get(), roadBehindName = RoadBehind.name(), roadBehindStuds = RoadBehind.studs(),
+		roadAhead = RoadAhead.get(), roadAheadName = RoadAhead.name(), roadAheadStuds = RoadAhead.studs(),
 		soundLevels = SoundLevels.all(),
 		view = self.view and self.view:describe()}
 end

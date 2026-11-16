@@ -672,6 +672,15 @@ function Tests:run(opts)
 		------------------------------------------------------------------------
 		do
 			local gen = RoadService:DebugGenerator()
+			-- the window ahead fills a section a tick (T-263: up to 9 600 studs, about 45 ticks):
+			-- let it fill first, so what is compared below is the join and the leave, not that
+			for _ = 1, 200 do
+				local before = gen.last
+				RoadService:DebugTick()
+				if gen.last == before then
+					break
+				end
+			end
 			local seedBefore, firstBefore, lastBefore = gen.seed, gen.first, gen.last
 			local closing = closingS()
 			local joinedAt = RoadService:DebugJoin(STAND_IN)

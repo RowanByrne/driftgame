@@ -84,38 +84,80 @@ function Tests.run()
 			worstSlice < Config.Spline.Mesh.SliceMs * 3,
 			`spread over {fmt(slices / math.max(1, built), 1)} frames a chunk; the most any one frame paid {fmt(worstSlice, 2)} ms (aim {Config.Spline.Mesh.SliceMs})`
 		)
-		-- THE WINDOW AND THE BUDGET (T-230): every chunk is a fixed-size copy now, so a chunk
+		-- THE WINDOW AND THE BUDGET (T-230, T-263): every chunk is a fixed-size copy, so a chunk
 		-- costs its own triangles, and only the one being built is growable (it holds back
-		-- `GROWABLE` whatever it uses). A Studio PC client holds `BUDGET` in all. Each "Road
-		-- behind" step's widest window (chunk-aligned: up to a chunk more than its studs) must
-		-- fit it beside the most ground tiles any setting draws (Ultra's, which the
-		-- corridor's extra tiles never pass)
+		-- `GROWABLE` whatever it uses). A Studio PC client holds `BUDGET` in all. Chunks within
+		-- `Near` of the car are whole, the rest drawn at `Far`'s detail (T-263). Every pair of
+		-- "Road ahead" and "Road behind" steps (chunk-aligned: up to a chunk more each way) must
+		-- fit beside the most ground tiles that pair draws on Ultra (its own, plus the steps'
+		-- `GroundTiles`, never past `CorridorMost` more)
 		local BUDGET, GROWABLE = 81000, 10400 -- triangles (measured, T-225 and T-230)
 		local G = Config.Spline.Ground
 		local tileTris = G.TileCells * G.TileCells * 2
-		local mean = tris / math.max(1, built)
-		local meanParts = plainParts / math.max(1, built)
-		local ultra = (G.Detail[#G.Detail].Tiles + G.Spare) * tileTris
-		local lines, worstShare, previous = {}, 0, 0
-		local grows = true
-		for _, step in M.Behind do
-			local window = math.ceil((M.Ahead + step.Studs) / L) + 1
-			local cost = window * mean + math.max(GROWABLE, mean) + ultra
-			worstShare = math.max(worstShare, cost / BUDGET)
-			grows = grows and step.Studs > previous and (step.GroundTiles or 0) >= 0
-			previous = step.Studs
-			table.insert(lines, `{step.Name} {step.Studs}: {window} chunks, {math.floor(window * mean)} triangles and {math.floor(window * meanParts)} plain parts; {math.floor(cost)} of {BUDGET} at worst beside Ultra ground`)
+		-- (as the game draws them, whoever draws the runoff: the chunks above draw it
+		-- themselves for the checks that read it, which costs more than the game pays)
+		local F = M.Far
+		local wholeTris, farTris, sampled = 0, 0, 0
+		for i = 0, math.min(chunks, 8) - 1 do
+			local s0, s1 = i * L, math.min((i + 1) * L, spline.length)
+			local whole, wi = SplineMesh.build(spline, s0, s1, folder, {})
+			local far, fi = SplineMesh.build(spline, s0, s1, folder, { tolerance = F.Tolerance, maxStep = F.MaxStep, across = F.Across })
+			if whole and far then
+				wholeTris += wi.triangles
+				farTris += fi.triangles
+				sampled += 1
+			end
+			if whole then
+				SplineMesh.destroy(whole)
+			end
+			if far then
+				SplineMesh.destroy(far)
+			end
+			task.wait()
+		end
+		local mean = wholeTris / math.max(1, sampled)
+		local farMean = farTris / math.max(1, sampled)
+		check("a far chunk costs much less than a whole one", sampled > 0 and farMean < mean * 0.6, `far {math.floor(farMean)} triangles, whole {math.floor(mean)}, over {sampled} chunks`)
+		local nearChunks = math.ceil((M.Near.Ahead + M.Near.Behind) / L) + 1
+		local ultraTiles = G.Detail[#G.Detail].Tiles
+		local lines, worstShare, worstName = {}, 0, ""
+		for _, a in M.Ahead do
+			for _, b in M.Behind do
+				local window = math.ceil((a.Studs + b.Studs) / L) + 1
+				local near = math.min(window, nearChunks)
+				local tiles = math.min(ultraTiles + a.GroundTiles + b.GroundTiles, ultraTiles + G.CorridorMost) + G.Spare
+				-- (and the whole chunk a rebuild replaces stays up until the new one is done)
+				local cost = near * mean + (window - near) * farMean + math.max(GROWABLE, mean) + mean + tiles * tileTris
+				if cost / BUDGET > worstShare then
+					worstShare, worstName = cost / BUDGET, `{a.Name} ahead, {b.Name} behind`
+				end
+				if a == M.Ahead[#M.Ahead] or b == M.Behind[#M.Behind] then
+					table.insert(lines, `{a.Name}/{b.Name}: {window} chunks ({near} whole), {math.floor(cost)}`)
+				end
+			end
 		end
 		check(
-			"every Road behind step fits the client's mesh budget",
-			worstShare <= 1 and grows and #M.Behind >= 2,
-			`{table.concat(lines, "; ")} (a chunk: {math.floor(mean)} triangles; the one being built holds back {GROWABLE})`
+			"every Road ahead and behind pair fits the client's mesh budget on Ultra",
+			worstShare <= 1,
+			`worst {worstName}: {math.floor(worstShare * BUDGET)} of {BUDGET}; {table.concat(lines, "; ")}`
 		)
-		local pc, touch = M.Behind[M.BehindDefault], M.Behind[M.BehindTouchDefault]
+		-- the same steps both ways, growing, and the defaults three times what they were
+		-- (Road ahead 1 600 and Road behind 1 300 before T-263's send-back)
+		local same, grows, previous = #M.Ahead == #M.Behind and #M.Ahead >= 2, true, 0
+		for k, a in M.Ahead do
+			local b = M.Behind[k]
+			same = same and b ~= nil and a.Name == b.Name and a.Studs == b.Studs
+			grows = grows and a.Studs > previous and a.GroundTiles >= 0 and (b == nil or b.GroundTiles >= 0)
+			previous = a.Studs
+		end
+		check("Road ahead and Road behind have the same steps", same and grows, `{#M.Ahead} and {#M.Behind} steps`)
+		local aPc, aTouch = M.Ahead[M.AheadDefault], M.Ahead[M.AheadTouchDefault]
+		local bPc, bTouch = M.Behind[M.BehindDefault], M.Behind[M.BehindTouchDefault]
 		check(
-			"the defaults keep more road behind than before, less on touch",
-			pc ~= nil and touch ~= nil and pc.Studs > 300 and touch.Studs > 300 and touch.Studs <= pc.Studs and M.Behind[1].Studs == 300,
-			`PC {pc and pc.Studs}, touch {touch and touch.Studs}, shortest {M.Behind[1].Studs} (300 before T-230)`
+			"the defaults are the steps nearest three times before",
+			aPc ~= nil and aTouch ~= nil and bPc ~= nil and bTouch ~= nil and aPc.Studs == 4800 and aTouch.Studs <= aPc.Studs
+				and math.abs(bPc.Studs - 3900) <= 900 and bTouch.Studs <= bPc.Studs,
+			`ahead PC {aPc and aPc.Studs}, touch {aTouch and aTouch.Studs}; behind PC {bPc and bPc.Studs}, touch {bTouch and bTouch.Studs}`
 		)
 
 		-- 2. Every vertex of the road surface is on the curve's surface.
