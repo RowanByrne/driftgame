@@ -128,7 +128,7 @@ A third category, **Graphics**, holds one row: **Ground detail**, a five-step sl
 
 ## Sound (T-256)
 
-A fourth category, **Sound**, asked for by the user on 2026-11-16: one volume slider per category, Music, Tire squeal, Off-road drift, Suspension and Engine, each 0 to 100% with - and + (10% steps) and the percent on the right. Music has nothing to scale yet; its level is kept for when music exists.
+A fourth category, **Sound**, asked for by the user on 2026-11-16: one volume slider per category, Music, Tire squeal, Off-road drift, Suspension and Engine, each 0 to 100% with - and + (10% steps) and the percent on the right. **Each starts at 30%, which plays today's mix exactly** (the user's send-back, 2026-11-16): the scale is level / 30, so 15% is half and 100% about 3.33x. Music has nothing to scale yet; its level is kept for when music exists.
 
 - **Where it lives:** `Drift/SoundLevels` holds the five levels for this device and session, like Ground detail, and keeps one `SoundGroup` per category in `SoundService`. The engine, skid and suspension sounds join their group when they are made, so a level scales them on top of the mix (AUDIO.md "Mix"), live while dragging. No remote and nothing saved.
 - **Layout:** the wide rail gets a fourth tab. In compact layouts the four tabs share one row while each is at least 120 px (scaled with text size), else they make two rows of two.

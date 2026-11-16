@@ -57,10 +57,11 @@ squeal too loud twice, so its peak is now 0.85 × 0.40 = **0.340**, while the en
 than quietly put back: **if the drift stops reading over the engine, the engine comes down.**
 
 **The player's levels sit on top of this mix** (T-256): Settings has a Sound tab with one slider per
-category, 0 to 100%, default 100%, kept for the session on this device (`Drift/SoundLevels`,
-`SETTINGS.md`). Each category is a `SoundGroup` in `SoundService` (`SoundLevel_<Category>`), and a
-sound plays at its own volume times its group's, so a slider scales what the code above sets and
-never changes `Config.Fx`:
+category, 0 to 100%, kept for the session on this device (`Drift/SoundLevels`, `SETTINGS.md`).
+**30% is this mix exactly** (the user, 2026-11-16): each category is a `SoundGroup` in `SoundService`
+(`SoundLevel_<Category>`) at `level / 30`, and a sound plays at its own volume times its group's. So
+the default 30% is 1x, 15% half, 0% silent and 100% about 3.33x, and a slider never changes
+`Config.Fx`:
 
 | Category | Sounds in it |
 |---|---|
@@ -69,6 +70,23 @@ never changes `Config.Fx`:
 | Off-road drift | Every other skid clip: the dirt slide, played on grass, dirt and gravel |
 | Suspension | The clunks, catches and landing slam (`Drift/SuspensionSound`) |
 | Engine | Every engine loop, layered or the single clip (`Drift/EngineSound`) |
+
+**Headroom at 100%** (measured in `DR-Lane2`, T-256). Roblox caps a `Sound`'s and a `SoundGroup`'s
+`Volume` at 10 each, not their product, so nothing is capped by the slider; the loudest each sound
+gets from the code today, and at 100%:
+
+| Sound | Today's peak | At 100% |
+|---|---|---|
+| Engine, one layer (recorded sheet) | 0.84 | 2.80 |
+| Tyre squeal, tarmac | 0.34 | 1.13 |
+| Off-road slide (dirt clip, `ClipVolume` 3.2) | 1.09 | 3.63 |
+| Suspension clunk, slices 1 / 2 / 3 (`Gain` 2.6 / 9.7 / 22.3) | 1.33 / 4.95 / **10** (wants 11.37, already held at Roblox's 10 today) | 4.42 / 16.5 / 33.3 |
+| Landing | 0.54 | 1.81 |
+
+Whether 3.33x clips on a speaker can't be measured in Studio (the legacy `Sound` has no output
+meter). The gains are there because those files are quiet, so the clunks are not louder than the
+rest in the ear; the third clunk slice is the one already at Roblox's per-sound limit before any
+slider.
 
 ## Sounds
 
