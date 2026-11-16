@@ -9,6 +9,7 @@ Every task in progress and the files it owns, so parallel sessions and workers n
 
 | Branch | Lane | Files owned | Since |
 |---|---|---|---|
+| `agent/grass-mud-ruts` | lent | `src/StarterPlayerScripts/Drift/Wheels.luau` (the off-road marks), `Config/Fx.luau` (the `Ground`/`Grass` mark keys), `Tests/FxTests.luau`, `docs/game/features/car-fx.md` | 2026-11-16 (T-265, plan T-264) |
 | `agent/road-ahead-setting` | lent | new `Drift/RoadAhead.luau`, `Drift/SplineRoadView.luau` and `Drift/GroundMeshView.luau` (their reach ahead), `Config/Spline.luau` (`Mesh` ahead presets), `Services/RoadService.luau` (the window ahead, only if needed), `Settings/SettingsView.luau` (+ fixtures), `Controllers/SettingsController.luau`, settings docs | 2026-11-16 (T-263) |
 
 ## Notes between sessions
