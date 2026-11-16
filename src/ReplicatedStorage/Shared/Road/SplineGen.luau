@@ -103,7 +103,6 @@ export type Item = {
 	untilV: number?,
 	untilDir: number?,
 	refused: number?, -- times this turn was refused
-	ran: number?, -- studs of it laid so far (a range leg)
 }
 
 -- What a heading on the mountain is (T-226): "leg" across the local fall line, tilted down
@@ -175,7 +174,6 @@ export type Gen = typeof(setmetatable(
 		-- THE RANGE (T-238): the pass the road heads for, on the ridge ahead, and which way
 		-- the planned stretches go to reach it
 		target: { x: number, z: number, y: number, k: number }?,
-		doubling: boolean?, -- the last leg heading read would have doubled back (`LegOnward`)
 	},
 	SplineGen
 ))
@@ -1459,8 +1457,6 @@ function SplineGen._slopeAim(self: Gen, slope: Slope): (number, number, number, 
 		local r = (f.range :: any)
 		local on = hx * r.ux + hz * r.uz
 		local least = math.sin(math.rad(Config.Range.LegOnward))
-		-- (and says so: a leg that would double back ends at its next section, `step`)
-		self.doubling = on < least
 		if on < least then
 			local ax, az = hx - on * r.ux, hz - on * r.uz
 			local al = math.max(math.sqrt(ax * ax + az * az), 1e-9)
@@ -2230,15 +2226,10 @@ function SplineGen.step(self: Gen): Spline.Section?
 				head.left = 0
 			end
 			-- a leg that has the road digging in, the mountain rising faster along it than the
-			-- road can climb, ends here: the turnaround comes now; so does one that would have
-			-- to double back to follow the slope, once it has run `LegMin`
+			-- road can climb, ends here: the turnaround comes now
 			if Ground.h(self.ground, x, z) - y > Config.Range.LegCutEnd then
 				head.left = 0
 			end
-			if self.doubling and head.what == "leg" and (head.ran or 0) >= Config.Range.LegMin then
-				head.left = 0
-			end
-			head.ran = (head.ran or 0) + chosen.len
 		end
 		if (head.left :: number) <= 0 then
 			table.remove(self.plan, 1)
