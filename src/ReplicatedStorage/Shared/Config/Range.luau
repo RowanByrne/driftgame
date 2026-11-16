@@ -31,8 +31,9 @@ return {
 	Peak = { 650, 1200 }, -- studs above the start valley's floor: a ridge's peaks
 	SaddleDepth = { 250, 480 }, -- studs below its peaks: its saddles
 	SaddleMin = 380, -- studs above the start valley's floor: no saddle lower
-	SaddleEvery = 2600, -- studs across: about one saddle in this
-	SaddleSharp = 1.6, -- how much of the crest is near a peak or a saddle, not between
+	SaddleEvery = 3000, -- studs across: about one saddle in this
+	SaddleWarp = 0.5, -- how much the spacing wanders (under 1, so saddles never merge)
+	SaddleSharp = 1.3, -- how much of the crest is near a peak or a saddle, not between
 	SaddleRise = 60, -- studs: a saddle's crest rises at least this much on both sides...
 	SaddleSpan = 2000, -- ...within this many studs
 
