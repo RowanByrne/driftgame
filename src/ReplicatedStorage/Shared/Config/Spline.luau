@@ -593,7 +593,9 @@ local Spline = {
 		-- where the two differ there by `FitGap` studs or more, never along one joining a
 		-- vertex on the road to open ground
 		SnapFoot = 0.75, -- studs past the runoff's edge (`BlendFoot` is the flat foot's width)
-		SnapMax = 0.9, -- of a cell
+		-- (0.9 left a road running along a grid line with its wall a cell out: the vertex a
+		-- cell from the foot is up to a cell from it, measured on seed 31337)
+		SnapMax = 1, -- of a cell
 		FitGap = 0.2, -- studs
 		MeshSliceMs = 2, -- ms of building a frame
 		FirstSliceMs = 6, -- ms a frame while nothing is drawn yet (a run's first second)

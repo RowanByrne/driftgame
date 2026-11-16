@@ -383,6 +383,13 @@ end
 -- Where each vertex goes, and how each cell is split (T-231)
 --------------------------------------------------------------------------------
 
+-- `Ground.at`, counted: points of ground worked out to build tiles (the build's main cost).
+local groundEvals = 0
+local function groundAt(ctx: Ground.Context, x: number, z: number): (number, number, number, number)
+	groundEvals += 1
+	return Ground.at(ctx, x, z)
+end
+
 -- What a vertex is, for how its cell may be split: on the road (or the flat foot just past
 -- its edge), held below the edge, or open ground. A triangle joining ROAD to OPEN would
 -- reach up from the road over it.
@@ -418,7 +425,7 @@ end
 -- the ground, sunk under the road, and held below the edge within that spacing's clamp of it.
 -- Still how a vertex shared with a tile of another spacing is done, so both agree on it.
 local function vertexHeight(ctx: Ground.Context, s: number, x: number, z: number): number
-	local y, a, e, T = Ground.at(ctx, x, z)
+	local y, a, e, T = groundAt(ctx, x, z)
 	local sink = sinkOf[s]
 	y -= sink * a
 	if e < clampOf[s] then
@@ -448,7 +455,7 @@ local function latAt(L: Lattice, I: number, J: number): { number }
 	local k = latKey(I, J)
 	local r = L.at[k]
 	if not r then
-		local y, a, e, T = Ground.at(L.ctx, I * L.s, J * L.s)
+		local y, a, e, T = groundAt(L.ctx, I * L.s, J * L.s)
 		r = { y, a, e, T }
 		L.at[k] = r
 	end
@@ -459,8 +466,8 @@ end
 -- and its rate (about 1); nil where it is too flat to tell.
 local function edgeGradient(L: Lattice, x: number, z: number, e: number): (number?, number?, number?)
 	local h = 0.25
-	local _, _, ex = Ground.at(L.ctx, x + h, z)
-	local _, _, ez = Ground.at(L.ctx, x, z + h)
+	local _, _, ex = groundAt(L.ctx, x + h, z)
+	local _, _, ez = groundAt(L.ctx, x, z + h)
 	local gx, gz = (ex - e) / h, (ez - e) / h
 	local g = math.sqrt(gx * gx + gz * gz)
 	if g ~= g or g < 0.3 or g == math.huge then
@@ -511,9 +518,10 @@ local function place(L: Lattice, I: number, J: number): { number }
 					local ux, uz, g = edgeGradient(L, x, z, e)
 					if ux and uz and g then
 						local move = (e - foot) / g
-						if move <= reach then
+						if move <= reach * 1.15 then
+							move = math.min(move, reach) -- (a little short of the foot at worst)
 							local nx, nz = x - ux * move, z - uz * move
-							local y2, a2, _, T2 = Ground.at(L.ctx, nx, nz)
+							local y2, a2, _, T2 = groundAt(L.ctx, nx, nz)
 							p = { nx, nz, math.min(y2 - sink * a2, T2 - sink), HELD }
 						end
 					end
@@ -542,7 +550,7 @@ local function place(L: Lattice, I: number, J: number): { number }
 				local move = (e - topE) / g
 				if move <= reach then
 					local nx, nz = x - ux * move, z - uz * move
-					local y2, a2 = Ground.at(L.ctx, nx, nz)
+					local y2, a2 = groundAt(L.ctx, nx, nz)
 					p = { nx, nz, y2 - sink * a2, OPEN }
 				end
 			end
@@ -675,7 +683,7 @@ local function chooseSplit(ctx: Ground.Context, s: number, P: { { number } }, n:
 		local mx, mz = (A[1] + B[1] + Cc[1] + D[1]) * 0.25, (A[2] + B[2] + Cc[2] + D[2]) * 0.25
 		local yBC, yAD = heightAt(false, mx, mz), heightAt(true, mx, mz)
 		if yBC and yAD and math.abs(yBC - yAD) >= Config.Spline.Ground.FitGap then
-			local y, w = Ground.at(ctx, mx, mz)
+			local y, w = groundAt(ctx, mx, mz)
 			local want = y - sinkOf[s] * w
 			flip = math.abs(yAD - want) < math.abs(yBC - want)
 		end
@@ -1700,6 +1708,7 @@ function GroundMeshView.DebugState(self: View)
 		tilesBuilt = self.tilesBuilt,
 		rimWrites = self.rimWrites,
 		wall = self.wall,
+		groundPoints = groundEvals, -- `Ground.at` calls building tiles, every view this session
 		lastMs = self.lastMs,
 		worstMs = self.worstMs,
 		worstSliceMs = self.worstSliceMs,
