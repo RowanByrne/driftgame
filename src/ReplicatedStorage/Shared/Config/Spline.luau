@@ -503,7 +503,7 @@ local Spline = {
 		-- none: what is drawn is what the car stands on), and its runoff vertices are coloured
 		-- `Terrain.GrassColour` (gravel in a gravel run). A short skirt, `BevelSkirt` down from
 		-- the bevel's foot, hides the step where coarse ground far ahead sits lower
-		RunoffBy = "road",
+		RunoffBy = "ground",
 		RunoffSinks = { 0, 0.4, 2.5, 4, 4 }, -- studs, per spacing (as `Sinks`)
 		BevelSkirt = 3, -- studs
 		BevelSkirtLean = 0.5, -- studs
