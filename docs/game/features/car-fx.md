@@ -653,25 +653,43 @@ descendants after cleanup. The effects-off branch checks no emission and exclude
 geometry from visible-width measurements. Console review found only existing Studio plugin/MCP
 messages, and the quiet playtest was stopped. Lane 3 is retained for another user review.
 
-## Suspension sounds (`T-223`)
+## Suspension sounds (`T-223`, `T-252`)
 
 The user, 2026-11-15: *"also find some suspension clunking noises we can play when the wheels
-work up and down. also a big clunky one for when the car lands from a jump."*
+work up and down. also a big clunky one for when the car lands from a jump."* And 2026-11-16,
+after driving it: *"right now they play when the car heaves to one side, what i wanted for it to
+play when a wheel undergoes suspension compression, like if it goes from being on the grass to
+being on the road, up over that gravel wedge, i want it to clunk (individual per wheel)"* (T-252).
 
 `Drift/SuspensionSound`, made beside `SkidSound` in `DriftController` and stepped from its
 simulation-step hook (120 a second, so it is the same at every frame rate). It reads the model
-and never writes to it: each wheel's drawn `travel`, `wheelsDown`, and the car's vertical
-`velocity`. `Drift/Suspension` is untouched. The player's own car only: another player's car
-arrives as packed wheel lifts per packet, not as steps, and stays silent.
+and never writes to it: each wheel's drawn `travel`, `wheelsDown`, `wheelSurface`, and the
+car's height, yaw, body `up`, ground frame `groundUp` and `velocity`. `Drift/Suspension` is
+untouched. The player's own car only: another player's car arrives as packed wheel lifts per
+packet, not as steps, and stays silent.
 
-- **Clunk:** a wheel that is down and whose travel *closes* faster than `ClunkRate` (12 studs/s)
-  in a step has been shoved up: a bump, a kerb, or the catch after a drop (a wheel is drawn
-  falling no faster than `DropTime`, so the drop itself is silent). A wheel is pushed up to its
-  ground in one step, so the closing is the step's height times 120, whatever the speed: the
-  volume is that (0.16 to 0.60 across 12 to 60 studs/s) times the car's speed as a share of
-  80 studs/s, never under 0.35 of it. A wheel then waits 0.18 s, and no two clunks are closer
-  than 0.05 s, so two wheels on one kerb are one knock. Each clunk is one of the three slices
-  of clunk D, never the one just played, at 1 ± 0.08 speed, on three voices round-robin.
+- **The ground under each wheel (T-252).** T-223 clunked on a wheel's *travel* closing, and the
+  body rolling and pitching in a drift closes the outside wheels' travel too: it clunked on
+  weight transfer. Now each wheel's **ground height in the world** is rebuilt every step:
+  `Suspension.draw` puts a down wheel at exactly `Rest + (ground - corner)` of travel, so the
+  body's corner (from the car's height and tilt) plus the travel off `Rest` is that wheel's
+  ground. Body roll moves the corner and the travel by the same amount and cancels out.
+- **Clunk:** that ground rising faster than the plane the car is on says it should (`groundUp`,
+  along the way that wheel moved this step) by `ClunkRate` (4 studs/s) or more. A hill or a
+  cambered road rises as fast as its plane says, so it never counts. Each wheel knocks on its
+  own: once per rise (it re-arms when its ground rises at under half the threshold), and then
+  waits 0.18 s. `ClunkGap` is **0**: at 0.05 the front pair over one edge was one knock, and the
+  user asked for one a wheel. Four voices, one a wheel. The volume is the rise (0.16 to 0.60
+  across 4 to 24 studs/s) times the car's speed as a share of 80 studs/s, never under 0.35 of
+  it. Each clunk is one of the three slices of clunk D, never the one just played, at 1 ± 0.08
+  speed.
+- **Stepping down (catch):** a wheel whose ground falls away faster than `DropTime` lets it
+  drop is drawn falling. Back on its ground, if that ground is `CatchMin` (0.2 studs) or more
+  lower (over its plane) than the ground it left, it knocks **softly**: the clunk of a step up
+  that high, times `CatchShare` (0.3). Measured against the ground, not the wheel, so a wheel
+  the body lifts off its ground (the rebound off a bump) comes back to the same ground and is
+  silent. Decided: off the tarmac onto the grass is a soft knock per wheel, quieter than back
+  up.
 - **Landing:** no wheel down for at least 0.25 s, then a touchdown, having fallen at 8 studs/s
   or more at its fastest in the air: landing F, 0.30 to 0.76 across 8 to 45 studs/s. The
   fastest fall, not the last step's: the step a wheel reaches its bump stop, the stop takes the
@@ -686,8 +704,29 @@ arrives as packed wheel lifts per packet, not as steps, and stays silent.
 Every number is `Config.Fx.Suspension`. The sounds and how they were cut are in
 `assets/audio/sfx-suspension/MANIFEST.md`.
 
-**Measured** in quiet playtests in `DR-Lane1` and `DR-Lane4` (T-223), through
-`DriftController:DebugSound` and `DebugSoundMeasure`:
+**Readout** (`DriftController:DebugSound`, `DebugSoundMeasure`): `clunks`, `catches`,
+`perWheel`, `held`, `maxRate` (the most each wheel's ground rose over its plane), `maxDrop`,
+`log` (the last 32 clunks: wheel, rise, speed, volume, surface), `notes` (steps that rose at half
+the threshold or more), and the OLD rule counted but never played: `maxClose` (travel closing)
+and `closeClunks` (at T-223's 12 studs/s), for comparing the two on one drive.
+
+**Measured** in quiet playtests in `DR-Lane4` on the spline road (T-252), the car driven by
+`CarInputController:DebugSetInput` against `DebugSpline`; `old rule` is `closeClunks`:
+
+| Run | Clunks | Old rule | Notes |
+|---|---|---|---|
+| Hard drifting on the tarmac, flicked ±60° about the road every 0.7 s, 60.8 s on tarmac then 45.4 s more | 0 | 0 | Up to 88 to 114° of slip, up to 66 studs/s. Ground rise peaked at 1.8 studs/s (threshold 4); the old rule's travel closing at 4.0 (7.4 in a smoother ±45° slalom) |
+| Driving and drifting on the grass runoff, 8 s each, three runs | 0 | 0 | Ground rise peaked at 1.4 |
+| Grass up the bevel onto the tarmac, 60° at 19, 45° at 28, 30° at 48, 60° at 45 studs/s | 4 each, one a wheel | 0 | Front pair, then rear pair, 0.05 to 0.3 s apart (crossing at an angle, the near side's pair first). Rise 4.0 to 11.7, volumes 0.056 to 0.188 before the master |
+| Tarmac off down the bevel onto the grass, 60° at 21, 45° at 30, 30° at 39 studs/s | 4 soft catches each | 0 | The ground fell 0.15 to 0.99 studs under each wheel; volumes 0.063 to 0.093 |
+| Dropped from 30 studs / 8 studs | 0 | | Landing played: fell at 44.4 / 20.5 studs/s, volume 0.752 / 0.455 |
+
+The old rule gave 0 on the tarmac in these drives too: it took the user's driving to reach its
+12 studs/s. The new signal stays near zero there by construction, since the body's motion
+cancels out of it. No errors or warnings from these scripts.
+
+**Measured** in quiet playtests in `DR-Lane1` and `DR-Lane4` (T-223, the travel rule; the
+playground and the hill road are gone since):
 
 | Run | Clunks | Landings | Notes |
 |---|---|---|---|

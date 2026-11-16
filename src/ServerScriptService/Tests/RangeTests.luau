@@ -1,5 +1,5 @@
 --!nonstrict
--- RangeTests: the mountain range a ground run crosses (features/mountain-range.md, T-233).
+-- RangeTests: the mountain range every run crosses (features/mountain-range.md, T-233).
 -- Pure maths:
 --   require(game.ServerScriptService.Tests.RangeTests).run()
 -- Takes about half a minute with the road's checks (`opts.road = false` skips them): from
@@ -49,7 +49,7 @@ local function fmt(x: number, p: number?): string
 end
 
 local function field(seed: number)
-	return Ground.field(seed, ORIGIN, FALL, "range")
+	return Ground.field(seed, ORIGIN, FALL)
 end
 
 -- Every ridge from `k0` to `k1`, measured along v = `v`: where its crest is, its height,
@@ -221,12 +221,6 @@ local function run(check, opts)
 			end
 		end
 		check("no seams: a fiftieth of a stud never jumps a tenth", worst < 0.1, `steepest step {fmt(worst, 3)} studs over {n} points`)
-	end
-
-	-- runs get the shape `Config.Range.Shape` says (the range since T-238)
-	do
-		local f = Ground.field(7, ORIGIN, FALL)
-		check("runs get the shape the config names", f.shape == R.Shape and (R.Shape ~= "range" or f.range ~= nil), `{f.shape}`)
 	end
 
 	-- THE ROAD ON THE RANGE (T-242): it climbs to the passes and crosses them, with no trench

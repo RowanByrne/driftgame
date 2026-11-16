@@ -7,8 +7,7 @@ local Spline = require(script.Parent.Spline)
 local Ground = require(script.Parent.Ground)
 local Fit = {}
 export type Reading = {ok:boolean, score:number, view:number, cut:number, fill:number, samples:number, off:number?}
--- (`startFlip` and `flips` are kept for the callers; the mountain itself says how it rises)
-function Fit.measure(sp: Spline.Spline, s0:number, s1:number, startFlip:number, flips:{{number}}): Reading
+function Fit.measure(sp: Spline.Spline, s0:number, s1:number): Reading
 	local M = Config.Spline.Mountain
 	local field = sp.mountain :: Ground.Field
 	assert(field, "SplineTurnFit: the road has no mountain")

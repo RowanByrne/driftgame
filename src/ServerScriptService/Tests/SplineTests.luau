@@ -37,11 +37,6 @@ end
 
 local parts = {}
 
--- how the height band's centre moves per stud, for the mode the config sets
-local function gen0Drift(): number
-	return SplineGen.new(1).drift
-end
-
 -- 1. Every limit, read off the knots themselves (exact) and sampled along the surface.
 function parts.limits(check)
 	local C = Config.Spline
@@ -49,7 +44,7 @@ function parts.limits(check)
 	local kMax = 1 / C.MinRadius
 	local gMax = math.tan(math.rad(C.MaxGrade))
 	local bMax = math.rad(C.MaxBank)
-	local worst = { k = 0, kRate = 0, g = 0, gRate = 0, b = 0, bRate = 0, tilt = 0, yLo = 0, yHi = 0, stepErr = 0, yawRate = 0, minNy = 1 }
+	local worst = { k = 0, kRate = 0, g = 0, gRate = 0, b = 0, bRate = 0, tilt = 0, stepErr = 0, yawRate = 0, minNy = 1 }
 	local short = 0
 	for _, seed in SEEDS do
 		local gen = road(seed, LIMIT_LENGTH)
@@ -68,7 +63,6 @@ function parts.limits(check)
 				end
 			end
 		end
-		local base = sp.origin.y
 		local px, pz = sp:planAt(0)
 		local pyaw = sp:yawAt(0)
 		local s = 1
@@ -80,10 +74,6 @@ function parts.limits(check)
 			worst.stepErr = math.max(worst.stepErr, math.abs(dist - 1))
 			worst.yawRate = math.max(worst.yawRate, math.abs(yaw - pyaw))
 			px, pz, pyaw = x, z, yaw
-			-- the band's centre moves with the road on a descent (T-166)
-			local y = sp:heightAt(s) - (base + gen:bandAt(s))
-			worst.yLo = math.min(worst.yLo, y)
-			worst.yHi = math.max(worst.yHi, y)
 			if s % 5 == 0 then
 				for _, d in { -W / 2, 0, W / 2 } do
 					local n = sp:normalAt(s, d)
@@ -101,12 +91,6 @@ function parts.limits(check)
 	check("plan is continuous", worst.stepErr < 1e-3, `1 stud of road was 1 stud of plan to within {string.format("%.2e", worst.stepErr)}`)
 	check("grade within MaxGrade", worst.g <= gMax + 1e-12, `steepest {fmt(math.deg(math.atan(worst.g)), 2)} deg, limit {C.MaxGrade}`)
 	check("grade changes no faster than MaxGradeRate", worst.gRate <= C.MaxGradeRate * (1 + 1e-9), `worst {fmt(worst.gRate * 1000, 4)}e-3 per stud, limit {fmt(C.MaxGradeRate * 1000, 4)}e-3`)
-	-- the band moves with the road on a descent (T-166) and the generator plans each section
-	-- against where it will be at the section's end, so a crest mid-section may sit a stud
-	-- past it: 0.3 measured, and 1.7 where a climb begins at the floor. The grade limits above
-	-- are the hard ones
-	local slack = if gen0Drift() ~= 0 then 2 else 1e-6
-	check("height stays in its band", worst.yLo >= C.MinHeight - slack and worst.yHi <= C.MaxHeight + slack, `{fmt(worst.yLo, 1)} .. {fmt(worst.yHi, 1)} studs, band {C.MinHeight} .. {C.MaxHeight} round a centre moving {fmt(gen0Drift() * 1000, 1)} studs per 1000 and climbing back`)
 	check("bank within MaxBank", worst.b <= bMax + 1e-12, `most {fmt(math.deg(worst.b), 2)} deg, limit {C.MaxBank}`)
 	check("bank changes no faster than MaxBankRate", worst.bRate <= math.rad(C.MaxBankRate) * (1 + 1e-9), `worst {fmt(math.deg(worst.bRate), 4)} deg/stud, limit {fmt(C.MaxBankRate, 4)}`)
 	check(
@@ -474,7 +458,7 @@ function parts.terrain(check)
 		end
 		-- WHICH SIDE THE MOUNTAIN IS ON, along the road (T-166): the side the uphill direction
 		-- is on, outside the band along the fall line; and it changes only inside a planned
-		-- turn (a hairpin, a switchback or a double hairpin), never on an ordinary bend.
+		-- turn (a hairpin), never on an ordinary bend.
 		-- NO HEDGES (T-189): every point is rock one side and the drop the other, and a change
 		-- of sides happens at one point, both sides at once, inside the band: the rock face
 		-- ends on one side where it starts on the other, so the mountain has no gap
@@ -489,15 +473,7 @@ function parts.terrain(check)
 				hedgePoints += 1
 			end
 			local up = if l == Spline.ROCK or r == Spline.CLIFF then -1 elseif r == Spline.ROCK or l == Spline.CLIFF then 1 else nil
-			-- (while the road climbs the far side of a valley, the mountain is on the other
-			-- side of it, T-190: `gen.flips` says from where)
-			local flip = 1
-			for _, f in gen.flips do
-				if f[1] <= u then
-					flip = f[2]
-				end
-			end
-			local across = math.sin(sp:yawAt(u) - gen.fall) * flip
+			local across = math.sin(sp:yawAt(u) - gen.fall)
 			if up and math.abs(across) >= band + 0.02 then
 				sideChecked += 1
 				if up ~= (if across > 0 then 1 else -1) then
@@ -509,7 +485,7 @@ function parts.terrain(check)
 					swaps += 1
 					local planned = false
 					for _, t in gen.turns do
-						if t[1] <= u and t[2] >= lastS and t[3] ~= "straighten" and t[3] ~= "sideways" and t[3] ~= "sidewaysOut" then
+						if t[1] <= u and t[2] >= lastS and t[3] ~= "straighten" then
 							planned = true
 							break
 						end
@@ -718,14 +694,14 @@ function parts.twist(check)
 end
 
 -- 9. The mountain's direction (features/mountain-direction.md, T-166): a fixed fall line,
--- legs across it joined by planned turns, and a descent.
+-- and legs across the range's faces joined by planned hairpins (T-238).
 function parts.mountain(check)
 	local C = Config.Spline
 	local M = C.Mountain
 	local neutral = math.sin(math.rad(M.AlongFallLine))
-	local flips, badFlips, length, drop, stalls = 0, 0, 0, 0, 0
-	local downLen, climbLen, climbs, lowest = 0, 0, 0, math.huge
-	local legs, turnarounds, doubles, sideways, refused, straightens = 0, 0, 0, 0, 0, 0
+	local flips, badFlips, length, stalls = 0, 0, 0, 0
+	local lowest = math.huge
+	local legs, turnarounds, refused, straightens = 0, 0, 0, 0
 	local fallOk = 0
 	local seeds = 0
 	for i = 1, HEALTH_SEEDS do
@@ -765,47 +741,34 @@ function parts.mountain(check)
 			end
 		end
 		length += sp.length
-		-- the height lost while the band is going down, and the road it took
-		local b = gen.band
-		for j = 3, #b, 2 do
-			if b[j + 1] < b[j - 1] then
-				drop += sp:heightAt(b[j - 2]) - sp:heightAt(b[j])
-				downLen += b[j] - b[j - 2]
-			else
-				climbLen += b[j] - b[j - 2]
-			end
-		end
-		climbs += gen.stats.climbs
 		for s = 0, sp.length, 8 do
 			lowest = math.min(lowest, sp:heightAt(s) - sp.origin.y)
 		end
 		local st = gen.stats
 		legs += st.legs
 		turnarounds += st.turnarounds
-		doubles += st.doubles
-		sideways += st.sideways
 		refused += st.turnsRefused
 		straightens += st.straightens
 	end
 	local per = 10000 / length
-	local perK = drop / downLen * 1000
 	check("the fall line is square to the start heading, every seed", fallOk == seeds, `{fallOk} of {seeds}`)
-	check("never boxed in, on a descent", stalls == 0, `{stalls} of {seeds} roads of {HEALTH_LENGTH} studs stalled`)
-	-- (turning back across the slope only through a planned turn, and the descent's steady
-	-- rate, were the old descent planner's; since T-247 every road follows the mountain)
+	check("never boxed in, on the range", stalls == 0, `{stalls} of {seeds} roads of {HEALTH_LENGTH} studs stalled`)
+	-- (turning back across the slope only through a planned turn was the old descent
+	-- planner's rule; every road follows the mountain, and climbs to its passes as much as it
+	-- comes down: `RangeTests`)
 	check(
-		"legs, turnarounds and detours (measured)",
+		"legs and turnarounds (measured)",
 		legs * per >= 2 and legs * per <= 8,
-		`per 10 000 studs: {fmt(legs * per, 1)} legs, {fmt(turnarounds * per, 1)} turnarounds, {fmt(doubles * per, 2)} double hairpins, {fmt(sideways * per, 2)} sideways stretches, {fmt(straightens * per, 1)} straightening bends, {fmt(refused * per, 2)} turns refused and retried`
+		`per 10 000 studs: {fmt(legs * per, 1)} legs, {fmt(turnarounds * per, 1)} turnarounds, {fmt(straightens * per, 1)} straightening bends, {fmt(refused * per, 2)} turns refused and retried`
 	)
 	check(
-		"the run works its way down (measured)",
-		perK > 0,
-		`net drop {fmt(perK, 1)} studs per 1000 of road; {flips} changes of direction across the slope, {badFlips} outside a planned turn`
+		"the road turns back across the slope (measured)",
+		flips > 0,
+		`{flips} changes of direction across the slope, {badFlips} outside a planned turn`
 	)
 	-- hours of running: one very long road never sinks past the fall-kill height
 	local long = road(5151, 150000)
-	local low, ups = math.huge, long.stats.climbs
+	local low = math.huge
 	for s = 0, long.spline.length, 8 do
 		low = math.min(low, long.spline:heightAt(s))
 	end
@@ -813,7 +776,7 @@ function parts.mountain(check)
 	check(
 		"a run of hours stays above the fall-kill height",
 		long.spline.length >= 150000 and low > -500 + 20,
-		`one road of {math.floor(long.spline.length)} studs: lowest point Y {fmt(low, 1)}, {ups} climbs; lowest over all {seeds + 1} roads {fmt(lowest, 1)} below the start (kill height Y -500)`
+		`one road of {math.floor(long.spline.length)} studs: lowest point Y {fmt(low, 1)}; lowest over all {seeds + 1} roads {fmt(lowest, 1)} below the start (kill height Y -500)`
 	)
 end
 

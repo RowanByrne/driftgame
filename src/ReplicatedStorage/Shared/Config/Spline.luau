@@ -43,13 +43,6 @@ local Spline = {
 	-- How fast the grade may change: the crest and dip of a vertical curve. 0.0015 of grade
 	-- per stud is the piece road's 1.15 degrees per 13-stud segment.
 	MaxGradeRate = 0.0015, -- grade (dy/ds) per stud
-	-- The road may not wander off up or down for ever: it keeps its height inside this band
-	-- round where it started, and the grade is chosen to head back when it nears an edge.
-	-- On a descent the band's centre drops as the road goes on (`Mountain.DescentRate`).
-	MinHeight = -160, -- studs relative to the start
-	MaxHeight = 160,
-	-- How often a section keeps the grade it has rather than choosing a new one.
-	KeepGradeChance = 0.35,
 
 	-- BANK, raised on the OUTSIDE of the bend. 10 is what the user chose for the touge's
 	-- banked corner (DECISIONS.md, 2026-11-06); 30 is the most the car is proven on (the old
@@ -65,10 +58,6 @@ local Spline = {
 	-- lines this far apart in plan: the tarmac, the widest runoff and an edge either side,
 	-- and a gap (`SplineGen.limits`).
 	ClearanceGap = 20, -- studs between the outer faces of the two stretches' edges
-	-- With no mountain to follow (`Mountain.Mode = "traverse"`, not used yet) the road keeps
-	-- its start heading and may wander this far off it either way. On a descent the legs'
-	-- own limit (`Mountain.LegHeadingLimit`) does this job.
-	HeadingLimit = 115, -- degrees either side of `Config.Road.StartHeading`
 	-- Every section is accepted only if the road could still straighten up and run this far
 	-- clear afterwards. That is the escape: the road can never box itself in, because the
 	-- way out is checked before the way in is taken.
@@ -76,63 +65,34 @@ local Spline = {
 	CandidateTries = 14, -- random sections tried before taking the escape itself
 
 	-- --------------------------------------------------------------- the mountain's direction
-	-- (features/mountain-direction.md, T-166.) The mountain has ONE FALL LINE, fixed in the
-	-- world for the whole road: uphill one way, the valley the other. The road is laid as
-	-- LEGS across the slope, each tilted a little downhill, joined by TURNAROUNDS (a hairpin,
-	-- or a switchback of two tight bends) that send it back the other way, a level lower.
-	-- Ordinary bends inside a leg stay within `LegHeadingLimit` of it, so only a turnaround
-	-- can turn the road back. Chosen by the server from the seed; clients only replay.
+	-- (features/mountain-direction.md, T-166; on the range since T-238, features/mountain-range.md.)
+	-- The road has ONE FALL LINE, fixed in the world for the whole road: the range's way on is
+	-- down it. The road is laid as LEGS across the faces toward the pass ahead
+	-- (`SplineGen._planRange`, numbers in `Config.Range` and `Ground` below), joined by
+	-- planned HAIRPINS that send it back the other way. Ordinary bends inside a leg stay
+	-- within `LegHeadingLimit` of it, so only a hairpin can turn the road back. Chosen by the
+	-- server from the seed; clients only replay. (The old descent planner's legs, switchbacks,
+	-- double hairpins, sideways stretches and height band went with features/legacy-removal.md.)
 	Mountain = {
-		-- "descent" is the only one used. "ascent" climbs the same way (the legs tilt uphill
-		-- and the height band rises); "traverse" is the road as it was before: no legs, the
-		-- start heading kept within `HeadingLimit`, the height band fixed.
-		Mode = "descent",
 		-- Uphill is the start heading turned this far, to a side chosen from the seed, so the
 		-- first leg runs across the slope.
 		FallLineTurn = 90, -- degrees
 		-- Heading within this of straight up or down the slope counts as neither side: the
 		-- uphill side holds what it was, so a wiggle can't flip it (the cliff step).
 		AlongFallLine = 30, -- degrees
-		LegTilt = { 10, 25 }, -- degrees downhill off straight across
-		LegLength = { 1200, 3000 }, -- studs, then a turnaround
 		LegHeadingLimit = 60, -- degrees: no ordinary bend takes the road further off its leg
 		LegUphillLimit = 30, -- degrees, and no further off it UP the slope, toward the leg above
-		-- A turnaround: mostly a hairpin; sometimes two tight bends with a short run straight
-		-- down the slope between them.
-		HairpinRadius = { 75, 110 }, -- studs
-		TurnaroundSwitchbackChance = 0.25,
-		SwitchbackRadius = { 95, 150 }, -- studs, each of the two bends
-		SwitchbackGap = { 40, 140 }, -- studs between them, heading down the slope
-		-- A DOUBLE HAIRPIN in the middle of a leg: the road runs back the way it came for a
-		-- short stretch, a level lower, then turns back onto its leg another level down.
-		DoubleHairpinChance = 0.15, -- per leg
-		DoubleHairpinBack = { 150, 500 }, -- studs of the reversed stretch
-		-- A SIDEWAYS stretch in the middle of a leg: straight down (or now and then up) the
-		-- slope for a while, then back onto the leg.
-		SidewaysChance = 0.2, -- per leg
-		SidewaysLength = { 300, 1200 }, -- studs
-		-- of sideways stretches, how many climb rather than descend. 0: a climb ran into the
-		-- leg above and boxed the road in on 2 seeds of 40 at 0.3 (measured), so they are off
-		SidewaysUpShare = 0,
-		SidewaysUpLength = { 200, 500 }, -- studs: a climb is kept short, below the leg above
-		-- degrees its own bends may wander off straight up or down: inside `AlongFallLine`, so
-		-- the uphill side holds through the whole stretch
-		SidewaysLimit = 25,
-		SidewaysRadius = { 150, 320 }, -- studs, the bends into and out of it
+		HairpinRadius = { 75, 110 }, -- studs: a hairpin off steep ground (`Range.SteepHairpinRadius` on it)
 		-- A turnaround is laid only once the road heads within this of its leg; further off,
 		-- a bend first brings it back, so every hairpin turns about the same amount.
 		TurnWindow = 20, -- degrees
-		-- Bends in a stretch lean back toward its line (from where it began, along its
-		-- heading) as well as its heading: this far off the line, they aim back at half the
-		-- stretch's heading limit. Keeps each leg on its own level of the slope.
-		LineReach = 300, -- studs
 		StraightenRadius = { 200, 500 }, -- studs, that bend
 		-- When a planned turn is refused (it would come too close to old road), the stretch
 		-- before it runs on this far and it is tried again.
 		RetryAfter = 120, -- studs
 		TurnTries = 6, -- radii tried for one planned turn before it is refused
-		-- Fit sharp turns to the same hill the client draws (T-190). Clear radii are
-		-- ranked by excess rock ahead and by cutting/fill at the runoff's sides.
+		-- Fit sharp turns to the mountain the client draws (T-190, `Road/SplineTurnFit`). Clear
+		-- radii are ranked by excess rock ahead and by cutting/fill at the runoff's sides.
 		TurnChecks = true,
 		TurnFitTries = 3, -- fixed terrain-preview budget per sharp turn
 		TurnCheckAngle = 60, -- degrees: smaller heading corrections keep the old path
@@ -141,33 +101,6 @@ local Spline = {
 		TurnSideReach = 20, -- studs beyond runoff for the sideways checks
 		TurnMaxCut = 90, -- studs: a very deep cutting near a turn
 		TurnMaxFill = 120, -- studs: an outsized embankment/drop near a turn
-		TurnLocationRetries = 2, -- run on RetryAfter and retry before taking the best clear fit
-		TurnDescentGrade = 0.025, -- downhill grade target in a descending turn, band safety wins
-		-- THE DESCENT: the height band (`MinHeight..MaxHeight`) moves with the road, its centre
-		-- dropping this much per stud of road, so the grade still goes up and down locally but
-		-- the run works its way down. 1 in 25 is about 2.3 degrees net.
-		DescentRate = 1 / 25, -- studs of height per stud of road
-		-- THE CLIMBS that let a run go on for hours (the user, 2026-11-13: "we want a system
-		-- that will allow for hours of running ... add uphill sections that are short and gain
-		-- good vertically every now and then"). Once the band's centre is `DescentFloor` below
-		-- the start, it rises at `ClimbRate` until it is back at `ClimbTop`, then the descent
-		-- goes on.
-		-- A CLIMB IS THE FAR SIDE OF A VALLEY (T-190). The road keeps zig-zagging the same way
-		-- in plan, so while it climbs, each new leg is HIGHER than the one before it: the
-		-- mountain is on the other side of the road. So a climb (and the descent after it)
-		-- begins where the road next heads straight along the fall line, the middle of a
-		-- hairpin as a rule, and from there the rock and the drop are on the other sides
-		-- (`SplineGen.flip`). The band waits at `DescentFloor` (or `ClimbTop`) for that turn,
-		-- and the stretches planned before it are cut to `FlipWithin` so it comes soon.
-		-- With the band's 160 either side, the road stays above Y -440, clear of Roblox's
-		-- fall-kill height (-500).
-		DescentFloor = -280, -- studs, the centre's lowest, relative to the start
-		ClimbRate = 1 / 10, -- studs of height per stud of road, about 5.7 degrees
-		ClimbTop = 0, -- studs, where a climb hands back to the descent
-		FlipWithin = 250, -- studs: the longest stretch left before the turn the mountain changes sides in
-		-- but that turn comes no sooner than the faces already drawn were told it would: they
-		-- are grand by their distance from a turnaround, full at `GrandNear + GrandRamp`
-		FlipClear = 850, -- studs
 	},
 
 	-- --------------------------------------------------------------- the bends
@@ -192,10 +125,10 @@ local Spline = {
 	-- the server with the curve (`SplineGen`), sent with each section, replayed by clients.
 	Terrain = {
 		-- THE RUNOFF: a strip of grass each side, its width eased (smoothstep) between knots
-		-- so nothing steps. Grass grips and scores as `Config.Drift.GripGrass` / `ScoreGrass`.
-		RunoffMin = 12, -- studs, about 2 car widths
-		RunoffMax = 40, -- studs, about 5
-		RunoffKnotEvery = { 120, 220 }, -- studs between two widths chosen
+		-- so nothing steps, from the mountain's side slope (`Ground.RunoffWide` to `RunoffThin`).
+		-- Grass grips and scores as `Config.Drift.GripGrass` / `ScoreGrass`.
+		RunoffMin = 12, -- studs, about 2 car widths: the narrowest outside a tight edge or a carve
+		RunoffMax = 40, -- studs, about 5: the widest outside a grove (it sizes the no-crossing gap)
 		StartRunoff = 24, -- studs, both sides, on the straight a run begins with
 		-- On the inside of a bend the grass never reaches past this share of the way to the
 		-- bend's centre, so the inside of a hairpin keeps a strip, not a spike.
@@ -229,45 +162,11 @@ local Spline = {
 		-- THE EDGES. A rock face is a wall at the runoff's outer edge (so is a hedge, never
 		-- chosen as an edge since T-189); a cliff is where the ground ends. To the car only:
 		-- nothing draws them since T-247 (the ground mesh stands in, `Drift/GroundMeshView`).
-		-- The grand, tight and low numbers below still shape the section's `gd` knots, which
-		-- nothing reads either; they go with the old descent planner (features/legacy-removal.md)
-		-- The heights and slopes here are near a turnaround; mid-leg they grow to the `Grand`
-		-- numbers below. `RockHeight[1]` is also the car's wall height (`Drift/SplineWorld`)
-		RockHeight = { 25, 60 }, -- studs. A look; to the car it is a wall
-		RockSlope = { 50, 70 }, -- degrees
+		-- `RockHeight[1]` is the car's wall height (`Drift/SplineWorld`); `[2]` is unread since the
+		-- grand cliffs went (features/legacy-removal.md)
+		RockHeight = { 25, 60 }, -- studs. To the car it is a wall
 		HedgeHeight = 6, -- studs
 		HedgeThickness = 4, -- studs
-		-- GRAND CLIFFS (T-185). The user, 2026-11-13: "cliffs should be more solid bodied and
-		-- grand. the farther you get from a switchback, we can have sections where the average
-		-- cliff height is huge, and then comes back down again as we near a switchback".
-		-- A rock face is a SOLID BODY: its face, a top of scrub `RockTop` deep, and a back
-		-- slope down to the ground `RockBack` of its height behind, closed at both ends. A
-		-- cliff is a jagged face with closed ends.
-		-- HOW GRAND, 0..1, is chosen by the server with each section (`gd` knots) from how far
-		-- the road is from the nearest turnaround (hairpin, switchback or double hairpin):
-		-- 0 within `GrandNear`, rising (smoothstep) to 1 over `GrandRamp` more. And never so
-		-- tall that a rock body would stand up through old road on its uphill side (the leg
-		-- above): it stays `GrandMargin` under that road wherever it reaches beneath it.
-		GrandNear = 250, -- studs from a turnaround
-		GrandRamp = 600, -- studs, then full
-		GrandKnotEvery = 60, -- studs between two knots of a section's grandeur
-		GrandRate = 300, -- studs, at the least, for the grandeur to go from 0 to 1 or back
-		GrandMargin = 12, -- studs a rock body's top keeps under old road above it
-		-- and short of that road, it may stand above it by this many studs for every stud it
-		-- keeps off it, so no pinnacle towers right beside the leg above. Measured over five
-		-- seeds, mid-leg (850+ studs from a turnaround) grandeur averages 0.54 at 1, 0.81 at 2,
-		-- 0.87 at 3 and 0.92 with no limit but the road above (0.78 at 2 with `GrandRate`)
-		GrandAbove = 2,
-		GrandRockHeight = { 140, 220 }, -- studs, mid-leg (`RockHeight` near a turnaround)
-		GrandRockSlope = { 64, 78 }, -- degrees, so a tall face doesn't reach out for ever
-		RockTop = { 14, 36 }, -- studs of scrub on top, near and grand
-		RockBack = 0.36, -- the back slope's run, as a share of the height
-		-- LOWER THAN NEAR A TURNAROUND (T-189): with no hedges, the uphill side just past a
-		-- hairpin is rock too, right under the leg you came down. Where even a low body would
-		-- stand up through that road, the grandeur goes below 0 (to -1) and the body shrinks
-		-- toward these, so it stays under the leg above. The car's wall stays `RockHeight[1]`
-		LowRockHeight = 4, -- studs, at -1
-		LowRockTop = 3, -- studs of scrub on top, at -1
 		-- How far past the runoff an edge reaches, for keeping two stretches of road apart.
 		EdgeDepth = 4, -- studs: a hedge's thickness, and the foot of a rock face
 		-- WHICH SIDE IS UPHILL follows from the heading against the fall line (T-166,
@@ -381,35 +280,9 @@ local Spline = {
 	-- The ground BUILT FIRST, as one mountain the road is cut into (`Road/Ground`), drawn by
 	-- each client as its own grid meshes (`Drift/GroundMeshView`).
 	Ground = {
-		-- THE MOUNTAIN, h(x, z), through the road's start. A pure function of the seed and the
-		-- place. Since T-228 (the user: "sections where it gets very steep for several thousand
-		-- studs, and sections where it's quite shallow ... big ridges that carve in and
-		-- promontories that stick out"), and the road follows whatever it is (T-227):
-		-- BELTS down the fall line: going down, a shallow BENCH (`Bench` studs of fall line at a
-		-- slope from `Low`), a ramp (`Ramp` studs, eased), a steep SCARP (`Scarp` studs at a
-		-- slope from `High`), a ramp, the next bench; each one's sizes from the seed. The road
-		-- spends about as long on a scarp as on a bench: it loses height at its own rate, and a
-		-- scarp is short but tall. Laid out `BeltsUp` studs up the fall line from the start and
-		-- `BeltsDown` down, every `BeltStep`; past them, straight on. The belts curve across the
-		-- mountain, up to `BeltWarp[1]` studs up or down it over `BeltWarp[2]` across.
-		BeltBench = { 2000, 4000 }, -- studs of fall line
-		BeltScarp = { 250, 600 }, -- studs of fall line
-		BeltRamp = 300, -- studs of fall line
-		BeltLow = { 0.03, 0.09 }, -- slope: about 2 to 5 degrees
-		BeltHigh = { 0.45, 0.6 }, -- slope: about 24 to 31 degrees (27 to 37 left the road stranded above scarps)
-		BeltsUp = 10000, -- studs of fall line
-		BeltsDown = 60000,
-		BeltStep = 16, -- studs
-		BeltWarp = { 300, 4000 }, -- studs
-		-- RIDGES AND GULLIES on the belts: {studs across, studs either way, kind} per octave of
-		-- noise, `Stretch` times longer down the fall line than across it, so they run down the
-		-- mountain. "ridge": sharp crests, promontories standing out; "gully": V-shaped, carving
-		-- in; none, rounded. Their height is scaled by how steep the belt is there: `ReliefLow`
-		-- of it where the belt's slope is `ReliefSlopes[1]` or less, all of it from `[2]`
-		Octaves = { { 1400, 80, "ridge" }, { 600, 35, "gully" }, { 220, 8 } },
-		Stretch = 2.5,
-		ReliefLow = 0.25,
-		ReliefSlopes = { 0.05, 0.6 },
+		-- THE MOUNTAIN, h(x, z), through the road's start, is the range (`Road/Range`,
+		-- `Config.Range`, T-238): a pure function of the seed and the place. (The T-228 belts and
+		-- their ridges and gullies went with features/legacy-removal.md.)
 		-- THE MOUNTAIN LEADS, THE ROAD FOLLOWS (T-226, features/road-on-the-slope.md). In a
 		-- ground run the road reads everything from h alone, with no height band, descent rate
 		-- or fixed heading of its own, so changing h changes the road with no road code touched.
@@ -425,15 +298,13 @@ local Spline = {
 		FollowAhead = 160, -- studs
 		FollowAheadWeight = 0.5,
 		FollowRadius = 16, -- studs
-		-- ITS ANGLE ACROSS THE MOUNTAIN: from h's slope where the road is heading (the gradient
-		-- `AimSpan` studs across, at each of `AimAt` studs ahead), a leg heads across the local
-		-- fall line, tilted down it just enough to descend `LegGrade` (one per leg, from the
-		-- plan's stream): nearly across where h is steep, more directly down where it is gentle,
-		-- at most `LegTiltMax` off across (straight down the fall line is a sideways stretch's).
-		-- Its bends may stray no further down the slope than keeps the grade within
-		-- `FollowGrade` of `MaxGrade` (never under `AimMinLimit`), so the road can follow h there.
-		-- `DownhillBias` adds the plane's own downhill to h's slope, so flat ground has a way down
-		AimAt = { 60, 180 }, -- studs ahead
+		-- ITS ANGLE ACROSS THE MOUNTAIN: from h's slope where the road is (the gradient `AimSpan`
+		-- studs across, blended with the range's own, `Config.Range.AimSpan`/`AimRelief`), a leg
+		-- heads across the face toward the pass ahead, tilted just enough to descend (or climb)
+		-- `LegGrade` (one per leg, from the plan's stream): nearly across where h is steep, more
+		-- directly down (or up) it where it is gentle, at most `LegTiltMax` off across. Its bends
+		-- may stray no further down the slope than keeps the grade within `FollowGrade` of
+		-- `MaxGrade` (never under `AimMinLimit`), so the road can follow h there
 		AimSpan = 60, -- studs
 		LegGrade = { 0.035, 0.07 }, -- descent per stud of road along a leg: 2 to 4 degrees
 		LegGradeSteep = 0.1, -- plus this much of h's slope there (T-228), to `FollowGrade` at most
@@ -442,7 +313,7 @@ local Spline = {
 		CatchUp = 1 / 150, -- (1 / 100 measured worse on 20 seeds, and one boxed in)
 		LegTiltMax = 75, -- degrees off straight across
 		FollowGrade = 0.9,
-		-- A SHARP PLANNED TURN (a hairpin, a switchback) that would leave the road more than
+		-- A SHARP PLANNED TURN (a hairpin) that would leave the road more than
 		-- `TurnMaxOff` studs off h is laid further on (`Mountain.RetryAfter` each time, up to
 		-- `TurnRetries` times) where it fits better: mid-turn the road heads straight down
 		-- the slope, which a steep scarp leaves it far above (T-228)
@@ -455,7 +326,6 @@ local Spline = {
 		TurnMaxCut = 45, -- studs
 		TurnRetries = 6,
 		AimMinLimit = 5, -- degrees (12 let a road on a 40-degree scarp stray to a 13-degree grade)
-		DownhillBias = 0.05, -- (0.01 let the aim swing round on a near-flat bench and the road box itself in, T-228)
 		-- THE CUT: under the road and its runoff the ground sits this far below their surface,
 		-- and past the runoff's outer edge it blends back to h, never over more than `BlendMax`
 		-- studs; how steeply, from the side slope (`BlendAngles`, below; 45 degrees and at least

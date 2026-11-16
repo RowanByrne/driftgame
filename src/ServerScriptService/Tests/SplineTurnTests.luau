@@ -7,12 +7,12 @@ local Gen=require(game.ReplicatedStorage.Shared.Road.SplineGen)
 local Fit=require(game.ReplicatedStorage.Shared.Road.SplineTurnFit)
 local Tests={}
 local function hashState(g)
-	local out={g.spline.length,#g.spline.curv.s,#g.spline.grade.s,#g.spline.bank.s,#g.flips,g.uphill,g.flip,g.lastGrand}
+	local out={g.spline.length,#g.spline.curv.s,#g.spline.grade.s,#g.spline.bank.s,#g.plan,g.uphill}
 	for _,r in {g.trng,g.grng,g.xrng,g.crng} do table.insert(out,r:Clone():NextNumber()) end
 	local n,sum=0,0
 	for _,bucket in g.spline.hash do for _,v in bucket do n+=1;sum+=v end end
 	table.insert(out,n);table.insert(out,sum)
-	return game:GetService("HttpService"):JSONEncode({summary=out,curv=g.spline.curv,grade=g.spline.grade,bank=g.spline.bank,edgeL=g.spline.edgeL,edgeR=g.spline.edgeR,runL=g.spline.runL,runR=g.spline.runR,runoff=g.runoff,inBand=g.inBand,crossAt=g.crossAt,flipDone=g.flipDone})
+	return game:GetService("HttpService"):JSONEncode({summary=out,curv=g.spline.curv,grade=g.spline.grade,bank=g.spline.bank,edgeL=g.spline.edgeL,edgeR=g.spline.edgeR,runL=g.spline.runL,runR=g.spline.runR,runoff=g.runoff,inBand=g.inBand,crossAt=g.crossAt})
 end
 function Tests.run()
 	local checks={}
@@ -23,7 +23,7 @@ function Tests.run()
 	local before=hashState(g)
 	local a=g:_fitTurn(sec,item)
 	local b=g:_fitTurn(sec,item)
-	check("speculative terrain leaves the road and scenery streams untouched",hashState(g)==before,"tracks, hash buckets, flips, edge state and four scenery RNGs unchanged")
+	check("speculative terrain leaves the road and scenery streams untouched",hashState(g)==before,"tracks, hash buckets, plan, edge state and four scenery RNGs unchanged")
 	check("the same detached candidate measures identically",a.view==b.view and a.cut==b.cut and a.fill==b.fill,"two previews agree")
 	local measured,worst,stalls,relaxed,checked,rejected,badEnds=0,0,0,0,0,0,0
 	local firstRoad
@@ -35,7 +35,7 @@ function Tests.run()
 			if #g.turnFits>n then
 				local r=g.turnFits[#g.turnFits]
 				if g.spline:curvatureAt(r.s1)~=0 or math.abs(g.spline:bankAt(r.s1))>1e-6 or g.lastDir==0 or g.lastWasBend then badEnds+=1 end
-				local now=Fit.measure(g.spline,r.s0,r.s1,1,g.flips)
+				local now=Fit.measure(g.spline,r.s0,r.s1)
 				worst=math.max(worst,math.abs(r.view-now.view),math.abs(r.cut-now.cut),math.abs(r.fill-now.fill))
 				measured+=1
 			end
