@@ -87,4 +87,7 @@ return {
 	RescueTurns = { 20, 45, 70, 100, 130, 160 }, -- degrees
 	RescueRadii = { 70, 110, 170, 260, 400 }, -- studs
 	GiveUp = 6, -- times a planned turn may be refused before the way to the pass is planned again
+	-- heading further off its aim than its bends may stray, the road turns back onto it on these
+	-- radii rather than run on straight (T-242)
+	RecoverRadius = { 90, 250 }, -- studs
 }
