@@ -1,6 +1,6 @@
 # Feature: The mountain horizon
 
-**Status:** building (`T-150`; only uphill, `T-232`): step 1, the ridges and the snow peak (`T-153`), and step 2, the valley floor (`T-157`), in the lane. **Owner task:** `T-150`, lane 2.
+**Status:** removed on 2026-11-16 at the user's request (`T-243`): *"get rid of them for now - no need to render anything physical in the distance. scrub it from the code"*. Its code, config, tests and the `horizon` admin command are deleted on every kind of run; this spec is kept for the record. Before that: building (`T-150`; only uphill, `T-232`), step 1 the ridges and the snow peak (`T-153`), step 2 the valley floor (`T-157`).
 
 ## Goal
 

@@ -27,7 +27,7 @@ Every command is open to whoever can use the console (above); there are no level
 - **Required** (`<players>`) where more arguments follow that you'd always type: `tp`, `tp-to`, `car`, `score-set`. So `tp me road`, `tp Alex garage`, `car all slider`. Cmdr reads arguments in order, so an optional first argument followed by a required one can't be skipped.
 - **Optional, defaulting to you** (`[players]`) where the targets are the only argument, or everything after them is optional: `respawn`, `start-run`, `end-run`, `unstuck`, `garage-out`, `get-out`, `get-in`, `speed`, `score-reset`. So `respawn` alone respawns you; `respawn all` respawns everyone. With a second argument the target has to be there: `speed me 90`, `start-run me 555`.
 - **One player, optional** (`[player]`) for reading: `where`, `run-info`, `whoami`.
-- **Your own screen only, no target:** `time`, `time-pause`, `time-resume`, `time-speed`, `readout`, `trajectory`, `zoom`, `horizon`, `score` (reading), `counts`, `stats`. They change or read one client's view, and reaching another player's screen for a look isn't worth a round trip.
+- **Your own screen only, no target:** `time`, `time-pause`, `time-resume`, `time-speed`, `readout`, `trajectory`, `zoom`, `score` (reading), `counts`, `stats`. They change or read one client's view, and reaching another player's screen for a look isn't worth a round trip.
 - **The whole server, no target:** `seed`, `road-mode`, `ground`, `barriers`.
 
 "Client" below means the player's own client does it: your own when you target only yourself; otherwise the server sends each target's client a `DriftAction` and replies "Sent ... to names" (the effect shows on their screen).
@@ -58,7 +58,6 @@ Every command is open to whoever can use the console (above); there are no level
 | Time | `time [when]` | Holds your sky at `noon`, `sunset`, `night`, `sunrise`, any keyframe by name (`morning`, `afternoon`, `golden-hour`, `dusk`, `dawn`), `midnight`, or an hour 0-24; with nothing, says where the cycle is | Your client |
 | Time | `time-pause` / `time-resume` (`timepause`, `timeresume`) | Stops your sky where it is / puts it back on the server's clock | Your client |
 | Time | `time-speed <times>` (`timespeed`) | Runs your cycle 0.1 to 100 times as fast | Your client |
-| World | `horizon [on\|off]` | Shows or hides the run's mountains (only up on the spline road) | Your client |
 | World | `barriers [on\|off]` | Guardrails down or up for everyone: the test hill's and the piece road's | Server |
 | World | `counts` | Parts, mesh parts, models and instances, on your client and the server (and the server's biggest folders) | Both |
 | World | `stats` | Your fps, worst frame, memory, ping, bandwidth; the server's heartbeat, physics, memory, uptime | Both |

@@ -1,7 +1,7 @@
 local Stats = game:GetService("Stats")
 local Workspace = game:GetService("Workspace")
 
--- What's in the Workspace, by kind. The road's mesh, the horizon and the sky's pieces are
+-- What's in the Workspace, by kind. The road's mesh, the ground and the sky's pieces are
 -- made on each client, so the client's numbers are the ones a player's frame pays for.
 local function count(): string
 	local parts, meshes, unions, anchoredOff, models = 0, 0, 0, 0, 0

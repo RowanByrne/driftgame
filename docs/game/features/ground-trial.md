@@ -33,7 +33,7 @@ First guesses, in a new `Config.Spline.Ground` block, off by default (`Mode = "c
 | Corridor | Road edge plus runoff, then a 20-60 stud blend to h | Cut steeper than 45 degrees draws as rock |
 | Mesh grid (option 1) | 8 studs near, 32 studs past 400, 128 past 1 200 | Chunked; built a few ms a frame |
 | Voxels (option 2) | 4-stud voxels, chunks of 128 by 128 studs | Written over frames as road arrives, cleared behind |
-| Drawn out to | 1 200 studs from the car | The horizon covers the rest |
+| Drawn out to | 1 200 studs from the car | The horizon covered the rest (removed 2026-11-16, `T-243`) |
 
 - **The road lays itself on h:** the turn fitting (`SplineTurnFit`) samples h instead of today's hillside.
 - **Budgets:** no frame over 20 ms while driving at 100 studs/s; chunk build work under 40 ms in total, sliced.
@@ -97,7 +97,7 @@ Three seeds (31337, 101, 2024), 5 000 studs each.
 `Drift/GroundMeshView` draws it; numbers in `Config.Spline.Ground` (`Levels` and below). Console: `ground mesh`, then `start-run`.
 
 - **The road in a ground run** (`Road/SplineMesh`, `ground` option) draws its tarmac, gravel, runoff, rails and groves only: no rock faces, drops or hillside. A 10-stud skirt hangs from each runoff's outer edge, so a dip in the ground beside it shows no gap.
-- **The ground is two nested square grids round the car:** 8 studs apart over 512 by 512, and 32 studs apart over 1 984 by 1 984 (so about 1 000 studs out, not 1 200; the horizon takes over). The fine grid lies over a hole in the coarse one and takes the coarse one's heights round its rim, so they meet without a crack. Each is rebuilt round the car as it moves (every 96 and 256 studs), into a hidden copy over a few frames, then swapped in whole.
+- **The ground is two nested square grids round the car:** 8 studs apart over 512 by 512, and 32 studs apart over 1 984 by 1 984 (so about 1 000 studs out, not 1 200; past it is only sky and fog since the horizon went, `T-243`). The fine grid lies over a hole in the coarse one and takes the coarse one's heights round its rim, so they meet without a crack. Each is rebuilt round the car as it moves (every 96 and 256 studs), into a hidden copy over a few frames, then swapped in whole.
 - **Round the road** every vertex sinks 1.25 studs under the road and runoff, and one within 12 studs of a runoff's edge (20 on the coarse grid) is held below the edge, so no triangle from a cutting covers the road. So a cutting starts about a cell out from the edge, with a shallow ditch, and the skirt hides the step.
 - **Colours:** two greens blotched, rock grey past 45 degrees, on Roblox's grass material.
 

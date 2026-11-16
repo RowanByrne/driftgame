@@ -60,7 +60,7 @@ First guesses, all in `Config.Spline` (a `Mountain` block):
 |---|---|---|
 | Slope across the fall line | 25 to 35° average | Steep enough for cuttings and drops, gentle enough for legs to share it |
 | Ridges and gullies | 300 to 900 studs across, ±40 studs | Seeded noise; gives cuttings and embankments their variety |
-| Drawn out to | 400 studs either side of the road | Far enough to meet the next leg; past it the horizon takes over |
+| Drawn out to | 400 studs either side of the road | Far enough to meet the next leg; past it the horizon took over (removed 2026-11-16, `T-243`) |
 | Cutting height | capped by the turn check | So a hairpin never sits in a 200-stud trench |
 
 - **Seeded and replayed:** the surface is a pure function of the seed and world position, so every

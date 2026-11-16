@@ -53,7 +53,6 @@ local SplineWorld = require(DriftFolder.SplineWorld)
 local SplineRoadView = require(DriftFolder.SplineRoadView)
 local GroundMeshView = require(DriftFolder.GroundMeshView)
 local GroundTerrainView = require(DriftFolder.GroundTerrainView)
-local HorizonView = require(DriftFolder.HorizonView)
 
 local CarInputController = require(script.Parent.CarInputController)
 
@@ -313,10 +312,6 @@ function DriftController:UseSpline(spline: any?)
 		self.groundView:Destroy()
 		self.groundView = nil
 	end
-	if self.horizon then
-		self.horizon:Destroy()
-		self.horizon = nil
-	end
 	self.spline = spline
 	self.splineClosing = nil
 	if spline then
@@ -328,9 +323,6 @@ function DriftController:UseSpline(spline: any?)
 		elseif spline.mountain and spline.mountain.mode == "terrain" then
 			self.groundView = GroundTerrainView.new(spline)
 		end
-		-- the mountains round the run, at the height of the road's start (T-150); only its
-		-- uphill half when it has a mountain (T-232)
-		self.horizon = HorizonView.new(spline.origin.y, nil, spline.mountain)
 	end
 	self:_rebuildWorld()
 end
@@ -346,20 +338,6 @@ function DriftController:SetSplineClosing(s: number?)
 	if self.splineView then
 		self.splineView:SetClosing(s)
 	end
-end
-
--- The mountains round the run: each layer's distance behind the camera, and their cost.
-function DriftController:DebugHorizon(resetCost: boolean?)
-	local h = self.horizon
-	if not h then
-		return { on = false }
-	end
-	if resetCost then
-		h:DebugResetCost()
-	end
-	local out = h:DebugState()
-	out.on = true
-	return out
 end
 
 -- The ground-first trial's drawn ground (T-218), when this run has one: option 1's grids
