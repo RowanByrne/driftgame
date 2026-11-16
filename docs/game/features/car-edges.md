@@ -1,6 +1,6 @@
 # Feature: Car edges follow the drawn ground
 
-**Status:** in progress. **Owner task:** T-258 (`feature/car-edges-follow-the-drawn-ground`), steps T-259 on.
+**Status:** done 2026-11-16. All three steps merged to main (T-259, T-260, T-261). **Owner task:** T-258.
 
 ## Goal
 
