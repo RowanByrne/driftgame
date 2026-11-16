@@ -75,10 +75,7 @@ return {
 	DirectGrade = 0.05, -- 3 degrees...
 	DirectReach = 900, -- ...and no further off than this (straight up from further, the road left the slope)
 	PassOver = 300, -- studs
-	PassBand = 3000, -- studs across, while the pass is `BandHeight` or more above the road;
-	BandHeight = 300, -- studs: under that, narrowing with what is left to climb...
-	BandLeast = 0.15, -- ...to this share of it
-	LegCutEnd = 30, -- studs: a leg that leaves the road this far below h ends there, and turns
+	PassBand = 3000, -- studs across
 	LegMin = 400, -- studs
 	LegMax = 6000, -- studs
 	TowardBias = 0.05,
