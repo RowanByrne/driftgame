@@ -738,9 +738,14 @@ return {
 	-- touching down, having fallen at `LandMinSpeed` or more. It plays INSTEAD of the clunks: every
 	-- wheel's clunk is held off for `LandQuiet` after it.
 	Suspension = {
-		ClunkRate = 12, -- studs/s a wheel's ground rises over its plane that is a knock. Under
-		-- this, silence. A wheel is pushed up to its ground in ONE step (1/120 s), so this is
-		-- a 0.1-stud step in the ground
+		ClunkRate = 4, -- studs/s a wheel's ground rises over its plane that is a knock. Under
+		-- this, silence. A step in the ground lifts a wheel in ONE step (1/120 s), so this is a
+		-- 0.033-stud step; the gravel bevel (1 up in 3 across) is this at 12 studs/s straight
+		-- at its edge. Was 12 against the wheel's travel (T-223). MEASURED in DR-Lane4
+		-- (T-252): hard drifting on the tarmac rises at most 1.1, driving and drifting on the
+		-- grass 1.4; crossing the bevel onto the tarmac at 21 to 74 studs/s rises 6 to 13
+		ClunkRearm = 0.5, -- a wheel that has knocked may again once its ground rises at under
+		-- this share of `ClunkRate`: one knock a bevel, however many steps it takes to climb
 		ClunkRateForMax = 60, -- studs/s (a 0.5-stud step) at which a clunk is at
 		-- `ClunkMaxVolume`
 		ClunkSpeedForFull = 80, -- studs/s of the car's speed at which a clunk is at full

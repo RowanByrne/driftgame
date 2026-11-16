@@ -97,6 +97,7 @@ export type SuspensionSound = typeof(setmetatable(
 		leftZ: { number },
 		away: { boolean },
 		readyAt: { number }, -- per wheel: the clock at which it may clunk again
+		armed: { boolean }, -- per wheel: its ground has eased off since its last clunk
 		gapUntil: number, -- the clock before which no wheel clunks (`ClunkGap`)
 		quietUntil: number, -- the clock before which no wheel clunks (`LandQuiet`)
 		airTime: number, -- s with no wheel down, so far
@@ -187,6 +188,7 @@ function SuspensionSound.new(): SuspensionSound
 		leftZ = table.create(WHEELS, 0),
 		away = table.create(WHEELS, false),
 		readyAt = table.create(WHEELS, 0),
+		armed = table.create(WHEELS, true),
 		gapUntil = 0,
 		quietUntil = 0,
 		airTime = 0,
@@ -272,6 +274,7 @@ function SuspensionSound.Cut(self: SuspensionSound)
 	for i = 1, WHEELS do
 		self.havePrev[i] = false
 		self.readyAt[i] = 0
+		self.armed[i] = true
 		self.away[i] = false
 	end
 	self.prevTravel[1] = -1 -- no travel yet: `Step` takes the first one as it is
@@ -513,9 +516,16 @@ function SuspensionSound.Step(self: SuspensionSound, dt: number, state: DriftMod
 					z = wz,
 				})
 			end
-			if rate >= S.ClunkRate then
+			-- ONE knock a rise: the bevel lifts a wheel over several steps, so a wheel that has
+			-- knocked waits for its ground to ease off (`ClunkRearm`) before it may again.
+			if rate >= S.ClunkRate and self.armed[i] then
+				self.armed[i] = false
 				self:_clunk(i, rate, SuspensionSound.clunkVolume(rate, speed), speed, false, s.wheelSurface[i])
+			elseif rate < S.ClunkRate * S.ClunkRearm then
+				self.armed[i] = true
 			end
+		elseif not (down[i] == true and t >= full - 1e-3) then
+			self.armed[i] = true -- off its ground; but not on its bump stop, mid-knock
 		end
 
 		self.havePrev[i] = onGround
