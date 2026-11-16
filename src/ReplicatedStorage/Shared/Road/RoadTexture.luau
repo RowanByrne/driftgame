@@ -6,11 +6,18 @@
 -- `Config.Spline.Tarmac` and the colours and lines in `Config.Road`.
 --
 -- WHAT IT DRAWS, after the user's concept art (`assets/reference/environment-mood/`): a cool
--- blue-violet grey with soft painterly grain stretched along the road; darker, smoother wheel
--- tracks in each lane and a faint oil strip between them; a dusty, lighter last stud or two
--- at each edge with gravel creeping on; patches of newer and older tarmac; cracks, mostly
--- along the edges; a few long tyre streaks; and the Japanese lines: a solid white edge line
--- just in from each edge, and a centre line (white dashes by default, or solid, or double).
+-- blue-violet grey with soft painterly grain stretched along the road and a finer aggregate;
+-- broad, faint, smoother wheel tracks in each lane and a faint oil strip between them; a
+-- dusty, lighter last stud or two at each edge with gravel creeping on; faint ragged patches
+-- of newer tarmac; thin cracks, mostly along the edges; and the Japanese lines: a solid
+-- white edge line just in from each edge, and a centre line (white dashes by default, or
+-- solid, or double). Tyre streaks can be painted too (`Streaks`), but are off: painted into
+-- a texture that repeats along the road they cannot follow its bends, and read as stripes
+-- (the user's send-back, "tyre marks are ugly"); the car's own drift marks draw those.
+--
+-- HOW LARGE: 1 024 x 1 024, the largest EditableImage a client will make (measured: 2 048
+-- on either side is refused), 4 MB. Painting it is about 250 ms of work, spread a few ms a
+-- frame over about 80 frames.
 --
 -- HOW IT IS MAPPED. U runs across the tarmac (edge to edge), V along the road over
 -- `period()` studs, so the texture repeats every `PeriodStuds` and the centre line's dashes
