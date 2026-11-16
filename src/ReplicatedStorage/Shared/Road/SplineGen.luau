@@ -1925,16 +1925,33 @@ function SplineGen._follow(self: Gen, nearest: Spline.Section?, nearOff: number?
 		if cost >= bestScore then
 			return
 		end
-		local g, worst = self:_followGrade(knots, g0, y0)
-		if cost + 0.5 * worst >= bestScore then
-			return
-		end
-		local e, w = lead(knots, kt)
-		cost += math.abs(e) + 0.5 * math.max(worst, w)
+		-- one fit for the section and the way on past it: the section's grade is its start
+		local len = knots[#knots - 1]
+		local ext = withEscape(knots, kt)
+		ext[#ext - 1] = ext[#ext - 3] + R.FollowLook
+		local gx, worst, _, _, e = self:_followGrade(ext, g0, y0)
+		cost += math.abs(e) + 0.5 * worst
 		if cost >= bestScore or not self:_clear(withEscape(knots, kt)) then
 			return
 		end
-		local len = knots[#knots - 1]
+		-- (the grade's knots up to `len`, the last one cut there)
+		local g: { number } = {}
+		local s, v = 0, g0
+		for j = 1, #gx, 2 do
+			local s1, v1 = gx[j], gx[j + 1]
+			if s1 >= len - 1e-6 then
+				table.insert(g, len)
+				table.insert(g, if s1 - s > 1e-9 then v + (v1 - v) * (len - s) / (s1 - s) else v1)
+				break
+			end
+			table.insert(g, s1)
+			table.insert(g, v1)
+			s, v = s1, v1
+		end
+		if #g == 0 or g[#g - 1] < len - 1e-6 then
+			table.insert(g, len)
+			table.insert(g, v)
+		end
 		best = {
 			len = len,
 			k = knots,
