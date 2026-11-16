@@ -1,6 +1,6 @@
 # Feature: The mountain horizon
 
-**Status:** building (`T-150`): step 1, the ridges and the snow peak (`T-153`), and step 2, the valley floor (`T-157`), in the lane. **Owner task:** `T-150`, lane 2.
+**Status:** building (`T-150`; only uphill, `T-232`): step 1, the ridges and the snow peak (`T-153`), and step 2, the valley floor (`T-157`), in the lane. **Owner task:** `T-150`, lane 2.
 
 ## Goal
 
@@ -15,9 +15,13 @@ far below the cliffs.
 
 ## How it plays
 
-1. Wherever you are on the road, mountains ring the horizon in **three layers**: dark green
-   forested ridges nearest, blue-green ones behind, pale far peaks behind those.
-2. **One tall snow-capped peak** stands above the far layer, a landmark, in one fixed direction.
+1. Wherever you are on the road, mountains stand on the horizon in **three layers**: dark green
+   forested ridges nearest, blue-green ones behind, pale far peaks behind those. On a run with
+   a mountain they cover **only the uphill half** (`T-232`): straight up the mountain and 90
+   degrees off it either way, their ends rolling down into the ground; downhill the view is
+   open over the valley. A run with no mountain (the old road) keeps the full ring.
+2. **One tall snow-capped peak** stands above the far layer, a landmark, in one fixed direction
+   (inside the uphill half).
 3. **You never reach them.** However far you drive, they stay on the horizon (they follow you,
    the farther layers more slowly, so they shift a little as you go, like real distance).
 4. **Look over a cliff** and the haze thins out onto a valley floor far below, not empty sky.
@@ -137,6 +141,35 @@ No art assets: geometry in code, colours in config.
 - Measured in the lane: every downward sight line from the camera, all the way round, from
   straight down to 12 degrees down, lands on it (1 440 of 1 440); shallower ones meet the
   near ridges. At noon it reads mostly as haze from the road; the look is the user's.
+
+## As built (only uphill, `T-232`)
+
+The user, 2026-11-15: *"update the far away mountains so that it's not 360 degrees. only uphill,
+and like 90 degrees off that in both directions."*
+
+- **Where uphill is:** the run's mountain (`Road/Ground`'s field, `ux`, `uz`), which every
+  client builds from the run's seed and fall line, so the arc is the same on every client.
+  `DriftController:UseSpline` passes `spline.mountain` to `HorizonView.new`.
+- **The arc:** `Config.Horizon.Arc` (180 degrees in all), centred on uphill. Each layer is an
+  open strip of `ArcSegments` ridge steps across it (32, 28, 36: as many as round the old
+  ring, so twice the detail on the half kept), its ends exactly on the arc's edges.
+- **The ends:** the last `Taper` (4) steps each end sink, eased, to the layer's foot: under
+  the valley floor for the near and middle layers, behind them for the far one. No wall.
+- **The snow peak:** keeps its `Bearing` when that is at least `Peak.Clear` (25) degrees
+  inside the arc, else stands `Peak.Offset` (35) degrees clockwise from uphill.
+- **The valley floor** reaches much further on the open side: with no ridges downhill its
+  edge 2 700 studs out showed. On an arc it is plates of `Floor.ArcTile` (2 000) turned
+  square to uphill, out to `Floor.Downhill` (6 000) downhill and to each side, still
+  `Size / 2` uphill: 30 plates instead of 9.
+- **No mountain field** (the old road's "current" ground, the playground has no horizon):
+  the full ring and the small floor, exactly as before (same triangles from the same seed).
+- **Measured in lane 2** (mesh ground): uphill 270 (seed from the console) and 90 (seed
+  424242); every ridge layer's parts span -89 to +89 degrees from uphill (the part centres;
+  the vertices reach the full 90, unit test); the peak's at +29..+42 and -61..-48. Parts:
+  483 on the ring (474 ridges and peak, 9 floor), 498 on the arc (468 and 30). Worst
+  update 0.63 ms, built in 9 ms; none of 502 collides, is queried, touched or shadows.
+- Unit tests: `Tests/HorizonTests`, 72 checks, both an uphill the peak stays at and one it
+  moves for.
 
 ## Open questions
 
