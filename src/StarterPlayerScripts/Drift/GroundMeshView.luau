@@ -52,6 +52,13 @@ type Tile = {
 	uv: { number },
 	leaf: Leaf?,
 	heights: { number }, -- what is drawn, world y, by grid index
+	px: { number }, -- and where, world x and z (a vertex can be moved off its grid point)
+	pz: { number },
+	normals: { Vector3 }, -- the normal each vertex is drawn with
+	-- by cell index i * C + j + 1: its two faces' ids, and whether it is split along a-d
+	-- (its corners a (i, j), b (i + 1, j), c (i, j + 1), d (i + 1, j + 1); b-c otherwise)
+	faces: { number },
+	flip: { boolean },
 	cy: number, -- the part's height (vertices are written relative to it)
 	stale: boolean,
 }
@@ -191,17 +198,31 @@ local function makeTile(master: Master): Tile?
 	local copy = em :: EditableMesh
 	-- the copy's own ids, found by where each vertex is and what its faces name
 	local v, cn, cc, cu = table.create(n * n), table.create(n * n), table.create(n * n), table.create(n * n)
+	local faces = table.create(2 * C * C)
 	for _, f in copy:GetFaces() do
 		local vs = copy:GetFaceVertices(f)
 		local ns = copy:GetFaceNormals(f)
 		local cs = copy:GetFaceColors(f)
 		local us = copy:GetFaceUVs(f)
+		local mi, mj, hasA = math.huge, math.huge, false
+		local ks = {}
 		for q = 1, 3 do
 			local p = copy:GetPosition(vs[q])
-			local k = math.round(p.X / sp + C / 2) * n + math.round(p.Z / sp + C / 2) + 1
+			local i, j = math.round(p.X / sp + C / 2), math.round(p.Z / sp + C / 2)
+			local k = i * n + j + 1
 			v[k], cn[k], cc[k], cu[k] = vs[q], ns[q], cs[q], us[q]
+			mi, mj = math.min(mi, i), math.min(mj, j)
+			ks[q] = { i, j }
 		end
+		for q = 1, 3 do
+			if ks[q][1] == mi and ks[q][2] == mj then
+				hasA = true
+			end
+		end
+		-- a cell's first face holds its corner a, its second does not
+		faces[2 * (mi * C + mj) + (if hasA then 1 else 2)] = f
 	end
+	local px, pz = table.create(n * n, 0), table.create(n * n, 0)
 	local ok2, part = pcall(function()
 		return AssetService:CreateMeshPartAsync(Content.fromObject(copy), {
 			CollisionFidelity = Enum.CollisionFidelity.Box,
@@ -230,6 +251,11 @@ local function makeTile(master: Master): Tile?
 		uv = cu,
 		leaf = nil,
 		heights = table.create(n * n, 0),
+		px = px,
+		pz = pz,
+		normals = table.create(n * n, Vector3.yAxis),
+		faces = faces,
+		flip = table.create(C * C, false),
 		cy = 0,
 		stale = false,
 	}
@@ -484,6 +510,7 @@ function GroundMeshView._fill(self: View, tile: Tile, leaf: Leaf, map: { [number
 				colour = g1:Lerp(g2, blotch)
 			end
 			em:SetPosition(tile.v[k], Vector3.new(x - cx, heights[k] - cy, z - cz))
+			tile.px[k], tile.pz[k], tile.normals[k] = x, z, nv
 			em:SetNormal(tile.nrm[k], nv)
 			em:SetColor(tile.col[k], colour)
 			em:SetUV(tile.uv[k], Vector2.new(x / uvStuds, z / uvStuds))
@@ -947,21 +974,63 @@ end
 -- Checks
 --------------------------------------------------------------------------------
 
--- The drawn ground's height at (x, z) in a tile, as its triangles have it.
-local function surfaceAt(tile: Tile, x: number, z: number): number
+-- The grid indices of a cell's two triangles, as drawn: split along b-c, or a-d if flipped.
+local function cellTriangles(n: number, i: number, j: number, flip: boolean): ({ number }, { number })
+	local a, b, c, d = i * n + j + 1, (i + 1) * n + j + 1, i * n + j + 2, (i + 1) * n + j + 2
+	if flip then
+		return { a, d, b }, { a, c, d }
+	end
+	return { a, c, b }, { b, c, d }
+end
+
+-- The drawn ground at (x, z) in a tile, as its triangles have it: its height, the triangle's
+-- own normal and the normal the renderer blends there; nil if no triangle of the tile holds
+-- it (its vertices can be moved off their grid points, up to a cell).
+local function facetAt(tile: Tile, x: number, z: number): (number?, Vector3?, Vector3?)
 	local leaf = tile.leaf :: Leaf
 	local C = cells()
 	local n = C + 1
-	local fx, fz = (x - leaf.x0) / leaf.s, (z - leaf.z0) / leaf.s
-	local i = math.clamp(math.floor(fx), 0, C - 1)
-	local j = math.clamp(math.floor(fz), 0, C - 1)
-	local u, w = fx - i, fz - j
-	local h = tile.heights
-	local ha, hb, hc, hd = h[i * n + j + 1], h[(i + 1) * n + j + 1], h[i * n + j + 2], h[(i + 1) * n + j + 2]
-	if u + w <= 1 then
-		return ha + (hb - ha) * u + (hc - ha) * w
+	local s = leaf.s
+	local gi = math.floor((x - leaf.x0) / s)
+	local gj = math.floor((z - leaf.z0) / s)
+	local px, pz, h = tile.px, tile.pz, tile.heights
+	local best, bestY, bestN, bestS = -math.huge, nil, nil, nil
+	for i = math.max(gi - 1, 0), math.min(gi + 1, C - 1) do
+		for j = math.max(gj - 1, 0), math.min(gj + 1, C - 1) do
+			local t1, t2 = cellTriangles(n, i, j, tile.flip[i * C + j + 1])
+			for _, t in { t1, t2 } do
+				local p, q, r = t[1], t[2], t[3]
+				local x1, z1, x2, z2, x3, z3 = px[p], pz[p], px[q], pz[q], px[r], pz[r]
+				local det = (z2 - z3) * (x1 - x3) + (x3 - x2) * (z1 - z3)
+				if math.abs(det) > 1e-9 then
+					local l1 = ((z2 - z3) * (x - x3) + (x3 - x2) * (z - z3)) / det
+					local l2 = ((z3 - z1) * (x - x3) + (x1 - x3) * (z - z3)) / det
+					local l3 = 1 - l1 - l2
+					local worst = math.min(l1, l2, l3) -- the most inside wins, for points on an edge
+					if worst > best and worst > -1e-6 then
+						best = worst
+						bestY = l1 * h[p] + l2 * h[q] + l3 * h[r]
+						local A = Vector3.new(x1, h[p], z1)
+						local B = Vector3.new(x2, h[q], z2)
+						local Cv = Vector3.new(x3, h[r], z3)
+						local fn = (B - A):Cross(Cv - A)
+						if fn.Y < 0 then
+							fn = -fn
+						end
+						bestN = if fn.Magnitude > 1e-9 then fn.Unit else Vector3.yAxis
+						local nm = tile.normals
+						local sn = nm[p] * l1 + nm[q] * l2 + nm[r] * l3
+						bestS = if sn.Magnitude > 1e-9 then sn.Unit else Vector3.yAxis
+					end
+				end
+			end
+		end
 	end
-	return hd + (hc - hd) * (1 - u) + (hb - hd) * (1 - w)
+	return bestY, bestN, bestS
+end
+
+local function surfaceAt(tile: Tile, x: number, z: number): number?
+	return (facetAt(tile, x, z))
 end
 
 function GroundMeshView._tileAt(self: View, x: number, z: number): Tile?
@@ -1001,7 +1070,7 @@ function GroundMeshView.DebugSeams(self: View, roadAhead: number?)
 			table.insert(list, tile)
 		end
 	end
-	local worst, edgePairs, samples = 0, 0, 0
+	local worst, edgePairs, samples, missing = 0, 0, 0, 0
 	local worstAt = nil
 	for a = 1, #list do
 		local A = list[a]
@@ -1031,7 +1100,11 @@ function GroundMeshView.DebugSeams(self: View, roadAhead: number?)
 					local f = t / len
 					local x = shared[1] + (shared[3] - shared[1]) * f
 					local z = shared[2] + (shared[4] - shared[2]) * f
-					local d = math.abs(surfaceAt(A, x, z) - surfaceAt(B, x, z))
+					local ya, yb = surfaceAt(A, x, z), surfaceAt(B, x, z)
+					local d = if ya and yb then math.abs(ya - yb) else 0
+					if not ya or not yb then
+						missing += 1
+					end
 					samples += 1
 					if d > worst then
 						worst = d
@@ -1056,8 +1129,8 @@ function GroundMeshView.DebugSeams(self: View, roadAhead: number?)
 				for _, d in { 0, half, half + w * 0.5, half + w - 0.05 } do
 					local x, y, z = spline:terrainXYZ(s, side * d)
 					local tile = self:_tileAt(x, z)
-					if tile then
-						local g = surfaceAt(tile, x, z)
+					local g = if tile then surfaceAt(tile, x, z) else nil
+					if tile and g then
 						local sk = tostring((tile.leaf :: Leaf).s)
 						aboveBySpacing[sk] = math.max(aboveBySpacing[sk] or -math.huge, g - y)
 						roadSamples += 1
@@ -1074,6 +1147,7 @@ function GroundMeshView.DebugSeams(self: View, roadAhead: number?)
 	return {
 		tilePairs = edgePairs,
 		edgeSamples = samples,
+		edgeMissing = missing, -- points on a shared edge a tile did not hold
 		worstStep = worst,
 		worstAt = worstAt,
 		roadSamples = roadSamples,
@@ -1081,6 +1155,159 @@ function GroundMeshView.DebugSeams(self: View, roadAhead: number?)
 		highestAboveRoadBySpacing = aboveBySpacing,
 		highestAt = aboveAt,
 	}
+end
+
+-- How well the drawn ground follows the cut walls and drops beside the road (T-231). Every
+-- `step` studs of road from `behind` back to `ahead` on from the car, a line square across each
+-- side from the runoff's edge, 40 studs out, every half stud: the drawn ground against what
+-- the tile means to draw there (`Ground.at`, sunk). A profile counts as a wall where the
+-- ground 40 studs out is over 4 studs above the edge (a cut) or below it (a fill). Per wall:
+-- the worst height difference along it; how far from the true wall's middle the drawn
+-- one's is (its wander, and how much that changes from one profile to the next: a sawtooth
+-- changes a lot); and at the true middle, how far the drawn triangle's own normal, and the
+-- normal the renderer blends there, are from the true ground's.
+function GroundMeshView.DebugWalls(self: View, ahead: number?, step: number?, behind: number?)
+	local spline = self.spline
+	local along = self.along
+	if not along then
+		return { on = false }
+	end
+	local half = Config.Road.Width * 0.5
+	local OUT, DS = 40, 0.5
+	local s0 = math.max(spline.firstSample * spline.step, along - (behind or 0))
+	local s1 = math.min(spline.length, along + (ahead or 400))
+	local dsStep = step or 2
+	local function agg()
+		return { n = 0, dev = {}, wander = {}, jitter = {}, facet = {}, shade = {}, facetStep = {}, bySpacing = {}, worst = 0, worstAt = nil :: any }
+	end
+	local out = { cut = agg(), fill = agg() }
+	local prev: { [number]: any } = {}
+	local s = s0
+	while s <= s1 do
+		local cx, cz = spline:planAt(s)
+		local yaw = spline:yawAt(s)
+		local rx, rz = math.cos(yaw), -math.sin(yaw)
+		for _, side in { -1, 1 } do
+			local D = half + spline:runoffAt(s, side)
+			local ux, uz = rx * side, rz * side
+			local ex, ez = cx + ux * D, cz + uz * D
+			local ctx = Ground.context(self.field, spline, ex - OUT - 2, ez - OUT - 2, ex + OUT + 2, ez + OUT + 2)
+			local trueY, drawnY, T0 = {}, {}, nil
+			local ok = true
+			local tileS = 0
+			for q = 0, OUT / DS do
+				local d = q * DS
+				local x, z = ex + ux * d, ez + uz * d
+				local y, a, _, T = Ground.at(ctx, x, z)
+				if q == 0 then
+					T0 = T
+				end
+				local tile = self:_tileAt(x, z)
+				local g = if tile then surfaceAt(tile, x, z) else nil
+				if not tile or not g then
+					ok = false
+					break
+				end
+				local sp = (tile.leaf :: Leaf).s
+				tileS = math.max(tileS, sp)
+				trueY[q] = y - sinkOf[sp] * a
+				drawnY[q] = g
+			end
+			local kind = nil
+			if ok and T0 then
+				local rise = trueY[OUT / DS] - T0
+				kind = if rise > 4 then "cut" elseif rise < -4 then "fill" else nil
+			end
+			if kind then
+				local A = out[kind]
+				local sign = if kind == "cut" then 1 else -1
+				local mid = (T0 + trueY[OUT / DS]) * 0.5
+				local dev, qT, qD = 0, nil, nil
+				for q = 0, OUT / DS do
+					dev = math.max(dev, math.abs(drawnY[q] - trueY[q]))
+					if not qT and (trueY[q] - mid) * sign >= 0 then
+						qT = q
+					end
+					if not qD and (drawnY[q] - mid) * sign >= 0 then
+						qD = q
+					end
+				end
+				A.n += 1
+				table.insert(A.dev, dev)
+				local key = tostring(tileS)
+				A.bySpacing[key] = (A.bySpacing[key] or 0) + 1
+				if dev > A.worst then
+					A.worst = dev
+					A.worstAt = { s - along, side, tileS }
+				end
+				if qT and qD then
+					local wander = (qD - qT) * DS
+					table.insert(A.wander, math.abs(wander))
+					local p = prev[side]
+					if p and p.kind == kind and p.s == s - dsStep then
+						table.insert(A.jitter, math.abs(wander - p.wander))
+					end
+					-- normals at the true wall's middle
+					local d = qT * DS
+					local x, z = ex + ux * d, ez + uz * d
+					local tile = self:_tileAt(x, z) :: Tile
+					local _, fn, sn = facetAt(tile, x, z)
+					local h = 0.5
+					local yx1 = Ground.at(ctx, x + h, z)
+					local yx0 = Ground.at(ctx, x - h, z)
+					local yz1 = Ground.at(ctx, x, z + h)
+					local yz0 = Ground.at(ctx, x, z - h)
+					local tn = Vector3.new(-(yx1 - yx0) / (2 * h), 1, -(yz1 - yz0) / (2 * h)).Unit
+					if fn and sn then
+						table.insert(A.facet, math.deg(math.acos(math.clamp(fn:Dot(tn), -1, 1))))
+						table.insert(A.shade, math.deg(math.acos(math.clamp(sn:Dot(tn), -1, 1))))
+						if p and p.kind == kind and p.s == s - dsStep and p.fn then
+							table.insert(A.facetStep, math.deg(math.acos(math.clamp(fn:Dot(p.fn), -1, 1))))
+						end
+					end
+					prev[side] = { kind = kind, s = s, wander = wander, fn = fn }
+				else
+					prev[side] = nil
+				end
+			else
+				prev[side] = nil
+			end
+		end
+		s += dsStep
+	end
+	local function summary(list: { number })
+		if #list == 0 then
+			return { n = 0 }
+		end
+		local sorted = table.clone(list)
+		table.sort(sorted)
+		local sum = 0
+		for _, v in sorted do
+			sum += v
+		end
+		local function pct(p: number): number
+			return sorted[math.clamp(math.ceil(#sorted * p), 1, #sorted)]
+		end
+		local r = function(v: number): number
+			return math.round(v * 100) / 100
+		end
+		return { n = #sorted, mean = r(sum / #sorted), p50 = r(pct(0.5)), p90 = r(pct(0.9)), max = r(sorted[#sorted]) }
+	end
+	local result = { on = true, from = s0 - along, to = s1 - along, step = dsStep }
+	for kind, A in out do
+		result[kind] = {
+			profiles = A.n,
+			bySpacing = A.bySpacing,
+			deviation = summary(A.dev), -- studs, worst along each profile
+			wander = summary(A.wander), -- studs, drawn wall's middle from the true one's
+			jitter = summary(A.jitter), -- studs, how much the wander changes profile to profile
+			facetAngle = summary(A.facet), -- degrees, drawn triangle's normal from the true one
+			shadeAngle = summary(A.shade), -- degrees, the blended normal from the true one
+			facetStep = summary(A.facetStep), -- degrees, triangle normal from the last profile's
+			worstAt = A.worstAt,
+		}
+	end
+	return result
 end
 
 function GroundMeshView.DebugState(self: View)
