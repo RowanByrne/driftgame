@@ -1495,6 +1495,18 @@ function SplineGen._slopeAim(self: Gen, slope: Slope, refine: boolean?): (number
 			swap = on < least and oon > on
 		elseif mode == "hyst" then
 			swap = on < -least and oon > on
+		elseif mode == "sticky" then
+			if refine then
+				local sw = (slope :: any).swapped == true
+				local ownOn, otherOn = if sw then oon else on, if sw then on else oon
+				if ownOn < -least and otherOn > least then
+					sw = not sw
+				end
+				(slope :: any).swapped = sw
+				swap = sw
+			else
+				swap = on < least and oon > on
+			end
 		elseif mode == "cont" then
 			if refine then
 				-- along the level line the way the road is already going
