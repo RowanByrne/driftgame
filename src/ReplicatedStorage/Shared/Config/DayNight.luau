@@ -109,7 +109,9 @@ return {
 	-- Colours: `Ambient` lights what the sky cannot see, `OutdoorAmbient` what it can,
 	-- `SunColour` tints the sun's (and at night the moon's) light. `Atmosphere*` is the air
 	-- between you and the horizon and the sky's own colour. `Tint`, `Contrast`,
-	-- `Saturation` are the colour grading over everything.
+	-- `Saturation` are the colour grading over everything. `VistaTint` tints the painted
+	-- ridges round the run and `CloudSeaColour` the cloud sea below it (`features/painted-vista.md`,
+	-- T-266), on top of the real sun lighting them.
 	Keyframes = {
 		{
 			Name = "morning",
@@ -136,6 +138,8 @@ return {
 			BloomIntensity = 0.6,
 			BloomThreshold = 1.4,
 			SunRays = 0.1,
+			VistaTint = rgb(240, 232, 236),
+			CloudSeaColour = rgb(250, 236, 228),
 		},
 		{
 			Name = "noon",
@@ -162,6 +166,8 @@ return {
 			BloomIntensity = 0.4,
 			BloomThreshold = 1.6,
 			SunRays = 0.04,
+			VistaTint = rgb(255, 255, 255),
+			CloudSeaColour = rgb(255, 255, 255),
 		},
 		{
 			Name = "afternoon",
@@ -188,6 +194,8 @@ return {
 			BloomIntensity = 0.5,
 			BloomThreshold = 1.5,
 			SunRays = 0.06,
+			VistaTint = rgb(255, 244, 230),
+			CloudSeaColour = rgb(255, 246, 236),
 		},
 		{
 			Name = "golden hour",
@@ -214,6 +222,8 @@ return {
 			BloomIntensity = 0.8,
 			BloomThreshold = 1.3,
 			SunRays = 0.14,
+			VistaTint = rgb(255, 214, 170),
+			CloudSeaColour = rgb(255, 214, 180),
 		},
 		{
 			Name = "sunset",
@@ -240,6 +250,8 @@ return {
 			BloomIntensity = 1,
 			BloomThreshold = 1.1,
 			SunRays = 0.2,
+			VistaTint = rgb(255, 180, 150),
+			CloudSeaColour = rgb(255, 186, 170),
 		},
 		{
 			Name = "dusk",
@@ -266,6 +278,8 @@ return {
 			BloomIntensity = 0.8,
 			BloomThreshold = 1.2,
 			SunRays = 0.06,
+			VistaTint = rgb(170, 150, 200),
+			CloudSeaColour = rgb(180, 150, 190),
 		},
 		{
 			Name = "night",
@@ -292,6 +306,8 @@ return {
 			BloomIntensity = 0.6,
 			BloomThreshold = 1.2,
 			SunRays = 0,
+			VistaTint = rgb(110, 130, 190),
+			CloudSeaColour = rgb(90, 104, 150),
 		},
 		{
 			Name = "dawn",
@@ -318,6 +334,8 @@ return {
 			BloomIntensity = 0.7,
 			BloomThreshold = 1.2,
 			SunRays = 0.04,
+			VistaTint = rgb(160, 160, 200),
+			CloudSeaColour = rgb(170, 165, 200),
 		},
 		{
 			Name = "sunrise",
@@ -344,6 +362,8 @@ return {
 			BloomIntensity = 0.9,
 			BloomThreshold = 1.15,
 			SunRays = 0.16,
+			VistaTint = rgb(255, 200, 180),
+			CloudSeaColour = rgb(255, 205, 190),
 		},
 	},
 }
