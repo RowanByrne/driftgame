@@ -120,7 +120,8 @@ function Range.crest(r: Range, k: number, v: number): (number, number)
 	local s = smooth(math.clamp(0.5 + 0.5 * R.SaddleSharp * math.sin(phase), 0, 1))
 	local deep = 1 + 0.6 * math.noise(v / (0.7 * R.SaddleEvery) + rd.sad * 1.7, 0.51, 0.23)
 	-- no lower than `SaddleMin`, eased into it (a hard floor left flat crests)
-	local a, b = rd.peak - rd.depth * deep * s, R.SaddleMin
+	local tall = rd.peak * (1 + R.PeakVary[1] * 2 * math.noise(v / R.PeakVary[2] + rd.wob * 0.7, 0.83, 0.17))
+	local a, b = tall - rd.depth * deep * s, R.SaddleMin
 	return 0.5 * (a + b + math.sqrt((a - b) * (a - b) + 1600)), s
 end
 

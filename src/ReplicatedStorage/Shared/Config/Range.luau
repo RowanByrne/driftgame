@@ -26,11 +26,12 @@ return {
 
 	Spacing = 5500, -- studs between ridges, on average
 	Jitter = 1200, -- studs either way, so 3 100 to 7 900 apart
-	Wobble = { 450, 5000 }, -- studs either way, over studs across
+	Wobble = { 850, 6500 }, -- studs either way, over studs across (never more than half of `Spacing - 2 * Jitter`)
 
 	Peak = { 650, 1200 }, -- studs above the start valley's floor: a ridge's peaks
 	SaddleDepth = { 250, 480 }, -- studs below its peaks: its saddles
 	SaddleMin = 380, -- studs above the start valley's floor: no saddle lower
+	PeakVary = { 0.3, 9000 }, -- a ridge rises and falls along its length: this share either way, over studs
 	SaddleEvery = 3000, -- studs across: about one saddle in this
 	SaddleWarp = 0.5, -- how much the spacing wanders (under 1, so saddles never merge)
 	SaddleSharp = 1.3, -- how much of the crest is near a peak or a saddle, not between
@@ -41,11 +42,11 @@ return {
 	ValleyBase = { -110, 80 }, -- studs from the start valley's floor
 	FloorVary = 60, -- studs either way along a valley...
 	FloorEvery = 6000, -- ...over studs across
-	Floor = { 0.05, 0.22 }, -- of each face, flat at the floor
-	Profile = { 1.5, 2.2 }, -- a face's exponent: higher, steeper near the crest
+	Floor = { 0, 0.12 }, -- of each face, flat at the floor
+	Profile = { 1.2, 1.8 }, -- a face's exponent: higher, steeper near the crest and wider at the floor
 	CrestRound = 40, -- studs: the crest rounded over about this much
 
-	Octaves = { { 1600, 120, "ridge" }, { 650, 45, "gully" }, { 220, 8 } },
+	Octaves = { { 1400, 170, "ridge" }, { 600, 60, "gully" }, { 220, 10 } },
 	Stretch = 2.5, -- times longer along `t` (down the faces) than across
 	ReliefFloor = 0.15, -- of the spurs and gullies on a valley floor...
 	ReliefRise = 0.35, -- ...rising to all of them this far up a face

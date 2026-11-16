@@ -172,7 +172,7 @@ local function run(check, opts)
 		`over 30 degrees {fmt(100 * steepN / slopeN)}%, under 8 {fmt(100 * shallowN / slopeN)}% of {slopeN} points`
 	)
 
-	-- no seams: the range is continuous (a fifth of a stud never jumps half a stud)
+	-- no seams: the range is continuous (a fiftieth of a stud never jumps a tenth: 79 degrees)
 	do
 		local f = field(3)
 		local worst, n = 0, 0
@@ -180,13 +180,13 @@ local function run(check, opts)
 			for v = -3000, 3000, 211 do
 				local x, z = Range.world(f.range, t, v)
 				local y = Ground.h(f, x, z)
-				local x2, z2 = Range.world(f.range, t + 0.2, v)
-				local x3, z3 = Range.world(f.range, t, v + 0.2)
+				local x2, z2 = Range.world(f.range, t + 0.02, v)
+				local x3, z3 = Range.world(f.range, t, v + 0.02)
 				worst = math.max(worst, math.abs(Ground.h(f, x2, z2) - y), math.abs(Ground.h(f, x3, z3) - y))
 				n += 1
 			end
 		end
-		check("no seams: a fifth of a stud never jumps", worst < 0.5, `steepest step {fmt(worst, 3)} studs over {n} points`)
+		check("no seams: a fiftieth of a stud never jumps a tenth", worst < 0.1, `steepest step {fmt(worst, 3)} studs over {n} points`)
 	end
 
 	-- the belts are still the default, unchanged
