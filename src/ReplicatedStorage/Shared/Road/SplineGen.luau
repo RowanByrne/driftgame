@@ -1660,7 +1660,7 @@ end
 
 -- One random candidate: a bend or a straight, its curvature knots, and whether its
 -- heading (with its escape) stays inside the limit.
-function SplineGen._candidate(self: Gen): (Spline.Section?, string?, number?, number?)
+function SplineGen._candidate(self: Gen): (Spline.Section?, string?, number?, number?, number?)
 	local C = Config.Spline
 	local rng = self.rng
 	local sp = self.spline
@@ -1731,10 +1731,10 @@ function SplineGen._candidate(self: Gen): (Spline.Section?, string?, number?, nu
 	local flat = rng:NextNumber() < C.UnbankedChance
 	-- a ground run (T-226): the grade follows the mountain, and how far off it the road
 	-- still ends up goes back with the candidate, so one that follows it can be preferred
-	local g, off, endOff
+	local g, off, endOff, worstCut
 	if self.ground then
-		local _f, _c
-		g, off, _f, _c, endOff = self:_followGrade(knots, g0, y0)
+		local _f
+		g, off, _f, worstCut, endOff = self:_followGrade(knots, g0, y0)
 	else
 		g = pickGrade(self, g0, y0, len)
 	end
@@ -1747,7 +1747,8 @@ function SplineGen._candidate(self: Gen): (Spline.Section?, string?, number?, nu
 	},
 		nil,
 		off,
-		endOff
+		endOff,
+		worstCut
 end
 
 --------------------------------------------------------------------------------
@@ -1892,7 +1893,7 @@ end
 -- far off h it ends, half how far it strays on the way, `FollowAimCost` studs a degree
 -- it ends past its aim's limit, and `FollowBackCost` studs for heading straight back the way
 -- on (in proportion). Returns the best clear one, or nil.
-function SplineGen._follow(self: Gen, nearest: Spline.Section?, nearOff: number?, nearEnd: number?): Spline.Section?
+function SplineGen._follow(self: Gen, nearest: Spline.Section?, nearOff: number?, nearEnd: number?, nearCut: number?): Spline.Section?
 	local C, R = Config.Spline, Config.Range :: any
 	local f = self.ground :: Ground.Field
 	local r = f.range :: Range.Range
@@ -1907,7 +1908,7 @@ function SplineGen._follow(self: Gen, nearest: Spline.Section?, nearOff: number?
 		local kn = nearest.k
 		local kt = kn[#kn]
 		best = nearest
-		bestScore = headingCost(yawAfter(yaw0, k0, kn) + 0.5 * kt * transition(kt, 0)) + math.abs(nearEnd) + 0.5 * nearOff
+		bestScore = headingCost(yawAfter(yaw0, k0, kn) + 0.5 * kt * transition(kt, 0)) + math.abs(nearEnd) + 0.5 * nearOff + R.FollowDeepCost * math.max(0, (nearCut or 0) - R.FollowDeepCut)
 	end
 	local function try(knots: { number }?, kt: number, radius: number?)
 		if not knots then
@@ -1917,8 +1918,8 @@ function SplineGen._follow(self: Gen, nearest: Spline.Section?, nearOff: number?
 		if cost >= bestScore then
 			return
 		end
-		local g, worst, _, _, endOff = self:_followGrade(knots, g0, y0)
-		cost += math.abs(endOff) + 0.5 * worst
+		local g, worst, _, worstCut, endOff = self:_followGrade(knots, g0, y0)
+		cost += math.abs(endOff) + 0.5 * worst + R.FollowDeepCost * math.max(0, worstCut - R.FollowDeepCut)
 		if cost >= bestScore or not self:_clear(withEscape(knots, kt)) then
 			return
 		end
@@ -1938,7 +1939,18 @@ function SplineGen._follow(self: Gen, nearest: Spline.Section?, nearOff: number?
 		for _, dir in { 1, -1 } do
 			for _, radius in R.FollowRadii do
 				local kt = dir / math.max(radius, C.MinRadius)
-				try((curvatureKnots(k0, kt, dir * math.rad(deg), nil)), kt, radius)
+				local kn = curvatureKnots(k0, kt, dir * math.rad(deg), nil)
+				try(kn, kt, radius)
+				if kn and (R.FollowHold or 0) > 0 then
+					local held = table.clone(kn)
+					local len = kn[#kn - 1]
+					local Te = transition(kt, 0)
+					table.insert(held, len + Te)
+					table.insert(held, 0)
+					table.insert(held, len + Te + R.FollowHold)
+					table.insert(held, 0)
+					try(held, 0, radius)
+				end
 			end
 		end
 	end
@@ -2339,10 +2351,10 @@ function SplineGen.step(self: Gen): Spline.Section?
 	end
 	-- a ground run (T-226): a candidate that leaves the road more than `FollowMaxOff` off the
 	-- mountain gives way to one that follows it; if none does, the one nearest it is laid
-	local nearest: Spline.Section?, nearestOff, nearWorst, nearEnd = nil, math.huge, nil, nil
+	local nearest: Spline.Section?, nearestOff, nearWorst, nearEnd, nearCut = nil, math.huge, nil, nil, nil
 	for _ = 1, if planned then 0 else C.CandidateTries do
 		st.tries += 1
-		local cand, why, off, endOff = self:_candidate()
+		local cand, why, off, endOff, worstCut = self:_candidate()
 		if cand and off and off > C.Ground.FollowMaxOff then
 			st.offGround += 1
 			-- (T-242 trial) the one that ends nearest h, rather than strays least on the way
@@ -2351,7 +2363,7 @@ function SplineGen.step(self: Gen): Spline.Section?
 				score = math.abs(endOff) + 0.25 * off
 			end
 			if score < nearestOff then
-				nearest, nearestOff, nearWorst, nearEnd = cand, score, off, endOff
+				nearest, nearestOff, nearWorst, nearEnd, nearCut = cand, score, off, endOff, worstCut
 			end
 		elseif cand then
 			sec = cand
@@ -2363,7 +2375,7 @@ function SplineGen.step(self: Gen): Spline.Section?
 		end
 	end
 	if not sec and not planned and self.ground and self.ground.range and (Config.Range :: any).Follow then
-		sec = self:_follow(nearest, nearWorst, nearEnd)
+		sec = self:_follow(nearest, nearWorst, nearEnd, nearCut)
 		if sec and sec == nearest then
 			st.offGroundLaid += 1
 		end

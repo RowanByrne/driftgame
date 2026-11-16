@@ -101,6 +101,9 @@ return {
 	FollowStraight = 160, -- studs
 	FollowAimCost = 0.5, -- studs a degree past the aim's limit
 	FollowBackCost = 100, -- studs, heading straight back
+	FollowDeepCut = 30, -- studs of cut...
+	FollowDeepCost = 2, -- ...past which each stud deeper costs this many more
+	FollowHold = 0, -- studs of straight after each bend tried (0: none)
 	AimLocal = true,
 	AimLocalAhead = 120, -- studs
 	AimLocalSwing = 60, -- degrees either way
