@@ -356,7 +356,7 @@ return {
 			-- The shape both grass marks share (T-265): the whole mark edge to edge, and its
 			-- core. The edges are the strips between, (Width - CoreWidth) / 2 each. Both
 			-- narrow through a slide like every mark, to `Marks.MinWidthRatio` (T-207).
-			Width = 2.6, -- studs. Wider than the tyre (1.6): the soil it pushes aside
+			Width = 3.0, -- studs. Wider than the tyre (1.6): the soil it pushes aside
 			CoreWidth = 1.4, -- studs. About the tyre's own width: what it pressed or ploughed
 
 			-- Each strip: `Colour` where it is laid, `DryColour` at the end of its life (a
@@ -369,21 +369,23 @@ return {
 					Transparency = 0.38,
 				},
 				Edge = {
-					Colour = Color3.fromRGB(124, 160, 80), -- lighter: blades bent over, catching
-					DryColour = Color3.fromRGB(110, 152, 72), -- the light either side
-					Transparency = 0.62,
+					Colour = Color3.fromRGB(112, 158, 74), -- lighter: blades bent over, catching
+					DryColour = Color3.fromRGB(104, 150, 68), -- the light either side. Faint
+					Transparency = 0.7,
 				},
 			},
 			TrenchMark = { -- past `TrenchSlipDegrees`: the rut, cut through to the soil
 				Core = {
-					Colour = Color3.fromRGB(38, 26, 16), -- dark wet earth, near black-brown
-					DryColour = Color3.fromRGB(70, 50, 31), -- drying out as it ages
-					Transparency = 0.04, -- near solid: the grass is GONE here
+					Colour = Color3.fromRGB(44, 30, 18), -- dark wet earth, near black-brown
+					DryColour = Color3.fromRGB(80, 60, 38), -- drying out as it ages
+					Transparency = 0.05, -- near solid: the grass is GONE here
 				},
 				Edge = {
-					Colour = Color3.fromRGB(118, 90, 58), -- churned soil thrown up either side,
-					DryColour = Color3.fromRGB(122, 98, 66), -- lighter and drier than the core
-					Transparency = 0.16,
+					Colour = Color3.fromRGB(98, 80, 48), -- churned soil and torn turf thrown up
+					DryColour = Color3.fromRGB(108, 94, 60), -- either side: lighter than the core,
+					Transparency = 0.38, -- and the grass shows through it, so it blends out
+					-- into the field rather than outlining the rut. MEASURED: at (118, 90, 58)
+					-- and 0.16 it read as a tan piping round a black stripe (DR-Lane2)
 				},
 			},
 
