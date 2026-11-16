@@ -170,8 +170,10 @@ function Ground.field(seed: number, origin: Spline.Origin, fall: number, shape: 
 			size = o[1],
 			amp = o[2],
 			kind = o[3],
-			a = rng:NextNumber() * 4096,
-			b = rng:NextNumber() * 4096,
+			-- (the range's within 64: far from its origin math.noise steps, a tenth of a
+			-- stud every third of a stud on the finest octave)
+			a = rng:NextNumber() * (if isRange then 64 else 4096),
+			b = rng:NextNumber() * (if isRange then 64 else 4096),
 			c = rng:NextNumber() * 256 + 0.5, -- never a whole number: math.noise is 0 on the lattice
 		})
 	end
