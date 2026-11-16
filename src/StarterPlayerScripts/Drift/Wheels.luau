@@ -212,6 +212,10 @@ export type Wheels = typeof(setmetatable(
 		wheels: { WheelFx },
 		enabled: boolean,
 		built: number, -- instances this object made for the body it holds
+		-- What laying grass marks on the drawn ground has cost since `new` (T-265): lookups
+		-- made and the seconds spent placing those wheels' corners. Read by `DebugState`.
+		groundLookups: number,
+		groundSeconds: number,
 	},
 	Wheels
 ))
@@ -402,6 +406,8 @@ function Wheels.new(): Wheels
 		wheels = {},
 		enabled = true,
 		built = 0,
+		groundLookups = 0,
+		groundSeconds = 0,
 	}, Wheels) :: any
 end
 
@@ -917,6 +923,7 @@ function Wheels.Update(self: Wheels, state: DriftModel.State?, input: any, dt: n
 		local mid = (w.patchC + w.patchD) * 0.5 + lift
 		w.snapped = 0
 		if drawn and emit and grass then
+			local started = os.clock()
 			local at = road:PointToWorldSpace(mid)
 			local across = span * (ratio * outer)
 			local l, onL = Wheels.onGround(ground, at - across, G.Lift, G.MaxSnap)
@@ -927,6 +934,8 @@ function Wheels.Update(self: Wheels, state: DriftModel.State?, input: any, dt: n
 			w.e.Position = bodyCF:PointToObjectSpace(m:Lerp(l, innerShare))
 			w.f.Position = bodyCF:PointToObjectSpace(m:Lerp(r, innerShare))
 			w.d.Position = bodyCF:PointToObjectSpace(r)
+			self.groundLookups += 3
+			self.groundSeconds += os.clock() - started
 		else
 			w.c.Position = unbody:PointToWorldSpace(mid - localSpan * outer)
 			w.e.Position = unbody:PointToWorldSpace(mid - localSpan * inner)
@@ -998,6 +1007,10 @@ function Wheels.DebugState(self: Wheels, state: DriftModel.State?, input: any)
 		attached = self.body ~= nil,
 		instances = self.built,
 		surfaces = F.Built,
+		-- Laying grass marks on the drawn ground (T-265): lookups so far, and the mean
+		-- microseconds a marking grass wheel spent on it (its three lookups and four corners).
+		groundLookups = self.groundLookups,
+		groundMicros = if self.groundLookups > 0 then self.groundSeconds / (self.groundLookups / 3) * 1e6 else 0,
 		rollDeg = if state then math.deg(state.bodyRoll) else nil,
 		slipDeg = if state then math.deg(state.slip) else nil,
 		throttle = if state then state.throttle else nil,
