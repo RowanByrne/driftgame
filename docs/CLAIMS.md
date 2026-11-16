@@ -10,7 +10,6 @@ Every task in progress and the files it owns, so parallel sessions and workers n
 | Branch | Lane | Files owned | Since |
 |---|---|---|---|
 | `agent/ground-wall-sawtooth` | lent | `src/StarterPlayerScripts/Drift/GroundMeshView.luau` (how tiles are triangulated and their heights; not its use of `Mesh.Behind`, which is T-230's), `src/StarterPlayerScripts/Drift/GroundTiles.luau`, `Config/Spline.luau` (the ground mesh keys `Spacings` to `ReleaseOnFail` only), `src/ServerScriptService/Tests/GroundTests.luau` (new checks at the end only) | 2026-11-15 (T-231) |
-| `agent/horizon-uphill-only` | lent | `src/ReplicatedStorage/Shared/Horizon.luau`, `src/ReplicatedStorage/Shared/Config/Horizon.luau`, `src/StarterPlayerScripts/Drift/HorizonView.luau`, `src/ServerScriptService/Tests/HorizonTests.luau`, `docs/game/features/horizon.md`, `src/StarterPlayerScripts/Controllers/DriftController.luau` (one line in `UseSpline`) | 2026-11-15 (T-232) |
 
 ## Notes between sessions
 
