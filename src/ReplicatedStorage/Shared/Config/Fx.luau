@@ -362,7 +362,8 @@ return {
 			AgeLevels = 28, -- how many steps the drying and fading are rewritten in (0.5 s each)
 			OuterMaterial = Enum.Material.Grass, -- the outer strips: the GROUND'S OWN material, on
 			-- its own world UVs, so where the mark meets the grass there is nothing to see
-			InnerMaterial = Enum.Material.Mud, -- the berm, walls and floor: wet, with a sheen
+			InnerMaterial = Enum.Material.Ground, -- the berm, walls and floor: soil. MEASURED: Mud's
+			-- sheen caught the sky at a chase camera's angle and turned the floor grey (DR-Lane3)
 
 			-- The inner strips' streak texture, made in code at start (an `EditableImage`). Grey,
 			-- tinted by the ribbon's colours: lines along the travel, flecks and clods toward
@@ -419,14 +420,14 @@ return {
 			-- (1 all the way), and one entry per `Profile` point, `Colour` when laid and
 			-- `DryColour` at the end of its life (it fades back into the ground as well).
 			FlatMark = { -- gentle slides: the grass pressed down along the travel, not torn
-				Opacity = 0.5,
+				Opacity = 0.45,
 				HeightScale = 0,
 				TiltScale = 0.15,
 				Points = {
 					{ Colour = Color3.fromRGB(96, 148, 66), DryColour = Color3.fromRGB(96, 148, 66) },
-					{ Colour = Color3.fromRGB(128, 170, 84), DryColour = Color3.fromRGB(116, 160, 76) }, -- bent blades, lighter
-					{ Colour = Color3.fromRGB(78, 120, 52), DryColour = Color3.fromRGB(86, 130, 58) },
-					{ Colour = Color3.fromRGB(56, 98, 40), DryColour = Color3.fromRGB(68, 110, 46) }, -- pressed flat, darker
+					{ Colour = Color3.fromRGB(104, 152, 70), DryColour = Color3.fromRGB(98, 146, 66) }, -- bent blades, lighter
+					{ Colour = Color3.fromRGB(70, 114, 48), DryColour = Color3.fromRGB(78, 124, 54) },
+					{ Colour = Color3.fromRGB(56, 98, 40), DryColour = Color3.fromRGB(66, 110, 46) }, -- pressed flat, darker
 				},
 			},
 			TrenchMark = { -- past `TrenchSlipDegrees`: the rut, cut through to the soil
@@ -435,9 +436,9 @@ return {
 				TiltScale = 1,
 				Points = {
 					{ Colour = Color3.fromRGB(100, 88, 56), DryColour = Color3.fromRGB(110, 98, 66) },
-					{ Colour = Color3.fromRGB(122, 100, 68), DryColour = Color3.fromRGB(138, 118, 84) }, -- churned berm
-					{ Colour = Color3.fromRGB(84, 62, 40), DryColour = Color3.fromRGB(104, 82, 56) }, -- the wall
-					{ Colour = Color3.fromRGB(46, 32, 20), DryColour = Color3.fromRGB(86, 64, 42) }, -- wet floor, drying
+					{ Colour = Color3.fromRGB(112, 94, 62), DryColour = Color3.fromRGB(128, 110, 78) }, -- churned berm
+					{ Colour = Color3.fromRGB(76, 56, 36), DryColour = Color3.fromRGB(98, 78, 54) }, -- the wall
+					{ Colour = Color3.fromRGB(40, 28, 17), DryColour = Color3.fromRGB(80, 60, 40) }, -- wet floor, drying
 				},
 			},
 
