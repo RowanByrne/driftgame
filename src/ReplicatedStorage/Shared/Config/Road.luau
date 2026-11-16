@@ -122,7 +122,7 @@ return {
 		-- colours it is painted in, as they show (the texture replaces the Asphalt material's
 		-- colour map). After the concept art: a cool blue-violet grey, not black
 		Tarmac = Color3.fromRGB(70, 72, 84),
-		TarmacWorn = Color3.fromRGB(52, 53, 62), -- the wheel tracks' middles, polished darker
+		TarmacWorn = Color3.fromRGB(47, 48, 57), -- the wheel tracks' middles, polished darker
 		TarmacEdge = Color3.fromRGB(98, 96, 94), -- the dusty last stud or two at each edge
 		TarmacPatch = { Color3.fromRGB(55, 56, 64), Color3.fromRGB(82, 83, 92) }, -- newer, older
 		Crack = Color3.fromRGB(30, 30, 36),

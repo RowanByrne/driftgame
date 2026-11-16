@@ -288,7 +288,7 @@ local Spline = {
 		Seed = 268,
 		-- the tone of each tarmac vertex, so the period never shows as a repeat: darker by up
 		-- to 2 x `Tone` from smooth noise over `ToneStuds` of road, a little warmer or cooler
-		Tone = 0.07,
+		Tone = 0.09,
 		ToneStuds = 120,
 		ToneHue = 0.03,
 		-- the grain: large soft mottling, painterly strokes stretched along, and fine speckle
@@ -301,8 +301,8 @@ local Spline = {
 		-- `TrackDark` of the way to `TarmacWorn` in the middle, wandering `TrackWobble` either
 		-- way over `TrackWobbleStuds`; a faint oil strip between them
 		TrackGap = 6.4,
-		TrackWidth = 2.8,
-		TrackDark = 0.75,
+		TrackWidth = 3.2,
+		TrackDark = 0.9,
 		TrackWobble = 0.8,
 		TrackWobbleStuds = 60,
 		OilWidth = 1.2,
@@ -323,10 +323,10 @@ local Spline = {
 		Cracks = 10,
 		CrackLength = { 6, 26 },
 		CrackEdge = { 1, 4.5 },
-		CrackAcross = 0.3,
-		CrackDark = 0.55,
+		CrackAcross = 0.15,
+		CrackDark = 0.35,
 		-- long tyre streaks: pairs of arcs through a lane, swinging up to `StreakSwing` across
-		Streaks = 3,
+		Streaks = 4,
 		StreakLength = { 40, 110 },
 		StreakSwing = 5,
 		StreakWidth = 0.6,

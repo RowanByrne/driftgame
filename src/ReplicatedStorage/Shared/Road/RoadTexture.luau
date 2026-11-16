@@ -365,8 +365,8 @@ function RoadTexture.paint(yield: (() -> ())?): (buffer, number, number)
 	for _ = 1, T.Cracks do
 		local side = if rand() < 0.5 then -1 else 1
 		if rand() < T.CrackAcross then
-			-- across: in from an edge, over part of a lane
-			walk(side * (half - 0.5), rand() * period, -side * (math.pi * 0.5) + (rand() - 0.5) * 0.6, range(T.CrackLength) * 0.5, T.CrackDark, 0)
+			-- across: a short one in from an edge
+			walk(side * (half - 0.5), rand() * period, -side * (math.pi * 0.5) + (rand() - 0.5) * 0.6, range(T.CrackLength) * 0.25, T.CrackDark, 0)
 		else
 			-- along, near the edge
 			local heading = (rand() - 0.5) * 0.2 + (if rand() < 0.5 then 0 else math.pi)
