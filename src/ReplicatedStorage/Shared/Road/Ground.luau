@@ -506,7 +506,7 @@ function Ground.at(ctx: Context, x: number, z: number): (number, number, number,
 	local field = ctx.field
 	local hp = Ground.h(field, x, z)
 	local reach = Ground.reach()
-	local soft, beyond = G.Soft, G.Beyond
+	local soft = G.Soft
 	-- (each station's own blend, from the mountain's side slope there: T-228)
 	local bMax = G.BlendMax
 	-- Running sums, rescaled whenever a nearer edge turns up (a soft minimum). What is
@@ -570,16 +570,18 @@ function Ground.at(ctx: Context, x: number, z: number): (number, number, number,
 							T = surface(st, side * w, ds, near) - G.Under
 							bw = math.clamp(math.abs(hp - T) / st.tanA, st.bmin, bMax)
 						end
-						-- what the soft minimum weighs: the distance past the edge, plus how far
-						-- beyond its own stretch the point lies along the road (`Beyond` times).
-						-- Of the stations a point is beside, the one whose stretch it is square
-						-- to counts most: at the runoff's edge a neighbour's nearest point is
-						-- barely further off, but its height is that of road a few studs along,
-						-- and round the inside of a bend a runoff wider a few stations back
-						-- reaches over the point
-						local score = e + beyond * math.max(0, -ds, ds - L)
-						do
-							local wl = 1
+						-- WHICH STATIONS COUNT: along one stretch of road, each station by how near
+						-- the point is to square beside it (a quadratic B-spline over a stretch and
+						-- a half either way, so the answers hand over smoothly from one station to
+						-- the next and the runoff's profile, which each station draws from its own
+						-- width, never lifts the ground above it); between two stretches of road
+						-- (two legs, the far side of a hairpin), the nearer edge, softly. Being
+						-- further in on a runoff makes a station no nearer
+						local q = if L > 0 then math.abs(ds) / L else 0
+						local hat = if q < 0.5 then 0.75 - q * q elseif q < 1.5 then 0.5 * (1.5 - q) * (1.5 - q) else 0
+						local score = past
+						if hat > 0 then
+							local wl = hat
 							if score < emin then
 								if emin < math.huge then
 									local k = math.exp((score - emin) / soft)
