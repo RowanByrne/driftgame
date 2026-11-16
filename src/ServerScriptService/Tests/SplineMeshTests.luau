@@ -126,7 +126,8 @@ function Tests.run()
 				local window = math.ceil((a.Studs + b.Studs) / L) + 1
 				local near = math.min(window, nearChunks)
 				local tiles = math.min(ultraTiles + a.GroundTiles + b.GroundTiles, ultraTiles + G.CorridorMost) + G.Spare
-				local cost = near * mean + (window - near) * farMean + math.max(GROWABLE, mean) + tiles * tileTris
+				-- (and the whole chunk a rebuild replaces stays up until the new one is done)
+				local cost = near * mean + (window - near) * farMean + math.max(GROWABLE, mean) + mean + tiles * tileTris
 				if cost / BUDGET > worstShare then
 					worstShare, worstName = cost / BUDGET, `{a.Name} ahead, {b.Name} behind`
 				end

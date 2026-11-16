@@ -437,8 +437,9 @@ local Spline = {
 		-- tile is a few pixels; at 32 the corridor of 9 600 studs each way took every tile.
 		RoadFar = { { From = 2400, Coarsest = 64 }, { From = 4800, Coarsest = 128 } },
 		-- the most tiles the Road ahead and Road behind steps may add past Ultra's own (T-263):
-		-- with Ultra and both at Longest the mesh budget check (SplineMeshTests) is just under 81 000
-		CorridorMost = 45,
+		-- (45 still ran out on Ultra with both at Longest while driving: the hidden spare tiles and
+		-- a chunk being rebuilt both count)
+		CorridorMost = 20,
 		RoadPad = 256, -- studs: tiles this near the drawn road are drawn even past `Reach`
 		ReleaseOnFail = 24, -- tiles let go if the device will not make another (room for the road)
 		-- THE PLAYER'S "GROUND DETAIL" (Settings, Graphics; docs/game/SETTINGS.md), light to far.
@@ -529,7 +530,7 @@ local Spline = {
 		-- whole that falls behind past it is drawn again far. That is what lets 9 600 studs each
 		-- way fit the mesh budget (measured: whole chunks alone ran out at Longest ahead).
 		Near = { Ahead = 1600, Behind = 480 }, -- studs
-		Far = { Tolerance = 0.5, MaxStep = 48, Across = 1 },
+		Far = { Tolerance = 1, MaxStep = 96, Across = 1 },
 		FallbackStep = 4, -- studs between cross-sections when a device draws parts instead
 		-- A chunk is built over as many frames as it needs (T-193): its build hands the frame
 		-- back whenever this much of it has been spent, and carries on next frame. Nothing is
