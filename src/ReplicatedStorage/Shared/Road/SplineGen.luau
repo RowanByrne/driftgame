@@ -1450,6 +1450,20 @@ function SplineGen._slopeAim(self: Gen, slope: Slope): (number, number, number, 
 		t = math.clamp(tilt(gd - catch), 0, math.rad(G.LegTiltMax))
 	end
 	local hx, hz = cx * math.cos(t) + dx * math.sin(t), cz * math.cos(t) + dz * math.sin(t)
+	if tgt and slope.kind == "leg" then
+		-- on the range every leg makes headway along the way on, at least `LegOnward` degrees
+		-- of it (T-238): near a pass the slope runs sideways toward the peaks either side, and
+		-- a leg across it there doubled back down below the one before and boxed the road in
+		local r = (f.range :: any)
+		local on = hx * r.ux + hz * r.uz
+		local least = math.sin(math.rad(Config.Range.LegOnward))
+		if on < least then
+			local ax, az = hx - on * r.ux, hz - on * r.uz
+			local al = math.max(math.sqrt(ax * ax + az * az), 1e-9)
+			local c = math.cos(math.rad(Config.Range.LegOnward))
+			hx, hz = r.ux * least + ax / al * c, r.uz * least + az / al * c
+		end
+	end
 	local aim = math.atan2(-hx, -hz)
 	if slope.kind ~= "leg" then
 		return aim, 0, 0, 0
