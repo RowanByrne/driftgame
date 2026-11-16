@@ -1522,7 +1522,7 @@ function GroundMeshView.DebugWalls(self: View, ahead: number?, step: number?, be
 	local s1 = math.min(spline.length, along + (ahead or 400))
 	local dsStep = step or 2
 	local function agg()
-		return { n = 0, dev = {}, wander = {}, jitter = {}, facet = {}, shade = {}, facetStep = {}, bySpacing = {}, worst = 0, worstAt = nil :: any }
+		return { n = 0, dev = {}, wander = {}, jitter = {}, facet = {}, shade = {}, facetStep = {}, bySpacing = {}, worst = 0, worstAt = nil :: any, worstList = {} :: { any } }
 	end
 	local out = { cut = agg(), fill = agg() }
 	local prev: { [number]: any } = {}
@@ -1577,6 +1577,18 @@ function GroundMeshView.DebugWalls(self: View, ahead: number?, step: number?, be
 				end
 				A.n += 1
 				table.insert(A.dev, dev)
+				-- the worst few, drawn against true every 2 studs out, to see what is off
+				if #A.worstList < 6 or dev > A.worstList[#A.worstList].dev then
+					local line = {}
+					for q = 0, OUT / DS, 4 do
+						table.insert(line, string.format("%g:%.1f/%.1f", q * DS, trueY[q] - T0, drawnY[q] - T0))
+					end
+					table.insert(A.worstList, { dev = math.round(dev * 100) / 100, at = math.round(s - along), side = side, edge = { math.round(ex), math.round(T0), math.round(ez) }, line = table.concat(line, " ") })
+					table.sort(A.worstList, function(p, q)
+						return p.dev > q.dev
+					end)
+					A.worstList[7] = nil
+				end
 				local key = tostring(tileS)
 				A.bySpacing[key] = (A.bySpacing[key] or 0) + 1
 				if dev > A.worst then
@@ -1647,6 +1659,7 @@ function GroundMeshView.DebugWalls(self: View, ahead: number?, step: number?, be
 			shadeAngle = summary(A.shade), -- degrees, the blended normal from the true one
 			facetStep = summary(A.facetStep), -- degrees, triangle normal from the last profile's
 			worstAt = A.worstAt,
+			worstProfiles = A.worstList, -- "studs out: true/drawn", heights above the edge
 		}
 	end
 	return result
