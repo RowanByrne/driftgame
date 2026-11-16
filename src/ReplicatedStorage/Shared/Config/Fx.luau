@@ -746,8 +746,10 @@ return {
 		-- grass 1.4; crossing the bevel onto the tarmac at 21 to 74 studs/s rises 6 to 13
 		ClunkRearm = 0.5, -- a wheel that has knocked may again once its ground rises at under
 		-- this share of `ClunkRate`: one knock a bevel, however many steps it takes to climb
-		ClunkRateForMax = 60, -- studs/s (a 0.5-stud step) at which a clunk is at
-		-- `ClunkMaxVolume`
+		ClunkRateForMax = 24, -- studs/s (a 0.2-stud step, or the bevel straight on at 72
+		-- studs/s) at which a clunk is at `ClunkMaxVolume`. Was 60 (a 0.5-stud step) when
+		-- the threshold was 12; brought down with it (T-252), or the bevel's 6 to 9 were all
+		-- at the bottom of the range
 		ClunkSpeedForFull = 80, -- studs/s of the car's speed at which a clunk is at full
 		-- volume; slower, it is quieter in proportion...
 		ClunkSlowShare = 0.35, -- ...down to this share of it
@@ -763,7 +765,8 @@ return {
 		-- its own knock, as the user asked ("individual per wheel"); 0.05 made the front pair
 		-- over one edge a single knock
 		CatchMin = 0.2, -- studs a wheel must have been drawn falling for its catch to knock
-		CatchShare = 0.5, -- a catch is the clunk of a step up as high as the fall, times this
+		CatchShare = 0.3, -- a catch is the clunk of a step up as high as the fall, times this:
+		-- off the bevel onto the grass (a 1-stud fall) is a softer knock than back up it
 		PitchJitter = 0.08, -- each clunk plays 1 +- this fast, so repeats are not identical
 
 		LandAirTime = 0.25, -- s with no wheel down before a touchdown counts as a landing.
