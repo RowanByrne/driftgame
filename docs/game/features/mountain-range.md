@@ -158,7 +158,7 @@ Folded into this feature by the conductor (the user: "the remnants of the 'lobe'
 
 ### Fixed: T-242, the road doubling back into a deep trench
 
-The user drove a range run whose road turned back the way it came and ran along the bottom of a cut far below a cliff wall. It was the road's layout on the range, on main, not the far-mountains change in that lane (that one only drew the horizon).
+The user drove a range run whose road turned back the way it came and ran along the bottom of a cut far below a cliff wall. It was the road's layout on the range, on main, not the far-mountains change in that lane (that one only drew the horizon, since removed: `T-243`).
 
 - **Why:** a leg's heading follows the face's level line, and where that line ran square to the way on, the leg swapped to the other way along it from one section to the next: about a quarter of a leg's heading updates jumped more than 60 degrees, most of them 100 to 180. No ordinary bend can turn that far, so the road laid its escape, a straight, again and again: 12% of the road was escapes, they ran on 1 000 studs and more, back the way the road came, climbing at 8 degrees into a face that rose faster. Smaller causes: the nearest-fitting bend was laid however far it strayed, and a bend straightening the road before a hairpin was never checked against h (one ran 100 studs into the face).
 - **Now** (`SplineGen._slopeAim`, `_follow`, `_planned`; numbers in `Config.Range`):
