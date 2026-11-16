@@ -552,6 +552,11 @@ local Spline = {
 		-- it a station answered, until T-237)
 		Look = 16, -- studs
 		Soft = 3, -- studs
+		-- ...each stud a point lies beyond a station's stretch, along the road, counting as
+		-- `Beyond` studs further from it (T-237): so a stretch whose runoff is wider a few
+		-- stations back, round the inside of a bend, does not lift the ground above the runoff
+		-- of the stretch the point is square to
+		Beyond = 4,
 		-- THE ROAD IN A GROUND RUN is drawn without its rock faces, drops and hillside, and
 		-- with a skirt from each runoff's outer edge `Skirt` studs down, leaning `SkirtLean`
 		-- out, so where the ground drawn apart dips below the edge no gap shows

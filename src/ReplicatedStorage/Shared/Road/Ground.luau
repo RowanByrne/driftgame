@@ -506,7 +506,7 @@ function Ground.at(ctx: Context, x: number, z: number): (number, number, number,
 	local field = ctx.field
 	local hp = Ground.h(field, x, z)
 	local reach = Ground.reach()
-	local soft = G.Soft
+	local soft, beyond = G.Soft, G.Beyond
 	-- (each station's own blend, from the mountain's side slope there: T-228)
 	local bMax = G.BlendMax
 	-- Running sums, rescaled whenever a nearer edge turns up (a soft minimum). What is
@@ -566,11 +566,13 @@ function Ground.at(ctx: Context, x: number, z: number): (number, number, number,
 							bw = math.clamp(math.abs(hp - T) / st.tanA, st.bmin, bMax)
 						end
 						-- what the soft minimum weighs: the distance past the edge, plus how far
-						-- beyond its own stretch the point lies along the road. Of the stations
-						-- a point is beside, the one whose stretch it is square to counts most:
-						-- at the runoff's edge a neighbour's nearest point is barely further
-						-- off, but its height is that of road a few studs along
-						local score = e + math.max(0, -ds, ds - L)
+						-- beyond its own stretch the point lies along the road (`Beyond` times).
+						-- Of the stations a point is beside, the one whose stretch it is square
+						-- to counts most: at the runoff's edge a neighbour's nearest point is
+						-- barely further off, but its height is that of road a few studs along,
+						-- and round the inside of a bend a runoff wider a few stations back
+						-- reaches over the point
+						local score = e + beyond * math.max(0, -ds, ds - L)
 						do
 							local wl = 1
 							if score < emin then
