@@ -9,6 +9,7 @@ Every task in progress and the files it owns, so parallel sessions and workers n
 
 | Branch | Lane | Files owned | Since |
 |---|---|---|---|
+| `agent/road-behind-slider` | lent | `src/ReplicatedStorage/Shared/Config/Spline.luau` (`Mesh.Behind` and a new key beside it), `src/StarterPlayerScripts/Drift/SplineRoadView.luau`, `src/StarterPlayerScripts/Drift/GroundMeshView.luau` (its use of `Mesh.Behind`), `src/StarterPlayerScripts/Drift/RoadBehind.luau` (new), `SettingsView`/`SettingsController` (one new Graphics slider), `src/ServerScriptService/Tests/SplineMeshTests.luau`, `docs/game/CONTRACTS.md` (new rows), `docs/game/SETTINGS.md` | 2026-11-15 (T-230) |
 
 ## Notes between sessions
 
