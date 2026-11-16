@@ -1,4 +1,4 @@
-﻿--!strict
+--!strict
 -- Drift/GroundMeshView: the ground-first trial's option 1, our own mesh (features/ground-trial.md,
 -- T-218; step T-220; drawn as tiles that follow the road since T-225). The mountain
 -- `Road/Ground` describes, drawn round the car and along the road ahead, on this device only.
