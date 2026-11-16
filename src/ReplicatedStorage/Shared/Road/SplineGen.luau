@@ -1910,7 +1910,13 @@ function SplineGen._follow(self: Gen, nearest: Spline.Section?, nearOff: number?
 		return endOff, worst
 	end
 	local best: Spline.Section?, bestScore = nil, math.huge
-	if nearest and nearOff and nearEnd then
+	-- (the random one only if it turns no further than the bends tried here: a hairpin-sized
+	-- random bend swung the road through the face, 110 studs into it)
+	local widest = 0
+	for _, deg in R.FollowTurns do
+		widest = math.max(widest, deg)
+	end
+	if nearest and nearOff and nearEnd and math.abs(wrap(yawAfter(yaw0, k0, nearest.k) - yaw0)) <= math.rad(widest) + 1e-6 then
 		local kn = nearest.k
 		local kt = kn[#kn]
 		local e, w = lead(kn, kt)
@@ -1973,7 +1979,8 @@ function SplineGen._follow(self: Gen, nearest: Spline.Section?, nearOff: number?
 	if best and best ~= nearest then
 		self.stats.follows += 1
 	end
-	return best
+	-- (nothing clear here: the random one all the same, as before T-242)
+	return best or nearest
 end
 
 -- The heading of a leg running `side` across the slope, tilted `tilt` down it (up it on
