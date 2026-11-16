@@ -186,4 +186,14 @@ On 32 more seeds (17 to 48): none stalled, 10.1% over 20 studs off h, 0.55% over
 
 RangeTests checks it now on seeds 1 to 16: no doubling back, and no trench (at most 1% of the road over 60 studs deep, no such stretch over 600 studs, none over 150).
 
-Known: deep cuts are rarer and shorter, not gone, and the road can still fall back where it is boxed in, about once in a million studs. The deep ones left come where a leg must turn round on a steep face away from a planned hairpin; nothing tried (heavier costs on depth, a hairpin at each turn-round, smoothing the heading) cut them further without the road going back the way it came. GroundTests: following the mountain now passes; trench stations 95 of 936 (129 before) and the over-20 count still fail as before. Its seam check trips on one wall on seed 2024 that is steep (a slope of 14) but continuous, checked down to a two-thousandth of a stud.
+Known: deep cuts are rarer and shorter, not gone, and the road can still fall back where it is boxed in, about once in a million studs. The deep ones left come where a leg must turn round on a steep face away from a planned hairpin; nothing tried (heavier costs on depth, a hairpin at each turn-round, smoothing the heading) cut them further without the road going back the way it came. GroundTests: following the mountain now passes; trench stations 95 of 936 (129 before). Its trench, over-20 and seam checks failed until T-244 brought them up to the range (below).
+
+### The road's tests brought up to the range (T-244)
+
+Six road suites were failing on main. None was the road misbehaving; each test's expectation was from before an approved change:
+
+- **RangeTests:** ridge spacing is now checked against the config's own limits (6 500 studs apart give or take jitter and wobble, since T-238), not the old 3 000 to 8 000.
+- **GroundTests:** the trench and over-20 limits are the range's (under 12% each; 10.1% and 9.0% measured), with how deep and how long a trench may be left to RangeTests. A jump is a seam only if it doesn't shrink with the step: the one wall on seed 2024 (a slope of 11) is continuous.
+- **SplineWorldTests:** both normals are judged on the surface and the wall themselves; the parts, flat triangles and 4-stud chords, are judged on the mean. The K-rail search may take a bend of 200 studs or wider: every rail in the seed's first 8 000 studs is on a bend now. On a banked bend the car is held at a K-rail by its push-out, not its sweep (0.3 to 0.45 studs short of the face).
+- **SplineTests:** a section's cost is judged on the mean (2.0 ms) and the median road's worst (about 15 ms). The single worst section of all 20 roads swings between 20 and 26 ms from run to run, a different road each time.
+- **RoadTests, RunTests:** they test the piece road, and since T-141 a run lays the spline road, so they switch the next run to the piece road themselves and put it back.

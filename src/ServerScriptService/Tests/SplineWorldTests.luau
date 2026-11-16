@@ -226,7 +226,7 @@ function Tests.run(which: { string }?, ...)
 			-- SO THE WORST IS JUDGED ON THE SURFACE ITSELF (T-244). Until then it was the parts'
 			-- worst under 8 degrees, and on today's road for this seed (bends down to a 104-stud
 			-- radius rolling their bank) it read 9.4, at a point where the maths' normal was
-			-- within a hundredth of a degree of the surface's own: the triangle was off, not
+			-- within 0.04 degrees of the surface's own: the triangle was off, not
 			-- the car's ground. So the maths must match the surface's normal (finite
 			-- differences, as SplineTests reads it) everywhere, and the parts on the mean.
 			local mean = sumDeg / math.max(1, n - misses)
@@ -305,9 +305,11 @@ function Tests.run(which: { string }?, ...)
 					-- the wall's own normal: square to the road's edge somewhere the car's body
 					-- could be touching it (the stop is the car's middle; a corner reaches
 					-- half its diagonal along the road, and on a 105-stud bend that turns the
-					-- wall 4 degrees and more)
+					-- wall 4 degrees and more), or where it was headed: the maths reads the
+					-- wall at the end of the 4-stud step, not where it touched (1.8 degrees
+					-- off the touch at worst, measured)
 					local sa = spline:projectFrom(a.X, a.Z, s) or s
-					local reach = 0.5 * math.sqrt(D.BodyLength ^ 2 + D.BodyWidth ^ 2)
+					local reach = 0.5 * math.sqrt(D.BodyLength ^ 2 + D.BodyWidth ^ 2) + 4
 					local flatN = Vector3.new(an.X, 0, an.Z).Unit
 					local best = 180
 					for u = sa - reach, sa + reach, 0.25 do
