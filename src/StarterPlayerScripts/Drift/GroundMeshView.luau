@@ -645,7 +645,10 @@ local function place(L: Lattice, I: number, J: number): { number }
 		if e < clampOf[s] then
 			p = { x, z, math.min(open, T - sink), HELD }
 		end
-	elseif e <= s + foot then
+	elseif e <= s + foot or (groundRunoff and e <= 2 * s + foot) then
+		-- (a stud along the road is not always a stud past the edge: round the inside of a
+		-- bend the runoff narrows fast, and a point a cell from the road can be more than a
+		-- cell past its edge, measured; so when the ground draws the runoff, two cells)
 		local west = latAt(L, I - 1, J)[3] <= foot
 		local east = latAt(L, I + 1, J)[3] <= foot
 		local south = latAt(L, I, J - 1)[3] <= foot
