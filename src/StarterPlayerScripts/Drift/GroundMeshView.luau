@@ -67,6 +67,7 @@ type Tile = {
 	pz: { number },
 	normals: { Vector3 }, -- the normal each vertex is drawn with
 	colours: { Color3 }, -- and its colour
+	borrowed: { boolean }, -- shaded a coarser neighbour's way (`shadeAt`), by grid index
 	cls: { number }, -- ROAD, HELD or OPEN (below), by grid index
 	-- by cell index i * C + j + 1: its two faces' ids, and whether it is split along a-d
 	-- (its corners a (i, j), b (i + 1, j), c (i, j + 1), d (i + 1, j + 1); b-c otherwise)
@@ -120,6 +121,8 @@ export type View = typeof(setmetatable(
 		ops: { [string]: number },
 		tilesBuilt: number,
 		rimWrites: number,
+		shades: { [number]: { [number]: { any } } }, -- grid points shaded, by spacing (`shadeAt`)
+		shadesFor: { number }, -- the road's first and last s they were worked out for
 		wall: { [string]: number }, -- vertices moved onto a wall's foot, held, cells split a-d, cells left inverted
 		lastMs: number,
 		worstMs: number,
@@ -283,6 +286,7 @@ local function makeTile(master: Master): Tile?
 		pz = pz,
 		normals = table.create(n * n, Vector3.yAxis),
 		colours = table.create(n * n, Color3.new(1, 1, 1)),
+		borrowed = table.create(n * n, false),
 		cls = table.create(n * n, 2),
 		faces = faces,
 		flip = table.create(C * C, false),
@@ -329,6 +333,8 @@ function GroundMeshView.new(spline: any, parent: Instance?): View
 		ops = { fill = 0, split = 0, merge = 0, drop = 0, stale = 0 },
 		tilesBuilt = 0,
 		rimWrites = 0,
+		shades = {},
+		shadesFor = { 0, 0 },
 		wall = { moved = 0, held = 0, flipped = 0, inverted = 0 },
 		lastMs = 0,
 		worstMs = 0,
@@ -933,6 +939,23 @@ local function shadeAt(self: View, map: { [number]: Leaf }, lats: { [number]: { 
 		sm = s
 	end
 	if onGrid(x, sm) and onGrid(z, sm) then
+		-- (kept: a grid point is shaded the same while the road near it does not change)
+		local I, J = math.round(x / sm), math.round(z / sm)
+		local spline = self.spline
+		local span = self.shadesFor
+		if span[1] ~= spline.firstSample or span[2] ~= spline.length then
+			self.shades = {}
+			self.shadesFor = { spline.firstSample, spline.length }
+		end
+		local bySpacing = self.shades[sm]
+		if not bySpacing then
+			bySpacing = {}
+			self.shades[sm] = bySpacing
+		end
+		local kept = bySpacing[latKey(I, J)]
+		if kept then
+			return kept[1], kept[2]
+		end
 		-- a lattice of that spacing made round a point near enough (`place` and its neighbours
 		-- reach two grid points out), or a new one round this point
 		local held = lats[sm]
@@ -941,7 +964,9 @@ local function shadeAt(self: View, map: { [number]: Leaf }, lats: { [number]: { 
 			held = { newLattice(Ground.context(self.field, self.spline, x - r, z - r, x + r, z + r), sm), x, z }
 			lats[sm] = held
 		end
-		return latticeShade(self.spline, held[1] :: Lattice, math.round(x / sm), math.round(z / sm))
+		local nv, colour = latticeShade(self.spline, held[1] :: Lattice, I, J)
+		bySpacing[latKey(I, J)] = { nv, colour }
+		return nv, colour
 	end
 	local ax, az, bx, bz, f
 	if onGrid(x, sm) then
@@ -1025,11 +1050,13 @@ function GroundMeshView._fill(self: View, tile: Tile, leaf: Leaf, map: { [number
 			local p = P[k]
 			local nv, colour
 			local _, hi = GroundTiles.spacingRange(map, x, z)
-			if (i == 0 or i == C or j == 0 or j == C) and hi > s then
+			local borrow = (i == 0 or i == C or j == 0 or j == C) and hi > s
+			if borrow then
 				nv, colour = shadeAt(self, map, lats, s, x, z) -- shared with a coarser tile
 			else
 				nv, colour = shadeFrom(self.spline, ctx, V[q], x, z, V[q + m], V[q - m], V[q + 1], V[q - 1])
 			end
+			tile.borrowed[k] = borrow
 			if groundRunoff then
 				self:_slice()
 			end
@@ -1086,17 +1113,22 @@ function GroundMeshView._rimChanges(self: View, tile: Tile, map: { [number]: Lea
 		local i, j = (k - 1) // n, (k - 1) % n
 		local x, z = leaf.x0 + i * s, leaf.z0 + j * s
 		local _, hi = GroundTiles.spacingRange(map, x, z)
-		local nv, colour
-		if hi > s then
-			nv, colour = shadeAt(self, map, lats, s, x, z)
-		else
-			nv, colour = latticeShade(self.spline, L, I0 + i, J0 + j)
+		local borrow = hi > s
+		local nv, colour = tile.normals[k], tile.colours[k]
+		local reshaded = false
+		-- (a vertex shaded its own tile's way stays so while no coarser tile touches it)
+		if borrow or tile.borrowed[k] then
+			if borrow then
+				nv, colour = shadeAt(self, map, lats, s, x, z)
+			else
+				nv, colour = latticeShade(self.spline, L, I0 + i, J0 + j)
+			end
+			local was, wasC = tile.normals[k], tile.colours[k]
+			reshaded = nv:Dot(was) < 0.99999
+				or math.abs(colour.R - wasC.R) + math.abs(colour.G - wasC.G) + math.abs(colour.B - wasC.B) > 1e-4
 		end
-		local was, wasC = tile.normals[k], tile.colours[k]
-		local reshaded = nv:Dot(was) < 0.99999
-			or math.abs(colour.R - wasC.R) + math.abs(colour.G - wasC.G) + math.abs(colour.B - wasC.B) > 1e-4
-		if moved or reshaded then
-			table.insert(changes, { k, p[1], p[2], p[3], p[4], nv, colour })
+		if moved or reshaded or borrow ~= tile.borrowed[k] then
+			table.insert(changes, { k, p[1], p[2], p[3], p[4], nv, colour, borrow })
 		end
 		if moved then
 			changed[k] = p
@@ -1445,7 +1477,7 @@ function GroundMeshView._do(self: View, op: Op): boolean
 			tile.em:SetPosition(tile.v[k], Vector3.new(x - cx, y - tile.cy, z - cz))
 			tile.em:SetUV(tile.uv[k], Vector2.new(x / uvStuds, z / uvStuds))
 			if nv and colour then
-				tile.normals[k], tile.colours[k] = nv, colour
+				tile.normals[k], tile.colours[k], tile.borrowed[k] = nv, colour, ch[8] == true
 				tile.em:SetNormal(tile.nrm[k], nv)
 				tile.em:SetColor(tile.col[k], colour)
 			end
