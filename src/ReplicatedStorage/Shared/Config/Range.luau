@@ -45,7 +45,7 @@ return {
 	Profile = { 1.0, 1.4 }, -- a face's exponent: higher, steeper near the crest and wider at the floor
 	CrestRound = 40, -- studs: the crest rounded over about this much
 
-	Octaves = { { 1400, 100, "ridge" }, { 600, 40, "gully" }, { 220, 8 } },
+	Octaves = { { 1400, 60, "ridge" }, { 600, 24, "gully" }, { 220, 8 } }, -- (100 tall, the road could not follow them)
 	Stretch = 2.5, -- times longer along `t` (down the faces) than across
 	ReliefFloor = 0.15, -- of the spurs and gullies on a valley floor...
 	ReliefRise = 0.35, -- ...rising to all of them this far up a face

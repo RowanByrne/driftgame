@@ -1238,7 +1238,11 @@ end
 -- on toward h's own grade there; past the section's end it is taken to carry on straight.
 -- The grade eases at `MaxGradeRate` and never passes `MaxGrade`, as every section's does, so
 -- the road stays drivable: it cuts or fills only where h changes faster than that allows.
-function SplineGen._followGrade(self: Gen, knots: { number }, g0: number, y0: number): ({ number }, number)
+-- `fill` (T-238): how much more a stud of road ABOVE h counts than one below it (1 unless
+-- given): a hairpin on a steep face sits in a cut, a wall on its inside, not out on fill.
+-- Returns the grade's knots, the furthest the centre line is from h, and of that, the most it
+-- is above h (fill) and below it (cut).
+function SplineGen._followGrade(self: Gen, knots: { number }, g0: number, y0: number, fill: number?): ({ number }, number, number, number)
 	local C = Config.Spline
 	local G = C.Ground
 	local f = self.ground :: Ground.Field
@@ -1257,13 +1261,13 @@ function SplineGen._followGrade(self: Gen, knots: { number }, g0: number, y0: nu
 		return true
 	end)
 	if #us == 0 then
-		return ramp(g0, 0, rate, 0, len), 0
+		return ramp(g0, 0, rate, 0, len), 0, 0, 0
 	end
 	local wAhead = G.FollowAheadWeight
 	local seg = G.FollowSegment
 	local out: { number } = {}
 	local yA, gA, a = y0, g0, 0
-	local worst = 0
+	local worst, worstFill, worstCut = 0, 0, 0
 	while a < len - 1e-6 do
 		local b = math.min(a + seg, len)
 		if len - b < seg * 0.5 then
@@ -1301,6 +1305,9 @@ function SplineGen._followGrade(self: Gen, knots: { number }, g0: number, y0: nu
 						y, w = yB + rampRise(u - b, gB, gAhead, rate), wAhead
 					end
 					local e = y - hs[i]
+					if fill and e > 0 then
+						w *= fill
+					end
 					sum += w * e * e
 				end
 			end
@@ -1339,13 +1346,16 @@ function SplineGen._followGrade(self: Gen, knots: { number }, g0: number, y0: nu
 		table.insert(out, gB)
 		if i0 and iB then
 			for i = i0, iB do
-				worst = math.max(worst, math.abs(yA + rampRise(us[i] - a, gA, gB, rate) - hs[i]))
+				local e = yA + rampRise(us[i] - a, gA, gB, rate) - hs[i]
+				worst = math.max(worst, math.abs(e))
+				worstFill = math.max(worstFill, e)
+				worstCut = math.max(worstCut, -e)
 			end
 		end
 		yA += rampRise(span, gA, gB, rate)
 		gA, a = gB, b
 	end
-	return out, worst
+	return out, worst, worstFill, worstCut
 end
 
 -- A ground run's heading for a stretch or a planned turn, from the mountain's slope where
@@ -1913,6 +1923,7 @@ end
 function SplineGen._turn(self: Gen, item: Item): (Spline.Section | string)?
 	local C, M = Config.Spline, Config.Spline.Mountain
 	local sp = self.spline
+	local f = self.ground
 	local _, _, yaw0, k0, g0, b0, y0 = sp:tip()
 	local dir, to = item.dir :: number, item.to :: number
 	local needed = (dir * (to-yaw0)) % (2*math.pi)
@@ -1951,7 +1962,14 @@ function SplineGen._turn(self: Gen, item: Item): (Spline.Section | string)?
 						-- a ground run (T-228): the grade follows the mountain, and how far off it
 						-- the turn leaves the road counts in its fit, so a turn a steep scarp
 						-- would leave stranded is laid further on, where it fits
-						g, off = self:_followGrade(emitted, g0, y0)
+						-- (on the range, a turnaround is fitted to sit in a cut rather than on fill,
+						-- and judged so: T-238, hairpins hug the steep face)
+						local hug = f and f.range and TURNAROUNDS[item.what]
+						local worstFill, worstCut
+						g, off, worstFill, worstCut = self:_followGrade(emitted, g0, y0, if hug then C.Ground.TurnFill else nil)
+						if hug then
+							off = math.max(worstFill, worstCut * C.Ground.TurnMaxOff / C.Ground.TurnMaxCut)
+						end
 					else
 						g = pickGrade(self,g0,y0,emittedLen,fit and self.flip>0,nextMove)
 					end
