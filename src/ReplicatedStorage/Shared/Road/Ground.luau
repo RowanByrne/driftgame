@@ -294,8 +294,12 @@ local function reliefAt(f: Field, x: number, z: number, share: number): number
 	local u = dx * f.ux + dz * f.uz -- up the mountain
 	local v = dx * f.uz - dz * f.ux -- across it
 	local y = 0
+	-- (on the range, each octave within its height either way: a ridge octave's trough went
+	-- three times as deep as its crest stood, holes 300 studs deep on the lower faces)
+	local cap = if f.range then 0.5 else math.huge
 	for _, o in f.oct do
 		local n = math.noise(u / (o.size * f.stretch) + o.a, v / o.size + o.b, o.c)
+		n = math.clamp(n, -cap, cap)
 		if o.kind == "ridge" then
 			y += o.amp * (1 - 4 * math.abs(n))
 		elseif o.kind == "gully" then
