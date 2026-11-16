@@ -76,7 +76,7 @@ function Tests.run()
 
 		-- a few degrees tall, with its bottom below the horizon
 		local peak, top, bottom = Vista.angles(layer)
-		check(`{layer.Name}: summit 2-7 degrees up`, peak >= 2 and peak <= 7, string.format("summit %.1f, top %.1f, bottom %.1f", peak, top, bottom))
+		check(`{layer.Name}: summit 2-10 degrees up`, peak >= 2 and peak <= 10, string.format("summit %.1f, top %.1f, bottom %.1f", peak, top, bottom))
 		local skirtBottom = 0
 		if panels[1].skirt then
 			local s = panels[1].skirt

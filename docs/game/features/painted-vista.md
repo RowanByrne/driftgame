@@ -1,6 +1,6 @@
 # Feature: Painted vista
 
-**Status:** specced; the plan is waiting for the user's OK. **Owner task:** none yet.
+**Status:** step 1 (the trial) in a lane for the user. **Owner task:** T-266 (step 1: T-267).
 
 ## Goal
 
@@ -69,7 +69,7 @@ Starting guesses, to be measured and tuned in the lane, as `horizon.md`'s were. 
 |---|---|---|---|---|
 | Near | 2 400 studs | 2–4° above level | Dark forested ridges | Up to 3 s, never more than 250 studs |
 | Middle | 3 200 studs | 3–5° | Blue-green ridges | 1.5 s |
-| Far | 4 500 studs | 4–6° | Pale snow peaks | 0.6 s |
+| Far | 3 200 studs (measured: 4 500 washed out in the haze) | summit 8° (5.5° barely cleared the ground) | Pale snow peaks | 0.6 s, at most 120 studs |
 
 - **Beyond the drawn ground:** the near layer stays further out than the ground's widest reach
   (2 100 studs today, `mountain-range.md`) at every Road ahead setting (`T-263`), even when it
@@ -79,22 +79,24 @@ Starting guesses, to be measured and tuned in the lane, as `horizon.md`'s were. 
 - **No bottom edge in sight:** each layer reaches down below the horizon into the cloud sea.
 - **Rises and falls with the road by three quarters** of the camera's height above the road's
   start, eased over 2 s, as the horizon did.
-- **Panels:** each layer is a ring of curved panels, each at most 2 000 studs wide (one mesh is at
-  most 2 048), so 8 panels for the near layer and 14 for the far one. One uploaded arc mesh is
-  reused for every panel. Each panel is a MeshPart with a SurfaceAppearance: a colour map whose
-  sky is see-through, plus, if the trial shows it helps, a normal map (below).
+- **Panels (as built in the trial):** each layer is a ring of flat panels, each under 2 048 studs
+  wide (10 for the far layer). Each is an invisible part with the art as a `Decal` on its inner
+  face, which the real sun lights, with a plain skirt below in the art's base colour. No mesh is
+  uploaded. The normal map would need a MeshPart with a SurfaceAppearance; not tried yet.
 - **The whole layer moves together:** each layer's panels are welded to one invisible anchor, and
   only the anchor moves, which measured 0.10 ms a frame for the horizon.
 
 ### Cloud sea
 
-- **Three stacked layers,** 30 studs apart, the top one 300 studs below the road's start. They
-  rise with the road by three quarters, like the ridges.
-- **Each layer** is 3 × 3 parts of 2 048 studs (6 100 across). Their edges are lost in the haze.
-- **Seamless cloud:** a tiling cloud texture (`Texture`, 1 200 studs a tile), offset by the
-  layer's position in the world so the clouds don't slide when the parts follow the car. Each
-  layer drifts about 2 studs a second, at a slightly different speed and direction. Transparency
-  is 0.2, 0.4 and 0.6, top to bottom.
+- **Three stacked layers,** 30 studs apart, the top one 150 studs below the road's start, and
+  never nearer than 120 under the camera. They rise with the road by three quarters, like the
+  ridges.
+- **The top layer** is 5 × 5 parts of 2 048 studs, so it reaches past the ridge ring and its edge
+  is never seen (3 × 3 showed its edge in the lane); the two under it are 3 × 3.
+- **Seamless cloud:** a tiling cloud texture (`Texture`, 2 048 studs a tile: 1 024 read as a
+  snowfield). The parts move in whole tiles, so the clouds don't slide when they follow the car.
+  Each layer drifts about 2 studs a second, at a slightly different speed and direction.
+  Transparency is 0.25, 0.4 and 0.6, top to bottom.
 
 ### Time of day
 

@@ -123,7 +123,7 @@ return {
 			Ambient = rgb(52, 50, 56),
 			OutdoorAmbient = rgb(136, 130, 136),
 			SunColour = rgb(255, 214, 180),
-			AtmosphereDensity = 0.26,
+			AtmosphereDensity = 0.2, -- painted vista (T-267): was 0.26
 			AtmosphereOffset = 0.2,
 			AtmosphereColour = rgb(218, 214, 214),
 			AtmosphereDecay = rgb(130, 124, 140),
@@ -151,7 +151,7 @@ return {
 			Ambient = rgb(40, 44, 52),
 			OutdoorAmbient = rgb(120, 128, 140),
 			SunColour = rgb(255, 250, 240),
-			AtmosphereDensity = 0.25,
+			AtmosphereDensity = 0.17, -- painted vista (T-267): was 0.25
 			AtmosphereOffset = 0.25,
 			AtmosphereColour = rgb(198, 214, 232),
 			AtmosphereDecay = rgb(104, 128, 160),
@@ -179,7 +179,7 @@ return {
 			Ambient = rgb(44, 44, 50),
 			OutdoorAmbient = rgb(128, 124, 120),
 			SunColour = rgb(255, 236, 205),
-			AtmosphereDensity = 0.26,
+			AtmosphereDensity = 0.19, -- painted vista (T-267): was 0.26
 			AtmosphereOffset = 0.25,
 			AtmosphereColour = rgb(214, 212, 206),
 			AtmosphereDecay = rgb(140, 120, 110),
@@ -207,7 +207,7 @@ return {
 			Ambient = rgb(60, 50, 48),
 			OutdoorAmbient = rgb(140, 120, 108),
 			SunColour = rgb(255, 184, 120),
-			AtmosphereDensity = 0.3,
+			AtmosphereDensity = 0.25, -- painted vista (T-267): was 0.3
 			AtmosphereOffset = 0.2,
 			AtmosphereColour = rgb(240, 200, 150),
 			AtmosphereDecay = rgb(180, 120, 100),
@@ -235,7 +235,7 @@ return {
 			Ambient = rgb(70, 50, 56),
 			OutdoorAmbient = rgb(150, 110, 110),
 			SunColour = rgb(255, 150, 90),
-			AtmosphereDensity = 0.3,
+			AtmosphereDensity = 0.27, -- painted vista (T-267): was 0.3
 			AtmosphereOffset = 0.15,
 			AtmosphereColour = rgb(255, 178, 120),
 			AtmosphereDecay = rgb(190, 96, 110),
@@ -319,7 +319,7 @@ return {
 			Ambient = rgb(56, 56, 84),
 			OutdoorAmbient = rgb(124, 122, 160),
 			SunColour = rgb(170, 160, 200),
-			AtmosphereDensity = 0.3,
+			AtmosphereDensity = 0.27, -- painted vista (T-267): was 0.3
 			AtmosphereOffset = 0.15,
 			AtmosphereColour = rgb(120, 124, 164),
 			AtmosphereDecay = rgb(90, 80, 130),
@@ -347,7 +347,7 @@ return {
 			Ambient = rgb(66, 56, 66),
 			OutdoorAmbient = rgb(150, 128, 136),
 			SunColour = rgb(255, 170, 130),
-			AtmosphereDensity = 0.3,
+			AtmosphereDensity = 0.27, -- painted vista (T-267): was 0.3
 			AtmosphereOffset = 0.15,
 			AtmosphereColour = rgb(245, 196, 170),
 			AtmosphereDecay = rgb(160, 120, 160),
