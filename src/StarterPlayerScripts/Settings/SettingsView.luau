@@ -165,7 +165,7 @@ function View.new(parent)
 		local key = row.key
 		local r = { key = key }
 		r.label = Glass.label(key .. "Label", self.sound, row.label)
-		r.value = Glass.label(key .. "Value", self.sound, "100%", true)
+		r.value = Glass.label(key .. "Value", self.sound, "30%", true)
 		r.value.TextXAlignment = Enum.TextXAlignment.Right
 		r.minus = Glass.button(key .. "Decrease", self.sound, "-")
 		r.plus = Glass.button(key .. "Increase", self.sound, "+")
@@ -238,7 +238,7 @@ end
 function View:nudgeBehind(delta)
 	if self.opened then self.ActionRequested:Fire("roadBehind", math.clamp((self.data.roadBehind or 3) + delta, 1, self:_behindCount())) end
 end
-function View:_soundLevel(key) return (self.data.soundLevels or {})[key] or 100 end
+function View:_soundLevel(key) return (self.data.soundLevels or {})[key] or 30 end
 -- +/- moves a sound level to the next whole step of 10%.
 function View:nudgeSound(key, delta)
 	if not self.opened then return end

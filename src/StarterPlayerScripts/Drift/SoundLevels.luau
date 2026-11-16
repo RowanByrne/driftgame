@@ -6,7 +6,9 @@
 -- ON TOP of the mix the code sets (`Config.Fx`), live, one-shots and loops alike, and none of
 -- the sound modules has to read it each frame.
 --
--- A level is a whole percent, 0 to 100, default 100. The groups live in `SoundService` as
+-- A level is a whole percent, 0 to 100, default 30, and 30 IS TODAY'S MIX (the user,
+-- 2026-11-16): a group plays at `level / Reference`, so 30% is 1x, 15% half, 0 silent and
+-- 100% about 3.33x the mix. The groups live in `SoundService` as
 -- `SoundLevel_<Category>`, made on the client only: on the server (the Fx tests build sounds
 -- there) `apply` leaves a sound alone.
 
@@ -28,7 +30,8 @@ SoundLevels.Labels = {
 	Suspension = "Suspension",
 	Engine = "Engine",
 }
-SoundLevels.Default = 100
+SoundLevels.Default = 30
+SoundLevels.Reference = 30 -- the level that plays the mix as `Config.Fx` sets it
 
 local levels: { [string]: number } = {}
 local groups: { [string]: SoundGroup } = {}
@@ -68,9 +71,14 @@ function SoundLevels.group(category: string): SoundGroup?
 		group.Name = name
 		group.Parent = SoundService
 	end
-	(group :: SoundGroup).Volume = SoundLevels.get(category) / 100
+	(group :: SoundGroup).Volume = SoundLevels.scale(category)
 	groups[category] = group :: SoundGroup
 	return group
+end
+
+-- What the category's group multiplies its sounds by: `level / Reference`.
+function SoundLevels.scale(category: string): number
+	return SoundLevels.get(category) / SoundLevels.Reference
 end
 
 -- Put `sound` in `category`'s group, so the player's level scales it. Server: does nothing.
@@ -94,7 +102,7 @@ function SoundLevels.set(category: any, value: any): boolean
 	levels[category] = v
 	local group = SoundLevels.group(category)
 	if group then
-		group.Volume = v / 100
+		group.Volume = v / SoundLevels.Reference
 	end
 	if v ~= before then
 		SoundLevels.Changed:Fire(category, v)
