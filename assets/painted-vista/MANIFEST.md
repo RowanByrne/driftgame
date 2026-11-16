@@ -36,3 +36,14 @@ Four candidates, two low-poly and two painted, made at once with `-Transparent`.
 | `cloud-oil-03.png` (1254 x 1254, alpha) | "Seamless tileable texture of a rolling sea of cloud seen from straight above, matching the cloud sea in the attached snow-pass painting: large heaped cumulus billows of several sizes, layered so some billows overlap others, strong rounded volume with soft shadowed undersides in pale blue-grey and lavender-grey and creamy white tops, loose painterly oil brushwork with thick impasto on the brightest tops. A few small torn holes between billows, otherwise continuous cloud. Avoid the polished game-asset look: no glossy 3D, no airbrushed gradients, no lens flare, no vignette. ONLY cloud: no mountains, no land, no sky, no sun, no birds, no text. Even, flat, diffuse light from straight above with no sun direction and no cast shadows, because the game lights and tints it. Neutral white and very pale blue-grey only, so it can be tinted. The gaps between the clouds are fully transparent background (real alpha), the cloud edges soft and feathered. Square canvas, and it must tile seamlessly: the left edge continues into the right edge and the top into the bottom, with no seam and no single dominant cloud, so it can repeat across a huge area." | `snow-pass-sunset.png` (reference), `far-painted-02.png` | `E8BF51E45E514EAA419BCA64BF4C6DFEBA4EADA787A4F8695CC3B3EF0AE42494` | **picked** |
 
 Measured: `cloud-oil-02` 60% opaque, none clear, a faint seam at the wrap; `cloud-oil-03` 98% opaque, small torn holes, no visible seam. **The user picked "Heaped billows" (`cloud-oil-03`),** 2026-11-16; copied unchanged.
+
+## Uploaded
+
+Every one through the Studio MCP `upload_image` (the user signed in to Studio), 2026-11-16. Decoded size read back as an EditableImage in lane 3.
+
+| File | Asset id | Decoded | Used in |
+|---|---|---|---|
+| `far-painted-02.png` | `rbxassetid://129944061048496` | 1023 x 341, 52% opaque | `Config.Vista.Layers` Far, `Images[1]` |
+| `far-painted-02-v1.png` | `rbxassetid://120124891988351` | 1023 x 341, 51% opaque | Far, `Images[2]` |
+| `far-painted-02-v2.png` | `rbxassetid://128884046668071` | 1023 x 341, 53% opaque | Far, `Images[3]` |
+| `cloud-oil-03.png` | `rbxassetid://117132635448742` | 1024 x 1024, 99% opaque | `Config.Vista.CloudSea.Image` |

@@ -44,9 +44,9 @@ return {
 			Skirt = 900,
 			BaseColour = Color3.fromRGB(151, 172, 198),
 			Images = {
-				"", -- far-painted-02 (assets/painted-vista/MANIFEST.md)
-				"", -- far-painted-02-v1
-				"", -- far-painted-02-v2
+				"rbxassetid://129944061048496", -- far-painted-02 (assets/painted-vista/MANIFEST.md)
+				"rbxassetid://120124891988351", -- far-painted-02-v1
+				"rbxassetid://128884046668071", -- far-painted-02-v2
 			},
 		},
 	},
@@ -67,7 +67,7 @@ return {
 	-- drifts at its own speed (studs/s) and direction (degrees), and lets more through the
 	-- lower it is (`Transparency`).
 	CloudSea = {
-		Image = "", -- the picked cloud texture (assets/painted-vista/MANIFEST.md)
+		Image = "rbxassetid://117132635448742", -- cloud-oil-03, the picked cloud texture (assets/painted-vista/MANIFEST.md)
 		Below = 300,
 		Gap = 30,
 		MinBelow = 200,
