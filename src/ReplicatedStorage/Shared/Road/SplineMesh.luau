@@ -46,6 +46,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Config = require(ReplicatedStorage.Shared.Config)
 local GrassTexture = require(script.Parent.GrassTexture)
+local Ground = require(script.Parent.Ground)
 local Spline = require(script.Parent.Spline)
 local SplineGrove = require(script.Parent.SplineGrove)
 
@@ -75,6 +76,9 @@ export type Options = {
 	across: number?,
 	forceFail: boolean?, -- Studio tests: behave as a device that cannot make a mesh
 	sliceMs: number?, -- ms of building a frame (`Mesh.SliceMs`); math.huge builds it in one go
+	-- who draws the runoff (T-251): "ground" draws the road to its bevels' feet only, "road"
+	-- the runoff too; nil, `Ground.runoffBy()`
+	runoffBy: string?,
 }
 
 export type Stats = {
@@ -322,7 +326,7 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 		-- as an angled shoulder; the tarmac and the grass either side keep their smooth normals.
 		-- (T-251: when the ground mesh draws the runoff, `Ground.RunoffBy = "ground"`, none: the
 		-- road stops at its bevels' feet)
-		local groundRunoff = Config.Spline.Ground.RunoffBy == "ground"
+		local groundRunoff = (o.runoffBy or Ground.runoffBy()) == "ground"
 		local RUNOFF_STRIPS = if groundRunoff then 0 else 2
 		local TT = Config.Spline.Terrain
 		local tarmacColour = road.em:AddColor(R.Colours.Road, 1)

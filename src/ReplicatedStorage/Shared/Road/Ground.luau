@@ -29,6 +29,7 @@
 -- follows `base` (`SplineGen`, in a ground run), so the cuts and fills are the relief.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
 
 local Config = require(ReplicatedStorage.Shared.Config)
 local Spline = require(script.Parent.Spline)
@@ -110,6 +111,19 @@ export type Context = {
 	grid: { [number]: { Station } },
 	count: number,
 }
+
+-- Who draws the runoff (T-251): `Config.Spline.Ground.RunoffBy`, "road" or "ground". In Studio
+-- the workspace attribute `__runoff_by` overrides it, so the two can be compared in one
+-- session: read when a road's drawing starts (a new run).
+function Ground.runoffBy(): string
+	if RunService:IsStudio() then
+		local v = workspace:GetAttribute("__runoff_by")
+		if v == "road" or v == "ground" then
+			return v
+		end
+	end
+	return Config.Spline.Ground.RunoffBy
+end
 
 --------------------------------------------------------------------------------
 -- The mountain: h(x, z)

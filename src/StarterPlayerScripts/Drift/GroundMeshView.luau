@@ -146,14 +146,19 @@ end
 -- what is drawn is what the car stands on. Its edge is the exact edge too, and a vertex past
 -- it beside the road moves onto its foot over a drop as well as under a wall, so the drop
 -- starts at the edge, where the car goes over, not a cell out.
-local groundRunoff = Config.Spline.Ground.RunoffBy == "ground"
+-- (`Ground.runoffBy`, read when a view is made: one view at a time)
+local groundRunoff = false
 
 local clampOf: { [number]: number } = {}
 local sinkOf: { [number]: number } = {}
-for k, s in Config.Spline.Ground.Spacings do
-	clampOf[s] = Config.Spline.Ground.Clamps[k]
-	sinkOf[s] = if groundRunoff then Config.Spline.Ground.RunoffSinks[k] else Config.Spline.Ground.Sinks[k]
+local function setRunoffBy()
+	groundRunoff = Ground.runoffBy() == "ground"
+	for k, s in Config.Spline.Ground.Spacings do
+		clampOf[s] = Config.Spline.Ground.Clamps[k]
+		sinkOf[s] = if groundRunoff then Config.Spline.Ground.RunoffSinks[k] else Config.Spline.Ground.Sinks[k]
+	end
 end
+setRunoffBy()
 
 -- The flat tile every tile is copied from: never shown, never moved. It spans the coarsest
 -- tile, so every tile's bounds hold whatever it draws.
@@ -285,6 +290,7 @@ local function makeTile(master: Master): Tile?
 end
 
 function GroundMeshView.new(spline: any, parent: Instance?): View
+	setRunoffBy()
 	local folder = Instance.new("Folder")
 	folder.Name = "GroundMesh"
 	folder.Parent = parent or Workspace
@@ -1954,7 +1960,7 @@ function GroundMeshView.DebugRunoffGap(self: View, ahead: number?, behind: numbe
 		end
 		s += step or 2
 	end
-	local out = { on = true, runoffBy = Config.Spline.Ground.RunoffBy, from = s0 - along, to = s1 - along, missing = missing, worst = worst, worstAt = worstAt, trace = trace, runoff = {}, belowRoad = {}, edgeFoot = {} }
+	local out = { on = true, runoffBy = Ground.runoffBy(), from = s0 - along, to = s1 - along, missing = missing, worst = worst, worstAt = worstAt, trace = trace, runoff = {}, belowRoad = {}, edgeFoot = {} }
 	for k, l in gaps do
 		out.runoff[k] = brief(l)
 		local abs = table.create(#l)
@@ -2126,7 +2132,7 @@ function GroundMeshView.DebugState(self: View)
 		rimWrites = self.rimWrites,
 		wall = self.wall,
 		groundPoints = groundEvals, -- `Ground.at` calls building tiles, every view this session
-		runoffBy = Config.Spline.Ground.RunoffBy,
+		runoffBy = Ground.runoffBy(),
 		underPoints = underEvals, -- `underAt` calls (T-251), every view this session
 		lastMs = self.lastMs,
 		worstMs = self.worstMs,

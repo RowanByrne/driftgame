@@ -502,7 +502,9 @@ local Spline = {
 		-- fill with no seam and no skirt. Each spacing sinks `RunoffSinks` under it (the finest
 		-- none: what is drawn is what the car stands on), and its runoff vertices are coloured
 		-- `Terrain.GrassColour` (gravel in a gravel run). A short skirt, `BevelSkirt` down from
-		-- the bevel's foot, hides the step where coarse ground far ahead sits lower
+		-- the bevel's foot, hides the step where coarse ground far ahead sits lower. In Studio the
+		-- workspace attribute `__runoff_by` ("road" or "ground") overrides this from the next
+		-- run (`Ground.runoffBy`), to compare the two
 		RunoffBy = "ground",
 		RunoffSinks = { 0, 0.4, 2.5, 4, 4 }, -- studs, per spacing (as `Sinks`)
 		BevelSkirt = 3, -- studs
