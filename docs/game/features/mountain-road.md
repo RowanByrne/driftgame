@@ -23,7 +23,10 @@ the drop. Running wide is no longer stopped by a wall; it costs you grip, then t
 2. **No side barriers.** Either side of the tarmac is a strip of **grass runoff**, a few car widths
    wide, widening and narrowing as the road goes. Grass holds about half as well as tarmac and
    scores about half, as dirt does today: a drift that runs wide onto it washes out.
-3. **Past the grass, each side ends in one of three edges**, which change along the road:
+3. **Past the grass is the drawn ground** (T-258, T-261, `features/car-edges.md`): the car and a
+   walker meet the ground they see, steep rises are walls and steep drops are drops. What
+   follows is how it was until then, kept as history: **each side ended in one of three edges**,
+   never drawn after T-247:
    - **Rock face:** the mountain rising on the uphill side. A wall: you hit it and grind along it.
    - **Hedge:** a low green wall. A wall, as the rock face. **No longer chosen since T-189**: it
      comes back later as decoration only.
@@ -84,10 +87,10 @@ does), so nothing steps.
 | Runoff on the inside of a bend | Never past 60% of the way to the bend's centre | So the inside of a hairpin keeps a strip, not a spike |
 | Carved apex (T-182) | Inside runoff down to 1 stud at the apex, for 20 to 50 studs | Only on bends of radius 220 or less with the rock inside and the cliff outside; see "Carved apexes" |
 | Runoff slope | Follows the road's bank, then eases flat | A banked road's grass doesn't lip up into a ramp |
-| Rock face | A solid body: rises 25 to 60 studs at 50 to 70 degrees near a turnaround, up to 140 to 220 at 64 to 78 degrees mid-leg ("Grand cliffs") | Height is looks; to the car it is a wall |
+| Rock face (gone, T-261) | A solid body: rises 25 to 60 studs at 50 to 70 degrees near a turnaround, up to 140 to 220 at 64 to 78 degrees mid-leg ("Grand cliffs") | Height is looks; to the car it is a wall |
 | Raised road (T-184) | The grass sits `RoadLip` 1 stud below the tarmac's edge, down a gravel bevel `RoadLipWidth` 3 studs across (18°) | See "The raised road" below |
-| Hedge | 6 studs high, 4 thick | |
-| Cliff | The ground ends; the face drops 80 studs into haze near a turnaround, up to 200 mid-leg | Past the lip, nothing to stand on |
+| Hedge (gone, T-261) | 6 studs high, 4 thick | |
+| Cliff (gone, T-261) | The ground ends; the face drops 80 studs into haze near a turnaround, up to 200 mid-leg | Past the lip, nothing to stand on |
 | K-rail (metal crash barrier) | 3 studs high, 2 thick, at the tarmac's edge | Runs of 60 to 300 studs. To the car a wall that size; drawn as a 1.2-stud rounded W-beam, top at 3 studs, face on the tarmac's edge; square posts every 7 studs on spacer blocks behind it, inside the wall; a striped hazard panel at each end |
 
 ### Where each edge goes
@@ -95,8 +98,10 @@ does), so nothing steps.
 A mountain road has the mountain on one side and the drop on the other, so the generator picks
 **which side is uphill** and keeps it for a long stretch:
 
-- **Uphill side:** always rock face (T-189).
-- **Downhill side:** always cliff drop (T-189).
+- **Uphill side:** always rock face (T-189). **Since T-261 only the side is kept** (`Spline:uphillAt`,
+  the section's `up` spans): nothing is chosen at the edge, and K-rails, tight edges and carved
+  apexes are still placed by it, so they did not move.
+- **Downhill side:** always cliff drop (T-189); the drawn ground since T-261.
 - **No hedges as a road edge** (the user, 2026-11-13, T-189: "ditch the hedge concept as a road
   barrier. hedges going forward will just be decoration and we will bring them back later").
   The generator never chooses one; the hedge's kind (2), its numbers and its drawing code stay,
@@ -153,8 +158,8 @@ The road stays purely visual: the car still reads everything from the curve (`Sp
 
 | The model asks | Now answered |
 |---|---|
-| `probe`: the ground under a point | Tarmac or grass, by lateral offset, with its grip and score; the grass `RoadLip` below the tarmac, down a gravel bevel (T-184). Nothing past a cliff's lip, so the car falls there |
-| `sweep`: how far the car may move | Stops at a rock face, a hedge or a K-rail, with the wall's normal. Nothing at the tarmac's edge any more |
+| `probe`: the ground under a point | Tarmac or grass, by lateral offset, with its grip and score; the grass `RoadLip` below the tarmac, down a gravel bevel (T-184). Past the runoff, the drawn ground (T-258; until then nothing past a cliff's lip) |
+| `sweep`: how far the car may move | Stops at drawn ground too steep to drive (T-258) or a K-rail, with the wall's normal (until T-261 a rock face or a hedge). Nothing at the tarmac's edge any more |
 | Surface | Grass uses dirt's numbers to start (`GripDirt` 0.5, `ScoreDirt` 0.5), as its own `GripGrass` / `ScoreGrass` so they can part later. Gravel (T-181) the same, as `GripGravel` / `ScoreGravel` |
 
 - **The side barriers go, for good,** and with them the guardrail switch (`setRails`, the TEST

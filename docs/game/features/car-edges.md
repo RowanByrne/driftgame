@@ -11,7 +11,8 @@ What the car meets beside the road is the ground the player sees. Until now each
 - Past the grass, the car drives on the drawn ground (the mountain with the road cut into it), with the grass's grip.
 - Ground steeper than about 45 degrees (where the drawn ground turns to rock) is a **wall** to a car below its top: a cut beside the road, or a steep rise out on the mountain. To a car above it, it is a **drop**: the car goes over and lands on the ground below.
 - Gentle slopes and valleys beside the road can be driven.
-- More than 300 studs from the road, the car is wrecked and put back on the road, at the nearest point reached (step 2).
+- More than 300 studs from the road, the car is wrecked and put back on the road, near where it left (T-260).
+- Out of the car, a walker walks on the same drawn ground past the grass (T-261, the user's pick): solid tiles on a 4-stud world grid round the avatar, on the road or off it.
 - K-rails, trees and the road itself are unchanged.
 
 ## Left out
@@ -34,7 +35,7 @@ What the car meets beside the road is the ground the player sees. Until now each
 
 What is kept is dropped when new road is laid (or old road trimmed) within reach of it.
 
-A road with no mountain (the tests' bare yardstick road) keeps its rock faces and cliffs.
+**No side is chosen any more (T-261).** The road keeps only which side the mountain is on (`Spline:uphillAt`, the section's `up` spans, sent in place of `el`/`er`), and the generator still places K-rails, tight edges and carved apexes by it, with the same random draws, so they did not move. A road with no mountain (the tests' bare yardstick road) is walled at its runoff's outer edge (`Terrain.BareWallHeight`), where its old barriers stood.
 
 ## Server and client
 

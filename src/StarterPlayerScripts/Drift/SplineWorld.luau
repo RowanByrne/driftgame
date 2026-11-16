@@ -10,25 +10,27 @@
 -- curve's arithmetic:
 --
 --   probe        the ground at the point's (s, d): the tarmac (`GripTarmac`), the grass
---                runoff either side (`GripGrass`, `ScoreGrass`), and NOTHING past a
---                cliff's lip, so a car that goes over falls. The grass is `RoadLip` below
---                the tarmac's edge (T-184), and the car's springs take that step as they
---                take any other (T-196, `Suspension.ride`)
---   sweep        the walls: a rock face or a hedge at the runoff's outer edge, and a K-rail
---                on the tarmac's edge where one stands. The car's footprint is six points
---                (its corners and the middle of each long side), and the step is cut where
---                the first of them would cross a wall. A cliff is not a wall. A grove's
---                tree trunks (T-183) are circles met by the whole box (`Road/SplineGrove`)
+--                runoff either side (`GripGrass`, `ScoreGrass`), and past it the drawn
+--                ground (below). The grass is `RoadLip` below the tarmac's edge (T-184), and
+--                the car's springs take that step as they take any other (T-196,
+--                `Suspension.ride`)
+--   sweep        the walls: the drawn ground where it is too steep (below), and a K-rail on
+--                the tarmac's edge where one stands. The car's footprint is six points (its
+--                corners and the middle of each long side), and the step is cut where the
+--                first of them would cross a wall. A grove's tree trunks (T-183) are
+--                circles met by the whole box (`Road/SplineGrove`)
 --   penetration  the deepest point already past a wall, and the way back out
 --   edge         nothing: the road has no steps
 --
 -- PAST THE RUNOFF, ON A MOUNTAIN ROAD, THE CAR DRIVES ON THE DRAWN GROUND (T-258,
 -- features/car-edges.md): the mountain with the road pressed into it, the ground the player
--- sees (`Drift/OffRoadGround`, from `Road/Ground`), not a rock face or a cliff chosen per side.
+-- sees (`Drift/OffRoadGround`, from `Road/Ground`). Until T-261 each side was secretly a rock
+-- face (a wall at the grass's edge) or a cliff (nothing past it).
 -- Gentle slopes and valleys are driven on like the grass; ground steeper than `WallAngle`
 -- is a WALL to a car below its top (a cut beside the road, a rise on the mountain) and a
 -- DROP to one above it, which it goes over and lands on the ground below. A road with no
--- mountain (a bare road, the tests' yardstick) keeps its rock faces and cliffs.
+-- mountain (a bare road, the tests' yardstick) is walled at its runoff's outer edge
+-- (`BareWallHeight`), where the old barriers stood, and its grass carries on past it.
 --
 -- THERE ARE NO SIDE BARRIERS ANY MORE (T-140): running wide costs grip on the grass, then
 -- the edge decides. The closing barrier behind the window stays, across the tarmac and both
@@ -68,11 +70,10 @@ export type Stats = {
 	probes: number,
 	hits: number,
 	grass: number, -- probes that found grass
-	gravel: number, -- probes that found gravel (a tight cliff stretch, T-181)
-	overCliff: number, -- probes past a cliff's lip: nothing under them
+	gravel: number, -- probes that found gravel (a tight edge, T-181)
 	searches: number, -- lookups that fell back to the grid
 	sweeps: number,
-	wallStops: number, -- a rock face or a hedge
+	wallStops: number, -- a bare road's wall at its runoff's edge
 	kRailStops: number,
 	closingStops: number,
 	treeStops: number, -- a grove's tree trunk (T-183)
@@ -124,7 +125,6 @@ function SplineWorld.new(spline: Spline.Spline, base: Model.World?): SplineWorld
 			hits = 0,
 			grass = 0,
 			gravel = 0,
-			overCliff = 0,
 			searches = 0,
 			sweeps = 0,
 			wallStops = 0,
@@ -214,26 +214,22 @@ function SplineWorld.new(spline: Spline.Spline, base: Model.World?): SplineWorld
 			end
 		elseif s and d then
 			local kind = spline:groundKind(s, d)
-			if kind == nil then
-				stats.overCliff += 1
-			else
-				self.hint = s
-				local y = spline:terrainY(s, d)
-				-- the same window a ground ray has: from GroundRayUp above the point down
-				-- GroundRayLength. A car far under the road does not find it over its head.
-				local dy = y - pos.Y
-				if dy <= rayTop and dy >= rayBottom then
-					stats.hits += 1
-					if kind == Spline.TARMAC then
-						return { y = y, normal = spline:normalAt(s, d), grip = C.GripTarmac, score = C.ScoreTarmac, surface = "tarmac" }
-					end
-					if kind == Spline.GRAVEL then
-						stats.gravel += 1
-						return { y = y, normal = spline:terrainNormal(s, d), grip = C.GripGravel, score = C.ScoreGravel, surface = "gravel" }
-					end
-					stats.grass += 1
-					return { y = y, normal = spline:terrainNormal(s, d), grip = C.GripGrass, score = C.ScoreGrass, surface = "grass" }
+			self.hint = s
+			local y = spline:terrainY(s, d)
+			-- the same window a ground ray has: from GroundRayUp above the point down
+			-- GroundRayLength. A car far under the road does not find it over its head.
+			local dy = y - pos.Y
+			if dy <= rayTop and dy >= rayBottom then
+				stats.hits += 1
+				if kind == Spline.TARMAC then
+					return { y = y, normal = spline:normalAt(s, d), grip = C.GripTarmac, score = C.ScoreTarmac, surface = "tarmac" }
 				end
+				if kind == Spline.GRAVEL then
+					stats.gravel += 1
+					return { y = y, normal = spline:terrainNormal(s, d), grip = C.GripGravel, score = C.ScoreGravel, surface = "gravel" }
+				end
+				stats.grass += 1
+				return { y = y, normal = spline:terrainNormal(s, d), grip = C.GripGrass, score = C.ScoreGrass, surface = "grass" }
 			end
 		end
 		if base then
@@ -253,7 +249,7 @@ function SplineWorld.new(spline: Spline.Spline, base: Model.World?): SplineWorld
 		local y: number, up: Vector3
 		if off and onDrawn(s, d, 0) then
 			y, up = drawn(pos.X, pos.Z)
-		elseif not s or not d or not spline:groundKind(s, d) then
+		elseif not s or not d then
 			return bw, bl
 		else
 			y, up = spline:terrainY(s, d), spline:terrainNormal(s, d)
@@ -286,14 +282,14 @@ function SplineWorld.new(spline: Spline.Spline, base: Model.World?): SplineWorld
 	end
 
 	-- Is a wall `height` tall, standing on the ground at (s, d), beside a car at `carY`? A
-	-- car well above it (a jump) or well under it (falling past a cliff) is not.
+	-- car well above it (a jump) or well under it (fallen off the side) is not.
 	local function standsBeside(s: number, d: number, height: number, carY: number): boolean
 		local footY = spline:terrainY(s, d)
 		return carY - bh < footY + height and carY + bh > footY - R.Thickness
 	end
 
-	-- THE SIDE WALL at (s, d): a rock face or a hedge on d's side, at the runoff's outer
-	-- edge. Its line is |d| = half + runoff(s); how far a point is inside it (positive is
+	-- THE SIDE WALL at (s, d), on a road with no mountain only (T-261): on d's side, at the
+	-- runoff's outer edge. Its line is |d| = half + runoff(s); how far a point is inside it (positive is
 	-- clear) and the way back toward the road. The runoff narrows and widens along the
 	-- road, so the wall line leans: its normal carries that lean, which is what lets a car
 	-- grind along a narrowing runoff rather than stick in it.
@@ -313,12 +309,7 @@ function SplineWorld.new(spline: Spline.Spline, base: Model.World?): SplineWorld
 			return false -- the drawn ground decides (T-258)
 		end
 		local side = if d >= 0 then 1 else -1
-		local kind = spline:edgeAt(s, side)
-		if kind == Spline.CLIFF then
-			return false
-		end
-		local height = if kind == Spline.ROCK then T.RockHeight[1] else T.HedgeHeight
-		return standsBeside(s, side * (half + spline:runoffAt(s, side)), height, carY)
+		return standsBeside(s, side * (half + spline:runoffAt(s, side)), T.BareWallHeight, carY)
 	end
 
 	-- THE DRAWN GROUND AS A WALL (T-258): a point of it steeper than `WallAngle` that stands

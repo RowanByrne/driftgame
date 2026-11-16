@@ -159,20 +159,17 @@ local Spline = {
 		-- steepest is 1.5 times it). Steeper than the runoff's own 0.25, or a bend is too
 		-- short to fit one; the car's wall leans with it, so it grinds rather than snags
 		CarvedRate = 0.4,
-		-- THE EDGES. A rock face is a wall at the runoff's outer edge (so is a hedge, never
-		-- chosen as an edge since T-189); a cliff is where the ground ends. To the car only:
-		-- nothing draws them since T-247 (the ground mesh stands in, `Drift/GroundMeshView`).
-		-- `RockHeight[1]` is the car's wall height (`Drift/SplineWorld`); `[2]` is unread since the
-		-- grand cliffs went (features/legacy-removal.md)
-		RockHeight = { 25, 60 }, -- studs. To the car it is a wall
-		HedgeHeight = 6, -- studs
-		HedgeThickness = 4, -- studs
+		-- THE EDGES ARE THE DRAWN GROUND (T-258, T-261, features/car-edges.md): no rock face,
+		-- hedge or cliff is chosen per side any more. Only a road with NO mountain (a test's
+		-- hand-made road, the collision tests' yardstick) is walled at its runoff's outer edge,
+		-- `BareWallHeight` high to the car and `BareWallThickness` thick to a walker
+		BareWallHeight = 6, -- studs
+		BareWallThickness = 4, -- studs
 		-- How far past the runoff an edge reaches, for keeping two stretches of road apart.
-		EdgeDepth = 4, -- studs: a hedge's thickness, and the foot of a rock face
+		EdgeDepth = 4, -- studs
 		-- WHICH SIDE IS UPHILL follows from the heading against the fall line (T-166,
-		-- `Mountain.AlongFallLine`): no stretch length and no random swap any more. The uphill
-		-- side is always rock and the downhill side always the drop: NO HEDGES as a road edge
-		-- (T-189). They come back later as decoration; `HedgeHeight` and the rest stay for it.
+		-- `Mountain.AlongFallLine`): no stretch length and no random swap any more. K-rails,
+		-- tight edges and carved apexes are placed by it (`Spline:uphillAt`).
 		-- K-RAILS: drawn as METAL CRASH BARRIERS (T-149): a W-beam steel guardrail held off
 		-- square posts on spacer blocks, a striped hazard panel at each end of a run; the
 		-- `KRail` names stay, since the generator and the car's collision read them. To the

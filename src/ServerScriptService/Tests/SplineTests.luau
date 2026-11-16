@@ -357,14 +357,13 @@ end
 function parts.terrain(check)
 	local T = Config.Spline.Terrain
 	local half = Config.Road.Width * 0.5
-	local names = { "rock", "hedge", "cliff" }
 
 	-- What the generator chose, over long roads
 	local missing, badWidth, worstRate, mixes, swaps, badSwaps, sameSides = 0, 0, 0, {}, 0, 0, 0
 	local rails, railsOnBendCliff, badRails, bendsOverCliff = 0, 0, 0, 0
 	local insideWorst, insideN = -math.huge, 0
 	local stretches = {}
-	local hedgePoints, swapApart, swapOutOfBand = 0, 0, 0 -- no hedges, and the mountain joined through a change of sides (T-189)
+	local noSide, swapOutOfBand = 0, 0 -- a side at every point, and each change of sides in the band (T-189, T-261)
 	-- carved apexes (T-182): how many, how close, and what is either side of each
 	local worstCarveRate, carves, carveLen, carveWorstGap, carveBad = 0, 0, 0, 0, 0
 	local wrongSide, sideChecked, swapLen = 0, 0, 0
@@ -373,7 +372,7 @@ function parts.terrain(check)
 		local sp = gen.spline
 		local s = 0
 		for _, sec in gen.sections do
-			if not (sec.rl and sec.rr and sec.el and sec.er) then
+			if not (sec.rl and sec.rr and sec.up) then
 				missing += 1
 			else
 				for i, knots in { sec.rl, sec.rr } do
@@ -400,19 +399,19 @@ function parts.terrain(check)
 						prevV, prevS = w, knots[j]
 					end
 				end
-				local l, r = sec.el[2], sec.er[2]
-				local key = `{names[l]}/{names[r]}`
-				mixes[key] = (mixes[key] or 0) + 1
-				-- one side the mountain, the other the drop: never rock both sides, never a
-				-- cliff both sides
-				if (l == Spline.ROCK and r == Spline.ROCK) or (l == Spline.CLIFF and r == Spline.CLIFF) then
+				-- the mountain's side as the section starts (T-261: one side, -1 or 1, where the
+				-- generator once chose rock one side and a cliff the other)
+				local up0 = sec.up[2]
+				if up0 ~= -1 and up0 ~= 1 then
 					sameSides += 1
 				end
+				local key = if up0 < 0 then "mountain left" else "mountain right"
+				mixes[key] = (mixes[key] or 0) + 1
 				local bend = sec.tag ~= "Straight" and sec.tag ~= "Escape" and sec.tag ~= "Start"
 				local kEnd = sec.k[#sec.k]
 				local outside = if kEnd > 0 then 1 else -1
-				local outsideKind = if outside < 0 then l else r
-				if bend and outsideKind == Spline.CLIFF and sec.len >= T.KRailRun[1] then
+				local outsideDown = outside == -up0
+				if bend and outsideDown and sec.len >= T.KRailRun[1] then
 					bendsOverCliff += 1
 				end
 				if sec.kr then
@@ -422,7 +421,7 @@ function parts.terrain(check)
 						if len < T.KRailRun[1] - 1e-6 or len > T.KRailRun[2] + 1e-6 then
 							badRails += 1
 						end
-						if bend and sec.kr[j + 2] == outside and outsideKind == Spline.CLIFF then
+						if bend and sec.kr[j + 2] == outside and outsideDown then
 							railsOnBendCliff += 1
 						end
 					end
@@ -440,8 +439,8 @@ function parts.terrain(check)
 				insideN += 1
 			end
 		end
-		-- CARVED APEXES (T-182): wherever the inside grass is down to `CarvedGap`, the rock is
-		-- that side, the drop the other, and the road is bending toward the rock
+		-- CARVED APEXES (T-182): wherever the inside grass is down to `CarvedGap`, the mountain
+		-- is that side, the drop the other, and the road is bending toward the mountain
 		carves += gen.stats.carved
 		carveLen += sp.length
 		for u = 0, sp.length, 2 do
@@ -450,7 +449,7 @@ function parts.terrain(check)
 				if w < T.RunoffMin - 0.01 then
 					carveWorstGap = math.max(carveWorstGap, if w <= T.CarvedGap + 1e-6 then sp:runoffAt(u, side) else 0)
 					local k = sp:curvatureAt(u)
-					if w <= T.CarvedGap + 1e-6 and (sp:edgeAt(u, side) ~= Spline.ROCK or sp:edgeAt(u, -side) ~= Spline.CLIFF or (k > 0) ~= (side < 0) or k == 0) then
+					if w <= T.CarvedGap + 1e-6 and (sp:uphillAt(u) ~= side or (k > 0) ~= (side < 0) or k == 0) then
 						carveBad += 1
 					end
 				end
@@ -459,20 +458,15 @@ function parts.terrain(check)
 		-- WHICH SIDE THE MOUNTAIN IS ON, along the road (T-166): the side the uphill direction
 		-- is on, outside the band along the fall line; and it changes only inside a planned
 		-- turn (a hairpin), never on an ordinary bend.
-		-- NO HEDGES (T-189): every point is rock one side and the drop the other, and a change
-		-- of sides happens at one point, both sides at once, inside the band: the rock face
-		-- ends on one side where it starts on the other, so the mountain has no gap
+		-- (T-189, T-261): every point has the mountain on one side, and a change of sides
+		-- happens inside the band
 		local band = math.sin(math.rad(Config.Spline.Mountain.AlongFallLine))
 		local upPrev, runFrom, lastS = nil, 0, 0
 		for u = 0, sp.length, 4 do
-			local l, r = sp:edgeAt(u, -1), sp:edgeAt(u, 1)
-			if (l == Spline.ROCK and r == Spline.ROCK) or (l == Spline.CLIFF and r == Spline.CLIFF) then
-				sameSides += 1
+			local up = sp:uphillAt(u)
+			if not up then
+				noSide += 1
 			end
-			if l == Spline.HEDGE or r == Spline.HEDGE then
-				hedgePoints += 1
-			end
-			local up = if l == Spline.ROCK or r == Spline.CLIFF then -1 elseif r == Spline.ROCK or l == Spline.CLIFF then 1 else nil
 			local across = math.sin(sp:yawAt(u) - gen.fall)
 			if up and math.abs(across) >= band + 0.02 then
 				sideChecked += 1
@@ -493,19 +487,15 @@ function parts.terrain(check)
 					if not planned then
 						badSwaps += 1
 					end
-					-- where each side changed, to a quarter of a stud: the same point, in the band
-					local at = { [-1] = u, [1] = u }
-					for _, side in { -1, 1 } do
-						local was = sp:edgeAt(lastS, side)
-						for v = lastS, u, 0.25 do
-							if sp:edgeAt(v, side) ~= was then
-								at[side] = v
-								break
-							end
+					-- where it changed, to a quarter of a stud: in the band
+					local at = u
+					for v = lastS, u, 0.25 do
+						if sp:uphillAt(v) ~= upPrev then
+							at = v
+							break
 						end
 					end
-					swapApart = math.max(swapApart, math.abs(at[-1] - at[1]))
-					if math.abs(math.sin(sp:yawAt(at[1]) - gen.fall)) > band + 1e-3 then
+					if math.abs(math.sin(sp:yawAt(at) - gen.fall)) > band + 1e-3 then
 						swapOutOfBand += 1
 					end
 					table.insert(stretches, u - runFrom)
@@ -528,9 +518,9 @@ function parts.terrain(check)
 	check(
 		"some sharp bends carve the rock to the tarmac's edge at the apex, eased in and out",
 		carves > 0 and carveBad == 0 and carveWorstGap <= T.CarvedGap + 1e-6 and worstCarveRate <= T.CarvedRate + 1e-9,
-		`{carves} carved apexes ({fmt(carves / carveLen * 10000, 2)} per 10 000 studs); rock to tarmac at the apex at most {fmt(carveWorstGap, 2)} studs; {carveBad} points carved without rock inside the bend and a cliff outside; steepest easing {fmt(worstCarveRate, 3)} stud per stud (limit {T.CarvedRate})`
+		`{carves} carved apexes ({fmt(carves / carveLen * 10000, 2)} per 10 000 studs); mountain to tarmac at the apex at most {fmt(carveWorstGap, 2)} studs; {carveBad} points carved without the mountain inside the bend; steepest easing {fmt(worstCarveRate, 3)} stud per stud (limit {T.CarvedRate})`
 	)
-	check("the mountain on one side, the drop on the other", sameSides == 0, `{sameSides} points with rock or cliff both sides. Left/right mix of sections' first edges: {table.concat(mixList, ", ")}`)
+	check("the mountain on one side, the drop on the other", sameSides == 0 and noSide == 0, `{sameSides} sections and {noSide} points with no uphill side. Sections' first sides: {table.concat(mixList, ", ")}`)
 	check("the mountain is on the uphill side of the road", wrongSide == 0 and sideChecked > 0, `{wrongSide} of {sideChecked} points away from the fall line have it on the wrong side`)
 	-- (the mountain changing sides only inside a planned turn was the old descent planner's
 	-- rule; since T-247 every road follows the mountain itself, which can turn it anywhere)
@@ -539,15 +529,11 @@ function parts.terrain(check)
 		swaps > 0,
 		`{swaps} changes of side ({fmt(swaps / swapLen * 10000, 1)} per 10 000 studs), {badSwaps} outside a planned turn; the mountain stayed on one side for {fmt(median, 0)} studs (median)`
 	)
+	check("the mountain changes sides only along the fall line", swapOutOfBand == 0, `{swapOutOfBand} changes outside the band along the fall line`)
 	check(
-		"no hedge edges, and the mountain joined through every change of sides",
-		hedgePoints == 0 and swapApart <= 0.25 + 1e-6 and swapOutOfBand == 0,
-		`{hedgePoints} points with a hedge; the two sides change at most {fmt(swapApart, 2)} studs apart (rock ends one side where it starts the other); {swapOutOfBand} changes outside the band along the fall line`
-	)
-	check(
-		"K-rails 60 to 300 studs, on most bends above a cliff",
+		"K-rails 60 to 300 studs, on most bends above the drop",
 		badRails == 0 and rails > 0 and railsOnBendCliff >= bendsOverCliff * 0.3,
-		`{rails} runs, {badRails} the wrong length; {railsOnBendCliff} of {bendsOverCliff} bends with a cliff outside have one (about half wanted)`
+		`{rails} runs, {badRails} the wrong length; {railsOnBendCliff} of {bendsOverCliff} bends with the drop outside have one (about half wanted)`
 	)
 	check("the inside of a bend keeps its grass short of the bend's centre", insideWorst <= T.InsideShare + 1e-6, `furthest the inside edge reaches: {fmt(insideWorst * 100, 1)}% of the way to the centre (limit {T.InsideShare * 100}%), {insideN} points on bends`)
 
@@ -557,12 +543,11 @@ function parts.terrain(check)
 	local rng = Random.new(11)
 	local wrongKind, worstJoin, worstSlope, worstFlat, n = 0, 0, 0, 0, 0
 	local worstLip, lipNormal = 0, 1
-	local cliffNil, cliffTried, wallGrass, wallTried = 0, 0, 0, 0
+	local pastGrass, pastTried = 0, 0
 	for _ = 1, 3000 do
 		local s = 50 + rng:NextNumber() * (sp.length - 100)
 		local side = if rng:NextNumber() < 0.5 then -1 else 1
 		local w = sp:runoffAt(s, side)
-		local edge = sp:edgeAt(s, side)
 		-- tarmac, grass, and past the edge
 		local dT = side * rng:NextNumber() * half
 		local dG = side * (half + 0.01 + rng:NextNumber() * math.max(0, w - 0.02))
@@ -570,16 +555,9 @@ function parts.terrain(check)
 		if sp:groundKind(s, dT) ~= Spline.TARMAC or (w > 0.05 and sp:groundKind(s, dG) ~= (if sp:gravelAt(s, side) or math.abs(dG) - half <= sp:lipWidthAt(s, side) then Spline.GRAVEL else Spline.GRASS)) then
 			wrongKind += 1
 		end
-		if edge == Spline.CLIFF then
-			cliffTried += 1
-			if sp:groundKind(s, dP) == nil then
-				cliffNil += 1
-			end
-		else
-			wallTried += 1
-			if sp:groundKind(s, dP) == Spline.GRASS then
-				wallGrass += 1
-			end
+		pastTried += 1
+		if sp:groundKind(s, dP) == Spline.GRASS then
+			pastGrass += 1
 		end
 		-- the grass meets the tarmac without a gap or a crease, and is flat at its edge: read
 		-- off the ground as if the road were not raised (`terrainY` + `lipAt`)
@@ -614,8 +592,7 @@ function parts.terrain(check)
 		n += 1
 	end
 	check("tarmac, then grass, at the right offsets", wrongKind == 0, `{wrongKind} of {n} points read the wrong surface`)
-	check("past a cliff's lip there is nothing", cliffTried > 0 and cliffNil == cliffTried, `{cliffNil} of {cliffTried} points past a cliff found nothing under them`)
-	check("past a rock face or a hedge the ground carries on", wallTried > 0 and wallGrass == wallTried, `{wallGrass} of {wallTried}`)
+	check("past the runoff the ground carries on, on both sides (no cliff, T-261)", pastTried > 0 and pastGrass == pastTried, `{pastGrass} of {pastTried}`)
 	check("the grass meets the tarmac with no gap: the step starts at its edge", worstJoin < 1e-3, `worst {string.format("%.1e", worstJoin)} studs`)
 	check(
 		"the road stands RoadLip above its grass",
@@ -632,19 +609,19 @@ function parts.terrain(check)
 		for _, side in { -1, 1 } do
 			local a0, a1 = sp:kRailAt(s, side)
 			local b0, b1 = copy:kRailAt(s, side)
-			if sp:runoffAt(s, side) ~= copy:runoffAt(s, side) or sp:edgeAt(s, side) ~= copy:edgeAt(s, side) or a0 ~= b0 or a1 ~= b1 or sp:terrainY(s, side * 40) ~= copy:terrainY(s, side * 40) then
+			if sp:runoffAt(s, side) ~= copy:runoffAt(s, side) or sp:uphillAt(s) ~= copy:uphillAt(s) or a0 ~= b0 or a1 ~= b1 or sp:terrainY(s, side * 40) ~= copy:terrainY(s, side * 40) then
 				differ += 1
 			end
 		end
 	end
-	check("a client's replay has the same grass, edges and K-rails", differ == 0, `{differ} of 4000 side samples differ`)
+	check("a client's replay has the same grass, uphill side and K-rails", differ == 0, `{differ} of 4000 side samples differ`)
 
 	-- A malformed section is refused whole
 	local refused = 0
 	local bad = {
-		{ len = 100, k = { 100, 0 }, g = { 100, 0 }, b = { 100, 0 }, el = { 100, 9 } },
+		{ len = 100, k = { 100, 0 }, g = { 100, 0 }, b = { 100, 0 }, up = { 100, 9 } },
 		{ len = 100, k = { 100, 0 }, g = { 100, 0 }, b = { 100, 0 }, rl = { 100, -5 } },
-		{ len = 100, k = { 100, 0 }, g = { 100, 0 }, b = { 100, 0 }, er = { 50, 1 } },
+		{ len = 100, k = { 100, 0 }, g = { 100, 0 }, b = { 100, 0 }, up = { 50, 1 } },
 		{ len = 100, k = { 100, 0 }, g = { 100, 0 }, b = { 100, 0 }, kr = { 20, 140, 1 } },
 		{ len = 100, k = { 100, 0 }, g = { 100, 0 }, b = { 100, 0 }, kr = { 20, 40, 0 } },
 	}
@@ -822,13 +799,13 @@ function parts.tight(check)
 					samples += 1
 					local w = sp:runoffAt(u, side)
 					narrowest = math.min(narrowest, w)
-					if sp:edgeAt(u, side) ~= Spline.CLIFF then
+					if sp:uphillAt(u) ~= -side then
 						notCliff += 1
 					end
 					if not sp:kRailAt(u, side) then
 						unrailed += 1
 					end
-					if sp:groundKind(u, side * (half + w * 0.5)) ~= Spline.GRAVEL or sp:groundKind(u, side * (half + w + 0.3)) ~= nil then
+					if sp:groundKind(u, side * (half + w * 0.5)) ~= Spline.GRAVEL or sp:groundKind(u, side * (half + w + 0.3)) ~= Spline.GRASS then
 						wrongKind += 1
 					end
 					if copy:gravelAt(u, side) ~= true or copy:runoffAt(u, side) ~= w then
@@ -846,9 +823,9 @@ function parts.tight(check)
 	)
 	check("tight cliff edges ease in and out", rate <= T.TightRate + 1e-9, `steepest change {fmt(rate, 3)} stud per stud between knots (limit {T.TightRate})`)
 	check(
-		"tight cliff edges: a cliff past the gravel and a rail on the tarmac's edge all the way",
+		"tight edges: on the downhill side, a rail on the tarmac's edge all the way",
 		notCliff == 0 and unrailed == 0 and wrongKind == 0 and samples > 0,
-		`{samples} points: {notCliff} not over a cliff, {unrailed} without a rail, {wrongKind} not gravel then nothing`
+		`{samples} points: {notCliff} not on the downhill side, {unrailed} without a rail, {wrongKind} not gravel then the ground`
 	)
 	check("a client's replay has the same gravel", differ == 0, `{differ} of {samples} differ`)
 	check("a tight cliff edge never shares a side with a grove", clash == 0, `{clash} of {count} on a grove's side`)
