@@ -1929,7 +1929,7 @@ function GroundMeshView.DebugRunoffGap(self: View, ahead: number?, behind: numbe
 								table.insert(dbg, string.format("%.1f,%.1f:%.2f/%d", tile.px[kk] - x, tile.pz[kk] - z, tile.heights[kk] - y, tile.cls[kk]))
 							end
 						end
-						table.insert(trace, { math.round((s - along) * 10) / 10, math.round((d - half) * 10) / 10, side, math.round((g - y) * 100) / 100, leaf.s, math.round(w * 10) / 10, table.concat(dbg, " ") })
+						table.insert(trace, { math.round((s - along) * 10) / 10, math.round((d - half) * 10) / 10, side, math.round((g - y) * 100) / 100, leaf.s, math.round(w * 10) / 10, table.concat(dbg, " "), math.round(x * 10) / 10, math.round(z * 10) / 10 })
 					end
 					if math.abs(g - y) > math.abs(worst) then
 						worst, worstAt = g - y, { math.round((s - along) * 10) / 10, math.round((d - half) * 10) / 10, side, (tile.leaf :: Leaf).s, math.round(w * 10) / 10 }
@@ -1955,10 +1955,21 @@ function GroundMeshView.DebugRunoffGap(self: View, ahead: number?, behind: numbe
 	for k, l in gaps do
 		out.runoff[k] = brief(l)
 		local abs = table.create(#l)
+		local o1, o2, o3 = 0, 0, 0
 		for i, v in l do
 			abs[i] = math.abs(v)
+			if abs[i] > 0.1 then
+				o1 += 1
+			end
+			if abs[i] > 0.2 then
+				o2 += 1
+			end
+			if abs[i] > 0.3 then
+				o3 += 1
+			end
 		end
 		out.runoff[k].abs = brief(abs)
+		out.runoff[k].over = { o1, o2, o3 } -- points off by more than 0.1, 0.2, 0.3 studs
 	end
 	for k, l in under do
 		out.belowRoad[k] = brief(l)
@@ -1967,6 +1978,44 @@ function GroundMeshView.DebugRunoffGap(self: View, ahead: number?, behind: numbe
 		out.edgeFoot[k] = brief(l)
 	end
 	return out
+end
+
+-- One drawn vertex near (x, z), and how it was placed (T-251): the shown tile's vertex nearest
+-- the point, and the same grid point worked out afresh (`Ground.at`, the exact edge, its four
+-- neighbours' distances past the edge, which spacings meet there, and where `place` puts it).
+function GroundMeshView.DebugVertexAt(self: View, x: number, z: number)
+	local tile = self:_tileAt(x, z)
+	if not tile or not tile.leaf then
+		return { found = false }
+	end
+	local leaf = tile.leaf :: Leaf
+	local s = leaf.s
+	local n = cells() + 1
+	local i, j = math.round((x - leaf.x0) / s), math.round((z - leaf.z0) / s)
+	local k = i * n + j + 1
+	local gx, gz = leaf.x0 + i * s, leaf.z0 + j * s
+	local margin = 2 * s + 1
+	local ctx = Ground.context(self.field, self.spline, gx - margin, gz - margin, gx + margin, gz + margin)
+	local L = newLattice(ctx, s)
+	local I, J = math.round(gx / s), math.round(gz / s)
+	local y, a, e, T = Ground.at(ctx, gx, gz)
+	local r = latAt(L, I, J)
+	local p = place(L, I, J)
+	local lo, hi = GroundTiles.spacingRange(self.shown, gx, gz)
+	local uy, us, ud, ue = underAt(ctx, gx, gz)
+	return {
+		found = true,
+		spacing = s,
+		grid = { gx, gz },
+		shown = { tile.px[k], tile.pz[k], tile.heights[k], tile.cls[k] },
+		placedNow = p,
+		groundAt = { y, a, e, T },
+		lattice = r,
+		under = { uy, us, ud, ue },
+		neighbours = { latAt(L, I - 1, J)[3], latAt(L, I + 1, J)[3], latAt(L, I, J - 1)[3], latAt(L, I, J + 1)[3] },
+		spacings = { lo, hi },
+		stale = tile.stale,
+	}
 end
 
 -- A DRIVE OVER THE RUNOFF (T-251): the car's own model, on the road's own world
