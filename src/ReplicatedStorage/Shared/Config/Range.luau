@@ -109,7 +109,10 @@ return {
 	AimLocalSwing = 40, -- degrees
 	AimLocalStep = 10, -- degrees
 	AimLocalTurnCost = 0.3, -- studs a degree
-	AimLocalBackCost = 200, -- studs
+	-- (200 until T-245 doubled the range: its legs twice as long, a heading a little back the
+	-- way on fell back twice as far over one, 4 times on 96 roads of 50 000 studs, to 1 140;
+	-- at 400 none, and no stall)
+	AimLocalBackCost = 400, -- studs
 	-- THE MOUNTAIN FIRST (T-242): when no random section follows h, a straight of
 	-- `FollowStraight` and every bend of `FollowTurns` either way on `FollowRadii`, each judged
 	-- `FollowLook` studs on past it: how far off h the road is there, half the furthest it
