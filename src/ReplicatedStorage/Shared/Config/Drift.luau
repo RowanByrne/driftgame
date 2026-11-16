@@ -453,7 +453,7 @@ local Drift = {
 	-- One finger, held, is the whole control (features/drift-model.md "The control").
 	-- Owned by the gesture task, not by the model: the model only ever wanted one number.
 	-- A SETTING, not a car: the gesture is the player's, the car is what it drives.
-	InputMode = "dynamic", -- EXACT. "centred": the offset is measured from the middle of
+	InputMode = "centred", -- EXACT, the default for a player who has not picked one (the user, 2026-11-16). "centred": the offset is measured from the middle of
 	-- the screen. "dynamic": from where the finger went down. The
 	-- reference ships both as a setting and they feel different
 	SliderWidthMin = 0.5, -- FALLBACK. Full travel as a share of half the screen width, at

@@ -53,7 +53,7 @@ Known starting points for the concept and that catalogue:
 
 | Control or tool | Existing status | Boundary for this feature |
 |---|---|---|
-| Steering mode and sensitivity | Dynamic or centred, default dynamic; sensitivity 1-10, default 5. `Drift/DragControl.luau` implements pointer response. T-208 adds validated `CarInputController:SetSettings/GetSettings` session APIs | Selected by the user; the page calls the runtime API, never its Studio debug hook |
+| Steering mode and sensitivity | Dynamic or centred, default centred (2026-11-16); sensitivity 1-10, default 5. `Drift/DragControl.luau` implements pointer response. T-208 adds validated `CarInputController:SetSettings/GetSettings` session APIs | Selected by the user; the page calls the runtime API, never its Studio debug hook |
 | Hide/restore game UI | Keyboard P, session-only (`SETTINGS.md`, T-200) | Preserve it; a hidden menu must not strand a modal input block or change a setting through a stale drag |
 | Camera controls | Existing camera/controller owns the view and its inputs | Catalogue supported controls and ask which should move; do not turn all camera tuning constants into settings |
 | Car tuner, readouts, trajectory and admin commands | Developer tools with their existing access rules | Keep those rules and entry points unless the user explicitly selects a development section; never expose server-wide actions as personal preferences |

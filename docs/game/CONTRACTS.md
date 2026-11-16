@@ -329,7 +329,7 @@ Client-owned session UI. No new remotes, persistent data keys, analytics events 
 
 | API | Contract |
 |---|---|
-| `CarInputController:GetSettings()` | Returns a copy `{mode: "dynamic" or "centred", sensitivity: integer 1..10}`; starts from Config.Drift defaults (dynamic, 5), survives car/avatar respawns for this session |
+| `CarInputController:GetSettings()` | Returns a copy `{mode: "dynamic" or "centred", sensitivity: integer 1..10}`; starts from Config.Drift defaults (centred, 5), survives car/avatar respawns for this session |
 | `CarInputController:SetSettings(mode?, sensitivity?)` | Nil leaves that field alone. Rejects an unknown mode, non-number, NaN or sensitivity outside 1..10 atomically; rounds valid numeric sensitivity to an integer. Returns boolean success. Applies to the pointer owner, never the model tune or keyboard/stick gain |
 | `CarInputController:IsMenuBlocked()` | Shared client menu ownership, including Roblox's menu; independent of actual driving/standing mode |
 | `UI/MenuInput.SetBlocked(owner, on)`, `IsBlocked()`, `Changed(blocked)` | Each owner releases only itself. Settings and an open console own separate blocks. A block neutralizes steering, ends pointer/pan input and prevents brake toggles; it preserves the brake latch and true driving mode |
