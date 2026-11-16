@@ -331,7 +331,10 @@ local Spline = {
 		Patches = 2, -- a copy is 240 studs now (480 in the first cut)
 		PatchLength = { 8, 26 },
 		PatchWidth = { 6, 16 },
-		PatchSeam = 0.25,
+		PatchSeam = 0.2,
+		PatchBlend = 0.5,
+		PatchSoft = 0.6, -- studs
+		PatchRagged = 0.8, -- studs
 		-- cracks: mostly along the road `CrackEdge` in from an edge, `CrackAcross` of them across
 		Cracks = 6,
 		CrackWidth = 0.12, -- studs

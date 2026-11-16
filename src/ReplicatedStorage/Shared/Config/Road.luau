@@ -124,7 +124,9 @@ return {
 		Tarmac = Color3.fromRGB(70, 72, 84),
 		TarmacWorn = Color3.fromRGB(47, 48, 57), -- the wheel tracks' middles, polished darker
 		TarmacEdge = Color3.fromRGB(98, 96, 94), -- the dusty last stud or two at each edge
-		TarmacPatch = { Color3.fromRGB(55, 56, 64), Color3.fromRGB(82, 83, 92) }, -- newer, older
+		-- patches of newer tarmac, a little darker (send-back: the lighter older patch and
+		-- strong ones read as flat panels)
+		TarmacPatch = { Color3.fromRGB(58, 59, 69), Color3.fromRGB(62, 63, 74) },
 		Crack = Color3.fromRGB(30, 30, 36),
 		TyreStreak = Color3.fromRGB(28, 28, 32),
 		EdgeLine = Color3.fromRGB(222, 222, 214), -- Japanese edge lines: solid white

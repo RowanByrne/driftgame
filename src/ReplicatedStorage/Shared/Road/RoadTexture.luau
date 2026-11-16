@@ -272,16 +272,18 @@ function RoadTexture.paint(yield: (() -> ())?): (buffer, number, number)
 			ed = ed * ed
 			r, g, b = lerp(r, edge.R, ed), lerp(g, edge.G, ed), lerp(b, edge.B, ed)
 
-			-- patches
+			-- patches: a ragged edge (the wear noise moves it up to `PatchRagged` studs), a faint
+			-- darker seam just inside it, and `PatchBlend` of the way to the patch's colour,
+			-- feathered over `PatchSoft` studs (send-back: hard flat rectangles read as panels)
 			local inPatch = false
 			for _, p in patches do
 				local dt = (t - p.t0) % period
-				if dt < p.len and d > p.d0 and d < p.d1 then
+				local seam = math.min(dt, p.len - dt, d - p.d0, p.d1 - d) + wn * T.PatchRagged
+				if seam > 0 then
 					inPatch = true
-					-- a darker seam round it
-					local seam = math.min(dt, p.len - dt, d - p.d0, p.d1 - d)
-					local k = if seam < T.PatchSeam then 0.8 else 1
-					r, g, b = lerp(r, p.c.R * k, 0.85), lerp(g, p.c.G * k, 0.85), lerp(b, p.c.B * k, 0.85)
+					local k = if seam < T.PatchSeam then 0.92 else 1
+					local a = T.PatchBlend * math.clamp(seam / T.PatchSoft, 0, 1)
+					r, g, b = lerp(r * k, p.c.R, a), lerp(g * k, p.c.G, a), lerp(b * k, p.c.B, a)
 					break
 				end
 			end
