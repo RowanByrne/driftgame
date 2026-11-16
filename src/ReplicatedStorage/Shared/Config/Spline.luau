@@ -437,8 +437,8 @@ local Spline = {
 		-- tile is a few pixels; at 32 the corridor of 9 600 studs each way took every tile.
 		RoadFar = { { From = 2400, Coarsest = 64 }, { From = 4800, Coarsest = 128 } },
 		-- the most tiles the Road ahead and Road behind steps may add past Ultra's own (T-263):
-		-- with Ultra and both at Longest that is about 78 000 of the ~81 000 triangles
-		CorridorMost = 60,
+		-- with Ultra and both at Longest the mesh budget check (SplineMeshTests) is just under 81 000
+		CorridorMost = 45,
 		RoadPad = 256, -- studs: tiles this near the drawn road are drawn even past `Reach`
 		ReleaseOnFail = 24, -- tiles let go if the device will not make another (room for the road)
 		-- THE PLAYER'S "GROUND DETAIL" (Settings, Graphics; docs/game/SETTINGS.md), light to far.
