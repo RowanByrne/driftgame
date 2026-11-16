@@ -52,7 +52,6 @@ local World = require(DriftFolder.World)
 local SplineWorld = require(DriftFolder.SplineWorld)
 local SplineRoadView = require(DriftFolder.SplineRoadView)
 local GroundMeshView = require(DriftFolder.GroundMeshView)
-local GroundTerrainView = require(DriftFolder.GroundTerrainView)
 
 local CarInputController = require(script.Parent.CarInputController)
 
@@ -316,12 +315,9 @@ function DriftController:UseSpline(spline: any?)
 	self.splineClosing = nil
 	if spline then
 		self.splineView = SplineRoadView.new(spline)
-		-- the ground-first trial (T-218): option 1 draws the mountain as its own meshes,
-		-- option 2 writes it as Roblox's terrain
-		if spline.mountain and spline.mountain.mode == "mesh" then
+		-- the ground (T-218): the mountain the road is cut into, drawn as its own meshes
+		if spline.mountain then
 			self.groundView = GroundMeshView.new(spline)
-		elseif spline.mountain and spline.mountain.mode == "terrain" then
-			self.groundView = GroundTerrainView.new(spline)
 		end
 	end
 	self:_rebuildWorld()
@@ -340,8 +336,7 @@ function DriftController:SetSplineClosing(s: number?)
 	end
 end
 
--- The ground-first trial's drawn ground (T-218), when this run has one: option 1's grids
--- or option 2's terrain chunks.
+-- The drawn ground (T-218, `Drift/GroundMeshView`), when a road is up.
 function DriftController:DebugGroundView(paused: boolean?)
 	local view = self.groundView
 	if not view then
@@ -355,7 +350,7 @@ function DriftController:DebugGroundView(paused: boolean?)
 	return out
 end
 
--- How well option 1's mesh follows the cut walls and drops beside the road (T-231,
+-- How well the ground's mesh follows the cut walls and drops beside the road (T-231,
 -- `GroundMeshView.DebugWalls`).
 function DriftController:DebugGroundWalls(ahead: number?, step: number?, behind: number?)
 	local view: any = self.groundView

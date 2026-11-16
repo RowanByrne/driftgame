@@ -14,9 +14,6 @@
 -- THE INSTANCES it drives, made on this client if the place has none, and adopted if it
 -- has: Lighting's `Atmosphere` and `Sky`, the Terrain's `Clouds`, and three post effects of
 -- its own in Lighting (`DayNightGrade`, `DayNightBloom`, `DayNightRays`).
---
--- THE CLIFFS' HAZE: the foot of each cliff in the road's mesh takes the look's `CliffHaze`
--- (`Road/SplineMesh.setHaze`), rewritten only when it has moved `HazeStep`.
 
 local Lighting = game:GetService("Lighting")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -24,7 +21,6 @@ local RunService = game:GetService("RunService")
 
 local Config = require(ReplicatedStorage.Shared.Config)
 local DayNight = require(ReplicatedStorage.Shared.DayNight)
-local SplineMesh = require(ReplicatedStorage.Shared.Road.SplineMesh)
 
 local SkyController = {}
 SkyController.Priority = 0
@@ -43,8 +39,7 @@ local speed = 1
 local anchorT = 0
 local anchorClock = 0
 
-local lastHaze: Color3? = nil
-local stats = { applied = 0, hazeWrites = 0, hazeMeshes = 0, worstMs = 0 }
+local stats = { applied = 0, worstMs = 0 }
 local lastLook: { [string]: any }? = nil
 
 local function adopt<T>(parent: Instance, className: string, name: string?): T
@@ -68,11 +63,6 @@ local function now(): number
 		return (anchorT + (os.clock() - anchorClock) * speed) % cycle.length
 	end
 	return cycle:cycleTime(workspace:GetServerTimeNow())
-end
-
-local function hazeMoved(a: Color3, b: Color3): boolean
-	local step = Config.DayNight.HazeStep
-	return math.abs(a.R - b.R) >= step or math.abs(a.G - b.G) >= step or math.abs(a.B - b.B) >= step
 end
 
 -- The body lighting the world (the sun while it is over the horizon, else the moon), its
@@ -116,13 +106,6 @@ local function apply(look: { [string]: any })
 	bloom.Intensity = look.BloomIntensity
 	bloom.Threshold = look.BloomThreshold
 	rays.Intensity = look.SunRays
-
-	local haze: Color3 = look.CliffHaze
-	if not lastHaze or hazeMoved(lastHaze, haze) then
-		lastHaze = haze
-		stats.hazeMeshes = SplineMesh.setHaze(haze)
-		stats.hazeWrites += 1
-	end
 
 	stats.applied += 1
 	lastLook = look
@@ -198,13 +181,10 @@ function SkyController:DebugState(): { [string]: any }
 		lightSource = lightSource,
 		lightElevation = lightElevation,
 		lightFade = lightFade,
-		haze = lastHaze and lastHaze:ToHex(),
 		held = hold,
 		speed = speed,
 		length = cycle.length,
 		applied = stats.applied,
-		hazeWrites = stats.hazeWrites,
-		hazeMeshes = stats.hazeMeshes,
 		lights = cycle:lightsAt(now()),
 		worstMs = stats.worstMs,
 		clouds = clouds ~= nil,

@@ -49,9 +49,8 @@ All numbers in a new `Shared/Config/DayNight.luau`.
   At least: noon, golden hour, sunset, dusk, night, dawn, sunrise.
 - **The sun moves faster through the horizon** than across the day, so the 20 seconds of sunset
   are spent with the sun low, where it looks best, not crossing the middle of the sky.
-- **The cliffs' haze follows the sky.** The foot of each cliff fades into the atmosphere's colour
-  at that moment, so it doesn't glow pale at night (today it is a fixed colour in the road mesh,
-  `Config.Spline` `HazeColour`).
+- **The cliffs' haze followed the sky** until the drawn cliffs went (T-247, `legacy-removal.md`):
+  the ground mesh has no haze of its own.
 - **Night is readable:** the road at midnight stays easy to read, so the drift is never driven
   blind. It is judged by eye, in the lane: a playtest cannot read a frame's pixels (measured:
   a `CaptureService` capture cannot be opened as an `EditableImage`), so there is no number to
@@ -114,8 +113,7 @@ ambience sounds are left out.
 - Roblox's sun is on the horizon at 6:00 and 18:00 (measured in the lane, latitude 41.7).
 - The sky is Roblox's own `Sky` (stars and moon), an `Atmosphere`, Terrain `Clouds`, and a
   colour grade, bloom and sun rays of the controller's own. `GlobalShadows` is turned on.
-- The cliffs' haze is a colour id in each road chunk's mesh, rewritten in place when it has
-  moved 2/255.
+- The cliffs' haze (a colour id in each road chunk's mesh) went with the drawn cliffs in T-247.
 - Cost: the sky's step is 0.17 ms at worst, with the cycle run 70 times as fast.
 
 ## As built (step 2, `T-146`)
