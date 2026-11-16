@@ -9,7 +9,7 @@ Every task in progress and the files it owns, so parallel sessions and workers n
 
 | Branch | Lane | Files owned | Since |
 |---|---|---|---|
-| `agent/range-double-scale` | lent | `src/ReplicatedStorage/Shared/Config/Range.luau`, `src/ReplicatedStorage/Shared/Road/Range.luau`, `src/ServerScriptService/Tests/RangeTests.luau`, `src/ServerScriptService/Tests/GroundTests.luau`, `docs/game/features/mountain-range.md` | 2026-11-16 (T-245) |
+| `agent/ground-carries-runoff` | lent | EXPERIMENT, not for merge until the user picks it: `src/ReplicatedStorage/Shared/Road/Ground.luau`, `src/StarterPlayerScripts/Drift/GroundMeshView.luau`, `src/StarterPlayerScripts/Drift/GroundTiles.luau`, `src/StarterPlayerScripts/Drift/SplineWorld.luau`, the runoff and skirt parts of `src/ReplicatedStorage/Shared/Road/SplineMesh.luau` and `Spline.luau` (`terrainY`), `Config/Spline.luau` `Ground` keys. Overlaps T-247's removal by design; reconciled after it lands | 2026-11-16 (T-251) |
 
 ## Notes between sessions
 
