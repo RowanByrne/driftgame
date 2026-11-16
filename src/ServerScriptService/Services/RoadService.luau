@@ -630,7 +630,9 @@ function RoadService:SafeStart(position: Vector3?): CFrame?
 	local C = Config.Road
 	local want = nil
 	if position then
-		want = generator:locate(position)
+		-- (from as far out as a car on the mountain gets before it is put back, T-258: the
+		-- nearest road to it, not the leader's)
+		want = generator:locate(position, Config.Road.Width * 0.5 + Config.Drift.OffRoad.PutBack + 50)
 	end
 	want = want or windowCentre
 

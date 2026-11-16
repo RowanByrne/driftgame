@@ -186,8 +186,10 @@ end
 -- Which piece a point is on, how far along it (0..1) and how far off the centre line,
 -- unsigned. nil off the road altogether -- further from the centre line than the road, the
 -- widest runoff and a margin (T-140), or not over live road at all.
-function SplineSequence.locate(self: Sequence, position: Vector3): (number?, number, number)
-	local reach = Config.Road.Width * 0.5 + Config.Spline.Terrain.RunoffMax + 30
+-- `reach`: how far from the centre line a position may be and still be on the road; past the
+-- widest runoff unless said (a car put back from the mountain asks further, T-258).
+function SplineSequence.locate(self: Sequence, position: Vector3, reach: number?): (number?, number, number)
+	reach = reach or Config.Road.Width * 0.5 + Config.Spline.Terrain.RunoffMax + 30
 	local s, d = self.spline:project(position.X, position.Z, reach)
 	if not s or not d then
 		return nil, 0, math.huge

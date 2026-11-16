@@ -417,7 +417,8 @@ function Tests.run(which: { string }?, ...)
 			check("the maths costs no more than the rays", perStepA <= perStepB * 1.2, `a whole model step on the maths {fmt(perStepA, 0)} microseconds, on the parts {fmt(perStepB, 0)} (autopilot included in both)`)
 		end
 
-		-- 5. The mountainside (T-140): grass, rock, K-rail and cliff, each driven at.
+		-- 5. The mountainside (T-140): grass and K-rails, each driven at (rock and cliff went
+		-- with T-258: `OffRoadTests`).
 		if want("mountain") then
 			local T = Config.Spline.Terrain
 			-- further along than the yardstick's road: since T-189 (every downhill side a cliff, so
@@ -473,40 +474,9 @@ function Tests.run(which: { string }?, ...)
 					edge = half + mountain:runoffAt(sEnd or s, side),
 				}
 			end
-			local tried = 0
-			-- (no hedge: never an edge since T-189; the bare road above still drives at its walls)
-			for _, case in { { Spline.ROCK, "rock face" } } do
-				local s, side = find(case[1], 1, false), 1
-				if not s then
-					s, side = find(case[1], -1, false), -1
-				end
-				if s then
-					tried += 1
-					local r = offTheSide(s, side)
-					-- the car drives nose first at it, so its middle stops half a car short: its
-					-- box leans with the grass, so give it a stud either way
-					local nose = r.d + D.BodyLength * 0.5
-					check(
-						`a {case[2]} stops the car at the grass's edge`,
-						nose <= r.edge + 1 and nose > r.edge - 1.5 and not r.airborne and r.walls > 0 and r.grass > 0,
-						`after 3 s driving at it: the car's nose {fmt(nose, 2)} studs out (edge at {fmt(r.edge, 2)}), on the ground {tostring(not r.airborne)}, {fmt(-r.drop, 2)} above the road's centre, {r.walls} wall stops, {r.grass} wheel contacts on grass`
-					)
-				else
-					check(`a {case[2]} found to drive at`, false, `none on this road, seed {SEED}`)
-				end
-			end
-			do
-				local s, side = find(Spline.CLIFF, 1, false), 1
-				if not s then
-					s, side = find(Spline.CLIFF, -1, false), -1
-				end
-				if s then
-					local r = offTheSide(s, side)
-					check("over a cliff the car falls", r.d > r.edge and r.drop > 20 and r.airborne and r.overCliff > 0, `after 3 s: {fmt(r.d, 1)} studs out (lip at {fmt(r.edge, 1)}), {fmt(r.drop, 1)} studs below the road, airborne {tostring(r.airborne)}, {r.overCliff} probes past the lip`)
-				else
-					check("a cliff found to drive off", false, `none on this road, seed {SEED}`)
-				end
-			end
+			-- (No rock face and no cliff on a mountain road since T-258: past the grass the car
+			-- drives on the drawn ground, its steep cuts are walls and its steep drops are gone
+			-- over. `OffRoadTests` drives at each. The bare road above still has its walls.)
 			do
 				-- A K-RAIL ON A BEND (T-244): the generator lays most K-rails on the outside of
 				-- a bend above a cliff (`KRailBendChance`), and on today's road for this seed

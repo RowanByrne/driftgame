@@ -612,6 +612,29 @@ local Drift = {
 	TrajectoryFolder = "DriftTrajectory", -- its folder in Workspace. NEVER inside
 	-- `Workspace.Cars`, where the ground rays and the
 	-- car-claiming logic both look
+
+	-- ---------------------------------------------------------------- off the road
+	-- PAST THE RUNOFF THE CAR DRIVES ON THE DRAWN GROUND (T-258, features/car-edges.md,
+	-- `Drift/SplineWorld`, `Drift/OffRoadGround`): the mountain with the road pressed into it,
+	-- the same ground the player sees, instead of a rock face or a cliff chosen per side.
+	OffRoad = {
+		Lattice = 2, -- studs between the points of ground worked out (bilinear between)
+		ContextBox = 48, -- studs either side of a point: the road's stations gathered at once
+		Keep = 20000, -- points of ground held before they are all dropped
+		-- GROUND STEEPER THAN THIS IS A WALL to a car below its top, and a drop to one above it:
+		-- the angle the drawn ground turns to rock at (`Config.Spline.Ground.RockAngle`), and
+		-- about where the model stops climbing a surface (`GROUND_NORMAL_Y` 0.7)
+		WallAngle = 45, -- degrees
+		-- a steep point is a wall once it stands this far above where the car's wheels touch:
+		-- a little steep bump under it is ridden over
+		WallStep = 1.5, -- studs
+		-- MORE THAN `PutBack` STUDS FROM THE ROAD (past the tarmac's edge, the nearest road of
+		-- any leg) the car is wrecked and put back on the road, at the nearest point of it the
+		-- server knows, as a fall is (`CarRespawn`). Checked every `PutBackEvery` seconds
+		PutBack = 300, -- studs
+		PutBackEvery = 0.25, -- s
+		-- (it drives like the runoff's grass: `GripGrass`, `ScoreGrass`)
+	},
 }
 
 -- ---------------------------------------------------------------------- the active car

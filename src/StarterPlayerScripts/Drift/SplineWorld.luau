@@ -22,6 +22,14 @@
 --   penetration  the deepest point already past a wall, and the way back out
 --   edge         nothing: the road has no steps
 --
+-- PAST THE RUNOFF, ON A MOUNTAIN ROAD, THE CAR DRIVES ON THE DRAWN GROUND (T-258,
+-- features/car-edges.md): the mountain with the road pressed into it, the ground the player
+-- sees (`Drift/OffRoadGround`, from `Road/Ground`), not a rock face or a cliff chosen per side.
+-- Gentle slopes and valleys are driven on like the grass; ground steeper than `WallAngle`
+-- is a WALL to a car below its top (a cut beside the road, a rise on the mountain) and a
+-- DROP to one above it, which it goes over and lands on the ground below. A road with no
+-- mountain (a bare road, the tests' yardstick) keeps its rock faces and cliffs.
+--
 -- THERE ARE NO SIDE BARRIERS ANY MORE (T-140): running wide costs grip on the grass, then
 -- the edge decides. The closing barrier behind the window stays, across the tarmac and both
 -- runoffs, so nobody drives round it on the grass.
@@ -41,6 +49,7 @@ local Config = require(ReplicatedStorage.Shared.Config)
 local Spline = require(ReplicatedStorage.Shared.Road.Spline)
 local SplineGrove = require(ReplicatedStorage.Shared.Road.SplineGrove)
 local Model = require(script.Parent.Model)
+local OffRoadGround = require(script.Parent.OffRoadGround)
 
 local SplineWorld = {}
 
@@ -53,7 +62,7 @@ local PENETRATION_MARGIN = 0.05
 local REACH_PAST_EDGE = 30
 
 -- How a wall stop is counted.
-local KIND_SIDE, KIND_KRAIL, KIND_CLOSING, KIND_TREE = 1, 2, 3, 4
+local KIND_SIDE, KIND_KRAIL, KIND_CLOSING, KIND_TREE, KIND_GROUND = 1, 2, 3, 4, 5
 
 export type Stats = {
 	probes: number,
@@ -67,6 +76,8 @@ export type Stats = {
 	kRailStops: number,
 	closingStops: number,
 	treeStops: number, -- a grove's tree trunk (T-183)
+	groundStops: number, -- ground too steep to drive, past the runoff (T-258)
+	offRoad: number, -- probes that found the drawn ground past the runoff (T-258)
 	pushes: number,
 }
 
@@ -76,8 +87,12 @@ export type SplineWorld = Model.World & {
 	hint: number?,
 	closing: number?,
 	stats: Stats,
+	-- the drawn ground past the runoff, on a mountain road (T-258); nil on a bare road
+	offRoad: OffRoadGround.OffRoadGround?,
 	setClosing: (s: number?) -> (),
 	locate: (pos: Vector3) -> (number?, number?),
+	-- how far past the tarmac's edge the nearest road is, out to `out` studs; nil further
+	offBy: (pos: Vector3, out: number) -> number?,
 	destroy: () -> (),
 }
 
@@ -93,6 +108,11 @@ function SplineWorld.new(spline: Spline.Spline, base: Model.World?): SplineWorld
 	local bw, bl = C.BodyWidth * 0.5, C.BodyLength * 0.5
 	local bh = C.BodyHeight * 0.6 * 0.5
 	local railT = T.KRailThickness
+	-- THE DRAWN GROUND past the runoff (T-258), on a road cut into a mountain
+	local O = C.OffRoad
+	local off = if spline.mountain then OffRoadGround.new(spline, spline.mountain) else nil
+	local tanWall = math.tan(math.rad(O.WallAngle))
+	local wallStep = O.WallStep
 
 	local self: any = {
 		spline = spline,
@@ -111,8 +131,11 @@ function SplineWorld.new(spline: Spline.Spline, base: Model.World?): SplineWorld
 			kRailStops = 0,
 			closingStops = 0,
 			treeStops = 0,
+			groundStops = 0,
+			offRoad = 0,
 			pushes = 0,
 		},
+		offRoad = off,
 	}
 	local stats: Stats = self.stats
 
@@ -133,12 +156,41 @@ function SplineWorld.new(spline: Spline.Spline, base: Model.World?): SplineWorld
 		return s, d
 	end
 
+	-- Is a point at (s, d) -- or nowhere near the road, with no (s, d) -- on the drawn
+	-- ground rather than the road's own: past the runoff on `d`'s side, less `slack`.
+	local function onDrawn(s: number?, d: number?, slack: number): boolean
+		if not s or not d then
+			return true
+		end
+		local side = if d >= 0 then 1 else -1
+		return math.abs(d) > half + spline:runoffAt(s, side) - slack
+	end
+
+	-- The drawn ground's height at (x, z), and its normal.
+	local function drawn(x: number, z: number): (number, Vector3)
+		local y, gx, gz = (off :: OffRoadGround.OffRoadGround).sample(x, z)
+		return y, Vector3.new(-gx, 1, -gz).Unit
+	end
+
 	function self.locate(pos: Vector3): (number?, number?)
 		local s, d = locate(pos.X, pos.Z, self.hint)
 		if s then
 			self.hint = s
 		end
 		return s, d
+	end
+
+	-- How far a point is from the road: past the tarmac's edge of the nearest road, any leg.
+	-- Nil when no road is within `out` studs of the edge (T-258: the car is put back).
+	function self.offBy(pos: Vector3, out: number): number?
+		local s, d = locate(pos.X, pos.Z, self.hint)
+		if not s or not d then
+			s, d = spline:project(pos.X, pos.Z, half + out)
+		end
+		if not s or not d then
+			return nil
+		end
+		return math.max(math.abs(d) - half, 0)
 	end
 
 	function self.setClosing(s: number?)
@@ -149,7 +201,18 @@ function SplineWorld.new(spline: Spline.Spline, base: Model.World?): SplineWorld
 	function self.probe(pos: Vector3): Model.Hit?
 		stats.probes += 1
 		local s, d = locate(pos.X, pos.Z, self.hint)
-		if s and d then
+		if off and onDrawn(s, d, 0) then
+			if s then
+				self.hint = s
+			end
+			local y, normal = drawn(pos.X, pos.Z)
+			local dy = y - pos.Y
+			if dy <= rayTop and dy >= rayBottom then
+				stats.hits += 1
+				stats.offRoad += 1
+				return { y = y, normal = normal, grip = C.GripGrass, score = C.ScoreGrass, surface = "grass" }
+			end
+		elseif s and d then
 			local kind = spline:groundKind(s, d)
 			if kind == nil then
 				stats.overCliff += 1
@@ -187,14 +250,17 @@ function SplineWorld.new(spline: Spline.Spline, base: Model.World?): SplineWorld
 	local function boxReach(pos: Vector3, yaw: number): (number, number)
 		local flatFwd, flatRight = Model.axes(yaw)
 		local s, d = locate(pos.X, pos.Z, self.hint)
-		if not s or not d or not spline:groundKind(s, d) then
+		local y: number, up: Vector3
+		if off and onDrawn(s, d, 0) then
+			y, up = drawn(pos.X, pos.Z)
+		elseif not s or not d or not spline:groundKind(s, d) then
 			return bw, bl
+		else
+			y, up = spline:terrainY(s, d), spline:terrainNormal(s, d)
 		end
-		local y = spline:terrainY(s, d)
 		if pos.Y - (y + C.RideHeight) > C.AirborneMargin then
 			return bw, bl
 		end
-		local up = spline:terrainNormal(s, d)
 		local right = flatFwd:Cross(up)
 		if right.Magnitude < 1e-4 then
 			return bw, bl
@@ -243,6 +309,9 @@ function SplineWorld.new(spline: Spline.Spline, base: Model.World?): SplineWorld
 	end
 
 	local function sideWallStands(s: number, d: number, carY: number): boolean
+		if off then
+			return false -- the drawn ground decides (T-258)
+		end
 		local side = if d >= 0 then 1 else -1
 		local kind = spline:edgeAt(s, side)
 		if kind == Spline.CLIFF then
@@ -250,6 +319,24 @@ function SplineWorld.new(spline: Spline.Spline, base: Model.World?): SplineWorld
 		end
 		local height = if kind == Spline.ROCK then T.RockHeight[1] else T.HedgeHeight
 		return standsBeside(s, side * (half + spline:runoffAt(s, side)), height, carY)
+	end
+
+	-- THE DRAWN GROUND AS A WALL (T-258): a point of it steeper than `WallAngle` that stands
+	-- more than `WallStep` above where the car's wheels touch (`RideHeight` under the car at
+	-- `carY`). How far a point at (x, z) is short of it across the ground (the height still to
+	-- climb, over the slope: positive is clear), the way back out (downhill, level), and the
+	-- slope. Nil where the ground is not steep, or not past the runoff (less a stud).
+	local function groundWall(x: number, z: number, s: number?, d: number?, carY: number): (number?, Vector3?, number)
+		if not off or not onDrawn(s, d, 1) then
+			return nil, nil, 0
+		end
+		local y, gx, gz = off.sample(x, z)
+		local g = math.sqrt(gx * gx + gz * gz)
+		if g <= tanWall then
+			return nil, nil, g
+		end
+		local top = carY - C.RideHeight + wallStep
+		return (top - y) / g, Vector3.new(-gx / g, 0, -gz / g), g
 	end
 
 	-- A K-RAIL is a slab on the tarmac's edge, `railT` thick: solid from both sides, as the
@@ -346,6 +433,15 @@ function SplineWorld.new(spline: Spline.Spline, base: Model.World?): SplineWorld
 					end
 				end
 			end
+			-- the drawn ground where it is too steep (T-258): the step's end against the face
+			-- it is on, and its start against the same face
+			if off then
+				local m1, n, g = groundWall(x1, z1, s1, d1, to.Y)
+				if m1 and n then
+					local y0 = off.sample(x0, z0)
+					consider((to.Y - C.RideHeight + wallStep - y0) / g, m1, n, KIND_GROUND)
+				end
+			end
 			local c0 = closingMargin(x0, z0)
 			local c1, cn = closingMargin(x1, z1)
 			if c0 and c1 and cn then
@@ -389,6 +485,8 @@ function SplineWorld.new(spline: Spline.Spline, base: Model.World?): SplineWorld
 					stats.kRailStops += 1
 				elseif kind == KIND_TREE then
 					stats.treeStops += 1
+				elseif kind == KIND_GROUND then
+					stats.groundStops += 1
 				else
 					stats.wallStops += 1
 				end
@@ -445,6 +543,13 @@ function SplineWorld.new(spline: Spline.Spline, base: Model.World?): SplineWorld
 						depth, dir = ahead, fwd
 					end
 					take(depth, dir)
+				end
+			end
+			-- into ground too steep to drive (T-258): back out downhill
+			if off then
+				local m, n = groundWall(x, z, s, d, pos.Y)
+				if m and n then
+					take(PENETRATION_MARGIN - m, n)
 				end
 			end
 			local c, cn = closingMargin(x, z)
