@@ -1372,24 +1372,27 @@ function SplineGen._slopeAim(self: Gen, slope: Slope): (number, number, number, 
 	-- grade can't do it alone: it may fall 8 degrees at most, a scarp falls 30 and more
 	local catch = (y - followH(f, x, z, G.FollowRadius)) * G.CatchUp
 	local gx, gz = 0, 0
-	for _, a in G.AimAt do
-		local ax, az = gradient(f, x + fx * a, z + fz * a, G.AimSpan)
-		if f.range then
-			-- on the range (T-238), the face's own slope, with only `AimRelief` of the spurs'
-			-- and gullies': the spurs are as big as a leg is long, and a leg read on them alone
-			-- climbed a spur's flank sideways and came down the face
-			local e = G.AimSpan * 0.5
-			local px, pz = x + fx * a, z + fz * a
-			local bx = (Ground.base(f, px + e, pz) - Ground.base(f, px - e, pz)) / G.AimSpan
-			local bz = (Ground.base(f, px, pz + e) - Ground.base(f, px, pz - e)) / G.AimSpan
-			local q = Config.Range.AimRelief
-			ax, az = bx + q * (ax - bx), bz + q * (az - bz)
+	if f.range then
+		-- on the range (T-238), the face's own slope where the road is (not ahead along the
+		-- way it heads now: a turnaround's next leg goes the other way), over `AimSpan` of the
+		-- range, with only `AimRelief` of the spurs' and gullies': the spurs are as big as a
+		-- leg is long, and a leg read on them alone climbed a spur's flank and came down the face
+		local R = Config.Range
+		local e = R.AimSpan * 0.5
+		local bx = (Ground.base(f, x + e, z) - Ground.base(f, x - e, z)) / R.AimSpan
+		local bz = (Ground.base(f, x, z + e) - Ground.base(f, x, z - e)) / R.AimSpan
+		local ax, az = gradient(f, x, z, G.AimSpan)
+		local q = R.AimRelief
+		gx, gz = bx + q * (ax - bx), bz + q * (az - bz)
+	else
+		for _, a in G.AimAt do
+			local ax, az = gradient(f, x + fx * a, z + fz * a, G.AimSpan)
+			gx += ax
+			gz += az
 		end
-		gx += ax
-		gz += az
+		gx /= #G.AimAt
+		gz /= #G.AimAt
 	end
-	gx /= #G.AimAt
-	gz /= #G.AimAt
 	local S = math.sqrt(gx * gx + gz * gz)
 	-- downhill, and across it on the plan's side of the fall line. ON THE RANGE (T-238) the
 	-- way on is the way to the pass ahead: down the slope where the road is coming down to a

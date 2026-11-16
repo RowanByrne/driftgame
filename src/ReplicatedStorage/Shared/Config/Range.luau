@@ -78,7 +78,8 @@ return {
 	LegMin = 400, -- studs
 	LegMax = 6000, -- studs
 	TowardBias = 0.05,
-	AimRelief = 0.35, -- of the spurs' and gullies' slope a leg's heading reads, with the face's
+	AimRelief = 0.35, -- of the spurs' and gullies' slope a leg's heading reads, with the face's...
+	AimSpan = 200, -- ...over this many studs, where the road is
 	SteepHairpinRadius = { 70, 80 }, -- studs (`Spline.MinRadius` is 70)
 	GiveUp = 6, -- times a planned turn may be refused before the way to the pass is planned again
 }

@@ -209,6 +209,77 @@ local function run(check, opts)
 	end
 end
 
+-- THE ROAD ON THE RANGE (T-238): each seed's road laid to `length` studs, and how it went:
+-- stalls, height, how much of it climbs, how far its centre line is from h, the ridges it
+-- crossed and at what height against the crest there. Returns the lines and the totals.
+function Tests.road(_, opts)
+	local SplineGen = require(ReplicatedStorage.Shared.Road.SplineGen)
+	local seeds = (opts and opts.seeds) or { 1, 2, 3, 4, 5, 6, 7, 8 }
+	local length = (opts and opts.length) or 25000
+	local lines = {}
+	local tot = { n = 0, over = 0, climb = 0, fall = 0, stalls = 0, crossings = 0, length = 0, lowest = math.huge, crossOff = 0, worstMs = 0 }
+	for _, seed in seeds do
+		local gen = SplineGen.new(seed, { x = 0, y = 0, z = 0, yaw = 0 }, nil, "mesh")
+		local t0 = os.clock()
+		gen:extendTo(length)
+		local ms = (os.clock() - t0) * 1000
+		local sp, f = gen.spline, gen.ground
+		local lo, hi, climb, n, over = math.huge, -math.huge, 0, 0, 0
+		local offs = {}
+		local lastK, crossings, cross = nil, 0, {}
+		for s = 0, sp.length, 16 do
+			local x, z = sp:planAt(s)
+			local y = sp:heightAt(s)
+			lo, hi = math.min(lo, y), math.max(hi, y)
+			local g = sp:gradeAt(s)
+			if g > 0.005 then
+				climb += 1
+			elseif g < -0.005 then
+				tot.fall += 1
+			end
+			n += 1
+			local off = math.abs(y - Ground.h(f, x, z))
+			table.insert(offs, off)
+			if off > 20 then
+				over += 1
+			end
+			if f.range then
+				local k = Range.ridgeAhead(f.range, x, z)
+				if lastK and k > lastK then
+					crossings += 1
+					local _, v = Range.frame(f.range, x, z)
+					local c = Range.crest(f.range, lastK, v)
+					tot.crossOff = math.max(tot.crossOff, math.abs(y - c))
+					table.insert(cross, `{fmt(s / 1000, 1)}k y{fmt(y, 0)}/crest {fmt(c, 0)}`)
+				end
+				lastK = k
+			end
+		end
+		table.sort(offs)
+		local st = gen.stats
+		tot.n += n
+		tot.over += over
+		tot.climb += climb
+		tot.length += sp.length
+		tot.crossings += crossings
+		tot.lowest = math.min(tot.lowest, lo)
+		tot.worstMs = math.max(tot.worstMs, st.worstMs)
+		if st.stalled then
+			tot.stalls += 1
+		end
+		table.insert(
+			lines,
+			`seed {seed}: {fmt(sp.length, 0)} studs{if st.stalled then " STALLED" else ""} in {fmt(ms, 0)} ms (worst step {fmt(st.worstMs)}) | y {fmt(lo, 0)} to {fmt(hi, 0)}, climbing {fmt(100 * climb / n, 0)}% | off h: median {fmt(offs[n // 2 + 1] or 0)}, p95 {fmt(offs[math.floor(n * 0.95) + 1] or 0)}, over 20 {fmt(100 * over / n)}% | hairpins {st.turnarounds}, refused {st.turnsRefused}, escapes {st.escapes} | crossed {crossings}: {table.concat(cross, ", ")}`
+		)
+		task.wait()
+	end
+	table.insert(
+		lines,
+		`ALL: {fmt(tot.length, 0)} studs, {tot.stalls} stalled, climbing {fmt(100 * tot.climb / math.max(tot.n, 1), 0)}% and descending {fmt(100 * tot.fall / math.max(tot.n, 1), 0)}%, over 20 off h {fmt(100 * tot.over / math.max(tot.n, 1))}%, lowest {fmt(tot.lowest, 0)}, {tot.crossings} ridges crossed (worst {fmt(tot.crossOff, 0)} studs from the crest), worst step {fmt(tot.worstMs)} ms`
+	)
+	return { lines = lines, totals = tot, text = table.concat(lines, "\n") }
+end
+
 function Tests.run(_, opts)
 	local checks = {}
 	local function check(name: string, ok: boolean, detail: string?)
