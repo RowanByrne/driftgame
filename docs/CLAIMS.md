@@ -9,7 +9,6 @@ Every task in progress and the files it owns, so parallel sessions and workers n
 
 | Branch | Lane | Files owned | Since |
 |---|---|---|---|
-| `agent/range-double-scale` | lent | `src/ReplicatedStorage/Shared/Config/Range.luau`, `src/ReplicatedStorage/Shared/Road/Range.luau`, `src/ServerScriptService/Tests/RangeTests.luau`, `src/ServerScriptService/Tests/GroundTests.luau`, `docs/game/features/mountain-range.md` | 2026-11-16 (T-245) |
 
 ## Notes between sessions
 
