@@ -2,7 +2,8 @@
 -- RangeTests: the mountain range a ground run crosses (features/mountain-range.md, T-233).
 -- Pure maths:
 --   require(game.ServerScriptService.Tests.RangeTests).run()
--- Takes a few seconds: from execute_luau, run it in a task.spawn.
+-- Takes about half a minute with the road's checks (`opts.road = false` skips them): from
+-- execute_luau, run it in a task.spawn.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
@@ -18,6 +19,23 @@ local Tests = {}
 local ORIGIN = { x = 0, y = 0, z = 0, yaw = 0 }
 local FALL = math.rad(90) -- a start heading turned a quarter, as `SplineGen` does
 local KILL = -500 -- Roblox's fall-kill height
+
+-- THE ROAD ON THE RANGE (T-242): the checks run on `ROAD_SEEDS`, each laid to `ROAD_LENGTH`.
+-- DOUBLING BACK: the road falls back more than `BACK` studs along the way on (the range's t)
+-- behind the furthest it has reached. A switchback is not one: its legs climb the face one
+-- above the other, each further on than the one before, and a hairpin's loop reaches back
+-- less than its width (2 x 80 studs). A TRENCH: the centre line more than `TRENCH` studs
+-- below h, deeper than a hairpin is fitted into the face (`Spline.Ground.TurnMaxCut`, 45)
+-- with room for a spur the road cuts through; the one the user drove down went 150 to 290
+-- studs deep for a kilometre and more. Before T-242, on these seeds: 2.3% of the road over
+-- `TRENCH` deep, a stretch of 1 300 studs, 290 at the deepest; after it, 0.6%, 510 and 140.
+local ROAD_SEEDS = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16 }
+local ROAD_LENGTH = 25000
+local BACK = 300 -- studs
+local TRENCH = 60 -- studs below h
+local TRENCH_SHARE = 0.01 -- of the road at most that deep...
+local TRENCH_RUN = 600 -- ...no stretch longer than this, studs...
+local TRENCH_WORST = 150 -- ...and never deeper than this, studs
 
 local function fmt(x: number, p: number?): string
 	return string.format("%." .. tostring(p or 1) .. "f", x)
@@ -195,6 +213,31 @@ local function run(check, opts)
 		check("runs get the shape the config names", f.shape == R.Shape and (R.Shape ~= "range" or f.range ~= nil), `{f.shape}`)
 	end
 
+	-- THE ROAD ON THE RANGE (T-242): it climbs to the passes and crosses them, with no trench
+	-- and without doubling back
+	if not (opts and opts.road == false) then
+		local res = Tests.road(nil, { seeds = ROAD_SEEDS, length = ROAD_LENGTH })
+		local t = res.totals
+		local n = math.max(t.n, 1)
+		check("the road on the range never boxes itself in", t.stalls == 0, `{t.stalls} of {#ROAD_SEEDS} roads stalled`)
+		check(
+			"the road crosses the range's passes, climbing as much as it comes down",
+			t.crossings >= #ROAD_SEEDS and math.abs(t.climb - t.fall) / n < 0.15,
+			`{t.crossings} ridges crossed; climbing {fmt(100 * t.climb / n, 0)}%, descending {fmt(100 * t.fall / n, 0)}%`
+		)
+		check(
+			"no doubling back: the road never falls back along the way on",
+			t.backs == 0,
+			`{t.backs} times more than {BACK} studs back (furthest {fmt(t.backWorst, 0)}) over {fmt(t.length, 0)} studs`
+		)
+		check(
+			"no deep trench",
+			t.deep / n <= TRENCH_SHARE and t.deepRun <= TRENCH_RUN and t.cutWorst <= TRENCH_WORST,
+			`over {TRENCH} studs below h: {fmt(100 * t.deep / n, 2)}% of the road (at most {fmt(100 * TRENCH_SHARE, 0)}%), longest {fmt(t.deepRun, 0)} studs (at most {TRENCH_RUN}); deepest {fmt(t.cutWorst, 0)} (at most {TRENCH_WORST})`
+		)
+		check("the road's report", true, res.lines[#res.lines])
+	end
+
 	-- cost
 	do
 		local f = field(5)
@@ -217,7 +260,26 @@ function Tests.road(_, opts)
 	local seeds = (opts and opts.seeds) or { 1, 2, 3, 4, 5, 6, 7, 8 }
 	local length = (opts and opts.length) or 25000
 	local lines = {}
-	local tot = { n = 0, over = 0, climb = 0, fall = 0, stalls = 0, crossings = 0, length = 0, lowest = math.huge, crossOff = 0, worstMs = 0 }
+	local tot = {
+		n = 0,
+		over = 0,
+		climb = 0,
+		fall = 0,
+		stalls = 0,
+		crossings = 0,
+		length = 0,
+		lowest = math.huge,
+		crossOff = 0,
+		worstMs = 0,
+		-- (T-242) the deepest cut, the road deeper than `TRENCH`, its longest stretch, and the
+		-- times it fell back more than `BACK` along the way on (and the furthest)
+		cutWorst = 0,
+		deep = 0,
+		deepRun = 0,
+		backs = 0,
+		backWorst = 0,
+		follows = 0,
+	}
 	for _, seed in seeds do
 		local gen = SplineGen.new(seed, { x = 0, y = 0, z = 0, yaw = 0 }, nil, "mesh")
 		local t0 = os.clock()
@@ -227,6 +289,7 @@ function Tests.road(_, opts)
 		local lo, hi, climb, n, over = math.huge, -math.huge, 0, 0, 0
 		local offs = {}
 		local lastK, crossings, cross = nil, 0, {}
+		local cutWorst, deep, run, runFrom, backs, tMax, falling = 0, 0, 0, nil, {}, -math.huge, false
 		for s = 0, sp.length, 16 do
 			local x, z = sp:planAt(s)
 			local y = sp:heightAt(s)
@@ -238,12 +301,32 @@ function Tests.road(_, opts)
 				tot.fall += 1
 			end
 			n += 1
-			local off = math.abs(y - Ground.h(f, x, z))
+			local cut = Ground.h(f, x, z) - y
+			local off = math.abs(cut)
 			table.insert(offs, off)
 			if off > 20 then
 				over += 1
 			end
+			cutWorst = math.max(cutWorst, cut)
+			if cut > TRENCH then
+				deep += 1
+				runFrom = runFrom or s
+				run = math.max(run, s - runFrom)
+			else
+				runFrom = nil
+			end
 			if f.range then
+				-- falling back along the way on
+				local t = Range.frame(f.range, x, z)
+				if t > tMax then
+					tMax, falling = t, false
+				elseif tMax - t > BACK then
+					if not falling then
+						table.insert(backs, { s, 0 })
+						falling = true
+					end
+					backs[#backs][2] = math.max(backs[#backs][2], tMax - t)
+				end
 				local k = Range.ridgeAhead(f.range, x, z)
 				if lastK and k > lastK then
 					crossings += 1
@@ -267,15 +350,25 @@ function Tests.road(_, opts)
 		if st.stalled then
 			tot.stalls += 1
 		end
+		tot.cutWorst = math.max(tot.cutWorst, cutWorst)
+		tot.deep += deep
+		tot.deepRun = math.max(tot.deepRun, run)
+		tot.backs += #backs
+		tot.follows += st.follows or 0
+		local backText = {}
+		for _, b in backs do
+			tot.backWorst = math.max(tot.backWorst, b[2])
+			table.insert(backText, `{fmt(b[1] / 1000, 1)}k ({fmt(b[2], 0)})`)
+		end
 		table.insert(
 			lines,
-			`seed {seed}: {fmt(sp.length, 0)} studs{if st.stalled then " STALLED" else ""} in {fmt(ms, 0)} ms (worst step {fmt(st.worstMs)}) | y {fmt(lo, 0)} to {fmt(hi, 0)}, climbing {fmt(100 * climb / n, 0)}% | off h: median {fmt(offs[n // 2 + 1] or 0)}, p95 {fmt(offs[math.floor(n * 0.95) + 1] or 0)}, over 20 {fmt(100 * over / n)}% | hairpins {st.turnarounds}, refused {st.turnsRefused}, escapes {st.escapes} | crossed {crossings}: {table.concat(cross, ", ")}`
+			`seed {seed}: {fmt(sp.length, 0)} studs{if st.stalled then " STALLED" else ""} in {fmt(ms, 0)} ms (worst step {fmt(st.worstMs)}) | y {fmt(lo, 0)} to {fmt(hi, 0)}, climbing {fmt(100 * climb / n, 0)}% | off h: median {fmt(offs[n // 2 + 1] or 0)}, p95 {fmt(offs[math.floor(n * 0.95) + 1] or 0)}, over 20 {fmt(100 * over / n)}% | deepest cut {fmt(cutWorst, 0)}, over {TRENCH} {fmt(100 * deep / n, 1)}% (longest {fmt(run, 0)}) | fell back {#backs}{if #backs > 0 then ": " .. table.concat(backText, ", ") else ""} | hairpins {st.turnarounds}, refused {st.turnsRefused}, escapes {st.escapes}, follows {st.follows or 0} | crossed {crossings}: {table.concat(cross, ", ")}`
 		)
 		task.wait()
 	end
 	table.insert(
 		lines,
-		`ALL: {fmt(tot.length, 0)} studs, {tot.stalls} stalled, climbing {fmt(100 * tot.climb / math.max(tot.n, 1), 0)}% and descending {fmt(100 * tot.fall / math.max(tot.n, 1), 0)}%, over 20 off h {fmt(100 * tot.over / math.max(tot.n, 1))}%, lowest {fmt(tot.lowest, 0)}, {tot.crossings} ridges crossed (worst {fmt(tot.crossOff, 0)} studs from the crest), worst step {fmt(tot.worstMs)} ms`
+		`ALL: {fmt(tot.length, 0)} studs, {tot.stalls} stalled, climbing {fmt(100 * tot.climb / math.max(tot.n, 1), 0)}% and descending {fmt(100 * tot.fall / math.max(tot.n, 1), 0)}%, over 20 off h {fmt(100 * tot.over / math.max(tot.n, 1))}%, deepest cut {fmt(tot.cutWorst, 0)}, over {TRENCH} deep {fmt(100 * tot.deep / math.max(tot.n, 1), 2)}% (longest {fmt(tot.deepRun, 0)}), fell back {tot.backs} times (furthest {fmt(tot.backWorst, 0)}), lowest {fmt(tot.lowest, 0)}, {tot.crossings} ridges crossed (worst {fmt(tot.crossOff, 0)} studs from the crest), worst step {fmt(tot.worstMs)} ms`
 	)
 	return { lines = lines, totals = tot, text = table.concat(lines, "\n") }
 end
