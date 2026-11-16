@@ -164,6 +164,8 @@ function RoadMapController:_redraw(dt: number)
 	local tightK = 1 / C.TightRadius
 	local r, a, tight = table.create(#list), table.create(#list), table.create(#list)
 	local behind = 0
+	self.tightestRadius = math.huge -- the tightest bend in view, and at the car
+	self.radiusAtCar = 1 / math.max(math.abs(spline:curvatureAt(s)), 1e-6)
 	for i, si in list do
 		local x, z = spline:planAt(si)
 		local dx, dz = x - ox, z - oz
@@ -171,7 +173,11 @@ function RoadMapController:_redraw(dt: number)
 		a[i] = dx * fx + dz * fz
 		if i > 1 then
 			local mid = (list[i - 1] + si) * 0.5
-			tight[i - 1] = math.abs(spline:curvatureAt(mid)) >= tightK
+			local km = math.abs(spline:curvatureAt(mid))
+			tight[i - 1] = km >= tightK
+			if km > 1e-6 and 1 / km < self.tightestRadius then
+				self.tightestRadius = 1 / km
+			end
 			if si <= s then
 				behind = i - 1
 			end
@@ -217,6 +223,8 @@ function RoadMapController:DebugState()
 		upDeg = self.upYaw and math.deg(self.upYaw) or nil,
 		roadDeg = (self.spline and self.s) and math.deg(self.spline:yawAt(self.s)) or nil,
 		arrowDeg = snap.arrow and snap.arrow.deg or nil,
+		tightestRadius = self.tightestRadius,
+		radiusAtCar = self.radiusAtCar,
 		redraws = self.redraws,
 		lost = self.lost,
 		lastMs = self.lastMs,

@@ -52,8 +52,8 @@ return {
 
 	-- ------------------------------------------------------------------ the arrow
 	ArrowColor = Color3.fromRGB(255, 255, 255),
-	ArrowSize = 22, -- px, the glyph's height on a big screen
-	PhoneArrowSize = 16,
+	ArrowSize = 30, -- px, the glyph's height on a big screen
+	PhoneArrowSize = 22,
 	-- the car's sideways place on the road is drawn true, but never more than this far off
 	-- the line: a car on the grass still reads as on the road
 	ArrowMaxOffset = 14, -- px
