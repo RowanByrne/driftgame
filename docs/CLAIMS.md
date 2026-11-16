@@ -9,7 +9,6 @@ Every task in progress and the files it owns, so parallel sessions and workers n
 
 | Branch | Lane | Files owned | Since |
 |---|---|---|---|
-| `agent/road-tests-on-main` | lent | `src/ReplicatedStorage/Shared/Road/*`, `src/ServerScriptService/Services/RoadService.luau`, `src/ReplicatedStorage/Shared/Config/Range.luau`, `src/ReplicatedStorage/Shared/Config/Spline.luau` (all but the `GrandCliffDrop` comment, which T-243 holds), `src/ServerScriptService/Tests/RangeTests.luau`, `GroundTests.luau`, `SplineWorldTests.luau`, `SplineTests.luau`, `RoadTests.luau`, `RunTests.luau` | 2026-11-16 (T-244) |
 
 ## Notes between sessions
 
