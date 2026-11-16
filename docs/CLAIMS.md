@@ -10,7 +10,7 @@ Every task in progress and the files it owns, so parallel sessions and workers n
 | Branch | Lane | Files owned | Since |
 |---|---|---|---|
 | `feature/mountain-range-passes-ridges-valleys-bio` | lent | `src/ReplicatedStorage/Shared/Road/Ground.luau`, `src/ReplicatedStorage/Shared/Road/Range.luau` (new), `src/ReplicatedStorage/Shared/Config/Range.luau` (new), `src/ServerScriptService/Tests/RangeTests.luau` (new), `src/ServerScriptService/Tests/GroundTests.luau` (not the checks T-231 adds at the end), `docs/game/features/mountain-range.md`, the `Road/Ground` rows of `docs/game/CONTRACTS.md` | 2026-11-15 (T-233, T-235) |
-| `agent/ground-wall-sawtooth` | lent | `src/StarterPlayerScripts/Drift/GroundMeshView.luau` (how tiles are triangulated and their heights; not its use of `Mesh.Behind`, which is T-230's), `src/StarterPlayerScripts/Drift/GroundTiles.luau`, `Config/Spline.luau` (the ground mesh keys `Spacings` to `ReleaseOnFail` only), `src/ServerScriptService/Tests/GroundTests.luau` (new checks at the end only) | 2026-11-15 (T-231) |
+| `agent/ground-wall-sawtooth` | lent | `src/StarterPlayerScripts/Drift/GroundMeshView.luau` (how tiles are triangulated and their heights; not its use of `Mesh.Behind`, which is T-230's), `src/StarterPlayerScripts/Drift/GroundTiles.luau`, `Config/Spline.luau` (the ground mesh keys `Spacings` to `ReleaseOnFail` only), `src/ServerScriptService/Tests/GroundTests.luau` (new checks at the end only), `src/StarterPlayerScripts/Controllers/DriftController.luau` (`DebugGroundWalls`, about 8 lines) | 2026-11-15 (T-231) |
 
 ## Notes between sessions
 
