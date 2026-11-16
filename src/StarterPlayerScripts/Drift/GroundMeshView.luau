@@ -1,4 +1,4 @@
---!strict
+﻿--!strict
 -- Drift/GroundMeshView: the ground-first trial's option 1, our own mesh (features/ground-trial.md,
 -- T-218; step T-220; drawn as tiles that follow the road since T-225). The mountain
 -- `Road/Ground` describes, drawn round the car and along the road ahead, on this device only.
@@ -455,14 +455,30 @@ local function latAt(L: Lattice, I: number, J: number): { number }
 	return r
 end
 
+-- The way (x, z)'s distance past the nearest runoff's edge grows fastest, as a unit vector
+-- and its rate (about 1); nil where it is too flat to tell.
+local function edgeGradient(L: Lattice, x: number, z: number, e: number): (number?, number?, number?)
+	local h = 0.25
+	local _, _, ex = Ground.at(L.ctx, x + h, z)
+	local _, _, ez = Ground.at(L.ctx, x, z + h)
+	local gx, gz = (ex - e) / h, (ez - e) / h
+	local g = math.sqrt(gx * gx + gz * gz)
+	if g ~= g or g < 0.3 or g == math.huge then
+		return nil, nil, nil
+	end
+	return gx / g, gz / g, g
+end
+
 -- Where the vertex of grid point (I, J) goes, its height and its class: {x, z, y, class}. The
 -- same in every tile of this spacing, since it reads only the point and its four neighbours.
--- The road and open ground stay on their grid points. A point past a runoff's edge with a
--- neighbour on the road would make a triangle from the road up to it, reaching over the
--- road: it moves onto the edge's foot (`SnapFoot` past it), square to the edge (the way its
--- distance from the edge falls fastest), and is held below the edge there. Where it cannot
--- (road both sides of it, or further than `SnapMax` of a cell to go) it stays, held below the
--- edge.
+-- THE FOOT: a point past a runoff's edge with a neighbour on the road, and above the edge,
+-- would make a triangle from the road up to it, reaching over the road: it moves onto the
+-- edge's foot (`SnapFoot` past it), square to the edge, and is held below the edge there.
+-- Where it cannot (road both sides of it, or further than `SnapMax` of a cell to go) it stays,
+-- held below the edge. One already below the edge (a drop) stays where it is.
+-- THE TOP: a point just past the end of a cut or fill, with a neighbour on its face, moves
+-- back onto the face's end, so the wall's top edge is a line along the road too.
+-- Everything else stays on its grid point.
 local function place(L: Lattice, I: number, J: number): { number }
 	local key = latKey(I, J)
 	local p = L.placed[key]
@@ -476,33 +492,58 @@ local function place(L: Lattice, I: number, J: number): { number }
 	local y, a, e, T = r[1], r[2], r[3], r[4]
 	local sink = sinkOf[s]
 	local foot = G.SnapFoot
+	local reach = G.SnapMax * s
 	local open = y - sink * a
+	p = { x, z, open, OPEN }
 	if e <= foot then
 		p = { x, z, open, ROAD }
-	elseif e > s + foot then
-		p = { x, z, open, OPEN } -- no neighbour can be on the road
-	else
+	elseif e <= s + foot then
 		local west = latAt(L, I - 1, J)[3] <= foot
 		local east = latAt(L, I + 1, J)[3] <= foot
 		local south = latAt(L, I, J - 1)[3] <= foot
 		local north = latAt(L, I, J + 1)[3] <= foot
-		if not (west or east or south or north) then
-			p = { x, z, open, OPEN }
-		else
-			p = { x, z, math.min(open, T - sink), HELD }
-			if not (west and east) and not (south and north) then
-				local h = 0.25
-				local _, _, ex = Ground.at(L.ctx, x + h, z)
-				local _, _, ez = Ground.at(L.ctx, x, z + h)
-				local gx, gz = (ex - e) / h, (ez - e) / h
-				local g = math.sqrt(gx * gx + gz * gz)
-				if g > 0.3 then
-					local move = (e - foot) / g
-					if move <= G.SnapMax * s then
-						local nx, nz = x - gx / g * move, z - gz / g * move
-						local y2, a2, _, T2 = Ground.at(L.ctx, nx, nz)
-						p = { nx, nz, math.min(y2 - sink * a2, T2 - sink), HELD }
+		if west or east or south or north then
+			if open <= T - sink then
+				p = { x, z, open, HELD } -- below the edge already: safe where it is
+			else
+				p = { x, z, T - sink, HELD }
+				if not (west and east) and not (south and north) then
+					local ux, uz, g = edgeGradient(L, x, z, e)
+					if ux and uz and g then
+						local move = (e - foot) / g
+						if move <= reach then
+							local nx, nz = x - ux * move, z - uz * move
+							local y2, a2, _, T2 = Ground.at(L.ctx, nx, nz)
+							p = { nx, nz, math.min(y2 - sink * a2, T2 - sink), HELD }
+						end
 					end
+				end
+			end
+		end
+	end
+	if p[4] == OPEN and a <= 0 and e < G.BlendMax + G.BlendFoot + s then
+		-- past the end of a cut or fill: how wide its face is, read off a neighbour on it
+		-- (`Road/Ground`: the face eases over `bw` studs from `BlendFoot` past the edge)
+		local topE = math.huge
+		for _, o in { { -1, 0 }, { 1, 0 }, { 0, -1 }, { 0, 1 } } do
+			local q = latAt(L, I + o[1], J + o[2])
+			local aq, eq = q[2], q[3]
+			if aq > 0.02 and aq < 0.95 and eq < e then
+				-- 1 - a = smoothstep(t): t back from it
+				local t = 0.5 - math.sin(math.asin(math.clamp(1 - 2 * (1 - aq), -1, 1)) / 3)
+				if t > 0.05 then
+					topE = math.min(topE, G.BlendFoot + (eq - G.BlendFoot) / t)
+				end
+			end
+		end
+		if topE < e then
+			local ux, uz, g = edgeGradient(L, x, z, e)
+			if ux and uz and g then
+				local move = (e - topE) / g
+				if move <= reach then
+					local nx, nz = x - ux * move, z - uz * move
+					local y2, a2 = Ground.at(L.ctx, nx, nz)
+					p = { nx, nz, y2 - sink * a2, OPEN }
 				end
 			end
 		end
