@@ -163,79 +163,12 @@ paint()
 ask(nil)
 
 --------------------------------------------------------------------------------
--- The spline test road (Studio only, T-134)
---------------------------------------------------------------------------------
--- A third button: lay a spline road far from everything and drive it, before the run
--- uses one (`SplineTestService`, features/spline-road.md). The server chooses the road
--- and sends its sections; this replays them into the client's own copy of the curve and
--- hands it to `DriftController`, whose car then stands on the maths.
-local splineOn = false
-local splineButton: TextButton? = nil
-local runModeButton: TextButton? = nil
-local runMode = "spline"
-if RunService:IsStudio() then
-	local DriftController = require(Players.LocalPlayer:WaitForChild("PlayerScripts"):WaitForChild("Controllers"):WaitForChild("DriftController"))
-	local SplineGen = require(ReplicatedStorage.Shared.Road.SplineGen)
-	local splineRemote = Net.event("SplineTest")
-	local button = newButton("SplineRoad", "SPLINE TEST ROAD", EDGE + (HEIGHT + GAP) * 1)
-	splineButton = button
-	-- WHICH ROAD THE NEXT ENDLESS RUN LAYS (T-136): the spline road, as shipped since
-	-- T-140, or the old piece road. Refused while a run is going; the start button then
-	-- lays whichever this says.
-	local modeButton = newButton("RunRoad", "RUN ROAD: SPLINE", EDGE + (HEIGHT + GAP) * 2)
-	runModeButton = modeButton
-	header.Position = UDim2.new(0, EDGE, 1, -(EDGE + (HEIGHT + GAP) * 3))
-
-	local function paintSpline()
-		button.Text = if splineOn then "LEAVE SPLINE ROAD" else "SPLINE TEST ROAD"
-		button.BackgroundColor3 = if splineOn then LIVE else TEST
-		modeButton.Text = if runMode == "spline" then "RUN ROAD: SPLINE" else "RUN ROAD: PIECES"
-		modeButton.BackgroundColor3 = if runMode == "spline" then TEST else LIVE
-	end
-
-	modeButton.Activated:Connect(function()
-		splineRemote:FireServer("mode")
-	end)
-
-	button.Activated:Connect(function()
-		splineRemote:FireServer("toggle")
-	end)
-
-	splineRemote.OnClientEvent:Connect(function(answer)
-		if type(answer) ~= "table" then
-			return
-		end
-		if answer.runMode == "spline" or answer.runMode == "pieces" then
-			runMode = answer.runMode
-		end
-		local o = answer.origin
-		if answer.on == true and type(answer.sections) == "table" and type(o) == "table" and not splineOn then
-			local fall = if type(answer.fall) == "number" then answer.fall else nil
-			local ok, spline = pcall(SplineGen.replay, answer.sections, { x = o.x, y = o.y, z = o.z, yaw = o.yaw }, fall)
-			if ok then
-				splineOn = true
-				DriftController:UseSpline(spline)
-			else
-				warn(`[TestHud] the spline road's sections would not replay: {spline}`)
-			end
-		elseif answer.on ~= true and splineOn then
-			splineOn = false
-			DriftController:UseSpline(nil)
-		end
-		paintSpline()
-	end)
-
-	paintSpline()
-	splineRemote:FireServer(nil)
-end
-
---------------------------------------------------------------------------------
 -- The bridge
 --------------------------------------------------------------------------------
 
 -- Studio only, and the same shape as `Drift/RoadHud`'s: the client loader's own
 -- `DebugBridge` resolves loaded Controllers, and this is a LocalScript, so it carries its
--- own. `Invoke("DebugState")`, `Invoke("DebugPress", "lift" | "spline" | "mode")`.
+-- own. `Invoke("DebugState")`, `Invoke("DebugPress", "lift")`.
 if RunService:IsStudio() then
 	local bridge = Instance.new("BindableFunction")
 	bridge.Name = "TestHudBridge"
@@ -251,22 +184,10 @@ if RunService:IsStudio() then
 				liftSize = lift.AbsoluteSize,
 				displayOrder = gui.DisplayOrder,
 				zIndexBehavior = gui.ZIndexBehavior.Name,
-				splineOn = splineOn,
-				splineText = splineButton and splineButton.Text or nil,
-				runMode = runMode,
-				runModeText = runModeButton and runModeButton.Text or nil,
 			}
 		elseif member == "DebugPress" then
 			-- Through the real handler, not past it: what a tap does.
 			local what = ...
-			if what == "spline" and splineButton then
-				Net.event("SplineTest"):FireServer("toggle")
-				return { wanted = what }
-			end
-			if what == "mode" and runModeButton then
-				Net.event("SplineTest"):FireServer("mode")
-				return { wanted = what }
-			end
 			ask(what)
 			return { asked = asked, wanted = what }
 		end

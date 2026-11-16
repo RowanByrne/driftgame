@@ -139,8 +139,8 @@ export type Gen = typeof(setmetatable(
 		flipWanted: boolean,
 		flipDone: boolean, -- it changed in the section being laid
 		flips: { { number } }, -- every change, {s, flip}: the server's record, for tests
-		-- THE GROUND-FIRST TRIAL (T-218): the mountain the road is cut into, in a "mesh" or
-		-- "terrain" run; nil in a "current" one. The band follows its plane, with no climbs
+		-- THE GROUND (T-218): the mountain the road is cut into; every run has one since T-247
+		-- (the branches for a run without one go with the old descent planner)
 		ground: Ground.Field?,
 		band: { number }, -- the centre's knots, {s, centre, ...}: what the band was, for tests
 		legSide: number, -- which way across the slope the current leg runs (1 or -1)
@@ -213,7 +213,7 @@ function SplineGen.limits(clearOverride: number?): (number, number)
 	return clear, sep
 end
 
-function SplineGen.new(seed: number, origin: Spline.Origin?, clearOverride: number?, groundMode: string?): Gen
+function SplineGen.new(seed: number, origin: Spline.Origin?, clearOverride: number?): Gen
 	local clear, sep = SplineGen.limits(clearOverride)
 	local spline = Spline.new(origin)
 	local self = setmetatable({
@@ -294,10 +294,10 @@ function SplineGen.new(seed: number, origin: Spline.Origin?, clearOverride: numb
 	local q = if self.prng:NextNumber() < 0.5 then -1 else 1
 	self.fall = wrap(spline.origin.yaw + q * math.rad(M.FallLineTurn))
 	spline.fall = self.fall -- for the hillside's slope (T-190)
-	if groundMode == "mesh" or groundMode == "terrain" then
-		self.ground = Ground.field(seed, spline.origin, self.fall)
-		spline.mountain = self.ground
-	end
+	-- THE GROUND (T-218, the only ground since T-247): the mountain the road is cut into,
+	-- drawn by each client as its own mesh (`Drift/GroundMeshView`)
+	self.ground = Ground.field(seed, spline.origin, self.fall)
+	spline.mountain = self.ground
 	self.legSide = -q
 	self.sense = if self.mode == "ascent" then -1 else 1
 	self.drift = if self.mode == "descent" then -M.DescentRate elseif self.mode == "ascent" then M.DescentRate else 0
@@ -726,10 +726,14 @@ function SplineGen._carve(self: Gen, sec: Spline.Section)
 end
 
 -- A client's copy: the same road from the same sections, with no choosing.
--- `fall` is the mountain's uphill heading, as the server sent it with the road (T-190).
-function SplineGen.replay(sections: { Spline.Section }, origin: Spline.Origin?, fall: number?): Spline.Spline
+-- `fall` is the mountain's uphill heading and `seed` the run's, as the server sent them with
+-- the road (T-190): with both, the copy carries the same mountain (`Road/Ground`, T-218).
+function SplineGen.replay(sections: { Spline.Section }, origin: Spline.Origin?, fall: number?, seed: number?): Spline.Spline
 	local spline = Spline.new(origin)
 	spline.fall = fall
+	if fall and seed then
+		spline.mountain = Ground.field(seed, spline.origin, fall)
+	end
 	for _, sec in sections do
 		spline:append(sec)
 	end

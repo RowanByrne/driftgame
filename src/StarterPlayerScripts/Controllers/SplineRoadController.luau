@@ -23,7 +23,6 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Net = require(ReplicatedStorage.Shared.Net)
 local SplineGen = require(ReplicatedStorage.Shared.Road.SplineGen)
-local Ground = require(ReplicatedStorage.Shared.Road.Ground)
 
 local DriftController = require(script.Parent.DriftController)
 
@@ -31,8 +30,6 @@ local SplineRoadController = {}
 
 local spline: any = nil
 local closing: number? = nil
--- the ground-first trial's mode for this road (T-218): "current", "mesh" or "terrain"
-local groundMode = "current"
 local stats = { starts = 0, sections = 0, outOfOrder = 0, stops = 0, closings = 0, bad = 0 }
 
 local function numbers(list: any, group: number): boolean
@@ -93,21 +90,19 @@ function SplineRoadController:_on(message: any)
 				return
 			end
 		end
-		-- the mountain's uphill heading, for the hillside between the legs (T-190)
+		-- the mountain's uphill heading and the run's seed: from them, the origin and nothing
+		-- else, this client makes the same mountain the server laid the road on (T-218)
 		local fall = if type(message.fall) == "number" and message.fall == message.fall then message.fall else nil
-		local ok, built = pcall(SplineGen.replay, message.sections, { x = o.x, y = o.y, z = o.z, yaw = o.yaw }, fall)
+		local seed = if type(message.seed) == "number" and message.seed == message.seed then message.seed else nil
+		if not fall or not seed then
+			stats.bad += 1
+			return
+		end
+		local ok, built = pcall(SplineGen.replay, message.sections, { x = o.x, y = o.y, z = o.z, yaw = o.yaw }, fall, seed)
 		if not ok then
 			stats.bad += 1
 			warn(`[SplineRoad] the road would not replay: {built}`)
 			return
-		end
-		-- the ground-first trial (T-218): the same mountain the server laid the road on
-		groundMode = if Ground.valid(message.ground) then message.ground else "current"
-		if groundMode ~= "current" and fall and type(message.seed) == "number" then
-			built.mountain = Ground.field(message.seed, built.origin, fall)
-			built.mountain.mode = groundMode -- how this client draws it
-		else
-			groundMode = "current"
 		end
 		spline = built
 		stats.starts += 1
@@ -146,7 +141,6 @@ function SplineRoadController:_on(message: any)
 		stats.stops += 1
 		spline = nil
 		closing = nil
-		groundMode = "current"
 		DriftController:UseSpline(nil)
 	else
 		stats.bad += 1
@@ -169,15 +163,9 @@ function SplineRoadController:Road(): (any?, number?)
 	return spline, closing
 end
 
--- The ground this road is drawn with (T-218): "current", "mesh" or "terrain".
-function SplineRoadController:GroundMode(): string
-	return groundMode
-end
-
 function SplineRoadController:DebugState()
 	return {
 		on = spline ~= nil,
-		ground = groundMode,
 		length = spline and spline.length or 0,
 		sections = spline and spline.sections or 0,
 		counts = table.clone(stats),

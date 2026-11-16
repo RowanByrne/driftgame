@@ -7,7 +7,6 @@
 --   timeOfDay  a keyframe of the day-night cycle by name ("noon", "golden-hour"),
 --              "midnight", or an hour on the clock, 0 to 24
 --   roadMode   "pieces" or "spline"
---   groundMode "current", "mesh" or "terrain" (T-218)
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -66,8 +65,6 @@ return function(registry)
 	registry:RegisterType("car", Util.MakeEnumType("car", carKeys))
 
 	registry:RegisterType("roadMode", Util.MakeEnumType("road mode", { "pieces", "spline" }))
-	-- the ground-first trial (T-218)
-	registry:RegisterType("groundMode", Util.MakeEnumType("ground mode", { "current", "mesh", "terrain" }))
 
 	-- The places, then every player in the server by name: `tp me Alex` goes to Alex.
 	local function findPlace(text: string, first: boolean?)

@@ -128,11 +128,10 @@ export type Spline = typeof(setmetatable(
 		groveR: Groves,
 		grand: Track?, -- the rock and cliff faces' grandeur (T-185), made on the first section
 		-- the mountain's uphill heading (a yaw), fixed for the road (T-166): set by whoever
-		-- makes the road (`SplineGen`), nil on a road with no mountain. The hillside's slope
-		-- reads it (`Road/SplineHill`, T-190)
+		-- makes the road (`SplineGen`), nil on a road with no mountain
 		fall: number?,
-		-- the ground-first trial's mountain (`Road/Ground`, T-218): set in a "mesh" or
-		-- "terrain" run, by the generator and by a client's replay; nil otherwise
+		-- the mountain the road is cut into (`Road/Ground`, T-218): set by the generator and
+		-- by a client's replay; nil on a bare test curve
 		mountain: any?,
 	},
 	Spline

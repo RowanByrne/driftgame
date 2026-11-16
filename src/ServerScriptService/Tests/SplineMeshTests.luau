@@ -75,8 +75,7 @@ function Tests.run()
 			failed == 0,
 			`{built} chunks of {L} studs for {math.floor(spline.length)} studs of road: {tris} triangles, {verts} vertices, {sections} cross-sections ({fmt(spline.length / math.max(1, sections - built), 1)} studs apart on average), {plainParts} barrier and dash parts`
 		)
-		-- (40: the hillside, T-190, is about 6 ms of a chunk, measured: 22 against 16; it is
-		-- built a few ms a frame, the next check, so what a frame pays is unchanged)
+		-- (built a few ms a frame, the next check, so what a frame pays is less than this)
 		check("a chunk is quick to build", worstMs < 40, `mean {fmt(sumMs / math.max(1, built), 2)} ms of work, worst {fmt(worstMs, 2)} ms (one chunk is built at a time)`)
 		check(
 			"no frame pays much of a chunk",
@@ -87,42 +86,28 @@ function Tests.run()
 		-- costs its own triangles, and only the one being built is growable (it holds back
 		-- `GROWABLE` whatever it uses). A Studio PC client holds `BUDGET` in all. Each "Road
 		-- behind" step's widest window (chunk-aligned: up to a chunk more than its studs) must
-		-- fit it: on today's ground, the road alone; on a ground run, beside the most ground
-		-- tiles any setting draws (Ultra's, which the corridor's extra tiles never pass)
+		-- fit it beside the most ground tiles any setting draws (Ultra's, which the
+		-- corridor's extra tiles never pass)
 		local BUDGET, GROWABLE = 81000, 10400 -- triangles (measured, T-225 and T-230)
 		local G = Config.Spline.Ground
 		local tileTris = G.TileCells * G.TileCells * 2
 		local mean = tris / math.max(1, built)
 		local meanParts = plainParts / math.max(1, built)
-		-- a ground run's chunks: no faces, so fewer triangles
-		local ggen = SplineGen.new(SEED, nil, nil, "mesh")
-		ggen:extendTo(6 * L + 200)
-		local gtris, gbuilt = 0, 0
-		for i = 0, 5 do
-			local model, info = SplineMesh.build(ggen.spline, i * L, math.min((i + 1) * L, ggen.spline.length), folder, { ground = true })
-			if model then
-				gtris += info.triangles
-				gbuilt += 1
-				SplineMesh.destroy(model)
-			end
-		end
-		local gmean = gtris / math.max(1, gbuilt)
 		local ultra = (G.Detail[#G.Detail].Tiles + G.Spare) * tileTris
 		local lines, worstShare, previous = {}, 0, 0
 		local grows = true
 		for _, step in M.Behind do
 			local window = math.ceil((M.Ahead + step.Studs) / L) + 1
-			local today = window * mean + math.max(GROWABLE, mean)
-			local ground = window * gmean + math.max(GROWABLE, gmean) + ultra
-			worstShare = math.max(worstShare, today / BUDGET, ground / BUDGET)
+			local cost = window * mean + math.max(GROWABLE, mean) + ultra
+			worstShare = math.max(worstShare, cost / BUDGET)
 			grows = grows and step.Studs > previous and (step.GroundTiles or 0) >= 0
 			previous = step.Studs
-			table.insert(lines, `{step.Name} {step.Studs}: {window} chunks, {math.floor(window * mean)} triangles and {math.floor(window * meanParts)} plain parts; {math.floor(today)} of {BUDGET} at worst, {math.floor(ground)} on a ground run beside Ultra ground`)
+			table.insert(lines, `{step.Name} {step.Studs}: {window} chunks, {math.floor(window * mean)} triangles and {math.floor(window * meanParts)} plain parts; {math.floor(cost)} of {BUDGET} at worst beside Ultra ground`)
 		end
 		check(
 			"every Road behind step fits the client's mesh budget",
-			gbuilt == 6 and worstShare <= 1 and grows and #M.Behind >= 2,
-			`{table.concat(lines, "; ")} (a chunk: {math.floor(mean)} triangles on today's ground, {math.floor(gmean)} on a ground run; the one being built holds back {GROWABLE})`
+			worstShare <= 1 and grows and #M.Behind >= 2,
+			`{table.concat(lines, "; ")} (a chunk: {math.floor(mean)} triangles; the one being built holds back {GROWABLE})`
 		)
 		local pc, touch = M.Behind[M.BehindDefault], M.Behind[M.BehindTouchDefault]
 		check(
@@ -144,8 +129,7 @@ function Tests.run()
 					for _, v in obj:GetVertices() do
 						local p = road.CFrame:PointToWorldSpace(obj:GetPosition(v))
 						local s, d = spline:project(p.X, p.Z, reach)
-						-- the ground only: the tarmac and the grass, not the rock and cliff faces
-						-- that share the mesh
+						-- the ground only: the tarmac and the grass, not the skirt below their edge
 						local side = if d and d < 0 then -1 else 1
 						-- nor a grove's trees and bushes standing on the grass (T-183)
 						local onTree = false
@@ -167,10 +151,9 @@ function Tests.run()
 				end
 			end
 		end
-		-- (0.03, where it was 0.01: with the hillside in it, T-190, a chunk's mesh is far bigger,
-		-- and the error read back grew with its size -- 0.015 at 973 studs across, 0.022 now --
-		-- as if a mesh kept its vertices to a 65 536th of its size)
-		check("every surface vertex, tarmac and grass, is on the ground the car stands on", n > 0 and worstV < 0.03, `{n} vertices read back through their parts: worst {fmt(worstV, 4)} studs off (it grows with the mesh's size: the hillside is in it)`)
+		-- (the error read back grows with a mesh's size, as if it kept its vertices to a
+		-- 65 536th of it: 0.015 at 973 studs across, 0.022 with the old hillside in it, T-190)
+		check("every surface vertex, tarmac and grass, is on the ground the car stands on", n > 0 and worstV < 0.03, `{n} vertices read back through their parts: worst {fmt(worstV, 4)} studs off`)
 
 		-- 2b. The grass's texture (T-187): every grass face mapped in world studs, every other
 		-- face on UV (0, 0), where the tile is plain `Shade` grey.
@@ -305,71 +288,6 @@ function Tests.run()
 			end
 		end
 		check("chunks meet with no seam", worstSeam < 0.01, `worst gap between neighbouring chunks' shared edge: {fmt(worstSeam, 4)} studs`)
-
-		-- 4b. The hedge and K-rail tops run on without a step from one box to the next (a
-		-- level box per cut drew a staircase on every slope, seen in the lane). Only
-		-- neighbours of the same height, and only the low walls whose tops a driver sees: the
-		-- rock face's boxes are a stand-in, redrawn as faces in the feature's next step.
-		local worstStep, pairs, steps = 0, 0, 0
-		for _, model in models do
-			local byName = {}
-			for _, p in model:GetChildren() do
-				byName[p.Name] = p
-			end
-			for _, prefix in { "Edge_L_", "Edge_R_" } do
-				for k = 1, 4000 do
-					local a, b = byName[prefix .. k], byName[prefix .. (k + 1)]
-					if a and b and math.abs(a.Size.Y - b.Size.Y) < 1e-3 and a.Size.Y < 20 then
-						-- the top edge's end of one box, and the start of the next
-						local aEnd = a.CFrame * Vector3.new(0, a.Size.Y / 2, -a.Size.Z / 2 + 0.1)
-						local bStart = b.CFrame * Vector3.new(0, b.Size.Y / 2, b.Size.Z / 2 - 0.1)
-						local step = math.abs(aEnd.Y - bStart.Y)
-						worstStep = math.max(worstStep, step)
-						steps += if step > 0.1 then 1 else 0
-						pairs += 1
-					end
-				end
-			end
-		end
-		-- WHERE THE GROUND ITSELF TURNS SHARPLY a short box pitches far more than its
-		-- neighbour (the inside of a hairpin, where the grass's width is cut back fast on a
-		-- bank): a step of a few tenths there is the ground's shape, not a staircase
-		-- NO HEDGES ON THE ROAD since T-189: the generator never chooses one, so no hedge box
-		-- is drawn. Should one be (hedges come back as decoration), its tops must still run on
-		-- without steps
-		local hedges = 0
-		for _, model in models do
-			for _, p in model:GetChildren() do
-				if string.sub(p.Name, 1, 5) == "Edge_" then
-					hedges += 1
-				end
-			end
-		end
-		check("no hedge drawn on the road, and any hedge tops run on without steps", hedges == 0 and steps <= pairs * 0.01 and worstStep < 0.5, `{hedges} hedge boxes; {pairs} joints: {steps} step more than 0.1 studs, worst {fmt(worstStep, 3)}`)
-
-		-- 4c. The faces of the mountainside: in the one mesh, and never reaching past a
-		-- bend's centre on its inside (where the faces of a hairpin would fold through
-		-- each other)
-		local Spline = require(ReplicatedStorage.Shared.Road.Spline)
-		local worstReach, faces = 0, 0
-		for u = 0, spline.length, 5 do
-			for _, side in { -1, 1 } do
-				local kind = spline:edgeAt(u, side)
-				if kind == Spline.ROCK or kind == Spline.CLIFF then
-					faces += 1
-					local k = spline:curvatureAt(u)
-					if k ~= 0 and (k > 0) == (side < 0) then
-						local pts = SplineMesh.profile(spline, u, side, kind)
-						local cx, cz = spline:planAt(u)
-						for _, p in pts do
-							local reachOut = math.sqrt((p.X - cx) ^ 2 + (p.Z - cz) ^ 2) * math.abs(k)
-							worstReach = math.max(worstReach, reachOut)
-						end
-					end
-				end
-			end
-		end
-		check("rock and cliff faces never fold past a bend's centre", faces > 0 and worstReach <= 0.9 + 1e-3, `{faces} face profiles every 5 studs; on the inside of bends the furthest point is {fmt(worstReach * 100, 1)}% of the way to the centre (limit 90%)`)
 
 		-- 4d. The K-rails, drawn as metal crash barriers (T-149), stand where the car's wall
 		-- is (`Drift/SplineWorld`): the beam's face on the tarmac's edge, its top at

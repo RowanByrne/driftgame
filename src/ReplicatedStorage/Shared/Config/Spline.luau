@@ -227,14 +227,16 @@ local Spline = {
 		-- short to fit one; the car's wall leans with it, so it grinds rather than snags
 		CarvedRate = 0.4,
 		-- THE EDGES. A rock face is a wall at the runoff's outer edge (so is a hedge, never
-		-- chosen as an edge since T-189); a cliff is where the ground ends.
+		-- chosen as an edge since T-189); a cliff is where the ground ends. To the car only:
+		-- nothing draws them since T-247 (the ground mesh stands in, `Drift/GroundMeshView`).
+		-- The grand, tight and low numbers below still shape the section's `gd` knots, which
+		-- nothing reads either; they go with the old descent planner (features/legacy-removal.md)
 		-- The heights and slopes here are near a turnaround; mid-leg they grow to the `Grand`
 		-- numbers below. `RockHeight[1]` is also the car's wall height (`Drift/SplineWorld`)
 		RockHeight = { 25, 60 }, -- studs. A look; to the car it is a wall
 		RockSlope = { 50, 70 }, -- degrees
 		HedgeHeight = 6, -- studs
 		HedgeThickness = 4, -- studs
-		CliffDrop = 80, -- studs the face is drawn down into haze
 		-- GRAND CLIFFS (T-185). The user, 2026-11-13: "cliffs should be more solid bodied and
 		-- grand. the farther you get from a switchback, we can have sections where the average
 		-- cliff height is huge, and then comes back down again as we near a switchback".
@@ -260,24 +262,12 @@ local Spline = {
 		GrandRockSlope = { 64, 78 }, -- degrees, so a tall face doesn't reach out for ever
 		RockTop = { 14, 36 }, -- studs of scrub on top, near and grand
 		RockBack = 0.36, -- the back slope's run, as a share of the height
-		-- ON THE INSIDE OF A TIGHT BEND (T-193) a rock body is no grander than the bend allows
-		-- (none at `MinRadius`, full at this radius), and where it has to be squeezed in short
-		-- of the bend's centre, no taller than this many times what it reaches out
-		TightRockRadius = 250, -- studs
-		TightRockAspect = 2.5,
-		-- and it reaches no further than this share of the way to the bend's centre at the
-		-- tightest bend (0.9 at `TightRockRadius` and wider), clear of where the profiles meet
-		TightRockReach = 0.65,
-		-- studs either way along the road a tight bend limits a body: one just before it
-		-- reaches out across where the bend's profiles turn in
-		TightRockLook = 60,
 		-- LOWER THAN NEAR A TURNAROUND (T-189): with no hedges, the uphill side just past a
 		-- hairpin is rock too, right under the leg you came down. Where even a low body would
 		-- stand up through that road, the grandeur goes below 0 (to -1) and the body shrinks
 		-- toward these, so it stays under the leg above. The car's wall stays `RockHeight[1]`
 		LowRockHeight = 4, -- studs, at -1
 		LowRockTop = 3, -- studs of scrub on top, at -1
-		GrandCliffDrop = 200, -- studs, mid-leg (`CliffDrop` near)
 		-- How far past the runoff an edge reaches, for keeping two stretches of road apart.
 		EdgeDepth = 4, -- studs: a hedge's thickness, and the foot of a rock face
 		-- WHICH SIDE IS UPHILL follows from the heading against the fall line (T-166,
@@ -321,11 +311,6 @@ local Spline = {
 		-- Programmer colours (the look is set with the next feature)
 		GrassColour = Color3.fromRGB(86, 140, 62),
 		GravelColour = Color3.fromRGB(146, 138, 124), -- a tight cliff edge's strip (T-181)
-		HedgeColour = Color3.fromRGB(44, 92, 40),
-		RockColour = Color3.fromRGB(112, 108, 102),
-		ScrubColour = Color3.fromRGB(78, 104, 58), -- the ledge on top of a rock face
-		CliffColour = Color3.fromRGB(104, 96, 88),
-		HazeColour = Color3.fromRGB(196, 210, 222), -- the foot of a cliff fades into this
 		-- the guardrail, beam and posts: galvanized steel. Many in Japan are painted white:
 		-- swap in the line below for that
 		KRailColour = Color3.fromRGB(176, 182, 186),
@@ -391,65 +376,11 @@ local Spline = {
 		BlotchStuds = 70,
 	},
 
-	-- --------------------------------------------------------------- the hillside
-	-- ONE CONTINUOUS MOUNTAIN (features/continuous-mountain.md, T-190): past a rock face's
-	-- top and a cliff's foot the ground carries on, up and down the mountain, until it meets
-	-- the ground of the next leg (`Road/SplineHill`; drawn by `Road/SplineMesh`). A look only:
-	-- the car still meets a wall at a rock face and falls at a cliff's lip.
-	Hill = {
-		Reach = 500, -- studs past the road's edge the ground is drawn to, with nothing in the way
-		-- THE SLOPE of the open hillside along the fall line. The road only drops 1 in 25, so
-		-- two legs are seldom more than this apart in height: steeper, and the ground from the
-		-- leg above would miss the leg below
-		Slope = 0.2, -- studs of height per stud (about 11 degrees)
-		-- FACES FIT THE ROOM THERE IS between two legs: a rock face under a drop share the
-		-- height between the two roads, less this slope across the gap between their edges
-		MinSlope = 0.04,
-		SameShare = 0.25, -- two rock faces (or two drops) facing each other: this much of the gap, each
-		MinRock = 4, -- studs: a rock face next to another leg is never capped lower (the car's wall is there)
-		MinCliff = 6, -- studs, a drop the same
-		-- two legs further apart than this (centre lines) are capped less and less
-		RelaxFrom = 300, -- studs
-		RelaxRate = 0.5, -- studs of cap per stud further
-		-- WHERE THE MOUNTAIN CHANGES SIDES (the middle of a hairpin) the rock on one side and
-		-- the drop on the other both come down to nothing, this fast, so they meet level
-		TaperRate = 0.6, -- studs of face per stud of road from the change
-		-- and a face is as tall as its side faces squarely up or down the fall line (the sine
-		-- of the heading off the fall line, to this power): full across the slope, none
-		-- heading straight down it. 1 is a plane hillside, cut; higher opens the bends more
-		AcrossPower = 1,
-		FaceShare = 0.8, -- the most of its own ground a face may reach across (the inside of a bend)
-		Aspect = 1.5, -- and the tallest it may stand, as a multiple of how wide that ground is
-		RimDrop = 60, -- studs a drop's open hillside falls away at its rim, with nothing below
-		-- Two legs more than two reaches apart do not meet: each has the ground it would have
-		-- alone, ending at a rim. As they close in, a ray eases from that to the meeting
-		-- height over the last `MeetOver` of its reach
-		MeetOver = 150, -- studs
-		-- road this many times further along the curve than away is another stretch (the far
-		-- side of a bend from about 85 degrees round it)
-		Facing = 1.1,
-		-- broad ridges and gullies, away from the road
-		NoiseSize = 420, -- studs
-		NoiseHeight = 26, -- studs, either way
-		NoiseFrom = 120, -- studs past a face's end over which they ease in (or the ray's length, if less)
-		-- the drawing
-		StationStep = 16, -- studs between the road's stations (a multiple of `CheckStep`)
-		Gather = 1200, -- studs round a chunk its stations are gathered from (two reaches and two runoffs)
-		CutStep = 10, -- studs of road between two rays, at least
-		Rings = { 0.12, 0.32, 0.62, 1 }, -- where a ray's vertices go, as shares of its length
-		Skirt = 4, -- studs a ray is drawn past its end, level, so no crack shows where two meet
-		SteepRock = 0.72, -- a face whose normal is flatter than this (its Y) is drawn as rock
-		Colour = Color3.fromRGB(78, 122, 60), -- the open hillside: a shade under the runoff's grass
-	},
-
-	-- --------------------------------------------------------------- the ground-first trial
-	-- (features/ground-trial.md, T-218.) The ground BUILT FIRST, as one mountain the road is
-	-- cut into (`Road/Ground`), two ways to compare: "mesh", our own grid meshes, or
-	-- "terrain", Roblox's Terrain. "current" is the ground as it is today (the hillside
-	-- above). OFF BY DEFAULT: a run takes the mode set with the console's `ground` command,
-	-- only between runs, so the game and `main` stay as they are.
+	-- --------------------------------------------------------------- the ground
+	-- (features/ground-trial.md, T-218; the only ground since T-247, features/legacy-removal.md.)
+	-- The ground BUILT FIRST, as one mountain the road is cut into (`Road/Ground`), drawn by
+	-- each client as its own grid meshes (`Drift/GroundMeshView`).
 	Ground = {
-		Mode = "current", -- "current" | "mesh" | "terrain"
 		-- THE MOUNTAIN, h(x, z), through the road's start. A pure function of the seed and the
 		-- place. Since T-228 (the user: "sections where it gets very steep for several thousand
 		-- studs, and sections where it's quite shallow ... big ridges that carve in and
@@ -557,15 +488,14 @@ local Spline = {
 		-- it a station answered, until T-237)
 		Look = 16, -- studs
 		Soft = 3, -- studs
-		-- THE ROAD IN A GROUND RUN is drawn without its rock faces, drops and hillside, and
-		-- with a skirt from each runoff's outer edge `Skirt` studs down, leaning `SkirtLean`
-		-- out, so where the ground drawn apart dips below the edge no gap shows
+		-- THE ROAD is drawn with a skirt from each runoff's outer edge `Skirt` studs down,
+		-- leaning `SkirtLean` out, so where the ground drawn apart dips below the edge no gap
+		-- shows
 		Skirt = 10, -- studs
 		SkirtLean = 1.5, -- studs
 		SkirtColour = Color3.fromRGB(70, 104, 54),
 
-		-- OPTION 1, OUR OWN MESH ("mesh", `Drift/GroundMeshView`, T-220; redrawn as tiles in
-		-- T-225): the ground drawn as small square TILES, each `TileCells` cells across, as a
+		-- THE MESH (`Drift/GroundMeshView`, T-220; redrawn as tiles in T-225): the ground drawn as small square TILES, each `TileCells` cells across, as a
 		-- quadtree (`Drift/GroundTiles`): a tile `Spacings[k]` studs between vertices splits into
 		-- four of the next finer while it is too coarse for how near it is to the car, or to the
 		-- road (`Detail` below, the player's "Ground detail" setting). Tiles never overlap;
@@ -645,29 +575,6 @@ local Spline = {
 		GrassColours = { Color3.fromRGB(86, 132, 62), Color3.fromRGB(70, 116, 54) },
 		GroundRockColour = Color3.fromRGB(116, 110, 102),
 		UVStuds = 48, -- studs one tile of the ground's material covers
-
-		-- OPTION 2, ROBLOX TERRAIN ("terrain", `Drift/GroundTerrainView`): the same ground written
-		-- as Roblox's own terrain on this device, in square chunks of `TerrainChunk` studs (4-stud
-		-- voxels), nearest the car first, out to `DrawTo`, and cleared past `KeepTo`. A chunk is
-		-- rewritten when new road comes into it. Under the road and runoff it sinks
-		-- `TerrainSink` (smooth terrain rounds off between voxels), and within `TerrainClamp` of
-		-- a runoff's edge it is held that far below the edge. Solid `TerrainDepth` studs under
-		-- the chunk's lowest point. Grass, rock past `RockAngle`; programmer colours below
-		-- 256, not 128: each write costs the next frame about the same whatever its size (16 to
-		-- 34 ms, measured), so fewer, bigger writes
-		TerrainChunk = 256, -- studs
-		-- 768, not 1 024 as option 1: terrain costs frames by how much of it there is, more as the
-		-- camera moves (measured: a 1 024 ring, nothing being written, 15 ms a frame standing and
-		-- 34 moving on a busy PC). Past it is sky and fog
-		DrawTo = 768, -- studs from the car
-		KeepTo = 1024, -- studs
-		TerrainSink = 2.5, -- studs
-		TerrainClamp = 6, -- studs
-		TerrainDepth = 8, -- studs
-		TerrainSliceMs = 2, -- ms of building a frame (a chunk's one write can overrun it)
-		TerrainWriteGap = 0.1, -- seconds at least between two writes, so their slow frames never bunch up
-		TerrainGrassColour = Color3.fromRGB(86, 132, 62),
-		TerrainRockColour = Color3.fromRGB(116, 110, 102),
 	},
 
 	-- --------------------------------------------------------------- the mesh (step 3)
@@ -713,9 +620,6 @@ local Spline = {
 		},
 		BehindDefault = 3, -- keyboard and mouse, or gamepad
 		BehindTouchDefault = 2, -- a phone or tablet
-		-- A chunk whose hillside new road has come beside (T-190) is redrawn once it starts
-		-- within this of the car: further off, more road is still to come beside it
-		RedrawWithin = 800, -- studs ahead of the car
 		FallbackStep = 4, -- studs between cross-sections when a device draws parts instead
 		-- A chunk is built over as many frames as it needs (T-193): its build hands the frame
 		-- back whenever this much of it has been spent, and carries on next frame. Nothing is
@@ -723,11 +627,6 @@ local Spline = {
 		SliceMs = 3, -- ms of building in any one frame, at most (about; one step can overrun)
 	},
 
-	-- --------------------------------------------------------------- the Studio test road
-	-- `SplineTestService` (Studio only): a spline road to drive before the run lays one.
-	-- Far out on +X, clear of the track, the playground, the garage and the piece road.
-	TestOrigin = Vector3.new(30000, 0, -20000),
-	TestLength = 8000, -- studs
 }
 
 return Spline

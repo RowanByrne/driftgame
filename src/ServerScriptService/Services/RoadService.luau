@@ -46,7 +46,6 @@ local Generator = require(ReplicatedStorage.Shared.Road.Generator)
 local Net = require(ReplicatedStorage.Shared.Net)
 local Pieces = require(ReplicatedStorage.Shared.Road.Pieces)
 local SplineSequence = require(ReplicatedStorage.Shared.Road.SplineSequence)
-local Ground = require(ReplicatedStorage.Shared.Road.Ground)
 
 local RoadService = {}
 -- Below PlaygroundService (100) and TrackService: this one builds nothing until asked,
@@ -80,10 +79,6 @@ local generator = nil :: any
 -- builds NO PARTS for -- each client draws it and drives on its maths. The default is
 -- `Config.Road.Mode`; `SetMode` changes it between runs (the Studio TEST ONLY panel).
 local mode = nil :: string?
--- THE GROUND-FIRST TRIAL (features/ground-trial.md, T-218): "current", "mesh" or "terrain",
--- for the next spline run. `Config.Spline.Ground.Mode` ("current") unless the console's
--- `ground` command set it; like the road's mode, only between runs.
-local groundMode = nil :: string?
 local function splineRun(): boolean
 	return generator ~= nil and generator.spline ~= nil
 end
@@ -518,15 +513,6 @@ function RoadService:StartRun(player: Player): CFrame?
 		warn("[Road] a run was asked for with no CarService to move a car")
 		return nil
 	end
-	-- Not from the Studio spline test road: that one has its own roster and its own road
-	local test = script.Parent:FindFirstChild("SplineTestService")
-	if test then
-		local ok, svc = pcall(require, test)
-		if ok and type(svc) == "table" and type(svc.InTest) == "function" and svc:InTest(player) then
-			return nil
-		end
-	end
-
 	-- Where they are now, so ending the run can put them back there. Measured, not
 	-- remembered from a config: a player who drove from the track to the playground ends
 	-- their run on the playground.
@@ -713,7 +699,7 @@ function RoadService:Generate(seed: number?): CFrame
 			y = Config.Road.SurfaceY,
 			z = o.Z,
 			yaw = math.rad(Config.Road.StartHeading),
-		}, RoadService:GroundMode())
+		})
 	else
 		generator = Generator.new(chosen)
 	end
@@ -776,28 +762,6 @@ function RoadService:Mode(): string
 	return mode or (if Config.Road.Mode == "pieces" then "pieces" else "spline")
 end
 
--- WHICH GROUND THE NEXT SPLINE RUN HAS (T-218): "current", "mesh" or "terrain". Only between
--- runs, like the road's mode. Returns the mode now in force.
-function RoadService:GroundMode(): string
-	local want = groundMode or Config.Spline.Ground.Mode
-	return if Ground.valid(want) then want else "current"
-end
-
-function RoadService:SetGroundMode(want: string): string
-	if Ground.valid(want) and not self:HasRoad() then
-		groundMode = want
-	end
-	return self:GroundMode()
-end
-
--- The ground of the road that is up (T-218): what its run was started with.
-function RoadService:RunGround(): string?
-	if not splineRun() then
-		return nil
-	end
-	return generator.ground
-end
-
 function RoadService:SetMode(want: string): string
 	if (want == "pieces" or want == "spline") and not self:HasRoad() then
 		mode = want
@@ -850,10 +814,8 @@ function RoadService:_sendAll(player: Player)
 		-- the mountain's direction (T-166): the uphill heading and "descent" / "ascent" /
 		-- "traverse". The sections already carry everything drawn; this is for the view
 		fall = generator.gen.fall,
+		-- (the client makes the same mountain from the seed, the origin and the fall line, T-218)
 		mode = generator.gen.mode,
-		-- the ground-first trial (T-218): "current", "mesh" or "terrain". The client makes
-		-- the same mountain from the seed, the origin and the fall line
-		ground = self:RunGround(),
 	})
 end
 

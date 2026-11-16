@@ -57,7 +57,6 @@ export type Field = {
 	warp: { number }, -- {studs, studs across, noise offset, noise offset}
 	baseZero: number, -- the belts' height at the start, taken off so the start is on them
 	zero: number, -- the relief at the origin, taken off so the road starts on the mountain
-	mode: string?, -- on a client: how it is drawn, "mesh" or "terrain"
 	-- THE RANGE (T-233, `Road/Range`): in place of the belts when `Config.Range.Shape` is
 	-- "range": ridges across the way the run goes, passes, valleys
 	shape: string, -- "belts" or "range"
@@ -111,13 +110,6 @@ export type Context = {
 	grid: { [number]: { Station } },
 	count: number,
 }
-
-local MODES = { current = true, mesh = true, terrain = true }
-
--- Is `mode` one of the ground modes ("current" is today's ground, no field).
-function Ground.valid(mode: any): boolean
-	return type(mode) == "string" and MODES[mode] == true
-end
 
 --------------------------------------------------------------------------------
 -- The mountain: h(x, z)

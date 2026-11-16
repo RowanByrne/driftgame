@@ -5,7 +5,6 @@
 -- WHAT READS WHAT:
 --   `Shared/DayNight`                     the cycle: the time to a phase and a look
 --   `Controllers/SkyController`           sets the client's Lighting from that look
---   `Road/SplineMesh` (through the above) the foot of each cliff, `CliffHaze`
 --
 -- THE CYCLE, in seconds of the server's clock (`workspace:GetServerTimeNow()`), so every
 -- client works out the same moment by itself and nothing is sent:
@@ -51,12 +50,8 @@ return {
 	},
 
 	-- How often the lighting is set, per second. The clock moves about 0.1 hour a second,
-	-- so this is smooth; it is the colours of the cliffs' haze that cost (below).
+	-- so this is smooth.
 	Rate = 30,
-	-- The cliffs' haze is a colour inside each road chunk's mesh: it is written again only
-	-- when it has moved this far (0..1 per channel), so a chunk's mesh is not rewritten
-	-- every frame.
-	HazeStep = 2 / 255,
 
 	-- ---------------------------------------------------------------- the low light (T-179)
 	-- Roblox's sun and moon cross the horizon together (the moon's height is the sun's,
@@ -141,7 +136,6 @@ return {
 			BloomIntensity = 0.6,
 			BloomThreshold = 1.4,
 			SunRays = 0.1,
-			CliffHaze = rgb(206, 202, 204),
 		},
 		{
 			Name = "noon",
@@ -168,7 +162,6 @@ return {
 			BloomIntensity = 0.4,
 			BloomThreshold = 1.6,
 			SunRays = 0.04,
-			CliffHaze = rgb(190, 206, 224),
 		},
 		{
 			Name = "afternoon",
@@ -195,7 +188,6 @@ return {
 			BloomIntensity = 0.5,
 			BloomThreshold = 1.5,
 			SunRays = 0.06,
-			CliffHaze = rgb(206, 204, 198),
 		},
 		{
 			Name = "golden hour",
@@ -222,7 +214,6 @@ return {
 			BloomIntensity = 0.8,
 			BloomThreshold = 1.3,
 			SunRays = 0.14,
-			CliffHaze = rgb(230, 176, 136),
 		},
 		{
 			Name = "sunset",
@@ -249,7 +240,6 @@ return {
 			BloomIntensity = 1,
 			BloomThreshold = 1.1,
 			SunRays = 0.2,
-			CliffHaze = rgb(240, 170, 130),
 		},
 		{
 			Name = "dusk",
@@ -276,7 +266,6 @@ return {
 			BloomIntensity = 0.8,
 			BloomThreshold = 1.2,
 			SunRays = 0.06,
-			CliffHaze = rgb(124, 100, 144),
 		},
 		{
 			Name = "night",
@@ -303,7 +292,6 @@ return {
 			BloomIntensity = 0.6,
 			BloomThreshold = 1.2,
 			SunRays = 0,
-			CliffHaze = rgb(40, 50, 84),
 		},
 		{
 			Name = "dawn",
@@ -330,7 +318,6 @@ return {
 			BloomIntensity = 0.7,
 			BloomThreshold = 1.2,
 			SunRays = 0.04,
-			CliffHaze = rgb(116, 118, 156),
 		},
 		{
 			Name = "sunrise",
@@ -357,7 +344,6 @@ return {
 			BloomIntensity = 0.9,
 			BloomThreshold = 1.15,
 			SunRays = 0.16,
-			CliffHaze = rgb(214, 170, 166),
 		},
 	},
 }

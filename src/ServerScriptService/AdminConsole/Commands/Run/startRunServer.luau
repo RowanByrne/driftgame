@@ -16,7 +16,7 @@ return function(context, players: { Player }?, seed: number?): string
 		end
 		local cf = Ops.startRun(player)
 		if not cf then
-			return "The run didn't start (no car yet, or on the Studio spline test road)."
+			return "The run didn't start (no car yet?)."
 		end
 		return `Run started on seed {tostring(Ops.seed())}, {Ops.placed(cf)}.`
 	end)

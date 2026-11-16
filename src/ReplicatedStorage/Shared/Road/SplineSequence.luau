@@ -46,7 +46,6 @@ export type Sequence = typeof(setmetatable(
 		gen: SplineGen.Gen,
 		spline: Spline.Spline,
 		seed: number,
-		ground: string, -- the ground-first trial's mode (T-218): "current", "mesh" or "terrain"
 		first: number,
 		last: number,
 		starts: { number }, -- s at the start of each section, by n
@@ -58,14 +57,12 @@ export type Sequence = typeof(setmetatable(
 	SplineSequence
 ))
 
--- `ground`: the ground-first trial's mode (T-218), "current" when nil
-function SplineSequence.new(seed: number, origin: Spline.Origin?, ground: string?): Sequence
-	local gen = SplineGen.new(seed, origin, nil, ground)
+function SplineSequence.new(seed: number, origin: Spline.Origin?): Sequence
+	local gen = SplineGen.new(seed, origin)
 	local self = setmetatable({
 		gen = gen,
 		spline = gen.spline,
 		seed = seed,
-		ground = if gen.ground then ground :: string else "current",
 		first = 1,
 		last = 0,
 		starts = {},
