@@ -12,7 +12,7 @@ local function hashState(g)
 	local n,sum=0,0
 	for _,bucket in g.spline.hash do for _,v in bucket do n+=1;sum+=v end end
 	table.insert(out,n);table.insert(out,sum)
-	return game:GetService("HttpService"):JSONEncode({summary=out,curv=g.spline.curv,grade=g.spline.grade,bank=g.spline.bank,edgeL=g.spline.edgeL,edgeR=g.spline.edgeR,runL=g.spline.runL,runR=g.spline.runR,runoff=g.runoff,inBand=g.inBand,crossAt=g.crossAt})
+	return game:GetService("HttpService"):JSONEncode({summary=out,curv=g.spline.curv,grade=g.spline.grade,bank=g.spline.bank,ups=g.spline.ups,runL=g.spline.runL,runR=g.spline.runR,runoff=g.runoff,inBand=g.inBand,crossAt=g.crossAt})
 end
 function Tests.run()
 	local checks={}

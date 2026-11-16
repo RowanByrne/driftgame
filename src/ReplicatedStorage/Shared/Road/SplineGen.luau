@@ -358,22 +358,21 @@ function SplineGen._terrain(self: Gen, sec: Spline.Section)
 	sec.rl = runoff(-1)
 	sec.rr = runoff(1)
 
-	-- THE EDGES: the mountain on one side, the drop on the other, and WHICH SIDE follows
+	-- THE UPHILL SIDE: the mountain on one side, the drop on the other, and WHICH SIDE follows
 	-- from the heading against the fall line (T-166): the side the uphill direction is on.
 	-- Heading within `AlongFallLine` of straight up or down the slope counts as neither and
 	-- the side holds. Coming out of that band on the other side -- the road has turned back
 	-- through a hairpin -- the mountain changes sides, AT ONE POINT: where the heading last
 	-- crossed the fall line itself, the middle of the turn (or the section's start, if that
-	-- was in a section already laid). There the rock face ends on one side as it starts on
-	-- the other, and the drop the same, so the mountain carries on through the turn with no
-	-- gap (T-189).
-	-- NO HEDGES (T-189, the user 2026-11-13): the uphill side is always rock and the downhill
-	-- side always the drop. The two draws that used to choose a hedge are still made and
-	-- thrown away, so every other choice from this stream (the K-rails) is the road it was.
-	-- `Spline.HEDGE` and its drawing stay, for hedges coming back as decoration.
+	-- was in a section already laid) (T-189).
+	-- IT CHOOSES NOTHING AT THE EDGE (T-261): until then the uphill side was a rock face and
+	-- the downhill one a cliff, hidden walls and holes the car met; now past the runoff is the
+	-- drawn ground (T-258, features/car-edges.md). It is kept for what is placed by it: the
+	-- K-rails above the drop, the tight edges and the carved apexes. The two draws that once
+	-- chose a hedge are still made and thrown away, so every choice from this stream (the
+	-- K-rails) is the road it was.
 	r:NextNumber()
 	r:NextNumber()
-	local upKind, downKind = Spline.ROCK, Spline.CLIFF
 	local band = math.sin(math.rad(Config.Spline.Mountain.AlongFallLine))
 	local _, _, yaw0, k0 = self.spline:tip()
 	local s0 = self.spline.length
@@ -421,35 +420,19 @@ function SplineGen._terrain(self: Gen, sec: Spline.Section)
 	self.uphill = cur
 	self.inBand = inBand
 	self.crossAt = s0 + crossAt
-	local el, er = {}, {}
+	local up = {}
 	for _, sp in spans do
-		local kinds = { [sp[2]] = upKind, [-sp[2]] = downKind }
-		table.insert(el, sp[1])
-		table.insert(el, kinds[-1])
-		table.insert(er, sp[1])
-		table.insert(er, kinds[1])
+		table.insert(up, sp[1])
+		table.insert(up, sp[2])
 	end
-	sec.el = el
-	sec.er = er
-	-- the edge on one side over a run of the section, if it is the same all the way
-	local function edgeOver(side: number, a: number, b: number): number?
-		local list = if side < 0 then el else er
-		local s0, kind = 0, nil
-		for j = 1, #list, 2 do
-			local s1 = list[j]
-			if s1 > a and s0 < b then
-				if kind and kind ~= list[j + 1] then
-					return nil
-				end
-				kind = list[j + 1]
-			end
-			s0 = s1
-		end
-		return kind
+	sec.up = up
+	-- is `side` the downhill one over the whole of [a, b] of the section?
+	local function downhillOver(side: number, a: number, b: number): boolean
+		return SplineGen._uphillOver(up, -side, a, b)
 	end
 
-	-- K-RAILS: on the outside of a bend above a cliff about half the time, the body of the
-	-- bend; now and then a stretch anywhere else
+	-- K-RAILS: on the outside of a bend above the drop (the downhill side) about half the
+	-- time, the body of the bend; now and then a stretch anywhere else
 	local runMin, runMax = T.KRailRun[1], T.KRailRun[2]
 	local kr: { number } = {}
 	if bend then
@@ -458,7 +441,7 @@ function SplineGen._terrain(self: Gen, sec: Spline.Section)
 		if len >= runMin and r:NextNumber() < T.KRailBendChance then
 			local run = math.clamp(len * 0.8, runMin, math.min(runMax, len))
 			local a = (len - run) * 0.5
-			if edgeOver(outside, a, a + run) == Spline.CLIFF then
+			if downhillOver(outside, a, a + run) then
 				kr = { a, a + run, outside }
 			end
 		end
@@ -487,7 +470,7 @@ function SplineGen._terrain(self: Gen, sec: Spline.Section)
 	if tag ~= "Start" then
 		local x = self.xrng
 		local roll, uWidth, uCore, uAt = x:NextNumber(), x:NextNumber(), x:NextNumber(), x:NextNumber()
-		local side = if edgeOver(1, 0, len) == Spline.CLIFF and not grove[1] then 1 elseif edgeOver(-1, 0, len) == Spline.CLIFF and not grove[-1] then -1 else 0
+		local side = if downhillOver(1, 0, len) and not grove[1] then 1 elseif downhillOver(-1, 0, len) and not grove[-1] then -1 else 0
 		if side ~= 0 and roll < T.TightChance then
 			local w0, w1 = startRun[side], self.runoff[side]
 			local wt = T.TightRunoff[1] + (T.TightRunoff[2] - T.TightRunoff[1]) * uWidth
@@ -533,6 +516,19 @@ function SplineGen._terrain(self: Gen, sec: Spline.Section)
 	end
 end
 
+-- Is the mountain on `side` over the whole of [a, b] of a section, by its uphill spans
+-- `{dsEnd, side, ...}` (T-261)?
+function SplineGen._uphillOver(up: { number }, side: number, a: number, b: number): boolean
+	local s0 = 0
+	for j = 1, #up, 2 do
+		if up[j] > a and s0 < b and up[j + 1] ~= side then
+			return false
+		end
+		s0 = up[j]
+	end
+	return true
+end
+
 -- A CARVED APEX (T-182): the road cut into the cliff. On some sharp bends whose inside is
 -- the rock face and whose outside is the drop, the inside runoff narrows to `CarvedGap` at
 -- the apex -- the middle of the bend's held arc -- so the rock rises right at the tarmac's
@@ -542,7 +538,7 @@ end
 function SplineGen._carve(self: Gen, sec: Spline.Section)
 	local T = Config.Spline.Terrain
 	local tag = sec.tag
-	if tag == "Straight" or tag == "Escape" or tag == "Start" or not (sec.rl and sec.rr and sec.el and sec.er) then
+	if tag == "Straight" or tag == "Escape" or tag == "Start" or not (sec.rl and sec.rr and sec.up) then
 		return
 	end
 	local k = sec.k
@@ -568,16 +564,6 @@ function SplineGen._carve(self: Gen, sec: Spline.Section)
 	end
 	if not holdFrom or not holdTo or holdTo - holdFrom < 20 then
 		return
-	end
-	local function all(list: { number }, kind: number, a: number, b: number): boolean
-		local s0 = 0
-		for j = 1, #list, 2 do
-			if list[j] > a and s0 < b and list[j + 1] ~= kind then
-				return false
-			end
-			s0 = list[j]
-		end
-		return true
 	end
 	local hold = math.min(T.CarvedHold[1] + (T.CarvedHold[2] - T.CarvedHold[1]) * r:NextNumber(), (holdTo - holdFrom) * 0.5)
 	local gap, rate = T.CarvedGap, T.CarvedRate
@@ -606,8 +592,8 @@ function SplineGen._carve(self: Gen, sec: Spline.Section)
 	end
 	local b = math.min(math.max((holdFrom + holdTo - hold) * 0.5, lo), hi)
 	local c = b + hold
-	-- the rock all along the inside, the drop on the outside through the apex
-	if not all(if inside < 0 then sec.el else sec.er, Spline.ROCK, 0, len) or not all(if inside < 0 then sec.er else sec.el, Spline.CLIFF, b, c) then
+	-- the mountain all along the inside (so the drop is on the outside through the apex)
+	if not SplineGen._uphillOver(sec.up :: { number }, inside, 0, len) then
 		return
 	end
 	local knots = {}

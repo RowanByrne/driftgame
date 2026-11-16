@@ -12,11 +12,17 @@
 --
 --   ground   the tarmac and the grass runoff, each tile on the surface's own slope (bank,
 --            grade, and the grass easing flat), out to the edge on each side
---   walls    a rock face and a hedge at the runoff's outer edge, and a K-rail (the metal
---            crash barrier) on the tarmac's edge where one stands. The closing barrier
---            behind the run's window too
---   nothing  past a cliff's lip, or past the end of the laid road: walking off falls, and
---            whatever a fall does to an avatar today still happens
+--   drawn    past the runoff, on a mountain road, the DRAWN GROUND the car drives on too
+--            (T-261, features/car-edges.md, `Drift/OffRoadGround`): square tiles on a world
+--            grid round the avatar, each on the ground's own slope, on the road or off it
+--   walls    a K-rail (the metal crash barrier) on the tarmac's edge where one stands, and
+--            the closing barrier behind the run's window. A road with no mountain (a test's)
+--            is walled at its runoff's outer edge instead of the drawn ground
+--   nothing  past the end of the laid road: walking off falls, and whatever a fall does to
+--            an avatar today still happens
+--
+-- (Until T-261 each side was a rock face, a wall at the grass's edge, or a cliff, nothing
+-- past it, chosen per side and never drawn.)
 --
 -- THE TILES SIT ON A FIXED LATTICE along the road (`ROW` studs a row, the cross-section cut
 -- the same way every time), so the tile under the avatar never moves: walking only adds
@@ -46,6 +52,7 @@ local Spline = require(ReplicatedStorage.Shared.Road.Spline)
 
 local DriftFolder = script.Parent.Parent:WaitForChild("Drift")
 local Driver = require(DriftFolder:WaitForChild("Driver")) :: any
+local OffRoadGround = require(DriftFolder:WaitForChild("OffRoadGround")) :: any
 
 local DriftController = require(script.Parent.DriftController) :: any
 local SplineRoadController = require(script.Parent.SplineRoadController) :: any
@@ -63,19 +70,22 @@ local PIECE = 6 -- the widest a tile is across: the grass eases flat, and stays 
 local THICK = 2 -- studs: each tile's thickness, under the surface
 local OVERLAP = 0.1 -- studs each tile is grown by, so no seam opens between two
 
--- A CLIFF'S LIP is where the grass ends, and the grass widens and narrows along the road
--- (up to about a third of a stud per stud). A row's outer tile on a cliff side is cut into
--- strips until no strip's lip steps in by more than this.
+-- THE GRASS'S OUTER EDGE, where the drawn ground takes over, widens and narrows along the
+-- road (up to about a third of a stud per stud). A row's outer tile is cut into strips
+-- until no strip's edge steps in by more than this.
 local LIP_STEP = 0.25
 
--- THE WALLS, in studs. The drawn rock face is 25 to 60 high and leans back; to the avatar
--- it is a wall at its foot it cannot climb. The hedge is drawn 6 high, which an avatar
--- can just jump on to, and behind it there is nothing drawn and nothing to stand on, so
--- its wall is taller than a jump. A K-rail is the car's wall exactly: jump it, and the
--- grass and then the cliff are behind it. The closing barrier is taller than a jump too.
-local ROCK_WALL = 80
-local ROCK_THICK = 6
-local HEDGE_WALL = 12
+-- THE DRAWN GROUND (T-261): tiles `CELL` studs square on a world grid, out to `DRAWN_REACH`
+-- from the avatar, wherever the ground is past the runoff (a cell whose middle is up to
+-- `DRAWN_INTO` studs inside the runoff's edge counts, so no gap opens between the two).
+local CELL = 4
+local DRAWN_REACH = 24
+local DRAWN_INTO = 1
+
+-- THE WALLS, in studs. A road with no mountain is walled at its runoff's edge: taller than
+-- a jump. A K-rail is the car's wall exactly: jump it, and the grass and then the drawn
+-- ground are behind it. The closing barrier is taller than a jump too.
+local BARE_WALL = 12
 local CLOSING_WALL = 24
 local SINK = 3 -- how far a wall reaches down under the ground at its foot
 
@@ -93,6 +103,7 @@ local stats = {
 	clears = 0,
 	created = 0,
 	ground = 0,
+	drawn = 0, -- tiles of the drawn ground past the runoff (T-261)
 	walls = 0,
 	rails = 0,
 	closing = 0,
@@ -127,7 +138,21 @@ local function clear()
 	table.clear(parts)
 	lastKey = ""
 	stats.clears += 1
-	stats.ground, stats.walls, stats.rails, stats.closing = 0, 0, 0, 0
+	stats.ground, stats.drawn, stats.walls, stats.rails, stats.closing = 0, 0, 0, 0, 0
+end
+
+-- The drawn ground of the road we are on (T-261), made once per road.
+local drawnFor: any = nil
+local drawnGround: any = nil
+local function drawnOf(spline: any): any
+	if not spline.mountain then
+		return nil
+	end
+	if drawnFor ~= spline then
+		drawnFor = spline
+		drawnGround = OffRoadGround.new(spline, spline.mountain)
+	end
+	return drawnGround
 end
 
 -- Our avatar's root while it is out of the car and free to walk, else nil. In the seat its
@@ -172,11 +197,76 @@ end
 
 -- Everything the patch should hold round (sc, dc), by key. A key names the same tile every
 -- time it is asked for, and the same key always gives the same tile.
-local function plan(spline: any, sc: number, dc: number, closingS: number?): { [string]: Spec }
+-- `sc`/`dc` nil: the avatar is off the road, and only the drawn ground round (x, z) is wanted.
+local function plan(spline: any, sc: number?, dc: number?, closingS: number?, x: number, z: number): { [string]: Spec }
 	local R = Config.Road
 	local T = Config.Spline.Terrain
 	local half = R.Width * 0.5
 	local want: { [string]: Spec } = {}
+	local drawn = drawnOf(spline)
+
+	-- THE DRAWN GROUND round (x, z), past the runoff (T-261)
+	if drawn then
+		local ci, cj = math.floor(x / CELL), math.floor(z / CELL)
+		local cells = math.ceil(DRAWN_REACH / CELL)
+		local reach = half + T.RunoffMax + T.GroveRunoff[2] + CELL
+		local h: { [number]: number } = {}
+		local function corner(i: number, j: number): number
+			local k = i * 65536 + j
+			local y = h[k]
+			if not y then
+				y = (drawn.sample(i * CELL, j * CELL))
+				h[k] = y
+			end
+			return y
+		end
+		local hintHere = hint
+		for i = ci - cells, ci + cells do
+			for j = cj - cells, cj + cells do
+				local mx, mz = (i + 0.5) * CELL, (j + 0.5) * CELL
+				local s, d
+				if hintHere then
+					s, d = spline:projectFrom(mx, mz, hintHere)
+				end
+				if not s or not d or math.abs(d) > reach then
+					s, d = spline:project(mx, mz, reach)
+				end
+				local past = true
+				if s and d and math.abs(d) <= reach then
+					hintHere = s
+					local side = if d < 0 then -1 else 1
+					past = math.abs(d) > half + spline:runoffAt(s, side) - DRAWN_INTO
+				end
+				if past then
+					local x0, z0 = i * CELL, j * CELL
+					local p00 = Vector3.new(x0, corner(i, j), z0)
+					local p10 = Vector3.new(x0 + CELL, corner(i + 1, j), z0)
+					local p01 = Vector3.new(x0, corner(i, j + 1), z0 + CELL)
+					local p11 = Vector3.new(x0 + CELL, corner(i + 1, j + 1), z0 + CELL)
+					local n = (p11 - p00):Cross(p01 - p10)
+					if n.Y < 0 then
+						n = -n
+					end
+					if n.Magnitude > 1e-6 then
+						n = n.Unit
+						local mid = (p00 + p10 + p01 + p11) * 0.25
+						local rx = (p10 - p00 + p11 - p01) * 0.5
+						local r = rx - n * rx:Dot(n)
+						local fz = (p01 - p00 + p11 - p10) * 0.5
+						want[`o{i}:{j}`] = {
+							size = Vector3.new(rx.Magnitude + OVERLAP, THICK, fz.Magnitude + OVERLAP),
+							cf = CFrame.fromMatrix(mid - n * (THICK * 0.5), r.Unit, n),
+							material = Enum.Material.Grass,
+							kind = "drawn",
+						}
+					end
+				end
+			end
+		end
+	end
+	if not sc or not dc then
+		return want
+	end
 	local lo, hi = dc - ACROSS, dc + ACROSS
 
 	-- a ground tile over [s0, s1] x [d0, d1], its top on the surface at its middle. A
@@ -253,25 +343,6 @@ local function plan(spline: any, sc: number, dc: number, closingS: number?): { [
 		}
 	end
 
-	-- the stretches of [s0, s1] with one edge kind each on `side`: an edge changes only at
-	-- a section's end, found to a few hundredths of a stud
-	local function edgeSpans(s0: number, s1: number, side: number): { { number } }
-		local k0, k1 = spline:edgeAt(s0, side), spline:edgeAt(s1, side)
-		if k0 == k1 then
-			return { { s0, s1, k0 } }
-		end
-		local a, b = s0, s1
-		for _ = 1, 8 do
-			local m = (a + b) * 0.5
-			if spline:edgeAt(m, side) == k0 then
-				a = m
-			else
-				b = m
-			end
-		end
-		return { { s0, b, k0 }, { b, s1, k1 } }
-	end
-
 	local nc = math.floor(sc / ROW)
 	local tarmacPieces = math.ceil(R.Width / PIECE)
 	local tarmacW = R.Width / tarmacPieces
@@ -302,7 +373,7 @@ local function plan(spline: any, sc: number, dc: number, closingS: number?): { [
 				if w1 - w0 < 0.05 then
 					return
 				end
-				-- gravel in a tight cliff stretch (T-181), for the footsteps
+				-- gravel in a tight edge (T-181), for the footsteps
 				local mat = if spline:gravelAt((a + b) * 0.5, side) then Enum.Material.Pebble else Enum.Material.Grass
 				if side < 0 then
 					tile(key, a, b, -(half + w1), -(half + w0), mat)
@@ -310,37 +381,35 @@ local function plan(spline: any, sc: number, dc: number, closingS: number?): { [
 					tile(key, a, b, half + w0, half + w1, mat)
 				end
 			end
-			for g, span in edgeSpans(s0, s1, side) do
-				local a, b, kind = span[1], span[2], span[3]
+			do
+				local a, b = s0, s1
 				local wa, wb = spline:runoffAt(a, side), spline:runoffAt(b, side)
-				local key = `{tag}{n}:{g}`
-				if kind == Spline.CLIFF then
-					-- ground to the lip and not a hair past it: whole tiles as far as the
-					-- narrowest the grass gets here, then the rest in strips
+				local key = `{tag}{n}`
+				if drawn then
+					-- ground to the grass's edge and not a hair past it, where the drawn ground
+					-- takes over: whole tiles as far as the narrowest the grass gets here, then
+					-- the rest in strips
 					local wMin = math.min(wa, wb, spline:runoffAt((a + b) * 0.5, side))
 					local full = math.floor(wMin / PIECE)
 					for j = 1, full do
 						grass(`g{key}:{j}`, a, b, (j - 1) * PIECE, j * PIECE)
 					end
 					local strips = math.clamp(math.ceil(math.abs(wb - wa) / LIP_STEP), 1, 8)
-					for i = 1, strips do
-						local sa = a + (b - a) * (i - 1) / strips
-						local sb = a + (b - a) * i / strips
+					for k = 1, strips do
+						local sa = a + (b - a) * (k - 1) / strips
+						local sb = a + (b - a) * k / strips
 						local w = math.min(spline:runoffAt(sa, side), spline:runoffAt(sb, side))
-						grass(`l{key}:{i}`, sa, sb, full * PIECE, w)
+						grass(`l{key}:{k}`, sa, sb, full * PIECE, w)
 					end
 				else
-					-- ground out under the wall, then the wall on the grass's outer edge
+					-- a road with no mountain: ground out under the wall, then the wall on the
+					-- grass's outer edge
 					local w = math.max(wa, wb) + 1
 					local pieces = math.ceil(w / PIECE)
 					for j = 1, pieces do
 						grass(`g{key}:{j}`, a, b, (j - 1) * PIECE, math.min(j * PIECE, w))
 					end
-					if kind == Spline.ROCK then
-						wall(`w{key}`, "wall", a, b, side, half + wa, half + wb, ROCK_THICK, ROCK_WALL, Enum.Material.Rock)
-					else
-						wall(`w{key}`, "wall", a, b, side, half + wa, half + wb, T.HedgeThickness, HEDGE_WALL, Enum.Material.LeafyGrass)
-					end
+					wall(`w{key}`, "wall", a, b, side, half + wa, half + wb, T.BareWallThickness, BARE_WALL, Enum.Material.LeafyGrass)
 				end
 			end
 			-- the K-rails standing on the tarmac's edge in this row
@@ -388,7 +457,7 @@ local function apply(want: { [string]: Spec })
 		folder = made
 		f = made
 	end
-	local counts: { [string]: number } = { ground = 0, wall = 0, rail = 0, closing = 0 }
+	local counts: { [string]: number } = { ground = 0, drawn = 0, wall = 0, rail = 0, closing = 0 }
 	for key, spec in want do
 		local p = parts[key]
 		if not p then
@@ -413,7 +482,7 @@ local function apply(want: { [string]: Spec })
 	for _, p in spare do
 		p:Destroy()
 	end
-	stats.ground, stats.walls, stats.rails, stats.closing = counts.ground, counts.wall, counts.rail, counts.closing
+	stats.ground, stats.drawn, stats.walls, stats.rails, stats.closing = counts.ground, counts.drawn, counts.wall, counts.rail, counts.closing
 end
 
 local function frame()
@@ -430,25 +499,37 @@ local function frame()
 	local reach = R.Width * 0.5 + Config.Spline.Terrain.RunoffMax + ACROSS
 	local pos = root.Position
 	local s, d = locate(spline, pos.X, pos.Z, reach)
+	local drawn = spline.mountain ~= nil
 	if not s or not d then
 		stats.located = false
-		clear()
-		return
+		-- off the road altogether: only the drawn ground holds us up (T-261)
+		if not drawn then
+			clear()
+			return
+		end
+	else
+		stats.located, stats.s, stats.d = true, s, d
 	end
-	stats.located, stats.s, stats.d = true, s, d
-	local n = math.floor(s / ROW)
-	local band = math.floor(d / PIECE)
-	-- more road only matters while the patch would reach past the end of it
-	local laid = math.min(math.floor(spline.length / ROW), n + ROWS_EACH_WAY + 1)
-	local closingKey = if closingS and math.abs(closingS - s) <= ROW * (ROWS_EACH_WAY + 1) then closingS else -1
-	local key = `{n}/{band}/{laid}/{closingKey}`
+	-- the drawn ground's tiles move with the avatar's cell, and change as the road grows
+	local cellKey = if drawn then `{math.floor(pos.X / CELL)}:{math.floor(pos.Z / CELL)}:{spline.length}:{spline.firstSample}` else ""
+	local key
+	if s and d then
+		local n = math.floor(s / ROW)
+		local band = math.floor(d / PIECE)
+		-- more road only matters while the patch would reach past the end of it
+		local laid = math.min(math.floor(spline.length / ROW), n + ROWS_EACH_WAY + 1)
+		local closingKey = if closingS and math.abs(closingS - s) <= ROW * (ROWS_EACH_WAY + 1) then closingS else -1
+		key = `{n}/{band}/{laid}/{closingKey}/{cellKey}`
+	else
+		key = `off/{cellKey}`
+	end
 	if key == lastKey then
 		return
 	end
 	lastKey = key
 	stats.rebuilds += 1
 	local t0 = os.clock()
-	apply(plan(spline, s, d, closingS))
+	apply(plan(spline, s, d, closingS, pos.X, pos.Z))
 	local ms = (os.clock() - t0) * 1000
 	stats.rebuildMs = ms
 	stats.worstMs = math.max(stats.worstMs, ms)
@@ -500,6 +581,7 @@ function RoadGroundController:DebugState()
 		aboveSurface = aboveSurface,
 		parts = count,
 		ground = stats.ground,
+		drawn = stats.drawn,
 		walls = stats.walls,
 		rails = stats.rails,
 		closing = stats.closing,
@@ -508,16 +590,15 @@ function RoadGroundController:DebugState()
 		worstMs = stats.worstMs,
 		clears = stats.clears,
 		created = stats.created,
-		edgeL = spline and stats.located and spline:edgeAt(stats.s, -1) or nil,
-		edgeR = spline and stats.located and spline:edgeAt(stats.s, 1) or nil,
+		uphill = spline and stats.located and spline:uphillAt(stats.s) or nil, -- the mountain's side (T-261)
 		runoffL = spline and stats.located and spline:runoffAt(stats.s, -1) or nil,
 		runoffR = spline and stats.located and spline:runoffAt(stats.s, 1) or nil,
 	}
 end
 
 -- A point on the road's ground for a test to walk to, `d` studs right of the centre line at
--- `s`, with what is at that `s` either side: `{ point, edgeL, edgeR, runoffL, runoffR,
--- kRailL, kRailR }` (edges 1 rock, 2 hedge, 3 cliff). Nil with no road.
+-- `s`, with what is at that `s` either side: `{ point, uphill, runoffL, runoffR, kRailL,
+-- kRailR }` (`uphill`: the mountain's side, -1 left, 1 right, nil with none). Nil with no road.
 function RoadGroundController:DebugPoint(s: number, d: number)
 	local spline = SplineRoadController:Road()
 	if not spline then
@@ -527,8 +608,7 @@ function RoadGroundController:DebugPoint(s: number, d: number)
 	return {
 		point = Vector3.new(x, y, z),
 		length = spline.length,
-		edgeL = spline:edgeAt(s, -1),
-		edgeR = spline:edgeAt(s, 1),
+		uphill = spline:uphillAt(s),
 		runoffL = spline:runoffAt(s, -1),
 		runoffR = spline:runoffAt(s, 1),
 		kRailL = spline:kRailAt(s, -1) ~= nil,

@@ -427,15 +427,15 @@ function Tests.run(which: { string }?, ...)
 			local searchTo = 8000
 			gen:extendTo(searchTo + 300)
 			local mw = SplineWorld.new(mountain, nil)
-			-- A place where `side` ends in `kind` for 80 studs either way, on a gentle stretch,
-			-- with or without a K-rail.
+			-- A place where `side` is the downhill one (or the uphill one) for 80 studs either way,
+			-- on a gentle stretch, with or without a K-rail.
 			-- `maxK`: how sharp a bend may be there (a gentle 1 / 300 unless said).
-			local function find(kind: number, side: number, rail: boolean, maxK: number?): number?
+			local function find(downhill: boolean, side: number, rail: boolean, maxK: number?): number?
 				local kLimit = maxK or 1 / 300
 				for s = 300, searchTo - 300, 7 do
 					local good = true
 					for u = s - 80, s + 80, 10 do
-						if mountain:edgeAt(u, side) ~= kind or math.abs(mountain:curvatureAt(u)) > kLimit or (mountain:kRailAt(u, side) ~= nil) ~= rail then
+						if mountain:uphillAt(u) ~= (if downhill then -side else side) or math.abs(mountain:curvatureAt(u)) > kLimit or (mountain:kRailAt(u, side) ~= nil) ~= rail then
 							good = false
 							break
 						end
@@ -469,7 +469,6 @@ function Tests.run(which: { string }?, ...)
 					rails = after.kRailStops - before.kRailStops,
 					pushes = after.pushes - before.pushes,
 					grass = after.grass - before.grass,
-					overCliff = after.overCliff - before.overCliff,
 					-- where the edge is where the car ended up, not where it started
 					edge = half + mountain:runoffAt(sEnd or s, side),
 				}
@@ -479,18 +478,18 @@ function Tests.run(which: { string }?, ...)
 			-- over. `OffRoadTests` drives at each. The bare road above still has its walls.)
 			do
 				-- A K-RAIL ON A BEND (T-244): the generator lays most K-rails on the outside of
-				-- a bend above a cliff (`KRailBendChance`), and on today's road for this seed
+				-- a bend above the drop (`KRailBendChance`), and on today's road for this seed
 				-- every rail in its first 8 000 studs is on a bend of 105 to 295 studs radius,
 				-- so the gentle stretch the search wanted (no tighter than 300) found none. A
 				-- bend of 200 or wider is still near enough straight across the car's three
 				-- seconds driven at it; the gentle stretch is still tried first.
-				local s, side, kind = nil, 1, Spline.CLIFF
+				local s, side = nil, 1
 				for _, maxK in { 1 / 300, 1 / 200 } do
-					for _, k in { Spline.CLIFF, Spline.ROCK } do
+					for _, down in { true, false } do
 						for _, sd in { 1, -1 } do
 							if not s then
-								s = find(k, sd, true, maxK)
-								side, kind = sd, k
+								s = find(down, sd, true, maxK)
+								side = sd
 							end
 						end
 					end
@@ -593,8 +592,8 @@ function Tests.run(which: { string }?, ...)
 					check("a straight with wide grass found for the raised road", false, `none on this road, seed {SEED}`)
 				end
 			end
-			-- A tight cliff edge (T-181): a few studs of gravel, the rail on the tarmac's edge,
-			-- the lip just past it. The rail holds the car on the road, square on and glancing
+			-- A tight edge (T-181): a few studs of gravel, the rail on the tarmac's edge, the drawn
+			-- ground just past it. The rail holds the car on the road, square on and glancing
 			do
 				local s, side = nil, 1
 				for _, sd in { 1, -1 } do
@@ -629,19 +628,19 @@ function Tests.run(which: { string }?, ...)
 						hit = mw.probe(Vector3.new(mountain:terrainXYZ(s, side * (half + w * 0.5))) + Vector3.yAxis),
 					}
 					check(
-						"a tight cliff edge: gravel a few studs wide, then nothing",
-						w >= T.TightRunoff[1] - 1e-6 and w <= T.TightRunoff[2] + 1e-6 and gl.d == Spline.GRAVEL and gl.past == nil and gl.hit ~= nil and gl.hit.grip == D.GripGravel and gl.hit.score == D.ScoreGravel,
-						`at s {fmt(s, 0)}: {fmt(w, 2)} studs of gravel past the tarmac, the lip at {fmt(half + w, 2)}; grip there {gl.hit and gl.hit.grip or "none"}`
+						"a tight edge: gravel a few studs wide, then the ground",
+						w >= T.TightRunoff[1] - 1e-6 and w <= T.TightRunoff[2] + 1e-6 and gl.d == Spline.GRAVEL and gl.past == Spline.GRASS and gl.hit ~= nil and gl.hit.grip == D.GripGravel and gl.hit.score == D.ScoreGravel,
+						`at s {fmt(s, 0)}: {fmt(w, 2)} studs of gravel past the tarmac, its edge at {fmt(half + w, 2)}; grip there {gl.hit and gl.hit.grip or "none"}`
 					)
 					check(
-						"its rail stops the car before the drop",
+						"its rail stops the car at the tarmac's edge",
 						-- held by the rail (its sweep, or its push out if the sweep missed: the
-						-- counts below say which), never past its face, never over the lip
-						nose <= half + 0.5 and nose > half - 1.5 and not r.airborne and r.overCliff == 0 and widest + D.BodyWidth * 0.5 <= half + 1 and not runner.state.airborne and mw.stats.overCliff == before.overCliff,
-						`square on at 50 studs/s for 3 s: nose {fmt(nose, 2)} studs out (rail's face {half}, lip {fmt(half + w, 2)}), {r.rails} rail stops by the sweep; glancing at 60 studs/s, 30 degrees: the car's side at most {fmt(widest + D.BodyWidth * 0.5, 2)} studs out, {mw.stats.kRailStops - before.kRailStops} rail stops, on the ground {tostring(not runner.state.airborne)}`
+						-- counts below say which), never past its face
+						nose <= half + 0.5 and nose > half - 1.5 and not r.airborne and widest + D.BodyWidth * 0.5 <= half + 1 and not runner.state.airborne,
+						`square on at 50 studs/s for 3 s: nose {fmt(nose, 2)} studs out (rail's face {half}, gravel's edge {fmt(half + w, 2)}), {r.rails} rail stops by the sweep; glancing at 60 studs/s, 30 degrees: the car's side at most {fmt(widest + D.BodyWidth * 0.5, 2)} studs out, {mw.stats.kRailStops - before.kRailStops} rail stops, on the ground {tostring(not runner.state.airborne)}`
 					)
 				else
-					check("a tight cliff edge found to drive at", false, `none on this road, seed {SEED}`)
+					check("a tight edge found to drive at", false, `none on this road, seed {SEED}`)
 				end
 			end
 			-- The ground: grass grips and scores as grass
