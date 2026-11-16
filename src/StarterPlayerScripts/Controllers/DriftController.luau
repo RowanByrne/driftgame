@@ -130,6 +130,9 @@ function DriftController:Init()
 	self.sendClock = 0
 	self.respawns = 0
 	self.respawnsAsked = 0
+	-- put back for being too far off the road (T-258), and when that was last checked
+	self.putBacks = 0
+	self.putBackClock = 0
 	self.rigAttempts = 0 -- how many times the rig has been taken for the car we hold
 	self.rigFirstParts = -1 -- parts the first attempt found: 0 is the race in "the rig"
 	self.rigLiveAfter = -1 -- seconds from the first attempt until it caught the parts
@@ -598,6 +601,21 @@ function DriftController:_frame(dt: number)
 		self:_askForRespawn()
 	end
 
+	-- TOO FAR OFF THE ROAD (T-258, features/car-edges.md): past the grass the car drives on
+	-- the drawn mountain, and more than `OffRoad.PutBack` studs from the nearest road it is
+	-- wrecked and put back, by the server, as a fall is: at the nearest road it knows
+	self.putBackClock += dt
+	if self.putBackClock >= Config.Drift.OffRoad.PutBackEvery then
+		self.putBackClock = 0
+		local w: any = self.world
+		if w and w.offRoad and w.offBy and not self.awaitingRespawn then
+			if not w.offBy(state.position, Config.Drift.OffRoad.PutBack) then
+				self.putBacks += 1
+				self:_askForRespawn()
+			end
+		end
+	end
+
 	-- Drawn at THIS FRAME'S moment, not at the last completed step: the accumulator's
 	-- leftover is handed to Render, which carries the pose across it (T-025, Drift/Render
 	-- header). Without it the car is drawn a varying fraction of a step behind itself --
@@ -963,6 +981,7 @@ function DriftController:DebugState()
 		frameSeconds = self.frameSeconds,
 		respawns = self.respawns,
 		respawnsAsked = self.respawnsAsked,
+		putBacks = self.putBacks, -- asked for for being too far off the road (T-258)
 		awaitingRespawn = self.awaitingRespawn,
 		-- Out of the car, or on the way in or out: nothing steps, nothing is sent (T-096).
 		held = self.held,
