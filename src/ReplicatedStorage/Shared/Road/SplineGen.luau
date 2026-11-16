@@ -1363,6 +1363,17 @@ function SplineGen._slopeAim(self: Gen, slope: Slope): (number, number, number, 
 	local gx, gz = 0, 0
 	for _, a in G.AimAt do
 		local ax, az = gradient(f, x + fx * a, z + fz * a, G.AimSpan)
+		if f.range then
+			-- on the range (T-238), the face's own slope, with only `AimRelief` of the spurs'
+			-- and gullies': the spurs are as big as a leg is long, and a leg read on them alone
+			-- climbed a spur's flank sideways and came down the face
+			local e = G.AimSpan * 0.5
+			local px, pz = x + fx * a, z + fz * a
+			local bx = (Ground.base(f, px + e, pz) - Ground.base(f, px - e, pz)) / G.AimSpan
+			local bz = (Ground.base(f, px, pz + e) - Ground.base(f, px, pz - e)) / G.AimSpan
+			local q = Config.Range.AimRelief
+			ax, az = bx + q * (ax - bx), bz + q * (az - bz)
+		end
 		gx += ax
 		gz += az
 	end

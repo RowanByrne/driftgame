@@ -45,7 +45,7 @@ return {
 	Profile = { 1.2, 1.8 }, -- a face's exponent: higher, steeper near the crest and wider at the floor
 	CrestRound = 40, -- studs: the crest rounded over about this much
 
-	Octaves = { { 1400, 170, "ridge" }, { 600, 60, "gully" }, { 220, 10 } },
+	Octaves = { { 1400, 100, "ridge" }, { 600, 40, "gully" }, { 220, 8 } },
 	Stretch = 2.5, -- times longer along `t` (down the faces) than across
 	ReliefFloor = 0.15, -- of the spurs and gullies on a valley floor...
 	ReliefRise = 0.35, -- ...rising to all of them this far up a face
@@ -78,5 +78,6 @@ return {
 	LegMin = 400, -- studs
 	LegMax = 6000, -- studs
 	TowardBias = 0.05,
+	AimRelief = 0.35, -- of the spurs' and gullies' slope a leg's heading reads, with the face's
 	SteepHairpinRadius = { 70, 80 }, -- studs (`Spline.MinRadius` is 70)
 }
