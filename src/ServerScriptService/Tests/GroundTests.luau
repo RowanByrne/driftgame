@@ -71,21 +71,6 @@ local function run(check, opts)
 		)
 	end
 
-	-- "current" lays exactly the road it always has
-	do
-		local a = SplineGen.new(SEEDS[1])
-		a:extendTo(3000)
-		local b = SplineGen.new(SEEDS[1], nil, nil, "current")
-		b:extendTo(3000)
-		local x1, z1 = a.spline:planAt(3000)
-		local x2, z2 = b.spline:planAt(3000)
-		check(
-			"current: the same road as before",
-			#a.sections == #b.sections and x1 == x2 and z1 == z2 and a.spline:heightAt(3000) == b.spline:heightAt(3000) and b.ground == nil,
-			`{#a.sections} / {#b.sections} sections`
-		)
-	end
-
 	local totals = {
 		onPlaneWorst = 0,
 		onPlaneSum = 0,
@@ -121,7 +106,7 @@ local function run(check, opts)
 	}
 
 	for _, seed in SEEDS do
-		local gen = SplineGen.new(seed, nil, nil, "mesh")
+		local gen = SplineGen.new(seed)
 		gen:extendTo(length)
 		local sp = gen.spline
 		local field = gen.ground
@@ -151,8 +136,7 @@ local function run(check, opts)
 		end
 
 		-- a client's replay, with its own field from the start message's numbers
-		local copy = SplineGen.replay(gen.sections, sp.origin, gen.fall)
-		copy.mountain = Ground.field(seed, copy.origin, gen.fall)
+		local copy = SplineGen.replay(gen.sections, sp.origin, gen.fall, seed)
 
 		-- box by box along the road, as a chunk would be drawn
 		local step = 400
@@ -369,7 +353,7 @@ function Tests.profile(_, opts)
 	}
 	for _, seed in seeds do
 		local t0 = os.clock()
-		local gen = SplineGen.new(seed, nil, nil, "mesh")
+		local gen = SplineGen.new(seed)
 		gen:extendTo(length)
 		res.genMs += (os.clock() - t0) * 1000
 		res.genWorstMs = math.max(res.genWorstMs, gen.stats.worstMs)

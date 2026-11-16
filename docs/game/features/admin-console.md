@@ -28,7 +28,7 @@ Every command is open to whoever can use the console (above); there are no level
 - **Optional, defaulting to you** (`[players]`) where the targets are the only argument, or everything after them is optional: `respawn`, `start-run`, `end-run`, `unstuck`, `garage-out`, `get-out`, `get-in`, `speed`, `score-reset`. So `respawn` alone respawns you; `respawn all` respawns everyone. With a second argument the target has to be there: `speed me 90`, `start-run me 555`.
 - **One player, optional** (`[player]`) for reading: `where`, `run-info`, `whoami`.
 - **Your own screen only, no target:** `time`, `time-pause`, `time-resume`, `time-speed`, `readout`, `trajectory`, `zoom`, `score` (reading), `counts`, `stats`. They change or read one client's view, and reaching another player's screen for a look isn't worth a round trip.
-- **The whole server, no target:** `seed`, `road-mode`, `barriers`.
+- **The whole server, no target:** `seed`.
 
 "Client" below means the player's own client does it: your own when you target only yourself; otherwise the server sends each target's client a `DriftAction` and replies "Sent ... to names" (the effect shows on their screen).
 
@@ -38,9 +38,8 @@ Every command is open to whoever can use the console (above); there are no level
 | Run | `end-run [players]` (`endrun`) | Ends runs, each back to the world they came from | Server |
 | Run | `run-info [player]` (`runinfo`) | Road up or not, seed, mode, drivers, the player's piece and distance | Server |
 | Run | `seed [n]` | Shows the seed; with `n`, lays the road again from that seed and puts everyone who was on it back at its start (no road up: starts one for you) | Server |
-| Run | `road-mode [spline\|pieces]` (`roadmode`) | Shows or sets the next run's road; only between runs | Server |
 | Run | `respawn [players]` | Puts cars back now, no cooldown: on the road in a run (never behind the closing barrier), else the world's spawn | Server |
-| Teleport | `tp <players> <place> [studs]` | `road` joins the run or puts them back on it; `road <studs>` goes that far along the spline road (**Studio only**); `playground`, `track`, `garage` (drives in), `hill` (the test hill's top), any playground spot by name (`Spawn`, `OpenGround`, `PillarRun`, `DistrictGate`, `Boulevard`, `TightAlley`, `CircleCentre`, `RampBase`, `HillBase`, `HillTop`), or **another player's name** (beside their car; on their road if they're in a run). Leaving the road ends that player's run first | Server |
+| Teleport | `tp <players> <place> [studs]` | `road` joins the run or puts them back on it; `road <studs>` goes that far along the spline road (**Studio only**); `playground`, `track`, `garage` (drives in), any playground spot by name (`Spawn`, `OpenGround`, `PillarRun`, `DistrictGate`, `Boulevard`, `TightAlley`, `CircleCentre`, `RampBase`), or **another player's name** (beside their car; on their road if they're in a run). Leaving the road ends that player's run first | Server |
 | Teleport | `tp-to <players> <x> <y> <z> [heading]` (`tpto`) | Puts cars at a point, facing a heading in degrees (0 faces -Z) | Server |
 | Teleport | `where [player]` | Where the server believes a car is: point, world, piece and distance along the road | Server |
 | Teleport | `unstuck [players]` (`flip`) | Rights cars where they are: stopped, level, 2 studs up. Yours keeps the heading your screen shows; anyone else's faces along the road in a run, otherwise -Z (the server doesn't know which way their car points) | Server (your pose from your client) |
@@ -57,7 +56,6 @@ Every command is open to whoever can use the console (above); there are no level
 | Time | `time [when]` | Holds your sky at `noon`, `sunset`, `night`, `sunrise`, any keyframe by name (`morning`, `afternoon`, `golden-hour`, `dusk`, `dawn`), `midnight`, or an hour 0-24; with nothing, says where the cycle is | Your client |
 | Time | `time-pause` / `time-resume` (`timepause`, `timeresume`) | Stops your sky where it is / puts it back on the server's clock | Your client |
 | Time | `time-speed <times>` (`timespeed`) | Runs your cycle 0.1 to 100 times as fast | Your client |
-| World | `barriers [on\|off]` | Guardrails down or up for everyone: the test hill's and the piece road's | Server |
 | World | `counts` | Parts, mesh parts, models and instances, on your client and the server (and the server's biggest folders) | Both |
 | World | `stats` | Your fps, worst frame, memory, ping, bandwidth; the server's heartbeat, physics, memory, uptime | Both |
 | Admin | `whoami [player]` | Whether the server lets a player in, and why | Server |

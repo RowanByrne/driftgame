@@ -26,7 +26,7 @@
 -- That one formula is what the mesh is drawn from AND what the car stands on, so the two
 -- can never disagree by more than how finely the mesh is cut.
 --
--- Angles follow `Road/Pieces`: yaw 0 faces -Z, positive turns left,
+-- Angles follow the old piece road's: yaw 0 faces -Z, positive turns left,
 -- forward(yaw) = (-sin yaw, -cos yaw) and planRight(yaw) = (cos yaw, -sin yaw).
 --
 -- THE MOUNTAINSIDE (features/mountain-road.md, T-140). Either side of the tarmac, at every

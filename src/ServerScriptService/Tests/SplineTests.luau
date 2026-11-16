@@ -94,12 +94,6 @@ function parts.limits(check)
 		end
 	end
 	local tiltDeg = math.deg(math.acos(worst.minNy))
-	local R = Config.Road
-	check(
-		"the spline's limits sit inside the piece road's lids",
-		C.MaxGrade <= R.MaxGrade and C.MaxBank <= R.MaxBank and C.MaxBankRate <= R.MaxBankStep / R.MaxSegmentChord + 1e-12 and math.deg(math.atan(C.MaxGradeRate * R.MaxSegmentChord)) <= R.MaxPitchStep + 1e-3,
-		`grade {C.MaxGrade} of {R.MaxGrade} deg, bank {C.MaxBank} of {R.MaxBank} deg, bank rate {fmt(C.MaxBankRate, 4)} of {fmt(R.MaxBankStep / R.MaxSegmentChord, 4)} deg/stud, grade change {fmt(math.deg(math.atan(C.MaxGradeRate * R.MaxSegmentChord)), 3)} of {R.MaxPitchStep} deg per chord`
-	)
 	check("every road reached its length", short == 0, `{short} of {#SEEDS} seeds stalled short of {LIMIT_LENGTH} studs`)
 	check("no bend tighter than MinRadius", worst.k <= kMax + 1e-12, `tightest radius {fmt(1 / worst.k, 1)} studs, limit {C.MinRadius}`)
 	check("turn eases no faster than MaxCurvatureRate", worst.kRate <= C.MaxCurvatureRate * (1 + 1e-9), `worst {fmt(worst.kRate * 1e6, 2)}e-6 per stud, limit {fmt(C.MaxCurvatureRate * 1e6, 2)}e-6`)

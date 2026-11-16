@@ -35,7 +35,6 @@ The real map is designed once the drift feel is agreed (`ROADMAP.md`). This doc 
 | The district | Streets and alleys to pick a line through | 15 buildings on a 3 by 5 grid, 32 to 140 studs tall, alternating near-black and near-white. The gaps between them are the streets: 44 to 110 studs wide | — | about 4 s to its near edge, 10 s to its far corner | Built (code) |
 | The bowl | Holding one slide, and the ground-follow case | A 150-stud constant-radius band, 60 wide, banked 8 degrees, inner edge flush with the plate, with an 80-wide apron outside it falling back to the plate: 259 studs from the middle to the outside | — | about 6 s | Built (code) |
 | The ramp | The airborne case | 9 studs of climb over 110, eased in at the bottom and steepest at the top, with a 16-stud lip carrying straight on at that slope to 11.9 studs | — | about 6 s | Built (code) |
-| **The test hill** | Feeling a climb and a descent without starting a run | **Twenty pieces of the real endless road**, built permanently off the plate's southern edge: ten climbing at 7 degrees to **259 studs**, then ten descending at 5 and landing level with the plate. 5 136 studs of road, about 2 700 parts, on a plate of its own (`features/test-hill.md`) | — | about 12 s to `HillBase` | Built (code) |
 
 **There is no course and no order.** The player spawns in the middle of the yard facing the district with 360 studs of clear plate ahead — reaching top speed takes 90 — and drives wherever they like. The district's widest street, 110 studs, runs straight at the spawn; the narrowest alleys are 44 and punish a wide exit. The circle and the ramp sit off to either side of the yard, both within about 600 studs.
 
@@ -43,7 +42,7 @@ The real map is designed once the drift feel is agreed (`ROADMAP.md`). This doc 
 
 By car, everywhere: the plate is one continuous flat drivable surface, so running wide costs a quarter-stud kerb and nothing else. Buildings and pillars are walls — untagged, so the drift model's ground ray misses them and driving into one is a collision, never a climb. The bowl is entered from any side: the band's inner edge is flush with the plate and its rim stands 8.4 studs proud, and the apron outside it climbs to that rim at 1 in 9.6, so there is no edge anywhere on it taller than the quarter-stud kerb. That matters since `T-026`: a raised surface's vertical faces are walls to the car whether or not they are road, so a rim the car cannot drive up is a rim it cannot cross. A car or character that drives off the plate's edge falls; `PlaygroundService` puts it back at `Spawn` once it is below Y = -40.
 
-**The test hill is entered from the south edge** and nowhere else: a short ramp off the plate at `HillBase`, then twenty pieces of road with barriers down both sides, ending back at plate level on the hill's own ground. The **LIFT TO HILL TOP** button puts the car at the crest without driving up, and the **GUARDRAILS** button stands every wall on the hill *and* on the endless road down so the hill can be left on purpose (`features/test-hill.md`). Fall off low down and the pad catches you; fall off near the top, 259 studs up, and the client's own fall test (`FallBelowSurface`, 150) puts you back at `Spawn` before you land.
+**The test hill went with the piece road it was built from (T-249, `features/legacy-removal.md`).** It was entered from the south edge: a short ramp off the plate at `HillBase`, then twenty pieces of road with barriers down both sides, ending back at plate level on the hill's own ground. The **LIFT TO HILL TOP** button puts the car at the crest without driving up, and the **GUARDRAILS** button stands every wall on the hill *and* on the endless road down so the hill can be left on purpose (`features/test-hill.md`). Fall off low down and the pad catches you; fall off near the top, 259 studs up, and the client's own fall test (`FallBelowSurface`, 150) puts you back at `Spawn` before you land.
 
 ## Landmarks and wayfinding
 
@@ -51,7 +50,7 @@ Value contrast does the work, because the old course failed for want of it: buil
 
 ## Named spots
 
-The admin console reaches these spots with `tp <players> <spot>`: for example `tp me HillTop`, `tp all playground`, or `tp Alex garage`. Player targets come first. See `features/admin-console.md` for all locations and the Studio-only road-distance option.
+The admin console reaches these spots with `tp <players> <spot>`: for example `tp me RampBase`, `tp all playground`, or `tp Alex garage`. Player targets come first. See `features/admin-console.md` for all locations and the Studio-only road-distance option.
 
 Every spot comes from `PlaygroundService:GetSpot(name)`, which returns a CFrame facing a sensible way to set off; the positions live only in the layout module (`CONTRACTS.md`).
 
@@ -67,12 +66,10 @@ Every spot comes from `PlaygroundService:GetSpot(name)`, which returns a CFrame 
 | `TightAlley` | The district | `PlaygroundService:GetSpot("TightAlley")` | " |
 | `CircleCentre` | The banked circle | `PlaygroundService:GetSpot("CircleCentre")` | " |
 | `RampBase` | The ramp | `PlaygroundService:GetSpot("RampBase")` | " |
-| `HillBase` | The test hill | `PlaygroundService:GetSpot("HillBase")` | " |
-| `HillTop` | The test hill | `PlaygroundService:GetSpot("HillTop")` | the **LIFT TO HILL TOP** button (`Drift/TestHud`) |
 
 A ray straight down from every one of them hits a part tagged `DriftSurface` within 5 studs, asserted by `PlaygroundTests`.
 
-**`HillTop` is the only spot on a graded surface**, and it is read off the road piece it sits on rather than from a coordinate, so it carries that piece's grade and bank. `PlaygroundService:HillTopCFrame()` is the same pose moved down the spot's **own** up to `RideHeight`, which is what the lift button puts a car at; moving it down the world's up would be a stud out sideways on a 7-degree climb. Spot markers are laid in the spot's own frame for the same reason (which fixed `RampBase` too).
+Spot markers are laid in each spot's own frame, so the one on `RampBase`'s slope lies on it.
 
 ## Scale
 
@@ -80,8 +77,7 @@ A ray straight down from every one of them hits a part tagged `DriftSurface` wit
 - **Open yard:** x -800 to 200, z -380 to 360 — **1000 by 740 studs** of flat plate. Clear of everything for **200 studs** round the spawn (the nearest obstacle is a pillar at 253).
 - **Streets:** six of them, **narrowest 44 studs, widest 110**. Buildings are 92 by 56 studs at the smallest and 104 by 100 at the largest, and 32 to 140 tall.
 - **Reach:** the furthest thing in the world is the district's far corner, **895 studs** from the spawn — about 10 seconds at top speed. The bowl is 550 to its middle and 809 to its far outside edge, the ramp 497 to its base.
-- **World:** 2000 by 2000 studs, **plus the test hill's own plate off its southern edge** — 1 474 by 1 738 studs, sized at build time to the hill's footprint plus 180, overlapping the main plate so there is no seam to drop through. Streaming is **off** (`ARCHITECTURE.md`). Measured budget: **326 parts** for the playground proper against a limit of 1,500, and the hill against its own `HillPartBudget` of 3,400; both asserted in `PlaygroundTests`.
-- **The hill's eastern limit is `CarService:WorldAt`, not the ground.** That answers "which world is this position in" by which world's spawn is nearer, and the line between the playground's and a track's falls at about x = +1 010 in layout coordinates — the plate's own eastern edge, which is where the two worlds meet. A hill reaching past it would have a car falling off its eastern side respawn on the kart track. `Layout.Hill.x` is set so the pad stops at x = 957, and `PlaygroundTests` measures every corner of it.
+- **World:** 2000 by 2000 studs (the test hill's own plate off its southern edge went with it in T-249). Streaming is **off** (`ARCHITECTURE.md`). Measured budget: **326 parts** for the playground against a limit of 1,500, asserted in `PlaygroundTests`.
 
 ### Surface fidelity
 
@@ -127,41 +123,9 @@ The garage interior (`features/car-customization.md`, `T-102`): a grey-box stree
 
 `GarageRoomTests` asserts every point exists and that the car points stand on ground, and walks the drive in from `CarEntry` to `TurntableTop`: ground all the way, a largest step of 0.059 studs per half stud, and a car-sized box sweeps through the door without touching anything. In a playtest the car, put down at `CarEntry`, drove itself through the door, over the deck at 0.2 and into the shelves on the far side with no errors.
 
-## Looking at it in Studio: the showroom
+## Looking at it in Studio
 
-Every one of the three worlds is built by code at runtime, so in Studio's **edit mode** the place is empty and there is nothing to fly around. `src/ServerScriptService/Tools/Showroom.luau` is the answer to that: an edit-mode tool that builds the playground and one of every road piece into the open place's Workspace, where they can be flown around, clicked and looked at while the code that makes them is still being written. Nothing in the game requires it and it is never reached at runtime.
-
-Run it from Studio's command bar, and take it away again the same way:
-
-```
-require(game.ServerScriptService.Tools.Showroom).build()
-require(game.ServerScriptService.Tools.Showroom).clear()
-```
-
-What it leaves behind, all of it under one folder and all of it anchored:
-
-| Under `Workspace.Showroom` | What it is |
-|---|---|
-| `Playground` | exactly what `PlaygroundService:Build()` makes, where it makes it: 325 parts |
-| `Gallery` | one of every variant in `Pieces.order()`, in a grid: 16 pieces, 2,091 parts |
-
-The gallery sits past the playground's plate -- 400 studs clear of it -- in as square a grid as the set allows, of cells as wide as the widest piece plus a gap. All of it is measured from the built parts, so the layout re-lays itself when the piece set changes: the nine flat pieces made a 3 x 3 and the sixteen of the touge set make a 4 x 4, with no two pieces closer than 245 studs.
-
-**The touge pieces drop, and the floor drops with them.** Every variant is placed from a socket at road level and the grid centres it in X and Z only, never in height, so a piece that descends starts level with its neighbours and falls away from them -- which is the one thing worth seeing about it. They reach as far below road level as they descend: 12 studs of slab for the flat nine and the `Link`, 27 for a `Banked30`, 32 for a `Corkscrew`, 52 for a `HairpinStack`. So each cell has a floor pad of its own, flush under the bottom of the piece over it, and a descending piece stands on a plinth rather than sinking through one slab laid at road level.
-
-`build()` is `clear()` followed by a fresh build, so seeing a code change is one line and there is never a second showroom.
-
-**The labels are two, and they take turns.** Each piece has its variant id on a sign lying flat in front of it, in 45-stud letters, and on a small billboard 13 studs above it. The sign is the one that reads from the air; the billboard is only for when the camera is down among the pieces, where a sign lying on the ground is edge-on. Both are sized in **studs**, so both shrink with distance like the thing they name, and the billboard stops drawing past 210 studs so a pulled-back view has none of them in it at all.
-
-**Both were halved on the user's call** (2026-11-06), and the numbers either side of it, measured from cameras 300, 800 and 1 500 studs over the sixteen-piece grid at 1525 x 663 and 70 degrees. Sign height on screen went from 3-235 pixels to 2-114 at 300 studs up, 5-39 to 3-19 at 800, and 5-17 to 3-8 at 1 500; the billboard went from 111 x 28 pixels to 55 x 14 in the close-up it exists for. No two labels overlap at any of the three heights and no billboard draws at any of them -- where at the old size the signs did overlap, in two pairs, from 300 studs up. The far rows at 1 500 studs are a few pixels tall and are not meant to be read from there: fly lower.
-
-The version before that sized the billboard in *pixels*, which does not shrink with distance: nine labels 110 pixels tall, a sixth of the screen each, overlapping in 27 to 36 of the 36 pairs and hiding every piece.
-
-Three things to know:
-
-- **Save the place (Ctrl+S) or it is gone.** The showroom is ordinary instances in the Workspace, not something a script rebuilds on open.
-- **A playtest takes it down by itself, and leaves it alone.** `PlaygroundService:Build()` destroys `Workspace.Showroom` before it lays its own playground, because the two sit at the same coordinates and two playgrounds in one space is a place nobody can drive in. A playtest runs on a copy of the datamodel, so nothing that is saved is touched: stop the playtest and the showroom is still there to fly around. You do not have to clear it by hand.
-- **It borrows the place's baseplate.** The playground's own 2 000-stud plate is coplanar with Studio's default `Baseplate`, so `Build()` destroys it exactly as the game does. The showroom records its size, position, colour and material first, and `clear()` puts it back.
+Every one of the three worlds is built by code at runtime, so in Studio's **edit mode** the place is empty: playtest to see it. The edit-mode showroom tool (`Tools/Showroom`, T-059) that laid the playground and one of every road piece into the open place went with the piece road in T-249 (`features/legacy-removal.md`); a place that still has a `Workspace.Showroom` saved in it (`DR-Lane4`) keeps it as plain parts, and a playtest still takes it down so the playground is never doubled.
 
 ## Versions
 

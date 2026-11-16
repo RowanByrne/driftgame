@@ -297,7 +297,7 @@ function Tests.road(_, opts)
 		follows = 0,
 	}
 	for _, seed in seeds do
-		local gen = SplineGen.new(seed, { x = 0, y = 0, z = 0, yaw = 0 }, nil, "mesh")
+		local gen = SplineGen.new(seed, { x = 0, y = 0, z = 0, yaw = 0 })
 		local t0 = os.clock()
 		gen:extendTo(length)
 		local ms = (os.clock() - t0) * 1000
