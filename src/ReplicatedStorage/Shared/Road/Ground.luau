@@ -548,8 +548,14 @@ function Ground.at(ctx: Context, x: number, z: number): (number, number, number,
 					end
 					local px, pz = dx - vx * u, dz - vz * u
 					local r = math.sqrt(px * px + pz * pz)
+					-- how far along the road the point really is: further than its square on
+					-- the stretch on the inside of a bend, less on the outside (as `d` from a
+					-- centre of turn `1 / k` off); this, not the square, says which runoff
+					-- width and which height of road it is beside
+					ds /= math.max(1 + st.k * d, 0.3)
+					local ua = if L > 0 then math.clamp(ds / L, 0, 1) else 0
 					local side = if d < 0 then -1 else 1
-					local w = if side < 0 then st.wl + (st.nwl - st.wl) * u else st.wr + (st.nwr - st.wr) * u
+					local w = if side < 0 then st.wl + (st.nwl - st.wl) * ua else st.wr + (st.nwr - st.wr) * ua
 					local e = r - w
 					if e < bMax then
 						local T, bw, past
