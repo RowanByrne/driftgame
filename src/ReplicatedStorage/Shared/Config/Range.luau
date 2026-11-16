@@ -83,5 +83,8 @@ return {
 	AimSpan = 200, -- ...over this many studs, where the road is
 	LegOnward = 8, -- degrees: every leg heads at least this much along the way on, never back
 	SteepHairpinRadius = { 70, 80 }, -- studs (`Spline.MinRadius` is 70)
+	-- about to box itself in, the road tries every bend of these turns either way on these radii
+	RescueTurns = { 20, 45, 70, 100, 130, 160 }, -- degrees
+	RescueRadii = { 70, 110, 170, 260, 400 }, -- studs
 	GiveUp = 6, -- times a planned turn may be refused before the way to the pass is planned again
 }

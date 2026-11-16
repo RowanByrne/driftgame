@@ -1780,6 +1780,47 @@ function SplineGen._planRange(self: Gen)
 	self.legSide = -side
 end
 
+-- The way out when the road is about to box itself in on the range (T-238): every bend from
+-- `RescueTurns` either way, on each of `RescueRadii`, the first (least turn, the end heading
+-- most along the way on) that is clear with its escape. nil when none is.
+function SplineGen._rescue(self: Gen): Spline.Section?
+	local C, R = Config.Spline, Config.Range
+	local f = self.ground :: Ground.Field
+	local r = f.range :: Range.Range
+	local _, _, yaw0, k0, g0, b0, y0 = self.spline:tip()
+	local best: { number }?, bestKt, bestScore = nil, 0, -math.huge
+	for _, deg in R.RescueTurns do
+		for _, dir in { 1, -1 } do
+			for _, radius in R.RescueRadii do
+				local kt = dir / math.max(radius, C.MinRadius)
+				local knots = curvatureKnots(k0, kt, dir * math.rad(deg), nil)
+				if knots and self:_clear(withEscape(knots, kt)) then
+					local yaw = yawAfter(yaw0, k0, knots) + 0.5 * kt * transition(kt, 0)
+					local on = -math.sin(yaw) * r.ux - math.cos(yaw) * r.uz
+					local score = on - deg / 360
+					if score > bestScore then
+						best, bestKt, bestScore = knots, kt, score
+					end
+					break
+				end
+			end
+		end
+	end
+	if not best then
+		return nil
+	end
+	local knots = best :: { number }
+	local len = knots[#knots - 1]
+	self.stats.escapes += 1
+	return {
+		len = len,
+		k = knots,
+		g = (self:_followGrade(knots, g0, y0)),
+		b = pickBank(bestKt, 1 / math.abs(bestKt), b0, math.min(transition(k0, bestKt), len), len, false),
+		tag = "Medium",
+	}
+end
+
 -- The heading of a leg running `side` across the slope, tilted `tilt` down it (up it on
 -- an ascent).
 function SplineGen._legAim(self: Gen, side: number, tilt: number): number
@@ -2192,28 +2233,39 @@ function SplineGen.step(self: Gen): Spline.Section?
 		local Te = transition(k0, 0)
 		local len = Te + C.EscapeLength
 		local knots = if Te > 0 then { Te, 0, len, 0 } else { len, 0 }
-		if not self:_clear(knots) then
+		-- on the range (T-238), an escape that is not clear, or whose own escape is not, is
+		-- the road about to box itself in: any bend that gets it clear is taken first, and the
+		-- way to the pass planned again from there
+		local rescue: Spline.Section? = nil
+		if self.ground and self.ground.range and not self:_clear(withEscape(knots, 0)) then
+			rescue = self:_rescue()
+		end
+		if rescue then
+			sec = rescue
+			table.clear(self.plan)
+		elseif not self:_clear(knots) then
 			st.stalled = true
 			warn(`SplineGen: the road is boxed in at {math.floor(sp.length)} studs (seed {self.seed}); it stops growing here`)
 			return nil
+		else
+			st.escapes += 1
+			-- a detour that has run into old road ends here, and the turn back onto the leg
+			-- comes next (a sideways climb toward the leg above can otherwise box itself in)
+			local head = self.plan[1]
+			if head and not head.turn and head.what ~= "leg" then
+				head.left = 0
+			end
+			if not self:_clear(withEscape(knots, 0)) then
+				st.cornered += 1
+			end
+			sec = {
+				len = len,
+				k = knots,
+				g = pickGrade(self, g0, y0, len, nil, nil, knots),
+				b = pickBank(0, nil, b0, math.min(Te, len), len, true),
+				tag = "Escape",
+			}
 		end
-		st.escapes += 1
-		-- a detour that has run into old road ends here, and the turn back onto the leg
-		-- comes next (a sideways climb toward the leg above can otherwise box itself in)
-		local head = self.plan[1]
-		if head and not head.turn and head.what ~= "leg" then
-			head.left = 0
-		end
-		if not self:_clear(withEscape(knots, 0)) then
-			st.cornered += 1
-		end
-		sec = {
-			len = len,
-			k = knots,
-			g = pickGrade(self, g0, y0, len, nil, nil, knots),
-			b = pickBank(0, nil, b0, math.min(Te, len), len, true),
-			tag = "Escape",
-		}
 	end
 	local chosen = sec :: Spline.Section
 	self:_terrain(chosen)
