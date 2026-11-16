@@ -106,3 +106,25 @@ Folded into this feature by the conductor (the user: "the remnants of the 'lobe'
 - **Why it showed:** each station shaped only the points within 16 studs of square beside it. Inside a tight hairpin the bend's reach ended as an arc and each leg's as a straight line, and they didn't line up: a notch at each end of the arc, measured on seed 31337's first hairpin (radius 76).
 - **Now:** how far a point is past the edge is measured from the nearest point of the road's centre line (each station answers for its 8 studs to the next). Along the road the stations hand over smoothly (a quadratic B-spline over a stretch and a half either way), with how far along the road a point is corrected for the bend. Between two stretches the nearer edge still wins (`Soft`). The inside of a hairpin is one V-shaped pocket whose two drop lines meet at the apex, with no arc.
 - **Measured (DR-Lane1, GroundTests):** ground above the road or runoff: 0 of 18 870 points (1 before, 0.006 studs); the ground meets the runoff's edge within 0.14 studs of `Under` (0.35 before); no seams; a client's replay the same; a point 2.7 microseconds (as before). The one failing check, "cut or fill at the centre line over 20 studs" (48 of 936), is the road's own following and failed the same before.
+
+## As built: step 1, the range (T-235)
+
+`Road/Range` (new), `Road/Ground` (`field`, `base`, `h`, `relief`, `where`, `passAhead`), numbers in `Config.Range` (new). **Switched off for runs** (`Config.Range.Shape = "belts"`): today's road can only work its way down, so a run keeps the belts until step 2 lets the road climb to a pass. Tests and step 2 ask for the range by name (`Ground.field(seed, origin, fall, "range")`).
+
+- **The frame:** `t` along the way the run goes (the belts' downhill, so the run sets off the same way), `v` across.
+- **Ridges** lie across the way, one every 5 500 studs give or take 1 200, each wandering 850 studs either way over 6 500 across (measured 2 200 to 8 900 apart on 20 seeds). Along its crest a ridge rises and falls a fifth either way over 9 000 studs, and dips to a **saddle** about every 3 000 studs (a wave whose spacing and depth wander, so no ridge goes long without one); no saddle lower than 380 studs over the start valley.
+- **Valleys** lie between, their floors 40 to 60% of the way across, 110 studs below to 80 above the start valley's floor and wandering 60 either way. Each **face** falls from the crest as (1 - x)^1.2 to 1.8, steep near the crest and easing out at the floor; crests rounded over 40 studs.
+- **Spurs and gullies** run down the faces (ridge, gully and fine octaves of 170, 60 and 10 studs), a seventh of them on the valley floors and all of them from a third of the way up.
+- **The start** is on the floor of the first valley, square across from where the road begins, so a run starts low and climbs first.
+- **Where you are** (`Ground.where`): pass, ridge, valley or face; height in the band; slope; distance to the crest; which ridge; how near a saddle. A pure function of the place.
+- **The pass ahead** (`Ground.passAhead`): on the next ridge, the saddle within 4 000 studs either way across whose height plus 0.08 a stud off to the side is least.
+- Noise offsets are kept small on the range: far from its origin `math.noise` steps (a tenth of a stud every third of a stud on the finest octave).
+
+### Measured (DR-Lane2, RangeTests 14 of 14)
+
+20 seeds, a 90 000 by 40 000-stud box each:
+
+- Height: -263 to 1 343 studs (the fall-kill height is -500). Crest over the valley floors: 286 (the lowest saddle) to 1 252 (the highest peak).
+- 692 saddles on 220 ridges, every one a real dip (60 studs or more on both sides); every ridge has one within 4 000 studs of any line across. The pass ahead of the start is on the first ridge, at its crest, on all 20.
+- Along lines across the range: steeper than 30 degrees 25%, under 8 degrees 20%; pass 6%, ridge 5%, valley 28%, face 62%.
+- No seams; h costs 0.6 microseconds a point. GroundTests unchanged (the belts are untouched).
