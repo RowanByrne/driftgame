@@ -1,4 +1,4 @@
-﻿# Claims
+# Claims
 
 Every task in progress and the files it owns, so parallel sessions and workers never edit the same file (docs/workflow/CONDUCTOR.md "Claims").
 
