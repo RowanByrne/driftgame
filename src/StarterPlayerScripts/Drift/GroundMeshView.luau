@@ -66,6 +66,7 @@ type Tile = {
 	px: { number }, -- and where, world x and z (a vertex can be moved off its grid point)
 	pz: { number },
 	normals: { Vector3 }, -- the normal each vertex is drawn with
+	colours: { Color3 }, -- and its colour
 	cls: { number }, -- ROAD, HELD or OPEN (below), by grid index
 	-- by cell index i * C + j + 1: its two faces' ids, and whether it is split along a-d
 	-- (its corners a (i, j), b (i + 1, j), c (i, j + 1), d (i + 1, j + 1); b-c otherwise)
@@ -281,6 +282,7 @@ local function makeTile(master: Master): Tile?
 		px = px,
 		pz = pz,
 		normals = table.create(n * n, Vector3.yAxis),
+		colours = table.create(n * n, Color3.new(1, 1, 1)),
 		cls = table.create(n * n, 2),
 		faces = faces,
 		flip = table.create(C * C, false),
@@ -976,7 +978,7 @@ function GroundMeshView._fill(self: View, tile: Tile, leaf: Leaf, map: { [number
 				end
 			end
 			em:SetPosition(tile.v[k], Vector3.new(p[1] - cx, p[3] - cy, p[2] - cz))
-			tile.px[k], tile.pz[k], heights[k], tile.cls[k], tile.normals[k] = p[1], p[2], p[3], p[4], nv
+			tile.px[k], tile.pz[k], heights[k], tile.cls[k], tile.normals[k], tile.colours[k] = p[1], p[2], p[3], p[4], nv, colour
 			em:SetNormal(tile.nrm[k], nv)
 			em:SetColor(tile.col[k], colour)
 			em:SetUV(tile.uv[k], Vector2.new(p[1] / uvStuds, p[2] / uvStuds))
@@ -1480,7 +1482,7 @@ end
 -- The drawn ground at (x, z) in a tile, as its triangles have it: its height, the triangle's
 -- own normal and the normal the renderer blends there; nil if no triangle of the tile holds
 -- it (its vertices can be moved off their grid points, up to a cell).
-local function facetAt(tile: Tile, x: number, z: number): (number?, Vector3?, Vector3?)
+local function facetAt(tile: Tile, x: number, z: number): (number?, Vector3?, Vector3?, Color3?)
 	local leaf = tile.leaf :: Leaf
 	local C = cells()
 	local n = C + 1
@@ -1488,7 +1490,7 @@ local function facetAt(tile: Tile, x: number, z: number): (number?, Vector3?, Ve
 	local gi = math.floor((x - leaf.x0) / s)
 	local gj = math.floor((z - leaf.z0) / s)
 	local px, pz, h = tile.px, tile.pz, tile.heights
-	local best, bestY, bestN, bestS = -math.huge, nil, nil, nil
+	local best, bestY, bestN, bestS, bestC = -math.huge, nil, nil, nil, nil
 	for i = math.max(gi - 1, 0), math.min(gi + 1, C - 1) do
 		for j = math.max(gj - 1, 0), math.min(gj + 1, C - 1) do
 			local t1, t2 = cellTriangles(n, i, j, tile.flip[i * C + j + 1])
@@ -1512,12 +1514,15 @@ local function facetAt(tile: Tile, x: number, z: number): (number?, Vector3?, Ve
 						local nm = tile.normals
 						local sn = nm[p] * l1 + nm[q] * l2 + nm[r] * l3
 						bestS = if sn.Magnitude > 1e-9 then sn.Unit else Vector3.yAxis
+						local cl = tile.colours
+						local ca, cb, cc = cl[p], cl[q], cl[r]
+						bestC = Color3.new(ca.R * l1 + cb.R * l2 + cc.R * l3, ca.G * l1 + cb.G * l2 + cc.G * l3, ca.B * l1 + cb.B * l2 + cc.B * l3)
 					end
 				end
 			end
 		end
 	end
-	return bestY, bestN, bestS
+	return bestY, bestN, bestS, bestC
 end
 
 local function surfaceAt(tile: Tile, x: number, z: number): number?
@@ -1575,6 +1580,26 @@ function GroundMeshView.DebugReach(self: View, level: number, side: number?): nu
 	return s - along
 end
 
+-- Sorted numbers in brief: how many, mean, p50, p90, p99, min and max.
+local function brief(list: { number })
+	if #list == 0 then
+		return { n = 0 }
+	end
+	local sorted = table.clone(list)
+	table.sort(sorted)
+	local sum = 0
+	for _, v in sorted do
+		sum += v
+	end
+	local function pct(p: number): number
+		return sorted[math.clamp(math.ceil(#sorted * p), 1, #sorted)]
+	end
+	local function r(v: number): number
+		return math.round(v * 1000) / 1000
+	end
+	return { n = #sorted, mean = r(sum / #sorted), p50 = r(pct(0.5)), p90 = r(pct(0.9)), p99 = r(pct(0.99)), min = r(sorted[1]), max = r(sorted[#sorted]) }
+end
+
 -- Where two shown tiles meet: the biggest height difference along their shared edges, sampled
 -- every stud; and the drawn ground's highest point above the road or runoff, sampled along it.
 function GroundMeshView.DebugSeams(self: View, roadAhead: number?)
@@ -1586,6 +1611,8 @@ function GroundMeshView.DebugSeams(self: View, roadAhead: number?)
 	end
 	local worst, edgePairs, samples, missing = 0, 0, 0, 0
 	local rimVertices, rimMismatch = 0, 0
+	local shadeSame = { angle = {}, colour = {} }
+	local shadeMixed = { angle = {}, colour = {} }
 	local worstAt = nil
 	for a = 1, #list do
 		local A = list[a]
@@ -1625,11 +1652,21 @@ function GroundMeshView.DebugSeams(self: View, roadAhead: number?)
 						rimMismatch = math.max(rimMismatch, dd)
 					end
 				end
+				local mixed = la.s ~= lb.s
 				for t = 0, len do
 					local f = t / len
 					local x = shared[1] + (shared[3] - shared[1]) * f
 					local z = shared[2] + (shared[4] - shared[2]) * f
-					local ya, yb = surfaceAt(A, x, z), surfaceAt(B, x, z)
+					local ya, _, sa, ca = facetAt(A, x, z)
+					local yb, _, sb, cb = facetAt(B, x, z)
+					if sa and sb and ca and cb then
+						-- (T-251 send-back: how the two sides shade and colour the same point)
+						local ang = math.deg(math.acos(math.clamp(sa:Dot(sb), -1, 1)))
+						local col = math.max(math.abs(ca.R - cb.R), math.abs(ca.G - cb.G), math.abs(ca.B - cb.B)) * 255
+						local bucket = if mixed then shadeMixed else shadeSame
+						table.insert(bucket.angle, ang)
+						table.insert(bucket.colour, col)
+					end
 					local d = if ya and yb then math.abs(ya - yb) else 0
 					if not ya or not yb then
 						missing += 1
@@ -1684,6 +1721,11 @@ function GroundMeshView.DebugSeams(self: View, roadAhead: number?)
 		highestAboveRoad = above,
 		highestAboveRoadBySpacing = aboveBySpacing,
 		highestAt = aboveAt,
+		-- across every shared edge, every stud: the angle between the normals the two sides
+		-- shade it with (degrees), and the most a colour channel differs (of 255); between tiles
+		-- of one spacing, and of two
+		shadeSame = { angle = brief(shadeSame.angle), colour = brief(shadeSame.colour) },
+		shadeMixed = { angle = brief(shadeMixed.angle), colour = brief(shadeMixed.colour) },
 	}
 end
 
@@ -1849,26 +1891,6 @@ function GroundMeshView.DebugWalls(self: View, ahead: number?, step: number?, be
 		}
 	end
 	return result
-end
-
--- Sorted numbers in brief: how many, mean, p50, p90, p99, min and max.
-local function brief(list: { number })
-	if #list == 0 then
-		return { n = 0 }
-	end
-	local sorted = table.clone(list)
-	table.sort(sorted)
-	local sum = 0
-	for _, v in sorted do
-		sum += v
-	end
-	local function pct(p: number): number
-		return sorted[math.clamp(math.ceil(#sorted * p), 1, #sorted)]
-	end
-	local function r(v: number): number
-		return math.round(v * 1000) / 1000
-	end
-	return { n = #sorted, mean = r(sum / #sorted), p50 = r(pct(0.5)), p90 = r(pct(0.9)), p99 = r(pct(0.99)), min = r(sorted[1]), max = r(sorted[#sorted]) }
 end
 
 -- THE GROUND UNDER THE CAR WHERE IT CARRIES THE RUNOFF (T-251): every `step` studs of road
