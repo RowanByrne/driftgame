@@ -1,4 +1,4 @@
-# Claims
+﻿# Claims
 
 Every task in progress and the files it owns, so parallel sessions and workers never edit the same file (docs/workflow/CONDUCTOR.md "Claims").
 
@@ -9,7 +9,7 @@ Every task in progress and the files it owns, so parallel sessions and workers n
 
 | Branch | Lane | Files owned | Since |
 |---|---|---|---|
-| `feature/mountain-range-passes-ridges-valleys-bio` | lent | `src/ReplicatedStorage/Shared/Road/Ground.luau`, `src/ReplicatedStorage/Shared/Road/Range.luau` (new), `src/ReplicatedStorage/Shared/Config/Range.luau` (new), `src/ServerScriptService/Tests/RangeTests.luau` (new), `src/ServerScriptService/Tests/GroundTests.luau` (not the checks T-231 adds at the end), `docs/game/features/mountain-range.md`, the `Road/Ground` rows of `docs/game/CONTRACTS.md`, `src/ReplicatedStorage/Shared/Road/SplineGen.luau`, `src/ReplicatedStorage/Shared/Road/SplineTurnFit.luau`, `Config/Spline.luau` (the `Ground` keys the road reads: `Follow...`, `Aim...`, `Leg...`, `CatchUp`, `Turn...`, `DownhillBias`; `Mountain.Hairpin...`) | 2026-11-15 (T-233, T-235) |
+| `agent/horizon-follows-range` | lent | `src/ReplicatedStorage/Shared/Horizon.luau`, `src/ReplicatedStorage/Shared/Config/Horizon.luau`, `src/StarterPlayerScripts/Drift/HorizonView.luau`, `src/ServerScriptService/Tests/HorizonTests.luau`, `docs/game/features/horizon.md`, `docs/game/features/mountain-range.md` (a new "As built: step 3" section only), `src/StarterPlayerScripts/Controllers/DriftController.luau` (only where it makes the HorizonView), `src/ReplicatedStorage/Shared/Road/Range.luau` (read-only helpers added at the end only) | 2026-11-15 (T-241) |
 
 ## Notes between sessions
 
