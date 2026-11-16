@@ -141,7 +141,7 @@ local function run(check)
 	check(
 		"groves on flatter stretches",
 		groveSections > 0 and per10k >= MIN_PER_10K,
-		`{stretches} grove stretches over {math.floor(total)} studs: {fmt(per10k, 2)} per 10 000 studs (at least {MIN_PER_10K});{fmt(groveLen / (2 * total) * 100, 1)}% of the road's sides; {groveSections} of {sections} sections`
+		`{stretches} grove stretches over {math.floor(total)} studs: {fmt(per10k, 2)} per 10 000 studs (at least {MIN_PER_10K}); {fmt(groveLen / (2 * total) * 100, 1)}% of the road's sides; {groveSections} of {sections} sections`
 	)
 	check("only where the road is flat and gentle", steep == 0 and tight == 0 and short == 0, `{steep} too steep, {tight} too tight, {short} too short`)
 	check(
