@@ -9,7 +9,6 @@ Every task in progress and the files it owns, so parallel sessions and workers n
 
 | Branch | Lane | Files owned | Since |
 |---|---|---|---|
-| `agent/sound-settings-tab` | lent | `src/StarterPlayerScripts/Settings/SettingsView.luau` (+ fixtures), `src/StarterPlayerScripts/Controllers/SettingsController.luau`, a new sound-volume module, the volume hookup in `Drift/EngineSound.luau`, `Drift/SkidSound.luau`, `Drift/SuspensionSound.luau` | 2026-11-16 (T-256) |
 | `feature/car-edges-follow-the-drawn-ground` | lent | `src/StarterPlayerScripts/Drift/SplineWorld.luau`, new `src/StarterPlayerScripts/Drift/OffRoadGround.luau`, `Config/Drift.luau` (an appended `OffRoad` block), new `src/ServerScriptService/Tests/OffRoadTests.luau`, `src/ServerScriptService/Tests/SplineWorldTests.luau` (section 5 "mountainside" only); for T-260: `Controllers/DriftController.luau` (the 300-stud check in `_frame`), `Services/RoadService.luau` (`SafeStart` only), `Road/SplineSequence.luau` (`locate`'s optional reach). Step 3 asks again for `Spline.luau` edge kinds and `SplineGen`'s edge choice | 2026-11-16 (T-258, T-259) |
 
 ## Notes between sessions
