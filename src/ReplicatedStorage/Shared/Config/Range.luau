@@ -95,4 +95,10 @@ return {
 	CurlEnd = false,
 	Recover = "turn", -- "turn" | "converge" | "none"
 	NearestBy = "worst", -- "worst" | "end"
+	Follow = true,
+	FollowTurns = { 20, 40, 60, 90, 120 }, -- degrees
+	FollowRadii = { 120, 300 }, -- studs
+	FollowStraight = 160, -- studs
+	FollowAimCost = 0.5, -- studs a degree past the aim's limit
+	FollowBackCost = 100, -- studs, heading straight back
 }
