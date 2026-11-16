@@ -186,7 +186,7 @@ local function run(check)
 		if ok then
 			for i = 1, math.min(#plain.sections, #with.sections) do
 				local x, y = plain.sections[i], with.sections[i]
-				for _, key in { "k", "g", "b", "el", "er" } do
+				for _, key in { "k", "g", "b", "up" } do
 					local p, q = x[key], y[key]
 					if #p ~= #q then
 						differ += 1

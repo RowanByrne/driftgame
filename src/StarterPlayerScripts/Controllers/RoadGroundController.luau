@@ -221,15 +221,19 @@ local function plan(spline: any, sc: number?, dc: number?, closingS: number?, x:
 			return y
 		end
 		local hintHere = hint
+		-- far from any road, every cell is past the runoff: no cell need ask where it is
+		local far = not sc and spline:project(x, z, reach + DRAWN_REACH * 1.5) == nil
 		for i = ci - cells, ci + cells do
 			for j = cj - cells, cj + cells do
 				local mx, mz = (i + 0.5) * CELL, (j + 0.5) * CELL
 				local s, d
-				if hintHere then
-					s, d = spline:projectFrom(mx, mz, hintHere)
-				end
-				if not s or not d or math.abs(d) > reach then
-					s, d = spline:project(mx, mz, reach)
+				if not far then
+					if hintHere then
+						s, d = spline:projectFrom(mx, mz, hintHere)
+					end
+					if not s or not d or math.abs(d) > reach then
+						s, d = spline:project(mx, mz, reach)
+					end
 				end
 				local past = true
 				if s and d and math.abs(d) <= reach then
