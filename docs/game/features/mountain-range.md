@@ -160,7 +160,7 @@ Folded into this feature by the conductor (the user: "the remnants of the 'lobe'
 
 The user drove a range run whose road turned back the way it came and ran along the bottom of a cut far below a cliff wall. It was the road's layout on the range, on main, not the far-mountains change in that lane (that one only drew the horizon).
 
-- **Why:** a leg's heading follows the face's level line, and where that line ran square to the way on, the leg swapped to the other way along it from one section to the next: a quarter of the legs' heading changes were jumps of 100 to 180 degrees. No ordinary bend can turn that far, so the road laid its escape, a straight, again and again: 12% of the road was escapes, they ran on 1 000 studs and more, back the way the road came, climbing at 8 degrees into a face that rose faster. Smaller causes: the nearest-fitting bend was laid however far it strayed, and a bend straightening the road before a hairpin was never checked against h (one ran 100 studs into the face).
+- **Why:** a leg's heading follows the face's level line, and where that line ran square to the way on, the leg swapped to the other way along it from one section to the next: about a quarter of a leg's heading updates jumped more than 60 degrees, most of them 100 to 180. No ordinary bend can turn that far, so the road laid its escape, a straight, again and again: 12% of the road was escapes, they ran on 1 000 studs and more, back the way the road came, climbing at 8 degrees into a face that rose faster. Smaller causes: the nearest-fitting bend was laid however far it strayed, and a bend straightening the road before a hairpin was never checked against h (one ran 100 studs into the face).
 - **Now** (`SplineGen._slopeAim`, `_follow`, `_planned`; numbers in `Config.Range`):
   - A leg changes to the other way along its level line only where the way it is going heads back by `LegOnward` (8 degrees) and the other way heads on by as much, and it keeps to that.
   - A leg's heading is checked against h itself, 60 and 120 studs ahead, within 40 degrees either way of the face's heading (`AimLocal...`).
@@ -180,8 +180,10 @@ Measured (DR-Lane1, `RangeTests.road`, seeds 1 to 16 x 25 000 studs, before, the
 | Stalled | 1 of 16 | none |
 | Climbing / descending | 51% / 46% | 52% / 45% |
 | Ridges crossed | 34 | 31 |
-| Generator's worst step | 23 to 24 ms | 24 to 30 ms (timing varies run to run) |
+| Generator's worst step | 23 to 24 ms | 24 to 25 ms |
 
-On 32 more seeds (17 to 48) the same: none doubling back, none stalled, 10 to 11% over 20 studs off h; the deepest cuts there reach 130 to 220 studs, about once in 200 000 studs, against 280 to 320 before. RangeTests checks it now: no doubling back, and no trench (at most 1% of the road over 60 studs deep, no such stretch over 600 studs, none over 150).
+On 32 more seeds (17 to 48): none stalled, 10.1% over 20 studs off h, 0.55% over 60 deep (longest 400 studs, deepest 116). The road fell back once, 870 studs, on seed 26 at 23 800 studs, boxed in between its own legs below a pass. Before T-242, seeds 25 to 48 had 5 falls back (worst 531), 3 stalls, 3.3% over 60 deep and a deepest cut of 278.
 
-Known: deep cuts are rarer and shorter, not gone. The rest come where a leg must turn round on a steep face away from a planned hairpin; nothing tried (heavier costs on depth, hairpins at each turn-round, smoothing the heading) cut them further without the road going back the way it came.
+RangeTests checks it now on seeds 1 to 16: no doubling back, and no trench (at most 1% of the road over 60 studs deep, no such stretch over 600 studs, none over 150).
+
+Known: deep cuts are rarer and shorter, not gone, and the road can still fall back where it is boxed in, about once in a million studs. The deep ones left come where a leg must turn round on a steep face away from a planned hairpin; nothing tried (heavier costs on depth, a hairpin at each turn-round, smoothing the heading) cut them further without the road going back the way it came. GroundTests: following the mountain now passes; trench stations 95 of 936 (129 before) and the over-20 count still fail as before. Its seam check trips on one wall on seed 2024 that is steep (a slope of 14) but continuous, checked down to a two-thousandth of a stud.
