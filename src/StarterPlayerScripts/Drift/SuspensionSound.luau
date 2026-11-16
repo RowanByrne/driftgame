@@ -70,6 +70,7 @@ local WHEELS = 4
 local FRONT = { 1, 1, -1, -1 }
 local SIDE = { -1, 1, -1, 1 }
 local LOG_MAX = 32 -- the readout's list of recent clunks
+local OLD_CLUNK_RATE = 12 -- studs/s: T-223's threshold on the travel closing, for the readout
 
 type Clip = { Id: string, Start: number, Length: number, Gain: number, Speed: number? }
 
@@ -114,7 +115,7 @@ export type SuspensionSound = typeof(setmetatable(
 		maxDrop: { number }, -- per wheel, the furthest its ground fell while it was off it, studs
 		notes: { any }, -- the steps a wheel's ground rose at half `ClunkRate` or more
 		-- THE OLD RULE, counted and never played (T-252's before-and-after): a down wheel's
-		-- travel closing faster than `ClunkRate`, each wheel on its own cooldown
+		-- travel closing faster than T-223's 12 studs/s, each wheel on its own cooldown
 		maxClose: { number },
 		closeClunks: number,
 		closeReadyAt: { number },
@@ -458,7 +459,7 @@ function SuspensionSound.Step(self: SuspensionSound, dt: number, state: DriftMod
 			if close > self.maxClose[i] then
 				self.maxClose[i] = close
 			end
-			if close >= S.ClunkRate and now >= self.closeReadyAt[i] and now >= self.quietUntil then
+			if close >= OLD_CLUNK_RATE and now >= self.closeReadyAt[i] and now >= self.quietUntil then
 				self.closeClunks += 1
 				self.closeReadyAt[i] = now + S.ClunkCooldown
 			end
