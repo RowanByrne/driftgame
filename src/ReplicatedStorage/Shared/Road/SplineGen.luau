@@ -1495,6 +1495,18 @@ function SplineGen._slopeAim(self: Gen, slope: Slope, refine: boolean?): (number
 			swap = on < least and oon > on
 		elseif mode == "hyst" then
 			swap = on < -least and oon > on
+		elseif mode == "cont" then
+			if refine then
+				-- along the level line the way the road is already going
+				swap = (ox * -math.sin(yaw) + oz * -math.cos(yaw)) > (hx * -math.sin(yaw) + hz * -math.cos(yaw))
+			else
+				swap = on < least and oon > on
+			end
+			if swap then
+				curl = R.CurlEnd and oon < -least and on > least
+			else
+				curl = R.CurlEnd and on < -least and oon > least
+			end
 		elseif mode == "near" then
 			swap = on < least and (ox * -math.sin(yaw) + oz * -math.cos(yaw)) > (hx * -math.sin(yaw) + hz * -math.cos(yaw))
 		end
