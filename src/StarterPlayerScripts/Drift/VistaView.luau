@@ -6,8 +6,8 @@
 -- below the road; Roblox's own sky stays above them. Every number is in `Config.Vista`, the
 -- sums in `Shared/Vista`.
 --
--- RIDGE PANELS are curved: one uploaded arc mesh (`Config.Vista.Mesh`), shaded smooth, with
--- the art as a see-through SurfaceAppearance, so Roblox's real sun lights the ring with no
+-- RIDGE PANELS are curved: one arc mesh built on this device (`Config.Vista.Mesh`), shaded
+-- smooth, with the art as a see-through SurfaceAppearance from `ReplicatedStorage.VistaSurfaces`, so Roblox's real sun lights the ring with no
 -- step where two panels meet (flat ones showed seams: T-267, the user). Ridges facing the sun
 -- are lit, ones with the sun behind them dark. The mesh's own skirt, in the art's bottom
 -- row, hides its bottom edge. Until the mesh loads, or if it can't, the layers are flat
@@ -129,19 +129,37 @@ local function weld(anchor: BasePart, p: BasePart)
 	w.Parent = p
 end
 
--- The arc mesh, made once and cloned for every panel of every run.
+-- The arc mesh, made once and cloned for every panel of every run. The EditableMesh is kept,
+-- since the MeshPart made from it reads its shape from it.
 local arcTemplate: MeshPart? = nil
+local arcMesh: EditableMesh? = nil
 local arcError: string? = nil
 
-local function loadArc(id: string): MeshPart?
+local function loadArc(): MeshPart?
 	if arcTemplate or arcError then
 		return arcTemplate
 	end
 	local ok, res = pcall(function()
-		return AssetService:CreateMeshPartAsync(Content.fromUri(id), {
+		local g = Vista.arcGeometry(Config.Vista.Mesh)
+		local em = AssetService:CreateEditableMesh()
+		local vs, ns, us = {}, {}, {}
+		for i, p in g.positions do
+			vs[i] = em:AddVertex(p)
+			ns[i] = em:AddNormal(g.normals[i])
+			us[i] = em:AddUV(g.uvs[i])
+		end
+		for _, t in g.triangles do
+			local a, b, c = t[1], t[2], t[3]
+			local f = em:AddTriangle(vs[a], vs[b], vs[c])
+			em:SetFaceNormals(f, { ns[a], ns[b], ns[c] })
+			em:SetFaceUVs(f, { us[a], us[b], us[c] })
+		end
+		local part = AssetService:CreateMeshPartAsync(Content.fromObject(em), {
 			CollisionFidelity = Enum.CollisionFidelity.Box,
 			RenderFidelity = Enum.RenderFidelity.Precise,
 		})
+		arcMesh = em
+		return part
 	end)
 	if ok then
 		arcTemplate = res
@@ -149,6 +167,13 @@ local function loadArc(id: string): MeshPart?
 		arcError = tostring(res)
 	end
 	return arcTemplate
+end
+
+local function surfaceFor(image: string): SurfaceAppearance?
+	local folder = ReplicatedStorage:FindFirstChild("VistaSurfaces")
+	local id = string.match(image, "%d+$")
+	local sa = if folder and id then folder:FindFirstChild(id) else nil
+	return if sa and sa:IsA("SurfaceAppearance") then sa else nil
 end
 
 local function times(a: Color3, b: Color3): Color3
@@ -216,7 +241,7 @@ function VistaView._buildRidges(self: View, start: Vector3)
 		})
 	end
 	local mesh = Config.Vista.Mesh
-	if mesh.Id == "" then
+	if not mesh.Build then
 		for i, layer in layers do
 			self:_fillFlat(self.ridges[i], layer)
 		end
@@ -224,7 +249,7 @@ function VistaView._buildRidges(self: View, start: Vector3)
 	end
 	-- the mesh loads off the frame: the road is up meanwhile, the ridges a moment after
 	task.spawn(function()
-		local arc = loadArc(mesh.Id)
+		local arc = loadArc()
 		if self.dead then
 			return
 		end
@@ -255,10 +280,9 @@ function VistaView._fillCurved(self: View, ridge: Ridge, layer: any, arc: MeshPa
 		p.DoubleSided = false
 		backdrop(p)
 		weld(ridge.anchor, p)
-		if panel.image ~= "" then
-			local sa = Instance.new("SurfaceAppearance")
-			sa.AlphaMode = Enum.AlphaMode.Transparency
-			sa.ColorMapContent = Content.fromUri(panel.image)
+		local made = if panel.image ~= "" then surfaceFor(panel.image) else nil
+		if made then
+			local sa = made:Clone()
 			sa.Parent = p
 			table.insert(ridge.surfaces, sa)
 			noteImage(ridge, panel.image)

@@ -78,13 +78,12 @@ function Vista.arcs(layer: any, mesh: any): { Panel }
 	local top = math.tan(math.rad(layer.Peak)) * r + layer.PeakAt * art
 	local centreY = top - height / 2
 	local images: { string } = layer.Images or {}
-	local yaw = CFrame.Angles(0, math.rad(mesh.Yaw or 0), 0)
 	local out: { Panel } = {}
 	for i = 1, n do
 		local angle = (i - 0.5) * 2 * math.pi / n
 		local dir = Vector3.new(math.sin(angle), 0, math.cos(angle))
 		local at = dir * (r + mid) / 2 -- the box's centre, halfway through its depth
-		local cf = CFrame.lookAt(at + Vector3.yAxis * centreY, Vector3.yAxis * centreY) * yaw
+		local cf = CFrame.lookAt(at + Vector3.yAxis * centreY, Vector3.yAxis * centreY)
 		table.insert(out, {
 			index = i,
 			cframe = cf,
@@ -93,6 +92,56 @@ function Vista.arcs(layer: any, mesh: any): { Panel }
 			skirt = nil,
 		})
 	end
+	return out
+end
+
+export type ArcGeometry = {
+	positions: { Vector3 },
+	normals: { Vector3 },
+	uvs: { Vector2 },
+	triangles: { { number } }, -- indices into the three lists above, which share them
+	size: Vector3, -- the box, centred on the origin
+}
+
+-- The curved panel's mesh, at a ring 1 000 studs round (the game scales it to each layer).
+-- In mesh space the ring's centre is on -Z, the way a part's front looks, and the box is
+-- centred on the origin, as Roblox centres a mesh in its part. Every normal points in at the
+-- centre, so the shading runs on smoothly from one panel into the next. u runs left to right
+-- as seen from the centre; v down the picture, and held at its bottom row down the skirt
+-- (kept just inside the edges, clear of the wrap to the transparent top).
+function Vista.arcGeometry(mesh: any): ArcGeometry
+	local radius = 1000
+	local half = math.rad(mesh.ArcDeg / 2)
+	local width = 2 * radius * math.sin(half)
+	local art = width / 3
+	local height = art / mesh.ArtShare
+	local zc = -radius * (1 + math.cos(half)) / 2
+	local cols: number = mesh.Columns
+	local top, base = 0.005, 0.995
+	local out: ArcGeometry = { positions = {}, normals = {}, uvs = {}, triangles = {}, size = Vector3.zero }
+	for i = 0, cols do
+		local t = i / cols
+		-- seen from the centre looking +Z, +X is on the left: u = 0 there
+		local a = half - 2 * half * t
+		local x, z = radius * math.sin(a), zc + radius * math.cos(a)
+		local n = Vector3.new(-math.sin(a), 0, -math.cos(a))
+		for _, row in { { height / 2, top }, { height / 2 - art, base }, { -height / 2, base } } do
+			table.insert(out.positions, Vector3.new(x, row[1], z))
+			table.insert(out.normals, n)
+			table.insert(out.uvs, Vector2.new(t, row[2]))
+		end
+	end
+	for i = 0, cols - 1 do
+		for r = 0, 1 do
+			local tl = i * 3 + r + 1
+			local bl, tr = tl + 1, tl + 3
+			local br = tr + 1
+			-- front faces look in at the centre
+			table.insert(out.triangles, { tl, bl, tr })
+			table.insert(out.triangles, { tr, bl, br })
+		end
+	end
+	out.size = Vector3.new(width, height, radius * (1 - math.cos(half)))
 	return out
 end
 

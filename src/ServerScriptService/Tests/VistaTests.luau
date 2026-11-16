@@ -116,12 +116,47 @@ function Tests.run()
 			arcBottom < -V.CloudSea.Below,
 			string.format("to %.0f, cloud at %.0f", arcBottom, -V.CloudSea.Below)
 		)
+		local surfaces = game:GetService("ReplicatedStorage"):FindFirstChild("VistaSurfaces")
+		local missing = {}
+		for _, id in layer.Images do
+			local sa = surfaces and surfaces:FindFirstChild(string.match(id, "%d+$") or "")
+			if not (sa and sa:IsA("SurfaceAppearance") and sa.AlphaMode == Enum.AlphaMode.Transparency) then
+				table.insert(missing, id)
+			end
+		end
+		check(`{layer.Name}: a see-through surface made for every picture`, #missing == 0, table.concat(missing, ", "))
 		local art = #layer.Images > 0
 		for _, id in layer.Images do
 			art = art and string.match(id, "^rbxassetid://%d+$") ~= nil
 		end
 		check(`{layer.Name}: every picture has its asset id`, art)
 	end
+
+	-- the arc mesh: every face looks in at the ring's centre, its box is centred and as sized
+	local g = Vista.arcGeometry(V.Mesh)
+	local half = math.rad(V.Mesh.ArcDeg / 2)
+	local centre = Vector3.new(0, 0, -1000 * (1 + math.cos(half)) / 2)
+	local away = 0
+	for _, t in g.triangles do
+		local a, b, c = g.positions[t[1]], g.positions[t[2]], g.positions[t[3]]
+		local n = (b - a):Cross(c - a)
+		local to = centre - a
+		if n:Dot(Vector3.new(to.X, 0, to.Z)) <= 0 then
+			away += 1
+		end
+	end
+	check("arc: every face looks in at the centre", away == 0, `{away} of {#g.triangles} face away`)
+	local lo, hi = Vector3.one * math.huge, -Vector3.one * math.huge
+	for _, p in g.positions do
+		lo, hi = lo:Min(p), hi:Max(p)
+	end
+	check("arc: its box is centred", ((lo + hi) / 2).Magnitude < 0.01, tostring((lo + hi) / 2))
+	check("arc: its box is the size it says", ((hi - lo) - g.size).Magnitude < 0.01, tostring(hi - lo))
+	local uvOk = true
+	for _, uv in g.uvs do
+		uvOk = uvOk and uv.X >= 0 and uv.X <= 1 and uv.Y > 0 and uv.Y < 1
+	end
+	check("arc: the picture's v stays inside its edges", uvOk)
 
 	-- the cloud sea
 	local sea = V.CloudSea

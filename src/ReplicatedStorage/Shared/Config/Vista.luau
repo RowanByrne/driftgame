@@ -19,18 +19,21 @@ return {
 	Enabled = true,
 
 	-- ------------------------------------------------------------- the curved panel
-	-- One uploaded mesh, reused for every panel (`pipeline/vista/arc-mesh.py`): an arc of
-	-- `ArcDeg` degrees shaded smooth, so a ring of them shows no step where two meet in the
-	-- sun's light (the user, on flat panels: "the seams you can see where they join"). Its
-	-- top `ArtShare` carries the picture through a SurfaceAppearance; below that a skirt in
-	-- the picture's own bottom row reaches down under the cloud sea. `Yaw` turns it if the
-	-- importer faced it the other way. With no `Id` (or if it fails to load), the layers
-	-- fall back to flat panels with a Decal and a plain skirt.
+	-- One mesh, built on this device when the first vista is (`Shared/Vista.arcGeometry`, an
+	-- EditableMesh: nothing uploaded) and cloned for every panel: an arc of `ArcDeg` degrees
+	-- in `Columns` strips, shaded smooth, so a ring of them shows no step where two meet in
+	-- the sun's light (the user, on flat panels: "the seams you can see where they join").
+	-- Its top `ArtShare` carries the picture; below that a skirt in the picture's own bottom
+	-- row reaches down under the cloud sea. The picture is a SurfaceAppearance (its sky
+	-- see-through), made ahead in `ReplicatedStorage.VistaSurfaces`, one per image, named by
+	-- its asset id: a game script can't set one's picture itself (measured: "lacking
+	-- capability Plugin"), and a mesh's own texture fills the sky in. `Build` off, or if the
+	-- mesh can't be made, the layers fall back to flat panels with a Decal and a plain skirt.
 	Mesh = {
-		Id = "",
+		Build = true,
 		ArcDeg = 36, -- so a curved layer has 360 / 36 = 10 panels
-		ArtShare = 0.4228,
-		Yaw = 0, -- degrees
+		Columns = 24,
+		ArtShare = 0.4228, -- the far layer's art over art + skirt (659 of 1 559 studs)
 	},
 
 	-- ------------------------------------------------------------- ridge layers
