@@ -67,7 +67,8 @@ local Config = require(ReplicatedStorage.Shared.Config)
 local GroundMarks = {}
 GroundMarks.__index = GroundMarks
 
-local HALF = 2048 -- studs: a strip's local box either way of its origin; float32 is 0.0002 here
+local HALF = 1000 -- studs: a strip's local box either way of its origin (a mesh may be at most
+-- 2 048 across: measured, "Mesh extents size too large")
 local MARKER = 0.01 -- studs: the two tiny triangles that hold the box open
 local DEPTH_LEVELS = 8 -- the flat-to-rut blend, in steps, for the colour table
 
@@ -616,6 +617,18 @@ local function reach(self: GroundMarks, st: Strip, at: Vector3)
 		part.CFrame = CFrame.new(at)
 	end
 	self.reorigins += 1
+	-- Sections now out of the box are the oldest (the ring is in age order from past the
+	-- tip): they go, as ageing would take them, each a point on the next one's centre.
+	local keep = HALF - Config.Fx.Ground.Ribbon.Spacing * 2
+	for step = 3, self.N do
+		local k = wrap(self, st.tip + step)
+		local sec = st.sections[k]
+		local off2 = sec.centre - at
+		if sec.real and k ~= st.tip and math.max(math.abs(off2.X), math.abs(off2.Y), math.abs(off2.Z)) > keep then
+			self.recycled += 1
+			point(self, st, k, st.sections[wrap(self, k + 1)].centre)
+		end
+	end
 	for k = 1, self.N do
 		local sec = st.sections[k]
 		for li, layer in self.layers do

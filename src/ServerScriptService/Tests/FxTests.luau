@@ -1100,7 +1100,7 @@ function Tests.run(opts)
 				for _, part in marks.folder:GetChildren() do
 					if part:IsA("MeshPart") then
 						parts += 1
-						scaleOk = scaleOk and math.abs(part.Size.X - 4096) < 1
+						scaleOk = scaleOk and math.abs(part.Size.X - 2000) < 1
 						if part.Name:find("Inner$") then
 							dressed = dressed and part.TextureContent.Object == marks.image and part.Material == RB.InnerMaterial
 						else

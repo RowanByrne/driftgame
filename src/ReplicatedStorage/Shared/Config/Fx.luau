@@ -353,7 +353,8 @@ return {
 			-- ground and the road taking most (features/ground-trial.md). 128 x 8 points x 4 wheels
 			-- is 4 096. MEASURED: a first build at 31 000 pushed the road out of budget. At a
 			-- section every 3 studs that is about 380 studs of mark a wheel; the oldest goes first
-			ReOrigin = 1500, -- studs a strip's origin may lag the tyre before it is moved (float32)
+			ReOrigin = 800, -- studs a strip's origin may lag the tyre before it is moved: a mesh is
+			-- at most 2 048 studs across, and sections past its box are let go
 			Spacing = 3, -- studs between cross-sections on a straight run...
 			MinSpacing = 0.5, -- ...and down to this through a bend, a new one whenever the path has
 			TurnDegrees = 4, -- turned this far since the last. So a curve is a smooth curve
