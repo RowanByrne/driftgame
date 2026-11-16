@@ -537,14 +537,13 @@ function Ground.at(ctx: Context, x: number, z: number): (number, number, number,
 					local vx, vz = st.nx - st.x, st.nz - st.z
 					local L2 = vx * vx + vz * vz
 					local dx, dz = x - st.x, z - st.z
-					local L, ds, d, u = 0, 0, dx * st.rx + dz * st.rz, 0
+					-- (across and along from the station's own heading: the stretch is a chord,
+					-- a turn's half angle off it, which far out on a wide runoff is studs)
+					local ds, d = dx * st.fx + dz * st.fz, dx * st.rx + dz * st.rz
+					local L, u = 0, 0
 					if L2 > 1e-9 then
 						L = math.sqrt(L2)
-						ds = (dx * vx + dz * vz) / L
-						d = (vx * dz - vz * dx) / L
-						u = math.clamp(ds / L, 0, 1)
-					else
-						ds = dx * st.fx + dz * st.fz
+						u = math.clamp((dx * vx + dz * vz) / L2, 0, 1)
 					end
 					local px, pz = dx - vx * u, dz - vz * u
 					local r = math.sqrt(px * px + pz * pz)
