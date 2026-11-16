@@ -3240,9 +3240,13 @@ end
 -- asked the spline road's generator for pieces it does not have (an error at
 -- `RoadService:DebugPieces`, `#piece.quads`, and at `Pieces.poseAt`). So the suite switches
 -- the next run to the piece road, as the admin console's `roadmode` does, and puts the mode
--- back when it is done, error or not.
+-- back when it is done, error or not. Already on the piece road (a drive inside `run`,
+-- which has a road up for it), it changes nothing.
 local function onPieces(fn)
 	return function(self, ...)
+		if RoadService:Mode() == "pieces" then
+			return fn(self, ...)
+		end
 		RoadService:Stop()
 		local was = RoadService:Mode()
 		RoadService:SetMode("pieces")

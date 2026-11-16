@@ -302,11 +302,20 @@ function Tests.run(which: { string }?, ...)
 					if deg > 3 then
 						chordOff += 1
 					end
-					-- the wall's own normal: square to the road's edge where the car stopped
+					-- the wall's own normal: square to the road's edge somewhere the car's body
+					-- could be touching it (the stop is the car's middle; a corner reaches
+					-- half its diagonal along the road, and on a 105-stud bend that turns the
+					-- wall 4 degrees and more)
 					local sa = spline:projectFrom(a.X, a.Z, s) or s
-					local ya = spline:yawAt(sa)
-					local inward = Vector3.new(math.cos(ya), 0, -math.sin(ya)) * -side
-					worstTrue = math.max(worstTrue, math.deg(math.acos(math.clamp(Vector3.new(an.X, 0, an.Z).Unit:Dot(inward), -1, 1))))
+					local reach = 0.5 * math.sqrt(D.BodyLength ^ 2 + D.BodyWidth ^ 2)
+					local flatN = Vector3.new(an.X, 0, an.Z).Unit
+					local best = 180
+					for u = sa - reach, sa + reach, 0.25 do
+						local ya = spline:yawAt(u)
+						local inward = Vector3.new(math.cos(ya), 0, -math.sin(ya)) * -side
+						best = math.min(best, math.deg(math.acos(math.clamp(flatN:Dot(inward), -1, 1))))
+					end
+					worstTrue = math.max(worstTrue, best)
 				end
 			end
 			check(
@@ -450,6 +459,7 @@ function Tests.run(which: { string }?, ...)
 					airborne = runner.state.airborne,
 					walls = after.wallStops - before.wallStops,
 					rails = after.kRailStops - before.kRailStops,
+					pushes = after.pushes - before.pushes,
 					grass = after.grass - before.grass,
 					overCliff = after.overCliff - before.overCliff,
 					-- where the edge is where the car ended up, not where it started
@@ -511,7 +521,15 @@ function Tests.run(which: { string }?, ...)
 				if s then
 					local r = offTheSide(s, side)
 					local nose = r.d + D.BodyLength * 0.5
-					check("a K-rail stops the car at the tarmac's edge", nose <= half + 0.5 and nose > half - 1.5 and r.rails > 0, `after 3 s: the car's nose {fmt(nose, 2)} studs out (K-rail's face at {half}), {r.rails} K-rail stops`)
+					-- held by the rail's sweep, or by its push out where the sweep missed, as the
+					-- tight cliff edge's rail below (T-244: on a banked bend the sweep misses and
+					-- the push holds the car, measured 0.3 to 0.45 studs short of the face; on a
+					-- level stretch the sweep stops it)
+					check(
+						"a K-rail stops the car at the tarmac's edge",
+						nose <= half + 0.5 and nose > half - 1.5 and (r.rails > 0 or r.pushes > 0),
+						`after 3 s: the car's nose {fmt(nose, 2)} studs out (K-rail's face at {half}), {r.rails} K-rail stops by the sweep, {r.pushes} push outs; at s {fmt(s, 0)}, a {fmt(1 / math.max(math.abs(mountain:curvatureAt(s)), 1e-6), 0)}-stud bend banked {fmt(math.deg(mountain:bankAt(s)), 1)} degrees`
+					)
 					-- and from behind: a car on the grass beyond it, driven back at it
 					local yaw = mountain:yawAt(s)
 					local inYaw = yaw + side * math.pi / 2
