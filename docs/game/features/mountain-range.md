@@ -98,3 +98,11 @@ None: the ground looks as it does today.
 
 - Biomes, later: how they are chosen, during live generation (the user), and whether each brings its own time of day and weather.
 - How long between passes: about one every few minutes of driving, or longer?
+
+## As built: no lobe inside hairpins (T-237)
+
+Folded into this feature by the conductor (the user: "the remnants of the 'lobe' problem are still here. I want to fix that"). `Road/Ground` `at`:
+
+- **Why it showed:** each station shaped only the points within 16 studs of square beside it. Inside a tight hairpin the bend's reach ended as an arc and each leg's as a straight line, and they didn't line up: a notch at each end of the arc, measured on seed 31337's first hairpin (radius 76).
+- **Now:** how far a point is past the edge is measured from the nearest point of the road's centre line (each station answers for its 8 studs to the next). Along the road the stations hand over smoothly (a quadratic B-spline over a stretch and a half either way), with how far along the road a point is corrected for the bend. Between two stretches the nearer edge still wins (`Soft`). The inside of a hairpin is one V-shaped pocket whose two drop lines meet at the apex, with no arc.
+- **Measured (DR-Lane1, GroundTests):** ground above the road or runoff: 0 of 18 870 points (1 before, 0.006 studs); the ground meets the runoff's edge within 0.14 studs of `Under` (0.35 before); no seams; a client's replay the same; a point 2.7 microseconds (as before). The one failing check, "cut or fill at the centre line over 20 studs" (48 of 936), is the road's own following and failed the same before.

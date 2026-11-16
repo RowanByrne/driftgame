@@ -17,11 +17,12 @@
 -- legs it is simply `h`, with nothing to negotiate.
 --
 -- HOW THE BLEND IS TAKEN, so it has no seams: every station of road near a point (the
--- points the road files for its no-crossing test, every `CheckStep` studs) gives its own
--- answer from its own straight cross-section, weighted by how near the point is to square
--- beside it (`Look`). Where two stretches are both near (the inside of a hairpin, the
--- gap between two legs), the nearer edge wins, smoothly (`Soft`), so the ground is
--- continuous across the line between them. A stretch's influence fades to nothing at the
+-- points the road files for its no-crossing test, every `CheckStep` studs) answers for its
+-- stretch of centre line to the next, from the point of it nearest (T-237): how far past
+-- the edge the point is, and the road's height square beside it. The nearest edge wins,
+-- smoothly (`Soft`), so the ground is continuous where two stretches meet (round a bend,
+-- the inside of a hairpin, the gap between two legs), and the cut or fill ends an even
+-- distance from the road all round a bend. A stretch's influence fades to nothing at the
 -- end of its blend, so beyond it the ground is exactly `h`.
 --
 -- The road itself is unchanged: the car drives on the spline maths, and the road's height
@@ -77,6 +78,12 @@ export type Station = {
 	rl: number, -- the runoff alone, left
 	rr: number,
 	steep: number, -- how steep the mountain is across the road here, 0 to 1 (T-228)
+	-- the next station's centre and half widths: this station answers for the centre line
+	-- between the two (T-237)
+	nx: number,
+	nz: number,
+	nwl: number,
+	nwr: number,
 	bmin: number, -- so the cut or fill past its runoff: no narrower than this...
 	tanA: number, -- ...at about this slope
 	-- the centre line `HEIGHT_STEP` studs apart, from `HEIGHT_REACH` before the station to as
@@ -327,10 +334,15 @@ local function line(st: Station): Station
 	return st
 end
 
-local function surface(st: Station, d: number, ds: number?): number
+local function surface(st: Station, d: number, ds: number?, near: boolean?): number
 	local half = Config.Road.Width * 0.5
 	local yc, tb = st.yc, st.tb
-	if ds then
+	if ds and near then
+		-- within a station's own stretch (`CheckStep` studs): its grade carried on is within a
+		-- hundredth of a stud there
+		yc += ds * (st.g + 0.5 * st.gr * ds)
+		tb += ds * st.tbr
+	elseif ds then
 		local q = ds / HEIGHT_STEP + HEIGHT_MID
 		local i = math.floor(q)
 		local ys = line(st).ys :: { number }
@@ -415,7 +427,19 @@ local function station(spline: Spline.Spline, s: number, x: number, z: number, f
 		bmin = 0,
 		tanA = 1,
 		spline = spline,
+		nx = x,
+		nz = z,
+		nwl = half + rl,
+		nwr = half + rr,
 	}
+	do
+		-- the stretch of centre line this station answers for: to the next one (T-237)
+		local sn = math.min(s + spline.checkStep, spline.length)
+		if sn > s then
+			st.nx, st.nz = spline:planAt(sn)
+			st.nwl, st.nwr = half + spline:runoffAt(sn, -1), half + spline:runoffAt(sn, 1)
+		end
+	end
 	do
 		local G = Config.Spline.Ground
 		local q = st.steep
@@ -426,31 +450,6 @@ local function station(spline: Spline.Spline, s: number, x: number, z: number, f
 		mine[s] = st
 	end
 	return st
-end
-
--- How far along the road from a station the point (x, z) is square to, from the centre line
--- kept round it (`cxs`...), starting from the guess `ds0`; nil if not within them.
-local function along(st: Station, x: number, z: number, ds0: number): number?
-	line(st)
-	local cxs, czs, fxs, fzs = st.cxs :: { number }, st.czs :: { number }, st.fxs :: { number }, st.fzs :: { number }
-	local n = #cxs
-	local function g(i: number): number
-		return (x - cxs[i]) * fxs[i] + (z - czs[i]) * fzs[i]
-	end
-	local j = math.clamp(math.floor(ds0 / HEIGHT_STEP) + HEIGHT_MID, 1, n - 1)
-	local gj, gk = g(j), g(j + 1)
-	while gj < 0 and j > 1 do
-		j -= 1
-		gk, gj = gj, g(j)
-	end
-	while gk >= 0 and j < n - 1 do
-		j += 1
-		gj, gk = gk, g(j + 1)
-	end
-	if gj < 0 or gk >= 0 then
-		return nil
-	end
-	return (j - HEIGHT_MID + gj / (gj - gk)) * HEIGHT_STEP
 end
 
 local CELL = 64 -- studs: a point looks at the 25 cells round it (at 32, 81)
@@ -507,7 +506,7 @@ function Ground.at(ctx: Context, x: number, z: number): (number, number, number,
 	local field = ctx.field
 	local hp = Ground.h(field, x, z)
 	local reach = Ground.reach()
-	local look, soft = G.Look, G.Soft
+	local soft = G.Soft
 	-- (each station's own blend, from the mountain's side slope there: T-228)
 	local bMax = G.BlendMax
 	-- Running sums, rescaled whenever a nearer edge turns up (a soft minimum). What is
@@ -524,48 +523,74 @@ function Ground.at(ctx: Context, x: number, z: number): (number, number, number,
 			local list = grid[key(cx, cz)]
 			if list then
 				for _, st in list do
+					-- THE NEAREST POINT OF THE ROAD (T-237): each station answers for its stretch
+					-- of centre line to the next, from the point on it nearest (x, z). So the
+					-- distance past the edge is the true one all round a bend: the cut or fill
+					-- ends an even distance from the road, and the inside of a tight hairpin is
+					-- one bowl. (Until T-237 a station answered for the points square beside it,
+					-- within `Look`: inside a hairpin the bend's reach ended in an arc and the
+					-- legs' in straight lines, with a notch where they met.)
+					-- The distance (`r`, so `e`, signed: under 0 on the road) is to the nearest
+					-- point of the stretch; the height (`T`) is the road's square beside the point,
+					-- along the stretch carried on (`ds`, `d`), so a station a little way along
+					-- whose stretch ends short of the point still gives the road's height there.
+					local vx, vz = st.nx - st.x, st.nz - st.z
+					local L2 = vx * vx + vz * vz
 					local dx, dz = x - st.x, z - st.z
-					local l = dx * st.fx + dz * st.fz
-					if l > -look and l < look then
-						local d = dx * st.rx + dz * st.rz
-						local w = if d < 0 then st.wl else st.wr
-						local e = math.abs(d) - w
-						if e < bMax then
-							-- how far along the road the point is square to: further than `l` on
-							-- the inside of a bend, less on its outside
-							local c = 1 + st.k * d
-							local ds = l / math.max(c, 0.2)
-							-- from the centre line itself where the point is not right by the
-							-- centre of a tight bend (eased in over `c` 0.15 to 0.3, so nothing
-							-- jumps): the guess above is off by studs far out on a wide runoff,
-							-- which a steep grade turns into height (T-226)
-							if c > 0.15 then
-								local found = along(st, x, z, ds)
-								if found then
-									ds += (found - ds) * smooth(math.min((c - 0.15) / 0.15, 1))
-								end
-							end
-							local T, bw
-							if e <= 0 then
-								e = 0
-								T = surface(st, d, ds) - G.Under
-								bw = st.bmin
-							else
-								T = surface(st, if d < 0 then -w else w, ds) - G.Under
-								bw = math.clamp(math.abs(hp - T) / st.tanA, st.bmin, bMax)
-							end
-							local q = l / look
-							local wl = (1 - q * q)
-							wl *= wl
-							if e < emin then
+					-- (across and along from the station's own heading: the stretch is a chord,
+					-- a turn's half angle off it, which far out on a wide runoff is studs)
+					local ds, d = dx * st.fx + dz * st.fz, dx * st.rx + dz * st.rz
+					local L, u = 0, 0
+					if L2 > 1e-9 then
+						L = math.sqrt(L2)
+						u = math.clamp((dx * vx + dz * vz) / L2, 0, 1)
+					end
+					local px, pz = dx - vx * u, dz - vz * u
+					local r = math.sqrt(px * px + pz * pz)
+					-- how far along the road the point really is: further than its square on
+					-- the stretch on the inside of a bend, less on the outside (as `d` from a
+					-- centre of turn `1 / k` off); this, not the square, says which runoff
+					-- width and which height of road it is beside
+					ds /= math.max(1 + st.k * d, 0.3)
+					local ua = if L > 0 then math.clamp(ds / L, 0, 1) else 0
+					local side = if d < 0 then -1 else 1
+					local w = if side < 0 then st.wl + (st.nwl - st.wl) * ua else st.wr + (st.nwr - st.wr) * ua
+					local e = r - w
+					if e < bMax then
+						local T, bw, past
+						-- (a stretch's own grade carried on is close enough within two stretches;
+						-- further, the centre line kept round the station)
+						local near = math.abs(ds) <= 2 * L + 1
+						if e <= 0 then
+							past = 0
+							T = surface(st, math.clamp(d, -w, w), ds, near) - G.Under
+							bw = st.bmin
+						else
+							past = e
+							T = surface(st, side * w, ds, near) - G.Under
+							bw = math.clamp(math.abs(hp - T) / st.tanA, st.bmin, bMax)
+						end
+						-- WHICH STATIONS COUNT: along one stretch of road, each station by how near
+						-- the point is to square beside it (a quadratic B-spline over a stretch and
+						-- a half either way, so the answers hand over smoothly from one station to
+						-- the next and the runoff's profile, which each station draws from its own
+						-- width, never lifts the ground above it); between two stretches of road
+						-- (two legs, the far side of a hairpin), the nearer edge, softly. Being
+						-- further in on a runoff makes a station no nearer
+						local q = if L > 0 then math.abs(ds) / L else 0
+						local hat = if q < 0.5 then 0.75 - q * q elseif q < 1.5 then 0.5 * (1.5 - q) * (1.5 - q) else 0
+						local score = past
+						if hat > 0 then
+							local wl = hat
+							if score < emin then
 								if emin < math.huge then
-									local k = math.exp((e - emin) / soft)
+									local k = math.exp((score - emin) / soft)
 									sw *= k
 									swe *= k
 									swb *= k
 									swT *= k
 								end
-								emin = e
+								emin = score
 							end
 							-- and fades out over the last `FADE` studs of the longest blend, so a
 							-- station leaving the reckoning moves nothing
@@ -573,9 +598,9 @@ function Ground.at(ctx: Context, x: number, z: number): (number, number, number,
 							if f < 1 then
 								wl *= smooth(f)
 							end
-							local wgt = wl * math.exp((emin - e) / soft)
+							local wgt = wl * math.exp((emin - score) / soft)
 							sw += wgt
-							swe += wgt * e
+							swe += wgt * past
 							swb += wgt * bw
 							swT += wgt * T
 						end
