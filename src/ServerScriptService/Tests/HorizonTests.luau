@@ -1,6 +1,6 @@
 --!nonstrict
 -- HorizonTests: the shapes of the mountains round the run (features/horizon.md "Testing",
--- T-150). Pure: nothing in the place is touched. Run it in Studio:
+-- T-150), and only uphill on a run with a mountain (T-232). Pure: nothing in the place is touched. Run it in Studio:
 --   game.ServerStorage.DebugBridge:Invoke("DebugHorizonTests", "run")
 --
 -- What it cannot check: whether they LOOK right. That is the user's, in the lane.
@@ -64,41 +64,132 @@ function Tests.run()
 	-- and the lowest the road can stand in the horizon's own frame: at its lowest while the
 	-- camera is at the road's highest, so the horizon has risen with it (`FollowHeight`)
 	local roadLow = Config.Spline.MinHeight - H.FollowHeight * Config.Spline.MaxHeight
-	for i, L in H.Layers do
-		local layer = layout.layers[i]
-		local lo, hi, near, far = math.huge, -math.huge, math.huge, 0
-		for _, tri in layer.triangles do
+	local function ridgeChecks(lay: any, tag: string)
+		for i, L in H.Layers do
+			local layer = lay.layers[i]
+			local lo, hi, near, far = math.huge, -math.huge, math.huge, 0
+			for _, tri in layer.triangles do
+				for _, p in { tri.a, tri.b, tri.c } do
+					lo, hi = math.min(lo, p.Y), math.max(hi, p.Y)
+					near, far = math.min(near, flatDistance(p)), math.max(far, flatDistance(p))
+				end
+			end
+			check(`{tag}{L.Name}: foot and top in range`, math.abs(lo - L.Base) < 1e-6 and hi <= L.Height[2] + 1e-6 and hi >= L.Height[1], string.format("%.0f..%.0f", lo, hi))
+			check(
+				`{tag}{L.Name}: within its ring`,
+				far <= L.Radius * (1 + L.RadiusJitter) + 1e-6 and near >= L.Radius * (1 - L.Depth) * (1 - L.RadiusJitter) - 1e-6,
+				string.format("%.0f..%.0f studs out", near, far)
+			)
+			-- where a face stands as high as the road can go low, it is past the drawn road
+			local nearAtRoad = math.huge
+			for _, tri in layer.triangles do
+				local pts = { tri.a, tri.b, tri.c }
+				for k = 1, 3 do
+					local p, q = pts[k], pts[k % 3 + 1]
+					if p.Y >= roadLow then
+						nearAtRoad = math.min(nearAtRoad, flatDistance(p))
+					end
+					if (p.Y - roadLow) * (q.Y - roadLow) < 0 then
+						nearAtRoad = math.min(nearAtRoad, flatDistance(p:Lerp(q, (roadLow - p.Y) / (q.Y - p.Y))))
+					end
+				end
+			end
+			check(
+				`{tag}{L.Name}: never as near as the drawn road`,
+				nearAtRoad - L.MaxLag > roadReach,
+				string.format("nearest %.0f with the lag, road drawn to %d", nearAtRoad - L.MaxLag, roadReach)
+			)
+		end
+	end
+	ridgeChecks(layout, "")
+
+	-- ONLY UPHILL (T-232): the same checks on an arc, for two uphills, and the arc's own
+	local function offFrom(p: Vector3, uphill: number): number
+		return math.deg((Horizon.bearing(p.X, p.Z) - uphill + math.pi) % (2 * math.pi) - math.pi)
+	end
+	local half = H.Arc / 2
+	for _, uphillDeg in { 0, 217 } do
+		local uphill = math.rad(uphillDeg)
+		local arc = Horizon.layout(H, uphill)
+		local tag = `uphill {uphillDeg}: `
+		check(`{tag}three ridge layers and the peak`, #arc.layers == #H.Layers + 1)
+		ridgeChecks(arc, tag)
+		for i, L in H.Layers do
+			local lo, hi, highOut = math.huge, -math.huge, -math.huge
+			local endLow = true
+			for _, tri in arc.layers[i].triangles do
+				for _, p in { tri.a, tri.b, tri.c } do
+					local off = offFrom(p, uphill)
+					lo, hi = math.min(lo, off), math.max(hi, off)
+					-- the last degree each end: down at the layer's foot
+					if math.abs(off) > half - 1 and p.Y > L.Base + 1e-3 then
+						endLow = false
+					end
+					-- the outer half of the taper stands well below the full ridge
+					if math.abs(off) > half - (H.Taper / 2) * H.Arc / L.ArcSegments then
+						highOut = math.max(highOut, p.Y)
+					end
+				end
+			end
+			check(
+				`{tag}{L.Name}: spans the arc and no more`,
+				lo >= -half - 1e-3 and hi <= half + 1e-3 and lo <= -half + 1 and hi >= half - 1,
+				string.format("%.1f..%.1f degrees from uphill", lo, hi)
+			)
+			check(`{tag}{L.Name}: its ends are down at its foot`, endLow)
+			check(
+				`{tag}{L.Name}: its ends taper (outer half of the taper below the lowest full ridge)`,
+				highOut < L.Height[1],
+				string.format("highest %.0f against %d", highOut, L.Height[1])
+			)
+		end
+		local peakOff = -math.huge
+		local P = H.Peak
+		local topY = -math.huge
+		for _, tri in arc.layers[#arc.layers].triangles do
 			for _, p in { tri.a, tri.b, tri.c } do
-				lo, hi = math.min(lo, p.Y), math.max(hi, p.Y)
-				near, far = math.min(near, flatDistance(p)), math.max(far, flatDistance(p))
+				if p.Y > topY then
+					topY, peakOff = p.Y, offFrom(p, uphill)
+				end
 			end
 		end
-		check(`{L.Name}: foot and top in range`, math.abs(lo - L.Base) < 1e-6 and hi <= L.Height[2] + 1e-6 and hi >= L.Height[1], string.format("%.0f..%.0f", lo, hi))
 		check(
-			`{L.Name}: within its ring`,
-			far <= L.Radius * (1 + L.RadiusJitter) + 1e-6 and near >= L.Radius * (1 - L.Depth) * (1 - L.RadiusJitter) - 1e-6,
-			string.format("%.0f..%.0f studs out", near, far)
+			`{tag}peak: well inside the arc`,
+			math.abs(peakOff) <= half - P.Clear + 3,
+			string.format("summit %.1f degrees from uphill", peakOff)
 		)
-		-- where a face stands as high as the road can go low, it is past the drawn road
-		local nearAtRoad = math.huge
-		for _, tri in layer.triangles do
-			local pts = { tri.a, tri.b, tri.c }
-			for k = 1, 3 do
-				local p, q = pts[k], pts[k % 3 + 1]
-				if p.Y >= roadLow then
-					nearAtRoad = math.min(nearAtRoad, flatDistance(p))
-				end
-				if (p.Y - roadLow) * (q.Y - roadLow) < 0 then
-					nearAtRoad = math.min(nearAtRoad, flatDistance(p:Lerp(q, (roadLow - p.Y) / (q.Y - p.Y))))
-				end
-			end
+		check(`{tag}spends no more parts than the ring`, arc.triangles <= layout.triangles, `{arc.triangles * 2} parts against {layout.triangles * 2}`)
+	end
+	-- the peak keeps its own bearing when that is inside (uphill 0: 35 is inside 90 - 25)
+	local kept = Horizon.peakBearing(H.Peak, 0, math.rad(H.Arc))
+	check("peak: keeps its bearing when inside the arc", math.abs(math.deg(kept) - H.Peak.Bearing) < 1e-6)
+	local moved = Horizon.peakBearing(H.Peak, math.rad(H.Peak.Bearing + 180), math.rad(H.Arc))
+	check(
+		"peak: moved into the arc when outside it",
+		math.abs(math.deg(moved) - (H.Peak.Bearing + 180 + H.Peak.Offset)) < 1e-6,
+		string.format("%.1f", math.deg(moved))
+	)
+	-- the floor on an arc: parts that fit, reaching `Downhill` that way, and still `Size / 2`
+	-- uphill (so the ridges hide its uphill edge as before)
+	for _, uphillDeg in { 0, 217 } do
+		local uphill = math.rad(uphillDeg)
+		local up = Vector3.new(math.sin(uphill), 0, -math.cos(uphill))
+		local plates = Horizon.floor(H, uphill)
+		local big, minU, maxU, wide = 0, math.huge, -math.huge, 0
+		for _, plate in plates do
+			big = math.max(big, plate.size.X, plate.size.Z)
+			local u = plate.centre:Dot(up)
+			local half = plate.size.X / 2
+			minU, maxU = math.min(minU, u - half), math.max(maxU, u + half)
+			wide = math.max(wide, (plate.centre - up * u - Vector3.yAxis * plate.centre.Y).Magnitude + half)
 		end
 		check(
-			`{L.Name}: never as near as the drawn road`,
-			nearAtRoad - L.MaxLag > roadReach,
-			string.format("nearest %.0f with the lag, road drawn to %d", nearAtRoad - L.MaxLag, roadReach)
+			`uphill {uphillDeg}: floor reaches far downhill and to the sides, not further uphill`,
+			big <= 2048 and minU <= -H.Floor.Downhill and math.abs(maxU - H.Floor.Size / 2) < 1e-3 and wide >= H.Floor.Downhill,
+			string.format("%d plates, %.0f..%.0f along uphill, %.0f to the side", #plates, minU, maxU, wide)
 		)
 	end
+	check("a 360 arc is the ring", Horizon.layout(setmetatable({ Arc = 360 }, { __index = H }), 1).triangles == layout.triangles)
 
 	-- the snow peak: its bearing, its height, snow on top
 	local peak = layout.layers[#layout.layers]

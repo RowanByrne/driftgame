@@ -328,8 +328,9 @@ function DriftController:UseSpline(spline: any?)
 		elseif spline.mountain and spline.mountain.mode == "terrain" then
 			self.groundView = GroundTerrainView.new(spline)
 		end
-		-- the mountains round the run, at the height of the road's start (T-150)
-		self.horizon = HorizonView.new(spline.origin.y)
+		-- the mountains round the run, at the height of the road's start (T-150); only its
+		-- uphill half when it has a mountain (T-232)
+		self.horizon = HorizonView.new(spline.origin.y, nil, spline.mountain)
 	end
 	self:_rebuildWorld()
 end
