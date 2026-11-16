@@ -1440,9 +1440,11 @@ function SplineGen._slopeAim(self: Gen, slope: Slope, refine: boolean?): (number
 	dx, dz = dx / dl, dz / dl
 	local cy = self.fall + slope.side * math.pi * 0.5
 	local cx, cz = -dz, dx
-	if cx * -math.sin(cy) + cz * -math.cos(cy) < 0 then
+	local cdot = cx * -math.sin(cy) + cz * -math.cos(cy)
+	if cdot < 0 then
 		cx, cz = dz, -dx
 	end
+	local dbgSwap, dbgOn = false, 0
 	-- the furthest off across the road can head and still keep its grade followable
 	local gFollow = math.tan(math.rad(C.MaxGrade)) * G.FollowGrade
 	local steepest = if S > gFollow then math.asin(gFollow / S) else math.pi * 0.5
@@ -1499,6 +1501,7 @@ function SplineGen._slopeAim(self: Gen, slope: Slope, refine: boolean?): (number
 		if swap then
 			hx, hz, on = ox, oz, oon
 		end
+		dbgSwap, dbgOn = swap, on
 		if on < least then
 			local ax, az = hx - on * r.ux, hz - on * r.uz
 			local al = math.max(math.sqrt(ax * ax + az * az), 1e-9)
@@ -1507,6 +1510,9 @@ function SplineGen._slopeAim(self: Gen, slope: Slope, refine: boolean?): (number
 		end
 	end
 	local aim = math.atan2(-hx, -hz)
+	if (self :: any).debugAim then
+		(self :: any).aimWhy = { S = S, t = t, catch = catch, sc = sc, swap = dbgSwap, on = dbgOn, cdot = math.abs(cdot), plain = aim }
+	end
 	local RR = Config.Range :: any
 	if tgt and slope.kind == "leg" and refine and RR.AimLocal then
 		-- (T-242 trial) the heading checked against h itself, `AimLocalAhead` studs on
