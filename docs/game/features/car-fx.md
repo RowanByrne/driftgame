@@ -11,6 +11,7 @@
 | Remote cars | Not built, and out of scope for this round |
 | A darkness that varies along a mark | **Built, driven and removed** at the user's call, 2026-11-06. One shade of line now; the record of what it was and what it cost is below, so nobody rebuilds it blind |
 | Off the road: grass tears up, gravel dusts, per wheel | **Built** (`T-188`) — `Config/Fx.luau` `Ground`, `Drift/Wheels.luau`; see "Off the road" |
+| Grass and mud ruts that look cut in, laid on the drawn ground | **Built** (`T-265`), waiting on the user's look — see "Ruts cut into the ground" |
 
 The car slides in silence and leaves nothing behind. This is the layer that makes a drift
 *read* — engine note, tyre squeal, tyre marks on the road and smoke off the wheels — ported
@@ -501,8 +502,8 @@ they decide *whether* a wheel marks; the surface decides *what* it leaves.
 | On | Mark | Particles |
 |---|---|---|
 | **Tarmac** | The black line, unchanged | The two smoke layers, unchanged |
-| **Grass, trench off** | A flattened-grass line, darker green (`Grass.FlatMark`) | Green clippings kicked up and back (`Grass.Clippings`) |
-| **Grass, trench on** | Only a wider, near-solid brown trench (`Grass.TrenchMark`, 1.9 studs against 1.2) | Clippings, and brown dirt clods blending in from 22° to full at 40° (`Grass.Dirt`); the clippings drop to half as the dirt fills |
+| **Grass, trench off** | A flattened-grass line, darker green (`Grass.FlatMark`; since `T-265` a pressed core with faint lighter edges) | Green clippings kicked up and back (`Grass.Clippings`) |
+| **Grass, trench on** | Only a wider, near-solid brown trench (`Grass.TrenchMark`; 1.9 studs against 1.2 until `T-265` made it a rut: a dark wet core with churned edges, 3.0 studs) | Clippings, and brown dirt clods blending in from 22° to full at 40° (`Grass.Dirt`); the clippings drop to half as the dirt fills |
 | **Gravel** (the road's bevel, the tight-cliff strips) | A pale scuff (`Gravel.Mark`) | A tan dust cloud (`Gravel.Dust`). **Our choice, kept to one emitter:** loose stone does not burn rubber, so no smoke, and no pebbles |
 
 - **The smoke fades, it is not cut.** Each wheel keeps a mix per kind of ground, walked toward 1 on
@@ -512,7 +513,8 @@ they decide *whether* a wheel marks; the surface decides *what* it leaves.
   ground it is on. In the air the mixes hold.
 - **Green or brown, never both per wheel** (`T-205`, user decision 2026-11-14). The brown trench
   replaces the green line at 30° and green resumes below 25° (hysteresis), so a slide sitting
-  on the threshold cannot chatter it. It uses its own wider attachment pair, 0.04 studs higher.
+  on the threshold cannot chatter it. It used its own wider attachment pair, 0.04 studs higher; since
+  `T-265` both grass marks share four attachments and the same shape ("Ruts cut into the ground").
   Switching emission leaves already-laid marks on earlier parts of the path to fade normally;
   it does not clear or recolour them. The existing `Enabled` switches and zero minimum segment
   length are kept, and the trail instances and attachments are reused across switches.
@@ -524,7 +526,7 @@ they decide *whether* a wheel marks; the surface decides *what* it leaves.
 - **The squeal is unchanged on grass and gravel.** They have no clip, so `SkidSound` plays the
   tarmac one there as it always has; a clip for a surface is the user's pick (see "Open questions").
 
-**The budget**, which these grow:
+**The budget** at `T-207`, which these grew (the current one is in "Ruts cut into the ground"):
 
 ```
 per car = 4 wheels × (2 Attachments + smoking surfaces × (1 Trail + 2 Emitters)
@@ -532,9 +534,10 @@ per car = 4 wheels × (2 Attachments + smoking surfaces × (1 Trail + 2 Emitters
                       + 3 fixed emitter anchors)                     (T-207)
 ```
 
-**64** at one smoking surface, up from 52 before `T-207` and 20 before `T-188`; `Wheels.perWheel()` is the formula. Still built once and
-switched with `Enabled`; `FxTests` drives 1 000 frames with each wheel's ground changing under it
-and counts **64 → 64**.
+**64** at one smoking surface then, up from 52 before `T-207` and 20 before `T-188`; **88 since
+`T-265`**. `Wheels.perWheel()` is the formula. Still built once and switched with `Enabled`;
+`FxTests` drives 1 000 frames with each wheel's ground changing under it and counts them before
+and after.
 
 | Number | Start | What it does |
 |---|---|---|
@@ -544,7 +547,7 @@ and counts **64 → 64**.
 | `Ground.Grass.ClippingsAtFullDirt` | 0.5 | Share of the clippings left once the dirt is full |
 | `Ground.Grass.FullSlipDegrees` | 90 | The debris rates are at their max here |
 | `Ground.Grass.KickAngleDegrees` | 60 | How far back off straight up the debris is thrown |
-| `Ground.Grass.FlatMark`, `TrenchMark`, `Gravel.Mark` | see the file | Colour, transparency; the trench's width and lift |
+| `Ground.Grass.FlatMark`, `TrenchMark`, `Gravel.Mark` | see the file | Colour, transparency (since `T-265` a `Core` and an `Edge` each, with a `DryColour`; the shape is `Grass.Width` / `CoreWidth`) |
 | `Ground.Grass.Clippings`, `Dirt`, `Gravel.Dust` | see the file | Each emitter's look, and `RateMin`..`RateMax` |
 
 **Measured** (`DR-Lane2`, the spline test road, a quiet playtest):
@@ -652,6 +655,95 @@ studs at world height 3 000; preserved lifetimes; reset motion history on `Cut`;
 descendants after cleanup. The effects-off branch checks no emission and excludes inactive
 geometry from visible-width measurements. Console review found only existing Studio plugin/MCP
 messages, and the quiet playtest was stopped. Lane 3 is retained for another user review.
+
+## Ruts cut into the ground (`T-265`)
+
+The user, 2026-11-16, choosing where to start on the drift's effects: *"start with one thing:
+grass and mud marks. lets go from there."* The approved step: ruts that look cut into the
+ground, not a flat brown strip; staying longer than tarmac marks; sitting properly on the
+drawn ground beside the road and on the mountainside past it; the flattened-grass line kept and
+cleaned up to match; the `T-205` rules kept.
+
+### As built
+
+- **A grass mark is three trails side by side:** an edge, the core, an edge, strung across four
+  attachments per wheel (`FxT_<Wheel>_L`, `_IL`, `_IR`, `_R`). The strips meet edge to edge and
+  never overlap, so there is no draw order between them to fight over. **The rut** is a dark wet
+  core (`TrenchMark.Core`, near black-brown, near solid) with churned-soil edges either side
+  (`TrenchMark.Edge`, lighter olive-brown, partly see-through so they blend out into the grass
+  rather than outlining the rut). **The flattened line** has the same shape in greens: a
+  pressed, darker core and faint lighter edges (`FlatMark`). 3.0 studs edge to edge, the core
+  1.4 (`Grass.Width`, `Grass.CoreWidth`); both narrow through a slide like every mark
+  (`Marks.MinWidthRatio`, `T-207`). Flat colours, no texture, nothing uploaded.
+- **They dry as they age.** A trail's colour runs along its length, so each strip goes from
+  `Colour` where it is laid to `DryColour` at its old end: the rut's core lightens from wet to
+  dry earth.
+- **They stay 14 s** (`Ground.MarkSeconds`), against a tarmac mark's 5, and fade over the last
+  40% of that like every mark (`Marks.FadeAt`). `SetMarkSeconds` keeps them in proportion. Gravel
+  scuffs are unchanged (5 s).
+- **They are laid ON the drawn ground, not on the car's plane.** Measured before (`DR-Lane2`,
+  quiet playtests): on the grass runoff the brown trench floated **0.20 to 0.33 studs** over the
+  drawn ground and the green line **0.16 to 0.31**; driven onto the mountainside the trench sank
+  **up to 0.10 under it** (41 of 300 samples). The car's plane through its four contacts is not
+  the ground a stud and a half either side of a tyre, and `Marks.Lift` (0.25) was there to clear
+  the tarmac's ride height. So while a wheel marks grass, `Drift/Wheels` asks the drawn ground
+  for its height under the mark's two outer corners and its centre (`Drift/GroundMeshView`,
+  which `DriftController` passes into `Wheels:Update`, through its `_drawnAt`: the very
+  triangles it drew), puts them `Ground.Lift` (0.08) over it, and lays the two inner corners on
+  the lines between. A corner the ground would move more than `Ground.MaxSnap` (1.5 studs) off
+  the car's plane, or with no drawn ground under it, stays on the plane as before. Three lookups a
+  marking grass wheel a frame, none otherwise. Tarmac and gravel marks are unchanged.
+- **The `T-205` rules are kept:** green or brown per wheel, never both, with the 30° / 25°
+  hysteresis; the two grass marks share the four attachments, only one emits, and laid marks fade
+  normally. Switched with `Enabled` as before: a mark's three strips go on and off together.
+
+**The budget** (`Config/Fx.luau`, `Wheels.perWheel()`):
+
+```
+per car = 4 wheels × (2 Attachments + smoking surfaces × (1 Trail + 2 Emitters)
+                      + 4 Attachments + 7 Trails + 3 Emitters          (T-188, T-265)
+                      + 3 fixed emitter anchors)                      (T-207)
+```
+
+**88** at one smoking surface (22 a wheel), up from 64: two more attachments and four more
+trails a wheel. Built once when the rig is caught, never while driving.
+
+| Number | Start | What it does |
+|---|---|---|
+| `Ground.MarkSeconds` | 14 s | How long a grass mark stays (tarmac: `Marks.Seconds`, 5) |
+| `Ground.Lift` | 0.08 studs | How far a grass mark's corners sit over the drawn ground |
+| `Ground.MaxSnap` | 1.5 studs | The furthest a corner is moved off the car's plane to reach the drawn ground |
+| `Ground.Grass.Width` / `CoreWidth` | 3.0 / 1.4 studs | The mark edge to edge, and its core |
+| `Ground.Grass.TrenchMark.Core` / `.Edge` | see the file | The rut: `Colour`, `DryColour`, `Transparency` per strip |
+| `Ground.Grass.FlatMark.Core` / `.Edge` | see the file | The flattened line, the same three |
+
+**Measured** (`DR-Lane2`, quiet playtests, 2026-11-16; heights by casting down through the drawn
+ground's own mesh under each corner, each inner corner and each strip's middle, every third frame
+of a 5-second drift):
+
+- **On the runoff:** every grass-mark point **0.068 to 0.082 studs** over the drawn ground (outer
+  corners 0.080), **none under it**, across ruts and flattened lines on two runs (2 240 points).
+- **On the mountainside** (drives past the runoff, 6 068 off-road ground probes): ruts
+  **0.076 to 0.094**, flattened lines **0.069 to 0.081**, **none under it** (7 000 and 1 358
+  points).
+- **Every marking grass wheel-frame had all three lookups on the drawn ground** (1 514 of 1 514);
+  **0** strips of one mark out of step; **88** instances throughout.
+- **Cost:** laying one marking grass wheel's corners on the ground takes **14 to 16 µs** a frame,
+  so at most about **0.06 ms** with all four cutting ruts. **Frame time drifting on grass**
+  (Studio unfocused, which caps it): before, mean **8.32 ms**, median 8.38, p99 11.35; after,
+  mean **8.33 ms**, median 8.32 to 8.40, p99 11.35 to 12.9. Interleaved three-quarter-second
+  blocks with the wheel effects on and off on the same drift: **8.31 ms on, 8.34 off** — no
+  measurable cost, with the same unfocused-window caveat as before.
+- `FxTests`: **108 checks pass**, eight new or changed for this: the budget (22 a wheel, 88 a
+  car, 88 → 88 over 1 000 frames), the three strips chained across the four corners and
+  switched together, the 14 s life against 5, the core darker than its edges and drying, a
+  stand-in bumpy ground with every corner on it to **9e-8 studs** and the inner corners on the
+  lines between, the flattened line laid the same way, **no lookups** on tarmac, gravel or
+  coasting on grass and **three a wheel** cutting ruts, and the plane fallback past `MaxSnap` or
+  with no ground drawn.
+- **The look is the user's call.** A first pass had tan edges at (118, 90, 58) and 0.16, which
+  read as piping round a black stripe; they are now muted and part see-through. Screenshots of a
+  fresh rut close up and from mid distance are on the card.
 
 ## Suspension sounds (`T-223`, `T-252`)
 
