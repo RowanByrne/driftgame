@@ -1378,7 +1378,7 @@ end
 -- the road is heading (T-226). Returns the heading (a yaw), how far a bend may stray off it
 -- down the slope and up it, and which way up is (1 left, -1 right; 0 for no side); on the
 -- range, whether a leg's level line has curled back, so the leg should end (T-242).
-function SplineGen._slopeAim(self: Gen, slope: Slope): (number, number, number, number, boolean?)
+function SplineGen._slopeAim(self: Gen, slope: Slope, refine: boolean?): (number, number, number, number, boolean?)
 	local C = Config.Spline
 	local G, M = C.Ground, C.Mountain
 	local f = self.ground :: Ground.Field
@@ -1507,6 +1507,31 @@ function SplineGen._slopeAim(self: Gen, slope: Slope): (number, number, number, 
 		end
 	end
 	local aim = math.atan2(-hx, -hz)
+	local RR = Config.Range :: any
+	if tgt and slope.kind == "leg" and refine and RR.AimLocal then
+		-- (T-242 trial) the heading checked against h itself, `AimLocalAhead` studs on
+		local r = (f.range :: any)
+		local L = RR.AimLocalAhead
+		local best, bestCost = aim, math.huge
+		local n = math.floor(RR.AimLocalSwing / RR.AimLocalStep + 0.5)
+		for i = -n, n do
+			local d = math.rad(i * RR.AimLocalStep)
+			local a = aim + d
+			local ex, ez = -math.sin(a), -math.cos(a)
+			local miss = 0
+			for _, q in { 0.5, 1 } do
+				local hq = followH(f, x + ex * L * q, z + ez * L * q, G.FollowRadius)
+				local need = (hq - y) / (L * q)
+				miss += math.max(0, math.abs(need) - gFollow) * L * q
+			end
+			local on = ex * r.ux + ez * r.uz
+			local cost = miss + RR.AimLocalTurnCost * math.abs(i * RR.AimLocalStep) + RR.AimLocalBackCost * math.max(0, -on)
+			if cost < bestCost then
+				best, bestCost = a, cost
+			end
+		end
+		aim = wrap(best)
+	end
 	if slope.kind ~= "leg" then
 		return aim, 0, 0, 0, false
 	end
@@ -2286,7 +2311,7 @@ function SplineGen.step(self: Gen): Spline.Section?
 				local sl = item.slope or self.lastSlope
 				if sl then
 					self.lastSlope = sl
-					local aim, down, up, upSign, curl = self:_slopeAim(sl)
+					local aim, down, up, upSign, curl = self:_slopeAim(sl, true)
 					self.aim = aim
 					if sl.kind == "leg" then
 						self.limit, self.limitUp, self.upSign = down, up, upSign

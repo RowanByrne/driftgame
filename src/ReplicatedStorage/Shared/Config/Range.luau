@@ -101,4 +101,10 @@ return {
 	FollowStraight = 160, -- studs
 	FollowAimCost = 0.5, -- studs a degree past the aim's limit
 	FollowBackCost = 100, -- studs, heading straight back
+	AimLocal = true,
+	AimLocalAhead = 120, -- studs
+	AimLocalSwing = 60, -- degrees either way
+	AimLocalStep = 10, -- degrees
+	AimLocalTurnCost = 0.3, -- studs a degree off the plan's heading
+	AimLocalBackCost = 60, -- studs, heading straight back
 }
