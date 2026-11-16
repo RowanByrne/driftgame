@@ -98,21 +98,17 @@ local function noise1(x: number, salt: number): number
 	local a, b = hash(i, 0, salt), hash(i + 1, 0, salt)
 	return (a + (b - a) * t) * 2 - 1
 end
-local function noise2(x: number, y: number, salt: number): number
-	local ix, iy = math.floor(x), math.floor(y)
-	local tx, ty = smooth(x - ix), smooth(y - iy)
-	local a = hash(ix, iy, salt) + (hash(ix + 1, iy, salt) - hash(ix, iy, salt)) * tx
-	local b = hash(ix, iy + 1, salt) + (hash(ix + 1, iy + 1, salt) - hash(ix, iy + 1, salt)) * tx
-	return (a + (b - a) * ty) * 2 - 1
-end
 
 -- A tarmac vertex's shade (T-268): darker or lighter by up to `Tone` from smooth noise along
--- the road (over `ToneStuds`, and a finer octave that differs lane to lane), a little warmer
--- or cooler by `ToneHue`. Never above 1: the image is painted 1 / (1 - Tone) brighter, so
--- the tarmac averages its colours.
-function RoadTexture.tone(s: number, d: number): Color3
+-- the road (over `ToneStuds`, and an octave half that), a little warmer or cooler by
+-- `ToneHue`. Never above 1: the image is painted 1 / (1 - Tone) brighter, so the tarmac
+-- averages its colours. ALONG ONLY, AND SLOW, on purpose: a chunk drawn coarse far ahead
+-- (T-263: one strip across, cuts up to 96 studs apart) has only its edges' vertices, so a
+-- tone that differed across the road or changed faster would jump when the chunk is drawn
+-- again whole as the car nears it. (`_d` is unused, kept so callers need not change.)
+function RoadTexture.tone(s: number, _d: number): Color3
 	local T = Config.Spline.Tarmac
-	local n = noise1(s / T.ToneStuds, 11) * 0.65 + noise2(s / (T.ToneStuds * 0.4), d / 20, 12) * 0.35
+	local n = noise1(s / T.ToneStuds, 11) * 0.75 + noise1(s / (T.ToneStuds * 0.5), 12) * 0.25
 	local k = 1 - T.Tone + T.Tone * math.clamp(n, -1, 1)
 	local h = T.ToneHue * noise1(s / (T.ToneStuds * 1.7), 13)
 	return Color3.new(math.min(1, k * (1 + h)), k, math.min(1, k * (1 - h)))

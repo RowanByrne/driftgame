@@ -287,9 +287,10 @@ local Spline = {
 		SliceMs = 3, -- ms of painting a frame (it is painted once, as the client loads)
 		Seed = 268,
 		-- the tone of each tarmac vertex, so the period never shows as a repeat: darker by up
-		-- to 2 x `Tone` from smooth noise over `ToneStuds` of road, a little warmer or cooler
+		-- to 2 x `Tone` from smooth noise over `ToneStuds` of road, a little warmer or cooler.
+		-- Kept slow (200+), so a chunk drawn coarse far ahead (cuts 96 studs apart) shades alike
 		Tone = 0.09,
-		ToneStuds = 120,
+		ToneStuds = 200,
 		ToneHue = 0.03,
 		-- the grain: large soft mottling, painterly strokes stretched along, and fine speckle
 		Mottle = 0.06,
