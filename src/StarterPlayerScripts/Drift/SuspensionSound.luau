@@ -26,8 +26,10 @@
 --   `ClunkCooldown`: the front pair over the bevel's edge, then the rear pair, are four.
 --
 --   THE CATCH, stepping down. A wheel whose ground falls away faster than it may drop
---   (`DropTime`) is drawn falling; once it reaches its ground again, having fallen at least
---   `CatchMin`, it knocks: the same clunk as a step up of that height, times `CatchShare`.
+--   (`DropTime`) is drawn falling; once it is back on its ground, if that ground is at least
+--   `CatchMin` lower (over its plane) than the ground it left, it knocks: the same clunk as a
+--   step up of that height, times `CatchShare`. A wheel the BODY lifted off its ground (the
+--   rebound off a bump) comes back to the ground it left, and is silent.
 --
 --   THE LANDING. No wheel down for at least `LandAirTime`, then one touches: the car has
 --   landed, falling at the fastest its vertical speed reached in the air. At
@@ -88,7 +90,12 @@ export type SuspensionSound = typeof(setmetatable(
 		prevZ: { number },
 		havePrev: { boolean },
 		prevTravel: { number },
-		dropped: { number }, -- studs each wheel has been drawn falling, since it last followed its ground
+		-- per wheel, while it is off its ground (drawn falling, or hanging): the ground it left
+		-- and where it stood then. A catch is measured against it
+		leftGround: { number },
+		leftX: { number },
+		leftZ: { number },
+		away: { boolean },
 		readyAt: { number }, -- per wheel: the clock at which it may clunk again
 		gapUntil: number, -- the clock before which no wheel clunks (`ClunkGap`)
 		quietUntil: number, -- the clock before which no wheel clunks (`LandQuiet`)
@@ -103,7 +110,8 @@ export type SuspensionSound = typeof(setmetatable(
 		touchdowns: number, -- landings that were too soft to play
 		held: number, -- clunks that would have played but for a cooldown, the gap or a landing
 		maxRate: { number }, -- per wheel, the most its ground rose over its plane, studs/s
-		maxDrop: { number }, -- per wheel, the furthest it was drawn falling, studs
+		maxDrop: { number }, -- per wheel, the furthest its ground fell while it was off it, studs
+		notes: { any }, -- the steps a wheel's ground rose at half `ClunkRate` or more
 		-- THE OLD RULE, counted and never played (T-252's before-and-after): a down wheel's
 		-- travel closing faster than `ClunkRate`, each wheel on its own cooldown
 		maxClose: { number },
@@ -136,8 +144,8 @@ function SuspensionSound.clunkVolume(rate: number, speed: number): number
 	return lerp(S.ClunkMinVolume, S.ClunkMaxVolume, t) * share
 end
 
--- A wheel caught after falling `drop` studs: the clunk of a step up that high, made in one
--- step of `dt`, times `CatchShare`; 0 under `CatchMin`.
+-- A wheel caught on ground `drop` studs lower than it left: the clunk of a step up that high,
+-- made in one step of `dt`, times `CatchShare`; 0 under `CatchMin`.
 function SuspensionSound.catchVolume(drop: number, speed: number, dt: number): number
 	local S = Config.Fx.Suspension
 	if drop < S.CatchMin or S.CatchShare <= 0 then
@@ -174,7 +182,10 @@ function SuspensionSound.new(): SuspensionSound
 		prevZ = table.create(WHEELS, 0),
 		havePrev = table.create(WHEELS, false),
 		prevTravel = { -1, 0, 0, 0 }, -- -1: no travel yet, `Step` takes the first as it is
-		dropped = table.create(WHEELS, 0),
+		leftGround = table.create(WHEELS, 0),
+		leftX = table.create(WHEELS, 0),
+		leftZ = table.create(WHEELS, 0),
+		away = table.create(WHEELS, false),
 		readyAt = table.create(WHEELS, 0),
 		gapUntil = 0,
 		quietUntil = 0,
@@ -189,6 +200,7 @@ function SuspensionSound.new(): SuspensionSound
 		held = 0,
 		maxRate = table.create(WHEELS, 0),
 		maxDrop = table.create(WHEELS, 0),
+		notes = {},
 		maxClose = table.create(WHEELS, 0),
 		closeClunks = 0,
 		closeReadyAt = table.create(WHEELS, 0),
@@ -260,7 +272,7 @@ function SuspensionSound.Cut(self: SuspensionSound)
 	for i = 1, WHEELS do
 		self.havePrev[i] = false
 		self.readyAt[i] = 0
-		self.dropped[i] = 0
+		self.away[i] = false
 	end
 	self.prevTravel[1] = -1 -- no travel yet: `Step` takes the first one as it is
 	for _, sound in self.voices do
@@ -335,7 +347,8 @@ function SuspensionSound._clunk(
 	rate: number,
 	volume: number,
 	speed: number,
-	catch: boolean
+	catch: boolean,
+	surface: string?
 )
 	local S = Config.Fx.Suspension
 	local now = self.clock
@@ -353,7 +366,7 @@ function SuspensionSound._clunk(
 	end
 	self.readyAt[i] = now + S.ClunkCooldown
 	self.gapUntil = math.max(self.gapUntil, now + S.ClunkGap)
-	local entry = { at = now, wheel = i, rate = rate, speed = speed, volume = volume, catch = catch }
+	local entry = { at = now, wheel = i, rate = rate, speed = speed, volume = volume, catch = catch, surface = surface }
 	self.lastClunk = entry
 	if #self.log < LOG_MAX then
 		table.insert(self.log, entry)
@@ -454,17 +467,28 @@ function SuspensionSound.Step(self: SuspensionSound, dt: number, state: DriftMod
 		local corner = y + right.Y * (SIDE[i] * halfTrack) - u.Y * D.RideHeight + fwd.Y * (FRONT[i] * halfBase)
 		local ground = corner + (t - rest) * uy
 
-		-- THE CATCH: a wheel back on its ground after being drawn falling.
-		if falling then
-			self.dropped[i] += (pt - t) * uy
-			if self.dropped[i] > self.maxDrop[i] then
-				self.maxDrop[i] = self.dropped[i]
+		-- THE CATCH: a wheel back on its ground after being off it. Off it is drawn falling
+		-- or hanging, which the BODY rising off a bump does too -- so what knocks is how far
+		-- the GROUND fell meanwhile, against the plane the car is on: a bouncing body comes
+		-- back down to the ground it left and is silent.
+		if falling or down[i] ~= true then
+			if not self.away[i] and self.havePrev[i] then
+				self.away[i] = true
+				self.leftGround[i] = self.prevGround[i]
+				self.leftX[i], self.leftZ[i] = self.prevX[i], self.prevZ[i]
 			end
-		elseif down[i] == true and self.dropped[i] > 0 then
-			local drop = self.dropped[i]
-			self.dropped[i] = 0
+		elseif self.away[i] then
+			self.away[i] = false
+			local dx, dz = wx - self.leftX[i], wz - self.leftZ[i]
+			local planeRise = if n.Y > 0.3 then -(n.X * dx + n.Z * dz) / n.Y else 0
+			local drop = self.leftGround[i] + planeRise - ground
+			if drop > self.maxDrop[i] then
+				self.maxDrop[i] = drop
+			end
 			local volume = SuspensionSound.catchVolume(drop, speed, dt)
-			self:_clunk(i, drop / dt, volume, speed, true)
+			if volume > 0 then
+				self:_clunk(i, drop / dt, volume, speed, true, s.wheelSurface[i])
+			end
 		end
 
 		-- THE CLUNK: this wheel's ground rose faster than the plane the car is on says it should.
@@ -478,8 +502,19 @@ function SuspensionSound.Step(self: SuspensionSound, dt: number, state: DriftMod
 			if rate > self.maxRate[i] then
 				self.maxRate[i] = rate
 			end
+			if rate >= S.ClunkRate * 0.5 and #self.notes < LOG_MAX * 2 then
+				table.insert(self.notes, {
+					at = now,
+					wheel = i,
+					rate = rate,
+					speed = speed,
+					surface = s.wheelSurface[i],
+					x = wx,
+					z = wz,
+				})
+			end
 			if rate >= S.ClunkRate then
-				self:_clunk(i, rate, SuspensionSound.clunkVolume(rate, speed), speed, false)
+				self:_clunk(i, rate, SuspensionSound.clunkVolume(rate, speed), speed, false, s.wheelSurface[i])
 			end
 		end
 
@@ -508,6 +543,7 @@ function SuspensionSound.ResetMeasure(self: SuspensionSound)
 		maxClose = table.clone(self.maxClose),
 		closeClunks = self.closeClunks,
 		log = self.log,
+		notes = self.notes,
 		lastClunk = self.lastClunk,
 		lastLanding = self.lastLanding,
 	}
@@ -520,6 +556,7 @@ function SuspensionSound.ResetMeasure(self: SuspensionSound)
 	end
 	self.closeClunks = 0
 	self.log = {}
+	self.notes = {}
 	self.lastClunk, self.lastLanding = nil, nil
 	return out
 end
