@@ -94,20 +94,30 @@ function Tests.run()
 		local BUDGET, GROWABLE = 81000, 10400 -- triangles (measured, T-225 and T-230)
 		local G = Config.Spline.Ground
 		local tileTris = G.TileCells * G.TileCells * 2
-		local mean = tris / math.max(1, built)
+		-- (as the game draws them, whoever draws the runoff: the chunks above draw it
+		-- themselves for the checks that read it, which costs more than the game pays)
 		local F = M.Far
-		local farTris, farBuilt = 0, 0
+		local wholeTris, farTris, sampled = 0, 0, 0
 		for i = 0, math.min(chunks, 8) - 1 do
 			local s0, s1 = i * L, math.min((i + 1) * L, spline.length)
-			local model, info = SplineMesh.build(spline, s0, s1, folder, { runoffBy = "road", tolerance = F.Tolerance, maxStep = F.MaxStep, across = F.Across })
-			if model then
-				farTris += info.triangles
-				farBuilt += 1
-				SplineMesh.destroy(model)
+			local whole, wi = SplineMesh.build(spline, s0, s1, folder, {})
+			local far, fi = SplineMesh.build(spline, s0, s1, folder, { tolerance = F.Tolerance, maxStep = F.MaxStep, across = F.Across })
+			if whole and far then
+				wholeTris += wi.triangles
+				farTris += fi.triangles
+				sampled += 1
 			end
+			if whole then
+				SplineMesh.destroy(whole)
+			end
+			if far then
+				SplineMesh.destroy(far)
+			end
+			task.wait()
 		end
-		local farMean = farTris / math.max(1, farBuilt)
-		check("a far chunk costs much less than a whole one", farBuilt > 0 and farMean < mean * 0.6, `far {math.floor(farMean)} triangles, whole {math.floor(mean)}`)
+		local mean = wholeTris / math.max(1, sampled)
+		local farMean = farTris / math.max(1, sampled)
+		check("a far chunk costs much less than a whole one", sampled > 0 and farMean < mean * 0.6, `far {math.floor(farMean)} triangles, whole {math.floor(mean)}, over {sampled} chunks`)
 		local nearChunks = math.ceil((M.Near.Ahead + M.Near.Behind) / L) + 1
 		local ultraTiles = G.Detail[#G.Detail].Tiles
 		local lines, worstShare, worstName = {}, 0, ""
