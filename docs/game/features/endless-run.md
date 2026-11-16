@@ -204,8 +204,11 @@ even on the press, which is its own small decision and is listed below.
 
 ## Testing
 
-`ServerScriptService/Tests/RunTests.luau`, **15 checks**, run from the server debug bridge **in a
-playtest**:
+`ServerScriptService/Tests/RunTests.luau`, **17 checks on the spline road since `T-250`** (rewritten
+when the piece road went, `legacy-removal.md`: the parts and `Workspace.Road` checks became checks of
+the generator, the window and `closingS`; the list at the top of the file says what was dropped and
+why). The numbers below are from the piece road and are kept as the record. Run from the server
+debug bridge **in a playtest**:
 
 ```
 game.ServerStorage.DebugBridge:Invoke("DebugRunTests", "run")
