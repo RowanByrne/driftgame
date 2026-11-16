@@ -16,6 +16,7 @@ local Garage = require(script.Parent.GarageController)
 local Cmdr = require(script.Parent.CmdrController)
 local GroundDetail = require(script.Parent.Parent:WaitForChild("Drift"):WaitForChild("GroundDetail"))
 local RoadBehind = require(script.Parent.Parent:WaitForChild("Drift"):WaitForChild("RoadBehind"))
+local SoundLevels = require(script.Parent.Parent:WaitForChild("Drift"):WaitForChild("SoundLevels"))
 local Settings = { Priority = -10 }
 
 function Settings:Init()
@@ -58,6 +59,8 @@ function Settings:_draw()
 		data.roadBehind = RoadBehind.get()
 		data.behindNames = {}
 		for i = 1, RoadBehind.count() do data.behindNames[i] = RoadBehind.name(i) end
+		-- Sound: each category's volume, this device's own (T-256)
+		data.soundLevels = SoundLevels.all()
 	end
 	self.view:setData(data)
 end
@@ -117,16 +120,26 @@ function Settings:Close()
 	return true
 end
 
-function Settings:_action(action, value)
+function Settings:_action(action, value, level)
 	if action == "open" then self:Open(); return end
 	if not self.effective then return end
 	if action == "close" then self:Close()
 	elseif action == "category" then
-		if value == "steering" or value == "interface" or value == "graphics" then self.category = value; self:_draw() end
+		if value == "steering" or value == "interface" or value == "graphics" or value == "sound" then self.category = value; self:_draw() end
 	elseif action == "groundDetail" then
 		if self.fixture then
 			if type(value) == "number" then self.fixture.groundDetail = value end
 		elseif GroundDetail.set(value) then
+			self.changes += 1
+		end
+		self:_draw()
+	elseif action == "soundLevel" then
+		if self.fixture then
+			if type(value) == "string" and type(level) == "number" then
+				self.fixture.soundLevels = table.clone(self.fixture.soundLevels or {})
+				self.fixture.soundLevels[value] = level
+			end
+		elseif SoundLevels.get(value) ~= level and SoundLevels.set(value, level) then
 			self.changes += 1
 		end
 		self:_draw()
@@ -223,9 +236,10 @@ function Settings:DebugState()
 		blurSize = self.blur and self.blur.Size, category = self.category, fixture = self.fixture ~= nil,
 		values = CarInput:GetSettings(), groundDetail = GroundDetail.get(), groundDetailName = GroundDetail.name(),
 		roadBehind = RoadBehind.get(), roadBehindName = RoadBehind.name(), roadBehindStuds = RoadBehind.studs(),
+		soundLevels = SoundLevels.all(),
 		view = self.view and self.view:describe()}
 end
-function Settings:DebugAction(action, value) self:_action(action, value); return self:DebugState() end
+function Settings:DebugAction(action, value, level) self:_action(action, value, level); return self:DebugState() end
 function Settings:DebugFixture(name)
 	assert(RunService:IsStudio(), "Studio only")
 	assert(name == nil or Fixtures[name], "Unknown settings fixture")

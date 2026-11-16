@@ -56,7 +56,19 @@ squeal too loud twice, so its peak is now 0.85 × 0.40 = **0.340**, while the en
 **0.45**. The squeal is under the engine at every moment. It is left that way deliberately rather
 than quietly put back: **if the drift stops reading over the engine, the engine comes down.**
 
-Player volume controls wait for a settings screen (`SETTINGS.md`, the UI phase).
+**The player's levels sit on top of this mix** (T-256): Settings has a Sound tab with one slider per
+category, 0 to 100%, default 100%, kept for the session on this device (`Drift/SoundLevels`,
+`SETTINGS.md`). Each category is a `SoundGroup` in `SoundService` (`SoundLevel_<Category>`), and a
+sound plays at its own volume times its group's, so a slider scales what the code above sets and
+never changes `Config.Fx`:
+
+| Category | Sounds in it |
+|---|---|
+| Music | None yet. A music sound joins with `SoundLevels.apply(sound, "Music")` |
+| Tire squeal | The tarmac skid clip (`Drift/SkidSound`) |
+| Off-road drift | Every other skid clip: the dirt slide, played on grass, dirt and gravel |
+| Suspension | The clunks, catches and landing slam (`Drift/SuspensionSound`) |
+| Engine | Every engine loop, layered or the single clip (`Drift/EngineSound`) |
 
 ## Sounds
 

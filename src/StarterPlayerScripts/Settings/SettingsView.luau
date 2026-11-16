@@ -32,6 +32,16 @@ local function makeSlider(name, parent)
 	return slider, track, fill, knob
 end
 
+-- The Sound tab's rows, in order (T-256). `key` is the `Drift/SoundLevels` category.
+local SOUND_ROWS = {
+	{ key = "Music", label = "Music", note = "No music plays yet. This level is kept for when it does." },
+	{ key = "TireSqueal", label = "Tire squeal" },
+	{ key = "OffRoad", label = "Off-road drift", note = "Sliding on grass, dirt and gravel." },
+	{ key = "Suspension", label = "Suspension", note = "Bumps, kerbs and landing from a jump." },
+	{ key = "Engine", label = "Engine" },
+}
+local SOUND_STEP = 10
+
 function View.new(parent)
 	local self = setmetatable({ ActionRequested = Signal.new(), connections = {}, offsets = {}, data = {}, opened = false }, View)
 	self.gui = Create("ScreenGui", { Name = "Settings", ResetOnSpawn = false, IgnoreGuiInset = true,
@@ -58,7 +68,8 @@ function View.new(parent)
 	self.navSteer = Glass.button("SteeringTab", self.pane, "Steering")
 	self.navUI = Glass.button("InterfaceTab", self.pane, "Interface")
 	self.navGfx = Glass.button("GraphicsTab", self.pane, "Graphics")
-	for _, pair in { {self.navSteer, "steering"}, {self.navUI, "interface"}, {self.navGfx, "graphics"} } do
+	self.navSnd = Glass.button("SoundTab", self.pane, "Sound")
+	for _, pair in { {self.navSteer, "steering"}, {self.navUI, "interface"}, {self.navGfx, "graphics"}, {self.navSnd, "sound"} } do
 		pair[1].Activated:Connect(function() self.ActionRequested:Fire("category", pair[2]) end)
 	end
 	self.scroll = Create("ScrollingFrame", { Name = "Content", BackgroundTransparency = 1, BorderSizePixel = 0,
@@ -146,12 +157,40 @@ function View.new(parent)
 			self:_fromX(input.Position.X)
 		end
 	end)
+	-- Sound: one volume slider per category, 0-100% (T-256)
+	self.sound = Glass.panel("SoundControls", self.scroll, true)
+	self.sndHeading = Glass.label("Heading", self.sound, "Sound", true)
+	self.soundRows = {}
+	for _, row in SOUND_ROWS do
+		local key = row.key
+		local r = { key = key }
+		r.label = Glass.label(key .. "Label", self.sound, row.label)
+		r.value = Glass.label(key .. "Value", self.sound, "100%", true)
+		r.value.TextXAlignment = Enum.TextXAlignment.Right
+		r.minus = Glass.button(key .. "Decrease", self.sound, "-")
+		r.plus = Glass.button(key .. "Increase", self.sound, "+")
+		r.slider, r.track, r.fill, r.knob = makeSlider(key .. "Volume", self.sound)
+		r.slider:SetAttribute("SoundKey", key)
+		if row.note then
+			r.note = Glass.label(key .. "Note", self.sound, row.note)
+			r.note.TextColor3 = Theme.Color.Secondary
+		end
+		r.minus.Activated:Connect(function() self:nudgeSound(key, -1) end)
+		r.plus.Activated:Connect(function() self:nudgeSound(key, 1) end)
+		r.slider.InputBegan:Connect(function(input)
+			if self.opened and (input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch) then
+				self.drag, self.dragSlider = input, r.slider
+				self:_fromX(input.Position.X)
+			end
+		end)
+		table.insert(self.soundRows, r)
+	end
 	self.back = Glass.button("Back", self.pane, "Back to drive")
 	self.back.Activated:Connect(function() self.ActionRequested:Fire("close") end)
 	self.session = Glass.label("Session", self.pane, "Session only")
 	self.session.TextColor3 = Theme.Color.Secondary
 	self.session.TextXAlignment = Enum.TextXAlignment.Right
-	for _, object in {self.navSteer, self.navUI, self.navGfx, self.close, self.back, self.steering, self.interface, self.graphics} do object:SetAttribute("LayoutItem", object.Name) end
+	for _, object in {self.navSteer, self.navUI, self.navGfx, self.navSnd, self.close, self.back, self.steering, self.interface, self.graphics, self.sound} do object:SetAttribute("LayoutItem", object.Name) end
 	self:_connect(UserInputService.InputChanged, function(input)
 		if self.drag and self.opened and self.modal.AbsoluteSize.X > 1 then
 			if input == self.drag or (self.drag.UserInputType == Enum.UserInputType.MouseButton1 and input.UserInputType == Enum.UserInputType.MouseMovement) then self:_fromX(input.Position.X) end
@@ -177,7 +216,10 @@ function View:_fromX(x)
 	local width = slider.AbsoluteSize.X
 	if width <= 1 then return end
 	local t = math.clamp((x - slider.AbsolutePosition.X) / width, 0, 1)
-	if slider == self.groundSlider then
+	local soundKey = slider:GetAttribute("SoundKey")
+	if soundKey then
+		self.ActionRequested:Fire("soundLevel", soundKey, math.floor(t * 100 + 0.5))
+	elseif slider == self.groundSlider then
 		local count = self:_groundCount()
 		self.ActionRequested:Fire("groundDetail", math.floor(1 + t * (count - 1) + 0.5))
 	elseif slider == self.behindSlider then
@@ -196,9 +238,20 @@ end
 function View:nudgeBehind(delta)
 	if self.opened then self.ActionRequested:Fire("roadBehind", math.clamp((self.data.roadBehind or 3) + delta, 1, self:_behindCount())) end
 end
+function View:_soundLevel(key) return (self.data.soundLevels or {})[key] or 100 end
+-- +/- moves a sound level to the next whole step of 10%.
+function View:nudgeSound(key, delta)
+	if not self.opened then return end
+	local level = self:_soundLevel(key)
+	local target = if delta > 0 then math.floor(level / SOUND_STEP + 1e-6) * SOUND_STEP + SOUND_STEP
+		else math.ceil(level / SOUND_STEP - 1e-6) * SOUND_STEP - SOUND_STEP
+	self.ActionRequested:Fire("soundLevel", key, math.clamp(target, 0, 100))
+end
 -- Left/right on a focused slider: true if one was focused.
 function View:nudgeSelected(delta)
 	local selected = GuiService.SelectedObject
+	local soundKey = selected and selected:GetAttribute("SoundKey")
+	if soundKey then self:nudgeSound(soundKey, delta); return true end
 	if selected == self.slider then self:nudge(delta); return true end
 	if selected == self.groundSlider then self:nudgeGround(delta); return true end
 	if selected == self.behindSlider then self:nudgeBehind(delta); return true end
@@ -237,15 +290,28 @@ function View:setData(data)
 	self.behindFill.Size = UDim2.fromScale(b, 1)
 	self.behindKnob.Position = UDim2.fromScale(b, 0.5)
 	self.behindRange.Text = if data.behindNames then data.behindNames[1] .. " - " .. data.behindNames[behindCount] else "1 - " .. behindCount
+	self.navSnd:SetAttribute("Selected", self.data.category == "sound")
+	for _, r in self.soundRows do
+		local level = math.clamp(self:_soundLevel(r.key), 0, 100)
+		r.value.Text = level .. "%"
+		r.fill.Size = UDim2.fromScale(level / 100, 1)
+		r.knob.Position = UDim2.fromScale(level / 100, 0.5)
+	end
 	self.steering.Visible = self.data.category == "steering"
 	self.interface.Visible = self.data.category == "interface"
 	self.graphics.Visible = self.data.category == "graphics"
+	self.sound.Visible = self.data.category == "sound"
 	if changedCategory then
 		self:cancelDrag()
 		self.scroll.CanvasPosition = Vector2.zero
+		-- Focus left on a page that just hid goes to the tab of the page now showing.
 		local selected = GuiService.SelectedObject
-		if selected and self.data.category ~= "steering" and selected:IsDescendantOf(self.steering) then GuiService.SelectedObject = if self.data.category == "graphics" then self.navGfx else self.navUI end
-		if selected and self.data.category ~= "graphics" and selected:IsDescendantOf(self.graphics) then GuiService.SelectedObject = if self.data.category == "steering" then self.navSteer else self.navUI end
+		local tabs = {steering = self.navSteer, interface = self.navUI, graphics = self.navGfx, sound = self.navSnd}
+		if selected and selected:IsDescendantOf(self.scroll) then
+			for _, panel in {self.steering, self.interface, self.graphics, self.sound} do
+				if not panel.Visible and selected:IsDescendantOf(panel) then GuiService.SelectedObject = tabs[self.data.category] or self.navSteer end
+			end
+		end
 	end
 	self:_layout()
 end
@@ -261,8 +327,10 @@ function View:_layout()
 		if item:IsA("TextLabel") or item:IsA("TextButton") then item.TextSize = fontSize end
 	end
 	for _, label in {self.subtitle, self.session, self.modeNote, self.note, self.uiNote, self.range, self.groundRange, self.groundNote, self.behindRange, self.behindNote} do label.TextSize = secondary end
+	for _, r in self.soundRows do if r.note then r.note.TextSize = secondary end end
 	self.title.TextSize = math.floor(30 * math.min(scale, 1.2))
 	self.heading.TextSize, self.uiHeading.TextSize, self.gfxHeading.TextSize = math.floor(22 * scale), math.floor(22 * scale), math.floor(22 * scale)
+	self.sndHeading.TextSize = math.floor(22 * scale)
 	-- GetInsetArea rectangles share the core-UI origin. Translate into this full-screen GUI.
 	local full = GuiService:GetInsetArea(Enum.ScreenInsets.None)
 	local safe = GuiService:GetInsetArea(Enum.ScreenInsets.CoreUISafeInsets)
@@ -291,20 +359,23 @@ function View:_layout()
 		rect(self.navSteer, 24, navY, 184, 56)
 		rect(self.navUI, 24, navY + 68, 184, 56)
 		rect(self.navGfx, 24, navY + 136, 184, 56)
+		rect(self.navSnd, 24, navY + 204, 184, 56)
 		contentX, contentY, contentW = 232, navY, w - 256
 	else
-		-- three tabs in a row while each keeps room for its word; else two rows
-		local navW3 = (w - 72) / 3
-		if navW3 >= 120 * scale then
-			rect(self.navSteer, 24, navY, navW3, 48)
-			rect(self.navUI, 36 + navW3, navY, navW3, 48)
-			rect(self.navGfx, 48 + 2 * navW3, navY, navW3, 48)
+		-- four tabs in a row while each keeps room for its word; else two rows of two
+		local navW4 = (w - 84) / 4
+		if navW4 >= 120 * scale then
+			rect(self.navSteer, 24, navY, navW4, 48)
+			rect(self.navUI, 36 + navW4, navY, navW4, 48)
+			rect(self.navGfx, 48 + 2 * navW4, navY, navW4, 48)
+			rect(self.navSnd, 60 + 3 * navW4, navY, navW4, 48)
 			contentX, contentY, contentW = 20, navY + 60, w - 40
 		else
 			local navW = (w - 60) / 2
 			rect(self.navSteer, 24, navY, navW, 48)
 			rect(self.navUI, 36 + navW, navY, navW, 48)
 			rect(self.navGfx, 24, navY + 60, navW, 48)
+			rect(self.navSnd, 36 + navW, navY + 60, navW, 48)
 			contentX, contentY, contentW = 20, navY + 120, w - 40
 		end
 	end
@@ -397,8 +468,24 @@ function View:_layout()
 	label(self.behindNote, 48 * scale)
 	rect(self.graphics, 0, 0, contentW, y + 8)
 	local graphicsH = y + 12
+	y = 18
+	label(self.sndHeading, 32 * scale)
+	for i, r in self.soundRows do
+		if i > 1 then y += 8 end
+		local rowY = y
+		label(r.label, 28 * scale, inner - 124)
+		rect(r.value, inner - 96, rowY, 110, math.max(28 * scale, 36))
+		rect(r.minus, 14, y, 48, 48)
+		rect(r.slider, 74, y, inner - 120, 48)
+		rect(r.plus, inner - 34, y, 48, 48)
+		y += 58
+		if r.note then label(r.note, 24 * scale) end
+	end
+	rect(self.sound, 0, 0, contentW, y + 8)
+	local soundH = y + 12
 	self.scroll.CanvasSize = UDim2.fromOffset(0, if self.data.category == "interface" then interfaceH
-		elseif self.data.category == "graphics" then graphicsH else steeringH + 4)
+		elseif self.data.category == "graphics" then graphicsH
+		elseif self.data.category == "sound" then soundH else steeringH + 4)
 	rect(self.back, 24, h - 64, math.min(200, w - 48), 48)
 	self.session.Visible = w >= 500
 	rect(self.session, w - 224, h - 60, 200, 40)
@@ -411,11 +498,15 @@ function View:_layout()
 end
 
 function View:_focusOrder()
-	local list = {self.navSteer, self.navUI, self.navGfx}
+	local list = {self.navSteer, self.navUI, self.navGfx, self.navSnd}
 	if self.data.category == "steering" then
 		for _, item in {self.dynamic, self.centred, self.minus, self.slider, self.plus} do table.insert(list, item) end
 	elseif self.data.category == "graphics" then
 		for _, item in {self.groundMinus, self.groundSlider, self.groundPlus, self.behindMinus, self.behindSlider, self.behindPlus} do table.insert(list, item) end
+	elseif self.data.category == "sound" then
+		for _, r in self.soundRows do
+			for _, item in {r.minus, r.slider, r.plus} do table.insert(list, item) end
+		end
 	end
 	table.insert(list, self.back)
 	table.insert(list, self.close)
@@ -436,6 +527,7 @@ function View:activateSelected()
 	if selected == self.navSteer then self.ActionRequested:Fire("category", "steering")
 	elseif selected == self.navUI then self.ActionRequested:Fire("category", "interface")
 	elseif selected == self.navGfx then self.ActionRequested:Fire("category", "graphics")
+	elseif selected == self.navSnd then self.ActionRequested:Fire("category", "sound")
 	elseif selected == self.groundMinus then self:nudgeGround(-1)
 	elseif selected == self.groundPlus then self:nudgeGround(1)
 	elseif selected == self.behindMinus then self:nudgeBehind(-1)
@@ -444,7 +536,13 @@ function View:activateSelected()
 	elseif selected == self.centred then self.ActionRequested:Fire("mode", "centred")
 	elseif selected == self.minus then self:nudge(-1)
 	elseif selected == self.plus then self:nudge(1)
-	elseif selected == self.close or selected == self.back then self.ActionRequested:Fire("close") end
+	elseif selected == self.close or selected == self.back then self.ActionRequested:Fire("close")
+	else
+		for _, r in self.soundRows do
+			if selected == r.minus then self:nudgeSound(r.key, -1)
+			elseif selected == r.plus then self:nudgeSound(r.key, 1) end
+		end
+	end
 end
 function View:show()
 	self.opened, self.modal.Visible, self.entry.Visible = true, true, false

@@ -125,3 +125,12 @@ A third category, **Graphics**, holds one row: **Ground detail**, a five-step sl
 - **Layout:** in the wide layout the rail gets a third tab. In compact layouts the three tabs share one row while each is at least 120 px (scaled with text size), else Graphics drops to a second row and the content moves down.
 - **Input:** the tab, -, slider and + join the focus order; Left/Right nudge whichever slider has focus (`SettingsView:nudgeSelected`); Enter on - or + steps it. Mouse and touch drag the slider like the sensitivity one.
 - **Fixtures:** `graphics` and `largestGraphics` (largest text, opaque panes).
+
+## Sound (T-256)
+
+A fourth category, **Sound**, asked for by the user on 2026-11-16: one volume slider per category, Music, Tire squeal, Off-road drift, Suspension and Engine, each 0 to 100% with - and + (10% steps) and the percent on the right. Music has nothing to scale yet; its level is kept for when music exists.
+
+- **Where it lives:** `Drift/SoundLevels` holds the five levels for this device and session, like Ground detail, and keeps one `SoundGroup` per category in `SoundService`. The engine, skid and suspension sounds join their group when they are made, so a level scales them on top of the mix (AUDIO.md "Mix"), live while dragging. No remote and nothing saved.
+- **Layout:** the wide rail gets a fourth tab. In compact layouts the four tabs share one row while each is at least 120 px (scaled with text size), else they make two rows of two.
+- **Input:** as Graphics: the tab and each row's -, slider and + join the focus order; Left/Right nudge a focused slider.
+- **Fixtures:** `sound` and `largestSound`.

@@ -67,6 +67,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Config = require(ReplicatedStorage.Shared.Config)
 local DriftModel = require(script.Parent.Model)
+local SoundLevels = require(script.Parent.SoundLevels)
 local Wheels = require(script.Parent.Wheels)
 
 -- An agent's playtest makes no sound. Asked ONCE, at client start -- see the same block in
@@ -261,6 +262,9 @@ function SkidSound.Attach(self: SkidSound, rig: any): boolean
 		sound.RollOffMinDistance = S.RollOffMin
 		sound.RollOffMaxDistance = S.RollOffMax
 		sound.Volume = 0
+		-- The player's level on top of the mix (Settings, Sound; T-256): the tarmac clip is
+		-- the tire squeal, every other clip the off-road slide.
+		SoundLevels.apply(sound, if surface == "tarmac" then "TireSqueal" else "OffRoad")
 		sound.Parent = body
 		table.insert(self.sounds, { surface = surface, sound = sound, playing = false, mix = 0 })
 	end

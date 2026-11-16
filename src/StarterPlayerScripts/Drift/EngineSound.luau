@@ -37,6 +37,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Config = require(ReplicatedStorage.Shared.Config)
 local DriftModel = require(script.Parent.Model)
 local Engine = require(script.Parent.Engine)
+local SoundLevels = require(script.Parent.SoundLevels)
 
 -- An agent's playtest makes no sound (docs/workflow/TESTING.md "Studio test kit"). Asked
 -- ONCE, here, at client start. The LOGIC is unaffected: the rpm, the gear, the pitches and
@@ -236,6 +237,8 @@ local function makeSound(name: string, id: string): Sound
 	sound.RollOffMinDistance = E.RollOffMin
 	sound.RollOffMaxDistance = E.RollOffMax
 	sound.Volume = 0
+	-- The player's Engine level scales it on top of the mix (Settings, Sound; T-256).
+	SoundLevels.apply(sound, "Engine")
 	return sound
 end
 

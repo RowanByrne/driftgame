@@ -52,6 +52,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Config = require(ReplicatedStorage.Shared.Config)
 local DriftModel = require(script.Parent.Model)
+local SoundLevels = require(script.Parent.SoundLevels)
 local Suspension = require(script.Parent.Suspension)
 
 local QUIET = (function(): boolean
@@ -235,6 +236,8 @@ local function newSound(name: string, parent: BasePart): Sound
 	sound.RollOffMinDistance = S.RollOffMin
 	sound.RollOffMaxDistance = S.RollOffMax
 	sound.Volume = 0
+	-- The player's Suspension level on top of the mix (Settings, Sound; T-256).
+	SoundLevels.apply(sound, "Suspension")
 	sound.Parent = parent
 	return sound
 end
