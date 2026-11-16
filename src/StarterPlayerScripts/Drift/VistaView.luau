@@ -229,8 +229,8 @@ function VistaView._buildClouds(self: View, start: Vector3)
 	local sea = Config.Vista.CloudSea
 	local sub = Instance.new("Folder")
 	sub.Name = "CloudSea"
-	local cells = Vista.cloudParts(sea)
 	for i, layer in sea.Layers do
+		local cells = Vista.cloudParts(sea, layer.Grid)
 		local lf = Instance.new("Folder")
 		lf.Name = `Cloud_{i}`
 		local anchor = anchorPart(`Cloud_{i}_Anchor`, Vista.snap(start, sea.Tile), lf)

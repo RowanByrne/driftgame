@@ -34,10 +34,12 @@ return {
 	Layers = {
 		{
 			Name = "Far",
-			Radius = 4500,
-			Panels = 14,
+			-- 4 500 washed the peaks out in the day's haze, and 5.5 degrees barely cleared the
+			-- drawn ground's far edge (lane 3, first look): nearer and taller.
+			Radius = 3200,
+			Panels = 10,
 			Aspect = 3, -- the art's width over its height (2172 x 724)
-			Peak = 5.5,
+			Peak = 8,
 			PeakAt = 0.33,
 			Lag = 0.6,
 			MaxLag = 120,
@@ -61,23 +63,24 @@ return {
 	-- `Layers` stacked layers, the top one `Below` studs under the road's start and each
 	-- next one `Gap` under it, rising with the road like the ridges (`FollowHeight`). It never
 	-- comes nearer than `MinBelow` under the camera, so a long descent can't bring it up to
-	-- the road. Each layer is `Grid` x `Grid` parts of `PartSize` studs. The cloud texture
+	-- the road. Each layer is `Grid` x `Grid` parts of `PartSize` studs: the top one reaches
+	-- past the ridge ring, so its edge is never seen; the ones under it only show through
+	-- it, so they stay small. The cloud texture
 	-- repeats every `Tile` studs, and must divide `PartSize` so neighbouring parts join; the
 	-- parts move in whole tiles, so the cloud stays put while they follow the car. Each layer
 	-- drifts at its own speed (studs/s) and direction (degrees), and lets more through the
 	-- lower it is (`Transparency`).
 	CloudSea = {
 		Image = "rbxassetid://117132635448742", -- cloud-oil-03, the picked cloud texture (assets/painted-vista/MANIFEST.md)
-		Below = 300,
+		Below = 150,
 		Gap = 30,
-		MinBelow = 200,
-		Grid = 3,
+		MinBelow = 120,
 		PartSize = 2048,
-		Tile = 1024,
+		Tile = 2048, -- 1 024 made small billows that read as a snowfield
 		Layers = {
-			{ Transparency = 0.2, Drift = 2, Heading = 20 },
-			{ Transparency = 0.4, Drift = 2.6, Heading = 35 },
-			{ Transparency = 0.6, Drift = 1.6, Heading = 5 },
+			{ Grid = 5, Transparency = 0.25, Drift = 2, Heading = 20 },
+			{ Grid = 3, Transparency = 0.4, Drift = 2.6, Heading = 35 },
+			{ Grid = 3, Transparency = 0.6, Drift = 1.6, Heading = 5 },
 		},
 	},
 }

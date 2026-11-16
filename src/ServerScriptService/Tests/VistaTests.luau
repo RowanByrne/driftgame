@@ -84,12 +84,15 @@ function Tests.run()
 		end
 		local mid = layer.Radius * math.cos(math.pi / layer.Panels)
 		-- the cloud sea's far edge, seen from the camera at the road's start
-		local seaHalf = V.CloudSea.Grid * V.CloudSea.PartSize / 2 - V.CloudSea.Tile / 2
-		local seaEdge = -V.CloudSea.Below * mid / seaHalf
 		check(
-			`{layer.Name}: no bottom edge in sight above the cloud sea`,
-			skirtBottom < seaEdge,
-			string.format("skirt to %.0f, sea's edge seen at %.0f", skirtBottom, seaEdge)
+			`{layer.Name}: the skirt reaches down below the cloud sea`,
+			skirtBottom < -V.CloudSea.Below,
+			string.format("skirt to %.0f, cloud at %.0f", skirtBottom, -V.CloudSea.Below)
+		)
+		check(
+			`{layer.Name}: the cloud sea reaches past it, so its edge is never seen`,
+			Vista.cloudReach(V.CloudSea) > layer.Radius + layer.MaxLag,
+			string.format("cloud reaches %.0f", Vista.cloudReach(V.CloudSea))
 		)
 
 		local art = #layer.Images > 0
@@ -101,10 +104,13 @@ function Tests.run()
 
 	-- the cloud sea
 	local sea = V.CloudSea
+	check("cloud: the top layer is the widest", sea.Layers[1].Grid >= (sea.Layers[2] and sea.Layers[2].Grid or 0))
 	check("cloud: has its asset id", string.match(sea.Image, "^rbxassetid://%d+$") ~= nil)
 	check("cloud: the tile divides a part, so parts join",sea.PartSize % sea.Tile == 0, `{sea.PartSize} / {sea.Tile}`)
 	check("cloud: parts under 2 048 studs", sea.PartSize <= 2048)
-	total += #sea.Layers * (sea.Grid * sea.Grid + 1)
+	for _, l in sea.Layers do
+		total += l.Grid * l.Grid + 1
+	end
 	check("fewer than 100 parts in all", total < 100, `{total}`)
 
 	local snapped = Vista.snap(Vector3.new(1530, 0, -2600), sea.Tile)

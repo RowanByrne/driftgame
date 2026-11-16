@@ -102,15 +102,21 @@ function Vista.cloudTop(cfg: any, originY: number, camY: number): number
 	return math.min(y, camY - sea.MinBelow)
 end
 
+-- How far the cloud sea's top layer reaches from the camera at the least (its anchor
+-- snaps to the nearest whole tile, up to half a tile off).
+function Vista.cloudReach(sea: any): number
+	return sea.Layers[1].Grid * sea.PartSize / 2 - sea.Tile / 2
+end
+
 -- A flat position snapped to whole tiles, so parts moved there leave the cloud where it was.
 function Vista.snap(p: Vector3, tile: number): Vector3
 	return Vector3.new(math.round(p.X / tile) * tile, 0, math.round(p.Z / tile) * tile)
 end
 
--- Where each part of a cloud layer stands round its anchor: a grid of `Grid` x `Grid`.
-function Vista.cloudParts(sea: any): { Vector3 }
+-- Where each part of a cloud layer stands round its anchor: a grid of `grid` x `grid`.
+function Vista.cloudParts(sea: any, grid: number): { Vector3 }
 	local out = {}
-	local g: number = sea.Grid
+	local g = grid
 	for i = 0, g - 1 do
 		for j = 0, g - 1 do
 			table.insert(out, Vector3.new((i - (g - 1) / 2) * sea.PartSize, 0, (j - (g - 1) / 2) * sea.PartSize))

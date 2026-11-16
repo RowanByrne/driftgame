@@ -139,7 +139,7 @@ return {
 			BloomThreshold = 1.4,
 			SunRays = 0.1,
 			VistaTint = rgb(240, 232, 236),
-			CloudSeaColour = rgb(250, 236, 228),
+			CloudSeaColour = rgb(236, 226, 224),
 		},
 		{
 			Name = "noon",
@@ -167,7 +167,7 @@ return {
 			BloomThreshold = 1.6,
 			SunRays = 0.04,
 			VistaTint = rgb(255, 255, 255),
-			CloudSeaColour = rgb(255, 255, 255),
+			CloudSeaColour = rgb(222, 230, 242),
 		},
 		{
 			Name = "afternoon",
@@ -195,7 +195,7 @@ return {
 			BloomThreshold = 1.5,
 			SunRays = 0.06,
 			VistaTint = rgb(255, 244, 230),
-			CloudSeaColour = rgb(255, 246, 236),
+			CloudSeaColour = rgb(236, 230, 224),
 		},
 		{
 			Name = "golden hour",
