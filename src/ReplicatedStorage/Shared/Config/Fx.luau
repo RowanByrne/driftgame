@@ -314,33 +314,70 @@ return {
 	-- BUILT-IN TEXTURES ONLY: the bits are `SquareParticle.png`, flat-coloured squares, which
 	-- is the low-poly look. Nothing uploaded.
 	--
-	-- RUTS THAT LOOK CUT IN (T-265). A grass mark is THREE trails side by side across four
-	-- attachments (outer left, inner left, inner right, outer right): a core the tyre pressed
-	-- or ploughed, and an edge strip either side. They do not overlap, so there is no draw
-	-- order to fight over. The flattened line and the rut share the four attachments and the
-	-- shape; only their colours differ, and only one of them emits per wheel (T-205). On the
-	-- drawn ground each mark's corners are put ON that ground (`Lift` over it), not on the
-	-- car's plane, so a mark neither floats nor sinks where the ground bends under the car.
+	-- RUTS THAT LOOK CUT IN (T-265). A grass mark is a MESH RIBBON laid on the ground, not a
+	-- trail (`Drift/GroundMarks`, features/car-fx.md "Ruts cut into the ground"): one per wheel,
+	-- a cross-section every few studs, with a shaped profile -- a berm either side, a wall that
+	-- leans in and a floor -- whose normals catch the scene's light, so one wall is lit and the
+	-- other in shade, day or night. A streak texture made in code (nothing uploaded) runs along
+	-- it; its colour and alpha fade in at the start of a mark, out at the end, and dry and fade
+	-- with age. The flattened line and the rut are the same ribbon in two looks, blended over
+	-- `Ribbon.BlendSeconds` where the slide crosses the trench threshold (T-205's hysteresis).
 	--
-	-- THE BUDGET: the off-road layer is, per wheel, 4 Attachments (the mark's outer and
-	-- inner pairs) + 7 Trails (3 flattened, 3 rut, 1 gravel) + 3 Emitters, and T-207's 3
-	-- fixed particle-source Attachments. With the tarmac layer's 2 Attachments + 3 per
-	-- smoking surface, one smoking surface is 22 per wheel:
-	--   4 x (2 + 3 + 4 + 7 + 3 + 3) = 88 per car (64 before T-265, 20 before T-188).
-	-- All built once, then switched with `Enabled`. `Drift/Wheels.perWheel()` is the formula.
+	-- THE BUDGET: the off-road layer is, per wheel, 1 Trail (gravel) + 3 Emitters, and T-207's
+	-- 3 fixed particle-source Attachments; the grass ribbon is `Ribbon.Chunks` MeshParts per
+	-- car and their folder. With the tarmac layer's 2 Attachments + 3 per smoking surface, one
+	-- smoking surface is 12 per wheel:
+	--   4 x (2 + 3 + 1 + 3 + 3) + 8 chunks + 1 folder = 57 per car
+	-- (88 with T-265's first, trail-built ruts; 64 before T-265; 20 before T-188). All built
+	-- once, then switched or rewritten in place. `Drift/Wheels.perCar()` is the formula.
 	Ground = {
 		FadeSeconds = 0.2, -- s for a wheel's smoke to fade out when it leaves tarmac, and for
 		-- the grass/gravel debris to fade in -- and the same back. Fast, but not a cut
 
 		-- How the grass marks sit on the ground and how long they stay (T-265).
-		MarkSeconds = 14, -- s of `Trail.Lifetime` for the flattened line and the rut. Longer
-		-- than a tarmac mark (`Marks.Seconds`, 5): torn ground stays torn
-		Lift = 0.08, -- studs a grass mark's corners sit over the DRAWN ground under them.
-		-- Only a hair, because they are put on the ground itself and not on
-		-- the car's plane: no ride height or grade to clear any more
-		MaxSnap = 1.5, -- studs. A corner is moved at most this far off the car's plane to
-		-- reach the drawn ground; further (a wall's foot, a tile not drawn yet)
-		-- and it stays on the car's plane, as every mark did before T-265
+		MarkSeconds = 14, -- s a grass mark lasts. Longer than a tarmac mark (`Marks.Seconds`, 5):
+		-- torn ground stays torn. It dries over all of it and fades over the last
+		-- `1 - Marks.FadeAt` of it, like every mark
+		Lift = 0.06, -- studs the ribbon's lowest points sit over the DRAWN ground under them
+		MaxSnap = 1.5, -- studs. A point is moved at most this far off the car's plane to reach
+		-- the drawn ground; further (a wall's foot, a tile not drawn yet) and it stays
+		-- on the car's plane
+
+		-- The ribbon itself (`Drift/GroundMarks`).
+		Ribbon = {
+			Chunks = 8, -- MeshParts per car. Each holds `PerChunk` segments laid within
+			PerChunk = 192, -- `ChunkReach` studs of where it was started; then the next one is
+			ChunkReach = 400, -- reused, oldest first. 1 536 segments: 14 s of four wheels cutting
+			-- at about 3 studs a segment and 80 studs/s
+			Spacing = 3, -- studs between cross-sections on a straight run...
+			MinSpacing = 0.5, -- ...and down to this through a bend, a new one whenever the path has
+			TurnDegrees = 4, -- turned this far since the last. So a curve is a smooth curve
+			FadeInStuds = 2.5, -- a mark comes in over this much of its start, not with an edge,
+			-- and its last segment fades out to nothing when it ends
+			BlendSeconds = 0.2, -- flattened line to rut (and back) blends over this along the mark
+			WidthSeconds = 0.12, -- the width's T-207 narrowing is smoothed over this, so it never steps
+			TileLength = 6, -- studs of the mark one repeat of the streak texture covers
+			AgeLevels = 28, -- how many steps the drying and fading are rewritten in (0.5 s each)
+			Material = Enum.Material.SmoothPlastic, -- a little sheen: wet earth catches the light
+
+			-- The streak texture, made in code at start (an `EditableImage`). Grey, multiplied by
+			-- the ribbon's colours: lines along the travel, flecks and clods toward the edges,
+			-- and a ragged, soft alpha edge. Nothing is uploaded.
+			Texture = {
+				Width = 64, -- pixels across the mark
+				Height = 256, -- pixels along one `TileLength`; it repeats seamlessly
+				Seed = 265,
+				Base = 0.94, -- brightness between streaks
+				StreakDepth = 0.32, -- how much darker the deepest tread streak is
+				StreakWobble = 0.35, -- how much a streak varies along its length
+				Flecks = 260, -- clods and flecks in one tile...
+				FleckBand = 0.32, -- ...mostly within this share of the width from either edge
+				FleckLight = 1.0, -- a dry clod catching the light
+				FleckDark = 0.5, -- a wet one in shadow
+				EdgeRagged = 0.1, -- how far the soft edge wanders in and out along the mark
+				EdgeSoft = 0.12, -- how wide the edge's fade is
+			},
+		},
 
 		Grass = {
 			TrenchSlipDegrees = 30, -- |slip| at which the trench starts being cut
@@ -353,39 +390,43 @@ return {
 			-- full: deep slides throw mostly dirt
 			FullSlipDegrees = 90, -- slip at which the debris rates are at their max
 
-			-- The shape both grass marks share (T-265): the whole mark edge to edge, and its
-			-- core. The edges are the strips between, (Width - CoreWidth) / 2 each. Both
-			-- narrow through a slide like every mark, to `Marks.MinWidthRatio` (T-207).
-			Width = 3.0, -- studs. Wider than the tyre (1.6): the soil it pushes aside
-			CoreWidth = 1.4, -- studs. About the tyre's own width: what it pressed or ploughed
+			Width = 3.0, -- studs edge to edge: wider than the tyre (1.6), for the soil it
+			-- pushes aside. Narrows through a slide like every mark (`Marks.MinWidthRatio`, T-207)
+			DebrisOffset = 0.95, -- studs left of the contact the clippings and dirt are thrown from
 
-			-- Each strip: `Colour` where it is laid, `DryColour` at the end of its life (a
-			-- trail's colour runs along its length, so the old end of a mark dries out),
-			-- and `Transparency` (lower is more solid).
-			FlatMark = { -- gentle slides: the grass pressed down, not torn
-				Core = {
-					Colour = Color3.fromRGB(50, 90, 36), -- darker than the grass (86, 140, 62):
-					DryColour = Color3.fromRGB(62, 104, 44), -- pressed, shadowed blades
-					Transparency = 0.38,
-				},
-				Edge = {
-					Colour = Color3.fromRGB(112, 158, 74), -- lighter: blades bent over, catching
-					DryColour = Color3.fromRGB(104, 150, 68), -- the light either side. Faint
-					Transparency = 0.7,
+			-- The ribbon's cross-section, from its outer edge in to the floor beside the centre
+			-- line, mirrored for the other side: 8 points across. `Offset` is the share of the
+			-- half-width out from the centre, `Height` studs over `Lift` (times the look's
+			-- `HeightScale`), `Tilt` degrees the surface's normal leans TOWARD the centre (times
+			-- `TiltScale`): the inner wall leans hard, so the far wall faces the light and the
+			-- near one turns away from it, which is what reads as depth.
+			Profile = {
+				{ Offset = 1.00, Height = 0.00, Tilt = -25 }, -- the outer edge, fading to nothing
+				{ Offset = 0.74, Height = 0.10, Tilt = -8 }, -- the berm's crest: soil pushed up
+				{ Offset = 0.50, Height = 0.03, Tilt = 55 }, -- the inner wall
+				{ Offset = 0.26, Height = 0.00, Tilt = 12 }, -- the floor's edge; flat between
+			},
+
+			-- The two looks, one entry per `Profile` point: `Colour` when laid, `DryColour` at
+			-- the end of its life, `Alpha` (1 solid, 0 gone).
+			FlatMark = { -- gentle slides: the grass pressed down along the travel, not torn
+				HeightScale = 0,
+				TiltScale = 0.15,
+				Points = {
+					{ Colour = Color3.fromRGB(96, 148, 66), DryColour = Color3.fromRGB(96, 148, 66), Alpha = 0 },
+					{ Colour = Color3.fromRGB(128, 170, 84), DryColour = Color3.fromRGB(116, 160, 76), Alpha = 0.3 }, -- bent blades, lighter
+					{ Colour = Color3.fromRGB(78, 120, 52), DryColour = Color3.fromRGB(86, 130, 58), Alpha = 0.42 },
+					{ Colour = Color3.fromRGB(56, 98, 40), DryColour = Color3.fromRGB(68, 110, 46), Alpha = 0.5 }, -- pressed flat, darker
 				},
 			},
 			TrenchMark = { -- past `TrenchSlipDegrees`: the rut, cut through to the soil
-				Core = {
-					Colour = Color3.fromRGB(44, 30, 18), -- dark wet earth, near black-brown
-					DryColour = Color3.fromRGB(80, 60, 38), -- drying out as it ages
-					Transparency = 0.05, -- near solid: the grass is GONE here
-				},
-				Edge = {
-					Colour = Color3.fromRGB(98, 80, 48), -- churned soil and torn turf thrown up
-					DryColour = Color3.fromRGB(108, 94, 60), -- either side: lighter than the core,
-					Transparency = 0.38, -- and the grass shows through it, so it blends out
-					-- into the field rather than outlining the rut. MEASURED: at (118, 90, 58)
-					-- and 0.16 it read as a tan piping round a black stripe (DR-Lane2)
+				HeightScale = 1,
+				TiltScale = 1,
+				Points = {
+					{ Colour = Color3.fromRGB(100, 88, 56), DryColour = Color3.fromRGB(110, 98, 66), Alpha = 0 },
+					{ Colour = Color3.fromRGB(122, 100, 68), DryColour = Color3.fromRGB(138, 118, 84), Alpha = 0.92 }, -- churned berm
+					{ Colour = Color3.fromRGB(84, 62, 40), DryColour = Color3.fromRGB(104, 82, 56), Alpha = 1 }, -- the wall
+					{ Colour = Color3.fromRGB(46, 32, 20), DryColour = Color3.fromRGB(86, 64, 42), Alpha = 1 }, -- wet floor, drying
 				},
 			},
 
@@ -473,10 +514,11 @@ return {
 		Trail = "FxMark_%s_%s", -- wheel name, then surface. ONE per wheel per surface
 		Emitter = "FxSmoke_%s_%s", -- wheel name, then surface. The DIFFUSE layer
 		Stylized = "FxPuff_%s_%s", -- wheel name, then surface. The STYLIZED layer
-		TrenchAttachment = "FxT_%s_%s", -- wheel name, then the grass mark's corners: "L" and "R"
-		-- outside (T-188), "IL" and "IR" either side of its core (T-265)
-		GroundTrail = "FxMark_%s_%s", -- wheel name, then "gravel", or a grass mark's strip:
-		-- "grass" / "trench" for the core, with "_L" / "_R" for its edges (T-188, T-265)
+		TrenchAttachment = "FxT_%s_%s", -- wheel name, then "L": with "_Emitter" on the end, the
+		-- clippings and dirt source (T-188, T-207)
+		GroundTrail = "FxMark_%s_%s", -- wheel name, then "gravel" (T-188)
+		MarksFolder = "FxGroundMarks", -- the local car's grass ribbon: a client-only folder in
+		MarksChunk = "FxGroundMarks_%d", -- Workspace, and its MeshParts (T-265)
 		GroundEmitter = "FxKick_%s_%s", -- wheel name, then "grass", "dirt" or "dust" (T-188)
 		Engine = "FxEngine", -- the one engine `Sound`, on the body (T-064)
 		Skid = "FxSkid_%s", -- surface. One `Sound` per surface in `Built`, on the body

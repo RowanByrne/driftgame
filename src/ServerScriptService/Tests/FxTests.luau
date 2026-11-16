@@ -50,6 +50,7 @@ local Render = require(DriftFolder.Render)
 local Suspension = require(DriftFolder.Suspension)
 local SkidSound = require(DriftFolder.SkidSound)
 local Wheels = require(DriftFolder.Wheels)
+local GroundMarks = require(DriftFolder.GroundMarks)
 
 local Tests = {}
 
@@ -192,12 +193,13 @@ function Tests.run(opts)
 			`built: {table.concat(F.Built, ", ")}{if builtOk then "" else "; incomplete look for " .. table.concat(missing, ", ")}`
 		)
 		-- THE INSTANCE BUDGET IS THIS FORMULA: 4 wheels x (2 Attachments + smoking surfaces x
-		-- (1 Trail + 2 ParticleEmitters) + the off-road layer's 4 Attachments, 7 Trails and 3
-		-- ParticleEmitters, T-188 and T-265, plus 3 fixed emitter anchors, T-207): 88 a car.
+		-- (1 Trail + 2 ParticleEmitters) + the off-road layer's gravel Trail and 3
+		-- ParticleEmitters, T-188, plus 3 fixed emitter anchors, T-207), and the grass ribbon's
+		-- chunks and folder (T-265): 57 a car.
 		check(
 			"one smoking surface, and the budget it comes to",
-			#F.Built == 1 and Wheels.perWheel() == 22,
-			`{#F.Built} surface(s) -> {#CarModel.WHEEL_NAMES * Wheels.perWheel()} instances per car`
+			#F.Built == 1 and Wheels.perWheel() == 12 and Wheels.perCar() == 4 * 12 + F.Ground.Ribbon.Chunks + 1,
+			`{#F.Built} surface(s) -> {Wheels.perWheel()} a wheel, {Wheels.perCar()} instances per car`
 		)
 		-- ONE DARKNESS, which is the whole of the rollback. A ladder would be a table.
 		check(
@@ -586,7 +588,12 @@ function Tests.run(opts)
 	----------------------------------------------------------------------------
 	if opts.skipInstances ~= true then
 		local rig, car = standInRig()
-		local w = Wheels.new()
+		-- The grass ribbon is built in its own thread (making a mesh yields): wait for it.
+		local w = Wheels.new(ServerStorage)
+		local waitUntil = os.clock() + 15
+		while not w:Ready() and not w.marks.failed and os.clock() < waitUntil do
+			task.wait()
+		end
 		local attached = w:Attach(rig)
 		local want = #CarModel.WHEEL_NAMES * Wheels.perWheel()
 		local before = w:CountInstances()
@@ -636,10 +643,7 @@ function Tests.run(opts)
 					local path = if previous[wheel.index] then expected - previous[wheel.index] else s.velocity
 					path -= s.groundUp * path:Dot(s.groundUp)
 					local span = wheel.b.WorldPosition - wheel.a.WorldPosition
-					local trenchSpan = wheel.d.WorldPosition - wheel.c.WorldPosition
-					local coreSpan = wheel.f.WorldPosition - wheel.e.WorldPosition
-					planeError = math.max(planeError, math.abs(span:Dot(s.groundUp)), math.abs(trenchSpan:Dot(s.groundUp)),
-						math.abs(coreSpan:Dot(s.groundUp)))
+					planeError = math.max(planeError, math.abs(span:Dot(s.groundUp)))
 					local across
 					if path.Magnitude > 1e-4 then
 						across = path.Unit:Cross(s.groundUp).Unit
@@ -653,9 +657,7 @@ function Tests.run(opts)
 					local ratio = math.max(F.Marks.MinWidthRatio, natural)
 					-- Ignore the first yawing frame's instantaneous fallback vs chord.
 					if frame > 1 or s.r == 0 then
-						widthError = math.max(widthError, math.abs(math.abs(span:Dot(across)) - F.Marks.Width * ratio),
-							math.abs(math.abs(trenchSpan:Dot(across)) - F.Ground.Grass.Width * ratio),
-							math.abs(math.abs(coreSpan:Dot(across)) - F.Ground.Grass.CoreWidth * ratio))
+						widthError = math.max(widthError, math.abs(math.abs(span:Dot(across)) - F.Marks.Width * ratio))
 					end
 					if spans[wheel.index] and span:Dot(spans[wheel.index]) < -1e-5 then flips += 1 end
 					previous[wheel.index], spans[wheel.index] = expected, span
@@ -732,10 +734,7 @@ function Tests.run(opts)
 					end
 				end
 				-- Every off-road alternative counts, including the trench (T-205).
-				if wheel.ground.flat.trails[1].Enabled then
-					here += 1
-				end
-				if wheel.ground.trench.trails[1].Enabled then
+				if w.marks:Kind(wheel.index) then
 					here += 1
 				end
 				if wheel.ground.gravel.trails[1].Enabled then
@@ -754,7 +753,7 @@ function Tests.run(opts)
 		-- `blank` is the number that mattered when there was a darkness ladder and still
 		-- matters now: a frame in which a wheel is MARKING but nothing is drawn is a hole
 		-- in the mark. With one trail per wheel there is nothing left that can cause one.
-		local flips, lastOn, worstPerWheel, blank, stripSplits = 0, false, 0, 0, 0
+		local flips, lastOn, worstPerWheel, blank = 0, false, 0, 0
 		for frame = 1, FRAMES do
 			local t = frame / FRAMES
 			local deg = 180 * math.abs(math.sin(t * math.pi * 7))
@@ -781,22 +780,13 @@ function Tests.run(opts)
 			local _, perWheel = litTrails()
 			worstPerWheel = math.max(worstPerWheel, perWheel)
 			for _, wheel in w.wheels do
-				local drawn = wheel.ground.flat.trails[1].Enabled
-					or wheel.ground.trench.trails[1].Enabled
+				local drawn = w.marks:Kind(wheel.index) ~= nil
 					or wheel.ground.gravel.trails[1].Enabled
 				for _, fx in wheel.fx do
 					drawn = drawn or fx.trail.Enabled
 				end
 				if wheel.marking and not drawn then
 					blank += 1
-				end
-				-- A grass mark's three strips go on and off together (T-265).
-				for _, m in { wheel.ground.flat, wheel.ground.trench, wheel.ground.gravel } do
-					for _, trail in m.trails do
-						if trail.Enabled ~= m.trails[1].Enabled then
-							stripSplits += 1
-						end
-					end
 				end
 			end
 		end
@@ -819,11 +809,6 @@ function Tests.run(opts)
 			"and never a frame where a marking wheel draws nothing",
 			blank == 0,
 			`{blank} blank frames over {FRAMES} frames x {#CarModel.WHEEL_NAMES} wheels`
-		)
-		check(
-			"a grass mark's three strips are always switched together",
-			stripSplits == 0,
-			`{stripSplits} strips out of step over {FRAMES} frames`
 		)
 
 		-- The heat is per wheel, and the fronts and the rears do not share it: through a
@@ -945,8 +930,7 @@ function Tests.run(opts)
 		)
 		check(
 			"at a low angle on grass: the flat grass line, clippings, no trench, no dirt",
-			rl.ground.flat.trails[1].Enabled
-				and not rl.ground.trench.trails[1].Enabled
+			w.marks:Kind(rl.index) == "flat"
 				and not rl.fx[1].trail.Enabled
 				and rl.ground.clippings.emitter.Enabled
 				and not rl.ground.dirt.emitter.Enabled,
@@ -959,8 +943,7 @@ function Tests.run(opts)
 		end
 		check(
 			"at a high angle on grass: only the trench, and dirt sprays",
-			not rl.ground.flat.trails[1].Enabled
-				and rl.ground.trench.trails[1].Enabled
+			w.marks:Kind(rl.index) == "rut"
 				and rl.ground.dirt.emitter.Enabled
 				and rl.ground.dirt.emitter.Rate > 0,
 			string.format(
@@ -971,9 +954,9 @@ function Tests.run(opts)
 		)
 		-- Hysteresis: 27 deg keeps the trench (stop is 25), 24 drops it.
 		w:Update(stateWith({ slipDeg = 27, speed = 70, throttle = 1, surface = "grass" }), { handbrake = false }, DT)
-		local held = rl.ground.trench.trails[1].Enabled and not rl.ground.flat.trails[1].Enabled
+		local held = w.marks:Kind(rl.index) == "rut"
 		w:Update(stateWith({ slipDeg = 24, speed = 70, throttle = 1, surface = "grass" }), { handbrake = false }, DT)
-		local dropped = not rl.ground.trench.trails[1].Enabled and rl.ground.flat.trails[1].Enabled
+		local dropped = w.marks:Kind(rl.index) == "flat"
 		check(
 			"the trench has hysteresis, and green resumes only after it ends",
 			held and dropped and Wheels.trenchOn(30, false) and not Wheels.trenchOn(29.9, false),
@@ -1038,7 +1021,7 @@ function Tests.run(opts)
 				and math.abs(rl.fx[1].diffuse.Rate - full) < 1e-6
 				and not rl.ground.clippings.emitter.Enabled
 				and rl.fx[1].trail.Enabled
-				and not rl.ground.flat.trails[1].Enabled,
+				and w.marks:Kind(rl.index) == nil,
 			string.format("smoke %.2f one frame back, %.2f half a second later (full %.2f)", smokeIn1, rl.fx[1].diffuse.Rate, full)
 		)
 		-- Per wheel: two wheels on grass, two on tarmac.
@@ -1078,102 +1061,248 @@ function Tests.run(opts)
 		)
 
 		------------------------------------------------------------------------
-		-- 9c. RUTS CUT INTO THE GROUND (T-265): three strips, a longer life, and laid on
-		-- the drawn ground rather than the car's plane.
+		-- 9c. RUTS CUT INTO THE GROUND (T-265): the grass marks are a lit mesh ribbon
+		-- (`Drift/GroundMarks`) laid on the drawn ground, with soft ends, mitred joins,
+		-- a shaped profile, a streak texture made in code, and an age.
 		------------------------------------------------------------------------
 		do
 			local GG = G.Grass
-			local function lum(c: Color3): number
-				return 0.2126 * c.R + 0.7152 * c.G + 0.0722 * c.B
-			end
-			local function near(a: Color3, b: Color3): boolean
-				return math.abs(a.R - b.R) + math.abs(a.G - b.G) + math.abs(a.B - b.B) < 1e-3
-			end
-			local shapeOk, lifeOk = true, true
-			for _, wheel in w.wheels do
-				for _, m in { wheel.ground.flat, wheel.ground.trench } do
-					local t = m.trails
-					shapeOk = shapeOk
-						and #t == 3
-						and t[1].Attachment0 == wheel.c and t[1].Attachment1 == wheel.e
-						and t[2].Attachment0 == wheel.e and t[2].Attachment1 == wheel.f
-						and t[3].Attachment0 == wheel.f and t[3].Attachment1 == wheel.d
-					for _, trail in t do
-						lifeOk = lifeOk and math.abs(trail.Lifetime - G.MarkSeconds) < 1e-4
-					end
+			local RB = G.Ribbon
+			local marks = w.marks
+			local P = #GG.Profile * 2
+
+			-- The texture: deterministic, soft at both edges, streaked across the middle.
+			local T = RB.Texture
+			local px1 = GroundMarks.texturePixels(T)
+			local px2 = GroundMarks.texturePixels(T)
+			local same = buffer.len(px1) == T.Width * T.Height * 4 and buffer.tostring(px1) == buffer.tostring(px2)
+			local edgeMax, middleMin, greyLo, greyHi = 0, 255, 255, 0
+			for y = 0, T.Height - 1 do
+				local row = y * T.Width * 4
+				edgeMax = math.max(edgeMax, buffer.readu8(px1, row + 3), buffer.readu8(px1, row + (T.Width - 1) * 4 + 3))
+				local mid = row + (T.Width // 2) * 4
+				middleMin = math.min(middleMin, buffer.readu8(px1, mid + 3))
+				for x = T.Width // 4, 3 * T.Width // 4 do
+					local gval = buffer.readu8(px1, row + x * 4)
+					greyLo, greyHi = math.min(greyLo, gval), math.max(greyHi, gval)
 				end
-				lifeOk = lifeOk
-					and math.abs(wheel.ground.gravel.trails[1].Lifetime - F.Marks.Seconds) < 1e-4
-					and math.abs(wheel.fx[1].trail.Lifetime - F.Marks.Seconds) < 1e-4
 			end
-			local R, Fl = GG.TrenchMark, GG.FlatMark
-			local kp = rl.ground.trench.trails[2].Color.Keypoints
-			local colourOk = lum(R.Core.Colour) < lum(R.Edge.Colour)
-				and lum(R.Core.Colour) < lum(R.Core.DryColour)
-				and lum(Fl.Core.Colour) < lum(Fl.Edge.Colour)
-				and R.Core.Transparency < R.Edge.Transparency
-				and near(kp[1].Value, R.Core.Colour)
-				and near(kp[#kp].Value, R.Core.DryColour)
 			check(
-				"grass marks are edge, core and edge across four corners, staying longer than tarmac",
-				shapeOk and lifeOk and colourOk and G.MarkSeconds > F.Marks.Seconds and GG.CoreWidth < GG.Width,
-				string.format(
-					"strips chained %s, lifetimes %s (%.1f s against tarmac %.1f s), rut core darker than its edges and drying %s; %.2f wide, core %.2f",
-					tostring(shapeOk), tostring(lifeOk), G.MarkSeconds, F.Marks.Seconds, tostring(colourOk), GG.Width, GG.CoreWidth
-				)
+				"the streak texture is made in code, the same every time, soft at the edges and streaked between",
+				same and edgeMax < 40 and middleMin == 255 and greyHi - greyLo > 40,
+				string.format("%dx%d, identical twice %s; edge alpha at most %d, middle alpha %d; greys %d..%d across the middle",
+					T.Width, T.Height, tostring(same), edgeMax, middleMin, greyLo, greyHi)
 			)
 
-			-- A stand-in drawn ground: bumps under the car, a little below its plane, so a
-			-- corner on the plane would float over some of it and sink into the rest.
-			local grass45 = stateWith({ slipDeg = 45, speed = 70, throttle = 1, surface = "grass" })
-			w:Cut()
-			w:Update(grass45, { handbrake = false }, DT)
-			local base = rl.c.WorldPosition.Y - F.Marks.Lift
+			-- Built once: the chunks, at scale 1, textured, in their folder.
+			local parts, scaleOk, textured = 0, true, true
+			if marks.folder then
+				for _, part in marks.folder:GetChildren() do
+					if part:IsA("MeshPart") then
+						parts += 1
+						scaleOk = scaleOk and math.abs(part.Size.X - 1024) < 0.5
+						textured = textured and part.TextureContent.Object == marks.image
+					end
+				end
+			end
+			check(
+				"the ribbon is built once: its chunks, at scale 1, with the streak texture",
+				marks.ready and parts == RB.Chunks and scaleOk and textured
+					and Wheels.perWheel() * #CarModel.WHEEL_NAMES + parts + 1 == Wheels.perCar(),
+				`ready {marks.ready} ({marks.failed or "ok"}); {parts} MeshParts; scale 1 {scaleOk}; textured {textured}; {Wheels.perCar()} a car`
+			)
+
+			-- A stand-in drawn ground: a tilted plane with long, gentle swells, so a point
+			-- interpolated between two on the ground is on it too, near enough.
 			local calls = 0
-			local function bumps(x: number, z: number): number
-				return base + 0.35 * math.sin(x * 0.9) + 0.25 * math.cos(z * 0.7) - 0.2
+			local function groundY(x: number, z: number): number
+				return 20 + 0.08 * x + 0.03 * z + 0.6 * math.sin(x * 0.05) + 0.4 * math.cos(z * 0.04)
 			end
 			local drawn = { _drawnAt = function(_, x: number, z: number): number
 				calls += 1
-				return bumps(x, z)
+				return groundY(x, z)
 			end }
-			local k = GG.CoreWidth / GG.Width
-			local cornerError, innerError, snappedAll, marking = 0, 0, true, 0
-			for _ = 1, 5 do
-				w:Update(grass45, { handbrake = false }, DT, drawn)
+			local up = Vector3.yAxis
+			local folderBefore = #marks.folder:GetDescendants()
+
+			-- Drive wheel 1 round a 40-stud arc at 50 studs/s, cutting a rut, then flat, then lift.
+			GroundMarks.Clear(marks)
+			GroundMarks.Cut(marks)
+			local order, seen = {}, {}
+			local radius, speed, DT2 = 40, 50, 1 / 60
+			local function at(t: number): (Vector3, Vector3)
+				local a = speed * t / radius
+				local x, z = radius * math.sin(a), radius * (1 - math.cos(a))
+				local p = Vector3.new(x, groundY(x, z) + 0.5, z) -- the car's plane, half a stud up
+				local tangent = Vector3.new(math.cos(a), 0, math.sin(a))
+				return p, tangent:Cross(up)
 			end
-			for _, wheel in w.wheels do
-				if wheel.ground.trench.on then
-					marking += 1
-					local c, d = wheel.c.WorldPosition, wheel.d.WorldPosition
-					for _, p in { c, d } do
-						cornerError = math.max(cornerError, math.abs(p.Y - (bumps(p.X, p.Z) + G.Lift)))
+			local calls0 = calls
+			local frames = 0
+			for f = 0, 90 do
+				local p, across = at(f * DT2)
+				GroundMarks.Wheel(marks, 1, true, p, up, across, 1, f < 60, drawn, Wheels.onGround, DT2)
+				GroundMarks.Age(marks, DT2)
+				frames += 1
+				local r = marks.wheels[1]
+				local g = r.lastSlot
+				if g and not seen[g] then
+					seen[g] = true
+					table.insert(order, g)
+				end
+			end
+			local lookupsPerFrame = (calls - calls0) / frames
+			local rMid = marks.wheels[1]
+			local depthAfterSwitch = rMid.depth
+			local kindAfter = GroundMarks.Kind(marks, 1)
+			local endSlot = marks.wheels[1].head or marks.wheels[1].lastSlot
+			GroundMarks.Wheel(marks, 1, false, at(91 * DT2), up, Vector3.xAxis, 1, false, drawn, Wheels.onGround, DT2)
+
+			-- The joins: every segment starts exactly where the last one ended.
+			local joinError, edgeError, widthError, turnMax, spacingMax = 0, 0, 0, 0, 0
+			local lastDir
+			for n, g in order do
+				local slot = marks:DebugSlot(g)
+				local pts = slot.points
+				if n > 1 then
+					local prev = marks:DebugSlot(order[n - 1]).points
+					for j = 1, P do
+						joinError = math.max(joinError, (pts[j] - prev[P + j]).Magnitude)
 					end
-					local mid = (c + d) * 0.5
-					local m = Vector3.new(mid.X, bumps(mid.X, mid.Z) + G.Lift, mid.Z)
-					innerError = math.max(innerError, (wheel.e.WorldPosition - m:Lerp(c, k)).Magnitude,
-						(wheel.f.WorldPosition - m:Lerp(d, k)).Magnitude)
-					snappedAll = snappedAll and wheel.snapped == 3
+				end
+				for _, k in { 1, P, P + 1, 2 * P } do
+					edgeError = math.max(edgeError, math.abs(pts[k].Y - (groundY(pts[k].X, pts[k].Z) + G.Lift)))
+				end
+				local wide = pts[2 * P] - pts[P + 1]
+				widthError = math.max(widthError, math.abs(Vector3.new(wide.X, 0, wide.Z).Magnitude - GG.Width))
+				local c0, c1 = (pts[1] + pts[P]) * 0.5, (pts[P + 1] + pts[2 * P]) * 0.5
+				local d = Vector3.new(c1.X - c0.X, 0, c1.Z - c0.Z)
+				spacingMax = math.max(spacingMax, d.Magnitude)
+				if lastDir and d.Magnitude > 1e-3 then
+					turnMax = math.max(turnMax, math.deg(math.acos(math.clamp(d.Unit:Dot(lastDir), -1, 1))))
+				end
+				if d.Magnitude > 1e-3 then
+					lastDir = d.Unit
 				end
 			end
 			check(
-				"a rut's corners sit on the drawn ground under them, and its inner corners on the lines between",
-				marking == 4 and snappedAll and cornerError < 1e-4 and innerError < 1e-4,
-				string.format("%d wheels cutting; corner height error %.2e, inner corner error %.2e studs, %s",
-					marking, cornerError, innerError, if snappedAll then "all 3 lookups on the ground" else "some lookups missed")
+				"the ribbon is joined: each segment starts exactly where the last ended, round a bend, with no steps",
+				#order > 10 and joinError < 1e-3 and turnMax <= RB.TurnDegrees * 1.6 and spacingMax <= RB.Spacing + speed * DT2 + 1e-3,
+				string.format("%d segments round a %d-stud arc; join error %.1e studs; sharpest joint %.1f deg; longest segment %.2f studs",
+					#order, radius, joinError, turnMax, spacingMax)
+			)
+			check(
+				"the ribbon lies on the drawn ground at its full width, three lookups a frame",
+				edgeError < 2e-3 and widthError < 0.02 and math.abs(lookupsPerFrame - 3) < 0.2,
+				string.format("edges %.1e studs off ground + Lift; width error %.3f studs of %.1f; %.2f lookups a frame",
+					edgeError, widthError, GG.Width, lookupsPerFrame)
 			)
 
-			-- The flattened line is laid the same way.
-			local grass20 = stateWith({ slipDeg = 20, speed = 70, throttle = 1, surface = "grass" })
-			w:Cut()
-			for _ = 1, 3 do
-				w:Update(grass20, { handbrake = false }, DT, drawn)
-			end
-			local flatOk = rl.ground.flat.on and rl.snapped == 3
-				and math.abs(rl.c.WorldPosition.Y - (bumps(rl.c.WorldPosition.X, rl.c.WorldPosition.Z) + G.Lift)) < 1e-4
-			check("the flattened line is laid on the drawn ground too", flatOk, `snapped {rl.snapped}, flat on {rl.ground.flat.on}`)
+			-- The shape: the rut's walls lean in, its berms stand up, its floor is the low line.
+			local slot = marks:DebugSlot(order[3])
+			local pts, nrm = slot.points, slot.normals
+			local acrossDir = (pts[P] - pts[1]).Unit
+			local leftWall, rightWall = nrm[3]:Dot(acrossDir), nrm[P - 2]:Dot(acrossDir)
+			local bermUp = (pts[2] - pts[1]).Y > 0.05 or (pts[2].Y - (groundY(pts[2].X, pts[2].Z) + G.Lift)) > 0.05
+			check(
+				"a rut's walls lean toward its centre, so one catches the light and the other is in shade",
+				leftWall > 0.5 and rightWall < -0.5 and bermUp,
+				string.format("left wall normal %.2f across, right %.2f; berm raised %s", leftWall, rightWall, tostring(bermUp))
+			)
 
-			-- Nothing is looked up unless a wheel is marking grass.
+			-- Soft ends: the first section is clear, and so is the last once the mark ends.
+			local first = marks:DebugSlot(order[1]).alpha
+			local last = marks:DebugSlot(endSlot).alpha
+			local firstMax, lastMax = 0, 0
+			for j = 1, P do
+				firstMax = math.max(firstMax, first[j])
+				lastMax = math.max(lastMax, last[P + j])
+			end
+			local fullAt = marks:DebugSlot(order[#order // 2]).alpha
+			local floorAlpha = fullAt[P // 2]
+			check(
+				"a mark fades in at its start and out at its end, and is solid between",
+				firstMax < 1e-3 and lastMax < 1e-3 and floorAlpha > 0.4,
+				string.format("start alpha %.3f, end alpha %.3f, mid-mark floor %.2f", firstMax, lastMax, floorAlpha)
+			)
+			check(
+				"rut to flattened line blends over BlendSeconds, never both at once",
+				kindAfter == "flat" and depthAfterSwitch < 1e-6,
+				string.format("look after the switch %s, blend %.2f after %.2f s (BlendSeconds %.2f)", tostring(kindAfter), depthAfterSwitch, 30 * DT2, RB.BlendSeconds)
+			)
+
+			-- Ageing: it dries and fades, and goes when its life is up.
+			local probe = order[#order // 2]
+			local a0 = marks:DebugSlot(probe).alpha[P // 2]
+			GroundMarks.Age(marks, G.MarkSeconds * 0.85)
+			local a1 = marks:DebugSlot(probe).alpha[P // 2]
+			local liveMid = marks:LiveCount()
+			GroundMarks.Age(marks, G.MarkSeconds * 0.2)
+			local liveEnd = marks:LiveCount()
+			check(
+				"laid marks fade with age and go when their life is up",
+				a1 < a0 * 0.6 and liveMid > 0 and liveEnd == 0,
+				string.format("floor alpha %.2f fresh, %.2f at 85%% of %.0f s; %d segments then, %d after", a0, a1, G.MarkSeconds, liveMid, liveEnd)
+			)
+
+			-- No ground drawn, or too far to reach: the points stay on the car's plane.
+			GroundMarks.Cut(marks)
+			local far = { _drawnAt = function(_, x: number, z: number): number
+				return groundY(x, z) + G.MaxSnap + 2
+			end }
+			local planeError = 0
+			for _, ground in { far, false } do
+				GroundMarks.Clear(marks)
+				for f = 0, 12 do
+					local p, across = at(f * DT2)
+					GroundMarks.Wheel(marks, 2, true, p, up, across, 1, true, if ground then ground else nil, Wheels.onGround, DT2)
+				end
+				local g = marks.wheels[2].head or marks.wheels[2].lastSlot
+				if g then
+					local q = marks:DebugSlot(g).points
+					local p = at(12 * DT2)
+					planeError = math.max(planeError, math.abs(q[P + 1].Y - (p.Y + G.Lift)), math.abs(q[2 * P].Y - (p.Y + G.Lift)))
+				else
+					planeError = math.huge
+				end
+				GroundMarks.Cut(marks)
+			end
+			check(
+				"with no drawn ground in reach the ribbon lies on the car's plane",
+				planeError < 1e-3,
+				string.format("edges %.1e studs off the plane + Lift", planeError)
+			)
+
+			-- Room: a long straight run lays more than the ring holds, across many chunk
+			-- reaches. The oldest go first, and the newest still land where they should.
+			GroundMarks.Clear(marks)
+			local t0 = os.clock()
+			local laid = 0
+			local x = 0
+			for _ = 1, marks.total + 200 do
+				x += RB.Spacing
+				local p = Vector3.new(x, groundY(x, 0) + 0.5, 0)
+				GroundMarks.Wheel(marks, 3, true, p, up, Vector3.zAxis, 1, true, drawn, Wheels.onGround, DT2)
+				laid += 1
+			end
+			local perCall = (os.clock() - t0) / laid * 1e6
+			local newest = marks:DebugSlot(marks.wheels[3].lastSlot :: number).points
+			local newestError = math.abs(newest[2 * P].Y - (groundY(newest[2 * P].X, newest[2 * P].Z) + G.Lift))
+			local live = marks:LiveCount()
+			check(
+				"a full ring reuses the oldest segments, and new chunks still lay marks in the right place",
+				marks.recycled > 0 and live <= marks.total and newestError < 2e-3,
+				string.format("%d sections over %.0f studs; %d live of %d slots, %d reused early; newest edge %.1e studs off; %.1f us a section",
+					laid, x, live, marks.total, marks.recycled, newestError, perCall)
+			)
+			GroundMarks.Clear(marks)
+			check(
+				"and the ribbon made nothing while it drew",
+				#marks.folder:GetDescendants() == folderBefore and marks:LiveCount() == 0,
+				`{folderBefore} in its folder before, {#marks.folder:GetDescendants()} after; Clear leaves {marks:LiveCount()} segments`
+			)
+
+			-- Through `Wheels`: the ground is asked only while a wheel marks grass.
 			calls = 0
 			w:Cut()
 			for _, s in {
@@ -1186,48 +1315,21 @@ function Tests.run(opts)
 			local idleCalls = calls
 			calls = 0
 			w:Cut()
-			w:Update(grass45, { handbrake = false }, DT, drawn)
+			w:Update(stateWith({ slipDeg = 45, speed = 70, throttle = 1, surface = "grass" }), { handbrake = false }, DT, drawn)
 			check(
 				"the ground is asked only by wheels marking grass: three lookups each",
 				idleCalls == 0 and calls == 3 * #CarModel.WHEEL_NAMES,
 				`{idleCalls} lookups on tarmac, gravel and coasting on grass; {calls} for four wheels cutting ruts`
 			)
-
-			-- Too far off the car's plane, or no ground drawn there: the corner stays on the plane.
-			local function planar(): number
-				local worst = 0
-				local up = rig.body.CFrame.UpVector
-				for _, wheel in w.wheels do
-					local across = wheel.d.WorldPosition - wheel.c.WorldPosition
-					local core = wheel.f.WorldPosition - wheel.e.WorldPosition
-					worst = math.max(worst, math.abs(across:Dot(up)), math.abs(core:Dot(up)),
-						math.abs((wheel.e.WorldPosition - wheel.c.WorldPosition):Dot(up)))
-				end
-				return worst
-			end
-			local farOff = { _drawnAt = function(_, x: number, z: number): number
-				return bumps(x, z) + G.MaxSnap + 2
-			end }
-			local nothing = { _drawnAt = function(): number?
-				return nil
-			end }
 			w:Cut()
-			w:Update(grass45, { handbrake = false }, DT, farOff)
-			local farSnapped, farPlane = rl.snapped, planar()
-			w:Update(grass45, { handbrake = false }, DT, nothing)
-			local noneSnapped, nonePlane = rl.snapped, planar()
-			check(
-				"a corner the drawn ground cannot reach within MaxSnap, or with none drawn, stays on the car's plane",
-				farSnapped == 0 and noneSnapped == 0 and farPlane < 1e-4 and nonePlane < 1e-4 and rl.ground.trench.on,
-				string.format("snapped %d and %d; out of plane %.2e and %.2e studs", farSnapped, noneSnapped, farPlane, nonePlane)
-			)
-			w:Cut()
+			GroundMarks.Clear(marks)
 		end
 		check("and none of it built anything", w:CountInstances() == want, `{w:CountInstances()} instances`)
 
 		w:Clear()
 		check("Clear takes all of them away", w:CountInstances() == 0, `{#rig.body:GetDescendants()} left on the body`)
 		car:Destroy()
+		w.marks:Destroy()
 	end
 
 	----------------------------------------------------------------------------
