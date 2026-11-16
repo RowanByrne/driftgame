@@ -359,12 +359,16 @@ return {
 			TileLength = 6, -- studs of the mark one repeat of the streak texture covers
 			AgeLevels = 28, -- how many steps the drying and fading are rewritten in (0.5 s each)
 			Material = Enum.Material.SmoothPlastic, -- a little sheen: wet earth catches the light
+			Transparency = 0.001, -- the parts' own: just over 0 puts them in the see-through
+			-- pass, so the texture's alpha (the soft edges, the opacity copies) is drawn
 
 			-- The streak texture, made in code at start (an `EditableImage`). Grey, multiplied by
 			-- the ribbon's colours: lines along the travel, flecks and clods toward the edges,
 			-- and a ragged, soft alpha edge. Nothing is uploaded.
 			Texture = {
-				Width = 64, -- pixels across the mark
+				Levels = 12, -- copies of the tile side by side, clear to solid: a segment's
+				-- opacity is which one its UVs point at (vertex alpha is not see-through)
+				Width = 64, -- pixels across the mark, in one copy
 				Height = 256, -- pixels along one `TileLength`; it repeats seamlessly
 				Seed = 265,
 				Base = 0.94, -- brightness between streaks
@@ -392,6 +396,9 @@ return {
 
 			Width = 3.0, -- studs edge to edge: wider than the tyre (1.6), for the soil it
 			-- pushes aside. Narrows through a slide like every mark (`Marks.MinWidthRatio`, T-207)
+			MinWidthRatio = 0.5, -- the ribbon narrows through a slide (T-207) only to this share:
+			-- a tyre ploughing sideways still digs its contact patch's length. OURS, and wider
+			-- than tyre marks' `Marks.MinWidthRatio` (0.25): at 0.25 a sideways rut was a thin line
 			DebrisOffset = 0.95, -- studs left of the contact the clippings and dirt are thrown from
 
 			-- The ribbon's cross-section, from its outer edge in to the floor beside the centre
@@ -407,26 +414,28 @@ return {
 				{ Offset = 0.26, Height = 0.00, Tilt = 12 }, -- the floor's edge; flat between
 			},
 
-			-- The two looks, one entry per `Profile` point: `Colour` when laid, `DryColour` at
-			-- the end of its life, `Alpha` (1 solid, 0 gone).
+			-- The two looks: `Opacity` (1 solid), and one entry per `Profile` point, `Colour`
+			-- when laid and `DryColour` at the end of its life. The edges' fade is the texture's.
 			FlatMark = { -- gentle slides: the grass pressed down along the travel, not torn
+				Opacity = 0.5,
 				HeightScale = 0,
 				TiltScale = 0.15,
 				Points = {
-					{ Colour = Color3.fromRGB(96, 148, 66), DryColour = Color3.fromRGB(96, 148, 66), Alpha = 0 },
-					{ Colour = Color3.fromRGB(128, 170, 84), DryColour = Color3.fromRGB(116, 160, 76), Alpha = 0.3 }, -- bent blades, lighter
-					{ Colour = Color3.fromRGB(78, 120, 52), DryColour = Color3.fromRGB(86, 130, 58), Alpha = 0.42 },
-					{ Colour = Color3.fromRGB(56, 98, 40), DryColour = Color3.fromRGB(68, 110, 46), Alpha = 0.5 }, -- pressed flat, darker
+					{ Colour = Color3.fromRGB(96, 148, 66), DryColour = Color3.fromRGB(96, 148, 66) },
+					{ Colour = Color3.fromRGB(128, 170, 84), DryColour = Color3.fromRGB(116, 160, 76) }, -- bent blades, lighter
+					{ Colour = Color3.fromRGB(78, 120, 52), DryColour = Color3.fromRGB(86, 130, 58) },
+					{ Colour = Color3.fromRGB(56, 98, 40), DryColour = Color3.fromRGB(68, 110, 46) }, -- pressed flat, darker
 				},
 			},
 			TrenchMark = { -- past `TrenchSlipDegrees`: the rut, cut through to the soil
+				Opacity = 1,
 				HeightScale = 1,
 				TiltScale = 1,
 				Points = {
-					{ Colour = Color3.fromRGB(100, 88, 56), DryColour = Color3.fromRGB(110, 98, 66), Alpha = 0 },
-					{ Colour = Color3.fromRGB(122, 100, 68), DryColour = Color3.fromRGB(138, 118, 84), Alpha = 0.92 }, -- churned berm
-					{ Colour = Color3.fromRGB(84, 62, 40), DryColour = Color3.fromRGB(104, 82, 56), Alpha = 1 }, -- the wall
-					{ Colour = Color3.fromRGB(46, 32, 20), DryColour = Color3.fromRGB(86, 64, 42), Alpha = 1 }, -- wet floor, drying
+					{ Colour = Color3.fromRGB(100, 88, 56), DryColour = Color3.fromRGB(110, 98, 66) },
+					{ Colour = Color3.fromRGB(122, 100, 68), DryColour = Color3.fromRGB(138, 118, 84) }, -- churned berm
+					{ Colour = Color3.fromRGB(84, 62, 40), DryColour = Color3.fromRGB(104, 82, 56) }, -- the wall
+					{ Colour = Color3.fromRGB(46, 32, 20), DryColour = Color3.fromRGB(86, 64, 42) }, -- wet floor, drying
 				},
 			},
 

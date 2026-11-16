@@ -21,9 +21,13 @@
 --   * A STREAK TEXTURE made here in code (`EditableImage`, nothing uploaded): tread lines
 --     along the travel, flecks and clods toward the edges, a ragged soft alpha edge. Grey,
 --     multiplied by the vertex colours, so the same texture serves grass and mud.
---   * VERTEX COLOUR AND ALPHA per section: a mark fades in over its first studs, out over its
---     last segment, blends between the flattened-grass look and the rut look, and dries and
---     fades with age, rewritten in `AgeLevels` steps.
+--   * VERTEX COLOUR per section: the flattened-grass look blends into the rut look, and the
+--     colour dries with age. OPACITY comes from the TEXTURE, not the vertices: Roblox draws a
+--     vertex colour's alpha as a blend toward white, not as see-through (measured: the first
+--     build's fade-ins came out as white streaks). So the texture is an ATLAS of
+--     `Texture.Levels` copies of the streak tile side by side, each fainter than the last, and
+--     a segment picks its opacity by which copy its UVs point at: it fades in over a mark's
+--     first studs, out over its last segment, and out with age, in `AgeLevels` steps.
 --   * ON THE DRAWN GROUND: each section's outer points and centre are put on the ground mesh
 --     (`GroundMeshView._drawnAt`, `Wheels.onGround`), the rest on the lines between.
 --
@@ -108,7 +112,9 @@ export type GroundMarks = typeof(setmetatable(
 		scratchPts: { Vector3 },
 		scratchNrm: { Vector3 },
 		lutC: { Color3 }, -- [(h-1)*(DL+1)*AL + dl*AL + al + 1]
-		lutA: { number },
+		fadeAt: { number }, -- per age step, 0..1: how much of a segment's opacity is left
+		v0: { number }, -- per slot: texture v at its two sections
+		v1: { number },
 		offsets: { number }, -- per point, signed share of the half-width, -1..1
 		heights: { { number } }, -- per point: flat, rut
 		tilts: { { number } },
@@ -208,6 +214,29 @@ function GroundMarks.texturePixels(T: any): buffer
 	return buf
 end
 
+-- The atlas the ribbon is drawn with: `Levels` copies of the tile side by side, copy `c`
+-- (0-based) at `c / (Levels - 1)` of the tile's opacity, so the first is clear and the last
+-- solid. `(Width * Levels) x Height` RGBA bytes.
+function GroundMarks.atlasPixels(T: any): buffer
+	local W, H, K = T.Width, T.Height, T.Levels
+	local tile = GroundMarks.texturePixels(T)
+	local out = buffer.create(W * K * H * 4)
+	for c = 0, K - 1 do
+		local opacity = c / math.max(K - 1, 1)
+		for y = 0, H - 1 do
+			for x = 0, W - 1 do
+				local i = (y * W + x) * 4
+				local o = (y * W * K + c * W + x) * 4
+				buffer.writeu8(out, o, buffer.readu8(tile, i))
+				buffer.writeu8(out, o + 1, buffer.readu8(tile, i + 1))
+				buffer.writeu8(out, o + 2, buffer.readu8(tile, i + 2))
+				buffer.writeu8(out, o + 3, math.floor(buffer.readu8(tile, i + 3) * opacity + 0.5))
+			end
+		end
+	end
+	return out
+end
+
 --------------------------------------------------------------------------------
 -- Construction
 --------------------------------------------------------------------------------
@@ -248,7 +277,9 @@ function GroundMarks.new(): GroundMarks
 		scratchPts = table.create(P, Vector3.zero),
 		scratchNrm = table.create(P, Vector3.yAxis),
 		lutC = {},
-		lutA = {},
+		fadeAt = {},
+		v0 = {},
+		v1 = {},
 		offsets = table.create(P, 0),
 		heights = {},
 		tilts = {},
@@ -291,8 +322,9 @@ function GroundMarks.new(): GroundMarks
 	return self
 end
 
--- The colour and alpha of every profile point, at every blend step and every age step, so
--- rewriting a slot as it ages is table lookups and no `Color3` made.
+-- The colour of every profile point at every blend step and every age step, and how much
+-- opacity is left at every age step, so rewriting a slot as it ages is table lookups and no
+-- `Color3` made.
 function GroundMarks._buildTables(self: GroundMarks)
 	local G = Config.Fx.Ground
 	local R = G.Ribbon
@@ -300,19 +332,19 @@ function GroundMarks._buildTables(self: GroundMarks)
 	local AL = R.AgeLevels
 	local fadeAt = Config.Fx.Marks.FadeAt
 	table.clear(self.lutC)
-	table.clear(self.lutA)
+	table.clear(self.fadeAt)
+	for al = 0, AL - 1 do
+		local age = (al + 0.5) / AL
+		self.fadeAt[al + 1] = if age <= fadeAt then 1 else math.clamp(1 - (age - fadeAt) / math.max(1 - fadeAt, 1e-4), 0, 1)
+	end
 	for h = 1, #flat do
 		for dl = 0, DEPTH_LEVELS do
 			local d = dl / DEPTH_LEVELS
 			local wet = flat[h].Colour:Lerp(rut[h].Colour, d)
 			local dry = flat[h].DryColour:Lerp(rut[h].DryColour, d)
-			local alpha = flat[h].Alpha + (rut[h].Alpha - flat[h].Alpha) * d
 			for al = 0, AL - 1 do
-				local age = (al + 0.5) / AL
-				local fade = if age <= fadeAt then 1 else math.clamp(1 - (age - fadeAt) / math.max(1 - fadeAt, 1e-4), 0, 1)
 				local k = (h - 1) * (DEPTH_LEVELS + 1) * AL + dl * AL + al + 1
-				self.lutC[k] = wet:Lerp(dry, age)
-				self.lutA[k] = alpha * fade
+				self.lutC[k] = wet:Lerp(dry, (al + 0.5) / AL)
 			end
 		end
 	end
@@ -325,7 +357,7 @@ local function makeTemplate(slots: number, P: number): EditableMesh
 		local v, c, n, u = table.create(2 * P, 0), table.create(2 * P, 0), table.create(2 * P, 0), table.create(2 * P, 0)
 		for k = 1, 2 * P do
 			v[k] = em:AddVertex(Vector3.zero)
-			c[k] = em:AddColor(Color3.new(1, 1, 1), 0)
+			c[k] = em:AddColor(Color3.new(1, 1, 1), 1)
 			n[k] = em:AddNormal(Vector3.yAxis)
 			u[k] = em:AddUV(Vector2.zero)
 		end
@@ -366,9 +398,10 @@ function GroundMarks.Build(self: GroundMarks, parent: Instance?): boolean
 		local folder = Instance.new("Folder")
 		folder.Name = Config.Fx.Names.MarksFolder
 		local T = R.Texture
-		local image = AssetService:CreateEditableImage({ Size = Vector2.new(T.Width, T.Height) })
+		local size = Vector2.new(T.Width * T.Levels, T.Height)
+		local image = AssetService:CreateEditableImage({ Size = size })
 		assert(image, "no EditableImage")
-		image:WritePixelsBuffer(Vector2.zero, Vector2.new(T.Width, T.Height), GroundMarks.texturePixels(T))
+		image:WritePixelsBuffer(Vector2.zero, size, GroundMarks.atlasPixels(T))
 		self.image = image
 		for ci = 1, R.Chunks do
 			local template = makeTemplate(self.perChunk, P)
@@ -397,6 +430,7 @@ function GroundMarks.Build(self: GroundMarks, parent: Instance?): boolean
 			part.CastShadow = false
 			part.Material = R.Material
 			part.Color = Color3.new(1, 1, 1)
+			part.Transparency = R.Transparency -- puts it in the see-through pass, for the atlas
 			part.TextureContent = Content.fromObject(image)
 			part.CFrame = CFrame.new(0, 0, 0)
 			part.Parent = folder
@@ -408,6 +442,7 @@ function GroundMarks.Build(self: GroundMarks, parent: Instance?): boolean
 			self.level[g] = -1
 			self.isHead[g] = false
 			self.d0[g], self.d1[g], self.s0[g], self.s1[g] = 0, 0, 0, 0
+			self.v0[g], self.v1[g] = 0, 0
 		end
 		folder.Parent = parent or workspace
 		self.folder = folder
@@ -500,19 +535,29 @@ local function alloc(self: GroundMarks, at: Vector3): number
 	return g
 end
 
-local function lut(self: GroundMarks, j: number, d: number, al: number): (Color3, number)
+local function lut(self: GroundMarks, j: number, d: number, al: number): Color3
 	local P = self.P
 	local half = P // 2
 	local h = if j <= half then j else P + 1 - j
 	local AL = Config.Fx.Ground.Ribbon.AgeLevels
 	local dl = math.clamp(math.floor(d * DEPTH_LEVELS + 0.5), 0, DEPTH_LEVELS)
-	local k = (h - 1) * (DEPTH_LEVELS + 1) * AL + dl * AL + math.clamp(al, 0, AL - 1) + 1
-	return self.lutC[k], self.lutA[k]
+	return self.lutC[(h - 1) * (DEPTH_LEVELS + 1) * AL + dl * AL + math.clamp(al, 0, AL - 1) + 1]
 end
 
--- Write one section of slot `g` (0 the start, 1 the end): points, normals, texture v, and
--- its colour at blend `d`, strength `s` and age step `al`.
-local function writeSection(self: GroundMarks, g: number, sec: number, pts: { Vector3 }, nrm: { Vector3 }, v: number, d: number, s: number, al: number)
+-- Which copy of the atlas slot `g` is drawn with at age step `al`: its strength (soft ends),
+-- its look's opacity (a flattened line is fainter than a rut) and what age has left of it.
+function GroundMarks.opacityLevel(self: GroundMarks, g: number, al: number): number
+	local G = Config.Fx.Ground
+	local K = G.Ribbon.Texture.Levels
+	local d = (self.d0[g] + self.d1[g]) * 0.5
+	local look = G.Grass.FlatMark.Opacity + (G.Grass.TrenchMark.Opacity - G.Grass.FlatMark.Opacity) * d
+	local s = (self.s0[g] + self.s1[g]) * 0.5
+	local fade = self.fadeAt[math.clamp(al, 0, G.Ribbon.AgeLevels - 1) + 1]
+	return math.clamp(math.floor(s * look * fade * (K - 1) + 0.5), 0, K - 1)
+end
+
+-- Write one section of slot `g` (0 the start, 1 the end): its points and normals.
+local function writeSection(self: GroundMarks, g: number, sec: number, pts: { Vector3 }, nrm: { Vector3 })
 	local ch = chunkOf(self, g)
 	local em, origin = ch.em, ch.origin
 	local P = self.P
@@ -521,26 +566,26 @@ local function writeSection(self: GroundMarks, g: number, sec: number, pts: { Ve
 		local k = base + j
 		em:SetPosition(self.vids[k], pts[j] - origin)
 		em:SetNormal(self.nids[k], nrm[j])
-		em:SetUV(self.uids[k], Vector2.new(self.us[j], v))
-		local colour, alpha = lut(self, j, d, al)
-		em:SetColor(self.cids[k], colour)
-		em:SetColorAlpha(self.cids[k], alpha * s)
 	end
 end
 
--- Rewrite slot `g`'s colours for age step `al` (positions and normals stay).
-local function recolour(self: GroundMarks, g: number, al: number)
+-- Paint slot `g` for age step `al`: every vertex's colour (blend and drying) and its UV in
+-- the atlas copy for its opacity.
+local function paint(self: GroundMarks, g: number, al: number)
 	local em = chunkOf(self, g).em
 	local P = self.P
+	local T = Config.Fx.Ground.Ribbon.Texture
+	local K = T.Levels
+	local copy = GroundMarks.opacityLevel(self, g, al)
+	local pad = 1 / T.Width
 	local base = (g - 1) * 2 * P
 	for sec = 0, 1 do
 		local d = if sec == 0 then self.d0[g] else self.d1[g]
-		local s = if sec == 0 then self.s0[g] else self.s1[g]
+		local v = if sec == 0 then self.v0[g] else self.v1[g]
 		for j = 1, P do
 			local k = base + sec * P + j
-			local colour, alpha = lut(self, j, d, al)
-			em:SetColor(self.cids[k], colour)
-			em:SetColorAlpha(self.cids[k], alpha * s)
+			em:SetColor(self.cids[k], lut(self, j, d, al))
+			em:SetUV(self.uids[k], Vector2.new((copy + pad + self.us[j] * (1 - 2 * pad)) / K, v))
 		end
 	end
 end
@@ -606,7 +651,7 @@ local function finish(self: GroundMarks, r: Ribbon)
 		self.isHead[g] = false
 		local al = math.max(self.level[g], 0)
 		self.level[g] = al
-		recolour(self, g, al)
+		paint(self, g, al)
 	end
 	r.head = nil
 	r.lastSlot = nil
@@ -653,7 +698,7 @@ function GroundMarks.Wheel(
 		r.prevDir = nil
 		r.dist = 0
 		r.depth = if rut then 1 else 0
-		r.ratio = ratio
+		r.ratio = math.max(ratio, G.Grass.MinWidthRatio)
 		local tangent = up:Cross(across)
 		r.snapped = section(self, contact, if tangent.Magnitude > 1e-4 then tangent.Unit else Vector3.zAxis, up, hw * r.ratio, r.depth, ground, onGround)
 		for j = 1, self.P do
@@ -667,7 +712,7 @@ function GroundMarks.Wheel(
 	local target = if rut then 1 else 0
 	local blend = dt / math.max(R.BlendSeconds, 1e-4)
 	r.depth = if r.depth < target then math.min(r.depth + blend, target) else math.max(r.depth - blend, target)
-	r.ratio += (ratio - r.ratio) * (1 - math.exp(-dt / math.max(R.WidthSeconds, 1e-4)))
+	r.ratio += (math.max(ratio, G.Grass.MinWidthRatio) - r.ratio) * (1 - math.exp(-dt / math.max(R.WidthSeconds, 1e-4)))
 
 	local chord = contact - r.lastPos
 	chord -= up * chord:Dot(up)
@@ -702,15 +747,18 @@ function GroundMarks.Wheel(
 		g = alloc(self, r.lastPos)
 		r.head = g
 		self.isHead[g] = true
-		self.d0[g], self.s0[g] = r.lastD, r.lastS
-		writeSection(self, g, 0, r.lastPts, r.lastNrm, r.lastV, r.lastD, r.lastS, 0)
+		self.d0[g], self.s0[g], self.v0[g] = r.lastD, r.lastS, r.lastV
+		writeSection(self, g, 0, r.lastPts, r.lastNrm)
 	end
-	self.d1[g], self.s1[g] = r.depth, strength
-	writeSection(self, g, 1, self.scratchPts, self.scratchNrm, v, r.depth, strength, 0)
+	self.d1[g], self.s1[g], self.v1[g] = r.depth, strength, v
+	writeSection(self, g, 1, self.scratchPts, self.scratchNrm)
+	paint(self, g, 0)
 
 	-- Commit: this section is fixed, and the next segment starts from it.
 	local turned = if r.prevDir then math.deg(math.acos(math.clamp(dir:Dot(r.prevDir :: Vector3), -1, 1))) else 0
-	if len >= R.Spacing or (len >= R.MinSpacing and turned >= R.TurnDegrees) then
+	-- Short segments while the mark fades in, so its opacity climbs in small steps.
+	local spacing = if r.dist < R.FadeInStuds then R.MinSpacing else R.Spacing
+	if len >= spacing or (len >= R.MinSpacing and turned >= R.TurnDegrees) then
 		self.isHead[g] = false
 		self.born[g] = self.clock
 		self.level[g] = 0
@@ -744,7 +792,7 @@ function GroundMarks.Age(self: GroundMarks, dt: number)
 				local al = math.floor(age / life * AL)
 				if al ~= self.level[g] then
 					self.level[g] = al
-					recolour(self, g, al)
+					paint(self, g, al)
 				end
 			end
 		end
@@ -804,13 +852,24 @@ function GroundMarks.DebugSlot(self: GroundMarks, g: number)
 	local ch = chunkOf(self, g)
 	local P = self.P
 	local base = (g - 1) * 2 * P
-	local pts, nrm, alpha = {}, {}, {}
+	local pts, nrm, uv = {}, {}, {}
 	for k = 1, 2 * P do
 		pts[k] = ch.em:GetPosition(self.vids[base + k]) + ch.origin
 		nrm[k] = ch.em:GetNormal(self.nids[base + k])
-		alpha[k] = ch.em:GetColorAlpha(self.cids[base + k])
+		uv[k] = ch.em:GetUV(self.uids[base + k])
 	end
-	return { live = self.live[g], head = self.isHead[g], born = self.born[g], points = pts, normals = nrm, alpha = alpha }
+	-- `opacity`: 0..1, the atlas copy its UVs point at.
+	local K = Config.Fx.Ground.Ribbon.Texture.Levels
+	local copy = math.floor(uv[1].X * K)
+	return {
+		live = self.live[g],
+		head = self.isHead[g],
+		born = self.born[g],
+		points = pts,
+		normals = nrm,
+		uvs = uv,
+		opacity = copy / math.max(K - 1, 1),
+	}
 end
 
 function GroundMarks.DebugState(self: GroundMarks)

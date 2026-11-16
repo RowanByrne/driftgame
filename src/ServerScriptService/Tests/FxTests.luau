@@ -1175,6 +1175,7 @@ function Tests.run(opts)
 				end
 				local wide = pts[2 * P] - pts[P + 1]
 				widthError = math.max(widthError, math.abs(Vector3.new(wide.X, 0, wide.Z).Magnitude - GG.Width))
+				-- (ratio 1 here: the T-207 narrowing is `Wheels`', floored at `Grass.MinWidthRatio`)
 				local c0, c1 = (pts[1] + pts[P]) * 0.5, (pts[P + 1] + pts[2 * P]) * 0.5
 				local d = Vector3.new(c1.X - c0.X, 0, c1.Z - c0.Z)
 				spacingMax = math.max(spacingMax, d.Magnitude)
@@ -1210,20 +1211,38 @@ function Tests.run(opts)
 				string.format("left wall normal %.2f across, right %.2f; berm raised %s", leftWall, rightWall, tostring(bermUp))
 			)
 
-			-- Soft ends: the first section is clear, and so is the last once the mark ends.
-			local first = marks:DebugSlot(order[1]).alpha
-			local last = marks:DebugSlot(endSlot).alpha
-			local firstMax, lastMax = 0, 0
-			for j = 1, P do
-				firstMax = math.max(firstMax, first[j])
-				lastMax = math.max(lastMax, last[P + j])
+			-- Soft ends: opacity climbs over the first segments and drops on the last.
+			local ramp = {}
+			for n = 1, math.min(5, #order) do
+				table.insert(ramp, marks:DebugSlot(order[n]).opacity)
 			end
-			local fullAt = marks:DebugSlot(order[#order // 2]).alpha
-			local floorAlpha = fullAt[P // 2]
+			local rising = true
+			for n = 2, #ramp do
+				rising = rising and ramp[n] >= ramp[n - 1]
+			end
+			local lastOpacity = marks:DebugSlot(endSlot).opacity
+			local midOpacity = marks:DebugSlot(order[math.max(#order // 3, 1)]).opacity
 			check(
 				"a mark fades in at its start and out at its end, and is solid between",
-				firstMax < 1e-3 and lastMax < 1e-3 and floorAlpha > 0.4,
-				string.format("start alpha %.3f, end alpha %.3f, mid-mark floor %.2f", firstMax, lastMax, floorAlpha)
+				ramp[1] <= 0.2 and rising and lastOpacity < 0.6 and midOpacity > 0.99,
+				string.format("first segments' opacity %s, last %.2f, mid-rut %.2f", fmtList(ramp), lastOpacity, midOpacity)
+			)
+			-- The atlas the opacity comes from: copy 0 clear, the last the tile itself.
+			local atlas = GroundMarks.atlasPixels(T)
+			local tile = GroundMarks.texturePixels(T)
+			local K = T.Levels
+			local clear, solid = true, true
+			for y = 0, T.Height - 1, 7 do
+				for x = 0, T.Width - 1, 3 do
+					local tileA = buffer.readu8(tile, (y * T.Width + x) * 4 + 3)
+					clear = clear and buffer.readu8(atlas, (y * T.Width * K + x) * 4 + 3) == 0
+					solid = solid and buffer.readu8(atlas, (y * T.Width * K + (K - 1) * T.Width + x) * 4 + 3) == tileA
+				end
+			end
+			check(
+				"opacity is the texture's: an atlas of copies from clear to solid",
+				clear and solid and buffer.len(atlas) == T.Width * K * T.Height * 4,
+				`{K} copies of {T.Width}x{T.Height}; first clear {clear}, last the tile {solid}`
 			)
 			check(
 				"rut to flattened line blends over BlendSeconds, never both at once",
@@ -1233,16 +1252,16 @@ function Tests.run(opts)
 
 			-- Ageing: it dries and fades, and goes when its life is up.
 			local probe = order[#order // 2]
-			local a0 = marks:DebugSlot(probe).alpha[P // 2]
+			local a0 = marks:DebugSlot(probe).opacity
 			GroundMarks.Age(marks, G.MarkSeconds * 0.85)
-			local a1 = marks:DebugSlot(probe).alpha[P // 2]
+			local a1 = marks:DebugSlot(probe).opacity
 			local liveMid = marks:LiveCount()
 			GroundMarks.Age(marks, G.MarkSeconds * 0.2)
 			local liveEnd = marks:LiveCount()
 			check(
 				"laid marks fade with age and go when their life is up",
 				a1 < a0 * 0.6 and liveMid > 0 and liveEnd == 0,
-				string.format("floor alpha %.2f fresh, %.2f at 85%% of %.0f s; %d segments then, %d after", a0, a1, G.MarkSeconds, liveMid, liveEnd)
+				string.format("opacity %.2f fresh, %.2f at 85%% of %.0f s; %d segments then, %d after", a0, a1, G.MarkSeconds, liveMid, liveEnd)
 			)
 
 			-- No ground drawn, or too far to reach: the points stay on the car's plane.
