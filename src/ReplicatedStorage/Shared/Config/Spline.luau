@@ -436,6 +436,9 @@ local Spline = {
 		-- road `From` studs or more from the car, either way. Past about 2 400 studs a 64-stud
 		-- tile is a few pixels; at 32 the corridor of 9 600 studs each way took every tile.
 		RoadFar = { { From = 2400, Coarsest = 64 }, { From = 4800, Coarsest = 128 } },
+		-- the most tiles the Road ahead and Road behind steps may add past Ultra's own (T-263):
+		-- with Ultra and both at Longest that is about 78 000 of the ~81 000 triangles
+		CorridorMost = 60,
 		RoadPad = 256, -- studs: tiles this near the drawn road are drawn even past `Reach`
 		ReleaseOnFail = 24, -- tiles let go if the device will not make another (room for the road)
 		-- THE PLAYER'S "GROUND DETAIL" (Settings, Graphics; docs/game/SETTINGS.md), light to far.
@@ -497,10 +500,10 @@ local Spline = {
 		-- A DEVICE CAN ONLY DRAW ROAD THE SERVER HAS SENT: `Config.Road.AheadStuds`, the
 		-- server's window ahead, is at least the longest step here.
 		Ahead = {
-			{ Name = "Short", Studs = 3000, GroundTiles = 12 },
-			{ Name = "Medium", Studs = 4800, GroundTiles = 20 },
-			{ Name = "Long", Studs = 7200, GroundTiles = 28 },
-			{ Name = "Longest", Studs = 9600, GroundTiles = 36 },
+			{ Name = "Short", Studs = 3000, GroundTiles = 40 },
+			{ Name = "Medium", Studs = 4800, GroundTiles = 60 },
+			{ Name = "Long", Studs = 7200, GroundTiles = 80 },
+			{ Name = "Longest", Studs = 9600, GroundTiles = 100 },
 		},
 		AheadDefault = 2, -- keyboard and mouse, or gamepad: today's
 		AheadTouchDefault = 2, -- a phone or tablet: today's too
@@ -515,10 +518,10 @@ local Spline = {
 		-- 232 at Long, 120 at Longest). So each step gives the ground that many more tiles
 		-- (128 triangles each) for its corridor, and the sharp ground ahead keeps its share.
 		Behind = {
-			{ Name = "Short", Studs = 3000, GroundTiles = 8 },
-			{ Name = "Medium", Studs = 4800, GroundTiles = 14 },
-			{ Name = "Long", Studs = 7200, GroundTiles = 22 },
-			{ Name = "Longest", Studs = 9600, GroundTiles = 30 },
+			{ Name = "Short", Studs = 3000, GroundTiles = 30 },
+			{ Name = "Medium", Studs = 4800, GroundTiles = 40 },
+			{ Name = "Long", Studs = 7200, GroundTiles = 55 },
+			{ Name = "Longest", Studs = 9600, GroundTiles = 70 },
 		},
 		BehindDefault = 1, -- keyboard and mouse, or gamepad
 		BehindTouchDefault = 1, -- a phone or tablet

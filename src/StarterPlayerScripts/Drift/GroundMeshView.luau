@@ -377,7 +377,7 @@ function GroundMeshView._tiles(self: View): number
 	local detail = Config.Spline.Ground.Detail
 	local own = GroundDetail.preset(self.detail).Tiles
 	local more = (RoadBehind.preset().GroundTiles or 0) + (RoadAhead.preset().GroundTiles or 0)
-	return math.max(own, math.min(own + more, detail[#detail].Tiles))
+	return math.max(own, math.min(own + more, detail[#detail].Tiles + Config.Spline.Ground.CorridorMost))
 end
 
 function GroundMeshView._setCap(self: View)
