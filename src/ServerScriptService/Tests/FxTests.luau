@@ -192,11 +192,11 @@ function Tests.run(opts)
 			`built: {table.concat(F.Built, ", ")}{if builtOk then "" else "; incomplete look for " .. table.concat(missing, ", ")}`
 		)
 		-- THE INSTANCE BUDGET IS THIS FORMULA: 4 wheels x (2 Attachments + smoking surfaces x
-		-- (1 Trail + 2 ParticleEmitters) + the off-road layer's 2 Attachments, 3 Trails and 3
-		-- ParticleEmitters, T-188, plus 3 fixed emitter anchors, T-207).
+		-- (1 Trail + 2 ParticleEmitters) + the off-road layer's 4 Attachments, 7 Trails and 3
+		-- ParticleEmitters, T-188 and T-265, plus 3 fixed emitter anchors, T-207): 88 a car.
 		check(
 			"one smoking surface, and the budget it comes to",
-			#F.Built == 1 and Wheels.perWheel() == 16,
+			#F.Built == 1 and Wheels.perWheel() == 22,
 			`{#F.Built} surface(s) -> {#CarModel.WHEEL_NAMES * Wheels.perWheel()} instances per car`
 		)
 		-- ONE DARKNESS, which is the whole of the rollback. A ladder would be a table.
@@ -637,7 +637,9 @@ function Tests.run(opts)
 					path -= s.groundUp * path:Dot(s.groundUp)
 					local span = wheel.b.WorldPosition - wheel.a.WorldPosition
 					local trenchSpan = wheel.d.WorldPosition - wheel.c.WorldPosition
-					planeError = math.max(planeError, math.abs(span:Dot(s.groundUp)), math.abs(trenchSpan:Dot(s.groundUp)))
+					local coreSpan = wheel.f.WorldPosition - wheel.e.WorldPosition
+					planeError = math.max(planeError, math.abs(span:Dot(s.groundUp)), math.abs(trenchSpan:Dot(s.groundUp)),
+						math.abs(coreSpan:Dot(s.groundUp)))
 					local across
 					if path.Magnitude > 1e-4 then
 						across = path.Unit:Cross(s.groundUp).Unit
@@ -652,7 +654,8 @@ function Tests.run(opts)
 					-- Ignore the first yawing frame's instantaneous fallback vs chord.
 					if frame > 1 or s.r == 0 then
 						widthError = math.max(widthError, math.abs(math.abs(span:Dot(across)) - F.Marks.Width * ratio),
-							math.abs(math.abs(trenchSpan:Dot(across)) - F.Ground.Grass.TrenchMark.Width * ratio))
+							math.abs(math.abs(trenchSpan:Dot(across)) - F.Ground.Grass.Width * ratio),
+							math.abs(math.abs(coreSpan:Dot(across)) - F.Ground.Grass.CoreWidth * ratio))
 					end
 					if spans[wheel.index] and span:Dot(spans[wheel.index]) < -1e-5 then flips += 1 end
 					previous[wheel.index], spans[wheel.index] = expected, span
@@ -713,7 +716,9 @@ function Tests.run(opts)
 		end
 		check("flat marks follow the natural angle curve and bottom out at one quarter width",
 			angleError < 1e-4 and floorError < 1e-4 and F.Marks.MinWidthRatio == 0.25,
-			string.format("angle error %.2e, sideways floor error %.2e studs; width 1.2 -> 0.3, trench 1.9 -> 0.475", angleError, floorError))
+			string.format("angle error %.2e, sideways floor error %.2e studs; width %.2f -> %.2f, grass mark %.2f -> %.3f",
+				angleError, floorError, F.Marks.Width, F.Marks.Width * F.Marks.MinWidthRatio,
+				F.Ground.Grass.Width, F.Ground.Grass.Width * F.Marks.MinWidthRatio))
 		check("mark endpoints stay ordered through turns and rest fallback", flips == 0, `{flips} endpoint flips`)
 		w:Cut()
 
@@ -727,13 +732,13 @@ function Tests.run(opts)
 					end
 				end
 				-- Every off-road alternative counts, including the trench (T-205).
-				if wheel.ground.flat.trail.Enabled then
+				if wheel.ground.flat.trails[1].Enabled then
 					here += 1
 				end
-				if wheel.ground.trench.trail.Enabled then
+				if wheel.ground.trench.trails[1].Enabled then
 					here += 1
 				end
-				if wheel.ground.gravel.trail.Enabled then
+				if wheel.ground.gravel.trails[1].Enabled then
 					here += 1
 				end
 				lit += here
@@ -749,7 +754,7 @@ function Tests.run(opts)
 		-- `blank` is the number that mattered when there was a darkness ladder and still
 		-- matters now: a frame in which a wheel is MARKING but nothing is drawn is a hole
 		-- in the mark. With one trail per wheel there is nothing left that can cause one.
-		local flips, lastOn, worstPerWheel, blank = 0, false, 0, 0
+		local flips, lastOn, worstPerWheel, blank, stripSplits = 0, false, 0, 0, 0
 		for frame = 1, FRAMES do
 			local t = frame / FRAMES
 			local deg = 180 * math.abs(math.sin(t * math.pi * 7))
@@ -776,14 +781,22 @@ function Tests.run(opts)
 			local _, perWheel = litTrails()
 			worstPerWheel = math.max(worstPerWheel, perWheel)
 			for _, wheel in w.wheels do
-				local drawn = wheel.ground.flat.trail.Enabled
-					or wheel.ground.trench.trail.Enabled
-					or wheel.ground.gravel.trail.Enabled
+				local drawn = wheel.ground.flat.trails[1].Enabled
+					or wheel.ground.trench.trails[1].Enabled
+					or wheel.ground.gravel.trails[1].Enabled
 				for _, fx in wheel.fx do
 					drawn = drawn or fx.trail.Enabled
 				end
 				if wheel.marking and not drawn then
 					blank += 1
+				end
+				-- A grass mark's three strips go on and off together (T-265).
+				for _, m in { wheel.ground.flat, wheel.ground.trench, wheel.ground.gravel } do
+					for _, trail in m.trails do
+						if trail.Enabled ~= m.trails[1].Enabled then
+							stripSplits += 1
+						end
+					end
 				end
 			end
 		end
@@ -806,6 +819,11 @@ function Tests.run(opts)
 			"and never a frame where a marking wheel draws nothing",
 			blank == 0,
 			`{blank} blank frames over {FRAMES} frames x {#CarModel.WHEEL_NAMES} wheels`
+		)
+		check(
+			"a grass mark's three strips are always switched together",
+			stripSplits == 0,
+			`{stripSplits} strips out of step over {FRAMES} frames`
 		)
 
 		-- The heat is per wheel, and the fronts and the rears do not share it: through a
@@ -927,8 +945,8 @@ function Tests.run(opts)
 		)
 		check(
 			"at a low angle on grass: the flat grass line, clippings, no trench, no dirt",
-			rl.ground.flat.trail.Enabled
-				and not rl.ground.trench.trail.Enabled
+			rl.ground.flat.trails[1].Enabled
+				and not rl.ground.trench.trails[1].Enabled
 				and not rl.fx[1].trail.Enabled
 				and rl.ground.clippings.emitter.Enabled
 				and not rl.ground.dirt.emitter.Enabled,
@@ -941,8 +959,8 @@ function Tests.run(opts)
 		end
 		check(
 			"at a high angle on grass: only the trench, and dirt sprays",
-			not rl.ground.flat.trail.Enabled
-				and rl.ground.trench.trail.Enabled
+			not rl.ground.flat.trails[1].Enabled
+				and rl.ground.trench.trails[1].Enabled
 				and rl.ground.dirt.emitter.Enabled
 				and rl.ground.dirt.emitter.Rate > 0,
 			string.format(
@@ -953,9 +971,9 @@ function Tests.run(opts)
 		)
 		-- Hysteresis: 27 deg keeps the trench (stop is 25), 24 drops it.
 		w:Update(stateWith({ slipDeg = 27, speed = 70, throttle = 1, surface = "grass" }), { handbrake = false }, DT)
-		local held = rl.ground.trench.trail.Enabled and not rl.ground.flat.trail.Enabled
+		local held = rl.ground.trench.trails[1].Enabled and not rl.ground.flat.trails[1].Enabled
 		w:Update(stateWith({ slipDeg = 24, speed = 70, throttle = 1, surface = "grass" }), { handbrake = false }, DT)
-		local dropped = not rl.ground.trench.trail.Enabled and rl.ground.flat.trail.Enabled
+		local dropped = not rl.ground.trench.trails[1].Enabled and rl.ground.flat.trails[1].Enabled
 		check(
 			"the trench has hysteresis, and green resumes only after it ends",
 			held and dropped and Wheels.trenchOn(30, false) and not Wheels.trenchOn(29.9, false),
@@ -1020,7 +1038,7 @@ function Tests.run(opts)
 				and math.abs(rl.fx[1].diffuse.Rate - full) < 1e-6
 				and not rl.ground.clippings.emitter.Enabled
 				and rl.fx[1].trail.Enabled
-				and not rl.ground.flat.trail.Enabled,
+				and not rl.ground.flat.trails[1].Enabled,
 			string.format("smoke %.2f one frame back, %.2f half a second later (full %.2f)", smokeIn1, rl.fx[1].diffuse.Rate, full)
 		)
 		-- Per wheel: two wheels on grass, two on tarmac.
@@ -1045,7 +1063,7 @@ function Tests.run(opts)
 		end
 		check(
 			"on gravel: a scuff mark and dust, no smoke, no grass",
-			rl.ground.gravel.trail.Enabled
+			rl.ground.gravel.trails[1].Enabled
 				and rl.ground.dust.emitter.Enabled
 				and not rl.fx[1].diffuse.Enabled
 				and not rl.ground.clippings.emitter.Enabled,
@@ -1058,6 +1076,153 @@ function Tests.run(opts)
 				and Wheels.surfaceOf(stateWith({ surface = "grass" }), 1, false) == nil,
 			"'' -> default, grass -> grass, not down -> nil"
 		)
+
+		------------------------------------------------------------------------
+		-- 9c. RUTS CUT INTO THE GROUND (T-265): three strips, a longer life, and laid on
+		-- the drawn ground rather than the car's plane.
+		------------------------------------------------------------------------
+		do
+			local GG = G.Grass
+			local function lum(c: Color3): number
+				return 0.2126 * c.R + 0.7152 * c.G + 0.0722 * c.B
+			end
+			local function near(a: Color3, b: Color3): boolean
+				return math.abs(a.R - b.R) + math.abs(a.G - b.G) + math.abs(a.B - b.B) < 1e-3
+			end
+			local shapeOk, lifeOk = true, true
+			for _, wheel in w.wheels do
+				for _, m in { wheel.ground.flat, wheel.ground.trench } do
+					local t = m.trails
+					shapeOk = shapeOk
+						and #t == 3
+						and t[1].Attachment0 == wheel.c and t[1].Attachment1 == wheel.e
+						and t[2].Attachment0 == wheel.e and t[2].Attachment1 == wheel.f
+						and t[3].Attachment0 == wheel.f and t[3].Attachment1 == wheel.d
+					for _, trail in t do
+						lifeOk = lifeOk and math.abs(trail.Lifetime - G.MarkSeconds) < 1e-4
+					end
+				end
+				lifeOk = lifeOk
+					and math.abs(wheel.ground.gravel.trails[1].Lifetime - F.Marks.Seconds) < 1e-4
+					and math.abs(wheel.fx[1].trail.Lifetime - F.Marks.Seconds) < 1e-4
+			end
+			local R, Fl = GG.TrenchMark, GG.FlatMark
+			local kp = rl.ground.trench.trails[2].Color.Keypoints
+			local colourOk = lum(R.Core.Colour) < lum(R.Edge.Colour)
+				and lum(R.Core.Colour) < lum(R.Core.DryColour)
+				and lum(Fl.Core.Colour) < lum(Fl.Edge.Colour)
+				and R.Core.Transparency < R.Edge.Transparency
+				and near(kp[1].Value, R.Core.Colour)
+				and near(kp[#kp].Value, R.Core.DryColour)
+			check(
+				"grass marks are edge, core and edge across four corners, staying longer than tarmac",
+				shapeOk and lifeOk and colourOk and G.MarkSeconds > F.Marks.Seconds and GG.CoreWidth < GG.Width,
+				string.format(
+					"strips chained %s, lifetimes %s (%.1f s against tarmac %.1f s), rut core darker than its edges and drying %s; %.2f wide, core %.2f",
+					tostring(shapeOk), tostring(lifeOk), G.MarkSeconds, F.Marks.Seconds, tostring(colourOk), GG.Width, GG.CoreWidth
+				)
+			)
+
+			-- A stand-in drawn ground: bumps under the car, a little below its plane, so a
+			-- corner on the plane would float over some of it and sink into the rest.
+			local grass45 = stateWith({ slipDeg = 45, speed = 70, throttle = 1, surface = "grass" })
+			w:Cut()
+			w:Update(grass45, { handbrake = false }, DT)
+			local base = rl.c.WorldPosition.Y - F.Marks.Lift
+			local calls = 0
+			local function bumps(x: number, z: number): number
+				return base + 0.35 * math.sin(x * 0.9) + 0.25 * math.cos(z * 0.7) - 0.2
+			end
+			local drawn = { _drawnAt = function(_, x: number, z: number): number
+				calls += 1
+				return bumps(x, z)
+			end }
+			local k = GG.CoreWidth / GG.Width
+			local cornerError, innerError, snappedAll, marking = 0, 0, true, 0
+			for _ = 1, 5 do
+				w:Update(grass45, { handbrake = false }, DT, drawn)
+			end
+			for _, wheel in w.wheels do
+				if wheel.ground.trench.on then
+					marking += 1
+					local c, d = wheel.c.WorldPosition, wheel.d.WorldPosition
+					for _, p in { c, d } do
+						cornerError = math.max(cornerError, math.abs(p.Y - (bumps(p.X, p.Z) + G.Lift)))
+					end
+					local mid = (c + d) * 0.5
+					local m = Vector3.new(mid.X, bumps(mid.X, mid.Z) + G.Lift, mid.Z)
+					innerError = math.max(innerError, (wheel.e.WorldPosition - m:Lerp(c, k)).Magnitude,
+						(wheel.f.WorldPosition - m:Lerp(d, k)).Magnitude)
+					snappedAll = snappedAll and wheel.snapped == 3
+				end
+			end
+			check(
+				"a rut's corners sit on the drawn ground under them, and its inner corners on the lines between",
+				marking == 4 and snappedAll and cornerError < 1e-4 and innerError < 1e-4,
+				string.format("%d wheels cutting; corner height error %.2e, inner corner error %.2e studs, %s",
+					marking, cornerError, innerError, if snappedAll then "all 3 lookups on the ground" else "some lookups missed")
+			)
+
+			-- The flattened line is laid the same way.
+			local grass20 = stateWith({ slipDeg = 20, speed = 70, throttle = 1, surface = "grass" })
+			w:Cut()
+			for _ = 1, 3 do
+				w:Update(grass20, { handbrake = false }, DT, drawn)
+			end
+			local flatOk = rl.ground.flat.on and rl.snapped == 3
+				and math.abs(rl.c.WorldPosition.Y - (bumps(rl.c.WorldPosition.X, rl.c.WorldPosition.Z) + G.Lift)) < 1e-4
+			check("the flattened line is laid on the drawn ground too", flatOk, `snapped {rl.snapped}, flat on {rl.ground.flat.on}`)
+
+			-- Nothing is looked up unless a wheel is marking grass.
+			calls = 0
+			w:Cut()
+			for _, s in {
+				stateWith({ slipDeg = 45, speed = 70, throttle = 1, surface = "tarmac" }),
+				stateWith({ slipDeg = 45, speed = 70, throttle = 1, surface = "gravel" }),
+				stateWith({ slipDeg = 45, speed = 70, throttle = 0, surface = "grass" }),
+			} do
+				w:Update(s, { handbrake = false }, DT, drawn)
+			end
+			local idleCalls = calls
+			calls = 0
+			w:Cut()
+			w:Update(grass45, { handbrake = false }, DT, drawn)
+			check(
+				"the ground is asked only by wheels marking grass: three lookups each",
+				idleCalls == 0 and calls == 3 * #CarModel.WHEEL_NAMES,
+				`{idleCalls} lookups on tarmac, gravel and coasting on grass; {calls} for four wheels cutting ruts`
+			)
+
+			-- Too far off the car's plane, or no ground drawn there: the corner stays on the plane.
+			local function planar(): number
+				local worst = 0
+				local up = rig.body.CFrame.UpVector
+				for _, wheel in w.wheels do
+					local across = wheel.d.WorldPosition - wheel.c.WorldPosition
+					local core = wheel.f.WorldPosition - wheel.e.WorldPosition
+					worst = math.max(worst, math.abs(across:Dot(up)), math.abs(core:Dot(up)),
+						math.abs((wheel.e.WorldPosition - wheel.c.WorldPosition):Dot(up)))
+				end
+				return worst
+			end
+			local farOff = { _drawnAt = function(_, x: number, z: number): number
+				return bumps(x, z) + G.MaxSnap + 2
+			end }
+			local nothing = { _drawnAt = function(): number?
+				return nil
+			end }
+			w:Cut()
+			w:Update(grass45, { handbrake = false }, DT, farOff)
+			local farSnapped, farPlane = rl.snapped, planar()
+			w:Update(grass45, { handbrake = false }, DT, nothing)
+			local noneSnapped, nonePlane = rl.snapped, planar()
+			check(
+				"a corner the drawn ground cannot reach within MaxSnap, or with none drawn, stays on the car's plane",
+				farSnapped == 0 and noneSnapped == 0 and farPlane < 1e-4 and nonePlane < 1e-4 and rl.ground.trench.on,
+				string.format("snapped %d and %d; out of plane %.2e and %.2e studs", farSnapped, noneSnapped, farPlane, nonePlane)
+			)
+			w:Cut()
+		end
 		check("and none of it built anything", w:CountInstances() == want, `{w:CountInstances()} instances`)
 
 		w:Clear()

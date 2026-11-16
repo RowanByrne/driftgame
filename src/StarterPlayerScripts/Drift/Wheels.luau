@@ -98,12 +98,31 @@
 -- line OR a brown trench past `Grass.TrenchSlipDegrees`, with hysteresis (T-205).
 -- Only one grass mark emits per wheel; already-laid marks keep their normal lifetime.
 --
--- NOTHING IS CREATED OR DESTROYED WHILE DRIVING. 64 instances per car at one smoking
+-- ------------------------------------------------------- ruts cut into the ground (T-265)
+--
+-- A grass mark is THREE trails side by side -- an edge, the core, an edge -- strung across
+-- four attachments (`c` outer left, `e` inner left, `f` inner right, `d` outer right), so
+-- the rut has a dark wet core and churned, lighter edges, and the flattened line the same
+-- shape in greens. The strips meet edge to edge and never overlap. Both grass marks share
+-- the four attachments; only one of them emits (T-205), and each stays `Ground.MarkSeconds`.
+--
+-- AND THEY ARE PUT ON THE DRAWN GROUND, not on the car's plane. Since T-251 the ground mesh
+-- draws the grass, and since T-258 the car drives on past it onto the mountainside. The
+-- car's plane through its four contacts is not that ground a stud either side of a tyre,
+-- and a mark hung off the car at `Marks.Lift` floated a quarter of a stud over it on the
+-- runoff and sank a tenth under it where the ground bent (measured, DR-Lane2). So a
+-- marking grass wheel asks the drawn ground (`Drift/GroundMeshView`, passed into `Update`)
+-- for its height under the mark's two outer corners and its centre, puts them `Ground.Lift`
+-- over it, and lays the inner two on the lines between. Three height lookups a marking
+-- grass wheel a frame and none otherwise. A corner the ground would move more than
+-- `Ground.MaxSnap` off the car's plane, or with no drawn ground under it, stays on the plane.
+--
+-- NOTHING IS CREATED OR DESTROYED WHILE DRIVING. 88 instances per car at one smoking
 -- surface -- 4 wheels x (2 Attachments + 1 Trail + 2 ParticleEmitters, and the off-road
--- layer's 2 Attachments + 3 Trails + 3 ParticleEmitters + 3 emitter anchors) -- built
--- once and switched with `Enabled` for ever after. It was 20 before T-188. There is no
--- `Instance.new`, no table, no `NumberSequence` and no `NumberRange` anywhere in `Update`:
--- a frame that allocates is the thing to fail on, and `FxTests` counts the instances
+-- layer's 4 Attachments + 7 Trails + 3 ParticleEmitters + 3 emitter anchors) -- built
+-- once and switched with `Enabled` for ever after. It was 20 before T-188, 64 before T-265.
+-- There is no `Instance.new`, no `NumberSequence` and no `NumberRange` anywhere in `Update`:
+-- a frame that allocates instances is the thing to fail on, and `FxTests` counts them
 -- before and after a thousand frames because of it.
 --
 -- WHERE THE EFFECTS HANG, and why it is not the wheel part. `Drift/Render` spins each
@@ -138,8 +157,9 @@ type SurfaceFx = {
 	stylizedRate: number,
 }
 
--- One trail or one emitter, with what was last written to it.
-type MarkFx = { trail: Trail, on: boolean }
+-- One mark or one emitter, with what was last written to it. A mark is one trail on gravel,
+-- and three side by side on grass (edge, core, edge: T-265), switched together.
+type MarkFx = { trails: { Trail }, on: boolean }
 type KickFx = { emitter: ParticleEmitter, on: boolean, rate: number }
 
 -- The off-road layer on one wheel (T-188, `Config.Fx.Ground`): grass, trench and gravel
@@ -159,8 +179,10 @@ type WheelFx = {
 	front: boolean,
 	a: Attachment,
 	b: Attachment,
-	c: Attachment, -- the trench's wider pair (T-188)
+	c: Attachment, -- the grass marks' outer pair (T-188)
 	d: Attachment,
+	e: Attachment, -- and their inner pair, either side of the core (T-265)
+	f: Attachment,
 	sourceA: Attachment, -- fixed diffuse smoke / dust source, independent of mark span
 	sourceB: Attachment, -- fixed stylized smoke source
 	sourceC: Attachment, -- fixed clippings / dirt source
@@ -179,6 +201,7 @@ type WheelFx = {
 	mixGravel: number,
 	smokeSurface: string, -- the smoking surface the smoke is fading from or to
 	trench: boolean, -- past the trench threshold, with its hysteresis
+	snapped: number, -- grass-mark corners put on the drawn ground this frame, 0..3 (T-265)
 	fx: { SurfaceFx },
 	ground: GroundFx,
 }
@@ -383,10 +406,11 @@ function Wheels.new(): Wheels
 end
 
 -- Instances one wheel carries: its 2 attachments and 1 trail + 2 emitters per smoking
--- surface, plus the off-road layer's 2 attachments, 3 trails and 3 emitters (T-188),
--- and 3 fixed emitter anchors (T-207). 16 at one smoking surface, so 64 a car.
+-- surface, plus the off-road layer's 4 attachments, 7 trails (3 flattened, 3 rut,
+-- 1 gravel) and 3 emitters (T-188, T-265), and 3 fixed emitter anchors (T-207). 22 at
+-- one smoking surface, so 88 a car.
 function Wheels.perWheel(): number
-	return 2 + #Config.Fx.Built * 3 + 2 + 3 + 3 + 3
+	return 2 + #Config.Fx.Built * 3 + 4 + 7 + 3 + 3
 end
 
 local function wheelIndex(name: string): number?
@@ -404,14 +428,24 @@ end
 -- see the header -- and taking it out is most of this function.
 -- `colour` and `flat` are the mark's look: the tarmac's from `Surfaces`, the off-road ones
 -- from `Ground` (T-188). Everything else about a mark is the same on every surface.
-local function makeTrail(fullName: string, colour: Color3, flat: number, a: Attachment, b: Attachment): Trail
+-- `dry`, when given, is the colour at the old end of the mark: a trail's colour runs along
+-- its length, so a grass mark dries out as it ages (T-265). `seconds` is its lifetime.
+local function makeTrail(
+	fullName: string,
+	colour: Color3,
+	flat: number,
+	a: Attachment,
+	b: Attachment,
+	dry: Color3?,
+	seconds: number?
+): Trail
 	local F = Config.Fx
 	local trail = Instance.new("Trail")
 	trail.Name = fullName
 	trail.Attachment0 = a
 	trail.Attachment1 = b
-	trail.Lifetime = F.Marks.Seconds
-	trail.Color = ColorSequence.new(colour)
+	trail.Lifetime = seconds or F.Marks.Seconds
+	trail.Color = if dry then ColorSequence.new(colour, dry) else ColorSequence.new(colour)
 	-- Flat for most of its life, then the last of it spent fading out -- which is what
 	-- stops a mark ending in a hard edge the moment its lifetime is up. THIS IS THE ONLY
 	-- transparency a mark ever has: it is a property of the whole live ribbon, which is
@@ -484,7 +518,9 @@ function Wheels.Clear(self: Wheels)
 		end
 		local g = w.ground
 		for _, m in { g.flat, g.trench, g.gravel } do
-			m.trail:Destroy()
+			for _, trail in m.trails do
+				trail:Destroy()
+			end
 		end
 		for _, k in { g.clippings, g.dirt, g.dust } do
 			k.emitter:Destroy()
@@ -493,6 +529,8 @@ function Wheels.Clear(self: Wheels)
 		w.b:Destroy()
 		w.c:Destroy()
 		w.d:Destroy()
+		w.e:Destroy()
+		w.f:Destroy()
 		w.sourceA:Destroy()
 		w.sourceB:Destroy()
 		w.sourceC:Destroy()
@@ -550,22 +588,26 @@ function Wheels.Attach(self: Wheels, rig: any): boolean
 		b.Orientation = Vector3.new(F.Stylized.EmitAngleDegrees, 0, 0)
 		b.Parent = body
 
-		-- The trench's own pair (T-188): wider than the mark, a hair above it. Its
-		-- fixed debris source below copies the backward `KickAngleDegrees` tilt.
+		-- The grass marks' four corners (T-188, T-265): an outer pair the whole mark wide
+		-- and an inner pair either side of its core. Where they sit is worked out every
+		-- frame in `Update`; these are only their starting places. The debris source below
+		-- copies `c`'s backward `KickAngleDegrees` tilt.
 		local G = F.Ground
-		local tw = G.Grass.TrenchMark
-		local tPatch = patch + Vector3.new(0, tw.Lift, 0)
-		local patchC = tPatch - Vector3.new(tw.Width * 0.5, 0, 0)
-		local patchD = tPatch + Vector3.new(tw.Width * 0.5, 0, 0)
-		local c = Instance.new("Attachment")
-		c.Name = string.format(F.Names.TrenchAttachment, name, "L")
-		c.Position = patchC
+		local outer, inner = G.Grass.Width * 0.5, G.Grass.CoreWidth * 0.5
+		local patchC = patch - Vector3.new(outer, 0, 0)
+		local patchD = patch + Vector3.new(outer, 0, 0)
+		local function corner(side: string, at: Vector3): Attachment
+			local x = Instance.new("Attachment")
+			x.Name = string.format(F.Names.TrenchAttachment, name, side)
+			x.Position = at
+			x.Parent = body
+			return x
+		end
+		local c = corner("L", patchC)
 		c.Orientation = Vector3.new(G.Grass.KickAngleDegrees, 0, 0)
-		c.Parent = body
-		local d = Instance.new("Attachment")
-		d.Name = string.format(F.Names.TrenchAttachment, name, "R")
-		d.Position = patchD
-		d.Parent = body
+		local d = corner("R", patchD)
+		local e = corner("IL", patch - Vector3.new(inner, 0, 0))
+		local f = corner("IR", patch + Vector3.new(inner, 0, 0))
 
 		-- Marks turn across the ground path, but particle sources keep their original
 		-- positions and tilt. Built once: no source moves around a tyre with the slip.
@@ -594,14 +636,29 @@ function Wheels.Attach(self: Wheels, rig: any): boolean
 		end
 
 		local function mark(kind: string, look: any, x: Attachment, y: Attachment): MarkFx
-			return { trail = makeTrail(string.format(F.Names.GroundTrail, name, kind), look.Colour, look.Transparency, x, y), on = false }
+			return {
+				trails = { makeTrail(string.format(F.Names.GroundTrail, name, kind), look.Colour, look.Transparency, x, y) },
+				on = false,
+			}
+		end
+		-- A grass mark (T-265): edge, core, edge across the four corners, each strip drying
+		-- along its length and staying `Ground.MarkSeconds`.
+		local function strips(kind: string, look: any): MarkFx
+			local function strip(suffix: string, part: any, x: Attachment, y: Attachment): Trail
+				local full = string.format(F.Names.GroundTrail, name, kind .. suffix)
+				return makeTrail(full, part.Colour, part.Transparency, x, y, part.DryColour, G.MarkSeconds)
+			end
+			return {
+				trails = { strip("_L", look.Edge, c, e), strip("", look.Core, e, f), strip("_R", look.Edge, f, d) },
+				on = false,
+			}
 		end
 		local function kick(kind: string, S: any, at: Attachment): KickFx
 			return { emitter = makeEmitter(string.format(F.Names.GroundEmitter, name, kind), S.Colour, S, at), on = false, rate = 0 }
 		end
 		local ground: GroundFx = {
-			flat = mark("grass", G.Grass.FlatMark, a, b),
-			trench = mark("trench", tw, c, d),
+			flat = strips("grass", G.Grass.FlatMark),
+			trench = strips("trench", G.Grass.TrenchMark),
 			gravel = mark("gravel", G.Gravel.Mark, a, b),
 			clippings = kick("grass", G.Grass.Clippings, sourceC),
 			dirt = kick("dirt", G.Grass.Dirt, sourceC),
@@ -616,6 +673,8 @@ function Wheels.Attach(self: Wheels, rig: any): boolean
 			b = b,
 			c = c,
 			d = d,
+			e = e,
+			f = f,
 			sourceA = sourceA,
 			sourceB = sourceB,
 			sourceC = sourceC,
@@ -632,6 +691,7 @@ function Wheels.Attach(self: Wheels, rig: any): boolean
 			mixGravel = 0,
 			smokeSurface = F.Default,
 			trench = false,
+			snapped = 0,
 			fx = fx,
 			ground = ground,
 		})
@@ -685,7 +745,9 @@ end
 local function writeMark(m: MarkFx, on: boolean)
 	if m.on ~= on then
 		m.on = on
-		m.trail.Enabled = on
+		for _, trail in m.trails do
+			trail.Enabled = on
+		end
 	end
 end
 
@@ -720,6 +782,7 @@ function Wheels.Cut(self: Wheels)
 		w.span = nil
 		w.marking = false
 		w.trench = false
+		w.snapped = 0
 		for _, fx in w.fx do
 			write(fx, false, false, fx.diffuseRate, fx.stylizedRate)
 		end
@@ -727,10 +790,25 @@ function Wheels.Cut(self: Wheels)
 	end
 end
 
+-- One grass-mark corner put on the drawn ground (T-265): `p` is where the car's plane has
+-- it, and it comes back `lift` over the ground under it -- or as it was, and false, when
+-- there is no drawn ground there or reaching it would move it more than `maxSnap`.
+-- `ground` is anything with `_drawnAt(x, z) -> number?`: `Drift/GroundMeshView`, which
+-- answers off the very triangles it drew, or a stand-in in `FxTests`.
+function Wheels.onGround(ground: any, p: Vector3, lift: number, maxSnap: number): (Vector3, boolean)
+	local y = ground:_drawnAt(p.X, p.Z)
+	if type(y) == "number" and math.abs(y + lift - p.Y) <= maxSnap then
+		return Vector3.new(p.X, y + lift, p.Z), true
+	end
+	return p, false
+end
+
 -- One frame. `input` is what `CarInputController:Get()` handed the model this frame: the
 -- handbrake is an INPUT and not model state, which is why it is passed in rather than read
 -- off `state` (`Drift/Model`'s `Input`). `dt` is the frame, and the heat needs it.
-function Wheels.Update(self: Wheels, state: DriftModel.State?, input: any, dt: number?)
+-- `ground` is the drawn ground (`Drift/GroundMeshView`), nil where there is none: the grass
+-- marks are laid on it (T-265, see the header).
+function Wheels.Update(self: Wheels, state: DriftModel.State?, input: any, dt: number?, ground: any?)
 	if #self.wheels == 0 then
 		return
 	end
@@ -744,9 +822,10 @@ function Wheels.Update(self: Wheels, state: DriftModel.State?, input: any, dt: n
 
 	-- Recover the road pose actually drawn by Render.apply, including its fractional
 	-- simulation step. Cancel suspension and cosmetic lean before placing the patch.
+	local bodyCF = (self.body :: BasePart).CFrame
 	local bodyLocal = Suspension.bodyLocal(state)
 	local unbody = bodyLocal:Inverse()
-	local road = (self.body :: BasePart).CFrame * unbody
+	local road = bodyCF * unbody
 	local normal = state.groundUp
 	local normalLength = normal.Magnitude
 	if normalLength > 1e-4 and normalLength < math.huge then
@@ -755,50 +834,14 @@ function Wheels.Update(self: Wheels, state: DriftModel.State?, input: any, dt: n
 		normal = road.UpVector
 	end
 	local lifts = state.wheelLift
-	local half = Config.Fx.Marks.Width * 0.5
-	local trenchHalf = Config.Fx.Ground.Grass.TrenchMark.Width * 0.5
-	for _, w in self.wheels do
-		local lift = Vector3.new(0, if lifts then lifts[w.index] or 0 else 0, 0)
-		local patch = (w.patchA + w.patchB) * 0.5 + lift
-		local centre = road:PointToWorldSpace(patch)
-		local previous = w.previousPatch
-		local flow = if previous then centre - previous else Vector3.zero
-		flow -= normal * flow:Dot(normal)
-		if flow.Magnitude < 1e-4 or not (flow.Magnitude < math.huge) then
-			-- First frame / stopped: use velocity plus this contact's yaw motion, then
-			-- retain the previous axis at rest. Never divide by cos(slip) near sideways.
-			flow = state.velocity + (Vector3.yAxis * state.r):Cross(centre - road.Position)
-			flow -= normal * flow:Dot(normal)
-		end
-		local span = flow:Cross(normal)
-		if span.Magnitude < 1e-4 or not (span.Magnitude < math.huge) then
-			span = w.span or road.RightVector
-			span -= normal * span:Dot(normal)
-			if span.Magnitude < 1e-4 then
-				span = road.LookVector:Cross(normal)
-			end
-		end
-		span = span.Unit
-		local oldSpan = w.span
-		if oldSpan and span:Dot(oldSpan) < 0 then
-			span = -span -- the same undirected width, with no endpoint swap on reversing
-		end
-		w.previousPatch, w.span = centre, span
-		-- Keep the original angle-dependent projection until the configured floor,
-		-- while spanning across the path avoids an unbounded 1/cos expansion sideways.
-		local ratio = math.clamp(math.abs(road.RightVector:Dot(span)), Config.Fx.Marks.MinWidthRatio, 1)
-		local localSpan = road:VectorToObjectSpace(span) * ratio
-		local trench = (w.patchC + w.patchD) * 0.5 + lift
-		w.a.Position = unbody:PointToWorldSpace(patch - localSpan * half)
-		w.b.Position = unbody:PointToWorldSpace(patch + localSpan * half)
-		w.c.Position = unbody:PointToWorldSpace(trench - localSpan * trenchHalf)
-		w.d.Position = unbody:PointToWorldSpace(trench + localSpan * trenchHalf)
-		w.sourceA.Position = unbody:PointToWorldSpace(w.patchA + lift)
-		w.sourceB.Position = unbody:PointToWorldSpace(w.patchB + lift)
-		w.sourceC.Position = unbody:PointToWorldSpace(w.patchC + lift)
-	end
+	local F = Config.Fx
+	local G = F.Ground
+	local half = F.Marks.Width * 0.5
+	local outer = G.Grass.Width * 0.5
+	local inner = G.Grass.CoreWidth * 0.5
+	local innerShare = inner / math.max(outer, 1e-4)
+	local drawn = ground ~= nil and type(ground._drawnAt) == "function"
 
-	local G = Config.Fx.Ground
 	local slipDeg = math.deg(math.abs(state.slip))
 	local dirt = Wheels.dirtShare(slipDeg)
 	local clipShare = 1 - (1 - G.Grass.ClippingsAtFullDirt) * dirt
@@ -830,13 +873,74 @@ function Wheels.Update(self: Wheels, state: DriftModel.State?, input: any, dt: n
 		end
 		w.trench = Wheels.trenchOn(slipDeg, w.trench)
 
+		-- Where the marks go: across this wheel's own path over the ground (T-207).
+		local lift = Vector3.new(0, if lifts then lifts[w.index] or 0 else 0, 0)
+		local patch = (w.patchA + w.patchB) * 0.5 + lift
+		local centre = road:PointToWorldSpace(patch)
+		local previous = w.previousPatch
+		local flow = if previous then centre - previous else Vector3.zero
+		flow -= normal * flow:Dot(normal)
+		if flow.Magnitude < 1e-4 or not (flow.Magnitude < math.huge) then
+			-- First frame / stopped: use velocity plus this contact's yaw motion, then
+			-- retain the previous axis at rest. Never divide by cos(slip) near sideways.
+			flow = state.velocity + (Vector3.yAxis * state.r):Cross(centre - road.Position)
+			flow -= normal * flow:Dot(normal)
+		end
+		local span = flow:Cross(normal)
+		if span.Magnitude < 1e-4 or not (span.Magnitude < math.huge) then
+			span = w.span or road.RightVector
+			span -= normal * span:Dot(normal)
+			if span.Magnitude < 1e-4 then
+				span = road.LookVector:Cross(normal)
+			end
+		end
+		span = span.Unit
+		local oldSpan = w.span
+		if oldSpan and span:Dot(oldSpan) < 0 then
+			span = -span -- the same undirected width, with no endpoint swap on reversing
+		end
+		w.previousPatch, w.span = centre, span
+		-- Keep the original angle-dependent projection until the configured floor,
+		-- while spanning across the path avoids an unbounded 1/cos expansion sideways.
+		local ratio = math.clamp(math.abs(road.RightVector:Dot(span)), F.Marks.MinWidthRatio, 1)
+		local localSpan = road:VectorToObjectSpace(span) * ratio
+		w.a.Position = unbody:PointToWorldSpace(patch - localSpan * half)
+		w.b.Position = unbody:PointToWorldSpace(patch + localSpan * half)
+		w.sourceA.Position = unbody:PointToWorldSpace(w.patchA + lift)
+		w.sourceB.Position = unbody:PointToWorldSpace(w.patchB + lift)
+		w.sourceC.Position = unbody:PointToWorldSpace(w.patchC + lift)
+
+		-- The grass mark's four corners (T-265). Marking on grass with the drawn ground
+		-- there: the outer two and the centre are put on that ground and the inner two on
+		-- the lines between, so each strip lies on the ground under it. Otherwise on the
+		-- car's plane, as every mark was before.
+		local mid = (w.patchC + w.patchD) * 0.5 + lift
+		w.snapped = 0
+		if drawn and emit and grass then
+			local at = road:PointToWorldSpace(mid)
+			local across = span * (ratio * outer)
+			local l, onL = Wheels.onGround(ground, at - across, G.Lift, G.MaxSnap)
+			local m, onM = Wheels.onGround(ground, at, G.Lift, G.MaxSnap)
+			local r, onR = Wheels.onGround(ground, at + across, G.Lift, G.MaxSnap)
+			w.snapped = (if onL then 1 else 0) + (if onM then 1 else 0) + (if onR then 1 else 0)
+			w.c.Position = bodyCF:PointToObjectSpace(l)
+			w.e.Position = bodyCF:PointToObjectSpace(m:Lerp(l, innerShare))
+			w.f.Position = bodyCF:PointToObjectSpace(m:Lerp(r, innerShare))
+			w.d.Position = bodyCF:PointToObjectSpace(r)
+		else
+			w.c.Position = unbody:PointToWorldSpace(mid - localSpan * outer)
+			w.e.Position = unbody:PointToWorldSpace(mid - localSpan * inner)
+			w.f.Position = unbody:PointToWorldSpace(mid + localSpan * inner)
+			w.d.Position = unbody:PointToWorldSpace(mid + localSpan * outer)
+		end
+
 		-- Tarmac: the MARK is this surface or nothing, at once (a mark is on the ground it is
 		-- on); the SMOKE is scaled by the mix and fades.
 		local stylizedRate = Wheels.stylizedRate(w.heat)
-		local m = w.mixSmoke
+		local mix = w.mixSmoke
 		for _, fx in w.fx do
-			local smoking = emit and m > 0 and fx.surface == w.smokeSurface
-			write(fx, emit and fx.surface == surface, smoking, diffuseRate * m, stylizedRate * m)
+			local smoking = emit and mix > 0 and fx.surface == w.smokeSurface
+			write(fx, emit and fx.surface == surface, smoking, diffuseRate * mix, stylizedRate * mix)
 		end
 
 		-- Off the road. Each grass-marking wheel chooses green OR brown using the
@@ -873,9 +977,14 @@ function Wheels.SetMarkSeconds(self: Wheels, seconds: number)
 		for _, fx in w.fx do
 			fx.trail.Lifetime = seconds
 		end
-		w.ground.flat.trail.Lifetime = seconds
-		w.ground.trench.trail.Lifetime = seconds
-		w.ground.gravel.trail.Lifetime = seconds
+		-- The grass marks keep their longer life, in proportion (T-265).
+		local grass = seconds * Config.Fx.Ground.MarkSeconds / math.max(Config.Fx.Marks.Seconds, 1e-4)
+		for _, m in { w.ground.flat, w.ground.trench } do
+			for _, trail in m.trails do
+				trail.Lifetime = grass
+			end
+		end
+		w.ground.gravel.trails[1].Lifetime = seconds
 	end
 end
 
@@ -918,15 +1027,20 @@ function Wheels.DebugState(self: Wheels, state: DriftModel.State?, input: any)
 				lit += 1
 			end
 		end
+		-- A grass mark is three strips and counts as ONE mark (T-265). `split` counts the
+		-- strips of a mark that disagree with its first, which nothing should ever cause.
 		local g = w.ground
-		if g.flat.trail.Enabled then
-			lit += 1
-		end
-		if g.trench.trail.Enabled then
-			lit += 1
-		end
-		if g.gravel.trail.Enabled then
-			lit += 1
+		local split = 0
+		for _, m in { g.flat, g.trench, g.gravel } do
+			local on = m.trails[1].Enabled
+			if on then
+				lit += 1
+			end
+			for _, trail in m.trails do
+				if trail.Enabled ~= on then
+					split += 1
+				end
+			end
 		end
 		local smokeRate = 0
 		for _, fx in w.fx do
@@ -959,9 +1073,13 @@ function Wheels.DebugState(self: Wheels, state: DriftModel.State?, input: any)
 			gravelMix = w.mixGravel,
 			trench = w.trench,
 			smokeRate = smokeRate, -- the diffuse smoke's live Rate, 0 when off
-			grassMark = g.flat.trail.Enabled,
-			trenchMark = g.trench.trail.Enabled,
-			gravelMark = g.gravel.trail.Enabled,
+			grassMark = g.flat.trails[1].Enabled,
+			trenchMark = g.trench.trails[1].Enabled,
+			gravelMark = g.gravel.trails[1].Enabled,
+			split = split, -- strips of one mark disagreeing: always 0 (T-265)
+			-- The grass mark's corners put on the drawn ground last frame (T-265): 3 while
+			-- marking on drawn grass, 0 when not marking grass or with no drawn ground.
+			onGround = w.snapped,
 			clippingsRate = live(g.clippings),
 			dirtRate = live(g.dirt),
 			dustRate = live(g.dust),
@@ -986,6 +1104,7 @@ function Wheels.CountInstances(self: Wheels): number
 	for _, w in self.wheels do
 		n += (if w.a.Parent then 1 else 0) + (if w.b.Parent then 1 else 0)
 		n += (if w.c.Parent then 1 else 0) + (if w.d.Parent then 1 else 0)
+		n += (if w.e.Parent then 1 else 0) + (if w.f.Parent then 1 else 0)
 		n += (if w.sourceA.Parent then 1 else 0) + (if w.sourceB.Parent then 1 else 0) + (if w.sourceC.Parent then 1 else 0)
 		for _, fx in w.fx do
 			n += (if fx.trail.Parent then 1 else 0)
@@ -993,7 +1112,12 @@ function Wheels.CountInstances(self: Wheels): number
 				+ (if fx.stylized.Parent then 1 else 0)
 		end
 		local g = w.ground
-		for _, inst in { g.flat.trail, g.trench.trail, g.gravel.trail, g.clippings.emitter, g.dirt.emitter, g.dust.emitter } do
+		for _, m in { g.flat, g.trench, g.gravel } do
+			for _, trail in m.trails do
+				n += if trail.Parent then 1 else 0
+			end
+		end
+		for _, inst in { g.clippings.emitter, g.dirt.emitter, g.dust.emitter } do
 			n += if (inst :: Instance).Parent then 1 else 0
 		end
 	end

@@ -288,7 +288,7 @@ return {
 	--   per car = 4 wheels x (2 Attachments + surfaces x (1 Trail + 2 Emitters))
 	--
 	-- This original tarmac-only layer is 4 x 5 = 20 at one smoking surface. With the
-	-- off-road layer and fixed emitter anchors below, the current total is 64 (T-207),
+	-- off-road layer and fixed emitter anchors below, the current total is 88 (T-265; 64 at T-207),
 	-- all built once when the rig is caught. The old tarmac layer was 16 before stylized
 	-- smoke, 32 with four darkness rungs, 28 with three, then 20 after removal (T-062).
 	-- A second smoking surface adds 12 instances.
@@ -314,13 +314,33 @@ return {
 	-- BUILT-IN TEXTURES ONLY: the bits are `SquareParticle.png`, flat-coloured squares, which
 	-- is the low-poly look. Nothing uploaded.
 	--
-	-- THE BUDGET: the off-road layer adds 8 per wheel (2 trench Attachments + 3 Trails
-	-- + 3 Emitters). T-207 adds 3 fixed particle-source Attachments per wheel so turning
-	-- the mark span does not move smoke/debris. At one smoking surface that is 16 per
-	-- wheel, 4 x (5 + 8 + 3) = 64 per car. All built once, then switched with `Enabled`.
+	-- RUTS THAT LOOK CUT IN (T-265). A grass mark is THREE trails side by side across four
+	-- attachments (outer left, inner left, inner right, outer right): a core the tyre pressed
+	-- or ploughed, and an edge strip either side. They do not overlap, so there is no draw
+	-- order to fight over. The flattened line and the rut share the four attachments and the
+	-- shape; only their colours differ, and only one of them emits per wheel (T-205). On the
+	-- drawn ground each mark's corners are put ON that ground (`Lift` over it), not on the
+	-- car's plane, so a mark neither floats nor sinks where the ground bends under the car.
+	--
+	-- THE BUDGET: the off-road layer is, per wheel, 4 Attachments (the mark's outer and
+	-- inner pairs) + 7 Trails (3 flattened, 3 rut, 1 gravel) + 3 Emitters, and T-207's 3
+	-- fixed particle-source Attachments. With the tarmac layer's 2 Attachments + 3 per
+	-- smoking surface, one smoking surface is 22 per wheel:
+	--   4 x (2 + 3 + 4 + 7 + 3 + 3) = 88 per car (64 before T-265, 20 before T-188).
+	-- All built once, then switched with `Enabled`. `Drift/Wheels.perWheel()` is the formula.
 	Ground = {
 		FadeSeconds = 0.2, -- s for a wheel's smoke to fade out when it leaves tarmac, and for
 		-- the grass/gravel debris to fade in -- and the same back. Fast, but not a cut
+
+		-- How the grass marks sit on the ground and how long they stay (T-265).
+		MarkSeconds = 14, -- s of `Trail.Lifetime` for the flattened line and the rut. Longer
+		-- than a tarmac mark (`Marks.Seconds`, 5): torn ground stays torn
+		Lift = 0.08, -- studs a grass mark's corners sit over the DRAWN ground under them.
+		-- Only a hair, because they are put on the ground itself and not on
+		-- the car's plane: no ride height or grade to clear any more
+		MaxSnap = 1.5, -- studs. A corner is moved at most this far off the car's plane to
+		-- reach the drawn ground; further (a wall's foot, a tile not drawn yet)
+		-- and it stays on the car's plane, as every mark did before T-265
 
 		Grass = {
 			TrenchSlipDegrees = 30, -- |slip| at which the trench starts being cut
@@ -333,16 +353,38 @@ return {
 			-- full: deep slides throw mostly dirt
 			FullSlipDegrees = 90, -- slip at which the debris rates are at their max
 
-			FlatMark = {
-				Colour = Color3.fromRGB(52, 92, 38), -- darker than the grass (86, 140, 62):
-				-- flattened, shadowed blades
-				Transparency = 0.45,
+			-- The shape both grass marks share (T-265): the whole mark edge to edge, and its
+			-- core. The edges are the strips between, (Width - CoreWidth) / 2 each. Both
+			-- narrow through a slide like every mark, to `Marks.MinWidthRatio` (T-207).
+			Width = 2.6, -- studs. Wider than the tyre (1.6): the soil it pushes aside
+			CoreWidth = 1.4, -- studs. About the tyre's own width: what it pressed or ploughed
+
+			-- Each strip: `Colour` where it is laid, `DryColour` at the end of its life (a
+			-- trail's colour runs along its length, so the old end of a mark dries out),
+			-- and `Transparency` (lower is more solid).
+			FlatMark = { -- gentle slides: the grass pressed down, not torn
+				Core = {
+					Colour = Color3.fromRGB(50, 90, 36), -- darker than the grass (86, 140, 62):
+					DryColour = Color3.fromRGB(62, 104, 44), -- pressed, shadowed blades
+					Transparency = 0.38,
+				},
+				Edge = {
+					Colour = Color3.fromRGB(124, 160, 80), -- lighter: blades bent over, catching
+					DryColour = Color3.fromRGB(110, 152, 72), -- the light either side
+					Transparency = 0.62,
+				},
 			},
-			TrenchMark = {
-				Colour = Color3.fromRGB(70, 48, 28), -- dark wet earth
-				Transparency = 0.08, -- near solid: the grass is GONE here
-				Width = 1.9, -- studs. Wider than a tyre mark (1.2): the tyre ploughs
-				Lift = 0.04, -- studs ABOVE the flat mark, so the two never depth-fight
+			TrenchMark = { -- past `TrenchSlipDegrees`: the rut, cut through to the soil
+				Core = {
+					Colour = Color3.fromRGB(38, 26, 16), -- dark wet earth, near black-brown
+					DryColour = Color3.fromRGB(70, 50, 31), -- drying out as it ages
+					Transparency = 0.04, -- near solid: the grass is GONE here
+				},
+				Edge = {
+					Colour = Color3.fromRGB(118, 90, 58), -- churned soil thrown up either side,
+					DryColour = Color3.fromRGB(122, 98, 66), -- lighter and drier than the core
+					Transparency = 0.16,
+				},
 			},
 
 			-- How far back the debris is thrown, off straight up. On its own attachment pair
@@ -429,8 +471,10 @@ return {
 		Trail = "FxMark_%s_%s", -- wheel name, then surface. ONE per wheel per surface
 		Emitter = "FxSmoke_%s_%s", -- wheel name, then surface. The DIFFUSE layer
 		Stylized = "FxPuff_%s_%s", -- wheel name, then surface. The STYLIZED layer
-		TrenchAttachment = "FxT_%s_%s", -- wheel name, then "L" or "R": the wider trench pair (T-188)
-		GroundTrail = "FxMark_%s_%s", -- wheel name, then "grass", "trench" or "gravel" (T-188)
+		TrenchAttachment = "FxT_%s_%s", -- wheel name, then the grass mark's corners: "L" and "R"
+		-- outside (T-188), "IL" and "IR" either side of its core (T-265)
+		GroundTrail = "FxMark_%s_%s", -- wheel name, then "gravel", or a grass mark's strip:
+		-- "grass" / "trench" for the core, with "_L" / "_R" for its edges (T-188, T-265)
 		GroundEmitter = "FxKick_%s_%s", -- wheel name, then "grass", "dirt" or "dust" (T-188)
 		Engine = "FxEngine", -- the one engine `Sound`, on the body (T-064)
 		Skid = "FxSkid_%s", -- surface. One `Sound` per surface in `Built`, on the body
