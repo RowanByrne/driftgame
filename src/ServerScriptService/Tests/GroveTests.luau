@@ -17,8 +17,19 @@ local SplineGrove = require(ReplicatedStorage.Shared.Road.SplineGrove)
 
 local Tests = {}
 
-local SEEDS = { 101, 2024, 8080, 31337, 777 }
-local LENGTH = 20000
+-- Ten roads of 40 000 studs (T-257; five of 20 000 before). T-245 doubled the range: a
+-- road's first 20 000 studs are now mostly the long climb to its first pass, where the side
+-- slope is rarely shallow for a whole section, so the old roads read the start, not the rate
+-- (1.05 grove stretches per 10 000 studs over ten seeds' first 20 000, 1.80 over 80 000, as
+-- the range half the size gave). Roads twice as long cross as many ridges as before, and with
+-- ten seeds no single grove-less road (2024, 9001) sinks the measure.
+local SEEDS = { 101, 2024, 8080, 31337, 777, 7, 1234, 42, 99, 555 }
+local LENGTH = 40000
+-- Grove stretches per 10 000 studs, at least. 2 was set on the T-183 road (6.2 measured);
+-- since T-228 a grove needs a shallow side slope the whole section, and over these ten seeds
+-- the rate is 1.67 to 1.89 on the range half the size and 1.52 at 40 000 studs on today's:
+-- the old 2 passed only on five lucky seeds (2.2). The floor keeps groves a regular sight.
+local MIN_PER_10K = 1.25
 
 local function fmt(x: number, p: number?): string
 	return string.format("%." .. tostring(p or 2) .. "f", x)
@@ -129,8 +140,8 @@ local function run(check)
 	local per10k = stretches / total * 10000
 	check(
 		"groves on flatter stretches",
-		groveSections > 0 and per10k >= 2,
-		`{stretches} grove stretches over {math.floor(total)} studs: {fmt(per10k, 1)} per 10 000 studs; {fmt(groveLen / (2 * total) * 100, 1)}% of the road's sides; {groveSections} of {sections} sections`
+		groveSections > 0 and per10k >= MIN_PER_10K,
+		`{stretches} grove stretches over {math.floor(total)} studs: {fmt(per10k, 2)} per 10 000 studs (at least {MIN_PER_10K});{fmt(groveLen / (2 * total) * 100, 1)}% of the road's sides; {groveSections} of {sections} sections`
 	)
 	check("only where the road is flat and gentle", steep == 0 and tight == 0 and short == 0, `{steep} too steep, {tight} too tight, {short} too short`)
 	check(
