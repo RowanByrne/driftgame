@@ -2277,7 +2277,7 @@ function GroundMeshView.DebugState(self: View)
 		fineAheadCorridor = self:DebugReach(1, 40),
 		mediumAhead = self:DebugReach(2, 40),
 		coarseAhead = self:DebugReach(3, 100),
-		seams = self:DebugSeams(RoadAhead.studs()),
+		seams = self:DebugSeams(Config.Spline.Mesh.Near.Ahead), -- (to the whole road only: over 9 600 studs it takes about half a second)
 		failed = self.failed,
 		running = self.running,
 		paused = self.paused,
