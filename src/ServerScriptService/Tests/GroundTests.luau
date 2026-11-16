@@ -28,48 +28,8 @@ local function run(check, opts)
 	local length = (opts and opts.length) or LENGTH
 	local reach = Ground.reach()
 
-	-- the same mountain from the same seed, and a different one from another
-	do
-		local o = { x = 100, y = 20, z = -300, yaw = 0.3 }
-		-- (the belts by name: runs have the range since T-238, `RangeTests`)
-		local a = Ground.field(7, o, 1.1, "belts")
-		local b = Ground.field(7, o, 1.1, "belts")
-		local c = Ground.field(8, o, 1.1, "belts")
-		local same, differ = 0, 0
-		for i = 1, 200 do
-			local x, z = o.x + (i * 37.3) % 3000 - 1500, o.z + (i * 91.7) % 3000 - 1500
-			if Ground.h(a, x, z) == Ground.h(b, x, z) then
-				same += 1
-			end
-			if math.abs(Ground.h(a, x, z) - Ground.h(c, x, z)) > 0.5 then
-				differ += 1
-			end
-		end
-		check("h is a pure function of the seed and the place", same == 200, `{same} of 200`)
-		check("another seed is another mountain", differ > 150, `{differ} of 200 differ`)
-		check("the road's start sits on the mountain", math.abs(Ground.h(a, o.x, o.z) - o.y) < 1e-6, fmt(Ground.h(a, o.x, o.z) - o.y, 6))
-		-- the relief's range over 4 km by 4 km
-		local lo, hi = math.huge, -math.huge
-		for x = -2000, 2000, 25 do
-			for z = -2000, 2000, 25 do
-				local r = Ground.relief(a, o.x + x, o.z + z)
-				lo, hi = math.min(lo, r), math.max(hi, r)
-			end
-		end
-		check("relief: ridges and gullies of tens of studs", hi - lo > 40 and hi - lo < 400, `{fmt(lo)} to {fmt(hi)}`)
-		-- the belts rise up the fall line, steep and shallow (T-228)
-		local up = Ground.base(a, o.x + a.ux * 2000, o.z + a.uz * 2000) - Ground.base(a, o.x, o.z)
-		local least, most = math.huge, 0
-		for u = -20000, 5000, 50 do
-			local sl = Ground.beltSlope(a, o.x + a.ux * u, o.z + a.uz * u)
-			least, most = math.min(least, sl), math.max(most, sl)
-		end
-		check(
-			"the belts rise up the fall line, shallow and steep",
-			up > 0 and least <= G.BeltLow[2] and most >= G.BeltHigh[1],
-			`{fmt(up)} studs up over 2 000; slopes {fmt(math.deg(math.atan(least)))} to {fmt(math.deg(math.atan(most)))} degrees`
-		)
-	end
+	-- (the mountain itself, the range, is `RangeTests`': a pure function of the seed and the
+	-- place, the start on it. The belts it replaced went with features/legacy-removal.md)
 
 	local totals = {
 		onPlaneWorst = 0,

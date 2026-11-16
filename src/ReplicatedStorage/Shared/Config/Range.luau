@@ -1,6 +1,6 @@
 --!strict
--- Config.Range: the mountain range a ground run crosses (features/mountain-range.md, T-233).
--- Read by `Road/Range` and `Road/Ground`. Every number is a starting value, tuned in a lane.
+-- Config.Range: the mountain range every run crosses (features/mountain-range.md, T-233).
+-- Read by `Road/Range`, `Road/Ground` and `Road/SplineGen`. Every number is a starting value, tuned in a lane.
 --
 -- THE SHAPE, in the run's own frame: `t` studs on along the way the run goes (the old fall
 -- line's downhill), `v` studs across it. RIDGES lie across the way, one every `Spacing` studs
@@ -10,9 +10,8 @@
 -- `ValleyAt` of the way from one to the next, flat for `Floor` of each face, its height
 -- from `ValleyBase` and wandering `FloorVary` over `FloorEvery` across. Each face falls
 -- from the crest to the floor as (1 - x) ^ `Profile`: steep near the crest, easing out at
--- the floor, as a real face does. SPURS and GULLIES run down the faces (`Octaves`, as
--- `Spline.Ground.Octaves`), none on the valley floors and all of them from `ReliefRise` of
--- the way up a face.
+-- the floor, as a real face does. SPURS and GULLIES run down the faces (`Octaves`), none on
+-- the valley floors and all of them from `ReliefRise` of the way up a face.
 --
 -- Heights are from the floor of the valley the run starts in, which is where the road's
 -- start sits. Every number is the same on every device: the range is a pure function of the
@@ -30,10 +29,6 @@
 -- steeper); every other face is exactly twice the size.
 
 return {
-	-- "belts" is the T-228 mountain, one fall line, always down; "range" is this one, and since
-	-- T-238 the road climbs to its passes on it (`SplineGen._planRange`)
-	Shape = "range",
-
 	Spacing = 13000, -- studs between ridges, on average (6 500 until T-245)
 	Jitter = 2400, -- studs either way, so 8 200 to 17 800 apart
 	Wobble = { 1700, 13000 }, -- studs either way, over studs across (never more than half of `Spacing - 2 * Jitter`)
