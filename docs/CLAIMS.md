@@ -10,6 +10,7 @@ Every task in progress and the files it owns, so parallel sessions and workers n
 | Branch | Lane | Files owned | Since |
 |---|---|---|---|
 | `agent/remove-far-mountains` | lent | `src/ReplicatedStorage/Shared/Horizon.luau`, `src/ReplicatedStorage/Shared/Config/Horizon.luau`, `src/StarterPlayerScripts/Drift/HorizonView.luau`, `src/ServerScriptService/Tests/HorizonTests.luau`, `src/ServerScriptService/AdminConsole/Commands/World/horizon.luau`, `src/StarterPlayerScripts/Controllers/DriftController.luau` (the horizon lines only), `src/ServerScriptService/AdminConsole/Commands/World/counts.luau`, `docs/game/features/horizon.md`, `docs/game/CONTRACTS.md` (horizon entries), `src/ReplicatedStorage/Shared/Config/Spline.luau` (the `GrandCliffDrop` comment only), `docs/game/features/mountain-range.md` (far-mountain mentions) | 2026-11-16 (T-243) |
+| `agent/road-tests-on-main` | lent | `src/ReplicatedStorage/Shared/Road/*`, `src/ServerScriptService/Services/RoadService.luau`, `src/ReplicatedStorage/Shared/Config/Range.luau`, `src/ReplicatedStorage/Shared/Config/Spline.luau` (all but the `GrandCliffDrop` comment, which T-243 holds), `src/ServerScriptService/Tests/RangeTests.luau`, `GroundTests.luau`, `SplineWorldTests.luau`, `SplineTests.luau`, `RoadTests.luau`, `RunTests.luau` | 2026-11-16 (T-244) |
 
 ## Notes between sessions
 
