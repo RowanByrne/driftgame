@@ -1707,8 +1707,10 @@ function SplineGen._planRange(self: Gen)
 	local function stretch(len: number, what: string, sl: Slope, untilV: number?)
 		table.insert(plan, { turn = false, what = what, aim = self.aim, limit = math.rad(M.LegHeadingLimit), left = len, slope = sl, untilV = untilV })
 	end
+	-- (a turnaround turns the short way round onto the next leg: legs tilt toward the way on,
+	-- so that is through the uphill side on a climb and the downhill side coming down)
 	local function turn(what: string, dir: number, radius: { number }, tag: string, sl: Slope)
-		table.insert(plan, { turn = true, what = what, to = self.aim, dir = dir, radius = radius, tag = tag, window = self.aim, slope = sl })
+		table.insert(plan, { turn = true, what = what, to = self.aim, dir = dir, radius = radius, tag = tag, window = self.aim, slope = sl, autoDir = true })
 	end
 	-- straight for the pass, when it is in reach
 	local dist = math.sqrt((pt - t) ^ 2 + (pv - v) ^ 2)

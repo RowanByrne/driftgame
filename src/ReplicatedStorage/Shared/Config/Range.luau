@@ -23,11 +23,11 @@ return {
 	-- T-238 the road climbs to its passes on it (`SplineGen._planRange`)
 	Shape = "range",
 
-	Spacing = 5500, -- studs between ridges, on average
-	Jitter = 1200, -- studs either way, so 3 100 to 7 900 apart
+	Spacing = 6500, -- studs between ridges, on average
+	Jitter = 1200, -- studs either way, so 4 100 to 8 900 apart
 	Wobble = { 850, 6500 }, -- studs either way, over studs across (never more than half of `Spacing - 2 * Jitter`)
 
-	Peak = { 600, 1000 }, -- studs above the start valley's floor: a ridge's peaks (before `PeakVary`)
+	Peak = { 550, 900 }, -- studs above the start valley's floor: a ridge's peaks (before `PeakVary`)
 	SaddleDepth = { 250, 480 }, -- studs below its peaks: its saddles
 	SaddleMin = 380, -- studs above the start valley's floor: no saddle lower
 	PeakVary = { 0.2, 9000 }, -- a ridge rises and falls along its length: this share either way, over studs
@@ -42,7 +42,7 @@ return {
 	FloorVary = 60, -- studs either way along a valley...
 	FloorEvery = 6000, -- ...over studs across
 	Floor = { 0, 0.12 }, -- of each face, flat at the floor
-	Profile = { 1.2, 1.8 }, -- a face's exponent: higher, steeper near the crest and wider at the floor
+	Profile = { 1.0, 1.4 }, -- a face's exponent: higher, steeper near the crest and wider at the floor
 	CrestRound = 40, -- studs: the crest rounded over about this much
 
 	Octaves = { { 1400, 100, "ridge" }, { 600, 40, "gully" }, { 220, 8 } },
@@ -74,7 +74,7 @@ return {
 	-- steep ground (`Spline.Ground.SlopeSteep`) a hairpin is as tight as the road allows
 	DirectGrade = 0.07, -- 4 degrees
 	PassOver = 300, -- studs
-	PassBand = 1600, -- studs across
+	PassBand = 3000, -- studs across
 	LegMin = 400, -- studs
 	LegMax = 6000, -- studs
 	TowardBias = 0.05,
