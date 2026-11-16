@@ -291,13 +291,24 @@ function GroundMeshView.new(spline: any, parent: Instance?): View
 	-- the road drawn behind the car changed: so does the corridor the ground follows
 	self.behindConn = RoadBehind.Changed:Connect(function()
 		self.dirty = true
+		self:_setCap()
 	end)
 	return self
 end
 
+-- The tiles the settings allow: the Ground detail's, and the Road behind's for the corridor
+-- beside the road behind the car (T-230), so a longer road behind does not cost sharp ground
+-- ahead. Never past the most tiles any Ground detail holds (Ultra's): that is what the budget
+-- was measured to hold beside the road, and the furthest road behind still fits beside it.
+function GroundMeshView._tiles(self: View): number
+	local detail = Config.Spline.Ground.Detail
+	local own = GroundDetail.preset(self.detail).Tiles
+	return math.max(own, math.min(own + (RoadBehind.preset().GroundTiles or 0), detail[#detail].Tiles))
+end
+
 function GroundMeshView._setCap(self: View)
 	local G = Config.Spline.Ground
-	local cap = GroundDetail.preset(self.detail).Tiles + G.Spare
+	local cap = self:_tiles() + G.Spare
 	if self.failCap then
 		cap = math.min(cap, self.failCap)
 	end
@@ -306,7 +317,7 @@ end
 
 -- How many tiles may show: the setting's, or fewer if this device would not make that many.
 function GroundMeshView._leafBudget(self: View): number
-	return math.max(4, math.min(GroundDetail.preset(self.detail).Tiles, self.cap - Config.Spline.Ground.Spare))
+	return math.max(4, math.min(self:_tiles(), self.cap - Config.Spline.Ground.Spare))
 end
 
 --------------------------------------------------------------------------------

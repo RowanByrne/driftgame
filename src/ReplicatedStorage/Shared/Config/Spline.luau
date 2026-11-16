@@ -661,7 +661,7 @@ local Spline = {
 		-- Studio on a PC, `Ground` "THE BUDGET"), not a count of meshes: a GROWABLE mesh holds
 		-- back about 10 400 triangles of it however little it uses, which is where "eight
 		-- meshes" came from (measured, T-230). So a chunk, once built, is copied into a
-		-- fixed-size mesh (`Road/SplineMesh`) and costs only its own triangles: about 3 800 a
+		-- fixed-size mesh (`Road/SplineMesh`) and costs only its own triangles: about 3 600 a
 		-- chunk on today's ground, fewer on a ground run (no faces). Only the chunk being built
 		-- is growable. The window is chunk-aligned: from the chunk `Behind` studs back to the one
 		-- `Ahead` on, so the road kept behind is `Behind` to `Behind + ChunkLength` studs.
@@ -671,15 +671,20 @@ local Spline = {
 		Ahead = 1600, -- studs of road drawn in front of the car
 		-- THE PLAYER'S "ROAD BEHIND" (Settings, Graphics; docs/game/SETTINGS.md, T-230): how far
 		-- the road, and on a ground run the ground along it, stays drawn behind the car. Each
-		-- step back costs the chunks it keeps (`Studs / ChunkLength` more, about 3 800 triangles
-		-- and 20 to 250 plain parts each) and nothing else: a chunk behind was built when it was
-		-- ahead, so keeping it builds nothing. Short is the window before T-230.
+		-- step back costs the chunks it keeps (`Studs / ChunkLength` more: about 3 600 triangles
+		-- and 20 to 250 plain parts each on today's ground, 2 100 on a ground run) and no
+		-- building: a chunk behind was built when it was ahead. Short is the window before T-230.
+		-- `GroundTiles`: on a ground run, the ground's corridor beside the road behind needs
+		-- 32-stud tiles (no coarser tile may lie beside drawn road), and they came out of the
+		-- Ground detail's own `Tiles` (measured on Light: sharp ground ahead 400 studs at Short,
+		-- 232 at Long, 120 at Longest). So each step gives the ground that many more tiles
+		-- (128 triangles each) for its corridor, and the sharp ground ahead keeps its share.
 		Behind = {
-			{ Name = "Short", Studs = 300 },
-			{ Name = "Medium", Studs = 800 },
-			{ Name = "Long", Studs = 1300 },
-			{ Name = "Longer", Studs = 2000 },
-			{ Name = "Longest", Studs = 3000 },
+			{ Name = "Short", Studs = 300, GroundTiles = 0 },
+			{ Name = "Medium", Studs = 800, GroundTiles = 10 },
+			{ Name = "Long", Studs = 1300, GroundTiles = 24 },
+			{ Name = "Longer", Studs = 2000, GroundTiles = 38 },
+			{ Name = "Longest", Studs = 3000, GroundTiles = 56 },
 		},
 		BehindDefault = 3, -- keyboard and mouse, or gamepad
 		BehindTouchDefault = 2, -- a phone or tablet

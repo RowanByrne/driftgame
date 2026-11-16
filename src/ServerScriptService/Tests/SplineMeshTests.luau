@@ -85,30 +85,44 @@ function Tests.run()
 		)
 		-- THE WINDOW AND THE BUDGET (T-230): every chunk is a fixed-size copy now, so a chunk
 		-- costs its own triangles, and only the one being built is growable (it holds back
-		-- `GROWABLE` whatever it uses). Each "Road behind" step's window, at this road's mean
-		-- chunk, must fit a Studio PC client's budget beside the ground a ground run draws at
-		-- the same place in its own slider (Short beside Light ... Longest beside Ultra), and
-		-- the device defaults beside theirs
+		-- `GROWABLE` whatever it uses). A Studio PC client holds `BUDGET` in all. Each "Road
+		-- behind" step's widest window (chunk-aligned: up to a chunk more than its studs) must
+		-- fit it: on today's ground, the road alone; on a ground run, beside the most ground
+		-- tiles any setting draws (Ultra's, which the corridor's extra tiles never pass)
 		local BUDGET, GROWABLE = 81000, 10400 -- triangles (measured, T-225 and T-230)
 		local G = Config.Spline.Ground
 		local tileTris = G.TileCells * G.TileCells * 2
 		local mean = tris / math.max(1, built)
 		local meanParts = plainParts / math.max(1, built)
+		-- a ground run's chunks: no faces, so fewer triangles
+		local ggen = SplineGen.new(SEED, nil, nil, "mesh")
+		ggen:extendTo(6 * L + 200)
+		local gtris, gbuilt = 0, 0
+		for i = 0, 5 do
+			local model, info = SplineMesh.build(ggen.spline, i * L, math.min((i + 1) * L, ggen.spline.length), folder, { ground = true })
+			if model then
+				gtris += info.triangles
+				gbuilt += 1
+				SplineMesh.destroy(model)
+			end
+		end
+		local gmean = gtris / math.max(1, gbuilt)
+		local ultra = (G.Detail[#G.Detail].Tiles + G.Spare) * tileTris
 		local lines, worstShare, previous = {}, 0, 0
 		local grows = true
-		for k, step in M.Behind do
+		for _, step in M.Behind do
 			local window = math.ceil((M.Ahead + step.Studs) / L) + 1
-			local ground = (G.Detail[k] or G.Detail[#G.Detail]).Tiles + G.Spare
-			local need = window * mean + math.max(GROWABLE, mean) + ground * tileTris
-			worstShare = math.max(worstShare, need / BUDGET)
-			grows = grows and step.Studs > previous
+			local today = window * mean + math.max(GROWABLE, mean)
+			local ground = window * gmean + math.max(GROWABLE, gmean) + ultra
+			worstShare = math.max(worstShare, today / BUDGET, ground / BUDGET)
+			grows = grows and step.Studs > previous and (step.GroundTiles or 0) >= 0
 			previous = step.Studs
-			table.insert(lines, `{step.Name} {step.Studs}: {window} chunks, {math.floor(window * mean)} triangles and {math.floor(window * meanParts)} plain parts; with {G.Detail[k] and G.Detail[k].Name or "?"} ground {math.floor(need)} of {BUDGET}`)
+			table.insert(lines, `{step.Name} {step.Studs}: {window} chunks, {math.floor(window * mean)} triangles and {math.floor(window * meanParts)} plain parts; {math.floor(today)} of {BUDGET} at worst, {math.floor(ground)} on a ground run beside Ultra ground`)
 		end
 		check(
-			"every Road behind step fits the budget beside its ground",
-			worstShare <= 1 and grows and #M.Behind >= 2,
-			`{table.concat(lines, "; ")} (a chunk here: {math.floor(mean)} triangles, today's ground, more than a ground run's)`
+			"every Road behind step fits the client's mesh budget",
+			gbuilt == 6 and worstShare <= 1 and grows and #M.Behind >= 2,
+			`{table.concat(lines, "; ")} (a chunk: {math.floor(mean)} triangles on today's ground, {math.floor(gmean)} on a ground run; the one being built holds back {GROWABLE})`
 		)
 		local pc, touch = M.Behind[M.BehindDefault], M.Behind[M.BehindTouchDefault]
 		check(
