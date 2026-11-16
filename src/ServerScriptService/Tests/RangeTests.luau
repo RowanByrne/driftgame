@@ -29,9 +29,16 @@ local KILL = -500 -- Roblox's fall-kill height
 -- with room for a spur the road cuts through; the one the user drove down went 150 to 290
 -- studs deep for a kilometre and more. Before T-242, on these seeds: 2.3% of the road over
 -- `TRENCH` deep, a stretch of 1 300 studs, 290 at the deepest; after it, 0.6%, 510 and 140.
+-- T-245 doubled the range, so a road twice as long crosses as many ridges as it did.
 local ROAD_SEEDS = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16 }
-local ROAD_LENGTH = 25000
+local ROAD_LENGTH = 50000 -- studs (25 000 until T-245)
 local BACK = 300 -- studs
+-- (T-245) how often it may, over the 16 roads: the road falls back about twice in 5 million
+-- studs, the same before and after the range doubled (96 roads of 50 000 studs each: 874 and
+-- 342 studs before, 313 and 336 after), so once in these 800 000 is the rate, not a fault.
+-- Before T-242 it was 3 times in 400 000, to 706.
+local BACK_TIMES = 1
+local BACK_WORST = 600 -- studs
 local TRENCH = 60 -- studs below h
 local TRENCH_SHARE = 0.01 -- of the road at most that deep...
 local TRENCH_RUN = 600 -- ...no stretch longer than this, studs...
@@ -91,9 +98,9 @@ local function run(check, opts)
 	local steepN, shallowN, slopeN = 0, 0, 0
 	for seed = 1, seeds do
 		local f = field(seed)
-		-- the band: a 90 000 by 40 000 stud box, every 250 studs
-		for t = -30000, 60000, 250 do
-			for v = -20000, 20000, 250 do
+		-- the band: a 180 000 by 80 000 stud box, every 500 studs (T-245 doubled the range)
+		for t = -60000, 120000, 500 do
+			for v = -40000, 40000, 500 do
 				local x, z = Range.world(f.range, t, v)
 				local y = Ground.h(f, x, z)
 				lowest = math.min(lowest, y)
@@ -101,7 +108,7 @@ local function run(check, opts)
 			end
 		end
 		-- ridges ahead of the start, along three lines across
-		for _, v in { -6000, 0, 6000 } do
+		for _, v in { -12000, 0, 12000 } do
 			local list = ridges(f, 0, 10, v)
 			for i = 2, #list do
 				local gap = list[i].t - list[i - 1].t
@@ -124,9 +131,9 @@ local function run(check, opts)
 			end
 			for _, sd in list do
 				saddles += 1
-				-- a saddle is a dip: the crest is higher within 2 000 studs either way
+				-- a saddle is a dip: the crest is higher within `SaddleSpan` studs either way
 				local hiL, hiR = -math.huge, -math.huge
-				for dv = R.PassStep, 2000, R.PassStep do
+				for dv = R.PassStep, R.SaddleSpan, R.PassStep do
 					hiL = math.max(hiL, (Range.crest(f.range, k, sd[1] - dv)))
 					hiR = math.max(hiR, (Range.crest(f.range, k, sd[1] + dv)))
 				end
@@ -145,7 +152,7 @@ local function run(check, opts)
 			end
 		end
 		-- where you are, and how steep, along a line across the range
-		for t = -5000, 40000, 100 do
+		for t = -10000, 80000, 200 do
 			local x, z = Range.world(f.range, t, (seed * 997) % 8000 - 4000)
 			local w = Ground.where(f, x, z)
 			kinds[w.kind] += 1
@@ -160,7 +167,7 @@ local function run(check, opts)
 	end
 	check(
 		"the range stays in its band, well above the fall-kill height",
-		lowest > KILL + 200 and highest < 1600,
+		lowest > KILL + 200 and highest < 3200,
 		`{fmt(lowest)} to {fmt(highest)} studs on {seeds} seeds (kill {KILL})`
 	)
 	-- SPACING: `Spacing` either way `2 x Jitter` between two ridges' middles, and each ridge
@@ -168,16 +175,18 @@ local function run(check, opts)
 	-- nearer or further. Until T-238 the range was 5 500 apart (the check said 3 000 to 8 000,
 	-- bounded 2 000 to 9 000); T-238 made it wider for the road, 6 500 apart (mountain-range.md
 	-- "step 2"), measured 3 166 to 9 898 on 20 seeds (T-244), so the bounds are the maths' own.
+	-- T-245 doubled the range: 13 000 apart.
 	local spMin = R.Spacing - 2 * R.Jitter - 2 * R.Wobble[1]
 	local spMax = R.Spacing + 2 * R.Jitter + 2 * R.Wobble[1]
 	check(
-		"ridges lie about 4 000 to 9 000 studs apart",
+		"ridges lie about 8 000 to 18 000 studs apart",
 		spacingLo >= spMin and spacingHi <= spMax and spacingLo <= R.Spacing and spacingHi >= R.Spacing,
 		`{fmt(spacingLo, 0)} to {fmt(spacingHi, 0)} studs (the most the maths allows: {spMin} to {spMax})`
 	)
+	-- (twice T-238's 600 to 1 200 since T-245)
 	check(
-		"peaks rise 600 to 1 200 studs over the valley floors",
-		riseHi >= 600 and riseHi <= 1400 and riseLo >= 150,
+		"peaks rise 1 200 to 2 400 studs over the valley floors",
+		riseHi >= 1200 and riseHi <= 2800 and riseLo >= 300,
 		`crest over floor {fmt(riseLo, 0)} to {fmt(riseHi, 0)} studs`
 	)
 	check(
@@ -233,9 +242,9 @@ local function run(check, opts)
 			`{t.crossings} ridges crossed; climbing {fmt(100 * t.climb / n, 0)}%, descending {fmt(100 * t.fall / n, 0)}%`
 		)
 		check(
-			"no doubling back: the road never falls back along the way on",
-			t.backs == 0,
-			`{t.backs} times more than {BACK} studs back (furthest {fmt(t.backWorst, 0)}) over {fmt(t.length, 0)} studs`
+			"no doubling back: the road falls back along the way on at most as rarely as it did",
+			t.backs <= BACK_TIMES and t.backWorst <= BACK_WORST,
+			`{t.backs} times more than {BACK} studs back (at most {BACK_TIMES}), furthest {fmt(t.backWorst, 0)} (at most {BACK_WORST}), over {fmt(t.length, 0)} studs`
 		)
 		check(
 			"no deep trench",

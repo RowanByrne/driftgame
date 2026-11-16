@@ -29,9 +29,9 @@ The user, 2026-11-15 (C-dd9f36): "we basically create a realistic shaped mountai
 Starting values, tuned in a lane:
 
 - **The range, h(x, z):** still one pure function of seed and position, the same on every device, and still the thing the road follows ("The mountain leads, the road follows", `road-on-the-slope.md`).
-  - Ridges lie roughly across the run's way, about 3 000 to 8 000 studs apart, each with saddles a few hundred studs lower than its peaks.
+  - Ridges lie roughly across the run's way, about 8 000 to 18 000 studs apart (doubled by T-245, below), each with saddles 500 to 1 000 studs lower than its peaks.
   - Valleys lie between the ridges, with spurs and side ridges off the main ones.
-  - Peaks rise 600 to 1 200 studs above the valley floors.
+  - Peaks rise 1 200 to 2 400 studs above the valley floors.
   - The whole range sits in a height band whose bottom is well above -500, the fall-kill height.
 - **The road's route:**
   - Heads for the next pass: the lowest good saddle in the ridge ahead.
@@ -197,3 +197,39 @@ Six road suites were failing on main. None was the road misbehaving; each test's
 - **SplineWorldTests:** both normals are judged on the surface and the wall themselves; the parts, flat triangles and 4-stud chords, are judged on the mean. The K-rail search may take a bend of 200 studs or wider: every rail in the seed's first 8 000 studs is on a bend now. On a banked bend the car is held at a K-rail by its push-out, not its sweep (0.3 to 0.45 studs short of the face).
 - **SplineTests:** a section's cost is judged on the mean (2.0 ms) and the median road's worst (about 15 ms). The single worst section of all 20 roads swings between 20 and 26 ms from run to run, a different road each time.
 - **RoadTests, RunTests:** they test the piece road, and since T-141 a run lays the spline road, so they switch the next run to the piece road themselves and put it back.
+
+## As built: the range twice the size (T-245)
+
+The user, 2026-11-16: "I want to basically 2x the scale of the mountains and valleys that we have now. the goal being to create more space to put in our biomes in the future. the steepness and shallowness is good the way it is ... 2x it."
+
+`Config.Range` (and `Road/Range`, whose saddle easing was 40 studs written in: now `SaddleEase`). Every face keeps its steepness; the range grows.
+
+- **Doubled, across and up together:** ridge spacing (13 000 give or take 2 400), the crest's wander (1 700 over 13 000), peaks (and their rise and fall along the crest, over 18 000), saddle depth and floor (`SaddleMin`), a saddle every 6 000, a saddle's rise and span (120 within 4 000), the valley floors' heights and wander (120 over 12 000), the crest's rounding (80). With the same seed the base shape is exactly twice the old one, but for the lift below.
+- **Lifted 200 studs:** the valley floors and the crests sit 200 studs above twice T-238's; the start valley stays the zero. Doubled as they were, the lowest ground came to -329, 171 studs above the fall-kill height (-500). So the start valley lies a little lower among the others, and the faces either side of it are about a tenth taller (the first climb is a little steeper than twice the old one).
+- **Doubled with it, the range's own geography:** where a pass and a ridge are read (`PassReach` 700, `RidgeReach` 500), the window the pass ahead is looked for in (`PassWindow` 8 000, sampled every 100), the switchback band below a pass (`PassBand` 6 000) and the longest leg (`LegMax` 12 000), and how far off the road heads straight for a pass (`DirectReach` 1 800).
+- **Kept as they were, the road's size:** the spurs and gullies the road follows (`Octaves`: the 1 400/60 "ridge" octave too: 120 studs tall, the road could not follow it), hairpin, rescue and follow turns and radii, `PassOver`, `LegMin`, `AimSpan`, `DirectGrade`, `PassLean` (a height per stud: the same ratio doubled).
+- **One road number changed:** `AimLocalBackCost` 200 to 400. Legs are twice as long, so a heading a little back the way on fell back twice as far over one (4 times in 96 roads of 50 000 studs, to 1 140, where it was twice before, to 874). At 400 the rate is what it was.
+
+### Measured (DR-Lane1, 12 seeds for the shape, 96 roads of 50 000 studs for the road)
+
+| | Before | After |
+|---|---|---|
+| Ridges apart (median) | 6 486 | 13 070 |
+| Peaks over the valley floor (median, highest) | 863, 1 140 | 1 690, 2 296 |
+| Saddles over the floor (median) | 471 | 950 |
+| Face slope, the range alone (median, mean) | 10.6, 11.2 degrees | 10.6, 11.3 |
+| Face slope, with spurs and gullies (median, mean) | 15.4, 16.5 degrees | 15.3, 16.4 |
+| Ground (20 seeds) | | -249 to 2 449 |
+| Road to the first pass (median) | 5 500 studs | 13 200 (10 000 to 31 000) |
+| Ridges crossed, 48 roads | 193 | 93 |
+| Fell back over 300 studs, 96 roads | 2 (874, 342) | 2 (313, 336) |
+| Stalled, 96 roads | 1 | 1 |
+| Trench stretches over 600 studs, 96 roads | 2 (720, 880) | 2 (640, 880) |
+| Deepest cut, 48 roads | 138 | 130 |
+| Road over 60 deep / over 20 off h, 48 roads | 0.54% / 10.9% | 0.59% / 10.9% |
+
+The climb to a pass is over twice as long as before: the first pass is a little more than twice as high (960 or more over the start, from 380), as the lift adds to it.
+
+**Tests:** RangeTests lays its roads to 50 000 studs (twice as far, so they cross as many ridges), its bounds are twice as big, and its doubling-back check allows the rate measured before and after (once in its 800 000 studs, never past 600): the road falls back about twice in 5 million studs either way, and with zero allowed which seeds passed was luck. Before T-242 it was 3 times in 400 000, to 706, which still fails. RangeTests, GroundTests, SplineTests and SplineWorldTests pass.
+
+**Not changed, and worth a look:** the ground is drawn 1 100 to 2 100 studs round the car (`Spline.Ground.Detail` `Reach`); with ridges 13 000 apart, a valley shows its own faces and little of the ridge beyond, as was nearly so before.

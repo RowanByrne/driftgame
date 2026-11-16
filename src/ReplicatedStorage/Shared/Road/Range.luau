@@ -119,10 +119,10 @@ function Range.crest(r: Range, k: number, v: number): (number, number)
 	local phase = 2 * math.pi * (v / R.SaddleEvery + R.SaddleWarp * math.noise(v / (2 * R.SaddleEvery) + rd.sad, 0.13, 0.77))
 	local s = smooth(math.clamp(0.5 + 0.5 * R.SaddleSharp * math.sin(phase), 0, 1))
 	local deep = 1 + 0.6 * math.noise(v / (0.7 * R.SaddleEvery) + rd.sad * 1.7, 0.51, 0.23)
-	-- no lower than `SaddleMin`, eased into it (a hard floor left flat crests)
+	-- no lower than `SaddleMin`, eased into it over `SaddleEase` (a hard floor left flat crests)
 	local tall = rd.peak * (1 + R.PeakVary[1] * 2 * math.noise(v / R.PeakVary[2] + rd.wob * 0.7, 0.83, 0.17))
-	local a, b = tall - rd.depth * deep * s, R.SaddleMin
-	return 0.5 * (a + b + math.sqrt((a - b) * (a - b) + 1600)), s
+	local a, b, e = tall - rd.depth * deep * s, R.SaddleMin, R.SaddleEase
+	return 0.5 * (a + b + math.sqrt((a - b) * (a - b) + e * e)), s
 end
 
 -- Valley k's floor (between ridge k and ridge k + 1) at `v` across.
