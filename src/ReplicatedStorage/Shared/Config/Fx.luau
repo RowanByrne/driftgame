@@ -326,8 +326,8 @@ return {
 	-- THE BUDGET: the off-road layer is, per wheel, 1 Trail (gravel) + 3 Emitters, and T-207's
 	-- 3 fixed particle-source Attachments; the grass ribbon is `Ribbon.Chunks` MeshParts per
 	-- car and their folder. With the tarmac layer's 2 Attachments + 3 per smoking surface, one
-	-- smoking surface is 12 per wheel:
-	--   4 x (2 + 3 + 1 + 3 + 3) + 8 chunks + 1 folder = 57 per car
+	-- smoking surface is 12 per wheel, and the ribbon a MeshPart and a SurfaceAppearance a chunk:
+	--   4 x (2 + 3 + 1 + 3 + 3) + 8 x 2 + 1 folder = 65 per car
 	-- (88 with T-265's first, trail-built ruts; 64 before T-265; 20 before T-188). All built
 	-- once, then switched or rewritten in place. `Drift/Wheels.perCar()` is the formula.
 	Ground = {
@@ -359,8 +359,7 @@ return {
 			TileLength = 6, -- studs of the mark one repeat of the streak texture covers
 			AgeLevels = 28, -- how many steps the drying and fading are rewritten in (0.5 s each)
 			Material = Enum.Material.SmoothPlastic, -- a little sheen: wet earth catches the light
-			Transparency = 0.001, -- the parts' own: just over 0 puts them in the see-through
-			-- pass, so the texture's alpha (the soft edges, the opacity copies) is drawn
+			Transparency = 0, -- the parts' own. The see-through is the SurfaceAppearance's
 
 			-- The streak texture, made in code at start (an `EditableImage`). Grey, multiplied by
 			-- the ribbon's colours: lines along the travel, flecks and clods toward the edges,

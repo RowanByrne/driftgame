@@ -109,10 +109,10 @@
 -- contact, the ground's up, the T-207 width share and the drawn ground (`Drift/GroundMeshView`,
 -- passed into `Update`), which the ribbon's points are put on (`Wheels.onGround`).
 --
--- NOTHING IS CREATED OR DESTROYED WHILE DRIVING. 57 instances per car at one smoking
+-- NOTHING IS CREATED OR DESTROYED WHILE DRIVING. 65 instances per car at one smoking
 -- surface -- 4 wheels x (2 Attachments + 1 Trail + 2 ParticleEmitters, and the off-road
 -- layer's 1 Trail + 3 ParticleEmitters + 3 emitter anchors), and the grass ribbon's
--- `Ribbon.Chunks` MeshParts and their folder -- built once and switched or rewritten in place
+-- `Ribbon.Chunks` MeshParts, a SurfaceAppearance each, and their folder -- built once and switched or rewritten in place
 -- for ever after. It was 20 before T-188, 64 before T-265, 88 with T-265's trail ruts.
 -- There is no `Instance.new`, no `NumberSequence` and no `NumberRange` anywhere in `Update`:
 -- a frame that allocates instances is the thing to fail on, and `FxTests` counts them
@@ -417,9 +417,10 @@ function Wheels.perWheel(): number
 	return 2 + #Config.Fx.Built * 3 + 1 + 3 + 3
 end
 
--- And a car: its four wheels, and the grass ribbon's chunks and folder (T-265). 57.
+-- And a car: its four wheels, and the grass ribbon's chunks, each a MeshPart and its
+-- SurfaceAppearance, and their folder (T-265). 65.
 function Wheels.perCar(): number
-	return #CarModel.WHEEL_NAMES * Wheels.perWheel() + Config.Fx.Ground.Ribbon.Chunks + 1
+	return #CarModel.WHEEL_NAMES * Wheels.perWheel() + Config.Fx.Ground.Ribbon.Chunks * 2 + 1
 end
 
 local function wheelIndex(name: string): number?

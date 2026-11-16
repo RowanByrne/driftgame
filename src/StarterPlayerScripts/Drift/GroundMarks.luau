@@ -85,6 +85,9 @@ export type GroundMarks = typeof(setmetatable(
 	{} :: {
 		ready: boolean,
 		failed: string?,
+		surface: string, -- how the texture is put on: "SurfaceAppearance" (see-through) or
+		-- "TextureContent" (a fallback: Roblox shows the part's colour where a MeshPart
+		-- texture is clear, so its soft edges and fades would show white)
 		folder: Folder?,
 		image: EditableImage?,
 		chunks: { Chunk },
@@ -251,6 +254,7 @@ function GroundMarks.new(): GroundMarks
 	local self = setmetatable({
 		ready = false,
 		failed = nil,
+		surface = "none",
 		folder = nil,
 		image = nil,
 		chunks = {},
@@ -350,16 +354,21 @@ function GroundMarks._buildTables(self: GroundMarks)
 	end
 end
 
-local function makeTemplate(slots: number, P: number): EditableMesh
+-- The ids each `Add` returns are written into `self`'s id lists from `base`: kept as they
+-- come back, because `GetColors` and the like also list attributes `AddTriangle` makes for
+-- itself, so their order is not ours (measured: painting by that order left slots white).
+local function makeTemplate(self: GroundMarks, slots: number, P: number, base: number): EditableMesh
 	local em = AssetService:CreateEditableMesh({ FixedSize = false })
 	assert(em, "no EditableMesh")
-	for _ = 1, slots do
+	for slot = 1, slots do
 		local v, c, n, u = table.create(2 * P, 0), table.create(2 * P, 0), table.create(2 * P, 0), table.create(2 * P, 0)
 		for k = 1, 2 * P do
 			v[k] = em:AddVertex(Vector3.zero)
 			c[k] = em:AddColor(Color3.new(1, 1, 1), 1)
 			n[k] = em:AddNormal(Vector3.yAxis)
 			u[k] = em:AddUV(Vector2.zero)
+			local at = base + (slot - 1) * 2 * P + k
+			self.vids[at], self.cids[at], self.nids[at], self.uids[at] = v[k], c[k], n[k], u[k]
 		end
 		-- Section 0 (k = 1..P) is the start, behind; section 1 (P+1..2P) the end, ahead.
 		-- Wound so `(c - a) x (b - a)` points up: a ahead-left, c behind-left, b ahead-right.
@@ -404,16 +413,8 @@ function GroundMarks.Build(self: GroundMarks, parent: Instance?): boolean
 		image:WritePixelsBuffer(Vector2.zero, size, GroundMarks.atlasPixels(T))
 		self.image = image
 		for ci = 1, R.Chunks do
-			local template = makeTemplate(self.perChunk, P)
-			-- The ids of the template's vertices and attributes, in order: the copy keeps them.
-			local base = (ci - 1) * self.perChunk * 2 * P
-			local vs, cs, ns, us = template:GetVertices(), template:GetColors(), template:GetNormals(), template:GetUVs()
-			for k = 1, self.perChunk * 2 * P do
-				self.vids[base + k] = vs[k]
-				self.cids[base + k] = cs[k]
-				self.nids[base + k] = ns[k]
-				self.uids[base + k] = us[k]
-			end
+			-- The template's ids are the copy's too (measured), so they are kept as made.
+			local template = makeTemplate(self, self.perChunk, P, (ci - 1) * self.perChunk * 2 * P)
 			local em = AssetService:CreateEditableMeshAsync(Content.fromObject(template), { FixedSize = true })
 			template:Destroy()
 			assert(em, "no fixed copy")
@@ -430,8 +431,26 @@ function GroundMarks.Build(self: GroundMarks, parent: Instance?): boolean
 			part.CastShadow = false
 			part.Material = R.Material
 			part.Color = Color3.new(1, 1, 1)
-			part.Transparency = R.Transparency -- puts it in the see-through pass, for the atlas
-			part.TextureContent = Content.fromObject(image)
+			part.Transparency = R.Transparency
+			-- SEE-THROUGH NEEDS A SURFACEAPPEARANCE. Neither a vertex colour's alpha nor a
+			-- MeshPart texture's alpha is drawn as see-through -- both show the part's own
+			-- colour (measured: white streaks and bands, DR-Lane3) -- but a SurfaceAppearance
+			-- in `AlphaMode.Transparency` is. Its colour map is the atlas.
+			local okSA = pcall(function()
+				local sa = Instance.new("SurfaceAppearance")
+				sa.AlphaMode = Enum.AlphaMode.Transparency
+				sa.ColorMapContent = Content.fromObject(image)
+				sa.Parent = part
+			end)
+			if okSA then
+				self.surface = "SurfaceAppearance"
+			else
+				for _, child in part:GetChildren() do
+					child:Destroy()
+				end
+				part.TextureContent = Content.fromObject(image)
+				self.surface = "TextureContent"
+			end
 			part.CFrame = CFrame.new(0, 0, 0)
 			part.Parent = folder
 			table.insert(self.chunks, { em = em, part = part, origin = Vector3.zero })
@@ -880,6 +899,7 @@ function GroundMarks.DebugState(self: GroundMarks)
 	return {
 		ready = self.ready,
 		failed = self.failed,
+		surface = self.surface,
 		chunks = #self.chunks,
 		slots = self.total,
 		live = if self.ready then GroundMarks.LiveCount(self) else 0,

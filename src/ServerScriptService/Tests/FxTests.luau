@@ -195,10 +195,10 @@ function Tests.run(opts)
 		-- THE INSTANCE BUDGET IS THIS FORMULA: 4 wheels x (2 Attachments + smoking surfaces x
 		-- (1 Trail + 2 ParticleEmitters) + the off-road layer's gravel Trail and 3
 		-- ParticleEmitters, T-188, plus 3 fixed emitter anchors, T-207), and the grass ribbon's
-		-- chunks and folder (T-265): 57 a car.
+		-- chunks, each a MeshPart and a SurfaceAppearance, and their folder (T-265): 65 a car.
 		check(
 			"one smoking surface, and the budget it comes to",
-			#F.Built == 1 and Wheels.perWheel() == 12 and Wheels.perCar() == 4 * 12 + F.Ground.Ribbon.Chunks + 1,
+			#F.Built == 1 and Wheels.perWheel() == 12 and Wheels.perCar() == 4 * 12 + F.Ground.Ribbon.Chunks * 2 + 1,
 			`{#F.Built} surface(s) -> {Wheels.perWheel()} a wheel, {Wheels.perCar()} instances per car`
 		)
 		-- ONE DARKNESS, which is the whole of the rollback. A ladder would be a table.
@@ -1101,15 +1101,20 @@ function Tests.run(opts)
 					if part:IsA("MeshPart") then
 						parts += 1
 						scaleOk = scaleOk and math.abs(part.Size.X - 1024) < 0.5
-						textured = textured and part.TextureContent.Object == marks.image
+						-- See-through through a SurfaceAppearance (or the fallback texture).
+						local sa = part:FindFirstChildOfClass("SurfaceAppearance")
+						textured = textured and if sa
+							then sa.ColorMapContent.Object == marks.image and sa.AlphaMode == Enum.AlphaMode.Transparency
+							else part.TextureContent.Object == marks.image
 					end
 				end
 			end
+			local made = #marks.folder:GetDescendants()
 			check(
 				"the ribbon is built once: its chunks, at scale 1, with the streak texture",
 				marks.ready and parts == RB.Chunks and scaleOk and textured
-					and Wheels.perWheel() * #CarModel.WHEEL_NAMES + parts + 1 == Wheels.perCar(),
-				`ready {marks.ready} ({marks.failed or "ok"}); {parts} MeshParts; scale 1 {scaleOk}; textured {textured}; {Wheels.perCar()} a car`
+					and Wheels.perWheel() * #CarModel.WHEEL_NAMES + made + 1 == Wheels.perCar(),
+				`ready {marks.ready} ({marks.failed or "ok"}); {parts} MeshParts, drawn by {marks.surface}; scale 1 {scaleOk}; textured {textured}; {Wheels.perCar()} a car`
 			)
 
 			-- A stand-in drawn ground: a tilted plane with long, gentle swells, so a point
