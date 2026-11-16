@@ -554,6 +554,17 @@ function PlaygroundService:Build()
 		existing:Destroy()
 	end
 
+	-- A place with the old showroom saved in it (`Tools/Showroom`, T-059, gone in T-249;
+	-- `DR-Lane4` has one) carries a second copy of this world at these same coordinates, and
+	-- two playgrounds in one space is a place nobody can drive in, so a playtest takes it
+	-- down. Play runs on a copy of the datamodel, so nothing saved is touched.
+	if RunService:IsRunning() then
+		local showroom = workspace:FindFirstChild("Showroom")
+		if showroom then
+			showroom:Destroy()
+		end
+	end
+
 	table.clear(features)
 	table.clear(cones)
 	partCount = 0
