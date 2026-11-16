@@ -1189,6 +1189,10 @@ local function pickKind(self: Gen, s0: number): any
 		if s0 >= b.minS then
 			w = (1 + most - (counts[b.name] or 0)) * b.weight
 		end
+		-- (on the range no bend turns the road round but a planned hairpin, T-242)
+		if b.name == "Hairpin" and self.ground and self.ground.range and (Config.Range :: any).RandomHairpins == false then
+			w = 0
+		end
 		weights[i] = w
 		total += w
 	end
@@ -2237,6 +2241,16 @@ function SplineGen._planned(self: Gen, item: Item): Spline.Section?
 			radius = M.StraightenRadius,
 			tag = "Medium",
 		})
+		-- (on the range, only if it follows h: unchecked, one ran the road 100 studs into the
+		-- face just before a hairpin, T-242; the hairpin itself turns from any heading)
+		local R = Config.Range :: any
+		if typeof(fix) == "table" and self.ground and self.ground.range and R.StraightenMaxOff then
+			local _, _, _, _, g0, _, y0 = self.spline:tip()
+			local _, off = self:_followGrade((fix :: Spline.Section).k, g0, y0)
+			if off > R.StraightenMaxOff then
+				fix = nil
+			end
+		end
 		if typeof(fix) == "table" then
 			st.straightens += 1
 			self.turning = "straighten"

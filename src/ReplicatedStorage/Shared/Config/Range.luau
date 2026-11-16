@@ -106,4 +106,6 @@ return {
 	FollowLook = 100, -- studs
 	FollowAimCost = 0.5, -- studs a degree
 	FollowBackCost = 250, -- studs (100 left the road heading back 500 studs, twice in 24 runs)
+	StraightenMaxOff = 20, -- (trial)
+	RandomHairpins = false, -- (trial)
 }
