@@ -1,6 +1,6 @@
 # Feature: Road ahead map
 
-**Status:** specced (plan for the user).
+**Status:** built (T-236), with the user to try in a lane.
 
 ## Goal
 
@@ -14,7 +14,7 @@ The user, 2026-11-15 (C-5a24c5): "can we add a feature that shows the upcoming t
 2. The road is drawn as a line:
    - **Ahead:** about 800 studs of road.
    - **Behind:** a short tail of about 100 studs.
-   - **Heading-up:** the car's arrow stays fixed near the bottom middle of the panel pointing up, and the road turns around it.
+   - **Road-up** (the user, 2026-11-15): the road's direction at the car is up, so the map turns only as the road bends, eased over 0.35 s. The arrow sits near the bottom middle and turns to show the car's nose against the road, drift included.
 3. Hairpins and tight bends are easy to read. The line is drawn a little thicker or brighter through them.
 4. **Off the road:** when the car is off the road or respawning, the map stays on the road's line nearest the car.
 5. **Outside a run:** in the playground and garage, there is no map.
@@ -54,7 +54,7 @@ Client only. The client already has the whole spline road (`SplineWorld`/`Spline
 
 ## Contracts
 
-`Drift/RoadMap` with `DebugState()`: shown, the points drawn, studs ahead and the car's place on the road. Added to `CONTRACTS.md` with the code.
+`RoadMapController` with `DebugState()` (shown, the points drawn, studs ahead and behind, the car's place on the road, the cost), `DebugCheck()` (the drawn pixels measured back against the spline) and `DebugFixture(name)`; `PlayerGui.RoadMap`. In `CONTRACTS.md`.
 
 ## Analytics
 
@@ -83,5 +83,12 @@ None.
 
 ## Open questions
 
-- **Heading-up or north-up:** heading-up is the default, as most racing maps do.
+- ~~Heading-up or north-up~~: decided, road-up (DECISIONS.md, 2026-11-15).
 - **Off switch:** should it have a Settings toggle, or a size slider?
+
+## Built (T-236)
+
+- `Shared/Config/RoadMap` (every number), `Drift/RoadMapView` (the view) with `RoadMapView.fixtures`, `Controllers/RoadMapController` (its feed), `UI/Layers.RoadMap` = 12.
+- Points on a fixed 16-stud grid along the road plus the car's own place, so the line doesn't crawl. The line is cut at the panel's inner edge by hand: rotated frames are not clipped by their parent.
+- Measured in DR-Lane2, 2026-11-15, the car stepped along 2,290 studs of a real run at 80 studs/s (a 79-stud bend included): every drawn point within 0.000001 stud of the spline; the arrow within 1.2 px (5.7 studs) of the line; the map's up never turned more than 4.2 degrees between redraws, lagging the road by 29 degrees at most in the tightest bend; the arrow never jumped more than 1 px. Cost 0.15 ms a redraw on average at 20 a second (1.5 ms once, building the pool). Car 600 studs off the road: the map holds its last place; 50 studs off on the grass: the arrow sits beside the line.
+- Layouts measured: HD 1080 (220 px, top left), iPhone 13 Pro landscape 750 x 390 and iPhone 7 landscape 667 x 375 (140 px, top left), iPhone 13 Pro portrait 390 x 763 (140 px, dropped below the score panel to 146 px). It overlaps none of the run button, its line or the score panel at any of them. On iPhone 7 landscape its bottom edge reaches the top of the test-only buttons (bottom left, not shipping).

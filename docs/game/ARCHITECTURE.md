@@ -32,6 +32,7 @@ The car is **not** driven by Roblox's physics (`DECISIONS.md`, 2026-11-03). Its 
 |---|---|---|
 | `DriftController` | The drift model: the fixed-step simulation that moves the local player's car | `DebugState()`, `DebugDrive(inputs, seconds)` |
 | `ScoreController` | The endless run's score, on the client: steps `Drift/Score` on every simulation step while the server says this player is in a run (`features/endless-score.md`) | `View()`, `DebugState()` |
+| `RoadMapController` | The road-ahead map, top left (`features/road-ahead-map.md`, T-234): reads the client's spline road and its own car, and draws the next 800 studs as a line round an arrow, road-up, tight bends orange, in `Drift/RoadMapView`. Client only, sends nothing | `DebugState()`, `DebugCheck()`, `DebugFixture(name?)` |
 | `CarInputController` | Steering, drift and brake input across keyboard, touch and gamepad | `DebugState()` |
 | `UiVisibilityController` | Session P shortcut plus owner-aware HUD suppression for menus; preserves screen visibility ownership (`T-200`, T-201) | `Toggle()`, `Changed(hidden)`, `SetOverlayHidden(owner, on, exceptions?)`, `DebugState()` |
 | `SettingsController` | Smoked-glass driving settings, session pointer preferences, menu/focus lifecycle and client scene blur (T-201) | `Open()`, `Close()`, `DebugState()`, `DebugAction()`, `DebugFixture()`, `DebugNavigate()`, Studio layout methods below |
