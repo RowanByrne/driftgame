@@ -1377,6 +1377,9 @@ function SplineGen._slopeAim(self: Gen, slope: Slope): (number, number, number, 
 	local dx, dz
 	local tgt = if f.range then self:_target() else nil
 	if tgt then
+		-- (read where the road is now: a leg that crosses a valley floor turns from coming down
+		-- to climbing there)
+		sc = if Ground.where(f, x, z).ridge == tgt.k then -1 else 1
 		local wx, wz = tgt.x - x, tgt.z - z
 		local wl = math.max(math.sqrt(wx * wx + wz * wz), 1e-6)
 		local R = Config.Range
@@ -1685,7 +1688,8 @@ function SplineGen._planRange(self: Gen)
 	local t, v = Range.frame(r, x, z)
 	local pt, pv = Range.frame(r, tgt.x, tgt.z)
 	local where = Ground.where(f, x, z)
-	local climbing = where.ridge == tgt.k and where.kind ~= "valley"
+	-- (past the valley floor, on the target ridge's own face: from the floor on, it is a climb)
+	local climbing = where.ridge == tgt.k
 	local sc = if climbing then -1 else 1
 	self.stats.legs += 1
 	local function stretch(len: number, what: string, sl: Slope, untilV: number?)
