@@ -565,17 +565,23 @@ function Ground.at(ctx: Context, x: number, z: number): (number, number, number,
 							T = surface(st, side * w, ds, near) - G.Under
 							bw = math.clamp(math.abs(hp - T) / st.tanA, st.bmin, bMax)
 						end
+						-- what the soft minimum weighs: the distance past the edge, plus how far
+						-- beyond its own stretch the point lies along the road. Of the stations
+						-- a point is beside, the one whose stretch it is square to counts most:
+						-- at the runoff's edge a neighbour's nearest point is barely further
+						-- off, but its height is that of road a few studs along
+						local score = e + math.max(0, -ds, ds - L)
 						do
 							local wl = 1
-							if e < emin then
+							if score < emin then
 								if emin < math.huge then
-									local k = math.exp((e - emin) / soft)
+									local k = math.exp((score - emin) / soft)
 									sw *= k
 									swe *= k
 									swb *= k
 									swT *= k
 								end
-								emin = e
+								emin = score
 							end
 							-- and fades out over the last `FADE` studs of the longest blend, so a
 							-- station leaving the reckoning moves nothing
@@ -583,7 +589,7 @@ function Ground.at(ctx: Context, x: number, z: number): (number, number, number,
 							if f < 1 then
 								wl *= smooth(f)
 							end
-							local wgt = wl * math.exp((emin - e) / soft)
+							local wgt = wl * math.exp((emin - score) / soft)
 							sw += wgt
 							swe += wgt * past
 							swb += wgt * bw
