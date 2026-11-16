@@ -1,6 +1,6 @@
 # Feature: The spline road
 
-**Status:** all 4 steps built, behind the switch (`T-133` the curve maths, `T-134` collision, `T-135` the mesh, `T-136` the run). `Config.Road.Mode` is still `"pieces"`. **Owner task:** `T-132`,
+**Status:** all 4 steps built, behind the switch (`T-133` the curve maths, `T-134` collision, `T-135` the mesh, `T-136` the run). The switch is gone: since `T-249` the spline road is the only road (`legacy-removal.md`). **Owner task:** `T-132`,
 branch `feature/spline-road`, lane 1. Built behind a switch, and merged only when the user has
 driven it there.
 

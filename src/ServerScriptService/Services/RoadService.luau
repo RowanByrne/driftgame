@@ -13,9 +13,11 @@
 -- remote, features/endless-run.md).
 --
 -- What it actually owns:
---   * the parts -- one folder per piece under `Workspace.Road`, built by `Road/Builder`
---   * the window -- `AheadPieces` built in front of the car, `BehindPieces` kept behind it
---   * the closing barrier, `BarrierBehind` pieces back, moving up with the car
+--   * the road -- the spline road (`Road/SplineSequence`, features/spline-road.md), laid as
+--     sections and sent to the runners, who draw it and drive on its maths: the server
+--     builds no road parts (the piece road went in T-249, features/legacy-removal.md)
+--   * the window -- `AheadPieces` sections laid in front of the car, `BehindPieces` kept
+--   * the closing barrier, `BarrierBehind` sections back, moving up with the car
 --   * progress -- which piece each car is on, how far along, and whether that is forward
 --     on road it has not used. The server owns this for the same reason it owns the seed:
 --     a client that reports its own progress reports its own score later.
@@ -32,19 +34,15 @@
 -- NOTHING HERE MOVES A CAR. `CarService:Respawn(player, cf)` is still the only thing that
 -- does, as it has been since T-026: this service decides WHERE and asks.
 --
--- The sequence itself is `Shared/Road/Generator`, which is pure and has no idea any of
+-- The sequence itself is `Shared/Road/SplineSequence`, which is pure and has no idea any of
 -- this exists.
 
-local CollectionService = game:GetService("CollectionService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
 local Config = require(ReplicatedStorage.Shared.Config)
-local Builder = require(ReplicatedStorage.Shared.Road.Builder)
-local Generator = require(ReplicatedStorage.Shared.Road.Generator)
 local Net = require(ReplicatedStorage.Shared.Net)
-local Pieces = require(ReplicatedStorage.Shared.Road.Pieces)
 local SplineSequence = require(ReplicatedStorage.Shared.Road.SplineSequence)
 
 local RoadService = {}
@@ -52,10 +50,7 @@ local RoadService = {}
 -- so nothing depends on it having run first.
 RoadService.Priority = 50
 
-RoadService.Root = nil :: Folder?
 RoadService.Running = false
-
-local ROOT_NAME = "Road"
 
 -- The world's name, the one `CarService` knows it by. A third name beside "track" and
 -- "playground" (`WORLD.md` "The three worlds"), and the only one of the three that is not
@@ -74,21 +69,10 @@ local RUN_COOLDOWN = "RespawnCooldown" -- seconds between two presses that land
 
 local generator = nil :: any
 
--- WHICH ROAD A RUN LAYS (features/spline-road.md, T-136): `"pieces"`, the road as it has
--- always been, or `"spline"`, one continuous curve that the server lays as sections and
--- builds NO PARTS for -- each client draws it and drives on its maths. The default is
--- `Config.Road.Mode`; `SetMode` changes it between runs (the Studio TEST ONLY panel).
-local mode = nil :: string?
-local function splineRun(): boolean
-	return generator ~= nil and generator.spline ~= nil
-end
-
 -- What the clients on a spline road have been sent: sections 1..sentLast, the closing
 -- barrier at `sentClosing`. A runner who joins later is sent everything at once.
 local sentLast = 0
 local sentClosing = nil :: number?
-local built: { [number]: any } = {} -- n -> Builder.Built
-local closing: Part? = nil
 local leader = Vector3.zero -- where the window is centred: the furthest car down the road
 local leaderN = 1
 local windowCentre = 1 -- the furthest the window has been asked to reach; it never goes back
@@ -105,213 +89,31 @@ local runnerCount = 0
 -- The window
 --------------------------------------------------------------------------------
 
-local function root(): Folder
-	local existing = RoadService.Root
-	if existing and existing.Parent then
-		return existing
-	end
-	local old = workspace:FindFirstChild(ROOT_NAME)
-	if old then
-		old:Destroy()
-	end
-	local folder = Instance.new("Folder")
-	folder.Name = ROOT_NAME
-	folder.Parent = workspace
-	RoadService.Root = folder
-	return folder
-end
-
--- THE GUARDRAIL SWITCH (T-067). The user asked to be able to drive off the side of the
--- road on purpose, so the walls can be stood down and put back.
+-- Lay sections ahead and forget them behind. Everything the window does is here, in one
+-- place. NO PARTS: the new sections go to the runners, who draw them (T-136).
 --
--- IT TOUCHES THE WALLS AND NOTHING ELSE, and that distinction is the whole of the care
--- needed here. `Builder.build` hands back the slabs and the barriers in two separate
--- lists; the slabs are what the car's ground rays find (they are tagged `DriftSurface`)
--- and the barriers are deliberately untagged, which is what makes a barrier a wall rather
--- than a kerb (`Shared/Road/Builder`). Touching a slab's `CanQuery` would take the ROAD
--- out from under the car, not the fence.
---
--- `CanQuery` IS THE ONE THAT MATTERS, not `CanCollide`. The car is kinematic -- Roblox
--- physics never moves it -- and what stops it at a wall is a `Blockcast` through
--- `RaycastParams` (`Drift/World`), which obeys `CanQuery` and knows nothing about
--- `CanCollide`. Both are set anyway, so the player's character cannot walk through a wall
--- that is still there either.
-local railsOn = true
-
-local function applyRails(entry: any)
-	for _, wall in entry.barriers do
-		wall.CanCollide = railsOn
-		wall.CanQuery = railsOn
-		-- Not destroyed: hidden outright, so the road reads as open (the user, T-118:
-		-- "fully hide them, not partial transparency"). The closing barrier is not one of these.
-		wall.Transparency = if railsOn then 0 else 1
-	end
-end
-
---------------------------------------------------------------------------------
--- The profile (T-085), off unless `Config.Road.Profile` says otherwise
---------------------------------------------------------------------------------
--- WHY IT IS HERE AT ALL. "The road hitches when a piece appears" names a symptom and
--- three suspects -- the generator's search, the few hundred `Instance.new`s a piece is,
--- and the single `.Parent` write that puts them in the Workspace -- and the only way to
--- tell them apart is to time them separately on the frame they happen. So each stage is
--- timed into a ring, with the clock reading it was taken at, and `DebugProfile()` hands
--- the ring back for a test or a bridge call to total up.
---
--- IT COSTS NOTHING WHEN IT IS OFF: one `== true` per piece built and per piece destroyed.
--- Nothing in here prints, ever.
-local profile = {
-	pieces = {} :: { any }, -- one per piece built
-	destroys = {} :: { any }, -- one per piece destroyed
-	windows = {} :: { any }, -- one per `window()` call that did any work
-	builtEver = 0, -- pieces this VM has built, so a window call can say how many were its
-}
-
-local function profiling(): boolean
-	return Config.Road.Profile == true
-end
-
-local function keep(list: { any }, entry: any)
-	table.insert(list, entry)
-	local limit = Config.Road.ProfileKeep or 400
-	while #list > limit do
-		table.remove(list, 1)
-	end
-end
-
-local function buildPiece(piece: any)
-	if built[piece.n] then
-		return
-	end
-	local entry = Builder.build(piece, root())
-	built[piece.n] = entry
-	-- A piece built while the rails are down comes up with them down: the window builds
-	-- new road under a driver who already asked for them off.
-	if not railsOn then
-		applyRails(entry)
-	end
-	profile.builtEver += 1
-	if profiling() then
-		keep(profile.pieces, {
-			n = piece.n,
-			kind = piece.kind,
-			id = piece.id,
-			parts = entry.parts,
-			road = #entry.road,
-			barriers = #entry.barriers,
-			marks = #entry.marks,
-			segments = #piece.quads,
-			makeMs = entry.makeMs or 0,
-			tagMs = entry.tagMs or 0,
-			parentMs = entry.parentMs or 0,
-			at = os.clock(),
-		})
-	end
-end
-
-local function destroyPiece(n: number)
-	local entry = built[n]
-	if not entry then
-		return
-	end
-	local at = if profiling() then os.clock() else 0
-	entry.folder:Destroy()
-	built[n] = nil
-	if profiling() then
-		keep(profile.destroys, {
-			n = n,
-			parts = entry.parts,
-			destroyMs = (os.clock() - at) * 1000,
-			at = at,
-		})
-	end
-end
-
--- Build ahead, destroy behind. Everything the window does is here, in one place, so there
--- is exactly one answer to "how many pieces exist".
---
--- THE WINDOW ONLY EVER MOVES FORWARD, and that is not a convenience: a piece behind the
--- car has been DESTROYED, and nothing can un-destroy it. A player driving back down the
--- road would otherwise drag the window backwards and ask for pieces that no longer exist.
--- So the window follows the furthest the run has reached, which is also why the closing
--- barrier behind it cannot be pushed back by turning round.
+-- THE WINDOW ONLY EVER MOVES FORWARD: a section behind the car has been forgotten, and
+-- nothing can bring it back. A player driving back down the road would otherwise drag the
+-- window backwards. So the window follows the furthest the run has reached, which is also
+-- why the closing barrier behind it cannot be pushed back by turning round.
 local function window(centre: number)
 	local C = Config.Road
-	local on = profiling()
-	local startedAt = if on then os.clock() else 0
 	windowCentre = math.max(windowCentre, centre)
 	centre = windowCentre
-	local genAt = if on then os.clock() else 0
-	local added = generator:extendTo(centre + C.AheadPieces)
-	local genMs = if on then (os.clock() - genAt) * 1000 else 0
-	local before = profile.builtEver
-	if splineRun() then
-		-- NO PARTS: the new sections go to the runners, who draw them (T-136)
-		generator:trimBefore(centre - C.BehindPieces)
-		RoadService:_sendNewSections()
-		return
-	end
-	for _, piece in added do
-		buildPiece(piece)
-	end
-	-- A piece the generator already had but that has no parts (a Generate that was
-	-- interrupted, or a rebuild) is caught here rather than left as a hole.
-	for n = math.max(generator.first, centre - C.BehindPieces), generator.last do
-		local piece = generator:piece(n)
-		if piece then
-			buildPiece(piece)
-		end
-	end
-	for _, n in generator:trimBefore(centre - C.BehindPieces) do
-		destroyPiece(n)
-	end
-	-- Anything parented that the generator has forgotten goes too: the folder is the
-	-- window, and nothing is allowed to leak into it.
-	for n in built do
-		if n < generator.first then
-			destroyPiece(n)
-		end
-	end
-	if on then
-		local wholeMs = (os.clock() - startedAt) * 1000
-		if wholeMs > 0.05 or #added > 0 then
-			keep(profile.windows, {
-				centre = centre,
-				genMs = genMs,
-				wholeMs = wholeMs,
-				addedPieces = #added,
-				builtPieces = profile.builtEver - before,
-				at = startedAt,
-			})
-		end
-	end
+	generator:extendTo(centre + C.AheadPieces)
+	generator:trimBefore(centre - C.BehindPieces)
+	RoadService:_sendNewSections()
 end
 
 -- It sits behind the WINDOW's centre, not behind the car, for the same reason the window
 -- only moves forward: turning round must not open the way back up.
 local function moveClosingBarrier()
 	local C = Config.Road
-	if splineRun() then
-		-- a plane across the road at the start of that piece, on every runner's client
-		local s = generator:startOf(windowCentre - C.BarrierBehind) or generator:startOf(generator.first)
-		if s and s ~= sentClosing then
-			sentClosing = s
-			RoadService:_tellRunners({ kind = "closing", s = s })
-		end
-		return
-	end
-	if not closing or not closing.Parent then
-		return
-	end
-	local n = windowCentre - C.BarrierBehind
-	local piece = generator:piece(n)
-	if not piece then
-		-- Early in a run there is nothing that far back; park it at the very start, which
-		-- is still behind the car and still closes the way out.
-		piece = generator:piece(generator.first)
-	end
-	if piece then
-		Builder.moveClosingBarrier(closing, piece, 0)
+	-- a plane across the road at the start of that section, on every runner's client
+	local s = generator:startOf(windowCentre - C.BarrierBehind) or generator:startOf(generator.first)
+	if s and s ~= sentClosing then
+		sentClosing = s
+		RoadService:_tellRunners({ kind = "closing", s = s })
 	end
 end
 
@@ -437,7 +239,6 @@ function RoadService:Init()
 	-- The spline road's sections (with their mountainside, T-140) and closing barrier,
 	-- server to client (T-136).
 	self.roadSpline = Net.event("RoadSpline")
-	mode = if Config.Road.Mode == "spline" then "spline" else "pieces"
 	self.asks = 0
 	self.asksRefused = 0
 	self.started = 0
@@ -547,9 +348,7 @@ function RoadService:StartRun(player: Player): CFrame?
 	runnerCount += 1
 	-- The whole spline road so far, BEFORE the car is put on it: the client must have the
 	-- ground before it lands on it (T-136).
-	if splineRun() then
-		self:_sendAll(player)
-	end
+	self:_sendAll(player)
 
 	local ok, placed = pcall(cars.Place, cars, player, cf)
 	if not ok or not placed then
@@ -589,7 +388,7 @@ function RoadService:EndRun(player: Player): CFrame?
 	runners[player.UserId] = nil
 	runnerCount -= 1
 	self.ended += 1
-	if splineRun() and self.roadSpline then
+	if generator and self.roadSpline then
 		self.roadSpline:FireClient(player, { kind = "stop" })
 	end
 
@@ -692,17 +491,13 @@ end
 function RoadService:Generate(seed: number?): CFrame
 	self:Stop()
 	local chosen = seed or (DateTime.now().UnixTimestampMillis % 2 ^ 31)
-	if mode == "spline" then
-		local o = Config.Road.Offset
-		generator = SplineSequence.new(chosen, {
-			x = o.X,
-			y = Config.Road.SurfaceY,
-			z = o.Z,
-			yaw = math.rad(Config.Road.StartHeading),
-		})
-	else
-		generator = Generator.new(chosen)
-	end
+	local o = Config.Road.Offset
+	generator = SplineSequence.new(chosen, {
+		x = o.X,
+		y = Config.Road.SurfaceY,
+		z = o.Z,
+		yaw = math.rad(Config.Road.StartHeading),
+	})
 	RoadService.Running = true
 	leaderN = 1
 	windowCentre = 1
@@ -710,10 +505,6 @@ function RoadService:Generate(seed: number?): CFrame
 	sentLast = 0
 	sentClosing = nil
 
-	local folder = root()
-	if not splineRun() then
-		closing = Builder.closingBarrier(folder)
-	end
 	window(1)
 	moveClosingBarrier()
 	local spawn = self:SpawnCFrame()
@@ -721,7 +512,7 @@ function RoadService:Generate(seed: number?): CFrame
 	return spawn
 end
 
--- Tear the road down. Leaves no folder and no parts behind.
+-- Tear the road down.
 --
 -- IT EMPTIES THE ROSTER TOO, because a road that does not exist has nobody on it. A car
 -- left over the void where the road was falls, asks for a respawn, is no longer a runner,
@@ -730,43 +521,17 @@ end
 -- the last runner has already left.
 function RoadService:Stop()
 	RoadService.Running = false
-	if splineRun() then
+	if generator then
 		self:_tellRunners({ kind = "stop" })
 	end
 	sentLast = 0
 	sentClosing = nil
 	table.clear(runners)
 	runnerCount = 0
-	for n in built do
-		destroyPiece(n)
-	end
-	table.clear(built)
-	if closing then
-		closing:Destroy()
-		closing = nil
-	end
-	local folder = RoadService.Root
-	if folder then
-		folder:Destroy()
-	end
-	RoadService.Root = nil
 	generator = nil
 	lastProgress = nil
 	leaderN = 1
 	windowCentre = 1
-end
-
--- WHICH ROAD THE NEXT RUN LAYS: "pieces" or "spline". Only between runs -- a road being
--- driven is never swapped out from under anyone. Returns the mode now in force.
-function RoadService:Mode(): string
-	return mode or (if Config.Road.Mode == "pieces" then "pieces" else "spline")
-end
-
-function RoadService:SetMode(want: string): string
-	if (want == "pieces" or want == "spline") and not self:HasRoad() then
-		mode = want
-	end
-	return self:Mode()
 end
 
 -- The spline road to the clients (T-136). Only runners are sent it: they are the only ones
@@ -801,7 +566,7 @@ end
 -- because the curve is integrated from its start and a client cannot draw the middle of it
 -- without the beginning. A section is a few numbers; an hour of road is tens of kilobytes.
 function RoadService:_sendAll(player: Player)
-	if not self.roadSpline or not splineRun() then
+	if not self.roadSpline or not generator then
 		return
 	end
 	local o = generator.spline.origin
@@ -823,57 +588,6 @@ function RoadService:HasRoad(): boolean
 	return RoadService.Running and generator ~= nil
 end
 
--- The guardrail switch, for the testing HUD (`Drift/TestHud`, T-067). The road's own
--- walls; the test hill's are `PlaygroundService`'s, and the one button asks both.
---
--- THE CLOSING BARRIER IS NOT A GUARDRAIL and is deliberately left alone: it is the wall
--- that stops a driver reversing into road that is about to be destroyed
--- (features/track-generation.md), not a fence along the edge, and standing it down would
--- be a way to fall out of a run rather than a way to leave the road sideways.
-function RoadService:SetBarriers(on: boolean): boolean
-	-- The piece road's walls only: the spline road has no side barriers (T-140).
-	railsOn = on == true
-	for _, entry in built do
-		applyRails(entry)
-	end
-	return railsOn
-end
-
-function RoadService:BarriersOn(): boolean
-	return railsOn
-end
-
--- Studio only: what the switch actually did, part by part, so a test can say the SLABS
--- were not touched rather than only that the walls were.
-function RoadService:DebugBarrierReport()
-	assert(RunService:IsStudio(), "DebugBarrierReport is Studio only")
-	local walls, wallsQueryable, wallsSolid = 0, 0, 0
-	local slabs, slabsQueryable, slabsSolid, slabsTagged = 0, 0, 0, 0
-	for _, entry in built do
-		for _, wall in entry.barriers do
-			walls += 1
-			wallsQueryable += if wall.CanQuery then 1 else 0
-			wallsSolid += if wall.CanCollide then 1 else 0
-		end
-		for _, slab in entry.road do
-			slabs += 1
-			slabsQueryable += if slab.CanQuery then 1 else 0
-			slabsSolid += if slab.CanCollide then 1 else 0
-			slabsTagged += if CollectionService:HasTag(slab, Config.Drift.SurfaceTag) then 1 else 0
-		end
-	end
-	return {
-		on = railsOn,
-		walls = walls,
-		wallsQueryable = wallsQueryable,
-		wallsSolid = wallsSolid,
-		slabs = slabs,
-		slabsQueryable = slabsQueryable,
-		slabsSolid = slabsSolid,
-		slabsTagged = slabsTagged,
-	}
-end
-
 -- Where a car starts: on the centre line of piece 1, a little way in, facing the way the
 -- road goes. This is where the FIRST player of a run lands; a player joining a run already
 -- under way lands on `JoinCFrame` instead, because piece 1 has long been destroyed.
@@ -892,11 +606,7 @@ end
 -- The same pose for piece 1 (a spawn), for the piece a joiner lands on, and for the piece
 -- a fall puts a car back on -- the spec's `safeStart`.
 function RoadService:_poseOn(piece: any): CFrame
-	if splineRun() then
-		return generator:poseOn(piece, math.min(20, piece.length * 0.5), Config.Drift.RideHeight)
-	end
-	local t = math.clamp(20 / math.max(piece.length, 1), 0, 0.5)
-	return Pieces.poseAt(piece, t, Config.Road.SurfaceY + Config.Drift.RideHeight)
+	return generator:poseOn(piece, math.min(20, piece.length * 0.5), Config.Drift.RideHeight)
 end
 
 -- WHERE A CAR THAT CAME OFF THE ROAD GOES BACK ON, and the one rule it obeys: forward, or
@@ -1026,7 +736,6 @@ function RoadService:DebugState()
 	if not generator then
 		return {
 			running = false,
-			built = 0,
 			pieces = 0,
 			runners = 0,
 			run = {},
@@ -1034,23 +743,14 @@ function RoadService:DebugState()
 			asksRefused = self.asksRefused or 0,
 			started = self.started or 0,
 			ended = self.ended or 0,
-			barriersOn = railsOn,
 		}
 	end
 	local report = generator:report()
-	local parts = 0
-	local pieces = 0
-	for _, entry in built do
-		parts += entry.parts
-		pieces += 1
-	end
 	report.running = RoadService.Running
-	report.builtPieces = pieces
-	report.parts = parts
 	report.leaderN = leaderN
 	report.leader = leader
 	report.progress = lastProgress
-	report.closingAt = if closing then closing.Position else nil
+	report.closingS = sentClosing
 	report.offset = Config.Road.Offset
 	report.width = Config.Road.Width
 	report.runners = runnerCount
@@ -1059,7 +759,6 @@ function RoadService:DebugState()
 	report.asksRefused = self.asksRefused or 0
 	report.started = self.started or 0
 	report.ended = self.ended or 0
-	report.barriersOn = railsOn
 	report.safeStart = self:SafeStart(nil)
 	return report
 end
@@ -1119,64 +818,6 @@ function RoadService:DebugTick()
 	return self:DebugState()
 end
 
--- Studio only: the stage timings (T-085). `on` nil reads the switch, true or false sets
--- it; setting it either way empties the ring, so a measurement never contains the frames
--- before it was asked for. `Config.Road.Profile` is the one switch, so `Road/Builder`
--- sees the same answer.
-function RoadService:DebugProfile(on: boolean?)
-	assert(RunService:IsStudio(), "DebugProfile is Studio only")
-	if on ~= nil then
-		Config.Road.Profile = on == true
-		table.clear(profile.pieces)
-		table.clear(profile.destroys)
-		table.clear(profile.windows)
-	end
-	-- Totalled here rather than in the caller so that every report of this is the same
-	-- report. `worst` is the single longest piece, stages and all.
-	local sum = { makeMs = 0, tagMs = 0, parentMs = 0, parts = 0 }
-	local worst, worstMs = nil, -1
-	for _, p in profile.pieces do
-		local whole = p.makeMs + p.tagMs + p.parentMs
-		sum.makeMs += p.makeMs
-		sum.tagMs += p.tagMs
-		sum.parentMs += p.parentMs
-		sum.parts += p.parts
-		if whole > worstMs then
-			worst, worstMs = p, whole
-		end
-	end
-	local genMs, worstGen = 0, 0
-	for _, w in profile.windows do
-		genMs += w.genMs
-		worstGen = math.max(worstGen, w.genMs)
-	end
-	local destroyMs, worstDestroy = 0, 0
-	for _, d in profile.destroys do
-		destroyMs += d.destroyMs
-		worstDestroy = math.max(worstDestroy, d.destroyMs)
-	end
-	return {
-		on = Config.Road.Profile == true,
-		pieces = profile.pieces,
-		destroys = profile.destroys,
-		windows = profile.windows,
-		totals = {
-			built = #profile.pieces,
-			destroyed = #profile.destroys,
-			parts = sum.parts,
-			makeMs = sum.makeMs,
-			tagMs = sum.tagMs,
-			parentMs = sum.parentMs,
-			genMs = genMs,
-			destroyMs = destroyMs,
-			worstPieceMs = if worstMs >= 0 then worstMs else 0,
-			worstPieceN = worst and worst.n,
-			worstGenMs = worstGen,
-			worstDestroyMs = worstDestroy,
-		},
-	}
-end
-
 function RoadService:DebugLeave(userId: number)
 	assert(RunService:IsStudio(), "DebugLeave is Studio only")
 	self:_leave(userId)
@@ -1234,12 +875,9 @@ function RoadService:DebugPieces()
 				n = n,
 				id = piece.id,
 				kind = piece.kind,
-				dir = piece.dir,
 				length = piece.length,
-				segments = #piece.quads,
-				start = piece.start,
-				finish = piece.finish,
-				parts = if built[n] then built[n].parts else 0,
+				s0 = piece.s0,
+				s1 = piece.s1,
 			})
 		end
 	end

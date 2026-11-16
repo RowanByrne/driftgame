@@ -1,6 +1,6 @@
 # Feature: Road pieces and the endless road
 
-**Status:** **steps 1 and 2 built** (`T-049`, `T-050`): the generator on five flat piece types,
+**Status:** **removed** in `T-249` (`features/legacy-removal.md`): the piece road (`Road/Pieces`, `Road/Generator`, `Road/Builder`) is gone; every run lays the spline road (`spline-road.md`). The run itself (start, end, the window, the closing barrier, falls) lives on in `RoadService` on the spline road. What follows is the record. Was: **steps 1 and 2 built** (`T-049`, `T-050`): the generator on five flat piece types,
 every number measured. Step 3 (the start button, spawning, falling, getting back to the other
 worlds) is `T-051` and is not built here. **The set is now nine types in sixteen variants** — the
 five flat ones here plus the four touge pieces that carry a height and a bank

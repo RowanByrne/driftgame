@@ -6,7 +6,7 @@
 -- PIECES: build `AheadPieces` in front of the leader, forget `BehindPieces` behind, put the
 -- barrier `BarrierBehind` back, never respawn behind it. Every one of those rules is right
 -- for the spline road too, so rather than write them twice this hands the service what
--- `Road/Generator` hands it -- `extendTo`, `piece`, `trimBefore`, `locate`, `progress`,
+-- the old piece road's `Road/Generator` handed it (gone in T-249) -- `extendTo`, `piece`, `trimBefore`, `locate`, `progress`,
 -- `first`, `last`, `furthestN` -- with ONE SPLINE SECTION AS ONE PIECE. A section is one
 -- decision of the generator, a bend or a straight, 60 to 600 studs: the size of a piece.
 --
@@ -199,7 +199,7 @@ function SplineSequence.locate(self: Sequence, position: Vector3): (number?, num
 	return piece.n, (s - piece.s0) / math.max(piece.length, 1e-6), math.abs(d)
 end
 
--- The same flags `Road/Generator.progress` hands back.
+-- The same flags the old piece road's `Road/Generator.progress` handed back.
 function SplineSequence.progress(self: Sequence, position: Vector3)
 	local n, t, lateral = self:locate(position)
 	if not n then

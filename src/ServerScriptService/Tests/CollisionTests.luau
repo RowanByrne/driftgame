@@ -186,11 +186,12 @@ local function buildFeatures(rig: Folder)
 end
 
 -- A straight that runs level for `RAMP_RUNUP` studs and then climbs at `deg`, with the
--- grade blended in no faster than the road's own `MaxPitchStep` per segment. The height is
--- the integral of that grade, which is how `Road/Pieces` sets a piece's height out too.
+-- grade blended in no faster than `MAX_PITCH_STEP` per segment (the old piece road's
+-- `MaxPitchStep`, kept here when it went in T-249). The height is the integral of that grade.
+local MAX_PITCH_STEP = 1.15 -- degrees of grade change between neighbouring segments
 local function rampHeight(deg: number): ((number) -> number, number)
 	local g = math.tan(math.rad(deg))
-	local blend = math.max(120, math.ceil(deg / Config.Road.MaxPitchStep) * SLOPE_SEGMENT)
+	local blend = math.max(120, math.ceil(deg / MAX_PITCH_STEP) * SLOPE_SEGMENT)
 	return function(t: number): number
 		local s = t * RAMP_LENGTH - RAMP_RUNUP
 		if s <= 0 then

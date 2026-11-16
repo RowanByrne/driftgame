@@ -52,10 +52,10 @@ local Spline = {
 	KeepGradeChance = 0.35,
 
 	-- BANK, raised on the OUTSIDE of the bend. 10 is what the user chose for the touge's
-	-- banked corner (DECISIONS.md, 2026-11-06); `Config.Road.MaxBank`'s 30 is the most the
-	-- car is proven on, and that is where this goes once the car can unstick from a wall.
+	-- banked corner (DECISIONS.md, 2026-11-06); 30 is the most the car is proven on (the old
+	-- piece road's `MaxBank`), and that is where this goes once the car can unstick from a wall.
 	MaxBank = 10, -- degrees
-	MaxBankRate = 1.5 / 13, -- degrees per stud: the piece road's `MaxBankStep` per chord
+	MaxBankRate = 1.5 / 13, -- degrees per stud: the old piece road's 1.5 degrees per 13-stud chord
 	-- A bend is banked in proportion to how tight it is, full bank at this radius or under.
 	FullBankRadius = 160, -- studs
 	UnbankedChance = 0.3, -- how often a bend is left flat anyway

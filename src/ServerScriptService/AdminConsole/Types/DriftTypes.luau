@@ -6,7 +6,6 @@
 --   place      where `tp` goes: a world, the garage, a playground spot, or a player by name
 --   timeOfDay  a keyframe of the day-night cycle by name ("noon", "golden-hour"),
 --              "midnight", or an hour on the clock, 0 to 24
---   roadMode   "pieces" or "spline"
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -22,7 +21,6 @@ local PLACES = {
 	"playground",
 	"track",
 	"garage",
-	"hill",
 	"Spawn",
 	"OpenGround",
 	"PillarRun",
@@ -31,8 +29,6 @@ local PLACES = {
 	"TightAlley",
 	"CircleCentre",
 	"RampBase",
-	"HillBase",
-	"HillTop",
 }
 
 local function slug(name: string): string
@@ -64,8 +60,6 @@ return function(registry)
 	end
 	registry:RegisterType("car", Util.MakeEnumType("car", carKeys))
 
-	registry:RegisterType("roadMode", Util.MakeEnumType("road mode", { "pieces", "spline" }))
-
 	-- The places, then every player in the server by name: `tp me Alex` goes to Alex.
 	local function findPlace(text: string, first: boolean?)
 		local names = table.clone(PLACES)
@@ -79,7 +73,7 @@ return function(registry)
 			return text
 		end,
 		Validate = function(text: string)
-			return #text > 0, "Name a place: road, playground, track, garage, hill, a playground spot, or a player."
+			return #text > 0, "Name a place: road, playground, track, garage, a playground spot, or a player."
 		end,
 		Autocomplete = function(text: string)
 			return findPlace(text)
