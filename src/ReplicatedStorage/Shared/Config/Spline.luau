@@ -545,9 +545,11 @@ local Spline = {
 		BlendMins = { 20, 6 }, -- studs: shallow, steep
 		BlendFoot = 1.5, -- studs past the runoff's edge, flat, before the cut or fill begins
 		RockAngle = 45, -- degrees: ground steeper than this is drawn as rock
-		-- how a point hears the road: each station (every `CheckStep` studs) answers for the
-		-- points within `Look` studs of square beside it, and of two stretches the nearer
-		-- edge wins over `Soft` studs, so the line between them has no seam
+		-- how a point hears the road: each station (every `CheckStep` studs) answers for its
+		-- stretch of centre line to the next, from the nearest point of it (T-237), and of
+		-- two stretches the nearer edge wins over `Soft` studs, so the line between them has
+		-- no seam. `Look` is only a margin the tests keep (it was how far from square beside
+		-- it a station answered, until T-237)
 		Look = 16, -- studs
 		Soft = 3, -- studs
 		-- THE ROAD IN A GROUND RUN is drawn without its rock faces, drops and hillside, and
