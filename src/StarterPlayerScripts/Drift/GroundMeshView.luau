@@ -655,10 +655,11 @@ local function rimPlace(L: Lattice, leaf: Leaf, map: { [number]: Leaf }): { [num
 end
 
 -- How cell (i, j) is best split, given every vertex as placed (`P`: {x, z, y, class} by grid
--- index): true for a-d. Never along a diagonal joining a vertex on the road to open ground;
--- otherwise the diagonal that puts the cell's middle nearer the ground there, when the two
--- differ there by `FitGap` or more (b-c, the template's, when they do not); and never one
--- that folds a triangle over, if the other does not. Also whether it still folds.
+-- index): true for a-d. Never along a diagonal joining a vertex on the road to open ground.
+-- A cell with a corner on the road or held below it takes the lower diagonal; any other the
+-- one that puts the cell's middle nearer the ground there, when the two differ there by
+-- `FitGap` or more (b-c, the template's, when they do not); and never one that folds a
+-- triangle over, if the other does not. Also whether it still folds.
 local function chooseSplit(ctx: Ground.Context, s: number, P: { { number } }, n: number, i: number, j: number): (boolean, boolean)
 	local a, b, c, d = i * n + j + 1, (i + 1) * n + j + 1, i * n + j + 2, (i + 1) * n + j + 2
 	local A, B, Cc, D = P[a], P[b], P[c], P[d]
@@ -693,7 +694,17 @@ local function chooseSplit(ctx: Ground.Context, s: number, P: { { number } }, n:
 	elseif canAD == canBC then
 		local mx, mz = (A[1] + B[1] + Cc[1] + D[1]) * 0.25, (A[2] + B[2] + Cc[2] + D[2]) * 0.25
 		local yBC, yAD = heightAt(false, mx, mz), heightAt(true, mx, mz)
-		if yBC and yAD and math.abs(yBC - yAD) >= Config.Spline.Ground.FitGap then
+		local byRoad = false
+		for _, p in { A, B, Cc, D } do
+			if p[4] ~= OPEN then
+				byRoad = true
+			end
+		end
+		if yBC and yAD and byRoad then
+			-- beside the road: the lower, which lies under the other everywhere in the cell
+			-- (fitting the ground there raised a coarse tile's cell 2.3 studs over a runoff)
+			flip = yAD < yBC
+		elseif yBC and yAD and math.abs(yBC - yAD) >= Config.Spline.Ground.FitGap then
 			local y, w = groundAt(ctx, mx, mz)
 			local want = y - sinkOf[s] * w
 			flip = math.abs(yAD - want) < math.abs(yBC - want)
