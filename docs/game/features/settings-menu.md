@@ -126,6 +126,15 @@ A third category, **Graphics**, holds one row: **Ground detail**, a five-step sl
 - **Input:** the tab, -, slider and + join the focus order; Left/Right nudge whichever slider has focus (`SettingsView:nudgeSelected`); Enter on - or + steps it. Mouse and touch drag the slider like the sensitivity one.
 - **Fixtures:** `graphics` and `largestGraphics` (largest text, opaque panes).
 
+## Graphics: Road ahead (T-263)
+
+The user asked on 2026-11-16 for "a setting for how far in advance the road is generated - same as the way we have it for behind u". **Road ahead** sits in Graphics between Ground detail and Road behind, built the same way: a four-step slider (Short, Medium, Long, Longest: at least 1 000, 1 600, 2 400 and 3 200 studs) with - and +, the step's name on the right and "Short - Longest" under it.
+
+- **Where it lives:** `Drift/RoadAhead` holds the value for this device and session and fires `Changed`; `SettingsController` sets it through the view's `roadAhead` action. `Drift/SplineRoadView` draws road chunks to the one that distance ahead reaches into, and `Drift/GroundMeshView` lays the ground's corridor along the road as far, with a few more tiles on the longer steps (`GroundTiles`) so the sharp ground nearer the car keeps its share. No remote, nothing saved.
+- **Default:** Medium, the 1 600 studs drawn before T-263, on every device (`Config.Spline.Mesh.AheadDefault`, `AheadTouchDefault`).
+- **The server's side:** a client can only draw road the server has sent. `RoadService` lays at least the longest step past the end of the leader's section, besides its ten sections (which alone left as little as 1 087 studs).
+- **Input and fixtures:** as Road behind: -, slider and + join the focus order between Ground detail's and Road behind's. `graphics` shows Medium, `largestGraphics` Longest.
+
 ## Sound (T-256)
 
 A fourth category, **Sound**, asked for by the user on 2026-11-16: one volume slider per category, Music, Tire squeal, Off-road drift, Suspension and Engine, each 0 to 100% with - and + (10% steps) and the percent on the right. **Each starts at 30%, which plays today's mix exactly** (the user's send-back, 2026-11-16): the scale is level / 30, so 15% is half and 100% about 3.33x. Music has nothing to scale yet; its level is kept for when music exists.

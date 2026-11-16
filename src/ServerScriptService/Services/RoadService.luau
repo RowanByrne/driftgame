@@ -102,8 +102,11 @@ local runnerCount = 0
 -- a player may pick (`Config.Spline.Mesh.Ahead`) past the END of the leader's section, so a
 -- client can draw its whole setting from anywhere in that section. Ten sections alone left
 -- 1 087 to 1 711 studs at worst (measured over five seeds), less than the 1 600 drawn before.
--- It costs nothing more per stud driven -- one section is still laid for every one driven --
--- only the first window at a run's start is longer.
+-- It costs nothing more per stud driven -- one section is still laid for every one driven.
+-- Past `AheadPieces` it lays AT MOST ONE SECTION A CALL (a tick), so a long section entered
+-- never lays three at once (25-29 ms in one tick, measured, against 10-12 ms for one): the
+-- road it is owed is only needed by the time the leader reaches the end of its section, and
+-- a tick a tenth of a second lays a section far faster than any car drives one.
 local function aheadStuds(): number
 	local most = 0
 	for _, step in Config.Spline.Mesh.Ahead do
@@ -116,21 +119,12 @@ local function window(centre: number)
 	local C = Config.Road
 	windowCentre = math.max(windowCentre, centre)
 	centre = windowCentre
+	local laid = generator.last
 	generator:extendTo(centre + C.AheadPieces)
 	local here = generator:piece(centre)
-	if here then
-		local want = here.s1 + aheadStuds()
-		while true do
-			local last = generator:piece(generator.last)
-			if not last or last.s1 >= want then
-				break
-			end
-			local before = generator.last
-			generator:extendTo(before + 1)
-			if generator.last == before then
-				break -- boxed in: the road stops growing (SplineGen warns)
-			end
-		end
+	local last = generator:piece(generator.last)
+	if generator.last == laid and here and last and last.s1 < here.s1 + aheadStuds() then
+		generator:extendTo(generator.last + 1) -- (boxed in, it lays nothing: SplineGen warns)
 	end
 	generator:trimBefore(centre - C.BehindPieces)
 	RoadService:_sendNewSections()
