@@ -723,23 +723,24 @@ return {
 	-- ------------------------------------------------------------ suspension sounds (T-223)
 	-- A clunk when a wheel's strut knocks on a bump or catches after a drop, and one bigger
 	-- thud when the car lands from a jump (features/car-fx.md "Suspension sounds",
-	-- `Drift/SuspensionSound`). Read off the model's wheel travel, never written back. The
-	-- player's own car only.
+	-- `Drift/SuspensionSound`). Read off the model, never written back. The player's own car
+	-- only.
 	--
-	-- THE CLUNK is a wheel's travel CLOSING faster than `ClunkRate`: the strut being shoved up.
-	-- A wheel that drops is drawn falling no faster than `DropTime` lets it, so a drop makes no
-	-- sound of its own; the catch at the bottom of it is a closing, and clunks. On flat ground
-	-- the travel never moves, and on a smooth road it moves far slower than this.
+	-- THE CLUNK is the GROUND under one wheel rising faster than the plane the car is on says
+	-- it should, by more than `ClunkRate` (T-252): a kerb, a bump, the gravel bevel up onto the
+	-- tarmac. Not the wheel's travel closing: the body rolling and pitching in a drift closes
+	-- the outside wheels' travel too, and that clunked on every weight transfer. Each wheel
+	-- clunks on its own. A wheel that steps DOWN is drawn falling no faster than `DropTime`
+	-- lets it; when it is back on its ground, having fallen `CatchMin` or more, it knocks
+	-- softer (`CatchShare`).
 	--
 	-- THE LANDING is the car having had no wheel on the ground for `LandAirTime` and then
 	-- touching down, having fallen at `LandMinSpeed` or more. It plays INSTEAD of the clunks: every
 	-- wheel's clunk is held off for `LandQuiet` after it.
 	Suspension = {
-		ClunkRate = 12, -- studs/s of a wheel's travel closing that is a knock. Under this,
-		-- silence. A wheel is pushed up to its ground in ONE step (1/120 s), so this is a
-		-- 0.1-stud step in the ground. MEASURED in DR-Lane1 (T-223): the playground's
-		-- kerbs (0.25 to 0.6 studs) close at 30 to 46; the hill road's straight at 93 to
-		-- 117 studs/s closes at 0, and the crease where it turns at 9
+		ClunkRate = 12, -- studs/s a wheel's ground rises over its plane that is a knock. Under
+		-- this, silence. A wheel is pushed up to its ground in ONE step (1/120 s), so this is
+		-- a 0.1-stud step in the ground
 		ClunkRateForMax = 60, -- studs/s (a 0.5-stud step) at which a clunk is at
 		-- `ClunkMaxVolume`
 		ClunkSpeedForFull = 80, -- studs/s of the car's speed at which a clunk is at full
@@ -753,8 +754,11 @@ return {
 		-- user's choice. The quietest slice (Gain 22.3) reaches Roblox's Volume cap of 10
 		-- near the top and is clamped there
 		ClunkCooldown = 0.18, -- s before the same wheel may clunk again
-		ClunkGap = 0.05, -- s between any two clunks: a pair of wheels hitting one kerb in the
-		-- same moment is one knock, at the harder one's volume
+		ClunkGap = 0, -- s between any two clunks, whichever wheels. 0 (T-252): each wheel is
+		-- its own knock, as the user asked ("individual per wheel"); 0.05 made the front pair
+		-- over one edge a single knock
+		CatchMin = 0.2, -- studs a wheel must have been drawn falling for its catch to knock
+		CatchShare = 0.5, -- a catch is the clunk of a step up as high as the fall, times this
 		PitchJitter = 0.08, -- each clunk plays 1 +- this fast, so repeats are not identical
 
 		LandAirTime = 0.25, -- s with no wheel down before a touchdown counts as a landing.
@@ -797,8 +801,9 @@ return {
 
 		RollOffMin = 12, -- studs, as the squeal's
 		RollOffMax = 150, -- studs
-		Voices = 3, -- clunk `Sound`s on the body, played round-robin, so one clunk does not
-		-- cut the last one off. Built once, with the car
+		Voices = 4, -- clunk `Sound`s on the body, played round-robin, so one clunk does not
+		-- cut the last one off: one a wheel (T-252), so a bevel's four knocks all ring.
+		-- Built once, with the car
 		ClunkName = "FxClunk_%d", -- voice number
 		LandingName = "FxLanding",
 	},
