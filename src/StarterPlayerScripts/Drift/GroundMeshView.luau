@@ -409,7 +409,7 @@ end
 local underEvals = 0
 local candS: { number } = {}
 local candD: { number } = {}
-local function underAt(ctx: Ground.Context, x: number, z: number): (number?, number?, number?)
+local function underAt(ctx: Ground.Context, x: number, z: number): (number?, number?, number?, number?)
 	local spline = ctx.spline
 	local T = Config.Spline.Terrain
 	local half = Config.Road.Width * 0.5
@@ -438,7 +438,7 @@ local function underAt(ctx: Ground.Context, x: number, z: number): (number?, num
 		end
 	end
 	if n == 0 then
-		return nil, nil, nil
+		return nil, nil, nil, nil
 	end
 	-- the nearest filed point of each stretch (points more than `apart` along the road from
 	-- one already tried are another stretch)
@@ -477,10 +477,16 @@ local function underAt(ctx: Ground.Context, x: number, z: number): (number?, num
 		end
 	end
 	if not bestS or not bestD or bestE > 24 then
-		return nil, nil, nil
+		return nil, nil, nil, nil
 	end
-	return spline:underY(bestS, bestD), bestS, bestD
+	return spline:underY(bestS, bestD), bestS, bestD, bestE
 end
+
+-- How near a runoff's edge (`Ground.at`'s reckoning) a point has to be for the exact one to
+-- be worked out: `Ground.at`'s edge, from the stations' straight stretches and widths eased
+-- between them, can be a stud or so off the true one, and the vertices moved onto the foot
+-- are placed by it (T-251)
+local EXACT_NEAR = 40 -- studs
 
 -- The height the road holds the ground at, `T` as `Ground.at` has it (the edge's, less
 -- `Under`), or, when the ground draws the runoff, the runoff's own surface there.
@@ -532,8 +538,16 @@ local function vertexHeight(ctx: Ground.Context, s: number, x: number, z: number
 	local y, a, e, T = groundAt(ctx, x, z)
 	local sink = sinkOf[s]
 	y -= sink * a
-	if groundRunoff and e <= 0 then
-		return edgeY(ctx, x, z, T) - sink
+	if groundRunoff and e < EXACT_NEAR then
+		local uy, _, _, ue = underAt(ctx, x, z)
+		if uy and ue then
+			if ue <= 0 then
+				return uy - sink
+			elseif ue < clampOf[s] then
+				return math.min(y, uy - sink)
+			end
+			return y
+		end
 	end
 	if e < clampOf[s] then
 		y = math.min(y, edgeY(ctx, x, z, T) - sink)
@@ -563,6 +577,13 @@ local function latAt(L: Lattice, I: number, J: number): { number }
 	local r = L.at[k]
 	if not r then
 		local y, a, e, T = groundAt(L.ctx, I * L.s, J * L.s)
+		if groundRunoff and e < EXACT_NEAR then
+			-- (the exact edge: how far past it, and the runoff's surface level with it, T-251)
+			local uy, _, _, ue = underAt(L.ctx, I * L.s, J * L.s)
+			if uy and ue then
+				e, T = ue, uy
+			end
+		end
 		r = { y, a, e, T }
 		L.at[k] = r
 	end
@@ -575,6 +596,13 @@ local function edgeGradient(L: Lattice, x: number, z: number, e: number): (numbe
 	local h = 0.25
 	local _, _, ex = groundAt(L.ctx, x + h, z)
 	local _, _, ez = groundAt(L.ctx, x, z + h)
+	if groundRunoff then
+		local _, _, _, ux = underAt(L.ctx, x + h, z)
+		local _, _, _, uz = underAt(L.ctx, x, z + h)
+		if ux and uz then
+			ex, ez = ux, uz
+		end
+	end
 	local gx, gz = (ex - e) / h, (ez - e) / h
 	local g = math.sqrt(gx * gx + gz * gz)
 	if g ~= g or g < 0.3 or g == math.huge then
@@ -610,12 +638,12 @@ local function place(L: Lattice, I: number, J: number): { number }
 	local open = y - sink * a
 	p = { x, z, open, OPEN }
 	if e <= foot then
-		p = { x, z, if groundRunoff then edgeY(L.ctx, x, z, T) - sink else open, ROAD }
+		p = { x, z, if groundRunoff then T - sink else open, ROAD }
 	elseif s > G.SnapUpTo then
 		-- a coarse tile, far ahead: held below the edge within its clamp, as before T-231
 		-- (moved, a 32-stud tile's ground stood 5.8 studs over a runoff's edge, measured)
 		if e < clampOf[s] then
-			p = { x, z, math.min(open, edgeY(L.ctx, x, z, T) - sink), HELD }
+			p = { x, z, math.min(open, T - sink), HELD }
 		end
 	elseif e <= s + foot then
 		local west = latAt(L, I - 1, J)[3] <= foot
@@ -623,7 +651,7 @@ local function place(L: Lattice, I: number, J: number): { number }
 		local south = latAt(L, I, J - 1)[3] <= foot
 		local north = latAt(L, I, J + 1)[3] <= foot
 		if west or east or south or north then
-			local edge = edgeY(L.ctx, x, z, T) - sink
+			local edge = T - sink
 			if open <= edge and not groundRunoff then
 				p = { x, z, open, HELD } -- below the edge already: safe where it is
 			else
@@ -749,7 +777,7 @@ local function rimPlace(L: Lattice, leaf: Leaf, map: { [number]: Leaf }): { [num
 			y = H(x, z)
 		end
 		local r = latAt(L, I0 + i, J0 + j)
-		local cls = if r[3] <= foot then ROAD elseif y <= edgeY(ctx, x, z, r[4]) - sinkOf[s] + 1e-3 then HELD else OPEN
+		local cls = if r[3] <= foot then ROAD elseif y <= r[4] - sinkOf[s] + 1e-3 then HELD else OPEN
 		out[i * n + j + 1] = { x, z, y, cls }
 	end
 	for t = 0, C do
@@ -1864,6 +1892,7 @@ function GroundMeshView.DebugRunoffGap(self: View, ahead: number?, behind: numbe
 	local foot: { [string]: { number } } = {}
 	local missing = 0
 	local worst, worstAt = 0, nil :: any
+	local trace = {}
 	local s = s0
 	while s <= s1 do
 		for _, side in { -1, 1 } do
@@ -1888,6 +1917,20 @@ function GroundMeshView.DebugRunoffGap(self: View, ahead: number?, behind: numbe
 					local k = tostring((tile.leaf :: Leaf).s)
 					gaps[k] = gaps[k] or {}
 					table.insert(gaps[k], g - y)
+					if math.abs(g - y) > 0.25 and #trace < 40 then
+						local dbg = {}
+						local leaf = tile.leaf :: Leaf
+						-- the cell's corners, as placed: x, z, height less the runoff's there, class
+						local ci, cj = math.floor((x - leaf.x0) / leaf.s), math.floor((z - leaf.z0) / leaf.s)
+						local nn = cells() + 1
+						for _, o in { { 0, 0 }, { 1, 0 }, { 0, 1 }, { 1, 1 } } do
+							local kk = (ci + o[1]) * nn + (cj + o[2]) + 1
+							if tile.px[kk] then
+								table.insert(dbg, string.format("%.1f,%.1f:%.2f/%d", tile.px[kk] - x, tile.pz[kk] - z, tile.heights[kk] - y, tile.cls[kk]))
+							end
+						end
+						table.insert(trace, { math.round((s - along) * 10) / 10, math.round((d - half) * 10) / 10, side, math.round((g - y) * 100) / 100, leaf.s, math.round(w * 10) / 10, table.concat(dbg, " ") })
+					end
 					if math.abs(g - y) > math.abs(worst) then
 						worst, worstAt = g - y, { math.round((s - along) * 10) / 10, math.round((d - half) * 10) / 10, side, (tile.leaf :: Leaf).s, math.round(w * 10) / 10 }
 					end
@@ -1908,7 +1951,7 @@ function GroundMeshView.DebugRunoffGap(self: View, ahead: number?, behind: numbe
 		end
 		s += step or 2
 	end
-	local out = { on = true, runoffBy = Config.Spline.Ground.RunoffBy, from = s0 - along, to = s1 - along, missing = missing, worst = worst, worstAt = worstAt, runoff = {}, belowRoad = {}, edgeFoot = {} }
+	local out = { on = true, runoffBy = Config.Spline.Ground.RunoffBy, from = s0 - along, to = s1 - along, missing = missing, worst = worst, worstAt = worstAt, trace = trace, runoff = {}, belowRoad = {}, edgeFoot = {} }
 	for k, l in gaps do
 		out.runoff[k] = brief(l)
 		local abs = table.create(#l)
