@@ -44,7 +44,7 @@ the mountain a fixed direction in the world, and makes the road travel down it.
 - **Ascent and traverse.** Planned for, not built: the direction is one setting per stretch
   (`descent`, `ascent`, `traverse`) so a later change can switch it for sections of a run. Only
   `descent` is used now.
-- **The valley floor and distant mountains** you'd see below: `horizon.md` and the next art work.
+- **The valley floor and distant mountains** you'd see below: `horizon.md` (removed 2026-11-16, `T-243`) and the next art work.
   The haze past the cliff stays.
 - **Road stacked over road** (seeing the leg below you): the no-crossing rule still keeps legs apart
   in plan.

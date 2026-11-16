@@ -277,8 +277,7 @@ local Spline = {
 		-- toward these, so it stays under the leg above. The car's wall stays `RockHeight[1]`
 		LowRockHeight = 4, -- studs, at -1
 		LowRockTop = 3, -- studs of scrub on top, at -1
-		GrandCliffDrop = 200, -- studs, mid-leg (`CliffDrop` near). Above the valley floor
-		-- (`Config.Horizon.Floor`; HorizonTests checks it)
+		GrandCliffDrop = 200, -- studs, mid-leg (`CliffDrop` near)
 		-- How far past the runoff an edge reaches, for keeping two stretches of road apart.
 		EdgeDepth = 4, -- studs: a hedge's thickness, and the foot of a rock face
 		-- WHICH SIDE IS UPHILL follows from the heading against the fall line (T-166,
@@ -628,7 +627,7 @@ local Spline = {
 		-- `Fine`: along the road, 8-stud ground this far ahead, 16 to twice that, 32 beyond.
 		-- `Ratio`: round the car, a tile of spacing s splits while it is nearer than s * Ratio
 		-- (16: 8-stud cells within about 256 studs, 16 to 512, 32 to 1 024, 64 to 2 048).
-		-- `Reach`: how far round the car the ground is drawn at all; the horizon covers the rest.
+		-- `Reach`: how far round the car the ground is drawn at all; past it is sky and fog.
 		-- `Ratio` is kept modest on purpose: each tile spent round the car is one fewer along the
 		-- road ahead, where the player looks (measured on seed 31337: Ultra at Ratio 20 kept
 		-- 8-stud ground to about 1 000 studs ahead, at 14 to about 1 500)
@@ -659,7 +658,7 @@ local Spline = {
 		TerrainChunk = 256, -- studs
 		-- 768, not 1 024 as option 1: terrain costs frames by how much of it there is, more as the
 		-- camera moves (measured: a 1 024 ring, nothing being written, 15 ms a frame standing and
-		-- 34 moving on a busy PC). The horizon covers the rest
+		-- 34 moving on a busy PC). Past it is sky and fog
 		DrawTo = 768, -- studs from the car
 		KeepTo = 1024, -- studs
 		TerrainSink = 2.5, -- studs
