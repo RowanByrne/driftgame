@@ -50,7 +50,9 @@ function Tests.run()
 		local models = {}
 		for i = 0, chunks - 1 do
 			local s0, s1 = i * L, math.min((i + 1) * L, spline.length)
-			local model, info = SplineMesh.build(spline, s0, s1, folder)
+			-- (with the road drawing its own runoff, which these checks read: when the ground draws
+			-- it, T-251, `GroundMeshView.DebugRunoffGap` measures it)
+			local model, info = SplineMesh.build(spline, s0, s1, folder, { runoffBy = "road" })
 			if not model then
 				failed += 1
 				check("chunk " .. i .. " built", false, tostring(info))
