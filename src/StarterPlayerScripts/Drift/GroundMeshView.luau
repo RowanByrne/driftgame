@@ -370,9 +370,9 @@ end
 
 -- The tiles the settings allow: the Ground detail's, and the Road behind's and Road ahead's
 -- for the corridor beside the road behind the car (T-230) and past the default reach ahead
--- (T-263), so a longer road does not cost sharp ground nearer the car. Never past the most
--- tiles any Ground detail holds (Ultra's): that is what the budget was measured to hold beside
--- the road, and the furthest road behind still fits beside it.
+-- (T-263), so a longer road does not cost sharp ground nearer the car. Never more than
+-- `Ground.CorridorMost` past the most any Ground detail holds (Ultra's): with Ultra and both
+-- settings at Longest, that fits the budget beside the road (far chunks drawn at `Mesh.Far`).
 function GroundMeshView._tiles(self: View): number
 	local detail = Config.Spline.Ground.Detail
 	local own = GroundDetail.preset(self.detail).Tiles
@@ -1242,7 +1242,7 @@ function GroundMeshView._want(self: View): GroundTiles.Want
 		-- as far as the road is drawn: 8 studs out to `Fine` along it, then coarser. Behind the
 		-- car, from where the drawn road starts (the player's "Road behind", T-230, chunk-
 		-- aligned as `Drift/SplineRoadView` draws it), so no coarse tile ever lies beside drawn
-		-- road; but past `Short`'s 300 studs back it asks only for `RoadCoarsest`, so a longer
+		-- road; but past `Mesh.BehindSharp` (300) studs back it asks only for `RoadCoarsest`, so a longer
 		-- road behind costs the corridor's few coarse tiles, not the sharp ground ahead. Ahead,
 		-- to the player's "Road ahead" (T-263)
 		local first = spline.firstSample * spline.step

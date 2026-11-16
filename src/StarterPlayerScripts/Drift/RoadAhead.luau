@@ -3,7 +3,7 @@
 -- device, for this session. `SettingsController` sets it; `Drift/SplineRoadView` and
 -- `Drift/GroundMeshView` read it, and draw or let go of road and ground in front of the car
 -- as soon as it changes. A whole number 1 (shortest) to #Config.Spline.Mesh.Ahead (furthest);
--- the default is today's 1 600 studs. The pattern is `Drift/RoadBehind`'s (T-230).
+-- the default is Medium, 4 800 studs. The pattern, and the steps, are `Drift/RoadBehind`'s.
 --
 -- It can only draw road the server has sent: `Config.Road.AheadStuds` covers the longest step.
 
@@ -22,7 +22,7 @@ function RoadAhead.count(): number
 	return #Config.Spline.Mesh.Ahead
 end
 
--- The default for this device (both are today's distance, kept apart so touch can differ).
+-- The default for this device (the same on both today, kept apart so touch can differ).
 function RoadAhead.default(): number
 	local M = Config.Spline.Mesh
 	local touch = UserInputService.PreferredInput == Enum.PreferredInput.Touch
