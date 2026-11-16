@@ -33,6 +33,7 @@ local Workspace = game:GetService("Workspace")
 local Config = require(ReplicatedStorage.Shared.Config)
 local Ground = require(ReplicatedStorage.Shared.Road.Ground)
 local GroundDetail = require(script.Parent.GroundDetail)
+local RoadBehind = require(script.Parent.RoadBehind)
 local GroundTiles = require(script.Parent.GroundTiles)
 
 type Leaf = GroundTiles.Leaf
@@ -94,6 +95,7 @@ export type View = typeof(setmetatable(
 		sliceStart: number,
 		work: number,
 		changedConn: any,
+		behindConn: any, -- the player's "Road behind" (T-230)
 		-- measured
 		ops: { [string]: number },
 		tilesBuilt: number,
@@ -266,6 +268,7 @@ function GroundMeshView.new(spline: any, parent: Instance?): View
 		sliceStart = 0,
 		work = 0,
 		changedConn = nil,
+		behindConn = nil,
 		ops = { fill = 0, split = 0, merge = 0, drop = 0, stale = 0 },
 		tilesBuilt = 0,
 		rimWrites = 0,
@@ -284,6 +287,10 @@ function GroundMeshView.new(spline: any, parent: Instance?): View
 		self.detail = value
 		self.dirty = true
 		self:_setCap()
+	end)
+	-- the road drawn behind the car changed: so does the corridor the ground follows
+	self.behindConn = RoadBehind.Changed:Connect(function()
+		self.dirty = true
 	end)
 	return self
 end
@@ -567,14 +574,21 @@ function GroundMeshView._want(self: View): GroundTiles.Want
 	local along = self.along
 	local spline = self.spline
 	if along then
-		-- as far as the road is drawn: 8 studs out to `Fine` along it, then coarser
+		-- as far as the road is drawn: 8 studs out to `Fine` along it, then coarser. Behind the
+		-- car, from where the drawn road starts (the player's "Road behind", T-230, chunk-
+		-- aligned as `Drift/SplineRoadView` draws it), so no coarse tile ever lies beside drawn
+		-- road; but past `Short`'s 300 studs back it asks only for `RoadCoarsest`, so a longer
+		-- road behind costs the corridor's few coarse tiles, not the sharp ground ahead
 		local first = spline.firstSample * spline.step
-		local s0 = math.max(first, along - M.Behind)
+		local near = RoadBehind.studs(1)
+		local s0 = math.max(first, RoadBehind.from(along))
 		local s1 = math.min(spline.length, along + M.Ahead)
 		local s = s0
 		while s <= s1 do
 			local x, z = spline:planAt(s)
-			local w = math.min(G.Spacings[1] * math.max(1, math.abs(s - along) / P.Fine), G.RoadCoarsest)
+			local w = if s < along - near
+				then G.RoadCoarsest
+				else math.min(G.Spacings[1] * math.max(1, math.abs(s - along) / P.Fine), G.RoadCoarsest)
 			table.insert(road, x)
 			table.insert(road, z)
 			table.insert(road, w)
@@ -903,6 +917,9 @@ function GroundMeshView.Destroy(self: View)
 	if self.changedConn then
 		self.changedConn:Disconnect()
 	end
+	if self.behindConn then
+		self.behindConn:Disconnect()
+	end
 	for _, tile in self.pool do
 		tile.part:Destroy()
 		tile.em:Destroy()
@@ -1020,7 +1037,7 @@ function GroundMeshView.DebugSeams(self: View, roadAhead: number?)
 	local aboveBySpacing: { [string]: number } = {}
 	local aboveAt = nil
 	if self.along then
-		local s = math.max(self.along - 300, spline.firstSample * spline.step)
+		local s = math.max(RoadBehind.from(self.along), spline.firstSample * spline.step)
 		local s1 = math.min(spline.length, self.along + (roadAhead or 1600))
 		while s <= s1 do
 			for _, side in { -1, 1 } do

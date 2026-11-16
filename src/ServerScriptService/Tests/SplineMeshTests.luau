@@ -83,11 +83,38 @@ function Tests.run()
 			worstSlice < Config.Spline.Mesh.SliceMs * 3,
 			`spread over {fmt(slices / math.max(1, built), 1)} frames a chunk; the most any one frame paid {fmt(worstSlice, 2)} ms (aim {Config.Spline.Mesh.SliceMs})`
 		)
-		local window = math.ceil((M.Ahead + M.Behind) / L) + 1
+		-- THE WINDOW AND THE BUDGET (T-230): every chunk is a fixed-size copy now, so a chunk
+		-- costs its own triangles, and only the one being built is growable (it holds back
+		-- `GROWABLE` whatever it uses). Each "Road behind" step's window, at this road's mean
+		-- chunk, must fit a Studio PC client's budget beside the ground a ground run draws at
+		-- the same place in its own slider (Short beside Light ... Longest beside Ultra), and
+		-- the device defaults beside theirs
+		local BUDGET, GROWABLE = 81000, 10400 -- triangles (measured, T-225 and T-230)
+		local G = Config.Spline.Ground
+		local tileTris = G.TileCells * G.TileCells * 2
+		local mean = tris / math.max(1, built)
+		local meanParts = plainParts / math.max(1, built)
+		local lines, worstShare, previous = {}, 0, 0
+		local grows = true
+		for k, step in M.Behind do
+			local window = math.ceil((M.Ahead + step.Studs) / L) + 1
+			local ground = (G.Detail[k] or G.Detail[#G.Detail]).Tiles + G.Spare
+			local need = window * mean + math.max(GROWABLE, mean) + ground * tileTris
+			worstShare = math.max(worstShare, need / BUDGET)
+			grows = grows and step.Studs > previous
+			previous = step.Studs
+			table.insert(lines, `{step.Name} {step.Studs}: {window} chunks, {math.floor(window * mean)} triangles and {math.floor(window * meanParts)} plain parts; with {G.Detail[k] and G.Detail[k].Name or "?"} ground {math.floor(need)} of {BUDGET}`)
+		end
 		check(
-			"the window fits the client's eight EditableMeshes",
-			window + 1 <= 8,
-			`the window round the car is {window} chunks, so {window} meshes alive and one being built (a client may hold 8): about {math.floor(tris / math.max(1, built) * window)} triangles and {math.floor(plainParts / math.max(1, built) * window)} plain parts`
+			"every Road behind step fits the budget beside its ground",
+			worstShare <= 1 and grows and #M.Behind >= 2,
+			`{table.concat(lines, "; ")} (a chunk here: {math.floor(mean)} triangles, today's ground, more than a ground run's)`
+		)
+		local pc, touch = M.Behind[M.BehindDefault], M.Behind[M.BehindTouchDefault]
+		check(
+			"the defaults keep more road behind than before, less on touch",
+			pc ~= nil and touch ~= nil and pc.Studs > 300 and touch.Studs > 300 and touch.Studs <= pc.Studs and M.Behind[1].Studs == 300,
+			`PC {pc and pc.Studs}, touch {touch and touch.Studs}, shortest {M.Behind[1].Studs} (300 before T-230)`
 		)
 
 		-- 2. Every vertex of the road surface is on the curve's surface.

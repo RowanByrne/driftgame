@@ -656,12 +656,33 @@ local Spline = {
 		-- Strips across the road. Where the bank rolls on a grade through a bend the surface
 		-- twists, and one full-width triangle cannot follow it (6.5 degrees off, measured).
 		Across = 4,
-		-- studs of road per chunk. A chunk holds one EditableMesh while it is drawn, and a
-		-- client may hold only eight (measured), so the window round the car is kept to five
-		-- or six chunks: (Ahead + Behind) / ChunkLength + 1, plus the one being built
+		-- studs of road per chunk. A chunk holds one EditableMesh while it is drawn. WHAT
+		-- LIMITS THE WINDOW is the client's mesh budget, counted in triangles (about 81 000 in
+		-- Studio on a PC, `Ground` "THE BUDGET"), not a count of meshes: a GROWABLE mesh holds
+		-- back about 10 400 triangles of it however little it uses, which is where "eight
+		-- meshes" came from (measured, T-230). So a chunk, once built, is copied into a
+		-- fixed-size mesh (`Road/SplineMesh`) and costs only its own triangles: about 3 800 a
+		-- chunk on today's ground, fewer on a ground run (no faces). Only the chunk being built
+		-- is growable. The window is chunk-aligned: from the chunk `Behind` studs back to the one
+		-- `Ahead` on, so the road kept behind is `Behind` to `Behind + ChunkLength` studs.
+		-- A device that runs out anyway lets the furthest chunk behind go before the road
+		-- ahead falls back to parts (`Drift/SplineRoadView`).
 		ChunkLength = 480,
 		Ahead = 1600, -- studs of road drawn in front of the car
-		Behind = 300, -- and kept behind it
+		-- THE PLAYER'S "ROAD BEHIND" (Settings, Graphics; docs/game/SETTINGS.md, T-230): how far
+		-- the road, and on a ground run the ground along it, stays drawn behind the car. Each
+		-- step back costs the chunks it keeps (`Studs / ChunkLength` more, about 3 800 triangles
+		-- and 20 to 250 plain parts each) and nothing else: a chunk behind was built when it was
+		-- ahead, so keeping it builds nothing. Short is the window before T-230.
+		Behind = {
+			{ Name = "Short", Studs = 300 },
+			{ Name = "Medium", Studs = 800 },
+			{ Name = "Long", Studs = 1300 },
+			{ Name = "Longer", Studs = 2000 },
+			{ Name = "Longest", Studs = 3000 },
+		},
+		BehindDefault = 3, -- keyboard and mouse, or gamepad
+		BehindTouchDefault = 2, -- a phone or tablet
 		-- A chunk whose hillside new road has come beside (T-190) is redrawn once it starts
 		-- within this of the car: further off, more road is still to come beside it
 		RedrawWithin = 800, -- studs ahead of the car
