@@ -216,6 +216,55 @@ function Tests.run(...)
 		)
 	end
 
+	------------------------------------------------------------------ too far off: put back
+	-- (T-260) how far the road is, measured from where the car is, against the put-back line
+	do
+		local w = SplineWorld.new(spline, nil)
+		local limit = O.PutBack
+		local worst, nearMiss, farFound, n = 0, 0, 0, 0
+		local t0 = os.clock()
+		for _, p in survey do
+			local yaw = spline:yawAt(p.s)
+			local cx, cz = spline:planAt(p.s)
+			for _, out in { 20, limit - 20, limit + 20 } do
+				local x = cx + math.cos(yaw) * p.side * (half + out)
+				local z = cz - math.sin(yaw) * p.side * (half + out)
+				-- the truth: the nearest centre-line point of any leg, every 2 studs
+				local best = math.huge
+				for u = first, spline.length, 2 do
+					local ux, uz = spline:planAt(u)
+					best = math.min(best, math.sqrt((ux - x) ^ 2 + (uz - z) ^ 2))
+				end
+				local truth = math.max(best - half, 0)
+				local got = w.offBy(Vector3.new(x, 0, z), limit)
+				n += 1
+				if truth < limit - 2 and not got then
+					nearMiss += 1
+				elseif truth > limit + 2 and got then
+					farFound += 1
+				elseif got and truth < limit - 2 then
+					worst = math.max(worst, math.abs(got - truth))
+				end
+			end
+			if n >= 60 then
+				break
+			end
+		end
+		local us = (os.clock() - t0) -- (the truth's brute force dominates; timed apart below)
+		local t1 = os.clock()
+		for _ = 1, 200 do
+			local p = survey[1]
+			local cx, cz = spline:planAt(p.s)
+			w.offBy(Vector3.new(cx + 250, 0, cz + 250), limit)
+		end
+		local each = (os.clock() - t1) / 200 * 1e6
+		check(
+			`over {limit} studs from the road is told apart`,
+			nearMiss == 0 and farFound == 0 and worst < 2,
+			`{n} points 20, {limit - 20} and {limit + 20} studs out: {nearMiss} within reach missed, {farFound} beyond it found; worst {fmt(worst, 2)} studs off the true distance; a far check costs {fmt(each, 0)} microseconds ({fmt(us, 1)} s with the brute-force truth)`
+		)
+	end
+
 	------------------------------------------------------------------ what it costs
 	if gentle then
 		local function cost(onRoad: boolean): (number, number)

@@ -628,6 +628,11 @@ local Drift = {
 		-- a steep point is a wall once it stands this far above where the car's wheels touch:
 		-- a little steep bump under it is ridden over
 		WallStep = 1.5, -- studs
+		-- MORE THAN `PutBack` STUDS FROM THE ROAD (past the tarmac's edge, the nearest road of
+		-- any leg) the car is wrecked and put back on the road, at the nearest point of it the
+		-- server knows, as a fall is (`CarRespawn`). Checked every `PutBackEvery` seconds
+		PutBack = 300, -- studs
+		PutBackEvery = 0.25, -- s
 		-- (it drives like the runoff's grass: `GripGrass`, `ScoreGrass`)
 	},
 }

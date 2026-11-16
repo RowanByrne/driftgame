@@ -91,6 +91,8 @@ export type SplineWorld = Model.World & {
 	offRoad: OffRoadGround.OffRoadGround?,
 	setClosing: (s: number?) -> (),
 	locate: (pos: Vector3) -> (number?, number?),
+	-- how far past the tarmac's edge the nearest road is, out to `out` studs; nil further
+	offBy: (pos: Vector3, out: number) -> number?,
 	destroy: () -> (),
 }
 
@@ -176,6 +178,19 @@ function SplineWorld.new(spline: Spline.Spline, base: Model.World?): SplineWorld
 			self.hint = s
 		end
 		return s, d
+	end
+
+	-- How far a point is from the road: past the tarmac's edge of the nearest road, any leg.
+	-- Nil when no road is within `out` studs of the edge (T-258: the car is put back).
+	function self.offBy(pos: Vector3, out: number): number?
+		local s, d = locate(pos.X, pos.Z, self.hint)
+		if not s or not d then
+			s, d = spline:project(pos.X, pos.Z, half + out)
+		end
+		if not s or not d then
+			return nil
+		end
+		return math.max(math.abs(d) - half, 0)
 	end
 
 	function self.setClosing(s: number?)
