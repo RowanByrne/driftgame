@@ -48,8 +48,20 @@ return {
 	FollowHeight = 0.75,
 	HeightLag = 2, -- s
 
+	-- ------------------------------------------------------------ only uphill (T-232)
+	-- On a run with a mountain (`Road/Ground`'s field), the ridges cover only `Arc` degrees
+	-- in all, centred on the run's uphill: straight up the mountain, and `Arc / 2` off it each
+	-- way. Downhill is open, over the valley. Each layer's ridge line is then `ArcSegments`
+	-- steps across the arc (not `Segments` round the ring), so the parts go on the half kept;
+	-- its last `Taper` steps at each end sink to the layer's `Base`, eased, so each end rolls
+	-- down into the ground and haze instead of stopping like a wall. 360: the full ring.
+	-- Runs with no mountain field (the old road) keep the full ring.
+	Arc = 180, -- degrees
+	Taper = 4, -- ridge steps at each end
+
 	-- ----------------------------------------------------------------- the ridges
-	-- Nearest first. Each is a ring of `Segments` peaks and saddles: a ridge vertex every
+	-- Nearest first. Each is a ring of `Segments` peaks and saddles (or an arc of `ArcSegments`,
+	-- above): a ridge vertex every
 	-- 360/Segments degrees (jittered by `AngleJitter` of a step), at `Radius` (jittered by
 	-- `RadiusJitter` of it), between `Height[1]` and `Height[2]` tall; the faces run down
 	-- to `Base`, `Depth` (a fraction of `Radius`) nearer, half a step round, so the faces
@@ -62,7 +74,8 @@ return {
 		{
 			Name = "Near",
 			Radius = 2400,
-			Segments = 32,
+			Segments = 32, -- round the full ring
+			ArcSegments = 28, -- across the uphill arc
 			Height = { 70, 190 },
 			Base = -560,
 			Depth = 0.2,
@@ -78,7 +91,8 @@ return {
 		{
 			Name = "Middle",
 			Radius = 3200,
-			Segments = 28,
+			Segments = 28, -- round the full ring
+			ArcSegments = 24, -- across the uphill arc
 			Height = { 120, 250 },
 			Base = -540, -- below the valley floor, so its feet sink into it
 			Depth = 0.18,
@@ -94,7 +108,8 @@ return {
 		{
 			Name = "Far",
 			Radius = 4500,
-			Segments = 36,
+			Segments = 36, -- round the full ring
+			ArcSegments = 32, -- across the uphill arc
 			Height = { 180, 370 },
 			-- higher and steeper than the others, so its faces stay under `MaxEdge` unsplit;
 			-- the nearer layers hide its foot
@@ -117,8 +132,12 @@ return {
 	-- A cone of `Sides` faces, only the half facing you built: its foot at `Base`, a shoulder
 	-- at `Shoulder` of its height, the snow line at `SnowLine` of it (jagged by `SnowJag`),
 	-- and the summit at `Height`, leaning a little off centre by `Lean` of its foot's radius.
+	-- On an uphill arc, the peak keeps `Bearing` if that is at least `Clear` degrees inside
+	-- the arc's ends, and otherwise stands `Offset` degrees clockwise from uphill.
 	Peak = {
 		Bearing = 35,
+		Clear = 25,
+		Offset = 35,
 		Radius = 6000,
 		Height = 580,
 		Base = -300,

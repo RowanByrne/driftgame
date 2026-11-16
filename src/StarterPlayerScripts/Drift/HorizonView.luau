@@ -1,6 +1,7 @@
 --!strict
 -- HorizonView: the mountains round the endless run, drawn on this device
--- (docs/game/features/horizon.md, T-150).
+-- (docs/game/features/horizon.md, T-150). On a run with a mountain, only its uphill half
+-- (T-232).
 --
 -- `Shared/Horizon` gives the shapes as triangles; this draws each as two wedge parts
 -- (`Road/Builder.triangleSlab`) and keeps every layer round the camera, each frame, after
@@ -49,6 +50,7 @@ export type View = typeof(setmetatable(
 	{} :: {
 		folder: Folder,
 		originY: number,
+		uphill: number?, -- the bearing the arc is centred on, or nil for the full ring
 		camY: number, -- the camera's height, eased
 		lift: number, -- how far the horizon stands above the road's start now
 		layers: { LayerState },
@@ -74,12 +76,16 @@ local function cameraAt(): Vector3
 	return if cam then cam.CFrame.Position else Vector3.zero
 end
 
-function HorizonView.new(originY: number, parent: Instance?): View
+-- `mountain`: the run's `Road/Ground` field, if it has one. Then the ridges cover only the
+-- uphill arc (`Config.Horizon.Arc`), centred on its fall line, the same on every client; with
+-- none (the old road), the full ring.
+function HorizonView.new(originY: number, parent: Instance?, mountain: { ux: number, uz: number }?): View
 	local folder = Instance.new("Folder")
 	folder.Name = "Horizon"
 	folder.Parent = parent or Workspace
 
-	local layout = Horizon.layout(Config.Horizon)
+	local uphill = if mountain then Horizon.bearing(mountain.ux, mountain.uz) else nil
+	local layout = Horizon.layout(Config.Horizon, uphill)
 	local start = flat(cameraAt())
 	local layers: { LayerState } = {}
 	for _, layer in layout.layers do
@@ -109,6 +115,7 @@ function HorizonView.new(originY: number, parent: Instance?): View
 	local self = setmetatable({
 		folder = folder,
 		originY = originY,
+		uphill = uphill,
 		camY = cameraAt().Y,
 		lift = 0,
 		layers = layers,
@@ -254,14 +261,26 @@ function HorizonView.DebugState(self: View): { [string]: any }
 	local cam = flat(cameraAt())
 	local layers = {}
 	for _, layer in self.layers do
+		-- the bearings its parts span, in degrees from uphill (clockwise +), measured from
+		-- where they stand now round their anchor
+		local lo, hi = math.huge, -math.huge
+		local ref = self.uphill or 0
+		local centre = layer.anchor.Position
+		for _, p in layer.parts do
+			local d = p.Position - centre
+			local off = math.deg((Horizon.bearing(d.X, d.Z) - ref + math.pi) % (2 * math.pi) - math.pi)
+			lo, hi = math.min(lo, off), math.max(hi, off)
+		end
 		table.insert(layers, {
 			name = layer.name,
 			parts = #layer.parts,
 			behind = (cam - layer.centre).Magnitude,
 			nearest = layer.radius - (cam - layer.centre).Magnitude,
+			fromUphill = if #layer.parts > 0 then { lo, hi } else nil,
 		})
 	end
 	return {
+		uphill = if self.uphill then math.deg(self.uphill) % 360 else nil,
 		building = self.building,
 		triangles = self.triangles,
 		parts = self.parts,
