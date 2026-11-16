@@ -1741,7 +1741,7 @@ function SplineGen._planRange(self: Gen)
 	end
 	-- straight for the pass, when it is in reach
 	local dist = math.sqrt((pt - t) ^ 2 + (pv - v) ^ 2)
-	if climbing and tgt.y - y <= dist * R.DirectGrade then
+	if climbing and dist <= R.DirectReach and tgt.y - y <= dist * R.DirectGrade then
 		stretch(dist + R.PassOver, "pass", { kind = "pass", side = self.legSide, sc = sc })
 		return
 	end

@@ -189,10 +189,10 @@ local function run(check, opts)
 		check("no seams: a fiftieth of a stud never jumps a tenth", worst < 0.1, `steepest step {fmt(worst, 3)} studs over {n} points`)
 	end
 
-	-- the belts are still the default, unchanged
+	-- runs get the shape `Config.Range.Shape` says (the range since T-238)
 	do
 		local f = Ground.field(7, ORIGIN, FALL)
-		check("runs keep the belts until the road can climb (step 2)", f.shape == R.Shape and (R.Shape ~= "range" or f.range ~= nil), `{f.shape}`)
+		check("runs get the shape the config names", f.shape == R.Shape and (R.Shape ~= "range" or f.range ~= nil), `{f.shape}`)
 	end
 
 	-- cost

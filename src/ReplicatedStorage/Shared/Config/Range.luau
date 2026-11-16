@@ -72,7 +72,8 @@ return {
 	-- switchbacks stacked below the pass. Coming down, legs the same way toward the next pass.
 	-- `TowardBias` adds the way to the pass to the slope, so flat ground has a way on. On
 	-- steep ground (`Spline.Ground.SlopeSteep`) a hairpin is as tight as the road allows
-	DirectGrade = 0.07, -- 4 degrees
+	DirectGrade = 0.05, -- 3 degrees...
+	DirectReach = 900, -- ...and no further off than this (straight up from further, the road left the slope)
 	PassOver = 300, -- studs
 	PassBand = 3000, -- studs across
 	LegMin = 400, -- studs

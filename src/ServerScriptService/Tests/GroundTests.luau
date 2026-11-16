@@ -31,9 +31,10 @@ local function run(check, opts)
 	-- the same mountain from the same seed, and a different one from another
 	do
 		local o = { x = 100, y = 20, z = -300, yaw = 0.3 }
-		local a = Ground.field(7, o, 1.1)
-		local b = Ground.field(7, o, 1.1)
-		local c = Ground.field(8, o, 1.1)
+		-- (the belts by name: runs have the range since T-238, `RangeTests`)
+		local a = Ground.field(7, o, 1.1, "belts")
+		local b = Ground.field(7, o, 1.1, "belts")
+		local c = Ground.field(8, o, 1.1, "belts")
 		local same, differ = 0, 0
 		for i = 1, 200 do
 			local x, z = o.x + (i * 37.3) % 3000 - 1500, o.z + (i * 91.7) % 3000 - 1500
