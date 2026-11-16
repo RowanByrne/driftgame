@@ -87,4 +87,24 @@ return {
 	RescueTurns = { 20, 45, 70, 100, 130, 160 }, -- degrees
 	RescueRadii = { 70, 110, 170, 260, 400 }, -- studs
 	GiveUp = 6, -- times a planned turn may be refused before the way to the pass is planned again
+	-- A LEG'S HEADING CHECKED AGAINST h ITSELF (T-242): every heading `AimLocalStep` degrees
+	-- apart within `AimLocalSwing` either way of the one the face gives, scored on how far off h
+	-- the road would still be `AimLocalAhead` studs on (and half that), plus `AimLocalTurnCost`
+	-- studs a degree off the face's heading and `AimLocalBackCost` for heading straight back
+	AimLocalAhead = 120, -- studs
+	AimLocalSwing = 40, -- degrees
+	AimLocalStep = 10, -- degrees
+	AimLocalTurnCost = 0.3, -- studs a degree
+	AimLocalBackCost = 200, -- studs
+	-- THE MOUNTAIN FIRST (T-242): when no random section follows h, a straight of
+	-- `FollowStraight` and every bend of `FollowTurns` either way on `FollowRadii`, each judged
+	-- `FollowLook` studs on past it: how far off h the road is there, half the furthest it
+	-- strays, `FollowAimCost` studs a degree past its aim's limit, `FollowBackCost` heading back
+	FollowStraight = 160, -- studs
+	FollowTurns = { 20, 40, 60 }, -- degrees (bigger ones, 90 and 120, swung the road through a face)
+	FollowRadii = { 120, 250 }, -- studs
+	FollowLook = 100, -- studs
+	FollowAimCost = 0.5, -- studs a degree
+	FollowBackCost = 250, -- studs (100 left the road heading back 500 studs, twice in 24 runs)
+	StraightenMaxOff = 20, -- studs off h: a bend straightening the road before a hairpin goes no further (T-242)
 }
