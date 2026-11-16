@@ -873,6 +873,90 @@ local function setSplit(tile: Tile, i: number, j: number, flip: boolean)
 	end
 end
 
+-- HOW A VERTEX IS SHADED: its normal from the four round it, as placed, and its colour by
+-- slope (rock past `RockAngle`), blotched by where its grid point is; when the ground draws
+-- the runoff, a vertex on the road or held at its edge in the runoff's own colour, and one on
+-- the road with the road's true normal (T-251).
+local function shadeFrom(spline: any, ctx: Ground.Context, p: { number }, x: number, z: number, xp: { number }, xm: { number }, zp: { number }, zm: { number }): (Vector3, Color3)
+	local G = Config.Spline.Ground
+	local across = Vector3.new(zp[1] - zm[1], zp[3] - zm[3], zp[2] - zm[2])
+	local along = Vector3.new(xp[1] - xm[1], xp[3] - xm[3], xp[2] - xm[2])
+	local nv = across:Cross(along)
+	nv = if nv.Magnitude > 1e-9 then nv.Unit else Vector3.yAxis
+	local colour
+	if nv.Y < math.cos(math.rad(G.RockAngle)) then
+		colour = G.GroundRockColour
+	else
+		local blotch = math.clamp(0.5 + 1.6 * math.noise(x / 70, z / 70, 3.37), 0, 1)
+		colour = G.GrassColours[1]:Lerp(G.GrassColours[2], blotch)
+	end
+	if groundRunoff and (p[4] == ROAD or p[4] == HELD) then
+		-- THE RUNOFF (T-251): its own grass, blotched as the road's runoff was, or gravel
+		-- in a gravel run; on the road, its true normal, so it shades as it did
+		local TT = Config.Spline.Terrain
+		local g = TT.GrassColour
+		local _, rs, rd = underAt(ctx, p[1], p[2])
+		if rs and rd and math.abs(rd) > Config.Road.Width * 0.5 and spline:gravelAt(rs, if rd < 0 then -1 else 1) then
+			colour = TT.GravelColour
+		else
+			local b = GrassTexture.blotch(p[1], p[2])
+			colour = Color3.new(math.min(1, g.R * b), math.min(1, g.G * b), math.min(1, g.B * b))
+		end
+		if p[4] == ROAD and rs and rd then
+			nv = spline:terrainNormal(rs, rd)
+		end
+	end
+	return nv, colour
+end
+
+-- A grid point of a spacing's lattice, shaded the way a tile of that spacing shades it when
+-- every tile round the point has that spacing.
+local function latticeShade(spline: any, L: Lattice, I: number, J: number): (Vector3, Color3)
+	return shadeFrom(spline, L.ctx, place(L, I, J), I * L.s, J * L.s, place(L, I + 1, J), place(L, I - 1, J), place(L, I, J + 1), place(L, I, J - 1))
+end
+
+-- NO LINES WHERE TILES MEET (T-251 send-back): a vertex on an edge it shares with a coarser
+-- tile is shaded as the coarser tile shades that edge, as its height already is: at a grid
+-- point of the coarsest tile touching it, that spacing's way; between two, straight between
+-- them (the coarser tile blends its normals and colours along the edge just so). Before this,
+-- each tile shaded its edge from its own grid, so the two sides of an edge met at a
+-- different normal and colour: a light or dark line along every edge between two spacings
+-- (measured: up to 13 degrees and 12 of 255 apart). `lats`: lattices made so far, by spacing.
+local function onGrid(v: number, sp: number): boolean
+	local q = v / sp
+	return math.abs(q - math.round(q)) < 1e-6
+end
+
+local function shadeAt(self: View, map: { [number]: Leaf }, lats: { [number]: { any } }, s: number, x: number, z: number): (Vector3, Color3)
+	local sm = GroundTiles.spacingAround(map, x, z)
+	if sm < s then
+		sm = s
+	end
+	if onGrid(x, sm) and onGrid(z, sm) then
+		-- a lattice of that spacing made round a point near enough (`place` and its neighbours
+		-- reach two grid points out), or a new one round this point
+		local held = lats[sm]
+		if not held or math.abs(x - held[2]) > 2 * sm or math.abs(z - held[3]) > 2 * sm then
+			local r = 5 * sm + 1
+			held = { newLattice(Ground.context(self.field, self.spline, x - r, z - r, x + r, z + r), sm), x, z }
+			lats[sm] = held
+		end
+		return latticeShade(self.spline, held[1] :: Lattice, math.round(x / sm), math.round(z / sm))
+	end
+	local ax, az, bx, bz, f
+	if onGrid(x, sm) then
+		local z0 = math.floor(z / sm) * sm
+		ax, az, bx, bz, f = x, z0, x, z0 + sm, (z - z0) / sm
+	else
+		local x0 = math.floor(x / sm) * sm
+		ax, az, bx, bz, f = x0, z, x0 + sm, z, (x - x0) / sm
+	end
+	local na, ca = shadeAt(self, map, lats, sm, ax, az)
+	local nb, cb = shadeAt(self, map, lats, sm, bx, bz)
+	local nv = na * (1 - f) + nb * f
+	return if nv.Magnitude > 1e-9 then nv.Unit else Vector3.yAxis, ca:Lerp(cb, f)
+end
+
 -- Fill a hidden tile with `leaf`'s ground, given the tiles it will sit among (`map`).
 function GroundMeshView._fill(self: View, tile: Tile, leaf: Leaf, map: { [number]: Leaf }): boolean
 	local G = Config.Spline.Ground
@@ -928,46 +1012,25 @@ function GroundMeshView._fill(self: View, tile: Tile, leaf: Leaf, map: { [number
 	-- colours by slope
 	local cx, cz = x0 + leaf.side * 0.5, z0 + leaf.side * 0.5
 	local cy = Ground.base(self.field, cx, cz)
-	local rockY = math.cos(math.rad(G.RockAngle))
-	local g1, g2, rock = G.GrassColours[1], G.GrassColours[2], G.GroundRockColour
-	local TT = Config.Spline.Terrain
-	local half = Config.Road.Width * 0.5
 	local uvStuds = G.UVStuds
 	local em = tile.em
 	local heights = tile.heights
+	local lats: { [number]: { any } } = {}
 	for i = 0, C do
 		local x = x0 + i * s
 		for j = 0, C do
 			local k = i * n + j + 1
 			local z = z0 + j * s
 			local q = (i + 1) * m + (j + 1) + 1
-			local xp, xm, zp, zm = V[q + m], V[q - m], V[q + 1], V[q - 1]
-			local across = Vector3.new(zp[1] - zm[1], zp[3] - zm[3], zp[2] - zm[2])
-			local along = Vector3.new(xp[1] - xm[1], xp[3] - xm[3], xp[2] - xm[2])
-			local nv = across:Cross(along)
-			nv = if nv.Magnitude > 1e-9 then nv.Unit else Vector3.yAxis
-			local colour
-			if nv.Y < rockY then
-				colour = rock
-			else
-				local blotch = math.clamp(0.5 + 1.6 * math.noise(x / 70, z / 70, 3.37), 0, 1)
-				colour = g1:Lerp(g2, blotch)
-			end
 			local p = P[k]
-			if groundRunoff and (p[4] == ROAD or p[4] == HELD) then
-				-- THE RUNOFF (T-251): its own grass, blotched as the road's runoff was, or gravel
-				-- in a gravel run; on the road, its true normal, so it shades as it did
-				local g = TT.GrassColour
-				local _, rs, rd = underAt(ctx, p[1], p[2])
-				if rs and rd and math.abs(rd) > half and self.spline:gravelAt(rs, if rd < 0 then -1 else 1) then
-					colour = TT.GravelColour
-				else
-					local b = GrassTexture.blotch(p[1], p[2])
-					colour = Color3.new(math.min(1, g.R * b), math.min(1, g.G * b), math.min(1, g.B * b))
-				end
-				if p[4] == ROAD and rs and rd then
-					nv = self.spline:terrainNormal(rs, rd)
-				end
+			local nv, colour
+			local _, hi = GroundTiles.spacingRange(map, x, z)
+			if (i == 0 or i == C or j == 0 or j == C) and hi > s then
+				nv, colour = shadeAt(self, map, lats, s, x, z) -- shared with a coarser tile
+			else
+				nv, colour = shadeFrom(self.spline, ctx, V[q], x, z, V[q + m], V[q - m], V[q + 1], V[q - 1])
+			end
+			if groundRunoff then
 				self:_slice()
 			end
 			if p[4] == HELD then
@@ -998,9 +1061,10 @@ function GroundMeshView._fill(self: View, tile: Tile, leaf: Leaf, map: { [number
 	return true
 end
 
--- A shown tile's rim, worked out again among `map`: the vertices that would move ({k, x, z,
--- y, class}), and the cells beside them whose split would change ({i, j, flip}).
-function GroundMeshView._rimChanges(self: View, tile: Tile, map: { [number]: Leaf }): ({ { number } }, { { any } })
+-- A shown tile's rim, worked out again among `map`: the vertices that would move or shade
+-- differently ({k, x, z, y, class, normal, colour}), and the cells beside them whose split
+-- would change ({i, j, flip}).
+function GroundMeshView._rimChanges(self: View, tile: Tile, map: { [number]: Leaf }): ({ { any } }, { { any } })
 	local leaf = tile.leaf :: Leaf
 	local s = leaf.s
 	local C = cells()
@@ -1011,15 +1075,34 @@ function GroundMeshView._rimChanges(self: View, tile: Tile, map: { [number]: Lea
 	self:_slice()
 	local changes = {}
 	local changed: { [number]: { number } } = {}
+	local I0, J0 = math.round(leaf.x0 / s), math.round(leaf.z0 / s)
+	local lats: { [number]: { any } } = {}
 	for k, p in rimPlace(L, leaf, map) do
-		if
-			math.abs(p[1] - tile.px[k]) > 1e-4
+		local moved = math.abs(p[1] - tile.px[k]) > 1e-4
 			or math.abs(p[2] - tile.pz[k]) > 1e-4
 			or math.abs(p[3] - tile.heights[k]) > 1e-4
 			or p[4] ~= tile.cls[k]
-		then
-			table.insert(changes, { k, p[1], p[2], p[3], p[4] })
+		-- and how it is shaded, as `_fill` would shade it among these tiles
+		local i, j = (k - 1) // n, (k - 1) % n
+		local x, z = leaf.x0 + i * s, leaf.z0 + j * s
+		local _, hi = GroundTiles.spacingRange(map, x, z)
+		local nv, colour
+		if hi > s then
+			nv, colour = shadeAt(self, map, lats, s, x, z)
+		else
+			nv, colour = latticeShade(self.spline, L, I0 + i, J0 + j)
+		end
+		local was, wasC = tile.normals[k], tile.colours[k]
+		local reshaded = nv:Dot(was) < 0.99999
+			or math.abs(colour.R - wasC.R) + math.abs(colour.G - wasC.G) + math.abs(colour.B - wasC.B) > 1e-4
+		if moved or reshaded then
+			table.insert(changes, { k, p[1], p[2], p[3], p[4], nv, colour })
+		end
+		if moved then
 			changed[k] = p
+		end
+		if groundRunoff then
+			self:_slice()
 		end
 	end
 	self:_slice()
@@ -1353,14 +1436,19 @@ function GroundMeshView._do(self: View, op: Op): boolean
 	end
 	local uvStuds = Config.Spline.Ground.UVStuds
 	for _, p in pending do
-		local tile, changes, splits = p[1] :: Tile, p[2] :: { { number } }, p[3] :: { { any } }
+		local tile, changes, splits = p[1] :: Tile, p[2] :: { { any } }, p[3] :: { { any } }
 		local leaf = tile.leaf :: Leaf
 		local cx, cz = leaf.x0 + leaf.side * 0.5, leaf.z0 + leaf.side * 0.5
 		for _, ch in changes do
-			local k, x, z, y, cls = ch[1], ch[2], ch[3], ch[4], ch[5]
+			local k, x, z, y, cls, nv, colour = ch[1], ch[2], ch[3], ch[4], ch[5], ch[6], ch[7]
 			tile.heights[k], tile.px[k], tile.pz[k], tile.cls[k] = y, x, z, cls
 			tile.em:SetPosition(tile.v[k], Vector3.new(x - cx, y - tile.cy, z - cz))
 			tile.em:SetUV(tile.uv[k], Vector2.new(x / uvStuds, z / uvStuds))
+			if nv and colour then
+				tile.normals[k], tile.colours[k] = nv, colour
+				tile.em:SetNormal(tile.nrm[k], nv)
+				tile.em:SetColor(tile.col[k], colour)
+			end
 			self.rimWrites += 1
 		end
 		for _, sp in splits do
