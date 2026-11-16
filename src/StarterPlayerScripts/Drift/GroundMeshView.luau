@@ -29,9 +29,11 @@
 -- (a grid point held below the edge up to a cell and a half out, as before T-231, drew each
 -- cut wall as a sawtooth wherever the road ran at an angle across the grid). Then each cell
 -- is split along the diagonal that fits the ground best, never one joining a vertex on the
--- road to one up a wall. A vertex that cannot move (road both sides of it, or one on an edge
--- shared with a tile of another spacing, which is worked out the old way so the two still
--- agree) is held below the edge within its spacing's `Clamp`, as before. The road's skirt
+-- road to one up a wall; and the face's top edge is pulled onto its line the same way. A
+-- vertex that cannot move (road both sides of it, or one on an edge shared with a tile of
+-- another spacing, worked out the old way so the two still agree), and every vertex of a
+-- tile coarser than `SnapUpTo`, is held below the edge within its spacing's `Clamp`, as
+-- before. The road's skirt
 -- (`Road/SplineMesh`, a ground run) hides what is left of the gap.
 
 local AssetService = game:GetService("AssetService")
@@ -504,6 +506,12 @@ local function place(L: Lattice, I: number, J: number): { number }
 	p = { x, z, open, OPEN }
 	if e <= foot then
 		p = { x, z, open, ROAD }
+	elseif s > G.SnapUpTo then
+		-- a coarse tile, far ahead: held below the edge within its clamp, as before T-231
+		-- (moved, a 32-stud tile's ground stood 5.8 studs over a runoff's edge, measured)
+		if e < clampOf[s] then
+			p = { x, z, math.min(open, T - sink), HELD }
+		end
 	elseif e <= s + foot then
 		local west = latAt(L, I - 1, J)[3] <= foot
 		local east = latAt(L, I + 1, J)[3] <= foot
@@ -529,7 +537,7 @@ local function place(L: Lattice, I: number, J: number): { number }
 			end
 		end
 	end
-	if p[4] == OPEN and a <= 0 and e < G.BlendMax + G.BlendFoot + s then
+	if p[4] == OPEN and a <= 0 and s <= G.SnapUpTo and e < G.BlendMax + G.BlendFoot + s then
 		-- past the end of a cut or fill: how wide its face is, read off a neighbour on it
 		-- (`Road/Ground`: the face eases over `bw` studs from `BlendFoot` past the edge)
 		local topE = math.huge
@@ -550,8 +558,11 @@ local function place(L: Lattice, I: number, J: number): { number }
 				local move = (e - topE) / g
 				if move <= reach then
 					local nx, nz = x - ux * move, z - uz * move
-					local y2, a2 = groundAt(L.ctx, nx, nz)
-					p = { nx, nz, y2 - sink * a2, OPEN }
+					local y2, a2, e2 = groundAt(L.ctx, nx, nz)
+					-- only if it landed by the face's end, never down by the road
+					if a2 < 0.3 and e2 > foot + 1 then
+						p = { nx, nz, y2 - sink * a2, OPEN }
+					end
 				end
 			end
 		end

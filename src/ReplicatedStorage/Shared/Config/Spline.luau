@@ -597,6 +597,10 @@ local Spline = {
 		-- cell from the foot is up to a cell from it, measured on seed 31337)
 		SnapMax = 1, -- of a cell
 		FitGap = 0.2, -- studs
+		-- tiles this fine or finer move their vertices; coarser ones (far ahead) hold them below
+		-- the edge out to `Clamps`, as before: moved on a 32-stud tile, the drawn ground stood
+		-- 5.8 studs over a runoff's edge (measured, seed 31337)
+		SnapUpTo = 16, -- studs between vertices
 		MeshSliceMs = 2, -- ms of building a frame
 		FirstSliceMs = 6, -- ms a frame while nothing is drawn yet (a run's first second)
 		Spare = 24, -- tiles built hidden, then swapped in whole, so a change never shows half done
