@@ -41,10 +41,11 @@
 --   * the closing barrier as a piece number (`leaderN - BarrierBehind`) -- it is an arc
 --     length now, read from `DebugState().closingS`.
 --   * THE DESCENT FIXTURE: a straight that dropped 20 studs, spliced into
---     `Config.Road.Pieces` so the piece road would go downhill at all. Every spline road is
---     cut into the mountain and descends (`Config.Spline.Mountain.Mode = "descent"`), so the
---     ordinary drive on the pinned seed IS the descending road: the two descent checks are
---     now asked of it, with no fixture.
+--     `Config.Road.Pieces` so the piece road would leave Y = 0 at all. Every spline road is
+--     cut into the mountain and changes height by hundreds of studs on its own, so the two
+--     checks are asked of the ordinary pinned-seed drive, with no fixture -- and of the
+--     height it covers, up OR down, since on this build the road climbs (seed 8080: Y 3 to
+--     about 440 over its first 30 sections) where the fixture went down.
 --   * the `onPieces` wrapper that switched each run to the piece road and back -- there is
 --     only one road.
 
@@ -67,20 +68,25 @@ local DRIVE_PIECES = 30
 local DRIVE_SECONDS = 300
 local DRIVE_FPS = 60
 local LOOK_SECONDS = 0.9 -- the autopilot's lookahead, and a property of the DRIVER, not the
--- road. The same autopilot `SplineWorldTests` drives with (copied, not shared)
+-- road. The same steering `SplineWorldTests` drives with (copied, not shared)
 local LOOK_MIN, LOOK_MAX = 30, 120
-local BRAKE_LOOK = 1.6 -- seconds ahead the autopilot reads the corner it is about to meet
-local BRAKE_LIMIT = 65 -- studs/s^2 of cornering it will ask of the car before it uses the
--- handbrake. NOT OPTIONAL: with the brake left out the car entered the
--- first real corner of the old piece road at 113 studs/s, ran wide and
--- wedged against the barrier for the rest of the drive
+-- THE BRAKE, which is NOT OPTIONAL and is tighter than the piece road's 1.6 s / 65. The
+-- mountain road's turnarounds are hairpins, and with the old numbers the car took them too
+-- fast and ran out on to the grass runoff -- 436 steps off the tarmac on seed 8080, 39.6 studs
+-- from the centre line of a 50-stud road, nearly the whole 40-stud runoff (T-250, measured on
+-- the model alone). At 2.0 s / 20 it stayed on the tarmac on every seed tried (8080..8085,
+-- 1234): widest 6 to 18 studs from the centre, no wall touched. At 2.0 s / 30 three of those
+-- six ran wide again.
+local BRAKE_LOOK = 2.0 -- seconds ahead the autopilot reads the corner it is about to meet
+local BRAKE_LIMIT = 20 -- studs/s^2 of cornering it will ask of the car before it uses the
+-- handbrake
 local ROAD_SEED = 8080 -- the road the fall, the join and the drive are measured on. PINNED,
 -- and only for those: the button's own seed is the server's clock and
 -- check 2 is what proves it. A measurement that quoted a different road
 -- every time would not be a measurement
 local OLD_RESPAWN_BELOW_Y = -150 -- what `Config.Drift.RespawnBelowY` was before T-067, and
--- it is in this suite for one reason: so the drive can say how many of
--- its own steps the old absolute test would have called a fall
+-- it is in this suite for one reason: so the drive and the fall off the
+-- side can say what the old absolute test would have made of them
 local FALL_PIECE = 18 -- how far up the road the straight-down fall is staged
 
 local Tests = {}
@@ -243,7 +249,7 @@ function Tests:drive(opts)
 	local world = SplineWorld.new(spline, live)
 	world.setClosing(closingS())
 	-- Facing the way the road goes: the pose the SERVER put the car at, not a guess at it.
-	local spawnCF = opts.startCFrame or CFrame.new(assert(carPivot(player), "no car to drive"))
+	local spawnCF = opts.startCFrame or CFrame.new((assert(carPivot(player), "no car to drive")))
 	local runner = Sim.newRunner(spawnCF)
 	runner.state.velocity = spawnCF.LookVector * (opts.startSpeed or 60)
 	runner.state.time = 10 -- past the throttle's ease-in
@@ -267,6 +273,7 @@ function Tests:drive(opts)
 		modelFellSteps = 0,
 		startY = spawnCF.Position.Y,
 		lowestY = math.huge,
+		highestY = -math.huge,
 		-- And the same question asked the OLD way: how many of those steps were below the
 		-- world Y the fall test used to be a comparison against.
 		oldWouldFallSteps = 0,
@@ -293,6 +300,7 @@ function Tests:drive(opts)
 			r.oldWouldFallSteps += 1
 		end
 		r.lowestY = math.min(r.lowestY, s.position.Y)
+		r.highestY = math.max(r.highestY, s.position.Y)
 		local speed = math.sqrt(s.velocity.X ^ 2 + s.velocity.Z ^ 2)
 		r.minSpeed = math.min(r.minSpeed, speed)
 		r.maxSpeed = math.max(r.maxSpeed, speed)
@@ -903,11 +911,11 @@ function Tests:run(opts)
 			local stillUp = RoadService:HasRoad()
 			local stillIn = RoadService:InRun(player)
 
-			-- THE MOUNTAIN ROAD DESCENDS, and the model's fall test is relative to the ground
-			-- it last had (T-067). Two halves that pull opposite ways: hundreds of studs down
-			-- with road under the car the whole way, nothing is a fall (the drive, above); off
-			-- the side of that same road, past everything the curve answers for, a fall is
-			-- still a fall and still comes back.
+			-- THE MOUNTAIN ROAD CLIMBS AND DROPS, and the model's fall test is relative to the
+			-- ground it last had (T-067). Two halves that pull opposite ways: hundreds of studs
+			-- from where the run started, with road under the car the whole way, nothing is a
+			-- fall (the drive, above); off the side of that same road, past everything the curve
+			-- answers for, a fall is still a fall and still comes back.
 			local piece = assert(gen:piece(r.reached), "no piece to fall off")
 			local pose = gen:poseOn(piece, piece.length * 0.5, D.RideHeight)
 			local roadY = pose.Position.Y - D.RideHeight
@@ -943,6 +951,7 @@ function Tests:run(opts)
 			end
 			local fell = void ~= nil and runner.state.fell
 			local droppedBy = measuredFrom - runner.state.position.Y
+			local fellAtY = runner.state.position.Y
 			world.destroy()
 			liveWorld.destroy()
 
@@ -1010,22 +1019,31 @@ function Tests:run(opts)
 				r.offRoadSteps == 0 and r.airSteps == 0 and r.backwardsSteps == 0 and r.modelFellSteps == 0,
 				driveDetail .. string.format("; the model asked to be respawned on %d of %d steps", r.modelFellSteps, r.steps)
 			)
+			-- (Asked of the height the road actually covers, up OR down: the piece road's fixture
+			-- forced a descent, and on this build every seed tried climbs over its first 30
+			-- sections -- 8080..8100 all rise 200 to 520 studs. A road more than a fall's height
+			-- from where it started is one a fall test pinned to a world Y gets wrong.)
+			local climbed = r.highestY - r.startY
+			local dropped = r.startY - r.lowestY
 			check(
-				"a car driven down the mountain, below where the old absolute fall test sat, never asks to be respawned",
-				r.modelFellSteps == 0 and r.lowestY < OLD_RESPAWN_BELOW_Y and r.oldWouldFallSteps > 0,
+				"a car driven a long way up or down the mountain never asks to be respawned",
+				r.modelFellSteps == 0 and math.max(climbed, dropped) > D.FallBelowSurface,
 				string.format(
-					"from Y %.0f down to Y %.0f -- %.0f studs below the old RespawnBelowY of %d. THE OLD TEST WOULD HAVE CALLED %d OF THOSE %d STEPS A FALL; this one calls %d of them a fall",
+					"from Y %.0f the road took the car up %.0f and down %.0f studs (Y %.0f..%.0f), more than FallBelowSurface (%d) from where it started, and the model asked to be respawned on %d of %d steps. The old absolute test at Y %d would have called %d of them a fall",
 					r.startY,
+					climbed,
+					dropped,
 					r.lowestY,
-					OLD_RESPAWN_BELOW_Y - r.lowestY,
-					OLD_RESPAWN_BELOW_Y,
-					r.oldWouldFallSteps,
+					r.highestY,
+					D.FallBelowSurface,
+					r.modelFellSteps,
 					r.steps,
-					r.modelFellSteps
+					OLD_RESPAWN_BELOW_Y,
+					r.oldWouldFallSteps
 				)
 			)
 			check(
-				"a fall off the side of the road far down the mountain is still a fall, and comes back on the road at that height, ahead of the barrier",
+				"a fall off the side of the road, far from the height the run started at, is still a fall, and comes back on the road at that height, ahead of the barrier",
 				void ~= nil
 					and fell
 					and not onRoadFell
@@ -1040,7 +1058,7 @@ function Tests:run(opts)
 					and stillInAfterSide
 					and furthestAfter >= furthestBefore,
 				string.format(
-					"on the road at piece %d (Y %.0f) nothing was falling; %.0f studs to the side, over nothing (%s), the car fell %.0f studs from the %.0f it last had ground at -- FallBelowSurface is %d -- in %.1f s, and reported fell=%s. The server put it back on piece %s at s %.0f (closing barrier at s %s), Y %.2f, %.4f off the curve's surface + ride height; still in the run: %s; furthest N %d -> %d",
+					"on the road at piece %d (Y %.0f) nothing was falling; %.0f studs to the side, over nothing (%s), the car fell %.0f studs from the %.0f it last had ground at -- FallBelowSurface is %d -- in %.1f s, and reported fell=%s at Y %.0f (%s). The server put it back on piece %s at s %.0f (closing barrier at s %s), Y %.2f, %.4f off the curve's surface + ride height; still in the run: %s; furthest N %d -> %d",
 					r.reached,
 					roadY,
 					reach() + 60,
@@ -1050,6 +1068,10 @@ function Tests:run(opts)
 					D.FallBelowSurface,
 					seconds,
 					tostring(fell),
+					fellAtY,
+					if fellAtY > OLD_RESPAWN_BELOW_Y
+						then string.format("the old absolute test at Y %d would not call it a fall for another %.0f studs", OLD_RESPAWN_BELOW_Y, fellAtY - OLD_RESPAWN_BELOW_Y)
+						else string.format("below the old absolute test's Y %d too", OLD_RESPAWN_BELOW_Y),
 					at and tostring(at.n) or "NOT ON THE ROAD",
 					sBack or -1,
 					closing and string.format("%.0f", closing) or "none",
