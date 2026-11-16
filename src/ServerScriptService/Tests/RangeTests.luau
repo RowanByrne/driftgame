@@ -163,10 +163,17 @@ local function run(check, opts)
 		lowest > KILL + 200 and highest < 1600,
 		`{fmt(lowest)} to {fmt(highest)} studs on {seeds} seeds (kill {KILL})`
 	)
+	-- SPACING: `Spacing` either way `2 x Jitter` between two ridges' middles, and each ridge
+	-- wanders `Wobble[1]` either way, so along one line across they can be up to `2 x Wobble`
+	-- nearer or further. Until T-238 the range was 5 500 apart (the check said 3 000 to 8 000,
+	-- bounded 2 000 to 9 000); T-238 made it wider for the road, 6 500 apart (mountain-range.md
+	-- "step 2"), measured 3 166 to 9 898 on 20 seeds (T-244), so the bounds are the maths' own.
+	local spMin = R.Spacing - 2 * R.Jitter - 2 * R.Wobble[1]
+	local spMax = R.Spacing + 2 * R.Jitter + 2 * R.Wobble[1]
 	check(
-		"ridges lie about 3 000 to 8 000 studs apart",
-		spacingLo >= 2000 and spacingHi <= 9000,
-		`{fmt(spacingLo, 0)} to {fmt(spacingHi, 0)} studs`
+		"ridges lie about 4 000 to 9 000 studs apart",
+		spacingLo >= spMin and spacingHi <= spMax and spacingLo <= R.Spacing and spacingHi >= R.Spacing,
+		`{fmt(spacingLo, 0)} to {fmt(spacingHi, 0)} studs (the most the maths allows: {spMin} to {spMax})`
 	)
 	check(
 		"peaks rise 600 to 1 200 studs over the valley floors",

@@ -968,4 +968,30 @@ function Tests:run(opts)
 	return { passed = passed, checks = checks }
 end
 
+-- THE PIECE ROAD (T-244). Every check here is about the piece road (`Road/Generator`,
+-- `Road/Pieces`): its parts, its window, its closing barrier. Since 2026-11-12 (T-141) a run
+-- lays the spline road (`Config.Road.Mode = "spline"`), and this suite, written before that,
+-- asked the spline road's generator for pieces it does not have (an error at
+-- `RoadService:DebugPieces`, `#piece.quads`, and at `Pieces.poseAt`). So the suite switches
+-- the next run to the piece road, as the admin console's `roadmode` does, and puts the mode
+-- back when it is done, error or not.
+local function onPieces(fn)
+	return function(self, ...)
+		RoadService:Stop()
+		local was = RoadService:Mode()
+		RoadService:SetMode("pieces")
+		local result = table.pack(pcall(fn, self, ...))
+		if RoadService:HasRoad() then
+			RoadService:Stop()
+		end
+		RoadService:SetMode(was)
+		if not result[1] then
+			error(result[2], 0)
+		end
+		return table.unpack(result, 2, result.n)
+	end
+end
+Tests.run = onPieces(Tests.run)
+Tests.drive = onPieces(Tests.drive)
+
 return Tests
