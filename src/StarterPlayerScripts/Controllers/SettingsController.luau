@@ -15,6 +15,7 @@ local Visibility = require(script.Parent.UiVisibilityController)
 local Garage = require(script.Parent.GarageController)
 local Cmdr = require(script.Parent.CmdrController)
 local GroundDetail = require(script.Parent.Parent:WaitForChild("Drift"):WaitForChild("GroundDetail"))
+local RoadBehind = require(script.Parent.Parent:WaitForChild("Drift"):WaitForChild("RoadBehind"))
 local Settings = { Priority = -10 }
 
 function Settings:Init()
@@ -53,6 +54,10 @@ function Settings:_draw()
 		data.groundDetail = GroundDetail.get()
 		data.groundNames = {}
 		for i = 1, GroundDetail.count() do data.groundNames[i] = GroundDetail.name(i) end
+		-- and how far back the road stays drawn (T-230)
+		data.roadBehind = RoadBehind.get()
+		data.behindNames = {}
+		for i = 1, RoadBehind.count() do data.behindNames[i] = RoadBehind.name(i) end
 	end
 	self.view:setData(data)
 end
@@ -122,6 +127,13 @@ function Settings:_action(action, value)
 		if self.fixture then
 			if type(value) == "number" then self.fixture.groundDetail = value end
 		elseif GroundDetail.set(value) then
+			self.changes += 1
+		end
+		self:_draw()
+	elseif action == "roadBehind" then
+		if self.fixture then
+			if type(value) == "number" then self.fixture.roadBehind = value end
+		elseif RoadBehind.set(value) then
 			self.changes += 1
 		end
 		self:_draw()
@@ -210,6 +222,7 @@ function Settings:DebugState()
 		closes = self.closes, changes = self.changes, blur = self.blur and self.blur.Enabled,
 		blurSize = self.blur and self.blur.Size, category = self.category, fixture = self.fixture ~= nil,
 		values = CarInput:GetSettings(), groundDetail = GroundDetail.get(), groundDetailName = GroundDetail.name(),
+		roadBehind = RoadBehind.get(), roadBehindName = RoadBehind.name(), roadBehindStuds = RoadBehind.studs(),
 		view = self.view and self.view:describe()}
 end
 function Settings:DebugAction(action, value) self:_action(action, value); return self:DebugState() end

@@ -3,9 +3,14 @@
 -- (features/spline-road.md "The mesh, purely visual", T-135).
 --
 -- The server makes no road parts at all. Each client draws its own copy of the curve as
--- meshes (`Road/SplineMesh`), `ChunkLength` studs at a time, from `Behind` studs behind the
--- car to `Ahead` in front, and takes chunks down as the car leaves them. One chunk is built
--- at a time, nearest the car first, so a frame never pays for more than one.
+-- meshes (`Road/SplineMesh`), `ChunkLength` studs at a time, from the player's "Road behind"
+-- (`Drift/RoadBehind`, T-230) behind the car to `Ahead` in front, and takes chunks down as the
+-- car leaves them. One chunk is built at a time, nearest the car first, so a frame never pays
+-- for more than one.
+--
+-- OUT OF MESH BUDGET (T-230): the road ahead never pays for the road behind. A chunk that
+-- cannot be made lets the furthest chunk behind the car go and tries again, and the window
+-- behind stays that short (`behindCap`) until the player changes the setting.
 --
 -- A DEVICE THAT CANNOT MAKE A MESH still sees the road: the chunk is drawn as parts instead
 -- (`Road/SplineParts`, nothing queryable, tarmac only), and `fallbacks` counts how often.
@@ -18,6 +23,7 @@ local Config = require(ReplicatedStorage.Shared.Config)
 local Spline = require(ReplicatedStorage.Shared.Road.Spline)
 local SplineMesh = require(ReplicatedStorage.Shared.Road.SplineMesh)
 local SplineParts = require(ReplicatedStorage.Shared.Road.SplineParts)
+local RoadBehind = require(script.Parent.RoadBehind)
 
 local SplineRoadView = {}
 SplineRoadView.__index = SplineRoadView
@@ -52,6 +58,14 @@ export type View = typeof(setmetatable(
 		checkedTo: number,
 		stale: { [number]: boolean },
 		redrawn: number,
+		-- THE ROAD BEHIND (T-230): the car's chunk at the last update, chunks the budget made
+		-- us let go of, how many whole chunks behind the car's own may stay since (nil: the
+		-- setting's), each held chunk's triangles, and the setting's connection
+		here: number,
+		squeezed: number,
+		behindCap: number?,
+		tris: { [number]: number },
+		behindConn: any,
 	},
 	SplineRoadView
 ))
@@ -60,7 +74,7 @@ function SplineRoadView.new(spline: Spline.Spline, parent: Instance?): View
 	local folder = Instance.new("Folder")
 	folder.Name = "SplineRoad"
 	folder.Parent = parent or Workspace
-	return setmetatable({
+	local self = setmetatable({
 		spline = spline,
 		folder = folder,
 		chunks = {},
@@ -85,7 +99,17 @@ function SplineRoadView.new(spline: Spline.Spline, parent: Instance?): View
 		checkedTo = spline.length,
 		stale = {},
 		redrawn = 0,
+		here = 0,
+		squeezed = 0,
+		behindCap = nil,
+		tris = {},
+		behindConn = nil,
 	}, SplineRoadView)
+	-- a longer setting asks again, whatever the budget said before
+	self.behindConn = RoadBehind.Changed:Connect(function()
+		self.behindCap = nil
+	end)
+	return self
 end
 
 -- A new station can change a face cap or meeting height without shortening its ray.
@@ -190,6 +214,33 @@ local function removeChunk(chunk: Instance)
 	end
 end
 
+-- Take chunk `i` down and forget it.
+function SplineRoadView._drop(self: View, i: number)
+	local chunk = self.chunks[i]
+	if chunk then
+		removeChunk(chunk)
+	end
+	self.chunks[i] = nil
+	self.short[i] = nil
+	self.builtAt[i] = nil
+	self.stale[i] = nil
+	self.tris[i] = nil
+	self.removed += 1
+end
+
+-- The furthest chunk held behind both the car and chunk `i`, if any: the one to let go when
+-- the device has no room for `i`.
+function SplineRoadView._furthestBehind(self: View, i: number): number?
+	local limit = math.min(i, self.here)
+	local best: number? = nil
+	for j in self.chunks do
+		if j < limit and (not best or j < best) then
+			best = j
+		end
+	end
+	return best
+end
+
 function SplineRoadView._build(self: View, i: number)
 	local L = Config.Spline.Mesh.ChunkLength
 	local s0 = i * L
@@ -198,17 +249,33 @@ function SplineRoadView._build(self: View, i: number)
 	self.stale[i] = nil
 	local t0 = os.clock()
 	-- a ground-first run (T-218): the road without its faces, the ground drawn apart
-	local model, info = SplineMesh.build(self.spline, s0, s1, self.folder, { forceFail = self.forceFallback, ground = self.spline.mountain ~= nil })
+	local opts = { forceFail = self.forceFallback, ground = self.spline.mountain ~= nil }
+	local model, info = SplineMesh.build(self.spline, s0, s1, self.folder, opts)
+	-- out of budget: the road ahead never pays for the road behind (T-230). Let the furthest
+	-- chunk behind go, keep the window behind that short, and try again
+	while not model and not self.forceFallback and not self.dead do
+		local victim = self:_furthestBehind(i)
+		if not victim then
+			break
+		end
+		self:_drop(victim)
+		self.squeezed += 1
+		self.behindCap = math.max(0, self.here - victim - 1)
+		warn(`[SplineRoadView] out of mesh budget: let chunk {victim} behind the car go to draw chunk {i}`)
+		model, info = SplineMesh.build(self.spline, s0, s1, self.folder, opts)
+	end
 	local chunk: Instance
 	if model then
 		chunk = model
 		self.triangles += info.triangles
+		self.tris[i] = info.triangles
 		self.lastSliceMs = info.sliceMs or 0
 		self.worstSliceMs = math.max(self.worstSliceMs, self.lastSliceMs)
 		self.lastSlices = info.slices or 1
 	else
 		-- this device cannot make the mesh: draw the chunk as parts instead
 		self.fallbacks += 1
+		self.tris[i] = nil
 		self.lastError = info
 		local folder = Instance.new("Folder")
 		folder.Name = `Chunk_{math.floor(s0)}_parts`
@@ -249,16 +316,17 @@ function SplineRoadView.Update(self: View, s: number?)
 	local L = M.ChunkLength
 	local at = s or 0
 	local last = math.max(0, math.ceil(self.spline.length / L) - 1)
-	local lo = math.clamp(math.floor((at - M.Behind) / L), 0, last)
+	self.here = math.clamp(math.floor(at / L), 0, last)
+	-- from the chunk the player's "Road behind" reaches back into (T-230), or fewer if this
+	-- device ran out of room for them
+	local lo = math.clamp(math.floor(RoadBehind.from(at) / L), 0, last)
+	if self.behindCap then
+		lo = math.max(lo, self.here - self.behindCap)
+	end
 	local hi = math.clamp(math.floor((at + M.Ahead) / L), 0, last)
-	for i, chunk in self.chunks do
+	for i in self.chunks do
 		if i < lo or i > hi then
-			removeChunk(chunk)
-			self.chunks[i] = nil
-			self.short[i] = nil
-			self.builtAt[i] = nil
-			self.stale[i] = nil
-			self.removed += 1
+			self:_drop(i)
 		end
 	end
 	self:_checkNewRoad()
@@ -329,6 +397,10 @@ end
 
 function SplineRoadView.Destroy(self: View)
 	self.dead = true
+	if self.behindConn then
+		self.behindConn:Disconnect()
+		self.behindConn = nil
+	end
 	for i, chunk in self.chunks do
 		removeChunk(chunk)
 		self.chunks[i] = nil
@@ -338,9 +410,15 @@ function SplineRoadView.Destroy(self: View)
 end
 
 function SplineRoadView.DebugState(self: View)
-	local n, meshes, parts = 0, 0, 0
-	for _, chunk in self.chunks do
+	local n, meshes, parts, first = 0, 0, 0, nil
+	local L = Config.Spline.Mesh.ChunkLength
+	local held = 0
+	for _, k in self.tris do
+		held += k
+	end
+	for i, chunk in self.chunks do
 		n += 1
+		first = if first then math.min(first, i) else i
 		if chunk:IsA("Model") then
 			meshes += 1
 		else
@@ -367,6 +445,16 @@ function SplineRoadView.DebugState(self: View)
 		rebuilt = self.rebuilt,
 		redrawn = self.redrawn, -- chunks redrawn because new road came beside them (T-190)
 		length = self.spline.length,
+		-- the road behind (T-230)
+		behind = RoadBehind.get(),
+		behindName = RoadBehind.name(),
+		behindStuds = RoadBehind.studs(),
+		behindCap = self.behindCap,
+		squeezed = self.squeezed,
+		here = self.here,
+		firstChunk = first,
+		drawnFrom = if first then first * L else nil, -- where the drawn road starts
+		trianglesHeld = held, -- in the chunks drawn now
 	}
 end
 

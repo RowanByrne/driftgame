@@ -151,7 +151,7 @@ SplineMesh.profile = require(script.Parent.SplineProfile).profile
 type Builder = {
 	em: EditableMesh,
 	centre: Vector3,
-	fixed: boolean?, -- copied into a fixed-size mesh when done (a ground run, T-218)
+	fixed: boolean?, -- copied into a fixed-size mesh when done (every chunk since T-230)
 	vertices: number,
 	triangles: number,
 	grassTriangles: number,
@@ -252,17 +252,20 @@ local function toPart(b: Builder, name: string, colour: Color3, material: Enum.M
 	for _, v in b.em:GetVertices() do
 		b.em:SetPosition(v, b.em:GetPosition(v) - mid)
 	end
-	-- A GROUND RUN'S ROAD (T-218) is copied into a fixed-size mesh, which costs a device's
-	-- mesh budget by its size, not by what a growable one holds back (measured: the ground's
-	-- grids pushed growable road chunks out of the budget). The growable one goes
+	-- THE CHUNK IS COPIED INTO A FIXED-SIZE MESH (a ground run's since T-218, every one since
+	-- T-230), which costs a device's mesh budget by its size, not by what a growable one holds
+	-- back: about 10 400 triangles however little it uses (measured, T-230). The growable one
+	-- goes. A copy keeps its colour ids (measured), so the cliffs' haze still follows the sky
 	if b.fixed then
 		local okCopy, copy = pcall(function()
 			return AssetService:CreateEditableMeshAsync(Content.fromObject(b.em), { FixedSize = true })
 		end)
 		if okCopy and copy then
+			local haze = hazeOf[b.em]
 			hazeOf[b.em] = nil
 			b.em:Destroy()
 			b.em = copy
+			hazeOf[copy] = haze
 		end
 	end
 	local ok, part = pcall(function()
@@ -339,7 +342,7 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 	if not made then
 		return nil, tostring(road)
 	end
-	road.fixed = o.ground
+	road.fixed = true -- copied into a fixed-size mesh once whole (T-230)
 	local ok, built = pcall(function()
 		-- ONE EDITABLEMESH A CHUNK, AND IT STAYS ALIVE WITH IT. A MeshPart made from one is
 		-- drawn from it: let it go and the part draws nothing (measured -- the road vanished).

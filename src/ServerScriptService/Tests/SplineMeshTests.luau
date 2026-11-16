@@ -83,11 +83,52 @@ function Tests.run()
 			worstSlice < Config.Spline.Mesh.SliceMs * 3,
 			`spread over {fmt(slices / math.max(1, built), 1)} frames a chunk; the most any one frame paid {fmt(worstSlice, 2)} ms (aim {Config.Spline.Mesh.SliceMs})`
 		)
-		local window = math.ceil((M.Ahead + M.Behind) / L) + 1
+		-- THE WINDOW AND THE BUDGET (T-230): every chunk is a fixed-size copy now, so a chunk
+		-- costs its own triangles, and only the one being built is growable (it holds back
+		-- `GROWABLE` whatever it uses). A Studio PC client holds `BUDGET` in all. Each "Road
+		-- behind" step's widest window (chunk-aligned: up to a chunk more than its studs) must
+		-- fit it: on today's ground, the road alone; on a ground run, beside the most ground
+		-- tiles any setting draws (Ultra's, which the corridor's extra tiles never pass)
+		local BUDGET, GROWABLE = 81000, 10400 -- triangles (measured, T-225 and T-230)
+		local G = Config.Spline.Ground
+		local tileTris = G.TileCells * G.TileCells * 2
+		local mean = tris / math.max(1, built)
+		local meanParts = plainParts / math.max(1, built)
+		-- a ground run's chunks: no faces, so fewer triangles
+		local ggen = SplineGen.new(SEED, nil, nil, "mesh")
+		ggen:extendTo(6 * L + 200)
+		local gtris, gbuilt = 0, 0
+		for i = 0, 5 do
+			local model, info = SplineMesh.build(ggen.spline, i * L, math.min((i + 1) * L, ggen.spline.length), folder, { ground = true })
+			if model then
+				gtris += info.triangles
+				gbuilt += 1
+				SplineMesh.destroy(model)
+			end
+		end
+		local gmean = gtris / math.max(1, gbuilt)
+		local ultra = (G.Detail[#G.Detail].Tiles + G.Spare) * tileTris
+		local lines, worstShare, previous = {}, 0, 0
+		local grows = true
+		for _, step in M.Behind do
+			local window = math.ceil((M.Ahead + step.Studs) / L) + 1
+			local today = window * mean + math.max(GROWABLE, mean)
+			local ground = window * gmean + math.max(GROWABLE, gmean) + ultra
+			worstShare = math.max(worstShare, today / BUDGET, ground / BUDGET)
+			grows = grows and step.Studs > previous and (step.GroundTiles or 0) >= 0
+			previous = step.Studs
+			table.insert(lines, `{step.Name} {step.Studs}: {window} chunks, {math.floor(window * mean)} triangles and {math.floor(window * meanParts)} plain parts; {math.floor(today)} of {BUDGET} at worst, {math.floor(ground)} on a ground run beside Ultra ground`)
+		end
 		check(
-			"the window fits the client's eight EditableMeshes",
-			window + 1 <= 8,
-			`the window round the car is {window} chunks, so {window} meshes alive and one being built (a client may hold 8): about {math.floor(tris / math.max(1, built) * window)} triangles and {math.floor(plainParts / math.max(1, built) * window)} plain parts`
+			"every Road behind step fits the client's mesh budget",
+			gbuilt == 6 and worstShare <= 1 and grows and #M.Behind >= 2,
+			`{table.concat(lines, "; ")} (a chunk: {math.floor(mean)} triangles on today's ground, {math.floor(gmean)} on a ground run; the one being built holds back {GROWABLE})`
+		)
+		local pc, touch = M.Behind[M.BehindDefault], M.Behind[M.BehindTouchDefault]
+		check(
+			"the defaults keep more road behind than before, less on touch",
+			pc ~= nil and touch ~= nil and pc.Studs > 300 and touch.Studs > 300 and touch.Studs <= pc.Studs and M.Behind[1].Studs == 300,
+			`PC {pc and pc.Studs}, touch {touch and touch.Studs}, shortest {M.Behind[1].Studs} (300 before T-230)`
 		)
 
 		-- 2. Every vertex of the road surface is on the curve's surface.
