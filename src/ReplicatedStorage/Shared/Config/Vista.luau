@@ -18,6 +18,21 @@ return {
 	-- Off: nothing is built, and the view off the road is the sky and the drawn ground.
 	Enabled = true,
 
+	-- ------------------------------------------------------------- the curved panel
+	-- One uploaded mesh, reused for every panel (`pipeline/vista/arc-mesh.py`): an arc of
+	-- `ArcDeg` degrees shaded smooth, so a ring of them shows no step where two meet in the
+	-- sun's light (the user, on flat panels: "the seams you can see where they join"). Its
+	-- top `ArtShare` carries the picture through a SurfaceAppearance; below that a skirt in
+	-- the picture's own bottom row reaches down under the cloud sea. `Yaw` turns it if the
+	-- importer faced it the other way. With no `Id` (or if it fails to load), the layers
+	-- fall back to flat panels with a Decal and a plain skirt.
+	Mesh = {
+		Id = "",
+		ArcDeg = 36, -- so a curved layer has 360 / 36 = 10 panels
+		ArtShare = 0.4228,
+		Yaw = 0, -- degrees
+	},
+
 	-- ------------------------------------------------------------- ridge layers
 	-- Each layer is a ring of `Panels` flat panels, `Radius` studs from the camera (to each
 	-- panel's ends; its middle is a little nearer), each panel as wide as its chord, which

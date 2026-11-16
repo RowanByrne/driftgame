@@ -95,6 +95,27 @@ function Tests.run()
 			string.format("cloud reaches %.0f", Vista.cloudReach(V.CloudSea))
 		)
 
+		-- the curved panels (`Config.Vista.Mesh`)
+		local mesh = V.Mesh
+		check(`{layer.Name}: as many panels as arcs round the ring`, math.abs(layer.Panels * mesh.ArcDeg - 360) < 1e-6, `{layer.Panels} x {mesh.ArcDeg}`)
+		local arcs = Vista.arcs(layer, mesh)
+		local arcGap, arcWidest = 0, 0
+		for i, p in arcs do
+			local q = arcs[i % #arcs + 1]
+			local pr = (p.cframe * CFrame.new(p.size.X / 2, 0, -p.size.Z / 2)).Position
+			local ql = (q.cframe * CFrame.new(-q.size.X / 2, 0, -q.size.Z / 2)).Position
+			arcGap = math.max(arcGap, (pr - ql).Magnitude)
+			arcWidest = math.max(arcWidest, p.size.X, p.size.Y, p.size.Z)
+		end
+		check(`{layer.Name}: curved panels meet end to end`, arcGap < 0.5, string.format("widest gap %.2f", arcGap))
+		check(`{layer.Name}: curved panels under 2 048 studs`, arcWidest < 2048, string.format("largest side %.0f", arcWidest))
+		local a1 = arcs[1]
+		local arcBottom = a1.cframe.Position.Y - a1.size.Y / 2
+		check(
+			`{layer.Name}: a curved panel's skirt reaches below the cloud sea`,
+			arcBottom < -V.CloudSea.Below,
+			string.format("to %.0f, cloud at %.0f", arcBottom, -V.CloudSea.Below)
+		)
 		local art = #layer.Images > 0
 		for _, id in layer.Images do
 			art = art and string.match(id, "^rbxassetid://%d+$") ~= nil

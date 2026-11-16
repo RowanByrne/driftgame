@@ -6,10 +6,12 @@
 -- below the road; Roblox's own sky stays above them. Every number is in `Config.Vista`, the
 -- sums in `Shared/Vista`.
 --
--- RIDGE PANELS are flat, invisible parts with the art as a Decal on the face that looks in
--- at the camera, so Roblox's real sun lights them: a panel facing the sun is lit, one with
--- the sun behind it is dark. Under each, a plain skirt in the colour of the art's base hides
--- the art's bottom edge. Each layer's parts are welded to one anchored, invisible part, and
+-- RIDGE PANELS are curved: one uploaded arc mesh (`Config.Vista.Mesh`), shaded smooth, with
+-- the art as a see-through SurfaceAppearance, so Roblox's real sun lights the ring with no
+-- step where two panels meet (flat ones showed seams: T-267, the user). Ridges facing the sun
+-- are lit, ones with the sun behind them dark. The mesh's own skirt, in the art's bottom
+-- row, hides its bottom edge. Until the mesh loads, or if it can't, the layers are flat
+-- invisible parts with a Decal and a plain skirt. Each layer's parts are welded to one anchored, invisible part, and
 -- only that part moves (measured for the old horizon: one anchor costs nothing measurable).
 --
 -- THE CLOUD SEA is stacked layers of invisible parts, each with the cloud as a Texture on
@@ -23,6 +25,7 @@
 -- Nothing here collides, is touched or hit by a query, or casts a shadow: backdrop only.
 -- `DriftController:UseSpline` makes one with the road and destroys it with it.
 
+local AssetService = game:GetService("AssetService")
 local ContentProvider = game:GetService("ContentProvider")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
@@ -48,8 +51,10 @@ type Ridge = {
 	anchor: Part,
 	folder: Folder,
 	decals: { Decal },
+	surfaces: { SurfaceAppearance },
 	skirts: { { part: BasePart, base: Color3 } },
 	images: { string },
+	kind: string, -- "curved", "flat", or "loading"
 }
 
 type Cloud = {
@@ -124,6 +129,28 @@ local function weld(anchor: BasePart, p: BasePart)
 	w.Parent = p
 end
 
+-- The arc mesh, made once and cloned for every panel of every run.
+local arcTemplate: MeshPart? = nil
+local arcError: string? = nil
+
+local function loadArc(id: string): MeshPart?
+	if arcTemplate or arcError then
+		return arcTemplate
+	end
+	local ok, res = pcall(function()
+		return AssetService:CreateMeshPartAsync(Content.fromUri(id), {
+			CollisionFidelity = Enum.CollisionFidelity.Box,
+			RenderFidelity = Enum.RenderFidelity.Precise,
+		})
+	end)
+	if ok then
+		arcTemplate = res
+	else
+		arcError = tostring(res)
+	end
+	return arcTemplate
+end
+
 local function times(a: Color3, b: Color3): Color3
 	return Color3.new(a.R * b.R, a.G * b.G, a.B * b.B)
 end
@@ -167,11 +194,13 @@ function VistaView.new(originY: number, getLook: (() -> Look?)?, parent: Instanc
 end
 
 function VistaView._buildRidges(self: View, start: Vector3)
-	for _, layer in Config.Vista.Layers do
+	local layers = Config.Vista.Layers
+	for _, layer in layers do
 		local sub = Instance.new("Folder")
 		sub.Name = layer.Name
 		local anchor = anchorPart(`{layer.Name}Anchor`, start + Vector3.yAxis * self.originY, sub)
-		local ridge: Ridge = {
+		sub.Parent = self.folder
+		table.insert(self.ridges, {
 			name = layer.Name,
 			lag = layer.Lag,
 			maxLag = layer.MaxLag,
@@ -180,49 +209,105 @@ function VistaView._buildRidges(self: View, start: Vector3)
 			anchor = anchor,
 			folder = sub,
 			decals = {},
+			surfaces = {},
 			skirts = {},
 			images = {},
-		}
-		local at = anchor.CFrame
-		for _, panel in Vista.panels(layer) do
-			local p = Instance.new("Part")
-			p.Name = `{layer.Name}_{panel.index}`
-			p.Size = panel.size
-			p.CFrame = at * panel.cframe
-			p.Transparency = 1
-			backdrop(p)
-			weld(anchor, p)
-			if panel.image ~= "" then
-				local d = Instance.new("Decal")
-				d.Face = Enum.NormalId.Front
-				d.Texture = panel.image
-				d.Parent = p
-				table.insert(ridge.decals, d)
-				if not table.find(ridge.images, panel.image) then
-					table.insert(ridge.images, panel.image)
-				end
-			end
-			p.Parent = sub
-			self.parts += 1
-			if panel.skirt then
-				local s = Instance.new("Part")
-				s.Name = `{layer.Name}_{panel.index}_Skirt`
-				s.Size = panel.skirt.size
-				s.CFrame = at * panel.skirt.cframe
-				s.Material = Enum.Material.SmoothPlastic
-				s.Color = layer.BaseColour
-				s.TopSurface = Enum.SurfaceType.Smooth
-				s.BottomSurface = Enum.SurfaceType.Smooth
-				backdrop(s)
-				weld(anchor, s)
-				s.Parent = sub
-				table.insert(ridge.skirts, { part = s, base = layer.BaseColour })
-				self.parts += 1
+			kind = "loading",
+		})
+	end
+	local mesh = Config.Vista.Mesh
+	if mesh.Id == "" then
+		for i, layer in layers do
+			self:_fillFlat(self.ridges[i], layer)
+		end
+		return
+	end
+	-- the mesh loads off the frame: the road is up meanwhile, the ridges a moment after
+	task.spawn(function()
+		local arc = loadArc(mesh.Id)
+		if self.dead then
+			return
+		end
+		for i, layer in layers do
+			if arc then
+				self:_fillCurved(self.ridges[i], layer, arc)
+			else
+				self:_fillFlat(self.ridges[i], layer)
 			end
 		end
-		sub.Parent = self.folder
-		table.insert(self.ridges, ridge)
+		self.tint = nil -- colour the new panels
+	end)
+end
+
+local function noteImage(ridge: Ridge, image: string)
+	if not table.find(ridge.images, image) then
+		table.insert(ridge.images, image)
 	end
+end
+
+function VistaView._fillCurved(self: View, ridge: Ridge, layer: any, arc: MeshPart)
+	local at = ridge.anchor.CFrame
+	for _, panel in Vista.arcs(layer, Config.Vista.Mesh) do
+		local p = arc:Clone()
+		p.Name = `{layer.Name}_{panel.index}`
+		p.Size = panel.size
+		p.CFrame = at * panel.cframe
+		p.DoubleSided = false
+		backdrop(p)
+		weld(ridge.anchor, p)
+		if panel.image ~= "" then
+			local sa = Instance.new("SurfaceAppearance")
+			sa.AlphaMode = Enum.AlphaMode.Transparency
+			sa.ColorMapContent = Content.fromUri(panel.image)
+			sa.Parent = p
+			table.insert(ridge.surfaces, sa)
+			noteImage(ridge, panel.image)
+		else
+			p.Transparency = 1
+		end
+		p.Parent = ridge.folder
+		self.parts += 1
+	end
+	ridge.kind = "curved"
+end
+
+function VistaView._fillFlat(self: View, ridge: Ridge, layer: any)
+	local at = ridge.anchor.CFrame
+	for _, panel in Vista.panels(layer) do
+		local p = Instance.new("Part")
+		p.Name = `{layer.Name}_{panel.index}`
+		p.Size = panel.size
+		p.CFrame = at * panel.cframe
+		p.Transparency = 1
+		backdrop(p)
+		weld(ridge.anchor, p)
+		if panel.image ~= "" then
+			local d = Instance.new("Decal")
+			d.Face = Enum.NormalId.Front
+			d.Texture = panel.image
+			d.Parent = p
+			table.insert(ridge.decals, d)
+			noteImage(ridge, panel.image)
+		end
+		p.Parent = ridge.folder
+		self.parts += 1
+		if panel.skirt then
+			local sk = Instance.new("Part")
+			sk.Name = `{layer.Name}_{panel.index}_Skirt`
+			sk.Size = panel.skirt.size
+			sk.CFrame = at * panel.skirt.cframe
+			sk.Material = Enum.Material.SmoothPlastic
+			sk.Color = layer.BaseColour
+			sk.TopSurface = Enum.SurfaceType.Smooth
+			sk.BottomSurface = Enum.SurfaceType.Smooth
+			backdrop(sk)
+			weld(ridge.anchor, sk)
+			sk.Parent = ridge.folder
+			table.insert(ridge.skirts, { part = sk, base = layer.BaseColour })
+			self.parts += 1
+		end
+	end
+	ridge.kind = "flat"
 end
 
 function VistaView._buildClouds(self: View, start: Vector3)
@@ -281,6 +366,9 @@ function VistaView._colour(self: View)
 		for _, ridge in self.ridges do
 			for _, d in ridge.decals do
 				d.Color3 = tint
+			end
+			for _, sa in ridge.surfaces do
+				sa.Color = tint
 			end
 			for _, s in ridge.skirts do
 				s.part.Color = times(s.base, tint)
@@ -397,6 +485,7 @@ function VistaView.DebugState(self: View): { [string]: any }
 		end
 		table.insert(layers, {
 			name = ridge.name,
+			kind = ridge.kind,
 			parts = panels,
 			radius = ridge.radius,
 			behind = (cam - ridge.centre).Magnitude,
@@ -414,6 +503,7 @@ function VistaView.DebugState(self: View): { [string]: any }
 	table.sort(sorted)
 	return {
 		parts = self.parts,
+		meshError = arcError,
 		originY = self.originY,
 		lift = self.lift,
 		layers = layers,

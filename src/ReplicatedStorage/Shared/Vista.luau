@@ -63,6 +63,39 @@ function Vista.panels(layer: any): { Panel }
 	return out
 end
 
+-- Where each curved panel of a ridge layer stands round its anchor (`Config.Vista.Mesh`):
+-- the mesh's box, centred, its inner face looking in at the anchor. The art fills its top
+-- `ArtShare`, the art's summit at `Peak` degrees as with flat panels, and the skirt below.
+function Vista.arcs(layer: any, mesh: any): { Panel }
+	local n: number = layer.Panels
+	local r: number = layer.Radius
+	local half = math.pi / n
+	local width = Vista.panelWidth(r, n)
+	local art = width / layer.Aspect
+	local height = art / mesh.ArtShare
+	local depth = r * (1 - math.cos(half))
+	local mid = r * math.cos(half) -- to the panel's ends, where the art meets its neighbours
+	local top = math.tan(math.rad(layer.Peak)) * r + layer.PeakAt * art
+	local centreY = top - height / 2
+	local images: { string } = layer.Images or {}
+	local yaw = CFrame.Angles(0, math.rad(mesh.Yaw or 0), 0)
+	local out: { Panel } = {}
+	for i = 1, n do
+		local angle = (i - 0.5) * 2 * math.pi / n
+		local dir = Vector3.new(math.sin(angle), 0, math.cos(angle))
+		local at = dir * (r + mid) / 2 -- the box's centre, halfway through its depth
+		local cf = CFrame.lookAt(at + Vector3.yAxis * centreY, Vector3.yAxis * centreY) * yaw
+		table.insert(out, {
+			index = i,
+			cframe = cf,
+			size = Vector3.new(width, height, depth),
+			image = if #images > 0 then images[(i - 1) % #images + 1] else "",
+			skirt = nil,
+		})
+	end
+	return out
+end
+
 -- The angle, in degrees above level, of the art's highest summit, the panel's top edge and
 -- its bottom edge, seen from the anchor (what the tests check against the spec).
 function Vista.angles(layer: any): (number, number, number)
