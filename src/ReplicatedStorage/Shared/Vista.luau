@@ -72,11 +72,12 @@ function Vista.arcs(layer: any, mesh: any): { Panel }
 	local half = math.pi / n
 	local width = Vista.panelWidth(r, n)
 	local art = width / layer.Aspect
-	local height = art / mesh.ArtShare
+	local height = art / mesh.ArtShare - mesh.TopV * art
 	local depth = r * (1 - math.cos(half))
 	local mid = r * math.cos(half) -- to the panel's ends, where the art meets its neighbours
+	-- the picture's top edge (its v = 0), and the shape's, a little below it
 	local top = math.tan(math.rad(layer.Peak)) * r + layer.PeakAt * art
-	local centreY = top - height / 2
+	local centreY = top - mesh.TopV * art - height / 2
 	local images: { string } = layer.Images or {}
 	local out: { Panel } = {}
 	for i = 1, n do
@@ -114,10 +115,10 @@ function Vista.arcGeometry(mesh: any): ArcGeometry
 	local half = math.rad(mesh.ArcDeg / 2)
 	local width = 2 * radius * math.sin(half)
 	local art = width / 3
-	local height = art / mesh.ArtShare
+	local height = art / mesh.ArtShare - mesh.TopV * art
 	local zc = -radius * (1 + math.cos(half)) / 2
 	local cols: number = mesh.Columns
-	local top, base = 0.005, 0.995
+	local top, base = mesh.TopV, 0.995
 	local out: ArcGeometry = { positions = {}, normals = {}, uvs = {}, triangles = {}, size = Vector3.zero }
 	for i = 0, cols do
 		local t = i / cols
@@ -125,7 +126,7 @@ function Vista.arcGeometry(mesh: any): ArcGeometry
 		local a = half - 2 * half * t
 		local x, z = radius * math.sin(a), zc + radius * math.cos(a)
 		local n = Vector3.new(-math.sin(a), 0, -math.cos(a))
-		for _, row in { { height / 2, top }, { height / 2 - art, base }, { -height / 2, base } } do
+		for _, row in { { height / 2, top }, { height / 2 - art * (base - top), base }, { -height / 2, base } } do
 			table.insert(out.positions, Vector3.new(x, row[1], z))
 			table.insert(out.normals, n)
 			table.insert(out.uvs, Vector2.new(t, row[2]))

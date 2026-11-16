@@ -34,6 +34,10 @@ return {
 		ArcDeg = 36, -- so a curved layer has 360 / 36 = 10 panels
 		Columns = 24,
 		ArtShare = 0.4228, -- the far layer's art over art + skirt (659 of 1 559 studs)
+		-- The shape starts this far down the picture, in its empty sky: at the very top, the
+		-- picture's opaque bottom row wrapped round and drew a faint line along the panels'
+		-- top edge (lane 2). The summits are 0.31 or more down every picture.
+		TopV = 0.1,
 	},
 
 	-- ------------------------------------------------------------- ridge layers
