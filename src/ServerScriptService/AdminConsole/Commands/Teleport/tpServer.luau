@@ -65,17 +65,10 @@ local function toSpot(player: Player, name: string): string
 	local playground = Ops.need("PlaygroundService")
 	local lower = string.lower(name)
 	local cf, found = nil, nil
-	if lower == "hill" or lower == "hilltop" then
-		cf, found = playground:HillTopCFrame(), "HillTop"
-		if not cf then
-			return "This place has no test hill."
-		end
-	else
-		for spot, at in playground.Spots do
-			if string.lower(spot) == lower then
-				cf, found = at, spot
-				break
-			end
+	for spot, at in playground.Spots do
+		if string.lower(spot) == lower then
+			cf, found = at, spot
+			break
 		end
 	end
 	if not cf then
@@ -84,7 +77,7 @@ local function toSpot(player: Player, name: string): string
 			table.insert(names, spot)
 		end
 		table.sort(names)
-		return `No place or player '{name}'. Try road, playground, track, garage, hill, a player's name, or a spot: {table.concat(names, ", ")}.`
+		return `No place or player '{name}'. Try road, playground, track, garage, a player's name, or a spot: {table.concat(names, ", ")}.`
 	end
 	Ops.leaveRun(player)
 	local placed, why = Ops.place(player, cf)

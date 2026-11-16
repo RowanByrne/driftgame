@@ -164,7 +164,7 @@ function Ops.seed(): number?
 end
 
 -- How far along the spline road a position is, in studs from the road's start, or nil (off
--- the road, the piece road, or not in Studio: it reads the live generator, which only the
+-- the road, or not in Studio: it reads the live generator, which only the
 -- Studio debug hook hands out).
 function Ops.roadDistance(position: Vector3): number?
 	local road = Ops.service("RoadService")

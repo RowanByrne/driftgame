@@ -5,7 +5,7 @@
 -- THE YARDSTICK IS THE GAME'S OWN COLLISION. The piece road is ground rays and Blockcasts
 -- against tagged parts (`Drift/World.live`), and that is what the car the user approved
 -- drives on. So the same stretch of spline road is laid as parts the way the piece road
--- lays its own (`Road/SplineParts`, `Road/Builder.triangleSlab`), and every question the
+-- lays its own (`Road/SplineParts`, with the old piece road's triangle slab), and every question the
 -- model asks is put to both worlds: the spline's maths, and the live world on those parts.
 --
 -- It builds a few thousand parts in the place, so it runs in Studio only, yields while it
@@ -36,7 +36,7 @@ local SEED = 1234
 local LENGTH = 2600 -- studs of road laid as parts: past 1 500, so it holds hairpins
 -- How finely the yardstick is cut, and how far its triangles may stand off the true surface.
 -- A twisting, curving surface is not flat between two cross-sections, so a triangle is off
--- it by up to about this much; the piece road's own ray check allows 0.3 (RoadTests).
+-- it by up to about this much; the piece road's own ray check allowed 0.3.
 local YARD_STEP = 2
 local YARD_TOLERANCE = 0.1
 local DRIVE_SECONDS = 60

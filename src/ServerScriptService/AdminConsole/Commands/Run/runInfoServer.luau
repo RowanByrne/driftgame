@@ -5,7 +5,7 @@ return function(context, target: Player?): string
 	local road = Ops.need("RoadService")
 	local state = road:RunState(player)
 	if not state.running then
-		return `No road is up. Next run's road: {road:Mode()}.`
+		return `No road is up.`
 	end
 	local names = {}
 	for _, entry in road:RunReport() do
@@ -13,7 +13,7 @@ return function(context, target: Player?): string
 		table.insert(names, if p then p.Name else tostring(entry.userId))
 	end
 	local lines = {
-		`Road up: seed {tostring(Ops.seed())}, {road:Mode()} road, furthest piece {state.furthestN}, drivers: {table.concat(names, ", ")}.`,
+		`Road up: seed {tostring(Ops.seed())}, furthest section {state.furthestN}, drivers: {table.concat(names, ", ")}.`,
 	}
 	local who = if player == context.Executor then "You're" else `{player.Name} is`
 	if state.inRun then
@@ -21,7 +21,7 @@ return function(context, target: Player?): string
 		local at = cars:BelievedPosition(player.UserId)
 		local piece = at and road:PieceAt(at)
 		local studs = at and Ops.roadDistance(at)
-		local where = if piece then `piece {piece.n} ({math.round(piece.t * 100)}% along, {math.round(piece.lateral)} studs off centre)` else "off the road"
+		local where = if piece then `section {piece.n} ({math.round(piece.t * 100)}% along, {math.round(piece.lateral)} studs off centre)` else "off the road"
 		if studs then
 			where ..= `, {math.floor(studs)} studs from the start`
 		end

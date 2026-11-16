@@ -266,8 +266,8 @@ end
 -- WHICH WAY IS UP OUT OF A GROUND PART, and how far its top face is from its middle.
 --
 -- For a box that is `UpVector` and half the Y size, which is what it always was. NOT for a
--- WedgePart: `Road/Builder` builds a segment of road as triangles wherever a box cannot
--- lie in the surface (T-066), and a wedge's triangular faces are its +/-X ones, so the
+-- WedgePart: a parts copy of the road (`Road/SplineParts`, the old piece road's builder
+-- before it, T-066) builds road as triangles wherever a box cannot lie in the surface, and a wedge's triangular faces are its +/-X ones, so the
 -- road is its `RightVector` face and its thickness is X. Reading `UpVector` off one of
 -- those gives a near-horizontal vector, and everything downstream then decides the car is
 -- INSIDE the road rather than standing on it. Measured before this existed: the car was
