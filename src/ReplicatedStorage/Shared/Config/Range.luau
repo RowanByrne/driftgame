@@ -87,29 +87,23 @@ return {
 	RescueTurns = { 20, 45, 70, 100, 130, 160 }, -- degrees
 	RescueRadii = { 70, 110, 170, 260, 400 }, -- studs
 	GiveUp = 6, -- times a planned turn may be refused before the way to the pass is planned again
-	-- heading further off its aim than its bends may stray, the road turns back onto it on these
-	-- radii rather than run on straight (T-242)
-	RecoverRadius = { 90, 250 }, -- studs
-	-- (T-242 trial switches, temporary)
-	AimFlip = "hyst", -- "flip" | "hyst" | "near" | "keep"
-	CurlEnd = false,
-	CurlMin = 0, -- studs a leg runs before a curl may end it
-	Recover = "turn", -- "turn" | "converge" | "none"
-	NearestBy = "worst", -- "worst" | "end"
-	Follow = true,
-	FollowTurns = { 20, 40, 60, 90, 120 }, -- degrees
-	FollowRadii = { 120, 300 }, -- studs
-	FollowStraight = 160, -- studs
-	FollowAimCost = 0.5, -- studs a degree past the aim's limit
-	FollowBackCost = 100, -- studs, heading straight back
-	FollowDeepCut = 30, -- studs of cut...
-	FollowDeepCost = 2, -- ...past which each stud deeper costs this many more
-	FollowLook = 0, -- studs on straight past each bend tried, judged on where it leads (0: none)
-	FollowHold = 0, -- studs of straight after each bend tried (0: none)
-	AimLocal = true,
+	-- A LEG'S HEADING CHECKED AGAINST h ITSELF (T-242): every heading `AimLocalStep` degrees
+	-- apart within `AimLocalSwing` either way of the one the face gives, scored on how far off h
+	-- the road would still be `AimLocalAhead` studs on (and half that), plus `AimLocalTurnCost`
+	-- studs a degree off the face's heading and `AimLocalBackCost` for heading straight back
 	AimLocalAhead = 120, -- studs
-	AimLocalSwing = 60, -- degrees either way
+	AimLocalSwing = 40, -- degrees
 	AimLocalStep = 10, -- degrees
-	AimLocalTurnCost = 0.3, -- studs a degree off the plan's heading
-	AimLocalBackCost = 60, -- studs, heading straight back
+	AimLocalTurnCost = 0.3, -- studs a degree
+	AimLocalBackCost = 200, -- studs
+	-- THE MOUNTAIN FIRST (T-242): when no random section follows h, a straight of
+	-- `FollowStraight` and every bend of `FollowTurns` either way on `FollowRadii`, each judged
+	-- `FollowLook` studs on past it: how far off h the road is there, half the furthest it
+	-- strays, `FollowAimCost` studs a degree past its aim's limit, `FollowBackCost` heading back
+	FollowStraight = 160, -- studs
+	FollowTurns = { 20, 40, 60 }, -- degrees (bigger ones, 90 and 120, swung the road through a face)
+	FollowRadii = { 120, 250 }, -- studs
+	FollowLook = 100, -- studs
+	FollowAimCost = 0.5, -- studs a degree
+	FollowBackCost = 250, -- studs (100 left the road heading back 500 studs, twice in 24 runs)
 }

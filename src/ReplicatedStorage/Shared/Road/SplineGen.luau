@@ -76,10 +76,7 @@ export type Stats = {
 	carved: number, -- bends whose inside rock face was carved to the tarmac's edge (T-182)
 	offGround: number, -- a ground run: candidates passed over for leaving the road off h (T-226)
 	offGroundLaid: number, -- ...and sections laid off it all the same, none following it
-	-- on the range (T-242)
-	curls: number, -- legs ended early where their level line curled back
-	recovers: number, -- turns back onto the aim instead of an escape running on the wrong way
-	follows: number, -- sections laid by `_follow`, the bend that best brings the road back to h
+	follows: number, -- on the range: sections laid by `_follow`, the bend that best follows h (T-242)
 }
 
 -- One step of the plan: a STRETCH of random sections kept within `limit` of `aim` for
@@ -107,7 +104,6 @@ export type Item = {
 	untilV: number?,
 	untilDir: number?,
 	refused: number?, -- times this turn was refused
-	from: number?, -- s where the stretch began (T-242)
 }
 
 -- What a heading on the mountain is (T-226): "leg" across the local fall line, tilted down
@@ -116,8 +112,8 @@ export type Item = {
 -- sides), `scale` shrinks how far its bends may stray.
 -- On the range (T-238) `sc` says which way the road is going on the mountain: 1 down it (the
 -- belts' only way), -1 up it, toward a pass above; and kind "pass" heads straight for the
--- pass ahead.
-export type Slope = { kind: string, side: number, gd: number?, scale: number?, sc: number? }
+-- pass ahead. `swapped` (T-242): the leg has gone over to the other way along its level line.
+export type Slope = { kind: string, side: number, gd: number?, scale: number?, sc: number?, swapped: boolean? }
 
 export type Gen = typeof(setmetatable(
 	{} :: {
@@ -289,8 +285,6 @@ function SplineGen.new(seed: number, origin: Spline.Origin?, clearOverride: numb
 			carved = 0,
 			offGround = 0,
 			offGroundLaid = 0,
-			curls = 0,
-			recovers = 0,
 			follows = 0,
 		},
 	}, SplineGen)
@@ -1249,7 +1243,7 @@ end
 -- `fill` (T-238): how much more a stud of road ABOVE h counts than one below it (1 unless
 -- given): a hairpin on a steep face sits in a cut, a wall on its inside, not out on fill.
 -- Returns the grade's knots, the furthest the centre line is from h, and of that, the most it
--- is above h (fill) and below it (cut).
+-- is above h (fill) and below it (cut); and how far above h it ends (below it: negative).
 function SplineGen._followGrade(self: Gen, knots: { number }, g0: number, y0: number, fill: number?): ({ number }, number, number, number, number)
 	local C = Config.Spline
 	local G = C.Ground
@@ -1363,7 +1357,7 @@ function SplineGen._followGrade(self: Gen, knots: { number }, g0: number, y0: nu
 		yA += rampRise(span, gA, gB, rate)
 		gA, a = gB, b
 	end
-	-- (T-242) and how far off h the road ends: above it (+) or below it (-)
+	-- and how far off h the road ends: above it (+) or below it (-) (T-242)
 	local endOff = 0
 	for i = #us, 1, -1 do
 		if us[i] <= len + 1e-6 then
@@ -1376,9 +1370,11 @@ end
 
 -- A ground run's heading for a stretch or a planned turn, from the mountain's slope where
 -- the road is heading (T-226). Returns the heading (a yaw), how far a bend may stray off it
--- down the slope and up it, and which way up is (1 left, -1 right; 0 for no side); on the
--- range, whether a leg's level line has curled back, so the leg should end (T-242).
-function SplineGen._slopeAim(self: Gen, slope: Slope, refine: boolean?): (number, number, number, number, boolean?)
+-- down the slope and up it, and which way up is (1 left, -1 right; 0 for no side).
+-- `stretch` (T-242): the heading is for the stretch the road is on now, not a turn's target:
+-- on the range a leg's way along its level line is then kept from one section to the next,
+-- and checked against h itself.
+function SplineGen._slopeAim(self: Gen, slope: Slope, stretch: boolean?): (number, number, number, number)
 	local C = Config.Spline
 	local G, M = C.Ground, C.Mountain
 	local f = self.ground :: Ground.Field
@@ -1440,11 +1436,9 @@ function SplineGen._slopeAim(self: Gen, slope: Slope, refine: boolean?): (number
 	dx, dz = dx / dl, dz / dl
 	local cy = self.fall + slope.side * math.pi * 0.5
 	local cx, cz = -dz, dx
-	local cdot = cx * -math.sin(cy) + cz * -math.cos(cy)
-	if cdot < 0 then
+	if cx * -math.sin(cy) + cz * -math.cos(cy) < 0 then
 		cx, cz = dz, -dx
 	end
-	local dbgSwap, dbgOn = false, 0
 	-- the furthest off across the road can head and still keep its grade followable
 	local gFollow = math.tan(math.rad(C.MaxGrade)) * G.FollowGrade
 	local steepest = if S > gFollow then math.asin(gFollow / S) else math.pi * 0.5
@@ -1469,7 +1463,6 @@ function SplineGen._slopeAim(self: Gen, slope: Slope, refine: boolean?): (number
 		t = math.clamp(tilt(gd - catch), 0, math.rad(G.LegTiltMax))
 	end
 	local hx, hz = cx * math.cos(t) + dx * math.sin(t), cz * math.cos(t) + dz * math.sin(t)
-	local curl = false
 	if tgt and slope.kind == "leg" then
 		-- on the range every leg makes headway along the way on, at least `LegOnward` degrees
 		-- of it (T-238): near a pass the slope runs sideways toward the peaks either side, and
@@ -1478,56 +1471,30 @@ function SplineGen._slopeAim(self: Gen, slope: Slope, refine: boolean?): (number
 		local on = hx * r.ux + hz * r.uz
 		local least = math.sin(math.rad(Config.Range.LegOnward))
 		-- WHERE THE SLOPE'S LEVEL LINE CURLS BACK (a bowl under a pass, the flank of a peak),
-		-- the other way along it is the way on: that is the next leg's, after a hairpin, so
-		-- `curl` tells the plan to end this one (T-242). The leg itself keeps its own way
-		-- across: until T-242 its heading swapped to the other way here, and where the level
-		-- line ran square to the way on the swap flickered from section to section, the
-		-- heading turned 180 degrees with no hairpin, no bend could follow it, and the road ran
-		-- on straight, back the way it came and into the face
+		-- the leg follows it the other way, forward, before forcing a heading up the slope.
+		-- For the stretch the road is on (T-242) the leg goes over to the other way only when
+		-- the way it is going heads back by `LegOnward` and the other on by as much, and stays
+		-- there: until T-242 it took whichever way headed on further, section by section, and
+		-- where the level line ran square to the way on that flickered, the heading jumping
+		-- 100 to 180 degrees, no bend could follow it, and the road ran on straight, back the
+		-- way it came and into the face (a jump in a quarter of the legs' sections)
 		local ox, oz = -cx * math.cos(t) + dx * math.sin(t), -cz * math.cos(t) + dz * math.sin(t)
 		local oon = ox * r.ux + oz * r.uz
-		local R = Config.Range :: any
-		curl = R.CurlEnd and on < -least and oon > least
-		-- (T-242 trial modes, temporary)
-		local mode = R.AimFlip or "keep"
-		local swap = false
-		if mode == "flip" then
+		local swap
+		if stretch then
+			local sw = slope.swapped == true
+			local mine, other = if sw then oon else on, if sw then on else oon
+			if mine < -least and other > least then
+				sw = not sw
+			end
+			slope.swapped = sw
+			swap = sw
+		else
 			swap = on < least and oon > on
-		elseif mode == "hyst" then
-			swap = on < -least and oon > on
-		elseif mode == "sticky" then
-			curl = false
-			if refine then
-				local sw = (slope :: any).swapped == true
-				local ownOn, otherOn = if sw then oon else on, if sw then on else oon
-				if ownOn < -least and otherOn > least then
-					sw = not sw
-					curl = R.CurlEnd
-				end
-				(slope :: any).swapped = sw
-				swap = sw
-			else
-				swap = on < least and oon > on
-			end
-		elseif mode == "cont" then
-			if refine then
-				-- along the level line the way the road is already going
-				swap = (ox * -math.sin(yaw) + oz * -math.cos(yaw)) > (hx * -math.sin(yaw) + hz * -math.cos(yaw))
-			else
-				swap = on < least and oon > on
-			end
-			if swap then
-				curl = R.CurlEnd and oon < -least and on > least
-			else
-				curl = R.CurlEnd and on < -least and oon > least
-			end
-		elseif mode == "near" then
-			swap = on < least and (ox * -math.sin(yaw) + oz * -math.cos(yaw)) > (hx * -math.sin(yaw) + hz * -math.cos(yaw))
 		end
 		if swap then
 			hx, hz, on = ox, oz, oon
 		end
-		dbgSwap, dbgOn = swap, on
 		if on < least then
 			local ax, az = hx - on * r.ux, hz - on * r.uz
 			local al = math.max(math.sqrt(ax * ax + az * az), 1e-9)
@@ -1536,28 +1503,28 @@ function SplineGen._slopeAim(self: Gen, slope: Slope, refine: boolean?): (number
 		end
 	end
 	local aim = math.atan2(-hx, -hz)
-	if (self :: any).debugAim then
-		(self :: any).aimWhy = { S = S, t = t, catch = catch, sc = sc, swap = dbgSwap, on = dbgOn, cdot = math.abs(cdot), plain = aim }
-	end
-	local RR = Config.Range :: any
-	if tgt and slope.kind == "leg" and refine and RR.AimLocal then
-		-- (T-242 trial) the heading checked against h itself, `AimLocalAhead` studs on
+	if tgt and stretch and slope.kind == "leg" then
+		-- CHECKED AGAINST h ITSELF (T-242): the heading above reads the face smoothed, with a
+		-- third of its spurs, and where a spur's flank is steep that heading ran the road into
+		-- it. Every heading `AimLocalStep` degrees apart within `AimLocalSwing` of it is tried
+		-- on h, half and all of `AimLocalAhead` studs on: how far the road would still be off
+		-- h there, climbing or falling as steeply as it may, plus `AimLocalTurnCost` studs a
+		-- degree off the heading and `AimLocalBackCost` for heading straight back the way on
+		local R = Config.Range
 		local r = (f.range :: any)
-		local L = RR.AimLocalAhead
+		local L = R.AimLocalAhead
 		local best, bestCost = aim, math.huge
-		local n = math.floor(RR.AimLocalSwing / RR.AimLocalStep + 0.5)
+		local n = math.floor(R.AimLocalSwing / R.AimLocalStep + 0.5)
 		for i = -n, n do
-			local d = math.rad(i * RR.AimLocalStep)
-			local a = aim + d
+			local a = aim + math.rad(i * R.AimLocalStep)
 			local ex, ez = -math.sin(a), -math.cos(a)
 			local miss = 0
 			for _, q in { 0.5, 1 } do
-				local hq = followH(f, x + ex * L * q, z + ez * L * q, G.FollowRadius)
-				local need = (hq - y) / (L * q)
+				local need = (followH(f, x + ex * L * q, z + ez * L * q, G.FollowRadius) - y) / (L * q)
 				miss += math.max(0, math.abs(need) - gFollow) * L * q
 			end
-			local on = ex * r.ux + ez * r.uz
-			local cost = miss + RR.AimLocalTurnCost * math.abs(i * RR.AimLocalStep) + RR.AimLocalBackCost * math.max(0, -on)
+			local back = math.max(0, -(ex * r.ux + ez * r.uz))
+			local cost = miss + R.AimLocalTurnCost * math.abs(i * R.AimLocalStep) + R.AimLocalBackCost * back
 			if cost < bestCost then
 				best, bestCost = a, cost
 			end
@@ -1565,7 +1532,7 @@ function SplineGen._slopeAim(self: Gen, slope: Slope, refine: boolean?): (number
 		aim = wrap(best)
 	end
 	if slope.kind ~= "leg" then
-		return aim, 0, 0, 0, false
+		return aim, 0, 0, 0
 	end
 	local scale = slope.scale or 1
 	local least = math.rad(G.AimMinLimit)
@@ -1577,7 +1544,7 @@ function SplineGen._slopeAim(self: Gen, slope: Slope, refine: boolean?): (number
 		-- on the range, the side the leg before is on: back from the way on (below, climbing)
 		upSign = if -dx * -math.cos(aim) + -dz * math.sin(aim) > 0 then 1 else -1
 	end
-	return aim, down, up, upSign, curl
+	return aim, down, up, upSign
 end
 
 local function pickGrade(self: Gen, g0: number, y0: number, len: number, descendingTurn: boolean?, nextMove: number?, path: { number }?): { number }
@@ -1692,7 +1659,7 @@ end
 
 -- One random candidate: a bend or a straight, its curvature knots, and whether its
 -- heading (with its escape) stays inside the limit.
-function SplineGen._candidate(self: Gen): (Spline.Section?, string?, number?, number?, number?)
+function SplineGen._candidate(self: Gen): (Spline.Section?, string?, number?, number?)
 	local C = Config.Spline
 	local rng = self.rng
 	local sp = self.spline
@@ -1750,11 +1717,7 @@ function SplineGen._candidate(self: Gen): (Spline.Section?, string?, number?, nu
 	local escYaw = 0.5 * kt * transition(kt, 0)
 	local off = wrap(yawEnd + escYaw - self.aim)
 	if math.abs(off) > (if sign(off) == self.upSign then self.limitUp else limit) + 1e-6 then
-		-- (T-242 trial) on the range, a road already outside its limit may come back toward it
-		local conv = self.ground and self.ground.range and (Config.Range :: any).Recover == "converge"
-		if not (conv and math.abs(off) < math.abs(rel) - math.rad(10)) then
-			return nil, "heading"
-		end
+		return nil, "heading"
 	end
 	if not self:_clear(withEscape(knots, kt)) then
 		return nil, "crowded"
@@ -1763,10 +1726,11 @@ function SplineGen._candidate(self: Gen): (Spline.Section?, string?, number?, nu
 	local flat = rng:NextNumber() < C.UnbankedChance
 	-- a ground run (T-226): the grade follows the mountain, and how far off it the road
 	-- still ends up goes back with the candidate, so one that follows it can be preferred
-	local g, off, endOff, worstCut
+	-- (and how far off it the road ends, T-242)
+	local g, off, endOff
 	if self.ground then
-		local _f
-		g, off, _f, worstCut, endOff = self:_followGrade(knots, g0, y0)
+		local _f, _c
+		g, off, _f, _c, endOff = self:_followGrade(knots, g0, y0)
 	else
 		g = pickGrade(self, g0, y0, len)
 	end
@@ -1779,8 +1743,7 @@ function SplineGen._candidate(self: Gen): (Spline.Section?, string?, number?, nu
 	},
 		nil,
 		off,
-		endOff,
-		worstCut
+		endOff
 end
 
 --------------------------------------------------------------------------------
@@ -1918,15 +1881,18 @@ function SplineGen._rescue(self: Gen): Spline.Section?
 	}
 end
 
--- THE MOUNTAIN FIRST (T-242): when no random section keeps the road within `FollowMaxOff` of
--- h, the bend that best brings it back to h: a straight and every bend of `FollowTurns`
--- either way on each of `FollowRadii`, and the random one that came nearest (`nearest`, with
--- `nearOff` the furthest it strays and `nearEnd` how far off it ends). Each is scored by how
--- far off h it ends, half how far it strays on the way, `FollowAimCost` studs a degree
--- it ends past its aim's limit, and `FollowBackCost` studs for heading straight back the way
--- on (in proportion). Returns the best clear one, or nil.
-function SplineGen._follow(self: Gen, nearest: Spline.Section?, nearOff: number?, nearEnd: number?, nearCut: number?): Spline.Section?
-	local C, R = Config.Spline, Config.Range :: any
+-- THE MOUNTAIN FIRST (T-242): on the range, when no random section keeps the road within
+-- `FollowMaxOff` of h, the one that best brings it back: a straight of `FollowStraight` studs,
+-- every bend of `FollowTurns` either way on each of `FollowRadii`, and the random one that
+-- came nearest (`nearest`: `nearOff` the furthest it strays, `nearEnd` how far off h it ends).
+-- Each is judged on where it leads, running on straight `FollowLook` studs past it: how far
+-- off h the road is there, half the furthest it strays on the way, `FollowAimCost` studs a
+-- degree it ends past its aim's limit, and `FollowBackCost` for heading straight back the way
+-- on (in proportion). Until T-242 the random one nearest h was laid, however far it strayed,
+-- and when none was within its heading's limit an escape ran straight on: 1 000 studs and
+-- more, back the way the road came and 100 to 290 studs into the face.
+function SplineGen._follow(self: Gen, nearest: Spline.Section?, nearOff: number?, nearEnd: number?): Spline.Section?
+	local C, R = Config.Spline, Config.Range
 	local f = self.ground :: Ground.Field
 	local r = f.range :: Range.Range
 	local _, _, yaw0, k0, g0, b0, y0 = self.spline:tip()
@@ -1935,12 +1901,21 @@ function SplineGen._follow(self: Gen, nearest: Spline.Section?, nearOff: number?
 		local past = math.deg(math.abs(wrap(yaw - self.aim)) - self.limit)
 		return R.FollowAimCost * math.max(0, past) + R.FollowBackCost * math.max(0, -on)
 	end
+	-- how far off h the road is `FollowLook` on past a section with these knots (ending on
+	-- curvature `kt`), and the furthest it strays on the way
+	local function lead(knots: { number }, kt: number): (number, number)
+		local ext = withEscape(knots, kt)
+		ext[#ext - 1] = ext[#ext - 3] + R.FollowLook
+		local _, worst, _, _, endOff = self:_followGrade(ext, g0, y0)
+		return endOff, worst
+	end
 	local best: Spline.Section?, bestScore = nil, math.huge
 	if nearest and nearOff and nearEnd then
 		local kn = nearest.k
 		local kt = kn[#kn]
+		local e, w = lead(kn, kt)
 		best = nearest
-		bestScore = headingCost(yawAfter(yaw0, k0, kn) + 0.5 * kt * transition(kt, 0)) + math.abs(nearEnd) + 0.5 * nearOff + R.FollowDeepCost * math.max(0, (nearCut or 0) - R.FollowDeepCut)
+		bestScore = headingCost(yawAfter(yaw0, k0, kn) + 0.5 * kt * transition(kt, 0)) + math.abs(e) + 0.5 * math.max(w, nearOff)
 	end
 	local function try(knots: { number }?, kt: number, radius: number?)
 		if not knots then
@@ -1950,26 +1925,22 @@ function SplineGen._follow(self: Gen, nearest: Spline.Section?, nearOff: number?
 		if cost >= bestScore then
 			return
 		end
-		local g, worst, _, worstCut, endOff = self:_followGrade(knots, g0, y0)
-		if (R.FollowLook or 0) > 0 then
-			-- (trial) judged on where it leads: on straight `FollowLook` past it
-			local ext = withEscape(knots, kt)
-			ext[#ext - 1] = ext[#ext - 3] + R.FollowLook
-			local _, w2, _, c2, e2 = self:_followGrade(ext, g0, y0)
-			worst, worstCut, endOff = math.max(worst, w2), math.max(worstCut, c2), e2
+		local g, worst = self:_followGrade(knots, g0, y0)
+		if cost + 0.5 * worst >= bestScore then
+			return
 		end
-		cost += math.abs(endOff) + 0.5 * worst + R.FollowDeepCost * math.max(0, worstCut - R.FollowDeepCut)
+		local e, w = lead(knots, kt)
+		cost += math.abs(e) + 0.5 * math.max(worst, w)
 		if cost >= bestScore or not self:_clear(withEscape(knots, kt)) then
 			return
 		end
 		local len = knots[#knots - 1]
-		local tag = if not radius then "Straight" elseif radius >= 340 then "Sweeper" else "Medium"
 		best = {
 			len = len,
 			k = knots,
 			g = g,
 			b = pickBank(kt, radius, b0, math.min(transition(k0, kt), len), len, false),
-			tag = tag,
+			tag = if radius then "Medium" else "Straight",
 		}
 		bestScore = cost
 	end
@@ -1978,18 +1949,7 @@ function SplineGen._follow(self: Gen, nearest: Spline.Section?, nearOff: number?
 		for _, dir in { 1, -1 } do
 			for _, radius in R.FollowRadii do
 				local kt = dir / math.max(radius, C.MinRadius)
-				local kn = curvatureKnots(k0, kt, dir * math.rad(deg), nil)
-				try(kn, kt, radius)
-				if kn and (R.FollowHold or 0) > 0 then
-					local held = table.clone(kn)
-					local len = kn[#kn - 1]
-					local Te = transition(kt, 0)
-					table.insert(held, len + Te)
-					table.insert(held, 0)
-					table.insert(held, len + Te + R.FollowHold)
-					table.insert(held, 0)
-					try(held, 0, radius)
-				end
+				try((curvatureKnots(k0, kt, dir * math.rad(deg), nil)), kt, radius)
 			end
 		end
 	end
@@ -2362,26 +2322,18 @@ function SplineGen.step(self: Gen): Spline.Section?
 				local sl = item.slope or self.lastSlope
 				if sl then
 					self.lastSlope = sl
-					local aim, down, up, upSign, curl = self:_slopeAim(sl, true)
+					local aim, down, up, upSign = self:_slopeAim(sl, true)
 					self.aim = aim
 					if sl.kind == "leg" then
 						self.limit, self.limitUp, self.upSign = down, up, upSign
 					else
 						self.limitUp, self.upSign = self.limit, 0
 					end
-					-- on the range (T-242), a leg whose level line has curled back ends after this
-					-- section, once it has run `LegMin`: the hairpin after it turns onto the next leg,
-					-- the other way along the line, which is the way on
-					if curl and item.what == "leg" and item.untilV and item.from and self.spline.length - item.from >= ((Config.Range :: any).CurlMin or Config.Range.LegMin) then
-						item.left = 0
-						st.curls += 1
-					end
 				end
 			end
 			-- a stretch's line runs from where it began; a wait carries on the line before it
 			if not item.started then
 				item.started = true
-				item.from = self.spline.length
 				if item.what ~= "wait" or not self.lineX then
 					self.lineX, self.lineZ = self.spline:tip()
 				end
@@ -2390,19 +2342,14 @@ function SplineGen.step(self: Gen): Spline.Section?
 	end
 	-- a ground run (T-226): a candidate that leaves the road more than `FollowMaxOff` off the
 	-- mountain gives way to one that follows it; if none does, the one nearest it is laid
-	local nearest: Spline.Section?, nearestOff, nearWorst, nearEnd, nearCut = nil, math.huge, nil, nil, nil
+	local nearest: Spline.Section?, nearestOff, nearEnd = nil, math.huge, nil
 	for _ = 1, if planned then 0 else C.CandidateTries do
 		st.tries += 1
-		local cand, why, off, endOff, worstCut = self:_candidate()
+		local cand, why, off, endOff = self:_candidate()
 		if cand and off and off > C.Ground.FollowMaxOff then
 			st.offGround += 1
-			-- (T-242 trial) the one that ends nearest h, rather than strays least on the way
-			local score = off
-			if (Config.Range :: any).NearestBy == "end" and endOff and self.ground and self.ground.range then
-				score = math.abs(endOff) + 0.25 * off
-			end
-			if score < nearestOff then
-				nearest, nearestOff, nearWorst, nearEnd, nearCut = cand, score, off, endOff, worstCut
+			if off < nearestOff then
+				nearest, nearestOff, nearEnd = cand, off, endOff
 			end
 		elseif cand then
 			sec = cand
@@ -2413,8 +2360,9 @@ function SplineGen.step(self: Gen): Spline.Section?
 			st.rejectedHeading += 1
 		end
 	end
-	if not sec and not planned and self.ground and self.ground.range and (Config.Range :: any).Follow then
-		sec = self:_follow(nearest, nearWorst, nearEnd, nearCut)
+	-- on the range (T-242), the section that best brings the road back to h (`_follow`)
+	if not sec and not planned and self.ground and self.ground.range then
+		sec = self:_follow(nearest, if nearest then nearestOff else nil, nearEnd)
 		if sec and sec == nearest then
 			st.offGroundLaid += 1
 		end
@@ -2422,30 +2370,6 @@ function SplineGen.step(self: Gen): Spline.Section?
 	if not sec and nearest then
 		sec = nearest
 		st.offGroundLaid += 1
-	end
-	if not sec and not planned and self.ground and self.ground.range and (Config.Range :: any).Recover == "turn" then
-		-- on the range (T-242), a road heading further off its aim than a bend may stray can't
-		-- be brought back by a random bend, and its escape runs straight on, the wrong way: it
-		-- turns back onto the aim first (an escape ran on 1 000 studs and more, back the way
-		-- the road came and 100 studs into the face)
-		local yaw = select(3, self.spline:tip())
-		local off = wrap(self.aim - yaw)
-		if math.abs(off) > self.limit then
-			local fix = self:_turn({
-				turn = true,
-				what = "recover",
-				to = self.aim,
-				dir = sign(off),
-				radius = Config.Range.RecoverRadius,
-				tag = "Medium",
-				hillRetries = math.huge, -- the best clear fit here: there is no later
-			})
-			if typeof(fix) == "table" then
-				sec = fix :: Spline.Section
-				st.recovers += 1
-				self.turning = "recover"
-			end
-		end
 	end
 	if not sec then
 		-- the escape: checked when the section before this one was accepted
