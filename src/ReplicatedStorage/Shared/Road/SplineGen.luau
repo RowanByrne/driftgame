@@ -1458,6 +1458,15 @@ function SplineGen._slopeAim(self: Gen, slope: Slope): (number, number, number, 
 		local on = hx * r.ux + hz * r.uz
 		local least = math.sin(math.rad(Config.Range.LegOnward))
 		if on < least then
+			-- where the slope's level line curls back (a bowl under a pass, the flank of a
+			-- peak), follow it the other way, forward, before forcing a heading up the slope
+			local ox, oz = -cx * math.cos(t) + dx * math.sin(t), -cz * math.cos(t) + dz * math.sin(t)
+			local oon = ox * r.ux + oz * r.uz
+			if oon > on then
+				hx, hz, on = ox, oz, oon
+			end
+		end
+		if on < least then
 			local ax, az = hx - on * r.ux, hz - on * r.uz
 			local al = math.max(math.sqrt(ax * ax + az * az), 1e-9)
 			local c = math.cos(math.rad(Config.Range.LegOnward))
