@@ -137,9 +137,29 @@ function View.new(parent)
 			self:_fromX(input.Position.X)
 		end
 	end)
+	-- Graphics: how far ahead of the car the road is drawn (T-263)
+	self.aheadLabel = Glass.label("AheadLabel", self.graphics, "Road ahead")
+	self.aheadValue = Glass.label("AheadValue", self.graphics, "Medium", true)
+	self.aheadValue.TextXAlignment = Enum.TextXAlignment.Right
+	self.aheadMinus = Glass.button("AheadDecrease", self.graphics, "-")
+	self.aheadPlus = Glass.button("AheadIncrease", self.graphics, "+")
+	self.aheadSlider, self.aheadTrack, self.aheadFill, self.aheadKnob = makeSlider("RoadAhead", self.graphics)
+	self.aheadRange = Glass.label("AheadRange", self.graphics, "Short - Longest")
+	self.aheadRange.TextColor3 = Theme.Color.Secondary
+	self.aheadNote = Glass.label("AheadNote", self.graphics,
+		"How far ahead the road and its ground are drawn. Longer shows more of what's coming but costs more on slower devices.")
+	self.aheadNote.TextColor3 = Theme.Color.Secondary
+	self.aheadMinus.Activated:Connect(function() self:nudgeAhead(-1) end)
+	self.aheadPlus.Activated:Connect(function() self:nudgeAhead(1) end)
+	self.aheadSlider.InputBegan:Connect(function(input)
+		if self.opened and (input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch) then
+			self.drag, self.dragSlider = input, self.aheadSlider
+			self:_fromX(input.Position.X)
+		end
+	end)
 	-- Graphics: how far back the road stays drawn behind the car (T-230)
 	self.behindLabel = Glass.label("BehindLabel", self.graphics, "Road behind")
-	self.behindValue = Glass.label("BehindValue", self.graphics, "Long", true)
+	self.behindValue = Glass.label("BehindValue", self.graphics, "Short", true)
 	self.behindValue.TextXAlignment = Enum.TextXAlignment.Right
 	self.behindMinus = Glass.button("BehindDecrease", self.graphics, "-")
 	self.behindPlus = Glass.button("BehindIncrease", self.graphics, "+")
@@ -210,7 +230,8 @@ end
 
 function View:_connect(signal, fn) table.insert(self.connections, signal:Connect(fn)) end
 function View:_groundCount() return #(self.data.groundNames or {}) > 0 and #self.data.groundNames or 5 end
-function View:_behindCount() return #(self.data.behindNames or {}) > 0 and #self.data.behindNames or 5 end
+function View:_behindCount() return #(self.data.behindNames or {}) > 0 and #self.data.behindNames or 4 end
+function View:_aheadCount() return #(self.data.aheadNames or {}) > 0 and #self.data.aheadNames or 4 end
 function View:_fromX(x)
 	local slider = self.dragSlider or self.slider
 	local width = slider.AbsoluteSize.X
@@ -225,6 +246,9 @@ function View:_fromX(x)
 	elseif slider == self.behindSlider then
 		local count = self:_behindCount()
 		self.ActionRequested:Fire("roadBehind", math.floor(1 + t * (count - 1) + 0.5))
+	elseif slider == self.aheadSlider then
+		local count = self:_aheadCount()
+		self.ActionRequested:Fire("roadAhead", math.floor(1 + t * (count - 1) + 0.5))
 	else
 		self.ActionRequested:Fire("sensitivity", math.floor(1 + t * 9 + 0.5))
 	end
@@ -236,7 +260,10 @@ function View:nudgeGround(delta)
 	if self.opened then self.ActionRequested:Fire("groundDetail", math.clamp((self.data.groundDetail or 3) + delta, 1, self:_groundCount())) end
 end
 function View:nudgeBehind(delta)
-	if self.opened then self.ActionRequested:Fire("roadBehind", math.clamp((self.data.roadBehind or 3) + delta, 1, self:_behindCount())) end
+	if self.opened then self.ActionRequested:Fire("roadBehind", math.clamp((self.data.roadBehind or 1) + delta, 1, self:_behindCount())) end
+end
+function View:nudgeAhead(delta)
+	if self.opened then self.ActionRequested:Fire("roadAhead", math.clamp((self.data.roadAhead or 2) + delta, 1, self:_aheadCount())) end
 end
 function View:_soundLevel(key) return (self.data.soundLevels or {})[key] or 30 end
 -- +/- moves a sound level to the next whole step of 10%.
@@ -254,6 +281,7 @@ function View:nudgeSelected(delta)
 	if soundKey then self:nudgeSound(soundKey, delta); return true end
 	if selected == self.slider then self:nudge(delta); return true end
 	if selected == self.groundSlider then self:nudgeGround(delta); return true end
+	if selected == self.aheadSlider then self:nudgeAhead(delta); return true end
 	if selected == self.behindSlider then self:nudgeBehind(delta); return true end
 	return false
 end
@@ -283,8 +311,15 @@ function View:setData(data)
 	self.groundFill.Size = UDim2.fromScale(g, 1)
 	self.groundKnob.Position = UDim2.fromScale(g, 0.5)
 	self.groundRange.Text = if data.groundNames then data.groundNames[1] .. " - " .. data.groundNames[count] else "1 - " .. count
+	local aheadCount = self:_aheadCount()
+	local ahead = math.clamp(data.roadAhead or 2, 1, aheadCount)
+	self.aheadValue.Text = if data.aheadNames then data.aheadNames[ahead] else tostring(ahead)
+	local a = (ahead - 1) / math.max(aheadCount - 1, 1)
+	self.aheadFill.Size = UDim2.fromScale(a, 1)
+	self.aheadKnob.Position = UDim2.fromScale(a, 0.5)
+	self.aheadRange.Text = if data.aheadNames then data.aheadNames[1] .. " - " .. data.aheadNames[aheadCount] else "1 - " .. aheadCount
 	local behindCount = self:_behindCount()
-	local behind = math.clamp(data.roadBehind or 3, 1, behindCount)
+	local behind = math.clamp(data.roadBehind or 1, 1, behindCount)
 	self.behindValue.Text = if data.behindNames then data.behindNames[behind] else tostring(behind)
 	local b = (behind - 1) / math.max(behindCount - 1, 1)
 	self.behindFill.Size = UDim2.fromScale(b, 1)
@@ -326,7 +361,7 @@ function View:_layout()
 	for _, item in self.gui:GetDescendants() do
 		if item:IsA("TextLabel") or item:IsA("TextButton") then item.TextSize = fontSize end
 	end
-	for _, label in {self.subtitle, self.session, self.modeNote, self.note, self.uiNote, self.range, self.groundRange, self.groundNote, self.behindRange, self.behindNote} do label.TextSize = secondary end
+	for _, label in {self.subtitle, self.session, self.modeNote, self.note, self.uiNote, self.range, self.groundRange, self.groundNote, self.aheadRange, self.aheadNote, self.behindRange, self.behindNote} do label.TextSize = secondary end
 	for _, r in self.soundRows do if r.note then r.note.TextSize = secondary end end
 	self.title.TextSize = math.floor(30 * math.min(scale, 1.2))
 	self.heading.TextSize, self.uiHeading.TextSize, self.gfxHeading.TextSize = math.floor(22 * scale), math.floor(22 * scale), math.floor(22 * scale)
@@ -457,6 +492,16 @@ function View:_layout()
 	label(self.groundRange, 24 * scale)
 	label(self.groundNote, 48 * scale)
 	y += 12
+	local aheadY = y
+	label(self.aheadLabel, 28 * scale, inner - 124)
+	rect(self.aheadValue, inner - 96, aheadY, 110, math.max(28 * scale, 36))
+	rect(self.aheadMinus, 14, y, 48, 48)
+	rect(self.aheadSlider, 74, y, inner - 120, 48)
+	rect(self.aheadPlus, inner - 34, y, 48, 48)
+	y += 60
+	label(self.aheadRange, 24 * scale)
+	label(self.aheadNote, 48 * scale)
+	y += 12
 	local behindY = y
 	label(self.behindLabel, 28 * scale, inner - 124)
 	rect(self.behindValue, inner - 96, behindY, 110, math.max(28 * scale, 36))
@@ -502,7 +547,7 @@ function View:_focusOrder()
 	if self.data.category == "steering" then
 		for _, item in {self.dynamic, self.centred, self.minus, self.slider, self.plus} do table.insert(list, item) end
 	elseif self.data.category == "graphics" then
-		for _, item in {self.groundMinus, self.groundSlider, self.groundPlus, self.behindMinus, self.behindSlider, self.behindPlus} do table.insert(list, item) end
+		for _, item in {self.groundMinus, self.groundSlider, self.groundPlus, self.aheadMinus, self.aheadSlider, self.aheadPlus, self.behindMinus, self.behindSlider, self.behindPlus} do table.insert(list, item) end
 	elseif self.data.category == "sound" then
 		for _, r in self.soundRows do
 			for _, item in {r.minus, r.slider, r.plus} do table.insert(list, item) end
@@ -530,6 +575,8 @@ function View:activateSelected()
 	elseif selected == self.navSnd then self.ActionRequested:Fire("category", "sound")
 	elseif selected == self.groundMinus then self:nudgeGround(-1)
 	elseif selected == self.groundPlus then self:nudgeGround(1)
+	elseif selected == self.aheadMinus then self:nudgeAhead(-1)
+	elseif selected == self.aheadPlus then self:nudgeAhead(1)
 	elseif selected == self.behindMinus then self:nudgeBehind(-1)
 	elseif selected == self.behindPlus then self:nudgeBehind(1)
 	elseif selected == self.dynamic then self.ActionRequested:Fire("mode", "dynamic")
