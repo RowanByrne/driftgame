@@ -109,10 +109,10 @@
 -- contact, the ground's up, the T-207 width share and the drawn ground (`Drift/GroundMeshView`,
 -- passed into `Update`), which the ribbon's points are put on and take their colour from.
 --
--- NOTHING IS CREATED OR DESTROYED WHILE DRIVING. 65 instances per car at one smoking
+-- NOTHING IS CREATED OR DESTROYED WHILE DRIVING. 57 instances per car at one smoking
 -- surface -- 4 wheels x (2 Attachments + 1 Trail + 2 ParticleEmitters, and the off-road
 -- layer's 1 Trail + 3 ParticleEmitters + 3 emitter anchors), and the grass ribbon's
--- `Ribbon.Chunks` chunks of two MeshParts each, and their folder -- built once and switched or rewritten in place
+-- strips, two MeshParts a wheel, and their folder -- built once and switched or rewritten in place
 -- for ever after. It was 20 before T-188, 64 before T-265, 88 with T-265's trail ruts.
 -- There is no `Instance.new`, no `NumberSequence` and no `NumberRange` anywhere in `Update`:
 -- a frame that allocates instances is the thing to fail on, and `FxTests` counts them
@@ -417,10 +417,10 @@ function Wheels.perWheel(): number
 	return 2 + #Config.Fx.Built * 3 + 1 + 3 + 3
 end
 
--- And a car: its four wheels, and the grass ribbon's chunks, each two MeshParts (its outer
--- strips and its inner ones), and their folder (T-265). 65.
+-- And a car: its four wheels, and the grass ribbon's strips, one a wheel of two MeshParts (the
+-- outer strips and the inner ones), and their folder (T-265). 57.
 function Wheels.perCar(): number
-	return #CarModel.WHEEL_NAMES * Wheels.perWheel() + Config.Fx.Ground.Ribbon.Chunks * 2 + 1
+	return #CarModel.WHEEL_NAMES * Wheels.perWheel() + Config.Fx.Ground.Ribbon.Wheels * 2 + 1
 end
 
 local function wheelIndex(name: string): number?
@@ -887,7 +887,7 @@ function Wheels.Update(self: Wheels, state: DriftModel.State?, input: any, dt: n
 
 		-- The grass mark (T-265): the ribbon, from the tyre's contact on the ground (the patch
 		-- less the tarmac mark's `Marks.Lift`), laid on the drawn ground when there is one.
-		if ribbon and (emit and grass or marks.wheels[w.index].on) then
+		if ribbon and (emit and grass or marks.strips[w.index] ~= nil and marks.strips[w.index].on) then
 			worked = true
 			local t0 = os.clock()
 			local contact = road:PointToWorldSpace(patch - Vector3.new(0, F.Marks.Lift, 0))
@@ -1040,7 +1040,7 @@ function Wheels.DebugState(self: Wheels, state: DriftModel.State?, input: any)
 			gravelMark = g.gravel.trails[1].Enabled,
 			-- The ribbon's newest section's points found on the drawn ground (T-265): 3 while
 			-- marking on drawn grass, 0 off it or with no drawn ground.
-			onGround = self.marks.wheels[w.index] and self.marks.wheels[w.index].snapped or 0,
+			onGround = self.marks.strips[w.index] and self.marks.strips[w.index].snapped or 0,
 			clippingsRate = live(g.clippings),
 			dirtRate = live(g.dirt),
 			dustRate = live(g.dust),

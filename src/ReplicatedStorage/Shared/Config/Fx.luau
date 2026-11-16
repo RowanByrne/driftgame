@@ -326,10 +326,10 @@ return {
 	-- crosses the trench threshold (T-205's hysteresis).
 	--
 	-- THE BUDGET: the off-road layer is, per wheel, 1 Trail (gravel) + 3 Emitters, and T-207's
-	-- 3 fixed particle-source Attachments; the grass ribbon is `Ribbon.Chunks` chunks of two
-	-- MeshParts each and their folder. With the tarmac layer's 2 Attachments + 3 per smoking
+	-- 3 fixed particle-source Attachments; the grass ribbon is one strip a wheel of two
+	-- MeshParts and their folder. With the tarmac layer's 2 Attachments + 3 per smoking
 	-- surface, one smoking surface is 12 per wheel:
-	--   4 x (2 + 3 + 1 + 3 + 3) + 8 x 2 + 1 folder = 65 per car
+	--   4 x (2 + 3 + 1 + 3 + 3) + 4 x 2 + 1 folder = 57 per car
 	-- (88 with T-265's first, trail-built ruts; 64 before T-265; 20 before T-188). All built
 	-- once, then switched or rewritten in place. `Drift/Wheels.perCar()` is the formula.
 	Ground = {
@@ -347,10 +347,13 @@ return {
 
 		-- The ribbon itself (`Drift/GroundMarks`).
 		Ribbon = {
-			Chunks = 8, -- MeshParts per car. Each holds `PerChunk` segments laid within
-			PerChunk = 192, -- `ChunkReach` studs of where it was started; then the next one is
-			ChunkReach = 400, -- reused, oldest first. 1 536 segments: 14 s of four wheels cutting
-			-- at about 3 studs a segment and 80 studs/s
+			Wheels = 4, -- strips, one a wheel
+			Sections = 128, -- cross-sections in each wheel's ring, two kept as points ahead of the
+			-- tyre. THE MESH BUDGET: a client holds about 35 000 EditableMesh vertices with the
+			-- ground and the road taking most (features/ground-trial.md). 128 x 8 points x 4 wheels
+			-- is 4 096. MEASURED: a first build at 31 000 pushed the road out of budget. At a
+			-- section every 3 studs that is about 380 studs of mark a wheel; the oldest goes first
+			ReOrigin = 1500, -- studs a strip's origin may lag the tyre before it is moved (float32)
 			Spacing = 3, -- studs between cross-sections on a straight run...
 			MinSpacing = 0.5, -- ...and down to this through a bend, a new one whenever the path has
 			TurnDegrees = 4, -- turned this far since the last. So a curve is a smooth curve
@@ -411,9 +414,9 @@ return {
 			-- the ground under it is, so the mark has no edge to see.
 			Profile = {
 				{ Offset = 1.00, Height = 0.00, Tilt = 0, Weight = 0 }, -- the outer edge: the ground
-				{ Offset = 0.72, Height = 0.10, Tilt = -10, Weight = 0.8 }, -- the berm: soil pushed up
-				{ Offset = 0.48, Height = 0.03, Tilt = 55, Weight = 1 }, -- the inner wall
-				{ Offset = 0.24, Height = 0.00, Tilt = 12, Weight = 1 }, -- the floor's edge; flat between
+				{ Offset = 0.66, Height = 0.10, Tilt = -12, Weight = 0.8 }, -- the berm: soil pushed up
+				{ Offset = 0.30, Height = 0.00, Tilt = 50, Weight = 1 }, -- the floor's edge: the wall
+				-- runs from the berm down to here, leaning in, and the floor between bowls
 			},
 
 			-- The two looks: `Opacity`, how far the mark's colour and shape replace the ground's
@@ -426,7 +429,6 @@ return {
 				Points = {
 					{ Colour = Color3.fromRGB(96, 148, 66), DryColour = Color3.fromRGB(96, 148, 66) },
 					{ Colour = Color3.fromRGB(104, 152, 70), DryColour = Color3.fromRGB(98, 146, 66) }, -- bent blades, lighter
-					{ Colour = Color3.fromRGB(70, 114, 48), DryColour = Color3.fromRGB(78, 124, 54) },
 					{ Colour = Color3.fromRGB(56, 98, 40), DryColour = Color3.fromRGB(66, 110, 46) }, -- pressed flat, darker
 				},
 			},
@@ -437,7 +439,6 @@ return {
 				Points = {
 					{ Colour = Color3.fromRGB(100, 88, 56), DryColour = Color3.fromRGB(110, 98, 66) },
 					{ Colour = Color3.fromRGB(112, 94, 62), DryColour = Color3.fromRGB(128, 110, 78) }, -- churned berm
-					{ Colour = Color3.fromRGB(76, 56, 36), DryColour = Color3.fromRGB(98, 78, 54) }, -- the wall
 					{ Colour = Color3.fromRGB(40, 28, 17), DryColour = Color3.fromRGB(80, 60, 40) }, -- wet floor, drying
 				},
 			},
