@@ -75,7 +75,7 @@ return {
 			Name = "Near",
 			Radius = 2400,
 			Segments = 32, -- round the full ring
-			ArcSegments = 36, -- across the uphill arc
+			ArcSegments = 32, -- across the uphill arc
 			Height = { 70, 190 },
 			Base = -560,
 			Depth = 0.2,
