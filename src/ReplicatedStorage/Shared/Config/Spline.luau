@@ -272,6 +272,67 @@ local Spline = {
 		BlotchStuds = 70,
 	},
 
+	-- --------------------------------------------------------------- the tarmac's texture
+	-- T-268 (features/road-surface.md): the tarmac painted IN CODE into one image every chunk
+	-- shares (`Road/RoadTexture`), nothing uploaded. Its colours and lines are `Config.Road`'s.
+	-- Drawn when the ground draws the runoff (`Ground.RunoffBy = "ground"`); with the road
+	-- drawing its own grass the grass's texture is on the mesh instead, and the tarmac is flat.
+	-- Distances are studs of road; "along" repeats every `PeriodStuds`.
+	Tarmac = {
+		Enabled = true, -- false: the flat tarmac and the dash parts, as before
+		Width = 256, -- pixels across (the tarmac gets all but `PlainPx` each side: 4.8 a stud)
+		Length = 1024, -- pixels along (2.1 a stud: seen at a glancing angle, it needs fewer)
+		PeriodStuds = 480, -- studs along one copy (rounded to whole `MarkInterval`s)
+		PlainPx = 8, -- plain `Grass.Shade` columns each side, where the rest of the mesh samples
+		SliceMs = 3, -- ms of painting a frame (it is painted once, as the client loads)
+		Seed = 268,
+		-- the tone of each tarmac vertex, so the period never shows as a repeat: darker by up
+		-- to 2 x `Tone` from smooth noise over `ToneStuds` of road, a little warmer or cooler
+		Tone = 0.07,
+		ToneStuds = 120,
+		ToneHue = 0.03,
+		-- the grain: large soft mottling, painterly strokes stretched along, and fine speckle
+		Mottle = 0.06,
+		MottleStuds = 9,
+		Grain = 0.07,
+		GrainStuds = { 0.6, 3.5 }, -- across, along
+		Speckle = 0.035,
+		-- the wheel tracks: two a lane, `TrackGap` apart about its middle, `TrackWidth` wide,
+		-- `TrackDark` of the way to `TarmacWorn` in the middle, wandering `TrackWobble` either
+		-- way over `TrackWobbleStuds`; a faint oil strip between them
+		TrackGap = 6.4,
+		TrackWidth = 2.8,
+		TrackDark = 0.75,
+		TrackWobble = 0.8,
+		TrackWobbleStuds = 60,
+		OilWidth = 1.2,
+		OilDark = 0.25,
+		-- the dusty edge: `EdgeWear` studs in from each edge, with gravel specks
+		EdgeWear = 2.2,
+		Gravel = 0.35,
+		GravelLight = 1.35,
+		GravelDark = 0.7,
+		-- the paint's wear (0 none, 1 worn through where the noise is highest)
+		LineWear = 0.35,
+		-- patches of newer and older tarmac, a seam round each
+		Patches = 4,
+		PatchLength = { 8, 26 },
+		PatchWidth = { 6, 16 },
+		PatchSeam = 0.25,
+		-- cracks: mostly along the road `CrackEdge` in from an edge, `CrackAcross` of them across
+		Cracks = 10,
+		CrackLength = { 6, 26 },
+		CrackEdge = { 1, 4.5 },
+		CrackAcross = 0.3,
+		CrackDark = 0.55,
+		-- long tyre streaks: pairs of arcs through a lane, swinging up to `StreakSwing` across
+		Streaks = 3,
+		StreakLength = { 40, 110 },
+		StreakSwing = 5,
+		StreakWidth = 0.6,
+		StreakDark = 0.45,
+	},
+
 	-- --------------------------------------------------------------- the ground
 	-- (features/ground-trial.md, T-218; the only ground since T-247, features/legacy-removal.md.)
 	-- The ground BUILT FIRST, as one mountain the road is cut into (`Road/Ground`), drawn by

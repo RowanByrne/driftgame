@@ -111,11 +111,33 @@ return {
 	-- line. A look is its own task, after the system works; the markings are here because
 	-- speed has to be readable, not because the road has been art-directed.
 	Colours = {
-		Road = Color3.fromRGB(104, 112, 120),
+		Road = Color3.fromRGB(104, 112, 120), -- the tarmac drawn without its texture (a parts copy)
 		Barrier = Color3.fromRGB(142, 148, 156),
 		Marking = Color3.fromRGB(232, 230, 214), -- the centre line. Off-white, not pure
 		-- white: pure white blooms under the default
 		-- lighting and loses its edges at speed
 		Closing = Color3.fromRGB(196, 92, 72),
+
+		-- THE TARMAC'S TEXTURE (T-268, `Road/RoadTexture`, features/road-surface.md): the
+		-- colours it is painted in, as they show (the texture replaces the Asphalt material's
+		-- colour map). After the concept art: a cool blue-violet grey, not black
+		Tarmac = Color3.fromRGB(70, 72, 84),
+		TarmacWorn = Color3.fromRGB(52, 53, 62), -- the wheel tracks' middles, polished darker
+		TarmacEdge = Color3.fromRGB(98, 96, 94), -- the dusty last stud or two at each edge
+		TarmacPatch = { Color3.fromRGB(55, 56, 64), Color3.fromRGB(82, 83, 92) }, -- newer, older
+		Crack = Color3.fromRGB(30, 30, 36),
+		TyreStreak = Color3.fromRGB(28, 28, 32),
+		EdgeLine = Color3.fromRGB(222, 222, 214), -- Japanese edge lines: solid white
+		-- the centre line. White dashes are Japan's usual line, and carry the speed cue above;
+		-- the mountain passes' solid orange (no overtaking, the sakura art) is
+		-- Color3.fromRGB(232, 158, 52) with `CentreLineStyle = "solid"`
+		CentreLine = Color3.fromRGB(222, 222, 214),
 	},
+
+	-- THE PAINTED LINES on the tarmac's texture (T-268). The centre line is `MarkWidth` wide,
+	-- dashed on `MarkInterval` / `MarkDashLength` as the dash parts were
+	EdgeLineWidth = 0.8, -- studs
+	EdgeLineInset = 0.9, -- studs from the tarmac's edge to the line's outer side
+	CentreLineStyle = "dashed", -- "dashed", "solid", "double" or "none"
+	CentreLineGap = 0.5, -- studs between a double line's two lines
 }
