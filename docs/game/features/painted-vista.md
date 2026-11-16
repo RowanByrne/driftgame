@@ -79,10 +79,16 @@ Starting guesses, to be measured and tuned in the lane, as `horizon.md`'s were. 
 - **No bottom edge in sight:** each layer reaches down below the horizon into the cloud sea.
 - **Rises and falls with the road by three quarters** of the camera's height above the road's
   start, eased over 2 s, as the horizon did.
-- **Panels (as built in the trial):** each layer is a ring of flat panels, each under 2 048 studs
-  wide (10 for the far layer). Each is an invisible part with the art as a `Decal` on its inner
-  face, which the real sun lights, with a plain skirt below in the art's base colour. No mesh is
-  uploaded. The normal map would need a MeshPart with a SurfaceAppearance; not tried yet.
+- **Panels (as built in the trial):** each layer is a ring of curved panels, 36 degrees each
+  (10 a ring), each under 2 048 studs. Flat panels showed a step at every join, since each faced
+  the sun at its own angle (the user: "the seams you can see where they join"); the curved ones
+  are shaded smooth, so the light runs on round the ring. The arc mesh is built on the device
+  (an EditableMesh, `Shared/Vista.arcGeometry`), so nothing is uploaded; its lower part is a
+  skirt in the picture's own bottom row. The picture is a see-through SurfaceAppearance made
+  ahead in `ReplicatedStorage.VistaSurfaces`: a game script can't set one's picture, and a
+  mesh's own texture fills the sky in (both measured). Flat Decal panels remain the fallback.
+- **Before publishing:** an EditableMesh in a published game needs the experience's mesh and
+  image APIs allowed in its settings; if not, the layers fall back to flat panels (with seams).
 - **The whole layer moves together:** each layer's panels are welded to one invisible anchor, and
   only the anchor moves, which measured 0.10 ms a frame for the horizon.
 
