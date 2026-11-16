@@ -29,6 +29,8 @@ What the car meets beside the road is the ground the player sees. Until now each
 | `Keep` | 20 000 | Points kept before all are dropped |
 | `WallAngle` | 45 degrees | Steeper is a wall or a drop (`Config.Spline.Ground.RockAngle`, and the model's own climb limit) |
 | `WallStep` | 1.5 studs | A steep point is a wall once it stands this far above the car's wheels |
+| `PutBack` | 300 studs | Further than this past the tarmac's edge of the nearest road (any leg), the car asks the server to put it back (`CarRespawn`), as a fall does; the server's `SafeStart` finds the nearest road from that far out, never behind the closing barrier |
+| `PutBackEvery` | 0.25 s | How often the client checks |
 
 What is kept is dropped when new road is laid (or old road trimmed) within reach of it.
 
