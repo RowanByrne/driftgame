@@ -104,6 +104,7 @@ return {
 	FollowBackCost = 100, -- studs, heading straight back
 	FollowDeepCut = 30, -- studs of cut...
 	FollowDeepCost = 2, -- ...past which each stud deeper costs this many more
+	FollowLook = 0, -- studs on straight past each bend tried, judged on where it leads (0: none)
 	FollowHold = 0, -- studs of straight after each bend tried (0: none)
 	AimLocal = true,
 	AimLocalAhead = 120, -- studs

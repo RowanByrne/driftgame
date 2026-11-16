@@ -1951,6 +1951,13 @@ function SplineGen._follow(self: Gen, nearest: Spline.Section?, nearOff: number?
 			return
 		end
 		local g, worst, _, worstCut, endOff = self:_followGrade(knots, g0, y0)
+		if (R.FollowLook or 0) > 0 then
+			-- (trial) judged on where it leads: on straight `FollowLook` past it
+			local ext = withEscape(knots, kt)
+			ext[#ext - 1] = ext[#ext - 3] + R.FollowLook
+			local _, w2, _, c2, e2 = self:_followGrade(ext, g0, y0)
+			worst, worstCut, endOff = math.max(worst, w2), math.max(worstCut, c2), e2
+		end
 		cost += math.abs(endOff) + 0.5 * worst + R.FollowDeepCost * math.max(0, worstCut - R.FollowDeepCut)
 		if cost >= bestScore or not self:_clear(withEscape(knots, kt)) then
 			return
