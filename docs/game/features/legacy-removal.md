@@ -1,6 +1,6 @@
 # Feature: Remove the old road and ground systems
 
-**Status:** building, plan approved 2026-11-16. Steps 1 (`T-248`), 2 (`T-249`) and 3 (`T-253`) built, each waiting on the user's try in a lane. **Owner task:** `T-247`.
+**Status:** done 2026-11-16. All three steps merged to main (`T-248`, `T-249`, `T-253`). **Owner task:** `T-247`.
 
 ## Goal
 
