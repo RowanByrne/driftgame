@@ -293,6 +293,7 @@ end
 -- in from the origin.
 function CarCameraController._seed(rig, view: View)
 	rig.lookTarget = carPoint(view, Cam.CamLookAt)
+	rig.lookRawY = rig.lookTarget.Y -- the look height's own trail, before its cap (T-294)
 	rig.restTarget = carPoint(view, Cam.CamOffset)
 	rig.velTarget = rig.restTarget
 	rig.target = rig.restTarget
@@ -626,7 +627,7 @@ local function stepTargets(rig, view: View, dt: number)
 	-- flat, which is what the user saw. The grade is the road's (the smoothed normal), not
 	-- the car's own vertical speed, so a bump or a jump is still eased exactly as before; on
 	-- flat ground `climb` is 0 and this is the line it always was.
-	local baseY = rig.lookTarget.Y
+	local baseY = rig.lookRawY or rig.lookTarget.Y
 	local follow = Cam.HillLookFollow or 0
 	if follow ~= 0 and view.up and view.up ~= Vector3.yAxis then
 		baseY += view.speed * math.tan(hillGrade(view.up, travelFlat(view))) * follow * dt
@@ -636,8 +637,13 @@ local function stepTargets(rig, view: View, dt: number)
 	-- fixed radius from the car and drops with it, while the look height trailed the fall at
 	-- 1/s -- falling at 40 studs/s it sat about 40 studs ABOVE the car, so the view tipped up
 	-- and up as the car fell out of the bottom of the frame. The trail is now soft-capped at
-	-- `CamLookLagMax` studs: tanh, so it never kinks, and a road's small bumps (a stud or
-	-- less) are eased as before to within a hundredth of a stud.
+	-- `CamLookLagMax` studs. THE EASING ITSELF IS UNTOUCHED (`lookRawY` trails exactly as
+	-- before) and only what the camera looks at is squashed, by tanh: a road's small bumps (a
+	-- stud or less) look as they did, a fall is followed with the trail pinned just under the
+	-- cap, and on landing the raw trail runs down at its old rate while the squash keeps the
+	-- view still, so there is no snap. Squashing the stored value instead (the first try)
+	-- pulled the view down a stud in a frame on landing.
+	rig.lookRawY = lookY
 	local lagMax = Cam.CamLookLagMax or 0
 	if lagMax > 0 then
 		lookY = wantLook.Y + lagMax * math.tanh((lookY - wantLook.Y) / lagMax)
