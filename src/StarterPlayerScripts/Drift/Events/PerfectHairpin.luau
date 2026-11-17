@@ -1,7 +1,7 @@
 --!strict
 -- PerfectHairpin: the "perfect hairpin" conditional score event, the lenient one (T-299
 -- send-back: "sustained drift within the white lines, that's it"). On a true hairpin only
--- (`Road/Hairpins`: 120 degrees within 200 studs), a drift held from its entry to its exit
+-- (`Road/Hairpins`: 120 degrees within 250 studs), a drift held from its entry to its exit
 -- (the model's drift, any number of wheels, either way round; a lapse up to `Grace`
 -- forgiven) on the tarmac between the two white edge lines. Crossing the double yellow is
 -- fine; one wheel past an edge line is forgiven, two void it. The detector is

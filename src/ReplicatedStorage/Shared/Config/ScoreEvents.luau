@@ -171,9 +171,9 @@ return {
 			WordsBy = "size",
 			Words = { { at = 0, text = "PERFECT LANE DRIFT" } },
 		},
-		-- Easy on a true hairpin (120 degrees within 200 studs): any drift held through it
+		-- Easy on a true hairpin (120 degrees within 250 studs): any drift held through it
 		-- between the white edge lines (T-299 send-back: "much more lenient"). Hairpins are
-		-- rarer than bends (one every ~3 700 studs), so it pays a little more than a lane drift.
+		-- rarer than bends (one every ~3 000 studs), so it pays a little more than a lane drift.
 		perfectHairpin = {
 			Mode = "conditional",
 			Difficulty = "easy",

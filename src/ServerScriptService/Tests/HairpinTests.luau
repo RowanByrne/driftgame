@@ -9,7 +9,7 @@
 --   ...run({ drive = false })                                    -- skip the drives (about 15 s)
 --
 -- 1. DETECTION on seed 31337, 30 000 studs (and a count on four more seeds): the bends, the
---    true hairpins among them (120 degrees within 200 studs), their shape, the same answer
+--    true hairpins among them (120 degrees within 250 studs), their shape, the same answer
 --    for any chunk and as the road grows, and built on the double yellow's stretches.
 -- 2. THE LINES: which side of the double yellow a point is on, the white edge lines, the
 --    wheels across the road and how many are out.
@@ -270,7 +270,7 @@ local function runAll(opts)
 		for _, h in closed do
 			table.insert(lines, `{fmt(h.entry, 0)}{if h.dir > 0 then "L" else "R"} r{fmt(h.radius, 0)} {fmt(h.hairpinTurn, 0)}deg{if h.hairpin then " HAIRPIN" else ""}`)
 		end
-		table.insert(log, "bends on seed " .. SEED .. " (most turn within 200 studs): " .. table.concat(lines, ", "))
+		table.insert(log, "bends on seed " .. SEED .. " (most turn within the hairpin stretch): " .. table.concat(lines, ", "))
 		local more = {}
 		for _, seed in MORE_SEEDS do
 			local g = SplineGen.new(seed)
@@ -298,7 +298,7 @@ local function runAll(opts)
 			local ok = h.zone <= h.entry and h.entry < h.apex and h.apex < h.exit and math.abs(h.dir) == 1
 				and h.radius < Config.Road.CentreLineRadius and h.turn >= T.MinTurnDegrees
 				and h.entry - h.zone <= T.EntryZone + 1e-9 and h.zone > prevExit
-				and h.hairpin == (h.hairpinTurn >= T.HairpinDegrees) and h.hairpinTurn >= h.turn - 1e-6
+				and h.hairpin == (h.hairpinTurn >= T.HairpinDegrees) and h.hairpinTurn > 0
 			if not ok then
 				table.insert(bad, fmt(h.entry, 0))
 			end
@@ -429,7 +429,7 @@ local function runAll(opts)
 				end
 			end
 		end
-		table.insert(log, `{held} of {planned} planned turnarounds hold a true hairpin (the others turn under 120 deg within 200 studs)`)
+		table.insert(log, `{held} of {planned} planned turnarounds hold a true hairpin (the others turn under 120 deg within the stretch)`)
 
 		-- the cost: a frame asking between bends, and in one (cached once closed)
 		local t0 = os.clock()

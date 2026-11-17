@@ -14,10 +14,11 @@
 --
 -- A HAIRPIN (the user, T-299 send-back: "to be a hairpin we need at least 120 degrees within
 -- a certain stretch") is a bend where the road turns at least `HairpinDegrees` (120) the
--- bend's way within `HairpinStretch` (200) studs, the window overlapping the bend. 120 in
--- 200 studs is a mean radius of 95 or less: the generator's own "Hairpin" kind (70 to 95).
--- Measured on seeds 31337, 101, 2024, 8080 and 777: 7, 5, 13, 8 and 7 of 24 to 37 bends in
--- 30 000 studs, one every ~3 700 studs.
+-- bend's way within `HairpinStretch` (250) studs, the window overlapping the bend: a mean
+-- radius of 119 or less. 200 studs (radius 95) was measured first and left out the
+-- generator's own wide turnarounds (174 degrees at radius 98 turns 115 within 200 studs, 139
+-- within 250). Measured at 250 on seeds 31337, 101, 2024, 8080 and 777: 12, 7, 13, 12 and 7
+-- of 20 to 36 bends in 30 000 studs, one every ~3 000 studs.
 --
 --   zone    where the ENTRY ZONE starts: `EntryZone` studs before `entry`, cut short at the
 --           tight point of a bend just before it (a switchback's first bend), so zones never
@@ -54,7 +55,7 @@ Hairpins.Tuning = {
 	MergeGap = 20, -- studs: same-way tight runs closer than this are one bend
 	MinTurnDegrees = 45, -- a tight run turning less than this (inside its tight part) is not a bend
 	HairpinDegrees = 120, -- a bend turning this much within `HairpinStretch` is a hairpin
-	HairpinStretch = 200, -- studs
+	HairpinStretch = 250, -- studs
 	MaxLength = 2000, -- studs: a walk along one bend stops here (a guard, not a tuning number)
 }
 
