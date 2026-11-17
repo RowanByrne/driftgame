@@ -118,12 +118,13 @@
 -- passed into `Update`), which the ribbon's points are put on and take their colour from.
 --
 -- NOTHING IS CREATED OR DESTROYED WHILE DRIVING. 50 instances per car at one smoking
--- surface -- 4 wheels x (2 smoke ParticleEmitters, 4 off-road ParticleEmitters and 3 emitter
+-- surface -- 4 wheels x (3 smoke ParticleEmitters, 3 off-road ParticleEmitters and 3 emitter
 -- anchors), the grass ribbon's strips (two MeshParts a wheel), the rubber ribbon's (one a
 -- wheel) and their two folders -- built once and switched or rewritten in place for ever
 -- after. It was 20 before T-188, 64 before T-265, 88 with T-265's trail ruts, 57 with its
--- ribbon and the trails still on the tarmac.
--- There is no `Instance.new`, no `NumberSequence` and no `NumberRange` anywhere in `Update`:
+-- ribbon and the trails still on the tarmac, 46 before T-290's base smoke layer.
+-- There is no `Instance.new`, no `NumberSequence` and no `NumberRange` anywhere in `Update`
+-- (save once on a change of the low end's mode, T-290, which re-dresses the base layer):
 -- a frame that allocates instances is the thing to fail on, and `FxTests` counts them
 -- before and after a thousand frames because of it.
 --
@@ -153,9 +154,12 @@ type SurfaceFx = {
 	surface: string,
 	diffuse: ParticleEmitter,
 	stylized: ParticleEmitter,
+	base: ParticleEmitter, -- the low end's base layer (T-290, `Config.Fx.LowSmoke`)
 	smoking: boolean,
 	diffuseRate: number,
 	stylizedRate: number,
+	baseOn: boolean,
+	baseRate: number,
 }
 
 -- One debris emitter, with what was last written to it.
@@ -212,6 +216,8 @@ export type Wheels = typeof(setmetatable(
 		marksFrames: number,
 		marksSeconds: number,
 		debris: any, -- the 3D clods' pool (`Drift/Debris`, T-283)
+		lowSmoke: string, -- the base layer's look now dressed: "billows", "wisp" or "off" (T-290)
+		lowSmokeForced: string?, -- set by `SetLowSmoke` (tests): wins over the Workspace attribute
 	},
 	Wheels
 ))
@@ -371,6 +377,54 @@ function Wheels.stylizedRate(heat: number): number
 	return lerp(S.RateMin, S.RateMax, math.clamp(heat, 0, 1))
 end
 
+-- THE LOW END (T-290, `Config.Fx.LowSmoke`). A mode name made safe: anything that is not
+-- one of the three is the default, so a typo in the command bar shows the default and not
+-- nothing.
+function Wheels.lowSmokeMode(value: any): string
+	if value == "billows" or value == "wisp" or value == "off" then
+		return value
+	end
+	return Config.Fx.LowSmoke.Default
+end
+
+-- The base layer's look for a mode, or nil for "off".
+function Wheels.lowSmokeLook(mode: string): any
+	local L = Config.Fx.LowSmoke
+	if mode == "billows" then
+		return L.Billows
+	elseif mode == "wisp" then
+		return L.Wisp
+	end
+	return nil
+end
+
+-- How far the handover to today's diffuse cloud has got, 0..1, at this slip: a smoothstep
+-- from `HandoverStartDegrees` to `HandoverFullDegrees`. 1 is today's smoke exactly.
+function Wheels.handover(slipDeg: number): number
+	local L = Config.Fx.LowSmoke
+	local x = math.clamp(
+		(math.abs(slipDeg) - L.HandoverStartDegrees) / math.max(L.HandoverFullDegrees - L.HandoverStartDegrees, 1e-4),
+		0,
+		1
+	)
+	return x * x * (3 - 2 * x)
+end
+
+-- The two rates the low end splits a wheel's smoke into, for a mode: the base layer's and
+-- the diffuse layer's, given the diffuse rate today's curve asks for. "off" (or no look) is
+-- today's exactly: no base, the diffuse untouched. Two returns, no table: called per wheel
+-- per frame.
+function Wheels.lowSmokeRates(mode: string, slipDeg: number, diffuseRate: number): (number, number)
+	local look = Wheels.lowSmokeLook(mode)
+	if not look then
+		return 0, diffuseRate
+	end
+	local L = Config.Fx.LowSmoke
+	local w = Wheels.handover(slipDeg)
+	local u = math.clamp(math.abs(slipDeg) / math.max(L.HandoverFullDegrees, 1e-4), 0, 1)
+	return lerp(look.RateMin, look.RateMax, u) * (1 - w), diffuseRate * w
+end
+
 -- Where an attachment has to sit IN THE BODY'S OWN FRAME for its world position to land on
 -- the flat contact patch, given that `Drift/Render` has rolled the body by `roll` about
 -- `com`. This is `C(com) * R(-roll) * C(-com) * patch`, written out in scalars so a frame
@@ -466,6 +520,8 @@ function Wheels.new(marksParent: Instance?): Wheels
 		marksFrames = 0,
 		marksSeconds = 0,
 		debris = debris,
+		lowSmoke = Config.Fx.LowSmoke.Default,
+		lowSmokeForced = nil,
 	}, Wheels) :: any
 end
 
@@ -475,16 +531,18 @@ function Wheels.Ready(self: Wheels): boolean
 	return self.marks.ready and self.rubber.ready
 end
 
--- Instances one wheel carries: 2 smoke emitters per smoking surface, the 3 off-road emitters
+-- Instances one wheel carries: 3 smoke emitters per smoking surface (diffuse, stylized, and
+-- the low end's base layer, T-290), the 3 off-road emitters
 -- (the grass's fine spray and the gravel dust, T-188; the grass's earthy cloud, T-279; the
--- mud is 3D clods since T-283, `Drift/Debris`) and 3 fixed emitter anchors (T-207). 8 at one
+-- mud is 3D clods since T-283, `Drift/Debris`) and 3 fixed emitter anchors (T-207). 9 at one
 -- smoking surface. Its marks are the ribbons' (T-265, T-269), not the wheel's.
 function Wheels.perWheel(): number
-	return #Config.Fx.Built * 2 + 3 + 3
+	return #Config.Fx.Built * 3 + 3 + 3
 end
 
 -- And a car: its four wheels; the grass ribbon, a strip a wheel of two MeshParts (T-265);
--- the rubber ribbon, a strip a wheel of one (T-269); and their two folders. 46. (The 3D
+-- the rubber ribbon, a strip a wheel of one (T-269); and their two folders. 50 (46 before
+-- T-290's base layer). (The 3D
 -- clods' pool is the client's, not the car's: `Drift/Debris`.)
 function Wheels.perCar(): number
 	return #CarModel.WHEEL_NAMES * Wheels.perWheel()
@@ -507,9 +565,11 @@ end
 -- under the one lighting rule (T-279).
 local function dress(e: ParticleEmitter, colour: Color3, S: any)
 	local F = Config.Fx
-	local sheet = F.Sheets[S.Sheet]
-	e.Texture = sheet.Texture
-	e.FlipbookLayout = sheet.Layout
+	-- A look with its own `Texture` and no sheet is one still picture (the low end's wisp,
+	-- T-290); everything else is a painted sheet.
+	local sheet = S.Sheet and F.Sheets[S.Sheet]
+	e.Texture = if sheet then sheet.Texture else S.Texture
+	e.FlipbookLayout = if sheet then sheet.Layout else Enum.ParticleFlipbookLayout.None
 	e.FlipbookMode = F.Flipbook.Mode
 	e.FlipbookFramerate = NumberRange.new(F.Flipbook.Framerate)
 	e.FlipbookStartRandom = F.Flipbook.StartRandom
@@ -565,6 +625,7 @@ function Wheels.Clear(self: Wheels)
 		for _, fx in w.fx do
 			fx.diffuse:Destroy()
 			fx.stylized:Destroy()
+			fx.base:Destroy()
 		end
 		local g = w.ground
 		for _, k in { g.clippings, g.dust, g.spray } do
@@ -644,9 +705,19 @@ function Wheels.Attach(self: Wheels, rig: any): boolean
 				surface = surface,
 				diffuse = makeEmitter(string.format(F.Names.Emitter, name, surface), look.SmokeColour, F.Smoke, sourceA),
 				stylized = makeEmitter(string.format(F.Names.Stylized, name, surface), look.PuffColour, F.Stylized, sourceB),
+				-- Built in the look of the mode now dressed ("off" builds the billows look,
+				-- and leaves it off): the base layer is always there, so the budget is too.
+				base = makeEmitter(
+					string.format(F.Names.Base, name, surface),
+					look.SmokeColour,
+					Wheels.lowSmokeLook(self.lowSmoke) or F.LowSmoke.Billows,
+					sourceA
+				),
 				smoking = false,
 				diffuseRate = 0,
 				stylizedRate = 0,
+				baseOn = false,
+				baseRate = 0,
 			})
 		end
 
@@ -701,13 +772,23 @@ end
 -- The frame
 --------------------------------------------------------------------------------
 
--- One wheel's smoke, this frame: the two emitters go on and off together, and only the
--- rates move, written only when they have.
-local function write(fx: SurfaceFx, smoking: boolean, diffuseRate: number, stylizedRate: number)
+-- One wheel's smoke, this frame: the diffuse and stylized emitters go on and off together,
+-- the base layer (T-290) with them while it has a rate, and only the rates move, written
+-- only when they have.
+local function write(fx: SurfaceFx, smoking: boolean, diffuseRate: number, stylizedRate: number, baseRate: number)
 	if fx.smoking ~= smoking then
 		fx.smoking = smoking
 		fx.diffuse.Enabled = smoking
 		fx.stylized.Enabled = smoking
+	end
+	local baseOn = smoking and baseRate > 0
+	if fx.baseOn ~= baseOn then
+		fx.baseOn = baseOn
+		fx.base.Enabled = baseOn
+	end
+	if baseOn and fx.baseRate ~= baseRate then
+		fx.baseRate = baseRate
+		fx.base.Rate = baseRate
 	end
 	if smoking then
 		if fx.diffuseRate ~= diffuseRate then
@@ -751,7 +832,7 @@ function Wheels.Cut(self: Wheels)
 		w.trench = false
 		w.intensity = 0
 		for _, fx in w.fx do
-			write(fx, false, fx.diffuseRate, fx.stylizedRate)
+			write(fx, false, fx.diffuseRate, fx.stylizedRate, 0)
 		end
 		groundOff(w.ground)
 		w.clodDue = 0
@@ -815,6 +896,7 @@ function Wheels.Update(self: Wheels, state: DriftModel.State?, input: any, dt: n
 	local ease = 1 - math.exp(-step / math.max(F.Marks.Ribbon.IntensitySeconds, 1e-4))
 
 	local slipDeg = math.deg(math.abs(state.slip))
+	local mode = Wheels.applyLowSmoke(self)
 	local dirt = Wheels.dirtShare(slipDeg)
 	local clipShare = 1 - (1 - G.Grass.ClippingsAtFullDirt) * dirt
 	local clipBase = Wheels.kickRate(G.Grass.Clippings, slipDeg) * clipShare
@@ -905,11 +987,13 @@ function Wheels.Update(self: Wheels, state: DriftModel.State?, input: any, dt: n
 			spent += os.clock() - t0
 		end
 
-		-- The smoke, scaled by the mix: it fades rather than cuts (T-188).
+		-- The smoke, scaled by the mix: it fades rather than cuts (T-188). The low end splits
+		-- the diffuse rate between the base layer and today's cloud (T-290).
 		local stylizedRate = Wheels.stylizedRate(w.heat)
 		local mix = w.mixSmoke
+		local baseRate, cloudRate = Wheels.lowSmokeRates(mode, slipDeg, diffuseRate)
 		for _, fx in w.fx do
-			write(fx, emit and mix > 0 and fx.surface == w.smokeSurface, diffuseRate * mix, stylizedRate * mix)
+			write(fx, emit and mix > 0 and fx.surface == w.smokeSurface, cloudRate * mix, stylizedRate * mix, baseRate * mix)
 		end
 
 		-- Off the road: the debris.
@@ -949,6 +1033,38 @@ end
 -- Switches and the readout
 --------------------------------------------------------------------------------
 
+-- THE LOW END'S SWITCH (T-290): which look the base layer has, from `SetLowSmoke` if a test
+-- forced one, else the Workspace attribute `Config.Fx.LowSmoke.Attribute`, read every frame
+-- so the command bar switches it live. A change re-dresses the base emitters ONCE (that
+-- allocates its sequences, on the change only). Returns the mode now in force.
+function Wheels.applyLowSmoke(self: Wheels): string
+	local mode = Wheels.lowSmokeMode(self.lowSmokeForced or workspace:GetAttribute(Config.Fx.LowSmoke.Attribute))
+	if mode ~= self.lowSmoke then
+		self.lowSmoke = mode
+		local look = Wheels.lowSmokeLook(mode)
+		for _, w in self.wheels do
+			for _, fx in w.fx do
+				if look then
+					local surfaceLook = Config.Fx.Surfaces[fx.surface] or Config.Fx.Surfaces[Config.Fx.Default]
+					dress(fx.base, surfaceLook.SmokeColour, look)
+				end
+				-- Rewritten next write: the old rate belongs to the old look.
+				fx.baseOn = false
+				fx.baseRate = -1
+				fx.base.Enabled = false
+			end
+		end
+	end
+	return mode
+end
+
+-- Force the low end's mode ("billows", "wisp", "off"), or nil to follow the Workspace
+-- attribute again. Returns the mode in force.
+function Wheels.SetLowSmoke(self: Wheels, mode: string?): string
+	self.lowSmokeForced = if mode == nil then nil else Wheels.lowSmokeMode(mode)
+	return Wheels.applyLowSmoke(self)
+end
+
 -- The effects on or off wholesale. This is where a `show effects` setting lands
 -- (`SETTINGS.md`, features/car-fx.md "UI"), and it is also how the frame cost is measured:
 -- the same drive with it true and with it false. It creates and destroys nothing.
@@ -978,6 +1094,8 @@ function Wheels.DebugState(self: Wheels, state: DriftModel.State?, input: any)
 		attached = self.body ~= nil,
 		instances = self.built,
 		surfaces = F.Built,
+		lowSmoke = self.lowSmoke, -- the low end's mode in force (T-290)
+		handover = if state then Wheels.handover(math.deg(state.slip)) else nil,
 		-- The two ribbons: built or not, sections live and laid, ground lookups, mesh
 		-- vertices, and each wheel's look, blend, width share and points found on the ground.
 		marks = GroundMarks.DebugState(self.marks),
@@ -1016,12 +1134,20 @@ function Wheels.DebugState(self: Wheels, state: DriftModel.State?, input: any)
 		if kind then
 			lit += 1
 		end
-		local smokeRate = 0
+		local smokeRate, baseRate, puffRate = 0, 0, 0
 		for _, fx in w.fx do
 			if fx.diffuse.Enabled then
 				smokeRate += fx.diffuse.Rate
 			end
+			if fx.base.Enabled then
+				baseRate += fx.base.Rate
+			end
+			if fx.stylized.Enabled then
+				puffRate += fx.stylized.Rate
+			end
 		end
+		local speed = DriftModel.speed(state)
+		local allRate = smokeRate + baseRate + puffRate
 		local function live(k: KickFx): number
 			return if k.emitter.Enabled then k.emitter.Rate else 0
 		end
@@ -1046,6 +1172,11 @@ function Wheels.DebugState(self: Wheels, state: DriftModel.State?, input: any)
 			gravelMix = w.mixGravel,
 			trench = w.trench,
 			smokeRate = smokeRate, -- the diffuse smoke's live Rate, 0 when off
+			baseRate = baseRate, -- the low end's base layer's live Rate, 0 when off (T-290)
+			puffRate = puffRate, -- the stylized layer's live Rate, 0 when off
+			-- Studs of road between two puffs this wheel leaves, any layer: speed over the
+			-- summed live rates. The "split puffs" number (T-290); nil when not smoking.
+			puffGap = if allRate > 0 then speed / allRate else nil,
 			-- The marks being laid: rubber or scuff (T-269), flattened grass or rut (T-265).
 			rubberMark = rubberKind == "rubber",
 			gravelMark = rubberKind == "scuff",
@@ -1085,6 +1216,7 @@ function Wheels.CountInstances(self: Wheels): number
 		n += (if w.sourceA.Parent then 1 else 0) + (if w.sourceB.Parent then 1 else 0) + (if w.sourceC.Parent then 1 else 0)
 		for _, fx in w.fx do
 			n += (if fx.diffuse.Parent then 1 else 0) + (if fx.stylized.Parent then 1 else 0)
+				+ (if fx.base.Parent then 1 else 0)
 		end
 		local g = w.ground
 		for _, inst in { g.clippings.emitter, g.dust.emitter, g.spray.emitter } do

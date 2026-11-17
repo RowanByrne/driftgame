@@ -310,6 +310,69 @@ return {
 		-- POSITIONS, so the mark is untouched either way
 	},
 
+	-- ------------------------------------------------------------------ the low end (T-290)
+	-- The user: "the top end is great ... the mid and low is not ... at low speeds or when
+	-- drifts just barely start, we spawn the sprites so slow that it's a sequence of split
+	-- puffs." Today's diffuse layer spawns 10 a second at the gate: at 40 studs/s that is a
+	-- 2.1-stud puff every 4 studs. So a THIRD smoke emitter a wheel, the BASE layer, spawns
+	-- fast under light drifts and hands over to today's diffuse cloud as the slip grows:
+	--
+	--   base rate    = lerp(Base.RateMin, Base.RateMax, slip / HandoverFullDegrees) * (1 - w)
+	--   diffuse rate = today's (`Smoke.RateMin`..`RateMax` by slip / 180) * w
+	--   w            = smoothstep of slip from `HandoverStartDegrees` to `HandoverFullDegrees`
+	--
+	-- so past `HandoverFullDegrees` it is today's look exactly (the approved top end), and
+	-- the stylized layer is untouched throughout. Only RATES move, so nothing is allocated
+	-- while driving; a mode change re-dresses the base emitters once.
+	--
+	-- TWO LOOKS FOR THE BASE LAYER, live-switchable for the user to compare on the same drift
+	-- (`workspace:SetAttribute(Attribute, mode)`, or the admin console's `smoke <mode>`);
+	-- the loser comes out after the pick:
+	--   "billows"  the painted billows, smaller and fainter, so they merge into one stream
+	--   "wisp"     Roblox's built-in smoke_main wisp, the smoke before T-283
+	--   "off"      no base layer: today's smoke exactly
+	LowSmoke = {
+		Attribute = "__low_smoke", -- on Workspace, read every frame
+		Default = "billows",
+		HandoverStartDegrees = 8, -- slip below which the base layer is all there is (w = 0)
+		HandoverFullDegrees = 60, -- slip at and past which it is today's smoke exactly (w = 1)
+		Billows = {
+			Sheet = "Billows",
+			Orientation = Enum.ParticleOrientation.FacingCameraWorldUp,
+			ZOffset = 1.0, -- level with the diffuse layer (T-289: a stud, so its tyre cuts no hole in it)
+			RateMin = 60, -- particles/s at the gate: ~0.7 studs apart at 40 studs/s
+			RateMax = 95, -- at `HandoverFullDegrees`, before the handover takes it. Mobile cap 100
+			Lifetime = { 0.5, 1.0 }, -- s: shorter than the diffuse layer's, so the stream
+			-- does not pile up into a cloud the light drift has not earned
+			SizeStart = 0.9, -- studs: under half the diffuse layer's 2.1
+			SizeEnd = 4.5, -- half its 9
+			Transparency = 0.72, -- fainter than its 0.55: many faint puffs, one stream
+			Speed = { 1, 4 },
+			SpreadDegrees = 18,
+			RiseAcceleration = 5,
+			Drag = 1.5,
+			RotationDegrees = { -15, 15 },
+			RotationSpeed = { -30, 30 },
+		},
+		Wisp = {
+			Texture = "rbxasset://textures/particles/smoke_main.dds", -- built in, no sheet
+			Orientation = Enum.ParticleOrientation.FacingCamera,
+			ZOffset = 1.0,
+			RateMin = 28, -- the old smoke's 8, spawned fast enough to read as one wisp
+			RateMax = 45,
+			Lifetime = { 0.8, 1.6 }, -- the old smoke's
+			SizeStart = 1.8, -- the old smoke's 2.5 -> 11, a little smaller: it is a base
+			SizeEnd = 8, -- under light drifts, not the whole cloud
+			Transparency = 0.66, -- the old 0.55, fainter for being three times as many
+			Speed = { 2, 6 },
+			SpreadDegrees = 18,
+			RiseAcceleration = 6,
+			Drag = 1.5,
+			RotationDegrees = { -180, 180 }, -- one texture: turned at random, as it was
+			RotationSpeed = { -30, 30 },
+		},
+	},
+
 	-- ------------------------------------------------------------------ the four gates
 	-- What has to be true before a wheel marks and smokes
 	-- (features/car-fx.md "Tyre marks and smoke: per wheel, per surface, gated on four
@@ -688,6 +751,7 @@ return {
 		-- diffuse smoke and dust source ("L") and the stylized smoke's ("R") (T-207)
 		Emitter = "FxSmoke_%s_%s", -- wheel name, then surface. The DIFFUSE layer
 		Stylized = "FxPuff_%s_%s", -- wheel name, then surface. The STYLIZED layer
+		Base = "FxBase_%s_%s", -- wheel name, then surface. The low end's BASE layer (T-290)
 		TrenchAttachment = "FxT_%s_%s", -- wheel name, then "L": with "_Emitter" on the end, the
 		-- clippings and dirt source (T-188, T-207)
 		RubberFolder = "FxRubberMarks", -- the local car's tarmac and gravel ribbon (T-269): a

@@ -196,12 +196,13 @@ function Tests.run(opts)
 		-- + the off-road layer's 3 ParticleEmitters -- the grass's fine spray and the dust, T-188,
 		-- and the grass's earthy cloud, T-279; the mud is the client's 3D clods since T-283 -- + 3
 		-- fixed emitter anchors, T-207), the grass ribbon's strips, two MeshParts a wheel (T-265),
-		-- the rubber ribbon's, one a wheel (T-269), and their two folders: 46 a car.
+		-- the rubber ribbon's, one a wheel (T-269), and their two folders: 46 a car, and 50
+		-- with the low end's base smoke layer (3 smoke emitters a surface, T-290).
 		check(
 			"one smoking surface, and the budget it comes to",
-			#F.Built == 1 and Wheels.perWheel() == 8
-				and Wheels.perCar() == 4 * 8 + F.Ground.Ribbon.Wheels * 2 + F.Marks.Ribbon.Wheels + 2
-				and Wheels.perCar() == 46,
+			#F.Built == 1 and Wheels.perWheel() == 9
+				and Wheels.perCar() == 4 * 9 + F.Ground.Ribbon.Wheels * 2 + F.Marks.Ribbon.Wheels + 2
+				and Wheels.perCar() == 50,
 			`{#F.Built} surface(s) -> {Wheels.perWheel()} a wheel, {Wheels.perCar()} instances per car`
 		)
 		-- THE RUBBER IS SEE-THROUGH BY VERTEX ALPHA (T-269), which needs its part above 0
@@ -261,14 +262,29 @@ function Tests.run(opts)
 		-- the tyre it is born inside cannot cut a wheel-shaped hole in it (a stud: the patch is
 		-- 1.0 off the tyre's axis, inside its 1.25 radius).
 		local z = { F.Smoke.ZOffset, G.Gravel.Dust.ZOffset, G.Grass.Spray.ZOffset, F.Stylized.ZOffset, G.Grass.Clippings.ZOffset }
+		-- The low end's base layer (T-290) is level with the diffuse cloud, never above it.
+		local L = F.LowSmoke
 		local ordered = z[1] >= 1
+			and L.Billows.ZOffset >= 1 and L.Billows.ZOffset <= z[1]
+			and L.Wisp.ZOffset >= 1 and L.Wisp.ZOffset <= z[1]
 		for i = 2, #z do
 			ordered = ordered and z[i] > z[i - 1]
 		end
 		check(
 			"the smoke draws in front of its tyre, and every other layer in front of the smoke",
 			ordered,
-			`ZOffset diffuse, dust, spray, stylized, bits: {fmtList(z)}`
+			`ZOffset diffuse, dust, spray, stylized, bits: {fmtList(z)}; base {L.Billows.ZOffset} / {L.Wisp.ZOffset}`
+		)
+		-- THE LOW END (T-290): both base looks under the mobile cap and the one light rule; the
+		-- billows from the painted sheet, the wisp the built-in picture with no flipbook.
+		check(
+			"the low end's two base looks: under the mobile cap, one light, billows sheet and built-in wisp",
+			L.Billows.RateMax <= 100 and L.Wisp.RateMax <= 100
+				and L.Billows.LightInfluence == nil and L.Wisp.LightInfluence == nil
+				and F.Sheets[L.Billows.Sheet] ~= nil
+				and L.Wisp.Sheet == nil and string.match(L.Wisp.Texture, "^rbxasset://") ~= nil
+				and table.find({ "billows", "wisp", "off" }, L.Default) ~= nil,
+			`billows {L.Billows.RateMin}-{L.Billows.RateMax}/s, wisp {L.Wisp.RateMin}-{L.Wisp.RateMax}/s, default {L.Default}`
 		)
 	end
 
@@ -619,6 +635,9 @@ function Tests.run(opts)
 		local rig, car = standInRig()
 		-- The grass ribbon is built in its own thread (making a mesh yields): wait for it.
 		local w = Wheels.new(ServerStorage)
+		-- Today's smoke for every check written before the low end (T-290), which reads the
+		-- diffuse rate against today's curve; section 9a switches the modes itself.
+		w:SetLowSmoke("off")
 		local waitUntil = os.clock() + 15
 		while not w:Ready() and not w.marks.failed and os.clock() < waitUntil do
 			task.wait()
@@ -877,7 +896,7 @@ function Tests.run(opts)
 		for _, wheel in w.wheels do
 			coldAfterCut = coldAfterCut and wheel.heat == 0
 			for _, fx in wheel.fx do
-				anyAfterCut = anyAfterCut or fx.diffuse.Enabled or fx.stylized.Enabled
+				anyAfterCut = anyAfterCut or fx.diffuse.Enabled or fx.stylized.Enabled or fx.base.Enabled
 			end
 		end
 		check(
@@ -891,7 +910,7 @@ function Tests.run(opts)
 		local anyWhileOff = litTrails() > 0
 		for _, wheel in w.wheels do
 			for _, fx in wheel.fx do
-				anyWhileOff = anyWhileOff or fx.diffuse.Enabled or fx.stylized.Enabled
+				anyWhileOff = anyWhileOff or fx.diffuse.Enabled or fx.stylized.Enabled or fx.base.Enabled
 			end
 		end
 		check(
@@ -900,6 +919,94 @@ function Tests.run(opts)
 			`emitting {anyWhileOff}, instances {w:CountInstances()}`
 		)
 		w:SetEnabled(true)
+
+		------------------------------------------------------------------------
+		-- 9a. THE LOW END (T-290): the base layer in each mode, switched live.
+		------------------------------------------------------------------------
+		do
+			local DT = 1 / 60
+			local rlw
+			for _, wheel in w.wheels do
+				if wheel.name == CarModel.WHEEL_NAMES[3] then
+					rlw = wheel
+				end
+			end
+			local L = F.LowSmoke
+			-- Drive a rear wheel at a slip; its three live rates, and the studs between puffs.
+			local function at(slipDeg: number, speed: number)
+				local s = stateWith({ slipDeg = slipDeg, speed = speed, throttle = 1, surface = "tarmac" })
+				for _ = 1, 20 do
+					w:Update(s, { handbrake = false }, DT)
+				end
+				local fx = rlw.fx[1]
+				local base = if fx.base.Enabled then fx.base.Rate else 0
+				local cloud = if fx.diffuse.Enabled then fx.diffuse.Rate else 0
+				local puff = if fx.stylized.Enabled then fx.stylized.Rate else 0
+				return base, cloud, puff, speed / math.max(base + cloud + puff, 1e-6)
+			end
+			local lines, instancesOk, created = {}, true, 0
+			local rows = {}
+			local conn = rig.body.DescendantAdded:Connect(function()
+				created += 1
+			end)
+			for _, mode in { "off", "billows", "wisp" } do
+				w:Cut()
+				w:SetLowSmoke(mode)
+				rows[mode] = {}
+				for _, sample in { { 4, 35 }, { 30, 50 }, { 90, 70 } } do
+					local base, cloud, puff, gap = at(sample[1], sample[2])
+					table.insert(rows[mode], { base = base, cloud = cloud, puff = puff, gap = gap })
+					table.insert(lines, string.format("%s %d deg: base %.1f cloud %.1f puff %.1f gap %.2f", mode, sample[1], base, cloud, puff, gap))
+				end
+				instancesOk = instancesOk and w:CountInstances() == want
+			end
+			conn:Disconnect()
+			local off, bil, wisp = rows.off, rows.billows, rows.wisp
+			local today90 = select(2, Wheels.evaluate(stateWith({ slipDeg = 90, speed = 70, throttle = 1 }), false, false, true, true))
+			check(
+				"low end: off is today's smoke exactly, with no base layer",
+				off[1].base == 0 and off[2].base == 0 and off[3].base == 0
+					and math.abs(off[3].cloud - today90) < 1e-6,
+				table.concat(lines, " | ", 1, 3)
+			)
+			check(
+				"low end: the top end is today's in every mode (no base, the same diffuse rate past the handover)",
+				bil[3].base == 0 and wisp[3].base == 0
+					and math.abs(bil[3].cloud - off[3].cloud) < 1e-6 and math.abs(wisp[3].cloud - off[3].cloud) < 1e-6
+					and Wheels.handover(L.HandoverFullDegrees) == 1 and Wheels.handover(L.HandoverStartDegrees) == 0,
+				string.format("90 deg: diffuse %.2f / %.2f / %.2f", off[3].cloud, bil[3].cloud, wisp[3].cloud)
+			)
+			check(
+				"low end: a light drift's puffs come several times closer together, in both looks",
+				bil[1].gap < off[1].gap / 4 and wisp[1].gap < off[1].gap / 2
+					and bil[1].base <= 100 and wisp[1].base <= 100 and bil[2].gap < off[2].gap / 2,
+				table.concat(lines, " | ", 4)
+			)
+			local e = rlw.fx[1].base
+			w:SetLowSmoke("wisp")
+			local wispDressed = e.Texture == L.Wisp.Texture and e.FlipbookLayout == Enum.ParticleFlipbookLayout.None
+			w:SetLowSmoke("billows")
+			local billowsDressed = e.Texture == F.Sheets.Billows.Texture and e.FlipbookLayout == F.Sheets.Billows.Layout
+			check(
+				"low end: switching modes live re-dresses the base layer and creates nothing",
+				instancesOk and created == 0 and wispDressed and billowsDressed and w:CountInstances() == want,
+				`instances {w:CountInstances()} (want {want}), created {created}; wisp dressed {wispDressed}, billows {billowsDressed}`
+			)
+			-- The attribute is what the command bar sets: unforced, the wheels follow it.
+			local before = workspace:GetAttribute(L.Attribute)
+			workspace:SetAttribute(L.Attribute, "wisp")
+			local followed = w:SetLowSmoke(nil)
+			workspace:SetAttribute(L.Attribute, "nonsense")
+			local fallback = w:SetLowSmoke(nil)
+			workspace:SetAttribute(L.Attribute, before)
+			check(
+				"low end: the Workspace attribute switches it; anything else is the default",
+				followed == "wisp" and fallback == L.Default,
+				`"wisp" -> {followed}, "nonsense" -> {fallback}`
+			)
+			w:Cut()
+			w:SetLowSmoke("off")
+		end
 
 		------------------------------------------------------------------------
 		-- 9b. OFF THE ROAD (T-188): the smoke fades, the grass tears up.
