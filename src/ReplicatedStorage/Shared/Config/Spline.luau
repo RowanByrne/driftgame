@@ -695,8 +695,8 @@ local Spline = {
 			-- marks' two ribbons with their textures, the vista's arc
 			WholeChunk = 14,
 			FarChunk = 3,
-			Marks = 43,
-			Vista = 1,
+			Marks = 44,
+			Vista = 2,
 			-- left over, for a stretch heavier than those, and the moments a tile is replaced
 			-- (old and new both held). THE GROUND TAKES WHAT IS LEFT
 			-- (`SplineMesh.groundRoom`): never more tiles than the budget has room for beside
