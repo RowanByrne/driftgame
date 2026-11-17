@@ -328,10 +328,11 @@ local Camera = {
 	-- drift 0.73 and 0.81. The aim alone does not show more road past a crest -- that is
 	-- hidden by the road itself, and only the eye's height helps, which is why `CamOffset`
 	-- went up with it -- it shows the same road with the car out of its way.
-	-- DEGREES, NOT A SHARE OF THE SCREEN: a share would keep the car at one height at every
-	-- speed, but it ties the aim to the FOV, and that made the car shimmer against the camera
-	-- at full lock (JitterTests, 0.38 deg a frame against a 0.1 limit). So the car rides a
-	-- little higher as the FOV opens with speed, and a little lower below 120 studs/s.
+	-- DEGREES, a fixed angle, so nothing moves the aim but the guard below: the car rides a
+	-- little higher as the FOV opens with speed and a little lower below 120 studs/s
+	-- (measured below). THE ROLL IS APPLIED BEFORE IT, about the axis through the car:
+	-- rolled after it, the car swung sideways as the roll came and went
+	-- (`CarCameraController`, JitterTests).
 	CamAimUp = 16.7, -- deg. OURS (T-291)
 	CamFrameBottom = 0.95, -- share of the screen's height, from the top. OURS (T-291). The
 	-- guard: the aim is capped so the car's lowest point never sits below

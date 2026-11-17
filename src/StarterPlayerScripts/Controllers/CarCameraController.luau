@@ -735,14 +735,18 @@ function CarCameraController._advance(rig, view: View, dt: number, pan): CFrame
 		return CFrame.new(rig.position)
 	end
 	local cf = CFrame.lookAt(rig.position, rig.lookPoint)
+	-- THE ROLL GOES ON BEFORE THE FRAMING'S AIM (T-291), about the look axis that runs
+	-- through the car. The other way round it rolled about an axis 17 degrees above the
+	-- car, which swung the car sideways across the screen as the roll came and went:
+	-- JitterTests measured 0.37 degrees a frame of shimmer at full lock (limit 0.1), and
+	-- 0.09 in this order, which is the camera without the aim.
+	if rig.roll ~= 0 then
+		cf *= CFrame.Angles(0, 0, rig.roll)
+	end
 	-- The framing (T-291): the view is aimed UP by `CamAimUp` degrees, so the car sits
 	-- nearer the bottom of the screen. A turn of the rendered camera about its own right
 	-- axis, after everything above: it moves nothing the targets read, so the lag, the lean
 	-- and the swing are untouched. Zero is the camera before it, bit for bit.
-	-- A FIXED ANGLE, NOT A SHARE OF THE FOV, on purpose: scaled by the FOV, the aim moved
-	-- whenever the FOV did, and the FOV follows the speed, which the model only updates per
-	-- simulation step -- JitterTests measured the car shimmering 0.38 degrees a frame
-	-- against the screen at full lock (limit 0.1). A fixed angle cannot shimmer.
 	-- THE GUARD: a narrow FOV (a standstill's 52 degrees) or the wheel zoomed in makes the
 	-- car big enough that the full aim would cut its bottom off, so the aim is capped where
 	-- the car's lowest point -- `CamFrameCarRadius` studs below its middle, as seen from
@@ -763,9 +767,6 @@ function CarCameraController._advance(rig, view: View, dt: number, pan): CFrame
 		end
 		rig.aim = aim
 		cf *= CFrame.Angles(aim, 0, 0)
-	end
-	if rig.roll ~= 0 then
-		cf *= CFrame.Angles(0, 0, rig.roll)
 	end
 	-- The shake's position is in the camera's OWN axes and is a rendered offset: it moves
 	-- the picture, never `rig.position`, so the next step's geometry is untouched.
