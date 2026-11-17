@@ -34,7 +34,9 @@ return {
 	-- one that started between `SameSpotGap` and `SameSpotWindow` seconds ago scores nothing
 	-- (a crest jumped again by turning round and driving back). The gap lets a chain of the
 	-- same thing in a row (lifts over a crest, trees side by side) count, cut only by the
-	-- repeat rule.
+	-- repeat rule. A kind may set its own `SameSpot` and `SameSpotGap` (T-301: jump and wheel
+	-- lift have no gap, so the same spot counts at once -- a car hopping in place repeats
+	-- them within seconds, under the gap).
 	SameSpot = 40, -- studs
 	SameSpotGap = 4, -- seconds
 	SameSpotWindow = 60, -- seconds
@@ -78,6 +80,9 @@ return {
 			SizeFloor = 0.3,
 			Fill = 0.6, -- of a rung a second
 			MaxSeconds = 8,
+			-- No gap: a jump started within 40 studs of one in the last minute is nothing. A
+			-- real jump carries the car well past that before the next can start.
+			SameSpotGap = 0,
 			WordsBy = "seconds",
 			Words = { { at = 0, text = "JUMP" }, { at = 1, text = "BIG AIR" }, { at = 2, text = "HUGE AIR" } },
 		},
@@ -92,6 +97,11 @@ return {
 			Fill = 0.25,
 			MaxSeconds = 6,
 			RepeatWindow = 4,
+			-- No gap, and a short spot: a lift starting within 8 studs of an earlier one's start
+			-- is the car going nowhere. Lifts in a row while driving start further apart than
+			-- that even at 20 studs/s (a lift, its grace and the next one's hold).
+			SameSpot = 8,
+			SameSpotGap = 0,
 			WordsBy = "size",
 			Words = { { at = 0, text = "WHEEL LIFT" }, { at = 0.75, text = "TWO WHEELS" } },
 		},
@@ -181,8 +191,12 @@ return {
 		-- seconds count. It banks once the car has been back down `LandSettle` seconds; a
 		-- second hop inside that is the same jump. Lost on a fall, a put-back, landing tilted
 		-- past `LandTiltDeg` (on its side or roof), or a wall touched in the air or on landing.
+		-- T-301: a flight starts only `MinTravel` studs (flat) from where it left the ground,
+		-- and a jump bounces at most `MaxBounces` times before the next hop is its own flight.
 		Jump = {
 			MinAir = 0.4, -- seconds
+			MinTravel = 15, -- studs; at 40 studs/s a 0.4 s flight covers 16
+			MaxBounces = 1,
 			LandSettle = 0.2, -- seconds
 			LandTiltDeg = 60,
 			VoidOnWall = true,
