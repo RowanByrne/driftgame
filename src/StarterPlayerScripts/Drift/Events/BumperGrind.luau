@@ -22,14 +22,15 @@
 --
 -- ROCK DOESN'T COUNT. The user's words are "the barrier rail", and a rock cut beside a
 -- mountain road is a steep slope the car is stopped at, not a rail it can slide along
--- (`Kinds` is a switch; turning rock on is one line).
+-- (`Walls` is a switch; turning rock on is one line).
 --
 -- THE SIZE, 0 .. 1 each frame: the speed along the rail (`MinSpeed` gives `SizeFloor`,
 -- `FullSpeed` gives 1) times how steadily the car stays on it (the share of the last
 -- `SteadySeconds` the model read it as touching).
 --
 -- The interface every detector shares (features/score-events.md "The shared interface"):
--- `new(sink, rig)`, `:Update(dt, state)` each frame with the model's state, `:DebugState()`.
+-- `new(sink, rig)`, `:Update(dt, state)` each simulation step (or each frame: it works off
+-- `wallSteps` and seconds, not steps) with the model's state, `:DebugState()`.
 -- It calls only `sink.start` and the handle's `update` and `finish`.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -41,31 +42,19 @@ BumperGrind.__index = BumperGrind
 
 BumperGrind.KIND = "bumperGrind"
 
--- Detection only: what counts as a bumper grind, and how big a frame of it is. Points,
--- caps and repeats are the engine's (`Config/ScoreEvents`).
-BumperGrind.Tuning = {
-	Kinds = { krail = true, rock = false }, -- the walls that count
-	MinAngle = 6, -- degrees between the car's nose and the rail's line: less is its door
-	MinSpeed = 40, -- studs/s along the rail to start
-	KeepSpeed = 30, -- studs/s along the rail to keep going once started
-	FullSpeed = 100, -- studs/s along the rail for the speed's full share
-	SizeFloor = 0.3, -- the size at `MinSpeed`, steadily on the rail
-	MaxInto = 25, -- studs/s into the rail when it is met: harder is a crash
-	MinHold = 0.12, -- s on the rail before the event starts
-	MinContacts = 2, -- separate meetings with the rail within that, so one knock is not a grind
-	Grace = 0.25, -- s off the rail before it ends
-	CrashLoss = 0.4, -- a share of the speed lost within `CrashWindow` that is a crash
-	CrashWindow = 0.35, -- s
-	SteadySeconds = 0.4, -- s the steadiness is averaged over
-	PutBack = 30, -- studs moved in one frame past where the car could get: a put-back
-}
+-- Detection only: what counts as a bumper grind, and how big a frame of it is
+-- (`Config.ScoreEvents.Detectors.BumperGrind`). Points, caps and repeats are the engine's
+-- (`Config.ScoreEvents.Kinds.bumperGrind`).
+function BumperGrind.tuning(): any
+	return Config.ScoreEvents.Detectors.BumperGrind
+end
 
 export type Sink = {
 	oneOff: (kind: string, size: number, info: {}?) -> (),
 	start: (kind: string, info: {}?) -> any,
 }
 
-local HISTORY = 64 -- frames of speed kept for the crash check
+local HISTORY = 160 -- updates of speed kept for the crash check: over a second at 120 a second
 
 local function flatSpeed(v: Vector3): number
 	return math.sqrt(v.X * v.X + v.Z * v.Z)
@@ -88,6 +77,7 @@ function BumperGrind.new(sink: Sink, rig: any?)
 		info = nil :: { [string]: any }?,
 		lastPos = nil :: Vector3?,
 		lastSteps = nil :: number?,
+		lastState = nil :: any,
 		times = table.create(HISTORY, 0),
 		speeds = table.create(HISTORY, 0),
 		head = 0,
@@ -145,7 +135,7 @@ local function recentPeak(self: BumperGrind, window: number): number
 end
 
 function BumperGrind.Update(self: BumperGrind, dt: number, state: any)
-	local T = BumperGrind.Tuning
+	local T = BumperGrind.tuning()
 	if not state or dt <= 0 then
 		return
 	end
@@ -155,12 +145,18 @@ function BumperGrind.Update(self: BumperGrind, dt: number, state: any)
 	self.times[self.head] = self.clock
 	self.speeds[self.head] = speed
 
-	-- a put-back or a teleport: further in one frame than the car could have gone
+	-- a put-back or a teleport: a new state (as the engine's own detectors read it), or further
+	-- in one update than the car could have gone
 	local pos: Vector3 = state.position
 	local jumped = false
-	if self.lastPos then
+	local last = self.lastState
+	if last and state ~= last and state.time ~= nil and last.time ~= nil then
+		jumped = true
+		self.lastSteps = nil
+	elseif self.lastPos then
 		jumped = (pos - self.lastPos :: Vector3).Magnitude > speed * dt * 2 + T.PutBack
 	end
+	self.lastState = state
 	self.lastPos = pos
 
 	-- did this frame's steps meet a wall? The model counts the steps that did
@@ -168,7 +164,7 @@ function BumperGrind.Update(self: BumperGrind, dt: number, state: any)
 	local met = if self.lastSteps then steps ~= self.lastSteps else state.sinceWall < dt
 	self.lastSteps = steps
 	local touching = state.wallTouch == true
-	local kindOk = T.Kinds[state.wallKind] == true
+	local kindOk = T.Walls[state.wallKind] == true
 	local bumper = state.wallPoint == "front" or state.wallPoint == "rear"
 	self.angle = if touching then angleOff(state) else 0
 	self.along = if touching then state.wallAlong else 0
@@ -228,7 +224,9 @@ function BumperGrind.Update(self: BumperGrind, dt: number, state: any)
 			self.contacts += 1
 		end
 		self.held += dt
-		if self.held >= T.MinHold and self.contacts >= T.MinContacts then
+		-- it starts on a meeting with the rail at least MinHold after the first: on the rail
+		-- at both ends of the hold, so one knock and a slide away never starts one
+		if met and good and self.held >= T.MinHold and self.contacts >= T.MinContacts then
 			self.info = { wall = state.wallKind, point = state.wallPoint, side = state.wallSide }
 			self.handle = self.sink.start(BumperGrind.KIND, self.info)
 			self.phase = "live"

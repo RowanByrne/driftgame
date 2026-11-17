@@ -552,7 +552,7 @@ function Tests.measure(_self, seeds, seconds, how)
 	local HangGrind = require(DriftFolder.Events.HangGrind)
 	local HS = game:GetService("HttpService")
 	local D = Config.Drift
-	local B = BumperGrind.Tuning
+	local B = BumperGrind.tuning()
 	local half = Config.Road.Width * 0.5
 	local out = { driver = how, seeds = {}, totals = {} }
 	local totals = {
@@ -692,7 +692,7 @@ function Tests.run(which, ...)
 	local BumperGrind = require(DriftFolder.Events.BumperGrind)
 	local HangGrind = require(DriftFolder.Events.HangGrind)
 	local D = Config.Drift
-	local B = BumperGrind.Tuning
+	local B = BumperGrind.tuning()
 	local H = HangGrind.Tuning
 	local half = Config.Road.Width * 0.5
 
