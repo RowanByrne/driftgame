@@ -131,3 +131,7 @@ The user, on step 2 in lane 1: *"can we remove the clouds in betewen the lower l
 | `near-forest-01-clear-joined.png` | `DF3B5E188888B0E15B7056784FA7E23CCB75C14383BDFFFED9C56701D1438D7E` | `rbxassetid://100935312550957` |
 | `near-forest-01-v1-clear-joined.png` | `881BC39B990E5AF9EF85982AD7336F6A59271EFE3BF7825681646196896E3C88` | `rbxassetid://113094213083603` |
 | `near-forest-01-v2-clear-joined.png` | `62DDF6F954F95CE952788EBABB5692AF3D4440FFE3670791A82BADAA7771537B` | `rbxassetid://77096375808929` |
+
+## What's in git (2026-11-16)
+
+Only what the game uses stays here: the nine joined pictures the rings show (far `-joined-v2`, middle and near `-clear-joined`) and the cloud texture (`cloud-oil-03`, the cloud sea's, switched off for now). The picks, their `-clear` redraws and the first joined copies moved out of git, unchanged, to `..\art\source\painted-vista\` (24 files; the conductor: only approved art that ships belongs in git). Every hash above still identifies them there. New candidates and in-between copies go straight to `..\art\generated\painted-vista\`; `pipeline/vista/join-strips.py` can read from there and write its copies here.
