@@ -9,7 +9,6 @@ Every task in progress and the files it owns, so parallel sessions and workers n
 
 | Branch | Lane | Files owned | Since |
 |---|---|---|---|
-| `agent/opaque-cap` (T-284) | borrowed | `src/ReplicatedStorage/Shared/Road/SplineMesh.luau`, `Shared/Road/GrassTexture.luau`, `Shared/Road/OpaqueBudget.luau` (new), `Shared/Config/Spline.luau` (its `Mesh` table only), `src/ServerScriptService/Tests/SplineMeshTests.luau` | 2026-11-17 |
 
 ## Notes between sessions
 
