@@ -60,7 +60,15 @@
 -- asset overrides it) or OURS.
 
 local Camera = {
-	CamOffset = Vector3.new(0, 17.2, 42.7), -- studs. OURS (T-071), driven and measured.
+	CamOffset = Vector3.new(0, 20.18, 41.37), -- studs. OURS (T-291): THE SAME 46.0-STUD
+	-- RADIUS, raised from 22 to 26 degrees, so the eye is
+	-- 3 studs higher and sees further over a crest. On the
+	-- endless road's 8-degree climb, 140 studs short of its
+	-- top, the road stayed in sight to 176 studs ahead of
+	-- the car at 22 and 188 at 26 (30 degrees gave 216).
+	-- The radius is what GroundTiles and the vista tests
+	-- read, and it is unchanged. Was (0, 17.2, 42.7):
+	-- T-071's (below), driven and measured.
 	-- A 46.0-STUD RADIUS AT 22 DEGREES, against the
 	-- 55.5 at 14.9 this shipped with -- the reference's
 	-- own fallback, (0, 4, -15 m). Its LENGTH is the
@@ -272,9 +280,9 @@ local Camera = {
 	-- of the stepped targets, so it can never join the feedback loop. A multiplier on the
 	-- distance: 1 IS EXACTLY TODAY'S CAMERA, and someone who never scrolls never leaves it.
 	-- The prefix is `PlayerZoom`, never `CamZoom`, so the predecessor's names stay gone.
-	PlayerZoomMin = 0.6, -- x the distance at its nearest. OURS (T-152). 27.6 studs at 22 deg,
-	-- 10.3 up: the whole car and some road ahead, well clear of the roof
-	PlayerZoomMax = 1.8, -- x at its farthest. OURS (T-152). 82.8 studs, 31 up: the car is
+	PlayerZoomMin = 0.6, -- x the distance at its nearest. OURS (T-152). 27.6 studs at 26 deg,
+	-- 12.1 up (T-291; 10.3 at 22): the whole car and some road ahead, well clear of the roof
+	PlayerZoomMax = 1.8, -- x at its farthest. OURS (T-152). 82.8 studs, 36 up (T-291; 31 at 22): the car is
 	-- small but the road around it reads
 	PlayerZoomStep = 1.12, -- x per wheel notch, multiplied (so in and out are the same size
 	-- of step at any distance). OURS (T-152). Nine notches from nearest
@@ -310,6 +318,43 @@ local Camera = {
 	HillPitchRate = 3, -- per second. OURS (T-156). How fast the tip follows the grade: a 333
 	-- ms time constant, on top of the model's own smoothing of the normal,
 	-- so a crest rolls the view over rather than flicking it
+	-- THE FRAMING (T-291): "I want the car to sit lower on the screen, closer to the bottom".
+	-- The rendered view is aimed UP by this many degrees, so the car sits lower in the frame.
+	-- It turns the RENDERED camera only, after the pan, zoom and hill pitch, so nothing the
+	-- targets read moves: the lag, the lean and the swing are the approved camera's. 0 IS
+	-- THE CAMERA BEFORE IT, bit for bit.
+	-- Measured at 120 studs/s with `CamOffset` above: the car's middle sits 0.75 of the way
+	-- down the screen and its bottom 0.87, against 0.54 and 0.63 before; in a held 90-degree
+	-- drift 0.73 and 0.81. The aim alone does not show more road past a crest -- that is
+	-- hidden by the road itself, and only the eye's height helps, which is why `CamOffset`
+	-- went up with it -- it shows the same road with the car out of its way.
+	-- DEGREES, a fixed angle, so nothing moves the aim but the guard below: the car rides a
+	-- little higher as the FOV opens with speed and a little lower below 120 studs/s
+	-- (measured below). THE ROLL IS APPLIED BEFORE IT, about the axis through the car, so
+	-- the horizon banks about the car rather than swinging it sideways.
+	CamAimUp = 16.7, -- deg. OURS (T-291)
+	CamAimRate = 4, -- per second. OURS (T-291). How fast the aim follows what the guard
+	-- below allows: a 250 ms time constant, so a zoom notch or pulling
+	-- away reframes rather than snaps. THE GUARD READS THE CAMERA AT REST
+	-- (this offset, `CamLookAt`, the zoom and the FOV), never this frame's
+	-- camera: read live, it handed the camera's frame-to-frame wobble to
+	-- the picture (JitterTests: 0.47 deg a frame at full lock, limit 0.1)
+	CamFrameBottom = 0.95, -- share of the screen's height, from the top. OURS (T-291). The
+	-- guard: the aim is capped so the car's lowest point never sits below
+	-- this. It bites at low speed (a standstill's 52 deg FOV makes the car
+	-- big) and with the wheel zoomed in; at the default zoom at 120
+	-- studs/s and up it does not
+	CamFrameCarRadius = 9, -- studs. OURS (T-291). How far below its middle the car's
+	-- lowest point is, as the guard sees it: a sphere's worth, where the
+	-- AE86's real box is closer to 6.7 at the default distance but its
+	-- near corner reaches further down the screen close up. Measured,
+	-- the worst bottom of the car's box across a standstill, a held
+	-- 90-degree drift, an 8-degree dip at top speed and the wheel at
+	-- `PlayerZoomMin`: 7 let it reach 0.985 of the screen, 8 reached
+	-- 0.961, 9 holds 0.945. At a standstill it sits at 0.73 (bottom
+	-- 0.90), and zoomed fully in at a standstill the aim is off and the
+	-- car is where the camera alone puts it (bottom 0.945, against 0.903
+	-- before T-291). A bigger car wants a bigger number
 	CamTargetStep = 1 / 60, -- s. OURS, and NOT `FixedStep`. The camera's targets feed back
 	-- into themselves (the swung target is what the next frame's resting
 	-- direction is measured from), so where they settle depends on how
