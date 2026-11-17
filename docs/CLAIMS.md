@@ -9,7 +9,6 @@ Every task in progress and the files it owns, so parallel sessions and workers n
 
 | Branch | Lane | Files owned | Since |
 |---|---|---|---|
-| `agent/gravel-texture` | lent | `Road/RoadTexture.luau`, the gravel bevel's look in `Road/SplineMesh.luau`, the gravel runoff's colouring in `Drift/GroundMeshView.luau` (look only), `Config/Road.luau` and `Config/Spline.luau` gravel colour/texture keys, `features/road-surface.md` | 2026-11-16 (T-270) |
 | `feature/painted-vista-ridges-and-a-cloud-sea` | lent | new `Config/Vista.luau`, `Drift/VistaView.luau`, `Tests/VistaTests.luau`, admin command `World/vista.luau`, `pipeline/vista/*` (not `tools/`, which is the template's), `assets/painted-vista/*`; `Config/DayNight.luau` (two new keyframe values), `Controllers/SkyController.luau` (exposing the current look), `Controllers/DriftController.luau` (`UseSpline` builds and destroys the vista), `features/painted-vista.md`, `features/day-night.md` | 2026-11-16 (T-266) |
 
 ## Notes between sessions
