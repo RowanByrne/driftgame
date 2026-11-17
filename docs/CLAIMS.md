@@ -9,7 +9,6 @@ Every task in progress and the files it owns, so parallel sessions and workers n
 
 | Branch | Lane | Files owned | Since |
 |---|---|---|---|
-| `agent/score-engine` (T-295) | borrowed | `src/StarterPlayerScripts/Drift/ScoreEvents.luau` (new), `src/ReplicatedStorage/Shared/Config/ScoreEvents.luau` (new), `Drift/Events/Jump.luau` (new), `Drift/Events/WheelLift.luau` (new), `Drift/Score.luau`, `Shared/Config/Score.luau`, `src/ServerScriptService/Tests/ScoreTests.luau`, `Tests/ScoreEventsTests.luau` (new), `Controllers/DriftController.luau` (its score lines only), `docs/game/features/score-events.md` | 2026-11-17 |
 | `agent/score-grinds` (T-297) | borrowed | `src/StarterPlayerScripts/Drift/Model.luau` (wall-contact state fields only), `Drift/SplineWorld.luau`, `Drift/Events/BumperGrind.luau` (new), `Drift/Events/HangGrind.luau` (new), `src/ServerScriptService/Tests/SplineWorldTests.luau`, `Tests/GrindEventsTests.luau` (new) | 2026-11-17 |
 | `agent/score-nearmiss` (T-298) | borrowed | `src/StarterPlayerScripts/Drift/Events/NearMiss.luau` (new), `src/ServerScriptService/Tests/NearMissTests.luau` (new) | 2026-11-17 |
 | `agent/score-hairpins` (T-299) | borrowed | `src/ReplicatedStorage/Shared/Road/Hairpins.luau` (new), `src/StarterPlayerScripts/Drift/Events/PerfectHairpin.luau` (new), `Drift/Events/ReverseEntry.luau` (new), `src/ServerScriptService/Tests/HairpinTests.luau` (new) | 2026-11-17 |
