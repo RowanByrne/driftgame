@@ -40,6 +40,8 @@ local LaneDrift = require(DriftFolder.Events.LaneDrift)
 local PerfectLaneDrift = require(DriftFolder.Events.PerfectLaneDrift)
 local PerfectHairpin = require(DriftFolder.Events.PerfectHairpin)
 local ReverseEntry = require(DriftFolder.Events.ReverseEntry)
+local Score = require(DriftFolder.Score)
+local ScoreEvents = require(DriftFolder.ScoreEvents)
 
 local SEED = 31337
 local MORE_SEEDS = { 101, 2024, 8080, 777 }
@@ -114,6 +116,9 @@ local function standIn(spline, s: number, d: number, speed: number, into: number
 		wheelsDown = { true, true, true, true },
 		airborne = false,
 		fell = false,
+		surfaceScore = Config.Drift.ScoreTarmac,
+		grounded = true,
+		pinned = false,
 	}
 end
 
@@ -673,6 +678,73 @@ local function runAll(opts)
 			else
 				check(`{tag}: perfect hairpin does not start on a bend that is not a hairpin`, #sph.started == 0, `{#sph.started} started (turns {fmt(h.hairpinTurn, 0)} deg within {T.HairpinStretch} studs)`)
 			end
+
+			-- ONE FEED LINE: the bend's events through a real engine, its feed recorded
+			local function feedRide(plan)
+				local score = Score.new()
+				local eng = ScoreEvents.new()
+				eng.print = false
+				eng:bind(function()
+					return score
+				end)
+				local seen = {}
+				eng.feed:Connect(function(entry)
+					table.insert(seen, entry)
+				end)
+				local sinkE = eng:sink()
+				local dets = { LaneDrift.new(sinkE, rig), PerfectLaneDrift.new(sinkE, rig), PerfectHairpin.new(sinkE, rig) }
+				local dt = 1 / 120
+				local s, t = h.zone - 40, 0
+				while s <= h.exit + 20 do
+					local d, into = plan(s, t)
+					local st = standIn(spline, s, d, 60, into, h.dir)
+					eng:step(dt, st)
+					for _, det in dets do
+						det:Update(dt, st)
+					end
+					score:Step(dt, st)
+					s += 60 * dt
+					t += dt
+				end
+				local ids, voids = {}, 0
+				for _, en in seen do
+					ids[en.id] = true
+					if en.state == "void" then
+						voids += 1
+					end
+				end
+				local n = 0
+				for _ in ids do
+					n += 1
+				end
+				local banked = 0
+				for _, kind in { "laneDrift", "perfectLaneDrift", "perfectHairpin" } do
+					local c = eng.counts[kind]
+					banked += if c then c.points else 0
+				end
+				return n, seen[1], seen[#seen], banked, voids
+			end
+			local W = Config.ScoreEvents.Kinds
+			local liveWord = if h.hairpin then W.perfectHairpin.Words[1].text else W.laneDrift.Words[1].text
+			local n4, f4, l4, b4 = feedRide(function()
+				return outside, 45
+			end)
+			local n2, _, l2 = feedRide(function()
+				return outside, 20
+			end)
+			local nv, _, lv, _, vv = feedRide(breakFor(0.6))
+			local nd, _, ld = feedRide(function(s)
+				return outside, if s < h.apex then 45 else 20
+			end)
+			check(
+				`{tag}: the bend's events show as one feed line, worded {liveWord} live, upgraded to the best banked, LOST once`,
+				n4 == 1 and f4 and f4.state == "live" and f4.label == liveWord and l4 and l4.state == "banked" and l4.label == W.perfectLaneDrift.Words[1].text
+					and math.abs(l4.points - b4) < 1e-6 and b4 > 0
+					and n2 == 1 and l2 and l2.state == "banked" and l2.label == liveWord
+					and nv == 1 and lv and lv.state == "void" and vv == 1
+					and nd == 1 and ld and ld.state == "banked" and ld.label == liveWord,
+				`all four wheels: {n4} line, {f4 and f4.label} live, banked as {l4 and l4.label} +{l4 and fmt(l4.points, 0)} (the kinds banked {fmt(b4, 0)}); two wheels: {n2} line, {l2 and l2.label}; broken: {nv} line, {lv and lv.state}, {vv} void entry; 4 then 2: {nd} line, {ld and ld.label}`
+			)
 
 			-- REVERSE ENTRY, on every bend
 			local swingAt = h.entry - 20

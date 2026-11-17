@@ -17,6 +17,16 @@
 -- Kinds and every number: `Config.ScoreEvents`. An unknown kind warns once and does nothing.
 -- `info` may carry `label` (the line's text instead of the kind's words).
 --
+-- ONE LINE FOR SEVERAL EVENTS (T-299 send-back: "instead of showing multiple perfect hairpins
+-- on the UI - just show perfect hairpin, then upgrade it on completion if it was one of the
+-- better versions"). Events started with the same `info.group` while one of them is live
+-- share ONE feed entry: its own id, worded by `info.groupKind`'s first word while live, its
+-- points the sum of the members still live or banked (a member that fails drops out of it).
+-- When the last member ends: banked if any member banked, worded and kinded as the banked
+-- member with the highest `Static` (the best version), with the banked members' points;
+-- else void, once, with what was shown. Each member still scores as its own kind (repeats,
+-- counts, static, kick); only what the feed and the log see is merged.
+--
 -- THE MODULE IS ONE ENGINE, the client's, which `DriftController` steps and binds to
 -- `ScoreController`'s score; `ScoreEvents.new` makes a separate one (tests). Each engine:
 --   engine:step(dt, state)    once per simulation step, BEFORE the detectors and before
@@ -117,6 +127,7 @@ function ScoreEvents.new(): any
 		binAt = 0, -- the bin index the clock is in
 		binSum = 0,
 		counts = {} :: { [string]: any },
+		groups = {} :: { [any]: any }, -- live groups by `info.group`: one feed line each
 		log = {} :: { Entry },
 		warned = {} :: { [string]: boolean },
 		print = RunService:IsStudio() and C.PrintInStudio == true,
@@ -357,10 +368,84 @@ function Engine.start(self: any, kind: string, info: { [string]: any }?): any
 	}, Handle)
 	self.live[h] = true
 	self:_count(kind).started += 1
+	local key = info and info.group
+	if key ~= nil then
+		local g = self.groups[key]
+		if not g then
+			local gk = if info and info.groupKind and kindOf(info.groupKind) then info.groupKind else kind
+			g = {
+				key = key,
+				entry = self:_newEntry(gk, labelOf(kindOf(gk), nil, 0, 0), score.multiplier),
+				members = {},
+				lastFed = self.clock,
+				dirty = false,
+			}
+			self.groups[key] = g
+		end
+		h.group = g
+		table.insert(g.members, h)
+	end
 	if h.shown then
-		self:_emit(h.entry)
+		self:_show(h, true)
 	end
 	return h
+end
+
+-- A handle's line to the feed: its own entry, or its group's (`now`: at once, else at the
+-- next `FeedEvery`). A group whose last member has ended goes out banked or void, once.
+function Engine._show(self: any, h: any, now: boolean)
+	local g = h.group
+	if not g then
+		self:_emit(h.entry)
+		return
+	end
+	local points, rung, live = 0, g.entry.rung, false
+	local best, bestStatic = nil, -math.huge
+	local banked, lost = 0, 0
+	for _, m in g.members do
+		local e = m.entry
+		if m.live then
+			live = true
+			points += e.points
+			rung = math.max(rung, e.rung)
+		elseif e.state == "banked" then
+			points += e.points
+			banked += e.points
+			rung = math.max(rung, e.rung)
+			local s = m.k.Static or 0
+			if s >= bestStatic then
+				best, bestStatic = m, s
+			end
+		else
+			lost += e.points
+		end
+	end
+	local entry = g.entry
+	entry.rung = rung
+	if live then
+		entry.points = points
+		if now then
+			g.dirty = false
+			g.lastFed = self.clock
+			self:_emit(entry)
+		else
+			g.dirty = true
+		end
+		return
+	end
+	if self.groups[g.key] == g then
+		self.groups[g.key] = nil
+	end
+	if best then
+		entry.state = "banked"
+		entry.kind = best.kind
+		entry.label = best.entry.label
+		entry.points = banked
+	else
+		entry.state = "void"
+		entry.points = lost
+	end
+	self:_emit(entry)
 end
 
 function Engine.sink(self: any): Sink
@@ -436,17 +521,30 @@ function Engine.step(self: any, dt: number, state: any)
 		end
 		self.boundScore = score
 	end
-	-- The live lines' growth to the feed, at most every `FeedEvery`.
+	-- The live lines' growth to the feed, at most every `FeedEvery`. A grouped handle's growth
+	-- is its group's, sent once for all its members.
 	local due = {}
+	local dueGroups = {}
 	for h in self.live do
-		if h.dirty and h.shown and self.clock - h.lastFed >= C.FeedEvery then
-			table.insert(due, h)
+		if h.dirty and h.shown then
+			local g = h.group
+			if g then
+				h.dirty = false
+				if self.clock - g.lastFed >= C.FeedEvery and not dueGroups[g] then
+					dueGroups[g] = h
+				end
+			elseif self.clock - h.lastFed >= C.FeedEvery then
+				table.insert(due, h)
+			end
 		end
 	end
 	for _, h in due do
 		h.dirty = false
 		h.lastFed = self.clock
 		self:_emit(h.entry)
+	end
+	for _, h in dueGroups do
+		self:_show(h, true)
 	end
 end
 
@@ -456,6 +554,7 @@ function Engine.reset(self: any)
 	table.clear(self.history)
 	table.clear(self.counts)
 	table.clear(self.log)
+	table.clear(self.groups)
 	for i = 1, self.binCount do
 		self.bins[i] = 0
 	end
@@ -527,7 +626,7 @@ function Handle.update(self: any, size: number, dt: number)
 		self.shown = true
 		self.dirty = false
 		self.lastFed = engine.clock
-		engine:_emit(entry)
+		engine:_show(self, true)
 	end
 
 	-- Held too long: bank this line and carry on in a fresh one, so nothing runs up
@@ -573,7 +672,7 @@ function Handle._bank(self: any, score: any)
 	c.banked += 1
 	c.points += entry.points
 	c.best = math.max(c.best, entry.points)
-	self.engine:_emit(entry)
+	self.engine:_show(self, true)
 end
 
 function Handle.finish(self: any, completed: boolean)
@@ -600,16 +699,19 @@ function Handle.finish(self: any, completed: boolean)
 			c.banked += 1
 			c.points += entry.points
 			c.best = math.max(c.best, entry.points)
-			engine:_emit(entry)
+			engine:_show(self, true)
 		else
 			self:_bank(score)
 		end
 	elseif self.shown then
 		entry.state = "void"
 		engine:_count(self.kind).void += 1
-		engine:_emit(entry)
+		engine:_show(self, true)
 	else
 		engine:_count(self.kind).empty += 1 -- lost before it earned anything: no line
+		if self.group then
+			engine:_show(self, true) -- the group may have been waiting on this one
+		end
 	end
 end
 

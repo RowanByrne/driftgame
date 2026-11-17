@@ -24,6 +24,8 @@
 --   the tarmac between the two white edge lines. More than `MaxWheelsOut` wheels out at once
 --   voids it: one wheel over a line is forgiven (the user's send-back).
 --   COMPLETES (finish true) past the bend's exit; the handle is updated with size 1 each step.
+--   ONE FEED LINE: every bend event on the same bend shares `info.group`, so the feed shows
+--   one line for them (`Drift/ScoreEvents`), worded by `info.groupKind` while live.
 --   VOIDS (finish false) on a broken drift, too many wheels out, a fall, a put-back, going
 --   back out of the zone, or the road changing.
 --
@@ -306,6 +308,10 @@ function BendDrift.Update(self: any, dt: number, state: any)
 			radius = h.radius,
 			hairpin = h.hairpin,
 			side = side,
+			-- one feed line for every bend event on this bend (the engine's groups): PERFECT
+			-- HAIRPIN on a true hairpin, LANE DRIFT on a plain bend, upgraded as it banks
+			group = `bend:{h.entry}`,
+			groupKind = if h.hairpin then "perfectHairpin" else "laneDrift",
 		})
 	end
 end

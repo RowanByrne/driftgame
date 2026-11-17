@@ -61,6 +61,12 @@ ramp(hairpinBanked, 1, "perfectHairpin", "PERFECT HAIRPIN", 900, 0, 2.5, "banked
 local hairpinVoid = {}
 ramp(hairpinVoid, 1, "perfectHairpin", "PERFECT HAIRPIN", 520, 0, 2, "void")
 
+-- One line for a bend's events (T-299): it counts up live as PERFECT HAIRPIN, then banks
+-- upgraded to the best version completed, PERFECT LANE DRIFT, with the combined points.
+local bendUpgrade = {}
+ramp(bendUpgrade, 1, "perfectHairpin", "PERFECT HAIRPIN", 760, 0, 3)
+table.insert(bendUpgrade, at(3.05, e(1, "perfectLaneDrift", "PERFECT LANE DRIFT", 2240, "banked", 4)))
+
 -- Several at once: a grind live, a wheel lift starting under it, three near misses merging
 -- into one line, a jump landing, the lift lost to a fall.
 local stacking = {}
@@ -160,6 +166,7 @@ return {
 	grindLive = { script = grindLive },
 	hairpinBanked = { script = hairpinBanked },
 	hairpinVoid = { script = hairpinVoid },
+	bendUpgrade = { script = bendUpgrade },
 	stacking = { script = stacking },
 	longRun = { script = longRun },
 }
