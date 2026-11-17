@@ -30,12 +30,13 @@
 --   * Reduced Motion (`GuiService.ReducedMotionEnabled`): no slide, no flash, no glide, no
 --     pulse; lines appear and fade.
 --
--- WHERE IT SITS (the spec's choice): under the score panel, in its centre column, 146 px
--- below the inset (the panel's bottom 138 and a gap), 220 px wide like the panel. On a screen
--- too narrow for the road map to sit beside that column (phone portrait), the map drops below
--- the column on the left, so the feed sits right of the map instead, right-aligned, and starts
--- under the Settings button that shares that edge. The map's rule is read from
--- `Config.RoadMap`, the same numbers `Drift/RoadMapView` places itself by.
+-- WHERE IT SITS (`_layout`). Desktop and tablet: the spec's choice, under the score panel in
+-- its centre column, 146 px below the inset (the panel's bottom 138 and a gap), 220 px wide
+-- like the panel. A phone on its side: the top right corner, as a killfeed, because there the
+-- road ahead fills the centre column up to the horizon (measured, T-296). A phone upright (the
+-- road map has dropped below the centre column on the left): right of the map, under the
+-- Settings button that shares that edge. The map's rule is read from `Config.RoadMap`, the
+-- same numbers `Drift/RoadMapView` places itself by.
 --
 -- IT NEVER TAKES A TOUCH: the whole screen is the steering pad. Nothing here is `Active`, and
 -- its `DisplayOrder` (13) is under the score panel's 14, over the drag pad's 5.
@@ -60,10 +61,11 @@ local C = {
 	Top = 146, -- px below the inset: the score panel's bottom (80 + 58) and an 8 px gap
 	Margin = 16, -- px from the screen's right edge, beside the map (phone portrait)
 	MapGap = 8, -- px kept clear between the map and the feed
-	-- Beside the map the feed shares the right edge with the Settings button
-	-- (`Settings/SettingsView`: 144 x 48, its top 176 px below the safe area's top), so there
-	-- it starts under that button's bottom and a gap.
-	SettingsBottom = 224, -- px below the safe area's top
+	-- The Settings button on the right edge (`Settings/SettingsView`: 144 x 48, its top 176 px
+	-- below the safe area's top): beside the map the feed starts under it, top right it stops
+	-- above it (and above the Garage button, `Config.GarageMenu`).
+	SettingsTop = 176, -- px below the safe area's top
+	SettingsHeight = 48,
 	LineHeight = 30, -- px, one row
 	TwoRowHeight = 50, -- px, a name too long to share its row with the points
 	Gap = 4, -- px between lines
@@ -194,45 +196,61 @@ function ScoreFeedView:_reduced(): boolean
 	return GuiService.ReducedMotionEnabled
 end
 
--- Place the feed from the measured screen, the road map's rule beside it.
+-- Place the feed from the measured screen. Three placements, all in this one function
+-- (UI.md "Keep each screen's per-layout placement together"):
+--   centre     desktop and tablet: under the score panel, in its column
+--   topRight   a phone on its side: the top right corner, beside the run button's column
+--   besideMap  a phone upright: right of the road map, under the Settings button
 function ScoreFeedView:_layout()
 	local RM = Config.RoadMap
+	local G = Config.GarageMenu
 	local screen = self.gui.AbsoluteSize
 	local phone = screen.X > 0 and math.min(screen.X, screen.Y) < RM.PhoneBelow
 	local mapSize = if phone then RM.PhoneSize else RM.Size
 	local roomBeside = (screen.X - RM.CentreColumn) * 0.5 - RM.CentreGap
 	local besideMap = screen.X > 0 and RM.Margin + mapSize > roomBeside
 	local o = self.offsets.ScoreFeed or Vector2.zero
-	local width = C.Width
-	local top = C.Top
+
+	-- The right edge's buttons, in this screen's px: Settings (`Settings/SettingsView`, its
+	-- top 176 px below the safe area's top) and Garage (`Config.GarageMenu`, bottom right).
+	local safe = GuiService:GetInsetArea(Enum.ScreenInsets.CoreUISafeInsets)
+	local full = GuiService:GetInsetArea(Enum.ScreenInsets.None)
+	local myTop = self.gui.AbsolutePosition.Y
+	local settingsTop = safe.Min.Y + C.SettingsTop - myTop
+	local garageTop = full.Max.Y - (G.HudButtonAbove + G.HudButtonSize.Y) - myTop
+
+	local placement, width, top, maxBottom
 	if besideMap then
-		-- right of the map, which has dropped below the centre column on the left
+		placement = "besideMap"
 		local left = RM.Margin + mapSize + C.MapGap
 		width = math.min(C.Width, screen.X - C.Margin - left)
-		-- the safe area's top and this screen's own top, both in absolute px
-		local safe = GuiService:GetInsetArea(Enum.ScreenInsets.CoreUISafeInsets)
-		local settingsBottom = safe.Min.Y + C.SettingsBottom - self.gui.AbsolutePosition.Y
-		top = math.max(C.Top, settingsBottom + C.MapGap)
+		top = math.max(C.Top, settingsTop + C.SettingsHeight + C.MapGap)
+		self.root.AnchorPoint = Vector2.new(1, 0)
+		self.root.Position = UDim2.new(1, -C.Margin + o.X, 0, top + o.Y)
+	elseif phone then
+		-- Measured (T-296): on a phone on its side the road ahead fills the centre column
+		-- from the car up to the horizon, so under the score the feed covered it. The top
+		-- right is sky and scenery, and is where a killfeed sits.
+		placement = "topRight"
+		local left = (screen.X + RM.CentreColumn) * 0.5 + C.MapGap
+		width = math.min(C.Width, screen.X - C.Margin - left)
+		top = C.Margin
+		maxBottom = math.min(settingsTop, garageTop) - C.MapGap
 		self.root.AnchorPoint = Vector2.new(1, 0)
 		self.root.Position = UDim2.new(1, -C.Margin + o.X, 0, top + o.Y)
 	else
-		-- On a short phone on its side the Garage button (bottom right, `Config.GarageMenu`)
-		-- comes up into the feed's rows; then the feed moves left until its right edge is
-		-- clear of the button's left edge (iPhone 7: 16 px left).
-		local shift = 0
-		if phone then
-			local G = Config.GarageMenu
-			local clearRight = screen.X - (G.HudButtonMargin + G.HudButtonSize.X) - C.MapGap
-			shift = math.min(0, clearRight - (screen.X + C.Width) * 0.5)
-		end
+		placement = "centre"
+		width = C.Width
+		top = C.Top
 		self.root.AnchorPoint = Vector2.new(0.5, 0)
-		self.root.Position = UDim2.new(0.5, shift + o.X, 0, C.Top + o.Y)
+		self.root.Position = UDim2.new(0.5, o.X, 0, top + o.Y)
 	end
 	local changed = self.width ~= width
 	self.width = width
 	self.phone = phone
-	self.placement = if besideMap then "besideMap" else "centre"
+	self.placement = placement
 	self.top = top
+	self.maxHeight = if maxBottom then math.max(maxBottom - top, C.LineHeight) else nil
 	self.maxLines = if phone then C.PhoneLines else C.Lines
 	if changed then
 		for _, line in self.lines do
@@ -392,6 +410,27 @@ function ScoreFeedView:_trim()
 		if not line.fadeFrom and line.state ~= "live" then
 			line.fadeFrom = self.t
 			kept -= 1
+		end
+	end
+	-- and past the room it has (top right on a phone: above the Settings and Garage buttons)
+	if self.maxHeight then
+		local function height()
+			local h = 0
+			for _, line in self.lines do
+				if not line.fadeFrom then
+					h += line.height + C.Gap
+				end
+			end
+			return h - C.Gap
+		end
+		for i = #self.lines, 1, -1 do
+			if height() <= self.maxHeight then
+				break
+			end
+			local line = self.lines[i]
+			if not line.fadeFrom and line.state ~= "live" then
+				line.fadeFrom = self.t
+			end
 		end
 	end
 end
@@ -672,6 +711,7 @@ function ScoreFeedView:describe()
 		screen = self.gui.AbsoluteSize,
 		placement = self.placement,
 		top = self.top,
+		maxHeight = self.maxHeight,
 		phone = self.phone,
 		maxLines = self.maxLines,
 		width = self.width,
