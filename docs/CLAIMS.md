@@ -9,8 +9,8 @@ Every task in progress and the files it owns, so parallel sessions and workers n
 
 | Branch | Lane | Files owned | Since |
 |---|---|---|---|
-| `agent/ground-opaque` (T-276) | borrowed | `src/StarterPlayerScripts/Drift/GroundMeshView.luau`, `Drift/GroundTiles.luau`, `Drift/GroundDetail.luau`, `Drift/MeshBudget.luau`, `src/ReplicatedStorage/Shared/Road/GrassTexture.luau`, `Shared/Config/Spline.luau` (all but its `Tarmac` and `Gravel` tables and T-278's lines), `src/ServerScriptService/Tests/GroundTests.luau` | 2026-11-17 |
-| `agent/road-range` (T-278) | borrowed | `Shared/Config/Spline.luau` (only `Mesh.Ahead`, `AheadDefault`, `AheadTouchDefault`, `Behind`, `BehindDefault`, `BehindTouchDefault` and their comments), `docs/game/SETTINGS.md`, `src/ServerScriptService/Tests/SplineMeshTests.luau`, `src/StarterPlayerScripts/Drift/RoadAhead.luau`, `Drift/RoadBehind.luau` | 2026-11-17 |
+| `agent/road-patches` (T-285) | borrowed | `src/ReplicatedStorage/Shared/Road/RoadTexture.luau`, `Shared/Road/SplineMesh.luau`, `Shared/Config/Spline.luau` (its `Tarmac` table only), `assets/road/*`, `docs/game/features/road-surface.md` | 2026-11-17 |
+| `agent/ground-inside-vista` (T-281) | borrowed | `src/StarterPlayerScripts/Drift/GroundTiles.luau`, `Drift/GroundMeshView.luau`, `Drift/GroundDetail.luau`, `Shared/Config/Spline.luau` (its `Ground` table only), `src/ServerScriptService/Tests/GroundTests.luau` | 2026-11-17 |
 
 ## Notes between sessions
 

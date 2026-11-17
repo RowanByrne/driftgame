@@ -576,6 +576,19 @@ local Spline = {
 		MeshSliceMs = 2, -- ms of building a frame
 		FirstSliceMs = 6, -- ms a frame while nothing is drawn yet (a run's first second)
 		Spare = 24, -- tiles built hidden, then swapped in whole, so a change never shows half done
+		-- OPAQUE TILES (T-276, `Drift/GroundMeshView`): each time a tile changes, its mesh made
+		-- opaque content in a copy of the master let go at once, so the ground holds none of the
+		-- mesh memory (measured: free at the end of a 300 s defaults drive 308 -> 616). OFF: the
+		-- ground changes about 30 tiles a second, and a client that makes thousands of opaque
+		-- contents freezes (measured, DR-Lane1: a 300 s drive froze 16 s and 4 s; a bare bench
+		-- of copy -> opaque -> MeshPart, 300 kept, at 25 a second froze 5 to 12 s at a time from
+		-- about 2 100 to 3 500 made on, with or without a fresh copy each time). The master is
+		-- opaque either way (one content a session). In Studio `workspace.__opaque_ground = true`
+		-- turns it on, to measure again
+		OpaqueTiles = false,
+		-- with it on: this many copies at a time, made off the frame while the next tile is
+		-- worked out (each about two tiles of mesh memory while it is made)
+		OpaqueInFlight = 6,
 		Hysteresis = 1.2, -- a split tile stays split until it is this much past needing it
 		Reselect = 12, -- studs the car moves before the tiles are chosen again
 		-- THE ROAD'S DETAIL: from `Mesh.Behind` back to `Mesh.Ahead` on along it (as far as the
@@ -648,36 +661,40 @@ local Spline = {
 		-- ahead falls back to parts (`Drift/SplineRoadView`).
 		ChunkLength = 480,
 		-- THE PLAYER'S "ROAD AHEAD" AND "ROAD BEHIND" (Settings, Graphics; docs/game/SETTINGS.md,
-		-- T-230, T-263): how far in front of the car, and behind it, the road and the ground along
-		-- it are drawn: at least `Studs` (chunk-aligned, so up to a chunk more). THE SAME STEPS
-		-- BOTH WAYS, three times the first ones (the user's send-back, 2026-11-16: Road ahead was
-		-- 1 000 to 3 200, Road behind 300 to 3 000 in five steps). Past `Near` a chunk is drawn
-		-- at `Far`'s detail, about a quarter of a whole chunk's triangles: that is what lets
-		-- Longest both ways fit the mesh budget (measured: 41 chunks, about 14 000 triangles).
+		-- T-230, T-263, T-278): how far in front of the car, and behind it, the road and the ground
+		-- along it are drawn: at least `Studs` (chunk-aligned, so up to a chunk more).
+		-- CAPPED INSIDE THE VISTA (T-278, the user, 2026-11-17: no road or terrain cutting into
+		-- the art; then "Small vista move": the rings 1.37 times further out, `Config.Vista`).
+		-- The nearest ring, "Near", is now 3 589 studs from the camera; a flat panel's middle
+		-- is nearer (3 589 cos 9 = 3 545) and it trails the camera by up to 82: 3 463 at worst.
+		-- The furthest road is `Studs` + a chunk (480) past the car, the camera up to 83
+		-- behind it (`PlayerZoomMax`), and the corridor's ground a 256-stud tile
+		-- (`RoadCoarsest` x `TileCells`, 362 across its diagonal) past that: so no step may
+		-- exceed 3 463 - 480 - 83 - 362 = 2 538 (`SplineMeshTests` works it out from
+		-- `Config.Vista` for every setting). Ahead stays longer than behind at every step.
+		-- Every step ahead past `Near.Ahead` is drawn at the far detail.
 		-- `GroundTiles`: more tiles for the ground's corridor beside the longer road (32-stud
-		-- tiles to `Ground.RoadFar`, coarser past it), so the sharp ground round the car keeps
-		-- its share; never more than `Ground.CorridorMost` past Ultra's own.
+		-- tiles), about 15 for each 1 000 studs; never more than `Ground.CorridorMost` past Ultra's own.
 		-- A DEVICE CAN ONLY DRAW ROAD THE SERVER HAS SENT: `RoadService` lays the longest
 		-- `Ahead` step past the end of the leader's section.
 		Ahead = {
-			{ Name = "Short", Studs = 3000, GroundTiles = 40 },
-			{ Name = "Medium", Studs = 4800, GroundTiles = 60 },
-			{ Name = "Long", Studs = 7200, GroundTiles = 80 },
-			{ Name = "Longest", Studs = 9600, GroundTiles = 100 },
+			{ Name = "Short", Studs = 1200, GroundTiles = 18 },
+			{ Name = "Medium", Studs = 1600, GroundTiles = 24 },
+			{ Name = "Long", Studs = 2000, GroundTiles = 30 },
+			{ Name = "Longest", Studs = 2500, GroundTiles = 37 },
 		},
-		AheadDefault = 2, -- Medium: three times the 1 600 before
+		AheadDefault = 2, -- Medium, 1 600
 		AheadTouchDefault = 2, -- the same on a phone or tablet
 		-- behind: a chunk behind was built when it was ahead, so each step back costs the chunks
 		-- it keeps, not building (a whole one is drawn again far once it is past `Near`)
 		Behind = {
-			{ Name = "Short", Studs = 3000, GroundTiles = 30 },
-			{ Name = "Medium", Studs = 4800, GroundTiles = 40 },
-			{ Name = "Long", Studs = 7200, GroundTiles = 55 },
-			{ Name = "Longest", Studs = 9600, GroundTiles = 70 },
+			{ Name = "Short", Studs = 600, GroundTiles = 9 },
+			{ Name = "Medium", Studs = 1000, GroundTiles = 15 },
+			{ Name = "Long", Studs = 1500, GroundTiles = 22 },
+			{ Name = "Longest", Studs = 2000, GroundTiles = 30 },
 		},
-		-- Short: three times the old 1 300 is 3 900, as near Short as Medium, and Short is cheaper
-		BehindDefault = 1, -- keyboard and mouse, or gamepad
-		BehindTouchDefault = 1, -- a phone or tablet (it was Medium, 800: three times is 2 400)
+		BehindDefault = 1, -- Short, 600, on keyboard and mouse, or gamepad
+		BehindTouchDefault = 1, -- a phone or tablet
 		-- the ground beside the road behind stays as sharp as ahead for this far back, and is
 		-- `Ground.RoadCoarsest` past it (it was Short's 300 studs before T-263 tripled the steps)
 		BehindSharp = 300, -- studs

@@ -91,8 +91,8 @@ function Tests.run()
 			string.format("skirt to %.0f, cloud at %.0f", skirtBottom, -V.CloudSea.Below)
 		)
 		check(
-			`{layer.Name}: the cloud sea reaches past it, so its edge is never seen`,
-			Vista.cloudReach(V.CloudSea) > layer.Radius + layer.MaxLag,
+			`{layer.Name}: the cloud sea reaches past it, so its edge is never seen (or the cloud sea is off)`,
+			V.CloudSea.Enabled == false or Vista.cloudReach(V.CloudSea) > layer.Radius + layer.MaxLag,
 			string.format("cloud reaches %.0f", Vista.cloudReach(V.CloudSea))
 		)
 
@@ -109,6 +109,20 @@ function Tests.run()
 			arcWidest = math.max(arcWidest, p.size.X, p.size.Y, p.size.Z)
 		end
 		check(`{layer.Name}: curved panels meet end to end`, arcGap < 0.5, string.format("widest gap %.2f", arcGap))
+		-- (T-278) a picture's slices meet where its picture runs on: each panel's left edge
+		-- (u = slice / slices; the next panel round is on its left) is its left neighbour's
+		-- right edge ((slice + 1) / slices) in the same picture, and a new picture starts
+		-- where the last one ended (u 0 against u 1, the joined pictures' shared connector)
+		local uvJump = 0
+		for i, p in arcs do
+			local q = arcs[i % #arcs + 1]
+			local S = p.slices or 1
+			local leftU = (p.slice or 0) / S
+			local rightU = ((q.slice or 0) + 1) / S
+			local samePicture = p.image == q.image and math.floor((i - 1) / S) == math.floor(i / S)
+			uvJump = math.max(uvJump, if samePicture then math.abs(leftU - rightU) else math.abs(leftU - 0) + math.abs(rightU - 1))
+		end
+		check(`{layer.Name}: the slices of a picture join where the picture runs on`, uvJump < 1e-6, string.format("worst u jump %.3f", uvJump))
 		check(`{layer.Name}: curved panels under 2 048 studs`, arcWidest < 2048, string.format("largest side %.0f", arcWidest))
 		local a1 = arcs[1]
 		local arcBottom = a1.cframe.Position.Y - a1.size.Y / 2

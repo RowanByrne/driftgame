@@ -267,3 +267,23 @@ Made on 2026-11-10, after the gray model was approved, by `..\art\source\car-ae8
   (tail pipe included). The meshes were uploaded to the user's account by that import; the
   ids are in `car-ae86.meshes.json`. **Roblox ownership:** they are the importing account's, and
   nothing has been set about who may use them (ART-PIPELINE.md "Ownership and permissions").
+
+## The restyled model's export (2026-11-17)
+
+A second model of the same car, made in Blender from a detailed downloaded model of the real
+car (`features/car-model.md` "The restyled model"), exported on 2026-11-17 after the user's
+"great. prepare this for studio", by `..\art\source\car-ae86-fbx\mid\export.py` from
+`..\art\source\car-ae86-fbx\AE86_mid.blend`.
+
+| File | What it is |
+|---|---|
+| `car-ae86-mid.fbx` | The whole car, shut, pop-up lights down: 142 meshes, 64,533 triangles (the largest piece 3,660), 3.3 MB, each a part cut by surface and named `<Part>_<Surface>`. One unit is one stud, Y up, facing -Z as `car-ae86.fbx` is. Curved panels carry their smooth normals; the tyre, disc and caliper pieces carry their UVs and maps, embedded in the file (seven images). The `Paint` and `Second` pieces carry wrap UVs on the same sheet as `car-ae86.fbx` |
+| `car-ae86-mid.json` | The data that goes with it, in `car-ae86.json`'s shape: 54 moving parts and lamps (pivot, axis, travel, what each rides on, what lamp it is), the 8 static parts and what is in each, the 142 pieces, the 33 surfaces in use (starting look, `Paint` tag, maps), and the seat, exit and floor points |
+
+- **Checked:** read back in on its own: the same 142 names, triangle counts and points, every
+  corner's normal within 0.7 degrees, UVs on the 26 pieces that should have them, and the seven
+  maps.
+- **Not imported yet.** Roblox's docs say the importer takes PBR maps embedded in an FBX, but
+  not what it makes of them or whether it keeps a file's normals: check both in Studio.
+- **Where the downloaded model came from, and its licence, are not recorded here.** Its wheel
+  maps are in this export. Record them before the car ships (PLATFORM-RISKS.md).

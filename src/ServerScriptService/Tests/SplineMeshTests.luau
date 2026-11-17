@@ -256,16 +256,17 @@ function Tests.run()
 		end
 		check("every mesh user fits the client's mesh memory at the default settings, the ground keeping its own detail", defOk, `{table.concat(defLines, "; ")}; spare kept {MB.Spare}`)
 		-- (T-274) THE GROUND DRAWS WHAT IT DREW: its share is still T-273's (`Budget.GroundShare`),
-		-- whose caps T-273 measured (323 tiles at the defaults, 254 at Longest both ways), and what
+		-- whose caps T-273 measured (323 tiles at the old defaults, 254 at Longest both ways; T-278's shorter steps leave it more), and what
 		-- the savings freed stays free until the user spends it
+		local CAP_DEFAULT, CAP_LONGEST = 359, 344 -- (T-278) at its steps capped inside the vista (measured)
 		local capDefault = SplineMesh.groundRoom(M.Ahead[M.AheadDefault].Studs, M.Behind[M.BehindDefault].Studs)
 		local capLongest = SplineMesh.groundRoom(M.Ahead[#M.Ahead].Studs, M.Behind[#M.Behind].Studs)
 		local freeDefault = SplineMesh.freeTiles(M.Ahead[M.AheadDefault].Studs, M.Behind[M.BehindDefault].Studs)
 		local freeLongest = SplineMesh.freeTiles(M.Ahead[#M.Ahead].Studs, M.Behind[#M.Behind].Studs)
 		check(
 			"the ground draws what it drew before T-274, and the savings stay free",
-			capDefault == 323 and capLongest == 254 and freeDefault > 0 and freeLongest > 0,
-			`the ground's cap {capDefault} at the defaults (T-273: 323), {capLongest} at Longest both ways (254); free by these figures {math.floor(freeDefault)} and {math.floor(freeLongest)} tiles`
+			capDefault == CAP_DEFAULT and capLongest == CAP_LONGEST and freeDefault > 0 and freeLongest > 0,
+			`the ground's cap {capDefault} at the defaults ({CAP_DEFAULT}), {capLongest} at Longest both ways ({CAP_LONGEST}; T-278's shorter steps, T-273's were 323 and 254); free by these figures {math.floor(freeDefault)} and {math.floor(freeLongest)} tiles`
 		)
 		-- (b) ANY SETTINGS: the road's whole window fits beside the least ground there can be
 		-- (`YieldFloor`, `Drift/MeshBudget`), so no road near the car need ever go; and how many
@@ -288,22 +289,63 @@ function Tests.run()
 			worst <= MB.Tiles,
 			`worst {worstName}: {math.floor(worst)} of {MB.Tiles} tiles with the ground at {G.YieldFloor + G.Spare}; the ground on Ultra: {table.concat(lines, "; ")}`
 		)
-		-- the same steps both ways, growing, and the defaults three times what they were
-		-- (Road ahead 1 600 and Road behind 1 300 before T-263's send-back)
-		local same, grows, previous = #M.Ahead == #M.Behind and #M.Ahead >= 2, true, 0
-		for k, a in M.Ahead do
-			local b = M.Behind[k]
-			same = same and b ~= nil and a.Name == b.Name and a.Studs == b.Studs
-			grows = grows and a.Studs > previous and a.GroundTiles >= 0 and (b == nil or b.GroundTiles >= 0)
-			previous = a.Studs
+		-- each way its own steps, growing, ahead longer than behind (T-278, the user 2026-11-17)
+		local function grows(list: any): boolean
+			local previous = 0
+			for _, step in list do
+				if step.Studs <= previous or step.GroundTiles < 0 then
+					return false
+				end
+				previous = step.Studs
+			end
+			return #list >= 2
 		end
-		check("Road ahead and Road behind have the same steps", same and grows, `{#M.Ahead} and {#M.Behind} steps`)
+		check(
+			"Road ahead and Road behind each grow, ahead the longer",
+			grows(M.Ahead) and grows(M.Behind) and M.Ahead[1].Studs > M.Behind[1].Studs and M.Ahead[#M.Ahead].Studs >= M.Behind[#M.Behind].Studs,
+			`ahead {#M.Ahead} steps to {M.Ahead[#M.Ahead].Studs}, behind {#M.Behind} to {M.Behind[#M.Behind].Studs}`
+		)
+		-- (T-278) THE NEAREST RING IS BEYOND EVERYTHING DRAWN, at every Road ahead x Road behind x
+		-- Ground detail: the road (its step, a chunk past it, the camera at its furthest behind
+		-- the car, and a corridor tile of ground past the road) and the ground round the car
+		-- (its `Reach` and `RoadPad`, as `VistaTests` counts it), inside the nearest ring's
+		-- nearest point (a flat panel's middle, trailing its most). The ground's whole coarse
+		-- tiles poking past its reach are not counted: T-281 bounds them.
+		do
+			local Vista = require(ReplicatedStorage.Shared.Vista)
+			local nearest = math.huge
+			for _, layer in Config.Vista.Layers do
+				nearest = math.min(nearest, (Vista.ringSpan(layer)))
+			end
+			local C = Config.Camera
+			local camBack = C.CamOffset.Magnitude * C.PlayerZoomMax
+			local tile = G.RoadCoarsest * G.TileCells * math.sqrt(2)
+			local worst, worstName, combos = 0, "", 0
+			for _, a in M.Ahead do
+				for _, b in M.Behind do
+					for _, d in G.Detail do
+						combos += 1
+						local road = math.max(a.Studs, b.Studs) + M.ChunkLength + camBack + tile
+						local ground = d.Reach + (G.RoadPad or 0)
+						local far = math.max(road, ground)
+						if far > worst then
+							worst, worstName = far, `{a.Name} ahead, {b.Name} behind, {d.Name} ground ({math.floor(road)} road, {math.floor(ground)} ground)`
+						end
+					end
+				end
+			end
+			check(
+				"the nearest vista ring is beyond everything drawn, at every setting",
+				worst <= nearest,
+				`{combos} settings; furthest {math.floor(worst)} studs from the camera at {worstName}; nearest ring {math.floor(nearest)}`
+			)
+		end
 		local aPc, aTouch = M.Ahead[M.AheadDefault], M.Ahead[M.AheadTouchDefault]
 		local bPc, bTouch = M.Behind[M.BehindDefault], M.Behind[M.BehindTouchDefault]
 		check(
-			"the defaults are the steps nearest three times before",
-			aPc ~= nil and aTouch ~= nil and bPc ~= nil and bTouch ~= nil and aPc.Studs == 4800 and aTouch.Studs <= aPc.Studs
-				and math.abs(bPc.Studs - 3900) <= 900 and bTouch.Studs <= bPc.Studs,
+			"the defaults are Medium ahead (1 600) and Short behind (600)",
+			aPc ~= nil and aTouch ~= nil and bPc ~= nil and bTouch ~= nil and aPc.Studs == 1600 and aTouch.Studs <= aPc.Studs
+				and bPc.Studs == 600 and bTouch.Studs <= bPc.Studs,
 			`ahead PC {aPc and aPc.Studs}, touch {aTouch and aTouch.Studs}; behind PC {bPc and bPc.Studs}, touch {bTouch and bTouch.Studs}`
 		)
 

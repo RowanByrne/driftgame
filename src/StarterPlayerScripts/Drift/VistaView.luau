@@ -33,6 +33,22 @@ local Workspace = game:GetService("Workspace")
 
 local Config = require(ReplicatedStorage.Shared.Config)
 local Vista = require(ReplicatedStorage.Shared.Vista)
+local Ground = require(ReplicatedStorage.Shared.Road.Ground)
+local GroundDetail = require(script.Parent.GroundDetail)
+
+-- the run's road, for the ground's far edge (T-278); nil before a run
+local function road(): any?
+	local controllers = script.Parent.Parent:FindFirstChild("Controllers")
+	local m = controllers and controllers:FindFirstChild("SplineRoadController")
+	if not m then
+		return nil
+	end
+	local ok, c = pcall(require, m)
+	if not ok or not c.Road then
+		return nil
+	end
+	return (c:Road())
+end
 
 local VistaView = {}
 VistaView.__index = VistaView
@@ -48,10 +64,11 @@ type Ridge = {
 	maxLag: number,
 	slide: number,
 	radius: number,
+	bottom: number, -- its art's bottom over its anchor (T-278)
 	centre: Vector3, -- flat, Y = 0
 	anchor: Part,
 	folder: Folder,
-	decals: { Decal },
+	decals: { any }, -- Decals, or Textures showing a slice (T-278)
 	surfaces: { SurfaceAppearance },
 	skirts: { { part: BasePart, base: Color3 } },
 	images: { string },
@@ -86,6 +103,12 @@ export type View = typeof(setmetatable(
 		worstMs: number,
 		costs: { number },
 		costAt: number,
+		floor: Part?, -- the floor's anchor (T-278)
+		floorDrop: number,
+		dip: number, -- degrees every ring is dipped now (T-278)
+		dipWant: number,
+		edgeAngle: number?, -- the ground's far edge, lowest, degrees from the camera
+		dipAt: number,
 	},
 	VistaView
 ))
@@ -136,17 +159,15 @@ end
 -- little is in it, and was kept for the whole session until T-273, when the road ran out; a
 -- fixed-size copy (T-273) its own size, 1 tile. That copy is kept only where the content
 -- cannot be made opaque, since a MeshPart made from an EditableMesh reads its shape from it.
-local arcTemplate: MeshPart? = nil
-local arcMesh: EditableMesh? = nil
+-- One per slice of a picture (`Config.Vista.Mesh.Slices`, T-278): each shows its share.
+local arcTemplates: { MeshPart } = {}
+local arcMeshes: { EditableMesh } = {}
 local arcOpaque = false
 local arcError: string? = nil
 
-local function loadArc(): MeshPart?
-	if arcTemplate or arcError then
-		return arcTemplate
-	end
+local function loadSlice(slice: number): MeshPart
 	local ok, res = pcall(function()
-		local g = Vista.arcGeometry(Config.Vista.Mesh)
+		local g = Vista.arcGeometry(Config.Vista.Mesh, slice)
 		local em = AssetService:CreateEditableMesh({ FixedSize = false })
 		assert(em, "this device would not make an EditableMesh (out of its budget)")
 		local vs, ns, us = {}, {}, {}
@@ -190,16 +211,38 @@ local function loadArc(): MeshPart?
 			end
 			error(part)
 		end
-		arcMesh = fixed
-		arcOpaque = fixed == nil
+		if fixed then
+			table.insert(arcMeshes, fixed)
+		end
 		return part
 	end)
-	if ok then
-		arcTemplate = res
-	else
-		arcError = tostring(res)
+	if not ok then
+		error(res)
 	end
-	return arcTemplate
+	return res
+end
+
+-- Every slice's mesh, or nil if any could not be made (then the layers are flat).
+local function loadArc(): { MeshPart }?
+	if arcError then
+		return nil
+	end
+	if #arcTemplates == 0 then
+		local ok, res = pcall(function()
+			local made = {}
+			for j = 0, (Config.Vista.Mesh.Slices or 1) - 1 do
+				made[j + 1] = loadSlice(j)
+			end
+			return made
+		end)
+		if not ok then
+			arcError = tostring(res)
+			return nil
+		end
+		arcTemplates = res
+		arcOpaque = #arcMeshes == 0
+	end
+	return arcTemplates
 end
 
 local function surfaceFor(image: string): SurfaceAppearance?
@@ -238,9 +281,16 @@ function VistaView.new(originY: number, getLook: (() -> Look?)?, parent: Instanc
 		worstMs = 0,
 		costs = {},
 		costAt = 0,
+		floor = nil,
+		floorDrop = 0,
+		dip = 0,
+		dipWant = 0,
+		edgeAngle = nil,
+		dipAt = 0,
 	}, VistaView)
 
 	self:_buildRidges(start)
+	self:_buildFloor(start)
 	if Config.Vista.CloudSea.Enabled ~= false then
 		self:_buildClouds(start)
 	end
@@ -271,6 +321,7 @@ function VistaView._buildRidges(self: View, start: Vector3)
 			maxLag = layer.MaxLag,
 			slide = layer.Slide or Config.Vista.FollowHeight,
 			radius = layer.Radius,
+			bottom = Vista.artBottom(layer, Config.Vista.Mesh),
 			centre = start,
 			anchor = anchor,
 			folder = sub,
@@ -311,10 +362,10 @@ local function noteImage(ridge: Ridge, image: string)
 	end
 end
 
-function VistaView._fillCurved(self: View, ridge: Ridge, layer: any, arc: MeshPart)
+function VistaView._fillCurved(self: View, ridge: Ridge, layer: any, arcs: { MeshPart })
 	local at = ridge.anchor.CFrame
 	for _, panel in Vista.arcs(layer, Config.Vista.Mesh) do
-		local p = arc:Clone()
+		local p = arcs[(panel.slice or 0) + 1]:Clone()
 		p.Name = `{layer.Name}_{panel.index}`
 		p.Size = panel.size
 		p.CFrame = at * panel.cframe
@@ -347,9 +398,16 @@ function VistaView._fillFlat(self: View, ridge: Ridge, layer: any)
 		backdrop(p)
 		weld(ridge.anchor, p)
 		if panel.image ~= "" then
-			local d = Instance.new("Decal")
+			-- a slice of its picture (T-278): a Texture as wide as the whole picture, shifted
+			local slices = panel.slices or 1
+			local d: any = if slices > 1 then Instance.new("Texture") else Instance.new("Decal")
 			d.Face = Enum.NormalId.Front
 			d.Texture = panel.image
+			if slices > 1 then
+				d.StudsPerTileU = panel.size.X * slices
+				d.StudsPerTileV = panel.size.Y
+				d.OffsetStudsU = panel.size.X * (panel.slice or 0)
+			end
 			d.Parent = p
 			table.insert(ridge.decals, d)
 			noteImage(ridge, panel.image)
@@ -373,6 +431,51 @@ function VistaView._fillFlat(self: View, ridge: Ridge, layer: any)
 		end
 	end
 	ridge.kind = "flat"
+end
+
+-- The floor under the rings (T-278): the Near ring's base colour at its bottom, following the
+-- camera, so looking down past the drawn ground never sees open sky.
+function VistaView._buildFloor(self: View, start: Vector3)
+	local F = Config.Vista.Floor
+	if not F or F.Enabled == false then
+		return
+	end
+	local near: any = nil
+	for _, layer in Config.Vista.Layers do
+		if not near or layer.Radius < near.Radius then
+			near = layer
+		end
+	end
+	if not near then
+		return
+	end
+	local M = Config.Vista.Mesh
+	local art = Vista.pictureWidth(near.Radius, near.Panels, M.Slices or 1) / near.Aspect
+	local top = math.tan(math.rad(near.Peak)) * near.Radius + near.PeakAt * art
+	local height = art / M.ArtShare - M.TopV * art
+	-- under the Near ring's anchor: its mesh's bottom, a little higher so the two overlap
+	self.floorDrop = Vista.drop(Config.Vista, near.Slide or Config.Vista.FollowHeight) - (top - M.TopV * art - height) - 20
+	local sub = Instance.new("Folder")
+	sub.Name = "Floor"
+	local anchor = anchorPart("FloorAnchor", start, sub)
+	local g, size = F.Grid, F.PartSize
+	for i = 0, g - 1 do
+		for j = 0, g - 1 do
+			local p = Instance.new("Part")
+			p.Name = `Floor_{i}_{j}`
+			p.Size = Vector3.new(size, 1, size)
+			p.CFrame = anchor.CFrame + Vector3.new((i - (g - 1) / 2) * size, 0, (j - (g - 1) / 2) * size)
+			p.Material = Enum.Material.SmoothPlastic
+			p.Color = near.BaseColour
+			backdrop(p)
+			weld(anchor, p)
+			p.Parent = sub
+			table.insert(self.ridges[1] and self.ridges[1].skirts or {}, { part = p, base = near.BaseColour })
+			self.parts += 1
+		end
+	end
+	sub.Parent = self.folder
+	self.floor = anchor
 end
 
 function VistaView._buildClouds(self: View, start: Vector3)
@@ -465,10 +568,20 @@ function VistaView.Update(self: View, dt: number)
 	self.camY += (at.Y - self.camY) * (if dt > 0 then 1 - math.exp(-dt / V.HeightLag) else 1)
 	self.lift = Vista.lift(V, self.originY, self.camY)
 
+	if V.Dip ~= false then
+		self:_dipStep(dt, at)
+	end
 	for _, ridge in self.ridges do
 		ridge.centre = Vista.follow(ridge.centre, cam, dt, ridge.lag, ridge.maxLag)
-		local level = self.originY + Vista.lift(V, self.originY, self.camY, ridge.slide)
+		-- (T-278) at a fixed angle from the camera, whatever its height, and dipped together
+		-- while the ground's far edge is lower than the Near ring's art
+		local drop = Vista.drop(V, ridge.slide)
+		local level = at.Y - drop - Vista.dipDrop(ridge.radius, ridge.bottom, drop, self.dip)
 		ridge.anchor.CFrame = CFrame.new(ridge.centre + Vector3.yAxis * level)
+	end
+
+	if self.floor then
+		self.floor.CFrame = CFrame.new(cam + Vector3.yAxis * (at.Y - self.floorDrop))
 	end
 
 	self.cloudTop = Vista.cloudTop(V, self.originY, self.camY)
@@ -492,6 +605,41 @@ function VistaView.Update(self: View, dt: number)
 	self.worstMs = math.max(self.worstMs, ms)
 	self.costAt = self.costAt % COST_SAMPLES + 1
 	self.costs[self.costAt] = ms
+end
+
+-- The ground's far edge round the camera (T-278): every `DipEvery` s, its lowest angle from
+-- the camera at the Ground detail's `Reach`, and the dip that puts the Near ring's art below
+-- it; the dip itself eases toward that.
+function VistaView._dipStep(self: View, dt: number, at: Vector3)
+	local V = Config.Vista
+	self.dipAt -= dt
+	if self.dipAt <= 0 then
+		self.dipAt = V.DipEvery or 0.2
+		local spline = road()
+		local field = spline and spline.mountain
+		local nearest: Ridge? = nil
+		for _, ridge in self.ridges do
+			if not nearest or ridge.radius < nearest.radius then
+				nearest = ridge
+			end
+		end
+		if field and nearest then
+			local reach = GroundDetail.preset().Reach
+			local lowest = math.huge
+			local n = V.DipSamples or 24
+			for k = 1, n do
+				local a = (k - 0.5) * 2 * math.pi / n
+				local y = Ground.h(field, at.X + reach * math.sin(a), at.Z + reach * math.cos(a))
+				lowest = math.min(lowest, math.deg(math.atan((y - at.Y) / reach)))
+			end
+			self.edgeAngle = lowest
+			local drop = Vista.drop(V, nearest.slide)
+			local artAngle = math.deg(math.atan((nearest.bottom - drop) / nearest.radius))
+			self.dipWant = math.max(0, artAngle - (lowest - (V.DipMargin or 0)))
+		end
+	end
+	local lag = if self.dipWant > self.dip then V.DipIn or 0.25 else V.DipOut or 2
+	self.dip += (self.dipWant - self.dip) * (if dt > 0 and lag > 0 then 1 - math.exp(-dt / lag) else 1)
 end
 
 -- Show or hide the whole vista, or one part of it: a layer's name, or "CloudSea".
@@ -572,9 +720,12 @@ function VistaView.DebugState(self: View): { [string]: any }
 		meshError = arcError,
 		-- the arc's mesh holds none of the client's mesh memory (T-274), or a fixed-size copy
 		arcOpaque = arcOpaque,
-		arcFixed = arcMesh ~= nil,
+		arcFixed = #arcMeshes > 0,
 		originY = self.originY,
 		lift = self.lift,
+		dip = self.dip,
+		dipWant = self.dipWant,
+		edgeAngle = self.edgeAngle,
 		layers = layers,
 		cloudTop = self.cloudTop,
 		cloudBelowCamera = at.Y - self.cloudTop,

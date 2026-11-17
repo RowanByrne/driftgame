@@ -14,9 +14,19 @@
 -- lit by Roblox's real sun (a panel with the sun behind it is dark), and tinted by the time
 -- of day. The haze (`Atmosphere`) fades each layer by its distance.
 
+-- HOW FAR OUT THE RINGS STAND (T-278, the user, 2026-11-17: "Small vista move"): every ring's
+-- `Radius`, `MaxLag` and `Skirt` times this, once, so each looks the same on screen (its
+-- sizes and heights all scale with its radius) and the road can be drawn further before it
+-- reaches the nearest ring (`Config.Spline.Mesh.Ahead`). 1.37 is the most that fits: the Far
+-- ring's curved panel is then 2 046 studs tall, a part's largest size being 2 048.
+local SCALE = 1.37
+
 return {
 	-- Off: nothing is built, and the view off the road is the sky and the drawn ground.
 	Enabled = true,
+	-- `SCALE`, for `Drift/VistaView`: it stands each ring `Scale` times as far below (or above)
+	-- the camera as its level is, so the camera's height looks the same at the new distance
+	Scale = SCALE,
 
 	-- ------------------------------------------------------------- the curved panel
 	-- One mesh, built on this device when the first vista is (`Shared/Vista.arcGeometry`, an
@@ -31,7 +41,10 @@ return {
 	-- mesh can't be made, the layers fall back to flat panels with a Decal and a plain skirt.
 	Mesh = {
 		Build = true,
-		ArcDeg = 36, -- so a curved layer has 360 / 36 = 10 panels
+		ArcDeg = 18, -- so a curved layer has 360 / 18 = 20 panels
+		-- panels one picture spans, each showing its slice (T-278): a whole picture's 36 degrees
+		-- at the pushed-out radius is wider than a part may be
+		Slices = 2,
 		Columns = 24,
 		ArtShare = 0.4228, -- the far layer's art over art + skirt (659 of 1 559 studs)
 		-- The shape starts this far down the picture, in its empty sky: at the very top, the
@@ -80,15 +93,15 @@ return {
 			Name = "Far",
 			-- 4 500 washed the peaks out in the day's haze, and 5.5 degrees barely cleared the
 			-- drawn ground's far edge (lane 3, first look): nearer and taller.
-			Radius = 3200,
-			Panels = 10,
+			Radius = 3200 * SCALE,
+			Panels = 20, -- 10 pictures, each across `Mesh.Slices` panels
 			Aspect = 3, -- the art's width over its height (2172 x 724)
 			Peak = 8,
 			PeakAt = 0.33,
 			Lag = 0.6,
-			MaxLag = 40, -- was 120, before the nearer rings had to fit inside it
+			MaxLag = 40 * SCALE, -- was 120, before the nearer rings had to fit inside it
 			Slide = 0.75,
-			Skirt = 900,
+			Skirt = 900 * SCALE,
 			BaseColour = Color3.fromRGB(151, 172, 198),
 			Images = {
 				"rbxassetid://79376888826751", -- far-painted-02-joined-v2 (pipeline/vista/join-strips.py; assets/painted-vista/MANIFEST.md)
@@ -98,15 +111,15 @@ return {
 		},
 		{
 			Name = "Middle",
-			Radius = 2900,
-			Panels = 10,
+			Radius = 2900 * SCALE,
+			Panels = 20, -- 10 pictures, each across `Mesh.Slices` panels
 			Aspect = 3,
 			Peak = 5.5,
 			PeakAt = 0.33,
 			Lag = 1.5,
-			MaxLag = 50,
+			MaxLag = 50 * SCALE,
 			Slide = 0.6,
-			Skirt = 900,
+			Skirt = 900 * SCALE,
 			BaseColour = Color3.fromRGB(53, 106, 125), -- mid-ridge-02-clear's bottom tenth
 			Images = {
 				"rbxassetid://74618630837340", -- mid-ridge-02-clear-joined (pipeline/vista/join-strips.py; assets/painted-vista/MANIFEST.md)
@@ -116,15 +129,15 @@ return {
 		},
 		{
 			Name = "Near",
-			Radius = 2620,
-			Panels = 10,
+			Radius = 2620 * SCALE,
+			Panels = 20, -- 10 pictures, each across `Mesh.Slices` panels
 			Aspect = 3,
 			Peak = 3.5,
 			PeakAt = 0.33,
 			Lag = 3,
-			MaxLag = 60,
+			MaxLag = 60 * SCALE,
 			Slide = 0.45,
-			Skirt = 900,
+			Skirt = 900 * SCALE,
 			BaseColour = Color3.fromRGB(58, 91, 90), -- near-forest-01-clear's bottom tenth
 			Images = {
 				"rbxassetid://100935312550957", -- near-forest-01-clear-joined (pipeline/vista/join-strips.py; assets/painted-vista/MANIFEST.md)
@@ -138,6 +151,32 @@ return {
 	-- above it, eased over `HeightLag` s. The cloud sea rises by `FollowHeight`.
 	FollowHeight = 0.75,
 	HeightLag = 2, -- s
+
+	-- A BACKDROP YOU CAN'T LOOK DOWN ON (T-278, the user: "it happens when you are up high").
+	-- The rings follow the camera's height whole, standing as they would with the camera
+	-- `EyeHeight` studs above the road's start, scaled by `Scale`: every ridge at a fixed
+	-- angle, as before the move at that height (gap-free, measured). And when the drawn
+	-- ground's far edge drops below the Near ring's art (high on a ridge), every ring dips
+	-- by the same angle so the Near ring's art reaches `DipMargin` degrees below the lowest
+	-- point of that edge: no plain skirt, no sky under a ring. The edge is sampled at
+	-- `DipSamples` points round the camera every `DipEvery` s, the ground's own height
+	-- (`Road/Ground.h`) at the current Ground detail's `Reach`; the dip eases in over
+	-- `DipIn` s and out over `DipOut` s.
+	-- the dip is off (the user: one deep valley sank the whole view); below the Near ring's
+	-- art, its plain skirt and the floor under the rings show instead (the user: a blank
+	-- bottom is fine)
+	Dip = false,
+	-- A FLOOR under the rings (T-278): looking steeply down past the drawn ground's edge (high
+	-- on a ridge, or before the ground round a new spot is built) saw the open sky under the
+	-- Near ring's bottom. `Grid` x `Grid` flat parts of `PartSize` studs follow the camera at
+	-- the Near ring's bottom, in its `BaseColour`, tinted with the time of day.
+	Floor = { Enabled = true, Grid = 4, PartSize = 2048 },
+	EyeHeight = 60,
+	DipMargin = 0.75, -- degrees
+	DipSamples = 24,
+	DipEvery = 0.2, -- s
+	DipIn = 0.25, -- s
+	DipOut = 2, -- s
 
 	-- ------------------------------------------------------------- cloud sea
 	-- `Layers` stacked layers, the top one `Below` studs under the road's start and each

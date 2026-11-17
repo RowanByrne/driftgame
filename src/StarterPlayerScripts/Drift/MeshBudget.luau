@@ -10,10 +10,14 @@
 -- can ask how much is left: a mesh that does not fit just comes back nil, with an engine
 -- warning.
 --
+-- Since T-276 the ground's tiles are opaque content too, so the ground holds none of it
+-- either (only a copy for a moment while a tile is made, `Ground.OpaqueInFlight` at a time);
+-- the drift marks, rewritten every frame, are the one user left that holds any for good.
+--
 -- THE ROAD NEAR THE CAR NEVER GIVES WAY. When the road cannot make a chunk's mesh it asks
 -- here first: each giver, cheapest to lose first, lets some of its own go. The ground is the
 -- one giver today (`Drift/GroundMeshView`: its hidden spare tiles at once, then fewer tiles
--- far out). Only when nobody can give does the road let its own far chunks go
+-- far out), and gives only while it holds tiles of its own: where opaque content is refused. Only when nobody can give does the road let its own far chunks go
 -- (`Drift/SplineRoadView`), and never the ones near the car.
 
 local MeshBudget = {}
