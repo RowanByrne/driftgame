@@ -253,6 +253,28 @@ local function unit(check)
 		check("the same at 30, 60, 120 and 240 FPS", same and got[1].n == 2, `{got[1].n} calls, sizes {fmt(got[1].a, 3)} and {fmt(got[1].b, 3)} at 30; {got[4].n}, {fmt(got[4].a, 3)}, {fmt(got[4].b, 3)} at 240`)
 	end
 
+	-- 11. The engine's rig (functions), stepped at 120 Hz as the drift controller steps it
+	do
+		local trees = { trunk(0, 0.8) }
+		local plain = rigFor(trees)
+		local along = 0
+		local rig = { lookup = plain.lookup, spline = function()
+			return plain.spline
+		end, along = function()
+			return along
+		end }
+		local rec = recorder()
+		local det = NearMiss.new(rec.sink, rig)
+		local x = -80
+		while x < 80 do
+			x += 80 / 120
+			along = x
+			det:Update(1 / 120, state(x, 0, 80, 1))
+		end
+		local c = rec.calls[1]
+		check("the engine's rig, stepped at 120 Hz", #rec.calls == 1 and math.abs(c.size - 0.88) < 0.01, `{#rec.calls} call(s), size {if c then fmt(c.size, 3) else "-"}`)
+	end
+
 	-- 10. The lookup runs when the car has moved along, not every frame
 	do
 		local trees = {}

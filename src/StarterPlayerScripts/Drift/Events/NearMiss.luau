@@ -31,10 +31,13 @@
 -- `Watch` is wider than `Threshold` only to measure: every pass under `Watch` goes into
 -- the closest-pass histogram `DebugState` returns.
 --
--- `rig` is anything with `spline` (the road, a `Road/Spline`, or nil off it) and
--- `splineAlong` (the car's distance along it), read fresh each frame: the drift controller
--- itself carries both (`DriftController.spline`, `.splineAlong`). Tests may give
+-- `rig` is the engine's (`DriftController.scoreRig`): `spline()` (the road, a `Road/Spline`,
+-- or nil off it) and `along()` (the car's distance along it), asked fresh each update. A
+-- plain `spline` / `splineAlong` field is taken too. Tests may give
 -- `rig.lookup(spline, s0, s1, out)` to stand in for the grove.
+--
+-- Stepped once per simulation step (120 Hz) by the drift controller, or once per frame:
+-- everything is measured in the `dt` it is handed, so either gives the same events.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -46,20 +49,9 @@ NearMiss.__index = NearMiss
 
 NearMiss.KIND = "nearMiss"
 
--- Starting numbers; the engine's `Config.ScoreEvents.NearMiss` overrides any of them.
-NearMiss.Defaults = {
-	Threshold = 3, -- studs of gap: a pass closer than this fires (spec: 3)
-	FullGap = 0.5, -- studs: size 1 at this gap and closer (spec: words at 1.5 and 0.5)
-	MinSpeed = 50, -- studs/s, flat, forward, at the closest moment (spec: 50)
-	TouchGap = 0.1, -- studs: a gap this small is a touch (the collision holds 0.05)
-	Confirm = 0.5, -- seconds after a pass with nothing touched (spec: 0.5)
-	Open = 1.5, -- studs the gap must open past its closest for the pass to be over
-	Rearm = 5, -- seconds before the same tree can have another pass
-	Watch = 10, -- studs: passes under this are measured (the histogram); only under Threshold fire
-	Window = 30, -- studs of road each side of the car the trees are fetched over
-	Refetch = 8, -- studs the car moves along the road before they are fetched again
-	Teleport = 30, -- studs in one frame past its speed: a put-back, everything forgotten
-}
+-- The numbers: `Config.ScoreEvents.Detectors.NearMiss` (points, words and repeats are the
+-- engine's `Kinds.nearMiss`).
+NearMiss.Defaults = Config.ScoreEvents.Detectors.NearMiss
 
 -- the closest-pass histogram's bucket edges, studs of gap
 local BUCKETS = { 0.1, 0.5, 1, 1.5, 2, 3, 4, 6, 8, 10 }
@@ -81,19 +73,7 @@ type Pass = {
 export type Sink = { oneOff: (kind: string, size: number, info: { [string]: any }?) -> () }
 
 local function tuning(): { [string]: number }
-	local t = table.clone(NearMiss.Defaults)
-	local ok, events = pcall(function()
-		return (Config :: any).ScoreEvents
-	end)
-	local over = ok and type(events) == "table" and events.NearMiss
-	if type(over) == "table" then
-		for k, v in over do
-			if t[k] ~= nil and type(v) == "number" then
-				t[k] = v
-			end
-		end
-	end
-	return t
+	return table.clone(NearMiss.Defaults)
 end
 
 -- The flat gap between the car's box (centre px, pz; right and forward; half width and
@@ -214,8 +194,11 @@ function NearMiss:_update(dt: number, state: any)
 	st.closest = math.huge
 
 	local rig = self.rig
-	local spline = rig and rig.spline
-	local along = rig and rig.splineAlong
+	local spline, along = nil, nil
+	if rig then
+		spline = if type(rig.spline) == "function" then rig.spline() else rig.spline
+		along = if type(rig.along) == "function" then rig.along() else rig.splineAlong
+	end
 	local pos: Vector3 = state.position
 	if state.fell or not spline or type(along) ~= "number" then
 		self:_forget(if state.fell then "fell" else nil)

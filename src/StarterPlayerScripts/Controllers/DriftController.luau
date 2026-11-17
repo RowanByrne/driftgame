@@ -1005,6 +1005,7 @@ function DriftController:_startScoreEvents()
 	self.scoreDetectors = {
 		Jump = require(events.Jump).new(sink, self.scoreRig),
 		WheelLift = require(events.WheelLift).new(sink, self.scoreRig),
+		NearMiss = require(events.NearMiss).new(sink, self.scoreRig),
 	}
 end
 

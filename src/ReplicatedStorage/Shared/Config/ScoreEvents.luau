@@ -197,5 +197,23 @@ return {
 			TwoWheelSize = 1, -- both wheels on one side
 			OtherTwoSize = 0.4, -- two that are not one side (an axle, a diagonal)
 		},
+		-- `Drift/Events/NearMiss` (T-298): passing a grove tree's trunk (`Road/SplineGrove`)
+		-- closer than `Threshold` studs of gap (the car's body box to the trunk's circle) at
+		-- `MinSpeed` or more, moving forward, touching nothing then or for `Confirm` after.
+		-- Size 0 at `Threshold`, 1 at `FullGap` and closer. Once per tree per pass. Trees
+		-- stand 16+ studs past the tarmac, only in groves: rare by the user's choice.
+		NearMiss = {
+			Threshold = 3, -- studs of gap
+			FullGap = 0.5, -- studs: size 1 here and closer
+			MinSpeed = 50, -- studs/s, flat, at the closest moment
+			TouchGap = 0.1, -- studs: this close is a touch (the collision holds a car 0.05 clear)
+			Confirm = 0.5, -- seconds after the pass with no wall touched
+			Open = 1.5, -- studs the gap opens past its closest for the pass to be over
+			Rearm = 5, -- seconds before the same tree can have another pass
+			Watch = 10, -- studs: passes under this are measured (DebugState's histogram)
+			Window = 30, -- studs of road each side of the car the trunks are fetched over
+			Refetch = 8, -- studs the car moves along before they are fetched again
+			Teleport = 30, -- studs in one step past its speed: a put-back, all forgotten
+		},
 	},
 }
