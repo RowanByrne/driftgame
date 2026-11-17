@@ -979,7 +979,7 @@ function Tests.run(opts)
 			for f = 1, 90 do
 				w:Update(s90, { handbrake = false }, DT)
 				if f == 1 then
-					firstFront = { fl.smoke, fl.fx[1].diffuse.Rate, fl.fx[1].band }
+					firstFront = { fl.smoke, fl.fx[1].diffuse.Rate, fl.fx[1].band, fl.fx[1].base.Enabled }
 				end
 				if f % 15 == 0 then
 					table.insert(lines, string.format("%.2fs rear %.2f front %.2f", f * DT, rl.smoke, fl.smoke))
@@ -993,7 +993,7 @@ function Tests.run(opts)
 			check(
 				"a sudden big slide ramps every wheel in over RiseSeconds -- the front never pops to billows",
 				firstFront[1] <= DT / L.RiseSeconds + 1e-9 and firstFront[2] == 0
-					and fl.fx[1].base.Enabled and math.abs(rl.smoke - 1) < 1e-9 and math.abs(fl.smoke - 1) < 1e-9
+					and firstFront[4] and math.abs(rl.smoke - 1) < 1e-9 and math.abs(fl.smoke - 1) < 1e-9
 					and math.abs(rl.fx[1].diffuse.Rate - today90) < 1e-6 and not rl.fx[1].base.Enabled
 					and rl.fx[1].band == L.Bands,
 				string.format("front's first frame: intensity %.3f, billows %.1f/s, band %d; %s; at 1.5 s billows %.2f (today %.2f), wisp %s",
