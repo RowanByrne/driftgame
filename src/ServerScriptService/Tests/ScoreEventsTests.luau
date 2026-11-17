@@ -68,8 +68,11 @@ end
 
 -- `seconds` of steps as the live game takes them: the engine, then `each()` (the detectors'
 -- part), then the score.
+-- The car moves as its speed says (along X by `u`, along Z by `v`): the engine pays only for
+-- ground really covered (T-301).
 local function run(e, score, state, seconds: number, each: (() -> ())?)
 	for _ = 1, math.floor(seconds / STEP + 0.5) do
+		state.position += Vector3.new(state.u * STEP, 0, state.v * STEP)
 		e:step(STEP, state)
 		if each then
 			each()
@@ -118,8 +121,12 @@ local function pose(t)
 	}
 end
 
+-- The stand-ins share one place, which moves along X at `walker.speed` studs/s (0: in place).
+local walker = { x = 0, speed = 60 }
 local function feedDetector(det, state, seconds: number)
 	for _ = 1, math.floor(seconds / STEP + 0.5) do
+		walker.x += walker.speed * STEP
+		state.position = Vector3.new(walker.x, state.position.Y, 0)
 		det:Update(STEP, state)
 	end
 end
@@ -354,6 +361,7 @@ function Tests.run()
 		e:step(STEP, car(80, 0))
 		e:oneOff("nearMiss", 1)
 		run(e, score, car(80, 10), E.SameSpotGap + 0.5)
+		e:step(STEP, car(80, 10)) -- back at the spot
 		local before = score:Get().score
 		e:oneOff("nearMiss", 1)
 		local same = score:Get().score - before
@@ -622,6 +630,94 @@ function Tests.run()
 			"and the same at 30, 60 and 120 FPS",
 			near(a, b, 1e-9) and near(d, b, 1e-9),
 			string.format("%.6f / %.6f / %.6f", a, b, d)
+		)
+		check(
+			"and the same points as before the hop-farming fix (T-295: 70.184074)",
+			near(b, 70.184074, 1e-7),
+			string.format("%.6f", b)
+		)
+	end
+
+	-- ------------------------------------------------- hopping in place (T-301)
+	-- The farm T-297 found live: after a grind the car bounced in place against the rail,
+	-- its velocity still reading 30 studs/s, and the console filled with banked jumps and
+	-- lifts. Before the fix this scored 3,492 and 4,012 points in 30 s (measured, DR-Lane2).
+	do
+		local RH = Config.Drift.RideHeight
+		local function hops(airS: number, downS: number, speed: number, seconds: number)
+			local e, score = engine()
+			local sink = e:sink()
+			local j, w = Jump.new(sink, nil), WheelLift.new(sink, nil)
+			local st = {
+				slip = 0, u = 30, v = 0, surfaceScore = 1, grounded = true, airborne = false, pinned = false,
+				fell = false, hanging = false, wallHit = false, position = Vector3.new(0, RH, 0), groundY = 0,
+				fallFrom = 0, up = Vector3.yAxis, wheelsDown = { true, true, true, true }, time = 1,
+			}
+			if speed > 0 then
+				st.u = speed
+			end
+			local t, x = 0, 0
+			while t < seconds do
+				local inAir = (t % (airS + downS)) < airS
+				st.airborne, st.grounded = inAir, not inAir
+				x += speed * STEP
+				st.position = Vector3.new(x, RH + (if inAir then 1.5 else 0), 0)
+				-- on the ground one wheel is up, as a car tipped against a rail
+				st.wheelsDown = if inAir then { false, false, false, false } else { true, false, true, true }
+				st.time += STEP
+				e:step(STEP, st)
+				j:Update(STEP, st)
+				w:Update(STEP, st)
+				score:Step(STEP, st)
+				t += STEP
+			end
+			return score.eventPoints, e, j:DebugState().stats
+		end
+		local worst, parts = 0, {}
+		for _, p in { { 0.5, 0.1 }, { 0.45, 0.3 }, { 0.6, 0.05 }, { 0.42, 0.2 } } do
+			local pts, _, js = hops(p[1], p[2], 0, 30)
+			worst = math.max(worst, pts)
+			table.insert(parts, string.format("%.2f/%.2f s: %.1f (%d hops)", p[1], p[2], pts, js.hops))
+		end
+		check(
+			"hopping in place for 30 s (velocity 30 studs/s, going nowhere) scores ~0",
+			worst < 1,
+			table.concat(parts, "; ")
+		)
+		-- Held against a rail on a lifted wheel, going nowhere: no lift points.
+		local held = hops(0, 1, 0, 30)
+		check("a wheel up on a car going nowhere scores nothing", held < 1e-9, `{held}`)
+
+		-- The same bouncing, but driving forward at 60 studs/s: real flights, each covering 30
+		-- studs. They still score, cut by the repeat rule rather than paid in full for ever.
+		local moving, e = hops(0.5, 0.1, 60, 30)
+		local c = e.counts.jump
+		check(
+			"bouncing along at 60 studs/s: the flights score, cut by repeats, bounded",
+			c and c.banked >= 3 and c.banked + c.empty >= 10 and moving > 0 and moving < 400,
+			c and string.format("%d jumps (%d with a line), %d same spot, %.1f points in 30 s", c.banked + c.empty, c.banked, c.spent, moving) or "no jump"
+		)
+
+		-- Lifts in a row while driving at 20 studs/s: the 8-stud spot never blocks them.
+		local le, ls = engine()
+		local wl = WheelLift.new(le:sink(), nil)
+		local st = car(25, 0)
+		st.grounded, st.airborne, st.hanging, st.time = true, false, false, 1
+		local tt = 0
+		while tt < 10 do
+			st.wheelsDown = if (tt % 0.45) < 0.3 then { true, false, true, true } else { true, true, true, true }
+			st.position += Vector3.new(25 * STEP, 0, 0)
+			st.time += STEP
+			le:step(STEP, st)
+			wl:Update(STEP, st)
+			ls:Step(STEP, st)
+			tt += STEP
+		end
+		local lc = le.counts.wheelLift
+		check(
+			"lifts in a row while driving slowly still count (none taken for the same spot)",
+			lc and lc.started >= 20 and lc.spent == 0 and ls.eventPoints > 0,
+			lc and string.format("%d lifts, %d same spot, %.1f points", lc.started, lc.spent, ls.eventPoints) or "none"
 		)
 	end
 

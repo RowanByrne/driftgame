@@ -8,8 +8,13 @@
 -- Each step in the air after is held, sized by the height over the ground under the car (over
 -- nothing, over the ground it took off from), up to `FullHeight` for size 1.
 --
+-- A FLIGHT THAT GOES NOWHERE IS NOT A JUMP (T-301): it starts only once the car is also
+-- `MinTravel` studs (flat) from where it left the ground, so a car bouncing in place against
+-- a rail, or hopping at a crawl, never starts one.
+--
 -- IT ENDS once the car has been back down `LandSettle` seconds: banked. A hop inside that is
--- the same jump going on. It is LOST on a fall (`state.fell`), the car put back (a new state),
+-- the same jump going on, `MaxBounces` times; another banks it, and the new flight must count
+-- on its own (and so meets the engine's repeat and same-spot rules). It is LOST on a fall (`state.fell`), the car put back (a new state),
 -- landing tilted past `LandTiltDeg` (on its side or its roof), or a wall touched in the air or
 -- on the landing (`VoidOnWall`); a wall touched before it started spoils the flight.
 --
@@ -34,9 +39,12 @@ function Jump.new(sink: any, rig: any?): any
 		spoiled = false, -- a wall touched in this flight before it counted
 		lastState = nil :: any,
 		peakHeight = 0,
+		from = nil :: Vector3?, -- where this flight left the ground
+		bounces = 0, -- times back up inside `LandSettle`, this jump
 		-- What it has seen, for measuring how often jumps happen (`DebugState`)
 		stats = {
 			flights = 0, -- every time all four left the ground
+			hops = 0, -- flights long enough but going nowhere (under `MinTravel`)
 			jumps = 0, -- flights long enough to count
 			banked = 0,
 			void = 0,
@@ -66,6 +74,18 @@ function Jump._end(self: any, completed: boolean, why: string?)
 	self.air = 0
 	self.down = 0
 	self.peakHeight = 0
+	self.from = nil
+	self.bounces = 0
+end
+
+-- How far, flat, the car is from where this flight left the ground.
+function Jump._travel(self: any, state: any): number
+	local a, b = self.from, state.position
+	if not a or typeof(b) ~= "Vector3" then
+		return 0
+	end
+	local dx, dz = b.X - a.X, b.Z - a.Z
+	return math.sqrt(dx * dx + dz * dz)
 end
 
 function Jump._size(self: any, state: any): number
@@ -94,8 +114,18 @@ function Jump.Update(self: any, dt: number, state: any)
 	end
 
 	if state.airborne then
+		if self.handle and self.down > 0 then
+			-- Back up inside `LandSettle`: a bounce on the landing, the same jump going on --
+			-- `MaxBounces` times. After that the car is bouncing, not flying (T-301): the jump
+			-- banks, and this flight has to count on its own.
+			self.bounces += 1
+			if self.bounces > D.MaxBounces then
+				self:_end(true)
+			end
+		end
 		if self.air == 0 and not self.handle then
 			self.stats.flights += 1
+			self.from = state.position
 		end
 		self.air += dt
 		self.down = 0
@@ -110,7 +140,7 @@ function Jump.Update(self: any, dt: number, state: any)
 		if self.handle then
 			self.handle:update(size, dt)
 			self.stats.airSeconds += dt
-		elseif self.air >= D.MinAir and not self.spoiled then
+		elseif self.air >= D.MinAir and not self.spoiled and self:_travel(state) >= D.MinTravel then
 			self.handle = self.sink.start("jump", nil)
 			self.stats.jumps += 1
 			-- the seconds before it counted are part of the flight
@@ -122,9 +152,13 @@ function Jump.Update(self: any, dt: number, state: any)
 
 	-- On the ground.
 	if not self.handle then
+		if self.air >= D.MinAir then
+			self.stats.hops += 1 -- in the air long enough, but it went nowhere
+		end
 		self.air = 0
 		self.spoiled = false
 		self.peakHeight = 0
+		self.from = nil
 		return
 	end
 	if self.down == 0 then

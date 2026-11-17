@@ -1005,6 +1005,10 @@ function DriftController:_startScoreEvents()
 	self.scoreDetectors = {
 		Jump = require(events.Jump).new(sink, self.scoreRig),
 		WheelLift = require(events.WheelLift).new(sink, self.scoreRig),
+		NearMiss = require(events.NearMiss).new(sink, self.scoreRig),
+		BumperGrind = require(events.BumperGrind).new(sink, self.scoreRig),
+		LaneDrift = require(events.LaneDrift).new(sink, self.scoreRig),
+		PerfectLaneDrift = require(events.PerfectLaneDrift).new(sink, self.scoreRig),
 		PerfectHairpin = require(events.PerfectHairpin).new(sink, self.scoreRig),
 		ReverseEntry = require(events.ReverseEntry).new(sink, self.scoreRig),
 	}
