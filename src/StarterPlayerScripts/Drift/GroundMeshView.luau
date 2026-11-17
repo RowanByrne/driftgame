@@ -35,9 +35,23 @@
 -- tile coarser than `SnapUpTo`, is held below the edge within its spacing's `Clamp`, as
 -- before. The road's skirt
 -- (`Road/SplineMesh`, a ground run) hides what is left of the gap.
+--
+-- OPAQUE TILES (T-276): a tile no longer keeps an EditableMesh, which held one of the
+-- client's ~640 tiles of mesh memory each (`Config.Spline.Mesh.Budget`). What a tile draws is
+-- kept in its own tables (`heights`, `px`, `pz`, `normals`, `colours`, `flip`), and each time
+-- it changes -- built, its edges put right, redrawn -- it is written into a fresh fixed-size
+-- copy of the master, made OPAQUE CONTENT (`AssetService:CreateDataModelContentAsync`, which
+-- holds none of that memory) and the copy let go, into a new hidden MeshPart. A change is
+-- still swapped in within one frame: the new tiles' parts and their neighbours' new parts
+-- are made first (off the frame, `OpaqueInFlight` at a time), then shown together while the
+-- old ones go. The master is opaque content too, made once a session. WHERE OPAQUE CONTENT
+-- IS REFUSED (`CreateContentResult`, or `workspace.__no_opaque` in Studio, as the road's
+-- `Road/SplineMesh`), a tile keeps its copy and is edited in place, as every tile was before:
+-- never more held than then. Refused, it is not asked again for `REFUSED_WAIT` seconds.
 
 local AssetService = game:GetService("AssetService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
 
 local Config = require(ReplicatedStorage.Shared.Config)
@@ -57,8 +71,11 @@ local GroundMeshView = {}
 GroundMeshView.__index = GroundMeshView
 
 type Tile = {
-	em: EditableMesh,
-	part: MeshPart,
+	-- the tile's own fixed-size mesh, edited in place: only where opaque content was refused
+	-- (T-276); nil for an opaque tile, which draws a new part each time it changes
+	em: EditableMesh?,
+	part: MeshPart?, -- what it draws (an opaque tile hidden in the pool has none)
+	origin: Vector3, -- the world point its vertices are written relative to (the part's place)
 	-- by grid index i * (n + 1) + j + 1 (i along x, j along z): the vertex and its own
 	-- normal, colour and UV ids
 	v: { number },
@@ -88,7 +105,20 @@ type Op = {
 	region: { Leaf },
 }
 
-type Master = { em: EditableMesh }
+-- the flat tile every tile is copied from: opaque content (T-276), or where that was refused
+-- a fixed-size mesh, as before
+type Master = { em: EditableMesh?, content: Content? }
+
+-- A tile's mesh being made (T-276, `_render`): its part once done, the copy it keeps where
+-- opaque content was refused, and the point its vertices are relative to.
+type Job = {
+	done: boolean,
+	part: MeshPart?,
+	held: EditableMesh?,
+	origin: Vector3?,
+	map: any, -- the kept copy's ids (`IdMap`)
+	err: string?,
+}
 
 export type View = typeof(setmetatable(
 	{} :: {
@@ -141,6 +171,9 @@ export type View = typeof(setmetatable(
 		totalWorkMs: number, -- all building and choosing, for the per-frame cost
 		events: { { number } },
 		slices: { number },
+		inflight: number, -- tile meshes being made now (T-276)
+		opaque: { [string]: number }, -- how tiles' meshes were made (`_render`)
+		retryAt: number, -- (os.clock) a change that could not get a mesh is not tried before this
 	},
 	GroundMeshView
 ))
@@ -171,137 +204,6 @@ local function setRunoffBy()
 	end
 end
 setRunoffBy()
-
--- The flat tile every tile is copied from: never shown, never moved. It spans the coarsest
--- tile, so every tile's bounds hold whatever it draws.
-local function makeMaster(): Master?
-	local G = Config.Spline.Ground
-	local C = cells()
-	local n = C + 1
-	local sp = G.Spacings[#G.Spacings]
-	local template = AssetService:CreateEditableMesh({ FixedSize = false })
-	if not template then
-		return nil
-	end
-	local ids = table.create(n * n)
-	for i = 0, C do
-		for j = 0, C do
-			local y = 0
-			if i == 0 and j == 0 then
-				y = HALF_SPAN
-			elseif i == C and j == C then
-				y = -HALF_SPAN
-			end
-			ids[i * n + j + 1] = template:AddVertex(Vector3.new((i - C / 2) * sp, y, (j - C / 2) * sp))
-		end
-	end
-	local nrm, col, uv = table.create(n * n), table.create(n * n), table.create(n * n)
-	for k = 1, n * n do
-		nrm[k] = template:AddNormal(Vector3.yAxis)
-		col[k] = template:AddColor(Color3.new(1, 1, 1), 1)
-		uv[k] = template:AddUV(Vector2.zero)
-	end
-	for i = 0, C - 1 do
-		for j = 0, C - 1 do
-			local a, b, c, d = i * n + j + 1, (i + 1) * n + j + 1, i * n + j + 2, (i + 1) * n + j + 2
-			-- two triangles a cell, wound to face up, split along b-c
-			for _, t in { { a, c, b }, { b, c, d } } do
-				local f = template:AddTriangle(ids[t[1]], ids[t[2]], ids[t[3]])
-				template:SetFaceNormals(f, { nrm[t[1]], nrm[t[2]], nrm[t[3]] })
-				template:SetFaceColors(f, { col[t[1]], col[t[2]], col[t[3]] })
-				template:SetFaceUVs(f, { uv[t[1]], uv[t[2]], uv[t[3]] })
-			end
-		end
-	end
-	local ok, em = pcall(function()
-		return AssetService:CreateEditableMeshAsync(Content.fromObject(template), { FixedSize = true })
-	end)
-	template:Destroy()
-	if not ok or not em then
-		return nil
-	end
-	return { em = em :: EditableMesh }
-end
-
-local function makeTile(master: Master): Tile?
-	local G = Config.Spline.Ground
-	local C = cells()
-	local n = C + 1
-	local sp = G.Spacings[#G.Spacings]
-	local ok, em = pcall(function()
-		return AssetService:CreateEditableMeshAsync(Content.fromObject(master.em), { FixedSize = true })
-	end)
-	if not ok or not em then
-		return nil
-	end
-	local copy = em :: EditableMesh
-	-- the copy's own ids, found by where each vertex is and what its faces name
-	local v, cn, cc, cu = table.create(n * n), table.create(n * n), table.create(n * n), table.create(n * n)
-	local faces = table.create(2 * C * C)
-	for _, f in copy:GetFaces() do
-		local vs = copy:GetFaceVertices(f)
-		local ns = copy:GetFaceNormals(f)
-		local cs = copy:GetFaceColors(f)
-		local us = copy:GetFaceUVs(f)
-		local mi, mj, hasA = math.huge, math.huge, false
-		local ks = {}
-		for q = 1, 3 do
-			local p = copy:GetPosition(vs[q])
-			local i, j = math.round(p.X / sp + C / 2), math.round(p.Z / sp + C / 2)
-			local k = i * n + j + 1
-			v[k], cn[k], cc[k], cu[k] = vs[q], ns[q], cs[q], us[q]
-			mi, mj = math.min(mi, i), math.min(mj, j)
-			ks[q] = { i, j }
-		end
-		for q = 1, 3 do
-			if ks[q][1] == mi and ks[q][2] == mj then
-				hasA = true
-			end
-		end
-		-- a cell's first face holds its corner a, its second does not
-		faces[2 * (mi * C + mj) + (if hasA then 1 else 2)] = f
-	end
-	local px, pz = table.create(n * n, 0), table.create(n * n, 0)
-	local ok2, part = pcall(function()
-		return AssetService:CreateMeshPartAsync(Content.fromObject(copy), {
-			CollisionFidelity = Enum.CollisionFidelity.Box,
-			RenderFidelity = Enum.RenderFidelity.Precise,
-		})
-	end)
-	if not ok2 or not part then
-		copy:Destroy()
-		return nil
-	end
-	local mp = part :: MeshPart
-	mp.Name = "GroundTile"
-	mp.Anchored = true
-	mp.CanCollide = false
-	mp.CanQuery = false
-	mp.CanTouch = false
-	mp.CastShadow = false
-	mp.Material = Enum.Material.Grass
-	mp.Color = Color3.new(1, 1, 1)
-	return {
-		em = copy,
-		part = mp,
-		v = v,
-		nrm = cn,
-		col = cc,
-		uv = cu,
-		leaf = nil,
-		heights = table.create(n * n, 0),
-		px = px,
-		pz = pz,
-		normals = table.create(n * n, Vector3.yAxis),
-		colours = table.create(n * n, Color3.new(1, 1, 1)),
-		borrowed = table.create(n * n, false),
-		cls = table.create(n * n, 2),
-		faces = faces,
-		flip = table.create(C * C, false),
-		cy = 0,
-		stale = false,
-	}
-end
 
 function GroundMeshView.new(spline: any, parent: Instance?): View
 	setRunoffBy()
@@ -357,6 +259,12 @@ function GroundMeshView.new(spline: any, parent: Instance?): View
 		totalWorkMs = 0,
 		events = {},
 		slices = {},
+		inflight = 0,
+		-- renders: meshes made; opaque: made opaque; kept: refused, the copy kept (the fallback);
+		-- copyFails / partFails: no room for a copy, or no part; waitMs: a change waiting on
+		-- them, off the frame; worstWaitMs; inflightMost; drops: changes given up for want of one
+		opaque = { renders = 0, opaque = 0, kept = 0, copyFails = 0, partFails = 0, waitMs = 0, worstWaitMs = 0, inflightMost = 0, drops = 0 },
+		retryAt = 0,
 	}, GroundMeshView)
 	self:_setCap()
 	self.changedConn = GroundDetail.Changed:Connect(function(value: number)
@@ -386,9 +294,16 @@ end
 -- past those the ground holds fewer from now on (`failCap`), so it merges far tiles over the
 -- next frames: coarser far out, never under `Ground.YieldFloor` tiles. Returns the tiles let
 -- go now, and the ones still to go.
+-- OPAQUE TILES (T-276) hold none of the mesh memory, so letting them go frees nothing: the
+-- ground gives way only while it holds tiles of its own (where opaque content was refused),
+-- and counts only those.
 function GroundMeshView.Yield(self: View, units: number): (number, number)
 	if self.dead or units <= 0 then
 		return 0, 0
+	end
+	local held = self:_held()
+	if held <= 0 then
+		return 0, 0 -- nothing held: nothing to give
 	end
 	local G = Config.Spline.Ground
 	local floor = G.YieldFloor + G.Spare
@@ -402,10 +317,32 @@ function GroundMeshView.Yield(self: View, units: number): (number, number)
 	self:_setCap()
 	self.desired = nil
 	self:_trim()
-	local now = before - #self.pool
-	local soon = math.max(0, #self.pool - self.cap)
+	local now = held - self:_held()
+	local soon = 0
+	for _, t in self.pool do
+		if t.em then
+			soon += 1
+		end
+	end
+	soon = math.min(soon, math.max(0, #self.pool - self.cap))
 	self.yielded += now
 	return now, soon
+end
+
+-- The tiles of mesh memory the ground holds now (T-276): its tiles that keep their own mesh
+-- (none where opaque content is made), and the master where it is not opaque. (Not the copies
+-- being made opaque at this moment, `inflight`: those are let go within a frame or two.)
+function GroundMeshView._held(self: View): number
+	local held = 0
+	for _, t in self.pool do
+		if t.em then
+			held += 1
+		end
+	end
+	if self.master and self.master.em then
+		held += 1
+	end
+	return held
 end
 
 -- The tiles the settings allow: the Ground detail's, and the Road behind's and Road ahead's
@@ -570,6 +507,361 @@ local function cellTriangles(n: number, i: number, j: number, flip: boolean): ({
 		return { a, d, b }, { a, c, d }
 	end
 	return { a, c, b }, { b, c, d }
+end
+
+-- OPAQUE CONTENT (T-276), as `Road/SplineMesh` makes it: (true, content), or false where it is
+-- refused. In Studio, `workspace.__no_opaque = true` refuses it, to try the fallback. Once
+-- refused, nothing is made opaque for `REFUSED_WAIT` seconds (each try costs a copy).
+local REFUSED_WAIT = 30 -- seconds
+local refusedUntil = 0
+
+local function opaqueOk(): boolean
+	if RunService:IsStudio() and Workspace:GetAttribute("__no_opaque") == true then
+		return false
+	end
+	return os.clock() >= refusedUntil
+end
+
+local function toOpaque(em: EditableMesh): (boolean, Content?)
+	if not opaqueOk() then
+		return false, nil
+	end
+	local ok, result, content = pcall(function()
+		return AssetService:CreateDataModelContentAsync(Content.fromObject(em))
+	end)
+	local made = ok and result == Enum.CreateContentResult.Success and content ~= nil
+	if not made then
+		refusedUntil = os.clock() + REFUSED_WAIT
+		return false, nil
+	end
+	return true, content
+end
+
+-- Where grid point (i, j) of the master is (i along x, j along z): flat, `sp` apart, but for
+-- two corners `HALF_SPAN` up and down, so a part made from a copy as it comes has a box that
+-- holds anything a tile draws.
+local function masterPosition(C: number, sp: number, i: number, j: number): Vector3
+	local y = 0
+	if i == 0 and j == 0 then
+		y = HALF_SPAN
+	elseif i == C and j == C then
+		y = -HALF_SPAN
+	end
+	return Vector3.new((i - C / 2) * sp, y, (j - C / 2) * sp)
+end
+
+-- the master's opaque content, made once a session and shared by every view (it holds none of
+-- the mesh memory), for this many cells and this spacing
+local masterContent: Content? = nil
+local masterKey = ""
+
+-- The flat tile every tile is copied from: never shown, never moved. It spans the coarsest
+-- tile, so every tile's bounds hold whatever it draws. Opaque content (T-276); where that is
+-- refused, a fixed-size mesh, as before.
+local function makeMaster(): Master?
+	local G = Config.Spline.Ground
+	local C = cells()
+	local n = C + 1
+	local sp = G.Spacings[#G.Spacings]
+	local key = `{C}:{sp}`
+	if masterContent and masterKey == key then
+		return { em = nil, content = masterContent }
+	end
+	local okT, made = pcall(function()
+		return AssetService:CreateEditableMesh({ FixedSize = false })
+	end)
+	if not okT or not made then
+		return nil
+	end
+	local template = made :: EditableMesh
+	local ids = table.create(n * n)
+	for i = 0, C do
+		for j = 0, C do
+			ids[i * n + j + 1] = template:AddVertex(masterPosition(C, sp, i, j))
+		end
+	end
+	local nrm, col, uv = table.create(n * n), table.create(n * n), table.create(n * n)
+	for k = 1, n * n do
+		nrm[k] = template:AddNormal(Vector3.yAxis)
+		col[k] = template:AddColor(Color3.new(1, 1, 1), 1)
+		uv[k] = template:AddUV(Vector2.zero)
+	end
+	for i = 0, C - 1 do
+		for j = 0, C - 1 do
+			local a, b, c, d = i * n + j + 1, (i + 1) * n + j + 1, i * n + j + 2, (i + 1) * n + j + 2
+			-- two triangles a cell, wound to face up, split along b-c
+			for _, t in { { a, c, b }, { b, c, d } } do
+				local f = template:AddTriangle(ids[t[1]], ids[t[2]], ids[t[3]])
+				template:SetFaceNormals(f, { nrm[t[1]], nrm[t[2]], nrm[t[3]] })
+				template:SetFaceColors(f, { col[t[1]], col[t[2]], col[t[3]] })
+				template:SetFaceUVs(f, { uv[t[1]], uv[t[2]], uv[t[3]] })
+			end
+		end
+	end
+	local opaque, content = toOpaque(template)
+	if opaque and content then
+		template:Destroy()
+		masterContent, masterKey = content, key
+		return { em = nil, content = content }
+	end
+	local ok, em = pcall(function()
+		return AssetService:CreateEditableMeshAsync(Content.fromObject(template), { FixedSize = true })
+	end)
+	template:Destroy()
+	if not ok or not em then
+		return nil
+	end
+	return { em = em :: EditableMesh, content = nil }
+end
+
+local function masterSource(master: Master): Content
+	return if master.content then master.content else Content.fromObject(master.em :: EditableMesh)
+end
+
+-- A COPY'S IDS: each grid point's vertex, normal, colour and UV ids, and each cell's two faces
+-- (its first holds corner a, as the master has it). Found by where each vertex is and what its
+-- faces name, and kept: a copy of the same master gets the same ids (`Road/SplineMesh` measured
+-- it for its templates); a copy whose faces or corners differ is mapped again.
+type IdMap = {
+	v: { number },
+	nrm: { number },
+	col: { number },
+	uv: { number },
+	faces: { number },
+	count: number,
+	f1: number,
+	fN: number,
+}
+local idMapCache: IdMap? = nil
+local idMaps = 0 -- times a copy was mapped afresh
+
+local function idMapOf(copy: EditableMesh): IdMap
+	local G = Config.Spline.Ground
+	local C = cells()
+	local n = C + 1
+	local sp = G.Spacings[#G.Spacings]
+	local all = copy:GetFaces()
+	local m = idMapCache
+	if m and #all == m.count and all[1] == m.f1 and all[#all] == m.fN then
+		-- (and three corners where the master has them)
+		local same = true
+		for _, ij in { { 0, 0 }, { C, C }, { C, 0 } } do
+			local k = ij[1] * n + ij[2] + 1
+			local okP, p = pcall(copy.GetPosition, copy, m.v[k])
+			if not okP or (p - masterPosition(C, sp, ij[1], ij[2])).Magnitude > 1e-3 then
+				same = false
+			end
+		end
+		if same then
+			return m
+		end
+	end
+	idMaps += 1
+	local v, cn, cc, cu = table.create(n * n), table.create(n * n), table.create(n * n), table.create(n * n)
+	local faces = table.create(2 * C * C)
+	for _, f in all do
+		local vs = copy:GetFaceVertices(f)
+		local ns = copy:GetFaceNormals(f)
+		local cs = copy:GetFaceColors(f)
+		local us = copy:GetFaceUVs(f)
+		local mi, mj, hasA = math.huge, math.huge, false
+		local ks = {}
+		for q = 1, 3 do
+			local p = copy:GetPosition(vs[q])
+			local i, j = math.round(p.X / sp + C / 2), math.round(p.Z / sp + C / 2)
+			local k = i * n + j + 1
+			v[k], cn[k], cc[k], cu[k] = vs[q], ns[q], cs[q], us[q]
+			mi, mj = math.min(mi, i), math.min(mj, j)
+			ks[q] = { i, j }
+		end
+		for q = 1, 3 do
+			if ks[q][1] == mi and ks[q][2] == mj then
+				hasA = true
+			end
+		end
+		-- a cell's first face holds its corner a, its second does not
+		faces[2 * (mi * C + mj) + (if hasA then 1 else 2)] = f
+	end
+	m = { v = v, nrm = cn, col = cc, uv = cu, faces = faces, count = #all, f1 = all[1], fN = all[#all] }
+	idMapCache = m
+	return m
+end
+
+local function dress(mp: MeshPart)
+	mp.Name = "GroundTile"
+	mp.Anchored = true
+	mp.CanCollide = false
+	mp.CanQuery = false
+	mp.CanTouch = false
+	mp.CastShadow = false
+	mp.Material = Enum.Material.Grass
+	mp.Color = Color3.new(1, 1, 1)
+end
+
+local function partFrom(content: Content): MeshPart?
+	local ok, part = pcall(function()
+		return AssetService:CreateMeshPartAsync(content, {
+			CollisionFidelity = Enum.CollisionFidelity.Box,
+			RenderFidelity = Enum.RenderFidelity.Precise,
+		})
+	end)
+	if not ok or not part then
+		return nil
+	end
+	local mp = part :: MeshPart
+	dress(mp)
+	return mp
+end
+
+-- A tile's own tables, drawing nothing yet.
+local function blankTile(): Tile
+	local C = cells()
+	local n = C + 1
+	return {
+		em = nil,
+		part = nil,
+		origin = Vector3.zero,
+		v = {},
+		nrm = {},
+		col = {},
+		uv = {},
+		leaf = nil,
+		heights = table.create(n * n, 0),
+		px = table.create(n * n, 0),
+		pz = table.create(n * n, 0),
+		normals = table.create(n * n, Vector3.yAxis),
+		colours = table.create(n * n, Color3.new(1, 1, 1)),
+		borrowed = table.create(n * n, false),
+		cls = table.create(n * n, 2),
+		faces = {},
+		flip = table.create(C * C, false),
+		cy = 0,
+		stale = false,
+	}
+end
+
+-- A tile that keeps its own fixed-size mesh, edited in place (as every tile was before T-276):
+-- where opaque content is refused. nil when the device will not make it.
+local function makeTile(master: Master): Tile?
+	local ok, em = pcall(function()
+		return AssetService:CreateEditableMeshAsync(masterSource(master), { FixedSize = true })
+	end)
+	if not ok or not em then
+		return nil
+	end
+	local copy = em :: EditableMesh
+	local m = idMapOf(copy)
+	local mp = partFrom(Content.fromObject(copy))
+	if not mp then
+		copy:Destroy()
+		return nil
+	end
+	local tile = blankTile()
+	tile.em, tile.part = copy, mp
+	tile.v, tile.nrm, tile.col, tile.uv, tile.faces = m.v, m.nrm, m.col, m.uv, m.faces
+	return tile
+end
+
+-- Write a tile's ground into `copy` (fresh from the master: every cell split b-c), each vertex
+-- relative to `origin`.
+local function writeTile(copy: EditableMesh, m: IdMap, origin: Vector3, px: { number }, pz: { number }, heights: { number }, normals: { Vector3 }, colours: { Color3 }, flip: { boolean })
+	local C = cells()
+	local n = C + 1
+	local uvStuds = Config.Spline.Ground.UVStuds
+	local ox, oy, oz = origin.X, origin.Y, origin.Z
+	for k = 1, n * n do
+		local x, z = px[k], pz[k]
+		copy:SetPosition(m.v[k], Vector3.new(x - ox, heights[k] - oy, z - oz))
+		copy:SetNormal(m.nrm[k], normals[k])
+		copy:SetColor(m.col[k], colours[k])
+		copy:SetUV(m.uv[k], Vector2.new(x / uvStuds, z / uvStuds))
+	end
+	for i = 0, C - 1 do
+		for j = 0, C - 1 do
+			local c = i * C + j + 1
+			if flip[c] then
+				local t1, t2 = cellTriangles(n, i, j, true)
+				for q, t in { t1, t2 } do
+					local f = m.faces[2 * (c - 1) + q]
+					copy:SetFaceVertices(f, { m.v[t[1]], m.v[t[2]], m.v[t[3]] })
+					copy:SetFaceNormals(f, { m.nrm[t[1]], m.nrm[t[2]], m.nrm[t[3]] })
+					copy:SetFaceColors(f, { m.col[t[1]], m.col[t[2]], m.col[t[3]] })
+					copy:SetFaceUVs(f, { m.uv[t[1]], m.uv[t[2]], m.uv[t[3]] })
+				end
+			end
+		end
+	end
+end
+
+-- A TILE'S MESH AS OPAQUE CONTENT (T-276): `leaf`'s ground as these tables have it, written
+-- into a fresh copy of the master, centred on its own box (a part is culled by its box, and
+-- keeps its vertices where they were written: `Road/SplineMesh`), made opaque and the copy let
+-- go, into a new MeshPart, hidden. Where opaque content is refused, the copy is kept and the
+-- part drawn from it, edited in place from then on, as before: its vertices then relative to
+-- the tile's centre at `cy`, and its box the master's. Returns the part, the copy kept (if
+-- any) with its ids, and the point its vertices are relative to; nil when the device has no
+-- room for a copy.
+local function render(master: Master, leaf: Leaf, cy: number, px: { number }, pz: { number }, heights: { number }, normals: { Vector3 }, colours: { Color3 }, flip: { boolean }, stats: { [string]: number }): (MeshPart?, EditableMesh?, Vector3?, IdMap?)
+	local C = cells()
+	local n = C + 1
+	local sp = Config.Spline.Ground.Spacings[#Config.Spline.Ground.Spacings]
+	local centre = Vector3.new(leaf.x0 + leaf.side * 0.5, cy, leaf.z0 + leaf.side * 0.5)
+	local ok, em = pcall(function()
+		return AssetService:CreateEditableMeshAsync(masterSource(master), { FixedSize = true })
+	end)
+	if not ok or not em then
+		stats.copyFails += 1
+		return nil, nil, nil
+	end
+	local copy = em :: EditableMesh
+	local m = idMapOf(copy)
+	if opaqueOk() then
+		local lo, hi = Vector3.one * math.huge, -Vector3.one * math.huge
+		for k = 1, n * n do
+			local p = Vector3.new(px[k], heights[k], pz[k])
+			lo, hi = lo:Min(p), hi:Max(p)
+		end
+		local origin = (lo + hi) * 0.5
+		writeTile(copy, m, origin, px, pz, heights, normals, colours, flip)
+		local made, content = toOpaque(copy)
+		if made and content then
+			copy:Destroy()
+			local part = partFrom(content)
+			if not part then
+				stats.partFails += 1
+				return nil, nil, nil
+			end
+			part.CFrame = CFrame.new(origin)
+			stats.opaque += 1
+			return part, nil, origin
+		end
+		-- refused: the copy as the master has it again, so its part gets the master's box
+		for i = 0, C do
+			for j = 0, C do
+				copy:SetPosition(m.v[i * n + j + 1], masterPosition(C, sp, i, j))
+			end
+		end
+		for c = 1, C * C do
+			if flip[c] then
+				local i, j = (c - 1) // C, (c - 1) % C
+				local t1, t2 = cellTriangles(n, i, j, false)
+				for q, t in { t1, t2 } do
+					copy:SetFaceVertices(m.faces[2 * (c - 1) + q], { m.v[t[1]], m.v[t[2]], m.v[t[3]] })
+				end
+			end
+		end
+	end
+	-- kept, edited in place (the fallback)
+	local part = partFrom(Content.fromObject(copy))
+	if not part then
+		copy:Destroy()
+		stats.partFails += 1
+		return nil, nil, nil
+	end
+	writeTile(copy, m, centre, px, pz, heights, normals, colours, flip)
+	part.CFrame = CFrame.new(centre)
+	stats.kept += 1
+	return part, copy, centre, m
 end
 
 -- Where (x, z) is in a triangle, in plan: its three weights (all -1 for no triangle at all).
@@ -923,8 +1215,11 @@ local function setSplit(tile: Tile, i: number, j: number, flip: boolean)
 		return
 	end
 	tile.flip[c] = flip
-	local t1, t2 = cellTriangles(C + 1, i, j, flip)
 	local em = tile.em
+	if not em then
+		return -- an opaque tile: written whole when its mesh is made (`render`)
+	end
+	local t1, t2 = cellTriangles(C + 1, i, j, flip)
 	local v, nrm, col, uv = tile.v, tile.nrm, tile.col, tile.uv
 	for q, t in { t1, t2 } do
 		local f = tile.faces[2 * (c - 1) + q]
@@ -1126,11 +1421,14 @@ function GroundMeshView._fill(self: View, tile: Tile, leaf: Leaf, map: { [number
 					self.wall.held += 1
 				end
 			end
-			em:SetPosition(tile.v[k], Vector3.new(p[1] - cx, p[3] - cy, p[2] - cz))
 			tile.px[k], tile.pz[k], heights[k], tile.cls[k], tile.normals[k], tile.colours[k] = p[1], p[2], p[3], p[4], nv, colour
-			em:SetNormal(tile.nrm[k], nv)
-			em:SetColor(tile.col[k], colour)
-			em:SetUV(tile.uv[k], Vector2.new(p[1] / uvStuds, p[2] / uvStuds))
+			if em then
+				-- a tile that keeps its own mesh (opaque content refused): written in place
+				em:SetPosition(tile.v[k], Vector3.new(p[1] - cx, p[3] - cy, p[2] - cz))
+				em:SetNormal(tile.nrm[k], nv)
+				em:SetColor(tile.col[k], colour)
+				em:SetUV(tile.uv[k], Vector2.new(p[1] / uvStuds, p[2] / uvStuds))
+			end
 		end
 		self:_slice()
 	end
@@ -1139,7 +1437,11 @@ function GroundMeshView._fill(self: View, tile: Tile, leaf: Leaf, map: { [number
 			setSplit(tile, i, j, flips[i * C + j + 1])
 		end
 	end
-	tile.part.CFrame = CFrame.new(cx, cy, cz)
+	if em and tile.part then
+		tile.part.CFrame = CFrame.new(cx, cy, cz)
+		tile.origin = Vector3.new(cx, cy, cz)
+	end
+	-- (an opaque tile's mesh is made from these tables next, `_render`)
 	tile.leaf = leaf
 	tile.cy = cy
 	tile.stale = false
@@ -1223,13 +1525,6 @@ end
 -- that lets go of more tiles than it takes may go past the cap for a moment (a lower
 -- setting turns the pool into merges, each needing one tile before it frees four).
 function GroundMeshView._take(self: View, over: boolean?): Tile?
-	local t = table.remove(self.free)
-	if t then
-		return t
-	end
-	if #self.pool >= self.cap and not over then
-		return nil
-	end
 	if not self.master then
 		self.master = makeMaster()
 		if not self.master then
@@ -1237,7 +1532,39 @@ function GroundMeshView._take(self: View, over: boolean?): Tile?
 			return nil
 		end
 	end
-	local tile = makeTile(self.master :: Master)
+	local master = self.master :: Master
+	if master.em and not master.content and opaqueOk() then
+		-- opaque content refused when the master was made, served now: the master as content,
+		-- and its own mesh let go (T-276)
+		local made, content = toOpaque(master.em)
+		if made and content then
+			master.em:Destroy()
+			master.em, master.content = nil, content
+		end
+	end
+	local opaque = opaqueOk() and master.content ~= nil
+	local t = table.remove(self.free)
+	if t then
+		if t.em and opaque then
+			-- a tile that kept its own mesh, while opaque content was refused: let it go
+			if t.part then
+				t.part:Destroy()
+			end
+			t.em:Destroy()
+			t.em, t.part = nil, nil
+		end
+		return t
+	end
+	if #self.pool >= self.cap and not over then
+		return nil
+	end
+	local tile
+	if opaque then
+		-- (holds no mesh memory: its mesh is made opaque once it is filled, `_render`)
+		tile = blankTile()
+	else
+		tile = makeTile(master)
+	end
 	if not tile then
 		-- the budget is full: hold what there is, less a few for the road
 		local G = Config.Spline.Ground
@@ -1247,6 +1574,19 @@ function GroundMeshView._take(self: View, over: boolean?): Tile?
 	end
 	table.insert(self.pool, tile)
 	return tile
+end
+
+-- Let a tile's drawing go: an opaque tile's part (made again when it is next filled); one that
+-- keeps its own mesh only leaves the world, ready to be written again, as before T-276.
+local function stow(t: Tile)
+	if t.em then
+		if t.part then
+			t.part.Parent = nil
+		end
+	elseif t.part then
+		t.part:Destroy()
+		t.part = nil
+	end
 end
 
 -- Let go of hidden tiles past the cap (a lower setting, or a full budget), for the road; and
@@ -1259,8 +1599,84 @@ function GroundMeshView._trim(self: View)
 		if i then
 			table.remove(self.pool, i)
 		end
-		t.part:Destroy()
-		t.em:Destroy()
+		if t.part then
+			t.part:Destroy()
+		end
+		if t.em then
+			t.em:Destroy()
+		end
+	end
+end
+
+-- Make a tile's mesh from these tables, off the frame (T-276, `render`): at most
+-- `Ground.OpaqueInFlight` at once. The job is done once `job.done`.
+function GroundMeshView._render(self: View, leaf: Leaf, cy: number, px: { number }, pz: { number }, heights: { number }, normals: { Vector3 }, colours: { Color3 }, flip: { boolean }): Job
+	local most = Config.Spline.Ground.OpaqueInFlight
+	while self.inflight >= most and not self.dead do
+		self:_pause()
+	end
+	local job: Job = { done = false, part = nil, held = nil, origin = nil, map = nil, err = nil }
+	local master = self.master :: Master
+	local stats = self.opaque
+	self.inflight += 1
+	stats.inflightMost = math.max(stats.inflightMost, self.inflight)
+	stats.renders += 1
+	task.spawn(function()
+		local ok, part, held, origin, map = pcall(render, master, leaf, cy, px, pz, heights, normals, colours, flip, stats)
+		self.inflight -= 1
+		if ok then
+			job.part, job.held, job.origin, job.map = part, held, origin, map
+		else
+			job.err = tostring(part)
+		end
+		job.done = true
+	end)
+	return job
+end
+
+-- Hand the frame back while waiting on the engine: not counted as building (`Road/SplineMesh`
+-- measured the waits run off the frame).
+function GroundMeshView._pause(self: View)
+	local now = os.clock()
+	local ms = (now - self.sliceStart) * 1000
+	self.work += now - self.sliceStart
+	self.worstSliceMs = math.max(self.worstSliceMs, ms)
+	task.wait()
+	self.sliceStart = os.clock()
+end
+
+-- Wait for `jobs` to be done. Returns whether every one made its part.
+function GroundMeshView._await(self: View, jobs: { Job }): boolean
+	local t0 = os.clock()
+	local all = true
+	for _, job in jobs do
+		while not job.done do
+			self:_pause()
+		end
+		if not job.part then
+			all = false
+			if job.err then
+				warn(`[GroundMeshView] a tile's mesh: {job.err}`)
+			end
+		end
+	end
+	local ms = (os.clock() - t0) * 1000
+	self.opaque.waitMs += ms
+	self.opaque.worstWaitMs = math.max(self.opaque.worstWaitMs, ms)
+	return all
+end
+
+-- Let go of what `jobs` made (a change given up).
+local function scrap(jobs: { Job })
+	for _, job in jobs do
+		if job.part then
+			job.part:Destroy()
+			job.part = nil
+		end
+		if job.held then
+			job.held:Destroy()
+			job.held = nil
+		end
 	end
 end
 
@@ -1467,25 +1883,37 @@ function GroundMeshView._do(self: View, op: Op): boolean
 		future[l.key] = l
 		newKeys[l.key] = true
 	end
-	-- the new tiles, hidden
+	-- the new tiles, hidden; an opaque tile's mesh made from its tables as soon as it is filled
+	-- (T-276), while the next one is worked out
 	local built: { Tile } = {}
+	local jobs: { Job } = {}
+	local builtJobs: { [Tile]: Job } = {}
+	local function giveUp(): boolean
+		self:_await(jobs)
+		scrap(jobs)
+		for _, t in built do
+			stow(t)
+			table.insert(self.free, t)
+		end
+		return false
+	end
 	for _, leaf in op.new do
 		local tile = self:_take(#op.old > #op.new)
 		if not tile then
-			for _, t in built do
-				table.insert(self.free, t)
-			end
-			return false
+			return giveUp()
 		end
 		table.insert(built, tile)
 		if not self:_fill(tile, leaf, future) then
-			for _, t in built do
-				table.insert(self.free, t)
-			end
-			return false
+			return giveUp()
+		end
+		if not tile.em then
+			local job = self:_render(leaf, tile.cy, tile.px, tile.pz, tile.heights, tile.normals, tile.colours, tile.flip)
+			table.insert(jobs, job)
+			builtJobs[tile] = job
 		end
 	end
-	-- the tiles round it whose edges change
+	-- the tiles round it whose edges change: one that keeps its own mesh is written in place at
+	-- the swap, as before; an opaque one gets a new mesh from its tables with the changes in
 	local pending: { { any } } = {}
 	for k, leaf in future do
 		if not newKeys[k] then
@@ -1500,16 +1928,41 @@ function GroundMeshView._do(self: View, op: Op): boolean
 			if touching and tile then
 				local changes, splits = self:_rimChanges(tile, future)
 				if #changes > 0 or #splits > 0 then
-					table.insert(pending, { tile, changes, splits })
+					local job: Job? = nil
+					if not tile.em then
+						local px, pz, h = table.clone(tile.px), table.clone(tile.pz), table.clone(tile.heights)
+						local nm, cl, fl = table.clone(tile.normals), table.clone(tile.colours), table.clone(tile.flip)
+						for _, ch in changes do
+							local kk = ch[1]
+							px[kk], pz[kk], h[kk] = ch[2], ch[3], ch[4]
+							if ch[6] and ch[7] then
+								nm[kk], cl[kk] = ch[6], ch[7]
+							end
+						end
+						local C = cells()
+						for _, sp in splits do
+							fl[sp[1] * C + sp[2] + 1] = sp[3]
+						end
+						job = self:_render(tile.leaf :: Leaf, tile.cy, px, pz, h, nm, cl, fl)
+						table.insert(jobs, job :: Job)
+					end
+					table.insert(pending, { tile, changes, splits, job })
 				end
 			end
 		end
 		if self.dead then
-			return false
+			return giveUp()
 		end
 	end
 	if self.dead then
-		return false
+		return giveUp()
+	end
+	-- every mesh made, or none of it is shown
+	if not self:_await(jobs) or self.dead then
+		self.opaque.drops += 1
+		-- (out of room for a copy: not tried again for a moment)
+		self.retryAt = os.clock() + 0.25
+		return giveUp()
 	end
 	-- swap it in, all in this frame
 	local c0 = os.clock()
@@ -1523,37 +1976,65 @@ function GroundMeshView._do(self: View, op: Op): boolean
 	end
 	for _, tile in built do
 		local leaf = tile.leaf :: Leaf
+		local job = builtJobs[tile]
+		if job then
+			tile.part, tile.em, tile.origin = job.part, job.held, job.origin :: Vector3
+			if job.held then
+				-- (opaque content refused: it keeps its copy, written in place from now on)
+				local m = job.map :: IdMap
+				tile.v, tile.nrm, tile.col, tile.uv, tile.faces = m.v, m.nrm, m.col, m.uv, m.faces
+			end
+		end
 		self.tiles[leaf.key] = tile
-		tile.part.Parent = self.folder
+		;(tile.part :: MeshPart).Parent = self.folder
 		if self.spline.length ~= length then
 			tile.stale = true -- road arrived while it was built
 		end
 	end
 	for _, t in oldTiles do
-		t.part.Parent = nil
+		stow(t)
 		t.leaf = nil
 		t.stale = false
 		table.insert(self.free, t)
 	end
 	local uvStuds = Config.Spline.Ground.UVStuds
 	for _, p in pending do
-		local tile, changes, splits = p[1] :: Tile, p[2] :: { { any } }, p[3] :: { { any } }
-		local leaf = tile.leaf :: Leaf
-		local cx, cz = leaf.x0 + leaf.side * 0.5, leaf.z0 + leaf.side * 0.5
+		local tile, changes, splits, job = p[1] :: Tile, p[2] :: { { any } }, p[3] :: { { any } }, p[4] :: Job?
+		local em = tile.em
+		local o = tile.origin
 		for _, ch in changes do
 			local k, x, z, y, cls, nv, colour = ch[1], ch[2], ch[3], ch[4], ch[5], ch[6], ch[7]
 			tile.heights[k], tile.px[k], tile.pz[k], tile.cls[k] = y, x, z, cls
-			tile.em:SetPosition(tile.v[k], Vector3.new(x - cx, y - tile.cy, z - cz))
-			tile.em:SetUV(tile.uv[k], Vector2.new(x / uvStuds, z / uvStuds))
+			if em then
+				em:SetPosition(tile.v[k], Vector3.new(x - o.X, y - o.Y, z - o.Z))
+				em:SetUV(tile.uv[k], Vector2.new(x / uvStuds, z / uvStuds))
+			end
 			if nv and colour then
 				tile.normals[k], tile.colours[k], tile.borrowed[k] = nv, colour, ch[8] == true
-				tile.em:SetNormal(tile.nrm[k], nv)
-				tile.em:SetColor(tile.col[k], colour)
+				if em then
+					em:SetNormal(tile.nrm[k], nv)
+					em:SetColor(tile.col[k], colour)
+				end
 			end
 			self.rimWrites += 1
 		end
 		for _, sp in splits do
 			setSplit(tile, sp[1], sp[2], sp[3])
+		end
+		if job then
+			-- its new mesh in, its old one out, in this frame
+			local old = tile.part
+			local part = job.part :: MeshPart
+			part.Parent = self.folder
+			tile.part, tile.origin = part, job.origin :: Vector3
+			if job.held then
+				tile.em = job.held
+				local m = job.map :: IdMap
+				tile.v, tile.nrm, tile.col, tile.uv, tile.faces = m.v, m.nrm, m.col, m.uv, m.faces
+			end
+			if old then
+				old:Destroy()
+			end
 		end
 	end
 	self.shown = future
@@ -1602,8 +2083,12 @@ function GroundMeshView._run(self: View)
 			if self.failed then
 				break
 			end
-			-- no tile to be had: settle for fewer, and try again next frame
+			-- no tile to be had: settle for fewer, and try again next frame (or, out of room for
+			-- a tile's copy, in a moment, T-276)
 			self.desired = nil
+			while os.clock() < self.retryAt and not self.dead do
+				task.wait()
+			end
 		end
 		self:_trim()
 		task.wait()
@@ -1660,12 +2145,19 @@ function GroundMeshView.Destroy(self: View)
 		self.unGive = nil
 	end
 	for _, tile in self.pool do
-		tile.part:Destroy()
-		tile.em:Destroy()
+		if tile.part then
+			tile.part:Destroy()
+		end
+		if tile.em then
+			tile.em:Destroy()
+		end
 	end
 	self.pool, self.free, self.tiles, self.shown = {}, {}, {}, {}
 	if self.master then
-		self.master.em:Destroy()
+		-- (its opaque content is kept for the next view: it holds no mesh memory)
+		if self.master.em then
+			self.master.em:Destroy()
+		end
 		self.master = nil
 	end
 	self.folder:Destroy()
@@ -2319,11 +2811,103 @@ function GroundMeshView.DebugBudget(self: View)
 		cap = self.cap,
 		failCap = self.failCap,
 		master = self.master ~= nil,
+		masterOpaque = self.master ~= nil and self.master.content ~= nil,
 		yields = self.yields,
 		yielded = self.yielded,
 		failed = self.failed,
-		tileUnits = #self.pool + (if self.master then 1 else 0), -- mesh budget tiles held
+		-- mesh budget tiles held (T-276: only tiles that keep their own mesh, and a master that is
+		-- not opaque), and the copies being made opaque at this moment
+		tileUnits = self:_held(),
+		inflight = self.inflight,
+		opaque = table.clone(self.opaque),
+		opaqueOk = opaqueOk(),
 	}
+end
+
+-- WHAT IS DRAWN IS WHAT THE TABLES SAY (T-276): up to `count` shown tiles' meshes read back
+-- (an opaque part's content opened as a mesh again) and matched to their tables: each drawn
+-- vertex, placed by its part, against the nearest vertex the tables have, and each drawn
+-- triangle against the tables' triangles. The seams and over-the-road checks
+-- (`DebugSeams`) read the tables, so this is what carries them over to what is drawn.
+function GroundMeshView.DebugDrawnMatches(self: View, count: number?)
+	local C = cells()
+	local n = C + 1
+	local out = { tiles = 0, opaque = 0, kept = 0, vertices = 0, worstOff = 0, triangles = 0, trianglesMissing = 0, failed = 0, boxOff = 0 }
+	for _, tile in self.tiles do
+		if out.tiles >= (count or 20) then
+			break
+		end
+		local part = tile.part
+		if not part or not tile.leaf then
+			continue
+		end
+		out.tiles += 1
+		local mesh: EditableMesh? = tile.em
+		local own = false
+		if not mesh then
+			out.opaque += 1
+			local ok, em = pcall(function()
+				return AssetService:CreateEditableMeshAsync(part.MeshContent, { FixedSize = true })
+			end)
+			if not ok or not em then
+				out.failed += 1
+				continue
+			end
+			mesh, own = em, true
+		else
+			out.kept += 1
+		end
+		local em = mesh :: EditableMesh
+		local o = part.Position
+		-- the tables' vertices, and their triangles as sorted grid indices
+		local want = {}
+		for i = 0, C - 1 do
+			for j = 0, C - 1 do
+				local t1, t2 = cellTriangles(n, i, j, tile.flip[i * C + j + 1])
+				for _, t in { t1, t2 } do
+					local k = { t[1], t[2], t[3] }
+					table.sort(k)
+					want[`{k[1]},{k[2]},{k[3]}`] = true
+				end
+			end
+		end
+		local function nearest(p: Vector3): (number, number)
+			local best, bk = math.huge, 0
+			for k = 1, n * n do
+				local d = (Vector3.new(tile.px[k], tile.heights[k], tile.pz[k]) - p).Magnitude
+				if d < best then
+					best, bk = d, k
+				end
+			end
+			return bk, best
+		end
+		local lo, hi = Vector3.one * math.huge, -Vector3.one * math.huge
+		for _, f in em:GetFaces() do
+			local vs = em:GetFaceVertices(f)
+			local ks = {}
+			for q = 1, 3 do
+				local p = em:GetPosition(vs[q]) + o
+				lo, hi = lo:Min(p), hi:Max(p)
+				local k, d = nearest(p)
+				ks[q] = k
+				out.vertices += 1
+				out.worstOff = math.max(out.worstOff, d)
+			end
+			table.sort(ks)
+			out.triangles += 1
+			if not want[`{ks[1]},{ks[2]},{ks[3]}`] then
+				out.trianglesMissing += 1
+			end
+		end
+		if own then
+			-- an opaque part's box is its mesh's own (it is culled by it)
+			local box = hi - lo
+			out.boxOff = math.max(out.boxOff, (box - part.Size).Magnitude, ((lo + hi) * 0.5 - o).Magnitude)
+			em:Destroy()
+		end
+		task.wait()
+	end
+	return out
 end
 
 function GroundMeshView.DebugState(self: View)
@@ -2375,6 +2959,11 @@ function GroundMeshView.DebugState(self: View)
 		totalWorkMs = self.totalWorkMs,
 		events = self.events,
 		slices = self.slices,
+		-- T-276
+		held = self:_held(),
+		opaque = table.clone(self.opaque),
+		opaqueOk = opaqueOk(),
+		idMaps = idMaps,
 	}
 end
 

@@ -576,6 +576,11 @@ local Spline = {
 		MeshSliceMs = 2, -- ms of building a frame
 		FirstSliceMs = 6, -- ms a frame while nothing is drawn yet (a run's first second)
 		Spare = 24, -- tiles built hidden, then swapped in whole, so a change never shows half done
+		-- OPAQUE TILES (T-276, `Drift/GroundMeshView`): a tile's mesh is made opaque each time it
+		-- changes, in a copy of the master let go at once; this many copies at a time, made off
+		-- the frame while the next tile is worked out (each about two tiles of mesh memory while
+		-- it is made)
+		OpaqueInFlight = 6,
 		Hysteresis = 1.2, -- a split tile stays split until it is this much past needing it
 		Reselect = 12, -- studs the car moves before the tiles are chosen again
 		-- THE ROAD'S DETAIL: from `Mesh.Behind` back to `Mesh.Ahead` on along it (as far as the
