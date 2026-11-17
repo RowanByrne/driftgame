@@ -12,7 +12,9 @@
 --   step(dt)  ;  clear()  ;  describe()
 --
 -- AN ENTRY'S `points` IS ITS TOTAL SO FAR, not a step's share, with the rung already in it
--- (the line never shows the rung). The same `id` again is the same event growing or ending.
+-- (the line never shows the rung). The same `id` again is the same event growing or ending,
+-- and takes its new `label` (the engine rewords a line: a jump's BIG AIR, a bend line's
+-- upgrade to the best version banked, T-299).
 --
 -- NEWEST ON TOP. A new line slides in at the top of the stack and pushes the older ones down,
 -- so the line the eye meets first is the latest.
@@ -446,6 +448,11 @@ function ScoreFeedView:push(entry)
 	local line = id ~= nil and self.byId[id] or nil
 	if line then
 		local was = line.state
+		-- its words may change: a jump's "BIG AIR", a bend line upgraded as it banks (T-299)
+		if line.count == 1 and entry.label ~= nil then
+			line.label = tostring(entry.label)
+			line.kind = entry.kind or line.kind
+		end
 		line.points = entry.points or line.points
 		line.rung = entry.rung or line.rung
 		line.state = entry.state or line.state
