@@ -264,6 +264,77 @@ local function run(check, opts)
 		true,
 		`context {fmt(totals.ctxMs / math.max(totals.ctxN, 1), 2)} ms per 400-stud box; a point {fmt(totals.atUs / math.max(totals.atN, 1), 1)} us on average, {fmt(totals.nearUs / math.max(totals.nearN, 1), 1)} us on the road`
 	)
+
+	-- (T-281) THE GROUND STAYS INSIDE THE PAINTED VISTA: at every Road ahead x Road behind x
+	-- Ground detail, from several spots along a road, every tile `Drift/GroundTiles` picks has
+	-- its furthest corner inside the nearest ring's nearest point (`Shared/Vista.ringSpan`),
+	-- seen from the camera at its furthest behind the car. Without the limit (as before
+	-- T-281), for comparison.
+	do
+		local StarterPlayer = game:GetService("StarterPlayer")
+		local GroundTiles = require(StarterPlayer.StarterPlayerScripts:WaitForChild("Drift"):WaitForChild("GroundTiles"))
+		local Vista = require(ReplicatedStorage.Shared.Vista)
+		local M = Config.Spline.Mesh
+		local nearest = math.huge
+		for _, layer in Config.Vista.Layers do
+			nearest = math.min(nearest, (Vista.ringSpan(layer)))
+		end
+		local C = Config.Camera
+		local camBack = C.CamOffset.Magnitude * C.PlayerZoomMax
+		local limit = GroundTiles.limit()
+		local gen = SplineGen.new(SEEDS[1])
+		gen:extendTo(6400)
+		local sp = gen.spline
+		local first = sp.firstSample * sp.step
+		local spots = { 2600, 3000, 3400, 3800 }
+		local worst, worstName, combos = 0, "", 0
+		local before, beforeName = 0, ""
+		local tilesNow, tilesBefore, missed = 0, 0, 0
+		local detail = G.Detail
+		for _, a in M.Ahead do
+			for _, b in M.Behind do
+				for _, d in detail do
+					combos += 1
+					local more = (b.GroundTiles or 0) + (a.GroundTiles or 0)
+					local budget = math.max(d.Tiles, math.min(d.Tiles + more, detail[#detail].Tiles + G.CorridorMost))
+					for _, along in spots do
+						local cx, cz = sp:planAt(along)
+						local L = M.ChunkLength
+						local s0 = math.max(first, math.max(0, math.floor((along - b.Studs) / L) * L))
+						local s1 = math.min(sp.length, along + a.Studs)
+						local road = GroundTiles.roadPoints(sp, along, s0, s1, d.Fine)
+						local function far(lim: number?): (number, number)
+							local leaves = GroundTiles.select({ x = cx, z = cz, road = road, tiles = budget, ratio = d.Ratio, reach = d.Reach, limit = lim })
+							local most = 0
+							for _, l in leaves do
+								most = math.max(most, GroundTiles.farCorner(l.x0, l.z0, l.side, cx, cz))
+							end
+							return most + camBack, #leaves
+						end
+						local f, n = far(limit)
+						local f0, n0 = far(nil)
+						tilesNow += n
+						tilesBefore += n0
+						if f > nearest then
+							missed += 1
+						end
+						local name = `{a.Name} ahead, {b.Name} behind, {d.Name} ground, {along} along`
+						if f > worst then
+							worst, worstName = f, name
+						end
+						if f0 > before then
+							before, beforeName = f0, name
+						end
+					end
+				end
+			end
+		end
+		check(
+			"the ground stays inside the nearest vista ring, at every setting",
+			missed == 0 and worst < nearest,
+			`{combos} settings x {#spots} spots: furthest tile corner {math.floor(worst)} studs from the camera at {worstName}; nearest ring {math.floor(nearest)} (limit {math.floor(limit)} from the car); without the limit {math.floor(before)} at {beforeName}; tiles {tilesNow} now, {tilesBefore} without`
+		)
+	end
 end
 
 -- ROAD ON THE SLOPE (features/road-on-the-slope.md, T-226): how the road sits on the
