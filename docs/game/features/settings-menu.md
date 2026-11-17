@@ -126,6 +126,16 @@ A third category, **Graphics**, holds one row: **Ground detail**, a five-step sl
 - **Input:** the tab, -, slider and + join the focus order; Left/Right nudge whichever slider has focus (`SettingsView:nudgeSelected`); Enter on - or + steps it. Mouse and touch drag the slider like the sensitivity one.
 - **Fixtures:** `graphics` and `largestGraphics` (largest text, opaque panes).
 
+## Graphics: Road ahead (T-263)
+
+The user asked on 2026-11-16 for "a setting for how far in advance the road is generated - same as the way we have it for behind u". **Road ahead** sits in Graphics between Ground detail and Road behind, built the same way. Their send-back the same day: "triple the current distances in front and behind that can be reloaded. and pls match the distances forward and back". So both settings now have the same four steps, Short, Medium, Long and Longest: at least 3 000, 4 800, 7 200 and 9 600 studs. Road behind had five steps (300 to 3 000) before.
+
+- **Where it lives:** `Drift/RoadAhead` holds the value for this device and session and fires `Changed`; `SettingsController` sets it through the view's `roadAhead` action. `Drift/SplineRoadView` draws road chunks to the one that distance ahead reaches into, and `Drift/GroundMeshView` lays the ground's corridor along the road as far, with more tiles on the longer steps (`GroundTiles`) so the sharp ground round the car keeps its share. No remote, nothing saved.
+- **Defaults:** Road ahead Medium (4 800, three times the 1 600 before). Road behind Short (3 000): three times its old default of 1 300 is 3 900, as near Short as Medium, and Short is the cheaper. The same on every device.
+- **Far detail, so the long steps fit:** a road chunk wholly past `Mesh.Near` of the car (1 600 studs ahead, 480 behind) is drawn at `Mesh.Far`'s coarser detail (about a quarter of the triangles) and rebuilt whole as the car comes near. A whole chunk that falls behind past it is drawn again far. The ground beside road far from the car may be coarser: 64 studs between vertices past 2 400, 128 past 4 800 (`Ground.RoadFar`). Without this, Longest ahead alone ran the client's mesh budget out, and the corridor took every ground tile from round the car.
+- **The server's side:** a client can only draw road the server has sent. `RoadService` lays at least the longest step past the end of the leader's section, one section a tick past its ten.
+- **Input and fixtures:** as Road behind: -, slider and + join the focus order between Ground detail's and Road behind's. `graphics` shows Medium ahead and Short behind, `largestGraphics` Longest both.
+
 ## Sound (T-256)
 
 A fourth category, **Sound**, asked for by the user on 2026-11-16: one volume slider per category, Music, Tire squeal, Off-road drift, Suspension and Engine, each 0 to 100% with - and + (10% steps) and the percent on the right. **Each starts at 30%, which plays today's mix exactly** (the user's send-back, 2026-11-16): the scale is level / 30, so 15% is half and 100% about 3.33x. Music has nothing to scale yet; its level is kept for when music exists.

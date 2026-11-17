@@ -103,6 +103,8 @@ Three seeds (31337, 101, 2024), 5 000 studs each.
 
 ### The mesh budget (measured, DR-Lane2 client)
 
+**Also in it since T-265:** the grass and mud ruts (`Drift/GroundMarks`), 4 144 vertices, all the time. Since T-263, far road chunks are built coarse to fit Road ahead and behind at their longest.
+
 The binding limit for this option. A client holds only so many mesh vertices: about 35 000 to 40 000 in Studio, counting the road's. A growable mesh (the kind the road's chunks are built in) holds back far more than it uses: 7 empty ones fill the budget. A fixed-size copy costs only its size. And a mesh can't be let go once its part is made: the part then draws nothing (measured).
 
 - So each grid is a fixed-size copy of a flat grid, only its vertices moved: 4 225 and 3 969 vertices, twice each, 16 388 in all.

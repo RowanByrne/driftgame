@@ -272,6 +272,100 @@ local Spline = {
 		BlotchStuds = 70,
 	},
 
+	-- --------------------------------------------------------------- the tarmac's texture
+	-- T-268 (features/road-surface.md): the tarmac painted IN CODE into one image every chunk
+	-- shares (`Road/RoadTexture`), nothing uploaded. Its colours and lines are `Config.Road`'s.
+	-- Drawn when the ground draws the runoff (`Ground.RunoffBy = "ground"`); with the road
+	-- drawing its own grass the grass's texture is on the mesh instead, and the tarmac is flat.
+	-- Distances are studs of road; "along" repeats every `PeriodStuds`.
+	Tarmac = {
+		Enabled = true, -- false: the flat tarmac and the dash parts, as before
+		-- THE RESOLUTION (T-268 send-back, the user: "bit higher res this time for the main
+		-- asphalt texturing"): 1 024 x 1 024, the largest EditableImage, 4 MB. Across, the tarmac
+		-- gets all but `PlainPx` each side and the line band: 18.6 pixels a stud (4.8 in the
+		-- first cut); along,
+		-- 4.3 (2.1): it is seen at a glancing angle, so it needs fewer. The shorter repeat
+		-- that buys is hidden by the vertices' tone, which never repeats
+		Width = 1024, -- pixels across
+		Length = 1024, -- pixels along
+		PeriodStuds = 240, -- studs along one copy (rounded to whole `MarkInterval`s)
+		PlainPx = 32, -- plain `Grass.Shade` columns each side, where the rest of the mesh samples
+		-- (a thirty-second of the width each side, as before: still a pixel at a 32-wide mip)
+		SliceMs = 3, -- ms of painting a frame (it is painted once, as the client loads)
+		Seed = 268,
+		-- the tone of each tarmac vertex, so the period never shows as a repeat: darker by up
+		-- to 2 x `Tone` from smooth noise over `ToneStuds` of road, a little warmer or cooler.
+		-- Kept slow (200+), so a chunk drawn coarse far ahead (cuts 96 studs apart) shades alike
+		Tone = 0.09,
+		ToneStuds = 200,
+		ToneHue = 0.03,
+		-- the grain: large soft mottling, painterly strokes stretched along, a finer aggregate
+		-- octave (what the resolution is for), and speckle
+		Mottle = 0.06,
+		MottleStuds = 9,
+		Grain = 0.06,
+		GrainStuds = { 0.6, 3.5 }, -- across, along
+		Fine = 0.05,
+		FineStuds = { 0.18, 0.6 },
+		Speckle = 0.05,
+		-- the wheel tracks: two a lane, `TrackGap` apart about its middle, `TrackWidth` wide,
+		-- `TrackDark` of the way to `TarmacWorn` in the middle, wandering `TrackWobble` either
+		-- way over `TrackWobbleStuds`, their grain `TrackSmooth` smoother (polished); a faint
+		-- oil strip between them. Send-back (the user: "tyre marks are ugly"): broad and
+		-- faint, polish rather than stripes (0.9 dark and 3.2 wide in the first cut)
+		TrackGap = 6.4,
+		TrackWidth = 4.5,
+		-- Send-back 2 ("I still don't like the tire marks ... otherwise keep it simple
+		-- textured"): none. (Tracks only on the hairpins would need a second tarmac in the
+		-- image, and the car's own drift marks already rubber the hairpins it is drifted round)
+		TrackDark = 0,
+		TrackSmooth = 0,
+		TrackWobble = 0.8,
+		TrackWobbleStuds = 60,
+		OilWidth = 1.2,
+		OilDark = 0,
+		-- the dusty edge: `EdgeWear` studs in from each edge, with gravel specks
+		EdgeWear = 2.2,
+		Gravel = 0.35,
+		GravelLight = 1.35,
+		GravelDark = 0.7,
+		-- the paint's wear (0 none, 1 worn through where the noise is highest)
+		LineWear = 0.35,
+		-- THE PAINT'S WEATHERING (send-back 2: "faded and cracked/weather lines"), the edge
+		-- lines and the double yellow alike: each line's paint fades along the road between
+		-- `LineFade` (of full) over `LineFadeStuds`, wears through to the tarmac where the hole
+		-- noise (over `LineHoleStuds` across and along) passes `LineHoles` (-1..1: higher, fewer),
+		-- thins with the fine grain by up to `LineGrain`, has its sides chipped by up to
+		-- `LineChip` studs, and is broken by `LineCracks` cracks across it a copy
+		LineFade = { 0.5, 0.95 },
+		LineFadeStuds = 30,
+		LineHoles = 0.42,
+		LineHoleStuds = { 0.35, 1.6 },
+		LineGrain = 0.35,
+		LineChip = 0.06,
+		LineCracks = 10,
+		-- THE LINE BAND: columns of the image, right of the tarmac, holding one yellow line
+		-- (`Config.Road.CentreLineWidth`) on tarmac, which the double yellow's strips are mapped
+		-- to, `LineInsetPx` in from its sides
+		LineBandPx = 32,
+		LineInsetPx = 4,
+		-- patches of newer and older tarmac, a seam round each
+		Patches = 2, -- a copy is 240 studs now (480 in the first cut)
+		PatchLength = { 8, 26 },
+		PatchWidth = { 6, 16 },
+		PatchSeam = 0.2,
+		PatchBlend = 0.5,
+		PatchSoft = 0.6, -- studs
+		PatchRagged = 0.8, -- studs
+		-- cracks: mostly along the road `CrackEdge` in from an edge, `CrackAcross` of them across
+		Cracks = 6,
+		CrackWidth = 0.12, -- studs
+		CrackLength = { 6, 26 },
+		CrackEdge = { 1, 4.5 },
+		CrackAcross = 0.15,
+		CrackDark = 0.35,
+	},
+
 	-- --------------------------------------------------------------- the ground
 	-- (features/ground-trial.md, T-218; the only ground since T-247, features/legacy-removal.md.)
 	-- The ground BUILT FIRST, as one mountain the road is cut into (`Road/Ground`), drawn by
@@ -432,6 +526,14 @@ local Spline = {
 		RoadStep = 32, -- studs
 		RoadRange = 4, -- 8-stud tiles within about 32 studs of the road's middle, 16 within 64...
 		RoadCoarsest = 32, -- studs
+		-- and far along the road (T-263), coarser still: no tile coarser than `Coarsest` beside
+		-- road `From` studs or more from the car, either way. Past about 2 400 studs a 64-stud
+		-- tile is a few pixels; at 32 the corridor of 9 600 studs each way took every tile.
+		RoadFar = { { From = 2400, Coarsest = 64 }, { From = 4800, Coarsest = 128 } },
+		-- the most tiles the Road ahead and Road behind steps may add past Ultra's own (T-263):
+		-- (45 still ran out on Ultra with both at Longest while driving: the hidden spare tiles and
+		-- a chunk being rebuilt both count)
+		CorridorMost = 20,
 		RoadPad = 256, -- studs: tiles this near the drawn road are drawn even past `Reach`
 		ReleaseOnFail = 24, -- tiles let go if the device will not make another (room for the road)
 		-- THE PLAYER'S "GROUND DETAIL" (Settings, Graphics; docs/game/SETTINGS.md), light to far.
@@ -478,30 +580,51 @@ local Spline = {
 		-- fixed-size mesh (`Road/SplineMesh`) and costs only its own triangles: about 3 600 a
 		-- chunk on today's ground, fewer on a ground run (no faces). Only the chunk being built
 		-- is growable. The window is chunk-aligned: from the chunk `Behind` studs back to the one
-		-- `Ahead` on, so the road kept behind is `Behind` to `Behind + ChunkLength` studs.
+		-- `Ahead` on, so the road kept behind is `Behind` to `Behind + ChunkLength` studs (both
+		-- are the player's settings: `Drift/RoadBehind`, `Drift/RoadAhead`).
 		-- A device that runs out anyway lets the furthest chunk behind go before the road
 		-- ahead falls back to parts (`Drift/SplineRoadView`).
 		ChunkLength = 480,
-		Ahead = 1600, -- studs of road drawn in front of the car
-		-- THE PLAYER'S "ROAD BEHIND" (Settings, Graphics; docs/game/SETTINGS.md, T-230): how far
-		-- the road, and on a ground run the ground along it, stays drawn behind the car. Each
-		-- step back costs the chunks it keeps (`Studs / ChunkLength` more: about 3 600 triangles
-		-- and 20 to 250 plain parts each on today's ground, 2 100 on a ground run) and no
-		-- building: a chunk behind was built when it was ahead. Short is the window before T-230.
-		-- `GroundTiles`: on a ground run, the ground's corridor beside the road behind needs
-		-- 32-stud tiles (no coarser tile may lie beside drawn road), and they came out of the
-		-- Ground detail's own `Tiles` (measured on Light: sharp ground ahead 400 studs at Short,
-		-- 232 at Long, 120 at Longest). So each step gives the ground that many more tiles
-		-- (128 triangles each) for its corridor, and the sharp ground ahead keeps its share.
-		Behind = {
-			{ Name = "Short", Studs = 300, GroundTiles = 0 },
-			{ Name = "Medium", Studs = 800, GroundTiles = 10 },
-			{ Name = "Long", Studs = 1300, GroundTiles = 24 },
-			{ Name = "Longer", Studs = 2000, GroundTiles = 38 },
-			{ Name = "Longest", Studs = 3000, GroundTiles = 56 },
+		-- THE PLAYER'S "ROAD AHEAD" AND "ROAD BEHIND" (Settings, Graphics; docs/game/SETTINGS.md,
+		-- T-230, T-263): how far in front of the car, and behind it, the road and the ground along
+		-- it are drawn: at least `Studs` (chunk-aligned, so up to a chunk more). THE SAME STEPS
+		-- BOTH WAYS, three times the first ones (the user's send-back, 2026-11-16: Road ahead was
+		-- 1 000 to 3 200, Road behind 300 to 3 000 in five steps). Past `Near` a chunk is drawn
+		-- at `Far`'s detail, about a quarter of a whole chunk's triangles: that is what lets
+		-- Longest both ways fit the mesh budget (measured: 41 chunks, about 14 000 triangles).
+		-- `GroundTiles`: more tiles for the ground's corridor beside the longer road (32-stud
+		-- tiles to `Ground.RoadFar`, coarser past it), so the sharp ground round the car keeps
+		-- its share; never more than `Ground.CorridorMost` past Ultra's own.
+		-- A DEVICE CAN ONLY DRAW ROAD THE SERVER HAS SENT: `RoadService` lays the longest
+		-- `Ahead` step past the end of the leader's section.
+		Ahead = {
+			{ Name = "Short", Studs = 3000, GroundTiles = 40 },
+			{ Name = "Medium", Studs = 4800, GroundTiles = 60 },
+			{ Name = "Long", Studs = 7200, GroundTiles = 80 },
+			{ Name = "Longest", Studs = 9600, GroundTiles = 100 },
 		},
-		BehindDefault = 3, -- keyboard and mouse, or gamepad
-		BehindTouchDefault = 2, -- a phone or tablet
+		AheadDefault = 2, -- Medium: three times the 1 600 before
+		AheadTouchDefault = 2, -- the same on a phone or tablet
+		-- behind: a chunk behind was built when it was ahead, so each step back costs the chunks
+		-- it keeps, not building (a whole one is drawn again far once it is past `Near`)
+		Behind = {
+			{ Name = "Short", Studs = 3000, GroundTiles = 30 },
+			{ Name = "Medium", Studs = 4800, GroundTiles = 40 },
+			{ Name = "Long", Studs = 7200, GroundTiles = 55 },
+			{ Name = "Longest", Studs = 9600, GroundTiles = 70 },
+		},
+		-- Short: three times the old 1 300 is 3 900, as near Short as Medium, and Short is cheaper
+		BehindDefault = 1, -- keyboard and mouse, or gamepad
+		BehindTouchDefault = 1, -- a phone or tablet (it was Medium, 800: three times is 2 400)
+		-- the ground beside the road behind stays as sharp as ahead for this far back, and is
+		-- `Ground.RoadCoarsest` past it (it was Short's 300 studs before T-263 tripled the steps)
+		BehindSharp = 300, -- studs
+		-- FAR AWAY (T-263): a chunk wholly past `Near` of the car (ahead or behind) is drawn at
+		-- `Far`'s coarser detail, and rebuilt whole as the car comes within `Near`; a chunk drawn
+		-- whole that falls behind past it is drawn again far. That is what lets 9 600 studs each
+		-- way fit the mesh budget (measured: whole chunks alone ran out at Longest ahead).
+		Near = { Ahead = 1600, Behind = 480 }, -- studs
+		Far = { Tolerance = 1, MaxStep = 96, Across = 1 },
 		FallbackStep = 4, -- studs between cross-sections when a device draws parts instead
 		-- A chunk is built over as many frames as it needs (T-193): its build hands the frame
 		-- back whenever this much of it has been spent, and carries on next frame. Nothing is

@@ -663,8 +663,9 @@ function DriftController:_frame(dt: number)
 		self.scrape:Attach(self.rig)
 	end
 	-- Marks and smoke, from this frame's state and this frame's input: the handbrake is an
-	-- input and not model state, so both go in (Drift/Wheels).
-	self.wheels:Update(state, input, dt)
+	-- input and not model state, so both go in (Drift/Wheels). The drawn ground too: grass
+	-- marks are laid on it (T-265).
+	self.wheels:Update(state, input, dt, self.groundView)
 	-- The engine note, from the road speed alone, and the squeal, from the slip angle.
 	self.engineSound:Update(state, input, dt)
 	self.skidSound:Update(state, input, dt)
