@@ -24,6 +24,15 @@
 -- In the air `surfaceScore` is 0 (the model's, `Drift/Model`), so a jump scores nothing,
 -- and `grounded` is false, so the ladder does not drain either: it holds until the wheels
 -- come back down.
+--
+-- SCORE EVENTS (T-295, features/score-events.md) feed it through three calls, all from
+-- `Drift/ScoreEvents`, and with none of them made the maths above is exactly what it was:
+--   Award(points, kick)  a one-off: points times the rung into the score, and the bar
+--                        pushed by `kick`, never more than one rung (`MaxKick`)
+--   Hold(fill)           a held event this step: the bar gets `fill` on the next `Step`,
+--                        and does not drain on it
+--   Bank(points)         a held event's points, already times the rung they were earned
+--                        at, into the score when it ends cleanly
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -51,6 +60,7 @@ export type Reading = {
 	scoring: boolean, -- whether the last step earned points
 	driftSeconds: number, -- this run's time spent scoring
 	peakMultiplier: number, -- this run's highest rung
+	eventPoints: number, -- the part of `score` score events put there (T-295)
 }
 
 export type Score = typeof(setmetatable(
@@ -62,6 +72,9 @@ export type Score = typeof(setmetatable(
 		scoring: boolean,
 		driftSeconds: number,
 		peakMultiplier: number,
+		eventPoints: number,
+		holding: boolean,
+		heldFill: number,
 	},
 	Score
 ))
@@ -75,8 +88,25 @@ function Score.new(): Score
 		scoring = false,
 		driftSeconds = 0,
 		peakMultiplier = 1,
+		eventPoints = 0,
+		-- A held event since the last `Step`: no drain on it, and this much bar added.
+		holding = false,
+		heldFill = 0,
 	}, Score)
 	return self
+end
+
+-- A full bar is the next rung, to the top; at the top it stays full.
+local function climb(self: Score)
+	if self.progress > 1 then
+		if self.multiplier < Config.Score.MaxMultiplier then
+			self.multiplier += 1
+			self.progress -= 1
+			self.peakMultiplier = math.max(self.peakMultiplier, self.multiplier)
+		else
+			self.progress = 1
+		end
+	end
 end
 
 -- Points a step of `dt` seconds earns before the multiplier, or 0 when the car is not
@@ -103,8 +133,15 @@ function Score.Step(self: Score, dt: number, state: CarState)
 		self.driftSeconds += dt
 	end
 
-	local decay = if state.grounded then C.MultiplierDecay * self.multiplier * dt else 0
+	-- A held score event counts as scoring: the bar does not drain under it, and its fill is
+	-- added on top of the drift's, outside the drift's own ceiling (T-295).
+	local decay = if state.grounded and not self.holding then C.MultiplierDecay * self.multiplier * dt else 0
 	self.progress += math.clamp(base * C.ProgressRate - decay, -C.MaxProgressDown * dt, C.MaxProgressUp * dt)
+	if self.heldFill > 0 then
+		self.progress += self.heldFill
+	end
+	self.holding = false
+	self.heldFill = 0
 
 	if self.progress > 1 then
 		if self.multiplier < C.MaxMultiplier then
@@ -127,6 +164,34 @@ function Score.Step(self: Score, dt: number, state: CarState)
 	end
 end
 
+-- A one-off score event (T-295): `points` before the rung, times the rung, into the score,
+-- and the bar pushed by `kick` of a rung. ONE EVENT CLIMBS ONE RUNG AT MOST: the kick is
+-- cut to what fills the bar plus `MaxKick - 1` toward the next. Returns the points added.
+function Score.Award(self: Score, points: number, kick: number): number
+	local added = math.max(points, 0) * self.multiplier
+	self.score += added
+	self.eventPoints += added
+	local cap = (1 - self.progress) + (Config.Score.MaxKick - 1)
+	self.progress += math.clamp(kick, 0, math.max(cap, 0))
+	climb(self)
+	return added
+end
+
+-- A held score event this step (T-295): `fill` of a rung onto the bar at the next `Step`,
+-- which does not drain. Called before that `Step`, once per event per step.
+function Score.Hold(self: Score, fill: number)
+	self.holding = true
+	self.heldFill += math.max(fill, 0)
+end
+
+-- A held score event's points, already times the rungs they were earned at, into the score
+-- (T-295): what it collected on its line, when it ends cleanly.
+function Score.Bank(self: Score, points: number)
+	local p = math.max(points, 0)
+	self.score += p
+	self.eventPoints += p
+end
+
 -- A new run: the run's numbers back to nothing, and the one just finished counted toward
 -- the best first.
 function Score.Reset(self: Score)
@@ -137,6 +202,9 @@ function Score.Reset(self: Score)
 	self.scoring = false
 	self.driftSeconds = 0
 	self.peakMultiplier = 1
+	self.eventPoints = 0
+	self.holding = false
+	self.heldFill = 0
 end
 
 function Score.Get(self: Score): Reading
@@ -148,6 +216,7 @@ function Score.Get(self: Score): Reading
 		scoring = self.scoring,
 		driftSeconds = self.driftSeconds,
 		peakMultiplier = self.peakMultiplier,
+		eventPoints = self.eventPoints,
 	}
 end
 
