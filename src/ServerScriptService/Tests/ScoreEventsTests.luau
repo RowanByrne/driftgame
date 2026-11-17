@@ -400,6 +400,11 @@ function Tests.run()
 			`backwards {score:Get().score}, slow gated {slow.counts.nearMiss.gated}, pinned {hp.entry.points}`
 		)
 		check("but reverse entry counts going backwards (Forward = false)", hr.entry.points > 0, `{hr.entry.points}`)
+		check(
+			"a held event that earned nothing never makes a line",
+			e.counts.wheelLift.empty == 1 and e.counts.wheelLift.banked == 0 and #e.log == 0,
+			`empty {e.counts.wheelLift.empty}, banked {e.counts.wheelLift.banked}, lines {#e.log}`
+		)
 	end
 	do
 		local e, score = engine()

@@ -140,7 +140,7 @@ end
 function Engine._count(self: any, kind: string): any
 	local c = self.counts[kind]
 	if not c then
-		c = { started = 0, banked = 0, void = 0, spent = 0, gated = 0, points = 0, seconds = 0, best = 0 }
+		c = { started = 0, banked = 0, void = 0, empty = 0, spent = 0, gated = 0, points = 0, seconds = 0, best = 0 }
 		self.counts[kind] = c
 	end
 	return c
@@ -288,6 +288,10 @@ function Engine.oneOff(self: any, kind: string, size: number, info: { [string]: 
 	end
 	local scale = scaleOf(k, size)
 	local base = self:_allow((k.Base or 0) * scale * factor)
+	if base <= 0 then
+		c.empty += 1 -- the ceiling took all of it: no line
+		return nil
+	end
 	local points = score:Award(base, (k.Kick or 0) * scale)
 	local entry = self:_newEntry(kind, labelOf(k, info, math.clamp(size, 0, 1), 0), score.multiplier)
 	entry.points = points
@@ -331,10 +335,16 @@ function Engine.start(self: any, kind: string, info: { [string]: any }?): any
 		peak = 0, -- the line's largest size
 		lastFed = self.clock,
 		dirty = false,
+		-- A sustained line shows once it has earned a point, so a lift or a jump that earns
+		-- nothing (too slow, going backwards) never puts a +0 line in the feed. A
+		-- conditional shows at once: the player must see it is on.
+		shown = k.Mode ~= "sustained",
 	}, Handle)
 	self.live[h] = true
 	self:_count(kind).started += 1
-	self:_emit(h.entry)
+	if h.shown then
+		self:_emit(h.entry)
+	end
 	return h
 end
 
@@ -402,7 +412,7 @@ function Engine.step(self: any, dt: number, state: any)
 	-- The live lines' growth to the feed, at most every `FeedEvery`.
 	local due = {}
 	for h in self.live do
-		if h.dirty and self.clock - h.lastFed >= C.FeedEvery then
+		if h.dirty and h.shown and self.clock - h.lastFed >= C.FeedEvery then
 			table.insert(due, h)
 		end
 	end
@@ -486,6 +496,12 @@ function Handle.update(self: any, size: number, dt: number)
 		end
 		score:Hold((k.Fill or 0) * scale * dt)
 	end
+	if not self.shown and entry.points > 0 then
+		self.shown = true
+		self.dirty = false
+		self.lastFed = engine.clock
+		engine:_emit(entry)
+	end
 
 	-- Held too long: bank this line and carry on in a fresh one, so nothing runs up
 	-- unbounded points unseen.
@@ -495,13 +511,18 @@ function Handle.update(self: any, size: number, dt: number)
 		self.seconds = 0
 		self.peak = 0
 		self.dirty = false
+		self.shown = false
 		engine:_count(self.kind).started += 1
-		engine:_emit(self.entry)
 	end
 end
 
 function Handle._bank(self: any, score: any)
 	local entry: Entry = self.entry
+	if not self.shown then
+		-- it earned nothing: no line to bank
+		self.engine:_count(self.kind).empty += 1
+		return
+	end
 	score:Bank(entry.points)
 	entry.state = "banked"
 	local c = self.engine:_count(self.kind)
@@ -539,10 +560,12 @@ function Handle.finish(self: any, completed: boolean)
 		else
 			self:_bank(score)
 		end
-	else
+	elseif self.shown then
 		entry.state = "void"
 		engine:_count(self.kind).void += 1
 		engine:_emit(entry)
+	else
+		engine:_count(self.kind).empty += 1 -- lost before it earned anything: no line
 	end
 end
 
