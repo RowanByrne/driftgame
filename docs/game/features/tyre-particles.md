@@ -132,6 +132,14 @@ The sprites and the switch are gone, and so is the clods sheet (uploaded, unused
 - **Lowest graphics quality: not settled.** The one shot at `Level01` caught the car between slides, with nothing firing, so whether phones that turn flipbooks off show the sheets well is still unmeasured.
 - **Mesh budget:** both mark ribbons build alongside the clods (none of them is an EditableMesh).
 
+## Smoke over the marks and the wheels (T-289, DR-Lane1, 2026-11-17)
+
+The user: *"looks kinda weird when theres the wheel silhouette and the tire trails render on top of the smoke"*. Three artefacts, two causes, both measured:
+
+- **The marks drawn over the smoke.** Roblox sorts see-through things back to front a whole part at a time, by the part's centre. Each rubber strip is one `MeshPart` 2 000 studs across, centred on its **origin**, which sat where the tyre was when it last moved: behind the car, so toward the chase camera. In a drift the origins were 15 to 18 studs from the camera and the smoke's emitters 49, nearer in 37% of frames (1 792 strip-frames), and those frames drew the whole strip after, so over, the smoke. **Fix:** a strip with a camera keeps its origin `Marks.Ribbon.SortAhead` (600) studs straight down the view, and moves it on when it comes nearer than `SortMinDepth` (300) (`GroundMarks` "sortSpot"). After: 0 of 7 192 strip-frames had an origin nearer than the smoke, about one move every 2.5 s, and the marks don't shift when it moves (FxTests: 3e-5 studs). The grass ribbon is opaque, so it never had this.
+- **The wheel-shaped hole.** `ZOffset` moves a particle's depth, so it decides which opaque geometry hides it. The diffuse smoke is born 1.0 stud off the tyre's axis, inside its 1.25 radius, and at −0.5 sat up to about a stud behind the tyre's near face: the tyre cut a hard wheel outline out of the cloud. **Fix:** every emitter moved 1.5 toward the camera, keeping T-283's order: diffuse **1.0**, dust 1.2, spray 1.3, stylized 1.5, bits 1.8.
+- **The square-stepped bottom edges.** The same depth test against the road: a puff's camera-facing quad grows faster than it rises, so for its first half second its lower part is under the road and clipped (Roblox has no soft particles). −0.5 made that deeper; at +1.0 about 0.2 studs more of each puff shows at the chase camera's 13° pitch. **It's reduced, not gone:** a flat cut along the cloud's bottom still shows in the lane. Fully removing it means lifting the puffs (spawning higher or rising faster), which changes the approved look, so it's a question for the user.
+
 ## Left out
 
 - **3D debris chunks** (option 2). They can come later as a few big clods on top of the sprites, if the sprites don't hold up close.
@@ -150,7 +158,7 @@ All in `Config/Fx.luau`, starting values to be tuned in a lane:
 | `Sheets.Billows` / `GrassBits` / `Clods` | the picked ids; `Layout` `Grid2x2` / `Grid4x4` / `Grid4x4` | One texture per family |
 | Each emitter's `Flipbook` | `{ Mode = "Loop", Framerate = 0, StartRandom = true, Blend = false }` | A random still frame per particle |
 | Each emitter's `Orientation` | smoke and dust `FacingCameraWorldUp`, bits `FacingCamera` | Keeps painted light on top |
-| Each emitter's `ZOffset` | diffuse −0.5, dust −0.3, spray −0.2, stylized 0, bits +0.3 | Draw order |
+| Each emitter's `ZOffset` | diffuse 1.0, dust 1.2, spray 1.3, stylized 1.5, bits 1.8 (T-289: all 1.5 up from −0.5, −0.3, −0.2, 0, +0.3) | Draw order, and in front of the tyre |
 | `Smoke.RotationDegrees` | ±15 (from ±180) | Painted light stays up |
 | `Light.Influence` / `Light.Emission` | 0.8 / 0 (stylized 0.1) | One lighting rule |
 | `Grass.Clippings` | size 0.6 → 0.4, rate 15–55, spin ±200 | Bigger, fewer, calmer |
