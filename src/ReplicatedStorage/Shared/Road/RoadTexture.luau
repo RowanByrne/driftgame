@@ -14,7 +14,7 @@
 --
 -- WHAT IT DRAWS, after the user's concept art (`assets/reference/environment-mood/`): a cool
 -- blue-violet grey with soft painterly grain stretched along the road and a finer aggregate;
--- a dusty, lighter last stud or two at each edge with gravel creeping on; faint ragged
+-- a dusty last stud or so at each edge going softly over to the gravel's bed (T-277); faint ragged
 -- patches of newer tarmac; thin cracks, mostly along the edges; and the touge's two white
 -- edge lines, faded, worn through and cracked. Nothing down the middle, and no tyre marks
 -- (the user's send-backs: "tyre marks are ugly", "get rid of the dashes - it's not
@@ -353,10 +353,12 @@ function RoadTexture.paint(yield: (() -> ())?): (buffer, number, number)
 	-- it has worn through to the tarmac
 	local lineFade = layer(1000, T.LineFadeStuds, period, width, seed + 6)
 	local holes = layer(T.LineHoleStuds[1], T.LineHoleStuds[2], period, width, seed + 7)
+	-- the dusty edge's soft ragged shapes (T-277)
+	local dustN = layer(T.EdgeStuds[1], T.EdgeStuds[2], period, width, seed + 8)
 
 	local base = C.Tarmac
 	local worn = C.TarmacWorn
-	local edge = C.TarmacEdge
+	local dust = C.GravelDust -- the gravel's bare bed, what the dusty edge goes over to (T-277)
 	local plain = math.floor(Config.Spline.Grass.Shade * 255 + 0.5)
 
 	-- the patches: rectangles of newer tarmac, ragged and feathered
@@ -463,11 +465,7 @@ function RoadTexture.paint(yield: (() -> ())?): (buffer, number, number)
 				r, g, b = lerp(r, worn.R, tk), lerp(g, worn.G, tk), lerp(b, worn.B, tk)
 			end
 
-			-- the dusty edge, its inner line ragged
 			local wn = sample(wear, xs, t)
-			local ed = math.clamp(1 - e / T.EdgeWear + wn * 0.35, 0, 1)
-			ed = ed * ed
-			r, g, b = lerp(r, edge.R, ed), lerp(g, edge.G, ed), lerp(b, edge.B, ed)
 
 			-- patches: a ragged edge (the wear noise moves it up to `PatchRagged` studs), a faint
 			-- darker seam just inside it, and `PatchBlend` of the way to the patch's colour,
@@ -485,15 +483,18 @@ function RoadTexture.paint(yield: (() -> ())?): (buffer, number, number)
 				end
 			end
 
+			-- THE DUSTY EDGE (T-277): the tarmac going over to the gravel's bare bed in soft
+			-- ragged shapes, all of it in the last `EdgeFull` studs, none past `EdgeWear`, so
+			-- tarmac, dust and gravel read as one soft blend. Nothing per pixel: it was gravel
+			-- specks, single random pixels, which read as static ("no gravel pebbles on the road
+			-- texture itself"), and the speckle fades out with it, as the gravel's bed has none
+			local ragged = (sample(dustN, xs, t) * 0.65 + wn * 0.35) * T.EdgeRagged * math.clamp(e / 0.5, 0, 1)
+			local ed = 1 - smooth(math.clamp((e + ragged - T.EdgeFull) / (T.EdgeWear - T.EdgeFull), 0, 1))
+			r, g, b = lerp(r, dust.R, ed), lerp(g, dust.G, ed), lerp(b, dust.B, ed)
+
 			-- grain: painterly, stretched along; smoother in the polished tracks and patches
 			local smoothK = 1 - track * T.TrackSmooth - (if inPatch then 0.4 else 0)
-			local k = 1 + sample(mottle, xs, t) * T.Mottle + (sample(grain, xs, t) * T.Grain + sample(fine, xs, t) * T.Fine) * smoothK + (rand() * 2 - 1) * T.Speckle * smoothK
-
-			-- gravel specks on the dusty edge
-			if ed > 0.05 and rand() < T.Gravel * ed then
-				local v = if rand() < 0.5 then T.GravelLight else T.GravelDark
-				r, g, b = r * v, g * v, b * v
-			end
+			local k = 1 + sample(mottle, xs, t) * T.Mottle + (sample(grain, xs, t) * T.Grain + sample(fine, xs, t) * T.Fine) * smoothK + (rand() * 2 - 1) * T.Speckle * smoothK * (1 - ed)
 
 			-- the edge lines: chipped sides, a fade drifting along each, worn through in places
 			for li, ln in lines do
@@ -608,8 +609,8 @@ end
 -- stretched along, a finer octave; no per-pixel speckle), and a medium density of stones with
 -- soft painted shading (no outlines, no cel steps, soft edges a few pixels wide, a faint soft
 -- shadow), in the asphalt's own hue and value range ("keep the coloration generally of the
--- road"). Its edges: the tarmac's dusty edge colour taking over in soft ragged shapes at its
--- start, grass in soft shapes over its end. Its own random numbers, so the tarmac's are as
+-- road"). Its edges: the bare bed taking over in soft ragged shapes at its start (the tarmac's
+-- dusty edge goes over to the same bed, T-277), grass in soft shapes over its end. Its own random numbers, so the tarmac's are as
 -- they were.
 function RoadTexture.paintGravel(px: buffer, yield: (() -> ())?)
 	local T = Config.Spline.Tarmac
@@ -693,23 +694,28 @@ function RoadTexture.paintGravel(px: buffer, yield: (() -> ())?)
 		local towardLight = rand() < 0.5
 		local amt = rand() * L.Contrast
 		local tr, tg, tb = lerp(dust.R, (if towardLight then light else dark).R, amt), lerp(dust.G, (if towardLight then light else dark).G, amt), lerp(dust.B, (if towardLight then light else dark).B, amt)
-		local rx, ry = r * range(Gv.Aspect) * pxA, r * range(Gv.Aspect) * pxL
+		-- its shape in STUDS, turned in studs, then onto the pixels (T-277: turned in pixels,
+		-- where a stud along is fewer pixels than across, a stone turned square to the road
+		-- came out up to 4.7 times longer along the road than across, 1.9 on average, whatever
+		-- `Aspect` asked)
+		local ra, rb = r * range(Gv.Aspect), r * range(Gv.Aspect)
 		local rot = rand() * math.pi
 		local cs, sn = math.cos(rot), math.sin(rot)
 		local cx, cy = gx0 + inset + cu * pxA, ct * pxL
-		local reach = math.max(rx, ry) + L.SoftPx + 1
-		local softQ = L.SoftPx / math.min(rx, ry) -- the edge's width, in radii
+		local rmax = math.max(ra, rb)
+		local reachX, reachY = rmax * pxA + L.SoftPx + 1, rmax * pxL + L.SoftPx + 1
+		local softQ = (L.SoftPx / pxA) / math.min(ra, rb) -- the edge's width (pixels across), in radii
 		for pass = 1, 2 do
-			local ox = if pass == 1 then cx - lx * L.ShadowOffset * rx else cx
-			local oy = if pass == 1 then cy - ly * L.ShadowOffset * ry else cy
+			local ox = if pass == 1 then cx - lx * L.ShadowOffset * r * pxA else cx
+			local oy = if pass == 1 then cy - ly * L.ShadowOffset * r * pxL else cy
 			if pass == 1 and L.ShadowDark >= 1 then
 				continue
 			end
-			for y = math.floor(oy - reach), math.ceil(oy + reach) do
-				for x = math.max(gx0, math.floor(ox - reach)), math.min(gx0 + G - 1, math.ceil(ox + reach)) do
-					local dx, dy = x + 0.5 - ox, y + 0.5 - oy
-					local ex = (dx * cs + dy * sn) / rx
-					local ey = (-dx * sn + dy * cs) / ry
+			for y = math.floor(oy - reachY), math.ceil(oy + reachY) do
+				for x = math.max(gx0, math.floor(ox - reachX)), math.min(gx0 + G - 1, math.ceil(ox + reachX)) do
+					local dx, dy = (x + 0.5 - ox) / pxA, (y + 0.5 - oy) / pxL -- studs
+					local ex = (dx * cs + dy * sn) / ra
+					local ey = (-dx * sn + dy * cs) / rb
 					local q = math.sqrt(ex * ex + ey * ey)
 					local cov = smoothstep(1 + softQ * 0.5, 1 - softQ * 0.5, q)
 					if cov > 0 then
@@ -720,7 +726,7 @@ function RoadTexture.paintGravel(px: buffer, yield: (() -> ())?)
 							put(x, yy, ur * (1 - a), ug * (1 - a), ub * (1 - a))
 						else
 							-- soft shading: lighter where it faces the light, more so toward its rim
-							local toward = (dx / rx) * lx + (dy / ry) * ly
+							local toward = (dx * lx + dy * ly) / r
 							local s = 1 + L.Lit * math.clamp(toward, -1, 1) * (0.4 + 0.6 * math.min(1, q))
 							local a = cov * L.Opacity
 							put(x, yy, lerp(ur, tr * s, a), lerp(ug, tg * s, a), lerp(ub, tb * s, a))
@@ -753,10 +759,10 @@ function RoadTexture.paintGravel(px: buffer, yield: (() -> ())?)
 		yield()
 	end
 
-	-- THE EDGES, no hard seams: at its start the tarmac's dusty edge (`TarmacEdge`) takes over
-	-- in soft ragged shapes over `EdgeSoft`; past `GrassFrom`, grass in soft shapes, more toward
-	-- its end
-	local te, grass = C.TarmacEdge, C.GravelGrass
+	-- THE EDGES, no hard seams: at its start the bare bed (the dust and its grain, no stones),
+	-- which the tarmac's dusty edge goes over to (T-277), in soft ragged shapes over
+	-- `EdgeSoft`; past `GrassFrom`, grass in soft shapes, more toward its end
+	local grass = C.GravelGrass
 	for y = 0, H - 1 do
 		local t = (y + 0.5) / pxL
 		for x = gx0, gx0 + G - 1 do
@@ -767,7 +773,9 @@ function RoadTexture.paintGravel(px: buffer, yield: (() -> ())?)
 			if a > 0 or g > 0 then
 				local r0, g0, b0 = get(x, y)
 				if a > 0 then
-					r0, g0, b0 = lerp(r0, te.R, a), lerp(g0, te.G, a), lerp(b0, te.B, a)
+					local ub = math.max(0, ua + 1)
+					local kb = 1 + sample(mottle, ub, t) * L.Mottle + sample(grain, ub, t) * L.Grain + sample(fine, ub, t) * L.Fine
+					r0, g0, b0 = lerp(r0, dust.R * kb, a), lerp(g0, dust.G * kb, a), lerp(b0, dust.B * kb, a)
 				end
 				if g > 0 then
 					local k = 1 + sample(fine, math.max(0, ua + 1), t) * L.Fine

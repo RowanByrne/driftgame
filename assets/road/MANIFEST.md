@@ -4,15 +4,17 @@ The tarmac's texture, with its line band and gravel band (`features/road-surface
 
 | File | Made from | SHA-256 | Status |
 |---|---|---|---|
-| `tarmac-v1.png` (1024 x 1024, RGB) | The pixels `RoadTexture.paint()` makes at commit `cafab6d` (main after T-273), exactly: painted in the Edit datamodel of DR-Lane1, its RGBA buffer posted to a loopback listener in eight base64 pieces, written losslessly with Pillow as RGB (every alpha was 255). The painting's sum (`RoadTexture.pixelHash`) was `2423809896` in Studio's client, server and Edit alike, and Python's of the file's pixels (below) the same | `94927B73E8C162E4C2C6708FA5E638CBB2CDB58E3C491D748C3F00D96ED73139` | **approved, uploaded** |
+| `tarmac-v1.png` (1024 x 1024, RGB) | The pixels `RoadTexture.paint()` makes at commit `cafab6d` (main after T-273), exactly: painted in the Edit datamodel of DR-Lane1, its RGBA buffer posted to a loopback listener in eight base64 pieces, written losslessly with Pillow as RGB (every alpha was 255). The painting's sum (`RoadTexture.pixelHash`) was `2423809896` in Studio's client, server and Edit alike, and Python's of the file's pixels (below) the same | `94927B73E8C162E4C2C6708FA5E638CBB2CDB58E3C491D748C3F00D96ED73139` | superseded by v2 (T-277) |
+| `tarmac-v2.png` (1024 x 1024, RGB) | The pixels `RoadTexture.paint()` makes at commit `249fa18` (T-277: the tarmac 8.5 px/stud along over 120 studs, the dusty edge going softly over to the gravel's bed with no specks, the gravel's stones shaped in studs), exactly: painted in the Edit datamodel of DR-Lane2, its RGBA buffer posted to a loopback listener in eight pieces (`HttpService:JSONEncode` of a buffer gives base64, zstd-compressed when large: Python 3.14's `compression.zstd` reads it), written as RGB with filter 0 by a few lines of `zlib` (no Pillow on `MONSOONPC`). Every alpha was 255; the sum was `1346105968` in Studio and in Python | `B053824FFBE83A832EBB9E44EC8D3B13991E281EB8CD55DA13D081B990566096` | **approved to upload (the task's brief), uploaded; its look waits on the user** |
 
-**Approval:** Rowan approved uploading this texture in chat, 2026-11-16 (T-274's brief, on its card). It is the approved painted texture (T-268, T-270) unchanged, so no candidates were shown.
+**Approval:** Rowan approved uploading v1 in chat, 2026-11-16 (T-274's brief, on its card): the approved painted texture (T-268, T-270) unchanged, so no candidates were shown. v2 is the user's send-back 4 on it (T-277, `features/road-surface.md`), uploaded as the task's brief asked; its look is the user's to approve in the lane.
 
 ## Uploaded
 
 | File | Asset id | Uploaded by | Decoded | Used in |
 |---|---|---|---|---|
-| `tarmac-v1.png` | `rbxassetid://118359063841549` | Studio MCP `upload_image` (the user signed in to Studio on `WKEYSTUDIOS1680`), 2026-11-16 | 1024 x 1024, **identical to the painted pixels**: read back as an EditableImage in Studio and compared byte for byte, 0 of 4 194 304 bytes differ | `Config.Spline.Tarmac.Image`, loaded by `Road/RoadTexture.get` |
+| `tarmac-v1.png` | `rbxassetid://118359063841549` | Studio MCP `upload_image` (the user signed in to Studio on `WKEYSTUDIOS1680`), 2026-11-16 | 1024 x 1024, **identical to the painted pixels**: read back as an EditableImage in Studio and compared byte for byte, 0 of 4 194 304 bytes differ | nothing since T-277 |
+| `tarmac-v2.png` | `rbxassetid://116617809550507` | Studio MCP `upload_image` from a loopback URL (the user signed in to Studio on `MONSOONPC`), 2026-11-17 | 1024 x 1024, **identical to the painted pixels**: 0 of 4 194 304 bytes differ, read back in DR-Lane2 | `Config.Spline.Tarmac.Image`, loaded by `Road/RoadTexture.get` |
 
 ## Painting changed? Export it again
 
