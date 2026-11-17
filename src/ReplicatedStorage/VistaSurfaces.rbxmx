@@ -1,0 +1,28 @@
+<roblox xmlns:xmime="http://www.w3.org/2005/05/xmlmime" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://www.roblox.com/roblox.xsd" version="4">
+	<Item class="Folder" referent="RBX0">
+		<Properties>
+			<string name="Name">VistaSurfaces</string>
+		</Properties>
+		<Item class="SurfaceAppearance" referent="RBX1">
+			<Properties>
+				<string name="Name">129944061048496</string>
+				<token name="AlphaMode">1</token>
+				<Content name="ColorMap"><url>rbxassetid://129944061048496</url></Content>
+			</Properties>
+		</Item>
+		<Item class="SurfaceAppearance" referent="RBX2">
+			<Properties>
+				<string name="Name">120124891988351</string>
+				<token name="AlphaMode">1</token>
+				<Content name="ColorMap"><url>rbxassetid://120124891988351</url></Content>
+			</Properties>
+		</Item>
+		<Item class="SurfaceAppearance" referent="RBX3">
+			<Properties>
+				<string name="Name">128884046668071</string>
+				<token name="AlphaMode">1</token>
+				<Content name="ColorMap"><url>rbxassetid://128884046668071</url></Content>
+			</Properties>
+		</Item>
+	</Item>
+</roblox>

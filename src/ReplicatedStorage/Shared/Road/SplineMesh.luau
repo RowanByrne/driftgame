@@ -13,14 +13,21 @@
 --               ground itself is drawn apart, `Drift/GroundMeshView`), and a grove's trees
 --               and bushes (T-183, `Road/SplineGrove`), flat-shaded, very low poly. The grass
 --               alone is textured (T-187): a painted tile, `Road/GrassTexture`, mapped in
---               world studs; every other face samples the tile's plain corner
+--               world studs; every other face samples the tile's plain corner. When the
+--               ground draws the runoff (the default, T-251) there is no grass here, and the
+--               TARMAC is textured instead (T-268): a texture painted in code,
+--               `Road/RoadTexture`, mapped across the tarmac and along the road, with the
+--               weathered edge lines, patches and cracks in it; and on the tight stretches
+--               the DOUBLE YELLOW, two thin strips just over the tarmac mapped to the image's
+--               line band (send-back 2)
 --   KRail*_*    a K-rail run drawn as a METAL CRASH BARRIER (T-149): a W-beam guardrail,
 --               its beam two rounded ridges (`KRailTop_*`, `KRailLow_*`) and the groove
 --               between (`KRailGroove_*`), a piece per stretch of the run, pitched along the
 --               grade and cut finer round a bend; square posts (`KRailPost_*`) every
 --               `KRailPostEvery` on spacer blocks (`KRailSpacer_*`), bolt heads at each
 --               splice (`KRailBolt_*`), a striped hazard panel at each end (`KRailEnd_*`)
---   Mark        a flat box per dash of the centre line, `MarkLift` above the surface
+--   Mark        a flat box per dash of the centre line, `MarkLift` above the surface,
+--               only when the tarmac is not textured (the texture paints its own lines)
 --
 -- Only the surface is a mesh because a client may hold only eight EditableMeshes at once and
 -- a MeshPart is drawn from its EditableMesh for as long as it exists (see `build`).
@@ -47,6 +54,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Config = require(ReplicatedStorage.Shared.Config)
 local GrassTexture = require(script.Parent.GrassTexture)
 local Ground = require(script.Parent.Ground)
+local RoadTexture = require(script.Parent.RoadTexture)
 local Spline = require(script.Parent.Spline)
 local SplineGrove = require(script.Parent.SplineGrove)
 
@@ -136,6 +144,9 @@ type Builder = {
 	-- with the texture: each grass vertex's colour id, `GrassColour` lightened or darkened by
 	-- `GrassTexture.blotch` at its place
 	grassShade: { [number]: number }?,
+	-- with the tarmac's texture (T-268): faces painted the tarmac's colour id are the ones
+	-- mapped, and `grassShade` holds each tarmac vertex's tone
+	tarmacTriangles: number,
 }
 
 
@@ -144,9 +155,10 @@ type Builder = {
 -- `farA` / `farB`, when given, are the normals a vertex has as the FAR side of a strip
 -- (vertex i + 1 of strip i), so one vertex can be smooth on one strip and flat on the next:
 -- the road's step (T-184).
--- `uvA` / `uvB`, when given, are UV ids for the grass's vertices (T-187): a strip painted
--- `grass` is mapped with them; one that shares a grass vertex but is not grass gets `plainUV`.
-local function strip(b: Builder, rowA: { number }, normA: { number }, rowB: { number }, normB: { number }, flip: boolean, colours: { number }?, farA: { number }?, farB: { number }?, uvA: { [number]: number }?, uvB: { [number]: number }?, grass: number?)
+-- `uvA` / `uvB`, when given, are UV ids for the textured vertices: the grass's (T-187), or
+-- the tarmac's (T-268). A strip painted `mapped` is mapped with them; one that shares a mapped
+-- vertex but is not painted `mapped` gets `plainUV`. `tarmac`: the mapped faces are tarmac.
+local function strip(b: Builder, rowA: { number }, normA: { number }, rowB: { number }, normB: { number }, flip: boolean, colours: { number }?, farA: { number }?, farB: { number }?, uvA: { [number]: number }?, uvB: { [number]: number }?, mapped: number?, tarmac: boolean?)
 	local em = b.em
 	local fa, fb = farA or normA, farB or normB
 	for i = 1, #rowA - 1 do
@@ -168,7 +180,7 @@ local function strip(b: Builder, rowA: { number }, normA: { number }, rowB: { nu
 			local c = colours[i]
 			em:SetFaceColors(f1, { c, c, c })
 			em:SetFaceColors(f2, { c, c, c })
-			if uvA and uvB and c == grass then
+			if uvA and uvB and c == mapped then
 				local ua0, ua1, ub0, ub1 = uvA[i], uvA[i + 1], uvB[i], uvB[i + 1]
 				if ua0 and ua1 and ub0 and ub1 then
 					if flip then
@@ -179,6 +191,7 @@ local function strip(b: Builder, rowA: { number }, normA: { number }, rowB: { nu
 						em:SetFaceUVs(f2, { ua1, ub1, ub0 })
 					end
 					-- the blotches (T-187): each corner its own vertex's shade of the grass
+					-- (or of the tarmac, its tone, T-268)
 					local shadeOf = b.grassShade
 					if shadeOf then
 						local ca0, ca1, cb0, cb1 = shadeOf[a0] or c, shadeOf[a1] or c, shadeOf[b0] or c, shadeOf[b1] or c
@@ -190,11 +203,15 @@ local function strip(b: Builder, rowA: { number }, normA: { number }, rowB: { nu
 							em:SetFaceColors(f2, { ca1, cb1, cb0 })
 						end
 					end
-					b.grassTriangles += 2
+					if tarmac then
+						b.tarmacTriangles += 2
+					else
+						b.grassTriangles += 2
+					end
 				end
 			elseif b.plainUV and uvA and uvB and (uvA[i] or uvA[i + 1] or uvB[i] or uvB[i + 1]) then
-				-- a strip that is not grass but shares a vertex with the grass: the bevel, or
-				-- a gravelled runoff
+				-- a strip that is not mapped but shares a mapped vertex: the bevel, or a
+				-- gravelled runoff
 				local u = b.plainUV
 				em:SetFaceUVs(f1, { u, u, u })
 				em:SetFaceUVs(f2, { u, u, u })
@@ -208,7 +225,7 @@ local function newBuilder(centre: Vector3): Builder
 	local em = AssetService:CreateEditableMesh({ FixedSize = false })
 	-- nil is the device saying no: out of its EditableMesh budget
 	assert(em, "this device would not make an EditableMesh (out of its budget)")
-	return { em = em :: EditableMesh, centre = centre, vertices = 0, triangles = 0, grassTriangles = 0, plainUV = nil, grassShade = nil }
+	return { em = em :: EditableMesh, centre = centre, vertices = 0, triangles = 0, grassTriangles = 0, tarmacTriangles = 0, plainUV = nil, grassShade = nil }
 end
 
 -- A MeshPart made from an EditableMesh keeps the vertices exactly where they were written,
@@ -261,8 +278,9 @@ local function toPart(b: Builder, name: string, colour: Color3, material: Enum.M
 	mp.Material = material
 	mp.CFrame = CFrame.new(b.centre + mid)
 	if texture then
-		-- the grass's texture (T-187, `Road/GrassTexture`); it replaces the material's colour
-		-- map on every face, so the faces that are not grass sample its plain corner
+		-- the grass's texture (T-187, `Road/GrassTexture`) or the tarmac's (T-268,
+		-- `Road/RoadTexture`); it replaces the material's colour map on every face, so the
+		-- faces it is not for sample its plain corner or band
 		mp.TextureContent = Content.fromObject(texture)
 	end
 
@@ -344,8 +362,11 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 		-- THE GRASS'S TEXTURE (T-187): its vertices get UVs in world studs, in the shared
 		-- tile; a strip painted grass is mapped with them (`strip`)
 		-- (loaded once, the first time a chunk asks: not that chunk's cost)
+		-- THE TARMAC'S TEXTURE (T-268): when the ground draws the runoff the road's mesh has no
+		-- grass, so its one texture is the tarmac's (painted in code, `Road/RoadTexture`)
 		local g0 = os.clock()
-		local grassImage = GrassTexture.get()
+		local tarmacImage = if groundRunoff then RoadTexture.get() else nil
+		local grassImage = if tarmacImage then nil else GrassTexture.get()
 		local g1 = os.clock()
 		if g1 - g0 > 0.001 then
 			-- it waited on the asset: not work, and the frame's slice starts afresh (T-193)
@@ -353,12 +374,34 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 			sliceStart = g1
 		end
 		local baseU, baseV = GrassTexture.base(centre)
-		if grassImage then
+		local baseS = RoadTexture.base(s0)
+		if grassImage or tarmacImage then
 			road.plainUV = road.em:AddUV(Vector2.zero)
 			road.grassShade = {}
 		end
+		-- THE DOUBLE YELLOW (T-268 send-back 2): on the tight stretches only
+		-- (`RoadTexture.centreRuns`), with a cut at each end of a run, so the line starts and
+		-- stops square, on the same grid point in every chunk, near or far
+		local runs = if tarmacImage then RoadTexture.centreRuns(spline, s0, s1) else {}
+		if #runs > 0 then
+			for _, b in runs do
+				local dup = false
+				for _, c in cuts do
+					if math.abs(c - b) < 0.05 then
+						dup = true
+						break
+					end
+				end
+				if not dup then
+					table.insert(cuts, b)
+				end
+			end
+			table.sort(cuts)
+		end
+		local tarmacRows: { { Vector3 } } = {} -- per cut, with a run: the drawn tarmac's points
+		local lineTris = 0
 		local prevRow, prevNear, prevFar, prevS, prevUV = nil, nil, nil, 0, nil
-		for _, s in cuts do
+		for k, s in cuts do
 			local row, norm, pts = {}, {}, {}
 			local wL, wR = spline:runoffAt(s, -1), spline:runoffAt(s, 1)
 			local ds = {}
@@ -373,7 +416,7 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 			for j = 1, RUNOFF_STRIPS do
 				table.insert(ds, half + wR * j / RUNOFF_STRIPS)
 			end
-			local uv: { [number]: number }? = if grassImage then {} else nil
+			local uv: { [number]: number }? = if grassImage or tarmacImage then {} else nil
 			for j, d in ds do
 				local x, y, z = spline:terrainXYZ(s, d)
 				pts[j] = Vector3.new(x, y, z)
@@ -381,7 +424,17 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 				norm[j] = road.em:AddNormal(spline:terrainNormal(s, d))
 				road.vertices += 1
 				-- the grass's vertices: the runoff either side, out from each bevel's foot
-				if uv and (j <= lipL or j > lipR) then
+				if uv and tarmacImage then
+					-- the tarmac's vertices, from the left edge to the right: mapped across and
+					-- along, each shaded by its tone
+					if j > lipL and j <= lipR then
+						uv[j] = road.em:AddUV(RoadTexture.uv(s, d, baseS))
+						local shade = road.grassShade
+						if shade then
+							shade[row[j]] = road.em:AddColor(RoadTexture.tone(s, d), 1)
+						end
+					end
+				elseif uv and (j <= lipL or j > lipR) then
 					uv[j] = road.em:AddUV(GrassTexture.uv(x, z, baseU, baseV))
 					local shade = road.grassShade
 					if shade then
@@ -390,6 +443,13 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 						shade[row[j]] = road.em:AddColor(Color3.new(math.min(1, g.R * k), math.min(1, g.G * k), math.min(1, g.B * k)), 1)
 					end
 				end
+			end
+			if #runs > 0 then
+				local tp = {}
+				for j = lipL + 1, lipR do
+					table.insert(tp, pts[j])
+				end
+				tarmacRows[k] = tp
 			end
 			-- each bevel's own normal: square to the road's way and to its slope, outward
 			local yaw = spline:yawAt(s)
@@ -422,9 +482,77 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 					end
 					use = gravelled
 				end
-				strip(road, prevRow, prevNear, row, near, false, use, prevFar, far, prevUV, uv, grassColour)
+				strip(road, prevRow, prevNear, row, near, false, use, prevFar, far, prevUV, uv, if tarmacImage then tarmacColour else grassColour, tarmacImage ~= nil)
 			end
 			prevRow, prevNear, prevFar, prevS, prevUV = row, near, far, s, uv
+			slice()
+		end
+
+		-- THE DOUBLE YELLOW's strips: two a run, each `CentreLineWidth` wide, `CentreLineGap`
+		-- apart about the middle, mapped to the image's line band. Laid on the DRAWN tarmac
+		-- (between its own vertices, so on a coarse far chunk they sit on its coarse surface)
+		-- and lifted `CentreLineLift` along the normal, more on a coarser chunk
+		if #runs > 0 then
+			local em = road.em
+			local lw, gap = R.CentreLineWidth, R.CentreLineGap
+			local lineLift = R.CentreLineLift + (o.tolerance or M.Tolerance) * 0.25
+			local edgesD = { { -gap * 0.5 - lw, -gap * 0.5 }, { gap * 0.5, gap * 0.5 + lw } }
+			local function onTarmac(k: number, d: number): Vector3
+				local tp = tarmacRows[k]
+				local f = (d + half) / (2 * half) * across
+				local i = math.clamp(math.floor(f), 0, across - 1)
+				return tp[i + 1]:Lerp(tp[i + 2], f - i)
+			end
+			local made: { [number]: { [number]: any } } = {}
+			local function rowOf(k: number, which: number): any
+				made[k] = made[k] or {}
+				local m = made[k][which]
+				if m then
+					return m
+				end
+				local s = cuts[k]
+				local e = edgesD[which]
+				local n = spline:terrainNormal(s, (e[1] + e[2]) * 0.5)
+				local pL = onTarmac(k, e[1]) + n * lineLift
+				local pR = onTarmac(k, e[2]) + n * lineLift
+				m = {
+					l = em:AddVertex(pL - centre),
+					r = em:AddVertex(pR - centre),
+					ul = em:AddUV(RoadTexture.lineUV(s, 0, baseS, which)),
+					ur = em:AddUV(RoadTexture.lineUV(s, 1, baseS, which)),
+					n = em:AddNormal(n),
+					c = em:AddColor(RoadTexture.tone(s, 0), 1),
+				}
+				road.vertices += 2
+				made[k][which] = m
+				return m
+			end
+			for k = 1, #cuts - 1 do
+				local mid = (cuts[k] + cuts[k + 1]) * 0.5
+				local inRun = false
+				for r = 1, #runs, 2 do
+					if mid > runs[r] and mid < runs[r + 1] then
+						inRun = true
+						break
+					end
+				end
+				if inRun then
+					for which = 1, 2 do
+						local a, b = rowOf(k, which), rowOf(k + 1, which)
+						-- as the tarmac's strips: left to right, cut k to cut k + 1
+						local f1 = em:AddTriangle(a.l, a.r, b.l)
+						local f2 = em:AddTriangle(a.r, b.r, b.l)
+						em:SetFaceNormals(f1, { a.n, a.n, b.n })
+						em:SetFaceNormals(f2, { a.n, b.n, b.n })
+						em:SetFaceColors(f1, { a.c, a.c, b.c })
+						em:SetFaceColors(f2, { a.c, b.c, b.c })
+						em:SetFaceUVs(f1, { a.ul, a.ur, b.ul })
+						em:SetFaceUVs(f2, { a.ur, b.ur, b.ul })
+						road.triangles += 2
+						lineTris += 2
+					end
+				end
+			end
 			slice()
 		end
 
@@ -508,7 +636,7 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 		model:SetAttribute("S1", s1)
 		-- white, so the vertex colours are what show
 		slice()
-		local roadPart = toPart(road, "Road", Color3.new(1, 1, 1), R.RoadMaterial, grassImage)
+		local roadPart = toPart(road, "Road", Color3.new(1, 1, 1), R.RoadMaterial, tarmacImage or grassImage)
 		roadPart.Parent = model
 		slice()
 		local parts = 0
@@ -682,9 +810,13 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 		end
 
 		-- the centre line: a flat box per dash on the global pattern, so the dashes run on
-		-- across chunks, its painted face `MarkLift` above the surface along its normal
+		-- across chunks, its painted face `MarkLift` above the surface along its normal.
+		-- None on a textured tarmac: the texture paints the lines (T-268)
 		local interval, dash = R.MarkInterval, R.MarkDashLength
 		local start = math.floor(s0 / interval) * interval
+		if tarmacImage then
+			start = s1
+		end
 		while start < s1 do
 			local a, b = math.max(start, s0), math.min(start + dash, s1)
 			if b - a >= R.MarkMinLength then
@@ -710,7 +842,12 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 			vertices = road.vertices,
 			triangles = road.triangles,
 			grassTriangles = road.grassTriangles, -- textured (T-187)
-			textured = grassImage ~= nil,
+			tarmacTriangles = road.tarmacTriangles, -- textured (T-268)
+			centreLineTriangles = lineTris, -- the double yellow's strips (T-268)
+			centreRuns = #runs // 2,
+			textured = grassImage ~= nil or tarmacImage ~= nil,
+			grassTextured = grassImage ~= nil,
+			tarmacTextured = tarmacImage ~= nil,
 			parts = parts,
 			trees = trees,
 			treeTriangles = road.triangles - trianglesBefore,
