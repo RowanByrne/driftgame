@@ -169,23 +169,11 @@ function Vista.arcGeometry(mesh: any, slice: number?): ArcGeometry
 	local zc = -radius * (1 + math.cos(half)) / 2
 	local cols: number = mesh.Columns
 	local top, base = mesh.TopV, 0.995
-	-- UNDER THE PICTURE (T-278): its lower `SkirtBand` share again and again, mirrored each
-	-- time so every join meets itself, down to the panel's bottom: more of the same painted
-	-- hills from any height, never a plain band (a skirt fading to one mist colour showed as
-	-- a flat blue band from up high; stretching the bottom row streaked)
-	local band = mesh.SkirtBand or 0.3
-	local ys: { number } = { height / 2, height / 2 - art * (base - top) }
-	local vs: { number } = { top, base }
-	local step = art * band
-	local up = true
-	while ys[#ys] - step > -height / 2 + 1e-6 do
-		table.insert(ys, ys[#ys] - step)
-		table.insert(vs, if up then base - band else base)
-		up = not up
-	end
-	local rest = (ys[#ys] - -height / 2) / step
-	table.insert(ys, -height / 2)
-	table.insert(vs, if up then base - band * rest else (base - band) + band * rest)
+	-- UNDER THE PICTURE: the skirt fades, over `SkirtFade` of the picture's height, into the
+	-- picture's own mist at `SkirtUV`, then holds it down to the panel's bottom (the user,
+	-- T-278: a blank bottom is fine; repeating the hills under it looked wrong)
+	local artBottom = height / 2 - art * (base - top)
+	local ys: { number } = { height / 2, artBottom, artBottom - art * mesh.SkirtFade, -height / 2 }
 	local nr = #ys
 	local out: ArcGeometry = { positions = {}, normals = {}, uvs = {}, triangles = {}, size = Vector3.zero }
 	for i = 0, cols do
@@ -198,7 +186,8 @@ function Vista.arcGeometry(mesh: any, slice: number?): ArcGeometry
 		for r = 1, nr do
 			table.insert(out.positions, Vector3.new(x, ys[r], z))
 			table.insert(out.normals, n)
-			table.insert(out.uvs, Vector2.new(u, vs[r]))
+			local uv = if r == 1 then Vector2.new(u, top) elseif r == 2 then Vector2.new(u, base) else mesh.SkirtUV
+			table.insert(out.uvs, uv)
 		end
 	end
 	for i = 0, cols - 1 do
