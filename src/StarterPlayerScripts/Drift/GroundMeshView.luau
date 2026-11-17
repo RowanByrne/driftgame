@@ -2946,6 +2946,27 @@ function GroundMeshView.DebugDrawnMatches(self: View, count: number?)
 	return out
 end
 
+-- The shown tile whose furthest corner is furthest from the flat point (x, z) (the camera),
+-- and how far; with the ground's limit from the car (T-281).
+function GroundMeshView.DebugFarthest(self: View, x: number, z: number)
+	local most, at = 0, nil
+	local count = 0
+	for _, l in self.shown do
+		count += 1
+		local d = GroundTiles.farCorner(l.x0, l.z0, l.side, x, z)
+		if d > most then
+			most, at = d, l
+		end
+	end
+	return {
+		farthest = most,
+		side = at and at.side,
+		shown = count,
+		limit = GroundTiles.limit(),
+		car = Vector3.new(self.carX, 0, self.carZ),
+	}
+end
+
 function GroundMeshView.DebugState(self: View)
 	local byLevel = {}
 	local count = 0
