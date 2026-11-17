@@ -29,9 +29,9 @@
 
 local AssetService = game:GetService("AssetService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local RunService = game:GetService("RunService")
 
 local Config = require(ReplicatedStorage.Shared.Config)
+local OpaqueBudget = require(script.Parent.OpaqueBudget)
 
 local GrassTexture = {}
 
@@ -96,8 +96,9 @@ end
 -- (a 512 x 512 one about 8 of its ~640 tiles, `Config.Spline.Mesh.Budget`); opaque content
 -- (`AssetService:CreateDataModelContentAsync`) holds none, and nothing changes the image once
 -- its corners are set. So the image is made as `get` makes it, made opaque, and let go. Where
--- opaque content is refused (`CreateContentResult`, or `workspace.__no_opaque` in Studio, as
--- `Road/SplineMesh`), this is the EditableImage itself (`get`), as before. nil as `get`.
+-- opaque content is refused (`CreateContentResult`, past the session's cap, T-284, or
+-- `workspace.__no_opaque` in Studio: `Road/OpaqueBudget`), this is the EditableImage itself
+-- (`get`), as before. nil as `get`.
 -- Loaded the first time it is asked for; it yields, as `get` does.
 local content: Content? = nil
 local contentState = "none" -- "none", "making", "opaque", "image" (the fallback), "off"
@@ -124,14 +125,8 @@ function GrassTexture.content(): Content?
 		contentState = "off"
 		return nil
 	end
-	local refused = RunService:IsStudio() and workspace:GetAttribute("__no_opaque") == true
-	local ok, result, made = false, nil, nil
-	if not refused then
-		ok, result, made = pcall(function()
-			return AssetService:CreateDataModelContentAsync(Content.fromObject(img))
-		end)
-	end
-	if ok and result == Enum.CreateContentResult.Success and made then
+	local ok, made = OpaqueBudget.make("grass", Content.fromObject(img))
+	if ok and made then
 		content = made
 		contentState = "opaque"
 		-- the EditableImage let go: `get` makes it again only if asked (Studio checks)
