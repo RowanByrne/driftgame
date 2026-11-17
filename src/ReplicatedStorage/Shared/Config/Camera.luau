@@ -119,6 +119,10 @@ local Camera = {
 	-- a camera that lags and lets the car rotate in front of it, high
 	-- is one glued behind the nose
 	CamHeightRate = 1, -- per second. FALLBACK. How fast the look-at height follows
+	CamLookLagMax = 2, -- studs. OURS (T-294). The most the look height may trail the car,
+	-- soft-capped (tanh). Without it a falling car left the look point tens of
+	-- studs above it and the view tipped up and up through a jump. 0 is the
+	-- old uncapped trail
 	-- THE FOV, and the one place T-071 found the obvious reading of the brief to be wrong.
 	-- Measured before anything was changed, over a 60-second drive from a standstill with
 	-- the shipped 60 / 0.14 / 0.5: the FOV swings 22.0 degrees, 60.0 to 82.1, and it is

@@ -631,7 +631,18 @@ local function stepTargets(rig, view: View, dt: number)
 	if follow ~= 0 and view.up and view.up ~= Vector3.yAxis then
 		baseY += view.speed * math.tan(hillGrade(view.up, travelFlat(view))) * follow * dt
 	end
-	rig.lookTarget = Vector3.new(wantLook.X, baseY + (wantLook.Y - baseY) * ease(dt, Cam.CamHeightRate), wantLook.Z)
+	local lookY = baseY + (wantLook.Y - baseY) * ease(dt, Cam.CamHeightRate)
+	-- IN THE AIR (T-294) that easing was the whole problem: the camera itself is placed at a
+	-- fixed radius from the car and drops with it, while the look height trailed the fall at
+	-- 1/s -- falling at 40 studs/s it sat about 40 studs ABOVE the car, so the view tipped up
+	-- and up as the car fell out of the bottom of the frame. The trail is now soft-capped at
+	-- `CamLookLagMax` studs: tanh, so it never kinks, and a road's small bumps (a stud or
+	-- less) are eased as before to within a hundredth of a stud.
+	local lagMax = Cam.CamLookLagMax or 0
+	if lagMax > 0 then
+		lookY = wantLook.Y + lagMax * math.tanh((lookY - wantLook.Y) / lagMax)
+	end
+	rig.lookTarget = Vector3.new(wantLook.X, lookY, wantLook.Z)
 
 	-- (2) The resting place: `|CamOffset|` from the car, in a direction that follows the
 	-- car round at `CamAngleRate`. The length is always the offset's own length, so easing
