@@ -126,18 +126,6 @@ function Tests.run()
 			end
 		end
 		check(`{layer.Name}: a see-through surface made for every picture`, #missing == 0, table.concat(missing, ", "))
-		check(`{layer.Name}: a saddle height for every picture`, layer.Edges ~= nil and #layer.Edges == #layer.Images, `{layer.Edges and #layer.Edges or 0} for {#layer.Images}`)
-		-- neighbouring curved panels' saddles meet: each lift cancels its picture's own edge
-		local artH = Vista.panelWidth(layer.Radius, layer.Panels) / layer.Aspect
-		local worst = 0
-		for i, p in arcs do
-			local q = arcs[i % #arcs + 1]
-			local k1, k2 = (p.index - 1) % #layer.Images + 1, (q.index - 1) % #layer.Images + 1
-			local s1 = p.cframe.Position.Y + p.size.Y / 2 + (mesh.TopV - layer.Edges[k1]) * artH
-			local s2 = q.cframe.Position.Y + q.size.Y / 2 + (mesh.TopV - layer.Edges[k2]) * artH
-			worst = math.max(worst, math.abs(s1 - s2))
-		end
-		check(`{layer.Name}: neighbouring saddles meet`, worst < 0.5, string.format("worst step %.2f studs", worst))
 		local art = #layer.Images > 0
 		for _, id in layer.Images do
 			art = art and string.match(id, "^rbxassetid://%d+$") ~= nil

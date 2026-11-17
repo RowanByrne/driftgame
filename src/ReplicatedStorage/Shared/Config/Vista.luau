@@ -43,7 +43,9 @@ return {
 		-- the misty base, ran each column's colour down the skirt in streaks (the user circled
 		-- them; lane 2).
 		SkirtFade = 0.25,
-		SkirtUV = Vector2.new(0.5, 0.97),
+		-- At the picture's edge column, which every joined picture of a ring shares, so the
+		-- skirts of neighbouring panels match.
+		SkirtUV = Vector2.new(0.003, 0.97),
 	},
 
 	-- ------------------------------------------------------------- ridge layers
@@ -65,9 +67,12 @@ return {
 	-- climbing sinks it below the further ones and the view opens; in a valley it stands up in
 	-- front of them and closes it in.
 	--
-	-- A layer with no `Images` is not built. `Edges`: where each picture's end saddles sit,
-	-- as a share of its height from the top (measured off each strip); every picture is lifted
-	-- or lowered so its saddles meet the first picture's, and so its neighbours'. `Skirt`: a plain part under each panel, in the
+	-- A layer with no `Images` is not built. Its pictures are the `-joined` copies: every one
+	-- ends in the halves of one connector cut from the ring's first picture, so any two meet
+	-- without a seam (`pipeline/vista/join-strips.py`; lifting each picture to line up its
+	-- saddles still left the mist bands stepped, the user's screenshot). `Edges` (optional):
+	-- where each picture's end saddles sit, to lift it so they meet; the joined copies need
+	-- none. `Skirt`: a plain part under each panel, in the
 	-- colour of the art's base, reaching down `Skirt` studs so the bottom edge of the art is
 	-- never seen above the cloud sea; `BaseColour` is the art's bottom tenth, averaged.
 	Layers = {
@@ -86,11 +91,10 @@ return {
 			Skirt = 900,
 			BaseColour = Color3.fromRGB(151, 172, 198),
 			Images = {
-				"rbxassetid://129944061048496", -- far-painted-02 (assets/painted-vista/MANIFEST.md)
-				"rbxassetid://120124891988351", -- far-painted-02-v1
-				"rbxassetid://128884046668071", -- far-painted-02-v2
+				"rbxassetid://119692693529026", -- far-painted-02-joined (pipeline/vista/join-strips.py; assets/painted-vista/MANIFEST.md)
+				"rbxassetid://115396242160535", -- far-painted-02-v1-joined (pipeline/vista/join-strips.py; assets/painted-vista/MANIFEST.md)
+				"rbxassetid://85256458205915", -- far-painted-02-v2-joined (pipeline/vista/join-strips.py; assets/painted-vista/MANIFEST.md)
 			},
-			Edges = { 0.609, 0.612, 0.616 },
 		},
 		{
 			Name = "Middle",
@@ -105,11 +109,10 @@ return {
 			Skirt = 900,
 			BaseColour = Color3.fromRGB(156, 175, 194), -- mid-ridge-02's bottom tenth
 			Images = {
-				"rbxassetid://133682278735485", -- mid-ridge-02 (assets/painted-vista/MANIFEST.md)
-				"rbxassetid://89225550176420", -- mid-ridge-02-v1
-				"rbxassetid://110558208216398", -- mid-ridge-02-v2
+				"rbxassetid://80914219707896", -- mid-ridge-02-joined (pipeline/vista/join-strips.py; assets/painted-vista/MANIFEST.md)
+				"rbxassetid://75118707726792", -- mid-ridge-02-v1-joined (pipeline/vista/join-strips.py; assets/painted-vista/MANIFEST.md)
+				"rbxassetid://91599232524447", -- mid-ridge-02-v2-joined (pipeline/vista/join-strips.py; assets/painted-vista/MANIFEST.md)
 			},
-			Edges = { 0.619, 0.670, 0.644 },
 		},
 		{
 			Name = "Near",
@@ -124,11 +127,10 @@ return {
 			Skirt = 900,
 			BaseColour = Color3.fromRGB(152, 169, 188), -- near-forest-01's bottom tenth
 			Images = {
-				"rbxassetid://128017146178029", -- near-forest-01
-				"rbxassetid://135005587139269", -- near-forest-01-v1
-				"rbxassetid://105834515600586", -- near-forest-01-v2
+				"rbxassetid://90908547604599", -- near-forest-01-joined (pipeline/vista/join-strips.py; assets/painted-vista/MANIFEST.md)
+				"rbxassetid://138672626842006", -- near-forest-01-v1-joined (pipeline/vista/join-strips.py; assets/painted-vista/MANIFEST.md)
+				"rbxassetid://138887894601361", -- near-forest-01-v2-joined (pipeline/vista/join-strips.py; assets/painted-vista/MANIFEST.md)
 			},
-			Edges = { 0.663, 0.665, 0.684 },
 		},
 	},
 

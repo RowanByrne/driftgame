@@ -84,3 +84,21 @@ Through the Studio MCP `upload_image` (the user signed in to Studio), 2026-11-16
 | `mid-ridge-02.png` | `rbxassetid://133682278735485` | `Config.Vista.Layers` Middle |
 | `mid-ridge-02-v1.png` | `rbxassetid://89225550176420` | `Config.Vista.Layers` Middle |
 | `mid-ridge-02-v2.png` | `rbxassetid://110558208216398` | `Config.Vista.Layers` Middle |
+
+## Joined copies (T-271)
+
+The user, on step 2 in lane 1: *"yep just check that the seems are good pls"*, with a screenshot of steps in the mist where pictures meet. Lifting each picture to line up its saddles had shifted their mist bands apart, and three paintings never match at their ends. So each ring's pictures now end alike: `pipeline/vista/join-strips.py` cuts a connector (348 px, centred on the lowest point of the ridge in the middle half of the ring's first picture) and fades each picture's outer 8% at both ends into its halves, colour premultiplied, outline the union of both ridgelines. The picks are unchanged; the game uses these derived copies. Uploaded through the Studio MCP `upload_image` (the user signed in to Studio), 2026-11-16, lane 1; their see-through surfaces are in `src/ReplicatedStorage/VistaSurfaces.rbxmx`.
+
+| File | Made from | SHA-256 | Asset id |
+|---|---|---|---|
+| `far-painted-02-joined.png` | `far-painted-02.png` | `37FB74098D6D331316CD73EA8E656493904EC149ADD52C98F08D1A4303E94C2D` | `rbxassetid://119692693529026` |
+| `far-painted-02-v1-joined.png` | `far-painted-02-v1.png` | `0AC6CE72209624CEF4A5302EEC4CD772672CFE4A8BF047F50663BB50018544D3` | `rbxassetid://115396242160535` |
+| `far-painted-02-v2-joined.png` | `far-painted-02-v2.png` | `6855883516B298943E67645655616907AA1EFFC3C45D949704E7C6B86BF659F6` | `rbxassetid://85256458205915` |
+| `mid-ridge-02-joined.png` | `mid-ridge-02.png` | `32B5FBA4B5CD443D986512008A42907A482C263C462D7B318D0A8AE7EB8747AB` | `rbxassetid://80914219707896` |
+| `mid-ridge-02-v1-joined.png` | `mid-ridge-02-v1.png` | `2F42645C1CDD8DE39A659C860721C3F20AC79CAAA539BFACE9D41CAA71D1BA3A` | `rbxassetid://75118707726792` |
+| `mid-ridge-02-v2-joined.png` | `mid-ridge-02-v2.png` | `20818DFCFF72981117827B4A50C209FA8EA64C6AE7A925B6A3A352DCC53E3A77` | `rbxassetid://91599232524447` |
+| `near-forest-01-joined.png` | `near-forest-01.png` | `14BB0C3B3CBAD3E0D8AE6453DD2B7B6C9FAEF1BFC22872E681ED51B00B7B4337` | `rbxassetid://90908547604599` |
+| `near-forest-01-v1-joined.png` | `near-forest-01-v1.png` | `57DFEF549C5FF4D61BAA0321F80705397DA6C5E64F89692CBC1CC4E8F46F8320` | `rbxassetid://138672626842006` |
+| `near-forest-01-v2-joined.png` | `near-forest-01-v2.png` | `B9E8D9AF84EB25D490296516195C3CE2524C5503ED7EC14CAAAB119CFE9F1640` | `rbxassetid://138887894601361` |
+
+Connectors: far from `far-painted-02` x 567..915, middle from `mid-ridge-02` x 369..717, near from `near-forest-01` x 550..898.
