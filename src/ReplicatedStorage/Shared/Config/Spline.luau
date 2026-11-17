@@ -649,9 +649,10 @@ local Spline = {
 		ChunkLength = 480,
 		-- THE PLAYER'S "ROAD AHEAD" AND "ROAD BEHIND" (Settings, Graphics; docs/game/SETTINGS.md,
 		-- T-230, T-263): how far in front of the car, and behind it, the road and the ground along
-		-- it are drawn: at least `Studs` (chunk-aligned, so up to a chunk more). THE SAME STEPS
-		-- BOTH WAYS, three times the first ones (the user's send-back, 2026-11-16: Road ahead was
-		-- 1 000 to 3 200, Road behind 300 to 3 000 in five steps). Past `Near` a chunk is drawn
+		-- it are drawn: at least `Studs` (chunk-aligned, so up to a chunk more). NO LONGER THE
+		-- SAME STEPS BOTH WAYS (T-278, the user, 2026-11-17: "triple the max", keep the short
+		-- distance behind about 1 000 and short in front about 2 000, "go up from there", Longest
+		-- 9 600 both ways; T-263 had made them 3 000 to 9 600 both ways). Past `Near` a chunk is drawn
 		-- at `Far`'s detail, about a quarter of a whole chunk's triangles: that is what lets
 		-- Longest both ways fit the mesh budget (measured: 41 chunks, about 14 000 triangles).
 		-- `GroundTiles`: more tiles for the ground's corridor beside the longer road (32-stud
@@ -660,24 +661,24 @@ local Spline = {
 		-- A DEVICE CAN ONLY DRAW ROAD THE SERVER HAS SENT: `RoadService` lays the longest
 		-- `Ahead` step past the end of the leader's section.
 		Ahead = {
-			{ Name = "Short", Studs = 3000, GroundTiles = 40 },
-			{ Name = "Medium", Studs = 4800, GroundTiles = 60 },
-			{ Name = "Long", Studs = 7200, GroundTiles = 80 },
+			{ Name = "Short", Studs = 2000, GroundTiles = 30 },
+			{ Name = "Medium", Studs = 3600, GroundTiles = 45 },
+			{ Name = "Long", Studs = 6000, GroundTiles = 70 },
 			{ Name = "Longest", Studs = 9600, GroundTiles = 100 },
 		},
-		AheadDefault = 2, -- Medium: three times the 1 600 before
+		AheadDefault = 2, -- Medium, 3 600
 		AheadTouchDefault = 2, -- the same on a phone or tablet
 		-- behind: a chunk behind was built when it was ahead, so each step back costs the chunks
 		-- it keeps, not building (a whole one is drawn again far once it is past `Near`)
 		Behind = {
-			{ Name = "Short", Studs = 3000, GroundTiles = 30 },
-			{ Name = "Medium", Studs = 4800, GroundTiles = 40 },
-			{ Name = "Long", Studs = 7200, GroundTiles = 55 },
+			{ Name = "Short", Studs = 1000, GroundTiles = 20 },
+			{ Name = "Medium", Studs = 2400, GroundTiles = 27 },
+			{ Name = "Long", Studs = 4800, GroundTiles = 40 },
 			{ Name = "Longest", Studs = 9600, GroundTiles = 70 },
 		},
-		-- Short: three times the old 1 300 is 3 900, as near Short as Medium, and Short is cheaper
-		BehindDefault = 1, -- keyboard and mouse, or gamepad
-		BehindTouchDefault = 1, -- a phone or tablet (it was Medium, 800: three times is 2 400)
+		-- `GroundTiles` re-fitted to the new distances (T-278) along T-263's measured line, Longest's kept
+		BehindDefault = 1, -- Short, 1 000, on keyboard and mouse, or gamepad
+		BehindTouchDefault = 1, -- a phone or tablet
 		-- the ground beside the road behind stays as sharp as ahead for this far back, and is
 		-- `Ground.RoadCoarsest` past it (it was Short's 300 studs before T-263 tripled the steps)
 		BehindSharp = 300, -- studs
