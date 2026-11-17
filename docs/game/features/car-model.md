@@ -174,6 +174,22 @@ The gray model was approved on 2026-11-10 and the surfaces decided with it (DECI
 - **Wiring it into the game** through `Shared/Cars/Rig.assemble` (CONTRACTS.md "The car rig"): a task of its own.
 - **168 pieces is the flexible cut, not the cheapest.** If cars turn out to cost too much to draw or move, pieces that are never recoloured can be joined (the engine, the engine bay and the underside first) by changing one table in `export.py`.
 
+## The restyled model
+
+A second model of the same car, built 2026-11-11 to 2026-11-17 in Blender from a detailed downloaded model of the real car, at the user's direction, piece by piece: the body's own curved panels, thinned and shaded smooth with only their real creases hard; simpler blocks for trim, lamps and small parts; the real car's wheels with textured tyres, discs and calipers; and the gray model's interior, engine bay and boot fitted inside. Source, outside git: `..\art\source\car-ae86-fbx\AE86_mid.blend`, built by the scripts in `..\art\source\car-ae86-fbx\mid\`. The user approved it for the game on 2026-11-17: "great. prepare this for studio".
+
+**Exported** the same way as the gray model (above), as `assets/car-ae86/car-ae86-mid.fbx` and `car-ae86-mid.json` (the manifest has the files). What the wiring needs to know, where it differs from the gray model:
+
+- **Size:** wheelbase 9.6 (the game's), track 5.72, 16.9 long, 7.71 wide with the mirrors, 5.12 high; the tyres are 2.50 across.
+- **Static parts are joined by area:** `Body`, `BumperFront`, `BumperRear`, `Underside`, `EngineBay`, `Engine`, `Cabin`, `Windows` (the data lists what is in each). 142 pieces, against the gray model's 168.
+- **36 moving parts,** with the gray model's names and kinds (`steer` on the front calipers, `aim` on the struts, `HoodProp` opening with `Hood`; the engine's pulleys are hinges of 360 degrees), and **18 lamps:** headlights on the pods, front markers, front indicators, parking lamps, tail lamps, rear indicators and the six warning lights. There are no fog lamps, reversing lamps, separate brake lamps or centre garnish: **each tail lamp is one red lens**, so it has to light as the brake lamp too.
+- **The pop-up lights are written down,** like everything else shut; their travel (-63.25 degrees) raises them.
+- **New surface `Seam`:** the black folds behind the panel joins, drawn from both sides. The glass is closed sheets, so it is not.
+- **Textured surfaces:** `Tyre` (normal and roughness maps; the tread is in the normal map), `Disc` (colour, roughness, metalness) and `Caliper` (colour, normal). `MeshRig` makes each piece from its mesh id alone, so these maps need their image ids read off the import and put on the pieces (SurfaceAppearance) when the car is wired in; without them the tyres are smooth.
+- **Smooth shading:** every corner's normal is in the file. Whether Studio keeps them is to be checked by eye after the import.
+
+Not done: the import, the wiring (a body module like `Shared/Cars/Liftback`, read off the imported model, built through `MeshRig`), and the look in Studio.
+
 ## Not settled
 
 - **The car contract.** Today a car is a `Body` and four `Wheel*` groups (CONTRACTS.md). Parts that open need groups of their own; that change goes in first, as its own commit, when the model is wired in. The user: "we will adjust the game later to work with a car like this".
