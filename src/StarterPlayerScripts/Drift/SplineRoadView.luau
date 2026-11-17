@@ -25,8 +25,26 @@
 -- A DEVICE THAT CANNOT MAKE A MESH still sees the road: the chunk is drawn as parts instead
 -- (`Road/SplineParts`, nothing queryable, tarmac only), and `fallbacks` counts how often.
 -- Either way the car drives on the maths, not on anything drawn here.
+--
+-- FEWER REDRAWS (T-288): every chunk drawn is an opaque content, and a client may make only
+-- `Mesh.OpaqueCap` of them a session (`Road/OpaqueBudget`, T-284). So two redraws that showed
+-- for moments are skipped, neither changing what the player sees:
+--   1. A whole chunk that falls `Near.Behind` behind the car is not drawn again far when it
+--      leaves the window within a chunk (`_leavesIn`): at Short behind it left about 120 studs
+--      later, so half the defaults' contents went to chunks shown for two seconds. It stays
+--      whole until it goes. Only a chunk that holds no mesh memory (opaque): one holding a
+--      fixed-size mesh (past the cap) is still drawn far, which frees most of it; and when the
+--      budget asks, it is let go as any far chunk is (`_isFar` is by position).
+--   2. The far chunk at the road's end (Longest ahead reaches it) is drawn, and drawn again as
+--      the road grows, only once there is `GROW_FAR_END` of a chunk more road for it, or it
+--      can be whole (`_worthDrawing`): it was redrawn every section (~200 studs), up to 40% of
+--      builds. So the drawn road may end up to that much short of the road's end, which is at
+--      least the longest "Road ahead" past the leader's section (`RoadService`): at Longest,
+--      never nearer than about 2 260 studs from the car. A chunk within `Near` is drawn as before.
+-- In Studio, `workspace.__redraw_all = true` redraws as before T-288, to compare.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
 
 local Config = require(ReplicatedStorage.Shared.Config)
@@ -39,6 +57,20 @@ local RoadBehind = require(script.Parent.RoadBehind)
 
 local SplineRoadView = {}
 SplineRoadView.__index = SplineRoadView
+
+-- (T-288) a far chunk at the road's end is drawn again only once the road has grown this share
+-- of a chunk past what it shows (or it can be whole)
+local GROW_FAR_END = 0.5
+-- (T-288) a whole chunk behind the car is not drawn again far if it leaves the window within
+-- this share of a chunk
+local LEAVES_WITHIN = 1
+
+local isStudio = RunService:IsStudio()
+
+-- Studio only: redraw as before T-288, to compare
+local function redrawAll(): boolean
+	return isStudio and Workspace:GetAttribute("__redraw_all") == true
+end
 
 export type View = typeof(setmetatable(
 	{} :: {
@@ -82,6 +114,13 @@ export type View = typeof(setmetatable(
 		asked: number,
 		kept: number,
 		budgetFails: number,
+		-- FEWER REDRAWS (T-288): whole chunks left whole as they leave behind (each counted once),
+		-- far chunks drawn again far (behind), and draws of the road's far end put off for more road
+		keptWhole: { [number]: boolean },
+		farKept: number,
+		farRedrawn: number,
+		endWaits: number,
+		endWaiting: { [number]: number }, -- chunk -> the road's length when it was last put off
 	},
 	SplineRoadView
 ))
@@ -125,6 +164,11 @@ function SplineRoadView.new(spline: Spline.Spline, parent: Instance?): View
 		asked = 0,
 		kept = 0,
 		budgetFails = 0,
+		keptWhole = {},
+		farKept = 0,
+		farRedrawn = 0,
+		endWaits = 0,
+		endWaiting = {},
 	}, SplineRoadView)
 	-- a longer setting asks again, whatever the budget said before
 	self.behindConn = RoadBehind.Changed:Connect(function()
@@ -202,7 +246,65 @@ function SplineRoadView._drop(self: View, i: number)
 	self.tris[i] = nil
 	self.fixed[i] = nil
 	self.far[i] = nil
+	self.keptWhole[i] = nil
+	self.endWaiting[i] = nil
 	self.removed += 1
+end
+
+-- (T-288) Studs the car has still to go before chunk `i`, behind it, leaves the window: the
+-- player's "Road behind" (`RoadBehind.from`), or fewer chunks if the budget made the window
+-- shorter (`behindCap`). math.huge for a chunk not behind the car.
+function SplineRoadView._leavesIn(self: View, i: number): number
+	if i >= self.here then
+		return math.huge
+	end
+	local L = Config.Spline.Mesh.ChunkLength
+	-- `RoadBehind.from(at)` passes chunk i once at - studs >= (i + 1) L
+	local leave = (i + 1) * L + RoadBehind.studs()
+	if self.behindCap then
+		-- `here - behindCap` passes i once floor(at / L) >= i + 1 + behindCap
+		leave = math.min(leave, (i + 1 + self.behindCap) * L)
+	end
+	return leave - self.at
+end
+
+-- (T-288) Whether a whole chunk that is now far behind the car is worth drawing again far: not
+-- if it leaves the window within `LEAVES_WITHIN` of a chunk and holds none of the mesh memory
+-- (opaque). One holding a fixed-size mesh (past the cap, or refused) is drawn far as before,
+-- which frees most of what it holds.
+function SplineRoadView._farAgain(self: View, i: number): boolean
+	if redrawAll() or self.fixed[i] then
+		return true
+	end
+	local L = Config.Spline.Mesh.ChunkLength
+	if self:_leavesIn(i) > LEAVES_WITHIN * L then
+		return true
+	end
+	if not self.keptWhole[i] then
+		self.keptWhole[i] = true
+		self.farKept += 1
+	end
+	return false
+end
+
+-- (T-288) Whether chunk `i` is worth drawing (again) with the road there is now: always if it can
+-- be whole or is within `Near` of the car; a far one at the road's end only once the road has
+-- grown `GROW_FAR_END` of a chunk past what it shows (`builtTo`, or its start if nothing is
+-- drawn). So the drawn road ends at most that much short of the road's end.
+function SplineRoadView._worthDrawing(self: View, i: number, builtTo: number?): boolean
+	local L = Config.Spline.Mesh.ChunkLength
+	local length = self.spline.length
+	if redrawAll() or length >= (i + 1) * L - 1e-6 or not self:_isFar(i) then
+		return true
+	end
+	if length - (builtTo or i * L) >= GROW_FAR_END * L then
+		return true
+	end
+	if self.endWaiting[i] ~= length then
+		self.endWaiting[i] = length
+		self.endWaits += 1
+	end
+	return false
 end
 
 -- Whether chunk `i` is wholly past `Mesh.Near` of the car (T-263): drawn at the far detail,
@@ -327,6 +429,7 @@ function SplineRoadView._build(self: View, i: number, far: boolean?)
 		-- a chunk rebuilt to more road replaces the old one only now it is whole (T-193), so the
 		-- road never has a hole while the new one is built over several frames
 		self.far[i] = far == true
+		self.endWaiting[i] = nil
 		local old = self.chunks[i]
 		self.chunks[i] = model
 		if old and old ~= model then
@@ -432,7 +535,7 @@ function SplineRoadView.Update(self: View, s: number?)
 	-- (the old one stays up until the new one is whole, T-193)
 	if not holding then
 		for i, builtTo in self.short do
-			if self.spline.length > builtTo + 1e-6 and self.chunks[i] then
+			if self.spline.length > builtTo + 1e-6 and self.chunks[i] and self:_worthDrawing(i, builtTo) then
 				self.short[i] = nil
 				self.rebuilt += 1
 				self:_start(i, far(i))
@@ -446,7 +549,8 @@ function SplineRoadView.Update(self: View, s: number?)
 	local function wanted(i: number): boolean
 		local chunk = self.chunks[i]
 		if not chunk then
-			return not holding or not far(i)
+			-- (T-288) the far chunk at the road's end waits for enough road to be worth it
+			return (not holding or not far(i)) and self:_worthDrawing(i, nil)
 		end
 		if holding then
 			return false
@@ -473,11 +577,12 @@ function SplineRoadView.Update(self: View, s: number?)
 		end
 	end
 	-- and last, a chunk drawn whole that is now far (the road behind, mostly): drawn again at
-	-- the far detail, the furthest first, so the long settings stay within the budget
+	-- the far detail, the furthest first, so the long settings stay within the budget; but not
+	-- one about to leave the window that holds no mesh memory (T-288, `_farAgain`)
 	if not want and not holding then
 		local best = nil
 		for i in self.chunks do
-			if self.far[i] == false and far(i) and self.chunks[i]:IsA("Model") then
+			if self.far[i] == false and far(i) and self.chunks[i]:IsA("Model") and self:_farAgain(i) then
 				if not best or math.abs(i - self.here) > math.abs(best - self.here) then
 					best = i
 				end
@@ -486,6 +591,9 @@ function SplineRoadView.Update(self: View, s: number?)
 		want = best
 	end
 	if want then
+		if self.far[want] == false and far(want) and want < self.here then
+			self.farRedrawn += 1
+		end
 		self:_start(want :: number, far(want :: number))
 	end
 end
@@ -605,8 +713,21 @@ function SplineRoadView.DebugState(self: View)
 		firstChunk = first,
 		drawnFrom = if first then first * L else nil, -- where the drawn road starts
 		lastChunk = lastChunk,
-		-- where the drawn road ends (T-263): the last chunk's end, or the road's if it is shorter
-		drawnTo = if lastChunk then math.min((lastChunk + 1) * L, self.spline.length) else nil,
+		-- where the drawn road ends (T-263): the last chunk's end, or where the road ended when it
+		-- was drawn, if that was short of it (T-288: read off the chunk)
+		drawnTo = if lastChunk
+			then (function()
+				local s1 = self.chunks[lastChunk]:GetAttribute("S1")
+				return if type(s1) == "number" then s1 else math.min((lastChunk + 1) * L, self.spline.length)
+			end)()
+			else nil,
+		at = self.at, -- the car's distance along the road at the last update
+		-- fewer redraws (T-288): whole chunks left whole as they left behind, far ones drawn again
+		-- far behind the car, and times the road's far end was put off for more road
+		farKept = self.farKept,
+		farRedrawn = self.farRedrawn,
+		endWaits = self.endWaits,
+		redrawAll = redrawAll(),
 		trianglesHeld = held, -- in the chunks drawn now
 		farChunks = (function()
 			local k = 0

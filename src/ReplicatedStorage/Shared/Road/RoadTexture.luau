@@ -55,6 +55,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
 local Config = require(ReplicatedStorage.Shared.Config)
+local OpaqueBudget = require(script.Parent.OpaqueBudget)
 
 local RoadTexture = {}
 
@@ -963,10 +964,9 @@ local function paintIt(): Content?
 		return nil
 	end
 	local img = made :: EditableImage
-	local okC, result, content = pcall(function()
-		return AssetService:CreateDataModelContentAsync(Content.fromObject(img))
-	end)
-	if okC and result == Enum.CreateContentResult.Success then
+	-- (counted against the session's cap, `Road/OpaqueBudget`, T-288)
+	local okC, content = OpaqueBudget.make("tarmac", Content.fromObject(img))
+	if okC and content then
 		img:Destroy()
 		source = "painted"
 		return content
