@@ -256,7 +256,7 @@ function Tests.run()
 		end
 		check("every mesh user fits the client's mesh memory at the default settings, the ground keeping its own detail", defOk, `{table.concat(defLines, "; ")}; spare kept {MB.Spare}`)
 		-- (T-274) THE GROUND DRAWS WHAT IT DREW: its share is still T-273's (`Budget.GroundShare`),
-		-- whose caps T-273 measured (323 tiles at the defaults, 254 at Longest both ways), and what
+		-- whose caps T-273 measured (323 tiles at the old defaults, 254 at Longest both ways; 344 at T-278's smaller defaults), and what
 		-- the savings freed stays free until the user spends it
 		local capDefault = SplineMesh.groundRoom(M.Ahead[M.AheadDefault].Studs, M.Behind[M.BehindDefault].Studs)
 		local capLongest = SplineMesh.groundRoom(M.Ahead[#M.Ahead].Studs, M.Behind[#M.Behind].Studs)
@@ -264,8 +264,8 @@ function Tests.run()
 		local freeLongest = SplineMesh.freeTiles(M.Ahead[#M.Ahead].Studs, M.Behind[#M.Behind].Studs)
 		check(
 			"the ground draws what it drew before T-274, and the savings stay free",
-			capDefault == 323 and capLongest == 254 and freeDefault > 0 and freeLongest > 0,
-			`the ground's cap {capDefault} at the defaults (T-273: 323), {capLongest} at Longest both ways (254); free by these figures {math.floor(freeDefault)} and {math.floor(freeLongest)} tiles`
+			capDefault == 344 and capLongest == 254 and freeDefault > 0 and freeLongest > 0,
+			`the ground's cap {capDefault} at the defaults (T-278: 344; T-273's 323 was at 4 800 ahead, 3 000 behind), {capLongest} at Longest both ways (254); free by these figures {math.floor(freeDefault)} and {math.floor(freeLongest)} tiles`
 		)
 		-- (b) ANY SETTINGS: the road's whole window fits beside the least ground there can be
 		-- (`YieldFloor`, `Drift/MeshBudget`), so no road near the car need ever go; and how many
@@ -288,22 +288,29 @@ function Tests.run()
 			worst <= MB.Tiles,
 			`worst {worstName}: {math.floor(worst)} of {MB.Tiles} tiles with the ground at {G.YieldFloor + G.Spare}; the ground on Ultra: {table.concat(lines, "; ")}`
 		)
-		-- the same steps both ways, growing, and the defaults three times what they were
-		-- (Road ahead 1 600 and Road behind 1 300 before T-263's send-back)
-		local same, grows, previous = #M.Ahead == #M.Behind and #M.Ahead >= 2, true, 0
-		for k, a in M.Ahead do
-			local b = M.Behind[k]
-			same = same and b ~= nil and a.Name == b.Name and a.Studs == b.Studs
-			grows = grows and a.Studs > previous and a.GroundTiles >= 0 and (b == nil or b.GroundTiles >= 0)
-			previous = a.Studs
+		-- each way its own steps, growing, to the same Longest (T-278, the user 2026-11-17:
+		-- short behind about 1 000, short ahead about 2 000, Longest 9 600 both ways)
+		local function grows(list: any): boolean
+			local previous = 0
+			for _, step in list do
+				if step.Studs <= previous or step.GroundTiles < 0 then
+					return false
+				end
+				previous = step.Studs
+			end
+			return #list >= 2
 		end
-		check("Road ahead and Road behind have the same steps", same and grows, `{#M.Ahead} and {#M.Behind} steps`)
+		check(
+			"Road ahead and Road behind each grow to the same Longest",
+			grows(M.Ahead) and grows(M.Behind) and M.Ahead[#M.Ahead].Studs == M.Behind[#M.Behind].Studs and M.Ahead[1].Studs > M.Behind[1].Studs,
+			`ahead {#M.Ahead} steps, behind {#M.Behind}; Longest {M.Ahead[#M.Ahead].Studs} and {M.Behind[#M.Behind].Studs}`
+		)
 		local aPc, aTouch = M.Ahead[M.AheadDefault], M.Ahead[M.AheadTouchDefault]
 		local bPc, bTouch = M.Behind[M.BehindDefault], M.Behind[M.BehindTouchDefault]
 		check(
-			"the defaults are the steps nearest three times before",
-			aPc ~= nil and aTouch ~= nil and bPc ~= nil and bTouch ~= nil and aPc.Studs == 4800 and aTouch.Studs <= aPc.Studs
-				and math.abs(bPc.Studs - 3900) <= 900 and bTouch.Studs <= bPc.Studs,
+			"the defaults are Medium ahead (3 600) and Short behind (1 000)",
+			aPc ~= nil and aTouch ~= nil and bPc ~= nil and bTouch ~= nil and aPc.Studs == 3600 and aTouch.Studs <= aPc.Studs
+				and bPc.Studs == 1000 and bTouch.Studs <= bPc.Studs,
 			`ahead PC {aPc and aPc.Studs}, touch {aTouch and aTouch.Studs}; behind PC {bPc and bPc.Studs}, touch {bTouch and bTouch.Studs}`
 		)
 
