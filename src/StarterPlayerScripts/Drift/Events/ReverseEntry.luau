@@ -9,10 +9,11 @@
 --
 --   STARTS when the slip angle passes `AngleDegrees` (90) turned INTO the hairpin (the
 --   nose swung toward the bend's inside, past square to the travel), above `MinSpeed`, on
---   the ground, anywhere from the hairpin's entry zone to its exit (`Road/Hairpins`). One
---   attempt per hairpin.
+--   the ground, anywhere from the entry zone to the exit of ANY double-yellow bend
+--   (`Road/Hairpins.bendAround`, not only the true hairpins: the user loved it as it was,
+--   T-299 send-back). One attempt per bend; a put-back clears that.
 --   HOLDS while it drifts (`state.drifting`) with at least 2 wheels sliding
---   (`PerfectHairpin.slidingWheels`), above `MinSpeed`, either way round: once it is past
+--   (`BendDrift.slidingWheels`), above `MinSpeed`, either way round: once it is past
 --   90 the drift may swing back. A lapse of up to `Grace` is forgiven.
 --   COMPLETES (finish true) when the car passes the hairpin's exit still holding. The handle
 --   is updated each frame with size 1.
@@ -20,13 +21,13 @@
 --   reach, goes back out of the zone, takes longer than `MaxSeconds`, or the road changes.
 --   Leaving the tarmac does NOT void it: only the perfect hairpin asks for a side.
 --
--- `rig` as `PerfectHairpin`'s: anything with a `spline` field (a Spline or a function).
+-- `rig` as `BendDrift`'s: anything with a `spline` field (a Spline or a function).
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Config = require(ReplicatedStorage.Shared.Config)
 local Hairpins = require(ReplicatedStorage.Shared.Road.Hairpins)
-local PerfectHairpin = require(script.Parent.PerfectHairpin)
+local BendDrift = require(script.Parent.BendDrift)
 
 local ReverseEntry = {}
 ReverseEntry.__index = ReverseEntry
@@ -87,7 +88,7 @@ end
 
 function ReverseEntry.Update(self: any, dt: number, state: any)
 	local T = ReverseEntry.Tuning
-	local spline = PerfectHairpin.splineOf(self.rig)
+	local spline = BendDrift.splineOf(self.rig)
 	if spline ~= self.spline then
 		if self.live then
 			self:_end(false, "road changed")
@@ -113,9 +114,9 @@ function ReverseEntry.Update(self: any, dt: number, state: any)
 		self.tried = {} -- put back on the road: every hairpin is a fresh attempt
 	end
 
-	local n = PerfectHairpin.slidingWheels(state, self.marking)
+	local n = BendDrift.slidingWheels(state, self.marking)
 	self.sliding = n
-	local speedOk = PerfectHairpin.speed(state) >= Config.Fx.Gates.MinMarkSpeed
+	local speedOk = BendDrift.speed(state) >= Config.Fx.Gates.MinMarkSpeed
 	local drifting = state.drifting and not state.airborne and speedOk and n >= 2
 	if drifting then
 		self.badDrift = 0
@@ -149,7 +150,7 @@ function ReverseEntry.Update(self: any, dt: number, state: any)
 
 	local h = self.hairpin
 	if not h or h.open or s < h.zone or s > h.exit then
-		h = Hairpins.around(spline, s)
+		h = Hairpins.bendAround(spline, s) -- every double-yellow bend, not only true hairpins
 		self.hairpin = h
 	end
 	if not h or h.open or jumped or self.tried[h.entry] or s >= h.exit then
