@@ -242,7 +242,7 @@ local function pilot(Sim, SplineWorld, spline, h, o)
 			bStar = h.dir * math.rad(o.wrong) -- out of the bend
 			st.outMax = math.max(st.outMax, math.deg(s.slip * h.dir))
 		elseif flicked and cs <= h.exit then
-			bStar = -h.dir * math.clamp(bmag, math.rad(o.minIn), math.rad(85))
+			bStar = -h.dir * math.clamp(bmag, math.rad(o.minIn), math.rad(o.maxIn or 85))
 			if sf.phase == "in" then
 				st.inMin = math.min(st.inMin, math.deg(-s.slip * h.dir))
 			end
