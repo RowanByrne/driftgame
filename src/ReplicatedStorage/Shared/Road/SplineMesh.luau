@@ -17,7 +17,9 @@
 --               ground draws the runoff (the default, T-251) there is no grass here, and the
 --               TARMAC is textured instead (T-268): a texture painted in code,
 --               `Road/RoadTexture`, mapped across the tarmac and along the road, with the
---               painted lines, wheel tracks, patches and cracks in it
+--               weathered edge lines, patches and cracks in it; and on the tight stretches
+--               the DOUBLE YELLOW, two thin strips just over the tarmac mapped to the image's
+--               line band (send-back 2)
 --   KRail*_*    a K-rail run drawn as a METAL CRASH BARRIER (T-149): a W-beam guardrail,
 --               its beam two rounded ridges (`KRailTop_*`, `KRailLow_*`) and the groove
 --               between (`KRailGroove_*`), a piece per stretch of the run, pitched along the
@@ -377,8 +379,29 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 			road.plainUV = road.em:AddUV(Vector2.zero)
 			road.grassShade = {}
 		end
+		-- THE DOUBLE YELLOW (T-268 send-back 2): on the tight stretches only
+		-- (`RoadTexture.centreRuns`), with a cut at each end of a run, so the line starts and
+		-- stops square, on the same grid point in every chunk, near or far
+		local runs = if tarmacImage then RoadTexture.centreRuns(spline, s0, s1) else {}
+		if #runs > 0 then
+			for _, b in runs do
+				local dup = false
+				for _, c in cuts do
+					if math.abs(c - b) < 0.05 then
+						dup = true
+						break
+					end
+				end
+				if not dup then
+					table.insert(cuts, b)
+				end
+			end
+			table.sort(cuts)
+		end
+		local tarmacRows: { { Vector3 } } = {} -- per cut, with a run: the drawn tarmac's points
+		local lineTris = 0
 		local prevRow, prevNear, prevFar, prevS, prevUV = nil, nil, nil, 0, nil
-		for _, s in cuts do
+		for k, s in cuts do
 			local row, norm, pts = {}, {}, {}
 			local wL, wR = spline:runoffAt(s, -1), spline:runoffAt(s, 1)
 			local ds = {}
@@ -421,6 +444,13 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 					end
 				end
 			end
+			if #runs > 0 then
+				local tp = {}
+				for j = lipL + 1, lipR do
+					table.insert(tp, pts[j])
+				end
+				tarmacRows[k] = tp
+			end
 			-- each bevel's own normal: square to the road's way and to its slope, outward
 			local yaw = spline:yawAt(s)
 			local along = Vector3.new(-math.sin(yaw), spline:gradeAt(s), -math.cos(yaw))
@@ -455,6 +485,74 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 				strip(road, prevRow, prevNear, row, near, false, use, prevFar, far, prevUV, uv, if tarmacImage then tarmacColour else grassColour, tarmacImage ~= nil)
 			end
 			prevRow, prevNear, prevFar, prevS, prevUV = row, near, far, s, uv
+			slice()
+		end
+
+		-- THE DOUBLE YELLOW's strips: two a run, each `CentreLineWidth` wide, `CentreLineGap`
+		-- apart about the middle, mapped to the image's line band. Laid on the DRAWN tarmac
+		-- (between its own vertices, so on a coarse far chunk they sit on its coarse surface)
+		-- and lifted `CentreLineLift` along the normal, more on a coarser chunk
+		if #runs > 0 then
+			local em = road.em
+			local lw, gap = R.CentreLineWidth, R.CentreLineGap
+			local lineLift = R.CentreLineLift + (o.tolerance or M.Tolerance) * 0.25
+			local edgesD = { { -gap * 0.5 - lw, -gap * 0.5 }, { gap * 0.5, gap * 0.5 + lw } }
+			local function onTarmac(k: number, d: number): Vector3
+				local tp = tarmacRows[k]
+				local f = (d + half) / (2 * half) * across
+				local i = math.clamp(math.floor(f), 0, across - 1)
+				return tp[i + 1]:Lerp(tp[i + 2], f - i)
+			end
+			local made: { [number]: { [number]: any } } = {}
+			local function rowOf(k: number, which: number): any
+				made[k] = made[k] or {}
+				local m = made[k][which]
+				if m then
+					return m
+				end
+				local s = cuts[k]
+				local e = edgesD[which]
+				local n = spline:terrainNormal(s, (e[1] + e[2]) * 0.5)
+				local pL = onTarmac(k, e[1]) + n * lineLift
+				local pR = onTarmac(k, e[2]) + n * lineLift
+				m = {
+					l = em:AddVertex(pL - centre),
+					r = em:AddVertex(pR - centre),
+					ul = em:AddUV(RoadTexture.lineUV(s, 0, baseS, which)),
+					ur = em:AddUV(RoadTexture.lineUV(s, 1, baseS, which)),
+					n = em:AddNormal(n),
+					c = em:AddColor(RoadTexture.tone(s, 0), 1),
+				}
+				road.vertices += 2
+				made[k][which] = m
+				return m
+			end
+			for k = 1, #cuts - 1 do
+				local mid = (cuts[k] + cuts[k + 1]) * 0.5
+				local inRun = false
+				for r = 1, #runs, 2 do
+					if mid > runs[r] and mid < runs[r + 1] then
+						inRun = true
+						break
+					end
+				end
+				if inRun then
+					for which = 1, 2 do
+						local a, b = rowOf(k, which), rowOf(k + 1, which)
+						-- as the tarmac's strips: left to right, cut k to cut k + 1
+						local f1 = em:AddTriangle(a.l, a.r, b.l)
+						local f2 = em:AddTriangle(a.r, b.r, b.l)
+						em:SetFaceNormals(f1, { a.n, a.n, b.n })
+						em:SetFaceNormals(f2, { a.n, b.n, b.n })
+						em:SetFaceColors(f1, { a.c, a.c, b.c })
+						em:SetFaceColors(f2, { a.c, b.c, b.c })
+						em:SetFaceUVs(f1, { a.ul, a.ur, b.ul })
+						em:SetFaceUVs(f2, { a.ur, b.ur, b.ul })
+						road.triangles += 2
+						lineTris += 2
+					end
+				end
+			end
 			slice()
 		end
 
@@ -745,6 +843,8 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 			triangles = road.triangles,
 			grassTriangles = road.grassTriangles, -- textured (T-187)
 			tarmacTriangles = road.tarmacTriangles, -- textured (T-268)
+			centreLineTriangles = lineTris, -- the double yellow's strips (T-268)
+			centreRuns = #runs // 2,
 			textured = grassImage ~= nil or tarmacImage ~= nil,
 			grassTextured = grassImage ~= nil,
 			tarmacTextured = tarmacImage ~= nil,

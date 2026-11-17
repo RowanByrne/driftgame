@@ -128,18 +128,31 @@ return {
 		-- strong ones read as flat panels)
 		TarmacPatch = { Color3.fromRGB(58, 59, 69), Color3.fromRGB(62, 63, 74) },
 		Crack = Color3.fromRGB(30, 30, 36),
-		TyreStreak = Color3.fromRGB(28, 28, 32),
 		EdgeLine = Color3.fromRGB(222, 222, 214), -- Japanese edge lines: solid white
-		-- the centre line. White dashes are Japan's usual line, and carry the speed cue above;
-		-- the mountain passes' solid orange (no overtaking, the sakura art) is
-		-- Color3.fromRGB(232, 158, 52) with `CentreLineStyle = "solid"`
-		CentreLine = Color3.fromRGB(222, 222, 214),
+		CentreLine = Color3.fromRGB(230, 168, 46), -- the double yellow (the touge's orange-yellow)
 	},
 
-	-- THE PAINTED LINES on the tarmac's texture (T-268). The centre line is `MarkWidth` wide,
-	-- dashed on `MarkInterval` / `MarkDashLength` as the dash parts were
+	-- THE PAINTED LINES (T-268). The user, send-back 2: "get rid of the dashes - it's not
+	-- realistic. do the 2 painted lines on either side - that's the classic touge design
+	-- style. they should be faded and cracked/weather lines though. you can do the double
+	-- yellow lines that touge has for dangerous 2 lane sections, like switchbacks."
+	-- So no centre line on ordinary road (the dash parts of before are gone too, wherever the
+	-- tarmac is textured). The edge lines are in the tarmac's texture, weathered
+	-- (`Config.Spline.Tarmac` "the paint's weathering"); the double yellow is two thin strips
+	-- of the road's mesh, `CentreLineLift` above the tarmac, on the tight stretches only.
 	EdgeLineWidth = 0.8, -- studs
 	EdgeLineInset = 0.9, -- studs from the tarmac's edge to the line's outer side
-	CentreLineStyle = "dashed", -- "dashed", "solid", "double" or "none"
-	CentreLineGap = 0.5, -- studs between a double line's two lines
+	CentreLineStyle = "tight", -- "tight": the double yellow on the tight stretches; "none"
+	CentreLineWidth = 0.45, -- studs, each of the two lines
+	CentreLineGap = 0.45, -- studs between them
+	-- THE TIGHT STRETCHES: tighter than `CentreLineRadius` (every hairpin, 70 to 95, and the
+	-- tightest "Tight" bends, 95 to 170: `Config.Spline.Bends`), `CentreLineLead` studs either
+	-- side (the lead-in before the bend, the run-out after), and a gap shorter than
+	-- `CentreLineMerge` closed (a switchback's two bends get one line), read every
+	-- `CentreLineStep` studs (`Road/RoadTexture.centreRuns`)
+	CentreLineRadius = 130, -- studs
+	CentreLineLead = 40, -- studs
+	CentreLineMerge = 80, -- studs
+	CentreLineStep = 2, -- studs
+	CentreLineLift = 0.04, -- studs over the tarmac (more on a coarse far chunk: its tolerance / 4)
 }

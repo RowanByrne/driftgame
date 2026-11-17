@@ -314,12 +314,15 @@ local Spline = {
 		-- faint, polish rather than stripes (0.9 dark and 3.2 wide in the first cut)
 		TrackGap = 6.4,
 		TrackWidth = 4.5,
-		TrackDark = 0.3,
-		TrackSmooth = 0.5,
+		-- Send-back 2 ("I still don't like the tire marks ... otherwise keep it simple
+		-- textured"): none. (Tracks only on the hairpins would need a second tarmac in the
+		-- image, and the car's own drift marks already rubber the hairpins it is drifted round)
+		TrackDark = 0,
+		TrackSmooth = 0,
 		TrackWobble = 0.8,
 		TrackWobbleStuds = 60,
 		OilWidth = 1.2,
-		OilDark = 0.12,
+		OilDark = 0,
 		-- the dusty edge: `EdgeWear` studs in from each edge, with gravel specks
 		EdgeWear = 2.2,
 		Gravel = 0.35,
@@ -327,6 +330,24 @@ local Spline = {
 		GravelDark = 0.7,
 		-- the paint's wear (0 none, 1 worn through where the noise is highest)
 		LineWear = 0.35,
+		-- THE PAINT'S WEATHERING (send-back 2: "faded and cracked/weather lines"), the edge
+		-- lines and the double yellow alike: each line's paint fades along the road between
+		-- `LineFade` (of full) over `LineFadeStuds`, wears through to the tarmac where the hole
+		-- noise (over `LineHoleStuds` across and along) passes `LineHoles` (-1..1: higher, fewer),
+		-- thins with the fine grain by up to `LineGrain`, has its sides chipped by up to
+		-- `LineChip` studs, and is broken by `LineCracks` cracks across it a copy
+		LineFade = { 0.4, 0.95 },
+		LineFadeStuds = 30,
+		LineHoles = 0.3,
+		LineHoleStuds = { 0.35, 1.6 },
+		LineGrain = 0.35,
+		LineChip = 0.06,
+		LineCracks = 10,
+		-- THE LINE BAND: columns of the image, right of the tarmac, holding one yellow line
+		-- (`Config.Road.CentreLineWidth`) on tarmac, which the double yellow's strips are mapped
+		-- to, `LineInsetPx` in from its sides
+		LineBandPx = 32,
+		LineInsetPx = 4,
 		-- patches of newer and older tarmac, a seam round each
 		Patches = 2, -- a copy is 240 studs now (480 in the first cut)
 		PatchLength = { 8, 26 },
@@ -342,16 +363,6 @@ local Spline = {
 		CrackEdge = { 1, 4.5 },
 		CrackAcross = 0.15,
 		CrackDark = 0.35,
-		-- long tyre streaks: pairs of arcs through a lane, swinging up to `StreakSwing` across.
-		-- NONE since the send-back ("tyre marks are ugly"): painted into a texture that repeats
-		-- along the road they cannot follow its bends, so they read as stripes, and the car's
-		-- own drift marks (`Config.Fx.Marks`, near-black at half transparency) already draw
-		-- where the car really went
-		Streaks = 0,
-		StreakLength = { 40, 110 },
-		StreakSwing = 5,
-		StreakWidth = 0.6,
-		StreakDark = 0.45,
 	},
 
 	-- --------------------------------------------------------------- the ground
