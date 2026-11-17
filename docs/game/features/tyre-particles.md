@@ -1,6 +1,6 @@
 # Feature: Tyre smoke, grass and mud particles, one painted family
 
-**Status:** built; step 3 (tune and prove) in review. **Owner task:** T-279: art round T-280, emitters T-283 (merged), tuning T-286.
+**Status:** built; step 3 (tune and prove) in review; the low end (T-290) in review. **Owner task:** T-279: art round T-280, emitters T-283 (merged), tuning T-286, the low end T-290.
 
 The user, 2026-11-17: *"I want to improve the particle effects we have for tire smoke, grass, and mud effects. right now they clash hard as our particles are super low def and our smoke is super high def. I want something a bit more in the middle that leans towards high def for all. research the best way to do them, similar to how we did the tire mark effect changes, and propose a plan."*
 
@@ -139,6 +139,54 @@ The user: *"looks kinda weird when theres the wheel silhouette and the tire trai
 - **The marks drawn over the smoke.** Roblox sorts see-through things back to front a whole part at a time, by the part's centre. Each rubber strip is one `MeshPart` 2 000 studs across, centred on its **origin**, which sat where the tyre was when it last moved: behind the car, so toward the chase camera. In a drift the origins were 15 to 18 studs from the camera and the smoke's emitters 49, nearer in 37% of frames (1 792 strip-frames), and those frames drew the whole strip after, so over, the smoke. **Fix:** a strip with a camera keeps its origin `Marks.Ribbon.SortAhead` (600) studs straight down the view, and moves it on when it comes nearer than `SortMinDepth` (300) (`GroundMarks` "sortSpot"). After: 0 of 7 192 strip-frames had an origin nearer than the smoke, about one move every 2.5 s, and the marks don't shift when it moves (FxTests: 3e-5 studs). The grass ribbon is opaque, so it never had this.
 - **The wheel-shaped hole.** `ZOffset` moves a particle's depth, so it decides which opaque geometry hides it. The diffuse smoke is born 1.0 stud off the tyre's axis, inside its 1.25 radius, and at −0.5 sat up to about a stud behind the tyre's near face: the tyre cut a hard wheel outline out of the cloud. **Fix:** every emitter moved 1.5 toward the camera, keeping T-283's order: diffuse **1.0**, dust 1.2, spray 1.3, stylized 1.5, bits 1.8.
 - **The square-stepped bottom edges.** The same depth test against the road: a puff's camera-facing quad grows faster than it rises, so for its first half second its lower part is under the road and clipped (Roblox has no soft particles). −0.5 made that deeper; at +1.0 about 0.2 studs more of each puff shows at the chase camera's 13° pitch. **It's reduced, not gone:** a flat cut along the cloud's bottom still shows in the lane. Fully removing it means lifting the puffs (spawning higher or rising faster), which changes the approved look, so it's a question for the user.
+
+## The low end: wisp, then faint billows, then the cloud (T-290, 2026-11-17)
+
+The user: *"the top end is great, when we are spawning tons of smoke due to crazy drift. the mid and low is not ... at low speeds or when drifts just barely start, we spawn the sprites so slow that it's a sequence of split puffs. Is a solution to use our old drift smoke in combination with the new system?"* A first build put two looks behind a switch (painted billows or the old wisp as a fast-spawning base). Sent back: *"use transparency scaling on the sprites so that they can be subtle and soft when drifts start. def use this on the front tires - right now if you are drifting fast and you slide sideways enough to trigger a front wheel drift, it's INSTANT HUGE SMOKE BILLOWS that come out which is unrealistic. this is looking better tho with some wisp but it's not good enough yet. use just wisp when the drift starts, then a touch of low transparency billows, building into tons of billows and no wisp"*. "A touch of low transparency billows" is read as **faint** billows (very see-through), from "subtle and soft".
+
+**The causes, measured.**
+- **Split puffs:** the billows spawned `Smoke.RateMin` (10) a second at the gate. A light drift on the stand-in runs 1-5 degrees at 55-72 studs/s: one 2.1-stud puff every **5.8 studs**.
+- **The fronts' pop:** the billows' rate was the **car's** slip over 0..180 degrees, the same for all four wheels. A front's gate opens at 30 degrees, where that is already 21 a second of full-size, 0.55-opaque billows, so a front went from nothing to that in one frame.
+
+**The fix: each wheel's own smoke intensity, 0..1** (`Config.Fx.LowSmoke`, `Wheels.smokeTarget` / `smokeStep`):
+- Its target is its slip **past its own threshold**: over `RampDegrees` (50) for a rear, and over `FrontRampDegrees` (20) past the fronts' 30-degree gate. So a front just past its gate is at 0, and all four are full together at 50 degrees.
+- It walks toward the target no faster than `RiseSeconds` (0.8 s for 0 to 1) and falls over `FallSeconds` (0.4), so a slip spike ramps in rather than popping.
+- **The wisp** (Roblox's built-in `smoke_main`, the smoke before T-283, a third emitter a wheel, `FxBase_<Wheel>_<surface>`): one puff every 1.4 studs (15-50 a second), all of it at the start, soft (0.80 see-through at intensity 0, 0.66 by 0.3), fading out from 0.45 to 0.9. None at the top end.
+- **The billows** (today's diffuse emitter): none below intensity 0.15, then today's rate times a smoothstep share, **and** see-through and small at first: 0.93 see-through at 0.55 of today's size, to today's own 0.55 and 2.1 → 9 studs at intensity 1.
+- At intensity 1 it is today's approved smoke exactly. The stylized puff (heat-driven) is unchanged.
+- Size and transparency are sequences, so they come in 12 steps (`Bands`) built once at load and swapped onto a wheel's emitters by reference when its step changes: nothing is allocated while driving.
+- `workspace:SetAttribute("__low_smoke", "off")` puts today's smoke back, as a Studio compare. The billows-or-wisp switch and the `smoke` console command are gone.
+
+**Measured** (DR-Lane2; held-steer drives on the stand-in; rear-left wheel; live particles are rate × mean lifetime, since Roblox has no live count):
+
+| | Drift | Slip, speed | Intensity | Wisp / billows (see-through) / stylized /s | Studs between puffs | Live a car | Frame |
+|---|---|---|---|---|---|---|---|
+| today | light | 3.4°, 67 | | 0 / 11.2 (0.55) / 0.3 | **5.79** | ~27 | 5.55 ms |
+| today | mid | 32°, 41 | | 0 / 21.5 (0.55) / 11.1 | 1.26 | ~102 | 5.56 ms |
+| today | hard | 53°, 17 | | 0 / 29.0 (0.55) / 4.4 | 0.51 | ~146 | 5.54 ms |
+| new | light | 3.6°, 67 | 0.07 | 47.6 / 0 / 0.3 | **1.39** | ~115 | 5.56 ms |
+| new | mid | 32°, 41 | 0.64 | 18.3 / 13.0 (0.70) / 11.1 | 0.96 | ~139 | 5.56 ms |
+| new | hard | 53°, 17 | 0.98 | 0 / 28.8 (0.55) / 4.4 | 0.51 | ~143 | 5.55 ms |
+
+**The ramp through a hard drift's start** (straight at 35 studs/s, then full steer; 0.1 s samples):
+
+| Time | Slip | Rear: intensity, see-through, size, wisp / billows /s | Front: intensity, see-through, size, wisp / billows /s |
+|---|---|---|---|
+| 0.1 s | 9° | 0.11, –, –, 24.6 / 0 | gate closed |
+| 0.3 s | 26° | 0.39, 0.84, ×0.66, 25.3 / 3.8 | gate closed |
+| 0.4 s | 32° | 0.50, 0.79, ×0.72, 24.3 / 8.0 | **0.06**, –, –, 25.2 / 0 (opens on the wisp alone) |
+| 0.5 s | 39° | 0.64, 0.68, ×0.85, 15.2 / 14.9 | 0.20, 0.93, ×0.55, 24.7 / 0.2 |
+| 0.7 s | 52° | 0.92, 0.56, ×0.99, 0 / 28.0 | 0.47, 0.79, ×0.72, 21.9 / 9.3 |
+| 0.8 s | 56° | **1.00**, 0.55, ×1.00, 0 / 30.3 | 0.58, 0.73, ×0.78, 16.1 / 15.7 |
+| 1.0 s | 65° | 1.00 | 0.86, 0.59, ×0.95, 0.3 / 31.0 |
+| 1.3 s | 66° | 1.00 | **1.00**, 0.55, ×1.00, 0 / 33.7 |
+
+- From first smoke to full billows: **rear 0.74 s, front 0.83 s**. Before this, a front went from nothing to full-size billows in one frame. A sudden jump to 90 degrees in FxTests: the front's first frame is intensity 0.02 with the wisp alone and no billows; every wheel is at today's top end by 0.8 s.
+- **Top end unchanged:** at intensity 1 every wheel's billows run at today's rate, size and see-through, with no wisp (FxTests at 90 degrees: 42.5 a second, today's 42.5).
+- **Mobile cap:** the wisp peaks at 50 a second an emitter.
+- **Budget:** 46 to 50 instances a car (`Wheels.perWheel()` 8 to 9); the ramp creates nothing.
+- **Frame time:** no difference from today in Studio (5.54-5.56 ms means).
+- **Shots:** a mid drift at noon (wisp with faint billows over it). The light-drift wisp is as in the first round's shot.
 
 ## Left out
 
