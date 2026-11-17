@@ -184,17 +184,29 @@ local function slipFor(a: number): number
 	return (-c1 + math.sqrt(math.max(c1 * c1 - 4 * c2 * (c0 - a), 0))) / (2 * c2)
 end
 
--- Drive the real model from 100 studs before a hairpin's zone to 30 past its exit, aiming
--- down the lane `lane` studs right of the centre line (the same autopilot as HairpinTests').
+-- Drive the real model from 20 studs before a hairpin's zone to 30 past its exit (the
+-- same pure-pursuit autopilot as HairpinTests'), aiming down a lane: `lane` studs to the
+-- INSIDE of the bend before the entry, then, if `laneIn` is given, from `laneIn` at the entry
+-- to `laneOut` at the exit (a drift that slows turns tighter: wide in, tight out).
 -- The flick, as a driver would try it: from `outAt` studs before the entry it swings to
 -- `wrong` degrees OUT of the bend; the moment the attempt starts (the detector's `MinHold`
 -- met inside the zone) it flicks, at a full finger, into a drift INTO the bend held between
--- `minIn` and 85 degrees (the 4-wheel drift) to the exit. `st` says what happened, and why
--- the 4-wheel drift first lapsed if it did.
+-- `minIn` and `maxIn` degrees (the 4-wheel drift) to the exit. `control`: no flick, the
+-- drift into the bend from `outAt` on, and `st.held` says whether a 4-wheel drift held
+-- from the entry to the exit by the detector's own rule (the flick's cost, measured apart).
+-- `st` says what happened, and why the 4-wheel drift first lapsed if it did.
 local function pilot(Sim, SplineWorld, spline, h, o)
 	local D = Config.Drift
 	local G = Config.Fx.Gates
-	local lane = o.lane
+	local function laneAt(s: number): number
+		local inside = o.lane
+		if o.laneIn and s >= h.entry then
+			local a = math.clamp((s - h.entry) / (h.exit - h.entry), 0, 1)
+			inside = o.laneIn + (o.laneOut - o.laneIn) * a
+		end
+		return -inside * h.dir -- studs right of the centre line
+	end
+	local lane = laneAt(h.zone - 100)
 	-- the speed it arrives at: `v0`, or `k` times the speed a 4-wheel drift at about 31 to
 	-- 40 degrees (26 to 31 studs/s^2 of grip) carries round the hairpin's radius without
 	-- losing speed, which is what a player who has been drifting arrives at
@@ -212,7 +224,8 @@ local function pilot(Sim, SplineWorld, spline, h, o)
 	local lastS = startS
 	local outFrom = h.entry - o.outAt
 	local flicked = false
-	local st = { vFlick = nil, outMax = 0, inMin = math.huge, dMax = 0, lapse = nil, holdMax = 0 }
+	local st = { vFlick = nil, outMax = 0, inMin = math.huge, dMax = 0, lapse = nil, holdMax = 0, held = nil }
+	local ctlBad = 0
 	local prevHeading = nil
 	local frame = 0
 	for _ = 1, 60 * 30 do
@@ -227,13 +240,14 @@ local function pilot(Sim, SplineWorld, spline, h, o)
 		cs = cs or lastS
 		lastS = cs
 		local look = math.clamp(speed * 0.7, 20, 80)
-		local tp = spline:surface(math.min(cs + look, spline.length), lane)
+		local ts = math.min(cs + look, spline.length)
+		local tp = spline:surface(ts, laneAt(ts))
 		local dx, dz = tp.X - s.position.X, tp.Z - s.position.Z
 		local len = math.max(math.sqrt(dx * dx + dz * dz), 1e-3)
 		local kappa = 2 * math.sin(signedAngle(heading.X, heading.Z, dx / len, dz / len)) / len
 		local bmag = slipFor(speed * speed * math.abs(kappa))
 		local bStar = -math.sign(kappa) * bmag
-		if not flicked and (sf.phase == "out" or cs >= h.apex) then
+		if not flicked and (sf.phase == "out" or cs >= h.apex or (o.control and cs >= outFrom)) then
 			flicked = true
 			st.vFlick = speed
 			st.flickS = cs - h.entry
@@ -258,6 +272,17 @@ local function pilot(Sim, SplineWorld, spline, h, o)
 		Sim.advance(runner, 1 / 60, input, world)
 		sf:Update(1 / 60, runner.state)
 		st.holdMax = math.max(st.holdMax, sf.hold)
+		if o.control and st.held == nil and cs >= h.entry then
+			local ns = runner.state
+			local v = math.sqrt(ns.u * ns.u + ns.v * ns.v)
+			local right4 = ns.drifting and not ns.airborne and v >= G.MinMarkSpeed and sf.sliding == 4 and ns.slip * h.dir < 0
+			ctlBad = if right4 then 0 else ctlBad + 1 / 60
+			if ctlBad > ScandiFlick.Tuning.Grace then
+				st.held = false
+			elseif cs >= h.exit then
+				st.held = true
+			end
+		end
 		if o.trace and frame % 6 == 0 and cs >= h.zone - 30 and cs <= h.exit + 10 then
 			local ns = runner.state
 			table.insert(o.trace, string.format("s%+4.0f d%+5.1f out%+5.1f v%3.0f n%d %s%s", cs - h.entry, cd or 0, math.deg(ns.slip * h.dir), math.sqrt(ns.u * ns.u + ns.v * ns.v), sf.sliding, sf.phase, if ns.airborne then " AIR" else ""))
@@ -489,7 +514,6 @@ local function runAll(opts)
 			local ok, best, why = 0, nil, {}
 			for wi, w in ways do
 				local o = table.clone(w)
-				o.lane = -w.lane * h.dir -- studs right of the centre line
 				local sink, sf, st = pilot(Sim, SplineWorld, spline, h, o)
 				tries += 1
 				local e = sink.started[1]
@@ -576,13 +600,13 @@ function ScandiFlickTests.drive(entry: number, o)
 	local h = best
 	local trace = {}
 	local po = table.clone(o)
-	po.lane = -(o.lane or 0) * h.dir
+	po.lane = o.lane or 0
 	po.trace = trace
 	local sink, sf, st = pilot(require(DriftFolder.Sim), require(DriftFolder.SplineWorld), spline, h, po)
 	local e = sink.started[1]
 	return {
 		hairpin = `{fmt(h.entry, 0)} {if h.dir > 0 then "L" else "R"} r{fmt(h.radius, 0)} zone -{fmt(h.entry - h.zone, 0)} apex +{fmt(h.apex - h.entry, 0)} exit +{fmt(h.exit - h.entry, 0)}`,
-		result = if e then tostring(e.finished) else "not started",
+		result = if o.control then (if st.held then "held" else "not held") elseif e then tostring(e.finished) else "not started",
 		last = sf.last,
 		st = st,
 		trace = table.concat(trace, "\n"),
