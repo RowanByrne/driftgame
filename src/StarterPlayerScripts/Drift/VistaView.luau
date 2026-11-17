@@ -132,6 +132,9 @@ end
 
 -- The arc mesh, made once and cloned for every panel of every run. The EditableMesh is kept,
 -- since the MeshPart made from it reads its shape from it.
+-- IT IS KEPT AS A FIXED-SIZE COPY (T-273): a growable mesh holds back about 80 tiles of the
+-- client's mesh memory however little is in it (`Config.Spline.Mesh.Budget`), and this one
+-- was kept for the whole session, so the road ran out. The copy costs its own size, 1 tile.
 local arcTemplate: MeshPart? = nil
 local arcMesh: EditableMesh? = nil
 local arcError: string? = nil
@@ -142,7 +145,8 @@ local function loadArc(): MeshPart?
 	end
 	local ok, res = pcall(function()
 		local g = Vista.arcGeometry(Config.Vista.Mesh)
-		local em = AssetService:CreateEditableMesh()
+		local em = AssetService:CreateEditableMesh({ FixedSize = false })
+		assert(em, "this device would not make an EditableMesh (out of its budget)")
 		local vs, ns, us = {}, {}, {}
 		for i, p in g.positions do
 			vs[i] = em:AddVertex(p)
@@ -155,11 +159,23 @@ local function loadArc(): MeshPart?
 			em:SetFaceNormals(f, { ns[a], ns[b], ns[c] })
 			em:SetFaceUVs(f, { us[a], us[b], us[c] })
 		end
-		local part = AssetService:CreateMeshPartAsync(Content.fromObject(em), {
-			CollisionFidelity = Enum.CollisionFidelity.Box,
-			RenderFidelity = Enum.RenderFidelity.Precise,
-		})
-		arcMesh = em
+		local okCopy, copy = pcall(function()
+			return AssetService:CreateEditableMeshAsync(Content.fromObject(em), { FixedSize = true })
+		end)
+		em:Destroy()
+		assert(okCopy and copy, "this device would not copy the arc into a fixed-size mesh (out of its budget)")
+		local fixed = copy :: EditableMesh
+		local okPart, part = pcall(function()
+			return AssetService:CreateMeshPartAsync(Content.fromObject(fixed), {
+				CollisionFidelity = Enum.CollisionFidelity.Box,
+				RenderFidelity = Enum.RenderFidelity.Precise,
+			})
+		end)
+		if not okPart then
+			fixed:Destroy()
+			error(part)
+		end
+		arcMesh = fixed
 		return part
 	end)
 	if ok then

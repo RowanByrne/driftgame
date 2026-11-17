@@ -1169,6 +1169,17 @@ function GroundMarks.DebugStrip(self: GroundMarks, i: number)
 	return out
 end
 
+-- The mesh memory this ribbon holds once built, in triangles (T-273, `Config.Spline.Mesh.Budget`):
+-- every wheel's strip, each layer a ring of `N` sections joined by its strips' two triangles,
+-- and the two specks. Known before it is built, for the budget check.
+function GroundMarks.meshTriangles(self: GroundMarks): number
+	local per = 0
+	for _, layer in self.layers do
+		per += self.N * #layer.strips * 2 + 2
+	end
+	return per * self.spec.ribbon.Wheels
+end
+
 function GroundMarks.DebugState(self: GroundMarks)
 	local kinds = {}
 	for i, st in self.strips do

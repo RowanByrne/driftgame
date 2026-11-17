@@ -44,7 +44,9 @@ local Config = require(ReplicatedStorage.Shared.Config)
 local Ground = require(ReplicatedStorage.Shared.Road.Ground)
 local GrassTexture = require(ReplicatedStorage.Shared.Road.GrassTexture)
 local RoadTexture = require(ReplicatedStorage.Shared.Road.RoadTexture)
+local SplineMesh = require(ReplicatedStorage.Shared.Road.SplineMesh)
 local GroundDetail = require(script.Parent.GroundDetail)
+local MeshBudget = require(script.Parent.MeshBudget)
 local RoadAhead = require(script.Parent.RoadAhead)
 local RoadBehind = require(script.Parent.RoadBehind)
 local GroundTiles = require(script.Parent.GroundTiles)
@@ -120,6 +122,9 @@ export type View = typeof(setmetatable(
 		changedConn: any,
 		behindConn: any, -- the player's "Road behind" (T-230)
 		aheadConn: any, -- the player's "Road ahead" (T-263)
+		unGive: (() -> ())?, -- off `Drift/MeshBudget`'s givers (T-273)
+		yields: number, -- times the ground gave way to the road (T-273)
+		yielded: number, -- tiles it let go at once doing so
 		-- measured
 		ops: { [string]: number },
 		tilesBuilt: number,
@@ -334,6 +339,9 @@ function GroundMeshView.new(spline: any, parent: Instance?): View
 		changedConn = nil,
 		behindConn = nil,
 		aheadConn = nil,
+		unGive = nil,
+		yields = 0,
+		yielded = 0,
 		ops = { fill = 0, split = 0, merge = 0, drop = 0, stale = 0 },
 		tilesBuilt = 0,
 		rimWrites = 0,
@@ -366,7 +374,38 @@ function GroundMeshView.new(spline: any, parent: Instance?): View
 		self.dirty = true
 		self:_setCap()
 	end)
+	-- THE ROAD COMES FIRST (T-273, `Drift/MeshBudget`): out of mesh memory, the road asks the
+	-- ground to give way before it lets any of its own go
+	self.unGive = MeshBudget.giver("ground", 1, function(units: number)
+		return self:Yield(units)
+	end)
 	return self
+end
+
+-- Give way to the road (T-273): let go of up to `units` tiles. The hidden ones go at once;
+-- past those the ground holds fewer from now on (`failCap`), so it merges far tiles over the
+-- next frames: coarser far out, never under `Ground.YieldFloor` tiles. Returns the tiles let
+-- go now, and the ones still to go.
+function GroundMeshView.Yield(self: View, units: number): (number, number)
+	if self.dead or units <= 0 then
+		return 0, 0
+	end
+	local G = Config.Spline.Ground
+	local floor = G.YieldFloor + G.Spare
+	local before = #self.pool
+	local target = math.max(floor, math.min(self.cap, before) - math.ceil(units))
+	if target >= math.min(self.cap, before) then
+		return 0, 0 -- at the floor already
+	end
+	self.failCap = math.min(self.failCap or math.huge, target)
+	self.yields += 1
+	self:_setCap()
+	self.desired = nil
+	self:_trim()
+	local now = before - #self.pool
+	local soon = math.max(0, #self.pool - self.cap)
+	self.yielded += now
+	return now, soon
 end
 
 -- The tiles the settings allow: the Ground detail's, and the Road behind's and Road ahead's
@@ -374,11 +413,17 @@ end
 -- (T-263), so a longer road does not cost sharp ground nearer the car. Never more than
 -- `Ground.CorridorMost` past the most any Ground detail holds (Ultra's): with Ultra and both
 -- settings at Longest, that fits the budget beside the road (far chunks drawn at `Mesh.Far`).
+-- AND NEVER MORE THAN THE MESH MEMORY HAS ROOM FOR (T-273, `SplineMesh.groundRoom`): what is
+-- left beside the road those settings draw, the other mesh users and some spare. Past that
+-- the far ground is coarser, and the road never runs out.
 function GroundMeshView._tiles(self: View): number
-	local detail = Config.Spline.Ground.Detail
+	local G = Config.Spline.Ground
+	local detail = G.Detail
 	local own = GroundDetail.preset(self.detail).Tiles
 	local more = (RoadBehind.preset().GroundTiles or 0) + (RoadAhead.preset().GroundTiles or 0)
-	return math.max(own, math.min(own + more, detail[#detail].Tiles + Config.Spline.Ground.CorridorMost))
+	local wanted = math.max(own, math.min(own + more, detail[#detail].Tiles + G.CorridorMost))
+	local room = SplineMesh.groundRoom(RoadAhead.studs(), RoadBehind.studs()) - G.Spare
+	return math.max(G.YieldFloor, math.min(wanted, room))
 end
 
 function GroundMeshView._setCap(self: View)
@@ -1196,7 +1241,7 @@ function GroundMeshView._take(self: View, over: boolean?): Tile?
 	if not tile then
 		-- the budget is full: hold what there is, less a few for the road
 		local G = Config.Spline.Ground
-		self.failCap = math.max(G.Spare + 4, #self.pool - G.ReleaseOnFail)
+		self.failCap = math.min(self.failCap or math.huge, math.max(G.Spare + 4, #self.pool - G.ReleaseOnFail))
 		self:_setCap()
 		return nil
 	end
@@ -1204,9 +1249,11 @@ function GroundMeshView._take(self: View, over: boolean?): Tile?
 	return tile
 end
 
--- Let go of hidden tiles past the cap (a lower setting, or a full budget), for the road.
+-- Let go of hidden tiles past the cap (a lower setting, or a full budget), for the road; and
+-- past `Spare` (T-273): merges left up to 60 hidden, every one held in the mesh memory.
 function GroundMeshView._trim(self: View)
-	while #self.pool > self.cap and #self.free > 0 do
+	local spare = Config.Spline.Ground.Spare
+	while #self.free > 0 and (#self.pool > self.cap or #self.free > spare) do
 		local t = table.remove(self.free) :: Tile
 		local i = table.find(self.pool, t)
 		if i then
@@ -1607,6 +1654,10 @@ function GroundMeshView.Destroy(self: View)
 	end
 	if self.aheadConn then
 		self.aheadConn:Disconnect()
+	end
+	if self.unGive then
+		self.unGive()
+		self.unGive = nil
 	end
 	for _, tile in self.pool do
 		tile.part:Destroy()
@@ -2254,6 +2305,27 @@ function GroundMeshView.DebugDriveGap(self: View, start: CFrame, speed: number, 
 	return out
 end
 
+-- The tiles it holds and why, cheaply, for watching the mesh budget while driving (T-273):
+-- `DebugState` also checks the seams, about half a second over a long road.
+function GroundMeshView.DebugBudget(self: View)
+	local count = 0
+	for _ in self.shown do
+		count += 1
+	end
+	return {
+		shown = count,
+		pool = #self.pool,
+		free = #self.free,
+		cap = self.cap,
+		failCap = self.failCap,
+		master = self.master ~= nil,
+		yields = self.yields,
+		yielded = self.yielded,
+		failed = self.failed,
+		tileUnits = #self.pool + (if self.master then 1 else 0), -- mesh budget tiles held
+	}
+end
+
 function GroundMeshView.DebugState(self: View)
 	local byLevel = {}
 	local count = 0
@@ -2272,6 +2344,8 @@ function GroundMeshView.DebugState(self: View)
 		free = #self.free,
 		cap = self.cap,
 		failCap = self.failCap,
+		yields = self.yields, -- gave way to the road (T-273)
+		yielded = self.yielded,
 		trianglesShown = count * perTile,
 		trianglesHeld = #self.pool * perTile,
 		verticesShown = count * nv,
