@@ -42,8 +42,11 @@ function Vista.pictureWidth(radius: number, panels: number, slices: number): num
 	return 2 * radius * math.sin(math.pi * slices / panels)
 end
 
+-- Panels go round the ring LEFTWARD as seen from the centre (each next one at a larger
+-- angle, toward +X, which is on the left), and a picture's u runs left to right: so a
+-- picture's first panel shows its last (rightmost) slice.
 function Vista.pictureOf(i: number, slices: number): (number, number)
-	return (i - 1) // slices + 1, (i - 1) % slices
+	return (i - 1) // slices + 1, slices - 1 - (i - 1) % slices
 end
 
 -- How far panel `i`'s picture is lifted so its end saddles stand where the first picture's
