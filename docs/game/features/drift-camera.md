@@ -271,6 +271,56 @@ frame of a 2,025-frame recorded drive matched bit for bit. **The descent is the 
 it used to look up over the drop by accident and now looks slightly down the road. To keep the old
 descent, it wants `HillLookFollow` split by direction, which is a small change.
 
+## The car lower on screen
+
+The user (`T-291`): *"generally, I want the car to sit lower on the screen, closer to the bottom,
+and that means we will be able to see over crests a bit better"*. Framing only: the lag, the lean,
+the swing and the roll are the approved camera's.
+
+**Two levers, because the brief is two things.** Aiming the view up puts the car lower, but it
+shows **no more road past a crest**: past a crest the road is hidden by the road itself, and only
+a higher eye sees over it (measured: the aim alone left the visible road exactly where it was). So:
+
+- **`CamAimUp` (16.7°):** the rendered view is turned up about its own right axis, after
+  everything else, so nothing the targets read moves. A fixed angle, so the car rides a little
+  higher as the FOV opens with speed. The roll is applied *before* it, about the axis through the
+  car, so the horizon banks about the car rather than swinging it sideways.
+- **`CamOffset` raised from 22° to 26° at the same 46.0-stud radius** (`(0, 20.18, 41.37)`): the
+  eye is 3 studs higher. The radius is what `GroundTiles.limit` and the vista tests read, and it is
+  unchanged.
+- **A guard** so the car is never cut off: the aim is capped where the car's lowest point
+  (`CamFrameCarRadius`, 9 studs below its middle) would pass `CamFrameBottom` (0.95 of the screen),
+  and eased there at `CamAimRate` (4/s). It reads the camera **at rest** — offset, zoom and FOV —
+  not the live frame: read live, it fed the camera's frame-to-frame wobble into the picture and
+  `JitterTests` failed at 0.47° a frame. It bites at low speed (the 52° standstill FOV makes the
+  car big) and with the wheel zoomed in; at the default zoom at 120 studs/s and up it does not.
+
+Measured, the car's middle and bottom as a share of screen height from the top (synthetic drives
+through the real `_advance`, the AE86's box projected):
+
+| | Before | After |
+|---|---|---|
+| Straight, 120 studs/s | 0.54 / 0.63 | **0.75 / 0.87** |
+| Straight, top speed | 0.53 / 0.60 | **0.70 / 0.80** |
+| Standstill (guard: 7.6° of aim) | 0.57 / 0.73 | **0.73 / 0.90** |
+| Held 90° drift | 0.52 / 0.58 | **0.74 / 0.81** |
+| ±120° spin sweep, worst | 0.53 / 0.63 | **0.74 / 0.86** |
+| 8° dip at top speed, worst | 0.53 / 0.61 | **0.70 / 0.81** |
+| Wheel at 0.6×, standstill (aim off) | 0.61 / 0.90 | **0.63 / 0.95** |
+| Wheel at 0.6×, 8° dip, worst | 0.54 / 0.70 | **0.68 / 0.88** |
+
+The car never left the frame and its bottom never passed 0.95. Over a crest on the endless road
+(8° up into 7.5° down), at 120 studs/s, the road stayed in sight past the crest's top:
+
+| Car short of the top | Before (22°) | After (26°) | 30°, not shipped |
+|---|---|---|---|
+| 160 studs | 32 studs | **44** | 64 |
+| 80 studs | 124 | **132** | 144 |
+| 40 studs | 148 | **172** | the whole 400 checked |
+
+30° sees much further over a crest and looks more top-down; it is one number (`CamOffset =
+(0, 23.02, 39.87)`) if the user wants it.
+
 ## Left out
 
 - **Anything the player can change**, apart from the wheel's zoom above. All of this is one look,
@@ -294,7 +344,10 @@ and the shake's four), and proved the same way that zeroing them gives that buil
 
 | Number | Now | What it does |
 |---|---|---|
-| `CamOffset` | **`(0, 17.2, 42.7)`** — 46.0 @ 22° | Was 55.5 @ 14.9°. Nine and a half studs closer, seven degrees steeper to pay for the raised blend |
+| `CamOffset` | **`(0, 20.18, 41.37)`** — 46.0 @ 26° | `T-291`: raised 4° at the same radius, to see over crests. Was `(0, 17.2, 42.7)` at 22° (`T-071`), and 55.5 @ 14.9° before that |
+| `CamAimUp` | **16.7°** | `T-291`: the view turned up so the car sits lower on screen. 0 is the camera before it |
+| `CamAimRate` | **4 /s** | How fast the aim eases to what the guard allows |
+| `CamFrameBottom`, `CamFrameCarRadius` | **0.95, 9 studs** | The guard: the car's lowest point, taken as 9 studs below its middle, stays above 0.95 of the screen |
 | `CamFovBase`, `CamFovPerSpeed`, `CamFovRate` | **52, 0.18, 2** | Was 60, 0.14, 0.5. The in-play swing roughly doubles; the top is unchanged |
 | `CamVelocityBlend` | **0.12** | Was 0.05. How much it leans into the drift. **Compounds step to step**, so the number is nothing like the answer: what it really moves is how fast the camera gets round, not where it ends up |
 | `CamRollMax` | **4°** | The whole roll, at `CamRollAtAngle` of slip. The predecessor's was 45. **Negate it to bank the other way** |
@@ -394,7 +447,7 @@ None, unless the speed vignette is built, which is one flat gradient and no asse
 | **Frame rate does not change the camera** | The recorded drive at 30, 60 and 120 FPS puts the camera in the same place. This already held and must keep holding — it is why the targets are stepped. **`T-071`: still holds** with the new numbers. A 20-second drive ends within **0.0011 studs** across 30 → 120 FPS, and a sustained 60° drift settles **7.1412 / 7.1413 / 7.1412 studs** above the car at 30 / 60 / 120 — a spread of 0.0001, against the 16.2-vs-10.1 this rule exists to prevent. **`T-072`: still holds with the roll and the shake on.** Ten seconds into the recorded drive the camera sits **48.0810 / 48.0805 / 48.0818 studs** from the car at 30 / 60 / 120 (a spread of 0.0013) at **16.93° / 16.93° / 16.90°** of elevation, and the roll reads **2.583° / 2.574° / 2.581°**. The shake's kicks are chosen on their own clock, so all three frame rates get the same ones at the same moments |
 | The pan still cannot disturb it | `T-036`'s existing checks, unchanged. **`T-071`: passed.** The same drive with and without a hand on it leaves `target`, `lookTarget`, `restTarget` and `velTarget` **0.000000000 studs apart**; the pan preserves the radius to 8e-5 studs, comes home to 0.0000° every time, and the elevation guard still holds. **`T-072`: passed, unchanged.** A 20-second drive with a hand on it leaves `target`, `lookTarget`, `restTarget` and `velTarget` **0.000000000 studs** from the same drive without — and the roll **0.000000000°** apart; the radius is preserved to **0.00008011 studs**, bit for bit what `T-071` measured, and every pan figure is identical with the style on and off |
 | It does not cost frames | Frame time over a 60-second drive, before and after. **`T-072`: passed.** Sixty seconds of frames through `_advance` costs **0.0011–0.0017 ms a frame** without the style and **0.0016–0.0023 ms** with it: the roll and the shake together are about **half a microsecond a frame**, three thousandths of one per cent of a 60 FPS budget |
-| **`JitterTests` still passes** | It measures judder — movement the player should *not* see — as a second difference against a 0.1° limit, and the shake is deliberate movement at 0.37°. **`T-072` turns the shake off for the length of that measurement and nothing else**, which is a six-line change in `JitterTests` with the reason in it. The roll is left ON, and measures nothing: the shimmer figure is **0.0949° either way**, the same number it was before this task |
+| **`JitterTests` still passes** | It measures judder — movement the player should *not* see — as a second difference against a 0.1° limit, and the shake is deliberate movement at 0.37°. **`T-072` turns the shake off for the length of that measurement and nothing else**, which is a six-line change in `JitterTests` with the reason in it. The roll is left ON, and measures nothing: the shimmer figure is **0.0949° either way**, the same number it was before this task. **`T-291`: passes at 0.0981°** against 0.0943° without the aim — close to the limit: a car off the look axis moves a few per cent more per degree of camera wobble. A guard read off the live frame failed at 0.47° |
 
 ## Open questions
 
