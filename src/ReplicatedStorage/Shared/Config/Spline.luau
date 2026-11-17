@@ -288,6 +288,13 @@ local Spline = {
 		-- that buys is hidden by the vertices' tone, which never repeats
 		Width = 1024, -- pixels across
 		Length = 1024, -- pixels along
+		-- THE UPLOADED COPY (T-274, `assets/road/MANIFEST.md`): these pixels exactly, so the
+		-- client loads it instead of painting it (a painted 1 024 x 1 024 EditableImage holds
+		-- 32 tiles of its mesh memory, `Mesh.Budget`). "" paints it, as before. `ImageHash`: the
+		-- painted pixels' sum (`RoadTexture.pixelHash`); `SplineMeshTests` checks the painting
+		-- still makes it, so a change to anything it paints from is exported and uploaded again
+		Image = "rbxassetid://118359063841549",
+		ImageHash = 2423809896,
 		PeriodStuds = 240, -- studs along one copy (rounded to whole `MarkInterval`s)
 		PlainPx = 32, -- plain `Grass.Shade` columns each side, where the rest of the mesh samples
 		-- (a thirty-second of the width each side, as before: still a pixel at a 32-wide mip)
@@ -623,15 +630,14 @@ local Spline = {
 		-- Strips across the road. Where the bank rolls on a grade through a bend the surface
 		-- twists, and one full-width triangle cannot follow it (6.5 degrees off, measured).
 		Across = 4,
-		-- studs of road per chunk. A chunk holds one EditableMesh while it is drawn. WHAT
-		-- LIMITS THE WINDOW is the client's mesh budget, counted in triangles (about 81 000 in
-		-- Studio on a PC, `Ground` "THE BUDGET"), not a count of meshes: a GROWABLE mesh holds
-		-- back about 10 400 triangles of it however little it uses, which is where "eight
-		-- meshes" came from (measured, T-230). So a chunk, once built, is copied into a
-		-- fixed-size mesh (`Road/SplineMesh`) and costs only its own triangles: about 3 600 a
-		-- chunk on today's ground, fewer on a ground run (no faces). Only the chunk being built
-		-- is growable. The window is chunk-aligned: from the chunk `Behind` studs back to the one
-		-- `Ahead` on, so the road kept behind is `Behind` to `Behind + ChunkLength` studs (both
+		-- studs of road per chunk. The client's mesh budget (`Budget`, in tiles) once limited the
+		-- window: a GROWABLE mesh holds back about 10 400 triangles of it however little it
+		-- uses, which is where "eight meshes" came from (measured, T-230), and a fixed-size
+		-- copy its own triangles. SINCE T-274 A DRAWN CHUNK HOLDS NONE: it is written into a
+		-- fixed-size copy of a blank template and made opaque content (`Road/SplineMesh`), and
+		-- only the one being built holds its size for a moment. The window is chunk-aligned:
+		-- from the chunk `Behind` studs back to the one `Ahead` on, so the road kept behind is
+		-- `Behind` to `Behind + ChunkLength` studs (both
 		-- are the player's settings: `Drift/RoadBehind`, `Drift/RoadAhead`).
 		-- A device that runs out anyway lets the furthest chunk behind go before the road
 		-- ahead falls back to parts (`Drift/SplineRoadView`).
@@ -683,26 +689,41 @@ local Spline = {
 		-- TILES: what a fixed-size mesh of 128 triangles costs (one ground tile). Measured in a
 		-- DR-Lane1 client by filling it with copies of a tile: 563 free before a run; a road
 		-- chunk, a mark strip or the vista's arc costs about its triangles / 128; and
-		-- EditableImages count too. Every user must fit, with room for the one growable mesh
-		-- the road builds in (`SplineMeshTests` "every mesh user fits"):
+		-- EditableImages count too. OPAQUE CONTENT COSTS NONE OF IT (T-274, measured: 60 chunks
+		-- of 1 800 triangles made opaque, 0 tiles; a 1 024 x 1 024 image likewise), and neither
+		-- does an uploaded image. Every user must fit (`SplineMeshTests` "every mesh user fits"):
 		Budget = {
 			Tiles = 640, -- all of it, about 82 000 triangles (T-225 measured about 81 000)
-			Growable = 80, -- a growable mesh, empty or a chunk's worth: the road's kept one
-			Image1024 = 32, -- a 1 024 x 1 024 EditableImage (`Road/RoadTexture`)
+			-- what a growable mesh holds however little is in it (measured: empty, 128 or 6 144
+			-- triangles alike). Nothing keeps one since T-274: each is made, used and let go
+			-- (the road's templates, once a size; the ground's master; the marks; the vista)
+			Growable = 80,
+			Image1024 = 32, -- a 1 024 x 1 024 EditableImage (the painted tarmac, only as a fallback)
 			TileTriangles = 128,
 			-- what the others hold, at most (`SplineMeshTests` checks each against what is
-			-- built): a whole road chunk, a far one (its trees lean, `Far.LeanTrees`), the drift
-			-- marks' two ribbons with their textures, the vista's arc
+			-- built): a whole road chunk and a far one (its trees lean, `Far.LeanTrees`) as they
+			-- are built, and what a chunk holds once drawn (none: opaque, T-274); the most a
+			-- chunk's build holds for a moment (a copy of its template, which needs about twice
+			-- its size while it is made, measured: a 960-triangle one 13 to 16 tiles, a 1 536 one
+			-- 21 to 24; the heaviest chunk's, 3 008, about 47); the drift marks' two ribbons
+			-- (T-274: half as long; their textures are opaque); the vista's arc (opaque, T-274)
 			WholeChunk = 14,
 			FarChunk = 3,
-			Marks = 44,
-			Vista = 2,
+			DrawnChunk = 0,
+			Building = 48,
+			Marks = 22,
+			Vista = 0,
 			-- left over, for a stretch heavier than those, and the moments a tile is replaced
-			-- (old and new both held). THE GROUND TAKES WHAT IS LEFT
-			-- (`SplineMesh.groundRoom`): never more tiles than the budget has room for beside
-			-- the road the player's settings draw, so the far ground is coarser before any road
-			-- runs out
+			-- (old and new both held)
 			Spare = 24,
+			-- THE GROUND'S SHARE (`SplineMesh.groundRoom`): never more tiles than the budget has
+			-- room for beside the road the player's settings draw, so the far ground is coarser
+			-- before any road runs out. STILL WORKED OUT FROM T-273'S FIGURES (the others' total
+			-- then: a kept growable mesh, the marks at 44, the vista at 2, the painted texture and
+			-- the ground's master; a chunk's 14 whole and 3 far, and one more whole), so the
+			-- ground draws what it drew: the tiles T-274 freed stay free (`SplineMesh.freeTiles`)
+			-- until the user picks what they buy (T-274: spent only with the user's OK)
+			GroundShare = { Others = 159, WholeChunk = 14, FarChunk = 3 },
 			-- OUT OF IT (`Drift/SplineRoadView`, `Drift/MeshBudget`): tiles asked of the others
 			-- at a time, tries before giving up on a chunk, and how long nothing already drawn is
 			-- redrawn after one gave up (shorter when the ground is merging tiles to make room)
@@ -715,6 +736,11 @@ local Spline = {
 		-- back whenever this much of it has been spent, and carries on next frame. Nothing is
 		-- seen until the whole chunk is done, so nothing pops: it all appears at once.
 		SliceMs = 3, -- ms of building in any one frame, at most (about; one step can overrun)
+		-- THE TEMPLATES a client makes as it loads (T-274, `Road/SplineMesh` "THE TEMPLATES"):
+		-- every size up to the one that holds this many triangles, past the heaviest chunk
+		-- measured (over 2 400 whole, with a grove, in a drive at the defaults; a far one about
+		-- 400), so a run seldom makes one (making one holds a growable mesh for a moment)
+		PrepareFaces = 3008,
 	},
 
 }

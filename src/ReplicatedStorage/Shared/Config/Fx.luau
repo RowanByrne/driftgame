@@ -26,9 +26,10 @@ return {
 	-- T-269 a see-through mesh RIBBON on the road's own surface, one strip a wheel
 	-- (`Drift/GroundMarks.rubberSpec`, features/car-fx.md "Rubber on the tarmac"), not a Trail.
 	Marks = {
-		Seconds = 5, -- s a mark stays on the road, and therefore how much of a corner you can
+		Seconds = 2.5, -- s a mark stays on the road, and therefore how much of a corner you can
 		-- still see behind you. It dries over all of it and fades over the last
-		-- `1 - FadeAt` of it
+		-- `1 - FadeAt` of it. HALVED (T-274, the user: marks may fade sooner behind the car;
+		-- it was 5), with the ribbon's `Sections`, for the client's mesh memory
 		Width = 1.2, -- normal width in studs. A little under `Config.Drift.WheelWidth`.
 		MinWidthRatio = 0.25, -- minimum share of each material width during a slide (T-207).
 		-- User, 2026-11-14: narrow down to 25% width, not 25% thinner.
@@ -68,12 +69,13 @@ return {
 		-- not the ground mesh. See-through by vertex alpha: its edges, its ends and its age.
 		Ribbon = {
 			Wheels = 4,
-			Sections = 64, -- cross-sections in each wheel's ring. THE MESH BUDGET (features/
-			-- ground-trial.md) is the limit: 64 x 4 points x 4 wheels is 1 024 vertices. MEASURED
+			Sections = 32, -- cross-sections in each wheel's ring. THE MESH BUDGET (features/
+			-- ground-trial.md) is the limit: 32 x 4 points x 4 wheels is 512 vertices. MEASURED
 			-- (DR-Lane3, Road ahead and behind Longest): at 96 x 6 (2 304) the client ran out of
 			-- EditableMesh memory streaming the road ("Failed to create EditableMesh ... memory
-			-- budget"); without this ribbon it did not. At a section every 3 studs, 62 sections
-			-- is about 185 studs of mark a wheel; a longer one loses its oldest end early
+			-- budget"); without this ribbon it did not. At a section every 3 studs, 30 sections
+			-- is about 90 studs of mark a wheel; a longer one loses its oldest end early. HALVED
+			-- (T-274, with `Seconds`: it was 64), for the client's mesh memory
 			ReOrigin = 800, -- studs a strip's origin may lag the tyre before it moves
 			Spacing = 3, -- studs between cross-sections on a straight run...
 			MinSpacing = 0.4, -- ...and down to this through a bend, a new one whenever the path
@@ -384,9 +386,10 @@ return {
 		-- the grass/gravel debris to fade in -- and the same back. Fast, but not a cut
 
 		-- How the grass marks sit on the ground and how long they stay (T-265).
-		MarkSeconds = 14, -- s a grass mark lasts. Longer than a tarmac mark (`Marks.Seconds`, 5):
+		MarkSeconds = 7, -- s a grass mark lasts. Longer than a tarmac mark (`Marks.Seconds`, 2.5):
 		-- torn ground stays torn. It dries over all of it and fades over the last
-		-- `1 - Marks.FadeAt` of it, like every mark
+		-- `1 - Marks.FadeAt` of it, like every mark. HALVED (T-274, with the ribbon's
+		-- `Sections`: it was 14), for the client's mesh memory
 		Lift = 0.06, -- studs the ribbon's lowest points sit over the DRAWN ground under them
 		MaxSnap = 1.5, -- studs. A point is moved at most this far off the car's plane to reach
 		-- the drawn ground; further (a wall's foot, a tile not drawn yet) and it stays
@@ -395,13 +398,13 @@ return {
 		-- The ribbon itself (`Drift/GroundMarks`).
 		Ribbon = {
 			Wheels = 4, -- strips, one a wheel
-			Sections = 96, -- cross-sections in each wheel's ring, two kept as points ahead of the
+			Sections = 48, -- cross-sections in each wheel's ring, two kept as points ahead of the
 			-- tyre. THE MESH BUDGET: a client holds about 35 000 EditableMesh vertices with the
-			-- ground and the road taking most (features/ground-trial.md). 96 x 8 points x 4 wheels
-			-- is 3 072. MEASURED: a first build at 31 000 pushed the road out of budget. It was
-			-- 128 (4 096) until T-269 gave the 1 024 to the tarmac's rubber, so the two ribbons
-			-- together hold what the grass's alone did. At a section every 3 studs that is about
-			-- 280 studs of mark a wheel; the oldest goes first
+			-- ground and the road taking most (features/ground-trial.md). 48 x 8 points x 4 wheels
+			-- is 1 536. MEASURED: a first build at 31 000 pushed the road out of budget. It was
+			-- 128 (4 096) until T-269 gave the 1 024 to the tarmac's rubber, and 96 until T-274
+			-- halved it (with `MarkSeconds`). At a section every 3 studs that is about 140 studs
+			-- of mark a wheel; the oldest goes first
 			ReOrigin = 800, -- studs a strip's origin may lag the tyre before it is moved: a mesh is
 			-- at most 2 048 studs across, and sections past its box are let go
 			Spacing = 3, -- studs between cross-sections on a straight run...

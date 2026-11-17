@@ -1083,7 +1083,10 @@ function Tests.run(opts)
 						parts += 1
 						scaleOk = scaleOk and math.abs(part.Size.X - 2000) < 1
 						if part.Name:find("Inner$") then
-							dressed = dressed and part.TextureContent.Object == marks.image and part.Material == RB.InnerMaterial
+							-- its streak texture: opaque content (T-274), or the EditableImage where that failed
+							local tex = part.TextureContent
+							local textured = if marks.image then tex.Object == marks.image else tex.SourceType == Enum.ContentSourceType.Opaque
+							dressed = dressed and textured and part.Material == RB.InnerMaterial
 						else
 							dressed = dressed and part.Material == RB.OuterMaterial
 						end
@@ -1368,7 +1371,8 @@ function Tests.run(opts)
 					if part:IsA("MeshPart") then
 						rparts += 1
 						see = see and part.Transparency > 0.001 and part.Material == MR.Material
-							and part.TextureContent.Object == rub.image and math.abs(part.Size.X - 2000) < 1
+							and (if rub.image then part.TextureContent.Object == rub.image else part.TextureContent.SourceType == Enum.ContentSourceType.Opaque)
+							and math.abs(part.Size.X - 2000) < 1
 					end
 				end
 				local rverts = rub:DebugState().vertices
@@ -1475,7 +1479,7 @@ function Tests.run(opts)
 					scuffKind == "scuff",
 					`look on the gravel: {tostring(scuffKind)}`
 				)
-				-- It fades with its life, 5 s, and goes.
+				-- It fades with its life (`Marks.Seconds`) and goes.
 				local a0 = midSct.showing
 				GroundMarks.Age(rub, F.Marks.Seconds * 0.85)
 				local aged

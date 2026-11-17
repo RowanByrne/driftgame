@@ -4,9 +4,11 @@
 --
 -- A client holds about 640 "tiles" of mesh memory in Studio on a PC, a tile being a
 -- fixed-size mesh of 128 triangles (`Config.Spline.Mesh.Budget`). Every mesh user shares it:
--- the ground's tiles, the road's chunks, the drift marks, the vista's arc, and EditableImages
--- too (the road's 1 024 x 1 024 texture is 32 tiles). Nothing can ask how much is left: a
--- mesh that does not fit just comes back nil, with an engine warning.
+-- the ground's tiles, the drift marks, a road chunk while it is built, and EditableImages too
+-- (a 1 024 x 1 024 one is 32 tiles). Opaque content and uploaded images hold none of it, so
+-- since T-274 a drawn road chunk, the road's texture and the vista's arc hold none. Nothing
+-- can ask how much is left: a mesh that does not fit just comes back nil, with an engine
+-- warning.
 --
 -- THE ROAD NEAR THE CAR NEVER GIVES WAY. When the road cannot make a chunk's mesh it asks
 -- here first: each giver, cheapest to lose first, lets some of its own go. The ground is the

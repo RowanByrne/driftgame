@@ -130,13 +130,15 @@ local function weld(anchor: BasePart, p: BasePart)
 	w.Parent = p
 end
 
--- The arc mesh, made once and cloned for every panel of every run. The EditableMesh is kept,
--- since the MeshPart made from it reads its shape from it.
--- IT IS KEPT AS A FIXED-SIZE COPY (T-273): a growable mesh holds back about 80 tiles of the
--- client's mesh memory however little is in it (`Config.Spline.Mesh.Budget`), and this one
--- was kept for the whole session, so the road ran out. The copy costs its own size, 1 tile.
+-- The arc mesh, made once and cloned for every panel of every run.
+-- IT IS KEPT AS OPAQUE CONTENT (T-274), which costs none of the client's mesh memory
+-- (`Config.Spline.Mesh.Budget`): the growable mesh it is made in holds about 80 tiles however
+-- little is in it, and was kept for the whole session until T-273, when the road ran out; a
+-- fixed-size copy (T-273) its own size, 1 tile. That copy is kept only where the content
+-- cannot be made opaque, since a MeshPart made from an EditableMesh reads its shape from it.
 local arcTemplate: MeshPart? = nil
 local arcMesh: EditableMesh? = nil
+local arcOpaque = false
 local arcError: string? = nil
 
 local function loadArc(): MeshPart?
@@ -159,23 +161,37 @@ local function loadArc(): MeshPart?
 			em:SetFaceNormals(f, { ns[a], ns[b], ns[c] })
 			em:SetFaceUVs(f, { us[a], us[b], us[c] })
 		end
-		local okCopy, copy = pcall(function()
-			return AssetService:CreateEditableMeshAsync(Content.fromObject(em), { FixedSize = true })
+		local okOpaque, result, opaque = pcall(function()
+			return AssetService:CreateDataModelContentAsync(Content.fromObject(em))
 		end)
-		em:Destroy()
-		assert(okCopy and copy, "this device would not copy the arc into a fixed-size mesh (out of its budget)")
-		local fixed = copy :: EditableMesh
+		local content: Content
+		local fixed: EditableMesh? = nil
+		if okOpaque and result == Enum.CreateContentResult.Success then
+			em:Destroy()
+			content = opaque
+		else
+			local okCopy, copy = pcall(function()
+				return AssetService:CreateEditableMeshAsync(Content.fromObject(em), { FixedSize = true })
+			end)
+			em:Destroy()
+			assert(okCopy and copy, "this device would not copy the arc into a fixed-size mesh (out of its budget)")
+			fixed = copy
+			content = Content.fromObject(copy)
+		end
 		local okPart, part = pcall(function()
-			return AssetService:CreateMeshPartAsync(Content.fromObject(fixed), {
+			return AssetService:CreateMeshPartAsync(content, {
 				CollisionFidelity = Enum.CollisionFidelity.Box,
 				RenderFidelity = Enum.RenderFidelity.Precise,
 			})
 		end)
 		if not okPart then
-			fixed:Destroy()
+			if fixed then
+				fixed:Destroy()
+			end
 			error(part)
 		end
 		arcMesh = fixed
+		arcOpaque = fixed == nil
 		return part
 	end)
 	if ok then
@@ -554,6 +570,9 @@ function VistaView.DebugState(self: View): { [string]: any }
 	return {
 		parts = self.parts,
 		meshError = arcError,
+		-- the arc's mesh holds none of the client's mesh memory (T-274), or a fixed-size copy
+		arcOpaque = arcOpaque,
+		arcFixed = arcMesh ~= nil,
 		originY = self.originY,
 		lift = self.lift,
 		layers = layers,
