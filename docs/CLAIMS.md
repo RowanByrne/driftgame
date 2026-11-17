@@ -9,7 +9,7 @@ Every task in progress and the files it owns, so parallel sessions and workers n
 
 | Branch | Lane | Files owned | Since |
 |---|---|---|---|
-| `agent/mesh-savings` | lent | the same files as `agent/road-vanishes`, built on top of it (T-273 merges first), plus `assets/road/*` (new) | 2026-11-16 (T-275) |
+| `agent/mesh-savings` | lent | the client's mesh users and their budget (T-273's files): `Road/SplineMesh.luau`, `Road/RoadTexture.luau`, `Drift/SplineRoadView.luau`, `Drift/GroundMarks.luau`, `Drift/VistaView.luau`, `Drift/MeshBudget.luau`, `Config/Spline.luau` (`Mesh`, `Ground`, `Tarmac` keys), `Config/Fx.luau` (`Marks`, `Ground` mark keys), their tests, `assets/road/*` (new) | 2026-11-16 (T-274) |
 
 ## Notes between sessions
 
