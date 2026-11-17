@@ -337,9 +337,9 @@ local Spline = {
 		-- noise (over `LineHoleStuds` across and along) passes `LineHoles` (-1..1: higher, fewer),
 		-- thins with the fine grain by up to `LineGrain`, has its sides chipped by up to
 		-- `LineChip` studs, and is broken by `LineCracks` cracks across it a copy
-		LineFade = { 0.4, 0.95 },
+		LineFade = { 0.5, 0.95 },
 		LineFadeStuds = 30,
-		LineHoles = 0.3,
+		LineHoles = 0.42,
 		LineHoleStuds = { 0.35, 1.6 },
 		LineGrain = 0.35,
 		LineChip = 0.06,
