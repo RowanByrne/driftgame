@@ -725,6 +725,131 @@ function Tests.run()
 		local m, why = SplineMesh.build(spline, 0, L, folder, { forceFail = true })
 		check("a device that cannot make a mesh says so", m == nil and type(why) == "string", `answered nil: "{tostring(why)}"`)
 
+		-- 7. FEWER REDRAWS (T-288): the client's own road view (`Drift/SplineRoadView`) driven
+		-- down a road that grows ahead of the car as the server lays it (never less than the
+		-- longest "Road ahead" past the car), every build let finish before the car moves on.
+		-- Each drive is run as before T-288 too (`__redraw_all`), to compare.
+		do
+			local Drift = game:GetService("StarterPlayer").StarterPlayerScripts:WaitForChild("Drift")
+			local SplineRoadView = require(Drift:WaitForChild("SplineRoadView"))
+			local RoadAhead = require(Drift:WaitForChild("RoadAhead"))
+			local RoadBehind = require(Drift:WaitForChild("RoadBehind"))
+			local OpaqueBudget = require(ReplicatedStorage.Shared.Road.OpaqueBudget)
+			local aheadWas, behindWas = RoadAhead.get(), RoadBehind.get()
+			local most = RoadAhead.most()
+			local function drive(ahead: number, behind: number, old: boolean, to: number, capped: boolean?)
+				RoadAhead.set(ahead)
+				RoadBehind.set(behind)
+				workspace:SetAttribute("__redraw_all", if old then true else nil)
+				if capped then
+					workspace:SetAttribute("__opaque_cap", OpaqueBudget.made())
+				end
+				local g = SplineGen.new(SEED)
+				local sp = g.spline
+				local view = SplineRoadView.new(sp, folder)
+				local r = { builds = 0, missingNear = 0, nearest = math.huge, shortOfEnd = 0, victimOk = nil :: boolean?, fixed = 0 }
+				local at = 0
+				while at <= to do
+					-- the server keeps the road at least the longest "Road ahead" past the car
+					while sp.length < at + most do
+						if not g:step() then
+							break
+						end
+					end
+					for _ = 1, 40 do
+						local before = view.built
+						view:Update(at)
+						while view.building do
+							task.wait()
+						end
+						if view.built == before then
+							break
+						end
+					end
+					local st = view:DebugState()
+					-- the chunks within `Near` of the car are all drawn
+					local N = M.Near
+					for i = math.max(0, math.floor((at - N.Behind) / L)), math.floor((at + N.Ahead) / L) do
+						if i * L < sp.length and not view.chunks[i] then
+							r.missingNear += 1
+						end
+					end
+					if st.drawnTo then
+						r.nearest = math.min(r.nearest, st.drawnTo - at)
+						-- how far short of the road's end the drawn road stops, where the window reaches it
+						local hi = math.floor((at + RoadAhead.studs()) / L)
+						if (hi + 1) * L > sp.length then
+							r.shortOfEnd = math.max(r.shortOfEnd, sp.length - st.drawnTo)
+						end
+					end
+					-- a whole chunk kept as it leaves is still the first let go when the budget asks
+					if r.victimOk == nil and not old then
+						for k in view.keptWhole do
+							if view.chunks[k] then
+								local v = view:_victim(view.here)
+								r.victimOk = v == k
+								break
+							end
+						end
+					end
+					r.fixed = math.max(r.fixed, st.fixedChunks)
+					at += 40
+				end
+				local st = view:DebugState()
+				r.builds, r.farRedrawn, r.farKept, r.rebuilt, r.endWaits = st.built, st.farRedrawn, st.farKept, st.rebuilt, st.endWaits
+				view:Destroy()
+				workspace:SetAttribute("__redraw_all", nil)
+				workspace:SetAttribute("__opaque_cap", nil)
+				return r
+			end
+			local function line(r): string
+				return `{r.builds} builds ({r.farRedrawn} far again behind, {r.farKept} kept whole as they left, {r.rebuilt} redrawn for more road, {r.endWaits} put off), drawn road at least {math.floor(r.nearest)} studs ahead, at most {math.floor(r.shortOfEnd)} short of the road's end, {r.missingNear} chunks missing near the car`
+			end
+			local ok7, err7 = pcall(function()
+				local Short, Medium = 1, 2
+				local Longest = #M.Ahead
+				local D = 9 * L -- studs driven
+				-- the defaults (Medium ahead, Short behind)
+				local defOld = drive(M.AheadDefault, M.BehindDefault, true, D)
+				local defNew = drive(M.AheadDefault, M.BehindDefault, false, D)
+				check(
+					"at Short behind a whole chunk is not drawn again far just before it leaves",
+					defOld.farRedrawn > 0 and defNew.farRedrawn == 0 and defNew.farKept > 0 and defNew.builds <= defOld.builds - defOld.farRedrawn
+						and defNew.missingNear == 0 and defNew.nearest >= defOld.nearest - 1e-6 and defNew.victimOk == true,
+					`{M.Behind[Short].Name} behind, {M.Ahead[M.AheadDefault].Name} ahead, {D} studs: before {line(defOld)}; now {line(defNew)}; a kept chunk is let go first when out of memory: {defNew.victimOk}`
+				)
+				-- Longest ahead reaches the road's end; Medium behind leaves a chunk far for longer
+				local longOld = drive(Longest, Medium, true, D)
+				local longNew = drive(Longest, Medium, false, D)
+				local grow = 0.5 * L
+				check(
+					"at Longest ahead the road's far end is drawn again only once it has grown half a chunk",
+					longNew.rebuilt < longOld.rebuilt and longNew.builds < longOld.builds and longNew.shortOfEnd <= grow + 1e-6
+						and longNew.nearest >= RoadAhead.studs(Longest) - grow - 1e-6 and longNew.missingNear == 0,
+					`{M.Ahead[Longest].Name} ahead, {M.Behind[Medium].Name} behind, {D} studs: before {line(longOld)}; now {line(longNew)}`
+				)
+				check(
+					"a chunk that stays far behind for longer than a chunk is still drawn again far",
+					longNew.farRedrawn > 0 and longNew.farRedrawn == longOld.farRedrawn,
+					`{M.Behind[Medium].Name} behind: drawn again far {longNew.farRedrawn} times (before T-288 {longOld.farRedrawn})`
+				)
+				-- past the cap a chunk holds its own fixed-size mesh: drawn far again, as before
+				local capNew = drive(M.AheadDefault, M.BehindDefault, false, 4 * L, true)
+				check(
+					"past the cap, a whole chunk holding mesh memory is still drawn again far behind",
+					capNew.fixed > 0 and capNew.farRedrawn > 0 and capNew.missingNear == 0,
+					`{line(capNew)}; up to {capNew.fixed} chunks held fixed-size meshes`
+				)
+			end)
+			RoadAhead.set(aheadWas)
+			RoadBehind.set(behindWas)
+			workspace:SetAttribute("__redraw_all", nil)
+			workspace:SetAttribute("__opaque_cap", nil)
+			if not ok7 then
+				check("the road view's redraws (T-288) ran", false, tostring(err7))
+			end
+		end
+
 		for _, model in models do
 			SplineMesh.destroy(model)
 		end

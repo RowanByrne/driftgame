@@ -13,7 +13,11 @@
 -- .OpaqueCap` it is refused, as a client that refuses opaque content refuses it: each maker
 -- then does what it does there (the road builds as T-273 did, `Road/SplineMesh` "THE
 -- FALLBACK"; the others keep their fixed-size copy or EditableImage). Nothing is made opaque
--- again in that session.
+-- again in that session. The makers (`byWho`): the road's chunks and templates
+-- (`Road/SplineMesh`), the grass (`Road/GrassTexture`), and since T-288 the painted tarmac
+-- (`Road/RoadTexture`, only where the uploaded image will not load), the drift marks' texture
+-- (`Drift/GroundMarks`), the ground's master (`Drift/GroundMeshView`) and the vista's slices
+-- (`Drift/VistaView`).
 --
 -- The cap holds on a client only: a server draws nothing in a game (Studio's tests build chunks
 -- there, and count). In Studio, `workspace.__opaque_cap` (a number) stands in for the cap, to

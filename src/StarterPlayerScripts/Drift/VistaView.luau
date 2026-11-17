@@ -34,6 +34,7 @@ local Workspace = game:GetService("Workspace")
 local Config = require(ReplicatedStorage.Shared.Config)
 local Vista = require(ReplicatedStorage.Shared.Vista)
 local Ground = require(ReplicatedStorage.Shared.Road.Ground)
+local OpaqueBudget = require(ReplicatedStorage.Shared.Road.OpaqueBudget)
 local GroundDetail = require(script.Parent.GroundDetail)
 
 -- the run's road, for the ground's far edge (T-278); nil before a run
@@ -182,12 +183,11 @@ local function loadSlice(slice: number): MeshPart
 			em:SetFaceNormals(f, { ns[a], ns[b], ns[c] })
 			em:SetFaceUVs(f, { us[a], us[b], us[c] })
 		end
-		local okOpaque, result, opaque = pcall(function()
-			return AssetService:CreateDataModelContentAsync(Content.fromObject(em))
-		end)
+		-- (counted against the session's cap, `Road/OpaqueBudget`, T-288)
+		local okOpaque, opaque = OpaqueBudget.make("vista", Content.fromObject(em))
 		local content: Content
 		local fixed: EditableMesh? = nil
-		if okOpaque and result == Enum.CreateContentResult.Success then
+		if okOpaque and opaque then
 			em:Destroy()
 			content = opaque
 		else
