@@ -402,11 +402,11 @@ local Spline = {
 		LightAngle = -125,
 		CapSize = 0.5,
 		CapOffset = 0.3,
-		CapLight = 0.22,
+		CapLight = 0.28,
 		ShadeFrom = 0.25,
-		ShadeDark = 0.72,
+		ShadeDark = 0.66,
 		ShadowOffset = 0.3,
-		ShadowDark = 0.6,
+		ShadowDark = 0.55,
 		-- THE EDGES, no hard seams: the tarmac's dusty edge takes over raggedly over the band's
 		-- first `EdgeSoft` studs; grass tufts creep in from `GrassFrom` studs to its end
 		EdgeSoft = 0.45,
