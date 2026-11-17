@@ -478,15 +478,14 @@ function ScoreFeedView:step(dt: number)
 			line.x += (0 - line.x) * ease
 		end
 		local fade = 1
-		if not self.hold then
-			local from = line.fadeFrom
-			if line.endedAt and line.state ~= "live" then
-				local natural = line.endedAt + self:_finishedHold(line)
-				from = if from then math.min(from, natural) else natural
-			end
-			if from then
-				fade = 1 - math.clamp((t - from) / C.Fade, 0, 1)
-			end
+		-- pushed out fades even in a still fixture; only the natural aging is held
+		local from = line.fadeFrom
+		if not self.hold and line.endedAt and line.state ~= "live" then
+			local natural = line.endedAt + self:_finishedHold(line)
+			from = if from then math.min(from, natural) else natural
+		end
+		if from then
+			fade = if self.hold then 0 else 1 - math.clamp((t - from) / C.Fade, 0, 1)
 		end
 		if fade <= 0 then
 			self:_destroyLine(line)
@@ -586,6 +585,7 @@ function ScoreFeedView:setData(data)
 		line.flashAt = nil
 		line.shown = line.points
 	end
+	self:step(0) -- drops the lines pushed out past the most
 	self:_place(true)
 	self:step(0)
 end
