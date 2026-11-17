@@ -263,3 +263,34 @@ The user asked for the steps to run at the same time. So every step builds again
 **Detectors** are modules in `src/StarterPlayerScripts/Drift/Events/` (one file each, owned by its step): `Detector.new(sink, rig) -> detector` with `detector:Update(dt, state)` called each frame by the drift controller with the model's state, and `detector:DebugState()`. They call only `sink.oneOff` / `sink.start` and the handles; tests pass a recording sink.
 
 **Wiring:** step 1 adds the engine and its detectors to `DriftController`; each later step adds its own detectors there in one line each once step 1 is merged.
+
+## As built: engine (T-295, 2026-11-17)
+
+The interface above, exactly, in `Drift/ScoreEvents`; jump and wheel lift in `Drift/Events/Jump` and `Drift/Events/WheelLift`; every number in `Shared/Config/ScoreEvents.luau` (`Kinds` per event, `Detectors` per detector). What the interface left open, decided here:
+
+- **Detectors are stepped once per simulation step** (1/120 s, `dt = FixedStep`), not once per frame, in `DriftController`'s step: the engine first (`ScoreEvents.step(dt, state)`), then each detector's `Update(dt, state)`, then the score's own step. So an event scores the same at every frame rate (measured: a jump off a test kicker, 70.184074 points at 30, 60 and 120 FPS). A detector that errors is warned once and skipped; it can't stop the car.
+- **Adding a detector:** one line in `DriftController:_startScoreEvents`, into `self.scoreDetectors` by name: `NearMiss = require(events.NearMiss).new(sink, self.scoreRig),`.
+- **`rig`** is a table of functions, each asked when wanted because each changes: `world()` (the car's world: `SplineWorld` on the road), `spline()` (the `Road/Spline`, or nil), `along()` (where the car last was along it), `car()` (the car's model).
+- **The car put back** is a new state table (`Sim.newRunner`). The engine and both detectors take a different table that has a `time` as a put-back, and lose what is live; a test's stand-in states without `time` are never taken for one.
+- **Bound to the run:** the engine feeds `ScoreController.score` only while `inRun`. Outside a run `oneOff` does nothing and `start` returns an inert handle (`handle.live == false`; `update` and `finish` do nothing), and a run ending loses what is live. A new run clears the repeat and same-spot history.
+- **The engine itself loses every live event on a fall or a put-back**, whatever the detector does after; a later `finish` is ignored.
+- **The size's scale** is `SizeFloor + (1 - SizeFloor) * size`, per kind. Labels come from the kind's `Words`, by peak size or by seconds held (`WordsBy`); `info.label` overrides.
+- **Sustained points** are `Rate` a second or a stud (`Per`), with an optional `Ramp` (the jump's rate grows the longer it flies), times the scale, the repeat factor and the rung at that step. The bar gets `Fill * scale` a second, outside the drift's own `MaxProgressUp`, and doesn't drain. Nothing counts (points or fill) while the car goes backwards along its nose, is under `MinSpeed` (20 studs/s), or is pinned; `Forward = false` (reverse entry) drops only the first.
+- **Conditional finish(true)** banks what collected, then adds `Static * mean scale * repeat factor` times the rung then, with `Kick * mean scale` on the bar (perfect hairpin: size 1 for 4-wheel, 0.5 for 2-wheel, `SizeFloor = 0`, so 4-wheel is worth exactly twice).
+- **`MaxSeconds`** (sustained only) banks the line and carries on in a fresh one under the same handle (new `id`).
+- **Anti-farming:** repeats of a kind started within its `RepeatWindow` (10 s; wheel lift 4, near miss 6) are worth x0.5 compounding. The same spot (within 40 studs, flat) as one started between `SameSpotGap` (4 s) and 60 s ago scores nothing: the gap lets a chain of lifts or trees in a row count. **The ceiling is 80 points a second at x1 over 10 s**, not the 60 over 5 s above: 300 points could not pay one Scandinavian flick (600 static).
+- **The feed** gets a live entry at the start, the growing points at most every `FeedEvery` (0.05 s), and the end (`banked` or `void`); a one-off is one `banked` entry. Entries are copies. **A sustained line first shows when it has earned `ShowPoints` (1 point, rung included)**: a lift or jump that earns less (a flick of a wheel, sliding backwards) makes no line and banks what it has quietly, and one lost before then makes none either (both counted as `empty`). A conditional line shows at its start.
+- **`Drift/Score`** gained `Award(points, kick) -> added`, `Hold(fill)`, `Bank(points)` and `Get().eventPoints`. With none of them called, its maths is bit for bit what it was (measured: 404.540252 x4 either way). `Config.Score.MaxKick` (1.1) is the one-rung cap.
+- **Until the feed (T-296) draws them,** each finished event is printed in Studio: `[ScoreEvents] JUMP +52 x2 banked` (`Config.ScoreEvents.PrintInStudio`).
+- **Debug:** `DriftController:DebugScoreEvents()` (the engine's counts per kind, live lines, last 40 finished, the ceiling's cut; each detector's own counts), and Studio-only `DriftController:DebugScoreEvent(kind, size?, seconds?)`, which fires one without driving to it (for the feed).
+- **Jump:** starts after `MinAir` 0.4 s with all four wheels up (`state.airborne`), those seconds counted; size is height over the ground under the car / 12 studs; banks 0.2 s after landing (a hop inside that is the same jump); lost on a fall, a put-back, a wall touched in the air or on landing, or landing tilted past 60 degrees.
+- **Wheel lift:** on the ground, not `hanging`, one or two wheels up (not three) for `MinHold` 0.15 s, gaps up to `Grace` 0.1 s bridged (before the start too). Size 0.4 one wheel, 1 both on one side (`TWO WHEELS`); banks when it ends or the car leaves the ground.
+
+### Measured (T-295, DR-Lane3)
+
+- **Tests:** `ScoreEventsTests` 29 of 29, `ScoreTests` 21 of 21 (5 new checks for `Award`, `Hold`, `Bank`).
+- **Plain drifting is unchanged:** the real car drifting 12 s on the flat scores 404.540252 at x4 with the engine and both detectors stepped and without them, bit for bit; nothing fires.
+- **How often they fire on today's road** (seed 2024, 5 minutes of a test autopilot that steers down the centre line: 12,600 studs at a mean 50 studs/s, drifting half the time, 3 put-backs or resets). The autopilot drives worse than a player, so treat these as a floor:
+  - **Wheel lift is common:** 70 wheels up, 42 long enough to count (one every 7 s), 4 of them on two wheels, the longest 1.7 s. 26 earned points (13.2 s held in all, 80 points); 10 of those earned under a point, which is why a line now waits for `ShowPoints`, leaving 16 lines.
+  - **Jump is rare:** 8 times all four wheels left the ground, 5 for 0.4 s or more (one a minute), the longest 1.29 s and the highest 11.9 studs. 2 scored (45 and 19 points); 3 earned nothing, sliding backwards or slow.
+  - **The run:** 1,409 points, 145 of them (10%) from events; peak x3; the ceiling cut nothing.
