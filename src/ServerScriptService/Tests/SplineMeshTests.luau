@@ -1,4 +1,4 @@
---!nonstrict
+﻿--!nonstrict
 -- SplineMeshTests: the spline road's meshes (features/spline-road.md "The mesh, purely
 -- visual", T-135). Builds real MeshParts from EditableMeshes in the place, measures them and
 -- takes them away. Studio only; run it in a task:
@@ -258,7 +258,7 @@ function Tests.run()
 		-- (T-274) THE GROUND DRAWS WHAT IT DREW: its share is still T-273's (`Budget.GroundShare`),
 		-- whose caps T-273 measured (323 tiles at the old defaults, 254 at Longest both ways; T-278's shorter steps leave it more), and what
 		-- the savings freed stays free until the user spends it
-		local CAP_DEFAULT, CAP_LONGEST = 373, 356 -- (T-278) at its steps capped inside the vista (measured)
+		local CAP_DEFAULT, CAP_LONGEST = 359, 344 -- (T-278) at its steps capped inside the vista (measured)
 		local capDefault = SplineMesh.groundRoom(M.Ahead[M.AheadDefault].Studs, M.Behind[M.BehindDefault].Studs)
 		local capLongest = SplineMesh.groundRoom(M.Ahead[#M.Ahead].Studs, M.Behind[#M.Behind].Studs)
 		local freeDefault = SplineMesh.freeTiles(M.Ahead[M.AheadDefault].Studs, M.Behind[M.BehindDefault].Studs)
