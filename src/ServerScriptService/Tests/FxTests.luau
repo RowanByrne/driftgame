@@ -1374,8 +1374,8 @@ function Tests.run(opts)
 				local rverts = rub:DebugState().vertices
 				local allVerts = rverts + marks:DebugState().vertices
 				check(
-					"the rubber ribbon is built once, one see-through part a wheel, within the mesh budget",
-					rub.ready and rparts == MR.Wheels and see and rverts <= 1100 and allVerts <= 5300,
+					"the rubber ribbon is built once, one see-through part a wheel; both ribbons hold what the grass's alone did",
+					rub.ready and rparts == MR.Wheels and see and rverts <= 1100 and allVerts <= 4200,
 					`ready {rub.ready} ({rub.failed or "ok"}); {rparts} MeshParts, see-through and textured {see}; {rverts} mesh vertices, {allVerts} with the grass's`
 				)
 

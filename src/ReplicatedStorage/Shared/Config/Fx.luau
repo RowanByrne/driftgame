@@ -395,11 +395,13 @@ return {
 		-- The ribbon itself (`Drift/GroundMarks`).
 		Ribbon = {
 			Wheels = 4, -- strips, one a wheel
-			Sections = 128, -- cross-sections in each wheel's ring, two kept as points ahead of the
+			Sections = 96, -- cross-sections in each wheel's ring, two kept as points ahead of the
 			-- tyre. THE MESH BUDGET: a client holds about 35 000 EditableMesh vertices with the
-			-- ground and the road taking most (features/ground-trial.md). 128 x 8 points x 4 wheels
-			-- is 4 096. MEASURED: a first build at 31 000 pushed the road out of budget. At a
-			-- section every 3 studs that is about 380 studs of mark a wheel; the oldest goes first
+			-- ground and the road taking most (features/ground-trial.md). 96 x 8 points x 4 wheels
+			-- is 3 072. MEASURED: a first build at 31 000 pushed the road out of budget. It was
+			-- 128 (4 096) until T-269 gave the 1 024 to the tarmac's rubber, so the two ribbons
+			-- together hold what the grass's alone did. At a section every 3 studs that is about
+			-- 280 studs of mark a wheel; the oldest goes first
 			ReOrigin = 800, -- studs a strip's origin may lag the tyre before it is moved: a mesh is
 			-- at most 2 048 studs across, and sections past its box are let go
 			Spacing = 3, -- studs between cross-sections on a straight run...
