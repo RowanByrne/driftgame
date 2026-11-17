@@ -1,9 +1,16 @@
 --!strict
 --!native
--- RoadTexture: the tarmac's own texture (T-268, features/road-surface.md), DRAWN IN CODE into
--- one EditableImage every chunk of the spline road shares (`Road/SplineMesh`). Nothing is
--- uploaded: the image is painted here, on each device, from the numbers in
--- `Config.Spline.Tarmac` and the colours and lines in `Config.Road`.
+-- RoadTexture: the tarmac's own texture (T-268, features/road-surface.md), DRAWN IN CODE from
+-- the numbers in `Config.Spline.Tarmac` and the colours and lines in `Config.Road`, and
+-- shared by every chunk of the spline road (`Road/SplineMesh`).
+--
+-- UPLOADED SINCE T-274: an EditableImage of 1 024 x 1 024 holds 32 tiles of the client's
+-- mesh memory (`Config.Spline.Mesh.Budget`), so the painted pixels were exported exactly as
+-- painted and uploaded (`assets/road/`, `Tarmac.Image`): an uploaded image costs none of it.
+-- A device that cannot load it paints the image here as before, and hands it on as opaque
+-- content, which costs none of it either (`get`). `Tarmac.ImageHash` is the painted pixels'
+-- sum (`pixelHash`): change anything the painting reads and `SplineMeshTests` says the
+-- upload no longer matches, so it is exported and uploaded again (`assets/road/MANIFEST.md`).
 --
 -- WHAT IT DRAWS, after the user's concept art (`assets/reference/environment-mood/`): a cool
 -- blue-violet grey with soft painterly grain stretched along the road and a finer aggregate;
@@ -37,11 +44,13 @@
 -- grey, as the grass tile's corners are (`Road/GrassTexture`), so those keep the brightness
 -- they had: a texture on a MeshPart replaces its material's colour map on every face.
 --
--- WHEN. A client starts painting it as soon as this module is first required, a few ms a
--- frame, long before a run needs it; a chunk asking before it is done waits for it.
--- A device that will not make the image draws the tarmac as before (flat, with the dashes).
+-- WHEN. A client starts loading the uploaded image as soon as this module is first required,
+-- long before a run needs it; a chunk asking before it is ready waits for it. Painting it
+-- instead (the fallback) is a few hundred ms of work, a few ms a frame. A device that can
+-- neither load nor paint it draws the tarmac as before (flat, with the dashes).
 
 local AssetService = game:GetService("AssetService")
+local ContentProvider = game:GetService("ContentProvider")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
@@ -49,12 +58,18 @@ local Config = require(ReplicatedStorage.Shared.Config)
 
 local RoadTexture = {}
 
-local image: EditableImage? = nil
+local texture: Content? = nil
+-- the painted fallback's EditableImage, kept only when it could not be made opaque (32 tiles)
+local paintedImage: EditableImage? = nil
+local source = "none" -- "uploaded", "painted" (opaque), "painted image" (an EditableImage), "none"
 local state = "none" -- "none", "making", "done"
 local workMs, wallMs, frames = 0, 0, 0
+local loadMs = 0
+local fetchStatus = "" -- the uploaded image's, as `ContentProvider` reported it
 
 -- Off in config, or in Studio by `workspace.__tarmac_texture = false` (from the next chunk
--- built), to compare with the plain tarmac.
+-- built), to compare with the plain tarmac. (`workspace.__tarmac_painted = true`, set before
+-- the first chunk is drawn: the painted image, not the uploaded one, to compare the two.)
 function RoadTexture.enabled(): boolean
 	if RunService:IsStudio() then
 		local v = workspace:GetAttribute("__tarmac_texture")
@@ -767,20 +782,37 @@ function RoadTexture.paintGravel(px: buffer, yield: (() -> ())?)
 	end
 end
 
--- The shared image, painted the first time it is asked for (a client starts it on require,
--- below). It yields: a few ms a frame (`SliceMs`). nil when it is off, or when this device
--- will not make an EditableImage.
-function RoadTexture.get(): EditableImage?
-	if not RoadTexture.enabled() then
-		return nil
+-- The painted pixels' sum (T-274): what `Tarmac.ImageHash` records for the uploaded image.
+-- An FNV-style running sum over the RGBA words, in doubles as Luau does it (so it is not
+-- FNV's own value; `assets/road/MANIFEST.md` has the same sum in Python, to check a file).
+function RoadTexture.pixelHash(px: buffer): number
+	local h = 2166136261
+	for i = 0, buffer.len(px) - 1, 4 do
+		h = bit32.bxor(h, buffer.readu32(px, i))
+		h = (h * 16777619) % 4294967296
 	end
-	while state == "making" do
-		task.wait()
-	end
-	if state == "done" then
-		return image
-	end
-	state = "making"
+	return h
+end
+
+-- Whether this device has the uploaded image (T-274). Yields while it loads.
+local function loadUploaded(uri: string): boolean
+	local probe = Instance.new("ImageLabel")
+	probe.Image = uri
+	local status: Enum.AssetFetchStatus? = nil
+	local ok, err = pcall(function()
+		ContentProvider:PreloadAsync({ probe }, function(_, s)
+			status = s
+		end)
+	end)
+	probe:Destroy()
+	fetchStatus = if ok then tostring(status) else tostring(err)
+	return ok and status == Enum.AssetFetchStatus.Success
+end
+
+-- The fallback: the image painted here, a few ms a frame (`SliceMs`), then handed on as
+-- OPAQUE CONTENT and its EditableImage let go, so it costs none of the client's mesh memory
+-- (T-274; kept as the EditableImage, 32 tiles, only if that fails).
+local function paintIt(): Content?
 	local T = Config.Spline.Tarmac
 	local t0 = os.clock()
 	local budget = T.SliceMs / 1000
@@ -804,16 +836,60 @@ function RoadTexture.get(): EditableImage?
 	end)
 	wallMs = (os.clock() - t0) * 1000
 	workMs = wallMs - paused * 1000
-	if ok then
-		image = made
-	else
+	if not ok then
 		warn(`[RoadTexture] no tarmac texture on this device, the tarmac is drawn flat: {made}`)
+		return nil
 	end
-	state = "done"
-	return image
+	local img = made :: EditableImage
+	local okC, result, content = pcall(function()
+		return AssetService:CreateDataModelContentAsync(Content.fromObject(img))
+	end)
+	if okC and result == Enum.CreateContentResult.Success then
+		img:Destroy()
+		source = "painted"
+		return content
+	end
+	paintedImage = img
+	source = "painted image"
+	return Content.fromObject(img)
 end
 
--- Start painting now, in the background (a client, as soon as the road's code loads).
+-- The shared texture, ready the first time it is asked for (a client starts it on require,
+-- below): the uploaded image, or where it will not load, the image painted here. It yields.
+-- nil when it is off, or when this device can do neither.
+function RoadTexture.get(): Content?
+	if not RoadTexture.enabled() then
+		return nil
+	end
+	while state == "making" do
+		task.wait()
+	end
+	if state == "done" then
+		return texture
+	end
+	state = "making"
+	local T = Config.Spline.Tarmac
+	local painted = RunService:IsStudio() and workspace:GetAttribute("__tarmac_painted") == true
+	if T.Image ~= "" and not painted then
+		local t0 = os.clock()
+		-- (a server draws nothing: it only builds chunks in Studio tests, so it trusts the id)
+		if RunService:IsServer() or loadUploaded(T.Image) then
+			texture = Content.fromUri(T.Image)
+			source = "uploaded"
+		end
+		loadMs = (os.clock() - t0) * 1000
+	end
+	if not texture then
+		if T.Image ~= "" and not painted then
+			warn(`[RoadTexture] the uploaded tarmac texture did not load ({fetchStatus}), painting it instead`)
+		end
+		texture = paintIt()
+	end
+	state = "done"
+	return texture
+end
+
+-- Start loading it now, in the background (a client, as soon as the road's code loads).
 function RoadTexture.prepare()
 	if state == "none" and RoadTexture.enabled() then
 		task.spawn(RoadTexture.get)
@@ -822,13 +898,16 @@ end
 
 function RoadTexture.DebugState()
 	return {
-		made = image ~= nil,
+		made = texture ~= nil,
+		source = source, -- "uploaded", "painted" (opaque), "painted image", "none"
 		state = state,
-		workMs = workMs, -- painting, without the frames it waited
+		fetchStatus = fetchStatus,
+		loadMs = loadMs, -- loading the uploaded image
+		-- tiles of the client's mesh memory it holds: only a painted EditableImage holds any
+		tiles = if paintedImage then paintedImage.Size.X * paintedImage.Size.Y / (1024 * 1024) * Config.Spline.Mesh.Budget.Image1024 else 0,
+		workMs = workMs, -- painting (the fallback), without the frames it waited
 		wallMs = wallMs,
 		frames = frames,
-		width = if image then image.Size.X else 0,
-		height = if image then image.Size.Y else 0,
 		period = RoadTexture.period(),
 	}
 end

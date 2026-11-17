@@ -8,9 +8,9 @@
 -- T-263) in front, and takes chunks down as the car leaves them. One chunk is built at a time,
 -- nearest the car first, so a frame never pays for more than one.
 --
--- OUT OF MESH BUDGET (T-230, T-273): the road near the car never gives way.
---   1. Every chunk is built in one kept growable mesh (`SplineMesh` `reuse`), so building
---      never needs the 80 tiles of mesh memory a new growable one holds back.
+-- OUT OF MESH BUDGET (T-230, T-273, T-274): the road near the car never gives way.
+--   1. A chunk once drawn holds none of the client's mesh memory, and building one holds only
+--      its own size for a moment, never a growable mesh (`SplineMesh` "THE TEMPLATES", T-274).
 --   2. A chunk that still cannot be made asks the other mesh users to give way first
 --      (`Drift/MeshBudget`: the ground's spare tiles, then coarser ground far out).
 --   3. Then it lets this road's own FAR chunks go, never one within `Mesh.Near` of the car:
@@ -71,6 +71,7 @@ export type View = typeof(setmetatable(
 		behindCap: number?,
 		aheadCap: number?, -- whole chunks ahead of the car's own that may stay (T-273)
 		tris: { [number]: number },
+		fixed: { [number]: boolean }, -- chunk -> holds a fixed-size mesh, not opaque (T-274)
 		far: { [number]: boolean }, -- chunk -> built at the far detail (T-263)
 		behindConn: any,
 		aheadConn: any, -- the player's "Road ahead" (T-263)
@@ -116,6 +117,7 @@ function SplineRoadView.new(spline: Spline.Spline, parent: Instance?): View
 		behindCap = nil,
 		aheadCap = nil,
 		tris = {},
+		fixed = {},
 		far = {},
 		behindConn = nil,
 		aheadConn = nil,
@@ -198,6 +200,7 @@ function SplineRoadView._drop(self: View, i: number)
 	self.chunks[i] = nil
 	self.short[i] = nil
 	self.tris[i] = nil
+	self.fixed[i] = nil
 	self.far[i] = nil
 	self.removed += 1
 end
@@ -270,11 +273,9 @@ function SplineRoadView._build(self: View, i: number, far: boolean?)
 	local s0 = i * L
 	local s1 = math.min((i + 1) * L, self.spline.length)
 	local t0 = os.clock()
-	-- every chunk in the client's one kept growable mesh (T-273), and room asked for if the
-	-- finished chunk's fixed-size copy does not fit
+	-- room asked for if the chunk's mesh does not fit (T-273, T-274)
 	local opts: any = {
 		forceFail = self.forceFallback,
-		reuse = true,
 		onShort = function(): boolean
 			return (self:_makeRoom(i))
 		end,
@@ -315,6 +316,7 @@ function SplineRoadView._build(self: View, i: number, far: boolean?)
 	if model then
 		self.triangles += info.triangles
 		self.tris[i] = info.triangles
+		self.fixed[i] = if info.opaque then nil else true
 		self.lastSliceMs = info.sliceMs or 0
 		self.worstSliceMs = math.max(self.worstSliceMs, self.lastSliceMs)
 		self.lastSlices = info.slices or 1
@@ -358,6 +360,7 @@ function SplineRoadView._build(self: View, i: number, far: boolean?)
 	-- chunk as parts instead, so there is always road under the car
 	self.fallbacks += 1
 	self.tris[i] = nil
+	self.fixed[i] = nil
 	local folder = Instance.new("Folder")
 	folder.Name = `Chunk_{math.floor(s0)}_parts`
 	SplineParts.build(self.spline, s0, s1, folder, { step = M.FallbackStep, queryable = false, barriers = false })
@@ -562,13 +565,37 @@ function SplineRoadView.DebugState(self: View)
 		aheadCap = self.aheadCap, -- (T-273)
 		squeezed = self.squeezed,
 		-- out of mesh memory (T-273): builds that were, times the others were asked to give
-		-- way, redraws that kept the old mesh, seconds left of the hold, the kept mesh, and
-		-- who gave how much
+		-- way, redraws that kept the old mesh, seconds left of the hold, how the chunks' meshes
+		-- were made (T-274), and who gave how much
 		budgetFails = self.budgetFails,
 		asked = self.asked,
 		keptOld = self.kept,
 		holding = math.max(0, self.holdUntil - os.clock()),
-		keptMesh = SplineMesh.KeptState(),
+		buildState = SplineMesh.BuildState(),
+		-- the chunks drawn now that hold a fixed-size mesh (could not be made opaque), and
+		-- their triangles: what the road holds of the mesh memory between builds
+		fixedChunks = (function()
+			local k = 0
+			for _ in self.fixed do
+				k += 1
+			end
+			return k
+		end)(),
+		fixedTriangles = (function()
+			local k = 0
+			for i in self.fixed do
+				k += self.tris[i] or 0
+			end
+			return k
+		end)(),
+		chunkTris = (function()
+			local list = {}
+			for _, k in self.tris do
+				table.insert(list, k)
+			end
+			table.sort(list)
+			return list
+		end)(), -- each drawn chunk's triangles, fewest first
 		meshBudget = MeshBudget.DebugState(),
 		here = self.here,
 		firstChunk = first,

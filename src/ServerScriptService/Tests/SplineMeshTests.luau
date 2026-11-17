@@ -25,6 +25,43 @@ local function fmt(x: number, p: number?): string
 	return string.format("%." .. tostring(p or 3) .. "f", x)
 end
 
+-- A chunk's surface as an EditableMesh to read back (T-274): a drawn chunk is opaque content,
+-- so it is read through an editable copy of that content (what the GPU gets, the template's
+-- unused faces folded to a point included); a chunk that kept its fixed-size mesh, through it.
+-- The copies are let go by `forget`.
+local AssetService = game:GetService("AssetService")
+local readCopies: { [Instance]: EditableMesh } = {}
+local function editable(part: MeshPart?): EditableMesh?
+	if not part then
+		return nil
+	end
+	local content = part.MeshContent
+	local obj = content.Object
+	if obj and obj:IsA("EditableMesh") then
+		return obj
+	end
+	if readCopies[part] then
+		return readCopies[part]
+	end
+	if content.SourceType ~= Enum.ContentSourceType.Opaque then
+		return nil
+	end
+	local ok, em = pcall(function()
+		return AssetService:CreateEditableMeshAsync(content, { FixedSize = true })
+	end)
+	if ok and em then
+		readCopies[part] = em
+		return em
+	end
+	return nil
+end
+local function forget()
+	for part, em in readCopies do
+		em:Destroy()
+		readCopies[part] = nil
+	end
+end
+
 function Tests.run()
 	local checks = {}
 	local function check(name: string, ok: boolean, detail: string?)
@@ -84,14 +121,14 @@ function Tests.run()
 			worstSlice < Config.Spline.Mesh.SliceMs * 3,
 			`spread over {fmt(slices / math.max(1, built), 1)} frames a chunk; the most any one frame paid {fmt(worstSlice, 2)} ms (aim {Config.Spline.Mesh.SliceMs})`
 		)
-		-- THE WINDOW AND THE BUDGET (T-230, T-263, T-273): every chunk is a fixed-size copy, so a
-		-- chunk costs its own triangles. Chunks within `Near` of the car are whole, the rest drawn
-		-- at `Far`'s detail (T-263). EVERY MESH USER shares the client's mesh memory
-		-- (`Mesh.Budget`, in tiles of 128 triangles), EditableImages too: the ground's tiles and
-		-- its master, the road's chunks and the one growable mesh it builds in, the drift marks,
-		-- the vista's arc, the road's texture. T-273: the vista's arc was kept growable (80 tiles)
-		-- and nothing here counted it, the marks or the texture, so at the defaults the road ran
-		-- out and let every chunk behind the car go.
+		-- THE WINDOW AND THE BUDGET (T-230, T-263, T-273, T-274). Chunks within `Near` of the car
+		-- are whole, the rest drawn at `Far`'s detail (T-263). EVERY MESH USER shares the
+		-- client's mesh memory (`Mesh.Budget`, in tiles of 128 triangles), EditableImages too:
+		-- the ground's tiles and its master, the road, the drift marks, the vista's arc, the
+		-- road's texture. T-273: the vista's arc was kept growable (80 tiles) and nothing here
+		-- counted it, the marks or the texture, so at the defaults the road ran out and let every
+		-- chunk behind the car go. T-274: a drawn chunk is opaque content and holds none of it;
+		-- building one holds its template's size for a moment.
 		local MB = M.Budget
 		local G = Config.Spline.Ground
 		local tileTris = G.TileCells * G.TileCells * 2
@@ -138,32 +175,58 @@ function Tests.run()
 			groves == 0 or groveFar < groveWhole * 0.5,
 			`{groves} grove chunks: whole {math.floor(groveWhole / math.max(1, groves))} triangles, far {math.floor(groveFar / math.max(1, groves))} on average`
 		)
-		-- THE ESTIMATES THE GROUND'S ROOM IS WORKED OUT FROM (`SplineMesh.groundRoom`) hold what
-		-- is built: a chunk whole and far (on average, and the grove chunks with them), the
-		-- marks' ribbons and textures, the vista's arc. (`Growable` and `Image1024` are measured
-		-- in a client: a server has no mesh budget to fill)
+		-- THE ESTIMATES THE BUDGET IS WORKED OUT FROM hold what is built: a chunk whole and far
+		-- (on average, and the grove chunks with them) as it is built; the heaviest one's
+		-- template, what a build holds for a moment (`Building`); the marks' ribbons (their
+		-- textures are opaque, T-274). (`Growable` and `Image1024` are measured in a client: a
+		-- server has no mesh budget to fill)
 		local StarterPlayerScripts = game:GetService("StarterPlayer"):WaitForChild("StarterPlayerScripts")
 		local GroundMarks = require(StarterPlayerScripts.Drift.GroundMarks)
-		local Vista = require(ReplicatedStorage.Shared.Vista)
 		local marks = 0
 		for _, spec in { GroundMarks.grassSpec(), GroundMarks.rubberSpec() } do
 			local gm = GroundMarks.new(spec)
-			local tex = spec.ribbon.Texture
-			marks += GroundMarks.meshTriangles(gm) / tileTris + tex.Width * tex.Height / (1024 * 1024) * MB.Image1024
-		end
-		local vista = 0
-		if Config.Vista.Enabled and Config.Vista.Mesh.Build then
-			vista = #Vista.arcGeometry(Config.Vista.Mesh).triangles / tileTris
+			marks += GroundMarks.meshTriangles(gm) / tileTris
 		end
 		-- (a road of this seed's mix: a grove one chunk in every few)
 		local allWhole = (wholeTris + groveWhole) / math.max(1, sampled + groves)
 		local allFar = (farTris + groveFar) / math.max(1, sampled + groves)
+		local building = (SplineMesh.templateFaces(heaviest) or math.huge) / tileTris
 		check(
 			"the mesh budget's estimates hold what is built",
-			allWhole / tileTris <= MB.WholeChunk and allFar / tileTris <= MB.FarChunk and marks <= MB.Marks and vista <= MB.Vista,
-			`a whole chunk {fmt(allWhole / tileTris, 1)} tiles (allowed {MB.WholeChunk}), far {fmt(allFar / tileTris, 1)} ({MB.FarChunk}), with groves weighted in; the marks {fmt(marks, 1)} ({MB.Marks}); the vista's arc {fmt(vista, 2)} ({MB.Vista})`
+			allWhole / tileTris <= MB.WholeChunk and allFar / tileTris <= MB.FarChunk and building <= MB.Building and marks <= MB.Marks,
+			`a whole chunk {fmt(allWhole / tileTris, 1)} tiles (allowed {MB.WholeChunk}), far {fmt(allFar / tileTris, 1)} ({MB.FarChunk}), with groves weighted in; building the heaviest ({heaviest} triangles) holds its template's {fmt(building, 1)} ({MB.Building}); the marks {fmt(marks, 1)} ({MB.Marks})`
 		)
 		check("a heavy chunk is a small share of the spare room", heaviest / tileTris <= MB.Spare, `heaviest whole chunk {heaviest} triangles ({fmt(heaviest / tileTris, 1)} tiles), far {heaviestFar}; spare {MB.Spare}`)
+		-- (T-274) A DRAWN CHUNK HOLDS NO EDITABLEMESH: it is opaque content, read back here
+		-- through an editable copy of it, the template's unused faces folded to a point
+		local opaque, fixedHeld, folded, foldedOk = 0, 0, 0, true
+		for _, model in models do
+			local road = model:FindFirstChild("Road") :: MeshPart?
+			if road and road.MeshContent.SourceType == Enum.ContentSourceType.Opaque then
+				opaque += 1
+			elseif road then
+				fixedHeld += 1
+			end
+		end
+		do
+			local road = models[0] and models[0]:FindFirstChild("Road") :: MeshPart?
+			local em = editable(road)
+			if em then
+				for _, f in em:GetFaces() do
+					local vs = em:GetFaceVertices(f)
+					local a, b, c = em:GetPosition(vs[1]), em:GetPosition(vs[2]), em:GetPosition(vs[3])
+					if a == b and b == c then
+						folded += 1
+					end
+				end
+				foldedOk = #em:GetFaces() == SplineMesh.templateFaces(#em:GetFaces() - folded)
+			end
+		end
+		check(
+			"a drawn chunk is opaque content, written into a template's copy",
+			opaque == built and fixedHeld == 0 and foldedOk,
+			`{opaque} of {built} chunks opaque, {fixedHeld} holding a fixed-size mesh; the first read back with {folded} unused faces folded to a point; build state {game:GetService("HttpService"):JSONEncode(SplineMesh.BuildState())}`
+		)
 		-- (a) THE DEFAULTS: every mesh user fits with `Budget.Spare` over, and the ground keeps
 		-- at least its own Ground detail's tiles (what it gives up is corridor far along the road)
 		local others = SplineMesh.otherTiles()
@@ -182,9 +245,21 @@ function Tests.run()
 			local road, window, near = SplineMesh.roadTiles(d[3].Studs, d[4].Studs)
 			local total = tiles + G.Spare + road + others
 			defOk = defOk and total <= MB.Tiles - MB.Spare + 1e-6 and tiles >= d[2].Tiles
-			table.insert(defLines, `{d[1]} ({d[2].Name}, {d[3].Name} ahead, {d[4].Name} behind): {math.floor(total)} of {MB.Tiles} tiles = ground {tiles} shown (of {wanted} asked; its own {d[2].Tiles}) + {G.Spare} hidden + road {math.floor(road)} ({window} chunks, {near} whole) + the rest {math.floor(others)}`)
+			table.insert(defLines, `{d[1]} ({d[2].Name}, {d[3].Name} ahead, {d[4].Name} behind): {math.floor(total)} of {MB.Tiles} tiles = ground {tiles} shown (of {wanted} asked; its own {d[2].Tiles}) + {G.Spare} hidden + road {math.floor(road)} ({window} chunks, {near} whole) + the rest {math.floor(others)}; {math.floor(SplineMesh.freeTiles(d[3].Studs, d[4].Studs))} free`)
 		end
 		check("every mesh user fits the client's mesh memory at the default settings, the ground keeping its own detail", defOk, `{table.concat(defLines, "; ")}; spare kept {MB.Spare}`)
+		-- (T-274) THE GROUND DRAWS WHAT IT DREW: its share is still T-273's (`Budget.GroundShare`),
+		-- whose caps T-273 measured (323 tiles at the defaults, 254 at Longest both ways), and what
+		-- the savings freed stays free until the user spends it
+		local capDefault = SplineMesh.groundRoom(M.Ahead[M.AheadDefault].Studs, M.Behind[M.BehindDefault].Studs)
+		local capLongest = SplineMesh.groundRoom(M.Ahead[#M.Ahead].Studs, M.Behind[#M.Behind].Studs)
+		local freeDefault = SplineMesh.freeTiles(M.Ahead[M.AheadDefault].Studs, M.Behind[M.BehindDefault].Studs)
+		local freeLongest = SplineMesh.freeTiles(M.Ahead[#M.Ahead].Studs, M.Behind[#M.Behind].Studs)
+		check(
+			"the ground draws what it drew before T-274, and the savings stay free",
+			capDefault == 323 and capLongest == 254 and freeDefault > 0 and freeLongest > 0,
+			`the ground's cap {capDefault} at the defaults (T-273: 323), {capLongest} at Longest both ways (254); free by these figures {math.floor(freeDefault)} and {math.floor(freeLongest)} tiles`
+		)
 		-- (b) ANY SETTINGS: the road's whole window fits beside the least ground there can be
 		-- (`YieldFloor`, `Drift/MeshBudget`), so no road near the car need ever go; and how many
 		-- tiles the ground keeps at each pair, on Ultra
@@ -232,9 +307,8 @@ function Tests.run()
 			if road then
 				-- read the mesh back through the part: the vertices the GPU gets
 
-				local content = road.MeshContent
-				local obj = content and content.Object
-				if obj and obj:IsA("EditableMesh") then
+				local obj = editable(road)
+				if obj then
 					for _, v in obj:GetVertices() do
 						local p = road.CFrame:PointToWorldSpace(obj:GetPosition(v))
 						local s, d = spline:project(p.X, p.Z, reach)
@@ -285,9 +359,9 @@ function Tests.run()
 			local grassFaces, mappedOk, plainFaces, plainOk, worstStuds, textured = 0, 0, 0, 0, 0, 0
 			for _, model in models do
 				local road = model:FindFirstChild("Road")
-				local obj = road and road.MeshContent.Object
-				if obj and obj:IsA("EditableMesh") then
-					if road.TextureContent.Object then
+				local obj = editable(road)
+				if obj then
+					if road.TextureContent.SourceType ~= Enum.ContentSourceType.None then
 						textured += 1
 					end
 					for _, f in obj:GetFaces() do
@@ -350,6 +424,34 @@ function Tests.run()
 			check("the painted tile loads, its corners plain Shade, and it averages Shade", img ~= nil and cornerOk and math.abs(mean - G.Shade) < 0.03, `{G.Image}: {size} px, loaded in {fmt(ts.buildMs, 1)} ms; corners {want}/255; mean {fmt(mean, 3)} against Shade {G.Shade}`)
 		end
 
+		-- 2c. THE TARMAC'S UPLOADED IMAGE IS THE PAINTED ONE (T-274): what the painting makes
+		-- today sums to `Tarmac.ImageHash`, and so does the image Roblox decodes from the upload.
+		-- Change anything the painting reads and this fails: export it and upload it again
+		-- (`assets/road/MANIFEST.md`).
+		do
+			local RoadTexture = require(ReplicatedStorage.Shared.Road.RoadTexture)
+			local T = Config.Spline.Tarmac
+			local painted = RoadTexture.pixelHash((RoadTexture.paint()))
+			local decoded, why = nil, "no image"
+			if T.Image ~= "" then
+				local okImg, img = pcall(function()
+					return AssetService:CreateEditableImageAsync(Content.fromUri(T.Image))
+				end)
+				if okImg and img then
+					decoded = RoadTexture.pixelHash(img:ReadPixelsBuffer(Vector2.zero, img.Size))
+					why = `decoded {img.Size.X} x {img.Size.Y}`
+					img:Destroy()
+				else
+					why = `could not decode it here: {img}`
+				end
+			end
+			check(
+				"the tarmac's uploaded image is exactly what is painted",
+				T.Image ~= "" and painted == T.ImageHash and (decoded == nil or decoded == T.ImageHash),
+				`{T.Image}: painted sum {painted}, decoded {decoded} ({why}), recorded {T.ImageHash}`
+			)
+		end
+
 		-- 3. Between the cuts, the drawn surface stays within the tolerance of the true one.
 		local worstSag = 0
 		for i = 0, 5 do
@@ -372,7 +474,7 @@ function Tests.run()
 		for i = 0, chunks - 2 do
 			local a, b = models[i], models[i + 1]
 			if a and b then
-				local ar, br = a.Road.MeshContent.Object, b.Road.MeshContent.Object
+				local ar, br = editable(a.Road), editable(b.Road)
 				-- the vertices of each at the boundary s, read back through their parts
 				local sB = (i + 1) * L
 				local function atBoundary(part, em)
@@ -490,6 +592,7 @@ function Tests.run()
 	if not ok then
 		check("the suite ran", false, tostring(err))
 	end
+	forget()
 	folder:Destroy()
 
 	local passed = 0
