@@ -441,6 +441,14 @@ end
 function Wheels.new(marksParent: Instance?): Wheels
 	local marks = GroundMarks.new(GroundMarks.grassSpec())
 	local rubber = GroundMarks.new(GroundMarks.rubberSpec())
+	-- The rubber is see-through, so it must sort behind the smoke: it keeps its strips'
+	-- origins out in front of the camera (T-289, `GroundMarks` "sortSpot"). In play only.
+	if marksParent == nil then
+		rubber.view = function(): CFrame?
+			local cam = workspace.CurrentCamera
+			return if cam then cam.CFrame else nil
+		end
+	end
 	task.spawn(function()
 		GroundMarks.Build(rubber, marksParent)
 		GroundMarks.Build(marks, marksParent)
