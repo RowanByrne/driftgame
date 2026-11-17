@@ -10,6 +10,7 @@ Every task in progress and the files it owns, so parallel sessions and workers n
 | Branch | Lane | Files owned | Since |
 |---|---|---|---|
 | `agent/road-range` (T-278) | borrowed | `Shared/Config/Spline.luau` (only `Mesh.Ahead`, `AheadDefault`, `AheadTouchDefault`, `Behind`, `BehindDefault`, `BehindTouchDefault` and their comments), `docs/game/SETTINGS.md`, `src/ServerScriptService/Tests/SplineMeshTests.luau`, `src/StarterPlayerScripts/Drift/RoadAhead.luau`, `Drift/RoadBehind.luau`, `src/ReplicatedStorage/Shared/Config/Vista.luau`, `Shared/Vista.luau`, `Drift/VistaView.luau`, `src/ServerScriptService/Tests/VistaTests.luau` | 2026-11-17 |
+| `agent/road-patches` (T-285) | borrowed | `src/ReplicatedStorage/Shared/Road/RoadTexture.luau`, `Shared/Road/SplineMesh.luau`, `Shared/Config/Spline.luau` (its `Tarmac` table only), `assets/road/*`, `docs/game/features/road-surface.md` | 2026-11-17 |
 
 ## Notes between sessions
 
