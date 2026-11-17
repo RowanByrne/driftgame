@@ -109,7 +109,9 @@ return {
 	-- Colours: `Ambient` lights what the sky cannot see, `OutdoorAmbient` what it can,
 	-- `SunColour` tints the sun's (and at night the moon's) light. `Atmosphere*` is the air
 	-- between you and the horizon and the sky's own colour. `Tint`, `Contrast`,
-	-- `Saturation` are the colour grading over everything.
+	-- `Saturation` are the colour grading over everything. `VistaTint` tints the painted
+	-- ridges round the run and `CloudSeaColour` the cloud sea below it (`features/painted-vista.md`,
+	-- T-266), on top of the real sun lighting them.
 	Keyframes = {
 		{
 			Name = "morning",
@@ -121,7 +123,7 @@ return {
 			Ambient = rgb(52, 50, 56),
 			OutdoorAmbient = rgb(136, 130, 136),
 			SunColour = rgb(255, 214, 180),
-			AtmosphereDensity = 0.26,
+			AtmosphereDensity = 0.2, -- painted vista (T-267): was 0.26
 			AtmosphereOffset = 0.2,
 			AtmosphereColour = rgb(218, 214, 214),
 			AtmosphereDecay = rgb(130, 124, 140),
@@ -136,6 +138,8 @@ return {
 			BloomIntensity = 0.6,
 			BloomThreshold = 1.4,
 			SunRays = 0.1,
+			VistaTint = rgb(240, 232, 236),
+			CloudSeaColour = rgb(236, 226, 224),
 		},
 		{
 			Name = "noon",
@@ -147,7 +151,7 @@ return {
 			Ambient = rgb(40, 44, 52),
 			OutdoorAmbient = rgb(120, 128, 140),
 			SunColour = rgb(255, 250, 240),
-			AtmosphereDensity = 0.25,
+			AtmosphereDensity = 0.17, -- painted vista (T-267): was 0.25
 			AtmosphereOffset = 0.25,
 			AtmosphereColour = rgb(198, 214, 232),
 			AtmosphereDecay = rgb(104, 128, 160),
@@ -162,6 +166,8 @@ return {
 			BloomIntensity = 0.4,
 			BloomThreshold = 1.6,
 			SunRays = 0.04,
+			VistaTint = rgb(255, 255, 255),
+			CloudSeaColour = rgb(222, 230, 242),
 		},
 		{
 			Name = "afternoon",
@@ -173,7 +179,7 @@ return {
 			Ambient = rgb(44, 44, 50),
 			OutdoorAmbient = rgb(128, 124, 120),
 			SunColour = rgb(255, 236, 205),
-			AtmosphereDensity = 0.26,
+			AtmosphereDensity = 0.19, -- painted vista (T-267): was 0.26
 			AtmosphereOffset = 0.25,
 			AtmosphereColour = rgb(214, 212, 206),
 			AtmosphereDecay = rgb(140, 120, 110),
@@ -188,6 +194,8 @@ return {
 			BloomIntensity = 0.5,
 			BloomThreshold = 1.5,
 			SunRays = 0.06,
+			VistaTint = rgb(255, 244, 230),
+			CloudSeaColour = rgb(236, 230, 224),
 		},
 		{
 			Name = "golden hour",
@@ -199,7 +207,7 @@ return {
 			Ambient = rgb(60, 50, 48),
 			OutdoorAmbient = rgb(140, 120, 108),
 			SunColour = rgb(255, 184, 120),
-			AtmosphereDensity = 0.3,
+			AtmosphereDensity = 0.25, -- painted vista (T-267): was 0.3
 			AtmosphereOffset = 0.2,
 			AtmosphereColour = rgb(240, 200, 150),
 			AtmosphereDecay = rgb(180, 120, 100),
@@ -214,6 +222,8 @@ return {
 			BloomIntensity = 0.8,
 			BloomThreshold = 1.3,
 			SunRays = 0.14,
+			VistaTint = rgb(255, 214, 170),
+			CloudSeaColour = rgb(255, 214, 180),
 		},
 		{
 			Name = "sunset",
@@ -225,7 +235,7 @@ return {
 			Ambient = rgb(70, 50, 56),
 			OutdoorAmbient = rgb(150, 110, 110),
 			SunColour = rgb(255, 150, 90),
-			AtmosphereDensity = 0.3,
+			AtmosphereDensity = 0.27, -- painted vista (T-267): was 0.3
 			AtmosphereOffset = 0.15,
 			AtmosphereColour = rgb(255, 178, 120),
 			AtmosphereDecay = rgb(190, 96, 110),
@@ -240,6 +250,8 @@ return {
 			BloomIntensity = 1,
 			BloomThreshold = 1.1,
 			SunRays = 0.2,
+			VistaTint = rgb(255, 180, 150),
+			CloudSeaColour = rgb(255, 186, 170),
 		},
 		{
 			Name = "dusk",
@@ -266,6 +278,8 @@ return {
 			BloomIntensity = 0.8,
 			BloomThreshold = 1.2,
 			SunRays = 0.06,
+			VistaTint = rgb(170, 150, 200),
+			CloudSeaColour = rgb(180, 150, 190),
 		},
 		{
 			Name = "night",
@@ -292,6 +306,8 @@ return {
 			BloomIntensity = 0.6,
 			BloomThreshold = 1.2,
 			SunRays = 0,
+			VistaTint = rgb(110, 130, 190),
+			CloudSeaColour = rgb(90, 104, 150),
 		},
 		{
 			Name = "dawn",
@@ -303,7 +319,7 @@ return {
 			Ambient = rgb(56, 56, 84),
 			OutdoorAmbient = rgb(124, 122, 160),
 			SunColour = rgb(170, 160, 200),
-			AtmosphereDensity = 0.3,
+			AtmosphereDensity = 0.27, -- painted vista (T-267): was 0.3
 			AtmosphereOffset = 0.15,
 			AtmosphereColour = rgb(120, 124, 164),
 			AtmosphereDecay = rgb(90, 80, 130),
@@ -318,6 +334,8 @@ return {
 			BloomIntensity = 0.7,
 			BloomThreshold = 1.2,
 			SunRays = 0.04,
+			VistaTint = rgb(160, 160, 200),
+			CloudSeaColour = rgb(170, 165, 200),
 		},
 		{
 			Name = "sunrise",
@@ -329,7 +347,7 @@ return {
 			Ambient = rgb(66, 56, 66),
 			OutdoorAmbient = rgb(150, 128, 136),
 			SunColour = rgb(255, 170, 130),
-			AtmosphereDensity = 0.3,
+			AtmosphereDensity = 0.27, -- painted vista (T-267): was 0.3
 			AtmosphereOffset = 0.15,
 			AtmosphereColour = rgb(245, 196, 170),
 			AtmosphereDecay = rgb(160, 120, 160),
@@ -344,6 +362,8 @@ return {
 			BloomIntensity = 0.9,
 			BloomThreshold = 1.15,
 			SunRays = 0.16,
+			VistaTint = rgb(255, 200, 180),
+			CloudSeaColour = rgb(255, 205, 190),
 		},
 	},
 }
