@@ -248,3 +248,18 @@ Switchback is out of the first set; "long drift" is the existing drift score, no
 - **Reverse entry**: going into a hairpin, the car turns past 90 degrees towards the hairpin, so it is going backwards; it must then carry on in a drift (at least 2 wheels) through the rest of the hairpin to complete.
 
 "2-wheel" and "4-wheel" drift mean how many tyres are sliding (past their slip gate), per wheel, from `Drift/Wheels`.
+
+## The shared interface (built in parallel, 2026-11-17)
+
+The user asked for the steps to run at the same time. So every step builds against this interface, written before any of them start; the engine (step 1) implements it, and each detector reaches it only through a `sink` it is given, so it can be built and tested without the engine.
+
+**`Drift/ScoreEvents`** (client, step 1), the engine:
+- `ScoreEvents.oneOff(kind: string, size: number, info: {}?)`: a one-off event; `size` 0..1 (how big, how close).
+- `ScoreEvents.start(kind: string, info: {}?) -> Handle`: a sustained or conditional event begins. `Handle:update(size: number, dt: number)` while it is held (size 0..1, this frame), `Handle:finish(completed: boolean)` when it ends: `true` banks it, `false` voids it (a fall, a failed condition). A sustained event finishes `true` when let go cleanly.
+- `ScoreEvents.feed`: a signal the feed listens to, fired with an entry `{ id, kind, label, points, state = "live" | "banked" | "void", rung }` whenever an event starts, grows or ends.
+- `ScoreEvents.sink()`: the `{ oneOff, start }` table detectors are given.
+- Kinds: `jump`, `wheelLift`, `bumperGrind`, `hangGrind`, `nearMiss`, `perfectHairpin`, `scandiFlick`, `reverseEntry`. Points per kind, difficulty, caps and diminishing repeats are the engine's (`Config/ScoreEvents`).
+
+**Detectors** are modules in `src/StarterPlayerScripts/Drift/Events/` (one file each, owned by its step): `Detector.new(sink, rig) -> detector` with `detector:Update(dt, state)` called each frame by the drift controller with the model's state, and `detector:DebugState()`. They call only `sink.oneOff` / `sink.start` and the handles; tests pass a recording sink.
+
+**Wiring:** step 1 adds the engine and its detectors to `DriftController`; each later step adds its own detectors there in one line each once step 1 is merged.
