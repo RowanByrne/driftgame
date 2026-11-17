@@ -36,7 +36,7 @@ loudness. Rendered by a throwaway script (numpy, soundfile), not kept. The loops
 | A | **Gravel crunch loop**: a tyre rolling over gravel, recorded outside, no engine. One loop, its volume and playback speed following road speed | `9126157118` "Vehicle Gravel Tire Pass By Constant No Engine 2", region 6.5 to 17.5 s | `6C499F509DEF4334B9FA2BC3B373ED3D07602184FD0B21BFE3A185A5FFC8ADEF` | rejected (in game as D's crunch) |
 | B | **Over rocks, from inside**: tyres crunching over rocks recorded inside a car, so the stones hitting the floor pan are in it. Has the recording car's engine, low-cut out | `9126157444` "Vehicle Gravel Tires Crunch Constant Over Rocks 1", region 1.5 to 12.5 s | `96F7FA41A99FF6DE15C6ABBC6260439C1968BB9C876A14D38E643A8447A2705C` | rejected |
 | C | **Pebble ticks**: built in code from 40 single stone hits (35 pebble ticks, 5 heavier clacks) cut from store one-shots, fired at random, each at a random pitch (0.85 to 1.2x) and volume; how many a second follows speed, surface and slide (up to about 45 a second sliding fast on gravel). Never loops | `9117266254`, `9117266257`, `9117266265`, `9117266497` ("Pebble Drop Roll Stone Impact On Concrete 1 to 4"); `9118624159`, `9118624415`, `9118624423`, `9118624649`, `9118624847` ("Rock Impacts 1, 2, 3, 6, 8") | `6698F9E2684FD130D8BD85DD0AD6D8CE320C274EF4B3F80C5654F65CDB2B911B` | rejected (in game as D's ticks) |
-| D | **Ticks over crunch**: C on top of A, with A 9 dB under the ticks | as A and C | `9256A6B176E5A89AB04C6F139B13AF1CB458DAF9850431E2EB5076B5AF193939` | **approved** |
+| D | **Ticks over crunch**: C on top of A, with A 9 dB under the ticks | as A and C | `9256A6B176E5A89AB04C6F139B13AF1CB458DAF9850431E2EB5076B5AF193939` | approved, then **sent back** (round 2) |
 
 Store file SHA-256 (in `raw\`):
 
@@ -78,6 +78,40 @@ that's about **-26 dBFS**: 8.5 dB under the engine bed (-17.4 dBFS) and under th
 loudest moment (-18.8 dBFS). A full slide raises the ticks' rate 1.8x and the crunch 1.5x, to about
 -23.5 dBFS together, still under both. Grass is 0.4 of gravel in both rate and loudness (about
 -42 dBFS of ticks at full speed); dirt is 0.75.
+
+## Round 2: stones on metal (2026-11-17)
+
+**D was sent back by the user** after trying it in a lane: "eh not quite good enough. need rocks on
+metal sound, this is like pebbles on pebbles". The ticks must be stones hitting sheet metal (the
+wheel-well liner, the floor pan): hollow, tinny, resonant. The engine, gating, levels and the crunch
+under the ticks stay as built; only the hits change.
+
+New hits, all **Creator Store**, Pro Sound Effects, by id, store files in
+`..rt\generated\sfx-pebblesaw\metal\`:
+
+| Store id | Name | Used as | SHA-256 |
+|---|---|---|---|
+| `9116698689` | "Metal Impacts 13": stabbing an interior vehicle floor, ringing | clank | `BA5F541EC8DD531A8477AFE4643048C01F5C8427AEBEA300BF12518474547E9B` |
+| `9116698012` | "Metal Impacts 5": the same floor, clanking | clank | `14D374D6C3DC6C033A16B9995924AA79754B80ADB3D20DD23782EFD2B4D4C071` |
+| `9116695441` | "Metal Impacts 4": the same floor, a duller hit | clank | `E65556E389D543A454A054B9141C1709A3885F7CD5F44C23DE5EB6A44BD97327` |
+| `9116695715` | "Metal Impacts 6": the same floor, a light hit | ping | `8B8592CFD2C515977B9F948CF896DCD96BD52C87DB1C4E5FFC7287DF02AE2A65` |
+| `9116701254` | "Metal Impacts 2": thin sheet metal, "bullet hitting vehicle body" | ping | `593472D545637095189F092A6CD406A1AC351D7157D7639263E647516E0D0048` |
+| `9125464752`, `9125464768` | "Corrugated Roof Pounding Impacts On Thin Metal 2, 6": hollow clanking | clank | `414183C1A60E5AFA56E34CD112262F59BB091F0D06358B9DEEDEF9964623DB0C`, `C15A8EA72D4764A050C7CA1A438ACD44C4DFE937745053346D0F046B7D4B1539` |
+| `9125596462` | "Hammer Soft Taps On Metal Roof Sharp Clinks 2" | ping | `9381485D2D2FE3DADE27EAD88955B89AD991185A470B8036E10B407B49CA61DD` |
+| `9113106424`, `9113107643`, `9113107729` | "Ammo Shell Drop 2, 5, 7": small metal clinks | ping (F only) | `4B494F97C5597C1A381B24A424273DE5094676105F6BFC213137027FA027ED8B`, `2DDA649F367391A1B896848B5A4C13F7C935C9B3C28C8AC1A82124A3011CB711`, `38A213135293EDCDF9BBE32F0B61747FECE9C42667DF03A8A10066BF3BE0DDF9` |
+
+Each hit is cut from its onset to where it has rung down 30 dB (pings at most 0.15 to 0.23 s, clanks
+0.25 to 0.36 s); a slice that is still ringing louder than -10 dB there is dropped. Its last 50 ms
+fade out (in game, the voice's volume ramps down over its last 50 ms), because a metal ring cut dead
+clicks. The stream is up to **18 hits a second** at full speed on gravel (was 26: a ringing clank
+is longer than a pebble tick), the same random pitch (0.85 to 1.2x) and loudness, over the same crunch
+9 dB under. Previews: the same 10.5 s drive as round 1, level-matched on the gravel stretch.
+
+| | What | Hits | Preview SHA-256 | Status |
+|---|---|---|---|---|
+| E | **Floor-pan clanks**: mostly the vehicle-floor and corrugated thin-metal clanks (half the hits), with a few light floor and body pings | 5 pings, 12 clanks | `68A15627A9F4D3EA9D5D40AFF3C8CC01176BE08E1B3EFB3C2E354B9638FF7778` | candidate |
+| F | **Tinny pings**: mostly small sharp metal clinks (hammer taps on a metal roof, shell clinks, the body hit), one in five a floor-pan clank | 16 pings, 12 clanks | `96072051D4D585800ADD3438487983067088D0F4ED4715F8F11819F534F7FE51` | candidate |
+| G | **Stones on steel, made by us**: 24 pings and 8 heavier clanks synthesized in code (`synth_hits.py`): a sub-millisecond stone contact burst exciting 14 damped inharmonic panel modes (900 to 7,500 Hz for pings, 180 to 3,500 Hz plus a 95 to 170 Hz box thunk for clanks), with a little grit. One in five a clank. Ours, no licence; **would need one upload** if picked | 24 pings, 8 clanks | `028E23404866DEF6FA572A7643F95832AFAAB085B1BF501CA01096714B475780` (sheet `93D21DE53B0E6705993F9FF948613DCF8D5014F42C93B51E6FCADD84A2386930`) | candidate |
 
 ## Looked at and left out
 
