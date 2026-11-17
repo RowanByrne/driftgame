@@ -703,13 +703,14 @@ local Spline = {
 			-- what the others hold, at most (`SplineMeshTests` checks each against what is
 			-- built): a whole road chunk and a far one (its trees lean, `Far.LeanTrees`) as they
 			-- are built, and what a chunk holds once drawn (none: opaque, T-274); the most a
-			-- chunk's build holds for a moment (its template's size: the heaviest chunk, rounded
-			-- up a size); the drift marks' two ribbons (T-274: half as long; their textures are
-			-- opaque); the vista's arc (opaque, T-274)
+			-- chunk's build holds for a moment (a copy of its template, which needs about twice
+			-- its size while it is made, measured: a 960-triangle one 13 to 16 tiles, a 1 536 one
+			-- 21 to 24; the heaviest chunk's, 3 008, about 47); the drift marks' two ribbons
+			-- (T-274: half as long; their textures are opaque); the vista's arc (opaque, T-274)
 			WholeChunk = 14,
 			FarChunk = 3,
 			DrawnChunk = 0,
-			Building = 24,
+			Building = 48,
 			Marks = 22,
 			Vista = 0,
 			-- left over, for a stretch heavier than those, and the moments a tile is replaced

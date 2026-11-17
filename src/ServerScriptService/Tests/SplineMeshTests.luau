@@ -192,11 +192,12 @@ function Tests.run()
 		-- (a road of this seed's mix: a grove one chunk in every few)
 		local allWhole = (wholeTris + groveWhole) / math.max(1, sampled + groves)
 		local allFar = (farTris + groveFar) / math.max(1, sampled + groves)
-		local building = (SplineMesh.templateFaces(heaviest) or math.huge) / tileTris
+		-- (a copy of a template needs about twice its size while it is made: measured)
+		local building = 2 * (SplineMesh.templateFaces(heaviest) or math.huge) / tileTris
 		check(
 			"the mesh budget's estimates hold what is built",
 			allWhole / tileTris <= MB.WholeChunk and allFar / tileTris <= MB.FarChunk and building <= MB.Building and marks <= MB.Marks,
-			`a whole chunk {fmt(allWhole / tileTris, 1)} tiles (allowed {MB.WholeChunk}), far {fmt(allFar / tileTris, 1)} ({MB.FarChunk}), with groves weighted in; building the heaviest ({heaviest} triangles) holds its template's {fmt(building, 1)} ({MB.Building}); the marks {fmt(marks, 1)} ({MB.Marks})`
+			`a whole chunk {fmt(allWhole / tileTris, 1)} tiles (allowed {MB.WholeChunk}), far {fmt(allFar / tileTris, 1)} ({MB.FarChunk}), with groves weighted in; building the heaviest ({heaviest} triangles) holds twice its template's size for a moment, {fmt(building, 1)} ({MB.Building}); the marks {fmt(marks, 1)} ({MB.Marks})`
 		)
 		check("a heavy chunk is a small share of the spare room", heaviest / tileTris <= MB.Spare, `heaviest whole chunk {heaviest} triangles ({fmt(heaviest / tileTris, 1)} tiles), far {heaviestFar}; spare {MB.Spare}`)
 		-- (T-274) A DRAWN CHUNK HOLDS NO EDITABLEMESH: it is opaque content, read back here
