@@ -241,6 +241,30 @@ function Vista.scaledLevel(level: number, camY: number, scale: number): number
 	return camY + (level - camY) * scale
 end
 
+-- How far below the camera a ring's anchor stands with no dip (T-278): as it stood, scaled,
+-- with the camera `EyeHeight` above the road's start.
+function Vista.drop(cfg: any, slide: number): number
+	return (cfg.Scale or 1) * (1 - slide) * (cfg.EyeHeight or 0)
+end
+
+-- Height of a curved ring's art bottom (the picture's v = 0.995) above its anchor.
+function Vista.artBottom(layer: any, mesh: any): number
+	local r: number = layer.Radius
+	local art = Vista.pictureWidth(r, layer.Panels, mesh.Slices or 1) / layer.Aspect
+	local top = math.tan(math.rad(layer.Peak)) * r + layer.PeakAt * art
+	return top - 0.995 * art
+end
+
+-- How far a ring must drop for its art bottom (`yBottom` over its anchor, at radius `r`, the
+-- anchor `drop` under the camera) to be seen `dip` degrees lower.
+function Vista.dipDrop(r: number, yBottom: number, drop: number, dip: number): number
+	if dip <= 0 then
+		return 0
+	end
+	local a = math.atan((yBottom - drop) / r)
+	return r * (math.tan(a) - math.tan(a - math.rad(dip)))
+end
+
 -- The nearest and furthest a ring's panels come to the camera: their ends are nearest, their
 -- middles furthest, and the ring may trail by up to `MaxLag` either way.
 function Vista.ringSpan(layer: any): (number, number)

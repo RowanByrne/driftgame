@@ -33,6 +33,22 @@ local Workspace = game:GetService("Workspace")
 
 local Config = require(ReplicatedStorage.Shared.Config)
 local Vista = require(ReplicatedStorage.Shared.Vista)
+local Ground = require(ReplicatedStorage.Shared.Road.Ground)
+local GroundDetail = require(script.Parent.GroundDetail)
+
+-- the run's road, for the ground's far edge (T-278); nil before a run
+local function road(): any?
+	local controllers = script.Parent.Parent:FindFirstChild("Controllers")
+	local m = controllers and controllers:FindFirstChild("SplineRoadController")
+	if not m then
+		return nil
+	end
+	local ok, c = pcall(require, m)
+	if not ok or not c.Road then
+		return nil
+	end
+	return (c:Road())
+end
 
 local VistaView = {}
 VistaView.__index = VistaView
@@ -48,6 +64,7 @@ type Ridge = {
 	maxLag: number,
 	slide: number,
 	radius: number,
+	bottom: number, -- its art's bottom over its anchor (T-278)
 	centre: Vector3, -- flat, Y = 0
 	anchor: Part,
 	folder: Folder,
@@ -86,6 +103,10 @@ export type View = typeof(setmetatable(
 		worstMs: number,
 		costs: { number },
 		costAt: number,
+		dip: number, -- degrees every ring is dipped now (T-278)
+		dipWant: number,
+		edgeAngle: number?, -- the ground's far edge, lowest, degrees from the camera
+		dipAt: number,
 	},
 	VistaView
 ))
@@ -258,6 +279,10 @@ function VistaView.new(originY: number, getLook: (() -> Look?)?, parent: Instanc
 		worstMs = 0,
 		costs = {},
 		costAt = 0,
+		dip = 0,
+		dipWant = 0,
+		edgeAngle = nil,
+		dipAt = 0,
 	}, VistaView)
 
 	self:_buildRidges(start)
@@ -291,6 +316,7 @@ function VistaView._buildRidges(self: View, start: Vector3)
 			maxLag = layer.MaxLag,
 			slide = layer.Slide or Config.Vista.FollowHeight,
 			radius = layer.Radius,
+			bottom = Vista.artBottom(layer, Config.Vista.Mesh),
 			centre = start,
 			anchor = anchor,
 			folder = sub,
@@ -492,15 +518,13 @@ function VistaView.Update(self: View, dt: number)
 	self.camY += (at.Y - self.camY) * (if dt > 0 then 1 - math.exp(-dt / V.HeightLag) else 1)
 	self.lift = Vista.lift(V, self.originY, self.camY)
 
+	self:_dipStep(dt, at)
 	for _, ridge in self.ridges do
 		ridge.centre = Vista.follow(ridge.centre, cam, dt, ridge.lag, ridge.maxLag)
-		local level = self.originY + Vista.lift(V, self.originY, self.camY, ridge.slide)
-		-- (T-278) the rings stand `Scale` times further out and are `Scale` times bigger, so
-		-- they stand `Scale` times as far below the camera too: then every ridge, its art's
-		-- bottom and its skirt are at the same angles as before the move, still behind the
-		-- ring or the ground in front of them (left at its level, the camera's height counted
-		-- for less, and the skirt's plain mist rose into view above the ground)
-		level = Vista.scaledLevel(level, at.Y, V.Scale or 1)
+		-- (T-278) at a fixed angle from the camera, whatever its height, and dipped together
+		-- while the ground's far edge is lower than the Near ring's art
+		local drop = Vista.drop(V, ridge.slide)
+		local level = at.Y - drop - Vista.dipDrop(ridge.radius, ridge.bottom, drop, self.dip)
 		ridge.anchor.CFrame = CFrame.new(ridge.centre + Vector3.yAxis * level)
 	end
 
@@ -525,6 +549,41 @@ function VistaView.Update(self: View, dt: number)
 	self.worstMs = math.max(self.worstMs, ms)
 	self.costAt = self.costAt % COST_SAMPLES + 1
 	self.costs[self.costAt] = ms
+end
+
+-- The ground's far edge round the camera (T-278): every `DipEvery` s, its lowest angle from
+-- the camera at the Ground detail's `Reach`, and the dip that puts the Near ring's art below
+-- it; the dip itself eases toward that.
+function VistaView._dipStep(self: View, dt: number, at: Vector3)
+	local V = Config.Vista
+	self.dipAt -= dt
+	if self.dipAt <= 0 then
+		self.dipAt = V.DipEvery or 0.2
+		local spline = road()
+		local field = spline and spline.mountain
+		local nearest: Ridge? = nil
+		for _, ridge in self.ridges do
+			if not nearest or ridge.radius < nearest.radius then
+				nearest = ridge
+			end
+		end
+		if field and nearest then
+			local reach = GroundDetail.preset().Reach
+			local lowest = math.huge
+			local n = V.DipSamples or 24
+			for k = 1, n do
+				local a = (k - 0.5) * 2 * math.pi / n
+				local y = Ground.h(field, at.X + reach * math.sin(a), at.Z + reach * math.cos(a))
+				lowest = math.min(lowest, math.deg(math.atan((y - at.Y) / reach)))
+			end
+			self.edgeAngle = lowest
+			local drop = Vista.drop(V, nearest.slide)
+			local artAngle = math.deg(math.atan((nearest.bottom - drop) / nearest.radius))
+			self.dipWant = math.max(0, artAngle - (lowest - (V.DipMargin or 0)))
+		end
+	end
+	local lag = if self.dipWant > self.dip then V.DipIn or 0.25 else V.DipOut or 2
+	self.dip += (self.dipWant - self.dip) * (if dt > 0 and lag > 0 then 1 - math.exp(-dt / lag) else 1)
 end
 
 -- Show or hide the whole vista, or one part of it: a layer's name, or "CloudSea".
@@ -608,6 +667,9 @@ function VistaView.DebugState(self: View): { [string]: any }
 		arcFixed = #arcMeshes > 0,
 		originY = self.originY,
 		lift = self.lift,
+		dip = self.dip,
+		dipWant = self.dipWant,
+		edgeAngle = self.edgeAngle,
 		layers = layers,
 		cloudTop = self.cloudTop,
 		cloudBelowCamera = at.Y - self.cloudTop,

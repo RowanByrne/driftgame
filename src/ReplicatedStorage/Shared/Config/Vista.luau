@@ -152,6 +152,23 @@ return {
 	FollowHeight = 0.75,
 	HeightLag = 2, -- s
 
+	-- A BACKDROP YOU CAN'T LOOK DOWN ON (T-278, the user: "it happens when you are up high").
+	-- The rings follow the camera's height whole, standing as they would with the camera
+	-- `EyeHeight` studs above the road's start, scaled by `Scale`: every ridge at a fixed
+	-- angle, as before the move at that height (gap-free, measured). And when the drawn
+	-- ground's far edge drops below the Near ring's art (high on a ridge), every ring dips
+	-- by the same angle so the Near ring's art reaches `DipMargin` degrees below the lowest
+	-- point of that edge: no plain skirt, no sky under a ring. The edge is sampled at
+	-- `DipSamples` points round the camera every `DipEvery` s, the ground's own height
+	-- (`Road/Ground.h`) at the current Ground detail's `Reach`; the dip eases in over
+	-- `DipIn` s and out over `DipOut` s.
+	EyeHeight = 60,
+	DipMargin = 0.75, -- degrees
+	DipSamples = 24,
+	DipEvery = 0.2, -- s
+	DipIn = 0.25, -- s
+	DipOut = 2, -- s
+
 	-- ------------------------------------------------------------- cloud sea
 	-- `Layers` stacked layers, the top one `Below` studs under the road's start and each
 	-- next one `Gap` under it, rising with the road like the ridges (`FollowHeight`). It never
