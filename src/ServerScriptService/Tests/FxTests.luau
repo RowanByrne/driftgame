@@ -1419,6 +1419,13 @@ function Tests.run(opts)
 					terrainNormal = function()
 						return Vector3.yAxis
 					end,
+					-- the road runs along +x (s) with d along +z: yaw -90 degrees, straight
+					yawAt = function()
+						return -math.pi / 2
+					end,
+					curvatureAt = function()
+						return 0
+					end,
 				}
 				local roadGround = { spline = fakeSpline, _drawnAt = function() return nil end }
 				GroundMarks.Clear(rub)

@@ -317,6 +317,45 @@ function GroundMarks.roadProbe(ground: any, p: Vector3, lift: number, maxSnap: n
 	return Vector3.new(p.X, y + lift, p.Z), true, spline:terrainNormal(s, d), s
 end
 
+-- A whole cross-section put on the road's surface with ONE projection: the centre `M` is
+-- found from `hint` (`Spline.projectFrom`), and `L` and `R`, a stud or so either side, are
+-- stepped to from it in the road's own frame there (along over the curve's stretch, across
+-- as is) and read off `Spline.terrainXYZ`. Three projections cost three Newton solves; this
+-- costs one. Returns the three points (`lift` over the road, or as they were and false),
+-- the road's normal at the centre, and the centre's s for the next hint.
+function GroundMarks.roadSection(ground: any, L: Vector3, M: Vector3, R: Vector3, lift: number, maxSnap: number, hint: number?): (Vector3, Vector3, Vector3, number, Vector3?, number?)
+	local spline = ground.spline
+	if not spline then
+		return L, M, R, 0, nil, nil
+	end
+	local s, d
+	if hint then
+		s, d = spline:projectFrom(M.X, M.Z, hint)
+	end
+	if not s then
+		s, d = spline:project(M.X, M.Z, Config.Road.Width)
+	end
+	if not s or not d then
+		return L, M, R, 0, nil, nil
+	end
+	local yaw = spline:yawAt(s)
+	local fx, fz = -math.sin(yaw), -math.cos(yaw)
+	local rx, rz = math.cos(yaw), -math.sin(yaw)
+	local stretch = math.max(1 + spline:curvatureAt(s) * d, 0.2)
+	local found = 0
+	local function on(p: Vector3): Vector3
+		local ox, oz = p.X - M.X, p.Z - M.Z
+		local _, y = spline:terrainXYZ(s + (ox * fx + oz * fz) / stretch, d + ox * rx + oz * rz)
+		if math.abs(y + lift - p.Y) > maxSnap then
+			return p
+		end
+		found += 1
+		return Vector3.new(p.X, y + lift, p.Z)
+	end
+	local l, m, r = on(L), on(M), on(R)
+	return l, m, r, found, spline:terrainNormal(s, d), s
+end
+
 local function layerSpec(name: string, points: string, textured: boolean, material: Enum.Material)
 	return { name = name, points = points, textured = textured, material = material }
 end
@@ -814,15 +853,13 @@ local function section(self: GroundMarks, st: Strip, centre: Vector3, tangent: V
 	local cL, cM, cR, nL, nM, nR = grass, grass, grass, up, up, up
 	local found = 0
 	if ground and S.lies == "road" then
-		-- The tarmac (and its gravel): the spline road's own surface, from the last hint.
-		local okL, okM, okR, n1, n2, n3, sM
-		M, okM, n2, sM = GroundMarks.roadProbe(ground, M, S.lift, S.maxSnap, st.hint)
+		-- The tarmac (and its gravel): the spline road's own surface, from the last hint, in
+		-- one projection.
+		local rn, sM
+		L, M, Rr, found, rn, sM = GroundMarks.roadSection(ground, L, M, Rr, S.lift, S.maxSnap, st.hint)
 		st.hint = sM or st.hint
-		L, okL, n1 = GroundMarks.roadProbe(ground, L, S.lift, S.maxSnap, st.hint)
-		Rr, okR, n3 = GroundMarks.roadProbe(ground, Rr, S.lift, S.maxSnap, st.hint)
-		found = (if okL then 1 else 0) + (if okM then 1 else 0) + (if okR then 1 else 0)
-		nL, nM, nR = n1 or up, n2 or up, n3 or up
-		self.lookups += 3
+		nL, nM, nR = rn or up, rn or up, rn or up
+		self.lookups += 1
 	elseif ground then
 		local okL, okM, okR, c1, c2, c3, n1, n2, n3
 		L, okL, c1, n1 = GroundMarks.probe(ground, L, S.lift, S.maxSnap)
