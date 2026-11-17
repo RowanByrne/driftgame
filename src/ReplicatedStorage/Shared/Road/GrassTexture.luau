@@ -21,12 +21,15 @@
 --
 -- WHY AN EDITABLEIMAGE, not the asset id straight on the part: only an image the game holds
 -- can have its corners set, and the corners are what keep the rest of the mesh looking right.
+-- Once set, it is made opaque content and let go (`content`, T-276), so it holds none of the
+-- client's mesh memory.
 --
 -- A device that will not load or make the image draws the road as before: no texture, flat
 -- grass, the tarmac with its Asphalt grain.
 
 local AssetService = game:GetService("AssetService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
 
 local Config = require(ReplicatedStorage.Shared.Config)
 
@@ -89,6 +92,58 @@ function GrassTexture.get(): EditableImage?
 	return image
 end
 
+-- THE SAME IMAGE AS OPAQUE CONTENT (T-276): an EditableImage holds the client's mesh memory
+-- (a 512 x 512 one about 8 of its ~640 tiles, `Config.Spline.Mesh.Budget`); opaque content
+-- (`AssetService:CreateDataModelContentAsync`) holds none, and nothing changes the image once
+-- its corners are set. So the image is made as `get` makes it, made opaque, and let go. Where
+-- opaque content is refused (`CreateContentResult`, or `workspace.__no_opaque` in Studio, as
+-- `Road/SplineMesh`), this is the EditableImage itself (`get`), as before. nil as `get`.
+-- Loaded the first time it is asked for; it yields, as `get` does.
+local content: Content? = nil
+local contentState = "none" -- "none", "making", "opaque", "image" (the fallback), "off"
+
+function GrassTexture.content(): Content?
+	local G = Config.Spline.Grass
+	if not G.Enabled then
+		return nil
+	end
+	while contentState == "making" do
+		task.wait()
+	end
+	if contentState == "opaque" then
+		return content
+	elseif contentState == "image" then
+		local img = GrassTexture.get()
+		return if img then Content.fromObject(img) else nil
+	elseif contentState == "off" then
+		return nil
+	end
+	contentState = "making"
+	local img = GrassTexture.get()
+	if not img then
+		contentState = "off"
+		return nil
+	end
+	local refused = RunService:IsStudio() and workspace:GetAttribute("__no_opaque") == true
+	local ok, result, made = false, nil, nil
+	if not refused then
+		ok, result, made = pcall(function()
+			return AssetService:CreateDataModelContentAsync(Content.fromObject(img))
+		end)
+	end
+	if ok and result == Enum.CreateContentResult.Success and made then
+		content = made
+		contentState = "opaque"
+		-- the EditableImage let go: `get` makes it again only if asked (Studio checks)
+		img:Destroy()
+		image = nil
+		state = "none"
+		return content
+	end
+	contentState = "image"
+	return Content.fromObject(img)
+end
+
 -- A grass vertex's UV: world studs over `TileStuds`, shifted by a whole number of tiles
 -- (`base`, from the chunk's centre) so the numbers stay small and the tiling runs on
 -- unbroken from chunk to chunk.
@@ -138,6 +193,9 @@ function GrassTexture.DebugState()
 		state = state,
 		buildMs = buildMs,
 		size = if image then image.Size.X else 0,
+		-- T-276: "opaque" (the image let go), "image" (opaque content refused: the image kept),
+		-- "off", "none" (not asked for yet)
+		content = contentState,
 	}
 end
 
