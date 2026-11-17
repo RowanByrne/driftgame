@@ -43,7 +43,9 @@ return {
 		-- the misty base, ran each column's colour down the skirt in streaks (the user circled
 		-- them; lane 2).
 		SkirtFade = 0.25,
-		SkirtUV = Vector2.new(0.5, 0.97),
+		-- At the picture's edge column, which every joined picture of a ring shares, so the
+		-- skirts of neighbouring panels match.
+		SkirtUV = Vector2.new(0.003, 0.97),
 	},
 
 	-- ------------------------------------------------------------- ridge layers
@@ -56,7 +58,21 @@ return {
 	-- left out (the panel stands with no art, so it can't be seen).
 	--
 	-- `Lag` (s) and `MaxLag` (studs): how far the layer trails the camera, so a nearer layer
-	-- slides past a further one on a bend. `Skirt`: a plain part under each panel, in the
+	-- slides past a further one on a bend. The rings never cross, even at their full trails
+	-- (the tests check), which is why the trails are short: every ring stands between the
+	-- drawn ground's reach and the snow peaks.
+	--
+	-- `Slide` (step 2, the user's idea: "like the scenery of a puppet show"): the share of the
+	-- camera's height above the road's start each ring rises by. A nearer ring rises less, so
+	-- climbing sinks it below the further ones and the view opens; in a valley it stands up in
+	-- front of them and closes it in.
+	--
+	-- A layer with no `Images` is not built. Its pictures are the `-joined` copies: every one
+	-- ends in the halves of one connector cut from the ring's first picture, so any two meet
+	-- without a seam (`pipeline/vista/join-strips.py`; lifting each picture to line up its
+	-- saddles still left the mist bands stepped, the user's screenshot). `Edges` (optional):
+	-- where each picture's end saddles sit, to lift it so they meet; the joined copies need
+	-- none. `Skirt`: a plain part under each panel, in the
 	-- colour of the art's base, reaching down `Skirt` studs so the bottom edge of the art is
 	-- never seen above the cloud sea; `BaseColour` is the art's bottom tenth, averaged.
 	Layers = {
@@ -70,20 +86,56 @@ return {
 			Peak = 8,
 			PeakAt = 0.33,
 			Lag = 0.6,
-			MaxLag = 120,
+			MaxLag = 40, -- was 120, before the nearer rings had to fit inside it
+			Slide = 0.75,
 			Skirt = 900,
 			BaseColour = Color3.fromRGB(151, 172, 198),
 			Images = {
-				"rbxassetid://129944061048496", -- far-painted-02 (assets/painted-vista/MANIFEST.md)
-				"rbxassetid://120124891988351", -- far-painted-02-v1
-				"rbxassetid://128884046668071", -- far-painted-02-v2
+				"rbxassetid://79376888826751", -- far-painted-02-joined-v2 (pipeline/vista/join-strips.py; assets/painted-vista/MANIFEST.md)
+				"rbxassetid://81327599571700", -- far-painted-02-v1-joined-v2 (pipeline/vista/join-strips.py; assets/painted-vista/MANIFEST.md)
+				"rbxassetid://76162842646884", -- far-painted-02-v2-joined-v2 (pipeline/vista/join-strips.py; assets/painted-vista/MANIFEST.md)
+			},
+		},
+		{
+			Name = "Middle",
+			Radius = 2900,
+			Panels = 10,
+			Aspect = 3,
+			Peak = 5.5,
+			PeakAt = 0.33,
+			Lag = 1.5,
+			MaxLag = 50,
+			Slide = 0.6,
+			Skirt = 900,
+			BaseColour = Color3.fromRGB(53, 106, 125), -- mid-ridge-02-clear's bottom tenth
+			Images = {
+				"rbxassetid://74618630837340", -- mid-ridge-02-clear-joined (pipeline/vista/join-strips.py; assets/painted-vista/MANIFEST.md)
+				"rbxassetid://87127390672673", -- mid-ridge-02-v1-clear-joined (pipeline/vista/join-strips.py; assets/painted-vista/MANIFEST.md)
+				"rbxassetid://100196195395646", -- mid-ridge-02-v2-clear-joined (pipeline/vista/join-strips.py; assets/painted-vista/MANIFEST.md)
+			},
+		},
+		{
+			Name = "Near",
+			Radius = 2620,
+			Panels = 10,
+			Aspect = 3,
+			Peak = 3.5,
+			PeakAt = 0.33,
+			Lag = 3,
+			MaxLag = 60,
+			Slide = 0.45,
+			Skirt = 900,
+			BaseColour = Color3.fromRGB(58, 91, 90), -- near-forest-01-clear's bottom tenth
+			Images = {
+				"rbxassetid://100935312550957", -- near-forest-01-clear-joined (pipeline/vista/join-strips.py; assets/painted-vista/MANIFEST.md)
+				"rbxassetid://113094213083603", -- near-forest-01-v1-clear-joined (pipeline/vista/join-strips.py; assets/painted-vista/MANIFEST.md)
+				"rbxassetid://77096375808929", -- near-forest-01-v2-clear-joined (pipeline/vista/join-strips.py; assets/painted-vista/MANIFEST.md)
 			},
 		},
 	},
 
-	-- Each layer stands at the road's start height plus `FollowHeight` of the camera's
-	-- height above it, eased over `HeightLag` s, so it holds its place in the frame as the
-	-- road climbs and falls, sinking a little (as the old horizon did).
+	-- Each layer stands at the road's start height plus its `Slide` of the camera's height
+	-- above it, eased over `HeightLag` s. The cloud sea rises by `FollowHeight`.
 	FollowHeight = 0.75,
 	HeightLag = 2, -- s
 
@@ -99,6 +151,9 @@ return {
 	-- drifts at its own speed (studs/s) and direction (degrees), and lets more through the
 	-- lower it is (`Transparency`).
 	CloudSea = {
+		-- Off for now (2026-11-16, the user: "get rid of the cloud layer thing, we will revisit
+		-- that later"). Everything below stays for when it comes back.
+		Enabled = false,
 		Image = "rbxassetid://117132635448742", -- cloud-oil-03, the picked cloud texture (assets/painted-vista/MANIFEST.md)
 		Below = 150,
 		Gap = 30,

@@ -1,6 +1,6 @@
 # Feature: Painted vista
 
-**Status:** step 1 (the trial) in a lane for the user. **Owner task:** T-266 (step 1: T-267).
+**Status:** step 1 merged; step 2 (sliding rings) in a lane for the user. **Owner task:** T-266 (step 1: T-267, step 2: T-271).
 
 ## Goal
 
@@ -213,3 +213,16 @@ Made with the image tool (`tools\imagegen.ps1`) and recorded in `assets/painted-
 - **The look:** low-poly or painterly. The user picks from the trial's candidates.
 - **The day's haze:** the far layer may need the day's `AtmosphereDensity` lowered a little to stay
   visible, which changes how the day looks. That gets tuned in the trial and shown in the shots.
+
+## As built in step 2 (T-271)
+
+| Ring | Radius | Summit | Trails at most | Slide | Art |
+|---|---|---|---|---|---|
+| Near | 2 620 | 3.5° | 60 studs | 0.45 | `near-forest-01` and two variants |
+| Middle | 2 900 | 5.5° | 50 studs | 0.6 | `mid-ridge-02` and two variants |
+| Far | 3 200 | 8° | 40 studs | 0.75 | `far-painted-02` and two variants |
+
+- **Slide** is the share of the camera's height above the road's start each ring rises by: climbing 1 000 studs sinks the near ring 550 studs below the camera, the middle 400 and the far 250.
+- **The rings never cross,** even at their full trails (tested), which keeps the trails short.
+- **Saddles line up:** each picture is lifted or lowered by its measured saddle height (`Edges`), so neighbouring pictures meet without a step.
+- **The cloud sea is off** for now (the user: "get rid of the cloud layer thing, we will revisit that later"); its code and numbers stay.

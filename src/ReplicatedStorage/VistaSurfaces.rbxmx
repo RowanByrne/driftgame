@@ -5,23 +5,65 @@
 		</Properties>
 		<Item class="SurfaceAppearance" referent="RBX1">
 			<Properties>
-				<string name="Name">129944061048496</string>
+				<string name="Name">79376888826751</string>
 				<token name="AlphaMode">1</token>
-				<Content name="ColorMap"><url>rbxassetid://129944061048496</url></Content>
+				<Content name="ColorMap"><url>rbxassetid://79376888826751</url></Content>
 			</Properties>
 		</Item>
 		<Item class="SurfaceAppearance" referent="RBX2">
 			<Properties>
-				<string name="Name">120124891988351</string>
+				<string name="Name">81327599571700</string>
 				<token name="AlphaMode">1</token>
-				<Content name="ColorMap"><url>rbxassetid://120124891988351</url></Content>
+				<Content name="ColorMap"><url>rbxassetid://81327599571700</url></Content>
 			</Properties>
 		</Item>
 		<Item class="SurfaceAppearance" referent="RBX3">
 			<Properties>
-				<string name="Name">128884046668071</string>
+				<string name="Name">76162842646884</string>
 				<token name="AlphaMode">1</token>
-				<Content name="ColorMap"><url>rbxassetid://128884046668071</url></Content>
+				<Content name="ColorMap"><url>rbxassetid://76162842646884</url></Content>
+			</Properties>
+		</Item>
+		<Item class="SurfaceAppearance" referent="RBX4">
+			<Properties>
+				<string name="Name">74618630837340</string>
+				<token name="AlphaMode">1</token>
+				<Content name="ColorMap"><url>rbxassetid://74618630837340</url></Content>
+			</Properties>
+		</Item>
+		<Item class="SurfaceAppearance" referent="RBX5">
+			<Properties>
+				<string name="Name">87127390672673</string>
+				<token name="AlphaMode">1</token>
+				<Content name="ColorMap"><url>rbxassetid://87127390672673</url></Content>
+			</Properties>
+		</Item>
+		<Item class="SurfaceAppearance" referent="RBX6">
+			<Properties>
+				<string name="Name">100196195395646</string>
+				<token name="AlphaMode">1</token>
+				<Content name="ColorMap"><url>rbxassetid://100196195395646</url></Content>
+			</Properties>
+		</Item>
+		<Item class="SurfaceAppearance" referent="RBX7">
+			<Properties>
+				<string name="Name">100935312550957</string>
+				<token name="AlphaMode">1</token>
+				<Content name="ColorMap"><url>rbxassetid://100935312550957</url></Content>
+			</Properties>
+		</Item>
+		<Item class="SurfaceAppearance" referent="RBX8">
+			<Properties>
+				<string name="Name">113094213083603</string>
+				<token name="AlphaMode">1</token>
+				<Content name="ColorMap"><url>rbxassetid://113094213083603</url></Content>
+			</Properties>
+		</Item>
+		<Item class="SurfaceAppearance" referent="RBX9">
+			<Properties>
+				<string name="Name">77096375808929</string>
+				<token name="AlphaMode">1</token>
+				<Content name="ColorMap"><url>rbxassetid://77096375808929</url></Content>
 			</Properties>
 		</Item>
 	</Item>

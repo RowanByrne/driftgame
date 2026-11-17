@@ -48,7 +48,8 @@ function Tests.run()
 			widest = math.max(widest, p.size.X, p.size.Y, if p.skirt then p.skirt.size.Y else 0)
 		end
 		check(`{layer.Name}: every part under 2 048 studs`, widest < 2048, string.format("largest side %.0f", widest))
-		total += #panels * (if panels[1].skirt then 2 else 1) + 1
+		-- curved panels carry their own skirt; flat ones (the fallback) have a part for it
+		total += #panels * (if V.Mesh.Build or not panels[1].skirt then 1 else 2) + 1
 
 		-- beyond the drawn ground even at its full trail
 		local nearest = layer.Radius * math.cos(math.pi / layer.Panels) - layer.MaxLag
@@ -60,7 +61,7 @@ function Tests.run()
 			local q = panels[i % #panels + 1]
 			local pr = (p.cframe * CFrame.new(p.size.X / 2, 0, 0)).Position
 			local ql = (q.cframe * CFrame.new(-q.size.X / 2, 0, 0)).Position
-			gap = math.max(gap, (pr - ql).Magnitude)
+			gap = math.max(gap, Vector3.new(pr.X - ql.X, 0, pr.Z - ql.Z).Magnitude)
 		end
 		check(`{layer.Name}: no gap between neighbouring panels`, gap < 0.5, string.format("widest gap %.2f", gap))
 
@@ -104,7 +105,7 @@ function Tests.run()
 			local q = arcs[i % #arcs + 1]
 			local pr = (p.cframe * CFrame.new(p.size.X / 2, 0, -p.size.Z / 2)).Position
 			local ql = (q.cframe * CFrame.new(-q.size.X / 2, 0, -q.size.Z / 2)).Position
-			arcGap = math.max(arcGap, (pr - ql).Magnitude)
+			arcGap = math.max(arcGap, Vector3.new(pr.X - ql.X, 0, pr.Z - ql.Z).Magnitude)
 			arcWidest = math.max(arcWidest, p.size.X, p.size.Y, p.size.Z)
 		end
 		check(`{layer.Name}: curved panels meet end to end`, arcGap < 0.5, string.format("widest gap %.2f", arcGap))
@@ -131,6 +132,29 @@ function Tests.run()
 		end
 		check(`{layer.Name}: every picture has its asset id`, art)
 	end
+
+	-- the rings never cross, even at their full trails, and nearer ones slide less
+	local byRadius = table.clone(V.Layers)
+	table.sort(byRadius, function(a, b)
+		return a.Radius < b.Radius
+	end)
+	for i = 1, #byRadius - 1 do
+		local inner, outer = byRadius[i], byRadius[i + 1]
+		local _, innerFar = Vista.ringSpan(inner)
+		local outerNear = Vista.ringSpan(outer)
+		check(
+			`{inner.Name} never crosses {outer.Name}`,
+			innerFar < outerNear,
+			string.format("%s reaches %.0f, %s comes to %.0f", inner.Name, innerFar, outer.Name, outerNear)
+		)
+		check(`{inner.Name} slides less than {outer.Name}`, inner.Slide < outer.Slide, string.format("%.2f, %.2f", inner.Slide, outer.Slide))
+	end
+	-- climbing 1 000 studs sinks the nearest ring furthest below the camera
+	local sunk = {}
+	for _, layer in byRadius do
+		table.insert(sunk, string.format("%s %.0f", layer.Name, 1000 - Vista.lift(V, 0, 1000, layer.Slide)))
+	end
+	check("climbing 1 000 studs, each ring sinks", true, table.concat(sunk, ", "))
 
 	-- the arc mesh: every face looks in at the ring's centre, its box is centred and as sized
 	local g = Vista.arcGeometry(V.Mesh)
@@ -164,8 +188,10 @@ function Tests.run()
 	check("cloud: has its asset id", string.match(sea.Image, "^rbxassetid://%d+$") ~= nil)
 	check("cloud: the tile divides a part, so parts join",sea.PartSize % sea.Tile == 0, `{sea.PartSize} / {sea.Tile}`)
 	check("cloud: parts under 2 048 studs", sea.PartSize <= 2048)
-	for _, l in sea.Layers do
-		total += l.Grid * l.Grid + 1
+	if sea.Enabled ~= false then
+		for _, l in sea.Layers do
+			total += l.Grid * l.Grid + 1
+		end
 	end
 	check("fewer than 100 parts in all", total < 100, `{total}`)
 

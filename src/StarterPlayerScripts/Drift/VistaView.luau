@@ -46,6 +46,7 @@ type Ridge = {
 	name: string,
 	lag: number,
 	maxLag: number,
+	slide: number,
 	radius: number,
 	centre: Vector3, -- flat, Y = 0
 	anchor: Part,
@@ -208,7 +209,9 @@ function VistaView.new(originY: number, getLook: (() -> Look?)?, parent: Instanc
 	}, VistaView)
 
 	self:_buildRidges(start)
-	self:_buildClouds(start)
+	if Config.Vista.CloudSea.Enabled ~= false then
+		self:_buildClouds(start)
+	end
 	folder.Parent = parent or Workspace
 
 	RunService:BindToRenderStep(STEP_NAME, Enum.RenderPriority.Camera.Value + 1, function(dt: number)
@@ -219,7 +222,12 @@ function VistaView.new(originY: number, getLook: (() -> Look?)?, parent: Instanc
 end
 
 function VistaView._buildRidges(self: View, start: Vector3)
-	local layers = Config.Vista.Layers
+	local layers = {}
+	for _, layer in Config.Vista.Layers do
+		if #(layer.Images or {}) > 0 then
+			table.insert(layers, layer)
+		end
+	end
 	for _, layer in layers do
 		local sub = Instance.new("Folder")
 		sub.Name = layer.Name
@@ -229,6 +237,7 @@ function VistaView._buildRidges(self: View, start: Vector3)
 			name = layer.Name,
 			lag = layer.Lag,
 			maxLag = layer.MaxLag,
+			slide = layer.Slide or Config.Vista.FollowHeight,
 			radius = layer.Radius,
 			centre = start,
 			anchor = anchor,
@@ -423,10 +432,10 @@ function VistaView.Update(self: View, dt: number)
 	self.t += dt
 	self.camY += (at.Y - self.camY) * (if dt > 0 then 1 - math.exp(-dt / V.HeightLag) else 1)
 	self.lift = Vista.lift(V, self.originY, self.camY)
-	local level = self.originY + self.lift
 
 	for _, ridge in self.ridges do
 		ridge.centre = Vista.follow(ridge.centre, cam, dt, ridge.lag, ridge.maxLag)
+		local level = self.originY + Vista.lift(V, self.originY, self.camY, ridge.slide)
 		ridge.anchor.CFrame = CFrame.new(ridge.centre + Vector3.yAxis * level)
 	end
 
@@ -510,6 +519,7 @@ function VistaView.DebugState(self: View): { [string]: any }
 		table.insert(layers, {
 			name = ridge.name,
 			kind = ridge.kind,
+			level = ridge.anchor.Position.Y,
 			parts = panels,
 			radius = ridge.radius,
 			behind = (cam - ridge.centre).Magnitude,
