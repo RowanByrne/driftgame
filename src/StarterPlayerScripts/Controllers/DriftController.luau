@@ -1011,6 +1011,7 @@ function DriftController:_startScoreEvents()
 		PerfectLaneDrift = require(events.PerfectLaneDrift).new(sink, self.scoreRig),
 		PerfectHairpin = require(events.PerfectHairpin).new(sink, self.scoreRig),
 		ReverseEntry = require(events.ReverseEntry).new(sink, self.scoreRig),
+		ScandiFlick = require(events.ScandiFlick).new(sink, self.scoreRig),
 	}
 end
 

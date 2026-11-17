@@ -320,5 +320,16 @@ return {
 			JumpStuds = 80, -- studs
 			MaxSeconds = 20, -- an attempt still going after this is void
 		},
+		-- `Drift/Events/ScandiFlick` (T-300): on a true hairpin, a 4-wheel drift turned OUT of
+		-- it held `MinHold` inside its entry zone starts it; the 4-wheel drift INTO it must take
+		-- hold within `Window` of letting the first go (and before the apex), then hold to the
+		-- exit, a lapse up to `Grace` forgiven. A full finger swings it in about 0.53 s.
+		ScandiFlick = {
+			MinHold = 0.2, -- seconds of the wrong-way 4-wheel drift inside the zone
+			Window = 1.0, -- seconds from letting it go to the right-way 4-wheel drift
+			Grace = 0.2, -- seconds
+			JumpStuds = 80, -- studs along the road in one step that can only be a put-back
+			MaxSeconds = 20, -- an attempt still going after this is void
+		},
 	},
 }
