@@ -1,10 +1,12 @@
 --!strict
 -- PebbleSound: stones kicked up into the wheel wells and the floor off the road (T-292,
--- docs/game/AUDIO.md, numbers in `Config.Pebbles`). The user's pick, "D: Ticks + crunch":
+-- docs/game/AUDIO.md, numbers in `Config.Pebbles`). The user's pick, round 2 (round 1's
+-- pebble ticks were sent back as "pebbles on pebbles"):
 --
---   THE TICKS: single pebble ticks and heavier rock clacks, slices of Creator Store one-shots,
---   fired at random times (a Poisson stream: no two seconds alike, nothing to hear loop), each
---   at a random pitch and loudness, on a few `Sound`s that take turns.
+--   THE HITS: stones on sheet metal -- heavy floor-pan and thin-metal clanks and light pings,
+--   slices of Creator Store one-shots (the user's pick, "E: Floor-pan clanks") -- fired at
+--   random times (a Poisson stream: no two seconds alike, nothing to hear loop), each at a
+--   random pitch and loudness, its last `FadeTail` faded out, on `Voices` `Sound`s.
 --   THE CRUNCH: one gravel loop under them, quiet, its rumble cut by an EQ, never restarted
 --   while the car exists, so its loop point is never heard coming.
 --
@@ -54,7 +56,9 @@ export type PebbleSound = typeof(setmetatable(
 		body: BasePart?,
 		bed: Sound?,
 		voices: { Sound },
-		nextVoice: number,
+		voiceEnds: { number }, -- `clock` each voice's hit ends at (0: idle)
+		voiceLevels: { number }, -- each voice's volume before its fade
+		clock: number, -- seconds of `Update`, for the voices' ends
 		enabled: boolean,
 		ground: number, -- 0 .. 1, the heard ground value (faded)
 		target: number, -- what it is heading for
@@ -145,7 +149,9 @@ function PebbleSound.new(seed: number?): PebbleSound
 		body = nil,
 		bed = nil,
 		voices = {},
-		nextVoice = 1,
+		voiceEnds = {},
+		voiceLevels = {},
+		clock = 0,
 		enabled = true,
 		ground = 0,
 		target = 0,
@@ -191,6 +197,8 @@ function PebbleSound.Clear(self: PebbleSound)
 		voice:Destroy()
 	end
 	table.clear(self.voices)
+	table.clear(self.voiceEnds)
+	table.clear(self.voiceLevels)
 	self.body = nil
 end
 
@@ -241,6 +249,8 @@ function PebbleSound.Attach(self: PebbleSound, rig: any): boolean
 		voice.SoundId = "rbxassetid://" .. P.Ticks[1 + (i - 1) % #P.Ticks].id
 		voice.Parent = body
 		table.insert(self.voices, voice)
+		table.insert(self.voiceEnds, 0)
+		table.insert(self.voiceLevels, 0)
 	end
 	-- Every tick file loaded now, so the first tick on each is not late.
 	local seen = {}
@@ -284,8 +294,19 @@ function PebbleSound._fire(self: PebbleSound)
 	if QUIET or #self.voices == 0 then
 		return
 	end
-	local voice = self.voices[self.nextVoice]
-	self.nextVoice = self.nextVoice % #self.voices + 1
+	-- An idle voice, else the one nearest the end of its hit: a ring is cut only when every
+	-- voice is busy, and then the quietest-by-now one.
+	local index, soonest = 1, math.huge
+	for i, ends in self.voiceEnds do
+		if ends <= self.clock then
+			index = i
+			break
+		end
+		if ends < soonest then
+			index, soonest = i, ends
+		end
+	end
+	local voice = self.voices[index]
 	local id = "rbxassetid://" .. tick.id
 	if voice.SoundId ~= id then
 		voice.SoundId = id
@@ -293,9 +314,12 @@ function PebbleSound._fire(self: PebbleSound)
 	voice:Stop()
 	voice.PlaybackRegion = NumberRange.new(tick.start, tick.start + tick.length)
 	voice.TimePosition = tick.start
-	voice.PlaybackSpeed = r:NextNumber(P.PitchMin, P.PitchMax)
-	local level = PebbleSound.tickLevelFor(self.ground, self.speedT) * tick.gain * r:NextNumber(P.TickRandomVolume, 1)
-	voice.Volume = math.min(level, 10)
+	local pitch = r:NextNumber(P.PitchMin, P.PitchMax)
+	voice.PlaybackSpeed = pitch
+	local level = math.min(PebbleSound.tickLevelFor(self.ground, self.speedT) * tick.gain * r:NextNumber(P.TickRandomVolume, 1), 10)
+	voice.Volume = level
+	self.voiceLevels[index] = level
+	self.voiceEnds[index] = self.clock + tick.length / pitch
 	voice:Play()
 end
 
@@ -309,14 +333,42 @@ function PebbleSound.Cut(self: PebbleSound)
 	if self.bed then
 		self.bed.Volume = 0
 	end
-	for _, voice in self.voices do
+	for i, voice in self.voices do
 		voice:Stop()
+		self.voiceEnds[i] = 0
 	end
+end
+
+-- Each hit's last `FadeTail` fades to nothing, a step a frame: a metal ring cut dead clicks.
+-- The volume a voice should be at `remaining` seconds before its hit ends, pure.
+function PebbleSound.fadeLevel(level: number, remaining: number): number
+	local tail = Config.Pebbles.FadeTail
+	if remaining >= tail then
+		return level
+	end
+	return level * math.max(remaining, 0) / math.max(tail, 1e-4)
 end
 
 function PebbleSound.Update(self: PebbleSound, state: DriftModel.State?, dt: number)
 	local P = Config.Pebbles
 	local step = math.max(dt or 0, 0)
+	self.clock += step
+
+	-- The hits' fades, before any new hit takes a voice
+	for i, voice in self.voices do
+		local ends = self.voiceEnds[i]
+		if ends > 0 then
+			local remaining = ends - self.clock
+			if remaining <= 0 then
+				self.voiceEnds[i] = 0
+				if voice.IsPlaying then
+					voice:Stop()
+				end
+			elseif remaining < P.FadeTail then
+				voice.Volume = PebbleSound.fadeLevel(self.voiceLevels[i], remaining)
+			end
+		end
+	end
 
 	if state and self.lastPosition and (state.position - self.lastPosition).Magnitude > P.JumpDistance then
 		PebbleSound.Cut(self)
@@ -397,6 +449,13 @@ function PebbleSound.DebugState(self: PebbleSound, state: DriftModel.State?)
 		enabled = self.enabled,
 		attached = self.body ~= nil,
 		voices = #self.voices,
+		busyVoices = (function()
+			local n = 0
+			for _, ends in self.voiceEnds do
+				n += if ends > self.clock then 1 else 0
+			end
+			return n
+		end)(),
 		bedPlaying = if self.bed then self.bed.IsPlaying else false,
 		bedInstanceVolume = if self.bed then self.bed.Volume else 0,
 		bedPitch = if self.bed then self.bed.PlaybackSpeed else 0,

@@ -66,7 +66,7 @@ function PebbleSoundTests.run()
 	local grass = levels({ surface = "grass", speed = 100 })
 	check(checks, "tarmac at 100 studs/s is silent", tarmac.rate == 0 and tarmac.bed == 0 and tarmac.tick == 0,
 		`rate {f(tarmac.rate)}, crunch {f(tarmac.bed)}`)
-	check(checks, "gravel > dirt > grass > 0 (ticks a second and crunch)",
+	check(checks, "gravel > dirt > grass > 0 (hits a second and crunch)",
 		gravel.rate > dirt.rate and dirt.rate > grass.rate and grass.rate > 0
 			and gravel.bed > dirt.bed and dirt.bed > grass.bed and grass.bed > 0,
 		`rate {f(gravel.rate)} / {f(dirt.rate)} / {f(grass.rate)}; crunch {f(gravel.bed)} / {f(dirt.bed)} / {f(grass.bed)}`)
@@ -168,12 +168,23 @@ function PebbleSoundTests.run()
 	-- The slice table
 	local okTable, worstLevel = true, 0
 	for _, tick in P.Ticks do
-		if not (tick.length > 0.01 and tick.length < 0.1 and tick.start >= 0 and tick.gain > 0) then
+		if not (tick.length > P.FadeTail and tick.length < 0.4 and tick.start >= 0 and tick.gain > 0) then
 			okTable = false
 		end
 		worstLevel = math.max(worstLevel, P.TickVolume * tick.gain)
 	end
-	check(checks, "every slice is a short, positive window", okTable and #P.Ticks >= 20, `{#P.Ticks} slices`)
+	local clanks = 0
+	for _, tick in P.Ticks do
+		clanks += if tick.clack then 1 else 0
+	end
+	check(checks, "every hit is a short window longer than its fade, with pings and clanks both",
+		okTable and #P.Ticks >= 12 and clanks > 0 and clanks < #P.Ticks, `{#P.Ticks} hits, {clanks} clanks`)
+
+	-- The per-hit fade: full until its last FadeTail, then down to nothing at the end
+	local tail = P.FadeTail
+	local f1, fHalf, f0 = PebbleSound.fadeLevel(2, tail * 2), PebbleSound.fadeLevel(2, tail / 2), PebbleSound.fadeLevel(2, 0)
+	check(checks, "each hit fades out over its last FadeTail", f1 == 2 and math.abs(fHalf - 1) < 1e-9 and f0 == 0,
+		`level 2: {f(f1)} before the tail, {f(fHalf)} halfway through it, {f(f0)} at the end ({tail} s)`)
 	table.insert(log, `loudest tick instance volume wanted {f(worstLevel)} (held at 10)`)
 
 	local passed = true
