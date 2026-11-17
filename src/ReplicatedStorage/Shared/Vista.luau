@@ -178,10 +178,16 @@ function Vista.follow(centre: Vector3, cam: Vector3, dt: number, lag: number, ma
 	return nextCentre
 end
 
--- How far the layers stand above the road's start: `FollowHeight` of the (eased) camera's
--- height above it.
-function Vista.lift(cfg: any, originY: number, camY: number): number
-	return cfg.FollowHeight * (camY - originY)
+-- How far a layer stands above the road's start: its `slide` (else `FollowHeight`, the cloud
+-- sea's) of the (eased) camera's height above it.
+function Vista.lift(cfg: any, originY: number, camY: number, slide: number?): number
+	return (slide or cfg.FollowHeight) * (camY - originY)
+end
+
+-- The nearest and furthest a ring's panels come to the camera: their ends are nearest, their
+-- middles furthest, and the ring may trail by up to `MaxLag` either way.
+function Vista.ringSpan(layer: any): (number, number)
+	return layer.Radius * math.cos(math.pi / layer.Panels) - layer.MaxLag, layer.Radius + layer.MaxLag
 end
 
 -- The cloud sea's top layer height: under the road's start, rising with the road, and never

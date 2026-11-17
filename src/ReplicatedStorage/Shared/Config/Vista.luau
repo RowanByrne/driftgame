@@ -56,7 +56,16 @@ return {
 	-- left out (the panel stands with no art, so it can't be seen).
 	--
 	-- `Lag` (s) and `MaxLag` (studs): how far the layer trails the camera, so a nearer layer
-	-- slides past a further one on a bend. `Skirt`: a plain part under each panel, in the
+	-- slides past a further one on a bend. The rings never cross, even at their full trails
+	-- (the tests check), which is why the trails are short: every ring stands between the
+	-- drawn ground's reach and the snow peaks.
+	--
+	-- `Slide` (step 2, the user's idea: "like the scenery of a puppet show"): the share of the
+	-- camera's height above the road's start each ring rises by. A nearer ring rises less, so
+	-- climbing sinks it below the further ones and the view opens; in a valley it stands up in
+	-- front of them and closes it in.
+	--
+	-- A layer with no `Images` is not built. `Skirt`: a plain part under each panel, in the
 	-- colour of the art's base, reaching down `Skirt` studs so the bottom edge of the art is
 	-- never seen above the cloud sea; `BaseColour` is the art's bottom tenth, averaged.
 	Layers = {
@@ -70,7 +79,8 @@ return {
 			Peak = 8,
 			PeakAt = 0.33,
 			Lag = 0.6,
-			MaxLag = 120,
+			MaxLag = 40, -- was 120, before the nearer rings had to fit inside it
+			Slide = 0.75,
 			Skirt = 900,
 			BaseColour = Color3.fromRGB(151, 172, 198),
 			Images = {
@@ -79,11 +89,38 @@ return {
 				"rbxassetid://128884046668071", -- far-painted-02-v2
 			},
 		},
+		{
+			Name = "Middle",
+			Radius = 2900,
+			Panels = 10,
+			Aspect = 3,
+			Peak = 5.5,
+			PeakAt = 0.33,
+			Lag = 1.5,
+			MaxLag = 50,
+			Slide = 0.6,
+			Skirt = 900,
+			BaseColour = Color3.fromRGB(156, 175, 194), -- mid-ridge-02's bottom tenth
+			Images = {}, -- step 2's pick (assets/painted-vista/MANIFEST.md)
+		},
+		{
+			Name = "Near",
+			Radius = 2620,
+			Panels = 10,
+			Aspect = 3,
+			Peak = 3.5,
+			PeakAt = 0.33,
+			Lag = 3,
+			MaxLag = 60,
+			Slide = 0.45,
+			Skirt = 900,
+			BaseColour = Color3.fromRGB(152, 169, 188), -- near-forest-01's bottom tenth
+			Images = {}, -- step 2's pick
+		},
 	},
 
-	-- Each layer stands at the road's start height plus `FollowHeight` of the camera's
-	-- height above it, eased over `HeightLag` s, so it holds its place in the frame as the
-	-- road climbs and falls, sinking a little (as the old horizon did).
+	-- Each layer stands at the road's start height plus its `Slide` of the camera's height
+	-- above it, eased over `HeightLag` s. The cloud sea rises by `FollowHeight`.
 	FollowHeight = 0.75,
 	HeightLag = 2, -- s
 
@@ -99,6 +136,9 @@ return {
 	-- drifts at its own speed (studs/s) and direction (degrees), and lets more through the
 	-- lower it is (`Transparency`).
 	CloudSea = {
+		-- Off for now (2026-11-16, the user: "get rid of the cloud layer thing, we will revisit
+		-- that later"). Everything below stays for when it comes back.
+		Enabled = false,
 		Image = "rbxassetid://117132635448742", -- cloud-oil-03, the picked cloud texture (assets/painted-vista/MANIFEST.md)
 		Below = 150,
 		Gap = 30,

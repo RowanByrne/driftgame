@@ -132,6 +132,29 @@ function Tests.run()
 		check(`{layer.Name}: every picture has its asset id`, art)
 	end
 
+	-- the rings never cross, even at their full trails, and nearer ones slide less
+	local byRadius = table.clone(V.Layers)
+	table.sort(byRadius, function(a, b)
+		return a.Radius < b.Radius
+	end)
+	for i = 1, #byRadius - 1 do
+		local inner, outer = byRadius[i], byRadius[i + 1]
+		local _, innerFar = Vista.ringSpan(inner)
+		local outerNear = Vista.ringSpan(outer)
+		check(
+			`{inner.Name} never crosses {outer.Name}`,
+			innerFar < outerNear,
+			string.format("%s reaches %.0f, %s comes to %.0f", inner.Name, innerFar, outer.Name, outerNear)
+		)
+		check(`{inner.Name} slides less than {outer.Name}`, inner.Slide < outer.Slide, string.format("%.2f, %.2f", inner.Slide, outer.Slide))
+	end
+	-- climbing 1 000 studs sinks the nearest ring furthest below the camera
+	local sunk = {}
+	for _, layer in byRadius do
+		table.insert(sunk, string.format("%s %.0f", layer.Name, 1000 - Vista.lift(V, 0, 1000, layer.Slide)))
+	end
+	check("climbing 1 000 studs, each ring sinks", true, table.concat(sunk, ", "))
+
 	-- the arc mesh: every face looks in at the ring's centre, its box is centred and as sized
 	local g = Vista.arcGeometry(V.Mesh)
 	local half = math.rad(V.Mesh.ArcDeg / 2)
