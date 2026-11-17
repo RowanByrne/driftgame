@@ -108,8 +108,9 @@ export type ArcGeometry = {
 -- In mesh space the ring's centre is on -Z, the way a part's front looks, and the box is
 -- centred on the origin, as Roblox centres a mesh in its part. Every normal points in at the
 -- centre, so the shading runs on smoothly from one panel into the next. u runs left to right
--- as seen from the centre; v down the picture, and held at its bottom row down the skirt
--- (kept just inside the edges, clear of the wrap to the transparent top).
+-- as seen from the centre; v down the picture to `SkirtV`, and the rest of its misty base
+-- stretched down the skirt (kept just inside the edges, clear of the wrap to the
+-- transparent top).
 function Vista.arcGeometry(mesh: any): ArcGeometry
 	local radius = 1000
 	local half = math.rad(mesh.ArcDeg / 2)
@@ -118,7 +119,7 @@ function Vista.arcGeometry(mesh: any): ArcGeometry
 	local height = art / mesh.ArtShare - mesh.TopV * art
 	local zc = -radius * (1 + math.cos(half)) / 2
 	local cols: number = mesh.Columns
-	local top, base = mesh.TopV, 0.995
+	local top, mist, base = mesh.TopV, mesh.SkirtV, 0.995
 	local out: ArcGeometry = { positions = {}, normals = {}, uvs = {}, triangles = {}, size = Vector3.zero }
 	for i = 0, cols do
 		local t = i / cols
@@ -126,7 +127,7 @@ function Vista.arcGeometry(mesh: any): ArcGeometry
 		local a = half - 2 * half * t
 		local x, z = radius * math.sin(a), zc + radius * math.cos(a)
 		local n = Vector3.new(-math.sin(a), 0, -math.cos(a))
-		for _, row in { { height / 2, top }, { height / 2 - art * (base - top), base }, { -height / 2, base } } do
+		for _, row in { { height / 2, top }, { height / 2 - art * (mist - top), mist }, { -height / 2, base } } do
 			table.insert(out.positions, Vector3.new(x, row[1], z))
 			table.insert(out.normals, n)
 			table.insert(out.uvs, Vector2.new(t, row[2]))

@@ -38,6 +38,9 @@ return {
 		-- picture's opaque bottom row wrapped round and drew a faint line along the panels'
 		-- top edge (lane 2). The summits are 0.31 or more down every picture.
 		TopV = 0.1,
+		-- The skirt stretches the picture's misty base, from this far down it, over its whole
+		-- height: holding the bottom row alone streaked it top to bottom (the user circled it).
+		SkirtV = 0.85,
 	},
 
 	-- ------------------------------------------------------------- ridge layers
