@@ -603,7 +603,20 @@ function GroundMarks.Build(self: GroundMarks, parent: Instance?): boolean
 		local image = AssetService:CreateEditableImage({ Size = size })
 		assert(image, "no EditableImage")
 		image:WritePixelsBuffer(Vector2.zero, size, GroundMarks.texturePixels(T))
-		self.image = image
+		-- never written again, so MADE OPAQUE and let go (T-274): opaque content costs none of
+		-- the client's mesh memory, an EditableImage its size (half a tile here). Kept as the
+		-- EditableImage only where that fails
+		local okC, result, opaque = pcall(function()
+			return AssetService:CreateDataModelContentAsync(Content.fromObject(image))
+		end)
+		local texture: Content
+		if okC and result == Enum.CreateContentResult.Success then
+			image:Destroy()
+			texture = opaque
+		else
+			self.image = image
+			texture = Content.fromObject(image)
+		end
 		local grass = Config.Spline.Terrain.GrassColour
 		for wi = 1, R.Wheels do
 			local st: Strip = {
@@ -649,7 +662,7 @@ function GroundMarks.Build(self: GroundMarks, parent: Instance?): boolean
 				part.Transparency = S.transparency -- above 0: vertex alpha is see-through
 				part.Material = layer.material
 				if layer.textured then
-					part.TextureContent = Content.fromObject(image)
+					part.TextureContent = texture
 				end
 				part.CFrame = CFrame.new(0, 0, 0)
 				part.Parent = folder
