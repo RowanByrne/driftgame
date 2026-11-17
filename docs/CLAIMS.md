@@ -9,8 +9,9 @@ Every task in progress and the files it owns, so parallel sessions and workers n
 
 | Branch | Lane | Files owned | Since |
 |---|---|---|---|
-| `agent/ground-opaque` (T-276) | borrowed | `src/StarterPlayerScripts/Drift/GroundMeshView.luau`, `Drift/GroundTiles.luau`, `Drift/GroundDetail.luau`, `Drift/MeshBudget.luau`, `src/ReplicatedStorage/Shared/Road/GrassTexture.luau`, `Shared/Config/Spline.luau` (all but its `Tarmac` and `Gravel` tables), `src/ServerScriptService/Tests/GroundTests.luau` | 2026-11-17 |
+| `agent/ground-opaque` (T-276) | borrowed | `src/StarterPlayerScripts/Drift/GroundMeshView.luau`, `Drift/GroundTiles.luau`, `Drift/GroundDetail.luau`, `Drift/MeshBudget.luau`, `src/ReplicatedStorage/Shared/Road/GrassTexture.luau`, `Shared/Config/Spline.luau` (all but its `Tarmac` and `Gravel` tables and T-278's lines), `src/ServerScriptService/Tests/GroundTests.luau` | 2026-11-17 |
 | `agent/tarmac-stretch` (T-277) | borrowed | `src/ReplicatedStorage/Shared/Road/RoadTexture.luau`, `Shared/Config/Spline.luau` (its `Tarmac` and `Gravel` tables only), `assets/road/*`, `src/ServerScriptService/Tests/SplineMeshTests.luau`, `docs/game/features/road-surface.md` | 2026-11-17 |
+| `agent/road-range` (T-278) | borrowed | `Shared/Config/Spline.luau` (only `Mesh.Ahead`, `AheadDefault`, `AheadTouchDefault`, `Behind`, `BehindDefault`, `BehindTouchDefault` and their comments), `docs/game/SETTINGS.md` | 2026-11-17 |
 
 ## Notes between sessions
 
