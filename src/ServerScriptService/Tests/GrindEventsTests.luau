@@ -223,9 +223,9 @@ local function dir(yaw: number): Vector3
 	return Vector3.new(-math.sin(yaw), 0, -math.cos(yaw))
 end
 
--- A stylised driver: RunTests' autopilot down the road, but on the wide line through bends
--- (out toward the bend's outside, where the K-rails stand) and with a weave on the finger,
--- so it slides and meets the edges the way a player pushing it does. Deterministic.
+-- The digest's driver: RunTests' autopilot down the road, but aimed at the tarmac's very edge
+-- on the outside of bends, with a weave on the finger, so it meets rails and slides. FROZEN:
+-- the digest is compared across commits, so it must drive exactly the same.
 local function wideDriver(sp, D, half)
 	local lastS = nil
 	return function(st)
@@ -253,6 +253,52 @@ local function wideDriver(sp, D, half)
 			kMax = math.max(kMax, math.abs(sp:curvatureAt(math.min(s + u, sp.length))))
 		end
 		return { steer = steer, handbrake = speed * speed * kMax > 65 }, s
+	end
+end
+
+-- The drivers `measure` uses, each a stand-in for a way of driving. None of them is a player;
+-- what they say is how often a grind turns up when nobody is looking for one.
+--   tidy   the autopilot RunTests drives with: the middle of the road, braking for bends
+--   wide   no brake (a player has none), on the outside of every bend `aim` studs in from
+--          the tarmac's edge, where the K-rails stand, with a weave on the finger
+--   hugging  the same, closer to the edge and weaving more: a player leaning on the rails
+local DRIVERS = {
+	tidy = { aim = 0, weave = 0, brake = 65 },
+	wide = { aim = 3.5, weave = 0.25, brake = nil },
+	hugging = { aim = 1.5, weave = 0.3, brake = nil },
+}
+
+local function driverFor(sp, D, half, how)
+	local lastS = nil
+	return function(st)
+		local s = sp:projectFrom(st.position.X, st.position.Z, lastS or 300) or lastS or 300
+		lastS = s
+		local speed = math.sqrt(st.velocity.X ^ 2 + st.velocity.Z ^ 2)
+		local heading = if speed > 1 then Vector3.new(st.velocity.X / speed, 0, st.velocity.Z / speed) else dir(st.yaw)
+		local look = math.clamp(speed * 0.9, 30, 120)
+		local tx, tz = sp:planAt(math.min(s + look, sp.length))
+		local k = sp:curvatureAt(math.min(s + look * 0.5, sp.length))
+		local yawT = sp:yawAt(math.min(s + look, sp.length))
+		local aim = if how.aim > 0 and math.abs(k) > 1 / 400 then -math.sign(k) * (half - how.aim) else 0
+		tx += math.cos(yawT) * aim
+		tz += -math.sin(yawT) * aim
+		local dx, dz = tx - st.position.X, tz - st.position.Z
+		local len = math.sqrt(dx * dx + dz * dz)
+		local steer = 0
+		if len > 1e-3 then
+			local alpha = math.atan2((dx / len) * heading.Z - (dz / len) * heading.X, (dx / len) * heading.X + (dz / len) * heading.Z)
+			steer = math.clamp(speed * (2 * math.sin(alpha) / look) / (D.MaxSteeringSpeed * D.SteeringSensitivity), -1, 1)
+		end
+		steer = math.clamp(steer + how.weave * math.sin(st.time * 4.1), -1, 1)
+		local brake = false
+		if how.brake then
+			local kMax = 0
+			for u = 0, math.max(speed * 1.6, 30), 8 do
+				kMax = math.max(kMax, math.abs(sp:curvatureAt(math.min(s + u, sp.length))))
+			end
+			brake = speed * speed * kMax > how.brake
+		end
+		return { steer = steer, handbrake = brake }, s
 	end
 end
 
@@ -489,25 +535,37 @@ end
 -- measure: how often each grind happens in plain driving
 --------------------------------------------------------------------------------
 
--- `seconds` of the wide driver on each seed, both detectors fed every frame with the real
--- model's state, a recording sink behind them. Returns a log per seed and the totals.
-function Tests.measure(_self, seeds, seconds)
+-- `seconds` of driving on each seed with the driver named `how` (`DRIVERS`), both detectors
+-- fed every frame with the real model's state, a recording sink behind them. The car is put
+-- back on the road, as the game does, when it falls or stops getting anywhere. Returns a log
+-- per seed and the totals, with what the car's bumper did on the rails when no grind came.
+function Tests.measure(_self, seeds, seconds, how)
 	if _self ~= Tests then
-		seeds, seconds = _self, seeds
+		seeds, seconds, how = _self, seeds, seconds
 	end
 	seeds = seeds or { 2024, 268, 270, 31337 }
 	seconds = seconds or 60
+	how = how or "wide"
 	local Sim = require(DriftFolder.Sim)
 	local SplineWorld = require(DriftFolder.SplineWorld)
 	local BumperGrind = require(DriftFolder.Events.BumperGrind)
 	local HangGrind = require(DriftFolder.Events.HangGrind)
+	local HS = game:GetService("HttpService")
 	local D = Config.Drift
+	local B = BumperGrind.Tuning
 	local half = Config.Road.Width * 0.5
-	local out = { seeds = {}, totals = {} }
-	local totals = { seconds = 0, studs = 0, bumper = 0, bumperBanked = 0, bumperVoid = 0, bumperSeconds = 0, hang = 0, hangBanked = 0, hangVoid = 0, hangSeconds = 0, krailSteps = 0, rockSteps = 0, otherSteps = 0, hangingSteps = 0, rearHangSteps = 0, bumperTouchFrames = 0, puts = 0 }
+	local out = { driver = how, seeds = {}, totals = {} }
+	local totals = {
+		seconds = 0, studs = 0, puts = 0,
+		bumper = 0, bumperBanked = 0, bumperVoid = 0, bumperSeconds = 0,
+		hang = 0, hangBanked = 0, hangVoid = 0, hangSeconds = 0,
+		krailSteps = 0, rockSteps = 0, treeSteps = 0, otherSteps = 0, hangingSteps = 0, rearHangSteps = 0,
+		-- frames with a bumper corner on a K-rail, and why each was not a grind
+		bumperFrames = 0, tooSlow = 0, tooSquare = 0, backwards = 0, qualifying = 0,
+	}
 	for _, seed in seeds do
 		local gen = SplineGen.new(seed)
-		local length = 120 * seconds + 1000
+		local length = 140 * seconds + 1000
 		gen:extendTo(length)
 		local sp = gen.spline
 		local world = SplineWorld.new(sp, nil)
@@ -524,9 +582,10 @@ function Tests.measure(_self, seeds, seconds)
 			return runner
 		end
 		local runner = put(s0)
-		local drive = wideDriver(sp, D, half)
-		local log = { seed = seed, kinds = {}, events = {} }
-		local elapsed, frames, lastS, stuck = 0, 0, s0, 0
+		local drive = driverFor(sp, D, half, DRIVERS[how])
+		local log = { seed = seed, events = {} }
+		local elapsed, frames, lastS = 0, 0, s0
+		local progressAt, progressS = 0, s0
 		local kindSteps = { krail = 0, rock = 0, other = 0, tree = 0, closing = 0 }
 		local hangingSteps, rearHang = 0, 0
 		while elapsed < seconds do
@@ -545,30 +604,43 @@ function Tests.measure(_self, seeds, seconds)
 			elapsed += 1 / FPS
 			frames += 1
 			rec.clock = elapsed
-			bumper:Update(1 / FPS, runner.state)
-			hang:Update(1 / FPS, runner.state)
-			if runner.state.wallTouch and runner.state.wallKind == "krail" and (runner.state.wallPoint == "front" or runner.state.wallPoint == "rear") then
-				totals.bumperTouchFrames += 1
-			end
-			-- put back on the road when lost or stuck, as the game does
-			local speed = math.sqrt(runner.state.velocity.X ^ 2 + runner.state.velocity.Z ^ 2)
-			stuck = if speed < 3 then stuck + 1 / FPS else 0
-			if runner.state.fell or stuck > 3 or s >= length - 400 then
-				runner = put(math.min(s + 30, length - 500))
-				totals.puts += 1
-				stuck = 0
-				if s >= length - 400 then
-					break
+			local st = runner.state
+			bumper:Update(1 / FPS, st)
+			hang:Update(1 / FPS, st)
+			if st.wallTouch and st.wallKind == "krail" and (st.wallPoint == "front" or st.wallPoint == "rear") then
+				totals.bumperFrames += 1
+				local ds = bumper:DebugState()
+				if st.u <= 0 then
+					totals.backwards += 1
+				elseif ds.angle < B.MinAngle then
+					totals.tooSquare += 1
+				elseif ds.along < B.MinSpeed then
+					totals.tooSlow += 1
+				else
+					totals.qualifying += 1
 				end
 			end
-			totals.studs += math.max(s - lastS, 0)
+			-- put back on the road when it falls or stops getting anywhere, as the game does
+			if s > progressS + 20 then
+				progressAt, progressS = elapsed, s
+			end
+			if st.fell or elapsed - progressAt > 3 then
+				local at = math.min(math.max(s, progressS) + 40, length - 500)
+				runner = put(at)
+				progressAt, progressS = elapsed, at
+				totals.puts += 1
+			end
+			totals.studs += math.clamp(s - lastS, 0, 10)
 			lastS = s
+			if s >= length - 400 then
+				break
+			end
 			if frames % 30 == 0 then
 				task.wait()
 			end
 		end
 		for _, e in rec.events do
-			table.insert(log.events, string.format("%s at %.1fs for %.2fs: %s, size %.2f..%.2f, %s", e.kind, e.at, e.seconds, if e.result == true then "banked" elseif e.result == false then "void" else "live", if e.minSize == math.huge then 0 else e.minSize, e.maxSize, game:GetService("HttpService"):JSONEncode(e.info or {})))
+			table.insert(log.events, string.format("%s at %.1fs for %.2fs: %s, size %.2f..%.2f, %s", e.kind, e.at, e.seconds, if e.result == true then "banked" elseif e.result == false then "void" else "live", if e.minSize == math.huge then 0 else e.minSize, e.maxSize, HS:JSONEncode(e.info or {})))
 			if e.kind == "bumperGrind" then
 				totals.bumper += 1
 				totals.bumperSeconds += e.seconds
@@ -589,6 +661,7 @@ function Tests.measure(_self, seeds, seconds)
 		totals.seconds += elapsed
 		totals.krailSteps += kindSteps.krail
 		totals.rockSteps += kindSteps.rock
+		totals.treeSteps += kindSteps.tree
 		totals.otherSteps += kindSteps.other
 		totals.hangingSteps += hangingSteps
 		totals.rearHangSteps += rearHang
