@@ -494,11 +494,15 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 			end
 			local nL = stepNormal(pts[lipL], pts[lipL + 1], -1)
 			local nR = stepNormal(pts[lipR + 1], pts[lipR], 1)
-			-- as the near side of a strip the left foot and the right top are on a bevel; as
-			-- the far side, the left top and the right foot are
+			-- as the near side of a strip the left foot is on a bevel, as the far side the right
+			-- foot is. A bevel's TOP keeps the tarmac's own normal (T-270 send-back 3, the user:
+			-- "edit both gravel and road textures so that they mesh evenly"): lit the same as the
+			-- tarmac at their seam, shading on down to its own slope at its foot, so no crease of
+			-- light runs along the road's edge (it was flat at its slope, 19 degrees off: at noon
+			-- 22% less sun than the tarmac beside it)
 			local near, far = table.clone(norm), table.clone(norm)
-			near[lipL], near[lipR] = nL, nR
-			far[lipL + 1], far[lipR + 1] = nL, nR
+			near[lipL] = nL
+			far[lipR + 1] = nR
 			if prevRow then
 				local mid = (prevS + s) * 0.5
 				local gL, gR = spline:gravelAt(mid, -1), spline:gravelAt(mid, 1)

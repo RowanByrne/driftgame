@@ -19,7 +19,7 @@
 -- columns right of the tarmac holding one weathered yellow line on tarmac (`lineUV`).
 --
 -- THE GRAVEL (T-270) has a band of its own, right of the line band: softly painted stones
--- on a dusty bed with the asphalt's grain, in one of three looks, blending into the tarmac's
+-- on a dusty bed with the asphalt's grain, in the asphalt's colours, blending into the tarmac's
 -- edge at one side and grass at the other (`paintGravel`, `gravelUV`). The bevels and the gravel runoff's strips are mapped to it.
 --
 -- HOW LARGE: 1 024 x 1 024, the largest EditableImage a client will make (measured: 2 048
@@ -585,35 +585,21 @@ function RoadTexture.paint(yield: (() -> ())?): (buffer, number, number)
 	return px, W, H
 end
 
--- THE GRAVEL'S LOOK (T-270): `Config.Spline.Gravel.Look`, or in Studio the workspace
--- attribute `__gravel_look` ("A", "B" or "C"), which repaints the band live (`watchLook`).
-function RoadTexture.gravelLook(): string
-	local Gv = Config.Spline.Gravel
-	if RunService:IsStudio() then
-		local v = workspace:GetAttribute("__gravel_look")
-		if type(v) == "string" and Gv.Looks[v] then
-			return v
-		end
-	end
-	return Gv.Look
-end
-
 -- THE GRAVEL BAND (T-270, the user: "do the same for the gravel on the sides of the road"),
--- into `px`. Two send-backs set its range: the first cut, thousands of tiny faceted stones
--- with per-pixel grain, was "too noisy and static-y"; the second, flat values and cel-shaded
--- pebbles, "too cartoony". So it is painted like the approved asphalt: a dusty bed with the
--- asphalt's kind of grain (soft mottling, strokes stretched along, a finer octave; no
--- per-pixel speckle), and stones with soft painted shading (no outlines, no cel steps, soft
--- edges a few pixels wide, a faint soft shadow), in one of three LOOKS (`Gravel.Looks`):
---   A  dense small stones, low contrast, a softened spread of sizes
---   B  a medium density of stones, softly shaded, in a dusty bed
---   C  mostly the dusty bed, with a sprinkle of larger stones blending into it
--- Its edges: the tarmac's dusty edge colour taking over in soft ragged shapes at its start,
--- grass in soft shapes over its end. Its own random numbers, so the tarmac's are as they were.
-function RoadTexture.paintGravel(px: buffer, yield: (() -> ())?, lookName: string?)
+-- into `px`. Three send-backs set it: thousands of tiny faceted stones with per-pixel grain
+-- were "too noisy and static-y", flat values and cel-shaded pebbles "too cartoony", and of
+-- three looks between them the user picked B (2026-11-16). So it is painted like the
+-- approved asphalt: a dusty bed with the asphalt's kind of grain (soft mottling, strokes
+-- stretched along, a finer octave; no per-pixel speckle), and a medium density of stones with
+-- soft painted shading (no outlines, no cel steps, soft edges a few pixels wide, a faint soft
+-- shadow), in the asphalt's own hue and value range ("keep the coloration generally of the
+-- road"). Its edges: the tarmac's dusty edge colour taking over in soft ragged shapes at its
+-- start, grass in soft shapes over its end. Its own random numbers, so the tarmac's are as
+-- they were.
+function RoadTexture.paintGravel(px: buffer, yield: (() -> ())?)
 	local T = Config.Spline.Tarmac
 	local Gv = Config.Spline.Gravel
-	local L = Gv.Looks[lookName or RoadTexture.gravelLook()] or Gv.Looks[Gv.Look]
+	local L = Gv -- its look's numbers (look B of three, the user's pick)
 	local C = Config.Road.Colours
 	local W, H = T.Width, T.Length
 	local _, _, _, _, gx0, G = columns()
@@ -781,33 +767,6 @@ function RoadTexture.paintGravel(px: buffer, yield: (() -> ())?, lookName: strin
 	end
 end
 
--- Studio: `workspace.__gravel_look` repaints the band of the shared image in place, so every
--- chunk drawn shows the new look at once (no new run).
-local watching = false
-function RoadTexture.watchLook()
-	if watching or not RunService:IsStudio() or not RunService:IsClient() then
-		return
-	end
-	watching = true
-	workspace:GetAttributeChangedSignal("__gravel_look"):Connect(function()
-		local img = image
-		if not img then
-			return
-		end
-		local px = img:ReadPixelsBuffer(Vector2.zero, img.Size)
-		local start = os.clock()
-		RoadTexture.paintGravel(px, function()
-			if os.clock() - start > 0.004 then
-				task.wait()
-				start = os.clock()
-			end
-		end)
-		if image == img then
-			img:WritePixelsBuffer(Vector2.zero, img.Size, px)
-		end
-	end)
-end
-
 -- The shared image, painted the first time it is asked for (a client starts it on require,
 -- below). It yields: a few ms a frame (`SliceMs`). nil when it is off, or when this device
 -- will not make an EditableImage.
@@ -859,7 +818,6 @@ function RoadTexture.prepare()
 	if state == "none" and RoadTexture.enabled() then
 		task.spawn(RoadTexture.get)
 	end
-	RoadTexture.watchLook()
 end
 
 function RoadTexture.DebugState()

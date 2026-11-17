@@ -379,60 +379,24 @@ local Spline = {
 		BandStuds = 3, -- studs of gravel across the band: 29 pixels a stud
 		PeriodStuds = 64, -- studs along one copy: 16 pixels a stud
 		Seed = 270,
-		-- THE LOOK. Two send-backs set its range: thousands of tiny faceted stones with
-		-- per-pixel grain were "too noisy and static-y", flat values and cel-shaded pebbles "too
-		-- cartoony". So three looks between them, painted like the approved asphalt (soft
-		-- grain, no per-pixel speckle, soft-edged softly shaded stones), for the user to pick on
-		-- the road; in Studio `workspace.__gravel_look` ("A", "B", "C") repaints it live.
-		-- Each: the bed's grain (`Mottle`, `Grain`, `Fine`, each over its cells in studs
-		-- across and along, as the asphalt's); its stones by size (so many a square stud, a
-		-- radius range in studs); `Gap` studs kept between them (nil: they may overlap); how
-		-- far a stone's tone goes toward `GravelLight` or `GravelDark` (`Contrast`); its soft
-		-- shading toward the light (`Lit`); its edge `SoftPx` pixels wide; how much it covers
-		-- the bed (`Opacity`); its shadow, `ShadowOffset` of a radius away, `ShadowDark` dark (1:
-		-- none). Tuned so each one's fine detail sits near the asphalt's: the mean difference
-		-- between neighbouring pixels, A 2.58, B 2.63, C 2.81, the asphalt 2.75 (of 255)
-		Look = "B",
-		Looks = {
-			-- A: dense small stones, low contrast, a softened spread of sizes
-			A = {
-				MottleStuds = { 0.8, 1.4 }, Mottle = 0.05,
-				GrainStuds = { 0.3, 0.8 }, Grain = 0.04,
-				FineStuds = { 0.08, 0.2 }, Fine = 0.065,
-				Stones = {
-					{ Density = 5, Radius = { 0.14, 0.2 } },
-					{ Density = 1.5, Radius = { 0.2, 0.26 } },
-				},
-				Gap = nil,
-				Contrast = 0.45, Lit = 0.12, SoftPx = 1.5, Opacity = 0.9,
-				ShadowOffset = 0.3, ShadowDark = 0.9,
-			},
-			-- B: a medium density of stones, softly shaded, in a dusty bed
-			B = {
-				MottleStuds = { 0.8, 1.4 }, Mottle = 0.06,
-				GrainStuds = { 0.3, 0.8 }, Grain = 0.04,
-				FineStuds = { 0.08, 0.2 }, Fine = 0.065,
-				Stones = {
-					{ Density = 0.6, Radius = { 0.26, 0.36 } },
-					{ Density = 1.6, Radius = { 0.15, 0.22 } },
-				},
-				Gap = 0.02,
-				Contrast = 0.6, Lit = 0.18, SoftPx = 2, Opacity = 1,
-				ShadowOffset = 0.35, ShadowDark = 0.82,
-			},
-			-- C: mostly the dusty bed with the asphalt's grain, a sprinkle of larger stones
-			C = {
-				MottleStuds = { 0.9, 1.5 }, Mottle = 0.07,
-				GrainStuds = { 0.2, 0.6 }, Grain = 0.08,
-				FineStuds = { 0.08, 0.2 }, Fine = 0.12,
-				Stones = {
-					{ Density = 0.2, Radius = { 0.28, 0.42 } },
-				},
-				Gap = 0.1,
-				Contrast = 0.4, Lit = 0.12, SoftPx = 3, Opacity = 0.85,
-				ShadowOffset = 0.3, ShadowDark = 0.9,
-			},
+		-- THE LOOK: B, the user's pick of three (2026-11-16) after "too noisy and static-y" and
+		-- "too cartoony" (features/road-surface.md "The gravel"), painted like the asphalt.
+		-- The bed's grain (`Mottle`, `Grain`, `Fine`, each over its cells in studs across and
+		-- along, as the asphalt's); its stones by size (so many a square stud, a radius range in
+		-- studs), `Gap` studs kept between them; how far a stone's tone goes toward
+		-- `GravelLight` or `GravelDark` (`Contrast`); its soft shading toward the light (`Lit`);
+		-- its edge `SoftPx` pixels wide; how much it covers the bed (`Opacity`); its shadow,
+		-- `ShadowOffset` of a radius away, `ShadowDark` dark (1: none)
+		MottleStuds = { 0.8, 1.4 }, Mottle = 0.06,
+		GrainStuds = { 0.3, 0.8 }, Grain = 0.04,
+		FineStuds = { 0.08, 0.2 }, Fine = 0.065,
+		Stones = {
+			{ Density = 0.6, Radius = { 0.26, 0.36 } },
+			{ Density = 1.6, Radius = { 0.15, 0.22 } },
 		},
+		Gap = 0.02,
+		Contrast = 0.6, Lit = 0.18, SoftPx = 2, Opacity = 1,
+		ShadowOffset = 0.35, ShadowDark = 0.82,
 		Aspect = { 0.8, 1.2 }, -- a stone's two radii, as shares of its size
 		LightAngle = -125, -- degrees, in the band (across, along): where the stones are lit from
 		-- THE EDGES, no hard seams: the tarmac's dusty edge takes over raggedly over the band's
