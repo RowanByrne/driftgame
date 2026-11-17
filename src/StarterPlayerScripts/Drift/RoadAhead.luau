@@ -3,7 +3,7 @@
 -- device, for this session. `SettingsController` sets it; `Drift/SplineRoadView` and
 -- `Drift/GroundMeshView` read it, and draw or let go of road and ground in front of the car
 -- as soon as it changes. A whole number 1 (shortest) to #Config.Spline.Mesh.Ahead (furthest);
--- the default is Medium, 4 800 studs. The pattern, and the steps, are `Drift/RoadBehind`'s.
+-- the default is Medium, 1 600 studs. The pattern is `Drift/RoadBehind`'s; the steps are its own (T-278).
 --
 -- It can only draw road the server has sent: `Config.Road.AheadStuds` covers the longest step.
 
