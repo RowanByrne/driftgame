@@ -240,6 +240,35 @@ function Tests.run()
 		)
 	end
 
+	-- 11. What score events add (T-295; the engine's own rules are ScoreEventsTests').
+	do
+		local s = Score.new()
+		s.multiplier = 2
+		local added = s:Award(10, 0.3)
+		local r = s:Get()
+		check(
+			"Award: points times the rung, and the kick on the bar",
+			added == 20 and r.score == 20 and r.eventPoints == 20 and r.progress == 0.3,
+			`added {added}, score {r.score}, bar {r.progress}`
+		)
+		s:Award(0, 10)
+		check("Award: a kick climbs one rung at most", s:Get().multiplier == 3, `x{s:Get().multiplier}`)
+		s:Bank(7)
+		check("Bank: the points as they are", s:Get().score == 27 and s:Get().eventPoints == 27, `{s:Get().score}`)
+		local before = s:Get().progress
+		s:Hold(0.01)
+		s:Step(STEP, car(0, 150))
+		local held = s:Get().progress
+		s:Step(STEP, car(0, 150))
+		check(
+			"Hold: the bar gets its fill and does not drain that step, and drains again after",
+			held == before + 0.01 and s:Get().progress < held,
+			`{before} -> {held} -> {s:Get().progress}`
+		)
+		s:Reset()
+		check("Reset zeroes the event points", s:Get().eventPoints == 0, "")
+	end
+
 	local passed = true
 	for _, c in checks do
 		passed = passed and c.ok

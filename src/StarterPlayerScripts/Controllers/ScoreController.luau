@@ -19,6 +19,10 @@
 --
 -- THE PANEL IS `Drift/ScoreHudView`, fed from `View()` once a frame: the live run, then the
 -- run's result for `Config.Score.SummarySeconds` after END RUN, then nothing.
+--
+-- THE FEED IS `Drift/ScoreFeedView` (features/score-events.md "UI"): each entry the score
+-- events engine fires on `ScoreEvents.feed` goes straight to it. The engine is required only
+-- if it is there, so the feed shows nothing in a build without it.
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -30,6 +34,7 @@ local Net = require(ReplicatedStorage.Shared.Net)
 local DriftFolder = script.Parent.Parent:WaitForChild("Drift")
 local Score = require(DriftFolder.Score)
 local ScoreHudView = require(DriftFolder.ScoreHudView)
+local ScoreFeedView = require(DriftFolder.ScoreFeedView)
 
 local DriftController = require(script.Parent.DriftController)
 
@@ -65,10 +70,16 @@ function ScoreController:Start()
 		return r
 	end)
 
-	self.view = ScoreHudView.new(Players.LocalPlayer:WaitForChild("PlayerGui"))
-	RunService.RenderStepped:Connect(function()
+	local playerGui = Players.LocalPlayer:WaitForChild("PlayerGui")
+	self.playerGui = playerGui
+	self.view = ScoreHudView.new(playerGui)
+	self.feedView = ScoreFeedView.new(playerGui)
+	self.feedEntries = 0 -- entries heard from the engine this session
+	RunService.RenderStepped:Connect(function(dt)
 		self.view:setData(self.fixture or self:Snapshot())
+		self.feedView:step(dt)
 	end)
+	self:_listenToEvents()
 
 	local roadRun = Net.event("RoadRun")
 	roadRun.OnClientEvent:Connect(function(answer)
@@ -80,12 +91,39 @@ function ScoreController:Start()
 	end)
 end
 
+-- The score events engine's feed, if the engine is in this build (a guarded require: the
+-- feed is built before the engine and must stand without it).
+function ScoreController:_listenToEvents()
+	local module = DriftFolder:FindFirstChild("ScoreEvents")
+	if not (module and module:IsA("ModuleScript")) then
+		self.feedSource = "none"
+		return
+	end
+	local ok, ScoreEvents = pcall(require, module)
+	local feed = ok and type(ScoreEvents) == "table" and ScoreEvents.feed
+	if not (feed and feed.Connect) then
+		self.feedSource = if ok then "no feed" else `failed: {ScoreEvents}`
+		warn(`ScoreController: the score feed is off ({self.feedSource})`)
+		return
+	end
+	self.feedSource = "ScoreEvents"
+	feed:Connect(function(entry)
+		self.feedEntries += 1
+		if not self.feedFixture then
+			self.feedView:push(entry)
+		end
+	end)
+end
+
 function ScoreController:_setInRun(inRun: boolean)
 	if inRun == self.inRun then
 		return
 	end
 	if inRun then
 		self.score:Reset()
+		if not self.feedFixture then
+			self.feedView:clear()
+		end
 		self.runs += 1
 		self.steps = 0
 		self.runSeconds = 0
@@ -154,6 +192,73 @@ function ScoreController:DebugFixture(name: string?)
 	assert(self.fixture, `no fixture '{name}'`)
 	self.view:setData(self.fixture)
 	return self:DebugView()
+end
+
+-- The feed's lines as drawn: rects, texts, states (`ScoreFeedView:describe`).
+function ScoreController:DebugFeed()
+	local d = self.feedView and self.feedView:describe() or nil
+	if d then
+		d.source = self.feedSource
+		d.entriesHeard = self.feedEntries
+		d.fixture = self.feedFixture
+	end
+	return d
+end
+
+-- Studio only: play a feed fixture (`Drift/ScoreFeedView.fixtures`): a still picture at
+-- once, or a timed script as the engine would fire it. While one plays the engine's entries
+-- are ignored; `nil` clears the feed and hands it back.
+function ScoreController:DebugFeedFixture(name: string?)
+	if not RunService:IsStudio() then
+		return nil
+	end
+	self.feedToken = (self.feedToken or 0) + 1
+	local token = self.feedToken
+	self.feedView:clear()
+	if name == nil then
+		self.feedFixture = nil
+		return self:DebugFeed()
+	end
+	local fixtures = require(DriftFolder:WaitForChild("ScoreFeedView.fixtures"))
+	local fixture = fixtures[name]
+	assert(fixture, `no feed fixture '{name}'`)
+	self.feedFixture = name
+	if fixture.script then
+		for _, entry in fixture.script do
+			task.delay(entry.at or 0, function()
+				if self.feedToken == token then
+					self.feedView:push(entry)
+				end
+			end)
+		end
+	else
+		self.feedView:setData(fixture)
+	end
+	return self:DebugFeed()
+end
+
+-- Studio only: Reduced Motion forced on or off for the feed, `nil` to follow the setting.
+function ScoreController:DebugFeedMotion(reduced: boolean?)
+	if not RunService:IsStudio() then
+		return nil
+	end
+	self.feedView:setReducedMotion(reduced)
+	return self:DebugFeed()
+end
+
+-- Studio only: drag mode for the feed (UI.md "Move things now"), to try it elsewhere.
+-- Returns the export: each moved piece's distance from its nearest corner.
+function ScoreController:DebugFeedDrag(on: boolean)
+	if not RunService:IsStudio() then
+		return nil
+	end
+	if not self.feedDrag then
+		local UI = script.Parent.Parent:WaitForChild("UI")
+		local LayoutDrag = require(UI:WaitForChild("Dev"):WaitForChild("LayoutDrag"))
+		self.feedDrag = LayoutDrag.new({ view = self.feedView, parent = self.playerGui })
+	end
+	self.feedDrag:setEnabled(on == true)
+	return self.feedDrag:export()
 end
 
 -- The live score, for tests and agent playtests:
