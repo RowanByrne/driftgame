@@ -19,7 +19,8 @@
 --               `Road/RoadTexture`, mapped across the tarmac and along the road, with the
 --               weathered edge lines, patches and cracks in it; and on the tight stretches
 --               the DOUBLE YELLOW, two thin strips just over the tarmac mapped to the image's
---               line band (send-back 2)
+--               line band (send-back 2). The GRAVEL is textured too (T-270): the bevels map
+--               to the image's gravel band, and a strip over a tight cliff edge's gravel runoff
 --   KRail*_*    a K-rail run drawn as a METAL CRASH BARRIER (T-149): a W-beam guardrail,
 --               its beam two rounded ridges (`KRailTop_*`, `KRailLow_*`) and the groove
 --               between (`KRailGroove_*`), a piece per stretch of the run, pitched along the
@@ -158,7 +159,9 @@ type Builder = {
 -- `uvA` / `uvB`, when given, are UV ids for the textured vertices: the grass's (T-187), or
 -- the tarmac's (T-268). A strip painted `mapped` is mapped with them; one that shares a mapped
 -- vertex but is not painted `mapped` gets `plainUV`. `tarmac`: the mapped faces are tarmac.
-local function strip(b: Builder, rowA: { number }, normA: { number }, rowB: { number }, normB: { number }, flip: boolean, colours: { number }?, farA: { number }?, farB: { number }?, uvA: { [number]: number }?, uvB: { [number]: number }?, mapped: number?, tarmac: boolean?)
+-- `onFace(i, f1, f2)`, when given, is told each strip's two faces once they are made (T-270:
+-- the gravel bevels are mapped there).
+local function strip(b: Builder, rowA: { number }, normA: { number }, rowB: { number }, normB: { number }, flip: boolean, colours: { number }?, farA: { number }?, farB: { number }?, uvA: { [number]: number }?, uvB: { [number]: number }?, mapped: number?, tarmac: boolean?, onFace: ((number, number, number) -> ())?)
 	local em = b.em
 	local fa, fb = farA or normA, farB or normB
 	for i = 1, #rowA - 1 do
@@ -216,6 +219,9 @@ local function strip(b: Builder, rowA: { number }, normA: { number }, rowB: { nu
 				em:SetFaceUVs(f1, { u, u, u })
 				em:SetFaceUVs(f2, { u, u, u })
 			end
+		end
+		if onFace then
+			onFace(i, f1, f2)
 		end
 		b.triangles += 2
 	end
@@ -400,6 +406,15 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 		end
 		local tarmacRows: { { Vector3 } } = {} -- per cut, with a run: the drawn tarmac's points
 		local lineTris = 0
+		-- THE GRAVEL (T-270): with the tarmac's texture, the bevels are mapped to the image's
+		-- gravel band, from the tarmac's edge (0) to their foot (`BandStuds`, or `RunFoot` in a
+		-- gravel run, where gravel goes on past the foot), each row shaded by its tone
+		local GV = Config.Spline.Gravel
+		local baseG = RoadTexture.gravelBase(s0)
+		local gravelRows: { any } = {} -- per cut: { [side] = { top, foot, run } UV ids, c = tone }
+		local bevelTris = 0
+		local prevG: any = nil
+		local gravelOn = tarmacImage ~= nil and RoadTexture.gravelEnabled()
 		local prevRow, prevNear, prevFar, prevS, prevUV = nil, nil, nil, 0, nil
 		for k, s in cuts do
 			local row, norm, pts = {}, {}, {}
@@ -451,6 +466,19 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 				end
 				tarmacRows[k] = tp
 			end
+			local gRow: any = nil
+			if gravelOn then
+				local em = road.em
+				gRow = { c = (road.grassShade :: any)[row[lipL + 1]] }
+				for _, side in { -1, 1 } do
+					gRow[side] = {
+						em:AddUV(RoadTexture.gravelUV(s, 0, baseG, side)),
+						em:AddUV(RoadTexture.gravelUV(s, GV.BandStuds, baseG, side)),
+						em:AddUV(RoadTexture.gravelUV(s, GV.RunFoot, baseG, side)),
+					}
+				end
+				gravelRows[k] = gRow
+			end
 			-- each bevel's own normal: square to the road's way and to its slope, outward
 			local yaw = spline:yawAt(s)
 			local along = Vector3.new(-math.sin(yaw), spline:gradeAt(s), -math.cos(yaw))
@@ -466,11 +494,15 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 			end
 			local nL = stepNormal(pts[lipL], pts[lipL + 1], -1)
 			local nR = stepNormal(pts[lipR + 1], pts[lipR], 1)
-			-- as the near side of a strip the left foot and the right top are on a bevel; as
-			-- the far side, the left top and the right foot are
+			-- as the near side of a strip the left foot is on a bevel, as the far side the right
+			-- foot is. A bevel's TOP keeps the tarmac's own normal (T-270 send-back 3, the user:
+			-- "edit both gravel and road textures so that they mesh evenly"): lit the same as the
+			-- tarmac at their seam, shading on down to its own slope at its foot, so no crease of
+			-- light runs along the road's edge (it was flat at its slope, 19 degrees off: at noon
+			-- 22% less sun than the tarmac beside it)
 			local near, far = table.clone(norm), table.clone(norm)
-			near[lipL], near[lipR] = nL, nR
-			far[lipL + 1], far[lipR + 1] = nL, nR
+			near[lipL] = nL
+			far[lipR + 1] = nR
 			if prevRow then
 				local mid = (prevS + s) * 0.5
 				local gL, gR = spline:gravelAt(mid, -1), spline:gravelAt(mid, 1)
@@ -482,8 +514,38 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 					end
 					use = gravelled
 				end
-				strip(road, prevRow, prevNear, row, near, false, use, prevFar, far, prevUV, uv, if tarmacImage then tarmacColour else grassColour, tarmacImage ~= nil)
+				-- the bevels' faces onto the gravel band: the left bevel's strip runs foot to top,
+				-- the right one's top to foot
+				local onFace: ((number, number, number) -> ())? = nil
+				if gRow and prevG then
+					local A, Bn = prevG, gRow
+					onFace = function(i: number, f1: number, f2: number)
+						if i ~= lipL and i ~= lipR then
+							return
+						end
+						local side = if i == lipL then -1 else 1
+						local inRun = if side < 0 then gL else gR
+						local fi = if inRun then 3 else 2
+						local ta, fa, tb, fb = A[side][1], A[side][fi], Bn[side][1], Bn[side][fi]
+						local em = road.em
+						if side < 0 then
+							em:SetFaceUVs(f1, { fa, ta, fb })
+							em:SetFaceUVs(f2, { ta, tb, fb })
+						else
+							em:SetFaceUVs(f1, { ta, fa, tb })
+							em:SetFaceUVs(f2, { fa, fb, tb })
+						end
+						local ca, cb = A.c, Bn.c
+						if ca and cb then
+							em:SetFaceColors(f1, { ca, ca, cb })
+							em:SetFaceColors(f2, { ca, cb, cb })
+						end
+						bevelTris += 2
+					end
+				end
+				strip(road, prevRow, prevNear, row, near, false, use, prevFar, far, prevUV, uv, if tarmacImage then tarmacColour else grassColour, tarmacImage ~= nil, onFace)
 			end
+			prevG = gRow
 			prevRow, prevNear, prevFar, prevS, prevUV = row, near, far, s, uv
 			slice()
 		end
@@ -550,6 +612,69 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 						em:SetFaceUVs(f2, { a.ur, b.ur, b.ul })
 						road.triangles += 2
 						lineTris += 2
+					end
+				end
+			end
+			slice()
+		end
+
+		-- THE GRAVEL RUNOFF (T-270): a tight cliff edge's runoff is a narrow strip of gravel
+		-- past the bevel's foot, drawn by the ground mesh (T-251) in plain gravel colour. A strip
+		-- of this mesh is laid over it, from the bevel's foot to the runoff's lip, on the surface
+		-- the car stands on there (`terrainXYZ`), lifted `RunoffLift` (more on a coarse chunk),
+		-- and mapped to the gravel band's pure gravel (`RunFrom` to `RunFoot`)
+		local gravelTris = 0
+		if gravelOn and groundRunoff then
+			local em = road.em
+			local gLift = GV.RunoffLift + (o.tolerance or M.Tolerance) * 0.25
+			local made: { [number]: { [number]: any } } = {}
+			local function rowOf(k: number, side: number): any
+				made[k] = made[k] or {}
+				local m = made[k][side]
+				if m then
+					return m
+				end
+				local s = cuts[k]
+				local dFoot = side * (half + spline:lipWidthAt(s, side))
+				local dLip = side * (half + math.max(spline:runoffAt(s, side), spline:lipWidthAt(s, side)))
+				local n = spline:terrainNormal(s, (dFoot + dLip) * 0.5)
+				local pF = Vector3.new(spline:terrainXYZ(s, dFoot)) + n * gLift
+				local pL = Vector3.new(spline:terrainXYZ(s, dLip)) + n * gLift
+				local g = gravelRows[k]
+				m = {
+					foot = em:AddVertex(pF - centre),
+					lip = em:AddVertex(pL - centre),
+					uf = em:AddUV(RoadTexture.gravelUV(s, GV.RunFrom, baseG, side)),
+					ul = em:AddUV(RoadTexture.gravelUV(s, GV.RunFoot, baseG, side)),
+					n = em:AddNormal(n),
+					c = g and g.c or em:AddColor(RoadTexture.tone(s, 0), 1),
+				}
+				road.vertices += 2
+				made[k][side] = m
+				return m
+			end
+			for k = 1, #cuts - 1 do
+				local mid = (cuts[k] + cuts[k + 1]) * 0.5
+				for _, side in { -1, 1 } do
+					if spline:gravelAt(mid, side) then
+						local a, b = rowOf(k, side), rowOf(k + 1, side)
+						-- left to right across the road: on the left the lip is outermost
+						local l0, r0, l1, r1 = a.lip, a.foot, b.lip, b.foot
+						local ul0, ur0, ul1, ur1 = a.ul, a.uf, b.ul, b.uf
+						if side > 0 then
+							l0, r0, l1, r1 = a.foot, a.lip, b.foot, b.lip
+							ul0, ur0, ul1, ur1 = a.uf, a.ul, b.uf, b.ul
+						end
+						local f1 = em:AddTriangle(l0, r0, l1)
+						local f2 = em:AddTriangle(r0, r1, l1)
+						em:SetFaceNormals(f1, { a.n, a.n, b.n })
+						em:SetFaceNormals(f2, { a.n, b.n, b.n })
+						em:SetFaceColors(f1, { a.c, a.c, b.c })
+						em:SetFaceColors(f2, { a.c, b.c, b.c })
+						em:SetFaceUVs(f1, { ul0, ur0, ul1 })
+						em:SetFaceUVs(f2, { ur0, ur1, ul1 })
+						road.triangles += 2
+						gravelTris += 2
 					end
 				end
 			end
@@ -845,6 +970,8 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 			tarmacTriangles = road.tarmacTriangles, -- textured (T-268)
 			centreLineTriangles = lineTris, -- the double yellow's strips (T-268)
 			centreRuns = #runs // 2,
+			bevelTriangles = bevelTris, -- the bevels mapped to the gravel band (T-270)
+			gravelTriangles = gravelTris, -- the strips over gravel runoff (T-270)
 			textured = grassImage ~= nil or tarmacImage ~= nil,
 			grassTextured = grassImage ~= nil,
 			tarmacTextured = tarmacImage ~= nil,

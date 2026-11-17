@@ -1,6 +1,6 @@
 # Feature: Road surface
 
-**Status:** trial, waiting on the user (T-268). **Owner task:** `agent/road-texture-trial` (`docs/CLAIMS.md`).
+**Status:** the tarmac approved (T-268, the user: "road surface looking great"); the gravel's texture waiting on the user (T-270). **Owner task:** `agent/gravel-texture` (`docs/CLAIMS.md`).
 
 ## Goal
 
@@ -63,6 +63,33 @@ The user, on the second cut: *"get rid of the dashes - it's not realistic. do th
 - **No wheel tracks or tyre marks:** plain textured asphalt. Not tried on the hairpins (Left out).
 - The image keeps its 1 024 x 1 024; the line band takes 32 columns from the tarmac (19.2 to 18.6 pixels a stud).
 
+## The gravel (T-270)
+
+The user, after approving the tarmac: *"do the same for the gravel on the sides of the road. get a proper texture for it, that is."*
+
+- **What was gravel:** the bevel at each edge of the tarmac (in the road's mesh, sampling the image's plain grey band, in `GravelColour`), and a tight cliff edge's narrow gravel runoff (T-181), which the ground mesh draws (T-251) with its vertices in `GravelColour`.
+- **The gravel band:** 96 more columns of the same 1 024 x 1 024 image (no image of its own, no memory more), right of the line band, painted in code by `RoadTexture.paintGravel` with random numbers of its own. It covers `BandStuds` (3) across at 29 pixels a stud, and repeats every `PeriodStuds` (64) along at 16 pixels a stud; the right side reads half a copy on from the left.
+- **Its look: B, the user's pick of three (2026-11-16),** painted like the approved asphalt: a dusty bed (`Colours.GravelDust`) with the asphalt's kind of grain (soft mottling, strokes stretched along, a finer octave; no per-pixel speckle), and a medium density of stones (about 420 a copy, radius 0.15 to 0.36 studs) with soft painted shading (a soft edge a few pixels wide, lighter toward the light, a faint soft shadow; no outlines, no cel steps), their tones a little toward `GravelLight` or `GravelDark`. Looks A (dense small stones) and C (mostly bed) and the Studio switch between them are gone; the numbers are B's, in `Config.Spline.Gravel`.
+- **In the asphalt's colours** (send-back 3, "keep the coloration generally of the road"): the blue-violet grey of `Tarmac`, a little lighter and less blue, dustier. In the image, the gravel's middle is (88, 89, 98) against the tarmac's (77, 79, 92); it was a warm light grey, (110, 108, 109).
+- Its edges have no hard seam: the tarmac's dusty edge colour takes over in soft ragged shapes over its first `EdgeSoft` (0.45) studs, and grass (`Colours.GravelGrass`) in soft shapes from `GrassFrom` (2.4) studs to its end.
+- **The bevels** are mapped to it, from the tarmac's edge to their foot (the grass end), or to `RunFoot` (2.2, before the grass) in a gravel run, shaded by the tarmac's tone along the road. No triangles more.
+- **Lit as one surface with the tarmac** (send-back 3, "edit both gravel and road textures so that they mesh evenly ... the part color might be making it appear quite different in lighting conditions"). What was multiplied in, face by face: the part's colour (white) and material (Asphalt, projected in world space) are one for the whole mesh, and the bevel already took the tarmac's tone, so neither differed. What did: the painted colours (above), and the bevel's normal, flat at its slope, 19 degrees off the tarmac's: at noon it took 22% less sun than the tarmac beside it (sun on the normal 0.69 against 0.88), a crease of light along the road's edge. Now a bevel's top vertex keeps the tarmac's own normal and only its foot has the slope's, so the light runs on across the seam and shades down the bevel. Read off the drawn mesh: sun on the normal at noon 0.88 for the tarmac and the bevel's top (0.84 at its foot); at 17:42 (golden hour) 0.07 for all three; at night the same for both.
+- **The gravel runoff:** a strip of the road's mesh laid over a gravel run's flat runoff, from the bevel's foot to the lip, on the surface the car stands on there and lifted `RunoffLift` (0.06, plus a quarter of the chunk's tolerance on a far chunk), mapped to the band's pure gravel (`RunFrom` 1.0 to `RunFoot` 2.2). The ground's vertices under it stay grass now (`GroundMeshView`, look only): coloured gravel, they smeared it a whole ground cell, 8 studs or more, out across the grass beside it. The ground's shape, budget and what the car stands on are unchanged.
+- **The tarmac** gives the band its columns: 16.6 pixels a stud across, from 18.6.
+- **Switching it off:** `Config.Spline.Gravel.Enabled = false`, or in Studio `workspace.__gravel_texture = false` (from the next chunk built: start a new run): the bevels plain again, no strips, the ground's runoff gravel-coloured again.
+
+### The gravel's send-back (2026-11-16)
+
+The user, on the first gravel: *"texture too noisy and static-y. try something that will match road texture stylization, that sort of anime look we have going in teh concept art"*. The first cut painted about 5 700 tiny faceted stones with per-pixel grain, rims and random grass tufts: it shimmered. Now the look above: flat values, about 160 clear pebbles a copy, nothing per pixel. Measured as the mean difference between neighbouring pixels (green, of 255): the gravel band 2.22, the approved tarmac 2.75, so the gravel is now as calm as the road beside it.
+
+### The gravel's send-back 2 (2026-11-16)
+
+The user, on the anime gravel: *"that's too cartoony"*. So the target sits between the first two: the asphalt's painterly, realistic read at driving distance. Rather than a third single guess, three looks in that range, switchable live in the lane, each tuned to the asphalt's fine detail (above). Painting the image at load with B: 362 ms of work over 110 frames.
+
+### The gravel's send-back 3 (2026-11-16)
+
+The user: *"B. save that and then edit both gravel and road textures so that they mesh evenly. keep the coloration generally of the road. the part color might be making it appear quite different in lighting conditions."* Look B kept as the only one; the gravel in the asphalt's colours; the bevel lit as the tarmac at their seam (above). At the seam itself, the image's last 0.3 studs of tarmac are (104, 102, 103) and the gravel's first 0.3 studs (101, 99, 101): both take the tarmac's dusty edge colour, so they meet within 3 of 255.
+
 ## Platform risks
 
 None. Nothing is uploaded; the image exists only in each client's memory.
@@ -91,9 +118,26 @@ Measured in lanes 4 (before), 2 (first cut) and 1 (second and third cuts, on mai
 - **The car's drift marks on it:** measured by colour (send-back 1): a live mark, about (49, 50, 57) over this tarmac, is the darkest thing on it; nothing painted is near it now.
 - **Seed 31337's tight stretches:** 206-464 (tightest radius 114), 2 242-2 484 (89, a hairpin), 4 640-5 076 (109).
 
+**The gravel (T-270)**, lane 1, seed 31337, chunks 1-11 near and far:
+
+| | Before (T-268) | With the gravel |
+|---|---|---|
+| Triangles a chunk, near | 1 215 | 1 225 (the runoff strips: 118 over the 11; the bevels' 2 908 mapped, none added) |
+| Triangles a chunk, far | 261 | 263 (strips 28, bevels' 652 mapped) |
+| Building a chunk | 8.28 ms, 2.7 frames | 8.93 ms (worst 12.7), 3.0 frames; far 3.62. Later, a slower session, on then off in one go: 10.97 on, 12.87 off (noise; the build code did not change with the look) |
+| Most of a chunk any one frame paid | 4.81 ms | 4.64 ms |
+| Painting the image, once | 244 ms of work, 78 frames | first cut 232 ms over 75 frames; the anime look 337-348 ms over 101-108 frames (834-888 ms wall), the longest frame meanwhile 11.5-13.8 ms (its pebbles are blended colour by colour) |
+| Image memory | 4 MB | 4 MB (a band of the same image) |
+| Render CPU / GPU, parked at a gravel run, gravel off then on in one session | 2.13-2.57 / 0.56-0.63 ms | 1.79-2.02 / 0.41-0.49 ms |
+
+- **Seed 31337's gravel runs:** left 1 864-2 130 (runoff 2.7), right 3 878-4 098 (3.4).
+- **The ground under them:** 0 of the ground tiles' vertices in the gravel colour with the texture on (292 tiles read).
+- **Live:** 6 near and 8 far chunks, no fallbacks, no errors or warnings.
+
 ## As built
 
-- `Road/RoadTexture` (new): `enabled()`, `period()`, `base(s0)`, `uv(s, d, base)`, `lineUV(s, side, base, which)`, `centreRuns(spline, s0, s1)`, `tone(s, d)`, `paint(yield)`, `get()`, `prepare()`, `DebugState()`.
+- `Road/RoadTexture` (new): `enabled()`, `period()`, `base(s0)`, `uv(s, d, base)`, `lineUV(s, side, base, which)`, `centreRuns(spline, s0, s1)`, `tone(s, d)`, `paint(yield)`, `get()`, `prepare()`, `DebugState()`; T-270: `gravelEnabled()`, `gravelPeriod()`, `gravelBase(s0)`, `gravelUV(s, e, base, side)`, `paintGravel(px, yield)`.
+- T-270: `Road/SplineMesh` maps the bevels to the gravel band and lays the gravel runoff strips (stats `bevelTriangles`, `gravelTriangles`); `strip` takes an `onFace` callback. `Drift/GroundMeshView` keeps a gravel run's runoff vertices grass while the gravel is textured. Config: `Config.Spline.Gravel` (new block), `Config.Road.Colours.Gravel*`.
 - `Road/SplineMesh`: when the ground draws the runoff, the road's mesh takes the tarmac's texture instead of the grass's; the tarmac's vertices get UVs and tones, the bevels keep the plain band, no dash parts are made, and the tight stretches get the double yellow's strips (with a cut at each end of a run). Stats gain `tarmacTriangles`, `grassTextured`, `tarmacTextured`, `centreLineTriangles`, `centreRuns`.
 - Config: `Config.Spline.Tarmac` (new block), and the colour and line keys in `Config.Road`.
 

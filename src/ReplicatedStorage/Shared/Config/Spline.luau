@@ -366,6 +366,53 @@ local Spline = {
 		CrackDark = 0.35,
 	},
 
+	-- --------------------------------------------------------------- the gravel's texture
+	-- T-270 (features/road-surface.md "The gravel"), the user: "do the same for the gravel on
+	-- the sides of the road. get a proper texture for it". Painted in code into a band of the
+	-- tarmac's image (`Road/RoadTexture.paintGravel`), so it costs no image of its own; its
+	-- colours are `Config.Road.Colours.Gravel*`. The bevel at each edge of the tarmac is mapped
+	-- to it, and so is a strip laid over the narrow gravel runoff of a tight cliff edge.
+	Gravel = {
+		Enabled = true, -- false: the bevels plain gravel colour, no runoff strips, as before
+		BandPx = 96, -- columns of the 1 024-wide image (taken from the tarmac's: 16.6 pixels a stud there)
+		InsetPx = 4, -- columns each side of the band nothing is mapped to, so nothing bleeds in
+		BandStuds = 3, -- studs of gravel across the band: 29 pixels a stud
+		PeriodStuds = 64, -- studs along one copy: 16 pixels a stud
+		Seed = 270,
+		-- THE LOOK: B, the user's pick of three (2026-11-16) after "too noisy and static-y" and
+		-- "too cartoony" (features/road-surface.md "The gravel"), painted like the asphalt.
+		-- The bed's grain (`Mottle`, `Grain`, `Fine`, each over its cells in studs across and
+		-- along, as the asphalt's); its stones by size (so many a square stud, a radius range in
+		-- studs), `Gap` studs kept between them; how far a stone's tone goes toward
+		-- `GravelLight` or `GravelDark` (`Contrast`); its soft shading toward the light (`Lit`);
+		-- its edge `SoftPx` pixels wide; how much it covers the bed (`Opacity`); its shadow,
+		-- `ShadowOffset` of a radius away, `ShadowDark` dark (1: none)
+		MottleStuds = { 0.8, 1.4 }, Mottle = 0.06,
+		GrainStuds = { 0.3, 0.8 }, Grain = 0.04,
+		FineStuds = { 0.08, 0.2 }, Fine = 0.065,
+		Stones = {
+			{ Density = 0.6, Radius = { 0.26, 0.36 } },
+			{ Density = 1.6, Radius = { 0.15, 0.22 } },
+		},
+		Gap = 0.02,
+		Contrast = 0.6, Lit = 0.18, SoftPx = 2, Opacity = 1,
+		ShadowOffset = 0.35, ShadowDark = 0.82,
+		Aspect = { 0.8, 1.2 }, -- a stone's two radii, as shares of its size
+		LightAngle = -125, -- degrees, in the band (across, along): where the stones are lit from
+		-- THE EDGES, no hard seams: the tarmac's dusty edge takes over raggedly over the band's
+		-- first `EdgeSoft` studs; grass tufts creep in from `GrassFrom` studs to its end
+		EdgeSoft = 0.45,
+		GrassFrom = 2.4,
+		EdgeStuds = { 0.5, 1.2 }, -- the size of the edges' ragged shapes (across, along)
+		-- THE MAPPING: the bevel runs from the band's start (the tarmac's edge) to its end (the
+		-- grass) and, in a gravel run, to `RunFoot` only (no grass where gravel goes on); the
+		-- strip over a gravel run's flat runoff, from its foot to its lip, reads `RunFrom` to
+		-- `RunFoot`, lifted `RunoffLift` over the ground (more on a coarse chunk: its tolerance / 4)
+		RunFoot = 2.2,
+		RunFrom = 1.0,
+		RunoffLift = 0.06,
+	},
+
 	-- --------------------------------------------------------------- the ground
 	-- (features/ground-trial.md, T-218; the only ground since T-247, features/legacy-removal.md.)
 	-- The ground BUILT FIRST, as one mountain the road is cut into (`Road/Ground`), drawn by

@@ -130,6 +130,15 @@ return {
 		Crack = Color3.fromRGB(30, 30, 36),
 		EdgeLine = Color3.fromRGB(222, 222, 214), -- Japanese edge lines: solid white
 		CentreLine = Color3.fromRGB(230, 168, 46), -- the double yellow (the touge's orange-yellow)
+		-- THE GRAVEL'S TEXTURE (T-270, `Config.Spline.Gravel`): the dusty bed, and the two ends a
+		-- stone's tone goes toward. In the asphalt's own hue (the blue-violet grey of `Tarmac`)
+		-- and near its value, a little lighter and less blue: dustier. The user, send-back 3:
+		-- "keep the coloration generally of the road" (it was a warm light grey, about 40% lighter
+		-- than the tarmac, and read as another material)
+		GravelDust = Color3.fromRGB(80, 81, 90),
+		GravelLight = Color3.fromRGB(104, 104, 111),
+		GravelDark = Color3.fromRGB(56, 57, 67),
+		GravelGrass = Color3.fromRGB(66, 98, 48),
 	},
 
 	-- THE PAINTED LINES (T-268). The user, send-back 2: "get rid of the dashes - it's not
