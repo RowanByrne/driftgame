@@ -414,6 +414,7 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 		local gravelRows: { any } = {} -- per cut: { [side] = { top, foot, run } UV ids, c = tone }
 		local bevelTris = 0
 		local prevG: any = nil
+		local gravelOn = tarmacImage ~= nil and RoadTexture.gravelEnabled()
 		local prevRow, prevNear, prevFar, prevS, prevUV = nil, nil, nil, 0, nil
 		for k, s in cuts do
 			local row, norm, pts = {}, {}, {}
@@ -466,7 +467,7 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 				tarmacRows[k] = tp
 			end
 			local gRow: any = nil
-			if tarmacImage then
+			if gravelOn then
 				local em = road.em
 				gRow = { c = (road.grassShade :: any)[row[lipL + 1]] }
 				for _, side in { -1, 1 } do
@@ -619,7 +620,7 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 		-- the car stands on there (`terrainXYZ`), lifted `RunoffLift` (more on a coarse chunk),
 		-- and mapped to the gravel band's pure gravel (`RunFrom` to `RunFoot`)
 		local gravelTris = 0
-		if tarmacImage and groundRunoff then
+		if gravelOn and groundRunoff then
 			local em = road.em
 			local gLift = GV.RunoffLift + (o.tolerance or M.Tolerance) * 0.25
 			local made: { [number]: { [number]: any } } = {}
