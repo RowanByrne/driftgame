@@ -79,6 +79,7 @@ local AssetService = game:GetService("AssetService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Config = require(ReplicatedStorage.Shared.Config)
+local OpaqueBudget = require(ReplicatedStorage.Shared.Road.OpaqueBudget)
 
 local GroundMarks = {}
 GroundMarks.__index = GroundMarks
@@ -611,12 +612,10 @@ function GroundMarks.Build(self: GroundMarks, parent: Instance?): boolean
 		image:WritePixelsBuffer(Vector2.zero, size, GroundMarks.texturePixels(T))
 		-- never written again, so MADE OPAQUE and let go (T-274): opaque content costs none of
 		-- the client's mesh memory, an EditableImage its size (half a tile here). Kept as the
-		-- EditableImage only where that fails
-		local okC, result, opaque = pcall(function()
-			return AssetService:CreateDataModelContentAsync(Content.fromObject(image))
-		end)
+		-- EditableImage only where that fails, or past the session's cap (`Road/OpaqueBudget`, T-288)
+		local okC, opaque = OpaqueBudget.make("marks", Content.fromObject(image))
 		local texture: Content
-		if okC and result == Enum.CreateContentResult.Success then
+		if okC and opaque then
 			image:Destroy()
 			texture = opaque
 		else
