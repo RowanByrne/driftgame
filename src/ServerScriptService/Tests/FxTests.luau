@@ -265,7 +265,6 @@ function Tests.run(opts)
 		-- The low end's base layer (T-290) is level with the diffuse cloud, never above it.
 		local L = F.LowSmoke
 		local ordered = z[1] >= 1
-			and L.Billows.ZOffset >= 1 and L.Billows.ZOffset <= z[1]
 			and L.Wisp.ZOffset >= 1 and L.Wisp.ZOffset <= z[1]
 		for i = 2, #z do
 			ordered = ordered and z[i] > z[i - 1]
@@ -273,18 +272,46 @@ function Tests.run(opts)
 		check(
 			"the smoke draws in front of its tyre, and every other layer in front of the smoke",
 			ordered,
-			`ZOffset diffuse, dust, spray, stylized, bits: {fmtList(z)}; base {L.Billows.ZOffset} / {L.Wisp.ZOffset}`
+			`ZOffset diffuse, dust, spray, stylized, bits: {fmtList(z)}; wisp {L.Wisp.ZOffset}`
 		)
-		-- THE LOW END (T-290): both base looks under the mobile cap and the one light rule; the
-		-- billows from the painted sheet, the wisp the built-in picture with no flipbook.
+		-- THE LOW END (T-290): the wisp under the mobile cap and the one light rule, the
+		-- built-in picture with no flipbook; and the top band is today's billows exactly.
+		local topT, topS = Wheels.bandLook(L.Bands)
+		local lowT, lowS = Wheels.bandLook(Wheels.smokeBand(L.BillowsFrom + 0.05))
 		check(
-			"the low end's two base looks: under the mobile cap, one light, billows sheet and built-in wisp",
-			L.Billows.RateMax <= 100 and L.Wisp.RateMax <= 100
-				and L.Billows.LightInfluence == nil and L.Wisp.LightInfluence == nil
-				and F.Sheets[L.Billows.Sheet] ~= nil
+			"the low end: the wisp under the mobile cap and one light; the top band is today's billows",
+			L.Wisp.RateMax <= 100 and L.Wisp.LightInfluence == nil
 				and L.Wisp.Sheet == nil and string.match(L.Wisp.Texture, "^rbxasset://") ~= nil
-				and table.find({ "billows", "wisp", "off" }, L.Default) ~= nil,
-			`billows {L.Billows.RateMin}-{L.Billows.RateMax}/s, wisp {L.Wisp.RateMin}-{L.Wisp.RateMax}/s, default {L.Default}`
+				and math.abs(topT - F.Smoke.Transparency) < 1e-9 and math.abs(topS - 1) < 1e-9
+				and lowT > 0.85 and lowS < 0.7,
+			string.format("wisp %d-%d/s; top band see-through %.2f size x%.2f; first billows %.2f size x%.2f",
+				L.Wisp.RateMin, L.Wisp.RateMax, topT, topS, lowT, lowS)
+		)
+		-- And each wheel's intensity: a front just past its gate is at nothing, all four are full
+		-- together, and a spike ramps in over RiseSeconds rather than popping.
+		local frontAtGate = Wheels.smokeTarget(F.Gates.MaxSteerDegrees + 0.6, true)
+		local full = L.RampDegrees
+		local frames, x = 0, 0
+		while x < 1 and frames < 1000 do
+			x = Wheels.smokeStep(x, 1, 1 / 60)
+			frames += 1
+		end
+		check(
+			"the low end: per-wheel intensity -- a front starts at nothing, all four full together, a spike ramps",
+			frontAtGate < 0.05 and Wheels.smokeTarget(full, true) == 1 and Wheels.smokeTarget(full, false) == 1
+				and Wheels.smokeTarget(full * 0.5, false) < 1
+				and math.abs(frames / 60 - L.RiseSeconds) < 2 / 60,
+			string.format("front at %.1f deg -> %.3f; at %d deg front %.2f rear %.2f; 0 -> 1 in %.2f s (RiseSeconds %.2f)",
+				F.Gates.MaxSteerDegrees + 0.6, frontAtGate, full, Wheels.smokeTarget(full, true), Wheels.smokeTarget(full, false),
+				frames / 60, L.RiseSeconds)
+		)
+		local b0, w0 = Wheels.smokeShares(0)
+		local bm, wm = Wheels.smokeShares(0.5)
+		local b1, w1 = Wheels.smokeShares(1)
+		check(
+			"the low end: wisp alone at the start, both in the middle, billows alone at the top",
+			b0 == 0 and w0 == 1 and bm > 0 and bm < 1 and wm > 0 and wm < 1 and b1 == 1 and w1 == 0,
+			string.format("billows / wisp shares: 0 -> %.2f / %.2f, 0.5 -> %.2f / %.2f, 1 -> %.2f / %.2f", b0, w0, bm, wm, b1, w1)
 		)
 	end
 
@@ -921,89 +948,84 @@ function Tests.run(opts)
 		w:SetEnabled(true)
 
 		------------------------------------------------------------------------
-		-- 9a. THE LOW END (T-290): the base layer in each mode, switched live.
+		-- 9a. THE LOW END (T-290): each wheel ramps from wisp to billows; off is today's.
 		------------------------------------------------------------------------
 		do
 			local DT = 1 / 60
-			local rlw
-			for _, wheel in w.wheels do
-				if wheel.name == CarModel.WHEEL_NAMES[3] then
-					rlw = wheel
-				end
-			end
 			local L = F.LowSmoke
-			-- Drive a rear wheel at a slip; its three live rates, and the studs between puffs.
-			local function at(slipDeg: number, speed: number)
-				local s = stateWith({ slipDeg = slipDeg, speed = speed, throttle = 1, surface = "tarmac" })
-				for _ = 1, 20 do
-					w:Update(s, { handbrake = false }, DT)
-				end
-				local fx = rlw.fx[1]
-				local base = if fx.base.Enabled then fx.base.Rate else 0
-				local cloud = if fx.diffuse.Enabled then fx.diffuse.Rate else 0
-				local puff = if fx.stylized.Enabled then fx.stylized.Rate else 0
-				return base, cloud, puff, speed / math.max(base + cloud + puff, 1e-6)
+			local byName = {}
+			for _, wheel in w.wheels do
+				byName[wheel.name] = wheel
 			end
-			local lines, instancesOk, created = {}, true, 0
-			local rows = {}
+			local fl, rl = byName[CarModel.WHEEL_NAMES[1]], byName[CarModel.WHEEL_NAMES[3]]
+			local created = 0
 			local conn = rig.body.DescendantAdded:Connect(function()
 				created += 1
 			end)
-			for _, mode in { "off", "billows", "wisp" } do
-				w:Cut()
-				w:SetLowSmoke(mode)
-				rows[mode] = {}
-				for _, sample in { { 4, 35 }, { 30, 50 }, { 90, 70 } } do
-					local base, cloud, puff, gap = at(sample[1], sample[2])
-					table.insert(rows[mode], { base = base, cloud = cloud, puff = puff, gap = gap })
-					table.insert(lines, string.format("%s %d deg: base %.1f cloud %.1f puff %.1f gap %.2f", mode, sample[1], base, cloud, puff, gap))
-				end
-				instancesOk = instancesOk and w:CountInstances() == want
+			-- Off: today's smoke exactly, at any slip.
+			w:Cut()
+			w:SetLowSmoke("off")
+			local s90 = stateWith({ slipDeg = 90, speed = 70, throttle = 1, surface = "tarmac" })
+			for _ = 1, 20 do
+				w:Update(s90, { handbrake = false }, DT)
 			end
+			local today90 = select(2, Wheels.evaluate(s90, false, false, true, true))
+			local offOk = rl.fx[1].base.Enabled == false and math.abs(rl.fx[1].diffuse.Rate - today90) < 1e-6
+				and rl.fx[1].band == L.Bands
+			-- On: a sudden jump to 90 degrees from rest. The rear and the front ramp; neither pops.
+			w:Cut()
+			w:SetLowSmoke(nil)
+			local firstFront, lines = nil, {}
+			for f = 1, 90 do
+				w:Update(s90, { handbrake = false }, DT)
+				if f == 1 then
+					firstFront = { fl.smoke, fl.fx[1].diffuse.Rate, fl.fx[1].band }
+				end
+				if f % 15 == 0 then
+					table.insert(lines, string.format("%.2fs rear %.2f front %.2f", f * DT, rl.smoke, fl.smoke))
+				end
+			end
+			check(
+				"low end off is today's smoke exactly: full billows, no wisp",
+				offOk,
+				string.format("diffuse %.2f (today %.2f), wisp on %s, band %d", rl.fx[1].diffuse.Rate, today90, tostring(rl.fx[1].base.Enabled), rl.fx[1].band)
+			)
+			check(
+				"a sudden big slide ramps every wheel in over RiseSeconds -- the front never pops to billows",
+				firstFront[1] <= DT / L.RiseSeconds + 1e-9 and firstFront[2] == 0
+					and fl.fx[1].base.Enabled and math.abs(rl.smoke - 1) < 1e-9 and math.abs(fl.smoke - 1) < 1e-9
+					and math.abs(rl.fx[1].diffuse.Rate - today90) < 1e-6 and not rl.fx[1].base.Enabled
+					and rl.fx[1].band == L.Bands,
+				string.format("front's first frame: intensity %.3f, billows %.1f/s, band %d; %s; at 1.5 s billows %.2f (today %.2f), wisp %s",
+					firstFront[1], firstFront[2], firstFront[3], table.concat(lines, ", "), rl.fx[1].diffuse.Rate, today90, tostring(rl.fx[1].base.Enabled))
+			)
+			-- A light drift: the wisp alone, and soft.
+			w:Cut()
+			local s4 = stateWith({ slipDeg = 4, speed = 35, throttle = 1, surface = "tarmac" })
+			for _ = 1, 60 do
+				w:Update(s4, { handbrake = false }, DT)
+			end
+			local wispT = rl.fx[1].base.Transparency.Keypoints[2].Value
+			check(
+				"a light drift is the wisp alone, soft, a puff every Gap studs; no billows",
+				rl.fx[1].base.Enabled and math.abs(rl.fx[1].base.Rate - Wheels.wispRate(35)) < 1e-6
+					and rl.fx[1].diffuse.Rate == 0 and wispT > L.Wisp.Transparency,
+				string.format("intensity %.2f; wisp %.1f/s (%.2f studs apart), see-through %.2f; billows %.1f/s",
+					rl.smoke, rl.fx[1].base.Rate, 35 / rl.fx[1].base.Rate, wispT, rl.fx[1].diffuse.Rate)
+			)
 			conn:Disconnect()
-			local off, bil, wisp = rows.off, rows.billows, rows.wisp
-			local today90 = select(2, Wheels.evaluate(stateWith({ slipDeg = 90, speed = 70, throttle = 1 }), false, false, true, true))
 			check(
-				"low end: off is today's smoke exactly, with no base layer",
-				off[1].base == 0 and off[2].base == 0 and off[3].base == 0
-					and math.abs(off[3].cloud - today90) < 1e-6,
-				table.concat(lines, " | ", 1, 3)
+				"the low end creates nothing while it ramps",
+				created == 0 and w:CountInstances() == want,
+				`created {created}, instances {w:CountInstances()} (want {want})`
 			)
-			check(
-				"low end: the top end is today's in every mode (no base, the same diffuse rate past the handover)",
-				bil[3].base == 0 and wisp[3].base == 0
-					and math.abs(bil[3].cloud - off[3].cloud) < 1e-6 and math.abs(wisp[3].cloud - off[3].cloud) < 1e-6
-					and Wheels.handover(L.HandoverFullDegrees) == 1 and Wheels.handover(L.HandoverStartDegrees) == 0,
-				string.format("90 deg: diffuse %.2f / %.2f / %.2f", off[3].cloud, bil[3].cloud, wisp[3].cloud)
-			)
-			check(
-				"low end: a light drift's puffs come several times closer together, in both looks",
-				bil[1].gap < off[1].gap / 4 and wisp[1].gap < off[1].gap / 2
-					and bil[1].base <= 100 and wisp[1].base <= 100 and bil[2].gap < off[2].gap / 2,
-				table.concat(lines, " | ", 4)
-			)
-			local e = rlw.fx[1].base
-			w:SetLowSmoke("wisp")
-			local wispDressed = e.Texture == L.Wisp.Texture and e.FlipbookLayout == Enum.ParticleFlipbookLayout.None
-			w:SetLowSmoke("billows")
-			local billowsDressed = e.Texture == F.Sheets.Billows.Texture and e.FlipbookLayout == F.Sheets.Billows.Layout
-			check(
-				"low end: switching modes live re-dresses the base layer and creates nothing",
-				instancesOk and created == 0 and wispDressed and billowsDressed and w:CountInstances() == want,
-				`instances {w:CountInstances()} (want {want}), created {created}; wisp dressed {wispDressed}, billows {billowsDressed}`
-			)
-			-- The attribute is what the command bar sets: unforced, the wheels follow it.
+			-- The attribute is the Studio compare.
 			local before = workspace:GetAttribute(L.Attribute)
-			workspace:SetAttribute(L.Attribute, "wisp")
-			local followed = w:SetLowSmoke(nil)
-			workspace:SetAttribute(L.Attribute, "nonsense")
-			local fallback = w:SetLowSmoke(nil)
+			workspace:SetAttribute(L.Attribute, "off")
+			local off = w:SetLowSmoke(nil)
 			workspace:SetAttribute(L.Attribute, before)
-			check(
-				"low end: the Workspace attribute switches it; anything else is the default",
-				followed == "wisp" and fallback == L.Default,
-				`"wisp" -> {followed}, "nonsense" -> {fallback}`
-			)
+			local on = w:SetLowSmoke(nil)
+			check("the Workspace attribute \"off\" puts today's smoke back", off and not on, `off {off}, then {on}`)
 			w:Cut()
 			w:SetLowSmoke("off")
 		end
