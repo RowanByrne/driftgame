@@ -180,51 +180,41 @@ function Tests.run(opts)
 		local builtOk, missing = true, {}
 		for _, surface in F.Built do
 			local look = F.Surfaces[surface]
-			-- A built surface needs all three colours: the mark, the diffuse smoke and the
-			-- stylized puff on top of it.
-			if not look or not look.MarkColour or not look.SmokeColour or not look.PuffColour then
+			-- A built surface needs both colours: the diffuse smoke and the stylized puff on
+			-- top of it. (Its mark is the rubber ribbon's `Marks.Rubber`, T-269.)
+			if not look or not look.SmokeColour or not look.PuffColour then
 				builtOk = false
 				table.insert(missing, surface)
 			end
 		end
 		check(
-			"every built surface has a mark, a smoke and a puff colour",
+			"every built surface has a smoke and a puff colour",
 			builtOk,
 			`built: {table.concat(F.Built, ", ")}{if builtOk then "" else "; incomplete look for " .. table.concat(missing, ", ")}`
 		)
-		-- THE INSTANCE BUDGET IS THIS FORMULA: 4 wheels x (2 Attachments + smoking surfaces x
-		-- (1 Trail + 2 ParticleEmitters) + the off-road layer's gravel Trail and 3
-		-- ParticleEmitters, T-188, plus 3 fixed emitter anchors, T-207), and the grass ribbon's
-		-- strips, two MeshParts a wheel, and their folder (T-265): 57 a car.
+		-- THE INSTANCE BUDGET IS THIS FORMULA: 4 wheels x (smoking surfaces x 2 ParticleEmitters
+		-- + the off-road layer's 3 ParticleEmitters, T-188, + 3 fixed emitter anchors, T-207),
+		-- the grass ribbon's strips, two MeshParts a wheel (T-265), the rubber ribbon's, one a
+		-- wheel (T-269), and their two folders: 46 a car.
 		check(
 			"one smoking surface, and the budget it comes to",
-			#F.Built == 1 and Wheels.perWheel() == 12 and Wheels.perCar() == 4 * 12 + F.Ground.Ribbon.Wheels * 2 + 1,
+			#F.Built == 1 and Wheels.perWheel() == 8
+				and Wheels.perCar() == 4 * 8 + F.Ground.Ribbon.Wheels * 2 + F.Marks.Ribbon.Wheels + 2,
 			`{#F.Built} surface(s) -> {Wheels.perWheel()} a wheel, {Wheels.perCar()} instances per car`
 		)
-		-- ONE DARKNESS, which is the whole of the rollback. A ladder would be a table.
+		-- THE RUBBER IS SEE-THROUGH BY VERTEX ALPHA (T-269), which needs its part above 0
+		-- Transparency (measured: 0 and 0.001 draw solid), and no darkness ladder: one ribbon.
 		check(
-			"a mark has exactly one darkness",
-			type(F.Marks.Transparency) == "number"
-				and F.Marks.Transparency > 0
-				and F.Marks.Transparency < 1
+			"the rubber is a see-through ribbon: its part over 0 transparency, its edge clear",
+			F.Marks.Ribbon.Transparency > 0.001 and F.Marks.Ribbon.Transparency < 0.1
+				and F.Marks.Rubber.Points[1].Alpha == 0 and F.Marks.Scuff.Points[1].Alpha == 0
 				and F.Marks.Bands == nil,
-			`Marks.Transparency {F.Marks.Transparency}, and no Bands table`
+			`part transparency {F.Marks.Ribbon.Transparency}; edge alpha {F.Marks.Rubber.Points[1].Alpha}; no Bands table`
 		)
 		check(
 			"a mark is narrower than the tyre that leaves it",
 			F.Marks.Width < Config.Drift.WheelWidth,
 			`mark {F.Marks.Width} studs, tyre {Config.Drift.WheelWidth} studs`
-		)
-		-- `MinSegment` MUST STAY SMALL, and this check is here because it was 0.5 for a
-		-- round and that is what turned a chain of hairline band joins into the long
-		-- dashes the user photographed: a trail that will not draw until the patch has
-		-- moved half a stud starts every fresh ribbon half a stud late. Measured, the
-		-- patch advances as little as 0.104 studs in a frame through a real drift, so
-		-- anything at or above that drops segments at speed.
-		check(
-			"a fresh ribbon starts drawing straight away",
-			F.Marks.MinSegment < 0.1,
-			`MinSegment {F.Marks.MinSegment} studs; the patch advances as little as 0.104 studs a frame`
 		)
 		check(
 			"the fronts' threshold is well clear of the floating-point floor",
@@ -635,14 +625,14 @@ function Tests.run(opts)
 				for _, wheel in w.wheels do
 					local lift = Vector3.new(0, s.wheelLift[wheel.index], 0)
 					local expected = road:PointToWorldSpace((wheel.patchA + wheel.patchB) * 0.5 + lift)
-					local actual = (wheel.a.WorldPosition + wheel.b.WorldPosition) * 0.5
+					local actual = (wheel.markA + wheel.markB) * 0.5
 					centreError = math.max(centreError, (actual - expected).Magnitude)
 					for _, pair in { { wheel.sourceA, wheel.patchA }, { wheel.sourceB, wheel.patchB }, { wheel.sourceC, wheel.patchC } } do
 						emitterError = math.max(emitterError, (pair[1].WorldPosition - road:PointToWorldSpace(pair[2] + lift)).Magnitude)
 					end
 					local path = if previous[wheel.index] then expected - previous[wheel.index] else s.velocity
 					path -= s.groundUp * path:Dot(s.groundUp)
-					local span = wheel.b.WorldPosition - wheel.a.WorldPosition
+					local span = wheel.markB - wheel.markA
 					planeError = math.max(planeError, math.abs(span:Dot(s.groundUp)))
 					local across
 					if path.Magnitude > 1e-4 then
@@ -709,7 +699,7 @@ function Tests.run(opts)
 			w:Update(s, { handbrake = true }, 1 / 60)
 			local expected = math.max(math.abs(math.cos(math.rad(deg))), F.Marks.MinWidthRatio)
 			for _, wheel in w.wheels do
-				local width = (wheel.b.WorldPosition - wheel.a.WorldPosition).Magnitude
+				local width = (wheel.markB - wheel.markA).Magnitude
 				angleError = math.max(angleError, math.abs(width - F.Marks.Width * expected))
 				if math.abs(deg) == 90 then
 					floorError = math.max(floorError, math.abs(width - F.Marks.Width * F.Marks.MinWidthRatio))
@@ -728,16 +718,11 @@ function Tests.run(opts)
 			local lit, maxPerWheel = 0, 0
 			for _, wheel in w.wheels do
 				local here = 0
-				for _, fx in wheel.fx do
-					if fx.trail.Enabled then
-						here += 1
-					end
-				end
-				-- Every off-road alternative counts, including the trench (T-205).
-				if w.marks:Kind(wheel.index) then
+				-- Both ribbons count: rubber or scuff (T-269), flattened grass or rut (T-265).
+				if w.rubber:Kind(wheel.index) then
 					here += 1
 				end
-				if wheel.ground.gravel.trails[1].Enabled then
+				if w.marks:Kind(wheel.index) then
 					here += 1
 				end
 				lit += here
@@ -780,11 +765,7 @@ function Tests.run(opts)
 			local _, perWheel = litTrails()
 			worstPerWheel = math.max(worstPerWheel, perWheel)
 			for _, wheel in w.wheels do
-				local drawn = w.marks:Kind(wheel.index) ~= nil
-					or wheel.ground.gravel.trails[1].Enabled
-				for _, fx in wheel.fx do
-					drawn = drawn or fx.trail.Enabled
-				end
+				local drawn = w.marks:Kind(wheel.index) ~= nil or w.rubber:Kind(wheel.index) ~= nil
 				if wheel.marking and not drawn then
 					blank += 1
 				end
@@ -931,7 +912,7 @@ function Tests.run(opts)
 		check(
 			"at a low angle on grass: the flat grass line, clippings, no trench, no dirt",
 			w.marks:Kind(rl.index) == "flat"
-				and not rl.fx[1].trail.Enabled
+				and w.rubber:Kind(rl.index) == nil
 				and rl.ground.clippings.emitter.Enabled
 				and not rl.ground.dirt.emitter.Enabled,
 			string.format("clippings %.1f/s, mix %.2f", rl.ground.clippings.emitter.Rate, rl.mixGrass)
@@ -1020,7 +1001,7 @@ function Tests.run(opts)
 				and clipStill
 				and math.abs(rl.fx[1].diffuse.Rate - full) < 1e-6
 				and not rl.ground.clippings.emitter.Enabled
-				and rl.fx[1].trail.Enabled
+				and w.rubber:Kind(rl.index) == "rubber"
 				and w.marks:Kind(rl.index) == nil,
 			string.format("smoke %.2f one frame back, %.2f half a second later (full %.2f)", smokeIn1, rl.fx[1].diffuse.Rate, full)
 		)
@@ -1046,7 +1027,7 @@ function Tests.run(opts)
 		end
 		check(
 			"on gravel: a scuff mark and dust, no smoke, no grass",
-			rl.ground.gravel.trails[1].Enabled
+			w.rubber:Kind(rl.index) == "scuff"
 				and rl.ground.dust.emitter.Enabled
 				and not rl.fx[1].diffuse.Enabled
 				and not rl.ground.clippings.emitter.Enabled,
@@ -1114,7 +1095,7 @@ function Tests.run(opts)
 			check(
 				"the ribbon is built once, two parts a wheel at scale 1, within the mesh budget",
 				marks.ready and parts == RB.Wheels * 2 and scaleOk and dressed and vertices <= 4200
-					and Wheels.perWheel() * #CarModel.WHEEL_NAMES + made + 1 == Wheels.perCar(),
+					and Wheels.perWheel() * #CarModel.WHEEL_NAMES + made + 1 + #w.rubber.folder:GetDescendants() + 1 == Wheels.perCar(),
 				`ready {marks.ready} ({marks.failed or "ok"}); {parts} MeshParts; scale 1 {scaleOk}; materials and texture {dressed}; {vertices} mesh vertices; {Wheels.perCar()} a car`
 			)
 
@@ -1371,6 +1352,165 @@ function Tests.run(opts)
 				`{folderBefore} in its folder before, {#marks.folder:GetDescendants()} after; Clear leaves {marks:LiveCount()} sections`
 			)
 
+			------------------------------------------------------------------------
+			-- 9d. RUBBER ON THE TARMAC (T-269): the same ribbon, see-through, flat, on the
+			-- spline road's own surface; darkest where the wheel is loaded and sliding most.
+			------------------------------------------------------------------------
+			do
+				local MR = F.Marks.Ribbon
+				local rub = w.rubber
+				local RP = #F.Marks.Profile * 2
+
+				-- Built once, see-through, inside the budget.
+				local rparts, see = 0, true
+				for _, part in rub.folder:GetChildren() do
+					if part:IsA("MeshPart") then
+						rparts += 1
+						see = see and part.Transparency > 0.001 and part.Material == MR.Material
+							and part.TextureContent.Object == rub.image and math.abs(part.Size.X - 2000) < 1
+					end
+				end
+				local rverts = rub:DebugState().vertices
+				local allVerts = rverts + marks:DebugState().vertices
+				check(
+					"the rubber ribbon is built once, one see-through part a wheel, within the mesh budget",
+					rub.ready and rparts == MR.Wheels and see and rverts <= 2400 and allVerts <= 6600,
+					`ready {rub.ready} ({rub.failed or "ok"}); {rparts} MeshParts, see-through and textured {see}; {rverts} mesh vertices, {allVerts} with the grass's`
+				)
+
+				-- How hard a wheel marks: slip past its own threshold, and its load.
+				local I = Wheels.markIntensity
+				local rear0, rear1, rearFull = I(0, false, false, 0.5), I(1, false, false, 0.5), I(40, false, false, 0.5)
+				local front30, frontFull = I(29, true, false, 0.5), I(F.Gates.MaxSteerDegrees + MR.IntensitySlipDegrees, true, false, 0.5)
+				local hb = I(0, false, true, 0.5)
+				local loaded, light = I(20, false, false, 1), I(20, false, false, 0)
+				local mid = I(20, false, false, 0.5)
+				local s0 = stateWith({ slipDeg = 30, speed = 60, throttle = 1 })
+				s0.travel = { 0.25, 0.25, 0.4, 0.1 }
+				local shares = { Wheels.loadShare(s0, 1), Wheels.loadShare(s0, 3), Wheels.loadShare(s0, 4) }
+				check(
+					"rubber goes down with the slip past each wheel's threshold, and darkest where the wheel is loaded",
+					rear0 == 0 and rear1 >= MR.MinIntensity * 0.99 and rear1 < 0.6 and rearFull == 1 and front30 == 0
+						and frontFull == 1 and hb >= MR.HandbrakeIntensity and loaded > mid and mid > light
+						and math.abs(shares[1] - 0.5) < 1e-6 and shares[2] > 0.5 and shares[3] < 0.5,
+					string.format("rear 0/1/40 deg %.2f/%.2f/%.2f; front 29 deg %.2f, full %.2f; handbrake %.2f; 20 deg loaded/even/light %.2f/%.2f/%.2f; load shares %s",
+						rear0, rear1, rearFull, front30, frontFull, hb, loaded, mid, light, fmtList(shares))
+				)
+
+				-- A stand-in road: the spline's own surface, a tilted, wavy plane, s along x and d
+				-- along z. The ribbon must lie on it, not on the drawn ground (none here).
+				local function roadY(sx: number, dz: number): number
+					return 30 + 0.05 * sx + 0.02 * dz + 0.3 * math.sin(sx * 0.1)
+				end
+				local probes = 0
+				local fakeSpline = {
+					projectFrom = function(_, x: number, z: number, _hint: number?)
+						probes += 1
+						return x, z
+					end,
+					project = function(_, x: number, z: number)
+						probes += 1
+						return x, z
+					end,
+					terrainXYZ = function(_, sx: number, dz: number)
+						return sx, roadY(sx, dz), dz
+					end,
+					terrainNormal = function()
+						return Vector3.yAxis
+					end,
+				}
+				local roadGround = { spline = fakeSpline, _drawnAt = function() return nil end }
+				GroundMarks.Clear(rub)
+				local function onArc(t: number): (Vector3, Vector3)
+					local a = 50 * t / 40
+					local x, z = 40 * math.sin(a), 40 * (1 - math.cos(a))
+					local tangent = Vector3.new(math.cos(a), 0, math.sin(a))
+					return Vector3.new(x, roadY(x, z) + 0.4, z), tangent:Cross(up)
+				end
+				for f = 0, 60 do
+					local p, across = onArc(f / 60)
+					GroundMarks.Wheel(rub, 1, true, p, up, across, 1, f > 45, roadGround, 1 / 60, 1)
+					GroundMarks.Age(rub, 1 / 60)
+				end
+				local scuffKind = GroundMarks.Kind(rub, 1)
+				GroundMarks.Wheel(rub, 1, false, onArc(61 / 60), up, Vector3.xAxis, 1, true, roadGround, 1 / 60, 1)
+				local strip = rub:DebugStrip(1)
+				local worst = stretched(strip)
+				local rmark = {}
+				for _, sct in strip do
+					if sct.real and (sct.points[1] - sct.points[RP]).Magnitude > 1e-4 then
+						table.insert(rmark, sct)
+					end
+				end
+				local edgeErr, flatErr, edgeAlpha, midAlpha = 0, 0, 0, 0
+				for _, sct in rmark do
+					for _, j in { 1, RP } do
+						edgeErr = math.max(edgeErr, math.abs(sct.points[j].Y - (roadY(sct.points[j].X, sct.points[j].Z) + MR.Lift)))
+						edgeAlpha = math.max(edgeAlpha, sct.alphas[j])
+					end
+					for j = 1, RP do
+						flatErr = math.max(flatErr, math.abs(sct.normals[j]:Dot(Vector3.yAxis) - 1))
+					end
+				end
+				local midSct = rmark[math.max(#rmark // 2, 1)]
+				midAlpha = midSct.alphas[RP // 2]
+				local wantMid = F.Marks.Rubber.Points[#F.Marks.Profile].Alpha * F.Marks.Rubber.Opacity
+				check(
+					"the rubber lies flat on the road's own surface, clear at its edges, darkest in its middle",
+					#rmark > 10 and worst < 1e-3 and edgeErr < 2e-3 and flatErr < 1e-4 and edgeAlpha == 0
+						and math.abs(midAlpha - wantMid) < 0.02 and probes > 0,
+					string.format("%d sections; worst stretch %.1e; edges %.1e studs off the road + Lift; normals flat to %.1e; edge alpha %.2f, middle %.2f (want %.2f); %d road lookups",
+						#rmark, worst, edgeErr, flatErr, edgeAlpha, midAlpha, wantMid, probes)
+				)
+				check(
+					"onto the gravel the rubber becomes a scuff",
+					scuffKind == "scuff",
+					`look on the gravel: {tostring(scuffKind)}`
+				)
+				-- It fades with its life, 5 s, and goes.
+				local a0 = midSct.showing
+				GroundMarks.Age(rub, F.Marks.Seconds * 0.85)
+				local aged
+				for _, sct in rub:DebugStrip(1) do
+					if sct.k == midSct.k then
+						aged = sct
+					end
+				end
+				local liveMid = rub:LiveCount()
+				GroundMarks.Age(rub, F.Marks.Seconds * 0.2)
+				check(
+					"the rubber dries and fades over its life and goes",
+					aged and aged.showing < a0 * 0.6 and aged.alphas[RP // 2] < midAlpha * 0.6 and liveMid > 0 and rub:LiveCount() == 0,
+					string.format("showing %.2f fresh, %.2f at 85%% of %.0f s; %d sections then, %d after",
+						a0, if aged then aged.showing else -1, F.Marks.Seconds, liveMid, rub:LiveCount())
+				)
+				GroundMarks.Clear(rub)
+
+				-- Through `Wheels`: on tarmac the rubber comes in eased, never at once.
+				w:Cut()
+				local rear
+				for _, wheel in w.wheels do
+					if not wheel.front then
+						rear = wheel
+						break
+					end
+				end
+				local tarmacSlide = stateWith({ slipDeg = 40, speed = 70, throttle = 1, surface = "tarmac" })
+				w:Update(tarmacSlide, { handbrake = false }, DT, roadGround)
+				local first = rear.intensity
+				for _ = 1, 30 do
+					w:Update(tarmacSlide, { handbrake = false }, DT, roadGround)
+				end
+				local later = rear.intensity
+				check(
+					"through Wheels the rubber's darkness is eased in",
+					w.rubber:Kind(rear.index) == "rubber" and first > 0 and first < later and later > 0.9,
+					string.format("intensity %.2f after a frame, %.2f half a second later", first, later)
+				)
+				w:Cut()
+				GroundMarks.Clear(rub)
+			end
+
 			-- Through `Wheels`: the ground is asked only while a wheel marks grass.
 			calls = 0
 			w:Cut()
@@ -1399,6 +1539,7 @@ function Tests.run(opts)
 		check("Clear takes all of them away", w:CountInstances() == 0, `{#rig.body:GetDescendants()} left on the body`)
 		car:Destroy()
 		w.marks:Destroy()
+		w.rubber:Destroy()
 	end
 
 	----------------------------------------------------------------------------
