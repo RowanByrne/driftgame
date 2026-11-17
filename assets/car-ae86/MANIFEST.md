@@ -283,7 +283,14 @@ car (`features/car-model.md` "The restyled model"), exported on 2026-11-17 after
 - **Checked:** read back in on its own: the same 142 names, triangle counts and points, every
   corner's normal within 0.7 degrees, UVs on the 26 pieces that should have them, and the seven
   maps.
-- **Not imported yet.** Roblox's docs say the importer takes PBR maps embedded in an FBX, but
-  not what it makes of them or whether it keeps a file's normals: check both in Studio.
+- **Imported** by the user with Studio's 3D importer into the Lane 1 place on 2026-11-17, as
+  `Workspace.car-ae86-mid`: 142 MeshParts, 7.71 x 5.12 x 16.90. The importer kept the file's
+  normals (the panels read smooth) and turned the embedded maps into a SurfaceAppearance on
+  each tyre, disc and caliper. The meshes and the seven maps were uploaded to the user's
+  account by that import. Every piece's mesh id, size and centre, and the maps' ids, are in
+  `src/ReplicatedStorage/Shared/Cars/Restyled.luau`; the maps also in
+  `Shared/Cars/RestyledMaps.rbxmx` (features/car-model.md "The restyled model"). The `.fbm`
+  folder Studio wrote beside the file holds the seven maps again, extracted from it, and is
+  not kept: they are in the `.fbx`.
 - **Where the downloaded model came from, and its licence, are not recorded here.** Its wheel
   maps are in this export. Record them before the car ships (PLATFORM-RISKS.md).

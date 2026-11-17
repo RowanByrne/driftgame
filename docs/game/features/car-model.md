@@ -11,6 +11,7 @@ The game's own car, built through ART-PIPELINE.md "3D assets" as the pipeline's 
 | Gray model | **Approved 2026-11-10** ("ok approved."), after seven rounds of notes on the second build. The first, a headless scripted build, was rejected: "not even close" |
 | Textured model | **Surfaces decided 2026-11-10: materials and colour, per piece. Exported, imported into the Lane 3 place and coloured there; waiting for the look to be tuned and the user's verdict** ("Surfaces and export") |
 | Animation | Not started |
+| Restyled model in the game | **The default car since 2026-11-17** (T-287), waiting for the user's look ("The restyled model") |
 
 ## What is built
 
@@ -186,9 +187,17 @@ A second model of the same car, built 2026-11-11 to 2026-11-17 in Blender from a
 - **The pop-up lights are written down,** like everything else shut; their travel (-63.25 degrees) raises them.
 - **New surface `Seam`:** the black folds behind the panel joins, drawn from both sides. The glass is closed sheets, so it is not.
 - **Textured surfaces:** `Tyre` (normal and roughness maps; the tread is in the normal map), `Disc` (colour, roughness, metalness) and `Caliper` (colour, normal). `MeshRig` makes each piece from its mesh id alone, so these maps need their image ids read off the import and put on the pieces (SurfaceAppearance) when the car is wired in; without them the tyres are smooth.
-- **Smooth shading:** every corner's normal is in the file. Whether Studio keeps them is to be checked by eye after the import.
+- **Smooth shading:** every corner's normal is in the file. Studio keeps them: the curved panels read smooth in the lane (T-287).
 
-Not done: the import, the wiring (a body module like `Shared/Cars/Liftback`, read off the imported model, built through `MeshRig`), and the look in Studio.
+**Imported and wired in, 2026-11-17 (T-287).** The user imported the file into the Lane 1 place as `Workspace.car-ae86-mid`: 142 MeshParts, 7.71 x 5.12 x 16.90, its pivot the car's origin, facing +Z; every piece Plastic, gray, no texture; the tyres, discs and calipers each with a SurfaceAppearance carrying the export's maps. Read out of that place into `Shared/Cars/Restyled` (the body and car `restyled`), built through `MeshRig`, and made **the default car**, on exactly the old default's numbers (the user: "same stats as current default but make it the new default"). The gray liftback stays, as the car "Liftback (old)".
+
+- **Its parts move as the gray model's do:** 36 moving parts and 18 lamps, as `Rig` groups. The pop-up lights open at dusk and shut at dawn (`HeadlightsController`), and the headlight and tail lenses glow. The front calipers ride the steering hubs. The hood props on its rod, which swings 100.3 degrees, as the export has it.
+- **Brake lamps:** nothing in the game lights a brake lamp yet, on any car. The tail lamps glow at night; when brake lamps are built, they light the same lenses (`TailLampL_LensRed`, `TailLampR_LensRed`).
+- **The maps:** a game script cannot write a SurfaceAppearance's maps (measured in the lane), so the three surfaces' SurfaceAppearances are made ahead in `Shared/Cars/RestyledMaps.rbxmx` and cloned onto the pieces. Their ids are also in `Cars/Restyled`: change one, change both.
+- **Measured in the lane:** wheelbase 9.600, track 5.722 (the config's `TrackWidth` is 5.6; the drawn wheels are the model's), tyres 2.50 across (the config's `WheelDiameter` stays 2.3) and on the road to 0.001; raised, a headlight lens is 0.61 higher and 0.57 further forward. 142 mesh pieces and 64,533 triangles, against the gray liftback's 168 and 24,380.
+- **The garage's kit slots** for it are in `Config/CarKits` (`restyled`), measured off its body.
+
+Not done: the look in the user's eyes, by day and by night; the brake lamps (above); the wheels' maps' source and licence (the manifest).
 
 ## Not settled
 

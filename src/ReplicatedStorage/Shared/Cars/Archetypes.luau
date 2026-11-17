@@ -14,9 +14,9 @@
 --
 -- `Base` is every car field at the value the model was approved on
 -- (docs/game/DECISIONS.md, 2026-11-03), and each archetype is a SPARSE table of overrides
--- on top of it. `balanced` and `liftback` override nothing on purpose: each IS the
--- approved car, to the bit, and the liftback is the default (T-111). If a change here
--- moves either, it has moved the car the user said yes to.
+-- on top of it. `balanced`, `liftback` and `restyled` override nothing on purpose: each IS
+-- the approved car, to the bit, and the restyled liftback is the default (T-287). If a
+-- change here moves any of them, it has moved the car the user said yes to.
 --
 -- Units are studs, as everywhere else: the reference is in metres and everything carries
 -- 1 stud = 0.28 m (x 3.571). Angular rates are unitless in length and carry over as they
@@ -162,9 +162,9 @@ Archetypes.Base = {
 	SuspensionDamping = 22, -- 1/s. And how fast that dies away
 }
 
--- The order the panel cycles them in, and the order they are reported in. The liftback
--- first: it is the default (T-111).
-Archetypes.Order = { "liftback", "balanced", "gripper", "slider", "bruiser" }
+-- The order the panel cycles them in, and the order they are reported in. The restyled
+-- liftback first: it is the default (T-287).
+Archetypes.Order = { "restyled", "liftback", "balanced", "gripper", "slider", "bruiser" }
 
 -- Four cars, each a sparse table of overrides on `Base`. The keys are internal; the
 -- `Name` is a placeholder the user replaces when a car is something a player buys.
@@ -176,14 +176,26 @@ Archetypes.Order = { "liftback", "balanced", "gripper", "slider", "bruiser" }
 -- `CarService:SetCar`) and bounds each player against THEIR car, so a car here may be as
 -- fast as it deserves to be. The thing that still binds is taste, not the wire.
 Archetypes.Cars = {
-	-- -------------------------------------------------------------- liftback
-	-- THE GAME'S OWN CAR, AND THE DEFAULT (T-111). The 1980s liftback modelled for this game
-	-- (features/car-model.md), drawn by the `liftback` body (`Cars/Liftback`), on exactly
-	-- the numbers the AE86 placeholder passed the feel gate on: it overrides nothing, so it
-	-- IS the approved car, to the bit, as `balanced` is. Only its name differs, and the
+	-- -------------------------------------------------------------- restyled
+	-- THE DEFAULT (T-287): the same liftback, remodelled from a detailed model of the real
+	-- car (features/car-model.md "The restyled model"), drawn by the `restyled` body
+	-- (`Cars/Restyled`). The user: "same stats as current default", so like the liftback it
+	-- overrides nothing and IS the approved car, to the bit. Only its name differs, and the
 	-- shape `CarBody = "auto"` draws for it.
-	liftback = {
+	restyled = {
 		Name = "Liftback", -- placeholder: the user names it
+		Character = "the game's own car, restyled, on the numbers the feel gate was passed on",
+	} :: Car,
+
+	-- -------------------------------------------------------------- liftback
+	-- THE GAME'S OWN CAR, the gray model, and the default from T-111 to T-287. The 1980s
+	-- liftback modelled for this game (features/car-model.md), drawn by the `liftback` body
+	-- (`Cars/Liftback`), on exactly the numbers the AE86 placeholder passed the feel gate
+	-- on: it overrides nothing, so it IS the approved car, to the bit, as `balanced` is.
+	-- Only its name differs, and the shape `CarBody = "auto"` draws for it.
+	liftback = {
+		Name = "Liftback (old)", -- placeholder: the user names it. "(old)" since T-287, so
+		-- the garage tells it from the restyled one
 		Character = "the game's own car, on the numbers the feel gate was passed on",
 	} :: Car,
 
@@ -255,8 +267,8 @@ Archetypes.Cars = {
 	} :: Car,
 }
 
--- What a player spawns in: the liftback (T-111). `balanced` is still the approved car's
--- numbers and the liftback has the same ones.
-Archetypes.Default = "liftback"
+-- What a player spawns in: the restyled liftback (T-287; the gray liftback from T-111).
+-- `balanced` is still the approved car's numbers, and both liftbacks have the same ones.
+Archetypes.Default = "restyled"
 
 return Archetypes

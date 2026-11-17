@@ -80,11 +80,55 @@ function MeshRig.groupOf(data: any, part: string): string
 	return g.into or part
 end
 
+-- A surface's image maps, `{ colour, normal, roughness, metalness }` (any of them), as a
+-- SurfaceAppearance on the piece, written at run time. A GAME SCRIPT CANNOT WRITE A
+-- SurfaceAppearance's maps (measured in DR-Lane1, T-287: both the `*MapContent` and the
+-- `*Map` properties refuse), so a car's maps come made ahead, as SurfaceAppearances in a
+-- `.rbxmx` beside its data (`data.mapsFolder`, one per surface, named by it) and cloned by
+-- `build`; this is the fallback for a surface that has none there, in case the engine ever
+-- allows it. Returns whether every map went on: a piece whose maps would not go on keeps its
+-- plain colour and material.
+local MAP_PROPS = {
+	colour = "ColorMap",
+	normal = "NormalMap",
+	roughness = "RoughnessMap",
+	metalness = "MetalnessMap",
+}
+
+function MeshRig.dressMaps(part: BasePart, maps: { [string]: string }): boolean
+	local sa = Instance.new("SurfaceAppearance")
+	local all, set = true, 0
+	for key, id in maps do
+		local prop = MAP_PROPS[key]
+		if not prop then
+			all = false
+			continue
+		end
+		local ok = pcall(function()
+			(sa :: any)[prop .. "Content"] = Content.fromUri(id)
+		end)
+		if not ok then
+			ok = pcall(function()
+				(sa :: any)[prop] = id
+			end)
+		end
+		all = all and ok
+		set += if ok then 1 else 0
+	end
+	if set == 0 then
+		sa:Destroy() -- an empty one would draw the piece white
+		return false
+	end
+	sa.Parent = part
+	return all
+end
+
 -- Build the shell. Returns it (nil if no piece loaded), how many pieces were built, and
 -- how many would not load.
 function MeshRig.build(data: any): (Model?, number, number)
 	local s = MeshRig.frame(data)
 	local meshes = fetch(data.pieces)
+	local mapsFolder = if data.mapsFolder then script.Parent:FindFirstChild(data.mapsFolder) else nil
 
 	local byGroup: { [string]: { BasePart } } = { Body = {} }
 	local built, failed = 0, 0
@@ -107,6 +151,14 @@ function MeshRig.build(data: any): (Model?, number, number)
 		mp.Transparency = surface.transparency or 0
 		mp.DoubleSided = surface.doubleSided == true
 		mp.CastShadow = true
+		if surface.maps then
+			local made = mapsFolder and mapsFolder:FindFirstChild(surfaceName or "")
+			if made and made:IsA("SurfaceAppearance") then
+				made:Clone().Parent = mp
+			else
+				MeshRig.dressMaps(mp, surface.maps)
+			end
+		end
 		mp:SetAttribute("Paint", surface.paint or "none")
 		mp:SetAttribute("Surface", surfaceName)
 		mp:SetAttribute("Part", partName)

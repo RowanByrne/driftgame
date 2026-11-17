@@ -39,6 +39,7 @@ type State = {
 	spots: { SpotLight },
 	level: number, -- 0 out .. 1 full
 	on: boolean, -- what this car is switched to
+	pods: boolean?, -- what its pods were last moved to; nil until they have been
 	lenses: { Lens }?, -- while glowing: what each lens was
 	dirty: boolean, -- the car's parts changed: find its lenses again
 	conn: RBXScriptConnection?,
@@ -155,12 +156,23 @@ local function setGlow(state: State, on: boolean)
 	end
 end
 
-local function setPods(state: State, on: boolean)
+-- Move the pods to `on`. Returns false while the car's rig has not all arrived (a Model
+-- replicates before its groups; `CarParts.describe` is nil until they are in), so the caller
+-- tries again next frame. A rig with no pod by a name, a car with no rig, is done at once:
+-- asking `CarParts` to move a part a car does not have is an error (T-287).
+local function setPods(state: State, on: boolean): boolean
 	local car = state.car
 	if not CarParts.isRig(car) then
-		return
+		return true
+	end
+	local desc = CarParts.describe(car)
+	if not desc then
+		return false
 	end
 	for _, name in H().Pods do
+		if not desc.byName[name] then
+			continue
+		end
 		local amount = CarParts.amount(car, name)
 		local want = if on then 1 else 0
 		local going = car:GetAttribute(CarParts.ATTR .. name)
@@ -174,6 +186,7 @@ local function setPods(state: State, on: boolean)
 			stats.podMoves += 1
 		end
 	end
+	return true
 end
 
 local function track(car: Instance)
@@ -186,6 +199,7 @@ local function track(car: Instance)
 		spots = {},
 		level = 0,
 		on = false,
+		pods = nil,
 		lenses = nil,
 		dirty = false,
 		conn = nil,
@@ -230,7 +244,9 @@ local function step(dt: number)
 		if on ~= state.on then
 			state.on = on
 			stats.switches += 1
-			setPods(state, on)
+		end
+		if state.pods ~= on and setPods(state, on) then
+			state.pods = on
 		end
 		setGlow(state, on)
 		state.level = math.clamp(state.level + (if on then rate else -rate), 0, 1)
@@ -296,9 +312,12 @@ function HeadlightsController:DebugState(): { [string]: any }
 			}
 		end
 		local pods = {}
-		if CarParts.isRig(car) then
+		local desc = CarParts.isRig(car) and CarParts.describe(car)
+		if desc then
 			for _, name in H().Pods do
-				pods[name] = CarParts.amount(car, name)
+				if desc.byName[name] then
+					pods[name] = CarParts.amount(car, name)
+				end
 			end
 		end
 		local glowing = {}
