@@ -1,6 +1,6 @@
 # Feature: Tyre smoke, grass and mud particles, one painted family
 
-**Status:** built; step 3 (tune and prove) in review. **Owner task:** T-279: art round T-280, emitters T-283 (merged), tuning T-286.
+**Status:** built; step 3 (tune and prove) in review; the low end (T-290) in review. **Owner task:** T-279: art round T-280, emitters T-283 (merged), tuning T-286, the low end T-290.
 
 The user, 2026-11-17: *"I want to improve the particle effects we have for tire smoke, grass, and mud effects. right now they clash hard as our particles are super low def and our smoke is super high def. I want something a bit more in the middle that leans towards high def for all. research the best way to do them, similar to how we did the tire mark effect changes, and propose a plan."*
 
@@ -139,6 +139,42 @@ The user: *"looks kinda weird when theres the wheel silhouette and the tire trai
 - **The marks drawn over the smoke.** Roblox sorts see-through things back to front a whole part at a time, by the part's centre. Each rubber strip is one `MeshPart` 2 000 studs across, centred on its **origin**, which sat where the tyre was when it last moved: behind the car, so toward the chase camera. In a drift the origins were 15 to 18 studs from the camera and the smoke's emitters 49, nearer in 37% of frames (1 792 strip-frames), and those frames drew the whole strip after, so over, the smoke. **Fix:** a strip with a camera keeps its origin `Marks.Ribbon.SortAhead` (600) studs straight down the view, and moves it on when it comes nearer than `SortMinDepth` (300) (`GroundMarks` "sortSpot"). After: 0 of 7 192 strip-frames had an origin nearer than the smoke, about one move every 2.5 s, and the marks don't shift when it moves (FxTests: 3e-5 studs). The grass ribbon is opaque, so it never had this.
 - **The wheel-shaped hole.** `ZOffset` moves a particle's depth, so it decides which opaque geometry hides it. The diffuse smoke is born 1.0 stud off the tyre's axis, inside its 1.25 radius, and at −0.5 sat up to about a stud behind the tyre's near face: the tyre cut a hard wheel outline out of the cloud. **Fix:** every emitter moved 1.5 toward the camera, keeping T-283's order: diffuse **1.0**, dust 1.2, spray 1.3, stylized 1.5, bits 1.8.
 - **The square-stepped bottom edges.** The same depth test against the road: a puff's camera-facing quad grows faster than it rises, so for its first half second its lower part is under the road and clipped (Roblox has no soft particles). −0.5 made that deeper; at +1.0 about 0.2 studs more of each puff shows at the chase camera's 13° pitch. **It's reduced, not gone:** a flat cut along the cloud's bottom still shows in the lane. Fully removing it means lifting the puffs (spawning higher or rising faster), which changes the approved look, so it's a question for the user.
+
+## The low end: billows or wisp (T-290, DR-Lane3, 2026-11-17)
+
+The user: *"the top end is great, when we are spawning tons of smoke due to crazy drift. the mid and low is not ... at low speeds or when drifts just barely start, we spawn the sprites so slow that it's a sequence of split puffs. Is a solution to use our old drift smoke in combination with the new system?"* Built both answers, behind a live switch, for the user to compare on the same drift; the loser comes out after the pick.
+
+**The cause, measured.** The diffuse layer spawns `Smoke.RateMin` (10) a second at the gate, and the stylized layer starts at zero (it builds with heat). A light drift on the stand-in runs 1-5 degrees at 55-72 studs/s, so one 2.1-stud puff every **5.8 studs**. A mid drift (30-35 degrees, ~40 studs/s) was 1.25 studs apart; a hard one (48-55, slowing to ~18) 0.57.
+
+**The fix: a base layer that hands over.** A third smoke emitter a wheel (`FxBase_<Wheel>_<surface>`, on the diffuse layer's source) spawns **by the stud**: one puff every `Gap` studs of road, clamped to `RateMin`..`RateMax`. As the slip grows it hands over to today's diffuse cloud: with `w` a smoothstep of slip from `HandoverStartDegrees` (15) to `HandoverFullDegrees` (50), the base runs at `(1 - w)` of its rate and the diffuse at `w` of today's. **From 50 degrees on it is today's smoke exactly** (the approved top end); the stylized layer is untouched throughout. Only rates move while driving; a mode change re-dresses the base emitters once.
+
+| Mode | The base layer | Gap | Rate /s | Size (studs) | See-through | Light | ZOffset |
+|---|---|---|---|---|---|---|---|
+| **`billows`** (default) | The painted billows sheet, smaller and fainter: many puffs merge into one stream, and it grows into today's big clouds as the handover brings the diffuse layer in | 0.7 | 30-95 | 0.9 → 4.5 | 0.72 | the one rule | 1.0 |
+| **`wisp`** | Roblox's built-in `smoke_main` wisp, the smoke before T-283 (any rotation, facing the camera), fading out as the painted billows fade in | 1.4 | 15-50 | 1.8 → 8 | 0.66 | the one rule | 1.0 |
+| `off` | None: today's smoke exactly | | | | | | |
+
+**The switch.** `workspace:SetAttribute("__low_smoke", "billows" | "wisp" | "off")` (`Config.Fx.LowSmoke.Attribute`), read every frame, so the command bar switches it mid-drive. Or the admin console's `smoke billows|wisp|off` (your screen only). Anything else is the default.
+
+**Measured** (FxTests and three held-steer drives in each mode, the rear-left wheel; live particles are rate × mean lifetime, since Roblox has no live count):
+
+| Mode | Drift | Slip, speed | Base / diffuse / stylized /s | Studs between puffs | Live a car | Frame |
+|---|---|---|---|---|---|---|
+| off | light | 3.5°, 67 | 0 / 11.3 / 0.3 | **5.77** | ~27 | 5.56 ms |
+| off | mid | 32°, 41 | 0 / 21.5 / 11.2 | 1.25 | ~107 | 5.56 ms |
+| off | hard | 49°, 18 | 0 / 27.7 / 4.1 | 0.57 | ~139 | 5.55 ms |
+| billows | light | 3.6°, 67 | 93.4 / 0 / 0.3 | **0.71** | ~140 | 5.55 ms |
+| billows | mid | 32°, 41 | 30.7 / 10.2 / 11.1 | 0.78 | ~140 | 5.56 ms |
+| billows | hard | 49°, 18 | 2.5 / 25.7 / 4.1 | 0.56 | ~137 | 5.56 ms |
+| wisp | light | 3.5°, 67 | 47.5 / 0 / 0.3 | **1.40** | ~114 | 5.56 ms |
+| wisp | mid | 32°, 41 | 15.3 / 10.3 / 11.2 | 1.11 | ~124 | 5.55 ms |
+| wisp | hard | 49°, 18 | 1.2 / 25.7 / 4.1 | 0.58 | ~136 | 5.57 ms |
+
+- **Top end unchanged:** at 90 degrees every mode gives the diffuse layer today's 42.5/s and no base (FxTests); at 50 degrees and past, the handover is complete.
+- **Mobile cap:** the base peaked at 95/s (billows) and 50/s (wisp) an emitter, under 100.
+- **Frame time:** no difference between the modes in Studio (5.55-5.57 ms means); the live particles a car stay at or under today's hard-drift ~140.
+- **Budget:** 46 to 50 instances a car (`Wheels.perWheel()` 8 to 9). Switching modes 5 times created nothing.
+- **Shots:** a light drift by day in billows and in wisp (both one unbroken stream from each rear tyre), and billows at night.
 
 ## Left out
 

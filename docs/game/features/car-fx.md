@@ -246,7 +246,7 @@ still the reference's, converted, except the two marked **ours**.
 | `Marks.Seconds` | 2.5 (5 until T-274) | `MarkSeconds` | `Trail.Lifetime` |
 | `Marks.Width` | 1.2 studs | `MarkWidth` | Normal width before angle-dependent thinning. A little under the tyre's 1.6 |
 | `Marks.MinWidthRatio` | 0.25 | Ours (`T-207`, user clarification) | Minimum share of each normal material width; a quarter-width floor, not 25% thinner |
-| `Smoke.RateMin`, `Smoke.RateMax` | 8, 60 /s | `SmokeRateMin/Max` | `ParticleEmitter.Rate`, lerped by `slip / Gates.MaxSlipDegrees` |
+| `Smoke.RateMin`, `Smoke.RateMax` | 10, 75 /s (8, 60 until T-283) | `SmokeRateMin/Max` | `ParticleEmitter.Rate`, lerped by `slip / Gates.MaxSlipDegrees`. **Since T-290 scaled by the low end's handover** below `LowSmoke.HandoverFullDegrees` (`features/tyre-particles.md` "The low end") |
 
 Added in round two, and all of them ours — see the sections below for the measurements behind each:
 
@@ -879,9 +879,12 @@ ribbon is the T-265 one, unchanged in look. The rubber's (`Config.Fx.Marks`) is:
 **Budget.** Instances per car:
 
 ```
-per car = 4 wheels x (smoking surfaces x 2 Emitters + 3 debris Emitters + 3 emitter anchors)
-        + 4 grass strips x 2 MeshParts + 4 rubber strips x 1 MeshPart + 2 folders  = 46
+per car = 4 wheels x (smoking surfaces x 3 Emitters + 3 debris Emitters + 3 emitter anchors)
+        + 4 grass strips x 2 MeshParts + 4 rubber strips x 1 MeshPart + 2 folders  = 50
 ```
+
+(46 until T-290 added the low end's base smoke layer, one emitter per wheel per smoking
+surface: `features/tyre-particles.md` "The low end".)
 
 Mesh vertices: the rubber holds 1 048. **The grass ribbon gave up 1 024** (128 to 96 sections a
 wheel, about 280 studs of mark), so both ribbons together hold 4 168, what the grass's held alone
