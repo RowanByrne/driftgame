@@ -53,6 +53,10 @@ return {
 	-- How often a live line's growing points go to the feed, at most (seconds). Starts and
 	-- ends always go at once.
 	FeedEvery = 0.05,
+	-- A held (sustained) line first goes to the feed once it has earned this many points,
+	-- rung included. Less than that banks quietly, with no line: in a 5-minute drive 10 of
+	-- 26 wheel lifts earned under a point, and each was a `+0` line.
+	ShowPoints = 1,
 	-- TEMPORARY, until the feed (T-296) draws them: each finished event printed to the
 	-- console in Studio, `[ScoreEvents] JUMP +52 x2 banked`.
 	PrintInStudio = true,

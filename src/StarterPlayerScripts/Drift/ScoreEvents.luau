@@ -335,9 +335,10 @@ function Engine.start(self: any, kind: string, info: { [string]: any }?): any
 		peak = 0, -- the line's largest size
 		lastFed = self.clock,
 		dirty = false,
-		-- A sustained line shows once it has earned a point, so a lift or a jump that earns
-		-- nothing (too slow, going backwards) never puts a +0 line in the feed. A
-		-- conditional shows at once: the player must see it is on.
+		-- A sustained line shows once it has earned `ShowPoints`, so a lift or a jump that
+		-- earns next to nothing (a flick of a wheel, sliding backwards) never puts a +0 line
+		-- in the feed; what it earned still banks. A conditional shows at once: the player
+		-- must see it is on.
 		shown = k.Mode ~= "sustained",
 	}, Handle)
 	self.live[h] = true
@@ -496,7 +497,7 @@ function Handle.update(self: any, size: number, dt: number)
 		end
 		score:Hold((k.Fill or 0) * scale * dt)
 	end
-	if not self.shown and entry.points > 0 then
+	if not self.shown and entry.points >= cfg().ShowPoints then
 		self.shown = true
 		self.dirty = false
 		self.lastFed = engine.clock
@@ -519,8 +520,11 @@ end
 function Handle._bank(self: any, score: any)
 	local entry: Entry = self.entry
 	if not self.shown then
-		-- it earned nothing: no line to bank
-		self.engine:_count(self.kind).empty += 1
+		-- it earned less than a line is worth showing: what it has goes in quietly
+		score:Bank(entry.points)
+		local c = self.engine:_count(self.kind)
+		c.empty += 1
+		c.points += entry.points
 		return
 	end
 	score:Bank(entry.points)
