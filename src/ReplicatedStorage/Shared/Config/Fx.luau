@@ -310,6 +310,71 @@ return {
 		-- POSITIONS, so the mark is untouched either way
 	},
 
+	-- ------------------------------------------------------------------ the low end (T-290)
+	-- The user, first: "at low speeds or when drifts just barely start, we spawn the sprites
+	-- so slow that it's a sequence of split puffs." Then, after driving a first build: "use
+	-- just wisp when the drift starts, then a touch of low transparency billows, building
+	-- into tons of billows and no wisp", and "if you slide sideways enough to trigger a front
+	-- wheel drift, it's INSTANT HUGE SMOKE BILLOWS".
+	--
+	-- WHY THE FRONTS POPPED: the diffuse rate is the CAR's slip lerped over 0..180 degrees,
+	-- the same for all four wheels. A front opens its gate at 30 degrees, where that rate is
+	-- already 21/s of full-size, 0.55-opaque billows: a front went from nothing to that in
+	-- one frame.
+	--
+	-- SO EACH WHEEL HAS ITS OWN SMOKE INTENSITY, 0..1: its slip PAST ITS OWN THRESHOLD (0 for
+	-- a rear, `Gates.MaxSteerDegrees` for a front) over `RampDegrees` / `FrontRampDegrees`,
+	-- and walked toward that at no more than 1/`RiseSeconds` a second, so a slip spike ramps
+	-- in instead of popping. From it, per wheel:
+	--   the WISP (a third emitter a wheel, Roblox's built-in smoke_main, the smoke before
+	--     T-283): one puff every `Wisp.Gap` studs, all of it at the start, fading out from
+	--     `WispFadeFrom` to `WispFadeTo`. It is soft from its first puff (`Wisp.StartTransparency`).
+	--   the BILLOWS (today's diffuse emitter): nothing below `BillowsFrom`, then today's rate
+	--     times a smoothstep share, AND see-through and small at first: transparency from
+	--     `BillowTransparency` and size from `BillowSizeScale` of today's, to today's own at 1.
+	-- At intensity 1 it is today's approved smoke exactly. Size and transparency are
+	-- sequences, so they come in `Bands` steps built once at load and swapped by reference:
+	-- nothing is allocated while driving. The stylized layer (heat-driven) is unchanged.
+	--
+	-- `workspace:SetAttribute(Attribute, "off")` puts today's smoke back, for a compare in
+	-- Studio; anything else (or nothing) is this.
+	LowSmoke = {
+		Attribute = "__low_smoke",
+		RampDegrees = 50, -- a rear's slip at full intensity. MEASURED in DR-Lane3: a hard
+		-- drift holds 48-55 degrees, a mid one 30-35, a light one 1-5
+		FrontRampDegrees = 20, -- a front's slip PAST its 30-degree threshold at full: so all
+		-- four are full together at 50 degrees, and a front just past its gate is at 0
+		RiseSeconds = 0.8, -- the fastest intensity can go 0 -> 1: a spike ramps, never pops
+		FallSeconds = 0.4, -- and 1 -> 0
+		Bands = 12, -- steps of size and transparency, built once
+		BillowsFrom = 0.15, -- intensity below which there are no billows: the wisp alone
+		BillowTransparency = 0.93, -- the billows' see-through at `BillowsFrom` (a touch of
+		-- them, very faint), down to `Smoke.Transparency` (0.55) at full
+		BillowSizeScale = 0.55, -- their size at `BillowsFrom`, a share of today's 2.1 -> 9
+		WispFadeFrom = 0.45, -- intensity the wisp starts to fade at...
+		WispFadeTo = 0.9, -- ...and is gone by: no wisp at the top end
+		Wisp = {
+			Texture = "rbxasset://textures/particles/smoke_main.dds", -- built in, no sheet
+			Orientation = Enum.ParticleOrientation.FacingCamera,
+			ZOffset = 1.0, -- level with the diffuse layer (T-289: a stud, so its tyre cuts no hole)
+			Gap = 1.4, -- studs of road between two puffs: the wisp is soft and 1.8 wide, so they touch
+			RateMin = 15, -- particles/s however slow (the old smoke spawned 8 a second at the gate)
+			RateMax = 50, -- however fast: the mobile cap is 100
+			Lifetime = { 0.8, 1.6 }, -- the old smoke's
+			SizeStart = 1.8, -- the old smoke's 2.5 -> 11, a little smaller: it is the start
+			SizeEnd = 8,
+			StartTransparency = 0.8, -- at intensity 0: soft as a drift starts...
+			Transparency = 0.66, -- ...this by `WispSolidAt`
+			WispSolidAt = 0.3,
+			Speed = { 2, 6 },
+			SpreadDegrees = 18,
+			RiseAcceleration = 6,
+			Drag = 1.5,
+			RotationDegrees = { -180, 180 }, -- one texture: turned at random, as it was
+			RotationSpeed = { -30, 30 },
+		},
+	},
+
 	-- ------------------------------------------------------------------ the four gates
 	-- What has to be true before a wheel marks and smokes
 	-- (features/car-fx.md "Tyre marks and smoke: per wheel, per surface, gated on four
@@ -688,6 +753,7 @@ return {
 		-- diffuse smoke and dust source ("L") and the stylized smoke's ("R") (T-207)
 		Emitter = "FxSmoke_%s_%s", -- wheel name, then surface. The DIFFUSE layer
 		Stylized = "FxPuff_%s_%s", -- wheel name, then surface. The STYLIZED layer
+		Base = "FxBase_%s_%s", -- wheel name, then surface. The low end's WISP layer (T-290)
 		TrenchAttachment = "FxT_%s_%s", -- wheel name, then "L": with "_Emitter" on the end, the
 		-- clippings and dirt source (T-188, T-207)
 		RubberFolder = "FxRubberMarks", -- the local car's tarmac and gravel ribbon (T-269): a
