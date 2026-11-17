@@ -906,6 +906,7 @@ function Tests.run(opts)
 		end
 		local smokeBefore = rl.fx[1].diffuse.Rate
 		local grass20 = stateWith({ slipDeg = 20, speed = 70, throttle = 1, surface = "grass" })
+		local clodsBefore20 = w.debris:DebugState().spawned
 		local framesToZero, halfway = nil, nil
 		for frame = 1, 60 do
 			w:Update(grass20, { handbrake = false }, DT)
@@ -941,7 +942,7 @@ function Tests.run(opts)
 				and rl.ground.clippings.emitter.Enabled
 				and rl.ground.spray.emitter.Enabled
 				and math.abs(rl.ground.spray.emitter.Rate - Wheels.kickRate(G.Grass.Spray, 20) * rl.mixGrass) < 1e-6
-				and w.debris:DebugState().spawned == 0,
+				and w.debris:DebugState().spawned == clodsBefore20,
 			string.format("clippings %.1f/s, spray %.1f/s, mix %.2f", rl.ground.clippings.emitter.Rate, rl.ground.spray.emitter.Rate, rl.mixGrass)
 		)
 		-- Past the trench threshold: brown replaces green, and the clods fly (T-205, T-283).
