@@ -256,6 +256,20 @@ function Tests.run(opts)
 			sheetsOk and F.Light.Influence > 0 and F.Light.Emission == 0 and F.Flipbook.Framerate == 0,
 			if sheetsOk then `5 emitters; light {F.Light.Influence} / {F.Light.Emission}` else table.concat(sheetLine, "; ")
 		)
+		-- THE DRAW ORDER (T-289): the diffuse cloud is the lowest layer, everything else in
+		-- front of it in T-283's order, and the cloud itself far enough toward the camera that
+		-- the tyre it is born inside cannot cut a wheel-shaped hole in it (a stud: the patch is
+		-- 1.0 off the tyre's axis, inside its 1.25 radius).
+		local z = { F.Smoke.ZOffset, G.Gravel.Dust.ZOffset, G.Grass.Spray.ZOffset, F.Stylized.ZOffset, G.Grass.Clippings.ZOffset }
+		local ordered = z[1] >= 1
+		for i = 2, #z do
+			ordered = ordered and z[i] > z[i - 1]
+		end
+		check(
+			"the smoke draws in front of its tyre, and every other layer in front of the smoke",
+			ordered,
+			`ZOffset diffuse, dust, spray, stylized, bits: {fmtList(z)}`
+		)
 	end
 
 	----------------------------------------------------------------------------
@@ -1552,6 +1566,64 @@ function Tests.run(opts)
 					string.format("showing %.2f fresh, %.2f at 85%% of %.0f s; %d sections then, %d after",
 						a0, if aged then aged.showing else -1, F.Marks.Seconds, liveMid, rub:LiveCount())
 				)
+				GroundMarks.Clear(rub)
+
+				-- T-289: THE RUBBER SORTS BEHIND THE SMOKE. Roblox sorts a see-through part by
+				-- its centre, which for a strip is its origin. With a view (the camera), the
+				-- origin stays out in front of it, past any smoke: while a mark is laid with the
+				-- camera chasing the tyre, and after the camera turns round on a mark left to fade.
+				-- And moving the origin leaves every mark exactly where it was laid.
+				do
+					local camCF = CFrame.new()
+					rub.view = function(): CFrame?
+						return camCF
+					end
+					local moves0 = rub.sortMoves
+					local st = rub.strips[1]
+					local function depth(): number
+						return (st.origin - camCF.Position):Dot(camCF.LookVector)
+					end
+					local minDepth = math.huge
+					for f = 0, 40 do
+						local p, across = onArc(f / 60)
+						local ahead = (onArc((f + 1) / 60) - p).Unit
+						camCF = CFrame.lookAt(p - ahead * 30 + Vector3.yAxis * 10, p)
+						GroundMarks.Wheel(rub, 1, true, p, up, across, 1, false, roadGround, 1 / 60, 1)
+						GroundMarks.Age(rub, 1 / 60)
+						minDepth = math.min(minDepth, depth())
+					end
+					GroundMarks.Wheel(rub, 1, false, onArc(41 / 60), up, Vector3.xAxis, 1, false, roadGround, 1 / 60, 1)
+					local function onRoad(): (number, number, Vector3?)
+						local err, n, first = 0, 0, nil
+						for _, sct in rub:DebugStrip(1) do
+							if sct.real and (sct.points[1] - sct.points[RP]).Magnitude > 1e-4 then
+								n += 1
+								first = first or sct.points[1]
+								for _, j in { 1, RP } do
+									err = math.max(err, math.abs(sct.points[j].Y - (roadY(sct.points[j].X, sct.points[j].Z) + MR.Lift)))
+								end
+							end
+						end
+						return err, n, first
+					end
+					local errLaid, nLaid, firstLaid = onRoad()
+					-- The camera turns round: the old origin is now behind it.
+					camCF = CFrame.lookAt(camCF.Position, camCF.Position - camCF.LookVector)
+					local behind = depth()
+					local movesBefore = rub.sortMoves
+					GroundMarks.Age(rub, 1 / 60)
+					local turned = depth()
+					local errTurned, nTurned, firstTurned = onRoad()
+					local moved = if firstLaid and firstTurned then (firstLaid - firstTurned).Magnitude else math.huge
+					check(
+						"the rubber's origin stays out in front of the camera, so the smoke draws over the marks; the marks never move",
+						minDepth >= MR.SortMinDepth and behind < 0 and turned >= MR.SortMinDepth and rub.sortMoves > movesBefore
+							and movesBefore > moves0 and nLaid > 5 and nTurned == nLaid and errLaid < 2e-3 and errTurned < 2e-3 and moved < 1e-3,
+						string.format("origin at least %.0f studs deep while laying (floor %d), %d sort moves; camera turned: %.0f, then %.0f; %d sections, %.1e studs off the road, moved %.1e",
+							minDepth, MR.SortMinDepth, movesBefore - moves0, behind, turned, nTurned, errTurned, moved)
+					)
+					rub.view = nil
+				end
 				GroundMarks.Clear(rub)
 
 				-- Through `Wheels`: on tarmac the rubber comes in eased, never at once.
