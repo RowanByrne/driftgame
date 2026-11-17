@@ -38,9 +38,12 @@ return {
 		-- picture's opaque bottom row wrapped round and drew a faint line along the panels'
 		-- top edge (lane 2). The summits are 0.31 or more down every picture.
 		TopV = 0.1,
-		-- The skirt stretches the picture's misty base, from this far down it, over its whole
-		-- height: holding the bottom row alone streaked it top to bottom (the user circled it).
-		SkirtV = 0.85,
+		-- Under the picture the skirt fades, over `SkirtFade` of the picture's height, into one
+		-- even colour: the picture's own mist at `SkirtUV`. Holding the bottom row, or stretching
+		-- the misty base, ran each column's colour down the skirt in streaks (the user circled
+		-- them; lane 2).
+		SkirtFade = 0.25,
+		SkirtUV = Vector2.new(0.5, 0.97),
 	},
 
 	-- ------------------------------------------------------------- ridge layers

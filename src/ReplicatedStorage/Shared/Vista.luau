@@ -108,9 +108,8 @@ export type ArcGeometry = {
 -- In mesh space the ring's centre is on -Z, the way a part's front looks, and the box is
 -- centred on the origin, as Roblox centres a mesh in its part. Every normal points in at the
 -- centre, so the shading runs on smoothly from one panel into the next. u runs left to right
--- as seen from the centre; v down the picture to `SkirtV`, and the rest of its misty base
--- stretched down the skirt (kept just inside the edges, clear of the wrap to the
--- transparent top).
+-- as seen from the centre; v down the picture (kept just inside its edges, clear of the wrap
+-- to its transparent top). Under it the skirt fades into one even colour of its mist.
 function Vista.arcGeometry(mesh: any): ArcGeometry
 	local radius = 1000
 	local half = math.rad(mesh.ArcDeg / 2)
@@ -119,7 +118,8 @@ function Vista.arcGeometry(mesh: any): ArcGeometry
 	local height = art / mesh.ArtShare - mesh.TopV * art
 	local zc = -radius * (1 + math.cos(half)) / 2
 	local cols: number = mesh.Columns
-	local top, mist, base = mesh.TopV, mesh.SkirtV, 0.995
+	local top, base = mesh.TopV, 0.995
+	local fadeY = height / 2 - art * (base - top) - art * mesh.SkirtFade
 	local out: ArcGeometry = { positions = {}, normals = {}, uvs = {}, triangles = {}, size = Vector3.zero }
 	for i = 0, cols do
 		local t = i / cols
@@ -127,16 +127,22 @@ function Vista.arcGeometry(mesh: any): ArcGeometry
 		local a = half - 2 * half * t
 		local x, z = radius * math.sin(a), zc + radius * math.cos(a)
 		local n = Vector3.new(-math.sin(a), 0, -math.cos(a))
-		for _, row in { { height / 2, top }, { height / 2 - art * (mist - top), mist }, { -height / 2, base } } do
+		local rows = {
+			{ height / 2, Vector2.new(t, top) },
+			{ height / 2 - art * (base - top), Vector2.new(t, base) },
+			{ fadeY, mesh.SkirtUV },
+			{ -height / 2, mesh.SkirtUV },
+		}
+		for _, row in rows do
 			table.insert(out.positions, Vector3.new(x, row[1], z))
 			table.insert(out.normals, n)
-			table.insert(out.uvs, Vector2.new(t, row[2]))
+			table.insert(out.uvs, row[2])
 		end
 	end
 	for i = 0, cols - 1 do
-		for r = 0, 1 do
-			local tl = i * 3 + r + 1
-			local bl, tr = tl + 1, tl + 3
+		for r = 0, 2 do
+			local tl = i * 4 + r + 1
+			local bl, tr = tl + 1, tl + 4
 			local br = tr + 1
 			-- front faces look in at the centre
 			table.insert(out.triangles, { tl, bl, tr })
