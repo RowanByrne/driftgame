@@ -44,4 +44,10 @@ return {
 
 	-- ------------------------------------------------------------------- ours
 	SummarySeconds = 5, -- how long the run's final score shows after END RUN
+
+	-- ----------------------------------------------------- score events (T-295)
+	-- The events' own numbers are `Config.ScoreEvents`. This one is the ladder's: a one-off
+	-- event's kick (`Score:Award`) fills the bar to full and at most this much past empty
+	-- of a rung in all, so one event never climbs more than one rung.
+	MaxKick = 1.1, -- rungs
 }
