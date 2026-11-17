@@ -38,3 +38,5 @@ The fitted sheets, through the Studio MCP `upload_image` (the user signed in to 
 | `billows-oil-01-sheet.png` | `rbxassetid://128344324107416` | 1024 x 1024, 50% painted | `Config.Fx.Sheets.Billows` (Grid2x2) |
 | `grass-oil-01-sheet.png` | `rbxassetid://117335680983652` | 1024 x 1024, 24% painted | `Config.Fx.Sheets.GrassBits` (Grid4x4) |
 | `clods-oil-01-sheet.png` | `rbxassetid://124636864544130` | 1024 x 1024, 42% painted | `Config.Fx.Sheets.Clods` (Grid4x4) |
+
+**After driving them (2026-11-17, T-283):** the grass is the fine spray drawn from `grass-oil-01-sheet.png` (kept); the mud is low-poly 3D clods made in code, so `clods-oil-01-sheet.png` (`rbxassetid://124636864544130`) is no longer used. The user: *"the dirt and grass sprites look like shit... i don't think it's about the art style"*.

@@ -193,15 +193,15 @@ function Tests.run(opts)
 			`built: {table.concat(F.Built, ", ")}{if builtOk then "" else "; incomplete look for " .. table.concat(missing, ", ")}`
 		)
 		-- THE INSTANCE BUDGET IS THIS FORMULA: 4 wheels x (smoking surfaces x 2 ParticleEmitters
-		-- + the off-road layer's 4 ParticleEmitters -- clippings, dirt and dust, T-188, and the
-		-- grass spray, T-279 -- + 3 fixed emitter anchors, T-207), the grass ribbon's strips, two
-		-- MeshParts a wheel (T-265), the rubber ribbon's, one a wheel (T-269), and their two
-		-- folders: 50 a car.
+		-- + the off-road layer's 3 ParticleEmitters -- the grass's fine spray and the dust, T-188,
+		-- and the grass's earthy cloud, T-279; the mud is the client's 3D clods since T-283 -- + 3
+		-- fixed emitter anchors, T-207), the grass ribbon's strips, two MeshParts a wheel (T-265),
+		-- the rubber ribbon's, one a wheel (T-269), and their two folders: 46 a car.
 		check(
 			"one smoking surface, and the budget it comes to",
-			#F.Built == 1 and Wheels.perWheel() == 9
-				and Wheels.perCar() == 4 * 9 + F.Ground.Ribbon.Wheels * 2 + F.Marks.Ribbon.Wheels + 2
-				and Wheels.perCar() == 50,
+			#F.Built == 1 and Wheels.perWheel() == 8
+				and Wheels.perCar() == 4 * 8 + F.Ground.Ribbon.Wheels * 2 + F.Marks.Ribbon.Wheels + 2
+				and Wheels.perCar() == 46,
 			`{#F.Built} surface(s) -> {Wheels.perWheel()} a wheel, {Wheels.perCar()} instances per car`
 		)
 		-- THE RUBBER IS SEE-THROUGH BY VERTEX ALPHA (T-269), which needs its part above 0
@@ -234,7 +234,7 @@ function Tests.run(opts)
 		local G = F.Ground
 		local emitters = {
 			Smoke = F.Smoke, Stylized = F.Stylized, Clippings = G.Grass.Clippings,
-			Dirt = G.Grass.Dirt, Spray = G.Grass.Spray, Dust = G.Gravel.Dust,
+			Spray = G.Grass.Spray, Dust = G.Gravel.Dust,
 		}
 		local sheetsOk, sheetLine = true, {}
 		for name, S in emitters do
@@ -254,7 +254,7 @@ function Tests.run(opts)
 		check(
 			"every emitter draws from an uploaded sheet, under one light, under the mobile cap",
 			sheetsOk and F.Light.Influence > 0 and F.Light.Emission == 0 and F.Flipbook.Framerate == 0,
-			if sheetsOk then `6 emitters; light {F.Light.Influence} / {F.Light.Emission}` else table.concat(sheetLine, "; ")
+			if sheetsOk then `5 emitters; light {F.Light.Influence} / {F.Light.Emission}` else table.concat(sheetLine, "; ")
 		)
 	end
 
@@ -605,11 +605,8 @@ function Tests.run(opts)
 		local rig, car = standInRig()
 		-- The grass ribbon is built in its own thread (making a mesh yields): wait for it.
 		local w = Wheels.new(ServerStorage)
-		-- The checks below are about the debris EMITTERS (T-188, T-279); the 3D chunks and the
-		-- fine spray have their own, in 9b (T-283).
-		w:SetDebrisMode("sprites")
 		local waitUntil = os.clock() + 15
-		while not w:Ready() and not w.marks.failed and os.clock() < waitUntil do
+		while (not w:Ready() or not w.debris.ready) and not w.marks.failed and os.clock() < waitUntil do
 			task.wait()
 		end
 		local attached = w:Attach(rig)
@@ -938,30 +935,37 @@ function Tests.run(opts)
 			)
 		)
 		check(
-			"at a low angle on grass: the flat grass line, clippings and the spray, no trench, no dirt",
+			"at a low angle on grass: the flat grass line, the grass spray and its cloud, no trench, no clods",
 			w.marks:Kind(rl.index) == "flat"
 				and w.rubber:Kind(rl.index) == nil
 				and rl.ground.clippings.emitter.Enabled
 				and rl.ground.spray.emitter.Enabled
 				and math.abs(rl.ground.spray.emitter.Rate - Wheels.kickRate(G.Grass.Spray, 20) * rl.mixGrass) < 1e-6
-				and not rl.ground.dirt.emitter.Enabled,
+				and w.debris:DebugState().spawned == 0,
 			string.format("clippings %.1f/s, spray %.1f/s, mix %.2f", rl.ground.clippings.emitter.Rate, rl.ground.spray.emitter.Rate, rl.mixGrass)
 		)
-		-- Past the trench threshold: brown replaces green, while dirt still sprays (T-205).
+		-- Past the trench threshold: brown replaces green, and the clods fly (T-205, T-283).
 		local grass45 = stateWith({ slipDeg = 45, speed = 70, throttle = 1, surface = "grass" })
-		for _ = 1, 10 do
+		for _ = 1, 60 do
 			w:Update(grass45, { handbrake = false }, DT)
 		end
+		local d = w.debris:DebugState()
 		check(
-			"at a high angle on grass: only the trench, and dirt sprays",
+			"at a high angle on grass: only the trench, and low-poly clods are thrown",
 			w.marks:Kind(rl.index) == "rut"
-				and rl.ground.dirt.emitter.Enabled
-				and rl.ground.dirt.emitter.Rate > 0,
+				and d.ready and d.live > 0 and d.pool == G.Chunks.Pool
+				and d.shapes == G.Chunks.Shapes and d.triangles <= 30
+				and #w.debris.folder:GetChildren() == G.Chunks.Pool,
 			string.format(
-				"dirt %.1f/s, clippings %.1f/s at 45 deg",
-				rl.ground.dirt.emitter.Rate,
-				rl.ground.clippings.emitter.Rate
+				"%d clods out of %d (%d in the air), %d thrown in a second; %d shapes of %d triangles; grass spray %.1f/s",
+				d.live, d.pool, d.flying, d.spawned, d.shapes, d.triangles, rl.ground.clippings.emitter.Rate
 			)
+		)
+		check(
+			"the grass spray is streaked along its flight, from under the middle of the wheel",
+			rl.ground.clippings.emitter.Orientation == Enum.ParticleOrientation.VelocityParallel
+				and G.Grass.DebrisOffset == 0 and G.Grass.Clippings.RateMax <= 100,
+			`{rl.ground.clippings.emitter.Orientation.Name}, offset {G.Grass.DebrisOffset}`
 		)
 		-- Hysteresis: 27 deg keeps the trench (stop is 25), 24 drops it.
 		w:Update(stateWith({ slipDeg = 27, speed = 70, throttle = 1, surface = "grass" }), { handbrake = false }, DT)
@@ -1065,53 +1069,22 @@ function Tests.run(opts)
 				and not rl.ground.spray.emitter.Enabled,
 			string.format("dust %.1f/s", rl.ground.dust.emitter.Rate)
 		)
-		-- T-283: grass and mud three ways, switched while driving.
+		-- T-283: the clods land, sink and go back to the pool, and none are made after the first.
 		w:Cut()
-		local grassHard = stateWith({ slipDeg = 45, speed = 70, throttle = 1, surface = "grass" })
-		local tarmacHard = stateWith({ slipDeg = 45, speed = 70, throttle = 1, surface = "tarmac" })
-		check("an unknown debris mode is refused", w:SetDebrisMode("confetti") == "sprites", w.debrisMode)
-		w:SetDebrisMode("chunks")
-		for _ = 1, 60 do
-			w:Update(grassHard, { handbrake = false }, DT)
+		local before = w.debris:DebugState().spawned
+		for _ = 1, 30 do
+			w:Update(grass45, { handbrake = false }, DT)
 		end
-		local d = w.debris:DebugState()
-		check(
-			"chunks: real parts thrown on grass, the bits' emitters off, the cloud still on",
-			d.built and d.live > 0 and d.pool == G.Chunks.Pool
-				and #w.debris.folder:GetChildren() == G.Chunks.Pool
-				and not rl.ground.clippings.emitter.Enabled
-				and not rl.ground.dirt.emitter.Enabled
-				and rl.ground.spray.emitter.Enabled,
-			`{d.live} live of {d.pool}, {d.flying} in the air, {d.spawned} thrown in a second`
-		)
+		local thrown = w.debris:DebugState().spawned - before
+		local tarmacHard = stateWith({ slipDeg = 45, speed = 70, throttle = 1, surface = "tarmac" })
 		for _ = 1, math.ceil(G.Chunks.Lifetime[2] / DT) + 5 do
 			w:Update(tarmacHard, { handbrake = false }, DT)
 		end
 		local after = w.debris:DebugState()
 		check(
-			"chunks land, sink and go back to the pool, and none are made after the first",
-			after.live == 0 and #w.debris.folder:GetChildren() == G.Chunks.Pool,
-			`{after.live} still out after {G.Chunks.Lifetime[2]} s; {#w.debris.folder:GetChildren()} parts`
-		)
-		w:SetDebrisMode("specks")
-		for _ = 1, 30 do
-			w:Update(grassHard, { handbrake = false }, DT)
-		end
-		local dirtE = rl.ground.dirt.emitter
-		check(
-			"specks: the same emitters, streaked along their flight, under the mobile cap, no chunks",
-			dirtE.Enabled and dirtE.Orientation == Enum.ParticleOrientation.VelocityParallel
-				and dirtE.Rate > 0 and G.Grass.Specks.Dirt.RateMax <= 100 and G.Grass.Specks.Clippings.RateMax <= 100
-				and w.debris:DebugState().live == 0,
-			string.format("dirt %.1f/s, %s", dirtE.Rate, dirtE.Orientation.Name)
-		)
-		w:SetDebrisMode("sprites")
-		w:Update(grassHard, { handbrake = false }, DT)
-		check(
-			"sprites: back to the painted bits",
-			dirtE.Enabled and dirtE.Orientation == G.Grass.Dirt.Orientation
-				and math.abs(dirtE.Rate - Wheels.kickRate(G.Grass.Dirt, 45) * rl.mixGrass) < 1e-6,
-			string.format("dirt %.1f/s, %s", dirtE.Rate, dirtE.Orientation.Name)
+			"clods land, sink and go back to the pool, and none are made after the first",
+			thrown > 0 and after.live == 0 and #w.debris.folder:GetChildren() == G.Chunks.Pool,
+			`{thrown} thrown in half a second; {after.live} still out after {G.Chunks.Lifetime[2]} s; {#w.debris.folder:GetChildren()} parts`
 		)
 		w:Cut()
 		check(

@@ -524,7 +524,7 @@ they decide *whether* a wheel marks; the surface decides *what* it leaves.
 - **The debris is thrown back** off a 60° tilt on the trench's left attachment, falls under its own
   gravity, and is `SquareParticle.png` — a built-in flat square, which is the low-poly look.
   Nothing is uploaded. **Since T-279** the bits, the clods, the dust and the smoke are painted
-  sprite sheets, and grass has a soft spray too (`features/tyre-particles.md`).
+  sprite sheets, the grass a fine spray of streaks and the mud low-poly 3D clods (T-283), and grass has a soft cloud too (`features/tyre-particles.md`).
 - **The squeal is unchanged on grass and gravel.** They have no clip, so `SkidSound` plays the
   tarmac one there as it always has; a clip for a surface is the user's pick (see "Open questions").
 
@@ -754,8 +754,8 @@ Two more limits:
 - At a section every 3 studs, 126 live sections is about 380 studs of mark per wheel. On a
   longer mark, the oldest sections go before their 14 s are up.
 
-**The budget** (`Wheels.perCar()`), 57 instances at one smoking surface (46 since T-269, 50
-since T-279's grass spray: `features/tyre-particles.md`). Per wheel: 2
+**The budget** (`Wheels.perCar()`), 57 instances at one smoking surface (46 since T-269; 50 with
+T-279's grass cloud, and 46 again once T-283 made the mud 3D clods: `features/tyre-particles.md`). Per wheel: 2
 Attachments, 3 per smoking surface, the gravel Trail, 3 Emitters and 3 emitter anchors (12).
 Then the ribbon's 4 strips of 2 MeshParts, and their folder. That is down from 88 with the
 trail-built ruts. Nothing is created while driving.

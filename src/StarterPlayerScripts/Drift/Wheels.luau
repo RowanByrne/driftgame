@@ -164,8 +164,7 @@ type KickFx = { emitter: ParticleEmitter, on: boolean, rate: number }
 -- The off-road layer on one wheel (T-188, `Config.Fx.Ground`): the three debris emitters.
 -- Its marks are the ribbons'.
 type GroundFx = {
-	clippings: KickFx,
-	dirt: KickFx,
+	clippings: KickFx, -- the fine spray of grass (T-283)
 	dust: KickFx,
 	spray: KickFx, -- the soft billows on grass (T-279)
 }
@@ -197,8 +196,7 @@ type WheelFx = {
 	trench: boolean, -- past the trench threshold, with its hysteresis
 	fx: { SurfaceFx },
 	ground: GroundFx,
-	clodDue: number, -- 3D chunks owed and not yet thrown (T-283)
-	turfDue: number,
+	clodDue: number, -- 3D clods owed and not yet thrown (T-283)
 }
 
 export type Wheels = typeof(setmetatable(
@@ -213,8 +211,7 @@ export type Wheels = typeof(setmetatable(
 		-- there (its ground lookups included). Read by `DebugState`.
 		marksFrames: number,
 		marksSeconds: number,
-		debris: any, -- the 3D chunks' pool (`Drift/Debris`, T-283)
-		debrisMode: string, -- one of `Config.Fx.Ground.Debris.Modes`
+		debris: any, -- the 3D clods' pool (`Drift/Debris`, T-283)
 	},
 	Wheels
 ))
@@ -448,13 +445,9 @@ function Wheels.new(marksParent: Instance?): Wheels
 		GroundMarks.Build(rubber, marksParent)
 		GroundMarks.Build(marks, marksParent)
 	end)
-	-- How grass and mud are thrown: one of `Config.Fx.Ground.Debris.Modes` (T-283). The 3D
-	-- chunks' pool is made the first time it is wanted.
-	local mode = Config.Fx.Ground.Debris.Mode
+	-- The mud's 3D clods (T-283): their shapes and pool are made in their own thread too.
 	local debris = Debris.new(marksParent)
-	if mode == "chunks" then
-		Debris.Build(debris)
-	end
+	task.spawn(Debris.Build, debris)
 	return setmetatable({
 		body = nil,
 		wheels = {},
@@ -465,18 +458,7 @@ function Wheels.new(marksParent: Instance?): Wheels
 		marksFrames = 0,
 		marksSeconds = 0,
 		debris = debris,
-		debrisMode = mode,
 	}, Wheels) :: any
-end
-
--- The clippings' and the dirt's look and rates for a debris mode: the painted sprites, or
--- the fine spray. (Chunks keep the sprites' rates, scaled, and leave the emitters off.)
-local function kickLooks(mode: string): (any, any)
-	local Grass = Config.Fx.Ground.Grass
-	if mode == "specks" then
-		return Grass.Specks.Clippings, Grass.Specks.Dirt
-	end
-	return Grass.Clippings, Grass.Dirt
 end
 
 -- Whether both ribbons have been built (false while they are being made, or if one failed:
@@ -485,15 +467,17 @@ function Wheels.Ready(self: Wheels): boolean
 	return self.marks.ready and self.rubber.ready
 end
 
--- Instances one wheel carries: 2 smoke emitters per smoking surface, the 4 off-road emitters
--- (clippings, dirt and dust, T-188; the grass spray, T-279) and 3 fixed emitter anchors
--- (T-207). 9 at one smoking surface. Its marks are the ribbons' (T-265, T-269), not the wheel's.
+-- Instances one wheel carries: 2 smoke emitters per smoking surface, the 3 off-road emitters
+-- (the grass's fine spray and the gravel dust, T-188; the grass's earthy cloud, T-279; the
+-- mud is 3D clods since T-283, `Drift/Debris`) and 3 fixed emitter anchors (T-207). 8 at one
+-- smoking surface. Its marks are the ribbons' (T-265, T-269), not the wheel's.
 function Wheels.perWheel(): number
-	return #Config.Fx.Built * 2 + 4 + 3
+	return #Config.Fx.Built * 2 + 3 + 3
 end
 
 -- And a car: its four wheels; the grass ribbon, a strip a wheel of two MeshParts (T-265);
--- the rubber ribbon, a strip a wheel of one (T-269); and their two folders. 50.
+-- the rubber ribbon, a strip a wheel of one (T-269); and their two folders. 46. (The 3D
+-- clods' pool is the client's, not the car's: `Drift/Debris`.)
 function Wheels.perCar(): number
 	return #CarModel.WHEEL_NAMES * Wheels.perWheel()
 		+ Config.Fx.Ground.Ribbon.Wheels * 2
@@ -575,7 +559,7 @@ function Wheels.Clear(self: Wheels)
 			fx.stylized:Destroy()
 		end
 		local g = w.ground
-		for _, k in { g.clippings, g.dirt, g.dust, g.spray } do
+		for _, k in { g.clippings, g.dust, g.spray } do
 			k.emitter:Destroy()
 		end
 		w.sourceA:Destroy()
@@ -661,10 +645,8 @@ function Wheels.Attach(self: Wheels, rig: any): boolean
 		local function kick(kind: string, S: any, at: Attachment): KickFx
 			return { emitter = makeEmitter(string.format(F.Names.GroundEmitter, name, kind), S.Colour, S, at), on = false, rate = 0 }
 		end
-		local clipLook, dirtLook = kickLooks(self.debrisMode)
 		local ground: GroundFx = {
-			clippings = kick("grass", clipLook, sourceC),
-			dirt = kick("dirt", dirtLook, sourceC),
+			clippings = kick("grass", G.Grass.Clippings, sourceC),
 			dust = kick("dust", G.Gravel.Dust, sourceA),
 			spray = kick("spray", G.Grass.Spray, sourceA),
 		}
@@ -694,8 +676,7 @@ function Wheels.Attach(self: Wheels, rig: any): boolean
 			trench = false,
 			fx = fx,
 			ground = ground,
-			clodDue = 0, -- chunks owed but not yet thrown (T-283)
-			turfDue = 0,
+			clodDue = 0, -- clods owed but not yet thrown (T-283)
 		})
 	end
 
@@ -747,7 +728,6 @@ end
 
 local function groundOff(g: GroundFx)
 	writeKick(g.clippings, 0)
-	writeKick(g.dirt, 0)
 	writeKick(g.dust, 0)
 	writeKick(g.spray, 0)
 end
@@ -766,7 +746,7 @@ function Wheels.Cut(self: Wheels)
 			write(fx, false, fx.diffuseRate, fx.stylizedRate)
 		end
 		groundOff(w.ground)
-		w.clodDue, w.turfDue = 0, 0
+		w.clodDue = 0
 	end
 	Debris.Clear(self.debris)
 	-- And every mark ends where it is: the next one must not join across a jump.
@@ -829,12 +809,8 @@ function Wheels.Update(self: Wheels, state: DriftModel.State?, input: any, dt: n
 	local slipDeg = math.deg(math.abs(state.slip))
 	local dirt = Wheels.dirtShare(slipDeg)
 	local clipShare = 1 - (1 - G.Grass.ClippingsAtFullDirt) * dirt
-	local mode = self.debrisMode
-	local clipLook, dirtLook = kickLooks(mode)
-	local clipBase = Wheels.kickRate(clipLook, slipDeg) * clipShare
-	local dirtBase = Wheels.kickRate(dirtLook, slipDeg) * dirt
-	local chunks = mode == "chunks"
-	local chunkScale = G.Chunks.RateScale
+	local clipBase = Wheels.kickRate(G.Grass.Clippings, slipDeg) * clipShare
+	local clodBase = Wheels.kickRate(G.Chunks, slipDeg) * dirt
 	local dustBase = Wheels.kickRate(G.Gravel.Dust, slipDeg)
 	local sprayBase = Wheels.kickRate(G.Grass.Spray, slipDeg)
 
@@ -930,31 +906,25 @@ function Wheels.Update(self: Wheels, state: DriftModel.State?, input: any, dt: n
 
 		-- Off the road: the debris.
 		local g = w.ground
-		writeKick(g.clippings, if emit and not chunks then clipBase * w.mixGrass else 0)
-		writeKick(g.dirt, if emit and not chunks then dirtBase * w.mixGrass else 0)
-		if chunks and emit and w.mixGrass > 0 then
-			-- Owed chunks build up at the rate and are thrown whole (T-283).
-			w.clodDue += dirtBase * w.mixGrass * chunkScale * step
-			w.turfDue += clipBase * w.mixGrass * chunkScale * step
-			if w.clodDue >= 1 or w.turfDue >= 1 then
+		writeKick(g.clippings, if emit then clipBase * w.mixGrass else 0)
+		if emit and w.mixGrass > 0 and clodBase > 0 then
+			-- The mud: owed clods build up at the rate and are thrown whole (T-283).
+			w.clodDue += clodBase * w.mixGrass * step
+			if w.clodDue >= 1 then
 				local from = w.sourceC.WorldCFrame
 				while w.clodDue >= 1 do
 					w.clodDue -= 1
-					Debris.Spawn(self.debris, "clod", from, contact, normal, state.velocity)
-				end
-				while w.turfDue >= 1 do
-					w.turfDue -= 1
-					Debris.Spawn(self.debris, "turf", from, contact, normal, state.velocity)
+					Debris.Spawn(self.debris, from, contact, normal, state.velocity)
 				end
 			end
 		else
-			w.clodDue, w.turfDue = 0, 0
+			w.clodDue = 0
 		end
 		writeKick(g.dust, if emit then dustBase * w.mixGravel else 0)
 		writeKick(g.spray, if emit then sprayBase * w.mixGrass else 0)
 	end
 
-	-- The chunks in the air fly on, and the ones on the ground sink, whatever the wheels do.
+	-- The clods in the air fly on, and the ones on the ground sink, whatever the wheels do.
 	Debris.Step(self.debris, step)
 
 	-- The laid marks dry and fade with age, and go when their life is up.
@@ -982,33 +952,6 @@ function Wheels.SetEnabled(self: Wheels, on: boolean): boolean
 	return self.enabled
 end
 
--- How grass and mud are thrown, one of `Config.Fx.Ground.Debris.Modes` (T-283): the 3D
--- chunks, the fine spray, or the painted sprites. A switch, not a frame: it re-dresses the
--- clippings and dirt emitters (allocating their sequences), makes the chunks' pool the
--- first time, and empties it when leaving chunks. Returns the mode it is now in.
-function Wheels.SetDebrisMode(self: Wheels, mode: string): string
-	if not table.find(Config.Fx.Ground.Debris.Modes, mode) then
-		return self.debrisMode
-	end
-	self.debrisMode = mode
-	if mode == "chunks" then
-		Debris.Build(self.debris)
-	else
-		Debris.Clear(self.debris)
-	end
-	local clipLook, dirtLook = kickLooks(mode)
-	for _, w in self.wheels do
-		local g = w.ground
-		writeKick(g.clippings, 0)
-		writeKick(g.dirt, 0)
-		g.clippings.rate, g.dirt.rate = -1, -1 -- so the next frame writes its rate
-		dress(g.clippings.emitter, clipLook.Colour, clipLook)
-		dress(g.dirt.emitter, dirtLook.Colour, dirtLook)
-		w.clodDue, w.turfDue = 0, 0
-	end
-	return mode
-end
-
 -- How long a mark stays. The hook the reference keeps for its end-of-run replay shot:
 -- a huge number here leaves the whole run's marks on the road to be photographed. The
 -- grass keeps its longer life, in proportion (T-265).
@@ -1033,8 +976,8 @@ function Wheels.DebugState(self: Wheels, state: DriftModel.State?, input: any)
 		rubber = GroundMarks.DebugState(self.rubber),
 		-- Microseconds a frame the ribbons cost, over the frames a wheel was marking.
 		marksMicros = if self.marksFrames > 0 then self.marksSeconds / self.marksFrames * 1e6 else 0,
-		debrisMode = self.debrisMode, -- T-283: chunks, specks or sprites
-		debris = Debris.DebugState(self.debris), -- the chunks' pool: built, pool, live, flying, spawned
+		-- The mud's 3D clods (T-283): ready, pool, shapes, triangles, live, flying, spawned.
+		debris = Debris.DebugState(self.debris),
 		rollDeg = if state then math.deg(state.bodyRoll) else nil,
 		slipDeg = if state then math.deg(state.slip) else nil,
 		throttle = if state then state.throttle else nil,
@@ -1107,7 +1050,8 @@ function Wheels.DebugState(self: Wheels, state: DriftModel.State?, input: any)
 			onGround = self.marks.strips[w.index] and self.marks.strips[w.index].snapped or 0,
 			onRoad = self.rubber.strips[w.index] and self.rubber.strips[w.index].snapped or 0,
 			clippingsRate = live(w.ground.clippings),
-			dirtRate = live(w.ground.dirt),
+			clodRate = if w.mixGrass > 0 and emit then Wheels.kickRate(F.Ground.Chunks, math.deg(math.abs(state.slip)))
+				* Wheels.dirtShare(math.deg(math.abs(state.slip))) * w.mixGrass else 0, -- clods a second (T-283)
 			dustRate = live(w.ground.dust),
 			sprayRate = live(w.ground.spray),
 			-- How far the lean had to be pushed back on this wheel this frame, in studs.
@@ -1135,7 +1079,7 @@ function Wheels.CountInstances(self: Wheels): number
 			n += (if fx.diffuse.Parent then 1 else 0) + (if fx.stylized.Parent then 1 else 0)
 		end
 		local g = w.ground
-		for _, inst in { g.clippings.emitter, g.dirt.emitter, g.dust.emitter, g.spray.emitter } do
+		for _, inst in { g.clippings.emitter, g.dust.emitter, g.spray.emitter } do
 			n += if (inst :: Instance).Parent then 1 else 0
 		end
 	end
