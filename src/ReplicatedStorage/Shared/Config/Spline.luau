@@ -272,6 +272,100 @@ local Spline = {
 		BlotchStuds = 70,
 	},
 
+	-- --------------------------------------------------------------- the tarmac's texture
+	-- T-268 (features/road-surface.md): the tarmac painted IN CODE into one image every chunk
+	-- shares (`Road/RoadTexture`), nothing uploaded. Its colours and lines are `Config.Road`'s.
+	-- Drawn when the ground draws the runoff (`Ground.RunoffBy = "ground"`); with the road
+	-- drawing its own grass the grass's texture is on the mesh instead, and the tarmac is flat.
+	-- Distances are studs of road; "along" repeats every `PeriodStuds`.
+	Tarmac = {
+		Enabled = true, -- false: the flat tarmac and the dash parts, as before
+		-- THE RESOLUTION (T-268 send-back, the user: "bit higher res this time for the main
+		-- asphalt texturing"): 1 024 x 1 024, the largest EditableImage, 4 MB. Across, the tarmac
+		-- gets all but `PlainPx` each side and the line band: 18.6 pixels a stud (4.8 in the
+		-- first cut); along,
+		-- 4.3 (2.1): it is seen at a glancing angle, so it needs fewer. The shorter repeat
+		-- that buys is hidden by the vertices' tone, which never repeats
+		Width = 1024, -- pixels across
+		Length = 1024, -- pixels along
+		PeriodStuds = 240, -- studs along one copy (rounded to whole `MarkInterval`s)
+		PlainPx = 32, -- plain `Grass.Shade` columns each side, where the rest of the mesh samples
+		-- (a thirty-second of the width each side, as before: still a pixel at a 32-wide mip)
+		SliceMs = 3, -- ms of painting a frame (it is painted once, as the client loads)
+		Seed = 268,
+		-- the tone of each tarmac vertex, so the period never shows as a repeat: darker by up
+		-- to 2 x `Tone` from smooth noise over `ToneStuds` of road, a little warmer or cooler.
+		-- Kept slow (200+), so a chunk drawn coarse far ahead (cuts 96 studs apart) shades alike
+		Tone = 0.09,
+		ToneStuds = 200,
+		ToneHue = 0.03,
+		-- the grain: large soft mottling, painterly strokes stretched along, a finer aggregate
+		-- octave (what the resolution is for), and speckle
+		Mottle = 0.06,
+		MottleStuds = 9,
+		Grain = 0.06,
+		GrainStuds = { 0.6, 3.5 }, -- across, along
+		Fine = 0.05,
+		FineStuds = { 0.18, 0.6 },
+		Speckle = 0.05,
+		-- the wheel tracks: two a lane, `TrackGap` apart about its middle, `TrackWidth` wide,
+		-- `TrackDark` of the way to `TarmacWorn` in the middle, wandering `TrackWobble` either
+		-- way over `TrackWobbleStuds`, their grain `TrackSmooth` smoother (polished); a faint
+		-- oil strip between them. Send-back (the user: "tyre marks are ugly"): broad and
+		-- faint, polish rather than stripes (0.9 dark and 3.2 wide in the first cut)
+		TrackGap = 6.4,
+		TrackWidth = 4.5,
+		-- Send-back 2 ("I still don't like the tire marks ... otherwise keep it simple
+		-- textured"): none. (Tracks only on the hairpins would need a second tarmac in the
+		-- image, and the car's own drift marks already rubber the hairpins it is drifted round)
+		TrackDark = 0,
+		TrackSmooth = 0,
+		TrackWobble = 0.8,
+		TrackWobbleStuds = 60,
+		OilWidth = 1.2,
+		OilDark = 0,
+		-- the dusty edge: `EdgeWear` studs in from each edge, with gravel specks
+		EdgeWear = 2.2,
+		Gravel = 0.35,
+		GravelLight = 1.35,
+		GravelDark = 0.7,
+		-- the paint's wear (0 none, 1 worn through where the noise is highest)
+		LineWear = 0.35,
+		-- THE PAINT'S WEATHERING (send-back 2: "faded and cracked/weather lines"), the edge
+		-- lines and the double yellow alike: each line's paint fades along the road between
+		-- `LineFade` (of full) over `LineFadeStuds`, wears through to the tarmac where the hole
+		-- noise (over `LineHoleStuds` across and along) passes `LineHoles` (-1..1: higher, fewer),
+		-- thins with the fine grain by up to `LineGrain`, has its sides chipped by up to
+		-- `LineChip` studs, and is broken by `LineCracks` cracks across it a copy
+		LineFade = { 0.5, 0.95 },
+		LineFadeStuds = 30,
+		LineHoles = 0.42,
+		LineHoleStuds = { 0.35, 1.6 },
+		LineGrain = 0.35,
+		LineChip = 0.06,
+		LineCracks = 10,
+		-- THE LINE BAND: columns of the image, right of the tarmac, holding one yellow line
+		-- (`Config.Road.CentreLineWidth`) on tarmac, which the double yellow's strips are mapped
+		-- to, `LineInsetPx` in from its sides
+		LineBandPx = 32,
+		LineInsetPx = 4,
+		-- patches of newer and older tarmac, a seam round each
+		Patches = 2, -- a copy is 240 studs now (480 in the first cut)
+		PatchLength = { 8, 26 },
+		PatchWidth = { 6, 16 },
+		PatchSeam = 0.2,
+		PatchBlend = 0.5,
+		PatchSoft = 0.6, -- studs
+		PatchRagged = 0.8, -- studs
+		-- cracks: mostly along the road `CrackEdge` in from an edge, `CrackAcross` of them across
+		Cracks = 6,
+		CrackWidth = 0.12, -- studs
+		CrackLength = { 6, 26 },
+		CrackEdge = { 1, 4.5 },
+		CrackAcross = 0.15,
+		CrackDark = 0.35,
+	},
+
 	-- --------------------------------------------------------------- the ground
 	-- (features/ground-trial.md, T-218; the only ground since T-247, features/legacy-removal.md.)
 	-- The ground BUILT FIRST, as one mountain the road is cut into (`Road/Ground`), drawn by
