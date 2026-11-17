@@ -226,3 +226,14 @@ Made with the image tool (`tools\imagegen.ps1`) and recorded in `assets/painted-
 - **The rings never cross,** even at their full trails (tested), which keeps the trails short.
 - **Saddles line up:** each picture is lifted or lowered by its measured saddle height (`Edges`), so neighbouring pictures meet without a step.
 - **The cloud sea is off** for now (the user: "get rid of the cloud layer thing, we will revisit that later"); its code and numbers stay.
+
+## Since T-278 (2026-11-17)
+
+The user wanted nothing the road or ground draws to cut into the vista, then the gaps it showed from high up closed (DECISIONS.md, 2026-11-17).
+
+- **Moved out once, by 1.37x** (`Config.Vista.Scale`): Near 3 589, Middle 3 973, Far 4 384 studs, scaled so each looks the same on screen. 1.6x would make the Far panels taller than a part's 2 048 studs. Each ring has 20 panels of 18 degrees, each showing half a picture (`Mesh.Slices` 2).
+- **Road ahead and behind fit inside it:** ahead 1 200 / 1 600 / 2 000 / 2 500, behind 600 / 1 000 / 1 500 / 2 000 (`SETTINGS.md`). `SplineMeshTests` checks the nearest ring is beyond all the road drawn at every setting. The ground's own far tiles can still reach past it (T-281).
+- **The rings follow the camera's height fully,** at the angles they had with the camera 60 studs up (`EyeHeight`), so climbing never shows their bottoms. `Slide` (the table above) no longer applies to the rings. A dip that sank them when the ground fell away is built but off (`Dip = false`): one deep valley sank the whole view.
+- **Painted skirts:** under each picture, its lower 30% (`Mesh.SkirtBand`) repeats, mirrored, down to the panel's bottom, in place of the plain mist fade (`SkirtFade` and `SkirtUV` unused).
+- **A floor** (`Config.Vista.Floor`): 4 x 4 flat parts of 2 048 studs, 20 studs above the Near ring's bottom, following the camera, in the Near ring's base colour and tinted with the time of day, so looking down past the ground's edge never shows open sky. Measured 600 to 1 100 studs below the lowest drawn ground.
+- **The cloud sea's check** passes while it is off: its 4 096-stud reach is now short of the Far ring. Revisit when clouds come back.
