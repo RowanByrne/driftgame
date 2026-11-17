@@ -9,6 +9,7 @@ Every task in progress and the files it owns, so parallel sessions and workers n
 
 | Branch | Lane | Files owned | Since |
 |---|---|---|---|
+| `agent/ground-opaque` (T-276) | borrowed | `src/StarterPlayerScripts/Drift/GroundMeshView.luau`, `Drift/GroundTiles.luau`, `Drift/GroundDetail.luau`, `Drift/MeshBudget.luau`, `src/ReplicatedStorage/Shared/Road/GrassTexture.luau`, `Shared/Config/Spline.luau`, `src/ServerScriptService/Tests/GroundTests.luau` | 2026-11-17 |
 
 ## Notes between sessions
 
