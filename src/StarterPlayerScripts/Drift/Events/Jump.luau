@@ -81,7 +81,9 @@ end
 
 function Jump.Update(self: any, dt: number, state: any)
 	local D = Config.ScoreEvents.Detectors.Jump
-	if self.lastState and state ~= self.lastState then
+	-- the car put back: a new state (a stand-in with no clock is never taken for one)
+	local last = self.lastState
+	if last and state ~= last and state.time ~= nil and last.time ~= nil then
 		self:_end(false, "reset")
 		self.spoiled = false
 	end

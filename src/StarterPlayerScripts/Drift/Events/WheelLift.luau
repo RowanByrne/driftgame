@@ -96,7 +96,9 @@ end
 
 function WheelLift.Update(self: any, dt: number, state: any)
 	local D = Config.ScoreEvents.Detectors.WheelLift
-	if self.lastState and state ~= self.lastState then
+	-- the car put back: a new state (a stand-in with no clock is never taken for one)
+	local last = self.lastState
+	if last and state ~= last and state.time ~= nil and last.time ~= nil then
 		self:_end(false)
 	end
 	self.lastState = state
