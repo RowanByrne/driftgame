@@ -36,7 +36,7 @@ Nothing changes in how the car drives. The surface the car reads, grip, and the 
 
 - **Columns, left to right:** 32 plain, the tarmac (832: 16.6 pixels a stud across), the LINE BAND (32), the gravel band (96), 32 plain. **V runs along the road**, one copy every `PeriodStuds` (120 since send-back 4; 240 before). Along: 8.5 pixels a stud (4.3 before send-back 4).
 - **The plain bands** are `Grass.Shade` grey. The gravel bevels, the skirt and a grove's trees sample UV (0, 0) there, so they look exactly as before.
-- **The tarmac, painted in this order:** the tarmac colour; the dusty edge (send-back 4: going over to the gravel's bare bed in soft ragged shapes, no specks); faint patches of newer tarmac, ragged and feathered, with a light seam; grain (large mottling, painterly strokes stretched along, a finer aggregate octave, speckle); the two white edge lines, `EdgeLineInset` in from each edge; then thin cracks (`CrackWidth`, mostly along the edges, a few short ones across), and `LineCracks` short cracks across each edge line.
+- **The tarmac, painted in this order:** the tarmac colour; the dusty edge (send-back 4: going over to the gravel's bare bed in soft ragged shapes, no specks); no patches since send-back 5 (they are the mesh's, below); grain (large mottling, painterly strokes stretched along, a finer aggregate octave, speckle); the two white edge lines, `EdgeLineInset` in from each edge; then thin cracks (`CrackWidth`, mostly along the edges, a few short ones across), and `LineCracks` short cracks across each edge line.
 - **The paint's weathering** (edge lines and double yellow alike): each line fades along the road between `LineFade` of full over `LineFadeStuds`, each side on its own; wears through to the tarmac in holes (`LineHoles`, `LineHoleStuds`); thins with the fine grain (`LineGrain`) and the wear noise (`LineWear`); has its sides chipped (`LineChip`); and is broken by cracks across it.
 - **The double yellow** (`Config.Road.CentreLine*`): only on the TIGHT STRETCHES, `RoadTexture.centreRuns`: wherever the curve is tighter than `CentreLineRadius` (130 studs: every hairpin, 70 to 95, and the tightest "Tight" bends), `CentreLineLead` (40) studs either side as lead-in and run-out, gaps under `CentreLineMerge` (80) closed so a switchback's two bends get one line, read on a fixed grid of `CentreLineStep` (2) studs along the whole road. A chunk anywhere, near or far, finds the same runs (checked: 12 chunks' runs joined equal the whole road's). Each line is a strip of the road's mesh, `CentreLineWidth` (0.45) wide, `CentreLineGap` (0.45) apart, laid on the drawn tarmac between its own vertices and lifted `CentreLineLift` (0.04, plus a quarter of the chunk's tolerance: 0.29 on a far chunk); the mesh gets a cut at each end of a run, so the line starts and stops square. The strips are mapped to the line band: one weathered yellow line on tarmac, the second line half a period on so the two never wear alike. **Why strips:** the texture repeats along the road, so its pixels cannot know where the bends are.
 - **The tone:** each tarmac vertex is shaded darker or lighter by up to `Tone` (and a little warmer or cooler) from slow noise along the road, which never repeats, so the 120-stud period does not show as a repeat. It changes only along the road and slowly, so a chunk drawn coarse far ahead (T-263) shades almost exactly as the same chunk drawn whole.
@@ -111,6 +111,24 @@ The user, on the approved tarmac and gravel, close up: *"is the road texture str
 
 Uploaded as `tarmac-v2.png` (`assets/road/MANIFEST.md`), read back identical. Not changed: the gravel's period (64 studs) and the grain's own stroke shapes, stretched along by design (`GrainStuds` 0.6 x 3.5): if the road still reads streaky, those are next.
 
+## Send-back 5 (2026-11-17, T-285)
+
+The user: *"on the road texturing, the road patch that appears on the right side of the texture repeats very regularly and is a recognize-able pattern. randomize it more and have it be more rare so it doesn't stand out"*.
+
+- **Why it repeated:** the one patch a copy was painted in the image, so it showed at the same spot across the road every 120 studs. Nothing painted in a repeating image can be random along the road.
+- **Now:** no patch in the image (`Tarmac.Patches` 0, uploaded again as `tarmac-v3.png`: only the old patch's pixels changed, since its random numbers are still drawn and the cracks stay put). Each patch is a small piece of the road's mesh instead, laid on the drawn tarmac, lifted `PatchLift` (0.03, plus a fifth of the chunk's tolerance). It has the tarmac's own UVs and tone, darker inside, so its edges match the tarmac under it. **Where:** `RoadTexture.patches`, from a hash of the distance along. In each 360 studs of road there is one patch by a 70% chance, starting anywhere but the cell's last 120 studs plus its length. It goes in either lane, or across the middle (a quarter of them) where no double yellow runs, always inside the edge lines. **Its look:** 8-26 studs long and 6-16 wide, as before. It is darker toward `TarmacPatch` by `PatchBlend` 0.7, give or take 30% (about 12% darker; the painted ones were 0.5, with a crisp darker seam this has no pixels for). The feather is 0.6 studs across and 1.6 along, the sides are ragged by up to 0.8 over 2.5 studs, and the darkness is mottled 20%. A row of 4 vertices goes every 1.6 studs along, and every 12.8 on a far chunk.
+- **Not done:** no seam line and no smoother grain inside (those were pixels). A patch reads softer than the painted one.
+
+| Seed 31337 | Before (painted) | Now |
+|---|---|---|
+| Patches per 1 000 studs | 8.3, one every 120 studs at the same place across | 1.85 (37 over 20 007 studs) |
+| Gap between patches | 120 studs, always | 174 to 1 525 studs end to start; start to start 528 on average |
+| Across | always the same spot, right of centre | 21 left lane, 14 right, 2 across the middle |
+| Found chunk by chunk (480) vs the whole road at once | | the same 37 |
+| A chunk, near: triangles / build | 1 226 / 7.5 ms | 1 290 (patches 64 a chunk on average, 48 to 198 in a chunk with any) / 7.1-7.5 ms (noise) |
+| A chunk, far | 222 / 2.7 ms | 241 (the same 9 patches over chunks 0-11 as near) / 2.5-2.9 ms |
+| `SplineMeshTests` | 25 of 25 | 25 of 25 (its road draws its own runoff, so no tarmac texture and no patches; it checks the image's upload) |
+
 ## Platform risks
 
 None. Since T-274 the painted image is uploaded (`assets/road/`, `Config.Spline.Tarmac.Image`): code-made pixels, owned by whoever was signed in to Studio, so check the experience may load it before launch (ART-PIPELINE.md "Ownership and permissions").
@@ -157,6 +175,7 @@ Measured in lanes 4 (before), 2 (first cut) and 1 (second and third cuts, on mai
 
 ## As built
 
+- T-285: `Road/RoadTexture.patches(spline, s0, s1)`, `patchRow(p, s)`, `patchRows(p, s0, s1, coarse?)`; `Road/SplineMesh` lays them (stats `patchTriangles`, `patches`).
 - `Road/RoadTexture` (new): `enabled()`, `period()`, `base(s0)`, `uv(s, d, base)`, `lineUV(s, side, base, which)`, `centreRuns(spline, s0, s1)`, `tone(s, d)`, `paint(yield)`, `get()`, `prepare()`, `DebugState()`; T-270: `gravelEnabled()`, `gravelPeriod()`, `gravelBase(s0)`, `gravelUV(s, e, base, side)`, `paintGravel(px, yield)`.
 - T-270: `Road/SplineMesh` maps the bevels to the gravel band and lays the gravel runoff strips (stats `bevelTriangles`, `gravelTriangles`); `strip` takes an `onFace` callback. `Drift/GroundMeshView` keeps a gravel run's runoff vertices grass while the gravel is textured. Config: `Config.Spline.Gravel` (new block), `Config.Road.Colours.Gravel*`.
 - `Road/SplineMesh`: when the ground draws the runoff, the road's mesh takes the tarmac's texture instead of the grass's; the tarmac's vertices get UVs and tones, the bevels keep the plain band, no dash parts are made, and the tight stretches get the double yellow's strips (with a cut at each end of a run). Stats gain `tarmacTriangles`, `grassTextured`, `tarmacTextured`, `centreLineTriangles`, `centreRuns`.
