@@ -87,8 +87,7 @@ wheel-well liner, the floor pan): hollow, tinny, resonant. The engine, gating, l
 under the ticks stay as built; only the hits change.
 
 New hits, all **Creator Store**, Pro Sound Effects, by id, store files in
-`..rt\generated\sfx-pebbles
-aw\metal\`:
+`..\art\generated\sfx-pebbles\raw\metal\`:
 
 | Store id | Name | Used as | SHA-256 |
 |---|---|---|---|
