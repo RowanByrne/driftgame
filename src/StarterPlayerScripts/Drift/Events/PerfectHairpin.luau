@@ -186,6 +186,9 @@ function PerfectHairpin.Update(self: any, dt: number, state: any)
 		return
 	end
 	local jumped = prevS ~= nil and math.abs(s - prevS) > T.JumpStuds
+	if jumped then
+		self.tried = {} -- put back on the road: every hairpin is a fresh attempt
+	end
 
 	-- the conditions, every frame, so the entry can ask "drifting just now?"
 	local n = PerfectHairpin.slidingWheels(state, self.marking)

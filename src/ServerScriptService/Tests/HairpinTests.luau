@@ -550,9 +550,10 @@ local function runAll(opts)
 			end)
 			local eJ = sinkJ.started[1]
 			check(
-				`{tag}: a fall or a put-back voids it`,
-				e and e.finished == false and det.last.reason == "fell" and eJ and eJ.finished == false and eJ.finishes == 1,
-				`fall: {tostring(e and e.finished)} ({tostring(det.last and det.last.reason)}); put back 150 studs: {tostring(eJ and eJ.finished)} ({tostring(detJ.last and detJ.last.reason)}), {#sinkJ.started} started`
+				`{tag}: a fall or a put-back voids it; put back before it, a fresh try`,
+				e and e.finished == false and det.last.reason == "fell" and eJ and eJ.finished == false and eJ.finishes == 1
+					and #sinkJ.started == 2 and sinkJ.started[2].finished == true,
+				`fall: {tostring(e and e.finished)} ({tostring(det.last and det.last.reason)}); put back 150 studs: {tostring(eJ and eJ.finished)}, then {#sinkJ.started} started, the second finished {tostring(sinkJ.started[2] and sinkJ.started[2].finished)}`
 			)
 
 			-- the same at 30, 60 and 120 frames a second

@@ -109,6 +109,9 @@ function ReverseEntry.Update(self: any, dt: number, state: any)
 		return
 	end
 	local jumped = prevS ~= nil and math.abs(s - prevS) > T.JumpStuds
+	if jumped then
+		self.tried = {} -- put back on the road: every hairpin is a fresh attempt
+	end
 
 	local n = PerfectHairpin.slidingWheels(state, self.marking)
 	self.sliding = n
