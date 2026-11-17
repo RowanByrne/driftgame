@@ -844,11 +844,11 @@ local function sortSpot(self: GroundMarks, st: Strip, at: Vector3, force: boolea
 	if not force and (st.origin - cf.Position):Dot(look) >= R.SortMinDepth then
 		return nil
 	end
-	local flat = Vector3.new(look.X, 0, look.Z)
-	if flat.Magnitude < 1e-3 then
-		return nil
-	end
-	local spot = Vector3.new(cf.Position.X, at.Y, cf.Position.Z) + flat.Unit * R.SortAhead
+	-- Straight down the view, not along the ground: then it is exactly `SortAhead` deep however
+	-- the camera is pitched. A spot along the ground is under `SortMinDepth` for a camera
+	-- looking down more than 60 degrees, and would move every frame (a first build did once:
+	-- 601 moves in 10 s in DR-Lane1, against about 1 a second in a normal drift)
+	local spot = cf.Position + look * R.SortAhead
 	local off = at - spot
 	if math.max(math.abs(off.X), math.abs(off.Y), math.abs(off.Z)) > R.ReOrigin then
 		return nil -- a camera far from the car (a menu, a photo): the old rule

@@ -79,7 +79,7 @@ return {
 			ReOrigin = 800, -- studs a strip's origin may lag the tyre before it moves
 			-- WHERE THE RUBBER SORTS (T-289). Roblox sorts a see-through part by its centre, and
 			-- a strip's centre is its origin, so the origin is kept this far out in front of the
-			-- camera (flat), well past any smoke: the marks draw first and the smoke over them.
+			-- camera, down the view, well past any smoke: the marks draw first and the smoke over them.
 			-- It moves on when it comes nearer the camera than `SortMinDepth` along the view
 			-- (`Drift/GroundMarks` "sortSpot")
 			SortAhead = 600,
