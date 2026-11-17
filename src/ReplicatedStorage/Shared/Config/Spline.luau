@@ -384,13 +384,13 @@ local Spline = {
 		PatchLength = { 8, 26 },
 		PatchWidth = { 6, 16 },
 		PatchSeam = 0.2, -- (painted patches only)
-		PatchBlend = 0.5,
+		PatchBlend = 0.7, -- (0.5 painted, where a crisp darker seam outlined it too)
 		PatchVary = 0.3,
-		PatchSoft = 0.9, -- studs (0.6 painted)
+		PatchSoft = 0.6, -- studs
 		PatchSoftAlong = 1.6,
 		PatchRagged = 0.8, -- studs
 		PatchRaggedStuds = 2.5,
-		PatchMottle = 0.3,
+		PatchMottle = 0.2,
 		PatchStep = 1.6,
 		PatchLift = 0.03,
 		-- cracks: mostly along the road `CrackEdge` in from an edge, `CrackAcross` of them across
