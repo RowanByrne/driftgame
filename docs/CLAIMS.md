@@ -11,7 +11,7 @@ Every task in progress and the files it owns, so parallel sessions and workers n
 |---|---|---|---|
 | `agent/low-smoke` (T-290) | borrowed | `src/ReplicatedStorage/Shared/Config/Fx.luau`, `src/StarterPlayerScripts/Drift/Wheels.luau`, `src/ServerScriptService/Tests/FxTests.luau`, `docs/game/features/tyre-particles.md`, `features/car-fx.md` | 2026-11-17 |
 | `agent/camera-lower` (T-291) | borrowed | `src/ReplicatedStorage/Shared/Config/Camera.luau`, `src/StarterPlayerScripts/Controllers/CarCameraController.luau`, `src/ServerScriptService/Tests/JitterTests.luau`, `docs/game/features/drift-camera.md` | 2026-11-17 |
-| `agent/pebble-sound` (T-292) | borrowed | `src/StarterPlayerScripts/Drift/PebbleSound.luau` (new), `src/ReplicatedStorage/Shared/Config/Pebbles.luau` (new), `src/ServerScriptService/Tests/PebbleSoundTests.luau` (new), `assets/audio/sfx-pebbles/*` (new), `docs/game/AUDIO.md` | 2026-11-17 |
+| `agent/pebble-sound` (T-292) | borrowed | `src/StarterPlayerScripts/Drift/PebbleSound.luau` (new), `src/ReplicatedStorage/Shared/Config/Pebbles.luau` (new), `src/ServerScriptService/Tests/PebbleSoundTests.luau` (new), `assets/audio/sfx-pebbles/*` (new), `docs/game/AUDIO.md`, `src/StarterPlayerScripts/Controllers/DriftController.luau` (one start line and one debug line only) | 2026-11-17 |
 
 ## Notes between sessions
 
