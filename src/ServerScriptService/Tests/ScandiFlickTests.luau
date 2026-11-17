@@ -516,12 +516,8 @@ local function runAll(opts)
 		for wi, w in ways do
 			table.insert(wayRows, `lane {w.lane} in, {w.v0} st/s, out from -{w.outAt}: {byWay[wi] or 0}`)
 		end
-		table.insert(log, "drives, per hairpin (of " .. #ways .. " ways):
-  " .. table.concat(rows, "
-  "))
-		table.insert(log, "completed, per way (of " .. driven .. " hairpins):
-  " .. table.concat(wayRows, "
-  "))
+		table.insert(log, "drives, per hairpin (of " .. #ways .. " ways):\n  " .. table.concat(rows, "\n  "))
+		table.insert(log, "completed, per way (of " .. driven .. " hairpins):\n  " .. table.concat(wayRows, "\n  "))
 		local function list(t)
 			local out = {}
 			for k, v in t do
