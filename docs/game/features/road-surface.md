@@ -68,11 +68,16 @@ The user, on the second cut: *"get rid of the dashes - it's not realistic. do th
 The user, after approving the tarmac: *"do the same for the gravel on the sides of the road. get a proper texture for it, that is."*
 
 - **What was gravel:** the bevel at each edge of the tarmac (in the road's mesh, sampling the image's plain grey band, in `GravelColour`), and a tight cliff edge's narrow gravel runoff (T-181), which the ground mesh draws (T-251) with its vertices in `GravelColour`.
-- **The gravel band:** 96 more columns of the same 1 024 x 1 024 image (no image of its own, no memory more), right of the line band, painted in code by `RoadTexture.paintGravel` with random numbers of its own: a dusty, mottled bed with darker gaps; loose stones of three sizes (`Config.Spline.Gravel.Stones`: about 4 200 small, 1 300 medium and 230 large a copy) in five tones (`Colours.GravelStones`), each an ellipse in flat facets lit from one side, with a darker rim and a shadow, low poly but real; and five larger rocks. **Its edges have no hard seam:** the tarmac's dusty edge colour takes over raggedly over its first `EdgeSoft` (0.45) studs, and grass tufts (`Colours.GravelGrass`) creep in from `GrassFrom` (2.4) studs to its end. It covers `BandStuds` (3) across at 29 pixels a stud, and repeats every `PeriodStuds` (64) along at 16 pixels a stud; the right side reads half a copy on from the left.
+- **The gravel band:** 96 more columns of the same 1 024 x 1 024 image (no image of its own, no memory more), right of the line band, painted in code by `RoadTexture.paintGravel` with random numbers of its own. It covers `BandStuds` (3) across at 29 pixels a stud, and repeats every `PeriodStuds` (64) along at 16 pixels a stud; the right side reads half a copy on from the left.
+- **Its look, an anime background's gravel** (send-back, below): a calm bed of three flat values (`Colours.GravelDark`, `GravelDust`, `GravelLight`) laid as soft shapes from low-frequency noise, stepped with a soft edge; and a modest number of clearly drawn pebbles, about 23 large (radius 0.24 to 0.34 studs) and 134 small (0.12 to 0.19) a copy, kept `PebbleGap` apart so each reads, in three body tones (`Colours.GravelStones`), each cel-shaded: a flat body, a lit cap toward the light, a darker side away from it, an antialiased edge, and a soft shadow on the bed. **No per-pixel noise anywhere.** Its edges have no hard seam: the tarmac's dusty edge colour takes over in soft ragged shapes over its first `EdgeSoft` (0.45) studs, and flat grass shapes (`Colours.GravelGrass`) creep in from `GrassFrom` (2.4) studs to its end.
 - **The bevels** are mapped to it, from the tarmac's edge to their foot (the grass end), or to `RunFoot` (2.2, before the grass) in a gravel run, shaded by the tarmac's tone along the road. No triangles more.
 - **The gravel runoff:** a strip of the road's mesh laid over a gravel run's flat runoff, from the bevel's foot to the lip, on the surface the car stands on there and lifted `RunoffLift` (0.06, plus a quarter of the chunk's tolerance on a far chunk), mapped to the band's pure gravel (`RunFrom` 1.0 to `RunFoot` 2.2). The ground's vertices under it stay grass now (`GroundMeshView`, look only): coloured gravel, they smeared it a whole ground cell, 8 studs or more, out across the grass beside it. The ground's shape, budget and what the car stands on are unchanged.
 - **The tarmac** gives the band its columns: 16.6 pixels a stud across, from 18.6.
 - **Switching it off:** `Config.Spline.Gravel.Enabled = false`, or in Studio `workspace.__gravel_texture = false` (from the next chunk built: start a new run): the bevels plain again, no strips, the ground's runoff gravel-coloured again.
+
+### The gravel's send-back (2026-11-16)
+
+The user, on the first gravel: *"texture too noisy and static-y. try something that will match road texture stylization, that sort of anime look we have going in teh concept art"*. The first cut painted about 5 700 tiny faceted stones with per-pixel grain, rims and random grass tufts: it shimmered. Now the look above: flat values, about 160 clear pebbles a copy, nothing per pixel. Measured as the mean difference between neighbouring pixels (green, of 255): the gravel band 2.22, the approved tarmac 2.75, so the gravel is now as calm as the road beside it.
 
 ## Platform risks
 
@@ -108,9 +113,9 @@ Measured in lanes 4 (before), 2 (first cut) and 1 (second and third cuts, on mai
 |---|---|---|
 | Triangles a chunk, near | 1 215 | 1 225 (the runoff strips: 118 over the 11; the bevels' 2 908 mapped, none added) |
 | Triangles a chunk, far | 261 | 263 (strips 28, bevels' 652 mapped) |
-| Building a chunk | 8.28 ms, 2.7 frames | 8.93 ms (worst 12.7), 3.0 frames; far 3.62 |
+| Building a chunk | 8.28 ms, 2.7 frames | 8.93 ms (worst 12.7), 3.0 frames; far 3.62. Later, a slower session, on then off in one go: 10.97 on, 12.87 off (noise; the build code did not change with the look) |
 | Most of a chunk any one frame paid | 4.81 ms | 4.64 ms |
-| Painting the image, once | 244 ms of work, 78 frames | 232 ms over 75 frames (608 ms wall), the longest frame meanwhile 10.1 ms: the gravel band within run-to-run noise |
+| Painting the image, once | 244 ms of work, 78 frames | first cut 232 ms over 75 frames; the anime look 337-348 ms over 101-108 frames (834-888 ms wall), the longest frame meanwhile 11.5-13.8 ms (its pebbles are blended colour by colour) |
 | Image memory | 4 MB | 4 MB (a band of the same image) |
 | Render CPU / GPU, parked at a gravel run, gravel off then on in one session | 2.13-2.57 / 0.56-0.63 ms | 1.79-2.02 / 0.41-0.49 ms |
 
