@@ -85,10 +85,14 @@ export type Hit = { y: number, normal: Vector3, grip: number, score: number, sur
 -- is the whole of whether a building is solid (Drift/World, T-018). `penetration` says
 -- which way is out of anything the car is inside; both are optional, and a world without
 -- them has no walls at all.
+--
+-- A world MAY say what it met, as a third and fourth return of `sweep` and `penetration`:
+-- the wall's kind and a mask of the outline points touching it (`Drift/SplineWorld`, T-297).
+-- Look only: they go into the `wall*` state fields and nothing in the step reads them.
 export type World = {
 	probe: (pos: Vector3) -> Hit?,
-	sweep: ((from: Vector3, to: Vector3, yaw: number) -> (Vector3?, Vector3?))?,
-	penetration: ((pos: Vector3, yaw: number) -> (Vector3?, number))?,
+	sweep: ((from: Vector3, to: Vector3, yaw: number) -> (Vector3?, Vector3?, ...any))?,
+	penetration: ((pos: Vector3, yaw: number) -> (Vector3?, number, ...any))?,
 	-- Where a step's face is between two points, by one sideways ray (Drift/Suspension's
 	-- floor solve). Optional: without it the solve halves the gap with ground rays instead.
 	edge: ((from: Vector3, to: Vector3) -> Vector3?)?,
@@ -138,6 +142,21 @@ export type State = {
 	wallHit: boolean,
 	sinceWall: number, -- seconds since the car last touched a wall. TIME SINCE, not time
 	-- in: contact is intermittent even when the car is held (T-074)
+	-- THE WALL IT TOUCHED (T-297, features/score-events.md): LOOK ONLY, for the score's grind
+	-- events. Written from what `World.sweep` and `World.penetration` say they met; nothing in
+	-- the model reads any of them. They describe the last step that met a wall and hold while
+	-- `wallTouch` does, then clear.
+	wallTouch: boolean, -- a wall met within `WallContactGrace`: contact as continuous
+	wallKind: string, -- "krail" | "rock" | "tree" | "closing" | "other"; "" when not touching
+	wallPoint: string, -- the part of the car on it: "front" or "rear" (one end's corner),
+	-- "middle", "side" (more than one point of one side: a door along it), or "" (unknown, a
+	-- tree, or not touching)
+	wallSide: string, -- "left" | "right" | "" for which side of the car those points are on
+	wallPoints: number, -- the outline points touching, a mask (`Model.WALL_POINTS`)
+	wallInto: number, -- studs/s the car was moving INTO the wall when it met it (>= 0)
+	wallAlong: number, -- studs/s it is moving ALONG the wall now, flat (while touching)
+	wallDepth: number, -- studs it was pushed back out of the wall, 0 if only stopped at it
+	wallNormal: Vector3, -- the wall's normal, out toward the car
 	crawlSeconds: number, -- seconds the car has been slower than `UnstickSpeed`
 	pinned: boolean, -- held against a wall and crawling, so the grip and the wall scrub are
 	-- both let go this step. Never true at `UnstickSpeed = 0`
@@ -177,6 +196,39 @@ local WHEELS = {
 }
 Model.WHEEL_COUNT = #WHEELS
 Model.REAR_WHEELS = { 3, 4 }
+
+-- The car's six outline points, as a world's points mask numbers them (bit k - 1 is point
+-- k): which end of the car and which side each is (T-297).
+Model.WALL_POINTS = {
+	{ point = "front", side = "right" },
+	{ point = "middle", side = "right" },
+	{ point = "rear", side = "right" },
+	{ point = "front", side = "left" },
+	{ point = "middle", side = "left" },
+	{ point = "rear", side = "left" },
+}
+
+-- What a points mask says, as `wallPoint` and `wallSide` (see `State`).
+function Model.wallPart(mask: number): (string, string)
+	if mask <= 0 then
+		return "", ""
+	end
+	local point, side, count = "", "", 0
+	for k, p in Model.WALL_POINTS do
+		if bit32.btest(mask, bit32.lshift(1, k - 1)) then
+			count += 1
+			if count == 1 then
+				point, side = p.point, p.side
+			else
+				if p.side ~= side then
+					side = ""
+				end
+				point = if p.point == point then point else "side"
+			end
+		end
+	end
+	return point, side
+end
 
 -- The car's flat forward and right vectors, from its Roblox yaw. Used by anything that
 -- only wants the heading (the camera, the network send).
@@ -244,6 +296,15 @@ function Model.new(spawnCFrame: CFrame): State
 		wheelSpin = 0,
 		wallHit = false,
 		sinceWall = math.huge,
+		wallTouch = false,
+		wallKind = "",
+		wallPoint = "",
+		wallSide = "",
+		wallPoints = 0,
+		wallInto = 0,
+		wallAlong = 0,
+		wallDepth = 0,
+		wallNormal = Vector3.zero,
 		crawlSeconds = 0,
 		pinned = false,
 		fell = false,
@@ -510,11 +571,14 @@ function Model.step(s: State, input: Input, dt: number, world: World): State
 	-- its own length in the first wall it touched (T-018). Hence two passes: `sweep` keeps
 	-- the car out, and `penetration` puts it back out if anything else has got it in.
 	s.wallHit = false
+	-- What this step met (T-297): LOOK ONLY, written to the `wall*` fields below and read by
+	-- nothing here. The hardest-met wall of the step is the one kept.
+	local metKind: string?, metPoints, metInto, metNormal, metDepth = nil, 0, 0, Vector3.zero, 0
 	local targetY = target.Y
 	if world.sweep then
 		local at = s.position
 		for _ = 1, MAX_SLIDES do
-			local safe, hitNormal = world.sweep(at, target, s.yaw)
+			local safe, hitNormal, hitKind, hitPoints = world.sweep(at, target, s.yaw)
 			if not safe or not hitNormal then
 				break
 			end
@@ -536,6 +600,9 @@ function Model.step(s: State, input: Input, dt: number, world: World): State
 			-- wall -- `vel -= n * into` is untouched, so the car is still stopped at the
 			-- surface -- it simply stops being charged a crash a step for leaning on it.
 			local into = vel:Dot(n)
+			if metKind == nil or -into > metInto then
+				metKind, metPoints, metInto, metNormal = hitKind or "other", hitPoints or 0, math.max(-into, 0), n
+			end
 			if into < 0 then
 				local speed = vel.Magnitude
 				vel -= n * into -- slide along it instead of stopping dead
@@ -564,11 +631,15 @@ function Model.step(s: State, input: Input, dt: number, world: World): State
 	-- wall, a cone rolling into it, a respawn on top of something. Without this one
 	-- hundredth of a stud of overlap makes the car permanently blind to what it is in.
 	if world.penetration then
-		local push, depth = world.penetration(target, s.yaw)
+		local push, depth, inKind, inPoints = world.penetration(target, s.yaw)
 		if push and depth > 0 and (push :: Vector3).Magnitude > EPS then
 			local out = (push :: Vector3).Unit
 			target += out * (depth + C.WallPush)
 			local into = vel:Dot(out)
+			metDepth = depth
+			if metKind == nil or -into > metInto then
+				metKind, metPoints, metInto, metNormal = inKind or "other", inPoints or 0, math.max(-into, 0), out
+			end
 			if into < 0 then
 				vel -= out * into
 			end
@@ -885,6 +956,29 @@ function Model.step(s: State, input: Input, dt: number, world: World): State
 	s.bodyRoll = lerp(s.bodyRoll, rollTo, clamp(C.BodyRollRate * dt, 0, 1))
 	local steerTo = clamp(b, -math.rad(C.WheelSteerMax), math.rad(C.WheelSteerMax))
 	s.wheelSteer = lerp(s.wheelSteer, steerTo, clamp(C.WheelSteerRate * dt, 0, 1))
+
+	-- THE WALL IT TOUCHED (T-297, features/score-events.md): look only, like the two above.
+	-- A car leaning on a rail meets it on some steps and not others (T-074), so what it met
+	-- is held for `WallContactGrace` after the last step that met it, and the speed along it
+	-- is read off the car's travel every step meanwhile.
+	if metKind then
+		s.wallKind = metKind
+		s.wallPoints = metPoints
+		s.wallPoint, s.wallSide = Model.wallPart(metPoints)
+		s.wallInto = metInto
+		s.wallNormal = metNormal
+		s.wallDepth = metDepth
+	end
+	s.wallTouch = s.sinceWall <= C.WallContactGrace and s.wallKind ~= ""
+	if s.wallTouch then
+		local n = s.wallNormal
+		local across = vel.X * n.X + vel.Z * n.Z
+		local ax, az = vel.X - n.X * across, vel.Z - n.Z * across
+		s.wallAlong = math.sqrt(ax * ax + az * az)
+	elseif s.wallKind ~= "" then
+		s.wallKind, s.wallPoint, s.wallSide, s.wallPoints = "", "", "", 0
+		s.wallInto, s.wallAlong, s.wallDepth = 0, 0, 0
+	end
 
 	return s
 end
