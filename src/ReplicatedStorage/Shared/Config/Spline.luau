@@ -390,40 +390,41 @@ local Spline = {
 		-- far a stone's tone goes toward `GravelLight` or `GravelDark` (`Contrast`); its soft
 		-- shading toward the light (`Lit`); its edge `SoftPx` pixels wide; how much it covers
 		-- the bed (`Opacity`); its shadow, `ShadowOffset` of a radius away, `ShadowDark` dark (1:
-		-- none). Tuned so each one's fine detail sits near the asphalt's (features/road-surface.md)
+		-- none). Tuned so each one's fine detail sits near the asphalt's: the mean difference
+		-- between neighbouring pixels, A 2.58, B 2.63, C 2.81, the asphalt 2.75 (of 255)
 		Look = "B",
 		Looks = {
 			-- A: dense small stones, low contrast, a softened spread of sizes
 			A = {
 				MottleStuds = { 0.8, 1.4 }, Mottle = 0.05,
 				GrainStuds = { 0.3, 0.8 }, Grain = 0.04,
-				FineStuds = { 0.15, 0.4 }, Fine = 0.03,
+				FineStuds = { 0.08, 0.2 }, Fine = 0.065,
 				Stones = {
 					{ Density = 5, Radius = { 0.14, 0.2 } },
 					{ Density = 1.5, Radius = { 0.2, 0.26 } },
 				},
 				Gap = nil,
-				Contrast = 0.35, Lit = 0.12, SoftPx = 1.5, Opacity = 0.9,
+				Contrast = 0.45, Lit = 0.12, SoftPx = 1.5, Opacity = 0.9,
 				ShadowOffset = 0.3, ShadowDark = 0.9,
 			},
 			-- B: a medium density of stones, softly shaded, in a dusty bed
 			B = {
 				MottleStuds = { 0.8, 1.4 }, Mottle = 0.06,
 				GrainStuds = { 0.3, 0.8 }, Grain = 0.04,
-				FineStuds = { 0.15, 0.4 }, Fine = 0.025,
+				FineStuds = { 0.08, 0.2 }, Fine = 0.065,
 				Stones = {
 					{ Density = 0.6, Radius = { 0.26, 0.36 } },
 					{ Density = 1.6, Radius = { 0.15, 0.22 } },
 				},
 				Gap = 0.02,
-				Contrast = 0.55, Lit = 0.18, SoftPx = 2, Opacity = 1,
+				Contrast = 0.6, Lit = 0.18, SoftPx = 2, Opacity = 1,
 				ShadowOffset = 0.35, ShadowDark = 0.82,
 			},
 			-- C: mostly the dusty bed with the asphalt's grain, a sprinkle of larger stones
 			C = {
 				MottleStuds = { 0.9, 1.5 }, Mottle = 0.07,
-				GrainStuds = { 0.3, 0.9 }, Grain = 0.06,
-				FineStuds = { 0.15, 0.4 }, Fine = 0.04,
+				GrainStuds = { 0.2, 0.6 }, Grain = 0.08,
+				FineStuds = { 0.08, 0.2 }, Fine = 0.12,
 				Stones = {
 					{ Density = 0.2, Radius = { 0.28, 0.42 } },
 				},
