@@ -319,17 +319,20 @@ local Camera = {
 	-- ms time constant, on top of the model's own smoothing of the normal,
 	-- so a crest rolls the view over rather than flicking it
 	-- THE FRAMING (T-291): "I want the car to sit lower on the screen, closer to the bottom".
-	-- The rendered view is aimed up by this share of the screen's HALF-HEIGHT -- an angle of
-	-- atan(drop x tan(FOV / 2)) -- so the car sits the same distance down the screen at a
-	-- standstill's 52 deg and at top speed's 84. It turns the RENDERED camera only, after the
-	-- pan, zoom and hill pitch, so nothing the targets read moves: the lag, the lean and the
-	-- swing are the approved camera's. 0 IS THE CAMERA BEFORE IT, bit for bit.
+	-- The rendered view is aimed UP by this many degrees, so the car sits lower in the frame.
+	-- It turns the RENDERED camera only, after the pan, zoom and hill pitch, so nothing the
+	-- targets read moves: the lag, the lean and the swing are the approved camera's. 0 IS
+	-- THE CAMERA BEFORE IT, bit for bit.
 	-- Measured at 120 studs/s with `CamOffset` above: the car's middle sits 0.75 of the way
 	-- down the screen and its bottom 0.87, against 0.54 and 0.63 before; in a held 90-degree
 	-- drift 0.73 and 0.81. The aim alone does not show more road past a crest -- that is
 	-- hidden by the road itself, and only the eye's height helps, which is why `CamOffset`
 	-- went up with it -- it shows the same road with the car out of its way.
-	CamFrameDrop = 0.4,
+	-- DEGREES, NOT A SHARE OF THE SCREEN: a share would keep the car at one height at every
+	-- speed, but it ties the aim to the FOV, and that made the car shimmer against the camera
+	-- at full lock (JitterTests, 0.38 deg a frame against a 0.1 limit). So the car rides a
+	-- little higher as the FOV opens with speed, and a little lower below 120 studs/s.
+	CamAimUp = 16.7, -- deg. OURS (T-291)
 	CamFrameBottom = 0.95, -- share of the screen's height, from the top. OURS (T-291). The
 	-- guard: the aim is capped so the car's lowest point never sits below
 	-- this. It bites at a standstill (52 deg FOV, the car big) and with

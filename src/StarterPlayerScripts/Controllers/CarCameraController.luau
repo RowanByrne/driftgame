@@ -735,21 +735,24 @@ function CarCameraController._advance(rig, view: View, dt: number, pan): CFrame
 		return CFrame.new(rig.position)
 	end
 	local cf = CFrame.lookAt(rig.position, rig.lookPoint)
-	-- The framing (T-291): the view is aimed UP by `CamFrameDrop` of the screen's
-	-- half-height, so the car sits that much nearer the bottom at every FOV. A turn of the
-	-- rendered camera about its own right axis, after everything above: it moves nothing
-	-- the targets read, so the lag, the lean and the swing are untouched. Zero is the
-	-- camera before it, bit for bit.
+	-- The framing (T-291): the view is aimed UP by `CamAimUp` degrees, so the car sits
+	-- nearer the bottom of the screen. A turn of the rendered camera about its own right
+	-- axis, after everything above: it moves nothing the targets read, so the lag, the lean
+	-- and the swing are untouched. Zero is the camera before it, bit for bit.
+	-- A FIXED ANGLE, NOT A SHARE OF THE FOV, on purpose: scaled by the FOV, the aim moved
+	-- whenever the FOV did, and the FOV follows the speed, which the model only updates per
+	-- simulation step -- JitterTests measured the car shimmering 0.38 degrees a frame
+	-- against the screen at full lock (limit 0.1). A fixed angle cannot shimmer.
 	-- THE GUARD: a narrow FOV (a standstill's 52 degrees) or the wheel zoomed in makes the
 	-- car big enough that the full aim would cut its bottom off, so the aim is capped where
 	-- the car's lowest point -- `CamFrameCarRadius` studs below its middle, as seen from
 	-- here -- would cross `CamFrameBottom` of the screen. Never below level aim: the cap can
 	-- take the framing away, never push the car up past where the camera puts it alone.
 	rig.aim = 0
-	local drop = Cam.CamFrameDrop or 0
-	if drop ~= 0 then
+	local aimUp = Cam.CamAimUp or 0
+	if aimUp ~= 0 then
 		local tanHalf = math.tan(math.rad(rig.fov) * 0.5)
-		local aim = math.atan(drop * tanHalf)
+		local aim = math.rad(aimUp)
 		local toCar = view.position - rig.position
 		local dist = toCar.Magnitude
 		if Cam.CamFrameBottom and dist > EPS then
