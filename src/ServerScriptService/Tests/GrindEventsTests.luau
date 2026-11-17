@@ -712,7 +712,7 @@ function Tests.run(which, ...)
 			local e = rec.events[1]
 			check(
 				"a bumper on the rail, met one step in twelve, is one grind, banked when it peels off",
-				#rec.events == 1 and e.kind == "bumperGrind" and e.result == true and e.at >= B.MinHold and e.at < 0.3 and e.endAt >= 1.5 + B.Grace - 0.05 and e.endAt <= 1.5 + B.Grace + 0.15 and #rec.misuse == 0,
+				#rec.events == 1 and e.kind == "bumperGrind" and e.result == true and e.at >= B.MinHold and e.at <= 0.1 + B.MinHold + 0.1 + 0.01 and e.endAt >= 1.5 + B.Grace - 0.05 and e.endAt <= 1.5 + B.Grace + 0.15 and #rec.misuse == 0,
 				`{#rec.events} event(s): started at {e and fmt(e.at) or "-"} s, ended at {e and e.endAt and fmt(e.endAt) or "-"} s (contact stopped at 1.50, grace {B.Grace}), {e and (if e.result then "banked" else "void") or "-"}, {e and e.updates or 0} updates, size {e and fmt(e.minSize) or "-"}..{e and fmt(e.maxSize) or "-"}; misuse {#rec.misuse}; {g:DebugState().lastEnd}`
 			)
 			-- the same at 30 and 120 FPS
