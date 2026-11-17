@@ -696,7 +696,8 @@ function RoadTexture.paintGravel(px: buffer, yield: (() -> ())?)
 		local tr, tg, tb = lerp(dust.R, (if towardLight then light else dark).R, amt), lerp(dust.G, (if towardLight then light else dark).G, amt), lerp(dust.B, (if towardLight then light else dark).B, amt)
 		-- its shape in STUDS, turned in studs, then onto the pixels (T-277: turned in pixels,
 		-- where a stud along is fewer pixels than across, a stone turned square to the road
-		-- came out up to 3.4 times longer along the road than across, whatever `Aspect` asked)
+		-- came out up to 4.7 times longer along the road than across, 1.9 on average, whatever
+		-- `Aspect` asked)
 		local ra, rb = r * range(Gv.Aspect), r * range(Gv.Aspect)
 		local rot = rand() * math.pi
 		local cs, sn = math.cos(rot), math.sin(rot)
