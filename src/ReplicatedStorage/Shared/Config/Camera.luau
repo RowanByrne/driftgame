@@ -333,11 +333,18 @@ local Camera = {
 	CamFrameBottom = 0.95, -- share of the screen's height, from the top. OURS (T-291). The
 	-- guard: the aim is capped so the car's lowest point never sits below
 	-- this. It bites at a standstill (52 deg FOV, the car big) and with
-	-- the wheel zoomed in; at driving speed it never does
-	CamFrameCarRadius = 7, -- studs. OURS (T-291). How far below its middle the car's
-	-- lowest point is, as the guard sees it. Measured off the AE86's box
-	-- from behind: its bottom-front corner is 6.7 studs' worth below the
-	-- middle at the default distance. A bigger car wants a bigger number
+	-- the wheel zoomed in; at the default zoom while driving, never
+	CamFrameCarRadius = 9, -- studs. OURS (T-291). How far below its middle the car's
+	-- lowest point is, as the guard sees it: a sphere's worth, where the
+	-- AE86's real box is closer to 6.7 at the default distance but its
+	-- near corner reaches further down the screen close up. Measured,
+	-- the worst bottom of the car's box across a standstill, a held
+	-- 90-degree drift, an 8-degree dip at top speed and the wheel at
+	-- `PlayerZoomMin`: 7 let it reach 0.985 of the screen, 8 reached
+	-- 0.961, 9 holds 0.945. At a standstill it sits at 0.73 (bottom
+	-- 0.90), and zoomed fully in at a standstill the aim is off and the
+	-- car is where the camera alone puts it (bottom 0.945, against 0.903
+	-- before T-291). A bigger car wants a bigger number
 	CamTargetStep = 1 / 60, -- s. OURS, and NOT `FixedStep`. The camera's targets feed back
 	-- into themselves (the swung target is what the next frame's resting
 	-- direction is measured from), so where they settle depends on how
