@@ -103,6 +103,8 @@ export type View = typeof(setmetatable(
 		worstMs: number,
 		costs: { number },
 		costAt: number,
+		floor: Part?, -- the floor's anchor (T-278)
+		floorDrop: number,
 		dip: number, -- degrees every ring is dipped now (T-278)
 		dipWant: number,
 		edgeAngle: number?, -- the ground's far edge, lowest, degrees from the camera
@@ -279,6 +281,8 @@ function VistaView.new(originY: number, getLook: (() -> Look?)?, parent: Instanc
 		worstMs = 0,
 		costs = {},
 		costAt = 0,
+		floor = nil,
+		floorDrop = 0,
 		dip = 0,
 		dipWant = 0,
 		edgeAngle = nil,
@@ -286,6 +290,7 @@ function VistaView.new(originY: number, getLook: (() -> Look?)?, parent: Instanc
 	}, VistaView)
 
 	self:_buildRidges(start)
+	self:_buildFloor(start)
 	if Config.Vista.CloudSea.Enabled ~= false then
 		self:_buildClouds(start)
 	end
@@ -428,6 +433,51 @@ function VistaView._fillFlat(self: View, ridge: Ridge, layer: any)
 	ridge.kind = "flat"
 end
 
+-- The floor under the rings (T-278): the Near ring's base colour at its bottom, following the
+-- camera, so looking down past the drawn ground never sees open sky.
+function VistaView._buildFloor(self: View, start: Vector3)
+	local F = Config.Vista.Floor
+	if not F or F.Enabled == false then
+		return
+	end
+	local near: any = nil
+	for _, layer in Config.Vista.Layers do
+		if not near or layer.Radius < near.Radius then
+			near = layer
+		end
+	end
+	if not near then
+		return
+	end
+	local M = Config.Vista.Mesh
+	local art = Vista.pictureWidth(near.Radius, near.Panels, M.Slices or 1) / near.Aspect
+	local top = math.tan(math.rad(near.Peak)) * near.Radius + near.PeakAt * art
+	local height = art / M.ArtShare - M.TopV * art
+	-- under the Near ring's anchor: its mesh's bottom, a little higher so the two overlap
+	self.floorDrop = Vista.drop(Config.Vista, near.Slide or Config.Vista.FollowHeight) - (top - M.TopV * art - height) - 20
+	local sub = Instance.new("Folder")
+	sub.Name = "Floor"
+	local anchor = anchorPart("FloorAnchor", start, sub)
+	local g, size = F.Grid, F.PartSize
+	for i = 0, g - 1 do
+		for j = 0, g - 1 do
+			local p = Instance.new("Part")
+			p.Name = `Floor_{i}_{j}`
+			p.Size = Vector3.new(size, 1, size)
+			p.CFrame = anchor.CFrame + Vector3.new((i - (g - 1) / 2) * size, 0, (j - (g - 1) / 2) * size)
+			p.Material = Enum.Material.SmoothPlastic
+			p.Color = near.BaseColour
+			backdrop(p)
+			weld(anchor, p)
+			p.Parent = sub
+			table.insert(self.ridges[1] and self.ridges[1].skirts or {}, { part = p, base = near.BaseColour })
+			self.parts += 1
+		end
+	end
+	sub.Parent = self.folder
+	self.floor = anchor
+end
+
 function VistaView._buildClouds(self: View, start: Vector3)
 	local sea = Config.Vista.CloudSea
 	local sub = Instance.new("Folder")
@@ -528,6 +578,10 @@ function VistaView.Update(self: View, dt: number)
 		local drop = Vista.drop(V, ridge.slide)
 		local level = at.Y - drop - Vista.dipDrop(ridge.radius, ridge.bottom, drop, self.dip)
 		ridge.anchor.CFrame = CFrame.new(ridge.centre + Vector3.yAxis * level)
+	end
+
+	if self.floor then
+		self.floor.CFrame = CFrame.new(cam + Vector3.yAxis * (at.Y - self.floorDrop))
 	end
 
 	self.cloudTop = Vista.cloudTop(V, self.originY, self.camY)

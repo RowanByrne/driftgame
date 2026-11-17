@@ -168,6 +168,11 @@ return {
 	-- the dip is off (the user: one deep valley sank the whole view); the skirt's painted
 	-- hills cover below the Near ring instead (`Mesh.SkirtBand`)
 	Dip = false,
+	-- A FLOOR under the rings (T-278): looking steeply down past the drawn ground's edge (high
+	-- on a ridge, or before the ground round a new spot is built) saw the open sky under the
+	-- Near ring's bottom. `Grid` x `Grid` flat parts of `PartSize` studs follow the camera at
+	-- the Near ring's bottom, in its `BaseColour`, tinted with the time of day.
+	Floor = { Enabled = true, Grid = 4, PartSize = 2048 },
 	EyeHeight = 60,
 	DipMargin = 0.75, -- degrees
 	DipSamples = 24,
