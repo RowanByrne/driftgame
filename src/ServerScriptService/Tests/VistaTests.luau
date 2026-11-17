@@ -91,8 +91,8 @@ function Tests.run()
 			string.format("skirt to %.0f, cloud at %.0f", skirtBottom, -V.CloudSea.Below)
 		)
 		check(
-			`{layer.Name}: the cloud sea reaches past it, so its edge is never seen`,
-			Vista.cloudReach(V.CloudSea) > layer.Radius + layer.MaxLag,
+			`{layer.Name}: the cloud sea reaches past it, so its edge is never seen (or the cloud sea is off)`,
+			V.CloudSea.Enabled == false or Vista.cloudReach(V.CloudSea) > layer.Radius + layer.MaxLag,
 			string.format("cloud reaches %.0f", Vista.cloudReach(V.CloudSea))
 		)
 

@@ -5,6 +5,8 @@
 -- Every position here is relative to a layer's anchor: the camera's spot on the ground plan,
 -- at the layer's level (Y = 0).
 
+local Config = require(script.Parent.Config)
+
 local Vista = {}
 
 export type Panel = {
@@ -12,6 +14,8 @@ export type Panel = {
 	cframe: CFrame, -- the panel's centre; its front face (-Z) looks in at the anchor
 	size: Vector3,
 	image: string, -- "" for none
+	slice: number?, -- which slice of its picture it shows, 0 first (T-278)
+	slices: number?,
 	skirt: { cframe: CFrame, size: Vector3 }?,
 }
 
@@ -25,6 +29,23 @@ function Vista.panelWidth(radius: number, panels: number): number
 	return 2 * radius * math.sin(math.pi / panels)
 end
 
+-- How many panels one picture spans (`Config.Vista.Mesh.Slices`, T-278): each panel shows
+-- its slice of the picture, so a ring pushed out keeps its pictures whole and the same size
+-- on screen while every part stays under 2 048 studs.
+function Vista.slices(): number
+	return Config.Vista.Mesh.Slices or 1
+end
+
+-- The width a whole picture is drawn across (the chord of `Slices` panels), which sets the
+-- art's height; and panel `i`'s picture (1-based) and slice in it (0-based).
+function Vista.pictureWidth(radius: number, panels: number, slices: number): number
+	return 2 * radius * math.sin(math.pi * slices / panels)
+end
+
+function Vista.pictureOf(i: number, slices: number): (number, number)
+	return (i - 1) // slices + 1, (i - 1) % slices
+end
+
 -- How far panel `i`'s picture is lifted so its end saddles stand where the first picture's
 -- do (`Edges`, a share of the picture's height `art` from its top).
 function Vista.edgeLift(layer: any, i: number, art: number): number
@@ -33,7 +54,8 @@ function Vista.edgeLift(layer: any, i: number, art: number): number
 	if not edges or #images == 0 then
 		return 0
 	end
-	local k = (i - 1) % #images + 1
+	local picture = Vista.pictureOf(i, Vista.slices())
+	local k = (picture - 1) % #images + 1
 	return ((edges[k] or edges[1]) - edges[1]) * art
 end
 
@@ -41,8 +63,9 @@ end
 function Vista.panels(layer: any): { Panel }
 	local n: number = layer.Panels
 	local r: number = layer.Radius
+	local slices = Vista.slices()
 	local width = Vista.panelWidth(r, n)
-	local height = width / layer.Aspect
+	local height = Vista.pictureWidth(r, n, slices) / layer.Aspect
 	local mid = r * math.cos(math.pi / n) -- the anchor to the middle of each panel
 	-- the art's highest summit at `Peak` degrees above level, seen from the anchor
 	local top = math.tan(math.rad(layer.Peak)) * mid + layer.PeakAt * height
@@ -65,11 +88,14 @@ function Vista.panels(layer: any): { Panel }
 				size = Vector3.new(width, h, 1),
 			}
 		end
+		local picture, slice = Vista.pictureOf(i, slices)
 		table.insert(out, {
 			index = i,
 			cframe = cf,
 			size = Vector3.new(width, height, 1),
-			image = if #images > 0 then images[(i - 1) % #images + 1] else "",
+			image = if #images > 0 then images[(picture - 1) % #images + 1] else "",
+			slice = slice,
+			slices = slices,
 			skirt = skirt,
 		})
 	end
@@ -83,8 +109,9 @@ function Vista.arcs(layer: any, mesh: any): { Panel }
 	local n: number = layer.Panels
 	local r: number = layer.Radius
 	local half = math.pi / n
+	local slices = Vista.slices()
 	local width = Vista.panelWidth(r, n)
-	local art = width / layer.Aspect
+	local art = Vista.pictureWidth(r, n, slices) / layer.Aspect
 	local height = art / mesh.ArtShare - mesh.TopV * art
 	local depth = r * (1 - math.cos(half))
 	local mid = r * math.cos(half) -- to the panel's ends, where the art meets its neighbours
@@ -99,11 +126,14 @@ function Vista.arcs(layer: any, mesh: any): { Panel }
 		local at = dir * (r + mid) / 2 -- the box's centre, halfway through its depth
 		local y = centreY + Vista.edgeLift(layer, i, art)
 		local cf = CFrame.lookAt(at + Vector3.yAxis * y, Vector3.yAxis * y)
+		local picture, slice = Vista.pictureOf(i, slices)
 		table.insert(out, {
 			index = i,
 			cframe = cf,
 			size = Vector3.new(width, height, depth),
-			image = if #images > 0 then images[(i - 1) % #images + 1] else "",
+			image = if #images > 0 then images[(picture - 1) % #images + 1] else "",
+			slice = slice,
+			slices = slices,
 			skirt = nil,
 		})
 	end
@@ -124,11 +154,14 @@ export type ArcGeometry = {
 -- centre, so the shading runs on smoothly from one panel into the next. u runs left to right
 -- as seen from the centre; v down the picture (kept just inside its edges, clear of the wrap
 -- to its transparent top). Under it the skirt fades into one even colour of its mist.
-function Vista.arcGeometry(mesh: any): ArcGeometry
+-- `slice` (0 first, of `mesh.Slices`): the mesh shows that slice of the picture (T-278).
+function Vista.arcGeometry(mesh: any, slice: number?): ArcGeometry
 	local radius = 1000
+	local slices = mesh.Slices or 1
+	local j = slice or 0
 	local half = math.rad(mesh.ArcDeg / 2)
 	local width = 2 * radius * math.sin(half)
-	local art = width / 3
+	local art = 2 * radius * math.sin(half * slices) / 3
 	local height = art / mesh.ArtShare - mesh.TopV * art
 	local zc = -radius * (1 + math.cos(half)) / 2
 	local cols: number = mesh.Columns
@@ -139,11 +172,12 @@ function Vista.arcGeometry(mesh: any): ArcGeometry
 		local t = i / cols
 		-- seen from the centre looking +Z, +X is on the left: u = 0 there
 		local a = half - 2 * half * t
+		local u = (j + t) / slices
 		local x, z = radius * math.sin(a), zc + radius * math.cos(a)
 		local n = Vector3.new(-math.sin(a), 0, -math.cos(a))
 		local rows = {
-			{ height / 2, Vector2.new(t, top) },
-			{ height / 2 - art * (base - top), Vector2.new(t, base) },
+			{ height / 2, Vector2.new(u, top) },
+			{ height / 2 - art * (base - top), Vector2.new(u, base) },
 			{ fadeY, mesh.SkirtUV },
 			{ -height / 2, mesh.SkirtUV },
 		}

@@ -305,9 +305,12 @@ function Tests.run()
 			grows(M.Ahead) and grows(M.Behind) and M.Ahead[1].Studs > M.Behind[1].Studs and M.Ahead[#M.Ahead].Studs >= M.Behind[#M.Behind].Studs,
 			`ahead {#M.Ahead} steps to {M.Ahead[#M.Ahead].Studs}, behind {#M.Behind} to {M.Behind[#M.Behind].Studs}`
 		)
-		-- (T-278) NOTHING DRAWN REACHES THE VISTA: the furthest step, a chunk past it, the camera
-		-- at its furthest behind the car, and a corridor tile of ground past the road, all
-		-- inside the nearest ring's nearest point (a flat panel's middle, trailing its most)
+		-- (T-278) THE NEAREST RING IS BEYOND EVERYTHING DRAWN, at every Road ahead x Road behind x
+		-- Ground detail: the road (its step, a chunk past it, the camera at its furthest behind
+		-- the car, and a corridor tile of ground past the road) and the ground round the car
+		-- (its `Reach` and `RoadPad`, as `VistaTests` counts it), inside the nearest ring's
+		-- nearest point (a flat panel's middle, trailing its most). The ground's whole coarse
+		-- tiles poking past its reach are not counted: T-281 bounds them.
 		do
 			local Vista = require(ReplicatedStorage.Shared.Vista)
 			local nearest = math.huge
@@ -317,20 +320,32 @@ function Tests.run()
 			local C = Config.Camera
 			local camBack = C.CamOffset.Magnitude * C.PlayerZoomMax
 			local tile = G.RoadCoarsest * G.TileCells * math.sqrt(2)
-			local most = math.max(M.Ahead[#M.Ahead].Studs, M.Behind[#M.Behind].Studs)
-			local reach = most + M.ChunkLength + camBack + tile
+			local worst, worstName, combos = 0, "", 0
+			for _, a in M.Ahead do
+				for _, b in M.Behind do
+					for _, d in G.Detail do
+						combos += 1
+						local road = math.max(a.Studs, b.Studs) + M.ChunkLength + camBack + tile
+						local ground = d.Reach + (G.RoadPad or 0)
+						local far = math.max(road, ground)
+						if far > worst then
+							worst, worstName = far, `{a.Name} ahead, {b.Name} behind, {d.Name} ground ({math.floor(road)} road, {math.floor(ground)} ground)`
+						end
+					end
+				end
+			end
 			check(
-				"the road and its ground stop short of the nearest vista ring",
-				reach <= nearest,
-				`furthest {math.floor(reach)} studs from the camera ({most} + chunk {M.ChunkLength} + camera {math.floor(camBack)} + tile {math.floor(tile)}); nearest ring {math.floor(nearest)}`
+				"the nearest vista ring is beyond everything drawn, at every setting",
+				worst <= nearest,
+				`{combos} settings; furthest {math.floor(worst)} studs from the camera at {worstName}; nearest ring {math.floor(nearest)}`
 			)
 		end
 		local aPc, aTouch = M.Ahead[M.AheadDefault], M.Ahead[M.AheadTouchDefault]
 		local bPc, bTouch = M.Behind[M.BehindDefault], M.Behind[M.BehindTouchDefault]
 		check(
-			"the defaults are Medium ahead (1 200) and Short behind (500)",
-			aPc ~= nil and aTouch ~= nil and bPc ~= nil and bTouch ~= nil and aPc.Studs == 1200 and aTouch.Studs <= aPc.Studs
-				and bPc.Studs == 500 and bTouch.Studs <= bPc.Studs,
+			"the defaults are Medium ahead (1 600) and Short behind (600)",
+			aPc ~= nil and aTouch ~= nil and bPc ~= nil and bTouch ~= nil and aPc.Studs == 1600 and aTouch.Studs <= aPc.Studs
+				and bPc.Studs == 600 and bTouch.Studs <= bPc.Studs,
 			`ahead PC {aPc and aPc.Studs}, touch {aTouch and aTouch.Studs}; behind PC {bPc and bPc.Studs}, touch {bTouch and bTouch.Studs}`
 		)
 

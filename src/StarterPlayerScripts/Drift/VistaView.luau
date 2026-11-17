@@ -51,7 +51,7 @@ type Ridge = {
 	centre: Vector3, -- flat, Y = 0
 	anchor: Part,
 	folder: Folder,
-	decals: { Decal },
+	decals: { any }, -- Decals, or Textures showing a slice (T-278)
 	surfaces: { SurfaceAppearance },
 	skirts: { { part: BasePart, base: Color3 } },
 	images: { string },
@@ -136,17 +136,15 @@ end
 -- little is in it, and was kept for the whole session until T-273, when the road ran out; a
 -- fixed-size copy (T-273) its own size, 1 tile. That copy is kept only where the content
 -- cannot be made opaque, since a MeshPart made from an EditableMesh reads its shape from it.
-local arcTemplate: MeshPart? = nil
-local arcMesh: EditableMesh? = nil
+-- One per slice of a picture (`Config.Vista.Mesh.Slices`, T-278): each shows its share.
+local arcTemplates: { MeshPart } = {}
+local arcMeshes: { EditableMesh } = {}
 local arcOpaque = false
 local arcError: string? = nil
 
-local function loadArc(): MeshPart?
-	if arcTemplate or arcError then
-		return arcTemplate
-	end
+local function loadSlice(slice: number): MeshPart
 	local ok, res = pcall(function()
-		local g = Vista.arcGeometry(Config.Vista.Mesh)
+		local g = Vista.arcGeometry(Config.Vista.Mesh, slice)
 		local em = AssetService:CreateEditableMesh({ FixedSize = false })
 		assert(em, "this device would not make an EditableMesh (out of its budget)")
 		local vs, ns, us = {}, {}, {}
@@ -190,16 +188,38 @@ local function loadArc(): MeshPart?
 			end
 			error(part)
 		end
-		arcMesh = fixed
-		arcOpaque = fixed == nil
+		if fixed then
+			table.insert(arcMeshes, fixed)
+		end
 		return part
 	end)
-	if ok then
-		arcTemplate = res
-	else
-		arcError = tostring(res)
+	if not ok then
+		error(res)
 	end
-	return arcTemplate
+	return res
+end
+
+-- Every slice's mesh, or nil if any could not be made (then the layers are flat).
+local function loadArc(): { MeshPart }?
+	if arcError then
+		return nil
+	end
+	if #arcTemplates == 0 then
+		local ok, res = pcall(function()
+			local made = {}
+			for j = 0, (Config.Vista.Mesh.Slices or 1) - 1 do
+				made[j + 1] = loadSlice(j)
+			end
+			return made
+		end)
+		if not ok then
+			arcError = tostring(res)
+			return nil
+		end
+		arcTemplates = res
+		arcOpaque = #arcMeshes == 0
+	end
+	return arcTemplates
 end
 
 local function surfaceFor(image: string): SurfaceAppearance?
@@ -311,10 +331,10 @@ local function noteImage(ridge: Ridge, image: string)
 	end
 end
 
-function VistaView._fillCurved(self: View, ridge: Ridge, layer: any, arc: MeshPart)
+function VistaView._fillCurved(self: View, ridge: Ridge, layer: any, arcs: { MeshPart })
 	local at = ridge.anchor.CFrame
 	for _, panel in Vista.arcs(layer, Config.Vista.Mesh) do
-		local p = arc:Clone()
+		local p = arcs[(panel.slice or 0) + 1]:Clone()
 		p.Name = `{layer.Name}_{panel.index}`
 		p.Size = panel.size
 		p.CFrame = at * panel.cframe
@@ -347,9 +367,16 @@ function VistaView._fillFlat(self: View, ridge: Ridge, layer: any)
 		backdrop(p)
 		weld(ridge.anchor, p)
 		if panel.image ~= "" then
-			local d = Instance.new("Decal")
+			-- a slice of its picture (T-278): a Texture as wide as the whole picture, shifted
+			local slices = panel.slices or 1
+			local d: any = if slices > 1 then Instance.new("Texture") else Instance.new("Decal")
 			d.Face = Enum.NormalId.Front
 			d.Texture = panel.image
+			if slices > 1 then
+				d.StudsPerTileU = panel.size.X * slices
+				d.StudsPerTileV = panel.size.Y
+				d.OffsetStudsU = panel.size.X * (panel.slice or 0)
+			end
 			d.Parent = p
 			table.insert(ridge.decals, d)
 			noteImage(ridge, panel.image)
@@ -572,7 +599,7 @@ function VistaView.DebugState(self: View): { [string]: any }
 		meshError = arcError,
 		-- the arc's mesh holds none of the client's mesh memory (T-274), or a fixed-size copy
 		arcOpaque = arcOpaque,
-		arcFixed = arcMesh ~= nil,
+		arcFixed = #arcMeshes > 0,
 		originY = self.originY,
 		lift = self.lift,
 		layers = layers,

@@ -650,38 +650,37 @@ local Spline = {
 		-- THE PLAYER'S "ROAD AHEAD" AND "ROAD BEHIND" (Settings, Graphics; docs/game/SETTINGS.md,
 		-- T-230, T-263, T-278): how far in front of the car, and behind it, the road and the ground
 		-- along it are drawn: at least `Studs` (chunk-aligned, so up to a chunk more).
-		-- CAPPED INSIDE THE VISTA (T-278, the user, 2026-11-17: "i don't want to load or put art
-		-- that gets cut or obscured by the terrain going through it ... cut the render distance
-		-- shorter"). The nearest painted ring, `Config.Vista` layer "Near", stands 2 620 studs
-		-- from the camera; a flat panel's middle is nearer (2 620 cos 18 = 2 492) and the ring
-		-- trails the camera by up to its `MaxLag` (60): 2 432 at worst. The furthest road is
-		-- `Studs` + a chunk (480) past the car, the camera up to 83 behind it (`PlayerZoomMax`),
-		-- and the corridor's ground a 256-stud tile (`RoadCoarsest` x `TileCells`, 362 across
-		-- its diagonal) past that: so no step may exceed 2 432 - 480 - 83 - 362 = 1 507
-		-- (`SplineMeshTests` works it out from `Config.Vista` and fails past it). Ahead stays
-		-- longer than behind (the user's earlier wish: short behind about half short ahead).
-		-- Every step ahead is within `Near.Ahead`, so the road ahead is all drawn whole.
+		-- CAPPED INSIDE THE VISTA (T-278, the user, 2026-11-17: no road or terrain cutting into
+		-- the art; then "Small vista move": the rings 1.37 times further out, `Config.Vista`).
+		-- The nearest ring, "Near", is now 3 589 studs from the camera; a flat panel's middle
+		-- is nearer (3 589 cos 9 = 3 545) and it trails the camera by up to 82: 3 463 at worst.
+		-- The furthest road is `Studs` + a chunk (480) past the car, the camera up to 83
+		-- behind it (`PlayerZoomMax`), and the corridor's ground a 256-stud tile
+		-- (`RoadCoarsest` x `TileCells`, 362 across its diagonal) past that: so no step may
+		-- exceed 3 463 - 480 - 83 - 362 = 2 538 (`SplineMeshTests` works it out from
+		-- `Config.Vista` for every setting). Ahead stays longer than behind at every step.
+		-- Every step ahead past `Near.Ahead` is drawn at the far detail.
 		-- `GroundTiles`: more tiles for the ground's corridor beside the longer road (32-stud
 		-- tiles), about 15 for each 1 000 studs; never more than `Ground.CorridorMost` past Ultra's own.
 		-- A DEVICE CAN ONLY DRAW ROAD THE SERVER HAS SENT: `RoadService` lays the longest
 		-- `Ahead` step past the end of the leader's section.
 		Ahead = {
-			{ Name = "Short", Studs = 1000, GroundTiles = 15 },
-			{ Name = "Medium", Studs = 1200, GroundTiles = 18 },
-			{ Name = "Long", Studs = 1350, GroundTiles = 20 },
-			{ Name = "Longest", Studs = 1500, GroundTiles = 22 },
+			{ Name = "Short", Studs = 1200, GroundTiles = 18 },
+			{ Name = "Medium", Studs = 1600, GroundTiles = 24 },
+			{ Name = "Long", Studs = 2000, GroundTiles = 30 },
+			{ Name = "Longest", Studs = 2500, GroundTiles = 37 },
 		},
-		AheadDefault = 2, -- Medium, 1 200
+		AheadDefault = 2, -- Medium, 1 600
 		AheadTouchDefault = 2, -- the same on a phone or tablet
 		-- behind: a chunk behind was built when it was ahead, so each step back costs the chunks
 		-- it keeps, not building (a whole one is drawn again far once it is past `Near`)
 		Behind = {
-			{ Name = "Short", Studs = 500, GroundTiles = 8 },
-			{ Name = "Medium", Studs = 750, GroundTiles = 11 },
-			{ Name = "Long", Studs = 1000, GroundTiles = 15 },
-			{ Name = "Longest", Studs = 1200, GroundTiles = 18 },
+			{ Name = "Short", Studs = 600, GroundTiles = 9 },
+			{ Name = "Medium", Studs = 1000, GroundTiles = 15 },
+			{ Name = "Long", Studs = 1500, GroundTiles = 22 },
+			{ Name = "Longest", Studs = 2000, GroundTiles = 30 },
 		},
-		BehindDefault = 1, -- Short, 500, on keyboard and mouse, or gamepad
+		BehindDefault = 1, -- Short, 600, on keyboard and mouse, or gamepad
 		BehindTouchDefault = 1, -- a phone or tablet
 		-- the ground beside the road behind stays as sharp as ahead for this far back, and is
 		-- `Ground.RoadCoarsest` past it (it was Short's 300 studs before T-263 tripled the steps)
