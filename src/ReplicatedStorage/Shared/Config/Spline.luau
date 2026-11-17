@@ -379,27 +379,39 @@ local Spline = {
 		BandStuds = 3, -- studs of gravel across the band: 29 pixels a stud
 		PeriodStuds = 64, -- studs along one copy: 16 pixels a stud
 		Seed = 270,
-		-- the bed between the stones: dust, mottled by up to `BedMottle`, darker in the gaps
-		BedMottle = 0.15,
-		-- the stones, by size: so many a square stud, a radius range (studs), flat facets each
-		Stones = {
-			{ Density = 22, Radius = { 0.04, 0.08 }, Facets = 4 },
-			{ Density = 7, Radius = { 0.08, 0.16 }, Facets = 5 },
-			{ Density = 1.2, Radius = { 0.16, 0.26 }, Facets = 6 },
+		-- THE LOOK (send-back: "too noisy and static-y ... match road texture stylization, that
+		-- sort of anime look"): an anime background's gravel, not a photo's. No per-pixel noise.
+		-- The bed: three flat values (`Colours.GravelDark`, `GravelDust`, `GravelLight`) in soft
+		-- shapes over `BlotchStuds` (across, along), stepped at `BedSteps` (noise -1..1) with a
+		-- soft edge `BedSoft` wide
+		BlotchStuds = { 0.9, 1.6 },
+		BedSteps = { -0.3, 0.3 },
+		BedSoft = 0.06,
+		-- the pebbles, by size: so many a square stud, a radius range (studs); spaced at least
+		-- `PebbleGap` studs apart, each radius stretched by `Aspect`
+		Pebbles = {
+			{ Density = 0.12, Radius = { 0.24, 0.34 } },
+			{ Density = 0.7, Radius = { 0.12, 0.19 } },
 		},
-		-- the odd larger rock, a copy: so many, how far across the band (studs), how big
-		Rocks = { Count = 5, Across = { 0.6, 2.2 }, Radius = { 0.3, 0.5 }, Facets = 6 },
-		Aspect = { 0.75, 1.25 }, -- a stone's two radii, as shares of its size
-		LightAngle = -125, -- degrees, in the band (across, along): where the facets are lit from
-		FacetShade = 0.35, -- how much a facet facing the light (or away) is lighter (or darker)
-		Rim = 0.75, -- of a stone's radius, squared, past which its rim is darker by `RimDark`
-		RimDark = 0.8,
-		StoneGrain = 0.06, -- a stone's pixels vary by this
-		Shadow = 0.45, -- how dark a stone's shadow is at its middle
+		PebbleGap = 0.06,
+		Aspect = { 0.8, 1.2 },
+		-- cel shading: lit from `LightAngle` (degrees, in the band's across and along); a cap
+		-- `CapSize` of the pebble, `CapOffset` toward the light, `CapLight` of the way to white;
+		-- the side facing away past `ShadeFrom` darker by `ShadeDark`; a shadow on the bed
+		-- `ShadowOffset` of a radius away from the light, `ShadowDark` dark
+		LightAngle = -125,
+		CapSize = 0.5,
+		CapOffset = 0.3,
+		CapLight = 0.22,
+		ShadeFrom = 0.25,
+		ShadeDark = 0.72,
+		ShadowOffset = 0.3,
+		ShadowDark = 0.6,
 		-- THE EDGES, no hard seams: the tarmac's dusty edge takes over raggedly over the band's
 		-- first `EdgeSoft` studs; grass tufts creep in from `GrassFrom` studs to its end
 		EdgeSoft = 0.45,
 		GrassFrom = 2.4,
+		EdgeStuds = { 0.5, 1.2 }, -- the size of the edges' ragged shapes (across, along)
 		-- THE MAPPING: the bevel runs from the band's start (the tarmac's edge) to its end (the
 		-- grass) and, in a gravel run, to `RunFoot` only (no grass where gravel goes on); the
 		-- strip over a gravel run's flat runoff, from its foot to its lip, reads `RunFrom` to
