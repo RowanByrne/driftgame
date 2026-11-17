@@ -1193,6 +1193,8 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 			local em = road.em
 			local TM = Config.Spline.Tarmac
 			local pLift = TM.PatchLift + (o.tolerance or M.Tolerance) * 0.2
+			-- a far chunk (T-263) lays its rows further apart: the patch's shape, not its ragged sides
+			local coarse = math.clamp((o.tolerance or M.Tolerance) / M.Tolerance, 1, 8)
 			-- a point on the drawn tarmac at (s, d): in the strip between two cuts, on the one
 			-- of its two triangles it falls in (as `strip` makes them)
 			local function onDrawn(s: number, d: number): Vector3
@@ -1211,7 +1213,7 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 				return B[i + 2] + (B[i + 1] - B[i + 2]) * (1 - u) + (A[i + 2] - B[i + 2]) * (1 - v)
 			end
 			for _, p in roadPatches do
-				local rows = RoadTexture.patchRows(p, s0, s1)
+				local rows = RoadTexture.patchRows(p, s0, s1, coarse)
 				for _, c in cuts do
 					if c > p.a and c < p.b then
 						table.insert(rows, c)

@@ -356,8 +356,9 @@ end
 
 -- The rows a chunk lays a patch with, between `s0` and `s1`: its ends, a row in from each
 -- end where the feather along stops, and one every `PatchStep` between, all on a grid of
--- the patch's own (the chunk's own cross-sections are added by the mesh).
-function RoadTexture.patchRows(p: RoadPatch, s0: number, s1: number): { number }
+-- the patch's own (the chunk's own cross-sections are added by the mesh). `coarse` (1 or
+-- more) spaces them further: a far chunk's patch needs only its shape, not its ragged sides.
+function RoadTexture.patchRows(p: RoadPatch, s0: number, s1: number, coarse: number?): { number }
 	local T = Config.Spline.Tarmac
 	local rows = {}
 	local function add(s: number)
@@ -368,7 +369,7 @@ function RoadTexture.patchRows(p: RoadPatch, s0: number, s1: number): { number }
 	local fa = math.min(T.PatchSoftAlong, (p.b - p.a) * 0.5)
 	add(p.a)
 	add(p.a + fa)
-	local n = math.max(1, math.round((p.b - p.a - 2 * fa) / T.PatchStep))
+	local n = math.max(1, math.round((p.b - p.a - 2 * fa) / (T.PatchStep * (coarse or 1))))
 	for j = 1, n - 1 do
 		add(p.a + fa + (p.b - p.a - 2 * fa) * j / n)
 	end
