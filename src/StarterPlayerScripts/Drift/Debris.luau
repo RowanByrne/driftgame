@@ -8,11 +8,13 @@
 -- small anchored part in the ground's own material and colour, so the scene lights and shades
 -- it like the ground it came out of, it casts a shadow, and it tumbles in 3D.
 --
--- THE SHAPES ARE MADE HERE. `Config.Fx.Ground.Chunks.Shapes` jagged rocks, each an
--- icosahedron (20 triangles; the user asked for 30 at most) with its corners pushed in and out
--- and squashed a little, faces unshared so it is faceted. Each is an EditableMesh made once,
--- turned into one MeshPart, and the pool is clones of those. Nothing is uploaded. If a mesh
--- can't be made (a client out of EditableMesh budget), the pool is plain cubes instead.
+-- THE SHAPES ARE ROBLOX'S OWN WEDGES. Each clod is a `CornerWedgePart` or a `WedgePart` of
+-- its own uneven size, so tumbling it reads as a jagged shard of soil of 8 triangles or fewer
+-- (the user asked for 30 at most). NO EDITABLEMESH, ON PURPOSE: a first build made six
+-- 20-triangle rocks as EditableMeshes, and those took the client's EditableMesh budget that
+-- the tyre-mark ribbons need, so no marks were built at all (measured in DR-Lane2: both
+-- ribbons failed "no EditableMesh", the console "reaching memory budget limits"). A real rock
+-- mesh would have to be an uploaded asset.
 --
 -- THE COST IS BOUNDED BY THE POOL. `Chunks.Pool` parts are made once, in a client-only
 -- folder (`Config.Fx.Names.DebrisFolder`), and never again: a throw takes the next slot round
@@ -21,7 +23,6 @@
 -- plane of the ground it was thrown from, lies there, and sinks into it at the end of its life,
 -- so it goes without a property being faded.
 
-local AssetService = game:GetService("AssetService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
 
@@ -32,20 +33,9 @@ Debris.__index = Debris
 
 local PARK = CFrame.new(0, 1e5, 0)
 
--- The icosahedron: 12 corners, 20 faces.
-local PHI = (1 + math.sqrt(5)) / 2
-local CORNERS = {
-	{ -1, PHI, 0 }, { 1, PHI, 0 }, { -1, -PHI, 0 }, { 1, -PHI, 0 },
-	{ 0, -1, PHI }, { 0, 1, PHI }, { 0, -1, -PHI }, { 0, 1, -PHI },
-	{ PHI, 0, -1 }, { PHI, 0, 1 }, { -PHI, 0, -1 }, { -PHI, 0, 1 },
-}
-local FACES = {
-	{ 1, 12, 6 }, { 1, 6, 2 }, { 1, 2, 8 }, { 1, 8, 11 }, { 1, 11, 12 },
-	{ 2, 6, 10 }, { 6, 12, 5 }, { 12, 11, 3 }, { 11, 8, 7 }, { 8, 2, 9 },
-	{ 4, 10, 5 }, { 4, 5, 3 }, { 4, 3, 7 }, { 4, 7, 9 }, { 4, 9, 10 },
-	{ 5, 10, 6 }, { 3, 5, 12 }, { 7, 3, 11 }, { 9, 7, 8 }, { 10, 9, 2 },
-}
-Debris.TRIANGLES = #FACES
+-- The shapes the pool cycles through, and the most triangles any of them has.
+local SHAPES = { "CornerWedgePart", "WedgePart" }
+Debris.TRIANGLES = 8
 
 type Slot = {
 	part: BasePart,
@@ -71,9 +61,6 @@ function Debris.new(parent: Instance?)
 		parent = parent or Workspace,
 		folder = nil :: Folder?,
 		ready = false,
-		building = false,
-		meshes = {} :: { EditableMesh },
-		shapes = 0, -- how many rock shapes were made (0: cubes)
 		slots = {} :: { Slot },
 		ring = 0,
 		moveParts = {} :: { BasePart },
@@ -83,80 +70,17 @@ function Debris.new(parent: Instance?)
 	}, Debris)
 end
 
--- One jagged rock, about 2 studs across at scale 1, as an EditableMesh.
-local function rockMesh(rng: Random): EditableMesh
-	local C = Config.Fx.Ground.Chunks
-	local em = AssetService:CreateEditableMesh({ FixedSize = false })
-	assert(em, "no EditableMesh")
-	local corners = {}
-	local scale = 1 / math.sqrt(1 + PHI * PHI)
-	for i, c in CORNERS do
-		local push = rng:NextNumber(C.Jag[1], C.Jag[2])
-		corners[i] = Vector3.new(c[1], c[2] * C.Squash, c[3]) * (scale * push)
-	end
-	for _, f in FACES do
-		local a, b, c = corners[f[1]], corners[f[2]], corners[f[3]]
-		local n = (b - a):Cross(c - a)
-		if n:Dot(a + b + c) < 0 then -- keep every face pointing out
-			b, c = c, b
-			n = -n
-		end
-		n = n.Unit
-		local va, vb, vc = em:AddVertex(a), em:AddVertex(b), em:AddVertex(c)
-		local ni = em:AddNormal(n)
-		local face = em:AddTriangle(va, vb, vc)
-		em:SetFaceNormals(face, { ni, ni, ni })
-	end
-	return em
-end
-
-local function cube(): BasePart
-	local part = Instance.new("Part")
-	part.Size = Vector3.one
-	part.TopSurface = Enum.SurfaceType.Smooth
-	part.BottomSurface = Enum.SurfaceType.Smooth
-	return part
-end
-
--- Make the shapes and the pool, once. YIELDS (making a MeshPart does), so `Wheels.new` runs it
--- in its own thread; until it is `ready`, nothing is thrown.
+-- Make the pool, once. Safe to call again.
 function Debris.Build(self)
-	if self.folder or self.building then
+	if self.folder then
 		return
 	end
-	self.building = true
 	local C = Config.Fx.Ground.Chunks
 	local rng = self.rng
-	local templates = {}
-	local ok, err = pcall(function()
-		for _ = 1, C.Shapes do
-			local em = rockMesh(rng)
-			local part = AssetService:CreateMeshPartAsync(Content.fromObject(em), {
-				CollisionFidelity = Enum.CollisionFidelity.Box,
-				RenderFidelity = Enum.RenderFidelity.Precise,
-			})
-			assert(part, "no MeshPart")
-			table.insert(self.meshes, em)
-			table.insert(templates, part)
-		end
-	end)
-	if not ok then
-		warn(`Debris: no rock meshes ({err}); the clods are cubes`)
-		for _, t in templates do
-			t:Destroy()
-		end
-		table.clear(templates)
-		for _, em in self.meshes do
-			em:Destroy()
-		end
-		table.clear(self.meshes)
-	end
-	self.shapes = #templates
-
 	local folder = Instance.new("Folder")
 	folder.Name = Config.Fx.Names.DebrisFolder
 	for i = 1, C.Pool do
-		local part = if #templates > 0 then templates[(i - 1) % #templates + 1]:Clone() else cube()
+		local part = Instance.new(SHAPES[(i - 1) % #SHAPES + 1]) :: BasePart
 		part.Name = string.format("Clod_%d", i)
 		part.Anchored = true
 		part.CanCollide = false
@@ -165,9 +89,14 @@ function Debris.Build(self)
 		part.CastShadow = C.CastShadow
 		part.Material = C.Material
 		part.Color = C.Colours[rng:NextInteger(1, #C.Colours)]
-		-- Each slot its own size, picked once: the variety is in the pool, not per throw.
+		-- Each slot its own uneven size, picked once: the variety is in the pool, not per throw.
 		local d = rng:NextNumber(C.Size[1], C.Size[2])
-		local size = if #templates > 0 then Vector3.new(d, d * C.Squash, d) else Vector3.new(d, d * C.Squash, d) * 0.8
+		local u = C.Uneven
+		local size = Vector3.new(
+			d * rng:NextNumber(u[1], u[2]),
+			d * C.Squash * rng:NextNumber(u[1], u[2]),
+			d * rng:NextNumber(u[1], u[2])
+		)
 		part.Size = size
 		part.Transparency = 1
 		part.CFrame = PARK
@@ -187,16 +116,12 @@ function Debris.Build(self)
 			bounces = 0,
 			landed = false,
 			rest = Vector3.zero,
-			half = size.Y * 0.5,
+			half = math.min(size.X, size.Y, size.Z) * 0.5,
 		})
-	end
-	for _, t in templates do
-		t:Destroy()
 	end
 	folder.Parent = self.parent
 	self.folder = folder
 	self.ready = true
-	self.building = false
 end
 
 local function park(slot: Slot)
@@ -314,10 +239,6 @@ function Debris.Destroy(self)
 	if self.folder then
 		self.folder:Destroy()
 	end
-	for _, em in self.meshes do
-		em:Destroy()
-	end
-	table.clear(self.meshes)
 	self.folder = nil
 	self.ready = false
 	table.clear(self.slots)
@@ -337,8 +258,8 @@ function Debris.DebugState(self)
 	return {
 		ready = self.ready,
 		pool = #self.slots,
-		shapes = self.shapes, -- rock meshes made; 0 means the pool is cubes
-		triangles = if self.shapes > 0 then Debris.TRIANGLES else 12,
+		shapes = #SHAPES, -- built-in wedge shapes; no EditableMesh
+		triangles = Debris.TRIANGLES,
 		live = live,
 		flying = flying,
 		spawned = self.spawned,

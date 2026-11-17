@@ -606,7 +606,7 @@ function Tests.run(opts)
 		-- The grass ribbon is built in its own thread (making a mesh yields): wait for it.
 		local w = Wheels.new(ServerStorage)
 		local waitUntil = os.clock() + 15
-		while (not w:Ready() or not w.debris.ready) and not w.marks.failed and os.clock() < waitUntil do
+		while not w:Ready() and not w.marks.failed and os.clock() < waitUntil do
 			task.wait()
 		end
 		local attached = w:Attach(rig)
@@ -952,10 +952,11 @@ function Tests.run(opts)
 		end
 		local d = w.debris:DebugState()
 		check(
-			"at a high angle on grass: only the trench, and low-poly clods are thrown",
+			"at a high angle on grass: only the trench, and low-poly clods (built-in wedges) are thrown",
 			w.marks:Kind(rl.index) == "rut"
 				and d.ready and d.live > 0 and d.pool == G.Chunks.Pool
-				and d.shapes == G.Chunks.Shapes and d.triangles <= 30
+				and d.triangles <= 30
+				and #w.debris.folder:GetDescendants() == G.Chunks.Pool -- no meshes: built-in wedges
 				and #w.debris.folder:GetChildren() == G.Chunks.Pool,
 			string.format(
 				"%d clods out of %d (%d in the air), %d thrown in a second; %d shapes of %d triangles; grass spray %.1f/s",

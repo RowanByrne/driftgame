@@ -445,9 +445,9 @@ function Wheels.new(marksParent: Instance?): Wheels
 		GroundMarks.Build(rubber, marksParent)
 		GroundMarks.Build(marks, marksParent)
 	end)
-	-- The mud's 3D clods (T-283): their shapes and pool are made in their own thread too.
+	-- The mud's 3D clods (T-283): a pool of built-in wedge parts, made now.
 	local debris = Debris.new(marksParent)
-	task.spawn(Debris.Build, debris)
+	Debris.Build(debris)
 	return setmetatable({
 		body = nil,
 		wheels = {},

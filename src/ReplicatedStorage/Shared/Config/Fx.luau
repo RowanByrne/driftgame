@@ -591,7 +591,7 @@ return {
 		-- THE MUD: small low-poly 3D clods (T-283, `Drift/Debris`). A flat picture turned to the
 		-- camera read as a sticker however it was painted (the user: "the dirt and grass sprites
 		-- look like shit... i don't think it's about the art style"), so a clod is a real part:
-		-- a jagged rock of `Shape.Triangles` faces, flat-shaded, in the ground's `Ground` material
+		-- a jagged wedge shard, flat-shaded, in the ground's `Ground` material
 		-- and the rut's soils, lit and shadowed by the scene. The user, on the first cubes: "try
 		-- super low poly (30 tri max) smaller chunks instead of the cubes we have now, and tone up
 		-- the rate at which they get spawned and flung".
@@ -615,14 +615,13 @@ return {
 			MinBounceSpeed = 4, -- studs/s into the ground below which it just lands
 			CastShadow = true,
 
-			-- The shapes: `Shapes` rocks, each an icosahedron (20 triangles, 30 at most asked)
-			-- with every corner pushed in or out and the whole squashed a little, faces not
-			-- shared, so each is faceted. Made in code as EditableMeshes (`Drift/Debris`): 12
-			-- corners and 60 vertices each, nothing uploaded. If a mesh can't be made, cubes.
-			Shapes = 6,
+			-- The shapes: Roblox's own corner wedges and wedges, each of its own uneven size, so a
+			-- tumbling clod reads as a jagged shard (8 triangles at most). NOT EDITABLEMESHES:
+			-- 20-triangle rocks made in code took the EditableMesh budget the tyre marks need,
+			-- and the marks went (`Drift/Debris`).
 			Seed = 283,
-			Jag = { 0.7, 1.15 }, -- each corner's distance from the middle, as a share
 			Squash = 0.75, -- height to width
+			Uneven = { 0.7, 1.3 }, -- each side's share of the clod's size
 
 			Material = Enum.Material.Ground,
 			Colours = { -- the rut's soils (`Grass.TrenchMark`), lifted a shade to read in the air
