@@ -7,6 +7,7 @@
 -- client makes, however few it keeps: past a few thousand the client freezes for seconds at a
 -- time (T-276's bench: from about 2 050 made at 5 a second; the same churn not made opaque
 -- never froze in 6 000). The road makes one a chunk it builds, for as long as the player drives.
+-- The cost is the session's (measured, T-284: a new Studio playtest starts from nothing).
 --
 -- SO every maker of opaque content goes through `make` here, and past `Config.Spline.Mesh
 -- .OpaqueCap` it is refused, as a client that refuses opaque content refuses it: each maker
