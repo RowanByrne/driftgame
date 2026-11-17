@@ -1311,6 +1311,25 @@ function DriftController:DebugWheelFx(on: boolean?): boolean
 	return self.wheels:SetEnabled(on == true)
 end
 
+-- How grass and mud are thrown (T-283): "chunks", "specks" or "sprites", or the next one
+-- round when no mode is given. The on-screen switch (`Drift/DebrisSwitch`) and the tests
+-- both come through here. Returns the mode it is now in.
+function DriftController:SetDebrisMode(mode: string?): string?
+	if not self.wheels then
+		return nil
+	end
+	if mode == nil then
+		local modes = Config.Fx.Ground.Debris.Modes
+		local at = table.find(modes, self.wheels.debrisMode) or 0
+		mode = modes[at % #modes + 1]
+	end
+	return self.wheels:SetDebrisMode(mode :: string)
+end
+
+function DriftController:DebrisMode(): string?
+	return if self.wheels then self.wheels.debrisMode else nil
+end
+
 -- What the car's two sounds are doing, and WHY (T-064, features/car-fx.md "Testing").
 -- Read against the live state, so a playtest can say "the squeal is silent because the
 -- slip is 3 degrees" and "the pitch is 1.44 because the box just shifted into second at

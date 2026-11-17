@@ -233,11 +233,13 @@ return {
 		Orientation = Enum.ParticleOrientation.FacingCameraWorldUp, -- turns only about world up,
 		-- so a puff painted lit from above stays lit from above
 		ZOffset = -0.5, -- drawn behind everything else a wheel throws
-		RateMin = 8, -- particles/s at the smallest slide that marks at all
-		RateMax = 60, -- particles/s at 180 degrees of slip. Lerped by `slip / pi`
+		RateMin = 10, -- particles/s at the smallest slide that marks at all. MEASURED (T-283,
+		-- the user driving the billows: "increase the rate of spawning them a bit and lower the
+		-- size of them a bit"): was 8
+		RateMax = 75, -- particles/s at 180 degrees of slip. Lerped by `slip / pi`. Was 60
 		Lifetime = { 0.8, 1.6 }, -- s, min and max per particle
-		SizeStart = 2.5, -- studs when a particle is born
-		SizeEnd = 11, -- studs when it dies. Smoke expands; this is the whole of why it
+		SizeStart = 2.1, -- studs when a particle is born (was 2.5, T-283)
+		SizeEnd = 9, -- studs when it dies (was 11, T-283). Smoke expands; this is the whole of why it
 		-- reads as smoke and not as dust
 		Transparency = 0.55, -- at its thickest, a quarter of the way through its life
 		Speed = { 2, 6 }, -- studs/s a particle leaves the contact patch at
@@ -578,6 +580,51 @@ return {
 				RotationDegrees = { -180, 180 },
 				RotationSpeed = { -150, 150 }, -- heavier: less spin (was ±300)
 			},
+			-- THE FINE SPRAY (T-283, `Debris.Mode` "specks"): the same two emitters, re-dressed as
+			-- many tiny streaks along their flight rather than objects you can make out. The
+			-- sheets' own colours darkened by `Colour`; the cloud carries the bulk.
+			Specks = {
+				Clippings = {
+					Sheet = "GrassBits",
+					Orientation = Enum.ParticleOrientation.VelocityParallel,
+					Squash = 1.4, -- stretched along the flight, like the scrape's sparks
+					ZOffset = 0.3,
+					Colour = Color3.fromRGB(200, 215, 170),
+					RateMin = 30,
+					RateMax = 90,
+					Lifetime = { 0.3, 0.55 },
+					SizeStart = 0.24,
+					SizeEnd = 0.14,
+					Transparency = 0,
+					FadeIn = 0,
+					Speed = { 14, 26 },
+					SpreadDegrees = 30,
+					RiseAcceleration = -60,
+					Drag = 1,
+					RotationDegrees = { 0, 0 },
+					RotationSpeed = { 0, 0 },
+				},
+				Dirt = {
+					Sheet = "Clods",
+					Orientation = Enum.ParticleOrientation.VelocityParallel,
+					Squash = 1.4,
+					ZOffset = 0.3,
+					Colour = Color3.fromRGB(120, 100, 80),
+					RateMin = 30,
+					RateMax = 100, -- the mobile cap
+					Lifetime = { 0.35, 0.6 },
+					SizeStart = 0.28,
+					SizeEnd = 0.16,
+					Transparency = 0,
+					FadeIn = 0,
+					Speed = { 18, 30 },
+					SpreadDegrees = 24,
+					RiseAcceleration = -70,
+					Drag = 0.6,
+					RotationDegrees = { 0, 0 },
+					RotationSpeed = { 0, 0 },
+				},
+			},
 			-- NEW (T-279): the soft layer on grass. The billows in an earthy green-brown, low and
 			-- behind the bits, so a grass drift has a cloud like a tarmac one does. It follows the
 			-- wheel's grass mix like the bits, at the slip ramp of `Clippings`. On the dust's
@@ -599,6 +646,66 @@ return {
 				Drag = 1.5,
 				RotationDegrees = { -15, 15 },
 				RotationSpeed = { -20, 20 },
+			},
+		},
+
+		-- GRASS AND MUD: THREE WAYS, BEING COMPARED (T-283). The user drove the painted sprites
+		-- and said: "the dirt and grass sprites look like shit. it just doesn't work. we need a
+		-- different solution, i don't think it's about the art style", and asked for two
+		-- alternatives built side by side, switched while driving:
+		--   "chunks"   real 3D clods and turf, a pooled part each (`Chunks`, `Drift/Debris`)
+		--   "specks"   tiny streaks of soil and grass along their flight (`Grass.Specks`)
+		--   "sprites"  the painted bits as first built (`Grass.Clippings` / `Grass.Dirt`)
+		-- The earthy spray cloud (`Grass.Spray`) and the ruts are the same in all three.
+		-- Once the user picks, the other two go.
+		Debris = {
+			Mode = "chunks", -- what a client starts on
+			Modes = { "chunks", "specks", "sprites" },
+			Switch = true, -- the on-screen button that cycles them (`Drift/DebrisSwitch`)
+		},
+
+		-- 3D CHUNKS. A pool of anchored parts per client, thrown from each grass wheel's debris
+		-- attachment (the 60-degree kick) at a share of the bits' rates, flying under gravity and
+		-- drag, bouncing once off the ground they came from, lying there, then sinking into it.
+		Chunks = {
+			Pool = 48, -- parts, made once. A throw takes the oldest when all are out
+			ClodShare = 0.6, -- of the pool, clods; the rest turf
+			RateScale = 0.3, -- chunks a second = the sprites' rate (`Clippings` for turf, `Dirt`
+			-- for clods, by the same grass mix and dirt ramp) times this
+			Lifetime = { 1.1, 1.7 }, -- s, from the throw to gone
+			SinkSeconds = 0.35, -- the end of its life it spends sinking into the ground
+			Gravity = 70, -- studs/s^2
+			Drag = 0.6,
+			InheritVelocity = 0.25, -- of the car's own velocity
+			Bounces = 1,
+			Bounce = 0.3, -- of the speed into the ground kept on the bounce...
+			BounceKeep = 0.55, -- ...and of the speed along it
+			MinBounceSpeed = 4, -- studs/s into the ground below which it just lands
+			CastShadow = true,
+			Clod = {
+				Material = Enum.Material.Ground,
+				Colours = { -- the rut's soils (`Grass.TrenchMark`), lifted a shade to read in the air
+					Color3.fromRGB(104, 82, 54),
+					Color3.fromRGB(88, 66, 42),
+					Color3.fromRGB(120, 98, 66),
+					Color3.fromRGB(72, 54, 34),
+				},
+				Size = { Vector3.new(0.3, 0.25, 0.3), Vector3.new(0.7, 0.55, 0.7) }, -- studs, min and max
+				Speed = { 14, 26 },
+				SpreadDegrees = 22,
+				SpinDegrees = { 120, 420 }, -- deg/s tumbling
+			},
+			Turf = {
+				Material = Enum.Material.Grass,
+				Colours = { -- the ground's grass (`Grass.FlatMark`)
+					Color3.fromRGB(96, 148, 66),
+					Color3.fromRGB(104, 152, 70),
+					Color3.fromRGB(78, 128, 54),
+				},
+				Size = { Vector3.new(0.45, 0.1, 0.35), Vector3.new(0.85, 0.16, 0.6) }, -- flat slabs of sod
+				Speed = { 12, 22 },
+				SpreadDegrees = 28,
+				SpinDegrees = { 180, 540 },
 			},
 		},
 
@@ -647,6 +754,7 @@ return {
 		MarksChunk = "FxGroundMarks_%d", -- Workspace, and its MeshParts (T-265)
 		GroundEmitter = "FxKick_%s_%s", -- wheel name, then "grass", "dirt", "dust" (T-188) or
 		-- "spray" (T-279)
+		DebrisFolder = "FxDebris", -- the 3D chunks' pool: a client-only folder in Workspace (T-283)
 		Engine = "FxEngine", -- the one engine `Sound`, on the body (T-064)
 		Skid = "FxSkid_%s", -- surface. One `Sound` per surface in `Built`, on the body
 		Spark = "FxSpark_%d", -- slot. One anchored part per spark slot, NOT in the car (T-097)

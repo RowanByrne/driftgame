@@ -110,6 +110,16 @@ All from `tools\imagegen.ps1` with `-Transparent`, which gave real alpha for the
 
 The user picks each sheet. The agent cuts each pick into its exact grid with gutters and edge bleed, uploads it as the user signed in to Studio, measures the decoded size, and records the id. The tuning of sizes, rates and light is then shown in a lane for the user's eye, as every look has been.
 
+## Grass and mud: three ways, compared (T-283)
+
+The user drove the painted sprites (2026-11-17): the smoke and the dust are good (smoke "a bit" denser and smaller: rate 10–75 from 8–60, size 2.1 → 9 from 2.5 → 11), but *"the dirt and grass sprites look like shit. it just doesn't work. we need a different solution, i don't think it's about the art style."* A flat picture turned to the camera reads as a sticker over a 3D world however it's painted. They asked for two alternatives built side by side, switched while driving (`Config.Fx.Ground.Debris`, the GRASS button beside TUNE):
+
+- **3D chunks** (`Drift/Debris`, `Ground.Chunks`): a pool of 48 anchored parts per client, clods in the ground's `Ground` material and the rut's soils, turf slabs in `Grass` and the ground's green, thrown from the debris attachment at 0.3 of the sprites' rates, tumbling, flying under gravity and drag, bouncing once, lying on the ground and sinking into it. Lit and shadowed like the world. Moved together with one `BulkMoveTo` a frame; nothing made after the pool.
+- **Fine spray** (`Ground.Grass.Specks`): the same two emitters, re-dressed as many tiny streaks along their flight (`VelocityParallel`, `Squash` 1.4, 0.24 and 0.28 studs, 30–90 and 30–100 a second), darkened.
+- **Sprites**: the painted bits, as first built.
+
+The earthy cloud and the ruts are the same in all three. The two the user doesn't pick are removed, with the switch.
+
 ## Left out
 
 - **3D debris chunks** (option 2). They can come later as a few big clods on top of the sprites, if the sprites don't hold up close.

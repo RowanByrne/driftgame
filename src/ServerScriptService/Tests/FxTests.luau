@@ -605,6 +605,9 @@ function Tests.run(opts)
 		local rig, car = standInRig()
 		-- The grass ribbon is built in its own thread (making a mesh yields): wait for it.
 		local w = Wheels.new(ServerStorage)
+		-- The checks below are about the debris EMITTERS (T-188, T-279); the 3D chunks and the
+		-- fine spray have their own, in 9b (T-283).
+		w:SetDebrisMode("sprites")
 		local waitUntil = os.clock() + 15
 		while not w:Ready() and not w.marks.failed and os.clock() < waitUntil do
 			task.wait()
@@ -1062,6 +1065,55 @@ function Tests.run(opts)
 				and not rl.ground.spray.emitter.Enabled,
 			string.format("dust %.1f/s", rl.ground.dust.emitter.Rate)
 		)
+		-- T-283: grass and mud three ways, switched while driving.
+		w:Cut()
+		local grassHard = stateWith({ slipDeg = 45, speed = 70, throttle = 1, surface = "grass" })
+		local tarmacHard = stateWith({ slipDeg = 45, speed = 70, throttle = 1, surface = "tarmac" })
+		check("an unknown debris mode is refused", w:SetDebrisMode("confetti") == "sprites", w.debrisMode)
+		w:SetDebrisMode("chunks")
+		for _ = 1, 60 do
+			w:Update(grassHard, { handbrake = false }, DT)
+		end
+		local d = w.debris:DebugState()
+		check(
+			"chunks: real parts thrown on grass, the bits' emitters off, the cloud still on",
+			d.built and d.live > 0 and d.pool == G.Chunks.Pool
+				and #w.debris.folder:GetChildren() == G.Chunks.Pool
+				and not rl.ground.clippings.emitter.Enabled
+				and not rl.ground.dirt.emitter.Enabled
+				and rl.ground.spray.emitter.Enabled,
+			`{d.live} live of {d.pool}, {d.flying} in the air, {d.spawned} thrown in a second`
+		)
+		for _ = 1, math.ceil(G.Chunks.Lifetime[2] / DT) + 5 do
+			w:Update(tarmacHard, { handbrake = false }, DT)
+		end
+		local after = w.debris:DebugState()
+		check(
+			"chunks land, sink and go back to the pool, and none are made after the first",
+			after.live == 0 and #w.debris.folder:GetChildren() == G.Chunks.Pool,
+			`{after.live} still out after {G.Chunks.Lifetime[2]} s; {#w.debris.folder:GetChildren()} parts`
+		)
+		w:SetDebrisMode("specks")
+		for _ = 1, 30 do
+			w:Update(grassHard, { handbrake = false }, DT)
+		end
+		local dirtE = rl.ground.dirt.emitter
+		check(
+			"specks: the same emitters, streaked along their flight, under the mobile cap, no chunks",
+			dirtE.Enabled and dirtE.Orientation == Enum.ParticleOrientation.VelocityParallel
+				and dirtE.Rate > 0 and G.Grass.Specks.Dirt.RateMax <= 100 and G.Grass.Specks.Clippings.RateMax <= 100
+				and w.debris:DebugState().live == 0,
+			string.format("dirt %.1f/s, %s", dirtE.Rate, dirtE.Orientation.Name)
+		)
+		w:SetDebrisMode("sprites")
+		w:Update(grassHard, { handbrake = false }, DT)
+		check(
+			"sprites: back to the painted bits",
+			dirtE.Enabled and dirtE.Orientation == G.Grass.Dirt.Orientation
+				and math.abs(dirtE.Rate - Wheels.kickRate(G.Grass.Dirt, 45) * rl.mixGrass) < 1e-6,
+			string.format("dirt %.1f/s, %s", dirtE.Rate, dirtE.Orientation.Name)
+		)
+		w:Cut()
 		check(
 			"a hit with no name is the default surface",
 			Wheels.surfaceOf(stateWith({ surface = "" }), 1, true) == F.Default
@@ -1581,6 +1633,7 @@ function Tests.run(opts)
 		car:Destroy()
 		w.marks:Destroy()
 		w.rubber:Destroy()
+		w.debris:Destroy()
 	end
 
 	----------------------------------------------------------------------------
