@@ -18,8 +18,10 @@
 --
 --   surfaces  the export's starting look per surface (`car-ae86-mid.json`), and its `Paint`
 --             role. `maps` are the SurfaceAppearance image ids the import uploaded for the
---             three textured surfaces (the tyre's tread is in its normal map); `MeshRig`
---             puts them on the pieces
+--             three textured surfaces (the tyre's tread is in its normal map). A game script
+--             cannot write them, so they are also made ahead in `Cars/RestyledMaps.rbxmx`
+--             (`mapsFolder`), one SurfaceAppearance per surface, which `MeshRig` clones onto
+--             the pieces: change an id, change it in both
 --   groups    each moving part and lamp: kind, pivot, axis and travel from the export
 --             (Blender's axes there, turned into the game's here). Not listed: the static
 --             body. The pop-up lights are modelled DOWN; their travel raises them. Each
@@ -36,6 +38,7 @@
 
 return {
 	key = "restyled",
+	mapsFolder = "RestyledMaps",
 	measured = {
 		wheelbase = 9.6,
 		track = 5.722,

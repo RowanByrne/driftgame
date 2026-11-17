@@ -81,9 +81,13 @@ function MeshRig.groupOf(data: any, part: string): string
 end
 
 -- A surface's image maps, `{ colour, normal, roughness, metalness }` (any of them), as a
--- SurfaceAppearance on the piece. Its `*MapContent` properties are the ones a game script
--- may write; the older `*Map` strings are tried if those are missing. Returns whether every
--- map went on: a piece whose maps would not go on keeps its plain colour and material.
+-- SurfaceAppearance on the piece, written at run time. A GAME SCRIPT CANNOT WRITE A
+-- SurfaceAppearance's maps (measured in DR-Lane1, T-287: both the `*MapContent` and the
+-- `*Map` properties refuse), so a car's maps come made ahead, as SurfaceAppearances in a
+-- `.rbxmx` beside its data (`data.mapsFolder`, one per surface, named by it) and cloned by
+-- `build`; this is the fallback for a surface that has none there, in case the engine ever
+-- allows it. Returns whether every map went on: a piece whose maps would not go on keeps its
+-- plain colour and material.
 local MAP_PROPS = {
 	colour = "ColorMap",
 	normal = "NormalMap",
@@ -124,6 +128,7 @@ end
 function MeshRig.build(data: any): (Model?, number, number)
 	local s = MeshRig.frame(data)
 	local meshes = fetch(data.pieces)
+	local mapsFolder = if data.mapsFolder then script.Parent:FindFirstChild(data.mapsFolder) else nil
 
 	local byGroup: { [string]: { BasePart } } = { Body = {} }
 	local built, failed = 0, 0
@@ -147,7 +152,12 @@ function MeshRig.build(data: any): (Model?, number, number)
 		mp.DoubleSided = surface.doubleSided == true
 		mp.CastShadow = true
 		if surface.maps then
-			MeshRig.dressMaps(mp, surface.maps)
+			local made = mapsFolder and mapsFolder:FindFirstChild(surfaceName or "")
+			if made and made:IsA("SurfaceAppearance") then
+				made:Clone().Parent = mp
+			else
+				MeshRig.dressMaps(mp, surface.maps)
+			end
 		end
 		mp:SetAttribute("Paint", surface.paint or "none")
 		mp:SetAttribute("Surface", surfaceName)

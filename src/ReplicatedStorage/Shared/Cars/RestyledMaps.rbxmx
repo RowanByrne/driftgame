@@ -1,0 +1,32 @@
+<roblox xmlns:xmime="http://www.w3.org/2005/05/xmlmime" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://www.roblox.com/roblox.xsd" version="4">
+	<Item class="Folder" referent="RBX0">
+		<Properties>
+			<string name="Name">RestyledMaps</string>
+		</Properties>
+		<Item class="SurfaceAppearance" referent="RBX1">
+			<Properties>
+				<string name="Name">Tyre</string>
+				<token name="AlphaMode">0</token>
+				<Content name="NormalMap"><url>rbxassetid://135054740935722</url></Content>
+				<Content name="RoughnessMap"><url>rbxassetid://117051494823854</url></Content>
+			</Properties>
+		</Item>
+		<Item class="SurfaceAppearance" referent="RBX2">
+			<Properties>
+				<string name="Name">Disc</string>
+				<token name="AlphaMode">0</token>
+				<Content name="ColorMap"><url>rbxassetid://120577089438726</url></Content>
+				<Content name="RoughnessMap"><url>rbxassetid://109784732330638</url></Content>
+				<Content name="MetalnessMap"><url>rbxassetid://102802952586472</url></Content>
+			</Properties>
+		</Item>
+		<Item class="SurfaceAppearance" referent="RBX3">
+			<Properties>
+				<string name="Name">Caliper</string>
+				<token name="AlphaMode">0</token>
+				<Content name="ColorMap"><url>rbxassetid://90932065351948</url></Content>
+				<Content name="NormalMap"><url>rbxassetid://90464091885161</url></Content>
+			</Properties>
+		</Item>
+	</Item>
+</roblox>
