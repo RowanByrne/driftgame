@@ -15,6 +15,7 @@ Every task in progress and the files it owns, so parallel sessions and workers n
 | `agent/score-grinds` (T-297) | borrowed | `src/StarterPlayerScripts/Drift/Model.luau` (wall-contact state fields only), `Drift/SplineWorld.luau`, `Drift/Events/BumperGrind.luau` (new), `Drift/Events/HangGrind.luau` (new), `src/ServerScriptService/Tests/SplineWorldTests.luau`, `Tests/GrindEventsTests.luau` (new) | 2026-11-17 |
 | `agent/score-nearmiss` (T-298) | borrowed | `src/StarterPlayerScripts/Drift/Events/NearMiss.luau` (new), `src/ServerScriptService/Tests/NearMissTests.luau` (new) | 2026-11-17 |
 | `agent/score-hairpins` (T-299) | borrowed | `src/ReplicatedStorage/Shared/Road/Hairpins.luau` (new), `src/StarterPlayerScripts/Drift/Events/PerfectHairpin.luau` (new), `Drift/Events/ReverseEntry.luau` (new), `src/ServerScriptService/Tests/HairpinTests.luau` (new) | 2026-11-17 |
+| `agent/score-flick` (T-300) | borrowed | `src/StarterPlayerScripts/Drift/Events/ScandiFlick.luau` (new), `src/ServerScriptService/Tests/ScandiFlickTests.luau` (new) | 2026-11-17 |
 
 ## Notes between sessions
 
