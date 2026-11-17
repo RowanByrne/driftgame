@@ -109,9 +109,28 @@ is longer than a pebble tick), the same random pitch (0.85 to 1.2x) and loudness
 
 | | What | Hits | Preview SHA-256 | Status |
 |---|---|---|---|---|
-| E | **Floor-pan clanks**: mostly the vehicle-floor and corrugated thin-metal clanks (half the hits), with a few light floor and body pings | 5 pings, 12 clanks | `68A15627A9F4D3EA9D5D40AFF3C8CC01176BE08E1B3EFB3C2E354B9638FF7778` | candidate |
-| F | **Tinny pings**: mostly small sharp metal clinks (hammer taps on a metal roof, shell clinks, the body hit), one in five a floor-pan clank | 16 pings, 12 clanks | `96072051D4D585800ADD3438487983067088D0F4ED4715F8F11819F534F7FE51` | candidate |
-| G | **Stones on steel, made by us**: 24 pings and 8 heavier clanks synthesized in code (`synth_hits.py`): a sub-millisecond stone contact burst exciting 14 damped inharmonic panel modes (900 to 7,500 Hz for pings, 180 to 3,500 Hz plus a 95 to 170 Hz box thunk for clanks), with a little grit. One in five a clank. Ours, no licence; **would need one upload** if picked | 24 pings, 8 clanks | `028E23404866DEF6FA572A7643F95832AFAAB085B1BF501CA01096714B475780` (sheet `93D21DE53B0E6705993F9FF948613DCF8D5014F42C93B51E6FCADD84A2386930`) | candidate |
+| E | **Floor-pan clanks**: mostly the vehicle-floor and corrugated thin-metal clanks (half the hits), with a few light floor and body pings | 5 pings, 12 clanks | `68A15627A9F4D3EA9D5D40AFF3C8CC01176BE08E1B3EFB3C2E354B9638FF7778` | **approved** |
+| F | **Tinny pings**: mostly small sharp metal clinks (hammer taps on a metal roof, shell clinks, the body hit), one in five a floor-pan clank | 16 pings, 12 clanks | `96072051D4D585800ADD3438487983067088D0F4ED4715F8F11819F534F7FE51` | rejected |
+| G | **Stones on steel, made by us**: 24 pings and 8 heavier clanks synthesized in code (`synth_hits.py`): a sub-millisecond stone contact burst exciting 14 damped inharmonic panel modes (900 to 7,500 Hz for pings, 180 to 3,500 Hz plus a 95 to 170 Hz box thunk for clanks), with a little grit. One in five a clank. Ours, no licence; **would need one upload** if picked | 24 pings, 8 clanks | `028E23404866DEF6FA572A7643F95832AFAAB085B1BF501CA01096714B475780` (sheet `93D21DE53B0E6705993F9FF948613DCF8D5014F42C93B51E6FCADD84A2386930`) | rejected, never uploaded |
+
+### The pick, round 2
+
+**E, "Floor-pan clanks", picked by ear by the user on 2026-11-17.** F and G are rejected; G was
+never uploaded. All of E is Creator Store audio used by id: no master in git, nothing uploaded. The
+17 hits (5 pings, 12 clanks) and every number are in `src/ReplicatedStorage/Shared/Config/Pebbles.luau`
+(`Ticks`, `ClackShare` 0.5, `MaxRate` 18, `FadeTail` 0.05, `Voices` 14), played by
+`Drift/PebbleSound`, over round 1's crunch (`9126157118`), which stays.
+
+**Its level, measured on the store files:** at `TickVolume` 0.36 the hits stream at about
+**-26.5 dBFS** RMS at full speed on gravel (18 a second, half of them clanks), the crunch 9 dB under
+at -35.5: together about -26 dBFS, the same place in the mix as round 1 (8.5 dB under the engine,
+under the off-road skid's loudest). A full slide is 32 a second. The loudest hit wants instance
+volume 10.3 and is held at Roblox's 10.
+
+**In game against the preview:** the 50 ms fade is a volume step a frame (about 3 steps at 60 fps)
+rather than the preview's smooth ramp. Measured in `DR-Lane6` with sound on: every hit's last frame
+before it stopped was 0.4% to 12.5% of its peak volume, no voice was ever cut short (at most 5 of
+the 14 busy at once on grass at 90 studs/s), and every hit played only inside its slice.
 
 ## Looked at and left out
 
