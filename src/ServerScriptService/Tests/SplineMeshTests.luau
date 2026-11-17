@@ -1,4 +1,4 @@
-﻿--!nonstrict
+--!nonstrict
 -- SplineMeshTests: the spline road's meshes (features/spline-road.md "The mesh, purely
 -- visual", T-135). Builds real MeshParts from EditableMeshes in the place, measures them and
 -- takes them away. Studio only; run it in a task:
