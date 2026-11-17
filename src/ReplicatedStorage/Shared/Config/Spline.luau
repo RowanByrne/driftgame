@@ -361,14 +361,38 @@ local Spline = {
 		-- to, `LineInsetPx` in from its sides
 		LineBandPx = 32,
 		LineInsetPx = 4,
-		-- patches of newer and older tarmac, a seam round each
-		Patches = 1, -- a copy (120 studs since T-277; 2 over 240, 4 over 480 in the first cut)
+		-- PATCHES OF NEWER TARMAC. T-285, the user: "the road patch that appears on the right
+		-- side of the texture repeats very regularly and is a recognize-able pattern. randomize
+		-- it more and have it be more rare". A patch painted in the image shows at the same
+		-- spot every `PeriodStuds`, so none is painted now (`Patches` 0: 1 a copy before, its
+		-- random numbers still drawn so the cracks stay where they were). Instead each is a
+		-- small piece of the road's mesh (`Road/SplineMesh`), laid on the tarmac where
+		-- `RoadTexture.patches` puts it, from a hash of the distance along: in each `PatchCell`
+		-- of road one patch by `PatchChance`, anywhere in the cell but its last `PatchGap`
+		-- (so two are never closer than that), in either lane, or across the middle by
+		-- `PatchMiddle` where there is no double yellow. Its look is the painted one's: the
+		-- same texture over it, darker toward `Colours.TarmacPatch` by `PatchBlend` (each
+		-- patch a little more or less, `PatchVary`), feathered over `PatchSoft` studs across
+		-- (`PatchSoftAlong` along), its sides ragged by up to `PatchRagged` over
+		-- `PatchRaggedStuds`, mottled by `PatchMottle`; a row of vertices every `PatchStep`
+		-- studs along, lifted `PatchLift` (more on a coarse far chunk)
+		Patches = 0, -- painted in the image, a copy
+		PatchCell = 360, -- studs: on average one patch every PatchCell / PatchChance (514)
+		PatchChance = 0.7,
+		PatchGap = 120, -- studs, at least, between two patches
+		PatchMiddle = 0.25,
 		PatchLength = { 8, 26 },
 		PatchWidth = { 6, 16 },
-		PatchSeam = 0.2,
+		PatchSeam = 0.2, -- (painted patches only)
 		PatchBlend = 0.5,
-		PatchSoft = 0.6, -- studs
+		PatchVary = 0.3,
+		PatchSoft = 0.9, -- studs (0.6 painted)
+		PatchSoftAlong = 1.6,
 		PatchRagged = 0.8, -- studs
+		PatchRaggedStuds = 2.5,
+		PatchMottle = 0.3,
+		PatchStep = 1.6,
+		PatchLift = 0.03,
 		-- cracks: mostly along the road `CrackEdge` in from an edge, `CrackAcross` of them across
 		Cracks = 3, -- a copy (6 over 240 before T-277)
 		CrackWidth = 0.12, -- studs
