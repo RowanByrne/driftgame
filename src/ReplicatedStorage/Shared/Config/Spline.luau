@@ -282,10 +282,10 @@ local Spline = {
 		Enabled = true, -- false: the flat tarmac and the dash parts, as before
 		-- THE RESOLUTION (T-268 send-back, the user: "bit higher res this time for the main
 		-- asphalt texturing"): 1 024 x 1 024, the largest EditableImage, 4 MB. Across, the tarmac
-		-- gets all but `PlainPx` each side and the line band: 18.6 pixels a stud (4.8 in the
-		-- first cut); along,
-		-- 4.3 (2.1): it is seen at a glancing angle, so it needs fewer. The shorter repeat
-		-- that buys is hidden by the vertices' tone, which never repeats
+		-- gets all but `PlainPx` each side, the line band and the gravel band: 16.6 pixels a stud.
+		-- Along, 8.5 (T-277, the user: "is the road texture stretched length wise"; 4.3 over 240
+		-- studs before). The shorter repeat that buys is hidden by the vertices' tone, which
+		-- never repeats
 		Width = 1024, -- pixels across
 		Length = 1024, -- pixels along
 		-- THE UPLOADED COPY (T-274, `assets/road/MANIFEST.md`): these pixels exactly, so the
@@ -295,7 +295,7 @@ local Spline = {
 		-- still makes it, so a change to anything it paints from is exported and uploaded again
 		Image = "rbxassetid://118359063841549",
 		ImageHash = 2423809896,
-		PeriodStuds = 240, -- studs along one copy (rounded to whole `MarkInterval`s)
+		PeriodStuds = 120, -- studs along one copy (rounded to whole `MarkInterval`s; 240 before T-277)
 		PlainPx = 32, -- plain `Grass.Shade` columns each side, where the rest of the mesh samples
 		-- (a thirty-second of the width each side, as before: still a pixel at a 32-wide mip)
 		SliceMs = 3, -- ms of painting a frame (it is painted once, as the client loads)
@@ -331,11 +331,16 @@ local Spline = {
 		TrackWobbleStuds = 60,
 		OilWidth = 1.2,
 		OilDark = 0,
-		-- the dusty edge: `EdgeWear` studs in from each edge, with gravel specks
-		EdgeWear = 2.2,
-		Gravel = 0.35,
-		GravelLight = 1.35,
-		GravelDark = 0.7,
+		-- THE DUSTY EDGE (T-277, the user: "use the current area that is static-y on the road
+		-- texture to prepare for the transition to gravel, the soft transition is what we are
+		-- looking for. no gravel pebbles on the road texture itself"): no specks; the tarmac
+		-- goes over to the gravel's bare bed (`Colours.GravelDust`) toward its edge, all of it
+		-- in the last `EdgeFull` studs, none past `EdgeWear`, in soft ragged shapes (noise over
+		-- `EdgeStuds` across and along, moving it up to `EdgeRagged` studs either way)
+		EdgeWear = 1.4,
+		EdgeFull = 0.25,
+		EdgeRagged = 0.45,
+		EdgeStuds = { 0.5, 1.3 },
 		-- the paint's wear (0 none, 1 worn through where the noise is highest)
 		LineWear = 0.35,
 		-- THE PAINT'S WEATHERING (send-back 2: "faded and cracked/weather lines"), the edge
@@ -350,14 +355,14 @@ local Spline = {
 		LineHoleStuds = { 0.35, 1.6 },
 		LineGrain = 0.35,
 		LineChip = 0.06,
-		LineCracks = 10,
+		LineCracks = 5, -- a copy (120 studs; 10 over 240 before T-277)
 		-- THE LINE BAND: columns of the image, right of the tarmac, holding one yellow line
 		-- (`Config.Road.CentreLineWidth`) on tarmac, which the double yellow's strips are mapped
 		-- to, `LineInsetPx` in from its sides
 		LineBandPx = 32,
 		LineInsetPx = 4,
 		-- patches of newer and older tarmac, a seam round each
-		Patches = 2, -- a copy is 240 studs now (480 in the first cut)
+		Patches = 1, -- a copy (120 studs since T-277; 2 over 240, 4 over 480 in the first cut)
 		PatchLength = { 8, 26 },
 		PatchWidth = { 6, 16 },
 		PatchSeam = 0.2,
@@ -365,7 +370,7 @@ local Spline = {
 		PatchSoft = 0.6, -- studs
 		PatchRagged = 0.8, -- studs
 		-- cracks: mostly along the road `CrackEdge` in from an edge, `CrackAcross` of them across
-		Cracks = 6,
+		Cracks = 3, -- a copy (6 over 240 before T-277)
 		CrackWidth = 0.12, -- studs
 		CrackLength = { 6, 26 },
 		CrackEdge = { 1, 4.5 },
