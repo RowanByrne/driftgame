@@ -36,8 +36,12 @@
 -- before. The road's skirt
 -- (`Road/SplineMesh`, a ground run) hides what is left of the gap.
 --
--- OPAQUE TILES (T-276): a tile no longer keeps an EditableMesh, which held one of the
--- client's ~640 tiles of mesh memory each (`Config.Spline.Mesh.Budget`). What a tile draws is
+-- OPAQUE TILES (T-276), BUILT BUT SWITCHED OFF (`Ground.OpaqueTiles`): a client that makes
+-- thousands of opaque contents freezes for seconds at a time (measured: see the config's
+-- note), and the ground changes ~30 tiles a second. Only the master is opaque by default; every
+-- tile keeps its EditableMesh as before. With the switch on, a tile no longer keeps an
+-- EditableMesh, which held one of the client's ~640 tiles of mesh memory each
+-- (`Config.Spline.Mesh.Budget`). What a tile draws is
 -- kept in its own tables (`heights`, `px`, `pz`, `normals`, `colours`, `flip`), and each time
 -- it changes -- built, its edges put right, redrawn -- it is written into a fresh fixed-size
 -- copy of the master, made OPAQUE CONTENT (`AssetService:CreateDataModelContentAsync`, which
@@ -514,6 +518,12 @@ end
 -- refused, nothing is made opaque for `REFUSED_WAIT` seconds (each try costs a copy).
 local REFUSED_WAIT = 30 -- seconds
 local refusedUntil = 0
+
+-- WHETHER TILES ARE MADE OPAQUE AT ALL (`Ground.OpaqueTiles`, off: see its note; in Studio
+-- `workspace.__opaque_ground = true` turns it on, to measure). The master is opaque either way.
+local function opaqueTiles(): boolean
+	return Config.Spline.Ground.OpaqueTiles == true or (RunService:IsStudio() and Workspace:GetAttribute("__opaque_ground") == true)
+end
 
 local function opaqueOk(): boolean
 	if RunService:IsStudio() and Workspace:GetAttribute("__no_opaque") == true then
@@ -1542,8 +1552,20 @@ function GroundMeshView._take(self: View, over: boolean?): Tile?
 			master.em, master.content = nil, content
 		end
 	end
-	local opaque = opaqueOk() and master.content ~= nil
+	local opaque = opaqueTiles() and opaqueOk() and master.content ~= nil
 	local t = table.remove(self.free)
+	if t and not t.em and not opaque then
+		-- an opaque tile while tiles are not made opaque (switched off since): a tile that
+		-- keeps its own mesh instead
+		local i = table.find(self.pool, t)
+		if i then
+			table.remove(self.pool, i)
+		end
+		if t.part then
+			t.part:Destroy()
+		end
+		t = nil
+	end
 	if t then
 		if t.em and opaque then
 			-- a tile that kept its own mesh, while opaque content was refused: let it go
@@ -2821,6 +2843,7 @@ function GroundMeshView.DebugBudget(self: View)
 		inflight = self.inflight,
 		opaque = table.clone(self.opaque),
 		opaqueOk = opaqueOk(),
+		opaqueTiles = opaqueTiles(),
 	}
 end
 
@@ -2963,6 +2986,7 @@ function GroundMeshView.DebugState(self: View)
 		held = self:_held(),
 		opaque = table.clone(self.opaque),
 		opaqueOk = opaqueOk(),
+		opaqueTiles = opaqueTiles(),
 		idMaps = idMaps,
 	}
 end
