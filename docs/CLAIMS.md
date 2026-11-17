@@ -9,7 +9,6 @@ Every task in progress and the files it owns, so parallel sessions and workers n
 
 | Branch | Lane | Files owned | Since |
 |---|---|---|---|
-| `agent/road-patches` (T-285) | borrowed | `src/ReplicatedStorage/Shared/Road/RoadTexture.luau`, `Shared/Road/SplineMesh.luau`, `Shared/Config/Spline.luau` (its `Tarmac` table only), `assets/road/*`, `docs/game/features/road-surface.md` | 2026-11-17 |
 | `agent/ground-inside-vista` (T-281) | borrowed | `src/StarterPlayerScripts/Drift/GroundTiles.luau`, `Drift/GroundMeshView.luau`, `Drift/GroundDetail.luau`, `Shared/Config/Spline.luau` (its `Ground` table only), `src/ServerScriptService/Tests/GroundTests.luau` | 2026-11-17 |
 
 ## Notes between sessions
