@@ -668,7 +668,8 @@ return {
 		-- attachment (the 60-degree kick) at a share of the bits' rates, flying under gravity and
 		-- drag, bouncing once off the ground they came from, lying there, then sinking into it.
 		Chunks = {
-			Pool = 48, -- parts, made once. A throw takes the oldest when all are out
+			Pool = 64, -- parts, made once. A throw takes the oldest when all are out (by then lying
+			-- on the ground). MEASURED: four wheels on grass throw about 52 a second
 			ClodShare = 0.6, -- of the pool, clods; the rest turf
 			RateScale = 0.3, -- chunks a second = the sprites' rate (`Clippings` for turf, `Dirt`
 			-- for clods, by the same grass mix and dirt ramp) times this
@@ -690,7 +691,8 @@ return {
 					Color3.fromRGB(120, 98, 66),
 					Color3.fromRGB(72, 54, 34),
 				},
-				Size = { Vector3.new(0.3, 0.25, 0.3), Vector3.new(0.7, 0.55, 0.7) }, -- studs, min and max
+				Size = { Vector3.new(0.4, 0.3, 0.4), Vector3.new(0.9, 0.7, 0.9) }, -- studs, min and max.
+				-- MEASURED: 0.3 to 0.7 read as specks from the chase camera
 				Speed = { 14, 26 },
 				SpreadDegrees = 22,
 				SpinDegrees = { 120, 420 }, -- deg/s tumbling
@@ -702,7 +704,7 @@ return {
 					Color3.fromRGB(104, 152, 70),
 					Color3.fromRGB(78, 128, 54),
 				},
-				Size = { Vector3.new(0.45, 0.1, 0.35), Vector3.new(0.85, 0.16, 0.6) }, -- flat slabs of sod
+				Size = { Vector3.new(0.6, 0.12, 0.45), Vector3.new(1.05, 0.2, 0.75) }, -- flat slabs of sod
 				Speed = { 12, 22 },
 				SpreadDegrees = 28,
 				SpinDegrees = { 180, 540 },
