@@ -66,6 +66,10 @@ local C = {
 	-- above it (and above the Garage button, `Config.GarageMenu`).
 	SettingsTop = 176, -- px below the safe area's top
 	SettingsHeight = 48,
+	-- The testing buttons in the top right corner, the readout's DBG and the tuner's TUNE
+	-- (`Drift/DragControl`, `Drift/TunerUI`: 64 px wide, 16 px in): the feed keeps left of
+	-- them where the screen is wide enough, so on desktop and tablet.
+	TestButtons = 64 + 8,
 	LineHeight = 30, -- px, one row
 	TwoRowHeight = 50, -- px, a name too long to share its row with the points
 	Gap = 4, -- px between lines
@@ -234,12 +238,14 @@ function ScoreFeedView:_layout()
 		-- lines. The top right is sky and scenery on every screen measured, and it is where
 		-- a killfeed sits. It stops above the Settings and Garage buttons.
 		placement = "topRight"
+		-- left of the testing buttons where there is room for it; on a phone there is not
+		local right = C.Margin + (if phone then 0 else C.TestButtons)
 		local left = (screen.X + RM.CentreColumn) * 0.5 + C.MapGap
-		width = math.min(C.Width, screen.X - C.Margin - left)
+		width = math.min(C.Width, screen.X - right - left)
 		top = C.Margin
 		maxBottom = math.min(settingsTop, garageTop) - C.MapGap
 		self.root.AnchorPoint = Vector2.new(1, 0)
-		self.root.Position = UDim2.new(1, -C.Margin + o.X, 0, top + o.Y)
+		self.root.Position = UDim2.new(1, -right + o.X, 0, top + o.Y)
 	end
 	local changed = self.width ~= width
 	self.width = width
