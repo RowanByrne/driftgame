@@ -751,21 +751,30 @@ function CarCameraController._advance(rig, view: View, dt: number, pan): CFrame
 	-- the car's lowest point -- `CamFrameCarRadius` studs below its middle, as seen from
 	-- here -- would cross `CamFrameBottom` of the screen. Never below level aim: the cap can
 	-- take the framing away, never push the car up past where the camera puts it alone.
-	-- THE AIM IS EASED toward what the guard allows (`CamAimRate`), never set: the cap is
-	-- read off this frame's camera and car, and followed raw it handed their frame-to-frame
-	-- wobble straight to the picture -- JitterTests measured 0.47 degrees a frame of shimmer
-	-- at full lock, where the guard bites, against a 0.1 limit.
+	-- THE GUARD READS THE CAMERA AT REST, not this frame's camera: where the car sits below
+	-- the look axis is worked out from `CamOffset`, `CamLookAt` and the wheel's zoom alone,
+	-- so the cap moves only with the FOV and the zoom, which are both eased. Read off this
+	-- frame's camera and car instead, it handed their frame-to-frame wobble straight to the
+	-- picture: JitterTests measured 0.47 degrees a frame of shimmer at full lock against a
+	-- 0.1 limit. The hill pitch turns the camera and its look point together about the car,
+	-- so it does not change the angle; the lean drops the camera in a drift, which puts the
+	-- car a little HIGHER on screen than at rest, so rest is the cautious reading.
+	-- And the aim is eased toward the cap (`CamAimRate`) rather than set, so a zoom notch
+	-- or a launch reframes rather than snaps.
 	local aimUp = Cam.CamAimUp or 0
 	if aimUp ~= 0 or rig.aim ~= 0 then
-		local tanHalf = math.tan(math.rad(rig.fov) * 0.5)
 		local want = math.rad(aimUp)
-		local toCar = view.position - rig.position
-		local dist = toCar.Magnitude
-		if want > 0 and Cam.CamFrameBottom and dist > EPS then
-			local below = math.atan2(-toCar:Dot(cf.UpVector), toCar:Dot(cf.LookVector))
-			local reach = math.asin(math.clamp((Cam.CamFrameCarRadius or 0) / dist, 0, 1))
-			local room = math.atan((2 * Cam.CamFrameBottom - 1) * tanHalf) - below - reach
-			want = math.min(want, math.max(room, 0))
+		if want > 0 and Cam.CamFrameBottom then
+			local off = Cam.CamOffset * rig.zoom
+			local dist = off.Magnitude
+			if dist > EPS then
+				local below = math.atan2(off.Y, off.Z)
+					- math.atan2(off.Y - Cam.CamLookAt.Y, off.Z - Cam.CamLookAt.Z)
+				local reach = math.asin(math.clamp((Cam.CamFrameCarRadius or 0) / dist, 0, 1))
+				local tanHalf = math.tan(math.rad(rig.fov) * 0.5)
+				local room = math.atan((2 * Cam.CamFrameBottom - 1) * tanHalf) - below - reach
+				want = math.min(want, math.max(room, 0))
+			end
 		end
 		local rate = Cam.CamAimRate or 0
 		rig.aim = if rate > 0 then rig.aim + (want - rig.aim) * ease(dt, rate) else want

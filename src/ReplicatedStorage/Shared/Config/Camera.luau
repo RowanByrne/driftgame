@@ -334,9 +334,11 @@ local Camera = {
 	-- the horizon banks about the car rather than swinging it sideways.
 	CamAimUp = 16.7, -- deg. OURS (T-291)
 	CamAimRate = 4, -- per second. OURS (T-291). How fast the aim follows what the guard
-	-- below allows: a 250 ms time constant. Followed raw, the guard handed
-	-- the frame-to-frame wobble of the camera and car straight to the
-	-- picture (JitterTests: 0.47 deg a frame at full lock, limit 0.1)
+	-- below allows: a 250 ms time constant, so a zoom notch or pulling
+	-- away reframes rather than snaps. THE GUARD READS THE CAMERA AT REST
+	-- (this offset, `CamLookAt`, the zoom and the FOV), never this frame's
+	-- camera: read live, it handed the camera's frame-to-frame wobble to
+	-- the picture (JitterTests: 0.47 deg a frame at full lock, limit 0.1)
 	CamFrameBottom = 0.95, -- share of the screen's height, from the top. OURS (T-291). The
 	-- guard: the aim is capped so the car's lowest point never sits below
 	-- this. It bites at low speed (a standstill's 52 deg FOV makes the car
