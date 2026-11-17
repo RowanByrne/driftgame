@@ -58,6 +58,7 @@ local RunService = game:GetService("RunService")
 local Config = require(ReplicatedStorage.Shared.Config)
 local GrassTexture = require(script.Parent.GrassTexture)
 local Ground = require(script.Parent.Ground)
+local OpaqueBudget = require(script.Parent.OpaqueBudget)
 local RoadTexture = require(script.Parent.RoadTexture)
 local Spline = require(script.Parent.Spline)
 local SplineGrove = require(script.Parent.SplineGrove)
@@ -235,6 +236,8 @@ type Builder = {
 	-- with the tarmac's texture (T-268): faces painted the tarmac's colour id are the ones
 	-- mapped, and `grassShade` holds each tarmac vertex's tone
 	tarmacTriangles: number,
+	-- what the chunk was drawn from and how (T-284): the same key and box, the same mesh
+	key: string?,
 }
 
 
@@ -359,6 +362,7 @@ local buildStats = {
 	writeMs = 0,
 	worstWriteMs = 0,
 	worstClassTiles = 0, -- the largest fixed-size mesh a build held for a moment, in tiles
+	reused = 0, -- chunks drawn from the opaque content of the same chunk drawn before (T-284)
 }
 
 -- The smallest size that holds `faces`, or nil past the largest.
@@ -379,16 +383,11 @@ end
 
 local making = false -- templates being made (one growable mesh at a time)
 
--- `em` as opaque content: (true, content), or false where it is refused. In Studio,
+-- `em` as opaque content: (true, content), or false where it is refused. Counted against the
+-- session's cap (`Road/OpaqueBudget`, T-284), which refuses it past `Mesh.OpaqueCap`; in Studio,
 -- `workspace.__no_opaque = true` refuses it, to try the fallback (T-274).
-local function toOpaque(em: EditableMesh): (boolean, Content?)
-	if RunService:IsStudio() and workspace:GetAttribute("__no_opaque") == true then
-		return false, nil
-	end
-	local ok, result, content = pcall(function()
-		return AssetService:CreateDataModelContentAsync(Content.fromObject(em))
-	end)
-	return ok and result == Enum.CreateContentResult.Success, if ok then content else nil
+local function toOpaque(em: EditableMesh, who: string): (boolean, Content?)
+	return OpaqueBudget.make(who, Content.fromObject(em))
 end
 
 -- Make every size up to `k` not made yet, in ONE growable mesh: blank faces are added, and
@@ -433,7 +432,7 @@ local function makeTemplates(k: number, pace: Pace): string
 			end
 			if not templates[size] then
 				local made, content = pace.wait(function()
-					return toOpaque(em)
+					return toOpaque(em, "template")
 				end)
 				if not made or not content then
 					outcome = "refused"
@@ -590,7 +589,7 @@ local function viaGrowable(b: Builder, mid: Vector3, pace: Pace): (Content, Edit
 		error(err)
 	end
 	local made, content = pace.wait(function()
-		return toOpaque(mesh)
+		return toOpaque(mesh, "road")
 	end)
 	if made and content then
 		done()
@@ -626,6 +625,12 @@ local function meshFor(b: Builder, mid: Vector3, pace: Pace): (Content, Editable
 	local F = rec.faces
 	local k = sizeFor(F)
 	assert(k, `a chunk of {F} triangles is more than an EditableMesh may hold`)
+	-- PAST THE SESSION'S CAP OF OPAQUE CONTENT (T-284, `Road/OpaqueBudget`): built as T-273 did,
+	-- straight away. (A template's copy would then be kept at the template's size, each face
+	-- its own three vertices: more than T-273 held.)
+	if not OpaqueBudget.allows() then
+		return viaGrowable(b, mid, pace)
+	end
 	if not templates[k] then
 		-- (refused a moment ago: not asked again for `REFUSED_WAIT`, each try costs a growable mesh)
 		if os.clock() < refusedUntil then
@@ -696,7 +701,7 @@ local function meshFor(b: Builder, mid: Vector3, pace: Pace): (Content, Editable
 		kept = nil
 	end
 	local made, content = pace.wait(function()
-		return toOpaque(mesh)
+		return toOpaque(mesh, "road")
 	end)
 	if made and content then
 		mesh:Destroy()
@@ -778,9 +783,72 @@ function SplineMesh.freeTiles(aheadStuds: number, behindStuds: number): number
 	return B.Tiles - B.Spare - SplineMesh.groundRoom(aheadStuds, behindStuds) - (SplineMesh.roadTiles(aheadStuds, behindStuds)) - SplineMesh.otherTiles()
 end
 
+-- MADE OPAQUE ONCE (T-284): every opaque content a client makes counts toward its freezes
+-- (`Road/OpaqueBudget`), so a chunk drawn again exactly as it was drawn before -- far ahead,
+-- then far again behind the car once it has passed (Road ahead past `Near.Ahead`), or after
+-- the window changed -- is drawn from the content it was given then. The last `ReuseKeep`
+-- are kept, the most recently used first: opaque content holds none of the mesh memory. A
+-- chunk is the same when it was drawn from the same road, over the same stretch, with the
+-- same detail and textures (`key`), and its recording has the same faces, vertices and box.
+type Reuse = { content: Content, faces: number, vertices: number, lo: Vector3, hi: Vector3, used: number }
+local reuse: { [string]: Reuse } = {}
+local reuseCount = 0
+local reuseClock = 0
+local splineIds: { [any]: number } = setmetatable({}, { __mode = "k" }) :: any
+local nextSplineId = 0
+
+local function splineId(spline: any): number
+	local id = splineIds[spline]
+	if not id then
+		nextSplineId += 1
+		id = nextSplineId
+		splineIds[spline] = id
+	end
+	return id
+end
+
+local function reuseGet(b: Builder, lo: Vector3, hi: Vector3): Content?
+	local key = b.key
+	local r = if key then reuse[key] else nil
+	if not r or r.faces ~= b.em.faces or r.vertices ~= #b.em.pos or r.lo ~= lo or r.hi ~= hi then
+		return nil
+	end
+	reuseClock += 1
+	r.used = reuseClock
+	return r.content
+end
+
+local function reusePut(b: Builder, content: Content, lo: Vector3, hi: Vector3)
+	local key = b.key
+	local keep = Config.Spline.Mesh.ReuseKeep
+	if not key or keep <= 0 then
+		return
+	end
+	reuseClock += 1
+	if not reuse[key] then
+		reuseCount += 1
+	end
+	reuse[key] = { content = content, faces = b.em.faces, vertices = #b.em.pos, lo = lo, hi = hi, used = reuseClock }
+	while reuseCount > keep do
+		local oldest, oldestUsed = nil, math.huge
+		for k, r in reuse do
+			if r.used < oldestUsed then
+				oldest, oldestUsed = k, r.used
+			end
+		end
+		if not oldest then
+			break
+		end
+		reuse[oldest] = nil
+		reuseCount -= 1
+	end
+end
+
 -- How the road's chunks were made, for the debug readouts (T-274).
 function SplineMesh.BuildState()
 	local s = table.clone(buildStats)
+	s.reuseHeld = reuseCount -- (T-284)
+	s.opaqueBudget = OpaqueBudget.DebugState()
 	local sizes = {}
 	for k in templates do
 		table.insert(sizes, SIZES[k])
@@ -808,12 +876,25 @@ local function toPart(b: Builder, name: string, colour: Color3, material: Enum.M
 	end
 	local mid = (lo + hi) * 0.5
 	-- THE CHUNK'S MESH (T-274): a fixed-size copy of a template, made opaque (`meshFor`). Out
-	-- of room for it, the builder may make room (`onShort`) and try once more
-	local content, held = meshFor(b, mid, b.pace)
+	-- of room for it, the builder may make room (`onShort`) and try once more. The same chunk
+	-- drawn the same way a moment ago: its opaque content again (T-284, `reuseGet`)
+	local content: Content? = reuseGet(b, lo, hi)
+	local held: EditableMesh? = nil
+	if content then
+		buildStats.reused += 1
+	else
+		local made: Content
+		made, held = meshFor(b, mid, b.pace)
+		content = made
+		if not held then
+			reusePut(b, made, lo, hi)
+		end
+	end
 	b.held = held
+	local meshContent = content :: Content
 	local ok, part = b.pace.wait(function()
 		return pcall(function()
-			return AssetService:CreateMeshPartAsync(content, {
+			return AssetService:CreateMeshPartAsync(meshContent, {
 				CollisionFidelity = Enum.CollisionFidelity.Box,
 				RenderFidelity = Enum.RenderFidelity.Precise,
 			})
@@ -821,7 +902,7 @@ local function toPart(b: Builder, name: string, colour: Color3, material: Enum.M
 	end)
 	if not ok then
 		part = b.pace.wait(function()
-			return AssetService:CreateMeshPartAsync(content)
+			return AssetService:CreateMeshPartAsync(meshContent)
 		end)
 	end
 	local mp = part :: MeshPart
@@ -935,7 +1016,8 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 		-- grass, so its one texture is the tarmac's (painted in code, `Road/RoadTexture`)
 		local g0 = os.clock()
 		local tarmacImage = if groundRunoff then RoadTexture.get() else nil
-		local grassImage = if tarmacImage then nil else GrassTexture.get()
+		-- (the grass's image as opaque content, T-276, counted by `Road/OpaqueBudget`, T-284)
+		local grassImage = if tarmacImage then nil else GrassTexture.content()
 		local g1 = os.clock()
 		if g1 - g0 > 0.001 then
 			-- it waited on the asset: not work, and the frame's slice starts afresh (T-193)
@@ -1429,7 +1511,9 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 		model:SetAttribute("S1", s1)
 		-- white, so the vertex colours are what show
 		slice()
-		local roadPart = toPart(road, "Road", Color3.new(1, 1, 1), R.RoadMaterial, tarmacImage or (if grassImage then Content.fromObject(grassImage) else nil))
+		-- (T-284) what the chunk is, for drawing it from its opaque content again (`reuseGet`)
+		road.key = `{splineId(spline)}|{s0}|{s1}|{o.tolerance or M.Tolerance}|{o.maxStep or M.MaxStep}|{o.minStep or M.MinStep}|{across}|{if groundRunoff then "g" else "r"}|{if lean then "l" else "w"}|{if tarmacImage then "t" elseif grassImage then "g" else "-"}`
+		local roadPart = toPart(road, "Road", Color3.new(1, 1, 1), R.RoadMaterial, tarmacImage or grassImage)
 		roadPart.Parent = model
 		slice()
 		local parts = 0

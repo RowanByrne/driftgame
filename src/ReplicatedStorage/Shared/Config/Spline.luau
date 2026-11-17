@@ -787,6 +787,16 @@ local Spline = {
 		-- measured (over 2 400 whole, with a grove, in a drive at the defaults; a far one about
 		-- 400), so a run seldom makes one (making one holds a growable mesh for a moment)
 		PrepareFaces = 3008,
+		-- OPAQUE CONTENT, PER SESSION (T-284, `Road/OpaqueBudget`): a client that makes a few
+		-- thousand freezes for seconds at a time, however few it keeps (T-276's bench: from
+		-- about 2 050 made). Past this many, nothing more is made opaque: the road builds as
+		-- T-273 did (a kept growable mesh, each chunk a fixed-size copy), the others keep their
+		-- fixed-size copies or images
+		OpaqueCap = 1500,
+		-- the far chunks' opaque content kept after they are taken down (T-284), the most
+		-- recently used first, so a chunk drawn far ahead and again far behind (Road ahead past
+		-- `Near.Ahead`) is made opaque once: it holds none of the mesh memory
+		ReuseKeep = 24,
 	},
 
 }

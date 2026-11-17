@@ -234,6 +234,64 @@ function Tests.run()
 			opaque == built and fixedHeld == 0 and foldedOk,
 			`{opaque} of {built} chunks opaque, {fixedHeld} holding a fixed-size mesh; read back, each is its template's size with {folded} unused faces in all folded to a point; build state {game:GetService("HttpService"):JSONEncode(SplineMesh.BuildState())}`
 		)
+		-- (T-284) EVERY OPAQUE CONTENT COUNTS FOR THE SESSION (`Road/OpaqueBudget`). A chunk drawn
+		-- again exactly as before (chunk 2 far, drawn and taken down) is drawn from the
+		-- content it had, not made opaque again; and past the session's cap a chunk is built as
+		-- T-273 did (a fixed-size mesh of its own size, nothing made opaque), while one drawn
+		-- before is still drawn from its content
+		do
+			local OpaqueBudget = require(ReplicatedStorage.Shared.Road.OpaqueBudget)
+			local farOpts = { tolerance = F.Tolerance, maxStep = F.MaxStep, across = F.Across, leanTrees = F.LeanTrees }
+			local function faceCount(part: MeshPart?): number
+				local em = editable(part)
+				return if em then #em:GetFaces() else -1
+			end
+			-- (drawn once first: it may have been let go of since, `ReuseKeep`)
+			local first = SplineMesh.build(spline, 2 * L, 3 * L, folder, farOpts)
+			if first then
+				SplineMesh.destroy(first)
+			end
+			local made0, st0 = OpaqueBudget.made(), SplineMesh.BuildState()
+			local again, ai = SplineMesh.build(spline, 2 * L, 3 * L, folder, farOpts)
+			local st1 = SplineMesh.BuildState()
+			local againOk = again ~= nil and ai.opaque and st1.reused == st0.reused + 1 and OpaqueBudget.made() == made0
+				and faceCount(again and again:FindFirstChild("Road")) == SplineMesh.templateFaces(ai.triangles)
+			-- a chunk drawn differently is not mistaken for it
+			local other, oi = SplineMesh.build(spline, 2 * L, 3 * L, folder, { across = 3 })
+			local otherOk = other ~= nil and oi.opaque and SplineMesh.BuildState().reused == st1.reused and OpaqueBudget.made() == made0 + 1
+			check(
+				"a chunk drawn again as it was is not made opaque again",
+				againOk and otherOk,
+				`far chunk 2 again: reused {st1.reused - st0.reused}, opaque made {OpaqueBudget.made() - made0 - 1} for it, read back {faceCount(again and again:FindFirstChild("Road"))} faces (its template {SplineMesh.templateFaces(ai and ai.triangles or 0)}); drawn with 3 strips across instead: made opaque {if otherOk then "anew" else "NOT anew"}; {SplineMesh.BuildState().reuseHeld} kept (at most {M.ReuseKeep})`
+			)
+			-- past the cap
+			workspace:SetAttribute("__opaque_cap", OpaqueBudget.made())
+			local st2, made2, declined2 = SplineMesh.BuildState(), OpaqueBudget.made(), OpaqueBudget.DebugState().declined
+			local past, pi = SplineMesh.build(spline, 3 * L, 4 * L, folder, { across = 3 })
+			local pastRoad = past and past:FindFirstChild("Road") :: MeshPart?
+			local pastObj = pastRoad and pastRoad.MeshContent.Object
+			local pastFaces = if pastObj and pastObj:IsA("EditableMesh") then #pastObj:GetFaces() else -1
+			local st3 = SplineMesh.BuildState()
+			local cached, ci = SplineMesh.build(spline, 2 * L, 3 * L, folder, farOpts)
+			local st4 = SplineMesh.BuildState()
+			workspace:SetAttribute("__opaque_cap", nil)
+			check(
+				"past the session's cap of opaque content, a chunk is built as T-273 did, and nothing is made opaque",
+				past ~= nil and not pi.opaque and pastFaces == pi.triangles and st3.growable == st2.growable + 1 and OpaqueBudget.made() == made2
+					and OpaqueBudget.DebugState().declined > declined2 and cached ~= nil and ci.opaque and st4.reused == st3.reused + 1,
+				`cap {made2}: chunk 3 built {if pi and pi.opaque then "opaque" else "holding its own fixed-size mesh"}, {pastFaces} faces for its {pi and pi.triangles} triangles (growable path {st3.growable - st2.growable}); made opaque {OpaqueBudget.made() - made2}, declined {OpaqueBudget.DebugState().declined - declined2}; far chunk 2 still drawn from its content: {ci and ci.opaque}`
+			)
+			for _, m in { again, other, past, cached } do
+				if m then
+					SplineMesh.destroy(m)
+				end
+			end
+			-- (a template serves again: the fallback's growable mesh is let go)
+			local after = SplineMesh.build(spline, 4 * L, 5 * L, folder, { across = 3 })
+			if after then
+				SplineMesh.destroy(after)
+			end
+		end
 		-- (a) THE DEFAULTS: every mesh user fits with `Budget.Spare` over, and the ground keeps
 		-- at least its own Ground detail's tiles (what it gives up is corridor far along the road)
 		local others = SplineMesh.otherTiles()
@@ -449,9 +507,35 @@ function Tests.run()
 				textured == built and grassFaces > 0 and mappedOk == grassFaces and plainOk == plainFaces,
 				`{textured} of {built} chunks textured; {mappedOk} of {grassFaces} grass faces mapped (worst {fmt(worstStuds, 4)} studs off), {plainOk} of {plainFaces} other faces on the plain corner; blotches {fmt(shadeLo, 3)} to {fmt(shadeHi, 3)} of the grass colour`
 			)
-			-- the shared image itself, as the chunks draw it: the painted tile, its corners set
+			-- the shared image itself, as the chunks draw it: the painted tile, its corners set.
+			-- Since T-284 the chunks draw it as opaque content (`GrassTexture.content`, T-276),
+			-- read back here through an editable copy of that content (or the image itself,
+			-- where the content was refused)
+			local grassContent = GrassTexture.content()
 			local ts = GrassTexture.DebugState()
-			local img = GrassTexture.get()
+			local img: EditableImage? = nil
+			local readCopy = false
+			if grassContent then
+				local obj = grassContent.Object
+				if obj and obj:IsA("EditableImage") then
+					img = obj
+				elseif grassContent.SourceType == Enum.ContentSourceType.Opaque then
+					local okImg, copy = pcall(function()
+						return AssetService:CreateEditableImageAsync(grassContent)
+					end)
+					if okImg and copy then
+						img, readCopy = copy, true
+					end
+				end
+			end
+			-- every chunk is drawn with that very content
+			local sameTexture = 0
+			for _, model in models do
+				local road = model:FindFirstChild("Road")
+				if road and grassContent and road.TextureContent == grassContent then
+					sameTexture += 1
+				end
+			end
 			local cornerOk, mean, size = false, 0, 0
 			local want = math.floor(G.Shade * 255 + 0.5)
 			if img then
@@ -470,7 +554,14 @@ function Tests.run()
 				end
 				mean = sum / (size * size) / 255
 			end
-			check("the painted tile loads, its corners plain Shade, and it averages Shade", img ~= nil and cornerOk and math.abs(mean - G.Shade) < 0.03, `{G.Image}: {size} px, loaded in {fmt(ts.buildMs, 1)} ms; corners {want}/255; mean {fmt(mean, 3)} against Shade {G.Shade}`)
+			if img and readCopy then
+				img:Destroy()
+			end
+			check(
+				"the painted tile loads, its corners plain Shade, and it averages Shade, read back from the content the chunks draw",
+				img ~= nil and cornerOk and math.abs(mean - G.Shade) < 0.03 and sameTexture == built and (ts.content == "opaque" or ts.content == "image"),
+				`{G.Image}: {size} px, loaded in {fmt(ts.buildMs, 1)} ms; drawn as {ts.content} content ({if readCopy then "read back through a copy" else "the image itself"}), {sameTexture} of {built} chunks with it; corners {want}/255; mean {fmt(mean, 3)} against Shade {G.Shade}`
+			)
 		end
 
 		-- 2c. THE TARMAC'S UPLOADED IMAGE IS THE PAINTED ONE (T-274): what the painting makes
