@@ -33,12 +33,8 @@ ReverseEntry.__index = ReverseEntry
 
 ReverseEntry.Kind = "reverseEntry"
 
-ReverseEntry.Tuning = {
-	AngleDegrees = 90, -- the slip, turned into the hairpin, that starts it
-	Grace = 0.2, -- s a lapse of the drift is forgiven
-	JumpStuds = 80, -- studs along the road in one frame that can only be a put-back
-	MaxSeconds = 20, -- an attempt still going after this is void
-}
+-- The numbers: `Config.ScoreEvents.Detectors.ReverseEntry`.
+ReverseEntry.Tuning = Config.ScoreEvents.Detectors.ReverseEntry
 
 local function hairpinInfo(h: Hairpins.Hairpin?): any
 	if not h then

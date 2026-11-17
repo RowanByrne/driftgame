@@ -473,8 +473,8 @@ local function runAll(opts)
 			sum, lo, hi = sums(e)
 			check(
 				`{tag}: dropping to 2 wheels at the apex completes at level 2`,
-				e and e.finished == true and e.info.level == 4 and det.last.level == 2 and lo == 0.5 and hi == 1,
-				`started at level {tostring(e and e.info.level)}, ended at {tostring(det.last and det.last.level)}, sizes {lo}..{hi}`
+				e and e.finished == true and e.info.level == 4 and det.last.level == 2 and lo == 0.5 and hi == 1 and e.info.label == Config.ScoreEvents.Kinds.perfectHairpin.Words[1].text,
+				`started at level {tostring(e and e.info.level)}, ended at {tostring(det.last and det.last.level)}, sizes {lo}..{hi}, the line relabelled {tostring(e and e.info.label)}`
 			)
 
 			-- crossing the double yellow after the apex: void

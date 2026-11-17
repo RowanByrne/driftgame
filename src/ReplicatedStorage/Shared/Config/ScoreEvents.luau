@@ -197,5 +197,25 @@ return {
 			TwoWheelSize = 1, -- both wheels on one side
 			OtherTwoSize = 0.4, -- two that are not one side (an axle, a diagonal)
 		},
+		-- `Drift/Events/PerfectHairpin` (T-299): crossing a hairpin's entry (`Road/Hairpins`)
+		-- drifting into it with 2+ wheels sliding starts it; your own side is the double
+		-- yellow's side the car's centre is on there. Held while it drifts into the bend with
+		-- 2+ wheels; a lapse up to `Grace` is forgiven. Voids on a wheel over the paint, the
+		-- centre off the tarmac, a fall or a put-back (`JumpStuds` along the road in a step).
+		PerfectHairpin = {
+			Grace = 0.2, -- seconds a lapse of the drift (or of the fourth wheel) is forgiven
+			JumpStuds = 80, -- studs along the road in one step that can only be a put-back
+			Size4 = 1, -- the handle's size while all four wheels have slid the whole way
+			Size2 = 0.5, -- and once the fourth has dropped out for good: half
+		},
+		-- `Drift/Events/ReverseEntry` (T-299): the slip past `AngleDegrees` turned into the
+		-- hairpin, from its entry zone to its exit, starts it; then a drift on 2+ wheels, any
+		-- way round, to the exit. A lapse up to `Grace` is forgiven.
+		ReverseEntry = {
+			AngleDegrees = 90,
+			Grace = 0.2, -- seconds
+			JumpStuds = 80, -- studs
+			MaxSeconds = 20, -- an attempt still going after this is void
+		},
 	},
 }

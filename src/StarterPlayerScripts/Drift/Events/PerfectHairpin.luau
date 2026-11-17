@@ -44,12 +44,8 @@ PerfectHairpin.__index = PerfectHairpin
 
 PerfectHairpin.Kind = "perfectHairpin"
 
-PerfectHairpin.Tuning = {
-	Grace = 0.2, -- s a lapse of the drift (or of the fourth wheel) is forgiven
-	JumpStuds = 80, -- studs along the road in one frame that can only be a put-back
-	Size4 = 1, -- the handle's size at the 4-wheel level
-	Size2 = 0.5, -- and at the 2-wheel level: half
-}
+-- The numbers: `Config.ScoreEvents.Detectors.PerfectHairpin`.
+PerfectHairpin.Tuning = Config.ScoreEvents.Detectors.PerfectHairpin
 
 -- Wheels FL FR RL RR, in the car's own axes (`Drift/Model`'s order)
 local WHEELS = {
@@ -130,6 +126,7 @@ function PerfectHairpin.new(sink: any, rig: any)
 		tried = {} :: { [number]: boolean }, -- hairpins (by entry) already attempted
 		-- the live attempt
 		handle = nil :: any,
+		info = nil :: any, -- the live attempt's info, kept: the engine reads its `label`
 		live = nil :: Hairpins.Hairpin?,
 		level = 0,
 		side = 0,
@@ -162,6 +159,7 @@ function PerfectHairpin._end(self: any, completed: boolean, reason: string)
 	}
 	self.handle = nil
 	self.live = nil
+	self.info = nil
 end
 
 function PerfectHairpin.Update(self: any, dt: number, state: any)
@@ -234,6 +232,10 @@ function PerfectHairpin.Update(self: any, dt: number, state: any)
 			else
 				if self.level == 4 and self.bad4 > T.Grace then
 					self.level = 2
+					-- the line's word follows the level, not the peak size the engine words by
+					if self.info then
+						self.info.label = Config.ScoreEvents.Kinds[PerfectHairpin.Kind].Words[1].text
+					end
 				end
 				if s >= live.exit then
 					self:_end(true, "through")
@@ -256,14 +258,15 @@ function PerfectHairpin.Update(self: any, dt: number, state: any)
 			self.level = if self.bad4 <= T.Grace then 4 else 2
 			self.elapsed = 0
 			self.stats.started += 1
-			self.handle = self.sink.start(PerfectHairpin.Kind, {
+			self.info = {
 				entry = h.entry,
 				exit = h.exit,
 				dir = h.dir,
 				radius = h.radius,
 				level = self.level,
 				side = side,
-			})
+			}
+			self.handle = self.sink.start(PerfectHairpin.Kind, self.info)
 		else
 			self.last = {
 				result = "not started",
