@@ -169,7 +169,24 @@ function Vista.arcGeometry(mesh: any, slice: number?): ArcGeometry
 	local zc = -radius * (1 + math.cos(half)) / 2
 	local cols: number = mesh.Columns
 	local top, base = mesh.TopV, 0.995
-	local fadeY = height / 2 - art * (base - top) - art * mesh.SkirtFade
+	-- UNDER THE PICTURE (T-278): its lower `SkirtBand` share again and again, mirrored each
+	-- time so every join meets itself, down to the panel's bottom: more of the same painted
+	-- hills from any height, never a plain band (a skirt fading to one mist colour showed as
+	-- a flat blue band from up high; stretching the bottom row streaked)
+	local band = mesh.SkirtBand or 0.3
+	local ys: { number } = { height / 2, height / 2 - art * (base - top) }
+	local vs: { number } = { top, base }
+	local step = art * band
+	local up = true
+	while ys[#ys] - step > -height / 2 + 1e-6 do
+		table.insert(ys, ys[#ys] - step)
+		table.insert(vs, if up then base - band else base)
+		up = not up
+	end
+	local rest = (ys[#ys] - -height / 2) / step
+	table.insert(ys, -height / 2)
+	table.insert(vs, if up then base - band * rest else (base - band) + band * rest)
+	local nr = #ys
 	local out: ArcGeometry = { positions = {}, normals = {}, uvs = {}, triangles = {}, size = Vector3.zero }
 	for i = 0, cols do
 		local t = i / cols
@@ -178,22 +195,16 @@ function Vista.arcGeometry(mesh: any, slice: number?): ArcGeometry
 		local u = (j + t) / slices
 		local x, z = radius * math.sin(a), zc + radius * math.cos(a)
 		local n = Vector3.new(-math.sin(a), 0, -math.cos(a))
-		local rows = {
-			{ height / 2, Vector2.new(u, top) },
-			{ height / 2 - art * (base - top), Vector2.new(u, base) },
-			{ fadeY, mesh.SkirtUV },
-			{ -height / 2, mesh.SkirtUV },
-		}
-		for _, row in rows do
-			table.insert(out.positions, Vector3.new(x, row[1], z))
+		for r = 1, nr do
+			table.insert(out.positions, Vector3.new(x, ys[r], z))
 			table.insert(out.normals, n)
-			table.insert(out.uvs, row[2])
+			table.insert(out.uvs, Vector2.new(u, vs[r]))
 		end
 	end
 	for i = 0, cols - 1 do
-		for r = 0, 2 do
-			local tl = i * 4 + r + 1
-			local bl, tr = tl + 1, tl + 4
+		for r = 0, nr - 2 do
+			local tl = i * nr + r + 1
+			local bl, tr = tl + 1, tl + nr
 			local br = tr + 1
 			-- front faces look in at the centre
 			table.insert(out.triangles, { tl, bl, tr })

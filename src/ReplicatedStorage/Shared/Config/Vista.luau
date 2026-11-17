@@ -59,6 +59,9 @@ return {
 		-- At the picture's edge column, which every joined picture of a ring shares, so the
 		-- skirts of neighbouring panels match.
 		SkirtUV = Vector2.new(0.003, 0.97),
+		-- (T-278) SkirtFade and SkirtUV are no longer used by the curved panels: under the
+		-- picture they repeat its lower `SkirtBand` share, mirrored, down to the panel's bottom
+		SkirtBand = 0.3,
 	},
 
 	-- ------------------------------------------------------------- ridge layers
@@ -162,6 +165,9 @@ return {
 	-- `DipSamples` points round the camera every `DipEvery` s, the ground's own height
 	-- (`Road/Ground.h`) at the current Ground detail's `Reach`; the dip eases in over
 	-- `DipIn` s and out over `DipOut` s.
+	-- the dip is off (the user: one deep valley sank the whole view); the skirt's painted
+	-- hills cover below the Near ring instead (`Mesh.SkirtBand`)
+	Dip = false,
 	EyeHeight = 60,
 	DipMargin = 0.75, -- degrees
 	DipSamples = 24,

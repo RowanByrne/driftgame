@@ -518,7 +518,9 @@ function VistaView.Update(self: View, dt: number)
 	self.camY += (at.Y - self.camY) * (if dt > 0 then 1 - math.exp(-dt / V.HeightLag) else 1)
 	self.lift = Vista.lift(V, self.originY, self.camY)
 
-	self:_dipStep(dt, at)
+	if V.Dip ~= false then
+		self:_dipStep(dt, at)
+	end
 	for _, ridge in self.ridges do
 		ridge.centre = Vista.follow(ridge.centre, cam, dt, ridge.lag, ridge.maxLag)
 		-- (T-278) at a fixed angle from the camera, whatever its height, and dipped together
