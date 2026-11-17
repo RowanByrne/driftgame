@@ -117,8 +117,8 @@
 -- contact, the ground's up, the T-207 width share and the drawn ground (`Drift/GroundMeshView`,
 -- passed into `Update`), which the ribbon's points are put on and take their colour from.
 --
--- NOTHING IS CREATED OR DESTROYED WHILE DRIVING. 46 instances per car at one smoking
--- surface -- 4 wheels x (2 smoke ParticleEmitters, 3 debris ParticleEmitters and 3 emitter
+-- NOTHING IS CREATED OR DESTROYED WHILE DRIVING. 50 instances per car at one smoking
+-- surface -- 4 wheels x (2 smoke ParticleEmitters, 4 off-road ParticleEmitters and 3 emitter
 -- anchors), the grass ribbon's strips (two MeshParts a wheel), the rubber ribbon's (one a
 -- wheel) and their two folders -- built once and switched or rewritten in place for ever
 -- after. It was 20 before T-188, 64 before T-265, 88 with T-265's trail ruts, 57 with its
@@ -166,6 +166,7 @@ type GroundFx = {
 	clippings: KickFx,
 	dirt: KickFx,
 	dust: KickFx,
+	spray: KickFx, -- the soft billows on grass (T-279)
 }
 
 type WheelFx = {
@@ -460,15 +461,15 @@ function Wheels.Ready(self: Wheels): boolean
 	return self.marks.ready and self.rubber.ready
 end
 
--- Instances one wheel carries: 2 smoke emitters per smoking surface, the 3 debris emitters
--- (T-188) and 3 fixed emitter anchors (T-207). 8 at one smoking surface. Its marks are the
--- ribbons' (T-265, T-269), not the wheel's.
+-- Instances one wheel carries: 2 smoke emitters per smoking surface, the 4 off-road emitters
+-- (clippings, dirt and dust, T-188; the grass spray, T-279) and 3 fixed emitter anchors
+-- (T-207). 9 at one smoking surface. Its marks are the ribbons' (T-265, T-269), not the wheel's.
 function Wheels.perWheel(): number
-	return #Config.Fx.Built * 2 + 3 + 3
+	return #Config.Fx.Built * 2 + 4 + 3
 end
 
 -- And a car: its four wheels; the grass ribbon, a strip a wheel of two MeshParts (T-265);
--- the rubber ribbon, a strip a wheel of one (T-269); and their two folders. 46.
+-- the rubber ribbon, a strip a wheel of one (T-269); and their two folders. 50.
 function Wheels.perCar(): number
 	return #CarModel.WHEEL_NAMES * Wheels.perWheel()
 		+ Config.Fx.Ground.Ribbon.Wheels * 2
@@ -485,12 +486,21 @@ local function wheelIndex(name: string): number?
 	return nil
 end
 
--- The two smoke layers share a shape, so they share a builder: `S` is `Config.Fx.Smoke`
--- for the diffuse one and `Config.Fx.Stylized` for the one on top.
+-- Every emitter shares a builder: `S` is its table in `Config.Fx` (`Smoke`, `Stylized`, or
+-- one of `Ground`'s). Each is drawn from one painted sheet, a random still frame a particle,
+-- under the one lighting rule (T-279).
 local function makeEmitter(fullName: string, colour: Color3, S: any, at: Attachment): ParticleEmitter
+	local F = Config.Fx
+	local sheet = F.Sheets[S.Sheet]
 	local e = Instance.new("ParticleEmitter")
 	e.Name = fullName
-	e.Texture = S.Texture
+	e.Texture = sheet.Texture
+	e.FlipbookLayout = sheet.Layout
+	e.FlipbookMode = F.Flipbook.Mode
+	e.FlipbookFramerate = NumberRange.new(F.Flipbook.Framerate)
+	e.FlipbookStartRandom = F.Flipbook.StartRandom
+	e.Orientation = S.Orientation
+	e.ZOffset = S.ZOffset
 	e.Color = ColorSequence.new(colour)
 	e.Size = NumberSequence.new(S.SizeStart, S.SizeEnd)
 	-- Smoke fades IN over the first quarter of its life; debris (`FadeIn = 0`, T-188) is
@@ -515,8 +525,9 @@ local function makeEmitter(fullName: string, colour: Color3, S: any, at: Attachm
 	e.RotSpeed = NumberRange.new(S.RotationSpeed[1], S.RotationSpeed[2])
 	e.Acceleration = Vector3.new(0, S.RiseAcceleration, 0)
 	e.Drag = S.Drag
-	e.LightEmission = S.LightEmission
-	e.LightInfluence = S.LightInfluence
+	-- `Instance.new` makes LightInfluence 0 (Studio makes it 1): always set it.
+	e.LightEmission = S.LightEmission or F.Light.Emission
+	e.LightInfluence = F.Light.Influence
 	e.EmissionDirection = Enum.NormalId.Top
 	e.Rate = 0
 	e.Enabled = false
@@ -535,7 +546,7 @@ function Wheels.Clear(self: Wheels)
 			fx.stylized:Destroy()
 		end
 		local g = w.ground
-		for _, k in { g.clippings, g.dirt, g.dust } do
+		for _, k in { g.clippings, g.dirt, g.dust, g.spray } do
 			k.emitter:Destroy()
 		end
 		w.sourceA:Destroy()
@@ -624,6 +635,7 @@ function Wheels.Attach(self: Wheels, rig: any): boolean
 			clippings = kick("grass", G.Grass.Clippings, sourceC),
 			dirt = kick("dirt", G.Grass.Dirt, sourceC),
 			dust = kick("dust", G.Gravel.Dust, sourceA),
+			spray = kick("spray", G.Grass.Spray, sourceA),
 		}
 
 		table.insert(self.wheels, {
@@ -704,6 +716,7 @@ local function groundOff(g: GroundFx)
 	writeKick(g.clippings, 0)
 	writeKick(g.dirt, 0)
 	writeKick(g.dust, 0)
+	writeKick(g.spray, 0)
 end
 
 -- Everything off and remembered as off. Used when the car jumps (spawn, respawn or
@@ -784,6 +797,7 @@ function Wheels.Update(self: Wheels, state: DriftModel.State?, input: any, dt: n
 	local clipBase = Wheels.kickRate(G.Grass.Clippings, slipDeg) * clipShare
 	local dirtBase = Wheels.kickRate(G.Grass.Dirt, slipDeg) * dirt
 	local dustBase = Wheels.kickRate(G.Gravel.Dust, slipDeg)
+	local sprayBase = Wheels.kickRate(G.Grass.Spray, slipDeg)
 
 	for _, w in self.wheels do
 		local down = state.wheelsDown[w.index] == true
@@ -880,6 +894,7 @@ function Wheels.Update(self: Wheels, state: DriftModel.State?, input: any, dt: n
 		writeKick(g.clippings, if emit then clipBase * w.mixGrass else 0)
 		writeKick(g.dirt, if emit then dirtBase * w.mixGrass else 0)
 		writeKick(g.dust, if emit then dustBase * w.mixGravel else 0)
+		writeKick(g.spray, if emit then sprayBase * w.mixGrass else 0)
 	end
 
 	-- The laid marks dry and fade with age, and go when their life is up.
@@ -1005,6 +1020,7 @@ function Wheels.DebugState(self: Wheels, state: DriftModel.State?, input: any)
 			clippingsRate = live(w.ground.clippings),
 			dirtRate = live(w.ground.dirt),
 			dustRate = live(w.ground.dust),
+			sprayRate = live(w.ground.spray),
 			-- How far the lean had to be pushed back on this wheel this frame, in studs.
 			-- This IS the bug, in one number: before the fix the attachment sat here and
 			-- the mark went with it, up to six tenths of a stud under a road with five
@@ -1030,7 +1046,7 @@ function Wheels.CountInstances(self: Wheels): number
 			n += (if fx.diffuse.Parent then 1 else 0) + (if fx.stylized.Parent then 1 else 0)
 		end
 		local g = w.ground
-		for _, inst in { g.clippings.emitter, g.dirt.emitter, g.dust.emitter } do
+		for _, inst in { g.clippings.emitter, g.dirt.emitter, g.dust.emitter, g.spray.emitter } do
 			n += if (inst :: Instance).Parent then 1 else 0
 		end
 	end

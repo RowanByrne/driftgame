@@ -1,6 +1,6 @@
 # Feature: Tyre smoke, grass and mud particles, one painted family
 
-**Status:** specced (draft for the user). **Owner task:** none yet.
+**Status:** building (plan approved 2026-11-17). **Owner task:** T-279: art round T-280, emitters T-283.
 
 The user, 2026-11-17: *"I want to improve the particle effects we have for tire smoke, grass, and mud effects. right now they clash hard as our particles are super low def and our smoke is super high def. I want something a bit more in the middle that leans towards high def for all. research the best way to do them, similar to how we did the tire mark effect changes, and propose a plan."*
 

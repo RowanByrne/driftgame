@@ -193,13 +193,15 @@ function Tests.run(opts)
 			`built: {table.concat(F.Built, ", ")}{if builtOk then "" else "; incomplete look for " .. table.concat(missing, ", ")}`
 		)
 		-- THE INSTANCE BUDGET IS THIS FORMULA: 4 wheels x (smoking surfaces x 2 ParticleEmitters
-		-- + the off-road layer's 3 ParticleEmitters, T-188, + 3 fixed emitter anchors, T-207),
-		-- the grass ribbon's strips, two MeshParts a wheel (T-265), the rubber ribbon's, one a
-		-- wheel (T-269), and their two folders: 46 a car.
+		-- + the off-road layer's 4 ParticleEmitters -- clippings, dirt and dust, T-188, and the
+		-- grass spray, T-279 -- + 3 fixed emitter anchors, T-207), the grass ribbon's strips, two
+		-- MeshParts a wheel (T-265), the rubber ribbon's, one a wheel (T-269), and their two
+		-- folders: 50 a car.
 		check(
 			"one smoking surface, and the budget it comes to",
-			#F.Built == 1 and Wheels.perWheel() == 8
-				and Wheels.perCar() == 4 * 8 + F.Ground.Ribbon.Wheels * 2 + F.Marks.Ribbon.Wheels + 2,
+			#F.Built == 1 and Wheels.perWheel() == 9
+				and Wheels.perCar() == 4 * 9 + F.Ground.Ribbon.Wheels * 2 + F.Marks.Ribbon.Wheels + 2
+				and Wheels.perCar() == 50,
 			`{#F.Built} surface(s) -> {Wheels.perWheel()} a wheel, {Wheels.perCar()} instances per car`
 		)
 		-- THE RUBBER IS SEE-THROUGH BY VERTEX ALPHA (T-269), which needs its part above 0
@@ -226,10 +228,33 @@ function Tests.run(opts)
 			F.Gates.MinSlipDegrees < Config.Drift.MinSlipAngleForDrift * 0.5,
 			`floor {F.Gates.MinSlipDegrees} deg, drifting at {Config.Drift.MinSlipAngleForDrift} deg`
 		)
+		-- THE PAINTED SHEETS (T-279): every emitter names a sheet that is an uploaded id with a
+		-- flipbook grid, lies under the one light rule, and stays under the mobile cap of 100
+		-- particles a second at its maximum.
+		local G = F.Ground
+		local emitters = {
+			Smoke = F.Smoke, Stylized = F.Stylized, Clippings = G.Grass.Clippings,
+			Dirt = G.Grass.Dirt, Spray = G.Grass.Spray, Dust = G.Gravel.Dust,
+		}
+		local sheetsOk, sheetLine = true, {}
+		for name, S in emitters do
+			local sheet = F.Sheets[S.Sheet]
+			local ok = sheet ~= nil
+				and string.match(sheet.Texture, "^rbxassetid://%d+$") ~= nil
+				and sheet.Layout ~= Enum.ParticleFlipbookLayout.None
+				and typeof(S.Orientation) == "EnumItem"
+				and type(S.ZOffset) == "number"
+				and S.LightInfluence == nil
+				and S.RateMax <= 100
+			sheetsOk = sheetsOk and ok
+			if not ok then
+				table.insert(sheetLine, `{name}: sheet {tostring(S.Sheet)}, RateMax {S.RateMax}`)
+			end
+		end
 		check(
-			"nothing in this feature uploads an asset",
-			string.sub(F.Smoke.Texture, 1, 11) == "rbxasset://",
-			`smoke texture {F.Smoke.Texture}`
+			"every emitter draws from an uploaded sheet, under one light, under the mobile cap",
+			sheetsOk and F.Light.Influence > 0 and F.Light.Emission == 0 and F.Flipbook.Framerate == 0,
+			if sheetsOk then `6 emitters; light {F.Light.Influence} / {F.Light.Emission}` else table.concat(sheetLine, "; ")
 		)
 	end
 
@@ -910,12 +935,14 @@ function Tests.run(opts)
 			)
 		)
 		check(
-			"at a low angle on grass: the flat grass line, clippings, no trench, no dirt",
+			"at a low angle on grass: the flat grass line, clippings and the spray, no trench, no dirt",
 			w.marks:Kind(rl.index) == "flat"
 				and w.rubber:Kind(rl.index) == nil
 				and rl.ground.clippings.emitter.Enabled
+				and rl.ground.spray.emitter.Enabled
+				and math.abs(rl.ground.spray.emitter.Rate - Wheels.kickRate(G.Grass.Spray, 20) * rl.mixGrass) < 1e-6
 				and not rl.ground.dirt.emitter.Enabled,
-			string.format("clippings %.1f/s, mix %.2f", rl.ground.clippings.emitter.Rate, rl.mixGrass)
+			string.format("clippings %.1f/s, spray %.1f/s, mix %.2f", rl.ground.clippings.emitter.Rate, rl.ground.spray.emitter.Rate, rl.mixGrass)
 		)
 		-- Past the trench threshold: brown replaces green, while dirt still sprays (T-205).
 		local grass45 = stateWith({ slipDeg = 45, speed = 70, throttle = 1, surface = "grass" })
@@ -1001,6 +1028,7 @@ function Tests.run(opts)
 				and clipStill
 				and math.abs(rl.fx[1].diffuse.Rate - full) < 1e-6
 				and not rl.ground.clippings.emitter.Enabled
+				and not rl.ground.spray.emitter.Enabled
 				and w.rubber:Kind(rl.index) == "rubber"
 				and w.marks:Kind(rl.index) == nil,
 			string.format("smoke %.2f one frame back, %.2f half a second later (full %.2f)", smokeIn1, rl.fx[1].diffuse.Rate, full)
@@ -1030,7 +1058,8 @@ function Tests.run(opts)
 			w.rubber:Kind(rl.index) == "scuff"
 				and rl.ground.dust.emitter.Enabled
 				and not rl.fx[1].diffuse.Enabled
-				and not rl.ground.clippings.emitter.Enabled,
+				and not rl.ground.clippings.emitter.Enabled
+				and not rl.ground.spray.emitter.Enabled,
 			string.format("dust %.1f/s", rl.ground.dust.emitter.Rate)
 		)
 		check(
