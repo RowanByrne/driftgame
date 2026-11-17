@@ -26,7 +26,7 @@ local Render = require(DriftFolder.Render)
 
 local CarKitsTests = {}
 
-local BODIES = { "block", "balanced", "gripper", "slider", "bruiser", "ae86" }
+local BODIES = { "block", "balanced", "gripper", "slider", "bruiser", "ae86", "restyled" }
 local KIT_CATEGORIES = { "BodyKit", "Interior" }
 
 local function check(checks, name: string, ok: boolean, detail: string)

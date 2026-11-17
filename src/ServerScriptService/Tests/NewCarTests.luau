@@ -404,7 +404,7 @@ function NewCarTests.run()
 		end
 		local spawnedOk = true
 		for _, c in (if folder then folder:GetChildren() else {}) do
-			spawnedOk = spawnedOk and c:GetAttribute("Body") == "liftback" and CarParts.isRig(c)
+			spawnedOk = spawnedOk and c:GetAttribute("Body") == key and CarParts.isRig(c)
 		end
 		local cycle = {}
 		local at = key
@@ -415,7 +415,7 @@ function NewCarTests.run()
 		check(
 			checks,
 			"it is the car a player spawns in, on the approved car's numbers",
-			key == "liftback" and drawn == "liftback" and same and fields > 30 and spawnedOk and at == key,
+			key == "restyled" and drawn == "restyled" and same and fields > 30 and spawnedOk and at == key,
 			string.format(
 				"default '%s' draws '%s'; %d car numbers equal to the approved car's%s; F4 cycles %s; %s",
 				key,

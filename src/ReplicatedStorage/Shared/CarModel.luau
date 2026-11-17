@@ -64,7 +64,7 @@ CarModel.SHELL_NAME = "Shell"
 -- download, no yield (T-028).
 -- A module whose data has `groups` and `pieces` is a rigged mesh car (`Cars/MeshRig`);
 -- otherwise it is the old shape, a `Body` and four `Wheel*` groups (`Cars/AE86`).
-CarModel.BODIES = { ae86 = "AE86", liftback = "Liftback" }
+CarModel.BODIES = { ae86 = "AE86", liftback = "Liftback", restyled = "Restyled" } -- restyled: T-287, the default
 
 -- `CarBody = "auto"` means "whatever body the ACTIVE archetype owns", which is what ties
 -- the shape to the car being driven. Any other value overrides it for every car, which is
