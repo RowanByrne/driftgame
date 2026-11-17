@@ -9,7 +9,7 @@ Every task in progress and the files it owns, so parallel sessions and workers n
 
 | Branch | Lane | Files owned | Since |
 |---|---|---|---|
-| `agent/score-hairpins` (T-299) | borrowed | `src/ReplicatedStorage/Shared/Road/Hairpins.luau` (new), `src/StarterPlayerScripts/Drift/Events/PerfectHairpin.luau` (new), `Drift/Events/ReverseEntry.luau` (new), `src/ServerScriptService/Tests/HairpinTests.luau` (new), `Controllers/DriftController.luau` (its one line in `_startScoreEvents` only) | 2026-11-17 |
+| `agent/score-hairpins` (T-299) | borrowed | `src/ReplicatedStorage/Shared/Road/Hairpins.luau` (new), `src/StarterPlayerScripts/Drift/Events/PerfectHairpin.luau` (new), `Drift/Events/ReverseEntry.luau` (new), `src/ServerScriptService/Tests/HairpinTests.luau` (new), `Controllers/DriftController.luau` (its one line in `_startScoreEvents` only), `Drift/ScoreEvents.luau` and `Drift/ScoreFeedView.luau` (one line per bend, upgraded on completion) | 2026-11-17 |
 | `agent/score-flick` (T-300) | borrowed | `src/StarterPlayerScripts/Drift/Events/ScandiFlick.luau` (new), `src/ServerScriptService/Tests/ScandiFlickTests.luau` (new) | 2026-11-17 |
 
 ## Notes between sessions
