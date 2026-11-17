@@ -321,6 +321,36 @@ The car never left the frame and its bottom never passed 0.95. Over a crest on t
 30° sees much further over a crest and looks more top-down; it is one number (`CamOffset =
 (0, 23.02, 39.87)`) if the user wants it.
 
+## In the air
+
+The user (`T-294`): *"when you get air right now (jump) the car falls and the camera slow looks up
+and up and up. that's not great, try to keep it fixed on the car"*.
+
+**Why:** the camera is placed at a fixed radius from the car, so it drops with it, but the look
+point's height eased at `CamHeightRate` (1/s). Falling at 40-55 studs/s, the look point trailed
+25-30 studs above the car, so the view tipped up as much as 28° and the car fell off the bottom
+of the screen. Hill pitch, the ground normal and the T-291 guard played no part.
+
+**The fix:** `CamLookLagMax` (2 studs) soft-caps how far the look height may trail. The easing
+itself is untouched; only what the camera looks at is squashed (tanh), and the raw trail is held
+within three caps, where the squash is already flat. So bumps look as they did, a fall is
+followed, and a landing does not snap. `0` gives the old trail back.
+
+Measured on synthetic jumps through the real `_advance` at 120 studs/s (8° kicker, ground pitch
+-4.5°), where the car sits as a share of screen height from the top:
+
+| | Before | After |
+|---|---|---|
+| 10-stud drop: car | 0.71 to 0.98 | **0.73 to 0.79** |
+| 10-stud drop: view pitch | -6.3° to +10.5° | **-5.5° to -1.2°** |
+| 40-stud drop: car | 0.71 to 1.40 (off screen) | **0.73 to 0.79** |
+| 40-stud drop: view pitch | up to +28° | **-5.5° to -1.2°** |
+| 40-stud drop at 45° slip: car | 0.67 to 1.33 | **0.70 to 0.78** |
+| Worst frame jolt at landing | 0.0195 of the screen | **0.0082** (the car stopping in one frame) |
+| Back within 0.5° of ground pitch | 4.1 s after landing | **2.5 s** |
+
+On 2,800 studs of the endless road the capped view differs from the uncapped one by at most 0.04°.
+
 ## Left out
 
 - **Anything the player can change**, apart from the wheel's zoom above. All of this is one look,
@@ -365,6 +395,7 @@ and the shake's four), and proved the same way that zeroing them gives that buil
 | `HillPitchUp`, `HillPitchDown` | **0.5, 0.3** | Share of the grade the view tips up on a climb, down on a descent |
 | `HillPitchMax` | **10°** | Lid on the tip |
 | `HillPitchRate` | **3 /s** | How fast the tip follows the grade |
+| `CamLookLagMax` | **2 studs** | `T-294`: the most the look height may trail the car (soft cap), so a jump stays framed. 0 is the old trail |
 
 **Every one of them must be settable to zero and give exactly today's camera back.** That is the
 test that protects the approved feel, and it is how the roll ships without reopening an argument.
