@@ -11,8 +11,9 @@
 --    voids, and the same at 30, 60 and 120 FPS.
 -- 2. ACHIEVABLE? The real drift model (`Drift/Sim`) on the road's maths (`Drift/SplineWorld`),
 --    driven by a slip-holding autopilot through every hairpin of the first 12 000 studs, in
---    each lane, flicking at three points before the entry. Counted, not judged: the check
---    asks only that it can be completed at all. How it FEELS is the user's, by driving.
+--    three lanes, at three arrival speeds, swinging out at two points before the entry; and
+--    the same autopilot with no flick, as a control. Counted, not judged: the check asks
+--    only that it can be completed at all. How it FEELS is the user's, by driving.
 --
 -- `run()` returns `{ passed, checks, log }`.
 
@@ -493,15 +494,21 @@ local function runAll(opts)
 		local Sim = require(DriftFolder.Sim)
 		local SplineWorld = require(DriftFolder.SplineWorld)
 		-- the ways tried at each hairpin: lane (studs to the INSIDE of the bend, so -12 is the
-		-- outside lane), speed 100 studs before the zone, and where the swing out starts
+		-- outside lane), the speed it arrives at (k times what a 4-wheel drift carries round the
+		-- hairpin's radius), and where the swing out starts (studs before the entry). The swing
+		-- is to 40 degrees out; the drift in is held between 34 and 48 degrees.
 		local ways = {}
 		for _, lane in { 12, 0, -12 } do
-			for _, v0 in { 45, 60 } do
-				for _, outAt in { 80, 65, 50 } do
-					table.insert(ways, { lane = lane, v0 = v0, outAt = outAt, wrong = 38, minIn = 34 })
+			for _, k in { 0.9, 1.0, 1.15 } do
+				for _, outAt in { 60, 50 } do
+					table.insert(ways, { lane = lane, k = k, outAt = outAt, wrong = 40, minIn = 34, maxIn = 48 })
 				end
 			end
 		end
+		-- the control: the same autopilot with no flick, drifting into the bend from 60 studs
+		-- before the entry, judged on the flick's last part alone (a 4-wheel drift held from
+		-- the entry to the exit, the same Grace)
+		local controlHeld, controlTries = 0, 0
 		local rows, reasons, lapses, flicks = {}, {}, {}, {}
 		local byWay = {}
 		local tries, done, hairpinsDone, driven = 0, 0, 0, 0
@@ -538,6 +545,15 @@ local function runAll(opts)
 				if n % 6 == 0 then
 					task.wait()
 				end
+				if w.outAt == 60 then
+					local co = table.clone(w)
+					co.control = true
+					local _, _, cst = pilot(Sim, SplineWorld, spline, h, co)
+					controlTries += 1
+					if cst.held then
+						controlHeld += 1
+					end
+				end
 			end
 			if ok > 0 then
 				hairpinsDone += 1
@@ -550,13 +566,13 @@ local function runAll(opts)
 			table.insert(
 				rows,
 				`{fmt(h.entry, 0)} {if h.dir > 0 then "L" else "R"} r{fmt(h.radius, 0)} {fmt(h.turn, 0)}deg zone {fmt(h.entry - h.zone, 0)}: {ok} of {#ways}`
-					.. (if best then ` (quickest flick {fmt(best.flick, 2)} s, lane {best.w.lane} in, {best.w.v0} st/s start, out from -{best.w.outAt}, {fmt(best.v, 0)} st/s at the flick)` else "")
+					.. (if best then ` (quickest flick {fmt(best.flick, 2)} s, lane {best.w.lane} in, k {best.w.k}, out from -{best.w.outAt}, {fmt(best.v, 0)} st/s at the flick)` else "")
 					.. (if #wl > 0 then "; " .. table.concat(wl, ", ") else "")
 			)
 		end
 		local wayRows = {}
 		for wi, w in ways do
-			table.insert(wayRows, `lane {w.lane} in, {w.v0} st/s, out from -{w.outAt}: {byWay[wi] or 0}`)
+			table.insert(wayRows, `lane {w.lane} in, k {w.k}, out from -{w.outAt}: {byWay[wi] or 0}`)
 		end
 		table.insert(log, "drives, per hairpin (of " .. #ways .. " ways):\n  " .. table.concat(rows, "\n  "))
 		table.insert(log, "completed, per way (of " .. driven .. " hairpins):\n  " .. table.concat(wayRows, "\n  "))
@@ -573,7 +589,7 @@ local function runAll(opts)
 		check(
 			"the autopilot completes a Scandinavian flick sometimes",
 			done > 0,
-			`{done} of {tries} drives ({hairpinsDone} of {driven} hairpins at least once); {fl}. Not completed: {list(reasons)}. The 4-wheel drift first lapsed: {list(lapses)}`
+			`{done} of {tries} drives ({hairpinsDone} of {driven} hairpins at least once); {fl}. Not completed: {list(reasons)}. The 4-wheel drift first lapsed: {list(lapses)}. Control, no flick, a 4-wheel drift held entry to exit: {controlHeld} of {controlTries}`
 		)
 	end
 
