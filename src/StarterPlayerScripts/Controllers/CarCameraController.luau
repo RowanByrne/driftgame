@@ -279,6 +279,9 @@ function CarCameraController.newRig(view: View?)
 		-- the road's grade, + is nose up. The same rule again: the RENDERED camera only.
 		hillPitch = 0,
 		hillGrade = 0, -- radians, the grade it was last measured against, for the debug state
+		-- The framing (T-291): radians the rendered view was last aimed up by, after the
+		-- guard. The RENDERED camera only, like the rest of this block.
+		aim = 0,
 	}
 	if view then
 		CarCameraController._seed(rig, view)
@@ -737,9 +740,26 @@ function CarCameraController._advance(rig, view: View, dt: number, pan): CFrame
 	-- rendered camera about its own right axis, after everything above: it moves nothing
 	-- the targets read, so the lag, the lean and the swing are untouched. Zero is the
 	-- camera before it, bit for bit.
+	-- THE GUARD: a narrow FOV (a standstill's 52 degrees) or the wheel zoomed in makes the
+	-- car big enough that the full aim would cut its bottom off, so the aim is capped where
+	-- the car's lowest point -- `CamFrameCarRadius` studs below its middle, as seen from
+	-- here -- would cross `CamFrameBottom` of the screen. Never below level aim: the cap can
+	-- take the framing away, never push the car up past where the camera puts it alone.
+	rig.aim = 0
 	local drop = Cam.CamFrameDrop or 0
 	if drop ~= 0 then
-		cf *= CFrame.Angles(math.atan(drop * math.tan(math.rad(rig.fov) * 0.5)), 0, 0)
+		local tanHalf = math.tan(math.rad(rig.fov) * 0.5)
+		local aim = math.atan(drop * tanHalf)
+		local toCar = view.position - rig.position
+		local dist = toCar.Magnitude
+		if Cam.CamFrameBottom and dist > EPS then
+			local below = math.atan2(-toCar:Dot(cf.UpVector), toCar:Dot(cf.LookVector))
+			local reach = math.asin(math.clamp((Cam.CamFrameCarRadius or 0) / dist, 0, 1))
+			local room = math.atan((2 * Cam.CamFrameBottom - 1) * tanHalf) - below - reach
+			aim = math.min(aim, math.max(room, 0))
+		end
+		rig.aim = aim
+		cf *= CFrame.Angles(aim, 0, 0)
 	end
 	if rig.roll ~= 0 then
 		cf *= CFrame.Angles(0, 0, rig.roll)
@@ -1012,7 +1032,7 @@ function CarCameraController:DebugState()
 		hillGradeDeg = math.deg(rig.hillGrade or 0),
 		hillPitchDeg = math.deg(rig.hillPitch or 0),
 		-- The framing's aim (T-291): how far the view is turned up to put the car low.
-		aimUpDeg = math.deg(math.atan((Cam.CamFrameDrop or 0) * math.tan(math.rad(rig.fov) * 0.5))),
+		aimUpDeg = math.deg(rig.aim or 0),
 		-- The rendered camera's own pitch, off the real CFrame: + looking up.
 		pitchDeg = if cf then math.deg(math.asin(math.clamp(cf.LookVector.Y, -1, 1))) else nil,
 		elevationDeg = if carPos
