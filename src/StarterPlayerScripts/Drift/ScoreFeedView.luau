@@ -14,8 +14,8 @@
 -- AN ENTRY'S `points` IS ITS TOTAL SO FAR, not a step's share, with the rung already in it
 -- (the line never shows the rung). The same `id` again is the same event growing or ending.
 --
--- NEWEST ON TOP. A new line slides in at the top of the stack, right under the score panel,
--- and pushes the older ones down, so the line the eye meets first is the latest.
+-- NEWEST ON TOP. A new line slides in at the top of the stack and pushes the older ones down,
+-- so the line the eye meets first is the latest.
 --
 -- WHAT A LINE DOES:
 --   * A ONE-OFF (its first entry already `banked`): pops in, stays `OneOffHold`, fades. The
@@ -30,10 +30,10 @@
 --   * Reduced Motion (`GuiService.ReducedMotionEnabled`): no slide, no flash, no glide, no
 --     pulse; lines appear and fade.
 --
--- WHERE IT SITS (`_layout`). Desktop and tablet: the spec's choice, under the score panel in
--- its centre column, 146 px below the inset (the panel's bottom 138 and a gap), 220 px wide
--- like the panel. A phone on its side: the top right corner, as a killfeed, because there the
--- road ahead fills the centre column up to the horizon (measured, T-296). A phone upright (the
+-- WHERE IT SITS (`_layout`). Not under the score panel, the spec's first choice: measured
+-- there (T-296) it covered the road ahead on phones on their side and at HD 720. So on every
+-- screen wider than tall: the top right corner, as a killfeed, 16 px in, as wide as fits up to
+-- 220 px beside the run button's column, and above the Settings button. A phone upright (the
 -- road map has dropped below the centre column on the left): right of the map, under the
 -- Settings button that shares that edge. The map's rule is read from `Config.RoadMap`, the
 -- same numbers `Drift/RoadMapView` places itself by.
@@ -58,8 +58,8 @@ ScoreFeedView.__index = ScoreFeedView
 local C = {
 	DisplayOrder = 13, -- under the score panel (14), over the drag pad (5)
 	Width = 220, -- px, the score panel's width
-	Top = 146, -- px below the inset: the score panel's bottom (80 + 58) and an 8 px gap
-	Margin = 16, -- px from the screen's right edge, beside the map (phone portrait)
+	Top = 146, -- px below the inset, beside the map: the score panel's bottom (80 + 58) and a gap
+	Margin = 16, -- px from the screen's top and right edges
 	MapGap = 8, -- px kept clear between the map and the feed
 	-- The Settings button on the right edge (`Settings/SettingsView`: 144 x 48, its top 176 px
 	-- below the safe area's top): beside the map the feed starts under it, top right it stops
@@ -196,10 +196,10 @@ function ScoreFeedView:_reduced(): boolean
 	return GuiService.ReducedMotionEnabled
 end
 
--- Place the feed from the measured screen. Three placements, all in this one function
+-- Place the feed from the measured screen. Two placements, both in this one function
 -- (UI.md "Keep each screen's per-layout placement together"):
---   centre     desktop and tablet: under the score panel, in its column
---   topRight   a phone on its side: the top right corner, beside the run button's column
+--   topRight   desktop, tablet, a phone on its side: the top right corner, beside the run
+--              button's column, above the Settings button
 --   besideMap  a phone upright: right of the road map, under the Settings button
 function ScoreFeedView:_layout()
 	local RM = Config.RoadMap
@@ -227,10 +227,12 @@ function ScoreFeedView:_layout()
 		top = math.max(C.Top, settingsTop + C.SettingsHeight + C.MapGap)
 		self.root.AnchorPoint = Vector2.new(1, 0)
 		self.root.Position = UDim2.new(1, -C.Margin + o.X, 0, top + o.Y)
-	elseif phone then
-		-- Measured (T-296): on a phone on its side the road ahead fills the centre column
-		-- from the car up to the horizon, so under the score the feed covered it. The top
-		-- right is sky and scenery, and is where a killfeed sits.
+	else
+		-- Measured (T-296): under the score panel, the spec's first choice, the feed covered
+		-- the road ahead: on a phone on its side the road fills the centre column from the car
+		-- up to the horizon, and at HD 720 the horizon is 203 px down, above the feed's lower
+		-- lines. The top right is sky and scenery on every screen measured, and it is where
+		-- a killfeed sits. It stops above the Settings and Garage buttons.
 		placement = "topRight"
 		local left = (screen.X + RM.CentreColumn) * 0.5 + C.MapGap
 		width = math.min(C.Width, screen.X - C.Margin - left)
@@ -238,12 +240,6 @@ function ScoreFeedView:_layout()
 		maxBottom = math.min(settingsTop, garageTop) - C.MapGap
 		self.root.AnchorPoint = Vector2.new(1, 0)
 		self.root.Position = UDim2.new(1, -C.Margin + o.X, 0, top + o.Y)
-	else
-		placement = "centre"
-		width = C.Width
-		top = C.Top
-		self.root.AnchorPoint = Vector2.new(0.5, 0)
-		self.root.Position = UDim2.new(0.5, o.X, 0, top + o.Y)
 	end
 	local changed = self.width ~= width
 	self.width = width
