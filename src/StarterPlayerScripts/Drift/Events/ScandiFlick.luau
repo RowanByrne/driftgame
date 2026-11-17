@@ -9,11 +9,11 @@
 -- (within a time window, "perhaps 1 second") to a 4-tyre drift the other way, the right way
 -- for the hairpin; and to complete, the 4-tyre drift held through the rest of the hairpin.
 --
---   STARTS when, inside a hairpin's ENTRY ZONE (`Road/Hairpins`: from `zone` up to
---   `entry`), the car has held a 4-wheel drift turned OUT of the hairpin (the slip the way
+--   STARTS when, inside a TRUE hairpin's ENTRY ZONE (`Road/Hairpins.around`, which answers
+--   only bends turning 120 degrees within 250 studs: from `zone` up to `entry`), the car has held a 4-wheel drift turned OUT of the hairpin (the slip the way
 --   a bend the other way would want) for `MinHold`. Only the time inside the zone counts:
 --   a drift carried in from before it still needs `MinHold` inside. One attempt per
---   hairpin. The handle is opened here, so the feed can show the attempt live.
+--   hairpin (a put-back makes every one a fresh try). The handle is opened here, so the feed can show the attempt live.
 --   THE FLICK: once the wrong-way 4-wheel drift is let go, the right-way 4-wheel drift
 --   (turned INTO the hairpin) must follow within `Window` seconds. Going back to the
 --   wrong-way drift inside the window is still holding it: the window starts again when it
@@ -29,33 +29,27 @@
 --   changed". Leaving the tarmac does not void it: only the perfect hairpin asks for a side.
 --   The handle is updated each live frame with size 1, from the start to the end.
 --
--- WHICH WHEELS SLIDE: `PerfectHairpin.slidingWheels`, each wheel's own slip gate (the one
+-- WHICH WHEELS SLIDE: `BendDrift.slidingWheels`, each wheel's own slip gate (the one
 -- that lays its tyre mark), so "4-wheel" is the drift that marks with all four: past the
 -- fronts' `MaxSteerDegrees` (30) plus their floor, on the ground, either way round. So the
 -- flick has to swing the slip from past 30 degrees one way to past 30 the other: about 60
 -- degrees of swing at the least, inside the window.
 --
--- `rig` as `PerfectHairpin`'s: anything with a `spline` field (a Spline or a function).
--- The tuning numbers are the module's own until `Config/ScoreEvents` takes them (T-295).
+-- `rig` as the other bend detectors': anything with a `spline` field (a Spline or a
+-- function, `BendDrift.splineOf`). The numbers: `Config.ScoreEvents.Detectors.ScandiFlick`.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Config = require(ReplicatedStorage.Shared.Config)
 local Hairpins = require(ReplicatedStorage.Shared.Road.Hairpins)
-local PerfectHairpin = require(script.Parent.PerfectHairpin)
+local BendDrift = require(script.Parent.BendDrift)
 
 local ScandiFlick = {}
 ScandiFlick.__index = ScandiFlick
 
 ScandiFlick.Kind = "scandiFlick"
 
-ScandiFlick.Tuning = {
-	MinHold = 0.2, -- s of the wrong-way 4-wheel drift, inside the entry zone, that starts it
-	Window = 1.0, -- s from letting the wrong-way drift go to the right-way 4-wheel drift
-	Grace = 0.2, -- s a lapse of the right-way 4-wheel drift is forgiven
-	JumpStuds = 80, -- studs along the road in one frame that can only be a put-back
-	MaxSeconds = 20, -- an attempt still going after this is void
-}
+ScandiFlick.Tuning = Config.ScoreEvents.Detectors.ScandiFlick
 
 local function hairpinInfo(h: Hairpins.Hairpin?): any
 	if not h then
@@ -118,7 +112,7 @@ end
 
 function ScandiFlick.Update(self: any, dt: number, state: any)
 	local T = ScandiFlick.Tuning
-	local spline = PerfectHairpin.splineOf(self.rig)
+	local spline = BendDrift.splineOf(self.rig)
 	if spline ~= self.spline then
 		if self.live then
 			self:_end(false, "road changed")
@@ -142,9 +136,12 @@ function ScandiFlick.Update(self: any, dt: number, state: any)
 		return
 	end
 	local jumped = prevS ~= nil and math.abs(s - prevS) > T.JumpStuds
+	if jumped and not self.live then
+		self.tried = {} -- put back on the road: every hairpin is a fresh try
+	end
 
 	-- the conditions, every frame (the wheels' gates keep their hysteresis between frames)
-	local n = PerfectHairpin.slidingWheels(state, self.marking)
+	local n = BendDrift.slidingWheels(state, self.marking)
 	self.sliding = n
 	local h = self.hairpin
 	if not h or h.open or s < h.zone or s > h.exit then
@@ -153,7 +150,7 @@ function ScandiFlick.Update(self: any, dt: number, state: any)
 	end
 	local want = self.live or h
 	local dir = if want then want.dir else 0
-	local speedOk = PerfectHairpin.speed(state) >= Config.Fx.Gates.MinMarkSpeed
+	local speedOk = BendDrift.speed(state) >= Config.Fx.Gates.MinMarkSpeed
 	local four = state.drifting and not state.airborne and speedOk and n == 4 and dir ~= 0
 	local wrong4 = four and state.slip * dir > 0 -- turned out of the hairpin
 	local right4 = four and state.slip * dir < 0 -- turned into it
