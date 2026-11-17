@@ -591,14 +591,14 @@ local function runAll(opts)
 			local sj = go(LaneDrift, h, function(s)
 				if s >= h.apex and not jumped then
 					jumped = true
-					return outside, 25, { jump = -150 }
+					return outside, 25, { jump = (h.zone - 20) - s } -- back before the zone
 				end
 				return outside, 25
 			end)
 			check(
 				`{tag}: a fall or a put-back voids it; put back before it, a fresh try`,
 				ef2 and ef2.finished == false and said(detf) == "fell" and #sj.started == 2 and sj.started[1].finished == false and sj.started[2].finished == true,
-				`fall: {tostring(ef2 and ef2.finished)}; put back 150 studs: {#sj.started} started, {tostring(sj.started[1] and sj.started[1].finished)} then {tostring(sj.started[2] and sj.started[2].finished)}`
+				`fall: {tostring(ef2 and ef2.finished)}; put back before the zone: {#sj.started} started, {tostring(sj.started[1] and sj.started[1].finished)} then {tostring(sj.started[2] and sj.started[2].finished)}`
 			)
 			-- the same at 30, 60 and 120 frames a second
 			local secs, fins = {}, {}
