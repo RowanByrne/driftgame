@@ -243,7 +243,7 @@ still the reference's, converted, except the two marked **ours**.
 | `Gates.MinHandbrakeSpeed` | 3.6 studs/s | — | Below this the handbrake smokes nothing |
 | `Gates.MinMarkSpeed` | 15 studs/s | — | **Ours (T-151).** A wheel only *starts* marking (and smoking) at or above this. Pulling away from rest with a finger held, the slip angle is noise on a velocity of a stud or two a second: measured in `DR-Lane3`, the rears marked from 0.1 studs/s and chattered up to ~14. A wheel already marking ignores it and runs down to `StopSlipDegrees`, so a drift that slows keeps its mark. The handbrake keeps its own floor |
 | `Gates.MaxSlipDegrees` | 180 | — | The angle the smoke rate is full at. This is the reference's `slip / π` written in degrees. **Note it is not the squeal's 90°:** at 90° of slip — a car fully sideways — the smoke is only at 34/s of its 60, which is a tuning question for the user's eye, not a bug |
-| `Marks.Seconds` | 5 | `MarkSeconds` | `Trail.Lifetime` |
+| `Marks.Seconds` | 2.5 (5 until T-274) | `MarkSeconds` | `Trail.Lifetime` |
 | `Marks.Width` | 1.2 studs | `MarkWidth` | Normal width before angle-dependent thinning. A little under the tyre's 1.6 |
 | `Marks.MinWidthRatio` | 0.25 | Ours (`T-207`, user clarification) | Minimum share of each normal material width; a quarter-width floor, not 25% thinner |
 | `Smoke.RateMin`, `Smoke.RateMax` | 8, 60 /s | `SmokeRateMin/Max` | `ParticleEmitter.Rate`, lerped by `slip / Gates.MaxSlipDegrees` |
@@ -760,10 +760,10 @@ trail-built ruts. Nothing is created while driving.
 
 | Number | Start | What it does |
 |---|---|---|
-| `Ground.MarkSeconds` | 14 s | How long a grass mark stays (tarmac: `Marks.Seconds`, 5) |
+| `Ground.MarkSeconds` | 7 s (14 until T-274) | How long a grass mark stays (tarmac: `Marks.Seconds`, 2.5) |
 | `Ground.Lift` | 0.06 studs | How far the ribbon's lowest points sit over the drawn ground |
 | `Ground.MaxSnap` | 1.5 studs | The furthest a point is moved off the car's plane to reach the drawn ground |
-| `Ground.Ribbon.Sections` / `ReOrigin` | 128 / 800 studs | Each wheel's ring, and when its origin follows |
+| `Ground.Ribbon.Sections` / `ReOrigin` | 48 (128, then 96 until T-274) / 800 studs | Each wheel's ring, and when its origin follows |
 | `Ground.Ribbon.Spacing` / `MinSpacing` / `TurnDegrees` | 3 / 0.5 studs / 4 degrees | Where sections go |
 | `Ground.Ribbon.FadeInStuds` / `BlendSeconds` / `WidthSeconds` | 2.5 studs / 0.2 / 0.12 s | Soft start, flat-to-rut blend, width smoothing |
 | `Ground.Ribbon.OuterMaterial` / `InnerMaterial` | Grass / Ground | The edges as the ground; the rut itself |
@@ -934,10 +934,22 @@ questions".
   (no headlight on it).
 
 **Known limits:**
-- The rubber's ring is 62 sections, about 185 studs of mark a wheel. A longer continuous mark
-  loses its oldest end before its 5 s are up.
+- The rubber's ring is 30 sections since T-274 (62 before), about 90 studs of mark a wheel. A
+  longer continuous mark loses its oldest end before its 2.5 s are up.
 - The road chunks' far detail (`Mesh.Far`) can sit a little off the curve. The rubber follows the
   curve, so on a far chunk it may float or dip by that tolerance. It is only seen from far off.
+
+## Shorter marks (`T-274`)
+
+For the client's mesh memory (`ground-trial.md` "The mesh budget"), with the user's OK that marks
+fade sooner behind the car (2026-11-16):
+
+- **Half as long, both ribbons:** the rubber's ring 32 sections (64) and its life 2.5 s (5); the
+  grass's 48 (96) and 7 s (14). Each mark dries and fades over its shorter life exactly as before
+  (the last 40%), so the trail behind the car is about half as long.
+- **Their streak textures are opaque content** (made once, never written again), which holds none
+  of the mesh memory; the strips themselves stay editable, rewritten every frame.
+- **Mesh memory:** the two ribbons hold 21.2 tiles (`Budget.Marks` 22), from 44.
 
 ## Suspension sounds (`T-223`, `T-252`)
 

@@ -22,7 +22,8 @@ Nothing changes in how the car drives. The surface the car reads, grip, and the 
 
 ## Left out
 
-- **No uploaded or generated image.** The texture is painted in code on each device, so nothing needs the user's pick before it can be tried. No image-tool candidates were made: the code version reads well, and a generated image could not be previewed in the lane without uploading it.
+- **No generated image.** The texture is painted in code, so nothing needs the user's pick before it can be tried. No image-tool candidates were made: the code version reads well, and a generated image could not be previewed in the lane without uploading it.
+- **Uploaded since T-274:** a painted 1 024 x 1 024 EditableImage holds 32 tiles of the client's mesh memory (`ground-trial.md` "The mesh budget"), so the painted pixels were exported exactly (0 of 4 194 304 bytes differ, read back from Roblox) and uploaded (`assets/road/MANIFEST.md`); the client loads that and paints nothing. Only a client that cannot load it paints it, a few ms a frame as before, and makes it opaque content, which holds none of that memory either. `SplineMeshTests` checks the painting still sums to `Tarmac.ImageHash`: change anything it paints from and the image is exported and uploaded again. In a lane, `workspace.__tarmac_painted = true` before Play draws the painted one, to compare.
 - **Wet roads, puddles and reflections** (would need a roughness map, `SurfaceAppearance`, and weather).
 - **Road debris** (leaves, petals): scenery, with the biomes.
 - **The road drawing its own grass** (`__runoff_by = "road"`, T-251's other option): its mesh carries the grass's texture, so its tarmac stays flat with the dash parts, as before. So does the texture switched off, and a device that will not make the image.
@@ -92,7 +93,7 @@ The user: *"B. save that and then edit both gravel and road textures so that the
 
 ## Platform risks
 
-None. Nothing is uploaded; the image exists only in each client's memory.
+None. Since T-274 the painted image is uploaded (`assets/road/`, `Config.Spline.Tarmac.Image`): code-made pixels, owned by whoever was signed in to Studio, so check the experience may load it before launch (ART-PIPELINE.md "Ownership and permissions").
 
 ## Art and sound
 

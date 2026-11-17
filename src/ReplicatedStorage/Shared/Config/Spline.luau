@@ -737,8 +737,9 @@ local Spline = {
 		SliceMs = 3, -- ms of building in any one frame, at most (about; one step can overrun)
 		-- THE TEMPLATES a client makes as it loads (T-274, `Road/SplineMesh` "THE TEMPLATES"):
 		-- every size up to the one that holds this many triangles, past the heaviest chunk
-		-- measured (1 980 whole, a grove's; a far one about 400), so a run seldom makes one
-		PrepareFaces = 2400,
+		-- measured (over 2 400 whole, with a grove, in a drive at the defaults; a far one about
+		-- 400), so a run seldom makes one (making one holds a growable mesh for a moment)
+		PrepareFaces = 3008,
 	},
 
 }
