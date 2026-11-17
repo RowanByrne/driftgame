@@ -495,6 +495,12 @@ function VistaView.Update(self: View, dt: number)
 	for _, ridge in self.ridges do
 		ridge.centre = Vista.follow(ridge.centre, cam, dt, ridge.lag, ridge.maxLag)
 		local level = self.originY + Vista.lift(V, self.originY, self.camY, ridge.slide)
+		-- (T-278) the rings stand `Scale` times further out and are `Scale` times bigger, so
+		-- they stand `Scale` times as far below the camera too: then every ridge, its art's
+		-- bottom and its skirt are at the same angles as before the move, still behind the
+		-- ring or the ground in front of them (left at its level, the camera's height counted
+		-- for less, and the skirt's plain mist rose into view above the ground)
+		level = Vista.scaledLevel(level, at.Y, V.Scale or 1)
 		ridge.anchor.CFrame = CFrame.new(ridge.centre + Vector3.yAxis * level)
 	end
 

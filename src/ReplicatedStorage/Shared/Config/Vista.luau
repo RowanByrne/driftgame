@@ -24,6 +24,9 @@ local SCALE = 1.37
 return {
 	-- Off: nothing is built, and the view off the road is the sky and the drawn ground.
 	Enabled = true,
+	-- `SCALE`, for `Drift/VistaView`: it stands each ring `Scale` times as far below (or above)
+	-- the camera as its level is, so the camera's height looks the same at the new distance
+	Scale = SCALE,
 
 	-- ------------------------------------------------------------- the curved panel
 	-- One mesh, built on this device when the first vista is (`Shared/Vista.arcGeometry`, an

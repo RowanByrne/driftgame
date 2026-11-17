@@ -235,6 +235,12 @@ function Vista.lift(cfg: any, originY: number, camY: number, slide: number?): nu
 	return (slide or cfg.FollowHeight) * (camY - originY)
 end
 
+-- A ring's level for a vista `scale` times as far out and as big (`Config.Vista.Scale`,
+-- T-278): `scale` times as far from the camera's height, so it is seen at the same angles.
+function Vista.scaledLevel(level: number, camY: number, scale: number): number
+	return camY + (level - camY) * scale
+end
+
 -- The nearest and furthest a ring's panels come to the camera: their ends are nearest, their
 -- middles furthest, and the ring may trail by up to `MaxLag` either way.
 function Vista.ringSpan(layer: any): (number, number)
