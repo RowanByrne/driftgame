@@ -583,6 +583,10 @@ local Spline = {
 		CorridorMost = 20,
 		RoadPad = 256, -- studs: tiles this near the drawn road are drawn even past `Reach`
 		ReleaseOnFail = 24, -- tiles let go if the device will not make another (room for the road)
+		-- the fewest tiles (besides `Spare`) the ground gives way to when the road is out of mesh
+		-- memory (T-273, `Drift/MeshBudget`): Light's own, so far ground goes coarser before any
+		-- road is let go, and the ground round the car stays
+		YieldFloor = 128,
 		-- THE PLAYER'S "GROUND DETAIL" (Settings, Graphics; docs/game/SETTINGS.md), light to far.
 		-- `Tiles`: how many may show (the nearest first; past that, ground stays coarser).
 		-- `Fine`: along the road, 8-stud ground this far ahead, 16 to twice that, 32 beyond.
@@ -673,6 +677,28 @@ local Spline = {
 		Near = { Ahead = 1600, Behind = 480 }, -- studs
 		Far = { Tolerance = 1, MaxStep = 96, Across = 1 },
 		FallbackStep = 4, -- studs between cross-sections when a device draws parts instead
+		-- THE CLIENT'S MESH MEMORY (T-273, features/ground-trial.md "The mesh budget"), in
+		-- TILES: what a fixed-size mesh of 128 triangles costs (one ground tile). Measured in a
+		-- DR-Lane1 client by filling it with copies of a tile: 563 free before a run; a road
+		-- chunk, a mark strip or the vista's arc costs about its triangles / 128; and
+		-- EditableImages count too. Every user must fit, with room for the one growable mesh
+		-- the road builds in (`SplineMeshTests` "every mesh user fits"):
+		Budget = {
+			Tiles = 640, -- all of it, about 82 000 triangles (T-225 measured about 81 000)
+			Growable = 80, -- a growable mesh, empty or a chunk's worth: the road's kept one
+			Image1024 = 32, -- a 1 024 x 1 024 EditableImage (`Road/RoadTexture`)
+			TileTriangles = 128,
+			-- the defaults must leave this much over, for a tight stretch's heavier chunks and
+			-- the moments a chunk or tile is replaced (old and new both held)
+			Spare = 40,
+			-- OUT OF IT (`Drift/SplineRoadView`, `Drift/MeshBudget`): tiles asked of the others
+			-- at a time, tries before giving up on a chunk, and how long nothing already drawn is
+			-- redrawn after one gave up (shorter when the ground is merging tiles to make room)
+			AskTiles = 32,
+			MaxTries = 6,
+			HoldSeconds = 4,
+			WaitSeconds = 0.5,
+		},
 		-- A chunk is built over as many frames as it needs (T-193): its build hands the frame
 		-- back whenever this much of it has been spent, and carries on next frame. Nothing is
 		-- seen until the whole chunk is done, so nothing pops: it all appears at once.

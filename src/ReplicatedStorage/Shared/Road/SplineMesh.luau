@@ -88,6 +88,14 @@ export type Options = {
 	-- who draws the runoff (T-251): "ground" draws the road to its bevels' feet only, "road"
 	-- the runoff too; nil, `Ground.runoffBy()`
 	runoffBy: string?,
+	-- BUILD IN THE KEPT MESH (T-273, the client's road): a chunk is built in a growable mesh,
+	-- which holds back about 80 tiles of the device's mesh memory whatever is in it. One is
+	-- made the first time and kept for the session, emptied after each chunk, so the road
+	-- always has room to build, whatever else has filled the budget since
+	reuse: boolean?,
+	-- out of mesh memory copying a built chunk into its fixed-size mesh (T-273): make room
+	-- (`Drift/MeshBudget`) and say whether to try once more
+	onShort: (() -> boolean)?,
 }
 
 export type Stats = {
@@ -134,6 +142,8 @@ type Builder = {
 	em: EditableMesh,
 	centre: Vector3,
 	fixed: boolean?, -- copied into a fixed-size mesh when done (every chunk since T-230)
+	kept: boolean?, -- `em` is the kept mesh (T-273): emptied, never destroyed
+	onShort: (() -> boolean)?,
 	vertices: number,
 	triangles: number,
 	grassTriangles: number,
@@ -227,11 +237,82 @@ local function strip(b: Builder, rowA: { number }, normA: { number }, rowB: { nu
 	end
 end
 
-local function newBuilder(centre: Vector3): Builder
+-- THE KEPT MESH (T-273): the one growable mesh the client's road builds every chunk in, and
+-- whether a build is using it now (a road view being replaced can still be finishing one)
+local kept: EditableMesh? = nil
+local keptBusy = false
+local keptStats = { made = 0, reused = 0, cleared = 0, clearMs = 0, worstClearMs = 0, borrowed = 0 }
+
+-- Empty the kept mesh for the next chunk: every face, then everything they used.
+local function clearKept()
+	local em = kept
+	if not em then
+		return
+	end
+	local t0 = os.clock()
+	local ok = pcall(function()
+		for _, f in em:GetFaces() do
+			em:RemoveFace(f)
+		end
+		em:RemoveUnused()
+	end)
+	if not ok or #em:GetVertices() > 0 then
+		-- could not empty it: let it go, and make a fresh one next time
+		em:Destroy()
+		kept = nil
+	end
+	local ms = (os.clock() - t0) * 1000
+	keptStats.cleared += 1
+	keptStats.clearMs += ms
+	keptStats.worstClearMs = math.max(keptStats.worstClearMs, ms)
+end
+
+local function newBuilder(centre: Vector3, reuse: boolean?): Builder
+	if reuse and not keptBusy then
+		if not kept then
+			kept = AssetService:CreateEditableMesh({ FixedSize = false })
+			if kept then
+				keptStats.made += 1
+			end
+		else
+			keptStats.reused += 1
+		end
+		if kept then
+			keptBusy = true
+			return { em = kept :: EditableMesh, kept = true, centre = centre, vertices = 0, triangles = 0, grassTriangles = 0, tarmacTriangles = 0, plainUV = nil, grassShade = nil }
+		end
+	elseif reuse then
+		keptStats.borrowed += 1 -- the kept one is in use: a mesh of its own for this one
+	end
 	local em = AssetService:CreateEditableMesh({ FixedSize = false })
 	-- nil is the device saying no: out of its EditableMesh budget
 	assert(em, "this device would not make an EditableMesh (out of its budget)")
 	return { em = em :: EditableMesh, centre = centre, vertices = 0, triangles = 0, grassTriangles = 0, tarmacTriangles = 0, plainUV = nil, grassShade = nil }
+end
+
+-- Done with a builder's growable mesh: the kept one is emptied, any other let go.
+local function releaseBuilder(b: Builder, em: EditableMesh)
+	if b.kept and em == kept then
+		clearKept()
+		keptBusy = false
+	else
+		em:Destroy()
+	end
+end
+
+-- The kept mesh, for the debug readouts (T-273).
+function SplineMesh.KeptState()
+	return {
+		kept = kept ~= nil,
+		busy = keptBusy,
+		vertices = if kept then #kept:GetVertices() else 0,
+		made = keptStats.made,
+		reused = keptStats.reused,
+		borrowed = keptStats.borrowed,
+		cleared = keptStats.cleared,
+		meanClearMs = if keptStats.cleared > 0 then keptStats.clearMs / keptStats.cleared else 0,
+		worstClearMs = keptStats.worstClearMs,
+	}
 end
 
 -- A MeshPart made from an EditableMesh keeps the vertices exactly where they were written,
@@ -252,14 +333,23 @@ local function toPart(b: Builder, name: string, colour: Color3, material: Enum.M
 	-- T-230), which costs a device's mesh budget by its size, not by what a growable one holds
 	-- back: about 10 400 triangles however little it uses (measured, T-230). The growable one
 	-- goes
+	-- OUT OF ROOM FOR THE COPY (T-273): the builder may make room (`onShort`) and try once
+	-- more. Never keep the growable one instead, as before: it holds about 80 tiles for good
 	if b.fixed then
-		local okCopy, copy = pcall(function()
-			return AssetService:CreateEditableMeshAsync(Content.fromObject(b.em), { FixedSize = true })
-		end)
-		if okCopy and copy then
-			b.em:Destroy()
-			b.em = copy
+		local function copyIt(): EditableMesh?
+			local okCopy, copy = pcall(function()
+				return AssetService:CreateEditableMeshAsync(Content.fromObject(b.em), { FixedSize = true })
+			end)
+			return if okCopy and copy then copy else nil
 		end
+		local copy = copyIt()
+		if not copy and b.onShort and b.onShort() then
+			copy = copyIt()
+		end
+		assert(copy, "this device would not copy the chunk into a fixed-size mesh (out of its budget)")
+		releaseBuilder(b, b.em)
+		b.em = copy
+		b.kept = false
 	end
 	local ok, part = pcall(function()
 		return AssetService:CreateMeshPartAsync(Content.fromObject(b.em), {
@@ -328,11 +418,12 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 	if o.forceFail then
 		return nil, "forced (a test standing in for a device that cannot make meshes)"
 	end
-	local made, road = pcall(newBuilder, centre)
+	local made, road = pcall(newBuilder, centre, o.reuse)
 	if not made then
 		return nil, tostring(road)
 	end
 	road.fixed = true -- copied into a fixed-size mesh once whole (T-230)
+	road.onShort = o.onShort
 	local ok, built = pcall(function()
 		-- ONE EDITABLEMESH A CHUNK, AND IT STAYS ALIVE WITH IT. A MeshPart made from one is
 		-- drawn from it: let it go and the part draws nothing (measured -- the road vanished).
@@ -984,7 +1075,8 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 		return { model = model, stats = stats, meshes = { road.em } }
 	end)
 	if not ok then
-		road.em:Destroy() -- never leak one of the eight
+		-- never leak one: the kept mesh is emptied for the next chunk, any other let go
+		releaseBuilder(road, road.em)
 		return nil, tostring(built)
 	end
 	local result = built :: any
