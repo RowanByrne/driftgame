@@ -208,11 +208,17 @@ local function pilot(Sim, SplineWorld, spline, h, o)
 	local lastS = startS
 	local outFrom = h.entry - o.outAt
 	local flicked = false
-	local st = { vFlick = nil, outMax = 0, inMin = math.huge, dMax = 0, lapse = nil }
+	local st = { vFlick = nil, outMax = 0, inMin = math.huge, dMax = 0, lapse = nil, holdMax = 0 }
+	local prevHeading = nil
+	local frame = 0
 	for _ = 1, 60 * 30 do
+		frame += 1
 		local s = runner.state
 		local speed = math.sqrt(s.velocity.X ^ 2 + s.velocity.Z ^ 2)
 		local heading = if speed > 1 then Vector3.new(s.velocity.X / speed, 0, s.velocity.Z / speed) else Vector3.new(-math.sin(s.yaw), 0, -math.cos(s.yaw))
+		-- how fast the travel itself is turning: what the nose must match to hold a slip
+		local omega = if prevHeading then signedAngle(prevHeading.X, prevHeading.Z, heading.X, heading.Z) * 60 else 0
+		prevHeading = heading
 		local cs, cd = Hairpins.locate(spline, s.position, lastS)
 		cs = cs or lastS
 		lastS = cs
@@ -240,10 +246,18 @@ local function pilot(Sim, SplineWorld, spline, h, o)
 		if cd and cs >= h.zone and cs <= h.exit then
 			st.dMax = math.max(st.dMax, math.abs(cd))
 		end
-		local r = speed * kappa + 8 * (s.slip - bStar)
+		-- following the lane, the nose turns with the path; holding a slip (out, then in), it
+		-- turns with the travel, so the slip sits on its target instead of under it
+		local held = (not flicked and cs >= outFrom) or (flicked and cs <= h.exit)
+		local r = (if held then omega else speed * kappa) + 8 * (s.slip - bStar)
 		input.steer = math.clamp(r / (D.MaxSteeringSpeed * D.SteeringSensitivity), -1, 1)
 		Sim.advance(runner, 1 / 60, input, world)
 		sf:Update(1 / 60, runner.state)
+		st.holdMax = math.max(st.holdMax, sf.hold)
+		if o.trace and frame % 6 == 0 and cs >= h.zone - 30 and cs <= h.exit + 10 then
+			local ns = runner.state
+			table.insert(o.trace, string.format("s%+4.0f d%+5.1f out%+5.1f v%3.0f n%d %s%s", cs - h.entry, cd or 0, math.deg(ns.slip * h.dir), math.sqrt(ns.u * ns.u + ns.v * ns.v), sf.sliding, sf.phase, if ns.airborne then " AIR" else ""))
+		end
 		-- why the 4-wheel drift first lapsed, if it did
 		local ns = runner.state
 		if sf.phase == "in" and sf.bad4 > 0 and not st.lapse then
@@ -257,7 +271,7 @@ local function pilot(Sim, SplineWorld, spline, h, o)
 			local into = math.deg(-ns.slip * h.dir)
 			st.lapse = if ns.airborne or down < 4 then "wheels up"
 				elseif v < G.MinMarkSpeed then "slow"
-				elseif into < G.MaxSteerDegrees then "slip under the fronts' gate"
+				elseif into < G.MaxSteerDegrees + G.MinSlipDegrees then "slip under the fronts' gate"
 				elseif into > 90 then "spun past 90"
 				else "other"
 			st.lapseAt = { s = sf.s - h.entry, d = sf.d, into = into, v = v, down = down }
@@ -540,6 +554,35 @@ local function runAll(opts)
 		passed = passed and c.ok
 	end
 	return { passed = passed, checks = checks, log = table.concat(log, "\n") }
+end
+
+-- One drive, traced, for tuning the autopilot by hand: the hairpin whose entry is nearest
+-- `entry` on the seeded road, and the pilot's options (lane studs to the inside, v0, outAt,
+-- wrong, minIn). Returns the result, the stats and a line every 0.1 s.
+function ScandiFlickTests.drive(entry: number, o)
+	local gen = SplineGen.new(SEED)
+	gen:extendTo(LENGTH)
+	local spline = gen.spline
+	local best = nil
+	for _, h in Hairpins.find(spline, 0, spline.length) do
+		if not best or math.abs(h.entry - entry) < math.abs(best.entry - entry) then
+			best = h
+		end
+	end
+	local h = best
+	local trace = {}
+	local po = table.clone(o)
+	po.lane = -(o.lane or 0) * h.dir
+	po.trace = trace
+	local sink, sf, st = pilot(require(DriftFolder.Sim), require(DriftFolder.SplineWorld), spline, h, po)
+	local e = sink.started[1]
+	return {
+		hairpin = `{fmt(h.entry, 0)} {if h.dir > 0 then "L" else "R"} r{fmt(h.radius, 0)} zone -{fmt(h.entry - h.zone, 0)} apex +{fmt(h.apex - h.entry, 0)} exit +{fmt(h.exit - h.entry, 0)}`,
+		result = if e then tostring(e.finished) else "not started",
+		last = sf.last,
+		st = st,
+		trace = table.concat(trace, "\n"),
+	}
 end
 
 function ScandiFlickTests.run(opts)
