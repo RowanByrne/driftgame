@@ -91,9 +91,9 @@ return {
 			Skirt = 900,
 			BaseColour = Color3.fromRGB(151, 172, 198),
 			Images = {
-				"rbxassetid://119692693529026", -- far-painted-02-joined (pipeline/vista/join-strips.py; assets/painted-vista/MANIFEST.md)
-				"rbxassetid://115396242160535", -- far-painted-02-v1-joined (pipeline/vista/join-strips.py; assets/painted-vista/MANIFEST.md)
-				"rbxassetid://85256458205915", -- far-painted-02-v2-joined (pipeline/vista/join-strips.py; assets/painted-vista/MANIFEST.md)
+				"rbxassetid://79376888826751", -- far-painted-02-joined-v2 (pipeline/vista/join-strips.py; assets/painted-vista/MANIFEST.md)
+				"rbxassetid://81327599571700", -- far-painted-02-v1-joined-v2 (pipeline/vista/join-strips.py; assets/painted-vista/MANIFEST.md)
+				"rbxassetid://76162842646884", -- far-painted-02-v2-joined-v2 (pipeline/vista/join-strips.py; assets/painted-vista/MANIFEST.md)
 			},
 		},
 		{
@@ -107,11 +107,11 @@ return {
 			MaxLag = 50,
 			Slide = 0.6,
 			Skirt = 900,
-			BaseColour = Color3.fromRGB(156, 175, 194), -- mid-ridge-02's bottom tenth
+			BaseColour = Color3.fromRGB(53, 106, 125), -- mid-ridge-02-clear's bottom tenth
 			Images = {
-				"rbxassetid://80914219707896", -- mid-ridge-02-joined (pipeline/vista/join-strips.py; assets/painted-vista/MANIFEST.md)
-				"rbxassetid://75118707726792", -- mid-ridge-02-v1-joined (pipeline/vista/join-strips.py; assets/painted-vista/MANIFEST.md)
-				"rbxassetid://91599232524447", -- mid-ridge-02-v2-joined (pipeline/vista/join-strips.py; assets/painted-vista/MANIFEST.md)
+				"rbxassetid://74618630837340", -- mid-ridge-02-clear-joined (pipeline/vista/join-strips.py; assets/painted-vista/MANIFEST.md)
+				"rbxassetid://87127390672673", -- mid-ridge-02-v1-clear-joined (pipeline/vista/join-strips.py; assets/painted-vista/MANIFEST.md)
+				"rbxassetid://100196195395646", -- mid-ridge-02-v2-clear-joined (pipeline/vista/join-strips.py; assets/painted-vista/MANIFEST.md)
 			},
 		},
 		{
@@ -125,11 +125,11 @@ return {
 			MaxLag = 60,
 			Slide = 0.45,
 			Skirt = 900,
-			BaseColour = Color3.fromRGB(152, 169, 188), -- near-forest-01's bottom tenth
+			BaseColour = Color3.fromRGB(58, 91, 90), -- near-forest-01-clear's bottom tenth
 			Images = {
-				"rbxassetid://90908547604599", -- near-forest-01-joined (pipeline/vista/join-strips.py; assets/painted-vista/MANIFEST.md)
-				"rbxassetid://138672626842006", -- near-forest-01-v1-joined (pipeline/vista/join-strips.py; assets/painted-vista/MANIFEST.md)
-				"rbxassetid://138887894601361", -- near-forest-01-v2-joined (pipeline/vista/join-strips.py; assets/painted-vista/MANIFEST.md)
+				"rbxassetid://100935312550957", -- near-forest-01-clear-joined (pipeline/vista/join-strips.py; assets/painted-vista/MANIFEST.md)
+				"rbxassetid://113094213083603", -- near-forest-01-v1-clear-joined (pipeline/vista/join-strips.py; assets/painted-vista/MANIFEST.md)
+				"rbxassetid://77096375808929", -- near-forest-01-v2-clear-joined (pipeline/vista/join-strips.py; assets/painted-vista/MANIFEST.md)
 			},
 		},
 	},
