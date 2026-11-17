@@ -1,6 +1,6 @@
 # Feature: Painted vista
 
-**Status:** step 1 merged; step 2 (sliding rings) in a lane for the user. **Owner task:** T-266 (step 1: T-267, step 2: T-271).
+**Status:** built: steps 1 and 2 merged (2026-11-16). Step 3, biome pictures, is left for when the road has biomes again (the user: "Leave it here"). **Owner task:** T-266 (step 1: T-267, step 2: T-271).
 
 ## Goal
 
@@ -202,7 +202,7 @@ Made with the image tool (`tools\imagegen.ps1`) and recorded in `assets/painted-
    opens; in a valley they rise and close it in. Their art, every time of day tuned, and the cost
    checked at low graphics quality. Every ring stands between the drawn ground's reach and the
    snow peaks (about 2 500 to 3 200 studs), so their depth comes from how they slide and trail.
-3. **Biome pictures** (lane, Standard, later): each ring's pictures swap, by fading, with the
+3. **Biome pictures** (not planned yet: needs the road to know its biome again; biomes were rolled back on 2026-11-15): each ring's pictures swap, by fading, with the
    biome the road is in.
 
 ## Open questions
