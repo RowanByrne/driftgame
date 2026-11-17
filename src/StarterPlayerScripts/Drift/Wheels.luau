@@ -117,8 +117,8 @@
 -- contact, the ground's up, the T-207 width share and the drawn ground (`Drift/GroundMeshView`,
 -- passed into `Update`), which the ribbon's points are put on and take their colour from.
 --
--- NOTHING IS CREATED OR DESTROYED WHILE DRIVING. 46 instances per car at one smoking
--- surface -- 4 wheels x (2 smoke ParticleEmitters, 3 debris ParticleEmitters and 3 emitter
+-- NOTHING IS CREATED OR DESTROYED WHILE DRIVING. 50 instances per car at one smoking
+-- surface -- 4 wheels x (2 smoke ParticleEmitters, 4 off-road ParticleEmitters and 3 emitter
 -- anchors), the grass ribbon's strips (two MeshParts a wheel), the rubber ribbon's (one a
 -- wheel) and their two folders -- built once and switched or rewritten in place for ever
 -- after. It was 20 before T-188, 64 before T-265, 88 with T-265's trail ruts, 57 with its
@@ -138,6 +138,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local CarModel = require(ReplicatedStorage.Shared.CarModel)
 local Config = require(ReplicatedStorage.Shared.Config)
+local Debris = require(script.Parent.Debris)
 local DriftModel = require(script.Parent.Model)
 local GroundMarks = require(script.Parent.GroundMarks)
 local Suspension = require(script.Parent.Suspension)
@@ -163,9 +164,9 @@ type KickFx = { emitter: ParticleEmitter, on: boolean, rate: number }
 -- The off-road layer on one wheel (T-188, `Config.Fx.Ground`): the three debris emitters.
 -- Its marks are the ribbons'.
 type GroundFx = {
-	clippings: KickFx,
-	dirt: KickFx,
+	clippings: KickFx, -- the fine spray of grass (T-283)
 	dust: KickFx,
+	spray: KickFx, -- the soft billows on grass (T-279)
 }
 
 type WheelFx = {
@@ -195,6 +196,7 @@ type WheelFx = {
 	trench: boolean, -- past the trench threshold, with its hysteresis
 	fx: { SurfaceFx },
 	ground: GroundFx,
+	clodDue: number, -- 3D clods owed and not yet thrown (T-283)
 }
 
 export type Wheels = typeof(setmetatable(
@@ -209,6 +211,7 @@ export type Wheels = typeof(setmetatable(
 		-- there (its ground lookups included). Read by `DebugState`.
 		marksFrames: number,
 		marksSeconds: number,
+		debris: any, -- the 3D clods' pool (`Drift/Debris`, T-283)
 	},
 	Wheels
 ))
@@ -442,6 +445,9 @@ function Wheels.new(marksParent: Instance?): Wheels
 		GroundMarks.Build(rubber, marksParent)
 		GroundMarks.Build(marks, marksParent)
 	end)
+	-- The mud's 3D clods (T-283): a pool of built-in wedge parts, made now.
+	local debris = Debris.new(marksParent)
+	Debris.Build(debris)
 	return setmetatable({
 		body = nil,
 		wheels = {},
@@ -451,6 +457,7 @@ function Wheels.new(marksParent: Instance?): Wheels
 		rubber = rubber,
 		marksFrames = 0,
 		marksSeconds = 0,
+		debris = debris,
 	}, Wheels) :: any
 end
 
@@ -460,15 +467,17 @@ function Wheels.Ready(self: Wheels): boolean
 	return self.marks.ready and self.rubber.ready
 end
 
--- Instances one wheel carries: 2 smoke emitters per smoking surface, the 3 debris emitters
--- (T-188) and 3 fixed emitter anchors (T-207). 8 at one smoking surface. Its marks are the
--- ribbons' (T-265, T-269), not the wheel's.
+-- Instances one wheel carries: 2 smoke emitters per smoking surface, the 3 off-road emitters
+-- (the grass's fine spray and the gravel dust, T-188; the grass's earthy cloud, T-279; the
+-- mud is 3D clods since T-283, `Drift/Debris`) and 3 fixed emitter anchors (T-207). 8 at one
+-- smoking surface. Its marks are the ribbons' (T-265, T-269), not the wheel's.
 function Wheels.perWheel(): number
 	return #Config.Fx.Built * 2 + 3 + 3
 end
 
 -- And a car: its four wheels; the grass ribbon, a strip a wheel of two MeshParts (T-265);
--- the rubber ribbon, a strip a wheel of one (T-269); and their two folders. 46.
+-- the rubber ribbon, a strip a wheel of one (T-269); and their two folders. 46. (The 3D
+-- clods' pool is the client's, not the car's: `Drift/Debris`.)
 function Wheels.perCar(): number
 	return #CarModel.WHEEL_NAMES * Wheels.perWheel()
 		+ Config.Fx.Ground.Ribbon.Wheels * 2
@@ -485,12 +494,20 @@ local function wheelIndex(name: string): number?
 	return nil
 end
 
--- The two smoke layers share a shape, so they share a builder: `S` is `Config.Fx.Smoke`
--- for the diffuse one and `Config.Fx.Stylized` for the one on top.
-local function makeEmitter(fullName: string, colour: Color3, S: any, at: Attachment): ParticleEmitter
-	local e = Instance.new("ParticleEmitter")
-	e.Name = fullName
-	e.Texture = S.Texture
+-- Every emitter shares a builder: `S` is its table in `Config.Fx` (`Smoke`, `Stylized`, or
+-- one of `Ground`'s). Each is drawn from one painted sheet, a random still frame a particle,
+-- under the one lighting rule (T-279).
+local function dress(e: ParticleEmitter, colour: Color3, S: any)
+	local F = Config.Fx
+	local sheet = F.Sheets[S.Sheet]
+	e.Texture = sheet.Texture
+	e.FlipbookLayout = sheet.Layout
+	e.FlipbookMode = F.Flipbook.Mode
+	e.FlipbookFramerate = NumberRange.new(F.Flipbook.Framerate)
+	e.FlipbookStartRandom = F.Flipbook.StartRandom
+	e.Orientation = S.Orientation
+	e.ZOffset = S.ZOffset
+	e.Squash = NumberSequence.new(S.Squash or 0)
 	e.Color = ColorSequence.new(colour)
 	e.Size = NumberSequence.new(S.SizeStart, S.SizeEnd)
 	-- Smoke fades IN over the first quarter of its life; debris (`FadeIn = 0`, T-188) is
@@ -515,8 +532,15 @@ local function makeEmitter(fullName: string, colour: Color3, S: any, at: Attachm
 	e.RotSpeed = NumberRange.new(S.RotationSpeed[1], S.RotationSpeed[2])
 	e.Acceleration = Vector3.new(0, S.RiseAcceleration, 0)
 	e.Drag = S.Drag
-	e.LightEmission = S.LightEmission
-	e.LightInfluence = S.LightInfluence
+	-- `Instance.new` makes LightInfluence 0 (Studio makes it 1): always set it.
+	e.LightEmission = S.LightEmission or F.Light.Emission
+	e.LightInfluence = F.Light.Influence
+end
+
+local function makeEmitter(fullName: string, colour: Color3, S: any, at: Attachment): ParticleEmitter
+	local e = Instance.new("ParticleEmitter")
+	e.Name = fullName
+	dress(e, colour, S)
 	e.EmissionDirection = Enum.NormalId.Top
 	e.Rate = 0
 	e.Enabled = false
@@ -535,7 +559,7 @@ function Wheels.Clear(self: Wheels)
 			fx.stylized:Destroy()
 		end
 		local g = w.ground
-		for _, k in { g.clippings, g.dirt, g.dust } do
+		for _, k in { g.clippings, g.dust, g.spray } do
 			k.emitter:Destroy()
 		end
 		w.sourceA:Destroy()
@@ -545,6 +569,7 @@ function Wheels.Clear(self: Wheels)
 	table.clear(self.wheels)
 	self.body = nil
 	self.built = 0
+	Debris.Clear(self.debris)
 	-- The ribbons are the world's, not the car's: they stay built, but their marks go.
 	for _, ribbon in { self.marks, self.rubber } do
 		if ribbon.ready then
@@ -622,8 +647,8 @@ function Wheels.Attach(self: Wheels, rig: any): boolean
 		end
 		local ground: GroundFx = {
 			clippings = kick("grass", G.Grass.Clippings, sourceC),
-			dirt = kick("dirt", G.Grass.Dirt, sourceC),
 			dust = kick("dust", G.Gravel.Dust, sourceA),
+			spray = kick("spray", G.Grass.Spray, sourceA),
 		}
 
 		table.insert(self.wheels, {
@@ -651,6 +676,7 @@ function Wheels.Attach(self: Wheels, rig: any): boolean
 			trench = false,
 			fx = fx,
 			ground = ground,
+			clodDue = 0, -- clods owed but not yet thrown (T-283)
 		})
 	end
 
@@ -702,8 +728,8 @@ end
 
 local function groundOff(g: GroundFx)
 	writeKick(g.clippings, 0)
-	writeKick(g.dirt, 0)
 	writeKick(g.dust, 0)
+	writeKick(g.spray, 0)
 end
 
 -- Everything off and remembered as off. Used when the car jumps (spawn, respawn or
@@ -720,7 +746,9 @@ function Wheels.Cut(self: Wheels)
 			write(fx, false, fx.diffuseRate, fx.stylizedRate)
 		end
 		groundOff(w.ground)
+		w.clodDue = 0
 	end
+	Debris.Clear(self.debris)
 	-- And every mark ends where it is: the next one must not join across a jump.
 	GroundMarks.Cut(self.marks)
 	GroundMarks.Cut(self.rubber)
@@ -782,8 +810,9 @@ function Wheels.Update(self: Wheels, state: DriftModel.State?, input: any, dt: n
 	local dirt = Wheels.dirtShare(slipDeg)
 	local clipShare = 1 - (1 - G.Grass.ClippingsAtFullDirt) * dirt
 	local clipBase = Wheels.kickRate(G.Grass.Clippings, slipDeg) * clipShare
-	local dirtBase = Wheels.kickRate(G.Grass.Dirt, slipDeg) * dirt
+	local clodBase = Wheels.kickRate(G.Chunks, slipDeg) * dirt
 	local dustBase = Wheels.kickRate(G.Gravel.Dust, slipDeg)
+	local sprayBase = Wheels.kickRate(G.Grass.Spray, slipDeg)
 
 	for _, w in self.wheels do
 		local down = state.wheelsDown[w.index] == true
@@ -878,9 +907,25 @@ function Wheels.Update(self: Wheels, state: DriftModel.State?, input: any, dt: n
 		-- Off the road: the debris.
 		local g = w.ground
 		writeKick(g.clippings, if emit then clipBase * w.mixGrass else 0)
-		writeKick(g.dirt, if emit then dirtBase * w.mixGrass else 0)
+		if emit and w.mixGrass > 0 and clodBase > 0 then
+			-- The mud: owed clods build up at the rate and are thrown whole (T-283).
+			w.clodDue += clodBase * w.mixGrass * step
+			if w.clodDue >= 1 then
+				local from = w.sourceC.WorldCFrame
+				while w.clodDue >= 1 do
+					w.clodDue -= 1
+					Debris.Spawn(self.debris, from, contact, normal, state.velocity)
+				end
+			end
+		else
+			w.clodDue = 0
+		end
 		writeKick(g.dust, if emit then dustBase * w.mixGravel else 0)
+		writeKick(g.spray, if emit then sprayBase * w.mixGrass else 0)
 	end
+
+	-- The clods in the air fly on, and the ones on the ground sink, whatever the wheels do.
+	Debris.Step(self.debris, step)
 
 	-- The laid marks dry and fade with age, and go when their life is up.
 	local t0 = os.clock()
@@ -931,6 +976,8 @@ function Wheels.DebugState(self: Wheels, state: DriftModel.State?, input: any)
 		rubber = GroundMarks.DebugState(self.rubber),
 		-- Microseconds a frame the ribbons cost, over the frames a wheel was marking.
 		marksMicros = if self.marksFrames > 0 then self.marksSeconds / self.marksFrames * 1e6 else 0,
+		-- The mud's 3D clods (T-283): ready, pool, shapes, triangles, live, flying, spawned.
+		debris = Debris.DebugState(self.debris),
 		rollDeg = if state then math.deg(state.bodyRoll) else nil,
 		slipDeg = if state then math.deg(state.slip) else nil,
 		throttle = if state then state.throttle else nil,
@@ -1003,8 +1050,10 @@ function Wheels.DebugState(self: Wheels, state: DriftModel.State?, input: any)
 			onGround = self.marks.strips[w.index] and self.marks.strips[w.index].snapped or 0,
 			onRoad = self.rubber.strips[w.index] and self.rubber.strips[w.index].snapped or 0,
 			clippingsRate = live(w.ground.clippings),
-			dirtRate = live(w.ground.dirt),
+			clodRate = if w.mixGrass > 0 and emit then Wheels.kickRate(F.Ground.Chunks, math.deg(math.abs(state.slip)))
+				* Wheels.dirtShare(math.deg(math.abs(state.slip))) * w.mixGrass else 0, -- clods a second (T-283)
 			dustRate = live(w.ground.dust),
+			sprayRate = live(w.ground.spray),
 			-- How far the lean had to be pushed back on this wheel this frame, in studs.
 			-- This IS the bug, in one number: before the fix the attachment sat here and
 			-- the mark went with it, up to six tenths of a stud under a road with five
@@ -1030,7 +1079,7 @@ function Wheels.CountInstances(self: Wheels): number
 			n += (if fx.diffuse.Parent then 1 else 0) + (if fx.stylized.Parent then 1 else 0)
 		end
 		local g = w.ground
-		for _, inst in { g.clippings.emitter, g.dirt.emitter, g.dust.emitter } do
+		for _, inst in { g.clippings.emitter, g.dust.emitter, g.spray.emitter } do
 			n += if (inst :: Instance).Parent then 1 else 0
 		end
 	end

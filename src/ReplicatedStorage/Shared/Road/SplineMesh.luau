@@ -967,7 +967,9 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 			end
 			table.sort(cuts)
 		end
-		local tarmacRows: { { Vector3 } } = {} -- per cut, with a run: the drawn tarmac's points
+		local tarmacRows: { { Vector3 } } = {} -- per cut, with a run or a patch: the drawn tarmac's points
+		-- THE PATCHES OF NEWER TARMAC (T-285): rare, placed along the road by a hash
+		local roadPatches = if tarmacImage then RoadTexture.patches(spline, s0, s1) else {}
 		local lineTris = 0
 		-- THE GRAVEL (T-270): with the tarmac's texture, the bevels are mapped to the image's
 		-- gravel band, from the tarmac's edge (0) to their foot (`BandStuds`, or `RunFoot` in a
@@ -1022,7 +1024,7 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 					end
 				end
 			end
-			if #runs > 0 then
+			if #runs > 0 or #roadPatches > 0 then
 				local tp = {}
 				for j = lipL + 1, lipR do
 					table.insert(tp, pts[j])
@@ -1179,6 +1181,90 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 				end
 			end
 			slice()
+		end
+
+		-- THE PATCHES (T-285): each a small grid laid on the DRAWN tarmac, four vertices
+		-- across a row (`RoadTexture.patchRow`), its rows the patch's own and the chunk's cuts
+		-- between them, mapped to the tarmac's own UVs there and shaded by its tone, darker
+		-- inside, so its edges are the tarmac under it exactly; lifted `PatchLift` (more on a
+		-- coarse chunk, less than the double yellow's, which it keeps clear of anyway)
+		local patchTris = 0
+		if #roadPatches > 0 then
+			local em = road.em
+			local TM = Config.Spline.Tarmac
+			local pLift = TM.PatchLift + (o.tolerance or M.Tolerance) * 0.2
+			-- a far chunk (T-263) lays its rows further apart: the patch's shape, not its ragged sides
+			local coarse = math.clamp((o.tolerance or M.Tolerance) / M.Tolerance, 1, 8)
+			-- a point on the drawn tarmac at (s, d): in the strip between two cuts, on the one
+			-- of its two triangles it falls in (as `strip` makes them)
+			local function onDrawn(s: number, d: number): Vector3
+				local k = 1
+				while k < #cuts - 1 and cuts[k + 1] < s do
+					k += 1
+				end
+				local A, B = tarmacRows[k], tarmacRows[k + 1]
+				local v = math.clamp((s - cuts[k]) / math.max(1e-6, cuts[k + 1] - cuts[k]), 0, 1)
+				local f = math.clamp((d + half) / (2 * half), 0, 1) * across
+				local i = math.clamp(math.floor(f), 0, across - 1)
+				local u = f - i
+				if u + v <= 1 then
+					return A[i + 1] + (A[i + 2] - A[i + 1]) * u + (B[i + 1] - A[i + 1]) * v
+				end
+				return B[i + 2] + (B[i + 1] - B[i + 2]) * (1 - u) + (A[i + 2] - B[i + 2]) * (1 - v)
+			end
+			for _, p in roadPatches do
+				local rows = RoadTexture.patchRows(p, s0, s1, coarse)
+				for _, c in cuts do
+					if c > p.a and c < p.b then
+						table.insert(rows, c)
+					end
+				end
+				table.sort(rows)
+				local prev: any = nil
+				local prevS = -math.huge
+				for _, s in rows do
+					if s - prevS < 0.05 then
+						continue
+					end
+					prevS = s
+					local l, il, ir, r, kL, kR = RoadTexture.patchRow(p, s)
+					local n = em:AddNormal(spline:terrainNormal(s, p.dc))
+					local tone = RoadTexture.tone(s, 0)
+					local base = em:AddColor(tone, 1)
+					local function darker(kk: number): number
+						local dk = p.dark
+						return em:AddColor(Color3.new(tone.R * (1 + (dk.R - 1) * kk), tone.G * (1 + (dk.G - 1) * kk), tone.B * (1 + (dk.B - 1) * kk)), 1)
+					end
+					local ds = { l, il, ir, r }
+					local cs = { base, darker(kL), darker(kR), base }
+					local row: any = {}
+					for j = 1, 4 do
+						local v = em:AddVertex(onDrawn(s, ds[j]) + spline:terrainNormal(s, ds[j]) * pLift - centre)
+						row[j] = { v = v, uv = em:AddUV(RoadTexture.uv(s, ds[j], baseS)), c = cs[j] }
+					end
+					road.vertices += 4
+					if prev then
+						local a = prev
+						for j = 1, 3 do
+							-- as the tarmac's strips: left to right, row before to row after
+							local al, ar, bl, br = a[j], a[j + 1], row[j], row[j + 1]
+							local f1 = em:AddTriangle(al.v, ar.v, bl.v)
+							local f2 = em:AddTriangle(ar.v, br.v, bl.v)
+							em:SetFaceNormals(f1, { a.n, a.n, n })
+							em:SetFaceNormals(f2, { a.n, n, n })
+							em:SetFaceColors(f1, { al.c, ar.c, bl.c })
+							em:SetFaceColors(f2, { ar.c, br.c, bl.c })
+							em:SetFaceUVs(f1, { al.uv, ar.uv, bl.uv })
+							em:SetFaceUVs(f2, { ar.uv, br.uv, bl.uv })
+							road.triangles += 2
+							patchTris += 2
+						end
+					end
+					row.n = n
+					prev = row
+				end
+				slice()
+			end
 		end
 
 		-- THE GRAVEL RUNOFF (T-270): a tight cliff edge's runoff is a narrow strip of gravel
@@ -1552,6 +1638,8 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 			tarmacTriangles = road.tarmacTriangles, -- textured (T-268)
 			centreLineTriangles = lineTris, -- the double yellow's strips (T-268)
 			centreRuns = #runs // 2,
+			patchTriangles = patchTris, -- the patches of newer tarmac (T-285)
+			patches = #roadPatches,
 			bevelTriangles = bevelTris, -- the bevels mapped to the gravel band (T-270)
 			gravelTriangles = gravelTris, -- the strips over gravel runoff (T-270)
 			textured = grassImage ~= nil or tarmacImage ~= nil,

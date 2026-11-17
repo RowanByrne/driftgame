@@ -1,6 +1,6 @@
 # Feature: Tyre smoke, grass and mud particles, one painted family
 
-**Status:** specced (draft for the user). **Owner task:** none yet.
+**Status:** built; step 3 (tune and prove) in review. **Owner task:** T-279: art round T-280, emitters T-283 (merged), tuning T-286.
 
 The user, 2026-11-17: *"I want to improve the particle effects we have for tire smoke, grass, and mud effects. right now they clash hard as our particles are super low def and our smoke is super high def. I want something a bit more in the middle that leans towards high def for all. research the best way to do them, similar to how we did the tire mark effect changes, and propose a plan."*
 
@@ -109,6 +109,28 @@ All from `tools\imagegen.ps1` with `-Transparent`, which gave real alpha for the
 - If the alpha fails (holes, a see-through middle), ask for an opaque version on flat black and key it, as ART-PIPELINE says.
 
 The user picks each sheet. The agent cuts each pick into its exact grid with gutters and edge bleed, uploads it as the user signed in to Studio, measures the decoded size, and records the id. The tuning of sizes, rates and light is then shown in a lane for the user's eye, as every look has been.
+
+## Grass and mud: what was tried, and what was picked (T-283)
+
+The user drove the painted sprites (2026-11-17): the smoke and the dust are good (smoke "a bit" denser and smaller: rate 10–75 from 8–60, size 2.1 → 9 from 2.5 → 11), but *"the dirt and grass sprites look like shit. it just doesn't work. we need a different solution, i don't think it's about the art style."* A flat picture turned to the camera reads as a sticker over a 3D world however it's painted. Three ways were then built behind an on-screen switch and driven: cube 3D chunks, a fine spray of streaks, and the sprites.
+
+**Picked:**
+- **Grass: the fine spray.** *"fine spray is my decision for grass - it looks great to simulate blades ripping off and flying away"*. `Grass.Clippings`: the grass-bits sheet as tiny streaks along their flight (`VelocityParallel`, `Squash` 1.4, 0.24 → 0.14 studs, 30–90 a second), thrown from under the middle of the wheel (`DebrisOffset` 0; it was 0.95 studs to one side).
+- **Mud: small low-poly 3D clods.** *"the 3D chunks might work for dirt - maybe we should try super low poly (30 tri max) smaller chunks instead of the cubes we have now, and tone up the rate"*. `Drift/Debris`, `Ground.Chunks`: a pool of 96 of Roblox's own corner wedges and wedges per client, each of its own uneven size so a tumbling one reads as a jagged shard (8 triangles at most), in the ground's `Ground` material and the rut's soils, 0.22–0.5 studs, 14–40 a wheel a second on the dirt ramp. Thrown from the debris attachment, they tumble, fly under gravity and drag, bounce once, lie on the ground and sink into it; lit and shadowed like the world, moved together with one `BulkMoveTo` a frame.
+
+**Not EditableMeshes.** The first build made six 20-triangle rocks in code as EditableMeshes, and the tyre marks vanished: those meshes took the client's EditableMesh budget, so neither mark ribbon could be built (DR-Lane2: both failed "no EditableMesh", the console "reaching memory budget limits"; the user: *"the skidmarks are gone? why? fix it"*). A rounder rock would have to be an uploaded mesh asset.
+
+The sprites and the switch are gone, and so is the clods sheet (uploaded, unused). The earthy cloud and the ruts are unchanged.
+
+## Measured (T-286, DR-Lane1, 2026-11-17)
+
+- **Frame time:** the same straddling drift (two wheels on tarmac, two on grass) and an all-grass drift, effects on and off in alternating 3-second blocks, twice each: 22.2 ms mean, 23.3–23.7 ms p95, both ways. Studio held the client at 45 fps, so a difference smaller than that cap can't show here; the CPU cost below is the honest number.
+- **The clods' own cost:** `Debris.Step` with all 96 out, thrown at 120 a second (above the four-wheel peak of 113): **168 µs a frame**.
+- **Peak rates, four wheels** (sampled every 0.3 s through the drifts): tarmac-side smoke 109/s and the puff 17/s; all-grass drift: grass spray 126/s, earthy cloud 51/s, clods 113/s with up to 70 out at once, gravel dust 31/s. Every emitter's own maximum is at or under the mobile cap of 100 a second.
+- **Live particles a car at those peaks** (rate × mean lifetime): tarmac about 140; grass about 97 particles plus up to 70 clods (the pool caps them at 96).
+- **Day and night:** at noon the ruts, cloud and clods read as one ground; at night the smoke takes the blue night light without glowing or going black. The clods read as black specks at night at their first colours, so they were lifted (`Chunks.Colours`, 112–162 from 72–120).
+- **Lowest graphics quality: not settled.** The one shot at `Level01` caught the car between slides, with nothing firing, so whether phones that turn flipbooks off show the sheets well is still unmeasured.
+- **Mesh budget:** both mark ribbons build alongside the clods (none of them is an EditableMesh).
 
 ## Left out
 

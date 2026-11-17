@@ -276,6 +276,114 @@ function RoadTexture.tone(s: number, _d: number): Color3
 	return Color3.new(math.min(1, k * (1 + h)), k, math.min(1, k * (1 - h)))
 end
 
+-- THE PATCHES OF NEWER TARMAC (T-285, the user: "randomize it more and have it be more rare
+-- so it doesn't stand out"): not in the image, which repeats, but laid on the tarmac as
+-- small pieces of the road's mesh (`Road/SplineMesh`). Where they are comes from a hash of
+-- the distance along alone, so a chunk anywhere, built near or far, finds the same ones:
+-- in each `PatchCell` of road, one by `PatchChance`, starting anywhere but in the cell's last
+-- `PatchGap + length` (so two are never closer than `PatchGap`); in one lane, or across the
+-- middle by `PatchMiddle` if no double yellow runs there; inside the edge lines. Returns
+-- those overlapping [s0, s1], whole (a chunk clips them): { a, b, dc, w, dark, salt }.
+export type RoadPatch = { a: number, b: number, dc: number, w: number, dark: Color3, salt: number }
+function RoadTexture.patches(spline: any, s0: number, s1: number): { RoadPatch }
+	local T = Config.Spline.Tarmac
+	local R = Config.Road
+	local out: { RoadPatch } = {}
+	if (T.PatchChance or 0) <= 0 then
+		return out
+	end
+	local cell = T.PatchCell
+	local half = R.Width * 0.5
+	local margin = T.PatchRagged + T.PatchSoft
+	-- inside the edge lines, and clear of the double yellow's strips
+	local outer = half - R.EdgeLineInset - R.EdgeLineWidth - 0.3 - margin
+	local inner = R.CentreLineGap * 0.5 + R.CentreLineWidth + 0.3 + margin
+	local lo, hi = T.PatchLength[1], T.PatchLength[2]
+	for i = math.max(0, math.floor(s0 / cell) - 1), math.floor(s1 / cell) do
+		if hash(i, 1, 285) >= T.PatchChance then
+			continue
+		end
+		local len = lo + (hi - lo) * hash(i, 2, 285)
+		local a = i * cell + math.max(0, cell - len - T.PatchGap) * hash(i, 3, 285)
+		local b = a + len
+		if b <= s0 or a >= s1 or a < 0 or b > spline.length then
+			continue
+		end
+		local w = T.PatchWidth[1] + (T.PatchWidth[2] - T.PatchWidth[1]) * hash(i, 4, 285)
+		local dc
+		if hash(i, 5, 285) < T.PatchMiddle and #RoadTexture.centreRuns(spline, a, b) == 0 then
+			w = math.min(w, 2 * outer)
+			dc = (hash(i, 6, 285) * 2 - 1) * (outer - w * 0.5)
+		else
+			w = math.min(w, outer - inner)
+			local side = if hash(i, 7, 285) < 0.5 then -1 else 1
+			dc = side * (inner + w * 0.5 + hash(i, 6, 285) * (outer - inner - w))
+		end
+		-- darker toward one of the patch colours, `PatchBlend` of the way, give or take `PatchVary`
+		local C = R.Colours
+		local base = C.Tarmac
+		local pc = C.TarmacPatch[math.floor(hash(i, 8, 285) * #C.TarmacPatch) + 1]
+		local k = T.PatchBlend * (1 + T.PatchVary * (hash(i, 9, 285) * 2 - 1))
+		local dark = Color3.new(
+			(base.R + (pc.R - base.R) * k) / base.R,
+			(base.G + (pc.G - base.G) * k) / base.G,
+			(base.B + (pc.B - base.B) * k) / base.B
+		)
+		table.insert(out, { a = a, b = b, dc = dc, w = w, dark = dark, salt = 300 + (i % 1000) * 4 })
+	end
+	return out
+end
+
+-- A patch's row of four vertices at `s` (a <= s <= b): studs across of its outer left,
+-- inner left, inner right and outer right vertices (the outer ring is the tarmac's own
+-- shade, the inner fully dark: `PatchSoft` between, so it is feathered), its sides ragged by
+-- noise along; and how dark its inner vertices are there (0 at its ends, feathered over
+-- `PatchSoftAlong`, mottled by `PatchMottle`). A function of `s` alone, so a chunk's own
+-- rows and the rows at its ends meet another chunk's exactly.
+function RoadTexture.patchRow(p: RoadPatch, s: number): (number, number, number, number, number, number)
+	local T = Config.Spline.Tarmac
+	local rs = T.PatchRaggedStuds
+	local l = p.dc - p.w * 0.5 + noise1(s / rs, p.salt) * T.PatchRagged
+	local r = p.dc + p.w * 0.5 + noise1(s / rs, p.salt + 1) * T.PatchRagged
+	local soft = T.PatchSoft
+	local il = math.min(l + soft, (l + r) * 0.5)
+	local ir = math.max(r - soft, (l + r) * 0.5)
+	local endK = math.clamp(math.min(s - p.a, p.b - s) / T.PatchSoftAlong, 0, 1)
+	local mL = 1 - T.PatchMottle * (noise1(s / 3, p.salt + 2) + 1) * 0.5
+	local mR = 1 - T.PatchMottle * (noise1(s / 3, p.salt + 3) + 1) * 0.5
+	return l, il, ir, r, endK * mL, endK * mR
+end
+
+-- The rows a chunk lays a patch with, between `s0` and `s1`: its ends, a row in from each
+-- end where the feather along stops, and one every `PatchStep` between, all on a grid of
+-- the patch's own (the chunk's own cross-sections are added by the mesh). `coarse` (1 or
+-- more) spaces them further: a far chunk's patch needs only its shape, not its ragged sides.
+function RoadTexture.patchRows(p: RoadPatch, s0: number, s1: number, coarse: number?): { number }
+	local T = Config.Spline.Tarmac
+	local rows = {}
+	local function add(s: number)
+		if s >= s0 - 1e-6 and s <= s1 + 1e-6 then
+			table.insert(rows, math.clamp(s, s0, s1))
+		end
+	end
+	local fa = math.min(T.PatchSoftAlong, (p.b - p.a) * 0.5)
+	add(p.a)
+	add(p.a + fa)
+	local n = math.max(1, math.round((p.b - p.a - 2 * fa) / (T.PatchStep * (coarse or 1))))
+	for j = 1, n - 1 do
+		add(p.a + fa + (p.b - p.a - 2 * fa) * j / n)
+	end
+	add(p.b - fa)
+	add(p.b)
+	if p.a < s0 and p.b > s0 then
+		table.insert(rows, s0)
+	end
+	if p.a < s1 and p.b > s1 then
+		table.insert(rows, s1)
+	end
+	return rows
+end
+
 -- Periodic value noise over the tarmac in studs: `cellD` across, `cellT` along, wrapping
 -- along every `period` studs so the texture tiles.
 type Layer = { nD: number, nT: number, cellD: number, cellT: number, v: { number } }
@@ -362,12 +470,18 @@ function RoadTexture.paint(yield: (() -> ())?): (buffer, number, number)
 	local plain = math.floor(Config.Spline.Grass.Shade * 255 + 0.5)
 
 	-- the patches: rectangles of newer tarmac, ragged and feathered
+	-- (T-285: none painted, they are the mesh's now, `patches`; T-277's one patch's random
+	-- numbers are still drawn, so everything painted after it stays where it was approved)
 	local patches: { Patch } = {}
-	for i = 1, T.Patches do
+	for i = 1, math.max(T.Patches, 1) do
 		local len, w = range(T.PatchLength), range(T.PatchWidth)
 		local dc = (rand() * 2 - 1) * (half - w * 0.5 - 0.5)
+		local t0 = rand() * period
+		if i > T.Patches then
+			continue
+		end
 		table.insert(patches, {
-			t0 = rand() * period,
+			t0 = t0,
 			len = len,
 			d0 = dc - w * 0.5,
 			d1 = dc + w * 0.5,
