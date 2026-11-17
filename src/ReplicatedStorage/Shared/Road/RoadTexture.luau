@@ -7,21 +7,23 @@
 --
 -- WHAT IT DRAWS, after the user's concept art (`assets/reference/environment-mood/`): a cool
 -- blue-violet grey with soft painterly grain stretched along the road and a finer aggregate;
--- broad, faint, smoother wheel tracks in each lane and a faint oil strip between them; a
--- dusty, lighter last stud or two at each edge with gravel creeping on; faint ragged patches
--- of newer tarmac; thin cracks, mostly along the edges; and the Japanese lines: a solid
--- white edge line just in from each edge, and a centre line (white dashes by default, or
--- solid, or double). Tyre streaks can be painted too (`Streaks`), but are off: painted into
--- a texture that repeats along the road they cannot follow its bends, and read as stripes
--- (the user's send-back, "tyre marks are ugly"); the car's own drift marks draw those.
+-- a dusty, lighter last stud or two at each edge with gravel creeping on; faint ragged
+-- patches of newer tarmac; thin cracks, mostly along the edges; and the touge's two white
+-- edge lines, faded, worn through and cracked. Nothing down the middle, and no tyre marks
+-- (the user's send-backs: "tyre marks are ugly", "get rid of the dashes - it's not
+-- realistic"). Wheel tracks can still be painted (`TrackDark`), but are off.
+--
+-- THE DOUBLE YELLOW of the tight stretches (`centreRuns`) is not in the tarmac's pixels:
+-- the texture repeats along the road, and the line must start and stop at the bends. It is
+-- two thin strips of the road's mesh (`Road/SplineMesh`), mapped to the image's LINE BAND:
+-- columns right of the tarmac holding one weathered yellow line on tarmac (`lineUV`).
 --
 -- HOW LARGE: 1 024 x 1 024, the largest EditableImage a client will make (measured: 2 048
--- on either side is refused), 4 MB. Painting it is about 250 ms of work, spread a few ms a
--- frame over about 80 frames.
+-- on either side is refused), 4 MB. Painting it is a few hundred ms of work, spread a few ms
+-- a frame over many frames.
 --
 -- HOW IT IS MAPPED. U runs across the tarmac (edge to edge), V along the road over
--- `period()` studs, so the texture repeats every `PeriodStuds` and the centre line's dashes
--- (on `MarkInterval`, a whole number of them a period) run on unbroken. Each chunk shifts V
+-- `period()` studs, so the texture repeats every `PeriodStuds`. Each chunk shifts V
 -- by whole periods (`base`) so the numbers stay small and the pattern runs on across chunks.
 -- Over that, each tarmac vertex is shaded by smooth noise along the road (`tone`), which
 -- does not repeat, so the period does not show as a repeat.

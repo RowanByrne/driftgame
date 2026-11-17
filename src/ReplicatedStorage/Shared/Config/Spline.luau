@@ -282,7 +282,8 @@ local Spline = {
 		Enabled = true, -- false: the flat tarmac and the dash parts, as before
 		-- THE RESOLUTION (T-268 send-back, the user: "bit higher res this time for the main
 		-- asphalt texturing"): 1 024 x 1 024, the largest EditableImage, 4 MB. Across, the tarmac
-		-- gets all but `PlainPx` each side: 19.2 pixels a stud (4.8 in the first cut); along,
+		-- gets all but `PlainPx` each side and the line band: 18.6 pixels a stud (4.8 in the
+		-- first cut); along,
 		-- 4.3 (2.1): it is seen at a glancing angle, so it needs fewer. The shorter repeat
 		-- that buys is hidden by the vertices' tone, which never repeats
 		Width = 1024, -- pixels across
