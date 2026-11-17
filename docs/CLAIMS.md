@@ -10,12 +10,12 @@ Every task in progress and the files it owns, so parallel sessions and workers n
 | Branch | Lane | Files owned | Since |
 |---|---|---|---|
 | `agent/pebble-sound` (T-292) | borrowed | `src/StarterPlayerScripts/Drift/PebbleSound.luau` (new), `src/ReplicatedStorage/Shared/Config/Pebbles.luau` (new), `src/ServerScriptService/Tests/PebbleSoundTests.luau` (new), `assets/audio/sfx-pebbles/*` (new), `docs/game/AUDIO.md`, `src/StarterPlayerScripts/Controllers/DriftController.luau` (one start line and one debug line only) | 2026-11-17 |
-| `agent/camera-air` (T-294) | borrowed | `src/ReplicatedStorage/Shared/Config/Camera.luau`, `src/StarterPlayerScripts/Controllers/CarCameraController.luau`, `src/ServerScriptService/Tests/JitterTests.luau`, `docs/game/features/drift-camera.md` | 2026-11-17 |
 | `agent/score-engine` (T-295) | borrowed | `src/StarterPlayerScripts/Drift/ScoreEvents.luau` (new), `src/ReplicatedStorage/Shared/Config/ScoreEvents.luau` (new), `Drift/Events/Jump.luau` (new), `Drift/Events/WheelLift.luau` (new), `Drift/Score.luau`, `Shared/Config/Score.luau`, `src/ServerScriptService/Tests/ScoreTests.luau`, `Tests/ScoreEventsTests.luau` (new), `Controllers/DriftController.luau` (its score lines only), `docs/game/features/score-events.md` | 2026-11-17 |
 | `agent/score-feed` (T-296) | borrowed | `src/StarterPlayerScripts/Drift/ScoreFeedView.luau` (new), `Drift/ScoreFeedView.fixtures.luau` (new), `Drift/ScoreHudView.luau`, `Drift/ScoreHudView.fixtures.luau`, `Controllers/ScoreController.luau`, `docs/game/UI-INVENTORY.md` | 2026-11-17 |
 | `agent/score-grinds` (T-297) | borrowed | `src/StarterPlayerScripts/Drift/Model.luau` (wall-contact state fields only), `Drift/SplineWorld.luau`, `Drift/Events/BumperGrind.luau` (new), `Drift/Events/HangGrind.luau` (new), `src/ServerScriptService/Tests/SplineWorldTests.luau`, `Tests/GrindEventsTests.luau` (new) | 2026-11-17 |
 | `agent/score-nearmiss` (T-298) | borrowed | `src/StarterPlayerScripts/Drift/Events/NearMiss.luau` (new), `src/ServerScriptService/Tests/NearMissTests.luau` (new) | 2026-11-17 |
 | `agent/score-hairpins` (T-299) | borrowed | `src/ReplicatedStorage/Shared/Road/Hairpins.luau` (new), `src/StarterPlayerScripts/Drift/Events/PerfectHairpin.luau` (new), `Drift/Events/ReverseEntry.luau` (new), `src/ServerScriptService/Tests/HairpinTests.luau` (new) | 2026-11-17 |
+| `agent/score-flick` (T-300) | borrowed | `src/StarterPlayerScripts/Drift/Events/ScandiFlick.luau` (new), `src/ServerScriptService/Tests/ScandiFlickTests.luau` (new) | 2026-11-17 |
 
 ## Notes between sessions
 
