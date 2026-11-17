@@ -33,8 +33,9 @@
 -- WHERE IT SITS (the spec's choice): under the score panel, in its centre column, 146 px
 -- below the inset (the panel's bottom 138 and a gap), 220 px wide like the panel. On a screen
 -- too narrow for the road map to sit beside that column (phone portrait), the map drops below
--- the column on the left, so the feed sits right of the map instead, right-aligned. The map's
--- rule is read from `Config.RoadMap`, the same numbers `Drift/RoadMapView` places itself by.
+-- the column on the left, so the feed sits right of the map instead, right-aligned, and starts
+-- under the Settings button that shares that edge. The map's rule is read from
+-- `Config.RoadMap`, the same numbers `Drift/RoadMapView` places itself by.
 --
 -- IT NEVER TAKES A TOUCH: the whole screen is the steering pad. Nothing here is `Active`, and
 -- its `DisplayOrder` (13) is under the score panel's 14, over the drag pad's 5.
@@ -59,6 +60,10 @@ local C = {
 	Top = 146, -- px below the inset: the score panel's bottom (80 + 58) and an 8 px gap
 	Margin = 16, -- px from the screen's right edge, beside the map (phone portrait)
 	MapGap = 8, -- px kept clear between the map and the feed
+	-- Beside the map the feed shares the right edge with the Settings button
+	-- (`Settings/SettingsView`: 144 x 48, its top 176 px below the safe area's top, in the
+	-- full-screen space), so there it starts under that button's bottom and a gap.
+	SettingsBottom = 224, -- px below the safe top, full-screen space
 	LineHeight = 30, -- px, one row
 	TwoRowHeight = 50, -- px, a name too long to share its row with the points
 	Gap = 4, -- px between lines
@@ -199,12 +204,17 @@ function ScoreFeedView:_layout()
 	local besideMap = screen.X > 0 and RM.Margin + mapSize > roomBeside
 	local o = self.offsets.ScoreFeed or Vector2.zero
 	local width = C.Width
+	local top = C.Top
 	if besideMap then
 		-- right of the map, which has dropped below the centre column on the left
 		local left = RM.Margin + mapSize + C.MapGap
 		width = math.min(C.Width, screen.X - C.Margin - left)
+		local full = GuiService:GetInsetArea(Enum.ScreenInsets.None)
+		local safe = GuiService:GetInsetArea(Enum.ScreenInsets.CoreUISafeInsets)
+		local settingsBottom = safe.Min.Y - full.Min.Y + C.SettingsBottom - GuiService:GetGuiInset().Y
+		top = math.max(C.Top, settingsBottom + C.MapGap)
 		self.root.AnchorPoint = Vector2.new(1, 0)
-		self.root.Position = UDim2.new(1, -C.Margin + o.X, 0, C.Top + o.Y)
+		self.root.Position = UDim2.new(1, -C.Margin + o.X, 0, top + o.Y)
 	else
 		self.root.AnchorPoint = Vector2.new(0.5, 0)
 		self.root.Position = UDim2.new(0.5, o.X, 0, C.Top + o.Y)
@@ -213,6 +223,7 @@ function ScoreFeedView:_layout()
 	self.width = width
 	self.phone = phone
 	self.placement = if besideMap then "besideMap" else "centre"
+	self.top = top
 	self.maxLines = if phone then C.PhoneLines else C.Lines
 	if changed then
 		for _, line in self.lines do
@@ -651,6 +662,7 @@ function ScoreFeedView:describe()
 		displayOrder = self.gui.DisplayOrder,
 		screen = self.gui.AbsoluteSize,
 		placement = self.placement,
+		top = self.top,
 		phone = self.phone,
 		maxLines = self.maxLines,
 		width = self.width,
