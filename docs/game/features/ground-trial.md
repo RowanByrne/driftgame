@@ -103,7 +103,7 @@ Three seeds (31337, 101, 2024), 5 000 studs each.
 
 ### The mesh budget (measured, DR-Lane2 client)
 
-**Also in it since T-265:** the drift marks (`Drift/GroundMarks`: grass ruts and, since T-269, tarmac rubber), 4 168 vertices in all, all the time (2 084 since T-274). **Measured in tiles (T-273):** a client holds about 640 tiles of 128 triangles; an empty growable mesh reserves 80 and a 1024 x 1024 EditableImage 32. The vista's kept growable template and the road texture pushed the defaults over (road chunks let go under the car); since T-273 the road builds in one kept growable mesh, the vista keeps a fixed copy, and `Drift/MeshBudget` makes the ground give way before the road, which never drops a chunk near the car. Since T-263, far road chunks are built coarse to fit Road ahead and behind at their longest.
+**Also in it since T-265:** the drift marks (`Drift/GroundMarks`: grass ruts and, since T-269, tarmac rubber), 4 168 vertices in all, all the time (2 120 since T-274). **Measured in tiles (T-273):** a client holds about 640 tiles of 128 triangles; an empty growable mesh reserves 80 and a 1024 x 1024 EditableImage 32. The vista's kept growable template and the road texture pushed the defaults over (road chunks let go under the car); since T-273 the road builds in one kept growable mesh, the vista keeps a fixed copy, and `Drift/MeshBudget` makes the ground give way before the road, which never drops a chunk near the car. Since T-263, far road chunks are built coarse to fit Road ahead and behind at their longest.
 
 **What holds it since T-274** (`Config.Spline.Mesh.Budget`; measured in a DR-Lane1 client, numbers on T-274's card):
 

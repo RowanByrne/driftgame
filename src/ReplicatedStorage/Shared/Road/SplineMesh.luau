@@ -379,6 +379,18 @@ end
 
 local making = false -- templates being made (one growable mesh at a time)
 
+-- `em` as opaque content: (true, content), or false where it is refused. In Studio,
+-- `workspace.__no_opaque = true` refuses it, to try the fallback (T-274).
+local function toOpaque(em: EditableMesh): (boolean, Content?)
+	if RunService:IsStudio() and workspace:GetAttribute("__no_opaque") == true then
+		return false, nil
+	end
+	local ok, result, content = pcall(function()
+		return AssetService:CreateDataModelContentAsync(Content.fromObject(em))
+	end)
+	return ok and result == Enum.CreateContentResult.Success, if ok then content else nil
+end
+
 -- Make every size up to `k` not made yet, in ONE growable mesh: blank faces are added, and
 -- the mesh is made opaque each time it reaches a size, then let go. Returns "ok", "memory"
 -- (no room for the growable mesh) or "refused" (opaque content was refused).
@@ -420,12 +432,10 @@ local function makeTemplates(k: number, pace: Pace): string
 				end
 			end
 			if not templates[size] then
-				local okC, result, content = pace.wait(function()
-					return pcall(function()
-						return AssetService:CreateDataModelContentAsync(Content.fromObject(em))
-					end)
+				local made, content = pace.wait(function()
+					return toOpaque(em)
 				end)
-				if not okC or result ~= Enum.CreateContentResult.Success then
+				if not made or not content then
 					outcome = "refused"
 					break
 				end
@@ -487,6 +497,8 @@ end
 -- fixed-size mesh of its own size. Let go again as soon as a template serves.
 local kept: EditableMesh? = nil
 local keptBusy = false
+local refusedUntil = 0 -- no template is tried again before this (os.clock)
+local REFUSED_WAIT = 30 -- seconds
 
 -- The recording replayed into a growable mesh, its vertices `mid` nearer the part's centre.
 local function replay(em: EditableMesh, rec: Rec, mid: Vector3, pace: Pace)
@@ -577,12 +589,10 @@ local function viaGrowable(b: Builder, mid: Vector3, pace: Pace): (Content, Edit
 		done()
 		error(err)
 	end
-	local okC, result, content = pace.wait(function()
-		return pcall(function()
-			return AssetService:CreateDataModelContentAsync(Content.fromObject(mesh))
-		end)
+	local made, content = pace.wait(function()
+		return toOpaque(mesh)
 	end)
-	if okC and result == Enum.CreateContentResult.Success then
+	if made and content then
 		done()
 		buildStats.opaque += 1
 		return content, nil
@@ -617,11 +627,16 @@ local function meshFor(b: Builder, mid: Vector3, pace: Pace): (Content, Editable
 	local k = sizeFor(F)
 	assert(k, `a chunk of {F} triangles is more than an EditableMesh may hold`)
 	if not templates[k] then
+		-- (refused a moment ago: not asked again for `REFUSED_WAIT`, each try costs a growable mesh)
+		if os.clock() < refusedUntil then
+			return viaGrowable(b, mid, pace)
+		end
 		local made = makeTemplates(k, pace)
 		if made == "memory" and b.onShort and b.onShort() then
 			made = makeTemplates(k, pace)
 		end
 		if made == "refused" then
+			refusedUntil = os.clock() + REFUSED_WAIT
 			return viaGrowable(b, mid, pace)
 		end
 		assert(made == "ok", "this device would not make an EditableMesh (out of its budget)")
@@ -680,12 +695,10 @@ local function meshFor(b: Builder, mid: Vector3, pace: Pace): (Content, Editable
 		kept:Destroy()
 		kept = nil
 	end
-	local okC, result, content = pace.wait(function()
-		return pcall(function()
-			return AssetService:CreateDataModelContentAsync(Content.fromObject(mesh))
-		end)
+	local made, content = pace.wait(function()
+		return toOpaque(mesh)
 	end)
-	if okC and result == Enum.CreateContentResult.Success then
+	if made and content then
 		mesh:Destroy()
 		buildStats.opaque += 1
 		return content, nil
