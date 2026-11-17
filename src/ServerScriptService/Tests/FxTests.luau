@@ -1391,7 +1391,7 @@ function Tests.run(opts)
 				local shares = { Wheels.loadShare(s0, 1), Wheels.loadShare(s0, 3), Wheels.loadShare(s0, 4) }
 				check(
 					"rubber goes down with the slip past each wheel's threshold, and darkest where the wheel is loaded",
-					rear0 == 0 and rear1 >= MR.MinIntensity * 0.99 and rear1 < 0.6 and rearFull == 1 and front30 == 0
+					rear0 == 0 and rear1 >= MR.MinIntensity * 0.99 and rear1 < MR.MinIntensity + 0.1 and rearFull == 1 and front30 == 0
 						and frontFull == 1 and hb >= MR.HandbrakeIntensity and loaded > mid and mid > light
 						and math.abs(shares[1] - 0.5) < 1e-6 and shares[2] > 0.5 and shares[3] < 0.5,
 					string.format("rear 0/1/40 deg %.2f/%.2f/%.2f; front 29 deg %.2f, full %.2f; handbrake %.2f; 20 deg loaded/even/light %.2f/%.2f/%.2f; load shares %s",

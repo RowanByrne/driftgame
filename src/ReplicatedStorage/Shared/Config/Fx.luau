@@ -95,7 +95,7 @@ return {
 			-- How hard a wheel marks, 0..1, which is how much of the mark shows: the slip past
 			-- that wheel's threshold, and its LOAD -- the wheel pressed hardest into the road
 			-- leaves the darkest rubber.
-			MinIntensity = 0.45, -- at the first degree past the threshold...
+			MinIntensity = 0.55, -- at the first degree past the threshold...
 			IntensitySlipDegrees = 35, -- ...full this far past it
 			HandbrakeIntensity = 0.7, -- a locked wheel with no slip to speak of
 			LoadWeight = 0.35, -- how much the load moves it, either way of the wheels' average
@@ -134,12 +134,12 @@ return {
 		-- end of its life, `Alpha` at full strength. `Opacity` scales the whole look; how much
 		-- of it shows is that times the wheel's intensity, the soft ends and the age.
 		Rubber = { -- on the tarmac: burnt rubber, darkest along the middle where it pressed
-			Opacity = 0.85,
+			Opacity = 1, -- MEASURED: at 0.85 a 20-degree slide laid 0.64 at most and read faint
 			HeightScale = 0,
 			TiltScale = 0,
 			Points = {
 				{ Colour = Color3.fromRGB(32, 31, 32), DryColour = Color3.fromRGB(44, 43, 44), Alpha = 0 },
-				{ Colour = Color3.fromRGB(22, 21, 22), DryColour = Color3.fromRGB(36, 35, 36), Alpha = 0.92 },
+				{ Colour = Color3.fromRGB(20, 19, 20), DryColour = Color3.fromRGB(36, 35, 36), Alpha = 0.95 },
 			},
 		},
 		Scuff = { -- on the road's gravel bevel and gravel runoff: stones pushed aside
