@@ -85,6 +85,7 @@ function Tests.run()
 		local tris, verts, worstMs, sumMs, failed, sections, plainParts = 0, 0, 0, 0, 0, 0, 0
 		local worstSlice, slices = 0, 0 -- a chunk is built a few ms a frame (T-193)
 		local models = {}
+		local modelTris = {}
 		for i = 0, chunks - 1 do
 			local s0, s1 = i * L, math.min((i + 1) * L, spline.length)
 			-- (with the road drawing its own runoff, which these checks read: when the ground draws
@@ -95,6 +96,7 @@ function Tests.run()
 				check("chunk " .. i .. " built", false, tostring(info))
 			else
 				models[i] = model
+				modelTris[i] = info.triangles
 				tris += info.triangles
 				verts += info.vertices
 				sections += info.sections
@@ -208,24 +210,28 @@ function Tests.run()
 				fixedHeld += 1
 			end
 		end
-		do
-			local road = models[0] and models[0]:FindFirstChild("Road") :: MeshPart?
-			local em = editable(road)
+		for i, model in models do
+			local em = editable(model:FindFirstChild("Road") :: MeshPart?)
 			if em then
+				local here = 0
 				for _, f in em:GetFaces() do
 					local vs = em:GetFaceVertices(f)
 					local a, b, c = em:GetPosition(vs[1]), em:GetPosition(vs[2]), em:GetPosition(vs[3])
 					if a == b and b == c then
-						folded += 1
+						here += 1
 					end
 				end
-				foldedOk = #em:GetFaces() == SplineMesh.templateFaces(#em:GetFaces() - folded)
+				folded += here
+				-- its own faces, and the rest of its template's folded
+				foldedOk = foldedOk and #em:GetFaces() == SplineMesh.templateFaces(modelTris[i]) and here == #em:GetFaces() - modelTris[i]
+			else
+				foldedOk = false
 			end
 		end
 		check(
 			"a drawn chunk is opaque content, written into a template's copy",
 			opaque == built and fixedHeld == 0 and foldedOk,
-			`{opaque} of {built} chunks opaque, {fixedHeld} holding a fixed-size mesh; the first read back with {folded} unused faces folded to a point; build state {game:GetService("HttpService"):JSONEncode(SplineMesh.BuildState())}`
+			`{opaque} of {built} chunks opaque, {fixedHeld} holding a fixed-size mesh; read back, each is its template's size with {folded} unused faces in all folded to a point; build state {game:GetService("HttpService"):JSONEncode(SplineMesh.BuildState())}`
 		)
 		-- (a) THE DEFAULTS: every mesh user fits with `Budget.Spare` over, and the ground keeps
 		-- at least its own Ground detail's tiles (what it gives up is corridor far along the road)

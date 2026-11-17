@@ -53,6 +53,7 @@
 
 local AssetService = game:GetService("AssetService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
 
 local Config = require(ReplicatedStorage.Shared.Config)
 local GrassTexture = require(script.Parent.GrassTexture)
@@ -208,12 +209,17 @@ end
 -- (nothing to do: only the faces' vertices are written, `meshFor`)
 function Recorder.RemoveUnused(_self: Rec) end
 
+-- How a build hands the frame back, and waits on the engine (`AssetService`'s Async calls run
+-- off the frame: measured, the worst frame was the same with them as without), so that wait
+-- is neither counted as the build's work nor as its frame's slice.
+type Pace = { slice: () -> (), wait: (() -> ...any) -> ...any }
+
 -- A mesh in the making: vertices relative to `centre`, with normals.
 type Builder = {
 	em: Rec,
 	centre: Vector3,
 	onShort: (() -> boolean)?,
-	slice: () -> (), -- hands the frame back when this frame's share of the build is spent
+	pace: Pace, -- hands the frame back when this frame's share of the build is spent
 	held: EditableMesh?, -- the fixed-size mesh, kept only where it could not be made opaque
 	vertices: number,
 	triangles: number,
@@ -308,19 +314,20 @@ local function strip(b: Builder, rowA: { number }, normA: { number }, rowB: { nu
 	end
 end
 
-local function newBuilder(centre: Vector3, slice: () -> ()): Builder
-	return { em = newRecorder(), centre = centre, slice = slice, held = nil, vertices = 0, triangles = 0, grassTriangles = 0, tarmacTriangles = 0, plainUV = nil, grassShade = nil }
+local function newBuilder(centre: Vector3, pace: Pace): Builder
+	return { em = newRecorder(), centre = centre, pace = pace, held = nil, vertices = 0, triangles = 0, grassTriangles = 0, tarmacTriangles = 0, plainUV = nil, grassShade = nil }
 end
 
 -- THE TEMPLATES (T-274). A fixed-size mesh can only be had as a copy of another mesh, and a
 -- growable one holds 80 tiles however little is in it (measured: empty, 128 or 6 144
 -- triangles alike). So a chunk is written into a fixed-size COPY OF A BLANK TEMPLATE: the
 -- smallest of a ladder of sizes that holds it, each face its own three vertices (any face can
--- then be anything), the faces it does not use folded to a point. A template is made once,
--- the first time a chunk needs its size, in a growable mesh let go at once, and kept as
--- OPAQUE CONTENT, which costs none of the client's mesh memory (measured). The ids a copy of
--- a template gets are the same every time (measured), so where each face's corners are is
--- worked out once a size (`map`).
+-- then be anything), the faces it does not use folded to a point. The templates are made
+-- once, as a client loads (`prepare`, up to `Mesh.PrepareFaces`) or the first time a chunk
+-- needs a larger size, in one growable mesh let go at once, and kept as OPAQUE CONTENT, which
+-- costs none of the client's mesh memory (measured). The ids a copy of a template gets are
+-- the same every time (measured), so where each face's corners are is worked out once a size
+-- (`map`). Where opaque content is refused, the road builds as T-273 did (`viaGrowable`).
 local SIZES: { number } = {}
 do
 	local s = 64
@@ -338,11 +345,13 @@ type Template = {
 	map: { tv: { number }, tn: { number }, tc: { number }, tu: { number }, f1: number, fN: number }?,
 }
 local templates: { [number]: Template } = {}
+local WHITE = Color3.new(1, 1, 1)
 local buildStats = {
 	templates = 0, -- sizes made
 	templateFails = 0, -- times one could not be made (no room for its growable mesh)
 	copies = 0, -- chunks written into a copy
 	copyFails = 0,
+	growable = 0, -- chunks built in a growable mesh instead (opaque content refused, the fallback)
 	opaque = 0, -- chunks made opaque
 	opaqueFails = 0, -- chunks that kept their fixed-size mesh instead
 	faces = 0, -- the chunks' own faces
@@ -368,51 +377,80 @@ function SplineMesh.templateFaces(faces: number): number?
 	return if k then SIZES[k] else nil
 end
 
--- Make template `k`: a growable mesh of blank faces, made opaque, then let go.
-local function makeTemplate(k: number, slice: () -> ()): boolean
-	local faces = SIZES[k]
+local making = false -- templates being made (one growable mesh at a time)
+
+-- Make every size up to `k` not made yet, in ONE growable mesh: blank faces are added, and
+-- the mesh is made opaque each time it reaches a size, then let go. Returns "ok", "memory"
+-- (no room for the growable mesh) or "refused" (opaque content was refused).
+local function makeTemplates(k: number, pace: Pace): string
+	while making do
+		task.wait()
+	end
+	if templates[k] then
+		return "ok"
+	end
+	making = true
 	local ok, g = pcall(function()
 		return AssetService:CreateEditableMesh()
 	end)
 	if not ok or not g then
+		making = false
 		buildStats.templateFails += 1
-		return false
+		return "memory"
 	end
 	local em = g :: EditableMesh
-	local made = pcall(function()
-		for f = 0, faces - 1 do
-			-- (well inside the 2 048 studs a mesh may span, so any size fits)
-			local x, z = (f % 64) * 2, (f // 64) * 2
-			local a = em:AddVertex(Vector3.new(x, 0, z))
-			local b = em:AddVertex(Vector3.new(x, 0, z + 1))
-			local c = em:AddVertex(Vector3.new(x + 1, 0, z))
-			local face = em:AddTriangle(a, b, c)
-			em:SetFaceNormals(face, { em:AddNormal(Vector3.yAxis), em:AddNormal(Vector3.yAxis), em:AddNormal(Vector3.yAxis) })
-			em:SetFaceColors(face, { em:AddColor(Color3.new(1, 1, 1), 1), em:AddColor(Color3.new(1, 1, 1), 1), em:AddColor(Color3.new(1, 1, 1), 1) })
-			em:SetFaceUVs(face, { em:AddUV(Vector2.zero), em:AddUV(Vector2.zero), em:AddUV(Vector2.zero) })
-			if f % 128 == 127 then
-				slice()
+	local outcome = "ok"
+	local done = pcall(function()
+		local f = 0
+		for size = 1, k do
+			local faces = SIZES[size]
+			while f < faces do
+				-- (well inside the 2 048 studs a mesh may span, so any size fits)
+				local x, z = (f % 64) * 2, (f // 64) * 2
+				local a = em:AddVertex(Vector3.new(x, 0, z))
+				local b = em:AddVertex(Vector3.new(x, 0, z + 1))
+				local c = em:AddVertex(Vector3.new(x + 1, 0, z))
+				local face = em:AddTriangle(a, b, c)
+				em:SetFaceNormals(face, { em:AddNormal(Vector3.yAxis), em:AddNormal(Vector3.yAxis), em:AddNormal(Vector3.yAxis) })
+				em:SetFaceColors(face, { em:AddColor(WHITE, 1), em:AddColor(WHITE, 1), em:AddColor(WHITE, 1) })
+				em:SetFaceUVs(face, { em:AddUV(Vector2.zero), em:AddUV(Vector2.zero), em:AddUV(Vector2.zero) })
+				f += 1
+				if f % 128 == 0 then
+					pace.slice()
+				end
+			end
+			if not templates[size] then
+				local okC, result, content = pace.wait(function()
+					return pcall(function()
+						return AssetService:CreateDataModelContentAsync(Content.fromObject(em))
+					end)
+				end)
+				if not okC or result ~= Enum.CreateContentResult.Success then
+					outcome = "refused"
+					break
+				end
+				templates[size] = { content = content, faces = faces, map = nil }
+				buildStats.templates += 1
 			end
 		end
-		local result, content = AssetService:CreateDataModelContentAsync(Content.fromObject(em))
-		assert(result == Enum.CreateContentResult.Success, tostring(result))
-		templates[k] = { content = content, faces = faces, map = nil }
 	end)
 	em:Destroy()
-	if made then
-		buildStats.templates += 1
-	else
+	making = false
+	if not done or outcome ~= "ok" then
 		buildStats.templateFails += 1
+		return if done then outcome else "memory"
 	end
-	return made
+	return "ok"
 end
 
 -- A fixed-size copy of template `k`, and where each of its faces' corners are; nil when the
 -- device has no room for it.
-local function copyOf(k: number, slice: () -> ()): (EditableMesh?, any)
+local function copyOf(k: number, pace: Pace): (EditableMesh?, any)
 	local t = templates[k]
-	local ok, copy = pcall(function()
-		return AssetService:CreateEditableMeshAsync(t.content, { FixedSize = true })
+	local ok, copy = pace.wait(function()
+		return pcall(function()
+			return AssetService:CreateEditableMeshAsync(t.content, { FixedSize = true })
+		end)
 	end)
 	if not ok or not copy then
 		buildStats.copyFails += 1
@@ -433,7 +471,7 @@ local function copyOf(k: number, slice: () -> ()): (EditableMesh?, any)
 				tv[k3 - 3 + q], tn[k3 - 3 + q], tc[k3 - 3 + q], tu[k3 - 3 + q] = vs[q], ns[q], cs[q], us[q]
 			end
 			if i % 256 == 0 then
-				slice()
+				pace.slice()
 			end
 		end
 		map = { tv = tv, tn = tn, tc = tc, tu = tu, f1 = faces[1], fN = faces[#faces] }
@@ -443,28 +481,154 @@ local function copyOf(k: number, slice: () -> ()): (EditableMesh?, any)
 	return em, map
 end
 
-local WHITE = Color3.new(1, 1, 1)
+-- THE FALLBACK (T-274): where opaque content is refused (`CreateContentResult`, seen once in a
+-- Studio client), no template can be made, and the road builds as T-273 did: in one growable
+-- mesh kept while it must be (80 tiles, `Budget.Growable`), each chunk copied into a
+-- fixed-size mesh of its own size. Let go again as soon as a template serves.
+local kept: EditableMesh? = nil
+local keptBusy = false
+
+-- The recording replayed into a growable mesh, its vertices `mid` nearer the part's centre.
+local function replay(em: EditableMesh, rec: Rec, mid: Vector3, pace: Pace)
+	local vid, nid, cid, uid = {}, {}, {}, {}
+	local plainN, plainC, plainU = nil, nil, nil
+	local pos, nrm, col, alpha, uv = rec.pos, rec.nrm, rec.col, rec.alpha, rec.uv
+	local fv, fn, fc, fu = rec.fv, rec.fn, rec.fc, rec.fu
+	for f = 1, rec.faces do
+		local k = 3 * f
+		local vs, ns, cs, us = {}, {}, {}, {}
+		for q = 1, 3 do
+			local i = k - 3 + q
+			local v = fv[i]
+			vid[v] = vid[v] or em:AddVertex(pos[v] - mid)
+			vs[q] = vid[v]
+			local n = fn[i]
+			if n > 0 then
+				nid[n] = nid[n] or em:AddNormal(nrm[n])
+				ns[q] = nid[n]
+			else
+				plainN = plainN or em:AddNormal(Vector3.yAxis)
+				ns[q] = plainN
+			end
+			local c = fc[i]
+			if c > 0 then
+				cid[c] = cid[c] or em:AddColor(col[c], alpha[c])
+				cs[q] = cid[c]
+			else
+				plainC = plainC or em:AddColor(WHITE, 1)
+				cs[q] = plainC
+			end
+			local u = fu[i]
+			if u > 0 then
+				uid[u] = uid[u] or em:AddUV(uv[u])
+				us[q] = uid[u]
+			else
+				plainU = plainU or em:AddUV(Vector2.zero)
+				us[q] = plainU
+			end
+		end
+		local face = em:AddTriangle(vs[1], vs[2], vs[3])
+		em:SetFaceNormals(face, ns)
+		em:SetFaceColors(face, cs)
+		em:SetFaceUVs(face, us)
+		if f % 128 == 0 then
+			pace.slice()
+		end
+	end
+end
+
+local function viaGrowable(b: Builder, mid: Vector3, pace: Pace): (Content, EditableMesh?)
+	buildStats.growable += 1
+	local own = keptBusy -- the kept one is in use (a view being replaced): one of its own
+	local em: EditableMesh? = if own then nil else kept
+	if not em then
+		local function make(): EditableMesh?
+			local ok, g = pcall(function()
+				return AssetService:CreateEditableMesh()
+			end)
+			return if ok then g else nil
+		end
+		em = make()
+		if not em and b.onShort and b.onShort() then
+			em = make()
+		end
+		assert(em, "this device would not make an EditableMesh (out of its budget)")
+		if not own then
+			kept = em
+		end
+	end
+	local mesh = em :: EditableMesh
+	if not own then
+		keptBusy = true
+	end
+	local function done()
+		if own then
+			mesh:Destroy()
+		else
+			mesh:Clear()
+			keptBusy = false
+		end
+	end
+	local ok, err = pcall(function(): any
+		replay(mesh, b.em, mid, pace)
+		return nil
+	end)
+	if not ok then
+		done()
+		error(err)
+	end
+	local okC, result, content = pace.wait(function()
+		return pcall(function()
+			return AssetService:CreateDataModelContentAsync(Content.fromObject(mesh))
+		end)
+	end)
+	if okC and result == Enum.CreateContentResult.Success then
+		done()
+		buildStats.opaque += 1
+		return content, nil
+	end
+	local function copyIt(): EditableMesh?
+		local okCopy, copy = pace.wait(function()
+			return pcall(function()
+				return AssetService:CreateEditableMeshAsync(Content.fromObject(mesh), { FixedSize = true })
+			end)
+		end)
+		return if okCopy then copy else nil
+	end
+	local copy = copyIt()
+	if not copy and b.onShort and b.onShort() then
+		copy = copyIt()
+	end
+	done()
+	assert(copy, "this device would not copy the chunk into a fixed-size mesh (out of its budget)")
+	buildStats.opaqueFails += 1
+	return Content.fromObject(copy), copy
+end
 
 -- The recorded chunk as a mesh (T-274): written into a fixed-size copy of the smallest
 -- template that holds it, its vertices `mid` nearer the part's centre, then MADE OPAQUE and
 -- the copy let go, so a chunk once drawn holds none of the client's mesh memory (measured).
--- Returns the mesh's content, and the copy where it could not be made opaque (it is then the
--- chunk's mesh, held at its size, as every chunk was before). Errors when out of memory.
-local function meshFor(b: Builder, mid: Vector3): (Content, EditableMesh?)
+-- Returns the mesh's content, and the fixed-size mesh where it could not be made opaque (it is
+-- then the chunk's mesh, held at its size, as every chunk was before). Errors when out of
+-- memory.
+local function meshFor(b: Builder, mid: Vector3, pace: Pace): (Content, EditableMesh?)
 	local rec = b.em
 	local F = rec.faces
 	local k = sizeFor(F)
 	assert(k, `a chunk of {F} triangles is more than an EditableMesh may hold`)
 	if not templates[k] then
-		local made = makeTemplate(k, b.slice)
-		if not made and b.onShort and b.onShort() then
-			made = makeTemplate(k, b.slice)
+		local made = makeTemplates(k, pace)
+		if made == "memory" and b.onShort and b.onShort() then
+			made = makeTemplates(k, pace)
 		end
-		assert(made, "this device would not make an EditableMesh (out of its budget)")
+		if made == "refused" then
+			return viaGrowable(b, mid, pace)
+		end
+		assert(made == "ok", "this device would not make an EditableMesh (out of its budget)")
 	end
-	local em, map = copyOf(k, b.slice)
+	local em, map = copyOf(k, pace)
 	if not em and b.onShort and b.onShort() then
-		em, map = copyOf(k, b.slice)
+		em, map = copyOf(k, pace)
 	end
 	assert(em and map, "this device would not make the chunk's fixed-size mesh (out of its budget)")
 	local mesh = em :: EditableMesh
@@ -492,7 +656,7 @@ local function meshFor(b: Builder, mid: Vector3): (Content, EditableMesh?)
 			mesh:SetUV(tu[i], if u > 0 then uv[u] else Vector2.zero)
 			if i % 384 == 0 then
 				local w = os.clock()
-				b.slice()
+				pace.slice()
 				paused += os.clock() - w
 			end
 		end
@@ -511,8 +675,15 @@ local function meshFor(b: Builder, mid: Vector3): (Content, EditableMesh?)
 		mesh:Destroy()
 		error(err)
 	end
-	local okC, result, content = pcall(function()
-		return AssetService:CreateDataModelContentAsync(Content.fromObject(mesh))
+	-- a template serves: the fallback's growable mesh is let go
+	if kept and not keptBusy then
+		kept:Destroy()
+		kept = nil
+	end
+	local okC, result, content = pace.wait(function()
+		return pcall(function()
+			return AssetService:CreateDataModelContentAsync(Content.fromObject(mesh))
+		end)
 	end)
 	if okC and result == Enum.CreateContentResult.Success then
 		mesh:Destroy()
@@ -521,6 +692,29 @@ local function meshFor(b: Builder, mid: Vector3): (Content, EditableMesh?)
 	end
 	buildStats.opaqueFails += 1
 	return Content.fromObject(mesh), mesh
+end
+
+-- Make the templates most chunks need now, a few ms a frame in the background (a client, as
+-- soon as the road's code loads, while its mesh memory is still free), so building a chunk in
+-- a run seldom makes one.
+function SplineMesh.prepare()
+	local budget = Config.Spline.Mesh.SliceMs / 1000
+	local sliceStart = os.clock()
+	local pace: Pace = {
+		slice = function()
+			if os.clock() - sliceStart >= budget then
+				task.wait()
+				sliceStart = os.clock()
+			end
+		end,
+		wait = function(fn: () -> ...any): ...any
+			local out = table.pack(fn())
+			sliceStart = os.clock()
+			return table.unpack(out, 1, out.n)
+		end,
+	}
+	local k = sizeFor(Config.Spline.Mesh.PrepareFaces) or #SIZES
+	task.spawn(makeTemplates, k, pace)
 end
 
 -- THE CLIENT'S MESH MEMORY (T-273, T-274, `Config.Spline.Mesh.Budget`), in tiles.
@@ -602,16 +796,20 @@ local function toPart(b: Builder, name: string, colour: Color3, material: Enum.M
 	local mid = (lo + hi) * 0.5
 	-- THE CHUNK'S MESH (T-274): a fixed-size copy of a template, made opaque (`meshFor`). Out
 	-- of room for it, the builder may make room (`onShort`) and try once more
-	local content, held = meshFor(b, mid)
+	local content, held = meshFor(b, mid, b.pace)
 	b.held = held
-	local ok, part = pcall(function()
-		return AssetService:CreateMeshPartAsync(content, {
-			CollisionFidelity = Enum.CollisionFidelity.Box,
-			RenderFidelity = Enum.RenderFidelity.Precise,
-		})
+	local ok, part = b.pace.wait(function()
+		return pcall(function()
+			return AssetService:CreateMeshPartAsync(content, {
+				CollisionFidelity = Enum.CollisionFidelity.Box,
+				RenderFidelity = Enum.RenderFidelity.Precise,
+			})
+		end)
 	end)
 	if not ok then
-		part = AssetService:CreateMeshPartAsync(content)
+		part = b.pace.wait(function()
+			return AssetService:CreateMeshPartAsync(content)
+		end)
 	end
 	local mp = part :: MeshPart
 	mp.Name = name
@@ -662,6 +860,17 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 			yieldNow()
 		end
 	end
+	-- waiting on the engine (T-274): not work, and the frame's slice starts afresh after it
+	local asyncWait = 0
+	local function wait(fn: () -> ...any): ...any
+		local w0 = os.clock()
+		local out = table.pack(fn())
+		local w1 = os.clock()
+		paused += w1 - w0
+		asyncWait += w1 - w0
+		sliceStart = w1
+		return table.unpack(out, 1, out.n)
+	end
 	local half = R.Width * 0.5
 	local across = o.across or M.Across
 	local cuts = SplineMesh.sections(spline, s0, s1, o)
@@ -672,7 +881,7 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 		return nil, "forced (a test standing in for a device that cannot make meshes)"
 	end
 	-- recorded, then written into a fixed-size mesh and made opaque once whole (T-274, `meshFor`)
-	local road = newBuilder(centre, slice)
+	local road = newBuilder(centre, { slice = slice, wait = wait })
 	road.onShort = o.onShort
 	local ok, built = pcall(function()
 		-- ONE MESH A CHUNK, AND IT STAYS ALIVE WITH IT. A MeshPart made from an EditableMesh is
@@ -1362,6 +1571,7 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 	result.stats.ms = (os.clock() - t0 - paused) * 1000
 	result.stats.slices = slices -- frames the build was spread over
 	result.stats.sliceMs = worstSlice * 1000 -- the most of it any one frame paid
+	result.stats.asyncMs = asyncWait * 1000 -- waiting on the engine (T-274), not in `ms`
 	if not placed then
 		SplineMesh.destroy(result.model)
 		return nil, "the chunk's parent went while it was built"
@@ -1379,6 +1589,10 @@ function SplineMesh.destroy(model: Model)
 			em:Destroy()
 		end
 	end
+end
+
+if RunService:IsClient() then
+	task.defer(SplineMesh.prepare)
 end
 
 return SplineMesh

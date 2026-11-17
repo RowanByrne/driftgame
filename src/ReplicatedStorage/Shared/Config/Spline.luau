@@ -735,6 +735,10 @@ local Spline = {
 		-- back whenever this much of it has been spent, and carries on next frame. Nothing is
 		-- seen until the whole chunk is done, so nothing pops: it all appears at once.
 		SliceMs = 3, -- ms of building in any one frame, at most (about; one step can overrun)
+		-- THE TEMPLATES a client makes as it loads (T-274, `Road/SplineMesh` "THE TEMPLATES"):
+		-- every size up to the one that holds this many triangles, past the heaviest chunk
+		-- measured (1 980 whole, a grove's; a far one about 400), so a run seldom makes one
+		PrepareFaces = 2400,
 	},
 
 }

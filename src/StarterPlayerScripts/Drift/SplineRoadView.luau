@@ -316,7 +316,11 @@ function SplineRoadView._build(self: View, i: number, far: boolean?)
 	if model then
 		self.triangles += info.triangles
 		self.tris[i] = info.triangles
-		self.fixed[i] = if info.opaque then nil else true
+		if info.opaque then
+			self.fixed[i] = nil
+		else
+			self.fixed[i] = true -- (T-274) it holds its fixed-size mesh
+		end
 		self.lastSliceMs = info.sliceMs or 0
 		self.worstSliceMs = math.max(self.worstSliceMs, self.lastSliceMs)
 		self.lastSlices = info.slices or 1
