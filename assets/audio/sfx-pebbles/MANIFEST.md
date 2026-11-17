@@ -33,10 +33,10 @@ loudness. Rendered by a throwaway script (numpy, soundfile), not kept. The loops
 
 | | What | Source ids | Preview SHA-256 | Status |
 |---|---|---|---|---|
-| A | **Gravel crunch loop**: a tyre rolling over gravel, recorded outside, no engine. One loop, its volume and playback speed following road speed | `9126157118` "Vehicle Gravel Tire Pass By Constant No Engine 2", region 6.5 to 17.5 s | `6C499F509DEF4334B9FA2BC3B373ED3D07602184FD0B21BFE3A185A5FFC8ADEF` | candidate |
-| B | **Over rocks, from inside**: tyres crunching over rocks recorded inside a car, so the stones hitting the floor pan are in it. Has the recording car's engine, low-cut out | `9126157444` "Vehicle Gravel Tires Crunch Constant Over Rocks 1", region 1.5 to 12.5 s | `96F7FA41A99FF6DE15C6ABBC6260439C1968BB9C876A14D38E643A8447A2705C` | candidate |
-| C | **Pebble ticks**: built in code from 40 single stone hits (35 pebble ticks, 5 heavier clacks) cut from store one-shots, fired at random, each at a random pitch (0.85 to 1.2x) and volume; how many a second follows speed, surface and slide (up to about 45 a second sliding fast on gravel). Never loops | `9117266254`, `9117266257`, `9117266265`, `9117266497` ("Pebble Drop Roll Stone Impact On Concrete 1 to 4"); `9118624159`, `9118624415`, `9118624423`, `9118624649`, `9118624847` ("Rock Impacts 1, 2, 3, 6, 8") | `6698F9E2684FD130D8BD85DD0AD6D8CE320C274EF4B3F80C5654F65CDB2B911B` | candidate |
-| D | **Ticks over crunch**: C on top of A, with A 9 dB under the ticks | as A and C | `9256A6B176E5A89AB04C6F139B13AF1CB458DAF9850431E2EB5076B5AF193939` | candidate |
+| A | **Gravel crunch loop**: a tyre rolling over gravel, recorded outside, no engine. One loop, its volume and playback speed following road speed | `9126157118` "Vehicle Gravel Tire Pass By Constant No Engine 2", region 6.5 to 17.5 s | `6C499F509DEF4334B9FA2BC3B373ED3D07602184FD0B21BFE3A185A5FFC8ADEF` | rejected (in game as D's crunch) |
+| B | **Over rocks, from inside**: tyres crunching over rocks recorded inside a car, so the stones hitting the floor pan are in it. Has the recording car's engine, low-cut out | `9126157444` "Vehicle Gravel Tires Crunch Constant Over Rocks 1", region 1.5 to 12.5 s | `96F7FA41A99FF6DE15C6ABBC6260439C1968BB9C876A14D38E643A8447A2705C` | rejected |
+| C | **Pebble ticks**: built in code from 40 single stone hits (35 pebble ticks, 5 heavier clacks) cut from store one-shots, fired at random, each at a random pitch (0.85 to 1.2x) and volume; how many a second follows speed, surface and slide (up to about 45 a second sliding fast on gravel). Never loops | `9117266254`, `9117266257`, `9117266265`, `9117266497` ("Pebble Drop Roll Stone Impact On Concrete 1 to 4"); `9118624159`, `9118624415`, `9118624423`, `9118624649`, `9118624847` ("Rock Impacts 1, 2, 3, 6, 8") | `6698F9E2684FD130D8BD85DD0AD6D8CE320C274EF4B3F80C5654F65CDB2B911B` | rejected (in game as D's ticks) |
+| D | **Ticks over crunch**: C on top of A, with A 9 dB under the ticks | as A and C | `9256A6B176E5A89AB04C6F139B13AF1CB458DAF9850431E2EB5076B5AF193939` | **approved** |
 
 Store file SHA-256 (in `raw\`):
 
@@ -53,6 +53,31 @@ Store file SHA-256 (in `raw\`):
 | `9118624423` | `450E89A9E9341AAA570ED2061DB92C6DC709582360D0A0D0F1344A756A3B938C` |
 | `9118624649` | `AC6FFA266492ABEAFE2B62917C250EE8216F8BD3DCEC17295C425D24C85C8D72` |
 | `9118624847` | `6B025985E390CBEAF0ED40DC2CD97005F27637F07CA3D9422C643CE44AA7C435` |
+
+## The pick
+
+**D, "Ticks + crunch", picked by ear by the user on 2026-11-17** (their answer on the card: "D:
+Ticks + crunch"). A, B and C are rejected as picks; A and C live on as D's two layers. Every source
+is Creator Store audio used by id, so there is no master in git and nothing was uploaded: the ids,
+the 40 slices and every number are in `src/ReplicatedStorage/Shared/Config/Pebbles.luau`, played by
+`Drift/PebbleSound`.
+
+**In game against the preview:** the same stream and the same crunch, with three differences. The
+crunch's low cut is Roblox's `EqualizerSoundEffect` (`LowGain` -30 dB under its fixed 400 Hz band)
+rather than the preview's 300 Hz filter. Each slice ends at the quietest point before the next onset
+in its file (every end 29 dB or more under its peak) instead of the preview's short fade. And a
+tick's instance volume is held at Roblox's 10: the quietest slices (gain over 7.1) can't be brought
+all the way up to the others' peak.
+
+## Level
+
+Measured on the store files (numpy, the same throwaway script). At full speed on gravel, not
+sliding, the ticks stream at about **-26.5 dBFS** RMS at `TickVolume` 1.4, and the crunch at
+**-35.5 dBFS** at `BedVolume` 0.62 (the loop region, low-cut, is -31.3 dBFS at volume 1). Together
+that's about **-26 dBFS**: 8.5 dB under the engine bed (-17.4 dBFS) and under the off-road skid's
+loudest moment (-18.8 dBFS). A full slide raises the ticks' rate 1.8x and the crunch 1.5x, to about
+-23.5 dBFS together, still under both. Grass is 0.4 of gravel in both rate and loudness (about
+-42 dBFS of ticks at full speed); dirt is 0.75.
 
 ## Looked at and left out
 
