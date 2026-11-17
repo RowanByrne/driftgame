@@ -338,9 +338,10 @@ return {
 		Attribute = "__low_smoke", -- on Workspace, read every frame
 		Default = "billows",
 		HandoverStartDegrees = 15, -- slip below which the base layer is all there is (w = 0)
-		HandoverFullDegrees = 60, -- slip at and past which it is today's smoke exactly (w = 1).
-		-- MEASURED in DR-Lane3: a hard drift on the stand-in peaks at 50-55 degrees, where w
-		-- is 0.90-0.97; a mid one holds 30-35, where it is 0.26-0.39
+		HandoverFullDegrees = 50, -- slip at and past which it is today's smoke exactly (w = 1).
+		-- MEASURED in DR-Lane3: a hard drift holds 48-55 degrees (w 1.00 from 50; at 60 it
+		-- was 0.89, a fifth of today's cloud moved to the base); a mid one 30-35 (w 0.45-0.65);
+		-- a light one 1-5 at 55-72 studs/s (w 0)
 		Billows = {
 			Sheet = "Billows",
 			Orientation = Enum.ParticleOrientation.FacingCameraWorldUp,
