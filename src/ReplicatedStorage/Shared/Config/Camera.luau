@@ -310,6 +310,13 @@ local Camera = {
 	HillPitchRate = 3, -- per second. OURS (T-156). How fast the tip follows the grade: a 333
 	-- ms time constant, on top of the model's own smoothing of the normal,
 	-- so a crest rolls the view over rather than flicking it
+	-- THE FRAMING (T-291): "I want the car to sit lower on the screen, closer to the bottom".
+	-- The rendered view is aimed up by this share of the screen's HALF-HEIGHT -- an angle of
+	-- atan(drop x tan(FOV / 2)) -- so the car sits the same distance down the screen at a
+	-- standstill's 52 deg and at top speed's 84. It turns the RENDERED camera only, after the
+	-- pan, zoom and hill pitch, so nothing the targets read moves: the lag, the lean and the
+	-- swing are the approved camera's. 0 IS THE CAMERA BEFORE IT, bit for bit.
+	CamFrameDrop = 0,
 	CamTargetStep = 1 / 60, -- s. OURS, and NOT `FixedStep`. The camera's targets feed back
 	-- into themselves (the swung target is what the next frame's resting
 	-- direction is measured from), so where they settle depends on how

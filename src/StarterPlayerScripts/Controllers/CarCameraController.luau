@@ -732,6 +732,15 @@ function CarCameraController._advance(rig, view: View, dt: number, pan): CFrame
 		return CFrame.new(rig.position)
 	end
 	local cf = CFrame.lookAt(rig.position, rig.lookPoint)
+	-- The framing (T-291): the view is aimed UP by `CamFrameDrop` of the screen's
+	-- half-height, so the car sits that much nearer the bottom at every FOV. A turn of the
+	-- rendered camera about its own right axis, after everything above: it moves nothing
+	-- the targets read, so the lag, the lean and the swing are untouched. Zero is the
+	-- camera before it, bit for bit.
+	local drop = Cam.CamFrameDrop or 0
+	if drop ~= 0 then
+		cf *= CFrame.Angles(math.atan(drop * math.tan(math.rad(rig.fov) * 0.5)), 0, 0)
+	end
 	if rig.roll ~= 0 then
 		cf *= CFrame.Angles(0, 0, rig.roll)
 	end
@@ -1002,6 +1011,8 @@ function CarCameraController:DebugState()
 		-- the view has been tipped to follow it (+ nose up).
 		hillGradeDeg = math.deg(rig.hillGrade or 0),
 		hillPitchDeg = math.deg(rig.hillPitch or 0),
+		-- The framing's aim (T-291): how far the view is turned up to put the car low.
+		aimUpDeg = math.deg(math.atan((Cam.CamFrameDrop or 0) * math.tan(math.rad(rig.fov) * 0.5))),
 		-- The rendered camera's own pitch, off the real CFrame: + looking up.
 		pitchDeg = if cf then math.deg(math.asin(math.clamp(cf.LookVector.Y, -1, 1))) else nil,
 		elevationDeg = if carPos
