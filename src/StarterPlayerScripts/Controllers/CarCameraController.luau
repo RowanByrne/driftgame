@@ -643,10 +643,16 @@ local function stepTargets(rig, view: View, dt: number)
 	-- cap, and on landing the raw trail runs down at its old rate while the squash keeps the
 	-- view still, so there is no snap. Squashing the stored value instead (the first try)
 	-- pulled the view down a stud in a frame on landing.
-	rig.lookRawY = lookY
+	-- The raw trail is itself held within three caps of the car, where the squash is already
+	-- flat (tanh 3 is 0.995), so the hold cannot be seen -- without it a long fall banked
+	-- tens of studs of trail and the view sat high for seconds after landing.
 	local lagMax = Cam.CamLookLagMax or 0
 	if lagMax > 0 then
+		lookY = math.clamp(lookY, wantLook.Y - 3 * lagMax, wantLook.Y + 3 * lagMax)
+		rig.lookRawY = lookY
 		lookY = wantLook.Y + lagMax * math.tanh((lookY - wantLook.Y) / lagMax)
+	else
+		rig.lookRawY = lookY
 	end
 	rig.lookTarget = Vector3.new(wantLook.X, lookY, wantLook.Z)
 
