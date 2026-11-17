@@ -317,11 +317,14 @@ return {
 	-- 2.1-stud puff every 4 studs. So a THIRD smoke emitter a wheel, the BASE layer, spawns
 	-- fast under light drifts and hands over to today's diffuse cloud as the slip grows:
 	--
-	--   base rate    = lerp(Base.RateMin, Base.RateMax, slip / HandoverFullDegrees) * (1 - w)
+	--   base rate    = clamp(speed / Base.Gap, Base.RateMin, Base.RateMax) * (1 - w)
 	--   diffuse rate = today's (`Smoke.RateMin`..`RateMax` by slip / 180) * w
 	--   w            = smoothstep of slip from `HandoverStartDegrees` to `HandoverFullDegrees`
 	--
-	-- so past `HandoverFullDegrees` it is today's look exactly (the approved top end), and
+	-- The base layer spawns BY THE STUD, not by the second: one puff every `Gap` studs of
+	-- road, so a fast light drift does not string its puffs out (measured: at 72 studs/s and
+	-- 5 degrees a flat 60/s left them 1.1 studs apart) and a slow one does not pile up.
+	-- So past `HandoverFullDegrees` it is today's look exactly (the approved top end), and
 	-- the stylized layer is untouched throughout. Only RATES move, so nothing is allocated
 	-- while driving; a mode change re-dresses the base emitters once.
 	--
@@ -334,14 +337,17 @@ return {
 	LowSmoke = {
 		Attribute = "__low_smoke", -- on Workspace, read every frame
 		Default = "billows",
-		HandoverStartDegrees = 8, -- slip below which the base layer is all there is (w = 0)
-		HandoverFullDegrees = 60, -- slip at and past which it is today's smoke exactly (w = 1)
+		HandoverStartDegrees = 15, -- slip below which the base layer is all there is (w = 0)
+		HandoverFullDegrees = 60, -- slip at and past which it is today's smoke exactly (w = 1).
+		-- MEASURED in DR-Lane3: a hard drift on the stand-in peaks at 50-55 degrees, where w
+		-- is 0.90-0.97; a mid one holds 30-35, where it is 0.26-0.39
 		Billows = {
 			Sheet = "Billows",
 			Orientation = Enum.ParticleOrientation.FacingCameraWorldUp,
 			ZOffset = 1.0, -- level with the diffuse layer (T-289: a stud, so its tyre cuts no hole in it)
-			RateMin = 60, -- particles/s at the gate: ~0.7 studs apart at 40 studs/s
-			RateMax = 95, -- at `HandoverFullDegrees`, before the handover takes it. Mobile cap 100
+			Gap = 0.7, -- studs of road between two puffs: under the 0.9-stud puff, so they touch
+			RateMin = 30, -- particles/s however slow the car (a crawl still smokes)
+			RateMax = 95, -- however fast: the mobile cap is 100
 			Lifetime = { 0.5, 1.0 }, -- s: shorter than the diffuse layer's, so the stream
 			-- does not pile up into a cloud the light drift has not earned
 			SizeStart = 0.9, -- studs: under half the diffuse layer's 2.1
@@ -358,8 +364,9 @@ return {
 			Texture = "rbxasset://textures/particles/smoke_main.dds", -- built in, no sheet
 			Orientation = Enum.ParticleOrientation.FacingCamera,
 			ZOffset = 1.0,
-			RateMin = 28, -- the old smoke's 8, spawned fast enough to read as one wisp
-			RateMax = 45,
+			Gap = 1.4, -- studs between puffs: the wisp is soft and wider (1.8), so fewer touch
+			RateMin = 15, -- the old smoke spawned 8 a second at the gate
+			RateMax = 50,
 			Lifetime = { 0.8, 1.6 }, -- the old smoke's
 			SizeStart = 1.8, -- the old smoke's 2.5 -> 11, a little smaller: it is a base
 			SizeEnd = 8, -- under light drifts, not the whole cloud

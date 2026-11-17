@@ -411,18 +411,17 @@ function Wheels.handover(slipDeg: number): number
 end
 
 -- The two rates the low end splits a wheel's smoke into, for a mode: the base layer's and
--- the diffuse layer's, given the diffuse rate today's curve asks for. "off" (or no look) is
--- today's exactly: no base, the diffuse untouched. Two returns, no table: called per wheel
--- per frame.
-function Wheels.lowSmokeRates(mode: string, slipDeg: number, diffuseRate: number): (number, number)
+-- the diffuse layer's, given the diffuse rate today's curve asks for and the car's speed.
+-- The base spawns one puff every `Gap` studs, clamped. "off" (or no look) is today's
+-- exactly: no base, the diffuse untouched. Two returns, no table: called per wheel per frame.
+function Wheels.lowSmokeRates(mode: string, slipDeg: number, diffuseRate: number, speed: number): (number, number)
 	local look = Wheels.lowSmokeLook(mode)
 	if not look then
 		return 0, diffuseRate
 	end
-	local L = Config.Fx.LowSmoke
 	local w = Wheels.handover(slipDeg)
-	local u = math.clamp(math.abs(slipDeg) / math.max(L.HandoverFullDegrees, 1e-4), 0, 1)
-	return lerp(look.RateMin, look.RateMax, u) * (1 - w), diffuseRate * w
+	local rate = math.clamp(math.abs(speed) / math.max(look.Gap, 1e-4), look.RateMin, look.RateMax)
+	return rate * (1 - w), diffuseRate * w
 end
 
 -- Where an attachment has to sit IN THE BODY'S OWN FRAME for its world position to land on
@@ -897,6 +896,7 @@ function Wheels.Update(self: Wheels, state: DriftModel.State?, input: any, dt: n
 
 	local slipDeg = math.deg(math.abs(state.slip))
 	local mode = Wheels.applyLowSmoke(self)
+	local carSpeed = DriftModel.speed(state)
 	local dirt = Wheels.dirtShare(slipDeg)
 	local clipShare = 1 - (1 - G.Grass.ClippingsAtFullDirt) * dirt
 	local clipBase = Wheels.kickRate(G.Grass.Clippings, slipDeg) * clipShare
@@ -991,7 +991,7 @@ function Wheels.Update(self: Wheels, state: DriftModel.State?, input: any, dt: n
 		-- the diffuse rate between the base layer and today's cloud (T-290).
 		local stylizedRate = Wheels.stylizedRate(w.heat)
 		local mix = w.mixSmoke
-		local baseRate, cloudRate = Wheels.lowSmokeRates(mode, slipDeg, diffuseRate)
+		local baseRate, cloudRate = Wheels.lowSmokeRates(mode, slipDeg, diffuseRate, carSpeed)
 		for _, fx in w.fx do
 			write(fx, emit and mix > 0 and fx.surface == w.smokeSurface, cloudRate * mix, stylizedRate * mix, baseRate * mix)
 		end
