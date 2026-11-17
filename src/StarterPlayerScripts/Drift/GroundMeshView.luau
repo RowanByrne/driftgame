@@ -63,6 +63,7 @@ local Ground = require(ReplicatedStorage.Shared.Road.Ground)
 local GrassTexture = require(ReplicatedStorage.Shared.Road.GrassTexture)
 local RoadTexture = require(ReplicatedStorage.Shared.Road.RoadTexture)
 local SplineMesh = require(ReplicatedStorage.Shared.Road.SplineMesh)
+local OpaqueBudget = require(ReplicatedStorage.Shared.Road.OpaqueBudget)
 local GroundDetail = require(script.Parent.GroundDetail)
 local MeshBudget = require(script.Parent.MeshBudget)
 local RoadAhead = require(script.Parent.RoadAhead)
@@ -529,17 +530,15 @@ local function opaqueOk(): boolean
 	if RunService:IsStudio() and Workspace:GetAttribute("__no_opaque") == true then
 		return false
 	end
-	return os.clock() >= refusedUntil
+	-- (T-288) and the session's cap of opaque content (`Road/OpaqueBudget`)
+	return os.clock() >= refusedUntil and OpaqueBudget.allows()
 end
 
 local function toOpaque(em: EditableMesh): (boolean, Content?)
 	if not opaqueOk() then
 		return false, nil
 	end
-	local ok, result, content = pcall(function()
-		return AssetService:CreateDataModelContentAsync(Content.fromObject(em))
-	end)
-	local made = ok and result == Enum.CreateContentResult.Success and content ~= nil
+	local made, content = OpaqueBudget.make("ground", Content.fromObject(em))
 	if not made then
 		refusedUntil = os.clock() + REFUSED_WAIT
 		return false, nil
