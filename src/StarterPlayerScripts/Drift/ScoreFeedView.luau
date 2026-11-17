@@ -348,6 +348,7 @@ function ScoreFeedView:_newLine(entry)
 		ghost = ghost,
 	}
 	self:_fit(line)
+	pts.Text = self:_pointsText(line, line.shown)
 	return line
 end
 
