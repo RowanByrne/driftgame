@@ -51,8 +51,6 @@ instead of built ridges. On approval, log the reversal in DECISIONS.md.
 ## Left out
 
 - **A painted sky.** Roblox's own sky, clouds, sun, moon and stars stay as `day-night.md` set them.
-- **A set of art per scenery** (autumn maples, cherry blossom, snow) that changes with where you
-  are on the range. That comes later, once one set works.
 - **Mountains you can reach.** The layers are scenery only (`T-241` dropped matching them to the
   real range).
 - **Weather, waterfalls, and wisps of mist drifting across the road.**
@@ -198,8 +196,14 @@ Made with the image tool (`tools\imagegen.ps1`) and recorded in `assets/painted-
    - Build that layer and the cloud sea, with the tint at every time of day, and try the normal map.
    - Take the review shots.
    - **The user decides** whether to go on, change it, or stop.
-2. **The full vista** (lane, Standard): the near and middle layers' art, the parallax between the
-   three layers, every time of day tuned, and the cost checked at low graphics quality.
+2. **Sliding rings** (lane, Standard), the user's idea (2026-11-16): the near (forested) and middle
+   (blue-green) rings in front of the snow peaks, each sliding up and down with the camera's
+   height at its own rate, like puppet-show scenery: climbing, the near ridges sink and the view
+   opens; in a valley they rise and close it in. Their art, every time of day tuned, and the cost
+   checked at low graphics quality. Every ring stands between the drawn ground's reach and the
+   snow peaks (about 2 500 to 3 200 studs), so their depth comes from how they slide and trail.
+3. **Biome pictures** (lane, Standard, later): each ring's pictures swap, by fading, with the
+   biome the road is in.
 
 ## Open questions
 
