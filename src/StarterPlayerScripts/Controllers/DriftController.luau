@@ -321,6 +321,7 @@ function DriftController:UseSpline(spline: any?)
 		self.vista = nil
 	end
 	self.spline = spline
+	self.splineAlong = nil -- where the car last was along this road (T-275)
 	self.splineClosing = nil
 	if spline then
 		self.splineView = SplineRoadView.new(spline)
@@ -615,9 +616,14 @@ function DriftController:_frame(dt: number)
 	if self.splineView then
 		local w: any = self.world
 		local along = if w and w.locate then w.locate(state.position) else nil
-		-- off the road altogether (falling, far out): keep what is drawn
 		if along then
-			self.splineView:Update(along)
+			self.splineAlong = along
+		end
+		-- off the road altogether (falling, far out, up to `OffRoad.PutBack` beside it): keep
+		-- the window round where the car last was on it, so what is drawn stays, and a Road
+		-- ahead or Road behind changed meanwhile still shows at once (T-275)
+		if self.splineAlong then
+			self.splineView:Update(self.splineAlong)
 		end
 	end
 	if self.groundView then
