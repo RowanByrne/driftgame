@@ -115,6 +115,15 @@ end
 -- grass creeping in over its last `GrassFrom` on), repeating every `Gravel.PeriodStuds`
 -- along (much shorter than the tarmac's, for the pixels: loose stones have no pattern to see
 -- repeat). `e`: studs across the band. The right side reads half a period on from the left.
+-- Off in config, or in Studio by `workspace.__gravel_texture = false` (from the next chunk
+-- built): the bevels sample the plain band again and no runoff strips are laid.
+function RoadTexture.gravelEnabled(): boolean
+	if RunService:IsStudio() and workspace:GetAttribute("__gravel_texture") == false then
+		return false
+	end
+	return Config.Spline.Gravel.Enabled
+end
+
 function RoadTexture.gravelPeriod(): number
 	return Config.Spline.Gravel.PeriodStuds
 end
