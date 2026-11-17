@@ -9,8 +9,8 @@ Every task in progress and the files it owns, so parallel sessions and workers n
 
 | Branch | Lane | Files owned | Since |
 |---|---|---|---|
-| `agent/graphics-settings-midrun` | lent | fixes only if the check finds a fault: `Drift/RoadAhead.luau`, `Drift/RoadBehind.luau`, `Drift/GroundDetail.luau`, `Drift/SplineRoadView.luau`, `Drift/GroundMeshView.luau`, `Controllers/SettingsController.luau`, `Controllers/DriftController.luau` (the view update off the road), their tests | 2026-11-16 (T-274) |
-| `agent/mesh-savings` | lent | the same files as `agent/road-vanishes`, built on top of it (T-273 merges first), plus `assets/road/*` (new) | 2026-11-16 (T-274) |
+| `agent/graphics-settings-midrun` | lent | fixes only if the check finds a fault: `Drift/RoadAhead.luau`, `Drift/RoadBehind.luau`, `Drift/GroundDetail.luau`, `Drift/SplineRoadView.luau`, `Drift/GroundMeshView.luau`, `Controllers/SettingsController.luau`, `Controllers/DriftController.luau` (the view update off the road), their tests | 2026-11-16 (T-275) |
+| `agent/mesh-savings` | lent | the same files as `agent/road-vanishes`, built on top of it (T-273 merges first), plus `assets/road/*` (new) | 2026-11-16 (T-275) |
 
 ## Notes between sessions
 
