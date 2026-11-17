@@ -2,7 +2,7 @@
 -- Drift/RoadBehind: the player's "Road behind" setting (T-230, docs/game/SETTINGS.md), on this
 -- device, for this session. `SettingsController` sets it; `Drift/SplineRoadView` and
 -- `Drift/GroundMeshView` read it, and keep or let go of what is drawn behind the car as soon
--- as it changes. A whole number 1 (1 000 studs) to #Config.Spline.Mesh.Behind (furthest): its own
+-- as it changes. A whole number 1 (500 studs) to #Config.Spline.Mesh.Behind (furthest): its own
 -- steps, shorter than `Drift/RoadAhead`'s and the same Longest (T-278).
 -- Until the player picks one it is the device's default: shorter on touch.
 

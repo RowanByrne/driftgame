@@ -648,36 +648,40 @@ local Spline = {
 		-- ahead falls back to parts (`Drift/SplineRoadView`).
 		ChunkLength = 480,
 		-- THE PLAYER'S "ROAD AHEAD" AND "ROAD BEHIND" (Settings, Graphics; docs/game/SETTINGS.md,
-		-- T-230, T-263): how far in front of the car, and behind it, the road and the ground along
-		-- it are drawn: at least `Studs` (chunk-aligned, so up to a chunk more). NO LONGER THE
-		-- SAME STEPS BOTH WAYS (T-278, the user, 2026-11-17: "triple the max", keep the short
-		-- distance behind about 1 000 and short in front about 2 000, "go up from there", Longest
-		-- 9 600 both ways; T-263 had made them 3 000 to 9 600 both ways). Past `Near` a chunk is drawn
-		-- at `Far`'s detail, about a quarter of a whole chunk's triangles: that is what lets
-		-- Longest both ways fit the mesh budget (measured: 41 chunks, about 14 000 triangles).
+		-- T-230, T-263, T-278): how far in front of the car, and behind it, the road and the ground
+		-- along it are drawn: at least `Studs` (chunk-aligned, so up to a chunk more).
+		-- CAPPED INSIDE THE VISTA (T-278, the user, 2026-11-17: "i don't want to load or put art
+		-- that gets cut or obscured by the terrain going through it ... cut the render distance
+		-- shorter"). The nearest painted ring, `Config.Vista` layer "Near", stands 2 620 studs
+		-- from the camera; a flat panel's middle is nearer (2 620 cos 18 = 2 492) and the ring
+		-- trails the camera by up to its `MaxLag` (60): 2 432 at worst. The furthest road is
+		-- `Studs` + a chunk (480) past the car, the camera up to 83 behind it (`PlayerZoomMax`),
+		-- and the corridor's ground a 256-stud tile (`RoadCoarsest` x `TileCells`, 362 across
+		-- its diagonal) past that: so no step may exceed 2 432 - 480 - 83 - 362 = 1 507
+		-- (`SplineMeshTests` works it out from `Config.Vista` and fails past it). Ahead stays
+		-- longer than behind (the user's earlier wish: short behind about half short ahead).
+		-- Every step ahead is within `Near.Ahead`, so the road ahead is all drawn whole.
 		-- `GroundTiles`: more tiles for the ground's corridor beside the longer road (32-stud
-		-- tiles to `Ground.RoadFar`, coarser past it), so the sharp ground round the car keeps
-		-- its share; never more than `Ground.CorridorMost` past Ultra's own.
+		-- tiles), about 15 for each 1 000 studs; never more than `Ground.CorridorMost` past Ultra's own.
 		-- A DEVICE CAN ONLY DRAW ROAD THE SERVER HAS SENT: `RoadService` lays the longest
 		-- `Ahead` step past the end of the leader's section.
 		Ahead = {
-			{ Name = "Short", Studs = 2000, GroundTiles = 30 },
-			{ Name = "Medium", Studs = 3600, GroundTiles = 45 },
-			{ Name = "Long", Studs = 6000, GroundTiles = 70 },
-			{ Name = "Longest", Studs = 9600, GroundTiles = 100 },
+			{ Name = "Short", Studs = 1000, GroundTiles = 15 },
+			{ Name = "Medium", Studs = 1200, GroundTiles = 18 },
+			{ Name = "Long", Studs = 1350, GroundTiles = 20 },
+			{ Name = "Longest", Studs = 1500, GroundTiles = 22 },
 		},
-		AheadDefault = 2, -- Medium, 3 600
+		AheadDefault = 2, -- Medium, 1 200
 		AheadTouchDefault = 2, -- the same on a phone or tablet
 		-- behind: a chunk behind was built when it was ahead, so each step back costs the chunks
 		-- it keeps, not building (a whole one is drawn again far once it is past `Near`)
 		Behind = {
-			{ Name = "Short", Studs = 1000, GroundTiles = 20 },
-			{ Name = "Medium", Studs = 2400, GroundTiles = 27 },
-			{ Name = "Long", Studs = 4800, GroundTiles = 40 },
-			{ Name = "Longest", Studs = 9600, GroundTiles = 70 },
+			{ Name = "Short", Studs = 500, GroundTiles = 8 },
+			{ Name = "Medium", Studs = 750, GroundTiles = 11 },
+			{ Name = "Long", Studs = 1000, GroundTiles = 15 },
+			{ Name = "Longest", Studs = 1200, GroundTiles = 18 },
 		},
-		-- `GroundTiles` re-fitted to the new distances (T-278) along T-263's measured line, Longest's kept
-		BehindDefault = 1, -- Short, 1 000, on keyboard and mouse, or gamepad
+		BehindDefault = 1, -- Short, 500, on keyboard and mouse, or gamepad
 		BehindTouchDefault = 1, -- a phone or tablet
 		-- the ground beside the road behind stays as sharp as ahead for this far back, and is
 		-- `Ground.RoadCoarsest` past it (it was Short's 300 studs before T-263 tripled the steps)
