@@ -61,9 +61,9 @@ local C = {
 	Margin = 16, -- px from the screen's right edge, beside the map (phone portrait)
 	MapGap = 8, -- px kept clear between the map and the feed
 	-- Beside the map the feed shares the right edge with the Settings button
-	-- (`Settings/SettingsView`: 144 x 48, its top 176 px below the safe area's top, in the
-	-- full-screen space), so there it starts under that button's bottom and a gap.
-	SettingsBottom = 224, -- px below the safe top, full-screen space
+	-- (`Settings/SettingsView`: 144 x 48, its top 176 px below the safe area's top), so there
+	-- it starts under that button's bottom and a gap.
+	SettingsBottom = 224, -- px below the safe area's top
 	LineHeight = 30, -- px, one row
 	TwoRowHeight = 50, -- px, a name too long to share its row with the points
 	Gap = 4, -- px between lines
@@ -209,15 +209,24 @@ function ScoreFeedView:_layout()
 		-- right of the map, which has dropped below the centre column on the left
 		local left = RM.Margin + mapSize + C.MapGap
 		width = math.min(C.Width, screen.X - C.Margin - left)
-		local full = GuiService:GetInsetArea(Enum.ScreenInsets.None)
+		-- the safe area's top and this screen's own top, both in absolute px
 		local safe = GuiService:GetInsetArea(Enum.ScreenInsets.CoreUISafeInsets)
-		local settingsBottom = safe.Min.Y - full.Min.Y + C.SettingsBottom - GuiService:GetGuiInset().Y
+		local settingsBottom = safe.Min.Y + C.SettingsBottom - self.gui.AbsolutePosition.Y
 		top = math.max(C.Top, settingsBottom + C.MapGap)
 		self.root.AnchorPoint = Vector2.new(1, 0)
 		self.root.Position = UDim2.new(1, -C.Margin + o.X, 0, top + o.Y)
 	else
+		-- On a short phone on its side the Garage button (bottom right, `Config.GarageMenu`)
+		-- comes up into the feed's rows; then the feed moves left until its right edge is
+		-- clear of the button's left edge (iPhone 7: 16 px left).
+		local shift = 0
+		if phone then
+			local G = Config.GarageMenu
+			local clearRight = screen.X - (G.HudButtonMargin + G.HudButtonSize.X) - C.MapGap
+			shift = math.min(0, clearRight - (screen.X + C.Width) * 0.5)
+		end
 		self.root.AnchorPoint = Vector2.new(0.5, 0)
-		self.root.Position = UDim2.new(0.5, o.X, 0, C.Top + o.Y)
+		self.root.Position = UDim2.new(0.5, shift + o.X, 0, C.Top + o.Y)
 	end
 	local changed = self.width ~= width
 	self.width = width
