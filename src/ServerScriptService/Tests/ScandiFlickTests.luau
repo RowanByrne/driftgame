@@ -185,11 +185,16 @@ local function slipFor(a: number): number
 end
 
 -- Drive the real model from 100 studs before a hairpin's zone to 30 past its exit, aiming
--- down the lane `lane` studs right of the centre line (the same autopilot as HairpinTests'),
--- with a flick: from `outFrom` it holds `wrong` degrees OUT of the bend, from `flickAt` it
--- swings to a drift INTO it held between 40 and 85 degrees (the 4-wheel drift), to the exit.
-local function pilot(Sim, SplineWorld, spline, h, lane: number, v0: number, outFrom: number, flickAt: number, wrong: number)
+-- down the lane `lane` studs right of the centre line (the same autopilot as HairpinTests').
+-- The flick, as a driver would try it: from `outAt` studs before the entry it swings to
+-- `wrong` degrees OUT of the bend; the moment the attempt starts (the detector's `MinHold`
+-- met inside the zone) it flicks, at a full finger, into a drift INTO the bend held between
+-- `minIn` and 85 degrees (the 4-wheel drift) to the exit. `st` says what happened, and why
+-- the 4-wheel drift first lapsed if it did.
+local function pilot(Sim, SplineWorld, spline, h, o)
 	local D = Config.Drift
+	local G = Config.Fx.Gates
+	local lane, v0 = o.lane, o.v0
 	local world = SplineWorld.new(spline, nil)
 	local startS = h.zone - 100
 	local cf = spline:frame(startS, D.RideHeight)
@@ -201,7 +206,9 @@ local function pilot(Sim, SplineWorld, spline, h, lane: number, v0: number, outF
 	local sf = ScandiFlick.new(sink, { spline = spline })
 	local input = { steer = 0, handbrake = false }
 	local lastS = startS
-	local st = { vFlick = nil, outMax = 0, inMin = math.huge, dMax = 0 }
+	local outFrom = h.entry - o.outAt
+	local flicked = false
+	local st = { vFlick = nil, outMax = 0, inMin = math.huge, dMax = 0, lapse = nil }
 	for _ = 1, 60 * 30 do
 		local s = runner.state
 		local speed = math.sqrt(s.velocity.X ^ 2 + s.velocity.Z ^ 2)
@@ -216,12 +223,16 @@ local function pilot(Sim, SplineWorld, spline, h, lane: number, v0: number, outF
 		local kappa = 2 * math.sin(signedAngle(heading.X, heading.Z, dx / len, dz / len)) / len
 		local bmag = slipFor(speed * speed * math.abs(kappa))
 		local bStar = -math.sign(kappa) * bmag
-		if cs >= outFrom and cs < flickAt then
-			bStar = h.dir * math.rad(wrong) -- out of the bend
+		if not flicked and (sf.phase == "out" or cs >= h.apex) then
+			flicked = true
+			st.vFlick = speed
+			st.flickS = cs - h.entry
+		end
+		if not flicked and cs >= outFrom then
+			bStar = h.dir * math.rad(o.wrong) -- out of the bend
 			st.outMax = math.max(st.outMax, math.deg(s.slip * h.dir))
-		elseif cs >= flickAt and cs <= h.exit then
-			bStar = -h.dir * math.clamp(bmag, math.rad(40), math.rad(85))
-			st.vFlick = st.vFlick or speed
+		elseif flicked and cs <= h.exit then
+			bStar = -h.dir * math.clamp(bmag, math.rad(o.minIn), math.rad(85))
 			if sf.phase == "in" then
 				st.inMin = math.min(st.inMin, math.deg(-s.slip * h.dir))
 			end
@@ -233,6 +244,24 @@ local function pilot(Sim, SplineWorld, spline, h, lane: number, v0: number, outF
 		input.steer = math.clamp(r / (D.MaxSteeringSpeed * D.SteeringSensitivity), -1, 1)
 		Sim.advance(runner, 1 / 60, input, world)
 		sf:Update(1 / 60, runner.state)
+		-- why the 4-wheel drift first lapsed, if it did
+		local ns = runner.state
+		if sf.phase == "in" and sf.bad4 > 0 and not st.lapse then
+			local down = 0
+			for i = 1, 4 do
+				if ns.wheelsDown[i] then
+					down += 1
+				end
+			end
+			local v = math.sqrt(ns.u * ns.u + ns.v * ns.v)
+			local into = math.deg(-ns.slip * h.dir)
+			st.lapse = if ns.airborne or down < 4 then "wheels up"
+				elseif v < G.MinMarkSpeed then "slow"
+				elseif into < G.MaxSteerDegrees then "slip under the fronts' gate"
+				elseif into > 90 then "spun past 90"
+				else "other"
+			st.lapseAt = { s = sf.s - h.entry, d = sf.d, into = into, v = v, down = down }
+		end
 		if cs > h.exit + 30 then
 			break
 		end
@@ -420,58 +449,93 @@ local function runAll(opts)
 	if opts.drive ~= false then
 		local Sim = require(DriftFolder.Sim)
 		local SplineWorld = require(DriftFolder.SplineWorld)
-		local rows, reasons, flicks = {}, {}, {}
+		-- the ways tried at each hairpin: lane (studs to the INSIDE of the bend, so -12 is the
+		-- outside lane), speed 100 studs before the zone, and where the swing out starts
+		local ways = {}
+		for _, lane in { 12, 0, -12 } do
+			for _, v0 in { 45, 60 } do
+				for _, outAt in { 80, 65, 50 } do
+					table.insert(ways, { lane = lane, v0 = v0, outAt = outAt, wrong = 38, minIn = 34 })
+				end
+			end
+		end
+		local rows, reasons, lapses, flicks = {}, {}, {}, {}
+		local byWay = {}
 		local tries, done, hairpinsDone, driven = 0, 0, 0, 0
 		local n = 0
 		for _, h in closed do
-			if h.exit < DRIVE_LENGTH then
-				driven += 1
-				local any = false
-				local row = { `{fmt(h.entry, 0)} {if h.dir > 0 then "L" else "R"} r{fmt(h.radius, 0)} {fmt(h.turn, 0)}deg zone {fmt(h.entry - h.zone, 0)}:` }
-				for _, laneSide in { -1, 1 } do
-					local lane = 12 * laneSide * h.dir -- -1: the inside lane
-					for _, early in { 30, 15, 0 } do
-						local sink, sf, st = pilot(Sim, SplineWorld, spline, h, lane, 60, h.zone - 20, h.entry - early, 40)
-						tries += 1
-						local e = sink.started[1]
-						local mark
-						if e and e.finished then
-							done += 1
-							any = true
-							mark = `OK flick {fmt(sf.last.flick, 2)}`
-							table.insert(flicks, sf.last.flick)
-						elseif e then
-							mark = sf.last and sf.last.reason or "?"
-							reasons[mark] = (reasons[mark] or 0) + 1
-						else
-							mark = "not started"
-							reasons[mark] = (reasons[mark] or 0) + 1
-						end
-						table.insert(row, `{if laneSide < 0 then "in" else "out"}/-{early} {mark} (out to {fmt(st.outMax, 0)}, {fmt(st.vFlick or 0, 0)} st/s at the flick, in held >= {fmt(if st.inMin < math.huge then st.inMin else 0, 0)}, |d| to {fmt(st.dMax, 0)})`)
-						n += 1
-						if n % 6 == 0 then
-							task.wait()
-						end
-					end
-				end
-				if any then
-					hairpinsDone += 1
-				end
-				table.insert(rows, table.concat(row, " "))
+			if h.exit >= DRIVE_LENGTH then
+				continue
 			end
+			driven += 1
+			local ok, best, why = 0, nil, {}
+			for wi, w in ways do
+				local o = table.clone(w)
+				o.lane = -w.lane * h.dir -- studs right of the centre line
+				local sink, sf, st = pilot(Sim, SplineWorld, spline, h, o)
+				tries += 1
+				local e = sink.started[1]
+				local mark
+				if e and e.finished then
+					done += 1
+					ok += 1
+					byWay[wi] = (byWay[wi] or 0) + 1
+					table.insert(flicks, sf.last.flick)
+					if not best or sf.last.flick < best.flick then
+						best = { flick = sf.last.flick, w = w, v = st.vFlick, at = st.flickS }
+					end
+				else
+					mark = if e then (sf.last and sf.last.reason or "?") else "not started"
+					if mark == "drift broken" and st.lapse then
+						lapses[st.lapse] = (lapses[st.lapse] or 0) + 1
+					end
+					reasons[mark] = (reasons[mark] or 0) + 1
+					why[mark] = (why[mark] or 0) + 1
+				end
+				n += 1
+				if n % 6 == 0 then
+					task.wait()
+				end
+			end
+			if ok > 0 then
+				hairpinsDone += 1
+			end
+			local wl = {}
+			for k, v in why do
+				table.insert(wl, `{k} {v}`)
+			end
+			table.sort(wl)
+			table.insert(
+				rows,
+				`{fmt(h.entry, 0)} {if h.dir > 0 then "L" else "R"} r{fmt(h.radius, 0)} {fmt(h.turn, 0)}deg zone {fmt(h.entry - h.zone, 0)}: {ok} of {#ways}`
+					.. (if best then ` (quickest flick {fmt(best.flick, 2)} s, lane {best.w.lane} in, {best.w.v0} st/s start, out from -{best.w.outAt}, {fmt(best.v, 0)} st/s at the flick)` else "")
+					.. (if #wl > 0 then "; " .. table.concat(wl, ", ") else "")
+			)
 		end
-		table.insert(log, "drives (lane / flick studs before the entry: result):\n  " .. table.concat(rows, "\n  "))
-		local why = {}
-		for k, v in reasons do
-			table.insert(why, `{k} {v}`)
+		local wayRows = {}
+		for wi, w in ways do
+			table.insert(wayRows, `lane {w.lane} in, {w.v0} st/s, out from -{w.outAt}: {byWay[wi] or 0}`)
 		end
-		table.sort(why)
+		table.insert(log, "drives, per hairpin (of " .. #ways .. " ways):
+  " .. table.concat(rows, "
+  "))
+		table.insert(log, "completed, per way (of " .. driven .. " hairpins):
+  " .. table.concat(wayRows, "
+  "))
+		local function list(t)
+			local out = {}
+			for k, v in t do
+				table.insert(out, `{k} {v}`)
+			end
+			table.sort(out)
+			return table.concat(out, ", ")
+		end
 		table.sort(flicks)
 		local fl = if #flicks > 0 then `flick {fmt(flicks[1], 2)} to {fmt(flicks[#flicks], 2)} s` else "no flicks"
 		check(
 			"the autopilot completes a Scandinavian flick sometimes",
 			done > 0,
-			`{done} of {tries} drives ({hairpinsDone} of {driven} hairpins at least once); {fl}. Not completed: {table.concat(why, ", ")}`
+			`{done} of {tries} drives ({hairpinsDone} of {driven} hairpins at least once); {fl}. Not completed: {list(reasons)}. The 4-wheel drift first lapsed: {list(lapses)}`
 		)
 	end
 
