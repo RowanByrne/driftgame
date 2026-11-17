@@ -339,7 +339,7 @@ function SplineRoadView._build(self: View, i: number, far: boolean?)
 	-- nothing more is redrawn for a moment: what is drawn stays up meanwhile
 	self.holdUntil = os.clock() + (if waitForRoom then M.Budget.WaitSeconds else M.Budget.HoldSeconds)
 	local current = self.chunks[i]
-	if current and short then
+	if current and not self.forceFallback then
 		-- A CHUNK ALREADY DRAWN KEEPS WHAT IT HAS (T-273): far detail, or built to an older end
 		-- of the road, it is still road. (It was replaced by parts before: plain grey chunks,
 		-- and with every chunk behind let go too, "the road behind me was being deleted".)
