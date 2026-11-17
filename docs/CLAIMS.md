@@ -9,6 +9,7 @@ Every task in progress and the files it owns, so parallel sessions and workers n
 
 | Branch | Lane | Files owned | Since |
 |---|---|---|---|
+| `agent/road-vanishes` | lent | the client's mesh users and their budget: `Drift/SplineRoadView.luau`, `Road/SplineMesh.luau`, `Drift/GroundMeshView.luau`, `Drift/GroundTiles.luau`, `Drift/GroundMarks.luau`, `Drift/Wheels.luau`, `Drift/VistaView.luau`, `Road/RoadTexture.luau`, `Config/Spline.luau` (`Mesh`, `Ground` keys), `Config/Fx.luau` (`Marks`), `Config/Vista.luau`, their tests | 2026-11-16 (T-273) |
 
 ## Notes between sessions
 
