@@ -242,6 +242,7 @@ local function sample(L: Layer, x: number, t: number): number
 	local fx, fy = x / L.cellD, t / L.cellT
 	local ix, iy = math.floor(fx), math.floor(fy)
 	local tx, ty = smooth(fx - ix), smooth(fy - iy)
+	ix %= L.nD -- across too, so a read past the width (an offset copy of a layer) wraps
 	local w = L.nD + 1
 	local r0 = (iy % L.nT) * w + ix + 1
 	local r1 = ((iy + 1) % L.nT) * w + ix + 1
