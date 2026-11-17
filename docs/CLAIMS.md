@@ -11,7 +11,6 @@ Every task in progress and the files it owns, so parallel sessions and workers n
 |---|---|---|---|
 | `agent/road-texture-trial` | lent | EXPERIMENT: the tarmac's look in `Road/SplineMesh.luau` (tarmac UVs, colours, lines; not the runoff, skirt or ground), `Config/Road.luau` colour and line keys, `Config/Spline.luau` the road texture keys only (not `Mesh` ahead/behind), new `Road/RoadTexture.luau`, new `assets/road-surface/*`, `features/road-surface.md` | 2026-11-16 (T-268) |
 | `feature/painted-vista-ridges-and-a-cloud-sea` | lent | new `Config/Vista.luau`, `Drift/VistaView.luau`, `Tests/VistaTests.luau`, admin command `World/vista.luau`, `pipeline/vista/*` (not `tools/`, which is the template's), `assets/painted-vista/*`; `Config/DayNight.luau` (two new keyframe values), `Controllers/SkyController.luau` (exposing the current look), `Controllers/DriftController.luau` (`UseSpline` builds and destroys the vista), `features/painted-vista.md`, `features/day-night.md` | 2026-11-16 (T-266) |
-| `agent/grass-mud-ruts` | lent | `src/StarterPlayerScripts/Drift/Wheels.luau` (the off-road marks), `Config/Fx.luau` (the `Ground`/`Grass` mark keys), `Tests/FxTests.luau`, `docs/game/features/car-fx.md` | 2026-11-16 (T-265, plan T-264) |
 
 ## Notes between sessions
 
