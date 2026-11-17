@@ -80,6 +80,45 @@ function MeshRig.groupOf(data: any, part: string): string
 	return g.into or part
 end
 
+-- A surface's image maps, `{ colour, normal, roughness, metalness }` (any of them), as a
+-- SurfaceAppearance on the piece. Its `*MapContent` properties are the ones a game script
+-- may write; the older `*Map` strings are tried if those are missing. Returns whether every
+-- map went on: a piece whose maps would not go on keeps its plain colour and material.
+local MAP_PROPS = {
+	colour = "ColorMap",
+	normal = "NormalMap",
+	roughness = "RoughnessMap",
+	metalness = "MetalnessMap",
+}
+
+function MeshRig.dressMaps(part: BasePart, maps: { [string]: string }): boolean
+	local sa = Instance.new("SurfaceAppearance")
+	local all, set = true, 0
+	for key, id in maps do
+		local prop = MAP_PROPS[key]
+		if not prop then
+			all = false
+			continue
+		end
+		local ok = pcall(function()
+			(sa :: any)[prop .. "Content"] = Content.fromUri(id)
+		end)
+		if not ok then
+			ok = pcall(function()
+				(sa :: any)[prop] = id
+			end)
+		end
+		all = all and ok
+		set += if ok then 1 else 0
+	end
+	if set == 0 then
+		sa:Destroy() -- an empty one would draw the piece white
+		return false
+	end
+	sa.Parent = part
+	return all
+end
+
 -- Build the shell. Returns it (nil if no piece loaded), how many pieces were built, and
 -- how many would not load.
 function MeshRig.build(data: any): (Model?, number, number)
@@ -107,6 +146,9 @@ function MeshRig.build(data: any): (Model?, number, number)
 		mp.Transparency = surface.transparency or 0
 		mp.DoubleSided = surface.doubleSided == true
 		mp.CastShadow = true
+		if surface.maps then
+			MeshRig.dressMaps(mp, surface.maps)
+		end
 		mp:SetAttribute("Paint", surface.paint or "none")
 		mp:SetAttribute("Surface", surfaceName)
 		mp:SetAttribute("Part", partName)
