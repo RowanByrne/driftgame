@@ -35,6 +35,9 @@
 -- ANTI-FARMING, all here so no detector has to: repeats of a kind within its window are
 -- worth less and less; the same spot again scores nothing; nothing counts going backwards,
 -- too slow or pinned on a wall; and a points-a-second ceiling over all of them together.
+-- "Too slow" is the ground the car really covered, not its velocity, and a held line that
+-- runs past `MaxSeconds` without leaving its spot scores nothing more (T-301: a car bouncing
+-- in place against a rail banked an uncut "HUGE AIR" every 8 s).
 --
 -- PURE apart from the feed's Signal and the Studio print: no instance, no remote, no clock of
 -- its own (its time is the steps it is handed), so the same drive scores the same at every
@@ -199,8 +202,13 @@ function Engine._allow(self: any, points: number): number
 	return take
 end
 
--- Whether the car, as last stepped, may score `k` now. No state yet (a test that never
--- stepped) is allowed.
+-- Whether the car, as last stepped, may score `k` now, and its speed. No state yet (a test
+-- that never stepped) is allowed.
+--
+-- THE SPEED IS THE GROUND THE CAR REALLY COVERED (T-301): the smaller of its velocity and
+-- how far its position moved over the last step. A car held against a rail, or bouncing in
+-- place, can read 20+ studs/s of velocity while going nowhere (measured: 23 studs/s of
+-- velocity, 16 studs moved in 12 s), and that velocity used to pay a jump or a lift.
 function Engine._moving(self: any, k: any): (boolean, number)
 	local s = self.state
 	if not s then
@@ -208,6 +216,9 @@ function Engine._moving(self: any, k: any): (boolean, number)
 	end
 	local u, v = s.u or 0, s.v or 0
 	local speed = math.sqrt(u * u + v * v)
+	if self.travel then
+		speed = math.min(speed, self.travel)
+	end
 	if s.pinned then
 		return false, speed
 	end
@@ -245,11 +256,13 @@ function Engine._admit(self: any, kind: string, k: any): number?
 	end
 	local x, z = self:_where()
 	local repeats = 0
+	local spot = k.SameSpot or C.SameSpot
+	local gap = k.SameSpotGap or C.SameSpotGap
 	for _, h in list do
 		local age = now - h.t
-		if x and z and age >= C.SameSpotGap and age <= C.SameSpotWindow then
+		if x and z and age >= gap and age <= C.SameSpotWindow then
 			local dx, dz = h.x - x, h.z - z
-			if dx * dx + dz * dz <= C.SameSpot * C.SameSpot then
+			if dx * dx + dz * dz <= spot * spot then
 				return nil
 			end
 		end
@@ -340,6 +353,7 @@ function Engine.start(self: any, kind: string, info: { [string]: any }?): any
 		-- in the feed; what it earned still banks. A conditional shows at once: the player
 		-- must see it is on.
 		shown = k.Mode ~= "sustained",
+		from = self.lastPos, -- where this line started, for a `MaxSeconds` restart
 	}, Handle)
 	self.live[h] = true
 	self:_count(kind).started += 1
@@ -391,10 +405,22 @@ function Engine.step(self: any, dt: number, state: any)
 	-- The car put back: a new state, from a new runner (`Sim.newRunner`). A stand-in with
 	-- no clock of its own is never taken for one.
 	local old = self.state
-	if old and state ~= old and old.time ~= nil and state.time ~= nil then
+	local putBack = old ~= nil and state ~= old and old.time ~= nil and state.time ~= nil
+	if putBack then
 		self:voidAll()
 	end
 	self.state = state
+	-- How fast the car really covered ground this step (T-301, `_moving`): unknown on the
+	-- first step and across a put-back.
+	local p = state.position
+	local last = self.lastPos
+	if typeof(p) == "Vector3" and last and not putBack then
+		local dx, dz = p.X - last.X, p.Z - last.Z
+		self.travel = math.sqrt(dx * dx + dz * dz) / dt
+	else
+		self.travel = nil
+	end
+	self.lastPos = if typeof(p) == "Vector3" then p else nil
 	if C.VoidOnFall and state.fell then
 		self:voidAll()
 	end
@@ -514,6 +540,20 @@ function Handle.update(self: any, size: number, dt: number)
 		self.dirty = false
 		self.shown = false
 		engine:_count(self.kind).started += 1
+		-- A held event that has not left the spot it started on is not going anywhere: the
+		-- fresh line scores nothing (T-301). This used to be the way round the repeat and
+		-- same-spot rules: a car bouncing in place held one endless "jump" that banked a
+		-- fresh, uncut line every `MaxSeconds`.
+		local here, from = engine.lastPos, self.from
+		if here and from then
+			local dx, dz = here.X - from.X, here.Z - from.Z
+			local spot = k.SameSpot or cfg().SameSpot
+			if dx * dx + dz * dz < spot * spot then
+				self.factor = 0
+				engine:_count(self.kind).spent += 1
+			end
+		end
+		self.from = here
 	end
 end
 

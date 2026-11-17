@@ -339,6 +339,9 @@ local Drift = {
 	-- ---------------------------------------------------------------- walls
 	WallScrub = 0.5, -- share of speed kept after hitting something
 	WallPush = 0.2, -- studs the car is held off the surface it hit
+	WallContactGrace = 0.1, -- s. LOOK ONLY (T-297): how long the model's `wallTouch` holds after
+	-- the last step that met a wall, so a car leaning on a rail reads as touching it although
+	-- the sweep meets it only on some steps. Nothing the car's motion reads
 
 	-- ---------------------------------------------------------------- pinned against a wall
 	-- OURS, and the whole of it is OFF AT `UnstickSpeed = 0`, which gives back exactly the

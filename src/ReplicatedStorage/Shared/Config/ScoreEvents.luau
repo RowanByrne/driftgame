@@ -34,7 +34,9 @@ return {
 	-- one that started between `SameSpotGap` and `SameSpotWindow` seconds ago scores nothing
 	-- (a crest jumped again by turning round and driving back). The gap lets a chain of the
 	-- same thing in a row (lifts over a crest, trees side by side) count, cut only by the
-	-- repeat rule.
+	-- repeat rule. A kind may set its own `SameSpot` and `SameSpotGap` (T-301: jump and wheel
+	-- lift have no gap, so the same spot counts at once -- a car hopping in place repeats
+	-- them within seconds, under the gap).
 	SameSpot = 40, -- studs
 	SameSpotGap = 4, -- seconds
 	SameSpotWindow = 60, -- seconds
@@ -78,6 +80,9 @@ return {
 			SizeFloor = 0.3,
 			Fill = 0.6, -- of a rung a second
 			MaxSeconds = 8,
+			-- No gap: a jump started within 40 studs of one in the last minute is nothing. A
+			-- real jump carries the car well past that before the next can start.
+			SameSpotGap = 0,
 			WordsBy = "seconds",
 			Words = { { at = 0, text = "JUMP" }, { at = 1, text = "BIG AIR" }, { at = 2, text = "HUGE AIR" } },
 		},
@@ -92,6 +97,11 @@ return {
 			Fill = 0.25,
 			MaxSeconds = 6,
 			RepeatWindow = 4,
+			-- No gap, and a short spot: a lift starting within 8 studs of an earlier one's start
+			-- is the car going nowhere. Lifts in a row while driving start further apart than
+			-- that even at 20 studs/s (a lift, its grace and the next one's hold).
+			SameSpot = 8,
+			SameSpotGap = 0,
 			WordsBy = "size",
 			Words = { { at = 0, text = "WHEEL LIFT" }, { at = 0.75, text = "TWO WHEELS" } },
 		},
@@ -130,20 +140,51 @@ return {
 			WordsBy = "size",
 			Words = { { at = 0, text = "NEAR MISS" }, { at = 0.5, text = "CLOSE CALL" }, { at = 0.85, text = "PAINT SWAP" } },
 		},
-		-- Medium. Conditional: drift the whole hairpin on your own side (T-299). Size 1 for
-		-- a 4-wheel drift, 0.5 for a 2-wheel one; the floor of 0 makes the 4-wheel level
-		-- worth twice, while held and at the finish.
-		perfectHairpin = {
+		-- Medium. Conditional: drift a double-yellow bend from its entry to its exit, into it on
+		-- 2+ wheels, in your own lane (T-299 send-back: the old perfect hairpin, renamed). The
+		-- old perfect hairpin's bonus at its full level. Size is always 1.
+		laneDrift = {
 			Mode = "conditional",
 			Difficulty = "medium",
 			Per = "second",
-			Rate = 15,
+			Rate = 12,
 			SizeFloor = 0,
 			Fill = 0.3,
-			Static = 150,
+			Static = 120,
 			Kick = 0.5,
 			WordsBy = "size",
-			Words = { { at = 0, text = "PERFECT HAIRPIN" }, { at = 0.75, text = "PERFECT HAIRPIN 4W" } },
+			Words = { { at = 0, text = "LANE DRIFT" } },
+		},
+		-- Extreme, the highest of the bend events: lane drift with all four wheels sliding the
+		-- whole way (T-299 send-back: "keep them super high scoring"). It stacks with the lane
+		-- drift it also is: 400 + 120 static, about 650 with the seconds, under the ceiling's
+		-- 800 a window. Size is always 1.
+		perfectLaneDrift = {
+			Mode = "conditional",
+			Difficulty = "extreme",
+			Per = "second",
+			Rate = 20,
+			SizeFloor = 0,
+			Fill = 0.6,
+			Static = 400,
+			Kick = 1,
+			WordsBy = "size",
+			Words = { { at = 0, text = "PERFECT LANE DRIFT" } },
+		},
+		-- Easy on a true hairpin (120 degrees within 250 studs): any drift held through it
+		-- between the white edge lines (T-299 send-back: "much more lenient"). Hairpins are
+		-- rarer than bends (one every ~3 000 studs), so it pays a little more than a lane drift.
+		perfectHairpin = {
+			Mode = "conditional",
+			Difficulty = "easy",
+			Per = "second",
+			Rate = 12,
+			SizeFloor = 0,
+			Fill = 0.4,
+			Static = 180,
+			Kick = 0.5,
+			WordsBy = "size",
+			Words = { { at = 0, text = "PERFECT HAIRPIN" } },
 		},
 		-- Extreme (T-299).
 		scandiFlick = {
@@ -158,7 +199,7 @@ return {
 			WordsBy = "size",
 			Words = { { at = 0, text = "SCANDINAVIAN FLICK" } },
 		},
-		-- Hard: past 90 degrees into the hairpin, so it counts going backwards (T-299).
+		-- Hard: past 90 degrees into a double-yellow bend, so it counts going backwards (T-299).
 		reverseEntry = {
 			Mode = "conditional",
 			Difficulty = "hard",
@@ -181,8 +222,12 @@ return {
 		-- seconds count. It banks once the car has been back down `LandSettle` seconds; a
 		-- second hop inside that is the same jump. Lost on a fall, a put-back, landing tilted
 		-- past `LandTiltDeg` (on its side or roof), or a wall touched in the air or on landing.
+		-- T-301: a flight starts only `MinTravel` studs (flat) from where it left the ground,
+		-- and a jump bounces at most `MaxBounces` times before the next hop is its own flight.
 		Jump = {
 			MinAir = 0.4, -- seconds
+			MinTravel = 15, -- studs; at 40 studs/s a 0.4 s flight covers 16
+			MaxBounces = 1,
 			LandSettle = 0.2, -- seconds
 			LandTiltDeg = 60,
 			VoidOnWall = true,
@@ -196,6 +241,84 @@ return {
 			OneWheelSize = 0.4,
 			TwoWheelSize = 1, -- both wheels on one side
 			OtherTwoSize = 0.4, -- two that are not one side (an axle, a diagonal)
+		},
+		-- `Drift/Events/NearMiss` (T-298): passing a grove tree's trunk (`Road/SplineGrove`)
+		-- closer than `Threshold` studs of gap (the car's body box to the trunk's circle) at
+		-- `MinSpeed` or more, moving forward, touching nothing then or for `Confirm` after.
+		-- Size 0 at `Threshold`, 1 at `FullGap` and closer. Once per tree per pass. Trees
+		-- stand 16+ studs past the tarmac, only in groves: rare by the user's choice.
+		NearMiss = {
+			Threshold = 3, -- studs of gap
+			FullGap = 0.5, -- studs: size 1 here and closer
+			MinSpeed = 50, -- studs/s, flat, at the closest moment
+			TouchGap = 0.1, -- studs: this close is a touch (the collision holds a car 0.05 clear)
+			Confirm = 0.5, -- seconds after the pass with no wall touched
+			Open = 1.5, -- studs the gap opens past its closest for the pass to be over
+			Rearm = 5, -- seconds before the same tree can have another pass
+			Watch = 10, -- studs: passes under this are measured (DebugState's histogram)
+			Window = 30, -- studs of road each side of the car the trunks are fetched over
+			Refetch = 8, -- studs the car moves along before they are fetched again
+			Teleport = 30, -- studs in one step past its speed: a put-back, all forgotten
+		},
+		-- `Drift/Events/BumperGrind` (T-297): a front or rear corner on a K-rail (the model's
+		-- `wallKind`, `wallPoint`), the car at least `MinAngle` off the rail's line (less is its
+		-- door), sliding along it at `MinSpeed`, met gently (`MaxInto`). It starts on a meeting
+		-- at least `MinHold` after the first, banks `Grace` after the car leaves the rail, and is
+		-- lost on a hard hit, losing `CrashLoss` of the speed within `CrashWindow`, a fall or a
+		-- put-back. Size: the speed along the rail (`SizeFloor` at `MinSpeed`, 1 at `FullSpeed`)
+		-- times the share of the last `SteadySeconds` the car read as touching it.
+		BumperGrind = {
+			Walls = { krail = true, rock = false }, -- rock cuts are not the user's "barrier rail"
+			MinAngle = 6, -- degrees
+			MinSpeed = 40, -- studs/s along the rail to start
+			KeepSpeed = 30, -- studs/s along it to keep going
+			FullSpeed = 100, -- studs/s along it for the speed's full share
+			SizeFloor = 0.3,
+			MaxInto = 25, -- studs/s into the rail at a meeting; harder is a crash
+			MinHold = 0.12, -- seconds
+			MinContacts = 2, -- steps that met the rail within the hold
+			Grace = 0.25, -- seconds off the rail before it ends
+			CrashLoss = 0.4, -- share of the speed
+			CrashWindow = 0.35, -- seconds
+			SteadySeconds = 0.4, -- seconds
+			PutBack = 30, -- studs moved in one update past where the car could get
+		},
+		-- `Drift/Events/LaneDrift` (T-299 send-back): on every double-yellow bend
+		-- (`Road/Hairpins.bendAround`), crossing its entry drifting into it on 2+ wheels starts
+		-- it; your own lane is the double yellow's side the car's centre is on there, out to
+		-- the white edge line. Held while it drifts into the bend on 2+ wheels; a lapse up to
+		-- `Grace` is forgiven. More than `MaxWheelsOut` wheels out of the lane at once voids it
+		-- (one over a line is forgiven), as do a fall and a put-back (`JumpStuds` in a step).
+		LaneDrift = {
+			Grace = 0.2, -- seconds
+			JumpStuds = 80, -- studs along the road in one step that can only be a put-back
+			MaxWheelsOut = 1,
+		},
+		-- `Drift/Events/PerfectLaneDrift` (T-299 send-back): lane drift with all four wheels
+		-- sliding (each by its own slip gate) from the entry to the exit; under four for
+		-- longer than `Grace` voids it.
+		PerfectLaneDrift = {
+			Grace = 0.2, -- seconds, for the drift and for the fourth wheel
+			JumpStuds = 80,
+			MaxWheelsOut = 1,
+		},
+		-- `Drift/Events/PerfectHairpin` (T-299 send-back, the lenient one): on a true hairpin
+		-- (`Road/Hairpins.around`), any drift held from the entry to the exit between the two
+		-- white edge lines; the double yellow does not count. More than `MaxWheelsOut` wheels
+		-- past an edge line voids it.
+		PerfectHairpin = {
+			Grace = 0.3, -- seconds
+			JumpStuds = 80,
+			MaxWheelsOut = 1,
+		},
+		-- `Drift/Events/ReverseEntry` (T-299): the slip past `AngleDegrees` turned into a
+		-- double-yellow bend, from its entry zone to its exit, starts it; then a drift on 2+
+		-- wheels, any way round, to the exit. A lapse up to `Grace` is forgiven.
+		ReverseEntry = {
+			AngleDegrees = 90,
+			Grace = 0.2, -- seconds
+			JumpStuds = 80, -- studs
+			MaxSeconds = 20, -- an attempt still going after this is void
 		},
 	},
 }

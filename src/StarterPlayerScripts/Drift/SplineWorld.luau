@@ -66,6 +66,20 @@ local REACH_PAST_EDGE = 30
 -- How a wall stop is counted.
 local KIND_SIDE, KIND_KRAIL, KIND_CLOSING, KIND_TREE, KIND_GROUND = 1, 2, 3, 4, 5
 
+-- WHAT WAS HIT, AND BY WHICH PART OF THE CAR (T-297, features/score-events.md "Contracts"):
+-- handed to the model as `sweep`'s and `penetration`'s third and fourth returns, for the
+-- score's grind events. LOOK ONLY: nothing here changes where the car may go. A bare road's
+-- runoff wall and anything the live world stopped are "other"; the drawn ground too steep to
+-- drive (a cut beside a mountain road) is "rock".
+local KIND_NAMES = { [KIND_SIDE] = "other", [KIND_KRAIL] = "krail", [KIND_CLOSING] = "closing", [KIND_TREE] = "tree", [KIND_GROUND] = "rock" }
+SplineWorld.KIND_NAMES = KIND_NAMES
+
+-- The footprint's six outline points, as bits of the points mask (`Model.WALL_POINTS`):
+-- 1 front right, 2 middle right, 3 rear right, 4 front left, 5 middle left, 6 rear left.
+-- A point within this many studs, along the step, of the first one to cross is touching
+-- too: a car square to a wall touches it with a whole side at once.
+local TIE_STUDS = 0.1
+
 export type Stats = {
 	probes: number,
 	hits: number,
@@ -376,14 +390,21 @@ function SplineWorld.new(spline: Spline.Spline, base: Model.World?): SplineWorld
 
 	local fromPts: { number } = table.create(12, 0)
 	local toPts: { number } = table.create(12, 0)
+	-- each outline point's earliest crossing this sweep (T-297), for the points mask
+	local pointT: { number } = table.create(6, math.huge)
 
 	-- The first moment, as a share of the step, at which any footprint point crosses a
-	-- wall, that wall's normal, and what kind of wall it was.
-	local function firstContact(from: Vector3, to: Vector3, yaw: number): (number?, Vector3?, number)
+	-- wall, that wall's normal, and what kind of wall it was; and (T-297, look only) which
+	-- outline points touch at that moment, as a mask.
+	local function firstContact(from: Vector3, to: Vector3, yaw: number): (number?, Vector3?, number, number)
 		footprint(from, yaw, fromPts)
 		footprint(to, yaw, toPts)
 		local hint = self.hint
 		local best, bestN, bestKind = math.huge, nil :: Vector3?, 0
+		local point = 0 -- the outline point being asked about; 0 is the whole box (a tree)
+		for k = 1, 6 do
+			pointT[k] = math.huge
+		end
 		local function consider(m0: number, m1: number, n: Vector3, kind: number)
 			if m1 >= 0 then
 				return
@@ -397,11 +418,15 @@ function SplineWorld.new(spline: Spline.Spline, base: Model.World?): SplineWorld
 			else
 				t = m0 / (m0 - m1)
 			end
+			if point > 0 and t < pointT[point] then
+				pointT[point] = t
+			end
 			if t < best then
 				best, bestN, bestKind = t, n, kind
 			end
 		end
 		for i = 1, 6 do
+			point = i
 			local x0, z0 = fromPts[i * 2 - 1], fromPts[i * 2]
 			local x1, z1 = toPts[i * 2 - 1], toPts[i * 2]
 			local s0, d0 = locate(x0, z0, hint)
@@ -445,6 +470,7 @@ function SplineWorld.new(spline: Spline.Spline, base: Model.World?): SplineWorld
 			end
 		end
 		-- A GROVE'S TREE TRUNKS (T-183): circles against the car's whole box, not its six points
+		point = 0
 		if hint then
 			local hw, hl = boxReach(from, yaw)
 			local fwd, right = Model.axes(yaw)
@@ -454,22 +480,35 @@ function SplineWorld.new(spline: Spline.Spline, base: Model.World?): SplineWorld
 			end
 		end
 		if bestN then
-			return best, bestN, bestKind
+			-- the points touching when the first one does (T-297): within `TIE_STUDS` of it
+			local dx, dz = to.X - from.X, to.Z - from.Z
+			local tie = TIE_STUDS / math.max(math.sqrt(dx * dx + dz * dz), 1e-4)
+			local mask = 0
+			for k = 1, 6 do
+				if pointT[k] <= best + tie then
+					mask = bit32.bor(mask, bit32.lshift(1, k - 1))
+				end
+			end
+			return best, bestN, bestKind, mask
 		end
-		return nil, nil, 0
+		return nil, nil, 0, 0
 	end
 
-	function self.sweep(from: Vector3, to: Vector3, yaw: number): (Vector3?, Vector3?)
+	-- Where the car may get to, and the normal of what stopped it; and (T-297, look only)
+	-- what that was (`KIND_NAMES`) and which of the car's outline points touched it (a mask).
+	function self.sweep(from: Vector3, to: Vector3, yaw: number): (Vector3?, Vector3?, string?, number)
 		stats.sweeps += 1
 		local delta = to - from
 		local flat = Vector3.new(delta.X, 0, delta.Z)
 		local travel = flat.Magnitude
 		local safe: Vector3?, normal: Vector3? = nil, nil
+		local hitKind: string?, hitPoints = nil, 0
 		if travel > 1e-4 then
-			local t, n, kind = firstContact(from, Vector3.new(to.X, from.Y, to.Z), yaw)
+			local t, n, kind, mask = firstContact(from, Vector3.new(to.X, from.Y, to.Z), yaw)
 			if t and n then
 				local allowed = math.max(t * travel - C.WallPush, 0)
 				safe, normal = from + (flat / travel) * allowed, n
+				hitKind, hitPoints = KIND_NAMES[kind], mask
 				if kind == KIND_CLOSING then
 					stats.closingStops += 1
 				elseif kind == KIND_KRAIL then
@@ -489,29 +528,38 @@ function SplineWorld.new(spline: Spline.Spline, base: Model.World?): SplineWorld
 			if bSafe and bNormal then
 				if not safe or (bSafe - from).Magnitude < ((safe :: Vector3) - from).Magnitude then
 					safe, normal = bSafe, bNormal
+					hitKind, hitPoints = "other", 0
 				end
 			end
 		end
-		return safe, normal
+		return safe, normal, hitKind, hitPoints
 	end
 
-	function self.penetration(pos: Vector3, yaw: number): (Vector3?, number)
+	-- The way out of whatever the car is in, and how far; and (T-297, look only) what it is
+	-- in and which outline points are in it (a mask), as `sweep` says them.
+	function self.penetration(pos: Vector3, yaw: number): (Vector3?, number, string?, number)
 		footprint(pos, yaw, toPts)
 		local worst, worstN = 0, nil :: Vector3?
+		local worstKind, inside = 0, 0
 		local hint = self.hint
-		local function take(depth: number, n: Vector3)
+		local point = 0
+		local function take(depth: number, n: Vector3, kind: number)
+			if depth > 0 and point > 0 then
+				inside = bit32.bor(inside, bit32.lshift(1, point - 1))
+			end
 			if depth > worst then
-				worst, worstN = depth, n
+				worst, worstN, worstKind = depth, n, kind
 			end
 		end
 		for i = 1, 6 do
+			point = i
 			local x, z = toPts[i * 2 - 1], toPts[i * 2]
 			local s, d = locate(x, z, hint)
 			if s and d then
 				local side = if d >= 0 then 1 else -1
 				if sideWallStands(s, d, pos.Y) then
 					local m, n = sideWall(s, d)
-					take(PENETRATION_MARGIN - m, n)
+					take(PENETRATION_MARGIN - m, n, KIND_SIDE)
 				end
 				-- inside a K-rail: out of whichever of its four faces is nearest
 				local a, b = kRailStands(s, d, pos.Y)
@@ -533,14 +581,14 @@ function SplineWorld.new(spline: Spline.Spline, base: Model.World?): SplineWorld
 					if ahead < depth then
 						depth, dir = ahead, fwd
 					end
-					take(depth, dir)
+					take(depth, dir, KIND_KRAIL)
 				end
 			end
 			-- into ground too steep to drive (T-258): back out downhill
 			if off then
 				local m, n = groundWall(x, z, s, d, pos.Y)
 				if m and n then
-					take(PENETRATION_MARGIN - m, n)
+					take(PENETRATION_MARGIN - m, n, KIND_GROUND)
 				end
 			end
 			local c, cn = closingMargin(x, z)
@@ -549,35 +597,38 @@ function SplineWorld.new(spline: Spline.Spline, base: Model.World?): SplineWorld
 				local forward = PENETRATION_MARGIN - c
 				local back = c + CLOSING_DEPTH + PENETRATION_MARGIN
 				if back < forward then
-					take(back, -cn)
+					take(back, -cn, KIND_CLOSING)
 				else
-					take(forward, cn)
+					take(forward, cn, KIND_CLOSING)
 				end
 			end
 		end
 		-- inside a tree's trunk (T-183): out the nearest way
+		point = 0
 		if hint then
 			local hw, hl = boxReach(pos, yaw)
 			local fwd, right = Model.axes(yaw)
 			local depth, n = SplineGrove.push(spline, hint, pos, fwd, right, hw, hl, bh, PENETRATION_MARGIN)
 			if n then
-				take(depth, n)
+				take(depth, n, KIND_TREE)
 			end
 		end
 		local dir: Vector3?, depth = worstN, worst
+		local inKind: string? = KIND_NAMES[worstKind]
 		if base and base.penetration then
 			local bDir, bDepth = base.penetration(pos, yaw)
 			if bDir and bDepth > depth then
 				dir, depth = bDir, bDepth
+				inKind, inside = "other", 0
 			end
 		end
 		if dir and depth > 0 then
 			if dir == worstN then
 				stats.pushes += 1
 			end
-			return dir, depth
+			return dir, depth, inKind, inside
 		end
-		return nil, 0
+		return nil, 0, nil, 0
 	end
 
 	function self.edge(from: Vector3, to: Vector3): Vector3?

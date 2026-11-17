@@ -1,39 +1,48 @@
 --!strict
--- Hairpins: the spline road's hairpins, known ahead of the car, for the conditional score
--- events (features/score-events.md "The user's revision", T-299): perfect hairpin, reverse
--- entry, and the Scandinavian flick built on this next. Pure maths, like `Road/Spline`.
+-- Hairpins: the spline road's double-yellow bends and, among them, its true hairpins, known
+-- ahead of the car, for the conditional score events (features/score-events.md, T-299):
+-- lane drift and perfect lane drift on every bend, perfect hairpin on the hairpins, reverse
+-- entry, and the Scandinavian flick. Pure maths, like `Road/Spline`.
 --
--- WHAT A HAIRPIN IS HERE. The road already knows its tight stretches: wherever it is
--- tighter than `Config.Road.CentreLineRadius` (130 studs), which is where the double yellow
--- is drawn (`Road/RoadTexture.centreRuns`). A hairpin is ONE BEND of that: a run of points
--- tighter than that radius, all turning the same way, read on the double yellow's own grid
+-- A BEND. The road knows its tight stretches: wherever it is tighter than
+-- `Config.Road.CentreLineRadius` (130 studs), which is where the double yellow is drawn
+-- (`Road/RoadTexture.centreRuns`). A bend is ONE BEND of that: a run of points tighter than
+-- that radius, all turning the same way, read on the double yellow's own grid
 -- (`CentreLineStep` studs). A switchback's two bends share one double yellow but are two
--- hairpins here, one each way. Two same-way tight runs closer than `MergeGap` are one
--- hairpin (a bend whose curvature wavers on the line), and a bend turning less than
--- `MinTurnDegrees` inside its tight part is not a hairpin at all (a short tight kink).
+-- bends here, one each way. Same-way tight runs closer than `MergeGap` are one bend, and a
+-- run turning less than `MinTurnDegrees` inside its tight part is not one (a tight kink).
+--
+-- A HAIRPIN (the user, T-299 send-back: "to be a hairpin we need at least 120 degrees within
+-- a certain stretch") is a bend where the road turns at least `HairpinDegrees` (120) the
+-- bend's way within `HairpinStretch` (250) studs, the window overlapping the bend: a mean
+-- radius of 119 or less. 200 studs (radius 95) was measured first and left out the
+-- generator's own wide turnarounds (174 degrees at radius 98 turns 115 within 200 studs, 139
+-- within 250). Measured at 250 on seeds 31337, 101, 2024, 8080 and 777: 12, 7, 13, 12 and 7
+-- of 20 to 36 bends in 30 000 studs, one every ~3 000 studs.
 --
 --   zone    where the ENTRY ZONE starts: `EntryZone` studs before `entry`, cut short at the
 --           tight point of a bend just before it (a switchback's first bend), so zones never
---           overlap another hairpin
+--           overlap another bend
 --   entry   the first point tighter than the radius
---   apex    where half the hairpin's turn is done
+--   apex    where half the bend's tight turn is done
 --   exit    the last point tighter than the radius
 --   dir     which way it turns: 1 LEFT, -1 RIGHT (the curve's own sign: curvature > 0 is left)
 --   radius  the tightest radius in it, studs
 --   turn    degrees turned from entry to exit
---   open    the road is not laid far enough past it yet to know where it ends; ask again
+--   hairpin it is a true hairpin; `hairpinTurn` the most it turns within `HairpinStretch`
+--   open    the road is not laid far enough past it yet to know it all; ask again
 --
--- THE SAME ANSWER FOR ANY CHUNK, ANY DEVICE. A hairpin is found by walking the fixed grid
+-- `bendAround` / `bends` answer every bend; `around` / `find` only the true hairpins.
+--
+-- THE SAME ANSWER FOR ANY CHUNK, ANY DEVICE. A bend is found by walking the fixed grid
 -- outward from any one of its tight points to both ends, never from a window's edge, so
 -- whatever point of it is asked about, the answer is the same numbers to the bit.
 --
--- THE DOUBLE YELLOW is drawn about the centre line (`Road/SplineMesh`): two lines of
--- `CentreLineWidth`, `CentreLineGap` apart. `lineAt` is where its middle is across the road
--- (d, studs right of the centre line) at any distance, nil where none is drawn; `sideOf`
--- which side of it a point is on.
---
--- The tuning numbers below are the module's own defaults until `Config/ScoreEvents` exists
--- (T-295); they are read through `Hairpins.Tuning` so a config can replace them.
+-- THE LINES. The double yellow is drawn about the centre line (`Road/SplineMesh`): two lines
+-- of `CentreLineWidth`, `CentreLineGap` apart. `lineAt` is where its middle is across the
+-- road (d, studs right of the centre line) at any distance, nil where none is drawn; `sideOf`
+-- which side of it a point is on. `edgeLine` is how far out the white edge lines' outer
+-- sides are (`Config.Road.EdgeLineInset` in from the tarmac's edge).
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -42,10 +51,12 @@ local Config = require(ReplicatedStorage.Shared.Config)
 local Hairpins = {}
 
 Hairpins.Tuning = {
-	EntryZone = 60, -- studs before a hairpin's entry where its entry zone starts
-	MergeGap = 20, -- studs: same-way tight runs closer than this are one hairpin
-	MinTurnDegrees = 45, -- a tight bend turning less than this (inside its tight part) is not a hairpin
-	MaxLength = 2000, -- studs: a walk along one hairpin stops here (a guard, not a tuning number)
+	EntryZone = 60, -- studs before a bend's entry where its entry zone starts
+	MergeGap = 20, -- studs: same-way tight runs closer than this are one bend
+	MinTurnDegrees = 45, -- a tight run turning less than this (inside its tight part) is not a bend
+	HairpinDegrees = 120, -- a bend turning this much within `HairpinStretch` is a hairpin
+	HairpinStretch = 250, -- studs
+	MaxLength = 2000, -- studs: a walk along one bend stops here (a guard, not a tuning number)
 }
 
 export type Hairpin = {
@@ -56,8 +67,14 @@ export type Hairpin = {
 	dir: number,
 	radius: number,
 	turn: number,
+	hairpin: boolean,
+	hairpinTurn: number,
 	open: boolean,
 }
+
+-- Closed bends already worked out, per road, by their first grid point: the walk out to a
+-- bend's ends is cheap, the rest (its turn, apex, zone, the hairpin test) is not.
+local cache: { [any]: { [number]: Hairpin | false } } = setmetatable({}, { __mode = "k" }) :: any
 
 local function grid(): (number, number)
 	local R = Config.Road
@@ -79,8 +96,8 @@ local function tightAt(spline: any, i: number, step: number, kMin: number): numb
 	return 0
 end
 
--- The hairpin holding the tight grid point `i` (turning `dir`), or nil if that bend is not
--- one (it turns too little). Walks out to both ends, closing same-way gaps under MergeGap.
+-- The bend holding the tight grid point `i` (turning `dir`), or nil if that run is not one
+-- (it turns too little). Walks out to both ends, closing same-way gaps under MergeGap.
 local function component(spline: any, i: number, dir: number): Hairpin?
 	local T = Hairpins.Tuning
 	local step, kMin = grid()
@@ -133,9 +150,19 @@ local function component(spline: any, i: number, dir: number): Hairpin?
 		b = found
 	end
 	local entry, exit = a * step, b * step
+	-- the hairpin test looks `HairpinStretch` past the exit: not known until that is laid
+	if exit + T.HairpinStretch > spline.length then
+		open = true
+	end
+	local known = cache[spline]
+	if not open and known and known[a] ~= nil then
+		return known[a] or nil
+	end
 	local y0, y1 = spline:yawAt(entry), spline:yawAt(exit)
 	local turn = math.deg(math.abs(y1 - y0))
 	if turn < T.MinTurnDegrees and not open then
+		cache[spline] = known or {}
+		cache[spline][a] = false
 		return nil
 	end
 	local kTop = 0
@@ -166,7 +193,18 @@ local function component(spline: any, i: number, dir: number): Hairpin?
 			break
 		end
 	end
-	return {
+	-- the hairpin test: the most the road turns this bend's way within `HairpinStretch`, over
+	-- windows on a fixed grid from `HairpinStretch` before the entry to the exit
+	local L = T.HairpinStretch
+	local best = 0
+	local w = entry - L
+	while w <= exit do
+		local w0, w1 = math.max(w, 0), math.min(w + L, spline.length)
+		best = math.max(best, (spline:yawAt(w1) - spline:yawAt(w0)) * dir)
+		w += 2 * step
+	end
+	local hairpinTurn = math.deg(best)
+	local h: Hairpin = {
 		zone = z * step,
 		entry = entry,
 		apex = (lo + hi) * 0.5,
@@ -174,12 +212,19 @@ local function component(spline: any, i: number, dir: number): Hairpin?
 		dir = dir,
 		radius = if kTop > 0 then 1 / kTop else math.huge,
 		turn = turn,
+		hairpin = hairpinTurn >= T.HairpinDegrees,
+		hairpinTurn = hairpinTurn,
 		open = open,
 	}
+	if not open then
+		cache[spline] = known or {}
+		cache[spline][a] = h
+	end
+	return h
 end
 
--- The hairpin whose entry zone or bend holds `s` (zone <= s <= exit), or nil.
-function Hairpins.around(spline: any, s: number): Hairpin?
+-- The bend whose entry zone or tight stretch holds `s` (zone <= s <= exit), or nil.
+function Hairpins.bendAround(spline: any, s: number): Hairpin?
 	local step, kMin = grid()
 	local i = math.round(s / step)
 	local t = tightAt(spline, i, step, kMin)
@@ -202,15 +247,25 @@ function Hairpins.around(spline: any, s: number): Hairpin?
 	return nil
 end
 
--- Every hairpin whose zone-to-exit overlaps [s0, s1], in order along the road. The same
--- hairpins, with the same numbers, whatever window is asked.
-function Hairpins.find(spline: any, s0: number, s1: number): { Hairpin }
+-- The true hairpin whose entry zone or tight stretch holds `s`, or nil (a bend that is not
+-- a hairpin answers nil). An open one is returned as such: ask again.
+function Hairpins.around(spline: any, s: number): Hairpin?
+	local h = Hairpins.bendAround(spline, s)
+	if h and (h.hairpin or h.open) then
+		return h
+	end
+	return nil
+end
+
+-- Every bend whose zone-to-exit overlaps [s0, s1], in order along the road. The same bends,
+-- with the same numbers, whatever window is asked.
+function Hairpins.bends(spline: any, s0: number, s1: number): { Hairpin }
 	local step, kMin = grid()
 	local nZone = math.round(Hairpins.Tuning.EntryZone / step)
 	local out = {}
 	local i = math.floor(s0 / step)
-	-- a hairpin whose bend started before s0 still counts: start from its own tight point
-	local first = Hairpins.around(spline, s0)
+	-- a bend that started before s0 still counts: start from its own tight point
+	local first = Hairpins.bendAround(spline, s0)
 	if first then
 		table.insert(out, first)
 		i = math.floor(first.exit / step) + 1
@@ -226,13 +281,24 @@ function Hairpins.find(spline: any, s0: number, s1: number): { Hairpin }
 				end
 				i = math.floor(h.exit / step) + 1
 			else
-				-- not a hairpin: skip its tight run
+				-- not a bend: skip its tight run
 				while tightAt(spline, i, step, kMin) == t do
 					i += 1
 				end
 			end
 		else
 			i += 1
+		end
+	end
+	return out
+end
+
+-- Every true hairpin whose zone-to-exit overlaps [s0, s1] (and any open bend at the road's end).
+function Hairpins.find(spline: any, s0: number, s1: number): { Hairpin }
+	local out = {}
+	for _, h in Hairpins.bends(spline, s0, s1) do
+		if h.hairpin or h.open then
+			table.insert(out, h)
 		end
 	end
 	return out
@@ -260,6 +326,12 @@ end
 function Hairpins.lineHalfWidth(): number
 	local R = Config.Road
 	return R.CentreLineGap * 0.5 + R.CentreLineWidth
+end
+
+-- How far out from the centre line the white edge lines' outer sides are (either side).
+function Hairpins.edgeLine(): number
+	local R = Config.Road
+	return R.Width * 0.5 - R.EdgeLineInset
 end
 
 -- Which side of the double yellow a point `d` studs right of the centre line is on, at a
