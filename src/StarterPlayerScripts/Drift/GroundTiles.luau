@@ -27,6 +27,8 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Config = require(ReplicatedStorage.Shared.Config)
 
+local IS_STUDIO = game:GetService("RunService"):IsStudio()
+
 local GroundTiles = {}
 
 export type Leaf = {
@@ -119,7 +121,8 @@ GroundTiles.farCorner = farCorner
 -- with the vista off.
 function GroundTiles.limit(): number
 	local V = Config.Vista
-	if not V or not V.Enabled or not V.Layers or #V.Layers == 0 then
+	-- (in Studio, `workspace.__ground_no_limit = true` draws as before T-281, to compare)
+	if not V or not V.Enabled or not V.Layers or #V.Layers == 0 or (IS_STUDIO and workspace:GetAttribute("__ground_no_limit") == true) then
 		return math.huge
 	end
 	local Vista = require(ReplicatedStorage.Shared.Vista)
