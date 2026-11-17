@@ -24,5 +24,47 @@
 				<Content name="ColorMap"><url>rbxassetid://128884046668071</url></Content>
 			</Properties>
 		</Item>
+		<Item class="SurfaceAppearance" referent="RBX4">
+			<Properties>
+				<string name="Name">128017146178029</string>
+				<token name="AlphaMode">1</token>
+				<Content name="ColorMap"><url>rbxassetid://128017146178029</url></Content>
+			</Properties>
+		</Item>
+		<Item class="SurfaceAppearance" referent="RBX5">
+			<Properties>
+				<string name="Name">135005587139269</string>
+				<token name="AlphaMode">1</token>
+				<Content name="ColorMap"><url>rbxassetid://135005587139269</url></Content>
+			</Properties>
+		</Item>
+		<Item class="SurfaceAppearance" referent="RBX6">
+			<Properties>
+				<string name="Name">105834515600586</string>
+				<token name="AlphaMode">1</token>
+				<Content name="ColorMap"><url>rbxassetid://105834515600586</url></Content>
+			</Properties>
+		</Item>
+		<Item class="SurfaceAppearance" referent="RBX7">
+			<Properties>
+				<string name="Name">133682278735485</string>
+				<token name="AlphaMode">1</token>
+				<Content name="ColorMap"><url>rbxassetid://133682278735485</url></Content>
+			</Properties>
+		</Item>
+		<Item class="SurfaceAppearance" referent="RBX8">
+			<Properties>
+				<string name="Name">89225550176420</string>
+				<token name="AlphaMode">1</token>
+				<Content name="ColorMap"><url>rbxassetid://89225550176420</url></Content>
+			</Properties>
+		</Item>
+		<Item class="SurfaceAppearance" referent="RBX9">
+			<Properties>
+				<string name="Name">110558208216398</string>
+				<token name="AlphaMode">1</token>
+				<Content name="ColorMap"><url>rbxassetid://110558208216398</url></Content>
+			</Properties>
+		</Item>
 	</Item>
 </roblox>

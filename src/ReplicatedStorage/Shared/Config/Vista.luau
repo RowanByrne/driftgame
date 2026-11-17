@@ -65,7 +65,9 @@ return {
 	-- climbing sinks it below the further ones and the view opens; in a valley it stands up in
 	-- front of them and closes it in.
 	--
-	-- A layer with no `Images` is not built. `Skirt`: a plain part under each panel, in the
+	-- A layer with no `Images` is not built. `Edges`: where each picture's end saddles sit,
+	-- as a share of its height from the top (measured off each strip); every picture is lifted
+	-- or lowered so its saddles meet the first picture's, and so its neighbours'. `Skirt`: a plain part under each panel, in the
 	-- colour of the art's base, reaching down `Skirt` studs so the bottom edge of the art is
 	-- never seen above the cloud sea; `BaseColour` is the art's bottom tenth, averaged.
 	Layers = {
@@ -88,6 +90,7 @@ return {
 				"rbxassetid://120124891988351", -- far-painted-02-v1
 				"rbxassetid://128884046668071", -- far-painted-02-v2
 			},
+			Edges = { 0.609, 0.612, 0.616 },
 		},
 		{
 			Name = "Middle",
@@ -101,7 +104,12 @@ return {
 			Slide = 0.6,
 			Skirt = 900,
 			BaseColour = Color3.fromRGB(156, 175, 194), -- mid-ridge-02's bottom tenth
-			Images = {}, -- step 2's pick (assets/painted-vista/MANIFEST.md)
+			Images = {
+				"rbxassetid://133682278735485", -- mid-ridge-02 (assets/painted-vista/MANIFEST.md)
+				"rbxassetid://89225550176420", -- mid-ridge-02-v1
+				"rbxassetid://110558208216398", -- mid-ridge-02-v2
+			},
+			Edges = { 0.619, 0.670, 0.644 },
 		},
 		{
 			Name = "Near",
@@ -115,7 +123,12 @@ return {
 			Slide = 0.45,
 			Skirt = 900,
 			BaseColour = Color3.fromRGB(152, 169, 188), -- near-forest-01's bottom tenth
-			Images = {}, -- step 2's pick
+			Images = {
+				"rbxassetid://128017146178029", -- near-forest-01
+				"rbxassetid://135005587139269", -- near-forest-01-v1
+				"rbxassetid://105834515600586", -- near-forest-01-v2
+			},
+			Edges = { 0.663, 0.665, 0.684 },
 		},
 	},
 

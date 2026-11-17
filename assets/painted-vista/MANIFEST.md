@@ -71,3 +71,16 @@ Four candidates, two a ring, in the far pick's hand. Measured: every one 2172 x 
 | `mid-ridge-02-v2.png` (2172 x 724, alpha) | "A NEW variant strip by the same painter as the attached strip, NOT a crop, stretch, mirror or copy of it: match its medium (expressive oil painting, palette-knife and impasto strokes), its palette, its haze, its flat even light, its misty base and the scale of its ridges exactly, but paint different ridges: several steep pointed ridges evenly spread, one tall rocky crest right of centre, thin bands of valley cloud between rows. Layer rules (one layer of a game's scenery, a wide strip that stands round the player in front of the attached snow-peak strip): everything above the ridgeline is empty transparent background: no sky, no clouds above, no sun, no moon, no birds. Even, flat, diffuse overcast light: no sun direction, no sunset colour, no cast shadows, both sides of every ridge lit about the same, because the game lights it. Ridges only: no road, no car, no buildings, no people, no text, no snow peaks. The ridgeline is low and rolling, filling only the top third to half of the canvas; at the left edge and at the right edge it drops to the same low saddle at exactly the same height (about 55 percent down the canvas), so copies placed side by side join without a seam. The lower part of the ridges sinks into a soft, opaque band of pale cloud and mist that reaches all the way down to the bottom edge, with no transparent gaps below the ridgeline. Wide landscape canvas. The attached concept painting is a mood reference only: do not copy it." | `mid-ridge-02.png` (the pick) | `95202A93153A52F991E1B552E22DDC5F1283B7A50EF5C4E20588C1D69888A15A` | **picked** |
 
 **The user picked "Both" for each ring** (2026-11-16); copied unchanged. Their saddles sit at slightly different heights (fraction down the picture, both edges averaged): near 0.663, 0.665, 0.684; middle 0.619, 0.670, 0.644; far 0.609, 0.612, 0.616. The game lifts or lowers each picture so its saddles meet its neighbours' (`Config.Vista` `Edges`).
+
+### Uploaded for step 2
+
+Through the Studio MCP `upload_image` (the user signed in to Studio), 2026-11-16, in lane 1. Each has a see-through SurfaceAppearance in `src/ReplicatedStorage/VistaSurfaces.rbxmx`.
+
+| File | Asset id | Used in |
+|---|---|---|
+| `near-forest-01.png` | `rbxassetid://128017146178029` | `Config.Vista.Layers` Near |
+| `near-forest-01-v1.png` | `rbxassetid://135005587139269` | `Config.Vista.Layers` Near |
+| `near-forest-01-v2.png` | `rbxassetid://105834515600586` | `Config.Vista.Layers` Near |
+| `mid-ridge-02.png` | `rbxassetid://133682278735485` | `Config.Vista.Layers` Middle |
+| `mid-ridge-02-v1.png` | `rbxassetid://89225550176420` | `Config.Vista.Layers` Middle |
+| `mid-ridge-02-v2.png` | `rbxassetid://110558208216398` | `Config.Vista.Layers` Middle |

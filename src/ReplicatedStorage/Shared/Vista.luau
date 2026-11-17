@@ -25,6 +25,18 @@ function Vista.panelWidth(radius: number, panels: number): number
 	return 2 * radius * math.sin(math.pi / panels)
 end
 
+-- How far panel `i`'s picture is lifted so its end saddles stand where the first picture's
+-- do (`Edges`, a share of the picture's height `art` from its top).
+function Vista.edgeLift(layer: any, i: number, art: number): number
+	local edges = layer.Edges
+	local images = layer.Images or {}
+	if not edges or #images == 0 then
+		return 0
+	end
+	local k = (i - 1) % #images + 1
+	return ((edges[k] or edges[1]) - edges[1]) * art
+end
+
 -- Where each panel of a ridge layer stands round its anchor.
 function Vista.panels(layer: any): { Panel }
 	local n: number = layer.Panels
@@ -41,11 +53,12 @@ function Vista.panels(layer: any): { Panel }
 		local angle = (i - 0.5) * 2 * math.pi / n
 		local dir = Vector3.new(math.sin(angle), 0, math.cos(angle))
 		local at = dir * mid
-		local cf = CFrame.lookAt(at + Vector3.yAxis * centreY, Vector3.yAxis * centreY)
+		local y = centreY + Vista.edgeLift(layer, i, height)
+		local cf = CFrame.lookAt(at + Vector3.yAxis * y, Vector3.yAxis * y)
 		local skirt = nil
 		if (layer.Skirt or 0) > 0 then
 			local h: number = layer.Skirt + SKIRT_OVERLAP
-			local skirtTop = centreY - height / 2 + SKIRT_OVERLAP
+			local skirtTop = y - height / 2 + SKIRT_OVERLAP
 			local behind = at + dir * SKIRT_BEHIND
 			skirt = {
 				cframe = CFrame.lookAt(behind + Vector3.yAxis * (skirtTop - h / 2), Vector3.yAxis * (skirtTop - h / 2)),
@@ -84,7 +97,8 @@ function Vista.arcs(layer: any, mesh: any): { Panel }
 		local angle = (i - 0.5) * 2 * math.pi / n
 		local dir = Vector3.new(math.sin(angle), 0, math.cos(angle))
 		local at = dir * (r + mid) / 2 -- the box's centre, halfway through its depth
-		local cf = CFrame.lookAt(at + Vector3.yAxis * centreY, Vector3.yAxis * centreY)
+		local y = centreY + Vista.edgeLift(layer, i, art)
+		local cf = CFrame.lookAt(at + Vector3.yAxis * y, Vector3.yAxis * y)
 		table.insert(out, {
 			index = i,
 			cframe = cf,
