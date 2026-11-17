@@ -215,5 +215,28 @@ return {
 			Refetch = 8, -- studs the car moves along before they are fetched again
 			Teleport = 30, -- studs in one step past its speed: a put-back, all forgotten
 		},
+		-- `Drift/Events/BumperGrind` (T-297): a front or rear corner on a K-rail (the model's
+		-- `wallKind`, `wallPoint`), the car at least `MinAngle` off the rail's line (less is its
+		-- door), sliding along it at `MinSpeed`, met gently (`MaxInto`). It starts on a meeting
+		-- at least `MinHold` after the first, banks `Grace` after the car leaves the rail, and is
+		-- lost on a hard hit, losing `CrashLoss` of the speed within `CrashWindow`, a fall or a
+		-- put-back. Size: the speed along the rail (`SizeFloor` at `MinSpeed`, 1 at `FullSpeed`)
+		-- times the share of the last `SteadySeconds` the car read as touching it.
+		BumperGrind = {
+			Walls = { krail = true, rock = false }, -- rock cuts are not the user's "barrier rail"
+			MinAngle = 6, -- degrees
+			MinSpeed = 40, -- studs/s along the rail to start
+			KeepSpeed = 30, -- studs/s along it to keep going
+			FullSpeed = 100, -- studs/s along it for the speed's full share
+			SizeFloor = 0.3,
+			MaxInto = 25, -- studs/s into the rail at a meeting; harder is a crash
+			MinHold = 0.12, -- seconds
+			MinContacts = 2, -- steps that met the rail within the hold
+			Grace = 0.25, -- seconds off the rail before it ends
+			CrashLoss = 0.4, -- share of the speed
+			CrashWindow = 0.35, -- seconds
+			SteadySeconds = 0.4, -- seconds
+			PutBack = 30, -- studs moved in one update past where the car could get
+		},
 	},
 }
