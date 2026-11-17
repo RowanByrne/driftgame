@@ -373,6 +373,7 @@ local Spline = {
 	-- colours are `Config.Road.Colours.Gravel*`. The bevel at each edge of the tarmac is mapped
 	-- to it, and so is a strip laid over the narrow gravel runoff of a tight cliff edge.
 	Gravel = {
+		Enabled = true, -- false: the bevels plain gravel colour, no runoff strips, as before
 		BandPx = 96, -- columns of the 1 024-wide image (taken from the tarmac's: 16.6 pixels a stud there)
 		InsetPx = 4, -- columns each side of the band nothing is mapped to, so nothing bleeds in
 		BandStuds = 3, -- studs of gravel across the band: 29 pixels a stud
