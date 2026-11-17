@@ -293,6 +293,7 @@ end
 -- in from the origin.
 function CarCameraController._seed(rig, view: View)
 	rig.lookTarget = carPoint(view, Cam.CamLookAt)
+	rig.lookRawY = rig.lookTarget.Y -- the look height's own trail, before its cap (T-294)
 	rig.restTarget = carPoint(view, Cam.CamOffset)
 	rig.velTarget = rig.restTarget
 	rig.target = rig.restTarget
@@ -626,12 +627,34 @@ local function stepTargets(rig, view: View, dt: number)
 	-- flat, which is what the user saw. The grade is the road's (the smoothed normal), not
 	-- the car's own vertical speed, so a bump or a jump is still eased exactly as before; on
 	-- flat ground `climb` is 0 and this is the line it always was.
-	local baseY = rig.lookTarget.Y
+	local baseY = rig.lookRawY or rig.lookTarget.Y
 	local follow = Cam.HillLookFollow or 0
 	if follow ~= 0 and view.up and view.up ~= Vector3.yAxis then
 		baseY += view.speed * math.tan(hillGrade(view.up, travelFlat(view))) * follow * dt
 	end
-	rig.lookTarget = Vector3.new(wantLook.X, baseY + (wantLook.Y - baseY) * ease(dt, Cam.CamHeightRate), wantLook.Z)
+	local lookY = baseY + (wantLook.Y - baseY) * ease(dt, Cam.CamHeightRate)
+	-- IN THE AIR (T-294) that easing was the whole problem: the camera itself is placed at a
+	-- fixed radius from the car and drops with it, while the look height trailed the fall at
+	-- 1/s -- falling at 40 studs/s it sat about 40 studs ABOVE the car, so the view tipped up
+	-- and up as the car fell out of the bottom of the frame. The trail is now soft-capped at
+	-- `CamLookLagMax` studs. THE EASING ITSELF IS UNTOUCHED (`lookRawY` trails exactly as
+	-- before) and only what the camera looks at is squashed, by tanh: a road's small bumps (a
+	-- stud or less) look as they did, a fall is followed with the trail pinned just under the
+	-- cap, and on landing the raw trail runs down at its old rate while the squash keeps the
+	-- view still, so there is no snap. Squashing the stored value instead (the first try)
+	-- pulled the view down a stud in a frame on landing.
+	-- The raw trail is itself held within three caps of the car, where the squash is already
+	-- flat (tanh 3 is 0.995), so the hold cannot be seen -- without it a long fall banked
+	-- tens of studs of trail and the view sat high for seconds after landing.
+	local lagMax = Cam.CamLookLagMax or 0
+	if lagMax > 0 then
+		lookY = math.clamp(lookY, wantLook.Y - 3 * lagMax, wantLook.Y + 3 * lagMax)
+		rig.lookRawY = lookY
+		lookY = wantLook.Y + lagMax * math.tanh((lookY - wantLook.Y) / lagMax)
+	else
+		rig.lookRawY = lookY
+	end
+	rig.lookTarget = Vector3.new(wantLook.X, lookY, wantLook.Z)
 
 	-- (2) The resting place: `|CamOffset|` from the car, in a direction that follows the
 	-- car round at `CamAngleRate`. The length is always the offset's own length, so easing
