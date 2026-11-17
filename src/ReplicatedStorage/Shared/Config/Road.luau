@@ -130,18 +130,12 @@ return {
 		Crack = Color3.fromRGB(30, 30, 36),
 		EdgeLine = Color3.fromRGB(222, 222, 214), -- Japanese edge lines: solid white
 		CentreLine = Color3.fromRGB(230, 168, 46), -- the double yellow (the touge's orange-yellow)
-		-- THE GRAVEL'S TEXTURE (T-270, `Config.Spline.Gravel`), in flat anime-background values:
-		-- the bed's three (dark, mid, light), the pebbles' body tones (each pebble one, with a lit
-		-- cap and a shadow side from it), and the grass creeping in at its outer edge. A little
-		-- cool, as the tarmac is, so the two read as one painting
-		GravelDark = Color3.fromRGB(86, 86, 90),
-		GravelDust = Color3.fromRGB(108, 107, 108),
-		GravelLight = Color3.fromRGB(126, 124, 122),
-		GravelStones = {
-			Color3.fromRGB(140, 138, 136),
-			Color3.fromRGB(122, 121, 124),
-			Color3.fromRGB(150, 144, 134),
-		},
+		-- THE GRAVEL'S TEXTURE (T-270, `Config.Spline.Gravel`): the dusty bed, and the two ends a
+		-- stone's tone goes toward, in the asphalt's value range (`TarmacEdge` is the dust at
+		-- the tarmac's edge), so the edge reads as one painting; and the grass at its outer edge
+		GravelDust = Color3.fromRGB(100, 99, 100),
+		GravelLight = Color3.fromRGB(132, 129, 124),
+		GravelDark = Color3.fromRGB(68, 69, 76),
 		GravelGrass = Color3.fromRGB(66, 98, 48),
 	},
 

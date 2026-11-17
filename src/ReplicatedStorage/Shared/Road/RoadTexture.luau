@@ -18,9 +18,9 @@
 -- two thin strips of the road's mesh (`Road/SplineMesh`), mapped to the image's LINE BAND:
 -- columns right of the tarmac holding one weathered yellow line on tarmac (`lineUV`).
 --
--- THE GRAVEL (T-270) has a band of its own, right of the line band: cel-shaded pebbles on
--- a bed of three flat values, blending into the tarmac's edge at one side and grass at the other
--- (`paintGravel`, `gravelUV`). The bevels and the gravel runoff's strips are mapped to it.
+-- THE GRAVEL (T-270) has a band of its own, right of the line band: softly painted stones
+-- on a dusty bed with the asphalt's grain, in one of three looks, blending into the tarmac's
+-- edge at one side and grass at the other (`paintGravel`, `gravelUV`). The bevels and the gravel runoff's strips are mapped to it.
 --
 -- HOW LARGE: 1 024 x 1 024, the largest EditableImage a client will make (measured: 2 048
 -- on either side is refused), 4 MB. Painting it is a few hundred ms of work, spread a few ms
@@ -585,18 +585,35 @@ function RoadTexture.paint(yield: (() -> ())?): (buffer, number, number)
 	return px, W, H
 end
 
--- THE GRAVEL BAND (T-270, the user: "do the same for the gravel on the sides of the road";
--- send-back: "too noisy and static-y ... match road texture stylization, that sort of anime
--- look"), into `px`, painted the way an anime background paints gravel: a calm bed of two or
--- three flat values laid as soft shapes, and a modest number of clearly drawn pebbles, each
--- a flat body with a lit cap and a shadow side, cel-shaded, casting a soft shadow, spaced so
--- the eye reads each one. NO per-pixel noise anywhere: that is what shimmered at distance and
--- in motion. Its edges: the tarmac's dusty edge colour taking over in soft ragged shapes at
--- its start, flat grass shapes creeping in over its end. Its own random numbers, so the
--- tarmac's are as they were.
-function RoadTexture.paintGravel(px: buffer, yield: (() -> ())?)
+-- THE GRAVEL'S LOOK (T-270): `Config.Spline.Gravel.Look`, or in Studio the workspace
+-- attribute `__gravel_look` ("A", "B" or "C"), which repaints the band live (`watchLook`).
+function RoadTexture.gravelLook(): string
+	local Gv = Config.Spline.Gravel
+	if RunService:IsStudio() then
+		local v = workspace:GetAttribute("__gravel_look")
+		if type(v) == "string" and Gv.Looks[v] then
+			return v
+		end
+	end
+	return Gv.Look
+end
+
+-- THE GRAVEL BAND (T-270, the user: "do the same for the gravel on the sides of the road"),
+-- into `px`. Two send-backs set its range: the first cut, thousands of tiny faceted stones
+-- with per-pixel grain, was "too noisy and static-y"; the second, flat values and cel-shaded
+-- pebbles, "too cartoony". So it is painted like the approved asphalt: a dusty bed with the
+-- asphalt's kind of grain (soft mottling, strokes stretched along, a finer octave; no
+-- per-pixel speckle), and stones with soft painted shading (no outlines, no cel steps, soft
+-- edges a few pixels wide, a faint soft shadow), in one of three LOOKS (`Gravel.Looks`):
+--   A  dense small stones, low contrast, a softened spread of sizes
+--   B  a medium density of stones, softly shaded, in a dusty bed
+--   C  mostly the dusty bed, with a sprinkle of larger stones blending into it
+-- Its edges: the tarmac's dusty edge colour taking over in soft ragged shapes at its start,
+-- grass in soft shapes over its end. Its own random numbers, so the tarmac's are as they were.
+function RoadTexture.paintGravel(px: buffer, yield: (() -> ())?, lookName: string?)
 	local T = Config.Spline.Tarmac
 	local Gv = Config.Spline.Gravel
+	local L = Gv.Looks[lookName or RoadTexture.gravelLook()] or Gv.Looks[Gv.Look]
 	local C = Config.Road.Colours
 	local W, H = T.Width, T.Length
 	local _, _, _, _, gx0, G = columns()
@@ -619,120 +636,113 @@ function RoadTexture.paintGravel(px: buffer, yield: (() -> ())?)
 		return t * t * (3 - 2 * t)
 	end
 	local width = B + 2 * inset / pxA + 2
-	local blotch = layer(Gv.BlotchStuds[1], Gv.BlotchStuds[2], period, width, Gv.Seed + 1)
-	local blotch2 = layer(Gv.BlotchStuds[1] * 0.5, Gv.BlotchStuds[2] * 0.5, period, width, Gv.Seed + 2)
+	local mottle = layer(L.MottleStuds[1], L.MottleStuds[2], period, width, Gv.Seed + 1)
+	local grain = layer(L.GrainStuds[1], L.GrainStuds[2], period, width, Gv.Seed + 2)
+	local fine = layer(L.FineStuds[1], L.FineStuds[2], period, width, Gv.Seed + 4)
 	local edgeN = layer(Gv.EdgeStuds[1], Gv.EdgeStuds[2], period, width, Gv.Seed + 3)
-	-- studs across the band of column x (the inset columns read as beyond its ends)
 	local function across(x: number): number
 		return (x + 0.5 - gx0 - inset) / pxA
 	end
-	local function put(x: number, y: number, c: Color3)
+	local m255 = lift * 255
+	local function put(x: number, y: number, r: number, g: number, b: number)
 		local o = (y * W + x) * 4
-		local m = lift * 255
-		buffer.writeu8(px, o, math.clamp(math.floor(c.R * m + 0.5), 0, 255))
-		buffer.writeu8(px, o + 1, math.clamp(math.floor(c.G * m + 0.5), 0, 255))
-		buffer.writeu8(px, o + 2, math.clamp(math.floor(c.B * m + 0.5), 0, 255))
+		buffer.writeu8(px, o, math.clamp(math.floor(r * m255 + 0.5), 0, 255))
+		buffer.writeu8(px, o + 1, math.clamp(math.floor(g * m255 + 0.5), 0, 255))
+		buffer.writeu8(px, o + 2, math.clamp(math.floor(b * m255 + 0.5), 0, 255))
 		buffer.writeu8(px, o + 3, 255)
 	end
-	local function get(x: number, y: number): Color3
+	local function get(x: number, y: number): (number, number, number)
 		local o = (y * W + x) * 4
-		local m = lift * 255
-		return Color3.new(buffer.readu8(px, o) / m, buffer.readu8(px, o + 1) / m, buffer.readu8(px, o + 2) / m)
+		return buffer.readu8(px, o) / m255, buffer.readu8(px, o + 1) / m255, buffer.readu8(px, o + 2) / m255
 	end
 
-	-- THE BED: three flat values (`GravelDark`, `GravelDust`, `GravelLight`) in soft shapes
-	-- from low-frequency noise, stepped with a soft edge `BedSoft` wide
-	local dark, mid, light = C.GravelDark, C.GravelDust, C.GravelLight
-	local soft = Gv.BedSoft
+	-- THE BED: the dust, with the asphalt's kind of grain
+	local dust, dark, light = C.GravelDust, C.GravelDark, C.GravelLight
 	for y = 0, H - 1 do
 		local t = (y + 0.5) / pxL
 		for x = gx0, gx0 + G - 1 do
 			local ua = math.max(0, across(x) + 1)
-			local n = sample(blotch, ua, t) * 0.75 + sample(blotch2, ua, t) * 0.25
-			local up = smoothstep(Gv.BedSteps[2] - soft, Gv.BedSteps[2] + soft, n)
-			local down = 1 - smoothstep(Gv.BedSteps[1] - soft, Gv.BedSteps[1] + soft, n)
-			put(x, y, mid:Lerp(light, up):Lerp(dark, down))
+			local k = 1 + sample(mottle, ua, t) * L.Mottle + sample(grain, ua, t) * L.Grain + sample(fine, ua, t) * L.Fine
+			put(x, y, dust.R * k, dust.G * k, dust.B * k)
 		end
 		if yield and y % 64 == 63 then
 			yield()
 		end
 	end
 
-	-- THE PEBBLES: placed with a gap between them (tries that land too near another are
-	-- dropped), largest first; each an ellipse with an antialiased edge, a body tone, a
-	-- shadow side and a lit cap, and a soft shadow on the bed away from the light
+	-- THE STONES: each an ellipse with a soft edge `SoftPx` pixels wide, its tone a little
+	-- toward `GravelLight` or `GravelDark` (up to `Contrast`), shaded softly across by where it
+	-- faces the light (`Lit`), over a faint soft shadow (`ShadowDark`) away from the light.
+	-- With `Gap`, kept that far apart; without, they may overlap, as dense gravel does
 	local la = math.rad(Gv.LightAngle)
-	local lx, ly = math.cos(la), math.sin(la) -- toward the light, in (across, along)
+	local lx, ly = math.cos(la), math.sin(la)
 	local placed: { { number } } = {}
 	local function free(u: number, t: number, r: number): boolean
 		for _, p in placed do
 			local du = u - p[1]
 			local dt = (t - p[2] + period * 0.5) % period - period * 0.5
-			local need = r + p[3] + Gv.PebbleGap
+			local need = r + p[3] + L.Gap
 			if du * du + dt * dt < need * need then
 				return false
 			end
 		end
 		return true
 	end
-	local tones = C.GravelStones
-	local function pebble(cu: number, ct: number, r: number, body: Color3)
-		local rxS, ryS = r * range(Gv.Aspect), r * range(Gv.Aspect) -- studs
+	local function stone(cu: number, ct: number, r: number)
+		local towardLight = rand() < 0.5
+		local amt = rand() * L.Contrast
+		local tr, tg, tb = lerp(dust.R, (if towardLight then light else dark).R, amt), lerp(dust.G, (if towardLight then light else dark).G, amt), lerp(dust.B, (if towardLight then light else dark).B, amt)
+		local rx, ry = r * range(Gv.Aspect) * pxA, r * range(Gv.Aspect) * pxL
 		local rot = rand() * math.pi
 		local cs, sn = math.cos(rot), math.sin(rot)
 		local cx, cy = gx0 + inset + cu * pxA, ct * pxL
-		local rx, ry = rxS * pxA, ryS * pxL
-		local reach = math.max(rx, ry) + 2
-		local lit = body:Lerp(Color3.new(1, 1, 1), Gv.CapLight)
-		local shade = Color3.new(body.R * Gv.ShadeDark, body.G * Gv.ShadeDark, body.B * Gv.ShadeDark)
-		local sOff = Gv.ShadowOffset
+		local reach = math.max(rx, ry) + L.SoftPx + 1
+		local softQ = L.SoftPx / math.min(rx, ry) -- the edge's width, in radii
 		for pass = 1, 2 do
-			-- pass 1 the shadow, offset away from the light; pass 2 the pebble
-			local ox = if pass == 1 then cx - lx * sOff * rx else cx
-			local oy = if pass == 1 then cy - ly * sOff * ry else cy
+			local ox = if pass == 1 then cx - lx * L.ShadowOffset * rx else cx
+			local oy = if pass == 1 then cy - ly * L.ShadowOffset * ry else cy
+			if pass == 1 and L.ShadowDark >= 1 then
+				continue
+			end
 			for y = math.floor(oy - reach), math.ceil(oy + reach) do
 				for x = math.max(gx0, math.floor(ox - reach)), math.min(gx0 + G - 1, math.ceil(ox + reach)) do
 					local dx, dy = x + 0.5 - ox, y + 0.5 - oy
-					-- in the pebble's own frame, in units of its radii
 					local ex = (dx * cs + dy * sn) / rx
 					local ey = (-dx * sn + dy * cs) / ry
 					local q = math.sqrt(ex * ex + ey * ey)
-					-- coverage: an antialiased edge about a pixel wide
-					local cov = math.clamp((1 - q) * math.min(rx, ry) + 0.5, 0, 1)
+					local cov = smoothstep(1 + softQ * 0.5, 1 - softQ * 0.5, q)
 					if cov > 0 then
 						local yy = y % H
-						local under = get(x, yy)
+						local ur, ug, ub = get(x, yy)
 						if pass == 1 then
-							put(x, yy, under:Lerp(Color3.new(under.R * Gv.ShadowDark, under.G * Gv.ShadowDark, under.B * Gv.ShadowDark), cov * smoothstep(1, 0.4, q)))
+							local a = cov * (1 - L.ShadowDark) * smoothstep(1, 0.2, q)
+							put(x, yy, ur * (1 - a), ug * (1 - a), ub * (1 - a))
 						else
-							-- cel shading by where the pixel faces, in the image's own frame: toward
-							-- the light the cap, away from it the shadow side, each a soft step
-							local fx, fy = dx / rx, dy / ry
-							local toward = fx * lx + fy * ly
-							local c = body
-							c = c:Lerp(shade, smoothstep(-Gv.ShadeFrom + 0.12, -Gv.ShadeFrom - 0.12, toward))
-							local cxp, cyp = fx - lx * Gv.CapOffset, fy - ly * Gv.CapOffset
-							local capQ = math.sqrt(cxp * cxp + cyp * cyp) / Gv.CapSize
-							c = c:Lerp(lit, smoothstep(1.1, 0.9, capQ))
-							put(x, yy, under:Lerp(c, cov))
+							-- soft shading: lighter where it faces the light, more so toward its rim
+							local toward = (dx / rx) * lx + (dy / ry) * ly
+							local s = 1 + L.Lit * math.clamp(toward, -1, 1) * (0.4 + 0.6 * math.min(1, q))
+							local a = cov * L.Opacity
+							put(x, yy, lerp(ur, tr * s, a), lerp(ug, tg * s, a), lerp(ub, tb * s, a))
 						end
 					end
 				end
 			end
 		end
 	end
-	for _, kind in Gv.Pebbles do
+	for _, kind in L.Stones do
 		local n = math.floor(kind.Density * B * period + 0.5)
 		local made, tries = 0, 0
-		while made < n and tries < n * 8 do
+		while made < n and tries < n * 6 do
 			tries += 1
 			local r = range(kind.Radius)
-			local u, t = r + rand() * (B - 2 * r), rand() * period
-			if free(u, t, r) then
-				table.insert(placed, { u, t, r })
-				pebble(u, t, r, tones[1 + math.floor(rand() * #tones)])
+			local u, t = rand() * B, rand() * period
+			if not L.Gap or free(u, t, r) then
+				if L.Gap then
+					table.insert(placed, { u, t, r })
+				end
+				stone(u, t, r)
 				made += 1
-				if yield and made % 40 == 0 then
+				if yield and made % 100 == 0 then
 					yield()
 				end
 			end
@@ -742,32 +752,60 @@ function RoadTexture.paintGravel(px: buffer, yield: (() -> ())?)
 		yield()
 	end
 
-	-- THE EDGES, no hard seams and no speckle: at its start the tarmac's dusty edge
-	-- (`TarmacEdge`) takes over in soft ragged shapes over `EdgeSoft`; past `GrassFrom`,
-	-- flat grass shapes creep in, more toward its end
+	-- THE EDGES, no hard seams: at its start the tarmac's dusty edge (`TarmacEdge`) takes over
+	-- in soft ragged shapes over `EdgeSoft`; past `GrassFrom`, grass in soft shapes, more toward
+	-- its end
 	local te, grass = C.TarmacEdge, C.GravelGrass
 	for y = 0, H - 1 do
 		local t = (y + 0.5) / pxL
 		for x = gx0, gx0 + G - 1 do
 			local ua = across(x)
 			local n = sample(edgeN, math.max(0, ua + 1), t)
-			local a = smoothstep(0.35, 0.65, 1 - ua / Gv.EdgeSoft + n * 0.5)
-			local g = smoothstep(0.4, 0.6, (ua - Gv.GrassFrom) / (B - Gv.GrassFrom) + n * 0.45)
+			local a = smoothstep(0.3, 0.7, 1 - ua / Gv.EdgeSoft + n * 0.5)
+			local g = smoothstep(0.35, 0.65, (ua - Gv.GrassFrom) / (B - Gv.GrassFrom) + n * 0.45)
 			if a > 0 or g > 0 then
-				local c = get(x, y)
+				local r0, g0, b0 = get(x, y)
 				if a > 0 then
-					c = c:Lerp(te, a)
+					r0, g0, b0 = lerp(r0, te.R, a), lerp(g0, te.G, a), lerp(b0, te.B, a)
 				end
 				if g > 0 then
-					c = c:Lerp(grass, g)
+					local k = 1 + sample(fine, math.max(0, ua + 1), t) * L.Fine
+					r0, g0, b0 = lerp(r0, grass.R * k, g), lerp(g0, grass.G * k, g), lerp(b0, grass.B * k, g)
 				end
-				put(x, y, c)
+				put(x, y, r0, g0, b0)
 			end
 		end
 		if yield and y % 64 == 63 then
 			yield()
 		end
 	end
+end
+
+-- Studio: `workspace.__gravel_look` repaints the band of the shared image in place, so every
+-- chunk drawn shows the new look at once (no new run).
+local watching = false
+function RoadTexture.watchLook()
+	if watching or not RunService:IsStudio() or not RunService:IsClient() then
+		return
+	end
+	watching = true
+	workspace:GetAttributeChangedSignal("__gravel_look"):Connect(function()
+		local img = image
+		if not img then
+			return
+		end
+		local px = img:ReadPixelsBuffer(Vector2.zero, img.Size)
+		local start = os.clock()
+		RoadTexture.paintGravel(px, function()
+			if os.clock() - start > 0.004 then
+				task.wait()
+				start = os.clock()
+			end
+		end)
+		if image == img then
+			img:WritePixelsBuffer(Vector2.zero, img.Size, px)
+		end
+	end)
 end
 
 -- The shared image, painted the first time it is asked for (a client starts it on require,
@@ -821,6 +859,7 @@ function RoadTexture.prepare()
 	if state == "none" and RoadTexture.enabled() then
 		task.spawn(RoadTexture.get)
 	end
+	RoadTexture.watchLook()
 end
 
 function RoadTexture.DebugState()

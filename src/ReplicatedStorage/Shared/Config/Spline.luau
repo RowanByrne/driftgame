@@ -379,34 +379,61 @@ local Spline = {
 		BandStuds = 3, -- studs of gravel across the band: 29 pixels a stud
 		PeriodStuds = 64, -- studs along one copy: 16 pixels a stud
 		Seed = 270,
-		-- THE LOOK (send-back: "too noisy and static-y ... match road texture stylization, that
-		-- sort of anime look"): an anime background's gravel, not a photo's. No per-pixel noise.
-		-- The bed: three flat values (`Colours.GravelDark`, `GravelDust`, `GravelLight`) in soft
-		-- shapes over `BlotchStuds` (across, along), stepped at `BedSteps` (noise -1..1) with a
-		-- soft edge `BedSoft` wide
-		BlotchStuds = { 0.9, 1.6 },
-		BedSteps = { -0.3, 0.3 },
-		BedSoft = 0.06,
-		-- the pebbles, by size: so many a square stud, a radius range (studs); spaced at least
-		-- `PebbleGap` studs apart, each radius stretched by `Aspect`
-		Pebbles = {
-			{ Density = 0.12, Radius = { 0.24, 0.34 } },
-			{ Density = 0.7, Radius = { 0.12, 0.19 } },
+		-- THE LOOK. Two send-backs set its range: thousands of tiny faceted stones with
+		-- per-pixel grain were "too noisy and static-y", flat values and cel-shaded pebbles "too
+		-- cartoony". So three looks between them, painted like the approved asphalt (soft
+		-- grain, no per-pixel speckle, soft-edged softly shaded stones), for the user to pick on
+		-- the road; in Studio `workspace.__gravel_look` ("A", "B", "C") repaints it live.
+		-- Each: the bed's grain (`Mottle`, `Grain`, `Fine`, each over its cells in studs
+		-- across and along, as the asphalt's); its stones by size (so many a square stud, a
+		-- radius range in studs); `Gap` studs kept between them (nil: they may overlap); how
+		-- far a stone's tone goes toward `GravelLight` or `GravelDark` (`Contrast`); its soft
+		-- shading toward the light (`Lit`); its edge `SoftPx` pixels wide; how much it covers
+		-- the bed (`Opacity`); its shadow, `ShadowOffset` of a radius away, `ShadowDark` dark (1:
+		-- none). Tuned so each one's fine detail sits near the asphalt's (features/road-surface.md)
+		Look = "B",
+		Looks = {
+			-- A: dense small stones, low contrast, a softened spread of sizes
+			A = {
+				MottleStuds = { 0.8, 1.4 }, Mottle = 0.05,
+				GrainStuds = { 0.3, 0.8 }, Grain = 0.04,
+				FineStuds = { 0.15, 0.4 }, Fine = 0.03,
+				Stones = {
+					{ Density = 5, Radius = { 0.14, 0.2 } },
+					{ Density = 1.5, Radius = { 0.2, 0.26 } },
+				},
+				Gap = nil,
+				Contrast = 0.35, Lit = 0.12, SoftPx = 1.5, Opacity = 0.9,
+				ShadowOffset = 0.3, ShadowDark = 0.9,
+			},
+			-- B: a medium density of stones, softly shaded, in a dusty bed
+			B = {
+				MottleStuds = { 0.8, 1.4 }, Mottle = 0.06,
+				GrainStuds = { 0.3, 0.8 }, Grain = 0.04,
+				FineStuds = { 0.15, 0.4 }, Fine = 0.025,
+				Stones = {
+					{ Density = 0.6, Radius = { 0.26, 0.36 } },
+					{ Density = 1.6, Radius = { 0.15, 0.22 } },
+				},
+				Gap = 0.02,
+				Contrast = 0.55, Lit = 0.18, SoftPx = 2, Opacity = 1,
+				ShadowOffset = 0.35, ShadowDark = 0.82,
+			},
+			-- C: mostly the dusty bed with the asphalt's grain, a sprinkle of larger stones
+			C = {
+				MottleStuds = { 0.9, 1.5 }, Mottle = 0.07,
+				GrainStuds = { 0.3, 0.9 }, Grain = 0.06,
+				FineStuds = { 0.15, 0.4 }, Fine = 0.04,
+				Stones = {
+					{ Density = 0.2, Radius = { 0.28, 0.42 } },
+				},
+				Gap = 0.1,
+				Contrast = 0.4, Lit = 0.12, SoftPx = 3, Opacity = 0.85,
+				ShadowOffset = 0.3, ShadowDark = 0.9,
+			},
 		},
-		PebbleGap = 0.06,
-		Aspect = { 0.8, 1.2 },
-		-- cel shading: lit from `LightAngle` (degrees, in the band's across and along); a cap
-		-- `CapSize` of the pebble, `CapOffset` toward the light, `CapLight` of the way to white;
-		-- the side facing away past `ShadeFrom` darker by `ShadeDark`; a shadow on the bed
-		-- `ShadowOffset` of a radius away from the light, `ShadowDark` dark
-		LightAngle = -125,
-		CapSize = 0.5,
-		CapOffset = 0.3,
-		CapLight = 0.28,
-		ShadeFrom = 0.25,
-		ShadeDark = 0.66,
-		ShadowOffset = 0.3,
-		ShadowDark = 0.55,
+		Aspect = { 0.8, 1.2 }, -- a stone's two radii, as shares of its size
+		LightAngle = -125, -- degrees, in the band (across, along): where the stones are lit from
 		-- THE EDGES, no hard seams: the tarmac's dusty edge takes over raggedly over the band's
 		-- first `EdgeSoft` studs; grass tufts creep in from `GrassFrom` studs to its end
 		EdgeSoft = 0.45,
