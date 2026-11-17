@@ -576,6 +576,19 @@ local Spline = {
 		MeshSliceMs = 2, -- ms of building a frame
 		FirstSliceMs = 6, -- ms a frame while nothing is drawn yet (a run's first second)
 		Spare = 24, -- tiles built hidden, then swapped in whole, so a change never shows half done
+		-- OPAQUE TILES (T-276, `Drift/GroundMeshView`): each time a tile changes, its mesh made
+		-- opaque content in a copy of the master let go at once, so the ground holds none of the
+		-- mesh memory (measured: free at the end of a 300 s defaults drive 308 -> 616). OFF: the
+		-- ground changes about 30 tiles a second, and a client that makes thousands of opaque
+		-- contents freezes (measured, DR-Lane1: a 300 s drive froze 16 s and 4 s; a bare bench
+		-- of copy -> opaque -> MeshPart, 300 kept, at 25 a second froze 5 to 12 s at a time from
+		-- about 2 100 to 3 500 made on, with or without a fresh copy each time). The master is
+		-- opaque either way (one content a session). In Studio `workspace.__opaque_ground = true`
+		-- turns it on, to measure again
+		OpaqueTiles = false,
+		-- with it on: this many copies at a time, made off the frame while the next tile is
+		-- worked out (each about two tiles of mesh memory while it is made)
+		OpaqueInFlight = 6,
 		Hysteresis = 1.2, -- a split tile stays split until it is this much past needing it
 		Reselect = 12, -- studs the car moves before the tiles are chosen again
 		-- THE ROAD'S DETAIL: from `Mesh.Behind` back to `Mesh.Ahead` on along it (as far as the
