@@ -523,13 +523,13 @@ local function runAll(opts)
 			)
 			-- one wheel over the double yellow is forgiven; two void
 			local own = h.dir -- the outside lane's side of the line
-			local d1 = dWithOut(spline, h, 30, own, 1, 6 * own, -2 * own)
-			local d2 = dWithOut(spline, h, 30, own, 2, 6 * own, -4 * own)
+			local d1 = dWithOut(spline, h, 20, own, 1, 6 * own, -2 * own)
+			local d2 = dWithOut(spline, h, 20, own, 2, 6 * own, -4 * own)
 			local s1, det1 = go(LaneDrift, h, function(s)
-				return if s < h.apex then outside else d1, 30
+				return if s < h.apex then outside else (d1 or outside), 20
 			end)
 			local s2, det2 = go(LaneDrift, h, function(s)
-				return if s < h.apex then outside else d2, 30
+				return if s < h.apex then outside else (d2 or outside), 20
 			end)
 			local e1, e2 = one(s1), one(s2)
 			check(
@@ -538,13 +538,13 @@ local function runAll(opts)
 				`one wheel over (d {d1 and fmt(d1, 2)}): finished {tostring(e1 and e1.finished)}; two (d {d2 and fmt(d2, 2)}): {tostring(e2 and e2.finished)} ({said(det2)})`
 			)
 			-- and the same at the white edge line
-			local e1w = dWithOut(spline, h, 30, own, 1, 20 * own, 30 * own)
-			local e2w = dWithOut(spline, h, 30, own, 2, 20 * own, 30 * own)
+			local e1w = dWithOut(spline, h, 20, own, 1, 20 * own, 30 * own)
+			local e2w = dWithOut(spline, h, 20, own, 2, 20 * own, 30 * own)
 			local w1 = one((go(LaneDrift, h, function(s)
-				return if s < h.apex then outside else e1w, 30
+				return if s < h.apex then outside else (e1w or outside), 20
 			end)))
 			local s2w, det2w = go(LaneDrift, h, function(s)
-				return if s < h.apex then outside else e2w, 30
+				return if s < h.apex then outside else (e2w or outside), 20
 			end)
 			local w2 = one(s2w)
 			check(
@@ -629,7 +629,7 @@ local function runAll(opts)
 			local pd = one(spd)
 			local d1p = dWithOut(spline, h, 45, own, 1, 7 * own, -2 * own)
 			local sp1 = go(PerfectLaneDrift, h, function(s)
-				return if s < h.apex then outside else d1p, 45
+				return if s < h.apex then outside else (d1p or outside), 45
 			end)
 			local p1 = one(sp1)
 			check(
@@ -648,13 +648,13 @@ local function runAll(opts)
 				local swo = go(PerfectHairpin, h, function()
 					return outside, -25
 				end)
-				local o2 = dWithOut(spline, h, 30, 0, 2, 20 * own, 30 * own)
-				local o1 = dWithOut(spline, h, 30, 0, 1, 20 * own, 30 * own)
+				local o2 = dWithOut(spline, h, 20, 0, 2, 20 * own, 30 * own)
+				local o1 = dWithOut(spline, h, 20, 0, 1, 20 * own, 30 * own)
 				local se2, dete2 = go(PerfectHairpin, h, function(s)
-					return if s < h.apex then outside else o2, 30
+					return if s < h.apex then outside else (o2 or outside), 20
 				end)
 				local se1 = go(PerfectHairpin, h, function(s)
-					return if s < h.apex then outside else o1, 30
+					return if s < h.apex then outside else (o1 or outside), 20
 				end)
 				local sbk, detbk = go(PerfectHairpin, h, breakFor(0.6))
 				local sbf = go(PerfectHairpin, h, breakFor(0.25))
