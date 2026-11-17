@@ -44,6 +44,7 @@ local Config = require(ReplicatedStorage.Shared.Config)
 local Ground = require(ReplicatedStorage.Shared.Road.Ground)
 local GrassTexture = require(ReplicatedStorage.Shared.Road.GrassTexture)
 local RoadTexture = require(ReplicatedStorage.Shared.Road.RoadTexture)
+local SplineMesh = require(ReplicatedStorage.Shared.Road.SplineMesh)
 local GroundDetail = require(script.Parent.GroundDetail)
 local MeshBudget = require(script.Parent.MeshBudget)
 local RoadAhead = require(script.Parent.RoadAhead)
@@ -412,11 +413,17 @@ end
 -- (T-263), so a longer road does not cost sharp ground nearer the car. Never more than
 -- `Ground.CorridorMost` past the most any Ground detail holds (Ultra's): with Ultra and both
 -- settings at Longest, that fits the budget beside the road (far chunks drawn at `Mesh.Far`).
+-- AND NEVER MORE THAN THE MESH MEMORY HAS ROOM FOR (T-273, `SplineMesh.groundRoom`): what is
+-- left beside the road those settings draw, the other mesh users and some spare. Past that
+-- the far ground is coarser, and the road never runs out.
 function GroundMeshView._tiles(self: View): number
-	local detail = Config.Spline.Ground.Detail
+	local G = Config.Spline.Ground
+	local detail = G.Detail
 	local own = GroundDetail.preset(self.detail).Tiles
 	local more = (RoadBehind.preset().GroundTiles or 0) + (RoadAhead.preset().GroundTiles or 0)
-	return math.max(own, math.min(own + more, detail[#detail].Tiles + Config.Spline.Ground.CorridorMost))
+	local wanted = math.max(own, math.min(own + more, detail[#detail].Tiles + G.CorridorMost))
+	local room = SplineMesh.groundRoom(RoadAhead.studs(), RoadBehind.studs()) - G.Spare
+	return math.max(G.YieldFloor, math.min(wanted, room))
 end
 
 function GroundMeshView._setCap(self: View)
@@ -1242,9 +1249,11 @@ function GroundMeshView._take(self: View, over: boolean?): Tile?
 	return tile
 end
 
--- Let go of hidden tiles past the cap (a lower setting, or a full budget), for the road.
+-- Let go of hidden tiles past the cap (a lower setting, or a full budget), for the road; and
+-- past `Spare` (T-273): merges left up to 60 hidden, every one held in the mesh memory.
 function GroundMeshView._trim(self: View)
-	while #self.pool > self.cap and #self.free > 0 do
+	local spare = Config.Spline.Ground.Spare
+	while #self.free > 0 and (#self.pool > self.cap or #self.free > spare) do
 		local t = table.remove(self.free) :: Tile
 		local i = table.find(self.pool, t)
 		if i then

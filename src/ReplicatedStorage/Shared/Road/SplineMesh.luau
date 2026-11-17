@@ -96,6 +96,9 @@ export type Options = {
 	-- out of mesh memory copying a built chunk into its fixed-size mesh (T-273): make room
 	-- (`Drift/MeshBudget`) and say whether to try once more
 	onShort: (() -> boolean)?,
+	-- a far chunk's trees without trunks or flat undersides (T-273): the same outline from far
+	-- off, about half the triangles
+	leanTrees: boolean?,
 }
 
 export type Stats = {
@@ -298,6 +301,37 @@ local function releaseBuilder(b: Builder, em: EditableMesh)
 	else
 		em:Destroy()
 	end
+end
+
+-- THE CLIENT'S MESH MEMORY (T-273, `Config.Spline.Mesh.Budget`), in tiles. What the road's
+-- window holds for a Road ahead and Road behind: chunk-aligned (up to a chunk more each way),
+-- whole within `Near` of the car, far past it, and one whole chunk more (a chunk being
+-- redrawn keeps its old one up till the new one is done). Returns the tiles, the chunks and
+-- how many of them whole.
+function SplineMesh.roadTiles(aheadStuds: number, behindStuds: number): (number, number, number)
+	local M = Config.Spline.Mesh
+	local B = M.Budget
+	local L = M.ChunkLength
+	local window = math.ceil((aheadStuds + behindStuds) / L) + 1
+	local near = math.min(window, math.ceil((M.Near.Ahead + M.Near.Behind) / L) + 1)
+	return near * B.WholeChunk + (window - near) * B.FarChunk + B.WholeChunk, window, near
+end
+
+-- What every mesh user but the road's chunks and the ground's tiles holds, in tiles: the
+-- road's kept growable mesh, the drift marks, the vista's arc, the road's texture, and the
+-- ground's master tile.
+function SplineMesh.otherTiles(): number
+	local B = Config.Spline.Mesh.Budget
+	local T = Config.Spline.Tarmac
+	local texture = if T.Enabled and Config.Spline.Ground.RunoffBy == "ground" then T.Width * T.Length / (1024 * 1024) * B.Image1024 else 0
+	return B.Growable + B.Marks + B.Vista + texture + 1
+end
+
+-- The tiles left for the ground (its `Spare` included) beside a road ahead and behind this
+-- long, keeping `Budget.Spare` over.
+function SplineMesh.groundRoom(aheadStuds: number, behindStuds: number): number
+	local B = Config.Spline.Mesh.Budget
+	return math.floor(B.Tiles - B.Spare - SplineMesh.otherTiles() - (SplineMesh.roadTiles(aheadStuds, behindStuds)))
 end
 
 -- The kept mesh, for the debug readouts (T-273).
@@ -828,12 +862,27 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 		slice()
 		local groveColours: { [Color3]: number } = {}
 		local trianglesBefore, treeT0 = road.triangles, os.clock()
+		-- A FAR CHUNK'S TREES ARE LEAN (T-273): no trunk and no flat underside, a few pixels
+		-- out there, so the same outline costs about half the mesh memory
+		local lean = o.leanTrees == true
+		local skipped = 0
+		local trunkColour = T.TrunkColour
 		local trees = SplineGrove.draw(spline, s0, s1, {
 			vertex = function(p: Vector3): number
 				road.vertices += 1
 				return em:AddVertex(p - centre)
 			end,
 			tri = function(a: number, b: number, c: number, pa: Vector3, pb: Vector3, pc: Vector3, colour: Color3, facing: Vector3)
+				if lean then
+					local n = (pb - pa):Cross(pc - pa)
+					if n:Dot(facing) < 0 then
+						n = -n
+					end
+					if colour == trunkColour or (n.Magnitude > 1e-9 and n.Unit.Y < -0.9) then
+						skipped += 1
+						return
+					end
+				end
 				local id = groveColours[colour]
 				if not id then
 					id = em:AddColor(colour, 1)
@@ -844,6 +893,10 @@ function SplineMesh.build(spline: Spline.Spline, s0: number, s1: number, parent:
 			end,
 		})
 		local treeMs = (os.clock() - treeT0) * 1000
+		if skipped > 0 then
+			-- (the trunks' and undersides' vertices too: a fixed-size copy keeps every vertex)
+			em:RemoveUnused()
+		end
 
 		local model = Instance.new("Model")
 		model.Name = `Chunk_{math.floor(s0)}`

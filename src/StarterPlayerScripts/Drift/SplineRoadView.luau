@@ -284,6 +284,7 @@ function SplineRoadView._build(self: View, i: number, far: boolean?)
 		-- the mesh budget; rebuilt whole as the car comes within `Near`
 		local F = M.Far
 		opts.tolerance, opts.maxStep, opts.across = F.Tolerance, F.MaxStep, F.Across
+		opts.leanTrees = F.LeanTrees -- (T-273)
 	end
 	local model, info = SplineMesh.build(self.spline, s0, s1, self.folder, opts)
 	-- out of memory: make room (the others first, then this road's far chunks) and try again

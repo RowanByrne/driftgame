@@ -84,62 +84,127 @@ function Tests.run()
 			worstSlice < Config.Spline.Mesh.SliceMs * 3,
 			`spread over {fmt(slices / math.max(1, built), 1)} frames a chunk; the most any one frame paid {fmt(worstSlice, 2)} ms (aim {Config.Spline.Mesh.SliceMs})`
 		)
-		-- THE WINDOW AND THE BUDGET (T-230, T-263): every chunk is a fixed-size copy, so a chunk
-		-- costs its own triangles, and only the one being built is growable (it holds back
-		-- `GROWABLE` whatever it uses). A Studio PC client holds `BUDGET` in all. Chunks within
-		-- `Near` of the car are whole, the rest drawn at `Far`'s detail (T-263). Every pair of
-		-- "Road ahead" and "Road behind" steps (chunk-aligned: up to a chunk more each way) must
-		-- fit beside the most ground tiles that pair draws on Ultra (its own, plus the steps'
-		-- `GroundTiles`, never past `CorridorMost` more)
-		local BUDGET, GROWABLE = 81000, 10400 -- triangles (measured, T-225 and T-230)
+		-- THE WINDOW AND THE BUDGET (T-230, T-263, T-273): every chunk is a fixed-size copy, so a
+		-- chunk costs its own triangles. Chunks within `Near` of the car are whole, the rest drawn
+		-- at `Far`'s detail (T-263). EVERY MESH USER shares the client's mesh memory
+		-- (`Mesh.Budget`, in tiles of 128 triangles), EditableImages too: the ground's tiles and
+		-- its master, the road's chunks and the one growable mesh it builds in, the drift marks,
+		-- the vista's arc, the road's texture. T-273: the vista's arc was kept growable (80 tiles)
+		-- and nothing here counted it, the marks or the texture, so at the defaults the road ran
+		-- out and let every chunk behind the car go.
+		local MB = M.Budget
 		local G = Config.Spline.Ground
 		local tileTris = G.TileCells * G.TileCells * 2
 		-- (as the game draws them, whoever draws the runoff: the chunks above draw it
-		-- themselves for the checks that read it, which costs more than the game pays)
+		-- themselves for the checks that read it, which costs more than the game pays). The
+		-- first chunks of this road, and every chunk with a grove, whole and far
 		local F = M.Far
-		local wholeTris, farTris, sampled = 0, 0, 0
-		for i = 0, math.min(chunks, 8) - 1 do
+		local wholeTris, farTris, sampled, heaviest, heaviestFar = 0, 0, 0, 0, 0
+		local groveWhole, groveFar, groves = 0, 0, 0
+		for i = 0, chunks - 1 do
 			local s0, s1 = i * L, math.min((i + 1) * L, spline.length)
-			local whole, wi = SplineMesh.build(spline, s0, s1, folder, {})
-			local far, fi = SplineMesh.build(spline, s0, s1, folder, { tolerance = F.Tolerance, maxStep = F.MaxStep, across = F.Across })
-			if whole and far then
-				wholeTris += wi.triangles
-				farTris += fi.triangles
-				sampled += 1
+			local hasGrove = models[i] ~= nil and (models[i]:GetAttribute("Trees") or 0) > 0
+			if i < 8 or hasGrove then
+				local whole, wi = SplineMesh.build(spline, s0, s1, folder, {})
+				local far, fi = SplineMesh.build(spline, s0, s1, folder, { tolerance = F.Tolerance, maxStep = F.MaxStep, across = F.Across, leanTrees = F.LeanTrees })
+				if whole and far then
+					if i < 8 then
+						wholeTris += wi.triangles
+						farTris += fi.triangles
+						sampled += 1
+					end
+					if hasGrove then
+						groveWhole += wi.triangles
+						groveFar += fi.triangles
+						groves += 1
+					end
+					heaviest = math.max(heaviest, wi.triangles)
+					heaviestFar = math.max(heaviestFar, fi.triangles)
+				end
+				if whole then
+					SplineMesh.destroy(whole)
+				end
+				if far then
+					SplineMesh.destroy(far)
+				end
+				task.wait()
 			end
-			if whole then
-				SplineMesh.destroy(whole)
-			end
-			if far then
-				SplineMesh.destroy(far)
-			end
-			task.wait()
 		end
 		local mean = wholeTris / math.max(1, sampled)
 		local farMean = farTris / math.max(1, sampled)
 		check("a far chunk costs much less than a whole one", sampled > 0 and farMean < mean * 0.6, `far {math.floor(farMean)} triangles, whole {math.floor(mean)}, over {sampled} chunks`)
-		local nearChunks = math.ceil((M.Near.Ahead + M.Near.Behind) / L) + 1
+		check(
+			"a far chunk's trees are lean: a grove chunk far costs well under half of it whole",
+			groves == 0 or groveFar < groveWhole * 0.5,
+			`{groves} grove chunks: whole {math.floor(groveWhole / math.max(1, groves))} triangles, far {math.floor(groveFar / math.max(1, groves))} on average`
+		)
+		-- THE ESTIMATES THE GROUND'S ROOM IS WORKED OUT FROM (`SplineMesh.groundRoom`) hold what
+		-- is built: a chunk whole and far (on average, and the grove chunks with them), the
+		-- marks' ribbons and textures, the vista's arc. (`Growable` and `Image1024` are measured
+		-- in a client: a server has no mesh budget to fill)
+		local StarterPlayerScripts = game:GetService("StarterPlayer"):WaitForChild("StarterPlayerScripts")
+		local GroundMarks = require(StarterPlayerScripts.Drift.GroundMarks)
+		local Vista = require(ReplicatedStorage.Shared.Vista)
+		local marks = 0
+		for _, spec in { GroundMarks.grassSpec(), GroundMarks.rubberSpec() } do
+			local gm = GroundMarks.new(spec)
+			local tex = spec.ribbon.Texture
+			marks += GroundMarks.meshTriangles(gm) / tileTris + tex.Width * tex.Height / (1024 * 1024) * MB.Image1024
+		end
+		local vista = 0
+		if Config.Vista.Enabled and Config.Vista.Mesh.Build then
+			vista = #Vista.arcGeometry(Config.Vista.Mesh).triangles / tileTris
+		end
+		-- (a road of this seed's mix: a grove one chunk in every few)
+		local allWhole = (wholeTris + groveWhole) / math.max(1, sampled + groves)
+		local allFar = (farTris + groveFar) / math.max(1, sampled + groves)
+		check(
+			"the mesh budget's estimates hold what is built",
+			allWhole / tileTris <= MB.WholeChunk and allFar / tileTris <= MB.FarChunk and marks <= MB.Marks and vista <= MB.Vista,
+			`a whole chunk {fmt(allWhole / tileTris, 1)} tiles (allowed {MB.WholeChunk}), far {fmt(allFar / tileTris, 1)} ({MB.FarChunk}), with groves weighted in; the marks {fmt(marks, 1)} ({MB.Marks}); the vista's arc {fmt(vista, 2)} ({MB.Vista})`
+		)
+		check("a heavy chunk is a small share of the spare room", heaviest / tileTris <= MB.Spare, `heaviest whole chunk {heaviest} triangles ({fmt(heaviest / tileTris, 1)} tiles), far {heaviestFar}; spare {MB.Spare}`)
+		-- (a) THE DEFAULTS: every mesh user fits with `Budget.Spare` over, and the ground keeps
+		-- at least its own Ground detail's tiles (what it gives up is corridor far along the road)
+		local others = SplineMesh.otherTiles()
 		local ultraTiles = G.Detail[#G.Detail].Tiles
-		local lines, worstShare, worstName = {}, 0, ""
+		local function groundTiles(detail: any, a: any, b: any): number
+			local wanted = math.max(detail.Tiles, math.min(detail.Tiles + a.GroundTiles + b.GroundTiles, ultraTiles + G.CorridorMost))
+			return math.max(G.YieldFloor, math.min(wanted, SplineMesh.groundRoom(a.Studs, b.Studs) - G.Spare)), wanted
+		end
+		local defaults = {
+			{ "PC", G.Detail[G.DetailDefault], M.Ahead[M.AheadDefault], M.Behind[M.BehindDefault] },
+			{ "touch", G.Detail[G.DetailTouchDefault], M.Ahead[M.AheadTouchDefault], M.Behind[M.BehindTouchDefault] },
+		}
+		local defOk, defLines = true, {}
+		for _, d in defaults do
+			local tiles, wanted = groundTiles(d[2], d[3], d[4])
+			local road, window, near = SplineMesh.roadTiles(d[3].Studs, d[4].Studs)
+			local total = tiles + G.Spare + road + others
+			defOk = defOk and total <= MB.Tiles - MB.Spare + 1e-6 and tiles >= d[2].Tiles
+			table.insert(defLines, `{d[1]} ({d[2].Name}, {d[3].Name} ahead, {d[4].Name} behind): {math.floor(total)} of {MB.Tiles} tiles = ground {tiles} shown (of {wanted} asked; its own {d[2].Tiles}) + {G.Spare} hidden + road {math.floor(road)} ({window} chunks, {near} whole) + the rest {math.floor(others)}`)
+		end
+		check("every mesh user fits the client's mesh memory at the default settings, the ground keeping its own detail", defOk, `{table.concat(defLines, "; ")}; spare kept {MB.Spare}`)
+		-- (b) ANY SETTINGS: the road's whole window fits beside the least ground there can be
+		-- (`YieldFloor`, `Drift/MeshBudget`), so no road near the car need ever go; and how many
+		-- tiles the ground keeps at each pair, on Ultra
+		local worst, worstName, lines = 0, "", {}
 		for _, a in M.Ahead do
 			for _, b in M.Behind do
-				local window = math.ceil((a.Studs + b.Studs) / L) + 1
-				local near = math.min(window, nearChunks)
-				local tiles = math.min(ultraTiles + a.GroundTiles + b.GroundTiles, ultraTiles + G.CorridorMost) + G.Spare
-				-- (and the whole chunk a rebuild replaces stays up until the new one is done)
-				local cost = near * mean + (window - near) * farMean + math.max(GROWABLE, mean) + mean + tiles * tileTris
-				if cost / BUDGET > worstShare then
-					worstShare, worstName = cost / BUDGET, `{a.Name} ahead, {b.Name} behind`
+				local floored = G.YieldFloor + G.Spare + (SplineMesh.roadTiles(a.Studs, b.Studs)) + others
+				if floored > worst then
+					worst, worstName = floored, `{a.Name} ahead, {b.Name} behind`
 				end
 				if a == M.Ahead[#M.Ahead] or b == M.Behind[#M.Behind] then
-					table.insert(lines, `{a.Name}/{b.Name}: {window} chunks ({near} whole), {math.floor(cost)}`)
+					local tiles, wanted = groundTiles(G.Detail[#G.Detail], a, b)
+					table.insert(lines, `{a.Name}/{b.Name} {tiles} of {wanted}`)
 				end
 			end
 		end
 		check(
-			"every Road ahead and behind pair fits the client's mesh budget on Ultra",
-			worstShare <= 1,
-			`worst {worstName}: {math.floor(worstShare * BUDGET)} of {BUDGET}; {table.concat(lines, "; ")}`
+			"at any Road ahead and behind, the road's whole window fits beside the least ground",
+			worst <= MB.Tiles,
+			`worst {worstName}: {math.floor(worst)} of {MB.Tiles} tiles with the ground at {G.YieldFloor + G.Spare}; the ground on Ultra: {table.concat(lines, "; ")}`
 		)
 		-- the same steps both ways, growing, and the defaults three times what they were
 		-- (Road ahead 1 600 and Road behind 1 300 before T-263's send-back)

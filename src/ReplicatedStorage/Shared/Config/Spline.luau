@@ -675,7 +675,9 @@ local Spline = {
 		-- whole that falls behind past it is drawn again far. That is what lets 9 600 studs each
 		-- way fit the mesh budget (measured: whole chunks alone ran out at Longest ahead).
 		Near = { Ahead = 1600, Behind = 480 }, -- studs
-		Far = { Tolerance = 1, MaxStep = 96, Across = 1 },
+		-- `LeanTrees` (T-273): a far chunk's grove trees have no trunk and no flat underside, the
+		-- same outline from 480 studs behind or 1 600 ahead at about half the mesh memory
+		Far = { Tolerance = 1, MaxStep = 96, Across = 1, LeanTrees = true },
 		FallbackStep = 4, -- studs between cross-sections when a device draws parts instead
 		-- THE CLIENT'S MESH MEMORY (T-273, features/ground-trial.md "The mesh budget"), in
 		-- TILES: what a fixed-size mesh of 128 triangles costs (one ground tile). Measured in a
@@ -688,9 +690,19 @@ local Spline = {
 			Growable = 80, -- a growable mesh, empty or a chunk's worth: the road's kept one
 			Image1024 = 32, -- a 1 024 x 1 024 EditableImage (`Road/RoadTexture`)
 			TileTriangles = 128,
-			-- the defaults must leave this much over, for a tight stretch's heavier chunks and
-			-- the moments a chunk or tile is replaced (old and new both held)
-			Spare = 40,
+			-- what the others hold, at most (`SplineMeshTests` checks each against what is
+			-- built): a whole road chunk, a far one (its trees lean, `Far.LeanTrees`), the drift
+			-- marks' two ribbons with their textures, the vista's arc
+			WholeChunk = 14,
+			FarChunk = 3,
+			Marks = 43,
+			Vista = 1,
+			-- left over, for a stretch heavier than those, and the moments a tile is replaced
+			-- (old and new both held). THE GROUND TAKES WHAT IS LEFT
+			-- (`SplineMesh.groundRoom`): never more tiles than the budget has room for beside
+			-- the road the player's settings draw, so the far ground is coarser before any road
+			-- runs out
+			Spare = 24,
 			-- OUT OF IT (`Drift/SplineRoadView`, `Drift/MeshBudget`): tiles asked of the others
 			-- at a time, tries before giving up on a chunk, and how long nothing already drawn is
 			-- redrawn after one gave up (shorter when the ground is merging tiles to make room)
