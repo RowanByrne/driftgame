@@ -11,9 +11,10 @@
 --
 -- WHAT IT READS, all from the drift model's state (`Drift/Model`): the wall the car met and
 -- which part of it met it (`wallKind`, `wallPoint`, `wallSide`, `wallInto`, `wallAlong`,
--- `wallNormal`), held for `WallContactGrace` as `wallTouch`, and `sinceWall`. A car leaning
--- on a rail meets it on some steps and not others, so contact is "met it within `Grace`",
--- never "met it this step".
+-- `wallNormal`), held for `WallContactGrace` as `wallTouch`, and `wallSteps`, the count of
+-- steps that met a wall, which says whether this frame's steps met one. A car leaning on a
+-- rail meets it on some steps and not others, so contact is "met it within `Grace`", never
+-- "met it this step".
 --
 -- A BUMPER, NOT A DOOR: the point on the rail must be one end's corner (`wallPoint` "front"
 -- or "rear"), and the car must sit at least `MinAngle` off the rail's line. A car square
@@ -86,6 +87,7 @@ function BumperGrind.new(sink: Sink, rig: any?)
 		live = 0, -- s the current event has run
 		info = nil :: { [string]: any }?,
 		lastPos = nil :: Vector3?,
+		lastSteps = nil :: number?,
 		times = table.create(HISTORY, 0),
 		speeds = table.create(HISTORY, 0),
 		head = 0,
@@ -161,8 +163,10 @@ function BumperGrind.Update(self: BumperGrind, dt: number, state: any)
 	end
 	self.lastPos = pos
 
-	-- what this frame met: a wall, during this frame's steps
-	local met = state.sinceWall <= dt + 1e-6
+	-- did this frame's steps meet a wall? The model counts the steps that did
+	local steps = state.wallSteps or 0
+	local met = if self.lastSteps then steps ~= self.lastSteps else state.sinceWall < dt
+	self.lastSteps = steps
 	local touching = state.wallTouch == true
 	local kindOk = T.Kinds[state.wallKind] == true
 	local bumper = state.wallPoint == "front" or state.wallPoint == "rear"

@@ -147,6 +147,8 @@ export type State = {
 	-- the model reads any of them. They describe the last step that met a wall and hold while
 	-- `wallTouch` does, then clear.
 	wallTouch: boolean, -- a wall met within `WallContactGrace`: contact as continuous
+	wallSteps: number, -- steps that have met a wall since the state was made: a counter, so a
+	-- reader once a frame can tell a frame that met one from a frame that did not
 	wallKind: string, -- "krail" | "rock" | "tree" | "closing" | "other"; "" when not touching
 	wallPoint: string, -- the part of the car on it: "front" or "rear" (one end's corner),
 	-- "middle", "side" (more than one point of one side: a door along it), or "" (unknown, a
@@ -297,6 +299,7 @@ function Model.new(spawnCFrame: CFrame): State
 		wallHit = false,
 		sinceWall = math.huge,
 		wallTouch = false,
+		wallSteps = 0,
 		wallKind = "",
 		wallPoint = "",
 		wallSide = "",
@@ -962,6 +965,7 @@ function Model.step(s: State, input: Input, dt: number, world: World): State
 	-- is held for `WallContactGrace` after the last step that met it, and the speed along it
 	-- is read off the car's travel every step meanwhile.
 	if metKind then
+		s.wallSteps += 1
 		s.wallKind = metKind
 		s.wallPoints = metPoints
 		s.wallPoint, s.wallSide = Model.wallPart(metPoints)

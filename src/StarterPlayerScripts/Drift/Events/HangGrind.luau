@@ -13,8 +13,9 @@
 --                            `DropBelow` under the edge it hung from, or it fell (`fell`),
 --                            or it was put back on the road
 --
--- A car that leaves the edge in the air is not decided until it comes down (`Settle`): the
--- event is held open, earning nothing, and banks or voids by where it lands.
+-- A car that leaves the edge in the air, or tips on over it on its floor, is not decided
+-- until it is back on its wheels (or `Settle` has passed): the event is held open, earning
+-- nothing, and banks or voids by where it ends up.
 --
 -- THE SIZE, 0 .. 1 each frame: how far out the car hangs (how much of its length is behind
 -- the rearmost point its floor rests on, `HangFull` of the body for the full share) and how
@@ -194,11 +195,11 @@ function HangGrind.Update(self: HangGrind, dt: number, state: any)
 			self.size = 0
 			if good then
 				self.phase = "live" -- caught on the edge again
-			elseif not state.airborne then
-				decide(self, state)
+			elseif not state.airborne and not state.hanging then
+				decide(self, state) -- back on its wheels: where?
 				return
 			elseif self.settling > T.Settle then
-				finish(self, false, "wentOver")
+				decide(self, state)
 				return
 			else
 				self.handle:update(0, dt)
@@ -206,7 +207,9 @@ function HangGrind.Update(self: HangGrind, dt: number, state: any)
 			end
 		end
 		if self.sinceGood > T.Grace then
-			if state.airborne then
+			-- in the air, or still on its floor (tipping on over the edge, both axles off):
+			-- not decided until it is back on its wheels
+			if state.airborne or state.hanging then
 				self.phase = "settling"
 				self.settling = 0
 				self.size = 0

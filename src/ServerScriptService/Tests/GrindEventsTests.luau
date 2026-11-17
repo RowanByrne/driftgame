@@ -115,6 +115,7 @@ local function railFrames(fps: number, seconds: number, detector, rec, script)
 		fell = false,
 		sinceWall = math.huge,
 		wallTouch = false,
+		wallSteps = 0,
 		wallKind = "",
 		wallPoint = "",
 		wallSide = "",
@@ -138,6 +139,7 @@ local function railFrames(fps: number, seconds: number, detector, rec, script)
 			state.position += state.velocity * step
 			if sc.every and sc.every > 0 and nStep % sc.every == 0 then
 				state.sinceWall = 0
+				state.wallSteps += 1
 				state.wallKind = sc.kind or "krail"
 				state.wallPoint = sc.point or "rear"
 				state.wallSide = "right"
@@ -862,10 +864,25 @@ function Tests.run(which, ...)
 				(kinds.krail or 0) > 0 and (points.rear or 0) > 0 and alongMax > 0,
 				`{hitSteps} contact steps of {steps}; kinds: {table.concat(kindRows, ", ")}; parts: {table.concat(pointRows, ", ")}; most into {fmt(intoMax, 1)} studs/s, most along {fmt(alongMax, 1)}`
 			)
+			-- A HELD CONTACT is one whose gaps are shorter than the grind's own grace: longer, the
+			-- car has come off the rail and come back. Of those gaps, how many the model's grace
+			-- bridges, so the contact reads as unbroken
+			local held, bridged = 0, 0
+			for _, g in gaps do
+				if g * D.FixedStep <= B.Grace then
+					held += 1
+					if (g - 1) * D.FixedStep <= D.WallContactGrace then
+						bridged += 1
+					end
+				end
+			end
+			local function pct(p)
+				return gaps[math.max(1, math.ceil(#gaps * p))] or 0
+			end
 			check(
 				`the grace ({D.WallContactGrace} s) reads a held contact as continuous`,
-				span > 0 and touchSteps / span > 0.9,
-				`between each drive's first and last contact, {touchSteps} of {span} steps read as touching ({fmt(100 * touchSteps / math.max(span, 1), 1)}%); gaps between contact steps: {#gaps}, 95% within {gap95} steps, the longest {gapMax} ({fmt(gapMax * D.FixedStep, 3)} s)`
+				held > 0 and bridged / held >= 0.95,
+				`{#gaps} gaps between contact steps, in steps of 1/120 s: half within {pct(0.5)}, 90% within {pct(0.9)}, 95% within {pct(0.95)}, 99% within {pct(0.99)}, the longest {gapMax}; of the {held} under the grind's grace ({B.Grace} s), {bridged} ({fmt(100 * bridged / math.max(held, 1), 1)}%) bridged; between each drive's first and last contact {fmt(100 * touchSteps / math.max(span, 1), 1)}% of steps read as touching (the rest is the car off the rail)`
 			)
 		end
 
