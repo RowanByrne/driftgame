@@ -12,7 +12,7 @@ return {
 		{
 			Type = "string",
 			Name = "what",
-			Description = "on, off, or a part to toggle: Far, CloudSea. Leave it out to toggle it all.",
+			Description = "on, off, or a part to toggle: Far, Middle, Near, CloudSea. Leave it out to toggle it all.",
 			Optional = true,
 		},
 	},
@@ -39,6 +39,6 @@ return {
 			view:SetShown(not shown, "CloudSea")
 			return if shown then "Cloud sea hidden." else "Cloud sea shown."
 		end
-		return `No part '{what}'. Try on, off, Far or CloudSea.`
+		return `No part '{what}'. Try on, off, Far, Middle, Near or CloudSea.`
 	end,
 }
