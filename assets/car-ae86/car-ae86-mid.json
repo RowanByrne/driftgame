@@ -1,0 +1,2282 @@
+{
+ "file": "car-ae86-mid.fbx",
+ "source": "art/source/car-ae86-fbx/AE86_mid.blend, by mid/export.py; pivots from pivots-ae86-mid.json",
+ "units": "studs",
+ "file_axes": "as for car-ae86.fbx: Studio's importer reads the file Y up, the car facing +Z with its left toward +X, the model's pivot the car's origin on the ground midway between the axles. Turned half a turn about Y it is the game's car frame (X = the car's right, -Z = forward)",
+ "axes": "everything below is in Blender's axes, as the pivots file is: X = the car's left, -Y = forward, Z = up; same origin",
+ "studs_per_metre": 4.01825,
+ "size": {
+  "length": 16.904,
+  "width": 7.714,
+  "height": 5.123,
+  "wheelbase": 9.6,
+  "track": 5.722,
+  "wheel_diameter": 2.5045
+ },
+ "built": "everything shut: doors, hood and hatch closed, glass up, pop-up lights folded down (PodL/PodR travel raises them)",
+ "triangles": 64533,
+ "surfaces": {
+  "Paint": {
+   "paint": "body",
+   "colour": [
+    0.965,
+    0.965,
+    0.965
+   ],
+   "material": "SmoothPlastic",
+   "reflectance": 0.12,
+   "transparency": 0.0,
+   "lamp": false,
+   "double_sided": false
+  },
+  "Second": {
+   "paint": "second",
+   "colour": [
+    0.067,
+    0.067,
+    0.071
+   ],
+   "material": "SmoothPlastic",
+   "reflectance": 0.0,
+   "transparency": 0.0,
+   "lamp": false,
+   "double_sided": false
+  },
+  "Rim": {
+   "paint": "rim",
+   "colour": [
+    0.102,
+    0.102,
+    0.11
+   ],
+   "material": "SmoothPlastic",
+   "reflectance": 0.0,
+   "transparency": 0.0,
+   "lamp": false,
+   "double_sided": false
+  },
+  "Tyre": {
+   "paint": "tyre",
+   "colour": [
+    0.086,
+    0.086,
+    0.094
+   ],
+   "material": "Rubber",
+   "reflectance": 0.0,
+   "transparency": 0.0,
+   "lamp": false,
+   "double_sided": false,
+   "textures": {
+    "normal": "Tyre_normal.png",
+    "roughness": "Tyre_roughness.png"
+   }
+  },
+  "Trim": {
+   "paint": "none",
+   "colour": [
+    0.067,
+    0.067,
+    0.075
+   ],
+   "material": "Plastic",
+   "reflectance": 0.0,
+   "transparency": 0.0,
+   "lamp": false,
+   "double_sided": false
+  },
+  "Rubber": {
+   "paint": "none",
+   "colour": [
+    0.118,
+    0.118,
+    0.125
+   ],
+   "material": "Rubber",
+   "reflectance": 0.0,
+   "transparency": 0.0,
+   "lamp": false,
+   "double_sided": false
+  },
+  "Seam": {
+   "paint": "none",
+   "colour": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "material": "Plastic",
+   "reflectance": 0.0,
+   "transparency": 0.0,
+   "lamp": false,
+   "double_sided": true
+  },
+  "Glass": {
+   "paint": "none",
+   "colour": [
+    0.149,
+    0.18,
+    0.22
+   ],
+   "material": "Glass",
+   "reflectance": 0.08,
+   "transparency": 0.4,
+   "lamp": false,
+   "double_sided": false
+  },
+  "Mirror": {
+   "paint": "none",
+   "colour": [
+    0.561,
+    0.612,
+    0.659
+   ],
+   "material": "SmoothPlastic",
+   "reflectance": 0.6,
+   "transparency": 0.0,
+   "lamp": false,
+   "double_sided": false
+  },
+  "LensHead": {
+   "paint": "none",
+   "colour": [
+    1.0,
+    0.925,
+    0.698
+   ],
+   "material": "SmoothPlastic",
+   "reflectance": 0.2,
+   "transparency": 0.0,
+   "lamp": true,
+   "double_sided": false
+  },
+  "LensAmber": {
+   "paint": "none",
+   "colour": [
+    0.953,
+    0.443,
+    0.086
+   ],
+   "material": "SmoothPlastic",
+   "reflectance": 0.05,
+   "transparency": 0.0,
+   "lamp": true,
+   "double_sided": false
+  },
+  "LensRed": {
+   "paint": "none",
+   "colour": [
+    0.69,
+    0.071,
+    0.086
+   ],
+   "material": "SmoothPlastic",
+   "reflectance": 0.05,
+   "transparency": 0.0,
+   "lamp": true,
+   "double_sided": false
+  },
+  "LensBrake": {
+   "paint": "none",
+   "colour": [
+    0.839,
+    0.11,
+    0.11
+   ],
+   "material": "SmoothPlastic",
+   "reflectance": 0.05,
+   "transparency": 0.0,
+   "lamp": true,
+   "double_sided": false
+  },
+  "LensClear": {
+   "paint": "none",
+   "colour": [
+    0.914,
+    0.918,
+    0.925
+   ],
+   "material": "SmoothPlastic",
+   "reflectance": 0.2,
+   "transparency": 0.0,
+   "lamp": true,
+   "double_sided": false
+  },
+  "Lining": {
+   "paint": "none",
+   "colour": [
+    0.275,
+    0.282,
+    0.294
+   ],
+   "material": "Plastic",
+   "reflectance": 0.0,
+   "transparency": 0.0,
+   "lamp": false,
+   "double_sided": false
+  },
+  "Panel": {
+   "paint": "none",
+   "colour": [
+    0.325,
+    0.329,
+    0.341
+   ],
+   "material": "Plastic",
+   "reflectance": 0.0,
+   "transparency": 0.0,
+   "lamp": false,
+   "double_sided": false
+  },
+  "Seat": {
+   "paint": "none",
+   "colour": [
+    0.314,
+    0.322,
+    0.337
+   ],
+   "material": "Fabric",
+   "reflectance": 0.0,
+   "transparency": 0.0,
+   "lamp": false,
+   "double_sided": false
+  },
+  "SeatAccent": {
+   "paint": "none",
+   "colour": [
+    0.373,
+    0.376,
+    0.388
+   ],
+   "material": "Fabric",
+   "reflectance": 0.0,
+   "transparency": 0.0,
+   "lamp": false,
+   "double_sided": false
+  },
+  "Disc": {
+   "paint": "none",
+   "colour": [
+    0.267,
+    0.267,
+    0.275
+   ],
+   "material": "Metal",
+   "reflectance": 0.1,
+   "transparency": 0.0,
+   "lamp": false,
+   "double_sided": false,
+   "textures": {
+    "colour": "Brake_Disc_color.jpg",
+    "roughness": "Brake_Disc_roughness.jpg",
+    "metalness": "Brake_Disc_metallic.jpg"
+   }
+  },
+  "Caliper": {
+   "paint": "none",
+   "colour": [
+    0.729,
+    0.729,
+    0.741
+   ],
+   "material": "SmoothPlastic",
+   "reflectance": 0.1,
+   "transparency": 0.0,
+   "lamp": false,
+   "double_sided": false,
+   "textures": {
+    "colour": "BrakeCaliper_color.jpg",
+    "normal": "BrakeCaliper_normal.jpg"
+   }
+  },
+  "Metal": {
+   "paint": "none",
+   "colour": [
+    0.729,
+    0.729,
+    0.741
+   ],
+   "material": "Metal",
+   "reflectance": 0.15,
+   "transparency": 0.0,
+   "lamp": false,
+   "double_sided": false
+  },
+  "Light": {
+   "paint": "none",
+   "colour": [
+    0.922,
+    0.922,
+    0.922
+   ],
+   "material": "SmoothPlastic",
+   "reflectance": 0.0,
+   "transparency": 0.0,
+   "lamp": false,
+   "double_sided": false
+  },
+  "Alloy": {
+   "paint": "none",
+   "colour": [
+    0.643,
+    0.651,
+    0.667
+   ],
+   "material": "Metal",
+   "reflectance": 0.05,
+   "transparency": 0.0,
+   "lamp": false,
+   "double_sided": false
+  },
+  "Iron": {
+   "paint": "none",
+   "colour": [
+    0.349,
+    0.349,
+    0.365
+   ],
+   "material": "Metal",
+   "reflectance": 0.0,
+   "transparency": 0.0,
+   "lamp": false,
+   "double_sided": false
+  },
+  "Rust": {
+   "paint": "none",
+   "colour": [
+    0.443,
+    0.357,
+    0.325
+   ],
+   "material": "CorrodedMetal",
+   "reflectance": 0.0,
+   "transparency": 0.0,
+   "lamp": false,
+   "double_sided": false
+  },
+  "Brass": {
+   "paint": "none",
+   "colour": [
+    0.847,
+    0.694,
+    0.349
+   ],
+   "material": "Metal",
+   "reflectance": 0.2,
+   "transparency": 0.0,
+   "lamp": false,
+   "double_sided": false
+  },
+  "Dial": {
+   "paint": "none",
+   "colour": [
+    0.216,
+    0.216,
+    0.231
+   ],
+   "material": "SmoothPlastic",
+   "reflectance": 0.0,
+   "transparency": 0.0,
+   "lamp": false,
+   "double_sided": false
+  },
+  "Needle": {
+   "paint": "none",
+   "colour": [
+    0.961,
+    0.961,
+    0.961
+   ],
+   "material": "SmoothPlastic",
+   "reflectance": 0.0,
+   "transparency": 0.0,
+   "lamp": false,
+   "double_sided": false
+  },
+  "AccentClear": {
+   "paint": "none",
+   "colour": [
+    0.914,
+    0.918,
+    0.925
+   ],
+   "material": "SmoothPlastic",
+   "reflectance": 0.0,
+   "transparency": 0.0,
+   "lamp": false,
+   "double_sided": false
+  },
+  "AccentCream": {
+   "paint": "none",
+   "colour": [
+    0.984,
+    0.933,
+    0.804
+   ],
+   "material": "SmoothPlastic",
+   "reflectance": 0.0,
+   "transparency": 0.0,
+   "lamp": false,
+   "double_sided": false
+  },
+  "AccentRed": {
+   "paint": "none",
+   "colour": [
+    0.859,
+    0.133,
+    0.133
+   ],
+   "material": "SmoothPlastic",
+   "reflectance": 0.0,
+   "transparency": 0.0,
+   "lamp": false,
+   "double_sided": false
+  },
+  "AccentYellow": {
+   "paint": "none",
+   "colour": [
+    0.976,
+    0.882,
+    0.255
+   ],
+   "material": "SmoothPlastic",
+   "reflectance": 0.0,
+   "transparency": 0.0,
+   "lamp": false,
+   "double_sided": false
+  },
+  "AccentBlue": {
+   "paint": "none",
+   "colour": [
+    0.349,
+    0.478,
+    0.694
+   ],
+   "material": "SmoothPlastic",
+   "reflectance": 0.0,
+   "transparency": 0.0,
+   "lamp": false,
+   "double_sided": false
+  }
+ },
+ "parts": {
+  "Hood": {
+   "origin": [
+    0.0,
+    -2.9014,
+    3.5357
+   ],
+   "axis": [
+    1.0,
+    0.0,
+    0.0
+   ],
+   "angle": -48.0,
+   "kind": "hinge"
+  },
+  "HoodProp": {
+   "origin": [
+    2.1899,
+    -4.8988,
+    3.153
+   ],
+   "axis": [
+    1.0,
+    0.0,
+    0.0
+   ],
+   "angle": -100.3,
+   "kind": "hinge",
+   "opens_with": "Hood"
+  },
+  "Hatch": {
+   "origin": [
+    0.0,
+    3.9482,
+    4.9248
+   ],
+   "axis": [
+    1.0,
+    0.0,
+    0.0
+   ],
+   "angle": 46.0,
+   "kind": "hinge"
+  },
+  "StrutRodL": {
+   "origin": [
+    2.1781,
+    4.6064,
+    4.5686
+   ],
+   "axis": [
+    1.0,
+    0.0,
+    0.0
+   ],
+   "angle": 0.0,
+   "kind": "aim",
+   "at": "StrutTubeL"
+  },
+  "StrutTubeL": {
+   "origin": [
+    2.3432,
+    5.5983,
+    4.1908
+   ],
+   "axis": [
+    1.0,
+    0.0,
+    0.0
+   ],
+   "angle": 0.0,
+   "kind": "aim",
+   "on": "Hatch",
+   "at": "StrutRodL"
+  },
+  "StrutRodR": {
+   "origin": [
+    -2.1781,
+    4.6064,
+    4.5686
+   ],
+   "axis": [
+    1.0,
+    0.0,
+    0.0
+   ],
+   "angle": 0.0,
+   "kind": "aim",
+   "at": "StrutTubeR"
+  },
+  "StrutTubeR": {
+   "origin": [
+    -2.3432,
+    5.5983,
+    4.1908
+   ],
+   "axis": [
+    1.0,
+    0.0,
+    0.0
+   ],
+   "angle": 0.0,
+   "kind": "aim",
+   "on": "Hatch",
+   "at": "StrutRodR"
+  },
+  "DoorL": {
+   "origin": [
+    3.1898,
+    -2.6195,
+    2.388
+   ],
+   "axis": [
+    0.0,
+    0.0,
+    1.0
+   ],
+   "angle": -62.0,
+   "kind": "hinge"
+  },
+  "DoorGlassL": {
+   "origin": [
+    -3.2548,
+    0.0383,
+    1.9862
+   ],
+   "axis": [
+    0.0,
+    1.0,
+    0.0
+   ],
+   "angle": 15.0,
+   "kind": "hinge",
+   "on": "DoorL"
+  },
+  "PodL": {
+   "origin": [
+    2.0869,
+    -6.9919,
+    2.9731
+   ],
+   "axis": [
+    1.0,
+    0.0,
+    0.0
+   ],
+   "angle": -63.25,
+   "kind": "hinge"
+  },
+  "DoorR": {
+   "origin": [
+    -3.1898,
+    -2.6195,
+    2.388
+   ],
+   "axis": [
+    0.0,
+    0.0,
+    1.0
+   ],
+   "angle": 62.0,
+   "kind": "hinge"
+  },
+  "DoorGlassR": {
+   "origin": [
+    3.2548,
+    0.0383,
+    1.9862
+   ],
+   "axis": [
+    0.0,
+    1.0,
+    0.0
+   ],
+   "angle": -15.0,
+   "kind": "hinge",
+   "on": "DoorR"
+  },
+  "PodR": {
+   "origin": [
+    -2.0869,
+    -6.9919,
+    2.9731
+   ],
+   "axis": [
+    1.0,
+    0.0,
+    0.0
+   ],
+   "angle": -63.25,
+   "kind": "hinge"
+  },
+  "WheelFL": {
+   "origin": [
+    2.861,
+    -4.8,
+    1.2517
+   ],
+   "axis": [
+    1.0,
+    0.0,
+    0.0
+   ],
+   "angle": 360.0,
+   "kind": "spin",
+   "steer": 30.0
+  },
+  "CaliperFL": {
+   "origin": [
+    2.861,
+    -4.8,
+    1.2517
+   ],
+   "axis": [
+    0.0,
+    0.0,
+    1.0
+   ],
+   "angle": 30.0,
+   "kind": "steer"
+  },
+  "WheelFR": {
+   "origin": [
+    -2.861,
+    -4.8,
+    1.2517
+   ],
+   "axis": [
+    1.0,
+    0.0,
+    0.0
+   ],
+   "angle": 360.0,
+   "kind": "spin",
+   "steer": 30.0
+  },
+  "CaliperFR": {
+   "origin": [
+    -2.861,
+    -4.8,
+    1.2517
+   ],
+   "axis": [
+    0.0,
+    0.0,
+    1.0
+   ],
+   "angle": 30.0,
+   "kind": "steer"
+  },
+  "WheelRL": {
+   "origin": [
+    2.861,
+    4.8,
+    1.2517
+   ],
+   "axis": [
+    1.0,
+    0.0,
+    0.0
+   ],
+   "angle": 360.0,
+   "kind": "spin"
+  },
+  "CaliperRL": {
+   "origin": [
+    2.861,
+    4.8,
+    1.2517
+   ],
+   "axis": [
+    0.0,
+    0.0,
+    1.0
+   ],
+   "angle": 0.0,
+   "kind": "fixed"
+  },
+  "WheelRR": {
+   "origin": [
+    -2.861,
+    4.8,
+    1.2517
+   ],
+   "axis": [
+    1.0,
+    0.0,
+    0.0
+   ],
+   "angle": 360.0,
+   "kind": "spin"
+  },
+  "CaliperRR": {
+   "origin": [
+    -2.861,
+    4.8,
+    1.2517
+   ],
+   "axis": [
+    0.0,
+    0.0,
+    1.0
+   ],
+   "angle": 0.0,
+   "kind": "fixed"
+  },
+  "EngineCrankPulley": {
+   "origin": [
+    0.0,
+    -6.9364,
+    1.4729
+   ],
+   "axis": [
+    0.0,
+    1.0,
+    0.0
+   ],
+   "angle": 360.0,
+   "kind": "hinge"
+  },
+  "EngineFan": {
+   "origin": [
+    -0.1891,
+    -7.0109,
+    1.9249
+   ],
+   "axis": [
+    0.0,
+    1.0,
+    0.0
+   ],
+   "angle": 360.0,
+   "kind": "hinge"
+  },
+  "EngineAlternatorPulley": {
+   "origin": [
+    -0.7248,
+    -6.9423,
+    1.5517
+   ],
+   "axis": [
+    0.0,
+    1.0,
+    0.0
+   ],
+   "angle": 360.0,
+   "kind": "hinge"
+  },
+  "SteeringWheel": {
+   "origin": [
+    -1.3075,
+    -1.2312,
+    2.9551
+   ],
+   "axis": [
+    0.0,
+    0.9272,
+    0.3746
+   ],
+   "angle": 90.0,
+   "kind": "hinge"
+  },
+  "NeedleSpeedo": {
+   "origin": [
+    -0.9558,
+    -1.7903,
+    3.0591
+   ],
+   "axis": [
+    0.0,
+    1.0,
+    0.0
+   ],
+   "angle": -240.0,
+   "kind": "hinge"
+  },
+  "NeedleTacho": {
+   "origin": [
+    -1.6591,
+    -1.7903,
+    3.0591
+   ],
+   "axis": [
+    0.0,
+    1.0,
+    0.0
+   ],
+   "angle": -240.0,
+   "kind": "hinge"
+  },
+  "NeedleFuel": {
+   "origin": [
+    -1.3075,
+    -1.7903,
+    3.107
+   ],
+   "axis": [
+    0.0,
+    1.0,
+    0.0
+   ],
+   "angle": -100.0,
+   "kind": "hinge"
+  },
+  "NeedleTemp": {
+   "origin": [
+    -1.3075,
+    -1.7903,
+    2.9241
+   ],
+   "axis": [
+    0.0,
+    1.0,
+    0.0
+   ],
+   "angle": -100.0,
+   "kind": "hinge"
+  },
+  "GearLever": {
+   "origin": [
+    0.0,
+    -1.1861,
+    1.8576
+   ],
+   "axis": [
+    1.0,
+    0.0,
+    0.0
+   ],
+   "angle": 14.0,
+   "kind": "hinge"
+  },
+  "Handbrake": {
+   "origin": [
+    0.0,
+    0.455,
+    1.727
+   ],
+   "axis": [
+    1.0,
+    0.0,
+    0.0
+   ],
+   "angle": -24.0,
+   "kind": "hinge"
+  },
+  "PedalAccel": {
+   "origin": [
+    -1.7764,
+    -3.1303,
+    1.9969
+   ],
+   "axis": [
+    1.0,
+    0.0,
+    0.0
+   ],
+   "angle": -12.0,
+   "kind": "hinge"
+  },
+  "PedalBrake": {
+   "origin": [
+    -1.3616,
+    -3.1303,
+    1.9969
+   ],
+   "axis": [
+    1.0,
+    0.0,
+    0.0
+   ],
+   "angle": -12.0,
+   "kind": "hinge"
+  },
+  "PedalClutch": {
+   "origin": [
+    -0.9107,
+    -3.1303,
+    1.9969
+   ],
+   "axis": [
+    1.0,
+    0.0,
+    0.0
+   ],
+   "angle": -12.0,
+   "kind": "hinge"
+  },
+  "WiperL": {
+   "origin": [
+    0.1288,
+    -3.2264,
+    3.296
+   ],
+   "axis": [
+    -0.0087,
+    -0.5082,
+    0.8612
+   ],
+   "angle": 78.0,
+   "kind": "hinge"
+  },
+  "WiperR": {
+   "origin": [
+    -2.4073,
+    -3.0291,
+    3.3073
+   ],
+   "axis": [
+    -0.0698,
+    -0.4843,
+    0.8721
+   ],
+   "angle": 78.0,
+   "kind": "hinge"
+  },
+  "HeadlightL": {
+   "kind": "light",
+   "lamp": "headlight",
+   "origin": [
+    2.0718,
+    -7.2022,
+    2.2016
+   ],
+   "on": "PodL"
+  },
+  "HeadlightR": {
+   "kind": "light",
+   "lamp": "headlight",
+   "origin": [
+    -2.0718,
+    -7.2022,
+    2.2016
+   ],
+   "on": "PodR"
+  },
+  "MarkerFrontL": {
+   "kind": "light",
+   "lamp": "side marker, orange",
+   "origin": [
+    2.8056,
+    -7.3784,
+    2.3826
+   ]
+  },
+  "MarkerFrontR": {
+   "kind": "light",
+   "lamp": "side marker, orange",
+   "origin": [
+    -2.8056,
+    -7.3784,
+    2.3826
+   ]
+  },
+  "IndicatorFrontL": {
+   "kind": "light",
+   "lamp": "turn signal, orange",
+   "origin": [
+    1.885,
+    -8.121,
+    1.9162
+   ]
+  },
+  "IndicatorFrontR": {
+   "kind": "light",
+   "lamp": "turn signal, orange",
+   "origin": [
+    -1.885,
+    -8.121,
+    1.9162
+   ]
+  },
+  "ParkLampL": {
+   "kind": "light",
+   "lamp": "parking lamp, clear",
+   "origin": [
+    2.2962,
+    -8.0765,
+    1.9175
+   ]
+  },
+  "ParkLampR": {
+   "kind": "light",
+   "lamp": "parking lamp, clear",
+   "origin": [
+    -2.2962,
+    -8.0765,
+    1.9175
+   ]
+  },
+  "TailLampL": {
+   "kind": "light",
+   "lamp": "tail and brake lamp, red: one lens",
+   "origin": [
+    1.8544,
+    8.281,
+    2.7384
+   ]
+  },
+  "TailLampR": {
+   "kind": "light",
+   "lamp": "tail and brake lamp, red: one lens",
+   "origin": [
+    -1.8544,
+    8.281,
+    2.7384
+   ]
+  },
+  "IndicatorRearL": {
+   "kind": "light",
+   "lamp": "turn signal, orange",
+   "origin": [
+    2.7485,
+    8.1227,
+    2.7396
+   ]
+  },
+  "IndicatorRearR": {
+   "kind": "light",
+   "lamp": "turn signal, orange",
+   "origin": [
+    -2.7485,
+    8.1227,
+    2.7396
+   ]
+  },
+  "WarnLamp1": {
+   "kind": "light",
+   "lamp": "warning light 1 of 6 under the dials, red",
+   "origin": [
+    -1.1046,
+    -1.7925,
+    2.8558
+   ]
+  },
+  "WarnLamp2": {
+   "kind": "light",
+   "lamp": "warning light 2 of 6 under the dials, red",
+   "origin": [
+    -1.1857,
+    -1.7925,
+    2.8558
+   ]
+  },
+  "WarnLamp3": {
+   "kind": "light",
+   "lamp": "warning light 3 of 6 under the dials, orange",
+   "origin": [
+    -1.2669,
+    -1.7925,
+    2.8558
+   ]
+  },
+  "WarnLamp4": {
+   "kind": "light",
+   "lamp": "warning light 4 of 6 under the dials, orange",
+   "origin": [
+    -1.3481,
+    -1.7925,
+    2.8558
+   ]
+  },
+  "WarnLamp5": {
+   "kind": "light",
+   "lamp": "warning light 5 of 6 under the dials, orange",
+   "origin": [
+    -1.4292,
+    -1.7925,
+    2.8558
+   ]
+  },
+  "WarnLamp6": {
+   "kind": "light",
+   "lamp": "warning light 6 of 6 under the dials, red",
+   "origin": [
+    -1.5104,
+    -1.7925,
+    2.8558
+   ]
+  }
+ },
+ "static_parts": {
+  "Body": [
+   "Cabin_Walls",
+   "Cowl",
+   "Cowl_Back",
+   "DoorJamb_L",
+   "DoorJamb_L_Back",
+   "DoorJamb_R",
+   "DoorJamb_R_Back",
+   "Fender_L",
+   "Fender_L_Back",
+   "Fender_R",
+   "Fender_R_Back",
+   "HatchSide",
+   "HatchSill",
+   "LampCornerHousing_L",
+   "LampCornerHousing_R",
+   "LampTailHousing_L",
+   "LampTailHousing_R",
+   "Liner",
+   "MudFlap_L",
+   "MudFlap_R",
+   "PillarSkin_L",
+   "PillarSkin_L_In",
+   "PillarSkin_R",
+   "PillarSkin_R_In",
+   "Seams",
+   "Shell",
+   "Shell_Inside",
+   "Sill_L",
+   "Sill_R",
+   "TailTrimMid",
+   "TailTrim_L",
+   "TailTrim_R",
+   "WellInner_L",
+   "WellInner_R",
+   "WellOuter_L",
+   "WellOuter_R",
+   "WindowTrim_L",
+   "WindowTrim_R",
+   "WindscreenFrame"
+  ],
+  "BumperFront": [
+   "BumperF",
+   "Grille",
+   "NoseTrim",
+   "Shadow_Front",
+   "Shadow_Front_Back"
+  ],
+  "BumperRear": [
+   "BumperR"
+  ],
+  "Cabin": [
+   "Int_Cabin"
+  ],
+  "Engine": [
+   "Engine_Accessories",
+   "Engine_Belt",
+   "Engine_Block",
+   "Engine_Exhaust",
+   "Engine_Head",
+   "Engine_Ignition",
+   "Engine_Intake",
+   "Engine_TimingCovers"
+  ],
+  "EngineBay": [
+   "BayParts",
+   "EngineBay",
+   "EngineBay_Back",
+   "HoodPropFoot"
+  ],
+  "Underside": [
+   "Exhaust",
+   "FuelTank"
+  ],
+  "Windows": [
+   "QuarterGlass_L",
+   "QuarterGlass_R",
+   "Windscreen"
+  ]
+ },
+ "pieces": [
+  {
+   "name": "Body_Lining",
+   "part": "Body",
+   "surface": "Lining",
+   "triangles": 2026,
+   "textured": false
+  },
+  {
+   "name": "Body_Paint",
+   "part": "Body",
+   "surface": "Paint",
+   "triangles": 3552,
+   "textured": false
+  },
+  {
+   "name": "Body_Seam",
+   "part": "Body",
+   "surface": "Seam",
+   "triangles": 1142,
+   "textured": false
+  },
+  {
+   "name": "Body_Second",
+   "part": "Body",
+   "surface": "Second",
+   "triangles": 1854,
+   "textured": false
+  },
+  {
+   "name": "Body_Trim",
+   "part": "Body",
+   "surface": "Trim",
+   "triangles": 2038,
+   "textured": false
+  },
+  {
+   "name": "BumperFront_Paint",
+   "part": "BumperFront",
+   "surface": "Paint",
+   "triangles": 68,
+   "textured": false
+  },
+  {
+   "name": "BumperFront_Trim",
+   "part": "BumperFront",
+   "surface": "Trim",
+   "triangles": 1927,
+   "textured": false
+  },
+  {
+   "name": "BumperRear_Paint",
+   "part": "BumperRear",
+   "surface": "Paint",
+   "triangles": 524,
+   "textured": false
+  },
+  {
+   "name": "BumperRear_Trim",
+   "part": "BumperRear",
+   "surface": "Trim",
+   "triangles": 1406,
+   "textured": false
+  },
+  {
+   "name": "Cabin_AccentBlue",
+   "part": "Cabin",
+   "surface": "AccentBlue",
+   "triangles": 12,
+   "textured": false
+  },
+  {
+   "name": "Cabin_AccentRed",
+   "part": "Cabin",
+   "surface": "AccentRed",
+   "triangles": 142,
+   "textured": false
+  },
+  {
+   "name": "Cabin_Dial",
+   "part": "Cabin",
+   "surface": "Dial",
+   "triangles": 8,
+   "textured": false
+  },
+  {
+   "name": "Cabin_Light",
+   "part": "Cabin",
+   "surface": "Light",
+   "triangles": 92,
+   "textured": false
+  },
+  {
+   "name": "Cabin_Lining",
+   "part": "Cabin",
+   "surface": "Lining",
+   "triangles": 932,
+   "textured": false
+  },
+  {
+   "name": "Cabin_Metal",
+   "part": "Cabin",
+   "surface": "Metal",
+   "triangles": 184,
+   "textured": false
+  },
+  {
+   "name": "Cabin_Mirror",
+   "part": "Cabin",
+   "surface": "Mirror",
+   "triangles": 2,
+   "textured": false
+  },
+  {
+   "name": "Cabin_Paint",
+   "part": "Cabin",
+   "surface": "Paint",
+   "triangles": 26,
+   "textured": false
+  },
+  {
+   "name": "Cabin_Panel",
+   "part": "Cabin",
+   "surface": "Panel",
+   "triangles": 72,
+   "textured": false
+  },
+  {
+   "name": "Cabin_Seat",
+   "part": "Cabin",
+   "surface": "Seat",
+   "triangles": 264,
+   "textured": false
+  },
+  {
+   "name": "Cabin_SeatAccent",
+   "part": "Cabin",
+   "surface": "SeatAccent",
+   "triangles": 72,
+   "textured": false
+  },
+  {
+   "name": "Cabin_Trim",
+   "part": "Cabin",
+   "surface": "Trim",
+   "triangles": 894,
+   "textured": false
+  },
+  {
+   "name": "CaliperFL_Caliper",
+   "part": "CaliperFL",
+   "surface": "Caliper",
+   "triangles": 822,
+   "textured": true
+  },
+  {
+   "name": "CaliperFR_Caliper",
+   "part": "CaliperFR",
+   "surface": "Caliper",
+   "triangles": 822,
+   "textured": true
+  },
+  {
+   "name": "CaliperRL_Caliper",
+   "part": "CaliperRL",
+   "surface": "Caliper",
+   "triangles": 822,
+   "textured": true
+  },
+  {
+   "name": "CaliperRR_Caliper",
+   "part": "CaliperRR",
+   "surface": "Caliper",
+   "triangles": 822,
+   "textured": true
+  },
+  {
+   "name": "DoorGlassL_Glass",
+   "part": "DoorGlassL",
+   "surface": "Glass",
+   "triangles": 308,
+   "textured": false
+  },
+  {
+   "name": "DoorGlassR_Glass",
+   "part": "DoorGlassR",
+   "surface": "Glass",
+   "triangles": 308,
+   "textured": false
+  },
+  {
+   "name": "DoorL_Lining",
+   "part": "DoorL",
+   "surface": "Lining",
+   "triangles": 115,
+   "textured": false
+  },
+  {
+   "name": "DoorL_Metal",
+   "part": "DoorL",
+   "surface": "Metal",
+   "triangles": 24,
+   "textured": false
+  },
+  {
+   "name": "DoorL_Paint",
+   "part": "DoorL",
+   "surface": "Paint",
+   "triangles": 576,
+   "textured": false
+  },
+  {
+   "name": "DoorL_Panel",
+   "part": "DoorL",
+   "surface": "Panel",
+   "triangles": 10,
+   "textured": false
+  },
+  {
+   "name": "DoorL_Second",
+   "part": "DoorL",
+   "surface": "Second",
+   "triangles": 68,
+   "textured": false
+  },
+  {
+   "name": "DoorL_Trim",
+   "part": "DoorL",
+   "surface": "Trim",
+   "triangles": 695,
+   "textured": false
+  },
+  {
+   "name": "DoorR_Lining",
+   "part": "DoorR",
+   "surface": "Lining",
+   "triangles": 115,
+   "textured": false
+  },
+  {
+   "name": "DoorR_Metal",
+   "part": "DoorR",
+   "surface": "Metal",
+   "triangles": 24,
+   "textured": false
+  },
+  {
+   "name": "DoorR_Paint",
+   "part": "DoorR",
+   "surface": "Paint",
+   "triangles": 576,
+   "textured": false
+  },
+  {
+   "name": "DoorR_Panel",
+   "part": "DoorR",
+   "surface": "Panel",
+   "triangles": 10,
+   "textured": false
+  },
+  {
+   "name": "DoorR_Second",
+   "part": "DoorR",
+   "surface": "Second",
+   "triangles": 68,
+   "textured": false
+  },
+  {
+   "name": "DoorR_Trim",
+   "part": "DoorR",
+   "surface": "Trim",
+   "triangles": 695,
+   "textured": false
+  },
+  {
+   "name": "Engine_Alloy",
+   "part": "Engine",
+   "surface": "Alloy",
+   "triangles": 374,
+   "textured": false
+  },
+  {
+   "name": "Engine_Brass",
+   "part": "Engine",
+   "surface": "Brass",
+   "triangles": 12,
+   "textured": false
+  },
+  {
+   "name": "Engine_Iron",
+   "part": "Engine",
+   "surface": "Iron",
+   "triangles": 436,
+   "textured": false
+  },
+  {
+   "name": "Engine_Metal",
+   "part": "Engine",
+   "surface": "Metal",
+   "triangles": 934,
+   "textured": false
+  },
+  {
+   "name": "Engine_Panel",
+   "part": "Engine",
+   "surface": "Panel",
+   "triangles": 72,
+   "textured": false
+  },
+  {
+   "name": "Engine_Rubber",
+   "part": "Engine",
+   "surface": "Rubber",
+   "triangles": 790,
+   "textured": false
+  },
+  {
+   "name": "Engine_Rust",
+   "part": "Engine",
+   "surface": "Rust",
+   "triangles": 292,
+   "textured": false
+  },
+  {
+   "name": "Engine_Trim",
+   "part": "Engine",
+   "surface": "Trim",
+   "triangles": 522,
+   "textured": false
+  },
+  {
+   "name": "EngineAlternatorPulley_Iron",
+   "part": "EngineAlternatorPulley",
+   "surface": "Iron",
+   "triangles": 180,
+   "textured": false
+  },
+  {
+   "name": "EngineBay_AccentClear",
+   "part": "EngineBay",
+   "surface": "AccentClear",
+   "triangles": 12,
+   "textured": false
+  },
+  {
+   "name": "EngineBay_AccentCream",
+   "part": "EngineBay",
+   "surface": "AccentCream",
+   "triangles": 12,
+   "textured": false
+  },
+  {
+   "name": "EngineBay_AccentRed",
+   "part": "EngineBay",
+   "surface": "AccentRed",
+   "triangles": 12,
+   "textured": false
+  },
+  {
+   "name": "EngineBay_AccentYellow",
+   "part": "EngineBay",
+   "surface": "AccentYellow",
+   "triangles": 24,
+   "textured": false
+  },
+  {
+   "name": "EngineBay_Alloy",
+   "part": "EngineBay",
+   "surface": "Alloy",
+   "triangles": 192,
+   "textured": false
+  },
+  {
+   "name": "EngineBay_Brass",
+   "part": "EngineBay",
+   "surface": "Brass",
+   "triangles": 54,
+   "textured": false
+  },
+  {
+   "name": "EngineBay_Iron",
+   "part": "EngineBay",
+   "surface": "Iron",
+   "triangles": 344,
+   "textured": false
+  },
+  {
+   "name": "EngineBay_Light",
+   "part": "EngineBay",
+   "surface": "Light",
+   "triangles": 24,
+   "textured": false
+  },
+  {
+   "name": "EngineBay_Lining",
+   "part": "EngineBay",
+   "surface": "Lining",
+   "triangles": 382,
+   "textured": false
+  },
+  {
+   "name": "EngineBay_Metal",
+   "part": "EngineBay",
+   "surface": "Metal",
+   "triangles": 508,
+   "textured": false
+  },
+  {
+   "name": "EngineBay_Paint",
+   "part": "EngineBay",
+   "surface": "Paint",
+   "triangles": 212,
+   "textured": false
+  },
+  {
+   "name": "EngineBay_Rubber",
+   "part": "EngineBay",
+   "surface": "Rubber",
+   "triangles": 470,
+   "textured": false
+  },
+  {
+   "name": "EngineBay_Trim",
+   "part": "EngineBay",
+   "surface": "Trim",
+   "triangles": 606,
+   "textured": false
+  },
+  {
+   "name": "EngineCrankPulley_Iron",
+   "part": "EngineCrankPulley",
+   "surface": "Iron",
+   "triangles": 240,
+   "textured": false
+  },
+  {
+   "name": "EngineCrankPulley_Metal",
+   "part": "EngineCrankPulley",
+   "surface": "Metal",
+   "triangles": 20,
+   "textured": false
+  },
+  {
+   "name": "EngineFan_Alloy",
+   "part": "EngineFan",
+   "surface": "Alloy",
+   "triangles": 84,
+   "textured": false
+  },
+  {
+   "name": "EngineFan_Iron",
+   "part": "EngineFan",
+   "surface": "Iron",
+   "triangles": 160,
+   "textured": false
+  },
+  {
+   "name": "EngineFan_Light",
+   "part": "EngineFan",
+   "surface": "Light",
+   "triangles": 84,
+   "textured": false
+  },
+  {
+   "name": "EngineFan_Metal",
+   "part": "EngineFan",
+   "surface": "Metal",
+   "triangles": 80,
+   "textured": false
+  },
+  {
+   "name": "GearLever_Metal",
+   "part": "GearLever",
+   "surface": "Metal",
+   "triangles": 20,
+   "textured": false
+  },
+  {
+   "name": "GearLever_Trim",
+   "part": "GearLever",
+   "surface": "Trim",
+   "triangles": 48,
+   "textured": false
+  },
+  {
+   "name": "Handbrake_Metal",
+   "part": "Handbrake",
+   "surface": "Metal",
+   "triangles": 20,
+   "textured": false
+  },
+  {
+   "name": "Handbrake_Panel",
+   "part": "Handbrake",
+   "surface": "Panel",
+   "triangles": 12,
+   "textured": false
+  },
+  {
+   "name": "Handbrake_Trim",
+   "part": "Handbrake",
+   "surface": "Trim",
+   "triangles": 12,
+   "textured": false
+  },
+  {
+   "name": "Hatch_Glass",
+   "part": "Hatch",
+   "surface": "Glass",
+   "triangles": 284,
+   "textured": false
+  },
+  {
+   "name": "Hatch_Paint",
+   "part": "Hatch",
+   "surface": "Paint",
+   "triangles": 574,
+   "textured": false
+  },
+  {
+   "name": "Hatch_Seam",
+   "part": "Hatch",
+   "surface": "Seam",
+   "triangles": 376,
+   "textured": false
+  },
+  {
+   "name": "Hatch_Trim",
+   "part": "Hatch",
+   "surface": "Trim",
+   "triangles": 378,
+   "textured": false
+  },
+  {
+   "name": "HeadlightL_LensHead",
+   "part": "HeadlightL",
+   "surface": "LensHead",
+   "triangles": 10,
+   "textured": false
+  },
+  {
+   "name": "HeadlightR_LensHead",
+   "part": "HeadlightR",
+   "surface": "LensHead",
+   "triangles": 10,
+   "textured": false
+  },
+  {
+   "name": "Hood_Paint",
+   "part": "Hood",
+   "surface": "Paint",
+   "triangles": 726,
+   "textured": false
+  },
+  {
+   "name": "Hood_Trim",
+   "part": "Hood",
+   "surface": "Trim",
+   "triangles": 96,
+   "textured": false
+  },
+  {
+   "name": "HoodProp_Metal",
+   "part": "HoodProp",
+   "surface": "Metal",
+   "triangles": 12,
+   "textured": false
+  },
+  {
+   "name": "IndicatorFrontL_LensAmber",
+   "part": "IndicatorFrontL",
+   "surface": "LensAmber",
+   "triangles": 36,
+   "textured": false
+  },
+  {
+   "name": "IndicatorFrontR_LensAmber",
+   "part": "IndicatorFrontR",
+   "surface": "LensAmber",
+   "triangles": 36,
+   "textured": false
+  },
+  {
+   "name": "IndicatorRearL_LensAmber",
+   "part": "IndicatorRearL",
+   "surface": "LensAmber",
+   "triangles": 88,
+   "textured": false
+  },
+  {
+   "name": "IndicatorRearR_LensAmber",
+   "part": "IndicatorRearR",
+   "surface": "LensAmber",
+   "triangles": 88,
+   "textured": false
+  },
+  {
+   "name": "MarkerFrontL_LensAmber",
+   "part": "MarkerFrontL",
+   "surface": "LensAmber",
+   "triangles": 48,
+   "textured": false
+  },
+  {
+   "name": "MarkerFrontR_LensAmber",
+   "part": "MarkerFrontR",
+   "surface": "LensAmber",
+   "triangles": 48,
+   "textured": false
+  },
+  {
+   "name": "NeedleFuel_Needle",
+   "part": "NeedleFuel",
+   "surface": "Needle",
+   "triangles": 2,
+   "textured": false
+  },
+  {
+   "name": "NeedleFuel_Trim",
+   "part": "NeedleFuel",
+   "surface": "Trim",
+   "triangles": 24,
+   "textured": false
+  },
+  {
+   "name": "NeedleSpeedo_Needle",
+   "part": "NeedleSpeedo",
+   "surface": "Needle",
+   "triangles": 2,
+   "textured": false
+  },
+  {
+   "name": "NeedleSpeedo_Trim",
+   "part": "NeedleSpeedo",
+   "surface": "Trim",
+   "triangles": 24,
+   "textured": false
+  },
+  {
+   "name": "NeedleTacho_Needle",
+   "part": "NeedleTacho",
+   "surface": "Needle",
+   "triangles": 2,
+   "textured": false
+  },
+  {
+   "name": "NeedleTacho_Trim",
+   "part": "NeedleTacho",
+   "surface": "Trim",
+   "triangles": 24,
+   "textured": false
+  },
+  {
+   "name": "NeedleTemp_Needle",
+   "part": "NeedleTemp",
+   "surface": "Needle",
+   "triangles": 2,
+   "textured": false
+  },
+  {
+   "name": "NeedleTemp_Trim",
+   "part": "NeedleTemp",
+   "surface": "Trim",
+   "triangles": 24,
+   "textured": false
+  },
+  {
+   "name": "ParkLampL_LensClear",
+   "part": "ParkLampL",
+   "surface": "LensClear",
+   "triangles": 34,
+   "textured": false
+  },
+  {
+   "name": "ParkLampR_LensClear",
+   "part": "ParkLampR",
+   "surface": "LensClear",
+   "triangles": 34,
+   "textured": false
+  },
+  {
+   "name": "PedalAccel_Metal",
+   "part": "PedalAccel",
+   "surface": "Metal",
+   "triangles": 12,
+   "textured": false
+  },
+  {
+   "name": "PedalAccel_Rubber",
+   "part": "PedalAccel",
+   "surface": "Rubber",
+   "triangles": 12,
+   "textured": false
+  },
+  {
+   "name": "PedalAccel_Trim",
+   "part": "PedalAccel",
+   "surface": "Trim",
+   "triangles": 6,
+   "textured": false
+  },
+  {
+   "name": "PedalBrake_Metal",
+   "part": "PedalBrake",
+   "surface": "Metal",
+   "triangles": 12,
+   "textured": false
+  },
+  {
+   "name": "PedalBrake_Rubber",
+   "part": "PedalBrake",
+   "surface": "Rubber",
+   "triangles": 12,
+   "textured": false
+  },
+  {
+   "name": "PedalBrake_Trim",
+   "part": "PedalBrake",
+   "surface": "Trim",
+   "triangles": 6,
+   "textured": false
+  },
+  {
+   "name": "PedalClutch_Metal",
+   "part": "PedalClutch",
+   "surface": "Metal",
+   "triangles": 12,
+   "textured": false
+  },
+  {
+   "name": "PedalClutch_Rubber",
+   "part": "PedalClutch",
+   "surface": "Rubber",
+   "triangles": 12,
+   "textured": false
+  },
+  {
+   "name": "PedalClutch_Trim",
+   "part": "PedalClutch",
+   "surface": "Trim",
+   "triangles": 6,
+   "textured": false
+  },
+  {
+   "name": "PodL_Paint",
+   "part": "PodL",
+   "surface": "Paint",
+   "triangles": 66,
+   "textured": false
+  },
+  {
+   "name": "PodL_Trim",
+   "part": "PodL",
+   "surface": "Trim",
+   "triangles": 126,
+   "textured": false
+  },
+  {
+   "name": "PodR_Paint",
+   "part": "PodR",
+   "surface": "Paint",
+   "triangles": 66,
+   "textured": false
+  },
+  {
+   "name": "PodR_Trim",
+   "part": "PodR",
+   "surface": "Trim",
+   "triangles": 126,
+   "textured": false
+  },
+  {
+   "name": "SteeringWheel_Trim",
+   "part": "SteeringWheel",
+   "surface": "Trim",
+   "triangles": 284,
+   "textured": false
+  },
+  {
+   "name": "StrutRodL_Metal",
+   "part": "StrutRodL",
+   "surface": "Metal",
+   "triangles": 40,
+   "textured": false
+  },
+  {
+   "name": "StrutRodR_Metal",
+   "part": "StrutRodR",
+   "surface": "Metal",
+   "triangles": 40,
+   "textured": false
+  },
+  {
+   "name": "StrutTubeL_Metal",
+   "part": "StrutTubeL",
+   "surface": "Metal",
+   "triangles": 20,
+   "textured": false
+  },
+  {
+   "name": "StrutTubeL_Trim",
+   "part": "StrutTubeL",
+   "surface": "Trim",
+   "triangles": 20,
+   "textured": false
+  },
+  {
+   "name": "StrutTubeR_Metal",
+   "part": "StrutTubeR",
+   "surface": "Metal",
+   "triangles": 20,
+   "textured": false
+  },
+  {
+   "name": "StrutTubeR_Trim",
+   "part": "StrutTubeR",
+   "surface": "Trim",
+   "triangles": 20,
+   "textured": false
+  },
+  {
+   "name": "TailLampL_LensRed",
+   "part": "TailLampL",
+   "surface": "LensRed",
+   "triangles": 68,
+   "textured": false
+  },
+  {
+   "name": "TailLampR_LensRed",
+   "part": "TailLampR",
+   "surface": "LensRed",
+   "triangles": 68,
+   "textured": false
+  },
+  {
+   "name": "Underside_Metal",
+   "part": "Underside",
+   "surface": "Metal",
+   "triangles": 504,
+   "textured": false
+  },
+  {
+   "name": "Underside_Trim",
+   "part": "Underside",
+   "surface": "Trim",
+   "triangles": 64,
+   "textured": false
+  },
+  {
+   "name": "WarnLamp1_LensBrake",
+   "part": "WarnLamp1",
+   "surface": "LensBrake",
+   "triangles": 12,
+   "textured": false
+  },
+  {
+   "name": "WarnLamp2_LensBrake",
+   "part": "WarnLamp2",
+   "surface": "LensBrake",
+   "triangles": 12,
+   "textured": false
+  },
+  {
+   "name": "WarnLamp3_LensAmber",
+   "part": "WarnLamp3",
+   "surface": "LensAmber",
+   "triangles": 12,
+   "textured": false
+  },
+  {
+   "name": "WarnLamp4_LensAmber",
+   "part": "WarnLamp4",
+   "surface": "LensAmber",
+   "triangles": 12,
+   "textured": false
+  },
+  {
+   "name": "WarnLamp5_LensAmber",
+   "part": "WarnLamp5",
+   "surface": "LensAmber",
+   "triangles": 12,
+   "textured": false
+  },
+  {
+   "name": "WarnLamp6_LensBrake",
+   "part": "WarnLamp6",
+   "surface": "LensBrake",
+   "triangles": 12,
+   "textured": false
+  },
+  {
+   "name": "WheelFL_Disc",
+   "part": "WheelFL",
+   "surface": "Disc",
+   "triangles": 584,
+   "textured": true
+  },
+  {
+   "name": "WheelFL_Rim",
+   "part": "WheelFL",
+   "surface": "Rim",
+   "triangles": 3660,
+   "textured": false
+  },
+  {
+   "name": "WheelFL_Tyre",
+   "part": "WheelFL",
+   "surface": "Tyre",
+   "triangles": 2508,
+   "textured": true
+  },
+  {
+   "name": "WheelFR_Disc",
+   "part": "WheelFR",
+   "surface": "Disc",
+   "triangles": 584,
+   "textured": true
+  },
+  {
+   "name": "WheelFR_Rim",
+   "part": "WheelFR",
+   "surface": "Rim",
+   "triangles": 3660,
+   "textured": false
+  },
+  {
+   "name": "WheelFR_Tyre",
+   "part": "WheelFR",
+   "surface": "Tyre",
+   "triangles": 2508,
+   "textured": true
+  },
+  {
+   "name": "WheelRL_Disc",
+   "part": "WheelRL",
+   "surface": "Disc",
+   "triangles": 584,
+   "textured": true
+  },
+  {
+   "name": "WheelRL_Rim",
+   "part": "WheelRL",
+   "surface": "Rim",
+   "triangles": 3660,
+   "textured": false
+  },
+  {
+   "name": "WheelRL_Tyre",
+   "part": "WheelRL",
+   "surface": "Tyre",
+   "triangles": 2508,
+   "textured": true
+  },
+  {
+   "name": "WheelRR_Disc",
+   "part": "WheelRR",
+   "surface": "Disc",
+   "triangles": 584,
+   "textured": true
+  },
+  {
+   "name": "WheelRR_Rim",
+   "part": "WheelRR",
+   "surface": "Rim",
+   "triangles": 3660,
+   "textured": false
+  },
+  {
+   "name": "WheelRR_Tyre",
+   "part": "WheelRR",
+   "surface": "Tyre",
+   "triangles": 2508,
+   "textured": true
+  },
+  {
+   "name": "Windows_Glass",
+   "part": "Windows",
+   "surface": "Glass",
+   "triangles": 1384,
+   "textured": false
+  },
+  {
+   "name": "WiperL_Trim",
+   "part": "WiperL",
+   "surface": "Trim",
+   "triangles": 50,
+   "textured": false
+  },
+  {
+   "name": "WiperR_Trim",
+   "part": "WiperR",
+   "surface": "Trim",
+   "triangles": 54,
+   "textured": false
+  }
+ ],
+ "points": {
+  "seat": [
+   -1.307,
+   0.184,
+   1.691
+  ],
+  "exit": [
+   -5.79,
+   1.28,
+   0.0
+  ],
+  "floor": {
+   "FloorFL": [
+    2.2,
+    -6.6,
+    0.66
+   ],
+   "FloorFC": [
+    -0.4,
+    -6.6,
+    0.66
+   ],
+   "FloorFR": [
+    -2.2,
+    -6.6,
+    0.66
+   ],
+   "FloorML": [
+    1.8,
+    -0.6,
+    0.642
+   ],
+   "FloorMC": [
+    -0.4,
+    -0.6,
+    0.637
+   ],
+   "FloorMR": [
+    -1.8,
+    -0.6,
+    0.642
+   ],
+   "FloorRL": [
+    2.6,
+    6.2,
+    0.645
+   ],
+   "FloorRC": [
+    -0.4,
+    6.2,
+    1.042
+   ],
+   "FloorRR": [
+    -2.6,
+    6.2,
+    0.645
+   ]
+  },
+  "note": "seat: top middle of the driver's cushion (right-hand drive). exit: on the road beside the driver's door, behind it when it is fully open; an estimate to check in Studio. floor: the lowest point of the underside over each of nine spots (F/M/R along the car, L/C/R across it)."
+ },
+ "wrap": "pieces whose surface is Paint or Second carry UVs: five plain views of the car on one square sheet, 24 studs across, as car-ae86.fbx's",
+ "textured": "the Tyre, Disc and Caliper pieces carry their own UVs and maps (surfaces[...].textures), embedded in the file"
+}

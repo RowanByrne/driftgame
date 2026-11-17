@@ -106,6 +106,14 @@ CarKits.Bodies = {
 		deck = Vector3.new(0.5, 0.58, 0.95),
 		cabin = { min = Vector3.new(0.13, 0.25, 0.36), max = Vector3.new(0.87, 0.9, 0.68) },
 	},
+	-- the restyled liftback, the default since T-287 (`Shared/Cars/Restyled`): its `Body`
+	-- group's box x ±3.39, y -1.84..2.72, z -8.25..8.66. The spoiler stands on the hatch's
+	-- bottom edge, y 0.66 at z 8.2; cabin from the dash (z -2.0) to behind the seats (3.6),
+	-- the floor (y -0.5) to the roof's underside (2.4), x ±2.63
+	restyled = {
+		deck = Vector3.new(0.5, 0.55, 0.97),
+		cabin = { min = Vector3.new(0.11, 0.29, 0.37), max = Vector3.new(0.89, 0.93, 0.70) },
+	},
 }
 CarKits.Bodies.Default = CarKits.Bodies.balanced
 

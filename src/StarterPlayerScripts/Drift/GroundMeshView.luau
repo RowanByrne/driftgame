@@ -1722,7 +1722,6 @@ function GroundMeshView._locate(self: View)
 end
 
 function GroundMeshView._want(self: View): GroundTiles.Want
-	local G = Config.Spline.Ground
 	local P = GroundDetail.preset(self.detail)
 	local road = {}
 	local along = self.along
@@ -1733,30 +1732,12 @@ function GroundMeshView._want(self: View): GroundTiles.Want
 		-- aligned as `Drift/SplineRoadView` draws it), so no coarse tile ever lies beside drawn
 		-- road; but past `Mesh.BehindSharp` (300) studs back it asks only for `RoadCoarsest`, so a longer
 		-- road behind costs the corridor's few coarse tiles, not the sharp ground ahead. Ahead,
-		-- to the player's "Road ahead" (T-263)
+		-- to the player's "Road ahead" (T-263). (`GroundTiles.roadPoints`, T-281, so the tests
+		-- ask for the same)
 		local first = spline.firstSample * spline.step
-		local near = Config.Spline.Mesh.BehindSharp
 		local s0 = math.max(first, RoadBehind.from(along))
 		local s1 = math.min(spline.length, along + RoadAhead.studs())
-		local s = s0
-		while s <= s1 do
-			local x, z = spline:planAt(s)
-			local w = if s < along - near
-				then G.RoadCoarsest
-				else math.min(G.Spacings[1] * math.max(1, math.abs(s - along) / P.Fine), G.RoadCoarsest)
-			-- far along the road, coarser still (T-263), and its points as far apart as that
-			-- allows (a tile's reach is `RoadRange` times its spacing)
-			local d = math.abs(s - along)
-			for _, step in G.RoadFar do
-				if d >= step.From then
-					w = math.max(w, step.Coarsest)
-				end
-			end
-			table.insert(road, x)
-			table.insert(road, z)
-			table.insert(road, w)
-			s += math.max(G.RoadStep, w * 2)
-		end
+		road = GroundTiles.roadPoints(spline, along, s0, s1, P.Fine)
 	end
 	local split: { [number]: boolean } = {}
 	for _, leaf in self.shown do
@@ -1774,6 +1755,7 @@ function GroundMeshView._want(self: View): GroundTiles.Want
 		ratio = P.Ratio,
 		reach = P.Reach,
 		split = split,
+		limit = GroundTiles.limit(), -- inside the painted vista (T-281)
 	}
 end
 
@@ -1792,6 +1774,37 @@ function GroundMeshView._desired(self: View): { [number]: Leaf }
 		self.pending = {}
 	end
 	return self.desired :: { [number]: Leaf }
+end
+
+-- A big split a step at a time: `root`'s children that hold wanted tiles, each one taken
+-- further down where it would reach past the ground's limit round where the wanted tiles
+-- were chosen (T-281), so no step ever shows a tile the vista would cut.
+function GroundMeshView._step(self: View, root: Leaf, desired: { [number]: Leaf }): { Leaf }
+	local limit = GroundTiles.limit()
+	local at = self.desiredAt or Vector3.new(self.carX, 0, self.carZ)
+	local out: { Leaf } = {}
+	local function walk(nd: Leaf)
+		for _, c in GroundTiles.children(nd) do
+			local holds = desired[c.key] ~= nil
+			if not holds then
+				for _, l in desired do
+					if GroundTiles.within(c, l) then
+						holds = true
+						break
+					end
+				end
+			end
+			if holds then
+				if not desired[c.key] and c.level > 1 and GroundTiles.farCorner(c.x0, c.z0, c.side, at.X, at.Z) > limit then
+					walk(c)
+				else
+					table.insert(out, c)
+				end
+			end
+		end
+	end
+	walk(root)
+	return out
 end
 
 -- Every place the shown tiles differ from the wanted ones, as one change each (the coarsest
@@ -1827,7 +1840,7 @@ function GroundMeshView._diff(self: View, desired: { [number]: Leaf }): { Op }
 		end
 		local kind = if #old == 0 then "fill" elseif #new == 0 then "drop" elseif shown[root.key] then "split" else "merge"
 		if kind == "split" and #new > G.Spare then
-			new = GroundTiles.children(root) -- a step at a time
+			new = self:_step(root, desired) -- a step at a time
 		end
 		table.insert(list, { kind = kind, old = old, new = new, region = { root } })
 	end
@@ -2931,6 +2944,27 @@ function GroundMeshView.DebugDrawnMatches(self: View, count: number?)
 		task.wait()
 	end
 	return out
+end
+
+-- The shown tile whose furthest corner is furthest from the flat point (x, z) (the camera),
+-- and how far; with the ground's limit from the car (T-281).
+function GroundMeshView.DebugFarthest(self: View, x: number, z: number)
+	local most, at = 0, nil
+	local count = 0
+	for _, l in self.shown do
+		count += 1
+		local d = GroundTiles.farCorner(l.x0, l.z0, l.side, x, z)
+		if d > most then
+			most, at = d, l
+		end
+	end
+	return {
+		farthest = most,
+		side = at and at.side,
+		shown = count,
+		limit = GroundTiles.limit(),
+		car = Vector3.new(self.carX, 0, self.carZ),
+	}
 end
 
 function GroundMeshView.DebugState(self: View)

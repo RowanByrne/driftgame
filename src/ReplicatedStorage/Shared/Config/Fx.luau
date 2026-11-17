@@ -624,11 +624,12 @@ return {
 			Uneven = { 0.7, 1.3 }, -- each side's share of the clod's size
 
 			Material = Enum.Material.Ground,
-			Colours = { -- the rut's soils (`Grass.TrenchMark`), lifted a shade to read in the air
-				Color3.fromRGB(104, 82, 54),
-				Color3.fromRGB(88, 66, 42),
-				Color3.fromRGB(120, 98, 66),
-				Color3.fromRGB(72, 54, 34),
+			Colours = { -- the rut's soils (`Grass.TrenchMark`), lifted to read in the air. MEASURED
+				-- (T-286): at 72..120 they read as black specks at night (DR-Lane3, sky held at night)
+				Color3.fromRGB(146, 116, 80),
+				Color3.fromRGB(128, 100, 68),
+				Color3.fromRGB(162, 134, 96),
+				Color3.fromRGB(112, 88, 58),
 			},
 			Size = { 0.22, 0.5 }, -- studs across, min and max; smaller than the cubes (0.4 to 0.9)
 			Speed = { 14, 26 },
