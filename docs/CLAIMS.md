@@ -10,7 +10,6 @@ Every task in progress and the files it owns, so parallel sessions and workers n
 | Branch | Lane | Files owned | Since |
 |---|---|---|---|
 | `agent/opaque-cap` (T-284) | borrowed | `src/ReplicatedStorage/Shared/Road/SplineMesh.luau`, `Shared/Road/GrassTexture.luau`, `Shared/Road/OpaqueBudget.luau` (new), `Shared/Config/Spline.luau` (its `Mesh` table only), `src/ServerScriptService/Tests/SplineMeshTests.luau` | 2026-11-17 |
-| `agent/ae86-mid` (T-287) | borrowed | `src/ReplicatedStorage/Shared/Cars/*`, `Shared/CarParts.luau`, `Shared/Config/CarKits.luau`, `Shared/Config/CarLooks.luau`, `Shared/Config/CarEntry.luau`, `src/StarterPlayerScripts/Controllers/HeadlightsController.luau`, `Drift/CarKits.luau`, `src/ServerScriptService/Tests/CarKitsTests.luau`, `Tests/BodyTests.luau`, `Tests/CarEntryTests.luau`, `assets/car-ae86/*`, `docs/game/features/car-model.md` | 2026-11-17 |
 
 ## Notes between sessions
 
