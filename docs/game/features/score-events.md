@@ -294,3 +294,9 @@ The interface above, exactly, in `Drift/ScoreEvents`; jump and wheel lift in `Dr
   - **Wheel lift is common:** 70 wheels up, 42 long enough to count (one every 7 s), 4 of them on two wheels, the longest 1.7 s. 26 earned points (13.2 s held in all, 80 points); 10 of those earned under a point, which is why a line now waits for `ShowPoints`, leaving 16 lines.
   - **Jump is rare:** 8 times all four wheels left the ground, 5 for 0.4 s or more (one a minute), the longest 1.29 s and the highest 11.9 studs. 2 scored (45 and 19 points); 3 earned nothing, sliding backwards or slow.
   - **The run:** 1,409 points, 145 of them (10%) from events; peak x3; the ceiling cut nothing.
+
+### No farming in place (T-301)
+
+- **Speed means ground really covered:** the engine's speed gate and per-stud points use the smaller of the velocity and how far the car truly moved since the last step (flat), so a car pressed against a rail or bouncing on the spot scores nothing.
+- **A held line past `MaxSeconds` within `SameSpot` studs of where it began scores nothing** when it restarts; each kind may set its own `SameSpot` and `SameSpotGap` (`jump.SameSpotGap` 0, `wheelLift.SameSpot` 8 and `SameSpotGap` 0).
+- **A jump needs to travel:** a flight counts only once it is `Detectors.Jump.MinTravel` (15) studs from take-off, and at most `MaxBounces` (1) bounce stays the same jump. Hopping in place for 30 s went from about 4 000 points to 0; the test kicker jump scores exactly as before.
