@@ -10,7 +10,6 @@ Every task in progress and the files it owns, so parallel sessions and workers n
 | Branch | Lane | Files owned | Since |
 |---|---|---|---|
 | `agent/fewer-redraws` (T-288) | borrowed | `src/StarterPlayerScripts/Drift/SplineRoadView.luau`, `Shared/Road/OpaqueBudget.luau`, `Shared/Road/RoadTexture.luau` (its opaque call only), `Drift/GroundMarks.luau` (its opaque call only), `Drift/GroundMeshView.luau` (its opaque call only), `Drift/VistaView.luau` (its opaque call only), `src/ServerScriptService/Tests/SplineMeshTests.luau` | 2026-11-17 |
-| `agent/smoke-order` (T-289) | borrowed | `src/ReplicatedStorage/Shared/Config/Fx.luau`, `src/StarterPlayerScripts/Drift/Wheels.luau`, `Drift/Debris.luau`, `Drift/GroundMarks.luau` (all but T-288's opaque call), `src/ServerScriptService/Tests/FxTests.luau`, `docs/game/features/tyre-particles.md`, `features/car-fx.md` | 2026-11-17 |
 
 ## Notes between sessions
 
