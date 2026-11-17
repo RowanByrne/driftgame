@@ -43,6 +43,7 @@ local Workspace = game:GetService("Workspace")
 local Config = require(ReplicatedStorage.Shared.Config)
 local Ground = require(ReplicatedStorage.Shared.Road.Ground)
 local GrassTexture = require(ReplicatedStorage.Shared.Road.GrassTexture)
+local RoadTexture = require(ReplicatedStorage.Shared.Road.RoadTexture)
 local GroundDetail = require(script.Parent.GroundDetail)
 local RoadAhead = require(script.Parent.RoadAhead)
 local RoadBehind = require(script.Parent.RoadBehind)
@@ -912,7 +913,10 @@ local function shadeFrom(spline: any, ctx: Ground.Context, p: { number }, x: num
 		local TT = Config.Spline.Terrain
 		local g = TT.GrassColour
 		local _, rs, rd = underAt(ctx, p[1], p[2])
-		if rs and rd and math.abs(rd) > Config.Road.Width * 0.5 and spline:gravelAt(rs, if rd < 0 then -1 else 1) then
+		-- (T-270: with the gravel textured, the road's mesh lays a gravel strip over a gravel
+		-- run's runoff; the ground under it stays grass, or its gravel colour smeared out a
+		-- whole cell across the grass beside it, 8 studs and more)
+		if rs and rd and math.abs(rd) > Config.Road.Width * 0.5 and spline:gravelAt(rs, if rd < 0 then -1 else 1) and not RoadTexture.gravelEnabled() then
 			colour = TT.GravelColour
 		else
 			local b = GrassTexture.blotch(p[1], p[2])
