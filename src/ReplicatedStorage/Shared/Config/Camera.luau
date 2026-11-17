@@ -330,14 +330,18 @@ local Camera = {
 	-- went up with it -- it shows the same road with the car out of its way.
 	-- DEGREES, a fixed angle, so nothing moves the aim but the guard below: the car rides a
 	-- little higher as the FOV opens with speed and a little lower below 120 studs/s
-	-- (measured below). THE ROLL IS APPLIED BEFORE IT, about the axis through the car:
-	-- rolled after it, the car swung sideways as the roll came and went
-	-- (`CarCameraController`, JitterTests).
+	-- (measured below). THE ROLL IS APPLIED BEFORE IT, about the axis through the car, so
+	-- the horizon banks about the car rather than swinging it sideways.
 	CamAimUp = 16.7, -- deg. OURS (T-291)
+	CamAimRate = 4, -- per second. OURS (T-291). How fast the aim follows what the guard
+	-- below allows: a 250 ms time constant. Followed raw, the guard handed
+	-- the frame-to-frame wobble of the camera and car straight to the
+	-- picture (JitterTests: 0.47 deg a frame at full lock, limit 0.1)
 	CamFrameBottom = 0.95, -- share of the screen's height, from the top. OURS (T-291). The
 	-- guard: the aim is capped so the car's lowest point never sits below
-	-- this. It bites at a standstill (52 deg FOV, the car big) and with
-	-- the wheel zoomed in; at the default zoom while driving, never
+	-- this. It bites at low speed (a standstill's 52 deg FOV makes the car
+	-- big) and with the wheel zoomed in; at the default zoom at 120
+	-- studs/s and up it does not
 	CamFrameCarRadius = 9, -- studs. OURS (T-291). How far below its middle the car's
 	-- lowest point is, as the guard sees it: a sphere's worth, where the
 	-- AE86's real box is closer to 6.7 at the default distance but its

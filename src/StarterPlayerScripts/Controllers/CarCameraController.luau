@@ -301,6 +301,7 @@ function CarCameraController._seed(rig, view: View)
 	rig.lastTarget = rig.restTarget
 	rig.lastCarPos = view.position
 	rig.fov = Cam.CamFovBase + Cam.CamFovPerSpeed * view.speed
+	rig.aim = math.rad(Cam.CamAimUp or 0) -- the framing (T-291), eased down by its guard from here
 	rig.accumulator = 0
 	rig.prevTarget = rig.target
 	rig.prevLookTarget = rig.lookTarget
@@ -736,10 +737,8 @@ function CarCameraController._advance(rig, view: View, dt: number, pan): CFrame
 	end
 	local cf = CFrame.lookAt(rig.position, rig.lookPoint)
 	-- THE ROLL GOES ON BEFORE THE FRAMING'S AIM (T-291), about the look axis that runs
-	-- through the car. The other way round it rolled about an axis 17 degrees above the
-	-- car, which swung the car sideways across the screen as the roll came and went:
-	-- JitterTests measured 0.37 degrees a frame of shimmer at full lock (limit 0.1), and
-	-- 0.09 in this order, which is the camera without the aim.
+	-- through the car, so the horizon banks about the car. The other way round it would
+	-- bank about a point 17 degrees above the car and swing the car sideways with it.
 	if rig.roll ~= 0 then
 		cf *= CFrame.Angles(0, 0, rig.roll)
 	end
@@ -752,21 +751,25 @@ function CarCameraController._advance(rig, view: View, dt: number, pan): CFrame
 	-- the car's lowest point -- `CamFrameCarRadius` studs below its middle, as seen from
 	-- here -- would cross `CamFrameBottom` of the screen. Never below level aim: the cap can
 	-- take the framing away, never push the car up past where the camera puts it alone.
-	rig.aim = 0
+	-- THE AIM IS EASED toward what the guard allows (`CamAimRate`), never set: the cap is
+	-- read off this frame's camera and car, and followed raw it handed their frame-to-frame
+	-- wobble straight to the picture -- JitterTests measured 0.47 degrees a frame of shimmer
+	-- at full lock, where the guard bites, against a 0.1 limit.
 	local aimUp = Cam.CamAimUp or 0
-	if aimUp ~= 0 then
+	if aimUp ~= 0 or rig.aim ~= 0 then
 		local tanHalf = math.tan(math.rad(rig.fov) * 0.5)
-		local aim = math.rad(aimUp)
+		local want = math.rad(aimUp)
 		local toCar = view.position - rig.position
 		local dist = toCar.Magnitude
-		if Cam.CamFrameBottom and dist > EPS then
+		if want > 0 and Cam.CamFrameBottom and dist > EPS then
 			local below = math.atan2(-toCar:Dot(cf.UpVector), toCar:Dot(cf.LookVector))
 			local reach = math.asin(math.clamp((Cam.CamFrameCarRadius or 0) / dist, 0, 1))
 			local room = math.atan((2 * Cam.CamFrameBottom - 1) * tanHalf) - below - reach
-			aim = math.min(aim, math.max(room, 0))
+			want = math.min(want, math.max(room, 0))
 		end
-		rig.aim = aim
-		cf *= CFrame.Angles(aim, 0, 0)
+		local rate = Cam.CamAimRate or 0
+		rig.aim = if rate > 0 then rig.aim + (want - rig.aim) * ease(dt, rate) else want
+		cf *= CFrame.Angles(rig.aim, 0, 0)
 	end
 	-- The shake's position is in the camera's OWN axes and is a rendered offset: it moves
 	-- the picture, never `rig.position`, so the next step's geometry is untouched.
