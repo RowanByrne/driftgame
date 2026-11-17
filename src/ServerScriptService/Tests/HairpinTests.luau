@@ -204,7 +204,7 @@ local function pilot(Sim, SplineWorld, spline, h, lane: number, v0: number, minB
 			bStar = -h.dir * math.rad(110)
 			swung = -s.slip * h.dir > math.rad(95)
 		end
-		local r = speed * kappa + 4 * (s.slip - bStar)
+		local r = speed * kappa + 8 * (s.slip - bStar) -- a firm hand on the slip: 4 lags a 4-wheel drift under its gate at the ends
 		input.steer = math.clamp(r / (D.MaxSteeringSpeed * D.SteeringSensitivity), -1, 1)
 		Sim.advance(runner, 1 / 60, input, world)
 		ph:Update(1 / 60, runner.state)
@@ -662,7 +662,7 @@ local function runAll(opts)
 						if way == "two" then
 							maxB = 28
 						elseif way == "four" then
-							minB = 35
+							minB = 40
 						end
 						local sink, ph, re, st = pilot(Sim, SplineWorld, spline, h, lane, 60, minB, maxB, way == "reverse")
 						local c = counts[way]
@@ -708,7 +708,7 @@ local function runAll(opts)
 		check(
 			"the autopilot completes perfect hairpins at both levels",
 			ph2 > 0 and ph4 > 0,
-			`plain drift: {counts.drift.ph2} at 2 wheels and {counts.drift.ph4} at 4 of {counts.drift.tries}; capped at 28 deg: {counts.two.ph2} + {counts.two.ph4} of {counts.two.tries}; held over 35 deg: {counts.four.ph2} + {counts.four.ph4} of {counts.four.tries}. Not completed: {table.concat(why, ", ")}`
+			`plain drift: {counts.drift.ph2} at 2 wheels and {counts.drift.ph4} at 4 of {counts.drift.tries}; capped at 28 deg: {counts.two.ph2} + {counts.two.ph4} of {counts.two.tries}; held over 40 deg: {counts.four.ph2} + {counts.four.ph4} of {counts.four.tries}. Not completed: {table.concat(why, ", ")}`
 		)
 		check("the scripted reverse entry completes sometimes", counts.reverse.re > 0, `{counts.reverse.re} of {counts.reverse.tries} scripted swings past 90 degrees carried through`)
 	end
