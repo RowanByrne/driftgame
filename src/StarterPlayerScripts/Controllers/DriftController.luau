@@ -170,6 +170,7 @@ function DriftController:Init()
 	-- Sparks and the scrape off the floor resting on something (T-097): looks only, read
 	-- off the model's floor contacts. Its spark parts sit in the camera, not in the car.
 	self.scrape = Scrape.new()
+	require(DriftFolder.PebbleSound).start(self) -- T-292: stones off the road; sets self.pebbleSound and drives itself
 	self._carSpawn = Net.event("CarSpawn")
 	self._carRespawn = Net.event("CarRespawn")
 	self._carState = Net.unreliable("CarState")
@@ -1324,6 +1325,7 @@ function DriftController:DebugSound()
 		engine = self.engineSound and self.engineSound:DebugState(state) or { attached = false },
 		skid = self.skidSound and self.skidSound:DebugState(state) or { attached = false },
 		suspension = self.suspensionSound and self.suspensionSound:DebugState() or { attached = false },
+		pebbles = self.pebbleSound and self.pebbleSound:DebugState(state) or { attached = false },
 	}
 end
 
