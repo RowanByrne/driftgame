@@ -184,6 +184,10 @@ export type GroundMarks = typeof(setmetatable(
 		recycled: number, -- live sections thrown away early to make room
 		lookups: number,
 		reorigins: number,
+		sortMoves: number, -- of those, moves to sort behind the smoke (T-289)
+		-- Where the camera is, for strips that must sort behind the smoke (T-289); nil sorts
+		-- nothing (the grass, which is opaque, and the tests unless they set it)
+		view: (() -> CFrame?)?,
 	},
 	GroundMarks
 ))
@@ -492,6 +496,8 @@ function GroundMarks.new(spec: Spec?): GroundMarks
 		recycled = 0,
 		lookups = 0,
 		reorigins = 0,
+		sortMoves = 0,
+		view = nil,
 	}, GroundMarks) :: any
 	-- The profile, mirrored: point 1 is the left edge, P the right edge.
 	local flat, rut = S.looks[1], S.looks[2]
@@ -813,13 +819,46 @@ local function point(self: GroundMarks, st: Strip, k: number, at: Vector3)
 	writeSection(self, st, k, nil)
 end
 
--- Put the strip's origin at `at` when a section would be too far from it, rewriting every
--- section where it was (they are kept in world space).
-local function reach(self: GroundMarks, st: Strip, at: Vector3)
-	local off = at - st.origin
-	if math.max(math.abs(off.X), math.abs(off.Y), math.abs(off.Z)) <= self.spec.ribbon.ReOrigin then
-		return
+-- WHERE A SEE-THROUGH STRIP SORTS (T-289). Roblox draws see-through things back to front a
+-- whole part at a time, by the part's centre, and a strip's centre is its ORIGIN, not its
+-- marks. The origin used to sit where the tyre was when it last moved, which is behind the car
+-- and so toward the chase camera: MEASURED (DR-Lane1, a drift), the rubber strips' origins
+-- were 15 to 18 studs from the camera while the smoke's emitters were 49, nearer in 37 per cent
+-- of frames, and every one of those frames drew the marks OVER the smoke (the user: "the tire
+-- trails render on top of the smoke"). So a strip with a `view` keeps its origin far out in
+-- front of the camera (`Ribbon.SortAhead`), and moves it on whenever it comes nearer than
+-- `Ribbon.SortMinDepth` (driving toward it, or the camera swinging round). Its marks, near the
+-- car, still lie well inside the box. Returns where to put the origin, or nil: no view, the
+-- origin is still deep enough (unless `force`), or the spot would not hold the tyre.
+local function sortSpot(self: GroundMarks, st: Strip, at: Vector3, force: boolean): Vector3?
+	local R = self.spec.ribbon
+	local view = self.view
+	if not view or not R.SortAhead then
+		return nil
 	end
+	local cf = view()
+	if not cf then
+		return nil
+	end
+	local look = cf.LookVector
+	if not force and (st.origin - cf.Position):Dot(look) >= R.SortMinDepth then
+		return nil
+	end
+	-- Straight down the view, not along the ground: then it is exactly `SortAhead` deep however
+	-- the camera is pitched. A spot along the ground is under `SortMinDepth` for a camera
+	-- looking down more than 60 degrees, and would move every frame (a first build did once:
+	-- 601 moves in 10 s in DR-Lane1, against about 1 a second in a normal drift)
+	local spot = cf.Position + look * R.SortAhead
+	local off = at - spot
+	if math.max(math.abs(off.X), math.abs(off.Y), math.abs(off.Z)) > R.ReOrigin then
+		return nil -- a camera far from the car (a menu, a photo): the old rule
+	end
+	return spot
+end
+
+-- Put the strip's origin at `at`, rewriting every section where it was (they are kept in world
+-- space).
+local function moveOrigin(self: GroundMarks, st: Strip, at: Vector3)
 	st.origin = at
 	for _, part in st.parts do
 		part.CFrame = CFrame.new(at)
@@ -846,6 +885,20 @@ local function reach(self: GroundMarks, st: Strip, at: Vector3)
 				em:SetPosition(st.vids[li][base + i], sec.pts[j] - at)
 			end
 		end
+	end
+end
+
+-- Move the strip's origin when a section would be too far from it, or when it would sort in
+-- front of the smoke (`sortSpot`).
+local function reach(self: GroundMarks, st: Strip, at: Vector3)
+	local off = at - st.origin
+	local far = math.max(math.abs(off.X), math.abs(off.Y), math.abs(off.Z)) > self.spec.ribbon.ReOrigin
+	local spot = sortSpot(self, st, at, far)
+	if spot then
+		self.sortMoves += 1
+		moveOrigin(self, st, spot)
+	elseif far then
+		moveOrigin(self, st, at)
 	end
 end
 
@@ -1078,6 +1131,15 @@ function GroundMarks.Age(self: GroundMarks, dt: number)
 	local AL = self.spec.ribbon.AgeLevels
 	local life = math.max(self.life, 1e-3)
 	for _, st in self.strips do
+		-- A strip no tyre is laying keeps sorting behind the smoke too (T-289): the camera
+		-- turns while the last mark fades.
+		if self.view and not st.on then
+			local spot = sortSpot(self, st, st.lastPos, false)
+			if spot then
+				self.sortMoves += 1
+				moveOrigin(self, st, spot)
+			end
+		end
 		for k = 1, self.N do
 			local sec = st.sections[k]
 			if sec.real and not (st.on and (k == st.tip or k == wrap(self, st.tip - 1) and st.first)) then
@@ -1213,6 +1275,7 @@ function GroundMarks.DebugState(self: GroundMarks)
 		recycled = self.recycled,
 		lookups = self.lookups,
 		reorigins = self.reorigins,
+		sortMoves = self.sortMoves,
 		life = self.life,
 		wheels = kinds,
 	}

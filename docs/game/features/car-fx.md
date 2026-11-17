@@ -953,6 +953,15 @@ fade sooner behind the car (2026-11-16):
   of the mesh memory; the strips themselves stay editable, rewritten every frame.
 - **Mesh memory:** the two ribbons hold 21.2 tiles (`Budget.Marks` 22), from 44.
 
+## The rubber sorts behind the smoke (`T-289`)
+
+The rubber strips are see-through, and Roblox sorts a see-through part by its centre: a strip's
+origin. That used to lag behind the car, toward the camera, so the marks drew over the smoke. Each
+strip now keeps its origin `Marks.Ribbon.SortAhead` (600) studs down the camera's view and moves it
+when it comes nearer than `SortMinDepth` (300). Only the rubber does this (`Wheels` gives it the
+camera); the grass ribbon is opaque. Measured, and the smoke's own `ZOffset` change with it, in
+`tyre-particles.md` "Smoke over the marks and the wheels".
+
 ## Suspension sounds (`T-223`, `T-252`)
 
 The user, 2026-11-15: *"also find some suspension clunking noises we can play when the wheels

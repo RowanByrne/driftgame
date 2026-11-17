@@ -77,6 +77,13 @@ return {
 			-- is about 90 studs of mark a wheel; a longer one loses its oldest end early. HALVED
 			-- (T-274, with `Seconds`: it was 64), for the client's mesh memory
 			ReOrigin = 800, -- studs a strip's origin may lag the tyre before it moves
+			-- WHERE THE RUBBER SORTS (T-289). Roblox sorts a see-through part by its centre, and
+			-- a strip's centre is its origin, so the origin is kept this far out in front of the
+			-- camera, down the view, well past any smoke: the marks draw first and the smoke over them.
+			-- It moves on when it comes nearer the camera than `SortMinDepth` along the view
+			-- (`Drift/GroundMarks` "sortSpot")
+			SortAhead = 600,
+			SortMinDepth = 300,
 			Spacing = 3, -- studs between cross-sections on a straight run...
 			MinSpacing = 0.4, -- ...and down to this through a bend, a new one whenever the path
 			TurnDegrees = 4, -- has turned this far since the last. So a curve is a curve
@@ -228,7 +235,14 @@ return {
 		Sheet = "Billows", -- was the built-in smoke_main.dds until T-279
 		Orientation = Enum.ParticleOrientation.FacingCameraWorldUp, -- turns only about world up,
 		-- so a puff painted lit from above stays lit from above
-		ZOffset = -0.5, -- drawn behind everything else a wheel throws
+		ZOffset = 1.0, -- studs toward the camera: the LOWEST of everything a wheel throws, so
+		-- the rest still draws in front of it, and every emitter keeps its order, all 1.5 up
+		-- from T-283's (T-289). ZOffset moves a particle's DEPTH, so it decides what opaque
+		-- geometry hides it: at -0.5 a puff born at the contact patch (1.0 stud off the tyre's
+		-- axis, inside its 1.25 radius) sat up to about a stud BEHIND the tyre's near face, and
+		-- the tyre cut a hard wheel-shaped hole in the cloud. At +1.0 it is in front of its own
+		-- tyre, and the road clips less of a puff's lower half too (the square-stepped bottom
+		-- edges). Each emitter's ZOffset is the same 1.5 above what T-283 approved
 		RateMin = 10, -- particles/s at the smallest slide that marks at all. MEASURED (T-283,
 		-- the user driving the billows: "increase the rate of spawning them a bit and lower the
 		-- size of them a bit"): was 8
@@ -263,7 +277,7 @@ return {
 	Stylized = {
 		Sheet = "Billows", -- the same sheet as the diffuse layer
 		Orientation = Enum.ParticleOrientation.FacingCameraWorldUp,
-		ZOffset = 0,
+		ZOffset = 1.5, -- in front of the diffuse layer (T-289: was 0, everything moved 1.5 up)
 		RateMin = 0, -- particles/s at zero heat. ZERO, so a wheel that has only just
 		-- stepped out shows nothing but the diffuse layer, and the stylized
 		-- one is visibly the thing that BUILDS
@@ -548,7 +562,7 @@ return {
 				Sheet = "GrassBits",
 				Orientation = Enum.ParticleOrientation.VelocityParallel,
 				Squash = 1.4, -- stretched along the flight, like the scrape's sparks
-				ZOffset = 0.3, -- in front of the smoke and the spray cloud
+				ZOffset = 1.8, -- in front of the smoke and the spray cloud (T-289: was 0.3)
 				Colour = Color3.fromRGB(200, 215, 170),
 				RateMin = 30, -- particles/s at the smallest slide that marks
 				RateMax = 90, -- at `FullSlipDegrees`; under the mobile cap of 100
@@ -571,7 +585,7 @@ return {
 			Spray = {
 				Sheet = "Billows",
 				Orientation = Enum.ParticleOrientation.FacingCameraWorldUp,
-				ZOffset = -0.2,
+				ZOffset = 1.3, -- T-289: was -0.2
 				Colour = Color3.fromRGB(150, 138, 104),
 				RateMin = 4,
 				RateMax = 20,
@@ -644,7 +658,7 @@ return {
 			Dust = {
 				Sheet = "Billows", -- tan billows (T-279; was the built-in smoke_main.dds)
 				Orientation = Enum.ParticleOrientation.FacingCameraWorldUp,
-				ZOffset = -0.3,
+				ZOffset = 1.2, -- T-289: was -0.3
 				Colour = Color3.fromRGB(176, 160, 132),
 				RateMin = 10,
 				RateMax = 45,
