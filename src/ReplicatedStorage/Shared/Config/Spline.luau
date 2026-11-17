@@ -293,8 +293,8 @@ local Spline = {
 		-- 32 tiles of its mesh memory, `Mesh.Budget`). "" paints it, as before. `ImageHash`: the
 		-- painted pixels' sum (`RoadTexture.pixelHash`); `SplineMeshTests` checks the painting
 		-- still makes it, so a change to anything it paints from is exported and uploaded again
-		Image = "rbxassetid://116617809550507", -- tarmac-v2.png (T-277)
-		ImageHash = 1346105968,
+		Image = "rbxassetid://83047839659045", -- tarmac-v3.png (T-285: no patch painted)
+		ImageHash = 385304080,
 		PeriodStuds = 120, -- studs along one copy (rounded to whole `MarkInterval`s; 240 before T-277)
 		PlainPx = 32, -- plain `Grass.Shade` columns each side, where the rest of the mesh samples
 		-- (a thirty-second of the width each side, as before: still a pixel at a 32-wide mip)
