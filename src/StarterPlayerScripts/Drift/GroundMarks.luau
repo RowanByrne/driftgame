@@ -1,7 +1,23 @@
 --!strict
--- GroundMarks: the grass and mud marks as a mesh ribbon laid on the ground, one per wheel
--- (T-265, features/car-fx.md "Ruts cut into the ground"). `Drift/Wheels` decides WHEN a wheel
--- marks grass and which look; this module draws it.
+-- GroundMarks: the car's marks as a mesh ribbon laid on the ground, one strip per wheel. Two
+-- of them: the grass and mud marks on the drawn ground (T-265, features/car-fx.md "Ruts cut
+-- into the ground") and the rubber on the tarmac and the scuffs on its gravel (T-269, "Rubber
+-- on the tarmac"). Each is a `Spec` (`GroundMarks.grassSpec`, `rubberSpec`): its numbers, its
+-- two looks, how it blends, and what it lies on. `Drift/Wheels` decides WHEN a wheel marks and
+-- which look; this module draws it.
+--
+-- ------------------------------------------------------------------ two ways to blend
+--
+-- "ground" (the grass): opaque, its outer strips drawn exactly as the ground under them is
+-- (the ground's material, world UVs, vertex colour and normal), blending into the mark toward
+-- its middle. Approved as it is, so kept.
+--
+-- "alpha" (the rubber): see-through. An EditableMesh's VERTEX ALPHA is see-through once its
+-- MeshPart's Transparency is above 0 (measured, DR-Lane3, T-269: at 0.3 an alpha ramp from 0
+-- to 1 showed the stripes under it fading out; at 0 and at 0.001 it was solid; a MeshPart
+-- TEXTURE's alpha was solid at all three). So the rubber's part sits at a hair of
+-- Transparency, and its edges, ends and age are vertex alpha: it reads the same on any
+-- tarmac, flat or painted (T-268), with nothing to match.
 --
 -- ------------------------------------------------------------------ why a mesh, not a Trail
 --
@@ -78,7 +94,28 @@ type Layer = {
 	points: { number }, -- profile point indices, left to right
 	strips: { { number } }, -- pairs of indices into `points`
 	n: number, -- #points
-	textured: boolean, -- the inner layer: streak texture, UVs across and along the mark
+	textured: boolean, -- streak texture, UVs across and along the mark (else world UVs)
+	material: Enum.Material,
+}
+
+-- What a ribbon is (`grassSpec`, `rubberSpec`).
+export type Spec = {
+	name: string, -- for the parts' names
+	folder: string, -- the folder's name
+	strip: string, -- a strip part's name, `string.format` with the wheel
+	ribbon: any, -- `Sections`, `Spacing`... (`Config.Fx.Ground.Ribbon`, `Config.Fx.Marks.Ribbon`)
+	life: number,
+	lift: number,
+	maxSnap: number,
+	width: number,
+	minWidthRatio: number,
+	profile: { any },
+	looks: { any }, -- two: blended by `d`, 0 the first .. 1 the second
+	kinds: { string }, -- what `Kind` calls the two looks
+	blend: string, -- "ground" or "alpha"
+	lies: string, -- "drawn" (the ground mesh) or "road" (the spline road's own surface)
+	layers: { { name: string, points: string, textured: boolean, material: Enum.Material } },
+	transparency: number,
 }
 
 -- A section of a wheel's ring.
@@ -116,10 +153,12 @@ type Strip = {
 	rut: boolean,
 	snapped: number,
 	lastV: number,
+	hint: number?, -- the road's s near the tyre, for `Spline.projectFrom` ("road" ribbons)
 }
 
 export type GroundMarks = typeof(setmetatable(
 	{} :: {
+		spec: Spec,
 		ready: boolean,
 		failed: string?,
 		folder: Folder?,
@@ -134,6 +173,7 @@ export type GroundMarks = typeof(setmetatable(
 		scratchNrm: { Vector3 },
 		scratchGC: { Color3 },
 		lutC: { Color3 }, -- [(h-1)*(DL+1)*AL + dl*AL + al + 1]: the mark's own colour
+		lutA: { number }, -- [(h-1)*(DL+1) + dl + 1]: its alpha at a point ("alpha" ribbons)
 		fadeAt: { number }, -- per age step: how much of the mark is left
 		offsets: { number }, -- per point, signed share of the half-width, -1..1
 		heights: { { number } }, -- per point: flat, rut
@@ -251,11 +291,132 @@ function GroundMarks.probe(ground: any, p: Vector3, lift: number, maxSnap: numbe
 	return p, false, nil, nil
 end
 
+-- One point put on the SPLINE ROAD'S OWN SURFACE (`Spline.terrainXYZ`: the tarmac, its gravel
+-- bevel, its gravel runoff), found from `hint` along the road: back `lift` over it, with the
+-- road's normal there and its s for the next hint; or as it was (false) off the road or past
+-- `maxSnap`. `ground` is the drawn ground, whose `spline` this asks.
+function GroundMarks.roadProbe(ground: any, p: Vector3, lift: number, maxSnap: number, hint: number?): (Vector3, boolean, Vector3?, number?)
+	local spline = ground.spline
+	if not spline then
+		return p, false, nil, nil
+	end
+	local s, d
+	if hint then
+		s, d = spline:projectFrom(p.X, p.Z, hint)
+	end
+	if not s then
+		s, d = spline:project(p.X, p.Z, Config.Road.Width)
+	end
+	if not s or not d then
+		return p, false, nil, nil
+	end
+	local _, y = spline:terrainXYZ(s, d)
+	if math.abs(y + lift - p.Y) > maxSnap then
+		return p, false, nil, s
+	end
+	return Vector3.new(p.X, y + lift, p.Z), true, spline:terrainNormal(s, d), s
+end
+
+-- A whole cross-section put on the road's surface with ONE projection: the centre `M` is
+-- found from `hint` (`Spline.projectFrom`), and `L` and `R`, a stud or so either side, are
+-- stepped to from it in the road's own frame there (along over the curve's stretch, across
+-- as is) and read off `Spline.terrainXYZ`. Three projections cost three Newton solves; this
+-- costs one. Returns the three points (`lift` over the road, or as they were and false),
+-- the road's normal at the centre, and the centre's s for the next hint.
+function GroundMarks.roadSection(ground: any, L: Vector3, M: Vector3, R: Vector3, lift: number, maxSnap: number, hint: number?): (Vector3, Vector3, Vector3, number, Vector3?, number?)
+	local spline = ground.spline
+	if not spline then
+		return L, M, R, 0, nil, nil
+	end
+	local s, d
+	if hint then
+		s, d = spline:projectFrom(M.X, M.Z, hint)
+	end
+	if not s then
+		s, d = spline:project(M.X, M.Z, Config.Road.Width)
+	end
+	if not s or not d then
+		return L, M, R, 0, nil, nil
+	end
+	local yaw = spline:yawAt(s)
+	local fx, fz = -math.sin(yaw), -math.cos(yaw)
+	local rx, rz = math.cos(yaw), -math.sin(yaw)
+	local stretch = math.max(1 + spline:curvatureAt(s) * d, 0.2)
+	local found = 0
+	local function on(p: Vector3): Vector3
+		local ox, oz = p.X - M.X, p.Z - M.Z
+		local _, y = spline:terrainXYZ(s + (ox * fx + oz * fz) / stretch, d + ox * rx + oz * rz)
+		if math.abs(y + lift - p.Y) > maxSnap then
+			return p
+		end
+		found += 1
+		return Vector3.new(p.X, y + lift, p.Z)
+	end
+	local l, m, r = on(L), on(M), on(R)
+	return l, m, r, found, spline:terrainNormal(s, d), s
+end
+
+local function layerSpec(name: string, points: string, textured: boolean, material: Enum.Material)
+	return { name = name, points = points, textured = textured, material = material }
+end
+
+-- The grass and mud marks (T-265): on the drawn ground, blended into it by colour.
+function GroundMarks.grassSpec(): Spec
+	local G = Config.Fx.Ground
+	return {
+		name = "grass",
+		folder = Config.Fx.Names.MarksFolder,
+		strip = Config.Fx.Names.MarksChunk,
+		ribbon = G.Ribbon,
+		life = G.MarkSeconds,
+		lift = G.Lift,
+		maxSnap = G.MaxSnap,
+		width = G.Grass.Width,
+		minWidthRatio = G.Grass.MinWidthRatio,
+		profile = G.Grass.Profile,
+		looks = { G.Grass.FlatMark, G.Grass.TrenchMark },
+		kinds = { "flat", "rut" },
+		blend = "ground",
+		lies = "drawn",
+		layers = {
+			-- the outer strips, edge to berm either side: drawn as the ground is
+			layerSpec("Outer", "outer", false, G.Ribbon.OuterMaterial),
+			-- the berm, walls and floor between: the mark itself
+			layerSpec("Inner", "inner", true, G.Ribbon.InnerMaterial),
+		},
+		transparency = 0,
+	}
+end
+
+-- The rubber on the tarmac and the scuffs on its gravel (T-269): on the road's own surface,
+-- see-through by vertex alpha, one layer.
+function GroundMarks.rubberSpec(): Spec
+	local M = Config.Fx.Marks
+	return {
+		name = "rubber",
+		folder = Config.Fx.Names.RubberFolder,
+		strip = Config.Fx.Names.RubberStrip,
+		ribbon = M.Ribbon,
+		life = M.Seconds,
+		lift = M.Ribbon.Lift,
+		maxSnap = M.Ribbon.MaxSnap,
+		width = M.Width,
+		minWidthRatio = M.MinWidthRatio,
+		profile = M.Profile,
+		looks = { M.Rubber, M.Scuff },
+		kinds = { "rubber", "scuff" },
+		blend = "alpha",
+		lies = "road",
+		layers = { layerSpec("", "all", true, M.Ribbon.Material) },
+		transparency = M.Ribbon.Transparency,
+	}
+end
+
 --------------------------------------------------------------------------------
 -- Construction
 --------------------------------------------------------------------------------
 
-local function makeLayer(name: string, points: { number }, textured: boolean): Layer
+local function makeLayer(name: string, points: { number }, textured: boolean, material: Enum.Material): Layer
 	local strips = {}
 	for i = 1, #points - 1 do
 		-- only between neighbours in the profile (the outer layer has a gap in the middle)
@@ -263,7 +424,7 @@ local function makeLayer(name: string, points: { number }, textured: boolean): L
 			table.insert(strips, { i, i + 1 })
 		end
 	end
-	return { name = name, points = points, strips = strips, n = #points, textured = textured }
+	return { name = name, points = points, strips = strips, n = #points, textured = textured, material = material }
 end
 
 local function newSection(P: number, grass: Color3): Section
@@ -280,37 +441,47 @@ local function newSection(P: number, grass: Color3): Section
 	}
 end
 
--- A ribbon with nothing built yet. `Build` makes the meshes (it yields).
-function GroundMarks.new(): GroundMarks
-	local G = Config.Fx.Ground
-	local R = G.Ribbon
-	local profile = G.Grass.Profile
+-- A ribbon with nothing built yet, as `spec` says (the grass's if none). `Build` makes the
+-- meshes (it yields).
+function GroundMarks.new(spec: Spec?): GroundMarks
+	local S = spec or GroundMarks.grassSpec()
+	local R = S.ribbon
+	local profile = S.profile
 	local half = #profile
 	local P = half * 2
-	local inner = {}
-	for j = 2, P - 1 do
-		table.insert(inner, j)
+	local layers = {}
+	for _, l in S.layers do
+		local pts = {}
+		if l.points == "outer" then
+			pts = { 1, 2, P - 1, P }
+		elseif l.points == "inner" then
+			for j = 2, P - 1 do
+				table.insert(pts, j)
+			end
+		else
+			for j = 1, P do
+				table.insert(pts, j)
+			end
+		end
+		table.insert(layers, makeLayer(l.name, pts, l.textured, l.material))
 	end
 	local self = setmetatable({
+		spec = S,
 		ready = false,
 		failed = nil,
 		folder = nil,
 		image = nil,
-		layers = {
-			-- the outer strips, edge to berm either side: drawn as the ground is
-			makeLayer("Outer", { 1, 2, P - 1, P }, false),
-			-- the berm, walls and floor between: the mark itself
-			makeLayer("Inner", inner, true),
-		},
+		layers = layers,
 		strips = {},
 		P = P,
 		N = R.Sections,
 		clock = 0,
-		life = G.MarkSeconds,
+		life = S.life,
 		scratchPts = table.create(P, Vector3.zero),
 		scratchNrm = table.create(P, Vector3.yAxis),
 		scratchGC = table.create(P, Color3.new()),
 		lutC = {},
+		lutA = {},
 		fadeAt = {},
 		offsets = table.create(P, 0),
 		heights = {},
@@ -323,7 +494,7 @@ function GroundMarks.new(): GroundMarks
 		reorigins = 0,
 	}, GroundMarks) :: any
 	-- The profile, mirrored: point 1 is the left edge, P the right edge.
-	local flat, rut = G.Grass.FlatMark, G.Grass.TrenchMark
+	local flat, rut = S.looks[1], S.looks[2]
 	for j = 1, P do
 		local h = if j <= half then j else P + 1 - j
 		local side = if j <= half then -1 else 1
@@ -341,12 +512,12 @@ end
 -- The mark's own colour at every profile point, blend step and age step, and how much of the
 -- mark is left at every age step, so painting a section is lookups.
 function GroundMarks._buildTables(self: GroundMarks)
-	local G = Config.Fx.Ground
-	local R = G.Ribbon
-	local flat, rut = G.Grass.FlatMark.Points, G.Grass.TrenchMark.Points
+	local R = self.spec.ribbon
+	local flat, rut = self.spec.looks[1].Points, self.spec.looks[2].Points
 	local AL = R.AgeLevels
 	local fadeAt = Config.Fx.Marks.FadeAt
 	table.clear(self.lutC)
+	table.clear(self.lutA)
 	table.clear(self.fadeAt)
 	for al = 0, AL - 1 do
 		local age = (al + 0.5) / AL
@@ -357,6 +528,8 @@ function GroundMarks._buildTables(self: GroundMarks)
 			local d = dl / DEPTH_LEVELS
 			local wet = flat[h].Colour:Lerp(rut[h].Colour, d)
 			local dry = flat[h].DryColour:Lerp(rut[h].DryColour, d)
+			local fa, ra = flat[h].Alpha or 1, rut[h].Alpha or 1
+			self.lutA[(h - 1) * (DEPTH_LEVELS + 1) + dl + 1] = fa + (ra - fa) * d
 			for al = 0, AL - 1 do
 				self.lutC[(h - 1) * (DEPTH_LEVELS + 1) * AL + dl * AL + al + 1] = wet:Lerp(dry, (al + 0.5) / AL)
 			end
@@ -421,9 +594,10 @@ end
 -- play; the tests use ServerStorage).
 function GroundMarks.Build(self: GroundMarks, parent: Instance?): boolean
 	local ok, err = pcall(function()
-		local R = Config.Fx.Ground.Ribbon
+		local S = self.spec
+		local R = S.ribbon
 		local folder = Instance.new("Folder")
-		folder.Name = Config.Fx.Names.MarksFolder
+		folder.Name = S.folder
 		local T = R.Texture
 		local size = Vector2.new(T.Width, T.Height)
 		local image = AssetService:CreateEditableImage({ Size = size })
@@ -452,6 +626,7 @@ function GroundMarks.Build(self: GroundMarks, parent: Instance?): boolean
 				rut = false,
 				snapped = 0,
 				lastV = 0,
+				hint = nil,
 			}
 			for li, layer in self.layers do
 				local v, c, n, u = {}, {}, {}, {}
@@ -464,18 +639,17 @@ function GroundMarks.Build(self: GroundMarks, parent: Instance?): boolean
 					RenderFidelity = Enum.RenderFidelity.Precise,
 				})
 				assert(part, "no MeshPart")
-				part.Name = string.format(Config.Fx.Names.MarksChunk, wi) .. layer.name
+				part.Name = string.format(S.strip, wi) .. layer.name
 				part.Anchored = true
 				part.CanCollide = false
 				part.CanQuery = false
 				part.CanTouch = false
 				part.CastShadow = false
 				part.Color = Color3.new(1, 1, 1)
+				part.Transparency = S.transparency -- above 0: vertex alpha is see-through
+				part.Material = layer.material
 				if layer.textured then
-					part.Material = R.InnerMaterial
 					part.TextureContent = Content.fromObject(image)
-				else
-					part.Material = R.OuterMaterial -- the ground's own
 				end
 				part.CFrame = CFrame.new(0, 0, 0)
 				part.Parent = folder
@@ -530,17 +704,36 @@ local function lut(self: GroundMarks, j: number, d: number, al: number): Color3
 	local P = self.P
 	local half = P // 2
 	local h = if j <= half then j else P + 1 - j
-	local AL = Config.Fx.Ground.Ribbon.AgeLevels
+	local AL = self.spec.ribbon.AgeLevels
 	local dl = math.clamp(math.floor(d * DEPTH_LEVELS + 0.5), 0, DEPTH_LEVELS)
 	return self.lutC[(h - 1) * (DEPTH_LEVELS + 1) * AL + dl * AL + math.clamp(al, 0, AL - 1) + 1]
+end
+
+-- A point's own alpha at blend `d` ("alpha" ribbons): the edge's 0, the middle's most.
+local function lutAlpha(self: GroundMarks, j: number, d: number): number
+	local P = self.P
+	local h = if j <= P // 2 then j else P + 1 - j
+	local dl = math.clamp(math.floor(d * DEPTH_LEVELS + 0.5), 0, DEPTH_LEVELS)
+	return self.lutA[(h - 1) * (DEPTH_LEVELS + 1) + dl + 1]
+end
+
+-- One vertex's colour (and alpha) for its section: "ground" ribbons blend the ground's colour
+-- into the mark's by how much shows; "alpha" ones are the mark's colour, as see-through as
+-- what shows says.
+local function colourAt(self: GroundMarks, em: EditableMesh, cid: number, sec: any, j: number, al: number, show: number)
+	if self.spec.blend == "alpha" then
+		em:SetColor(cid, lut(self, j, sec.d, al))
+		em:SetColorAlpha(cid, lutAlpha(self, j, sec.d) * show)
+	else
+		em:SetColor(cid, sec.gc[j]:Lerp(lut(self, j, sec.d, al), self.weights[j] * show))
+	end
 end
 
 -- How much of the mark shows at a section, 0..1: its strength (soft ends), its look (a
 -- flattened line is fainter than a rut) and what age has left of it.
 function GroundMarks.showing(self: GroundMarks, d: number, s: number, al: number): number
-	local G = Config.Fx.Ground
-	local look = G.Grass.FlatMark.Opacity + (G.Grass.TrenchMark.Opacity - G.Grass.FlatMark.Opacity) * d
-	return s * look * self.fadeAt[math.clamp(al, 0, G.Ribbon.AgeLevels - 1) + 1]
+	local a, b = self.spec.looks[1].Opacity, self.spec.looks[2].Opacity
+	return s * (a + (b - a) * d) * self.fadeAt[math.clamp(al, 0, self.spec.ribbon.AgeLevels - 1) + 1]
 end
 
 -- Write section `k` of strip `st` from its `Section`: every layer's points, and, unless
@@ -567,7 +760,9 @@ local function writeSection(self: GroundMarks, st: Strip, k: number, nrm: { Vect
 				em:SetUV(uids[id], if layer.textured then Vector2.new(self.us[j], sec.v) else Vector2.new(p.X / uvStuds, p.Z / uvStuds))
 			end
 			if sec.real then
-				em:SetColor(cids[id], sec.gc[j]:Lerp(lut(self, j, sec.d, al), self.weights[j] * show))
+				colourAt(self, em, cids[id], sec, j, al, show)
+			elseif self.spec.blend == "alpha" then
+				em:SetColorAlpha(cids[id], 0)
 			end
 		end
 	end
@@ -586,7 +781,7 @@ local function paint(self: GroundMarks, st: Strip, k: number)
 		local base = (k - 1) * layer.n
 		local cids = st.cids[li]
 		for i, j in layer.points do
-			em:SetColor(cids[base + i], sec.gc[j]:Lerp(lut(self, j, sec.d, al), self.weights[j] * show))
+			colourAt(self, em, cids[base + i], sec, j, al, show)
 		end
 	end
 end
@@ -609,7 +804,7 @@ end
 -- section where it was (they are kept in world space).
 local function reach(self: GroundMarks, st: Strip, at: Vector3)
 	local off = at - st.origin
-	if math.max(math.abs(off.X), math.abs(off.Y), math.abs(off.Z)) <= Config.Fx.Ground.Ribbon.ReOrigin then
+	if math.max(math.abs(off.X), math.abs(off.Y), math.abs(off.Z)) <= self.spec.ribbon.ReOrigin then
 		return
 	end
 	st.origin = at
@@ -619,7 +814,7 @@ local function reach(self: GroundMarks, st: Strip, at: Vector3)
 	self.reorigins += 1
 	-- Sections now out of the box are the oldest (the ring is in age order from past the
 	-- tip): they go, as ageing would take them, each a point on the next one's centre.
-	local keep = HALF - Config.Fx.Ground.Ribbon.Spacing * 2
+	local keep = HALF - self.spec.ribbon.Spacing * 2
 	for step = 3, self.N do
 		local k = wrap(self, st.tip + step)
 		local sec = st.sections[k]
@@ -645,23 +840,31 @@ end
 -- ground's up `up`, half-width `hw`, blend `d` and strength `s`, into the scratch arrays.
 -- Its two outer points and its centre are put on `ground` when given; the others go on the
 -- lines between. Returns how many of the three found the ground.
-local function section(self: GroundMarks, centre: Vector3, tangent: Vector3, up: Vector3, hw: number, d: number, s: number, ground: any?): number
-	local G = Config.Fx.Ground
+local function section(self: GroundMarks, st: Strip, centre: Vector3, tangent: Vector3, up: Vector3, hw: number, d: number, s: number, ground: any?): number
+	local S = self.spec
 	local right = tangent:Cross(up)
 	if right.Magnitude < 1e-4 then
 		right = Vector3.xAxis
 	end
 	right = right.Unit
-	local base = centre + up * G.Lift
+	local base = centre + up * S.lift
 	local L, M, Rr = base - right * hw, base, base + right * hw
 	local grass = Config.Spline.Terrain.GrassColour
 	local cL, cM, cR, nL, nM, nR = grass, grass, grass, up, up, up
 	local found = 0
-	if ground then
+	if ground and S.lies == "road" then
+		-- The tarmac (and its gravel): the spline road's own surface, from the last hint, in
+		-- one projection.
+		local rn, sM
+		L, M, Rr, found, rn, sM = GroundMarks.roadSection(ground, L, M, Rr, S.lift, S.maxSnap, st.hint)
+		st.hint = sM or st.hint
+		nL, nM, nR = rn or up, rn or up, rn or up
+		self.lookups += 1
+	elseif ground then
 		local okL, okM, okR, c1, c2, c3, n1, n2, n3
-		L, okL, c1, n1 = GroundMarks.probe(ground, L, G.Lift, G.MaxSnap)
-		M, okM, c2, n2 = GroundMarks.probe(ground, M, G.Lift, G.MaxSnap)
-		Rr, okR, c3, n3 = GroundMarks.probe(ground, Rr, G.Lift, G.MaxSnap)
+		L, okL, c1, n1 = GroundMarks.probe(ground, L, S.lift, S.maxSnap)
+		M, okM, c2, n2 = GroundMarks.probe(ground, M, S.lift, S.maxSnap)
+		Rr, okR, c3, n3 = GroundMarks.probe(ground, Rr, S.lift, S.maxSnap)
 		found = (if okL then 1 else 0) + (if okM then 1 else 0) + (if okR then 1 else 0)
 		cL, cM, cR = c1 or grass, c2 or grass, c3 or grass
 		nL, nM, nR = n1 or up, n2 or up, n3 or up
@@ -746,7 +949,8 @@ function GroundMarks.Wheel(
 	ratio: number,
 	rut: boolean,
 	ground: any?,
-	dt: number
+	dt: number,
+	intensity: number?
 )
 	local st = self.strips[i]
 	if not self.ready or not st then
@@ -766,10 +970,12 @@ function GroundMarks.Wheel(
 		st.snapped = 0
 		return
 	end
-	local G = Config.Fx.Ground
-	local R = G.Ribbon
+	local S = self.spec
+	local R = S.ribbon
 	st.rut = rut
-	local hw = G.Grass.Width * 0.5
+	local hw = S.width * 0.5
+	-- How strongly it marks (the rubber's slip and load, T-269); the grass always fully.
+	local strong = math.clamp(intensity or 1, 0, 1)
 	if not st.on then
 		-- A new mark. Past the old tip and its point: a point on this mark's start, then its
 		-- first section (fixed, at nothing), then the tip that follows the tyre.
@@ -778,11 +984,12 @@ function GroundMarks.Wheel(
 		st.prevDir = nil
 		st.dist = 0
 		st.depth = if rut then 1 else 0
-		st.ratio = math.max(ratio, G.Grass.MinWidthRatio)
+		st.ratio = math.max(ratio, S.minWidthRatio)
+		st.hint = nil
 		reach(self, st, contact)
 		local tangent = up:Cross(across)
 		tangent = if tangent.Magnitude > 1e-4 then tangent.Unit else Vector3.zAxis
-		st.snapped = section(self, contact, tangent, up, hw * st.ratio, st.depth, 0, ground)
+		st.snapped = section(self, st, contact, tangent, up, hw * st.ratio, st.depth, 0, ground)
 		local start = wrap(self, st.tip + 2)
 		local first = wrap(self, st.tip + 3)
 		st.lastV = (i - 1) * 0.37
@@ -799,7 +1006,7 @@ function GroundMarks.Wheel(
 	local target = if rut then 1 else 0
 	local blend = dt / math.max(R.BlendSeconds, 1e-4)
 	st.depth = if st.depth < target then math.min(st.depth + blend, target) else math.max(st.depth - blend, target)
-	st.ratio += (math.max(ratio, G.Grass.MinWidthRatio) - st.ratio) * (1 - math.exp(-dt / math.max(R.WidthSeconds, 1e-4)))
+	st.ratio += (math.max(ratio, S.minWidthRatio) - st.ratio) * (1 - math.exp(-dt / math.max(R.WidthSeconds, 1e-4)))
 
 	local chord = contact - st.lastPos
 	chord -= up * chord:Dot(up)
@@ -814,7 +1021,7 @@ function GroundMarks.Wheel(
 		-- not to the guess it started with, so the ribbon cannot twist.
 		local firstK = wrap(self, st.tip - 1)
 		local fs = st.sections[firstK]
-		section(self, st.lastPos, dir, up, hw * st.ratio, fs.d, 0, ground)
+		section(self, st, st.lastPos, dir, up, hw * st.ratio, fs.d, 0, ground)
 		place(self, st, firstK, fs.d, 0, fs.v)
 	end
 	-- Square to the bisector of this segment and the last: a mitred joint, no kink.
@@ -825,8 +1032,8 @@ function GroundMarks.Wheel(
 			tangent = bis.Unit
 		end
 	end
-	local strength = math.clamp((st.dist + len) / math.max(R.FadeInStuds, 1e-4), 0, 1)
-	st.snapped = section(self, contact, tangent, up, hw * st.ratio, st.depth, strength, ground)
+	local strength = math.clamp((st.dist + len) / math.max(R.FadeInStuds, 1e-4), 0, 1) * strong
+	st.snapped = section(self, st, contact, tangent, up, hw * st.ratio, st.depth, strength, ground)
 	local v = st.lastV + len / math.max(R.TileLength, 1e-4)
 	place(self, st, st.tip, st.depth, strength, v)
 	point(self, st, wrap(self, st.tip + 1), st.sections[st.tip].centre)
@@ -855,7 +1062,7 @@ function GroundMarks.Age(self: GroundMarks, dt: number)
 		return
 	end
 	self.clock += dt
-	local AL = Config.Fx.Ground.Ribbon.AgeLevels
+	local AL = self.spec.ribbon.AgeLevels
 	local life = math.max(self.life, 1e-3)
 	for _, st in self.strips do
 		for k = 1, self.N do
@@ -908,7 +1115,7 @@ function GroundMarks.Kind(self: GroundMarks, i: number): string?
 	if not st or not st.on then
 		return nil
 	end
-	return if st.rut then "rut" else "flat"
+	return if st.rut then self.spec.kinds[2] else self.spec.kinds[1]
 end
 
 -- Real (drawn) sections now, all wheels.
@@ -934,10 +1141,11 @@ function GroundMarks.DebugStrip(self: GroundMarks, i: number)
 	for step = 1, self.N do
 		local k = wrap(self, st.tip + step)
 		local sec = st.sections[k]
-		local pts, nrm, col = {}, {}, {}
+		local pts, nrm, col, alpha = {}, {}, {}, {}
 		for j = 1, P do
-			-- every point is in the inner layer but the edges, which are in the outer one
-			local li = if j == 1 or j == P then 1 else 2
+			-- every point is in the inner layer but the edges, which are in the outer one (a
+			-- one-layer ribbon has them all in its one)
+			local li = if #self.layers == 1 then 1 elseif j == 1 or j == P then 1 else 2
 			local layer = self.layers[li]
 			local idx = table.find(layer.points, j) :: number
 			local id = (k - 1) * layer.n + idx
@@ -945,6 +1153,7 @@ function GroundMarks.DebugStrip(self: GroundMarks, i: number)
 			pts[j] = em:GetPosition(st.vids[li][id]) + st.origin
 			nrm[j] = em:GetNormal(st.nids[li][id])
 			col[j] = em:GetColor(st.cids[li][id])
+			alpha[j] = em:GetColorAlpha(st.cids[li][id])
 		end
 		table.insert(out, {
 			k = k,
@@ -953,6 +1162,7 @@ function GroundMarks.DebugStrip(self: GroundMarks, i: number)
 			points = pts,
 			normals = nrm,
 			colours = col,
+			alphas = alpha,
 			showing = if sec.real then GroundMarks.showing(self, sec.d, sec.s, math.max(sec.level, 0)) else 0,
 		})
 	end

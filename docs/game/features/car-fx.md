@@ -11,6 +11,7 @@
 | Remote cars | Not built, and out of scope for this round |
 | A darkness that varies along a mark | **Built, driven and removed** at the user's call, 2026-11-06. One shade of line now; the record of what it was and what it cost is below, so nobody rebuilds it blind |
 | Off the road: grass tears up, gravel dusts, per wheel | **Built** (`T-188`) — `Config/Fx.luau` `Ground`, `Drift/Wheels.luau`; see "Off the road" |
+| Tarmac rubber and gravel scuffs as a see-through ribbon on the road's surface | **Built** (`T-269`), waiting on the user's look — see "Rubber on the tarmac" |
 | Grass and mud ruts that look cut in, laid on the drawn ground | **Built** (`T-265`) as a lit mesh ribbon (`Drift/GroundMarks.luau`) after a send-back; waiting on the user's look — see "Ruts cut into the ground" |
 
 The car slides in silence and leaves nothing behind. This is the layer that makes a drift
@@ -813,6 +814,131 @@ where the strips have 6. The look is the user's call.
 - Tarmac marks are still trails. Moving them onto the same ribbon (soft ends, lit, no steps) is
   a natural next step, but it must fit in the mesh budget too.
 
+## Rubber on the tarmac (`T-269`)
+
+The user, after the grass ruts: *"nice - do the tarmac thing now that grass is done."* That
+means the tarmac's drift marks on the same mesh ribbon, instead of Trails.
+
+### What it found first
+
+**Vertex alpha IS see-through once the part's `Transparency` is above 0.** Measured in a test
+scene in `DR-Lane3`, removed afterwards. Rows of quads with a 0-to-1 vertex-alpha ramp over
+stripes:
+- at a part Transparency of 0.3 the stripes showed through, fading out along the ramp;
+- at 0 and at 0.001 the quads were solid;
+- a MeshPart texture's alpha was solid at all three.
+
+T-265's grass was built believing no see-through was possible. It is, this way, so the rubber
+needs nothing matched to the road under it. That matters because the road's look just changed
+(T-268).
+
+### As built
+
+`Drift/GroundMarks` is now spec-driven (`GroundMarks.grassSpec`, `rubberSpec`). The grass's
+ribbon is the T-265 one, unchanged in look. The rubber's (`Config.Fx.Marks`) is:
+
+- **One see-through strip per wheel**, 64 sections in a ring and 4 points across, on one MeshPart
+  at Transparency 0.02 (SmoothPlastic) with a streak texture made in code.
+- **Smooth bends:** a section every 3 studs, every 0.4 studs through a bend (4 degrees) and while
+  the mark fades in, mitred, with the newest section following the tyre. Joins and point guards
+  are the grass's (no quad ever joins two marks).
+- **Flat:** no berm or walls, and every normal is the road's own (`Weight` 0), so the rubber takes
+  the light exactly as the tarmac under it does.
+- **Soft edges:** the alpha ramps from 0 at the edge to its most across the middle 0.3 of the
+  width. It is darkest in the middle, where the tyre pressed.
+- **Slip and load** (`Wheels.markIntensity`, `loadShare`):
+  - a wheel lays `MinIntensity` (0.55) at its first degree past its own threshold (the fronts'
+    30), and all of it 35 degrees past;
+  - at least `HandbrakeIntensity` (0.7) on the handbrake;
+  - then up or down by up to `LoadWeight` (35%) with its suspension travel against the four
+    wheels' average, so the outside wheels of a drift leave the darkest rubber;
+  - eased over 0.12 s, so the darkness never steps.
+- **Ageing:** the rubber dries from near-black (20, 19, 20) to a dull (36, 35, 36) over its
+  life, and fades over the last 40%.
+- **Life:** unchanged, 5 s (`Marks.Seconds`). I did not lengthen it without asking; see the
+  card.
+- **Height:** on the spline road's own surface, not the ground mesh.
+  - Each section's centre is projected onto the road once from the last hint
+    (`Spline.projectFrom`). Its edges are stepped to in the road's frame there and read off
+    `Spline.terrainXYZ`, which also covers the gravel bevel and gravel runoff.
+  - The points sit `Ribbon.Lift` (0.08) over it.
+  - With no spline (the parts world), the rubber lies on the car's plane.
+- **T-207 kept:** the width narrows through a slide to the 25% floor (`Marks.MinWidthRatio`). The
+  four gates are unchanged.
+- **Gravel moved onto the ribbon too.** It is the same strip's second look (`Marks.Scuff`,
+  stones pushed aside, lighter), blended over 0.15 s where the wheel crosses from tarmac. Why:
+  - a separate gravel strip would cost another 1 024 vertices for a mark that lasts seconds on a
+    3-stud bevel;
+  - one strip can't be stretched between tarmac and gravel the way two can;
+  - the gravel Trail had every flaw the user sent the grass back for.
+- **No more trails.** The tarmac and gravel Trails and the mark attachments are gone. The smoke
+  and dust sources keep their names (`FxA_<Wheel>_L_Emitter`, `_R_Emitter`).
+
+**Budget.** Instances per car:
+
+```
+per car = 4 wheels x (smoking surfaces x 2 Emitters + 3 debris Emitters + 3 emitter anchors)
+        + 4 grass strips x 2 MeshParts + 4 rubber strips x 1 MeshPart + 2 folders  = 46
+```
+
+Mesh vertices: the rubber holds 1 048. **The grass ribbon gave up 1 024** (128 to 96 sections a
+wheel, about 280 studs of mark), so both ribbons together hold 4 168, what the grass's held alone
+on main (4 144).
+
+That was needed. At Road ahead and behind Longest, main itself, now with the painted vista
+(T-267) and the road surface (T-268), already runs out of EditableMesh memory. In a 6 600-stud
+run with drifts:
+- main without the rubber: **14** "memory budget" failures and one "out of mesh budget" road
+  chunk;
+- with the rubber on top: **34** failures and 4.
+
+Before T-267 and T-268 were on main, the same run with the rubber had none. See "Open
+questions".
+
+| Number | Start | What it does |
+|---|---|---|
+| `Marks.Seconds` | 5 s | How long rubber stays |
+| `Marks.Ribbon.Sections` / `Spacing` / `MinSpacing` / `TurnDegrees` | 64 / 3 / 0.4 studs / 4 degrees | The ring, and where sections go |
+| `Marks.Ribbon.Lift` / `MaxSnap` | 0.08 / 1.5 studs | Over the road's surface; how far a point may move to reach it |
+| `Marks.Ribbon.Transparency` | 0.02 | The parts' own: above 0, so vertex alpha is see-through |
+| `Marks.Ribbon.MinIntensity` / `IntensitySlipDegrees` / `HandbrakeIntensity` | 0.55 / 35 degrees / 0.7 | How hard a wheel marks, from its slip |
+| `Marks.Ribbon.LoadWeight` / `LoadSpread` | 0.35 / 0.3 studs | And from its load |
+| `Marks.Ribbon.FadeInStuds` / `BlendSeconds` / `IntensitySeconds` | 1.2 studs / 0.15 / 0.12 s | Soft start; rubber to scuff; easing |
+| `Marks.Profile` | see the file | The 4 points across (edge, middle) |
+| `Marks.Rubber` / `Marks.Scuff` | see the file | Each look's opacity and its points' colours (laid, dry) and alpha |
+
+**Measured** in `DR-Lane3`, quiet playtests, 2026-11-16, on main with T-267 and T-268:
+
+- **On the road:** rubber vertices sat **0.075 to 0.080 studs** over the drawn road mesh (268
+  vertices, two drifts), **none under it**. Measured by casting down through the road chunks'
+  own meshes.
+- **Cost:** both ribbons take about **0.17 to 0.20 ms** a frame while wheels mark, the road
+  projection and ageing included.
+- **Frame time** drifting on the tarmac, with the wheel effects on and off in alternating blocks
+  on one drift:
+  - on: mean **8.35 to 8.56 ms**, p99 10.0 to 15.9;
+  - off: mean **8.33 to 8.36 ms**, p99 10.1 to 10.6;
+  - Studio unfocused, which caps it.
+- `FxTests`: **120 checks pass**. The rubber's own checks:
+  - it is see-through, built once and fits the budget alongside the grass;
+  - slip and load: rear 0, 1 and 40 degrees give 0, 0.55 and 1; front at 29 degrees gives 0;
+    handbrake 0.7; loaded, even and light give 1, 0.82 and 0.53;
+  - it lies flat on a stand-in road to 2e-6 studs, clear at its edges and 0.95 in its middle;
+  - gravel turns it to a scuff;
+  - it fades and goes over its 5 s;
+  - its darkness is eased in through `Wheels`.
+  The T-207 geometry checks now read each wheel's mark ends (`markA`, `markB`) instead of the
+  attachments, with the same results.
+- **Screenshots** (on the card): a fresh mark close up by day and by night, on T-268's road.
+  The marks read as soft, dark streaks with no hard edge. The night one is subtle by nature
+  (no headlight on it).
+
+**Known limits:**
+- The rubber's ring is 62 sections, about 185 studs of mark a wheel. A longer continuous mark
+  loses its oldest end before its 5 s are up.
+- The road chunks' far detail (`Mesh.Far`) can sit a little off the curve. The rubber follows the
+  curve, so on a far chunk it may float or dip by that tolerance. It is only seen from far off.
+
 ## Suspension sounds (`T-223`, `T-252`)
 
 The user, 2026-11-15: *"also find some suspension clunking noises we can play when the wheels
@@ -1048,6 +1174,12 @@ gate is wrong rather than "no smoke".
 
 ## Open questions
 
+- **The client's EditableMesh budget at Road ahead and behind Longest (found in `T-269`).** On
+  main with the painted vista (T-267) and the road surface (T-268), a 6 600-stud run with drifts
+  logged 14 "memory budget" failures with the rubber's meshes freed. Road chunks behind the car
+  were let go to draw ones ahead. The marks' two ribbons together hold 4 168 vertices, what the
+  grass's held alone. The ground (17 700 to 26 800), the road (9 100 to 14 700) and the vista's
+  far ring (1 000) are the rest. Who gives way is a call across those features.
 - ~~**The sounds themselves.**~~ **Closed 2026-11-04:** the user picked both by ear and decided
   against a backfire (`AUDIO.md`).
 - **`MinPitch` and `MaxPitch`, still open, and the one thing `T-064` could not settle.** The spec's

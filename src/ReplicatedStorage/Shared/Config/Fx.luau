@@ -22,16 +22,18 @@
 
 return {
 	-- ------------------------------------------------------------------ tyre marks
-	-- The black line a sliding wheel leaves. Per wheel: two attachments up to `Width` apart at
-	-- the contact patch, and one `Trail` PER BAND strung between them -- enabled and
-	-- disabled, never created or destroyed while driving (features/car-fx.md "The budget").
+	-- The rubber a sliding wheel leaves on the tarmac, and its scuff on the road's gravel: since
+	-- T-269 a see-through mesh RIBBON on the road's own surface, one strip a wheel
+	-- (`Drift/GroundMarks.rubberSpec`, features/car-fx.md "Rubber on the tarmac"), not a Trail.
 	Marks = {
-		Seconds = 5, -- s of `Trail.Lifetime`. How long a mark stays on the road, and
-		-- therefore how much of a corner you can still see behind you
+		Seconds = 5, -- s a mark stays on the road, and therefore how much of a corner you can
+		-- still see behind you. It dries over all of it and fades over the last
+		-- `1 - FadeAt` of it
 		Width = 1.2, -- normal width in studs. A little under `Config.Drift.WheelWidth`.
 		MinWidthRatio = 0.25, -- minimum share of each material width during a slide (T-207).
 		-- User, 2026-11-14: narrow down to 25% width, not 25% thinner.
-		Lift = 0.25, -- studs the attachments sit ABOVE the contact patch. OURS, and
+		Lift = 0.25, -- studs the smoke and dust sources sit ABOVE the contact patch (the
+		-- ribbon has its own, `Ribbon.Lift`). It was the trails' lift, OURS, and
 		-- MEASURED rather than chosen. A trail drawn exactly in the road's
 		-- surface z-fights with it, so there has to be some.
 		--
@@ -59,48 +61,96 @@ return {
 		FadeAt = 0.6, -- 0..1 of the lifetime the fade to invisible starts at. The last
 		-- 40 per cent of a mark's life is it fading away, which is what
 		-- stops five hundred marks ending in a hard edge
-		TextureLength = 0, -- 0 is a solid ribbon. A repeating texture would need an
-		-- uploaded asset, and this feature uploads nothing
 
-		MinSegment = 0, -- studs the contact patch must travel before the trail lays
-		-- another segment (`Trail.MinLength`). BACK TO ZERO, and the
-		-- round it spent at 0.5 is worth writing down because it was the
-		-- wrong diagnosis and it made the fault worse.
-		--
-		-- The mark was breaking up, and 0.5 was a guess at why: a ribbon
-		-- 1.2 studs wide advancing a measured 0.104 to 1.261 studs a
-		-- frame lays quads wider than they are long, so making each one
-		-- longer looked like the cure. It was not. THE BREAKS ARE BAND
-		-- CHATTER (see `SwapOverlap`): measured over 1 081 grounded
-		-- frames, the rear wheels changed band 58 times and the fronts
-		-- 30, and most of those swaps were 0 OR 1 STUD APART. Every swap
-		-- starts an empty trail, and `MinLength` then makes that empty
-		-- trail wait half a stud before it draws anything -- so 0.5
-		-- turned a chain of hairline joins into the long clean dashes the
-		-- user photographed.
-		--
-		-- With the chatter fixed at its source there is nothing for this
-		-- to help, and at zero a fresh ribbon starts drawing on its very
-		-- next frame. Raise it again only with a screenshot in hand.
-		LightInfluence = 1, -- 1 takes the world's light, which is what makes a mark sit
-		-- IN the road rather than glow on top of it. 0 would keep it
-		-- the same near-black in shade and in sun
+		-- THE RIBBON (T-269). One strip a wheel: a cross-section every few studs, mitred
+		-- through bends, the newest following the tyre; laid on the spline road's own surface
+		-- (`Spline.terrainXYZ`, which is the tarmac, its gravel bevel and its gravel runoff),
+		-- not the ground mesh. See-through by vertex alpha: its edges, its ends and its age.
+		Ribbon = {
+			Wheels = 4,
+			Sections = 64, -- cross-sections in each wheel's ring. THE MESH BUDGET (features/
+			-- ground-trial.md) is the limit: 64 x 4 points x 4 wheels is 1 024 vertices. MEASURED
+			-- (DR-Lane3, Road ahead and behind Longest): at 96 x 6 (2 304) the client ran out of
+			-- EditableMesh memory streaming the road ("Failed to create EditableMesh ... memory
+			-- budget"); without this ribbon it did not. At a section every 3 studs, 62 sections
+			-- is about 185 studs of mark a wheel; a longer one loses its oldest end early
+			ReOrigin = 800, -- studs a strip's origin may lag the tyre before it moves
+			Spacing = 3, -- studs between cross-sections on a straight run...
+			MinSpacing = 0.4, -- ...and down to this through a bend, a new one whenever the path
+			TurnDegrees = 4, -- has turned this far since the last. So a curve is a curve
+			FadeInStuds = 1.2, -- a mark comes in over this much of its start (short: rubber
+			-- goes down the moment the tyre lets go), and fades out at its end
+			BlendSeconds = 0.15, -- rubber to gravel scuff (and back) blends over this
+			WidthSeconds = 0.1, -- the T-207 narrowing, smoothed so it never steps
+			TileLength = 4, -- studs of mark one repeat of the streak texture covers
+			AgeLevels = 20, -- how many steps the drying and fading are rewritten in (0.25 s)
+			Lift = 0.08, -- studs over the road's surface. MEASURED against the drawn road mesh: at
+			-- 0.05 the rubber sat 0.021 to 0.052 over it (none under); 0.08 keeps a margin for
+			-- depth precision far off (features/car-fx.md "Rubber on the tarmac")
+			MaxSnap = 1.5, -- studs a point may move off the car's plane to reach the road
+			Material = Enum.Material.SmoothPlastic, -- rubber smeared flat: a little sheen
+			Transparency = 0.02, -- the parts' own. ABOVE 0 IS THE POINT: only then is vertex
+			-- alpha see-through (measured). 0.001 is still drawn solid
 
-		-- HOW DARK A MARK IS. ONE NUMBER, FOR EVERY MARK, AT EVERY SPEED AND ANGLE.
-		--
-		-- `Trail.Transparency` applies to the WHOLE live ribbon and not to the segment
-		-- being laid, so a darkness that varies along a mark cannot be a number at all: it
-		-- has to be a LADDER OF TRAILS, one per darkness, switched between. That ramp was
-		-- built, driven and removed at the user's call (features/car-fx.md "The darkness
-		-- ramp that was built and removed"), because every switch between trails is a hole
-		-- in the mark and the holes are inherent to the shape.
-		--
-		-- 0.52 IS THE MIDDLE RUNG OF THE LADDER THAT WAS THERE (0.70, 0.52, 0.34), which
-		-- is the honest place to land: an ordinary drift spent most of its time in the
-		-- middle of that ladder, so this reads about as the marks did before, without the
-		-- light end going faint or the dark end going to paint. **It is one number and the
-		-- whole look of a mark is in it** -- lower is darker.
-		Transparency = 0.52,
+			-- How hard a wheel marks, 0..1, which is how much of the mark shows: the slip past
+			-- that wheel's threshold, and its LOAD -- the wheel pressed hardest into the road
+			-- leaves the darkest rubber.
+			MinIntensity = 0.55, -- at the first degree past the threshold...
+			IntensitySlipDegrees = 35, -- ...full this far past it
+			HandbrakeIntensity = 0.7, -- a locked wheel with no slip to speak of
+			LoadWeight = 0.35, -- how much the load moves it, either way of the wheels' average
+			LoadSpread = 0.3, -- studs of suspension travel past the average that count as all
+			IntensitySeconds = 0.12, -- eased over this, so the darkness never steps
+
+			-- The streak texture, made in code (an `EditableImage`). Grey, tinting the rubber:
+			-- fine tread lines along the travel, a little grit. Nothing is uploaded.
+			Texture = {
+				Width = 64,
+				Height = 256,
+				Seed = 269,
+				Base = 0.95,
+				StreakDepth = 0.4, -- tread lines: the rubber laid unevenly across the tyre
+				StreakWobble = 0.3,
+				Flecks = 90, -- grit and flecks of rubber
+				FleckBand = 0.5,
+				FleckLight = 1.0,
+				FleckDark = 0.55,
+			},
+		},
+
+		-- The ribbon's cross-section, from its outer edge in, mirrored: 4 points across. FLAT:
+		-- rubber lies on the tarmac, it does not dig in (no berm, no walls). `Offset` is the
+		-- share of the half-width out from the centre; `Height` and `Tilt` are zero here, kept
+		-- for the shape the grass's ribbon shares; `Weight` 0 keeps every normal the road's own,
+		-- so the rubber takes the light exactly as the tarmac under it does. (Each look's
+		-- `Alpha` does the soft edge.)
+		Profile = {
+			{ Offset = 1.00, Height = 0, Tilt = 0, Weight = 0 }, -- the edge: nothing
+			{ Offset = 0.30, Height = 0, Tilt = 0, Weight = 0 }, -- the dark middle, flat between:
+			-- the alpha ramps from the edge in, the soft shoulder
+		},
+
+		-- The two looks, one entry per `Profile` point: `Colour` when laid, `DryColour` at the
+		-- end of its life, `Alpha` at full strength. `Opacity` scales the whole look; how much
+		-- of it shows is that times the wheel's intensity, the soft ends and the age.
+		Rubber = { -- on the tarmac: burnt rubber, darkest along the middle where it pressed
+			Opacity = 1, -- MEASURED: at 0.85 a 20-degree slide laid 0.64 at most and read faint
+			HeightScale = 0,
+			TiltScale = 0,
+			Points = {
+				{ Colour = Color3.fromRGB(32, 31, 32), DryColour = Color3.fromRGB(44, 43, 44), Alpha = 0 },
+				{ Colour = Color3.fromRGB(20, 19, 20), DryColour = Color3.fromRGB(36, 35, 36), Alpha = 0.95 },
+			},
+		},
+		Scuff = { -- on the road's gravel bevel and gravel runoff: stones pushed aside
+			Opacity = 0.7,
+			HeightScale = 0,
+			TiltScale = 0,
+			Points = {
+				{ Colour = Color3.fromRGB(100, 92, 80), DryColour = Color3.fromRGB(112, 104, 92), Alpha = 0 },
+				{ Colour = Color3.fromRGB(84, 76, 64), DryColour = Color3.fromRGB(100, 92, 80), Alpha = 0.75 },
+			},
+		},
 	},
 
 	-- ------------------------------------------------------------------ tyre heat
@@ -262,21 +312,18 @@ return {
 	},
 
 	-- ------------------------------------------------------------------ surfaces
-	-- A mark's colour and a puff's colour, per SMOKING surface. Only tarmac smokes: grass and
+	-- A smoke's and a puff's colour, per SMOKING surface (the marks are `Marks.Rubber`). Only tarmac smokes: grass and
 	-- gravel are `Ground` below (T-188), which tears up the ground instead. `Hit.surface`
 	-- names each wheel's ground on the spline road; anything unnamed is `Default`. `dirt` is
 	-- a look with no ground that is dirt, kept for the day there is some.
 	Surfaces = {
 		tarmac = {
-			MarkColour = Color3.fromRGB(26, 26, 28), -- near black, not black: a pure black
-			-- mark reads as a hole in the road
 			SmokeColour = Color3.fromRGB(226, 226, 230), -- burnt rubber is near white
 			PuffColour = Color3.fromRGB(255, 252, 246), -- the stylized layer, a shade
 			-- brighter and warmer than the diffuse one so
 			-- it separates from the cloud behind it
 		},
 		dirt = {
-			MarkColour = Color3.fromRGB(86, 66, 44),
 			SmokeColour = Color3.fromRGB(190, 166, 132),
 			PuffColour = Color3.fromRGB(214, 192, 156),
 		},
@@ -348,11 +395,13 @@ return {
 		-- The ribbon itself (`Drift/GroundMarks`).
 		Ribbon = {
 			Wheels = 4, -- strips, one a wheel
-			Sections = 128, -- cross-sections in each wheel's ring, two kept as points ahead of the
+			Sections = 96, -- cross-sections in each wheel's ring, two kept as points ahead of the
 			-- tyre. THE MESH BUDGET: a client holds about 35 000 EditableMesh vertices with the
-			-- ground and the road taking most (features/ground-trial.md). 128 x 8 points x 4 wheels
-			-- is 4 096. MEASURED: a first build at 31 000 pushed the road out of budget. At a
-			-- section every 3 studs that is about 380 studs of mark a wheel; the oldest goes first
+			-- ground and the road taking most (features/ground-trial.md). 96 x 8 points x 4 wheels
+			-- is 3 072. MEASURED: a first build at 31 000 pushed the road out of budget. It was
+			-- 128 (4 096) until T-269 gave the 1 024 to the tarmac's rubber, so the two ribbons
+			-- together hold what the grass's alone did. At a section every 3 studs that is about
+			-- 280 studs of mark a wheel; the oldest goes first
 			ReOrigin = 800, -- studs a strip's origin may lag the tyre before it is moved: a mesh is
 			-- at most 2 048 studs across, and sections past its box are let go
 			Spacing = 3, -- studs between cross-sections on a straight run...
@@ -491,10 +540,7 @@ return {
 		-- GRAVEL: the bevel at the road's edge and the tight-cliff strips. A pale scuff and a
 		-- dust cloud, no smoke -- loose stone does not burn rubber. Kept to one emitter.
 		Gravel = {
-			Mark = {
-				Colour = Color3.fromRGB(110, 102, 90), -- a scuffed, darker gravel (146, 138, 124)
-				Transparency = 0.5,
-			},
+			-- Its mark is the tarmac ribbon's `Marks.Scuff` look (T-269).
 			Dust = {
 				Texture = "rbxasset://textures/particles/smoke_main.dds",
 				Colour = Color3.fromRGB(176, 160, 132),
@@ -524,13 +570,14 @@ return {
 	-- wheel's Trail and ParticleEmitter hang off its first attachment. A folder would be a
 	-- seventeenth instance for nothing.
 	Names = {
-		Attachment = "FxA_%s_%s", -- wheel name, then "L" or "R" (the two ends of the mark)
-		Trail = "FxMark_%s_%s", -- wheel name, then surface. ONE per wheel per surface
+		Attachment = "FxA_%s_%s", -- wheel name, then "L" or "R": with "_Emitter" on the end, the
+		-- diffuse smoke and dust source ("L") and the stylized smoke's ("R") (T-207)
 		Emitter = "FxSmoke_%s_%s", -- wheel name, then surface. The DIFFUSE layer
 		Stylized = "FxPuff_%s_%s", -- wheel name, then surface. The STYLIZED layer
 		TrenchAttachment = "FxT_%s_%s", -- wheel name, then "L": with "_Emitter" on the end, the
 		-- clippings and dirt source (T-188, T-207)
-		GroundTrail = "FxMark_%s_%s", -- wheel name, then "gravel" (T-188)
+		RubberFolder = "FxRubberMarks", -- the local car's tarmac and gravel ribbon (T-269): a
+		RubberStrip = "FxRubberMarks_%d", -- client-only folder in Workspace, and its MeshParts
 		MarksFolder = "FxGroundMarks", -- the local car's grass ribbon: a client-only folder in
 		MarksChunk = "FxGroundMarks_%d", -- Workspace, and its MeshParts (T-265)
 		GroundEmitter = "FxKick_%s_%s", -- wheel name, then "grass", "dirt" or "dust" (T-188)
