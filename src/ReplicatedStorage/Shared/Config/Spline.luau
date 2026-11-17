@@ -607,6 +607,13 @@ local Spline = {
 		-- a chunk being rebuilt both count)
 		CorridorMost = 20,
 		RoadPad = 256, -- studs: tiles this near the drawn road are drawn even past `Reach`
+		-- INSIDE THE PAINTED VISTA (T-281, the user: no art "cut or obscured by the terrain going
+		-- through it"): no tile's furthest corner further from the car than the nearest ring's
+		-- nearest point (`Shared/Vista.ringSpan`), less the camera at its furthest behind the car
+		-- and this. A coarse tile that would reach further is drawn as its children the ground
+		-- wants (`Drift/GroundTiles.limit`); covers the 12 studs the car moves between choices
+		-- (`Reselect`), and the camera lagging on a fast drive
+		VistaMargin = 100, -- studs
 		ReleaseOnFail = 24, -- tiles let go if the device will not make another (room for the road)
 		-- the fewest tiles (besides `Spare`) the ground gives way to when the road is out of mesh
 		-- memory (T-273, `Drift/MeshBudget`): Light's own, so far ground goes coarser before any

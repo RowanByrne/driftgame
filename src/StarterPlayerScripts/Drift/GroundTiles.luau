@@ -16,6 +16,12 @@
 -- Every tile sits on one world lattice (its corner a whole number of its own sides from the
 -- origin), so a tile and its four children cover exactly the same ground, and two tiles
 -- either nest or do not overlap at all.
+--
+-- INSIDE THE VISTA (T-281, the user: no art "cut or obscured by the terrain going through
+-- it"): no tile's furthest corner passes `limit()` studs from the car, the nearest painted
+-- ring's nearest point less the camera at its furthest behind the car and `VistaMargin`. A
+-- root tile that would is drawn as those of its four children the ground wants (each one
+-- again, down to the finest), and a finest tile that still would is left out.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -44,6 +50,7 @@ export type Want = {
 	ratio: number,
 	reach: number,
 	split: { [number]: boolean }?, -- keys of tiles split now, which stay split a little longer
+	limit: number?, -- no tile's furthest corner further than this from the car (`limit()`)
 }
 
 local OFF = 524288 -- 2^19 tiles either way of the origin
@@ -98,6 +105,61 @@ local function distTo(x0: number, z0: number, side: number, px: number, pz: numb
 end
 GroundTiles.distTo = distTo
 
+-- How far (px, pz) is from a square's furthest corner.
+local function farCorner(x0: number, z0: number, side: number, px: number, pz: number): number
+	local dx = math.max(math.abs(px - x0), math.abs(px - (x0 + side)))
+	local dz = math.max(math.abs(pz - z0), math.abs(pz - (z0 + side)))
+	return math.sqrt(dx * dx + dz * dz)
+end
+GroundTiles.farCorner = farCorner
+
+-- How far from the car the ground may reach (T-281): the nearest point of the nearest painted
+-- ring (`Shared/Vista.ringSpan`: a panel's middle, the ring trailing its most), less the
+-- camera at its furthest behind the car (`PlayerZoomMax`) and `Ground.VistaMargin`. No limit
+-- with the vista off.
+function GroundTiles.limit(): number
+	local V = Config.Vista
+	if not V or not V.Enabled or not V.Layers or #V.Layers == 0 then
+		return math.huge
+	end
+	local Vista = require(ReplicatedStorage.Shared.Vista)
+	local nearest = math.huge
+	for _, layer in V.Layers do
+		nearest = math.min(nearest, (Vista.ringSpan(layer)))
+	end
+	local C = Config.Camera
+	local camBack = C.CamOffset.Magnitude * C.PlayerZoomMax
+	return nearest - camBack - Config.Spline.Ground.VistaMargin
+end
+
+-- The points of road the ground's detail follows, from `s0` to `s1` along `spline`, for a car
+-- at `along` (`Want.road`): 8 studs out to `fine` along it, then coarser; behind the car past
+-- `Mesh.BehindSharp` only `RoadCoarsest`; far along it coarser still (`RoadFar`, T-263), and
+-- its points as far apart as that allows (a tile's reach is `RoadRange` times its spacing).
+function GroundTiles.roadPoints(spline: any, along: number, s0: number, s1: number, fine: number): { number }
+	local G = Config.Spline.Ground
+	local near = Config.Spline.Mesh.BehindSharp
+	local road = {}
+	local s = s0
+	while s <= s1 do
+		local x, z = spline:planAt(s)
+		local w = if s < along - near
+			then G.RoadCoarsest
+			else math.min(G.Spacings[1] * math.max(1, math.abs(s - along) / fine), G.RoadCoarsest)
+		local d = math.abs(s - along)
+		for _, step in G.RoadFar do
+			if d >= step.From then
+				w = math.max(w, step.Coarsest)
+			end
+		end
+		table.insert(road, x)
+		table.insert(road, z)
+		table.insert(road, w)
+		s += math.max(G.RoadStep, w * 2)
+	end
+	return road
+end
+
 -- How much too coarse a tile is: over 1, it wants splitting.
 local function need(nd: Leaf, want: Want): number
 	if nd.level <= 1 then
@@ -130,17 +192,45 @@ function GroundTiles.select(want: Want): ({ Leaf }, { [number]: Leaf })
 	local leaves: { Leaf } = {}
 	local needs: { number } = {}
 	local seen: { [number]: boolean } = {}
+	local x, z, reach = want.x, want.z, want.reach
+	local pad = G.RoadPad
+	local road = want.road
+	local limit = want.limit or math.huge
+	-- is a tile wanted at all: within `reach` of the car, or `RoadPad` of a point of road
+	local function wanted(nd: Leaf): boolean
+		if distTo(nd.x0, nd.z0, nd.side, x, z) <= reach then
+			return true
+		end
+		for i = 1, #road, 3 do
+			if distTo(nd.x0, nd.z0, nd.side, road[i], road[i + 1]) <= pad then
+				return true
+			end
+		end
+		return false
+	end
+	-- a tile reaching past `limit` is drawn as its wanted children instead (T-281)
+	local function add(nd: Leaf)
+		if farCorner(nd.x0, nd.z0, nd.side, x, z) > limit then
+			if nd.level > 1 then
+				for _, c in GroundTiles.children(nd) do
+					if wanted(c) then
+						add(c)
+					end
+				end
+			end
+			return
+		end
+		table.insert(leaves, nd)
+		table.insert(needs, need(nd, want))
+	end
 	local function addRoot(ix: number, iz: number)
 		local k = GroundTiles.key(top, ix, iz)
 		if seen[k] then
 			return
 		end
 		seen[k] = true
-		local nd = GroundTiles.node(top, ix, iz)
-		table.insert(leaves, nd)
-		table.insert(needs, need(nd, want))
+		add(GroundTiles.node(top, ix, iz))
 	end
-	local x, z, reach = want.x, want.z, want.reach
 	for ix = math.floor((x - reach) / side), math.floor((x + reach) / side) do
 		for iz = math.floor((z - reach) / side), math.floor((z + reach) / side) do
 			if distTo(ix * side, iz * side, side, x, z) <= reach then
@@ -148,8 +238,6 @@ function GroundTiles.select(want: Want): ({ Leaf }, { [number]: Leaf })
 			end
 		end
 	end
-	local pad = G.RoadPad
-	local road = want.road
 	for i = 1, #road, 3 do
 		local rx, rz = road[i], road[i + 1]
 		for ix = math.floor((rx - pad) / side), math.floor((rx + pad) / side) do
