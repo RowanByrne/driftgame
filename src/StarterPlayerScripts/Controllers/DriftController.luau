@@ -43,6 +43,7 @@ local RemoteCars = require(DriftFolder.RemoteCars)
 local Render = require(DriftFolder.Render)
 local Sim = require(DriftFolder.Sim)
 local Scrape = require(DriftFolder.Scrape)
+local ScoreEvents = require(DriftFolder.ScoreEvents)
 local SkidSound = require(DriftFolder.SkidSound)
 local SuspensionSound = require(DriftFolder.SuspensionSound)
 local Trajectory = require(DriftFolder.Trajectory)
@@ -178,9 +179,16 @@ function DriftController:Init()
 	-- Plain functions called in order, not a Signal -- a Signal spawns a thread per handler,
 	-- and this fires 120 times a second.
 	self.stepListeners = {}
+	-- The score events (T-295, features/score-events.md): the engine and its detectors, one
+	-- per event in `Drift/Events`, each stepped with the simulation BEFORE the score's own
+	-- step, so a held event's bar fill lands on the step it was held. Each later event adds
+	-- its detector to `scoreDetectors` in `Start`, one line.
+	self.scoreDetectors = {}
+	self.scoreDetectorErrors = {}
 	self._onStep = function(state)
 		local step = Config.Drift.FixedStep
 		self.suspensionSound:Step(step, state)
+		self:_stepScoreEvents(step, state)
 		for _, fn in self.stepListeners do
 			fn(step, state)
 		end
@@ -209,6 +217,8 @@ function DriftController:Start()
 	self:_watchCharacters()
 	self.trajectory:BindToggle()
 	self.trajectory:SetEnabled(Config.Drift.TrajectoryLine)
+
+	self:_startScoreEvents()
 
 	if Config.Drift.DebugReadout then
 		self.hud = DebugHud.new()
@@ -960,6 +970,84 @@ function DriftController:OnStep(fn: (number, any) -> ()): () -> ()
 			table.remove(self.stepListeners, i)
 		end
 	end
+end
+
+-- ------------------------------------------------------------- score events (T-295)
+
+-- The engine fed to the run's score, and the detectors. What a detector is handed as `rig`:
+-- the car's world, the road and where the car is along it, and the car, each asked when
+-- wanted (all of them change: a new road, a new car).
+function DriftController:_startScoreEvents()
+	local scoreController = nil
+	-- The score to feed, only while a run is on. Looked up late: ScoreController requires
+	-- this module, so it cannot be required at the top.
+	ScoreEvents.bind(function()
+		scoreController = scoreController or require(script.Parent.ScoreController)
+		return if scoreController.inRun then scoreController.score else nil
+	end)
+	self.scoreRig = {
+		world = function()
+			return self.world
+		end,
+		spline = function()
+			return self.spline
+		end,
+		along = function()
+			return self.splineAlong
+		end,
+		car = function()
+			return self.car
+		end,
+	}
+	local events = DriftFolder:WaitForChild("Events")
+	local sink = ScoreEvents.sink()
+	self.scoreDetectors = {
+		Jump = require(events.Jump).new(sink, self.scoreRig),
+		WheelLift = require(events.WheelLift).new(sink, self.scoreRig),
+	}
+end
+
+-- Once per simulation step: the engine, then each detector. A detector that errors is
+-- reported once and skipped, never allowed to stop the car's step.
+function DriftController:_stepScoreEvents(dt: number, state)
+	ScoreEvents.step(dt, state)
+	for name, detector in self.scoreDetectors do
+		local ok, err = pcall(detector.Update, detector, dt, state)
+		if not ok and not self.scoreDetectorErrors[name] then
+			self.scoreDetectorErrors[name] = true
+			warn(`[DriftController] score event detector {name} failed: {err}`)
+		end
+	end
+end
+
+-- The score events: the engine's counts, live lines and last finished ones, and each
+-- detector's own state and counts.
+function DriftController:DebugScoreEvents()
+	local out = { engine = ScoreEvents.debug(), detectors = {} }
+	for name, detector in self.scoreDetectors do
+		out.detectors[name] = detector:DebugState()
+	end
+	return out
+end
+
+-- Studio only: an event of `kind` at `size`, without driving to it, for the feed. A one-off
+-- fires; a held kind starts, is held `seconds` (default 1) in one go, and banks.
+function DriftController:DebugScoreEvent(kind: string, size: number?, seconds: number?)
+	if not RunService:IsStudio() then
+		return nil
+	end
+	local k = Config.ScoreEvents.Kinds[kind]
+	if not k then
+		return nil
+	end
+	if k.Mode == "oneOff" then
+		ScoreEvents.oneOff(kind, size or 1)
+	else
+		local h = ScoreEvents.start(kind)
+		h:update(size or 1, seconds or 1)
+		h:finish(true)
+	end
+	return ScoreEvents.debug().log
 end
 
 -- The debug readout's score line: `fn()` returns `{ score, multiplier, progress, inRun }`.
