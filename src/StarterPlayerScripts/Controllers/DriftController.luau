@@ -52,8 +52,10 @@ local World = require(DriftFolder.World)
 local SplineWorld = require(DriftFolder.SplineWorld)
 local SplineRoadView = require(DriftFolder.SplineRoadView)
 local GroundMeshView = require(DriftFolder.GroundMeshView)
+local VistaView = require(DriftFolder.VistaView)
 
 local CarInputController = require(script.Parent.CarInputController)
+local SkyController = require(script.Parent.SkyController)
 
 local DriftController = {}
 
@@ -314,6 +316,10 @@ function DriftController:UseSpline(spline: any?)
 		self.groundView:Destroy()
 		self.groundView = nil
 	end
+	if self.vista then
+		self.vista:Destroy()
+		self.vista = nil
+	end
 	self.spline = spline
 	self.splineClosing = nil
 	if spline then
@@ -321,6 +327,13 @@ function DriftController:UseSpline(spline: any?)
 		-- the ground (T-218): the mountain the road is cut into, drawn as its own meshes
 		if spline.mountain then
 			self.groundView = GroundMeshView.new(spline)
+		end
+		-- the painted ridges and the cloud sea round the run, at the height of the road's
+		-- start, tinted by the sky's look (T-266)
+		if Config.Vista.Enabled then
+			self.vista = VistaView.new(spline.origin.y, function()
+				return SkyController:Look()
+			end)
 		end
 	end
 	self:_rebuildWorld()
@@ -337,6 +350,20 @@ function DriftController:SetSplineClosing(s: number?)
 	if self.splineView then
 		self.splineView:SetClosing(s)
 	end
+end
+
+-- The painted vista round the run (T-266): each layer's trail, the cloud sea, the cost.
+function DriftController:DebugVista(resetCost: boolean?)
+	local v = self.vista
+	if not v then
+		return { on = false }
+	end
+	if resetCost then
+		v:DebugResetCost()
+	end
+	local out = v:DebugState()
+	out.on = true
+	return out
 end
 
 -- The drawn ground (T-218, `Drift/GroundMeshView`), when a road is up.

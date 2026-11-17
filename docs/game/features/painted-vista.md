@@ -1,6 +1,6 @@
 # Feature: Painted vista
 
-**Status:** specced; the plan is waiting for the user's OK. **Owner task:** none yet.
+**Status:** step 1 (the trial) in a lane for the user. **Owner task:** T-266 (step 1: T-267).
 
 ## Goal
 
@@ -51,8 +51,6 @@ instead of built ridges. On approval, log the reversal in DECISIONS.md.
 ## Left out
 
 - **A painted sky.** Roblox's own sky, clouds, sun, moon and stars stay as `day-night.md` set them.
-- **A set of art per scenery** (autumn maples, cherry blossom, snow) that changes with where you
-  are on the range. That comes later, once one set works.
 - **Mountains you can reach.** The layers are scenery only (`T-241` dropped matching them to the
   real range).
 - **Weather, waterfalls, and wisps of mist drifting across the road.**
@@ -69,7 +67,7 @@ Starting guesses, to be measured and tuned in the lane, as `horizon.md`'s were. 
 |---|---|---|---|---|
 | Near | 2 400 studs | 2–4° above level | Dark forested ridges | Up to 3 s, never more than 250 studs |
 | Middle | 3 200 studs | 3–5° | Blue-green ridges | 1.5 s |
-| Far | 4 500 studs | 4–6° | Pale snow peaks | 0.6 s |
+| Far | 3 200 studs (measured: 4 500 washed out in the haze) | summit 8° (5.5° barely cleared the ground) | Pale snow peaks | 0.6 s, at most 120 studs |
 
 - **Beyond the drawn ground:** the near layer stays further out than the ground's widest reach
   (2 100 studs today, `mountain-range.md`) at every Road ahead setting (`T-263`), even when it
@@ -79,22 +77,30 @@ Starting guesses, to be measured and tuned in the lane, as `horizon.md`'s were. 
 - **No bottom edge in sight:** each layer reaches down below the horizon into the cloud sea.
 - **Rises and falls with the road by three quarters** of the camera's height above the road's
   start, eased over 2 s, as the horizon did.
-- **Panels:** each layer is a ring of curved panels, each at most 2 000 studs wide (one mesh is at
-  most 2 048), so 8 panels for the near layer and 14 for the far one. One uploaded arc mesh is
-  reused for every panel. Each panel is a MeshPart with a SurfaceAppearance: a colour map whose
-  sky is see-through, plus, if the trial shows it helps, a normal map (below).
+- **Panels (as built in the trial):** each layer is a ring of curved panels, 36 degrees each
+  (10 a ring), each under 2 048 studs. Flat panels showed a step at every join, since each faced
+  the sun at its own angle (the user: "the seams you can see where they join"); the curved ones
+  are shaded smooth, so the light runs on round the ring. The arc mesh is built on the device
+  (an EditableMesh, `Shared/Vista.arcGeometry`), so nothing is uploaded; its lower part is a
+  skirt in the picture's own bottom row. The picture is a see-through SurfaceAppearance made
+  ahead in `ReplicatedStorage.VistaSurfaces`: a game script can't set one's picture, and a
+  mesh's own texture fills the sky in (both measured). Flat Decal panels remain the fallback.
+- **Before publishing:** an EditableMesh in a published game needs the experience's mesh and
+  image APIs allowed in its settings; if not, the layers fall back to flat panels (with seams).
 - **The whole layer moves together:** each layer's panels are welded to one invisible anchor, and
   only the anchor moves, which measured 0.10 ms a frame for the horizon.
 
 ### Cloud sea
 
-- **Three stacked layers,** 30 studs apart, the top one 300 studs below the road's start. They
-  rise with the road by three quarters, like the ridges.
-- **Each layer** is 3 × 3 parts of 2 048 studs (6 100 across). Their edges are lost in the haze.
-- **Seamless cloud:** a tiling cloud texture (`Texture`, 1 200 studs a tile), offset by the
-  layer's position in the world so the clouds don't slide when the parts follow the car. Each
-  layer drifts about 2 studs a second, at a slightly different speed and direction. Transparency
-  is 0.2, 0.4 and 0.6, top to bottom.
+- **Three stacked layers,** 30 studs apart, the top one 150 studs below the road's start, and
+  never nearer than 120 under the camera. They rise with the road by three quarters, like the
+  ridges.
+- **The top layer** is 5 × 5 parts of 2 048 studs, so it reaches past the ridge ring and its edge
+  is never seen (3 × 3 showed its edge in the lane); the two under it are 3 × 3.
+- **Seamless cloud:** a tiling cloud texture (`Texture`, 2 048 studs a tile: 1 024 read as a
+  snowfield). The parts move in whole tiles, so the clouds don't slide when they follow the car.
+  Each layer drifts about 2 studs a second, at a slightly different speed and direction.
+  Transparency is 0.25, 0.4 and 0.6, top to bottom.
 
 ### Time of day
 
@@ -190,8 +196,14 @@ Made with the image tool (`tools\imagegen.ps1`) and recorded in `assets/painted-
    - Build that layer and the cloud sea, with the tint at every time of day, and try the normal map.
    - Take the review shots.
    - **The user decides** whether to go on, change it, or stop.
-2. **The full vista** (lane, Standard): the near and middle layers' art, the parallax between the
-   three layers, every time of day tuned, and the cost checked at low graphics quality.
+2. **Sliding rings** (lane, Standard), the user's idea (2026-11-16): the near (forested) and middle
+   (blue-green) rings in front of the snow peaks, each sliding up and down with the camera's
+   height at its own rate, like puppet-show scenery: climbing, the near ridges sink and the view
+   opens; in a valley they rise and close it in. Their art, every time of day tuned, and the cost
+   checked at low graphics quality. Every ring stands between the drawn ground's reach and the
+   snow peaks (about 2 500 to 3 200 studs), so their depth comes from how they slide and trail.
+3. **Biome pictures** (lane, Standard, later): each ring's pictures swap, by fading, with the
+   biome the road is in.
 
 ## Open questions
 

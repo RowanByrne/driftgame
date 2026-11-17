@@ -164,6 +164,12 @@ function SkyController:LightsOn(): boolean
 	return cycle:lightsAt(now())
 end
 
+-- The look set last (every keyframe value, blended), or nil before the first. The painted
+-- vista reads its `VistaTint` and `CloudSeaColour` from it (`Drift/VistaView`, T-266).
+function SkyController:Look(): { [string]: any }?
+	return lastLook
+end
+
 -- The look now, the moment it was taken at, and what was set.
 function SkyController:DebugState(): { [string]: any }
 	local look = lastLook or {}
