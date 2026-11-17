@@ -194,9 +194,13 @@ end
 local function pilot(Sim, SplineWorld, spline, h, o)
 	local D = Config.Drift
 	local G = Config.Fx.Gates
-	local lane, v0 = o.lane, o.v0
+	local lane = o.lane
+	-- the speed it arrives at: `v0`, or `k` times the speed a 4-wheel drift at about 31 to
+	-- 40 degrees (26 to 31 studs/s^2 of grip) carries round the hairpin's radius without
+	-- losing speed, which is what a player who has been drifting arrives at
+	local v0 = o.v0 or (o.k * math.sqrt(28 * h.radius))
 	local world = SplineWorld.new(spline, nil)
-	local startS = h.zone - 100
+	local startS = math.min(h.zone, h.entry - o.outAt) - 20
 	local cf = spline:frame(startS, D.RideHeight)
 	local pos = spline:surface(startS, lane) + Vector3.new(0, D.RideHeight, 0)
 	local runner = Sim.newRunner(CFrame.lookAt(pos, pos + cf.LookVector * Vector3.new(1, 0, 1)))
