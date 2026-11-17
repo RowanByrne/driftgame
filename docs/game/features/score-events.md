@@ -224,3 +224,27 @@ Steps 1 and 2 can run side by side (the feed builds against fixtures). Step 3 to
 - Options 1 to 4 above.
 - Whether a fall should also cost the ladder (today it doesn't). Recommended: no, keep T-119's "basic scoring" until a run has a structure.
 - Whether `WALL SCRAPE` (a door on the rail) scores at all, or only the bumper does.
+
+## The user's revision (2026-11-17)
+
+The user, on the plan: *"first set i actually want: jump is actually a sustained event - the flight is the sustain; wheel lift (smaller boost, easy); bumper grind (medium boost, sort of hard); hang grind (big boost, difficult); near miss (easy, trees only, proximity to object gives higher boost). we already have 'long drift' that's what the current score system we are building on top of does. i also want to add another category: conditional events - these you must initiate the event, but then complete it in order to get the boost, and they can be static boosts or sustained boosts depending on the thing"* (full words on T-293). This replaces the first set and the extras above where they differ.
+
+**The first set:**
+
+| Event | Kind | Difficulty, boost |
+|---|---|---|
+| Jump | Sustained: the flight is the sustain (points per second of airtime, scaled by height) | |
+| Wheel lift | Sustained | Easy, small |
+| Bumper grind | Sustained | Sort of hard, medium |
+| Hang grind | Sustained | Difficult, big |
+| Near miss | One-off | Easy; trees only; the closer to the trunk, the bigger |
+
+Switchback is out of the first set; "long drift" is the existing drift score, not a new event.
+
+**A third kind: conditional events.** The player starts one, and only gets the boost by completing it; each is a static or sustained boost, as fits. They need a hairpin to be known ahead of the car, with an entry zone before it and its exit: the road already knows its tight stretches (`RoadTexture.centreRuns`: under 130 studs of radius, where the double yellow is drawn), which the detection builds on.
+
+- **Perfect hairpin** (medium): a sustained drift through the whole hairpin while staying on your own side of the road (never crossing the double yellow). Two levels: a 2-wheel drift the whole way, and a 4-wheel drift the whole way, worth twice as much.
+- **Scandinavian flick** (extreme): in the zone before a hairpin, a 4-wheel drift the opposite way to the hairpin; then, within a short window (about 1 s, to tune), a switch to a 4-wheel drift the right way for the hairpin; held as a 4-wheel drift through the rest of the hairpin to complete.
+- **Reverse entry**: going into a hairpin, the car turns past 90 degrees towards the hairpin, so it is going backwards; it must then carry on in a drift (at least 2 wheels) through the rest of the hairpin to complete.
+
+"2-wheel" and "4-wheel" drift mean how many tyres are sliding (past their slip gate), per wheel, from `Drift/Wheels`.
