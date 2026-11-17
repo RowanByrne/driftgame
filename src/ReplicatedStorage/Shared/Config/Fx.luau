@@ -68,12 +68,14 @@ return {
 		-- not the ground mesh. See-through by vertex alpha: its edges, its ends and its age.
 		Ribbon = {
 			Wheels = 4,
-			Sections = 96, -- cross-sections in each wheel's ring. THE MESH BUDGET (features/
-			-- ground-trial.md): 96 x 6 points x 4 wheels is 2 304 vertices, with the grass's 4 144
-			-- and the road's and ground's own. At a section every 2.5 studs that is about 235
-			-- studs of mark a wheel: a 5-second drift at 45 studs/s
+			Sections = 64, -- cross-sections in each wheel's ring. THE MESH BUDGET (features/
+			-- ground-trial.md) is the limit: 64 x 4 points x 4 wheels is 1 024 vertices. MEASURED
+			-- (DR-Lane3, Road ahead and behind Longest): at 96 x 6 (2 304) the client ran out of
+			-- EditableMesh memory streaming the road ("Failed to create EditableMesh ... memory
+			-- budget"); without this ribbon it did not. At a section every 3 studs, 62 sections
+			-- is about 185 studs of mark a wheel; a longer one loses its oldest end early
 			ReOrigin = 800, -- studs a strip's origin may lag the tyre before it moves
-			Spacing = 2.5, -- studs between cross-sections on a straight run...
+			Spacing = 3, -- studs between cross-sections on a straight run...
 			MinSpacing = 0.4, -- ...and down to this through a bend, a new one whenever the path
 			TurnDegrees = 4, -- has turned this far since the last. So a curve is a curve
 			FadeInStuds = 1.2, -- a mark comes in over this much of its start (short: rubber
@@ -82,8 +84,9 @@ return {
 			WidthSeconds = 0.1, -- the T-207 narrowing, smoothed so it never steps
 			TileLength = 4, -- studs of mark one repeat of the streak texture covers
 			AgeLevels = 20, -- how many steps the drying and fading are rewritten in (0.25 s)
-			Lift = 0.05, -- studs over the road's surface. MEASURED against the drawn road
-			-- mesh: see features/car-fx.md "Rubber on the tarmac"
+			Lift = 0.08, -- studs over the road's surface. MEASURED against the drawn road mesh: at
+			-- 0.05 the rubber sat 0.021 to 0.052 over it (none under); 0.08 keeps a margin for
+			-- depth precision far off (features/car-fx.md "Rubber on the tarmac")
 			MaxSnap = 1.5, -- studs a point may move off the car's plane to reach the road
 			Material = Enum.Material.SmoothPlastic, -- rubber smeared flat: a little sheen
 			Transparency = 0.02, -- the parts' own. ABOVE 0 IS THE POINT: only then is vertex
@@ -115,7 +118,7 @@ return {
 			},
 		},
 
-		-- The ribbon's cross-section, from its outer edge in, mirrored: 6 points across. FLAT:
+		-- The ribbon's cross-section, from its outer edge in, mirrored: 4 points across. FLAT:
 		-- rubber lies on the tarmac, it does not dig in (no berm, no walls). `Offset` is the
 		-- share of the half-width out from the centre; `Height` and `Tilt` are zero here, kept
 		-- for the shape the grass's ribbon shares; `Weight` 0 keeps every normal the road's own,
@@ -123,8 +126,8 @@ return {
 		-- `Alpha` does the soft edge.)
 		Profile = {
 			{ Offset = 1.00, Height = 0, Tilt = 0, Weight = 0 }, -- the edge: nothing
-			{ Offset = 0.62, Height = 0, Tilt = 0, Weight = 0 }, -- the soft shoulder
-			{ Offset = 0.22, Height = 0, Tilt = 0, Weight = 0 }, -- the dark middle
+			{ Offset = 0.30, Height = 0, Tilt = 0, Weight = 0 }, -- the dark middle, flat between:
+			-- the alpha ramps from the edge in, the soft shoulder
 		},
 
 		-- The two looks, one entry per `Profile` point: `Colour` when laid, `DryColour` at the
@@ -135,8 +138,7 @@ return {
 			HeightScale = 0,
 			TiltScale = 0,
 			Points = {
-				{ Colour = Color3.fromRGB(34, 33, 34), DryColour = Color3.fromRGB(46, 45, 46), Alpha = 0 },
-				{ Colour = Color3.fromRGB(30, 29, 30), DryColour = Color3.fromRGB(42, 41, 42), Alpha = 0.5 },
+				{ Colour = Color3.fromRGB(32, 31, 32), DryColour = Color3.fromRGB(44, 43, 44), Alpha = 0 },
 				{ Colour = Color3.fromRGB(22, 21, 22), DryColour = Color3.fromRGB(36, 35, 36), Alpha = 0.92 },
 			},
 		},
@@ -145,8 +147,7 @@ return {
 			HeightScale = 0,
 			TiltScale = 0,
 			Points = {
-				{ Colour = Color3.fromRGB(104, 96, 84), DryColour = Color3.fromRGB(116, 108, 96), Alpha = 0 },
-				{ Colour = Color3.fromRGB(96, 88, 76), DryColour = Color3.fromRGB(110, 102, 90), Alpha = 0.45 },
+				{ Colour = Color3.fromRGB(100, 92, 80), DryColour = Color3.fromRGB(112, 104, 92), Alpha = 0 },
 				{ Colour = Color3.fromRGB(84, 76, 64), DryColour = Color3.fromRGB(100, 92, 80), Alpha = 0.75 },
 			},
 		},

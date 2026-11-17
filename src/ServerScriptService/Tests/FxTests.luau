@@ -1116,7 +1116,8 @@ function Tests.run(opts)
 			-- neighbours on one mark. Every pair of ring neighbours is either two sections of a
 			-- mark within a segment's length, or touches a point -- and a point is either next
 			-- to another point or sits on its neighbour's centre.
-			local function stretched(strip): (number, number)
+			local function stretched(strip, pp: number?): (number, number)
+				local P = pp or P
 				local worst, real = 0, 0
 				local n = #strip
 				for idx = 1, n do
@@ -1374,7 +1375,7 @@ function Tests.run(opts)
 				local allVerts = rverts + marks:DebugState().vertices
 				check(
 					"the rubber ribbon is built once, one see-through part a wheel, within the mesh budget",
-					rub.ready and rparts == MR.Wheels and see and rverts <= 2400 and allVerts <= 6600,
+					rub.ready and rparts == MR.Wheels and see and rverts <= 1100 and allVerts <= 5300,
 					`ready {rub.ready} ({rub.failed or "ok"}); {rparts} MeshParts, see-through and textured {see}; {rverts} mesh vertices, {allVerts} with the grass's`
 				)
 
@@ -1435,7 +1436,7 @@ function Tests.run(opts)
 				local scuffKind = GroundMarks.Kind(rub, 1)
 				GroundMarks.Wheel(rub, 1, false, onArc(61 / 60), up, Vector3.xAxis, 1, true, roadGround, 1 / 60, 1)
 				local strip = rub:DebugStrip(1)
-				local worst = stretched(strip)
+				local worst = stretched(strip, RP)
 				local rmark = {}
 				for _, sct in strip do
 					if sct.real and (sct.points[1] - sct.points[RP]).Magnitude > 1e-4 then
