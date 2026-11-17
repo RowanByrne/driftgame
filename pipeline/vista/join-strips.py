@@ -11,7 +11,9 @@ other and the land beneath blends (`blend`), so there is no see-through ghost of
 The picks are never changed: this writes a derived `<name>-joined.png` beside each, logged in
 the manifest (ART-PIPELINE.md, "Never edit a pick's pixels"; derived files as the grass did).
 
-Run:  python -I pipeline/vista/join-strips.py assets/painted-vista near-forest-01 near-forest-01-v1 near-forest-01-v2
+Run on a folder outside git holding the picks (`..rtsourcepainted-vista`), then copy only the
+`-joined` results the game uses into assets/painted-vista:
+  python -I pipeline/vista/join-strips.py ../art/source/painted-vista near-forest-01-clear near-forest-01-v1-clear near-forest-01-v2-clear
 """
 import hashlib
 import sys
