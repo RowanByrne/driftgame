@@ -63,6 +63,7 @@ NearMiss.Defaults = {
 
 -- the closest-pass histogram's bucket edges, studs of gap
 local BUCKETS = { 0.1, 0.5, 1, 1.5, 2, 3, 4, 6, 8, 10 }
+local RECENT = 20
 
 export type Tree = { x: number, y: number, z: number, h: number, trunk: number, s: number, side: number }
 
@@ -71,7 +72,8 @@ type Pass = {
 	minGap: number,
 	speedAtMin: number,
 	forwardAtMin: boolean,
-	touched: boolean,
+	touched: boolean, -- this trunk was touched
+	wall: boolean, -- another wall was, during the pass or its `Confirm`
 	over: boolean,
 	clock: number, -- seconds since the pass was over
 }
@@ -142,12 +144,14 @@ function NearMiss.new(sink: Sink, rig: any, opts: { [string]: number }?)
 		looked = 0, -- trunks looked at, all frames
 		passes = 0, -- passes under Watch
 		fired = 0,
-		hit = 0, -- would have fired, voided by a touch or a wall
+		hit = 0, -- would have fired, voided by touching this trunk
+		wall = 0, -- would have fired, voided by touching another wall (another trunk)
 		slow = 0, -- under Threshold, but too slow or backward
 		fell = 0,
 		hist = table.create(#BUCKETS + 1, 0),
 		closest = math.huge, -- the closest gap this frame
 		last = nil :: any,
+		recent = {} :: { any }, -- the last `RECENT` passes under Threshold, and what came of each
 		micros = 0, -- total Update time
 	}
 	return self
@@ -180,12 +184,13 @@ function NearMiss:_end(p: Pass)
 	if p.minGap >= t.Threshold then
 		return
 	end
-	if p.touched then
-		st.hit += 1
-		return
+	local outcome = if p.touched then "hit" elseif p.wall then "wall" elseif not p.forwardAtMin or p.speedAtMin < t.MinSpeed then "slow" else "fired"
+	if #st.recent >= RECENT then
+		table.remove(st.recent, 1)
 	end
-	if not p.forwardAtMin or p.speedAtMin < t.MinSpeed then
-		st.slow += 1
+	table.insert(st.recent, { gap = p.minGap, outcome = outcome, speed = p.speedAtMin, s = p.tree.s, side = p.tree.side, e = (p.tree :: any).e, at = self.clock })
+	if outcome ~= "fired" then
+		st[outcome] += 1
 		return
 	end
 	local size = math.clamp((t.Threshold - p.minGap) / (t.Threshold - t.FullGap), 0, 1)
@@ -272,7 +277,7 @@ function NearMiss:_update(dt: number, state: any)
 			if not p then
 				local rested = self.rested[tree]
 				if g < t.Watch and not (rested and self.clock - rested < t.Rearm) then
-					p = { tree = tree, minGap = math.huge, speedAtMin = 0, forwardAtMin = false, touched = false, over = false, clock = 0 }
+					p = { tree = tree, minGap = math.huge, speedAtMin = 0, forwardAtMin = false, touched = false, wall = false, over = false, clock = 0 }
 					passes[tree] = p
 				end
 			end
@@ -293,8 +298,8 @@ function NearMiss:_update(dt: number, state: any)
 	end
 
 	for tree, p in passes do
-		if wall then
-			p.touched = true
+		if wall and not p.touched then
+			p.wall = true
 		end
 		if not seen[tree] then
 			p.over = true
@@ -332,6 +337,8 @@ function NearMiss:DebugState()
 		passes = st.passes,
 		fired = st.fired,
 		hit = st.hit,
+		wall = st.wall,
+		recent = st.recent,
 		slow = st.slow,
 		fell = st.fell,
 		last = st.last,

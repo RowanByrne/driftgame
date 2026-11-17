@@ -288,7 +288,7 @@ local function signedAngle(ax, az, bx, bz)
 end
 
 local function newTotals()
-	return { seconds = 0, groveSeconds = 0, passes = 0, fired = 0, hit = 0, slow = 0, fell = 0, sizes = 0, treeStops = 0, falls = 0, hist = nil, micros = 0, frames = 0, fetches = 0, studs = 0 }
+	return { seconds = 0, groveSeconds = 0, passes = 0, fired = 0, hit = 0, wall = 0, slow = 0, recent = {}, fell = 0, sizes = 0, treeStops = 0, falls = 0, hist = nil, micros = 0, frames = 0, fetches = 0, studs = 0 }
 end
 
 local function addDet(tot, det)
@@ -296,6 +296,10 @@ local function addDet(tot, det)
 	tot.passes += ds.passes
 	tot.fired += ds.fired
 	tot.hit += ds.hit
+	tot.wall += ds.wall
+	for _, r in ds.recent do
+		table.insert(tot.recent, r)
+	end
 	tot.slow += ds.slow
 	tot.fell += ds.fell
 	tot.micros += ds.microsPerFrame * ds.frames
@@ -434,7 +438,7 @@ local function driveTests(check, results)
 	check(
 		"plain driving on the tarmac: no near misses",
 		plain.fired == 0,
-		`{fmt(plain.seconds, 0)} s, {fmt(plain.studs, 0)} studs; {plain.passes} passes within {NearMiss.Defaults.Watch} studs, {plain.fired} fired; closest passes {histText(plain.hist)}; {plain.falls} put-backs. {#runs} grove stretches on the road's {LENGTH} studs ({fmt(groveStuds / LENGTH * 100, 1)}% of it)`
+		`{fmt(plain.seconds, 0)} s, {fmt(plain.studs, 0)} studs; {plain.passes} passes within {NearMiss.Defaults.Watch} studs, {plain.fired} fired, {plain.hit} hit the trunk, {plain.wall} voided by another wall; closest passes {histText(plain.hist)}; {plain.falls} put-backs. {#runs} grove stretches on the road's {LENGTH} studs ({fmt(groveStuds / LENGTH * 100, 1)}% of it)`
 	)
 
 	-- 2. Along the groves at set distances out on the grass
@@ -458,12 +462,42 @@ local function driveTests(check, results)
 		check(
 			`along the groves, {out} studs out`,
 			true,
-			`{fmt(tot.groveSeconds, 0)} s out there: {tot.fired} fired ({fmt(perMin, 1)} a minute, mean size {fmt(tot.sizes / math.max(1, tot.fired), 2)}), {tot.hit} voided by a touch, {tot.slow} too slow, {tot.treeStops} steps stopped by a trunk, {tot.falls} put-backs; closest passes {histText(tot.hist)}`
+			`{fmt(tot.groveSeconds, 0)} s out there: {tot.fired} fired ({fmt(perMin, 1)} a minute, mean size {fmt(tot.sizes / math.max(1, tot.fired), 2)}), {tot.hit} hit the trunk, {tot.wall} voided by another wall, {tot.slow} too slow, {tot.treeStops} steps stopped by a trunk, {tot.falls} put-backs; closest passes {histText(tot.hist)}`
 		)
 	end
 	results.byOut = byOut
 
-	-- 3. The cost
+	-- 3. The groves' own layout: a car holding a straight line `out` studs past the tarmac's
+	-- edge, beside the road, the length of every grove: per 100 studs, how many trunks it
+	-- would pass within the threshold, and how many stand in its way.
+	local hw = Config.Drift.BodyWidth * 0.5
+	local SplineGrove = require(ReplicatedStorage.Shared.Road.SplineGrove)
+	local thr = NearMiss.Defaults.Threshold
+	local lines = {}
+	for out = 0, 20, 2 do
+		local near, blocked, studs, sizes = 0, 0, 0, 0
+		for _, r in runs do
+			local items = SplineGrove.items(spline, r.a + 40, r.b - 40, r.side)
+			studs += math.max(0, r.b - r.a - 80)
+			for _, it in items do
+				if it.trunk > 0 then
+					local g = math.abs(it.e - out) - hw - it.trunk
+					if g < 0 then
+						blocked += 1
+					elseif g < thr then
+						near += 1
+						sizes += math.clamp((thr - g) / (thr - NearMiss.Defaults.FullGap), 0, 1)
+					end
+				end
+			end
+		end
+		table.insert(lines, `{out}: {fmt(near / studs * 100, 2)} near, {fmt(blocked / studs * 100, 2)} in the way`)
+		results.layout = results.layout or {}
+		results.layout[out] = { near = near, blocked = blocked, studs = studs }
+	end
+	check("the groves' layout, a straight line N studs past the edge, per 100 studs", true, table.concat(lines, "; "))
+
+	-- 4. The cost
 	local frames, micros, fetches = plain.frames, plain.micros, plain.fetches
 	for _, tot in byOut do
 		frames += tot.frames
