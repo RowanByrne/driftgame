@@ -366,6 +366,48 @@ local Spline = {
 		CrackDark = 0.35,
 	},
 
+	-- --------------------------------------------------------------- the gravel's texture
+	-- T-270 (features/road-surface.md "The gravel"), the user: "do the same for the gravel on
+	-- the sides of the road. get a proper texture for it". Painted in code into a band of the
+	-- tarmac's image (`Road/RoadTexture.paintGravel`), so it costs no image of its own; its
+	-- colours are `Config.Road.Colours.Gravel*`. The bevel at each edge of the tarmac is mapped
+	-- to it, and so is a strip laid over the narrow gravel runoff of a tight cliff edge.
+	Gravel = {
+		BandPx = 96, -- columns of the 1 024-wide image (taken from the tarmac's: 16.6 pixels a stud there)
+		InsetPx = 4, -- columns each side of the band nothing is mapped to, so nothing bleeds in
+		BandStuds = 3, -- studs of gravel across the band: 29 pixels a stud
+		PeriodStuds = 64, -- studs along one copy: 16 pixels a stud
+		Seed = 270,
+		-- the bed between the stones: dust, mottled by up to `BedMottle`, darker in the gaps
+		BedMottle = 0.15,
+		-- the stones, by size: so many a square stud, a radius range (studs), flat facets each
+		Stones = {
+			{ Density = 22, Radius = { 0.04, 0.08 }, Facets = 4 },
+			{ Density = 7, Radius = { 0.08, 0.16 }, Facets = 5 },
+			{ Density = 1.2, Radius = { 0.16, 0.26 }, Facets = 6 },
+		},
+		-- the odd larger rock, a copy: so many, how far across the band (studs), how big
+		Rocks = { Count = 5, Across = { 0.6, 2.2 }, Radius = { 0.3, 0.5 }, Facets = 6 },
+		Aspect = { 0.75, 1.25 }, -- a stone's two radii, as shares of its size
+		LightAngle = -125, -- degrees, in the band (across, along): where the facets are lit from
+		FacetShade = 0.35, -- how much a facet facing the light (or away) is lighter (or darker)
+		Rim = 0.75, -- of a stone's radius, squared, past which its rim is darker by `RimDark`
+		RimDark = 0.8,
+		StoneGrain = 0.06, -- a stone's pixels vary by this
+		Shadow = 0.45, -- how dark a stone's shadow is at its middle
+		-- THE EDGES, no hard seams: the tarmac's dusty edge takes over raggedly over the band's
+		-- first `EdgeSoft` studs; grass tufts creep in from `GrassFrom` studs to its end
+		EdgeSoft = 0.45,
+		GrassFrom = 2.4,
+		-- THE MAPPING: the bevel runs from the band's start (the tarmac's edge) to its end (the
+		-- grass) and, in a gravel run, to `RunFoot` only (no grass where gravel goes on); the
+		-- strip over a gravel run's flat runoff, from its foot to its lip, reads `RunFrom` to
+		-- `RunFoot`, lifted `RunoffLift` over the ground (more on a coarse chunk: its tolerance / 4)
+		RunFoot = 2.2,
+		RunFrom = 1.0,
+		RunoffLift = 0.06,
+	},
+
 	-- --------------------------------------------------------------- the ground
 	-- (features/ground-trial.md, T-218; the only ground since T-247, features/legacy-removal.md.)
 	-- The ground BUILT FIRST, as one mountain the road is cut into (`Road/Ground`), drawn by

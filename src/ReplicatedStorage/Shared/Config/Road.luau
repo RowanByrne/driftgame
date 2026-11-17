@@ -130,6 +130,20 @@ return {
 		Crack = Color3.fromRGB(30, 30, 36),
 		EdgeLine = Color3.fromRGB(222, 222, 214), -- Japanese edge lines: solid white
 		CentreLine = Color3.fromRGB(230, 168, 46), -- the double yellow (the touge's orange-yellow)
+		-- THE GRAVEL'S TEXTURE (T-270, `Config.Spline.Gravel`): the bed's dust and its gaps,
+		-- the stones' tones (each stone one of these, a little toward the dust), the odd
+		-- larger rock, and the grass tufts creeping in at its outer edge
+		GravelDust = Color3.fromRGB(116, 110, 100),
+		GravelGap = Color3.fromRGB(54, 52, 50),
+		GravelStones = {
+			Color3.fromRGB(150, 146, 138),
+			Color3.fromRGB(128, 122, 112),
+			Color3.fromRGB(104, 100, 94),
+			Color3.fromRGB(160, 150, 134),
+			Color3.fromRGB(90, 88, 86),
+		},
+		GravelRock = Color3.fromRGB(124, 122, 118),
+		GravelGrass = Color3.fromRGB(66, 98, 48),
 	},
 
 	-- THE PAINTED LINES (T-268). The user, send-back 2: "get rid of the dashes - it's not
