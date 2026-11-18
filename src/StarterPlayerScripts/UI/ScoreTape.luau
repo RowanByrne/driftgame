@@ -132,13 +132,13 @@ function Rank:layout(layout)
 	self.progress = nil
 end
 
-function Rank:draw(rung, progress, entering)
+function Rank:draw(rung, progress, entering, reduced)
 	local style = Tape.tier(rung)
 	if rung ~= self.rung then
 		local widthChanged = self.doubleDigit ~= (rung >= 10)
 		self.rung = rung
 		if widthChanged then self:layout(self.layoutData) end
-		self.art:setRank(rung, entering == true)
+		self.art:setRank(rung, entering == true, reduced)
 		self.mult.Text = "×" .. tostring(rung)
 		self.mult.TextColor3 = style.accent
 		self.rule.BackgroundColor3 = style.accent

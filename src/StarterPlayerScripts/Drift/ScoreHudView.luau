@@ -84,7 +84,7 @@ function ScoreHudView:_layout()
 	self.runLine.Size = UDim2.fromOffset(width, math.ceil(l.height * .55))
 	self.bestLine.Position = UDim2.fromOffset(0, math.ceil(l.height * .55))
 	self.bestLine.Size = UDim2.fromOffset(width, math.ceil(l.height * .5))
-	if self.rung then self.rank:draw(self.rung, self.progress or 0) end
+	if self.rung then self.rank:draw(self.rung, self.progress or 0, false, self:_reduced()) end
 end
 
 function ScoreHudView:_reduced()
@@ -130,7 +130,7 @@ function ScoreHudView:setData(data)
 	if mode == "run" then
 		local rung = data.multiplier or 1
 		local style = Tape.tier(rung)
-		local entering = self.rung ~= nil and rung > self.rung
+		local entering = self.rung == nil or rung > self.rung
 		if self.rung ~= rung then
 			if self.rung and rung < self.rung and not self:_reduced() then
 				self.pulse = {age = 0, strength = .20 + style.force * .8, drop = rung < self.rung}
@@ -140,7 +140,7 @@ function ScoreHudView:setData(data)
 			self.divider.BackgroundColor3 = style.accent
 		end
 		self.progress = math.clamp(data.progress or 0, 0, 1)
-		self.rank:draw(rung, self.progress, entering)
+		self.rank:draw(rung, self.progress, entering, self:_reduced())
 		self:_drawTotal()
 	elseif mode == "summary" then
 		self.runLine.Text = "RUN SCORE " .. Tape.format(data.score)

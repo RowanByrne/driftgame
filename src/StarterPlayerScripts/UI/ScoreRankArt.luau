@@ -110,7 +110,8 @@ function Art:_buildFire()
 	end
 end
 
-function Art:setRank(rung, entry)
+function Art:setRank(rung, entry, reduced)
+	self.reduced = reduced
 	if self.scene then self.scene:Destroy() end
 	self.style = Registry[rung]
 	local s = self.style
