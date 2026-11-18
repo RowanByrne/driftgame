@@ -390,6 +390,7 @@ and the shake's four), and proved the same way that zeroing them gives that buil
 | `ShakeRestoreRate` | **14 /s** | How fast a kick settles back to zero: to half of itself before the next one arrives |
 | `PlayerZoomMin`, `PlayerZoomMax` | **0.4×, 1.8×** | The wheel's zoom limits, as multiples of the distance (`T-152`). 1 is the default and today's camera |
 | `PlayerZoomDollyStart` | **0.6×** | Below this distance the camera moves closer with the same viewing angle (T-321) |
+| `PlayerZoomLowering` | **0.65** | How much the eye lowers through the close range to keep the rear in frame while seeing over its roof |
 | `PlayerZoomStep` | **×1.12** | One wheel notch |
 | `PlayerZoomRate` | **10 /s** | How fast the camera eases to the zoom a notch asked for |
 | `HillLookFollow` | **1** | Share of the road's climb the look point's height is carried with (`T-156`). 0 is the old lag |

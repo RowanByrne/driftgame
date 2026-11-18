@@ -429,7 +429,8 @@ local function applyZoom(rig, carPos: Vector3)
 		rig.lookPoint = carPos:Lerp(rig.lookPoint, scale)
 		-- Lower the close chase eye for bumper clearance. Translate the look point
 		-- equally, so this changes framing without tilting the horizon.
-		local lower = Vector3.new(offset.X, offset.Y * scale, offset.Z).Unit * offset.Magnitude
+		local heightScale = 1 - (1 - scale) * Cam.PlayerZoomLowering
+		local lower = Vector3.new(offset.X, offset.Y * heightScale, offset.Z).Unit * offset.Magnitude
 		local shift = lower - offset
 		rig.position += shift
 		rig.lookPoint += shift

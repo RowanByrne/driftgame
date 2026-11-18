@@ -286,6 +286,7 @@ local Camera = {
 	-- The prefix is `PlayerZoom`, never `CamZoom`, so the predecessor's names stay gone.
 	PlayerZoomMin = 0.4, -- 18.4 studs from the car at rest with the wheel fully forward (T-321).
 	PlayerZoomDollyStart = 0.6, -- Closer than this, move the camera while preserving this chase angle.
+	PlayerZoomLowering = 0.65, -- Share of the extra zoom travel applied to the eye height.
 	PlayerZoomMax = 1.8, -- x at its farthest. OURS (T-152). 82.8 studs, 36 up (T-291; 31 at 22): the car is
 	-- small but the road around it reads
 	PlayerZoomStep = 1.12, -- x per wheel notch, multiplied (so in and out are the same size
