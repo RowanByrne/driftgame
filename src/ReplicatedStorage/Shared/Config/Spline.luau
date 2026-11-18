@@ -39,7 +39,8 @@ local Spline = {
 	MinTransition = 24, -- studs: no easing is shorter than this, however small the change
 
 	-- GRADE, as in `Config.Road`: a safety lid, not a target. Real touge grades are 4-8.
-	MaxGrade = 8, -- degrees
+	MaxGrade = 14, -- degrees on a short pitch around a spur or across a gully
+	CruiseGrade = 8, -- the sustained approach and the approved seed 7 recording
 	-- How fast the grade may change: the crest and dip of a vertical curve. 0.0015 of grade
 	-- per stud is the piece road's 1.15 degrees per 13-stud segment.
 	MaxGradeRate = 0.0015, -- grade (dy/ds) per stud
@@ -503,7 +504,7 @@ local Spline = {
 		-- `MaxGrade` (never under `AimMinLimit`), so the road can follow h there
 		AimSpan = 60, -- studs
 		LegGrade = { 0.035, 0.07 }, -- descent per stud of road along a leg: 2 to 4 degrees
-		LegGradeSteep = 0.1, -- plus this much of h's slope there (T-228), to `FollowGrade` at most
+		LegGradeEase = 2, -- steep faces gain less height per stud on the long approach
 		-- less this much a stud for every stud the road is above h where it is (more if below):
 		-- a road left above the mountain turns across it until the mountain is back
 		CatchUp = 1 / 150, -- (1 / 100 measured worse on 20 seeds, and one boxed in)
