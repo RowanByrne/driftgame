@@ -10,7 +10,6 @@ Every task in progress and the files it owns, so parallel sessions and workers n
 | Branch | Lane | Files owned | Since |
 |---|---|---|---|
 | `agent/akina-split-feed` (T-307) | Lent on test | `src/StarterPlayerScripts/Drift/Score{Hud,Feed}View.luau` and their `.fixtures.luau`, `src/StarterPlayerScripts/Controllers/ScoreController.luau`, `src/StarterPlayerScripts/UI/Theme.luau`, `src/StarterPlayerScripts/UI/Layers.luau` (ScoreHud and ScoreFeed entries only), `src/StarterPlayerScripts/UI/ScoreTape.luau` (new), score HUD sections of `docs/game/{ART-DIRECTION,UI-INVENTORY}.md` and `docs/game/features/{endless-score,score-events}.md`, `assets/reference/akina-split-feed.png` (new) | 2026-11-17 |
-| `agent/apex-side` (T-308) | borrowed | `src/ReplicatedStorage/Shared/Road/SplineGen.luau` (the carved apex side only), `Shared/Config/Spline.luau` (apex numbers only), `src/ServerScriptService/Tests/SplineGenTests.luau`, `Tests/SplineTests.luau`, `docs/game/features/mountain-road.md` | 2026-11-17 |
 
 ## Notes between sessions
 
