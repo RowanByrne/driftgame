@@ -84,7 +84,7 @@ function ScoreHudView:_layout()
 	self.runLine.Size = UDim2.fromOffset(width, math.ceil(l.height * .55))
 	self.bestLine.Position = UDim2.fromOffset(0, math.ceil(l.height * .55))
 	self.bestLine.Size = UDim2.fromOffset(width, math.ceil(l.height * .5))
-	if self.rung then self.rank:draw(self.rung, self.progress or 0) end
+	if self.rung then self.rank:draw(self.rung, self.progress or 0, false, self:_reduced()) end
 end
 
 function ScoreHudView:_reduced()
@@ -100,7 +100,6 @@ function ScoreHudView:_resetEffects()
 	self.pulse = nil
 	self.reservedThisSnapshot = 0
 	self.score.Position = UDim2.fromOffset(0, math.floor(self.layout.height * .39))
-	self.rank.echo.Visible = false
 	for _, spark in self.sparks do spark.Visible = false end
 	self.rank.root.Position = UDim2.fromOffset(self.layout.scoreWidth + self.layout.gap, 0)
 end
@@ -122,6 +121,7 @@ function ScoreHudView:setData(data)
 		for _, item in {self.rank.root, self.score, self.caption, self.divider} do item.Visible = live end
 		self.runLine.Visible = mode == "summary"
 		self.bestLine.Visible = mode == "summary"
+		self.rank.rung = nil
 		self.rung = nil
 		self.shown = nil
 	end
@@ -130,8 +130,9 @@ function ScoreHudView:setData(data)
 	if mode == "run" then
 		local rung = data.multiplier or 1
 		local style = Tape.tier(rung)
+		local entering = self.rung == nil or rung > self.rung
 		if self.rung ~= rung then
-			if self.rung and not self:_reduced() then
+			if self.rung and rung < self.rung and not self:_reduced() then
 				self.pulse = {age = 0, strength = .20 + style.force * .8, drop = rung < self.rung}
 			end
 			self.rung = rung
@@ -139,7 +140,7 @@ function ScoreHudView:setData(data)
 			self.divider.BackgroundColor3 = style.accent
 		end
 		self.progress = math.clamp(data.progress or 0, 0, 1)
-		self.rank:draw(rung, self.progress)
+		self.rank:draw(rung, self.progress, entering, self:_reduced())
 		self:_drawTotal()
 	elseif mode == "summary" then
 		self.runLine.Text = "RUN SCORE " .. Tape.format(data.score)
@@ -191,6 +192,7 @@ end
 
 function ScoreHudView:step(dt)
 	if self.mode ~= "run" then return end
+	if self.gui.Enabled then self.rank.art:step(dt, self:_reduced()) end
 	if self:_reduced() then
 		if self.pulse or #self.transfers > 0 or self.waiting > 0 then self:_resetEffects(); self:_drawTotal() end
 		return
@@ -206,10 +208,6 @@ function ScoreHudView:step(dt)
 		local x = math.sin(t * 34) * amplitude * 4
 		local y = math.sin(t * 17) * amplitude * (if pulse.drop then -5 else 6)
 		self.rank.root.Position = UDim2.fromOffset(lead + x, y)
-		self.rank.echo.Visible = self.rung >= 4 and t < .78
-		self.rank.echo.TextTransparency = 1 - amplitude * .74
-		self.rank.echo.TextStrokeTransparency = 1
-		self.rank.echo.Position = UDim2.fromOffset(-amplitude * 6, 1 + amplitude * 2)
 		for i, spark in self.sparks do
 			spark.Visible = self.rung >= 3 and not pulse.drop and i <= math.min(5, self.rung - 1) and t < 1
 			if spark.Visible then
@@ -266,7 +264,7 @@ function ScoreHudView:describe()
 	return {
 		mode = self.mode, enabled = self.gui.Enabled, displayOrder = self.gui.DisplayOrder, panel = rect(self.panel),
 		score = rect(self.score), scoreText = self.score.Text, multiplier = rect(self.rank.mult), multiplierText = self.rank.mult.Text,
-		rank = rect(self.rank.root), rankText = self.rank.base.Text, progress = self.progress or 0, accent = self.rank.lit.TextColor3,
+		rank = rect(self.rank.root), rankText = Tape.tier(self.rung).name, progress = self.progress or 0, accent = Tape.tier(self.rung).accent,
 		bar = rect(self.rank.bar), fill = rect(self.rank.fill), runLine = rect(self.runLine), runText = self.runLine.Text,
 		bestLine = rect(self.bestLine), bestText = self.bestLine.Text, anyActive = active,
 		bankStarts = self.bankStarts, absorbs = self.absorbs, pendingPoints = self.waiting, transferCount = #self.transfers,
