@@ -6,18 +6,8 @@ local Style = require(script.Parent.Theme).ScoreTape
 
 local Tape = {}
 local displayScale = 1.3
-local names = {
-	"WARMUP", "GRIPPED", "LOOSE", "SIDEWAYS", "LINKED", "COMMITTED", "SMOKED", "BOOSTED",
-	"LOCKED IN", "FULL SEND", "OVERDRIVE", "FLAT OUT", "REDLINE", "GHOST", "DEMON", "UNTOUGEABLE",
-}
-local tiers = {}
-for i, name in names do
-	local inks = Style.inks[math.min(i, #Style.inks)]
-	tiers[i] = {
-		name = name, accent = Color3.fromHex(inks[1]), base = Color3.fromHex(inks[2]),
-		tail = Color3.fromHex(inks[3]), tip = Style.ink, force = math.min((i - 1) / 8, 1),
-	}
-end
+local tiers = require(script.Parent.ScoreRankRegistry)
+local RankArt = require(script.Parent.ScoreRankArt)
 
 function Tape.tier(rung)
 	return tiers[math.clamp(math.floor(rung or 1), 1, #tiers)]
@@ -98,12 +88,7 @@ function Tape.newRank(parent)
 	self.root = Tape.frame("Rank", parent, 3)
 	self.rule = rule("Hairline", self.root, Style.secondary)
 	self.rule.BackgroundTransparency = 0.55
-	self.echo = Tape.text("Echo", self.root, Style.rankFont, Style.ink, 26, 1)
-	self.echo.Visible = false
-	self.base = Tape.text("RankName", self.root, Style.rankFont, Style.secondary, 26)
-	self.clip = Tape.frame("Charge", self.root, 3)
-	self.clip.ClipsDescendants = true
-	self.lit = Tape.text("ChargedLetters", self.clip, Style.rankFont, Style.ink, 26)
+	self.art = RankArt.new(self.root)
 	self.mult = Tape.text("Multiplier", self.root, Style.feedFont, Style.ink, 20)
 	self.mult.TextXAlignment = Enum.TextXAlignment.Right
 	self.bar = Tape.frame("Bar", self.root)
@@ -137,27 +122,19 @@ function Rank:layout(layout)
 			part.Size = UDim2.fromOffset(n, barHeight)
 		end
 	end
-	local rankWidth = w - math.round(29 * layout.textScale)
-	for _, part in {self.base, self.lit, self.echo} do
-		part.TextSize = layout.rankSize
-		part.Size = UDim2.fromOffset(rankWidth, h - barHeight - 1)
-	end
-	self.base.Position = UDim2.fromOffset(0, 1)
-	self.clip.Position = self.base.Position
+	local rankWidth = w - math.round(37 * layout.textScale)
+	self.art:layout(rankWidth, h - barHeight - 2)
 	self.mult.Size = UDim2.fromOffset(w - rankWidth, h - 6)
 	self.mult.Position = UDim2.fromOffset(rankWidth, 3)
 	self.mult.TextSize = math.round((if layout.compact then 17 else 20) * layout.textScale)
 	self.progress = nil
 end
 
-function Rank:draw(rung, progress)
+function Rank:draw(rung, progress, entering)
 	local style = Tape.tier(rung)
 	if rung ~= self.rung then
 		self.rung = rung
-		for _, part in {self.base, self.lit, self.echo} do part.Text = style.name end
-		self.base.TextColor3 = style.base
-		self.lit.TextColor3 = style.accent
-		self.echo.TextColor3 = style.tail
+		self.art:setRank(rung, entering == true)
 		self.mult.Text = "×" .. tostring(rung)
 		self.mult.TextColor3 = style.accent
 		self.rule.BackgroundColor3 = style.accent
@@ -169,11 +146,10 @@ function Rank:draw(rung, progress)
 		self.root:SetAttribute("Rung", rung)
 	end
 	local p = math.clamp(progress, 0, 1)
-	local width = math.ceil(self.base.TextBounds.X) + 2
-	if p ~= self.progress or width ~= self.inkWidth then
-		self.progress, self.inkWidth = p, width
+	if p ~= self.progress then
+		self.progress = p
 		self.fill.Size = UDim2.fromScale(p, 1)
-		self.clip.Size = UDim2.fromOffset(math.round(width * p), self.base.Size.Y.Offset)
+		self.art:setCharge(p)
 	end
 end
 

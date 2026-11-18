@@ -1,0 +1,156 @@
+--!nonstrict
+-- Approved Akina exports. Sample the entire registered canvas for lettering
+-- and the exact cel for animated sheets. Asset provenance is in assets/score-ranks.
+local function asset(id, w, h)
+	return {uri = "rbxassetid://" .. id, width = w, height = h}
+end
+local ink = Color3.fromHex
+local ranks = {
+	{
+		name = "WARMUP", accent = ink("B0B9C4"), base = ink("3F4248"), tail = ink("909EAE"),
+		cycle = 1.75, still = 3, entry = {-1, 1, 0.97, 0.97, 0},
+		letters = asset("121881041914215", 1024, 158),
+		signal = asset("72713351230786", 1024, 158),
+		body = asset("138031254409386", 1024, 448),
+		detail = asset("85679640156892", 1024, 448),
+	},
+	{
+		name = "GRIPPED", accent = ink("91B2CE"), base = ink("323B44"), tail = ink("688FB5"),
+		cycle = 1.54, still = 3, entry = {0, -2, 1, 0.92, 0},
+		printInk = ink("17222B"), printOpacity = 0.82,
+		letters = asset("85983549618465", 1024, 200),
+		signal = asset("123856415979745", 1024, 200),
+		body = asset("132149102688321", 1024, 448),
+		detail = asset("130717808025073", 1024, 448),
+		print = asset("70904466151762", 1024, 448),
+	},
+	{
+		name = "LOOSE", accent = ink("9CA4EB"), base = ink("323446"), tail = ink("777DBB"),
+		cycle = 1.46, still = 4, entry = {-4, 1, 1, 1, 0},
+		printInk = ink("201F35"), printOpacity = 0.84,
+		letters = asset("102975830182403", 1024, 209),
+		signal = asset("84240202517120", 1024, 209),
+		body = asset("114258694458298", 1024, 448),
+		detail = asset("135075898268756", 1024, 448),
+		print = asset("112081385787454", 1024, 448),
+	},
+	{
+		name = "SIDEWAYS", accent = ink("AC88FF"), base = ink("2D273F"), tail = ink("7963D9"),
+		cycle = 1.37, still = 6, entry = {-3, 0, 1, 1, -7},
+		letters = asset("122598773212360", 1024, 246),
+		signal = asset("84675478869102", 1024, 246),
+		body = asset("92518543037328", 1024, 448),
+		detail = asset("124771123709201", 1024, 448),
+	},
+	{
+		name = "LINKED", accent = ink("689DFF"), base = ink("212B3F"), tail = ink("4764F3"),
+		cycle = 1.05, still = 2, entry = {-5, 0, 1.05, 1, 0},
+		printInk = ink("90BAFF"), printOpacity = 0.83,
+		letters = asset("107883163055341", 1024, 197),
+		signal = asset("77676824547001", 1024, 197),
+		body = asset("116311052112998", 1024, 448),
+		detail = asset("90378570123584", 1024, 448),
+		print = asset("90378570123584", 1024, 448),
+	},
+	{
+		name = "COMMITTED", accent = ink("39CFFF"), base = ink("214857"), tail = ink("2379FF"),
+		cycle = 1.32, still = 6, entry = {-4, 2, 1, 1, -3},
+		letters = asset("85479550030285", 1024, 224),
+		signal = asset("109824962550143", 1024, 224),
+		body = asset("130963880449858", 1024, 448),
+		detail = asset("115468295641380", 1024, 448),
+	},
+	{
+		name = "SMOKED", accent = ink("29E1C1"), base = ink("1E504B"), tail = ink("0BADD4"),
+		cycle = 1.29, still = 5, entry = {6, 3, 0.84, 0.84, 0},
+		letters = asset("109740636863175", 1024, 207),
+		signal = asset("113091588146840", 1024, 207),
+		body = asset("71946743741698", 1024, 448),
+		detail = asset("115025989010127", 1024, 448),
+	},
+	{
+		name = "BOOSTED", accent = ink("58EE83"), base = ink("4C825F"), tail = ink("04C8A0"),
+		cycle = 1.05, still = 3, entry = {8, 0, 0.72, 1, 0},
+		coreInk = ink("59B5A1"),
+		exhaustInk = ink("137E74"),
+		letters = asset("136429896282375", 1024, 233),
+		signal = asset("112112758750022", 1024, 233),
+		body = asset("138685119098493", 1024, 448),
+		detail = asset("72897536458192", 1024, 448),
+		face = asset("71747594729900", 1024, 233),
+		keyline = asset("113170677225582", 1024, 233),
+	},
+	{
+		name = "LOCKED IN", accent = ink("B6F53D"), base = ink("4A5D2C"), tail = ink("25DE6E"),
+		cycle = 1.44, still = 7, entry = {0, 0, 1.23, 1.15, 0},
+		letters = asset("76001371774043", 1024, 238),
+		signal = asset("103938177119899", 1024, 238),
+		body = asset("140407410292385", 1024, 448),
+		detail = asset("78069198166510", 1024, 448),
+	},
+	{
+		name = "FULL SEND", accent = ink("FFD039"), base = ink("594E28"), tail = ink("F58B1F"),
+		cycle = 0.86, still = 8,
+		coreInk = ink("FFF0BA"),
+		printInk = ink("FFF0BA"), printOpacity = 0.94,
+		letters = asset("132812465743351", 1024, 267),
+		signal = asset("70551742313540", 1024, 267),
+		body = asset("108240446631221", 1024, 448),
+		detail = asset("75327373604156", 1024, 448),
+		print = asset("97966294706892", 1024, 448),
+	},
+	{
+		name = "OVERDRIVE", accent = ink("FF9C25"), base = ink("47331C"), tail = ink("FF6829"),
+		cycle = 0.43, still = 5,
+		letters = asset("111145998801937", 1024, 173),
+		signal = asset("102996266608720", 1024, 173),
+		body = asset("93579351397593", 1024, 448),
+		detail = asset("115861144611199", 1024, 448),
+		face = asset("99716900934955", 1024, 173),
+	},
+	{
+		name = "FLAT OUT", accent = ink("FF6F2D"), base = ink("311C14"), tail = ink("FF3F25"),
+		cycle = 0.97, still = 7, entry = {-10, 0, 0.9, 1, 0},
+		letters = asset("125375504154724", 1024, 216),
+		signal = asset("125739940291163", 1024, 216),
+		body = asset("110537609916142", 1024, 448),
+		detail = asset("118872622599757", 1024, 448),
+	},
+	{
+		name = "REDLINE", accent = ink("FF5660"), base = ink("221113"), tail = ink("F21F3F"),
+		cycle = 0.95, still = 2, entry = {0, 3, 1, 1, -4},
+		letters = asset("92499012290276", 1024, 207),
+		signal = asset("117517141150366", 1024, 207),
+		body = asset("105336174080415", 1024, 448),
+		detail = asset("114912883243379", 1024, 448),
+	},
+	{
+		name = "GHOST", accent = ink("B87BFF"), base = ink("20192B"), tail = ink("6746FF"),
+		cycle = 1.22, still = 5, entry = {-8, -3, 1, 1, 0},
+		letters = asset("104837647246631", 1024, 173),
+		signal = asset("70718411955157", 1024, 173),
+		body = asset("120665654350128", 1024, 448),
+		detail = asset("134597657495270", 1024, 448),
+	},
+	{
+		name = "DEMON", accent = ink("FF53BC"), base = ink("271421"), tail = ink("FF245C"),
+		cycle = 1.02, still = 4, entry = {0, 6, 0.86, 0.67, 0},
+		letters = asset("73574912690289", 1024, 305),
+		signal = asset("78060259384607", 1024, 305),
+		body = asset("78882304916568", 1024, 448),
+		detail = asset("129958055256262", 1024, 448),
+	},
+	{
+		name = "UNTOUGEABLE", accent = ink("C9F5FF"), base = ink("405876"), tail = ink("596FFF"),
+		letters = asset("118891531376055", 1024, 251),
+		signal = asset("78245545036858", 1024, 251),
+		flameBody = asset("133931410230463", 1024, 288),
+		flameCore = asset("118505868488769", 1024, 288),
+		face = asset("84983768087687", 1024, 251),
+	},
+}
+for i, rank in ranks do
+	rank.force = math.min((i - 1) / 8, 1)
+	rank.tip = rank.accent
+end
+return ranks

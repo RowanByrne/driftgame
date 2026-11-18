@@ -3,7 +3,7 @@
 -- can be in, big numbers included, for previewing and measuring it without playing to that
 -- state (docs/workflow/UI.md "Each screen is a view").
 
-return {
+local fixtures: {[string]: any} = {
 	-- A run just started.
 	runStart = { mode = "run", score = 0, multiplier = 1, progress = 0, maxMultiplier = 9 },
 	-- Mid-drift, a few rungs up, the bar half full.
@@ -23,3 +23,9 @@ return {
 	summaryHuge = { mode = "summary", score = 98765432, best = 98765432, newBest = true },
 	hidden = { mode = "hidden" },
 }
+
+for rung = 1, 16 do
+	fixtures[string.format("rank%02d", rung)] = {mode = "run", score = 12480, multiplier = rung, progress = .5, maxMultiplier = 9}
+end
+
+return fixtures
