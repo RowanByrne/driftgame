@@ -102,7 +102,14 @@ function ScoreFeedView:_layout()
 	local width = math.min(C.Width * scale, meter.width + 40 * scale, math.max(1, screen.X - 8))
 	self.screenSize = screen
 	local shortPortrait = screen.Y > screen.X and screen.Y < 640
-	local resultWidth = if shortPortrait then math.max(width, screen.X - 32) else width
+	local resultWidth = width
+	if shortPortrait then
+		resultWidth = math.max(width, screen.X - 32)
+	elseif meter.compact and screen.X > screen.Y then
+		-- Long results can use the width of a short landscape screen instead of
+		-- pushing the total up into the road map when they wrap.
+		resultWidth = math.max(width, math.min(320 * scale, screen.X - 16))
+	end
 	self.phone = meter.compact
 	self.maxLines = if meter.compact then C.PhoneLines else C.Lines
 	self.placement = "split"
@@ -166,7 +173,9 @@ function ScoreFeedView:_fit(line)
 	local mark = if held then self.markerSpace else 0
 	local gap = self.columnGap
 	local width = if held then self.width else self.resultWidth
-	line.left = if width > self.width then math.min(0, self.screenSize.X - 8 - self.anchorX - width) else 0
+	line.left = if width > self.width then
+		math.clamp((self.width - width) / 2, 8 - self.anchorX, self.screenSize.X - 8 - self.anchorX - width)
+		else 0
 	local single = mark + nameWidth + gap + pointsWidth <= width
 	local rowH = self.lineHeight
 	local nameRows = 1
@@ -370,7 +379,10 @@ function ScoreFeedView:_place(snap: boolean)
 			local minimum = math.max(287, 226 + self.origin)
 			top = math.clamp(top, minimum, math.max(minimum, bottom))
 		else
-			top = math.min(top, screen.Y - below - 2)
+			-- A full live stack must clear the run button and its status line.
+			-- The run total, which sits to the left of the tape, clears the map.
+			local minimum = math.max(158, 76 + self.origin)
+			top = math.clamp(top, minimum, math.max(minimum, screen.Y - below - 2))
 		end
 	end
 	if self.onLayoutShift then self.onLayoutShift(top - self.top) end
