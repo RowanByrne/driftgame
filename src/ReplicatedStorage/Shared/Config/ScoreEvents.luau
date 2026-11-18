@@ -65,6 +65,51 @@ return {
 	-- Entries the debug log keeps.
 	LogSize = 40,
 
+	-- ------------------------------------------------------------------- speed (T-303)
+	-- What a manoeuvre is worth for the speed it is done at (the user: "it's easier in slower
+	-- cars to hit accurate 4 wheel lane drifts"). From the ground the car really covers:
+	--   factor = Floor at Slow and under, rising in a straight line to 1 at Reference,
+	--            then to Cap at Fast and over
+	-- A one-off takes the factor of its moment; a held or conditional event each step's own,
+	-- and its finish the mean over the hold (`Drift/ScoreEvents` header).
+	--
+	-- MEASURED (T-303): the real drift model driven through all 11 double-yellow bends of the
+	-- first 12,000 studs of seed 31337 (T-299's slip-holding autopilot, both lanes, plain,
+	-- 4-wheel and reverse, arriving at 40, 60 and 80 studs/s: 198 drives). Mean real speed
+	-- over each completed event: lane drift 45 to 67 (median 58, 32 done), perfect lane drift
+	-- 48 to 68 (15), perfect hairpin 47 to 61 (20), reverse entry 27 to 48 (median 35, 13). A
+	-- bend settles the car near 55 to 60 whatever it arrives at; a steady drift on the flat
+	-- holds 84 (T-119). So 60 is today's car drifting a bend well; 30, half of it, is crawling
+	-- one; 100 is faster than the AE86 holds through any of them.
+	Speed = {
+		Enabled = true,
+		Reference = 60, -- studs/s: worth exactly what it was before
+		Slow = 30, -- studs/s
+		Floor = 0.6,
+		Fast = 100, -- studs/s
+		Cap = 1.4,
+		-- Kinds done slower by their nature, with their own Slow, Reference and Fast. A reverse
+		-- entry goes backwards past 90 degrees and loses half its speed doing it (measured
+		-- above): against 60 it would always sit near the floor.
+		Curves = {
+			reverseEntry = { Slow = 18, Reference = 35, Fast = 60 },
+		},
+		-- Each kind's share of the factor: 1 the whole of it, 0 none. A kind not named here
+		-- takes `Weight`.
+		Weight = 1,
+		Weights = {
+			-- paid a stud at a time already, so already worth more the faster they are done
+			wheelLift = 0,
+			bumperGrind = 0,
+			hangGrind = 0,
+			-- half: the jump's height already grows with speed, and a near miss needs 50
+			-- studs/s to count at all
+			jump = 0.5,
+			nearMiss = 0.5,
+		},
+		Samples = 50, -- speeds kept per kind for the debug log
+	},
+
 	-- -------------------------------------------------------------------- the kinds
 	-- `Difficulty` is the user's word for each (T-293); nothing reads it but people.
 	Kinds = {

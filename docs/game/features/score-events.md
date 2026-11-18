@@ -300,3 +300,20 @@ The interface above, exactly, in `Drift/ScoreEvents`; jump and wheel lift in `Dr
 - **Speed means ground really covered:** the engine's speed gate and per-stud points use the smaller of the velocity and how far the car truly moved since the last step (flat), so a car pressed against a rail or bouncing on the spot scores nothing.
 - **A held line past `MaxSeconds` within `SameSpot` studs of where it began scores nothing** when it restarts; each kind may set its own `SameSpot` and `SameSpotGap` (`jump.SameSpotGap` 0, `wheelLift.SameSpot` 8 and `SameSpotGap` 0).
 - **A jump needs to travel:** a flight counts only once it is `Detectors.Jump.MinTravel` (15) studs from take-off, and at most `MaxBounces` (1) bounce stays the same jump. Hopping in place for 30 s went from about 4 000 points to 0; the test kicker jump scores exactly as before.
+
+### Speed (T-303)
+
+The user: *"it's easier in slower cars to hit accurate 4 wheel lane drifts - so speed at which manuevers are done should affect the score you get from them."* Every event's points are multiplied by a **speed factor**, from the ground the car really covers (T-301's speed). Numbers in `Config.ScoreEvents.Speed`.
+
+- **The curve:** 0.6 (`Floor`) at 30 studs/s (`Slow`) and under, rising in a straight line to 1 at 60 (`Reference`), then to 1.4 (`Cap`) at 100 (`Fast`) and over. At the reference speed an event is worth exactly what it was before.
+- **Why those speeds (measured):** the real drift model, driven by T-299's slip-holding autopilot through all 11 double-yellow bends of the first 12,000 studs of seed 31337, in both lanes, three ways, arriving at 40, 60 and 80 studs/s (198 drives). Mean real speed over each completed event: lane drift 45 to 67 (median 58, 32 done), perfect lane drift 48 to 68 (15), perfect hairpin 47 to 61 (20), reverse entry 27 to 48 (median 35, 13). A bend settles the car near 55 to 60 whatever it arrives at, and a steady drift on the flat holds 84. So 60 is today's car drifting a bend well, 30 is crawling one, and 100 is faster than the AE86 carries through any of them. The autopilot's completed bends land between x0.80 and x1.08.
+- **One-offs** take the factor of the speed at their moment.
+- **Held and conditional events:** each step's points are times that step's own factor, and a conditional's finish (`Static`) is times the **time-weighted mean factor over the hold**. Per step, so the points earned are worth the speed they were earned at. Time-weighted, so a bend crawled through for most of it and rushed at the end is worth what most of it was, not what its last moment was.
+- **The bar's fill and kick are not scaled:** speed changes the points, not the ladder.
+- **Which kinds, and how much** (`Speed.Weights`, the share of the factor; default `Weight` 1):
+  - **None:** wheel lift, bumper grind, hang grind. They're paid by the stud, so twice the speed is already twice the points.
+  - **Half:** jump (its height already grows with speed) and near miss (it needs 50 studs/s to count at all).
+  - **All of it:** lane drift, perfect lane drift, perfect hairpin, reverse entry, Scandinavian flick.
+- **Reverse entry has its own speeds** (`Speed.Curves`): 18, 35 and 60 for `Slow`, `Reference` and `Fast`. It goes backwards past 90 degrees and loses half its speed doing it, so against 60 it would always sit near the floor.
+- **The debug log and the Studio print show it:** each entry carries `speed` (at the moment, or the mean over the hold) and `speedFactor`, e.g. `[ScoreEvents] LANE DRIFT +142 x2 banked (58 studs/s, speed x0.95)`. `DebugScoreEvents().engine.counts[kind].speeds` keeps the last 50 events' speeds per kind.
+- **Plain drift scoring is untouched:** the drift's own points never pass through the engine.
