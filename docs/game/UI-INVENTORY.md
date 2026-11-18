@@ -90,6 +90,8 @@ side. Measured at 1525 x 663 in `DR-Lane3`: `AbsolutePosition` (652.5, 8), `Abso
 
 ### Score panel and split feed
 
+The shared rank widget uses the approved 16-rank Akina lettering, registered charge reveals and per-rank animation sheets. In a Studio playtest press **]** to tour all ranks over the road. Press it again to resume the live readout early. The tour finishes automatically after 23.2 seconds. See [Score rank art](features/score-rank-art.md) for the charge and reduced-motion fixtures.
+
 The score readout, rank word and multiplier form one passive widget. The score sits to the left of the rank, with both aligned on their bottom edges. The rank’s charged lettering and 14 tape segments share the same clamped engine progress. The caption, compact separator and top rule come from native text and frames. The score widget draws on layer 14 and its event feed on 13. The run button stays on layer 15.
 
 `UI/ScoreTape.layout` computes the rank’s inset-relative anchor for both screens. The wide layout targets the reference at 33.65% across and 52.5% down. T-310 enlarges the score, rank, segmented meter, feed and summary to 1.3 times their T-307 size. Short phones use a 196 × 47 px rank at the default preference. Portrait reflows the cluster toward the centre and leaves room for the map above. Larger text preferences expand the row up to the safe screen width. Event text keeps the preferred size and wraps. The run score uses tabular digits so adjacent ranks and event rows hold their position as points accrue.

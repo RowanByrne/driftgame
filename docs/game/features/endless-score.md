@@ -97,7 +97,7 @@ None: no paid items, no player text, no outside assets.
 
 ## Art and sound
 
-None, placeholder UI only.
+The live word uses the approved Akina rank lettering and animated effects. The rank artwork, reduced-motion stills and Studio tour are described in [Score rank art](score-rank-art.md). Score sounds use the approved [Redline Bonus](split-feed-audio.md) sheet.
 
 ## Testing
 

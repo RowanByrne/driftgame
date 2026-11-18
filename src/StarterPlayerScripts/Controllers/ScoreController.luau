@@ -110,7 +110,25 @@ function ScoreController:Start()
 		if self:_soundLive() then self.sound:arrive(id) else self.sound:cancel(id) end
 	end
 	self.feedEntries = 0 -- entries heard from the engine this session
+	if RunService:IsStudio() then
+		local inputService = game:GetService("UserInputService")
+		inputService.InputBegan:Connect(function(input, processed)
+			if input.KeyCode == Enum.KeyCode.RightBracket and not processed and not inputService:GetFocusedTextBox() then
+				self:DebugRankTour(self.tourTime == nil)
+			end
+		end)
+	end
 	RunService.RenderStepped:Connect(function(dt)
+		if self.tourTime then
+			self.tourTime += dt
+			local slot = self.tourTime / 1.45
+			if slot >= 16 then
+				self:DebugRankTour(false)
+			else
+				self.fixture.multiplier = 1 + math.floor(slot)
+				self.fixture.progress = math.clamp((slot % 1 - .12) / .65, 0, 1)
+			end
+		end
 		local snapshot = self.fixture or self:Snapshot()
 		self.view:setData(snapshot)
 		self.sound:rank(if self:_soundLive() then snapshot.multiplier else nil)
@@ -248,6 +266,7 @@ function ScoreController:DebugFixture(name: string?)
 		return nil
 	end
 	self.sound:reset(false)
+	self.tourTime = nil
 	if name == nil then
 		self.fixture = nil
 		return self:DebugView()
@@ -255,6 +274,23 @@ function ScoreController:DebugFixture(name: string?)
 	local fixtures = require(DriftFolder:WaitForChild("ScoreHudView.fixtures"))
 	self.fixture = fixtures[name]
 	assert(self.fixture, `no fixture '{name}'`)
+	self.view:setData(self.fixture)
+	return self:DebugView()
+end
+
+-- Studio review uses the live view. Neither a tour nor a fixture changes the score engine.
+function ScoreController:DebugRankTour(on)
+	if not RunService:IsStudio() then return end
+	self.sound:reset(false)
+	self.tourTime = if on then 0 else nil
+	self.fixture = if on then {mode = "run", score = 12480, multiplier = 1, progress = 0} else nil
+end
+
+function ScoreController:DebugRank(rung, progress)
+	if not RunService:IsStudio() then return end
+	self:DebugFixture(string.format("rank%02d", math.clamp(math.floor(rung), 1, 16)))
+	self.fixture = table.clone(self.fixture)
+	self.fixture.progress = math.clamp(progress or .5, 0, 1)
 	self.view:setData(self.fixture)
 	return self:DebugView()
 end
