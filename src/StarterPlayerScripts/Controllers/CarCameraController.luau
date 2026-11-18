@@ -394,7 +394,7 @@ end
 --
 -- The player's own wheel, and the same design as the pan: a multiplier on the RENDERED
 -- camera's offset from the car, stored where no target reads it. Distance and height scale
--- together. Inside the former near stop the look point moves back toward the car.
+-- together down to the dolly start. Inside it, the chase eye lowers with the horizon held.
 -- Zoom 1 skips both adjustments.
 
 -- Move the zoom's target by `notches` of the wheel: + is nearer (wheel forward), - is
@@ -421,13 +421,18 @@ local function applyZoom(rig, carPos: Vector3)
 	if rig.zoom == 1 then
 		return
 	end
-	rig.position = carPos + (rig.position - carPos) * rig.zoom
-	-- A fixed point ahead of the hood crops the bumper at close range, especially
-	-- when looking across the car in a slide. Only shorten the rendered look offset.
-	if rig.zoom < Cam.PlayerZoomFullLookAhead then
-		local span = Cam.PlayerZoomFullLookAhead - Cam.PlayerZoomMin
-		local ahead = (rig.zoom - Cam.PlayerZoomMin) / span
-		rig.lookPoint = carPos:Lerp(rig.lookPoint, ahead)
+	local offset = (rig.position - carPos) * rig.zoom
+	rig.position = carPos + offset
+	if rig.zoom < Cam.PlayerZoomDollyStart and offset.Magnitude > EPS then
+		-- Scale both endpoints about the car to keep the direction at the dolly start.
+		local scale = rig.zoom / Cam.PlayerZoomDollyStart
+		rig.lookPoint = carPos:Lerp(rig.lookPoint, scale)
+		-- Lower the close chase eye for bumper clearance. Translate the look point
+		-- equally, so this changes framing without tilting the horizon.
+		local lower = Vector3.new(offset.X, offset.Y * scale, offset.Z).Unit * offset.Magnitude
+		local shift = lower - offset
+		rig.position += shift
+		rig.lookPoint += shift
 	end
 end
 
@@ -795,7 +800,7 @@ function CarCameraController._advance(rig, view: View, dt: number, pan): CFrame
 	if aimUp ~= 0 or rig.aim ~= 0 then
 		local want = math.rad(aimUp)
 		if want > 0 and Cam.CamFrameBottom then
-			local off = Cam.CamOffset * rig.zoom
+			local off = Cam.CamOffset * math.max(rig.zoom, Cam.PlayerZoomDollyStart)
 			local dist = off.Magnitude
 			if dist > EPS then
 				local below = math.atan2(off.Y, off.Z)
