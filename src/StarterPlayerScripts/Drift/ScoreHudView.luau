@@ -177,7 +177,7 @@ function ScoreHudView:absorb(points, id)
 	label.TextXAlignment = Enum.TextXAlignment.Center
 	label.Size = UDim2.fromOffset(self.layout.scoreWidth + 16, 22)
 	label.Text = "+" .. Tape.format(points)
-	table.insert(self.transfers, {age = 0, deferred = deferred, remaining = deferred, label = label})
+	table.insert(self.transfers, {id = id, age = 0, deferred = deferred, remaining = deferred, label = label})
 end
 
 function ScoreHudView:_drawTotal()
@@ -222,7 +222,11 @@ function ScoreHudView:step(dt)
 	end
 	for i = #self.transfers, 1, -1 do
 		local e = self.transfers[i]
+		local previousAge = e.age
 		e.age += dt
+		if previousAge < flightDuration and e.age >= flightDuration and self.onBankArrival then
+			self.onBankArrival(e.id)
+		end
 		local t = math.min(1, e.age / flightDuration)
 		local arrival = math.clamp((e.age - flightDuration) / countDuration, 0, 1)
 		local pos = center:Lerp(Vector2.new(l.scoreWidth * .67, l.height * .72), t)
