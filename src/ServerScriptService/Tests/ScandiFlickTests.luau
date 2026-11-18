@@ -8,7 +8,9 @@
 --
 -- 1. THE DETECTOR on stand-in drift-model states ridden along real hairpins of the seeded
 --    road (seed 31337), one each way, with a recording sink: each way a flick completes or
---    voids, and the same at 30, 60 and 120 FPS.
+--    voids, its two bonuses (four wheels, your lane) kept or lost and the line named for
+--    them, the same at 30, 60 and 120 FPS; and through a real engine with the bend's other
+--    detectors, one feed line that is renamed for the bonuses as it banks (T-302).
 -- 2. ACHIEVABLE? Measured, see the check's detail. The real drift model (`Drift/Sim`) on the road's maths (`Drift/SplineWorld`),
 --    driven by a slip-holding autopilot through every hairpin of the first 12 000 studs, in
 --    three lanes, at three arrival speeds, swinging out at two points before the entry; and
@@ -29,6 +31,11 @@ local Hairpins = require(ReplicatedStorage.Shared.Road.Hairpins)
 
 local DriftFolder = StarterPlayer.StarterPlayerScripts:WaitForChild("Drift")
 local ScandiFlick = require(DriftFolder.Events.ScandiFlick)
+local LaneDrift = require(DriftFolder.Events.LaneDrift)
+local PerfectLaneDrift = require(DriftFolder.Events.PerfectLaneDrift)
+local PerfectHairpin = require(DriftFolder.Events.PerfectHairpin)
+local Score = require(DriftFolder.Score)
+local ScoreEvents = require(DriftFolder.ScoreEvents)
 
 local SEED = 31337
 local LENGTH = 14000
@@ -98,6 +105,9 @@ local function standIn(spline, s: number, d: number, speed: number, into: number
 		wheelsDown = { true, true, true, true },
 		airborne = false,
 		fell = false,
+		surfaceScore = Config.Drift.ScoreTarmac,
+		grounded = true,
+		pinned = false,
 	}
 end
 
@@ -192,7 +202,7 @@ end
 -- The flick, as a driver would try it: from `outAt` studs before the entry it swings to
 -- `wrong` degrees OUT of the bend; the moment the attempt starts (the detector's `MinHold`
 -- met inside the zone) it flicks, at a full finger, into a drift INTO the bend held between
--- `minIn` and `maxIn` degrees (the 4-wheel drift) to the exit. `control`: no flick, the
+-- `minIn` and `maxIn` degrees to the exit. `control`: no flick, the
 -- drift into the bend from `outAt` on, and `st.held` says whether a 4-wheel drift held
 -- from the entry to the exit by the detector's own rule (the flick's cost, measured apart).
 -- `st` says what happened, and why the 4-wheel drift first lapsed if it did.
@@ -225,6 +235,7 @@ local function pilot(Sim, SplineWorld, spline, h, o)
 	local lastS = startS
 	local outFrom = h.entry - o.outAt
 	local flicked = false
+	local keyT = 0
 	local st = { vFlick = nil, outMax = 0, inMin = math.huge, dMax = 0, lapse = nil, holdMax = 0, held = nil }
 	local ctlBad = 0
 	local prevHeading = nil
@@ -248,7 +259,7 @@ local function pilot(Sim, SplineWorld, spline, h, o)
 		local kappa = 2 * math.sin(signedAngle(heading.X, heading.Z, dx / len, dz / len)) / len
 		local bmag = slipFor(speed * speed * math.abs(kappa))
 		local bStar = -math.sign(kappa) * bmag
-		if not flicked and (sf.phase == "out" or cs >= h.apex or (o.control and cs >= outFrom)) then
+		if not o.keys and not flicked and (sf.phase == "out" or cs >= h.apex or (o.control and cs >= outFrom)) then
 			flicked = true
 			st.vFlick = speed
 			st.flickS = cs - h.entry
@@ -270,6 +281,27 @@ local function pilot(Sim, SplineWorld, spline, h, o)
 		local held = (not flicked and cs >= outFrom) or (flicked and cs <= h.exit)
 		local r = (if held then omega else speed * kappa) + 8 * (s.slip - bStar)
 		input.steer = math.clamp(r / (D.MaxSteeringSpeed * D.SteeringSensitivity), -1, 1)
+		-- `keys`: a hand on the keyboard (a key is `KeySensitivity` of the finger). From
+		-- `outFrom` the wrong-way key is held `keys` seconds, then the other key until the slip
+		-- is 15 degrees into the bend; the autopilot then holds the drift, at a key's reach
+		if o.keys then
+			local key = D.KeySensitivity
+			if not flicked and cs >= outFrom then
+				keyT += 1 / 60
+				if keyT <= o.keys then
+					input.steer = -h.dir * key
+				else
+					input.steer = h.dir * key
+					if -s.slip * h.dir > math.rad(15) then
+						flicked = true
+						st.vFlick = speed
+						st.flickS = cs - h.entry
+					end
+				end
+			else
+				input.steer = math.clamp(input.steer, -key, key)
+			end
+		end
 		Sim.advance(runner, 1 / 60, input, world)
 		sf:Update(1 / 60, runner.state)
 		st.holdMax = math.max(st.holdMax, sf.hold)
@@ -290,7 +322,7 @@ local function pilot(Sim, SplineWorld, spline, h, o)
 		end
 		-- why the 4-wheel drift first lapsed, if it did
 		local ns = runner.state
-		if sf.phase == "in" and sf.bad4 > 0 and not st.lapse then
+		if sf.phase == "in" and sf.badDrift > 0 and not st.lapse then
 			local down = 0
 			for i = 1, 4 do
 				if ns.wheelsDown[i] then
@@ -301,7 +333,7 @@ local function pilot(Sim, SplineWorld, spline, h, o)
 			local into = math.deg(-ns.slip * h.dir)
 			st.lapse = if ns.airborne or down < 4 then "wheels up"
 				elseif v < G.MinMarkSpeed then "slow"
-				elseif into < G.MaxSteerDegrees + G.MinSlipDegrees then "slip under the fronts' gate"
+				elseif math.abs(into) < D.MinSlipAngleForDrift then "slip under a drift"
 				elseif into > 90 then "spun past 90"
 				else "other"
 			st.lapseAt = { s = sf.s - h.entry, d = sf.d, into = into, v = v, down = down }
@@ -342,6 +374,9 @@ local function runAll(opts)
 
 	-------------------------------------------------------------- 1. the detector
 	do
+		local Tn = ScandiFlick.Tuning
+		local L = Tn.Labels
+		local edge = Hairpins.edgeLine()
 		-- one hairpin each way: a full entry zone, turning a lot, its apex well past the entry
 		local hL, hR
 		for _, h in closed do
@@ -357,12 +392,17 @@ local function runAll(opts)
 			if not h then
 				continue
 			end
-			local tag = (if h.dir > 0 then "left" else "right") .. ` hairpin at {fmt(h.entry, 0)} (zone {fmt(h.entry - h.zone, 0)}, apex +{fmt(h.apex - h.entry, 0)}, exit +{fmt(h.exit - h.entry, 0)})`
+			local tag = (if h.dir > 0 then "left" else "right") .. ` hairpin at {fmt(h.entry, 0)}`
 			local rig = { spline = spline }
+			local own = 12 * h.dir -- the outside lane, well clear of the double yellow
 			local function go(planOpts, more)
 				local sink = recordingSink()
 				local det = ScandiFlick.new(sink, rig)
-				local o = { plan = flickPlan(h, planOpts) }
+				local po = { d = own }
+				for k, v in planOpts or {} do
+					po[k] = v
+				end
+				local o = { plan = flickPlan(h, po) }
 				for k, v in more or {} do
 					o[k] = v
 				end
@@ -372,61 +412,81 @@ local function runAll(opts)
 			local function one(sink)
 				return #sink.started == 1 and sink.started[1]
 			end
+			local function sums(e)
+				if not e then
+					return 0, 0, 0
+				end
+				return sizeSum(e)
+			end
 
-			-- complete: 45 out in the zone, a 0.4 s swing, 45 in to the exit
+			-- complete with both bonuses: 45 out in the zone, a 0.4 s swing, 45 in, own lane
 			local sink, det = go()
 			local e = one(sink)
-			local sum, lo, hi = 0, 0, 0
-			if e then
-				sum, lo, hi = sizeSum(e)
-			end
+			local sum, lo, hi = sums(e)
 			check(
-				`{tag}: out, a quick flick, in, held through: completes`,
-				e and e.finished == true and e.finishes == 1 and e.kind == "scandiFlick" and e.info.dir == h.dir and lo == 1 and hi == 1 and det.stats.completed == 1 and det.last.reason == "through",
-				`{#sink.started} started at {fmt(e and e.info.at, 0)} ({fmt(e and e.info.angle, 0)} deg out), finished {tostring(e and e.finished)}, flick {fmt(det.last and det.last.flick, 3)} s, right way from {fmt(det.last and det.last.flickAt and det.last.flickAt - h.entry, 0)} past the entry, sizes {lo}..{hi}, size x s {fmt(sum, 3)}`
+				`{tag}: out on four, flick, four in your lane to the exit: completes, both bonuses`,
+				e and e.finished == true and e.finishes == 1 and e.kind == "scandiFlick" and e.info.label == L.both and det.last.four and det.last.lane
+					and lo == 1 and hi == 1 and e.info.group == `bend:{h.entry}` and e.info.groupKind == "scandiFlick",
+				`finished {tostring(e and e.finished)}, named {tostring(e and e.info.label)}, flick {fmt(det.last and det.last.flick, 3)} s, sizes {lo}..{hi}, group {tostring(e and e.info.group)}`
+			)
+			local sumBoth = sum
+
+			-- two wheels after the flick, in the lane: completes, the lane bonus only
+			sink, det = go({ into = 20 })
+			e = one(sink)
+			sum, lo, hi = sums(e)
+			check(
+				`{tag}: two wheels after the flick completes, named for the lane only`,
+				e and e.finished == true and e.info.label == L.lane and det.last.four == false and det.last.lane == true
+					and math.abs(lo - (Tn.SizeBase + Tn.BonusLane)) < 1e-9 and hi <= 1, -- the four-wheel share until it is out of reach
+				`finished {tostring(e and e.finished)}, named {tostring(e and e.info.label)}, sizes {fmt(lo, 2)}..{fmt(hi, 2)}`
 			)
 
-			-- the window: a 0.6 s pause at zero inside the swing is in time, 0.9 s is not
-			local sinkA, detA = go({ pause = 0.6, outTo = h.zone + 25 })
-			local sinkB, detB = go({ pause = 0.9, outTo = h.zone + 25 })
-			local eA, eB = one(sinkA), one(sinkB)
+			-- four wheels, but over the double yellow after the apex: the four-wheel bonus only
+			local crossed = false
+			local sinkC, detC = go({}, {
+				plan = (function()
+					local p = flickPlan(h, { d = own })
+					return function(s, t)
+						local d, a, x = p(s, t)
+						if s >= h.apex then
+							crossed = true
+							d = -own -- the other lane
+						end
+						return d, a, x
+					end
+				end)(),
+			})
+			local eC = one(sinkC)
 			check(
-				`{tag}: a flick inside the {T.Window} s window completes, a slower one voids`,
-				eA and eA.finished == true and eB and eB.finished == false and detB.last.reason == "flick too slow",
-				`0.6 s pause: {tostring(eA and eA.finished)}, flick {fmt(detA.last and detA.last.flick, 3)} s; 0.9 s pause: {tostring(eB and eB.finished)} ({tostring(detB.last and detB.last.reason)})`
+				`{tag}: four wheels into the other lane completes, named for four wheels only`,
+				crossed and eC and eC.finished == true and eC.info.label == L.four and detC.last.four == true and detC.last.lane == false,
+				`finished {tostring(eC and eC.finished)}, named {tostring(eC and eC.info.label)}`
 			)
 
-			-- the first drift the hairpin's own way, or not a 4-wheel one: nothing starts
-			local sinkW, detW = go({ wrong = -45 }) -- "out" of -45 is 45 INTO the bend
-			local sinkT, detT = go({ wrong = 22 }) -- 22 out: the rears slide, the fronts don't
-			check(
-				`{tag}: a first drift the hairpin's way, or on 2 wheels, starts nothing`,
-				#sinkW.started == 0 and #sinkT.started == 0 and detW.stats.started == 0 and detT.stats.started == 0,
-				`into the bend first: {#sinkW.started} started; 22 deg out (2 wheels, sliding {detT.sliding} at the end): {#sinkT.started} started`
-			)
-
-			-- outside the entry zone: the wrong-way drift all before it, or all after the entry
-			local sinkE = go({ outFrom = h.zone - 50, outTo = h.zone - 10 })
-			local sinkL = go({ outFrom = h.entry + 2, outTo = h.entry + 30 })
-			local sinkM = go({ outFrom = h.zone + 10, outTo = h.zone + 14 }) -- held under MinHold
-			check(
-				`{tag}: the wrong-way drift outside the zone, or under {T.MinHold} s in it, starts nothing`,
-				#sinkE.started == 0 and #sinkL.started == 0 and #sinkM.started == 0,
-				`before the zone: {#sinkE.started}; after the entry: {#sinkL.started}; 4 studs (0.07 s) in the zone: {#sinkM.started}`
-			)
-
-			-- the flick left until past the apex: void
-			local sinkP, detP = go({ outTo = h.apex + 5 })
+			-- two wheels and over the line: plain, and worth the base's share of both bonuses'
+			local sinkP, detP = go({}, {
+				plan = (function()
+					local p = flickPlan(h, { d = own, into = 20 })
+					return function(s, t)
+						local d, a, x = p(s, t)
+						if s >= h.apex then
+							d = -own
+						end
+						return d, a, x
+					end
+				end)(),
+			})
 			local eP = one(sinkP)
+			local sumP = sums(eP)
 			check(
-				`{tag}: still drifting the wrong way at the apex voids it`,
-				eP and eP.finished == false and detP.last.reason == "flick too late",
-				`finished {tostring(eP and eP.finished)} ({tostring(detP.last and detP.last.reason)})`
+				`{tag}: two wheels and the other lane completes, plain`,
+				eP and eP.finished == true and eP.info.label == L.plain and detP.last.four == false and detP.last.lane == false,
+				`finished {tostring(eP and eP.finished)}, named {tostring(eP and eP.info.label)}; size x s {fmt(sumP, 3)} against both bonuses' {fmt(sumBoth, 3)}`
 			)
 
-			-- the 4-wheel drift broken in the hairpin (down to 2 wheels after the apex) for
-			-- 0.5 s: void; for 0.1 s: forgiven
-			local function lapse(seconds)
+			-- the four-wheel bonus lost after the apex (0.5 s on two), kept through a 0.1 s lapse
+			local function onTwoFor(seconds)
 				local at = nil
 				return go({
 					after = function(s, t)
@@ -440,17 +500,116 @@ local function runAll(opts)
 					end,
 				})
 			end
-			local sinkX, detX = lapse(0.5)
-			local sinkY = lapse(0.1)
-			local eX, eY = one(sinkX), one(sinkY)
+			local sink5, det5 = onTwoFor(0.5)
+			local sink1, det1 = onTwoFor(0.1)
+			local e5, e1 = one(sink5), one(sink1)
 			check(
-				`{tag}: the 4-wheel drift broken in the hairpin voids it; a 0.1 s lapse does not`,
-				eX and eX.finished == false and detX.last.reason == "drift broken" and eY and eY.finished == true,
-				`0.5 s on 2 wheels: {tostring(eX and eX.finished)} ({tostring(detX.last and detX.last.reason)}); 0.1 s: {tostring(eY and eY.finished)}`
+				`{tag}: 0.5 s on two wheels loses the four-wheel bonus; 0.1 s does not`,
+				e5 and e5.finished == true and e5.info.label == L.lane and e1 and e1.finished == true and e1.info.label == L.both,
+				`0.5 s: {tostring(e5 and e5.info.label)}; 0.1 s: {tostring(e1 and e1.info.label)}`
+			)
+
+			-- the window: a 0.6 s pause at zero inside the swing is in time, 1.0 s is not
+			local sinkA, detA = go({ pause = 0.6, outTo = h.zone + 25 })
+			local sinkB, detB = go({ pause = 1.0, outTo = h.zone + 25 })
+			local eA, eB = one(sinkA), one(sinkB)
+			check(
+				`{tag}: a flick inside the {Tn.Window} s window completes, a slower one voids`,
+				eA and eA.finished == true and eB and eB.finished == false and detB.last.reason == "flick too slow",
+				`0.6 s pause: {tostring(eA and eA.finished)}, flick {fmt(detA.last and detA.last.flick, 3)} s; 1.0 s pause: {tostring(eB and eB.finished)} ({tostring(detB.last and detB.last.reason)})`
+			)
+
+			-- the first drift the hairpin's own way, or not a 4-wheel one: nothing starts
+			local sinkW, detW = go({ wrong = -45 }) -- "out" of -45 is 45 INTO the bend
+			local sinkT, detT = go({ wrong = Tn.OutDegrees - 3 }) -- out, but under the start's angle
+			check(
+				`{tag}: a first drift the hairpin's way, or under {Tn.OutDegrees} deg out, starts nothing`,
+				#sinkW.started == 0 and #sinkT.started == 0 and detW.stats.started == 0 and detT.stats.started == 0,
+				`into the bend first: {#sinkW.started} started; {Tn.OutDegrees - 3} deg out: {#sinkT.started} started`
+			)
+
+			-- a quick feint on two wheels (22 deg out: the rears slide, the fronts don't) starts
+			-- it and completes; four wheels in all the way, but never four out: no +4W
+			local sink22, det22 = go({ wrong = 22 })
+			local e22 = one(sink22)
+			check(
+				`{tag}: a two-wheel feint out starts it; without four out, no four-wheel bonus`,
+				e22 and e22.finished == true and e22.info.label == L.lane and det22.last.outFour == false and det22.last.four == false,
+				`22 deg out: {#sink22.started} started, finished {tostring(e22 and e22.finished)}, named {tostring(e22 and e22.info.label)}`
+			)
+
+			-- outside the entry zone: the wrong-way drift all before it, or all after the entry
+			local sinkE = go({ outFrom = h.zone - 50, outTo = h.zone - 10 })
+			local sinkL = go({ outFrom = h.entry + 2, outTo = h.entry + 30 })
+			local sinkM = go({ outFrom = h.zone + 10, outTo = h.zone + 11, wrong = 20 }) -- held under MinHold
+			check(
+				`{tag}: the wrong-way drift outside the zone, or under {Tn.MinHold} s in it, starts nothing`,
+				#sinkE.started == 0 and #sinkL.started == 0 and #sinkM.started == 0,
+				`before the zone: {#sinkE.started}; after the entry: {#sinkL.started}; 0.07 s past {Tn.OutDegrees} deg in the zone: {#sinkM.started}`
+			)
+
+			-- the flick left until past the apex: void
+			local sinkLate, detLate = go({ outTo = h.apex + 5 })
+			local eLate = one(sinkLate)
+			check(
+				`{tag}: still drifting the wrong way at the apex voids it`,
+				eLate and eLate.finished == false and detLate.last.reason == "flick too late",
+				`finished {tostring(eLate and eLate.finished)} ({tostring(detLate.last and detLate.last.reason)})`
+			)
+
+			-- the drift broken in the hairpin (no slip after the apex) for 0.5 s: void; 0.1 s: forgiven
+			local function brokenFor(seconds)
+				local at = nil
+				return go({
+					after = function(s, t)
+						if s >= h.apex and not at then
+							at = t
+						end
+						if at and t - at < seconds then
+							return 0
+						end
+						return nil
+					end,
+				})
+			end
+			local sinkD, detD = brokenFor(0.5)
+			local sinkF = brokenFor(0.1)
+			local eD, eF = one(sinkD), one(sinkF)
+			check(
+				`{tag}: the drift broken in the hairpin voids it; a 0.1 s lapse does not`,
+				eD and eD.finished == false and detD.last.reason == "drift broken" and eF and eF.finished == true,
+				`0.5 s off: {tostring(eD and eD.finished)} ({tostring(detD.last and detD.last.reason)}); 0.1 s: {tostring(eF and eF.finished)}`
+			)
+
+			-- past the white edge line after the apex: void; the car's own centre on the line
+			-- with one wheel over is forgiven
+			local function wideAt(dWide)
+				return go({}, {
+					plan = (function()
+						local p = flickPlan(h, { d = own })
+						return function(s, t)
+							local d, a, x = p(s, t)
+							if s >= h.apex then
+								d = dWide
+							end
+							return d, a, x
+						end
+					end)(),
+				})
+			end
+			local outside = h.dir -- right of the centre line in a left bend: the outside
+			local sinkO, detO = wideAt(outside * (edge + 8))
+			local eO = one(sinkO)
+			local sinkN, detN = wideAt(outside * (edge - 6))
+			local eN = one(sinkN)
+			check(
+				`{tag}: past the white edge line voids it; close inside it does not`,
+				eO and eO.finished == false and detO.last.reason == "past the edge line" and eN and eN.finished == true,
+				`at {fmt(edge + 8, 1)} across: {tostring(eO and eO.finished)} ({tostring(detO.last and detO.last.reason)}); at {fmt(edge - 6, 1)}: {tostring(eN and eN.finished)}, {detN.out} wheels out at the end; edge line {fmt(edge, 2)}`
 			)
 
 			-- a fall, and a put-back, mid-hairpin: void
-			local sinkF, detF = go({
+			local sinkFa, detFa = go({
 				extra = function(s)
 					return if s >= h.apex then { fell = true } else nil
 				end,
@@ -465,26 +624,81 @@ local function runAll(opts)
 					return nil
 				end,
 			})
-			local eF, eJ = one(sinkF), sinkJ.started[1]
+			local eFa, eJ = one(sinkFa), sinkJ.started[1]
 			check(
 				`{tag}: a fall or a put-back voids it`,
-				eF and eF.finished == false and detF.last.reason == "fell" and eJ and eJ.finished == false and eJ.finishes == 1 and #sinkJ.started == 1,
-				`fall: {tostring(eF and eF.finished)} ({tostring(detF.last and detF.last.reason)}); put back 150 studs: {tostring(eJ and eJ.finished)} ({tostring(detJ.last and detJ.last.reason)}), {#sinkJ.started} started`
+				eFa and eFa.finished == false and detFa.last.reason == "fell" and eJ and eJ.finished == false and eJ.finishes == 1,
+				`fall: {tostring(eFa and eFa.finished)} ({tostring(detFa.last and detFa.last.reason)}); put back 150 studs: {tostring(eJ and eJ.finished)} ({tostring(detJ.last and detJ.last.reason)}), {#sinkJ.started} started`
 			)
 
 			-- the same at 30, 60 and 120 frames a second
-			local sums, fins, flicks = {}, {}, {}
+			local fsums, fins, flicks = {}, {}, {}
 			for _, fps in { 30, 60, 120 } do
 				local s3, d3 = go(nil, { fps = fps })
 				local e3 = one(s3)
-				table.insert(sums, if e3 then (sizeSum(e3)) else -1)
-				table.insert(fins, tostring(e3 and e3.finished))
+				table.insert(fsums, if e3 then (sizeSum(e3)) else -1)
+				table.insert(fins, tostring(e3 and e3.info.label))
 				table.insert(flicks, fmt(d3.last and d3.last.flick, 3))
 			end
 			check(
 				`{tag}: the same at 30, 60 and 120 FPS`,
-				table.concat(fins, ",") == "true,true,true" and math.abs(sums[1] - sums[3]) < 0.03 * sums[3] and math.abs(sums[2] - sums[3]) < 0.03 * sums[3],
-				`finished {table.concat(fins, ", ")}; size x s {fmt(sums[1], 3)}, {fmt(sums[2], 3)}, {fmt(sums[3], 3)}; flick {table.concat(flicks, ", ")} s`
+				fins[1] == L.both and fins[2] == L.both and fins[3] == L.both and math.abs(fsums[1] - fsums[3]) < 0.03 * fsums[3] and math.abs(fsums[2] - fsums[3]) < 0.03 * fsums[3],
+				`named {table.concat(fins, ", ")}; size x s {fmt(fsums[1], 3)}, {fmt(fsums[2], 3)}, {fmt(fsums[3], 3)}; flick {table.concat(flicks, ", ")} s`
+			)
+
+			-- ONE FEED LINE, through a real engine with the bend's other detectors
+			local function feedRide(planOpts)
+				local score = Score.new()
+				local eng = ScoreEvents.new()
+				eng.print = false
+				eng:bind(function()
+					return score
+				end)
+				local seen = {}
+				eng.feed:Connect(function(entry)
+					table.insert(seen, table.clone(entry))
+				end)
+				local sinkE2 = eng:sink()
+				local dets = { ScandiFlick.new(sinkE2, rig), LaneDrift.new(sinkE2, rig), PerfectLaneDrift.new(sinkE2, rig), PerfectHairpin.new(sinkE2, rig) }
+				local po = { d = own }
+				for k, v in planOpts or {} do
+					po[k] = v
+				end
+				local plan = flickPlan(h, po)
+				local dt = 1 / 120
+				local s, t = h.zone - 40, 0
+				while s <= h.exit + 20 do
+					local d, into = plan(s, t)
+					local st = standIn(spline, s, d, 60, into, h.dir)
+					eng:step(dt, st)
+					for _, dd in dets do
+						dd:Update(dt, st)
+					end
+					score:Step(dt, st)
+					s += 60 * dt
+					t += dt
+				end
+				local ids = {}
+				local n = 0
+				for _, en in seen do
+					if not ids[en.id] then
+						ids[en.id] = true
+						n += 1
+					end
+				end
+				local c = eng.counts.scandiFlick
+				return n, seen[1], seen[#seen], c and c.points or 0
+			end
+			local n1, f1, l1, p1 = feedRide()
+			local n2, _, l2, p2 = feedRide({ into = 20 })
+			local nv, _, lv = feedRide({ pause = 1.0, outTo = h.zone + 25 })
+			local liveWord = Config.ScoreEvents.Kinds.scandiFlick.Words[1].text
+			check(
+				`{tag}: one feed line, {liveWord} live, renamed for its bonuses as it banks, LOST once on a void`,
+				n1 == 1 and f1 and f1.state == "live" and f1.label == liveWord and l1 and l1.state == "banked" and l1.label == L.both
+					and n2 == 1 and l2 and l2.state == "banked" and l2.label == L.lane and p1 > p2 and p2 > 0
+					and nv == 1 and lv and lv.state == "void",
+				`both bonuses: {n1} line, {f1 and f1.label} live, banked as {l1 and l1.label} +{l1 and fmt(l1.points, 0)} (the flick's own {fmt(p1, 0)}); two wheels: {n2} line, {l2 and l2.label} (flick {fmt(p2, 0)}); too slow: {nv} line, {lv and lv.state}`
 			)
 		end
 	end
@@ -496,12 +710,12 @@ local function runAll(opts)
 		-- the ways tried at each hairpin: lane (studs to the INSIDE of the bend, so -12 is the
 		-- outside lane), the speed it arrives at (k times what a 4-wheel drift carries round the
 		-- hairpin's radius), and where the swing out starts (studs before the entry). The swing
-		-- is to 40 degrees out; the drift in is held between 34 and 48 degrees.
+		-- is to 40 degrees out; the drift in is held between 15 and 48 degrees (2+ wheels).
 		local ways = {}
 		for _, lane in { 12, 0, -12 } do
 			for _, k in { 1.0, 1.2, 1.4 } do
 				for _, outAt in { 60, 50 } do
-					table.insert(ways, { lane = lane, k = k, outAt = outAt, wrong = 40, minIn = 34, maxIn = 48 })
+					table.insert(ways, { lane = lane, k = k, outAt = outAt, wrong = 40, minIn = 15, maxIn = 48 })
 				end
 			end
 		end
@@ -509,7 +723,7 @@ local function runAll(opts)
 		-- before the entry, judged on the flick's last part alone (a 4-wheel drift held from
 		-- the entry to the exit, the same Grace)
 		local controlHeld, controlTries = 0, 0
-		local rows, reasons, lapses, flicks = {}, {}, {}, {}
+		local rows, reasons, lapses, flicks, named = {}, {}, {}, {}, {}
 		local byWay = {}
 		local tries, done, hairpinsDone, driven, switched = 0, 0, 0, 0, 0
 		local n = 0
@@ -533,6 +747,8 @@ local function runAll(opts)
 					done += 1
 					ok += 1
 					byWay[wi] = (byWay[wi] or 0) + 1
+					local lab = sf.last.label or "?"
+					named[lab] = (named[lab] or 0) + 1
 					if not best or sf.last.flick < best.flick then
 						best = { flick = sf.last.flick, w = w, v = st.vFlick, at = st.flickS }
 					end
@@ -551,6 +767,7 @@ local function runAll(opts)
 				if w.outAt == 60 then
 					local co = table.clone(w)
 					co.control = true
+					co.minIn = 34 -- the control holds four wheels
 					local _, _, cst = pilot(Sim, SplineWorld, spline, h, co)
 					controlTries += 1
 					if cst.held then
@@ -589,6 +806,38 @@ local function runAll(opts)
 		end
 		table.sort(flicks)
 		local fl = if #flicks > 0 then `flick {fmt(flicks[1], 2)} to {fmt(flicks[#flicks], 2)} s` else "no flicks"
+		-- A HAND: key-strength feints of 0.25, 0.35 and 0.5 s at every hairpin, both lanes. The
+		-- start must take them (T-302 send-back: nobody could start one by hand).
+		local keyRows, keyStarts, keyTries, keyDone = {}, 0, 0, 0
+		for _, h in closed do
+			if h.exit >= DRIVE_LENGTH then
+				continue
+			end
+			local row = {}
+			for _, T in { 0.25, 0.35, 0.5 } do
+				for _, lane in { 12, -12 } do
+					local sinkK, sfK = pilot(Sim, SplineWorld, spline, h, { lane = lane, k = 1.0, outAt = 55, wrong = 40, minIn = 15, maxIn = 48, keys = T })
+					keyTries += 1
+					local e = sinkK.started[1]
+					if e then
+						keyStarts += 1
+					end
+					if e and e.finished then
+						keyDone += 1
+					end
+					table.insert(row, `{T}s/{lane}: {if e then (if e.finished then (sfK.last.label or "ok") else sfK.last.reason) else "not started"}`)
+				end
+				task.wait()
+			end
+			table.insert(keyRows, `{fmt(h.entry, 0)}: ` .. table.concat(row, ", "))
+		end
+		table.insert(log, "key-strength feints (seconds held / lane to the inside: result):\n  " .. table.concat(keyRows, "\n  "))
+		check(
+			"a hand's quick feint on the keys starts the flick",
+			keyStarts > 0 and keyStarts >= keyTries / 2,
+			`{keyStarts} of {keyTries} started, {keyDone} completed (0.75 of the finger, the wrong-way key held 0.25, 0.35 or 0.5 s from 55 studs before the entry)`
+		)
+
 		-- Counted, not required: on the true hairpins (T-299's 120 degrees within 250 studs)
 		-- this autopilot completes none, and holds a 4-wheel drift from entry to exit without a
 		-- flick only rarely (the control). The check asks for what the flick itself needs: the
@@ -596,7 +845,7 @@ local function runAll(opts)
 		check(
 			"the autopilot starts flicks and switches inside the window (completions counted)",
 			switched > 0,
-			`{switched} of {tries} switched in time; completed {done} of {tries} drives ({hairpinsDone} of {driven} hairpins at least once); {fl}. Not completed: {list(reasons)}. The 4-wheel drift first lapsed: {list(lapses)}. Control, no flick, a 4-wheel drift held entry to exit: {controlHeld} of {controlTries}`
+			`{switched} of {tries} switched in time; completed {done} of {tries} drives ({hairpinsDone} of {driven} hairpins at least once); {fl}. Not completed: {list(reasons)}. Completed as: {list(named)}. The drift first lapsed: {list(lapses)}. Control, no flick, a 4-wheel drift held entry to exit: {controlHeld} of {controlTries}`
 		)
 	end
 

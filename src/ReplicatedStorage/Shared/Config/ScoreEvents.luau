@@ -231,13 +231,15 @@ return {
 			WordsBy = "size",
 			Words = { { at = 0, text = "PERFECT HAIRPIN" } },
 		},
-		-- Extreme (T-299).
+		-- Extreme (T-299, T-300). The detector's size is its base plus each bonus still in reach
+		-- (`Detectors.ScandiFlick`), so with no floor a plain flick earns `SizeBase` of these and
+		-- one with both bonuses kept the whole way all of them.
 		scandiFlick = {
 			Mode = "conditional",
 			Difficulty = "extreme",
 			Per = "second",
 			Rate = 20,
-			SizeFloor = 0.5,
+			SizeFloor = 0,
 			Fill = 0.5,
 			Static = 600,
 			Kick = 1,
@@ -365,16 +367,36 @@ return {
 			JumpStuds = 80, -- studs
 			MaxSeconds = 20, -- an attempt still going after this is void
 		},
-		-- `Drift/Events/ScandiFlick` (T-300): on a true hairpin, a 4-wheel drift turned OUT of
-		-- it held `MinHold` inside its entry zone starts it; the 4-wheel drift INTO it must take
-		-- hold within `Window` of letting the first go (and before the apex), then hold to the
-		-- exit, a lapse up to `Grace` forgiven. A full finger swings it in about 0.53 s.
+		-- `Drift/Events/ScandiFlick` (T-300, T-302): on a true hairpin, a drift turned OUT of
+		-- it past `OutDegrees` on 2+ wheels held `MinHold` inside its entry zone starts it (four
+		-- wheels there was too much for a hand: see the module); a drift INTO it on 2+ wheels
+		-- must follow within `Window` of letting the first go (and before the apex); then a
+		-- valid drift on 2+ wheels, either way round, to the exit, between the white edge lines
+		-- from the entry (`MaxWheelsOut` over is forgiven), as the perfect hairpin. Bonuses,
+		-- each adding to its points and naming the line: four wheels (all four the wrong way
+		-- at some moment before the flick, and all four from the flick to the exit, first all
+		-- four by the later of the entry and `FourWithin` after it), and your own lane from the
+		-- entry to the exit.
 		ScandiFlick = {
-			MinHold = 0.2, -- seconds of the wrong-way 4-wheel drift inside the zone
-			Window = 1.0, -- seconds from letting it go to the right-way 4-wheel drift
-			Grace = 0.2, -- seconds
+			OutDegrees = 15, -- degrees of slip out of the hairpin that count as the wrong way
+			MinHold = 0.1, -- seconds of the wrong-way drift inside the zone
+			Window = 1.0, -- seconds from letting it go to the right-way drift on 2+ wheels
+			Grace = 0.2, -- seconds, for the drift and for the fourth wheel
+			FourWithin = 1.0, -- seconds after the flick for all four to slide (if past the entry)
+			MaxWheelsOut = 1, -- wheels past a line at once that are forgiven
 			JumpStuds = 80, -- studs along the road in one step that can only be a put-back
 			MaxSeconds = 20, -- an attempt still going after this is void
+			-- the size, times `Kinds.scandiFlick`'s points: the base, plus each bonus kept
+			SizeBase = 0.6,
+			Bonus4W = 0.2,
+			BonusLane = 0.2,
+			-- the line's name on completion: whole strings, never glued
+			Labels = {
+				plain = "SCANDINAVIAN FLICK",
+				four = "SCANDI FLICK +4W",
+				lane = "SCANDI FLICK +LANE",
+				both = "SCANDI FLICK +4W +LANE",
+			},
 		},
 	},
 }
