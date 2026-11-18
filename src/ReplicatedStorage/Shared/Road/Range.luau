@@ -22,8 +22,10 @@
 -- start is on it, square across from where the road begins.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
 
 local Config = require(ReplicatedStorage.Shared.Config)
+local Seed7Relief = require(script.Parent.Seed7Relief)
 
 local Range = {}
 
@@ -51,6 +53,7 @@ export type Range = {
 	uz: number,
 	shift: number, -- added to `t`, so the start is on valley -1's floor
 	ridges: { [number]: Ridge },
+	basins: Seed7Relief.Cache?, -- the branching stream beds in the Studio seed 7 study
 }
 
 -- What `shape` says of a point: its height, how far up its face it is (0 on the valley
@@ -122,7 +125,8 @@ function Range.crest(r: Range, k: number, v: number): (number, number)
 	-- no lower than `SaddleMin`, eased into it over `SaddleEase` (a hard floor left flat crests)
 	local tall = rd.peak * (1 + R.PeakVary[1] * 2 * math.noise(v / R.PeakVary[2] + rd.wob * 0.7, 0.83, 0.17))
 	local a, b, e = tall - rd.depth * deep * s, R.SaddleMin, R.SaddleEase
-	return 0.5 * (a + b + math.sqrt((a - b) * (a - b) + e * e)), s
+	local y = 0.5 * (a + b + math.sqrt((a - b) * (a - b) + e * e))
+	return if r.basins then Seed7Relief.crest(y) else y, s
 end
 
 -- Valley k's floor (between ridge k and ridge k + 1) at `v` across.
@@ -134,6 +138,9 @@ end
 
 function Range.new(seed: number, ox: number, oz: number, ux: number, uz: number): Range
 	local r: Range = { seed = seed, ox = ox, oz = oz, ux = ux, uz = uz, shift = 0, ridges = {} }
+	if seed == 7 and RunService:IsStudio() and Config.Road.StudioSeed7Drive then
+		r.basins = {}
+	end
 	-- the start square across from valley -1's floor
 	local a, b = Range.ridgeT(r, -1, 0), Range.ridgeT(r, 0, 0)
 	r.shift = a + ridge(r, -1).p * (b - a)
@@ -189,6 +196,11 @@ function Range.at(r: Range, t: number, v: number): (number, number, number, numb
 	local dr = math.sqrt(d * d + c * c) - c
 	local x = math.clamp(dr / math.max(L * (1 - fl), 1), 0, 1)
 	local up = (1 - x) ^ q
+	if r.basins and up > 0 then
+		local side = if kc == k then 1 else -1
+		local y, incisedUp = Seed7Relief.face(r.basins, r.seed, kc, side, v, d, up, s, F, C)
+		return y, incisedUp, d, kc, s, F, C
+	end
 	return F + (C - F) * up, up, d, kc, s, F, C
 end
 

@@ -10,6 +10,16 @@ The user, 2026-11-15 (C-dd9f36): "we basically create a realistic shaped mountai
 
 ## How it plays
 
+### Seed 7 Studio drive (T-323)
+
+The review build's **Start Endless Run** button starts the approved seed 7 route. The first climb has a close pair of switchbacks at 7,512 and 7,924 studs. After the first ridge at 11,873, the road descends to the valley, then climbs through a wider pair at 29,632 and 30,555. It crosses the second ridge at 36,499.
+
+For a shorter drive, use the Studio console (F2) and enter `tp me road 7000` for the first pair or `tp me road 28800` for the second. The ordinary range planner continues from the recorded steering's final sample at 36,555 studs.
+
+The steering samples and the mountain's branching channels come from the approved preview. The game fits the road grade, bank, gravel and guardrails as it streams each section. The server and clients build the same terrain from the seed. Explicit alternate seeds and live runs use the usual procedural range.
+
+### The endless range
+
 1. A run starts low on a range. The road climbs a face in switchbacks that hug it (DECISIONS.md, 2026-11-15, hairpins hug the steep face).
 2. It reaches a pass, a saddle between two peaks. It crests, and the next valley opens below.
 3. It descends the far side, sometimes runs along a ridge with drops on both sides or along a valley floor beside a river line, then climbs to the next pass.

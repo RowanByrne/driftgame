@@ -45,6 +45,7 @@ local Spline = require(script.Parent.Spline)
 local SplineTurnFit = require(script.Parent.SplineTurnFit)
 local Ground = require(script.Parent.Ground)
 local Range = require(script.Parent.Range)
+local Seed7Drive = require(script.Parent.Seed7Drive)
 
 local SplineGen = {}
 SplineGen.__index = SplineGen
@@ -264,6 +265,11 @@ function SplineGen.new(seed: number, origin: Spline.Origin?, clearOverride: numb
 			follows = 0,
 		},
 	}, SplineGen)
+	if ground.range.basins then
+		-- The first recorded section includes the lead-in from the normal spawn.
+		self:step()
+		return self
+	end
 	-- the start straight follows the mountain too (T-226), level where it begins
 	local L = Config.Spline.StartStraight
 	local start: Spline.Section = { len = L, k = { L, 0 }, g = { L, 0 }, b = { L, 0 }, tag = "Start" }
@@ -1976,6 +1982,31 @@ function SplineGen._planned(self: Gen, item: Item): Spline.Section?
 	return nil
 end
 
+-- Both the recorded drive and the range planner lay ordinary sections. Keep the
+-- edge, runoff, bend history and clearance grid continuous when the recording ends.
+local function lay(self: Gen, chosen: Spline.Section, started: number)
+	self:_terrain(chosen)
+	self:_carve(chosen)
+	self:_commit(chosen)
+	local bend = chosen.tag ~= "Straight" and chosen.tag ~= "Escape" and chosen.tag ~= "Start"
+	if bend then
+		table.insert(self.recent, chosen.tag :: string)
+		if #self.recent > Config.Spline.RecentBends then
+			table.remove(self.recent, 1)
+		end
+		for j = #chosen.k, 2, -2 do
+			if chosen.k[j] ~= 0 then
+				self.lastDir = sign(chosen.k[j])
+				break
+			end
+		end
+	end
+	self.lastWasBend = bend and chosen.k[#chosen.k] ~= 0
+	local ms = (os.clock() - started) * 1000
+	self.stats.totalMs += ms
+	self.stats.worstMs = math.max(self.stats.worstMs, ms)
+end
+
 -- Lay the next section. Returns it, or nil if the road is stalled.
 function SplineGen.step(self: Gen): Spline.Section?
 	local st = self.stats
@@ -1983,6 +2014,15 @@ function SplineGen.step(self: Gen): Spline.Section?
 		return nil
 	end
 	local t0 = os.clock()
+	if self.ground.range.basins then
+		local _, _, _, _, grade, bank, height = self.spline:tip()
+		local recorded = Seed7Drive.section(self.spline.length, bank)
+		if recorded then
+			recorded.g = (self:_followGrade(recorded.k, grade, height))
+			lay(self, recorded, t0)
+			return recorded
+		end
+	end
 	local C = Config.Spline
 	local sec: Spline.Section? = nil
 	local planned = false
@@ -2098,9 +2138,7 @@ function SplineGen.step(self: Gen): Spline.Section?
 		end
 	end
 	local chosen = sec :: Spline.Section
-	self:_terrain(chosen)
-	self:_carve(chosen)
-	self:_commit(chosen)
+	lay(self, chosen, t0)
 	-- a random section counts toward the stretch it was laid in
 	local head = self.plan[1]
 	if not planned and head and not head.turn then
@@ -2116,20 +2154,6 @@ function SplineGen.step(self: Gen): Spline.Section?
 			table.remove(self.plan, 1)
 		end
 	end
-	local bend = chosen.tag ~= "Straight" and chosen.tag ~= "Escape" and chosen.tag ~= "Start"
-	if bend then
-		table.insert(self.recent, chosen.tag :: string)
-		if #self.recent > C.RecentBends then
-			table.remove(self.recent, 1)
-		end
-		for j = #chosen.k, 2, -2 do
-			if chosen.k[j] ~= 0 then self.lastDir = sign(chosen.k[j]); break end
-		end
-	end
-	self.lastWasBend = bend and chosen.k[#chosen.k] ~= 0
-	local ms = (os.clock() - t0) * 1000
-	st.totalMs += ms
-	st.worstMs = math.max(st.worstMs, ms)
 	return chosen
 end
 
