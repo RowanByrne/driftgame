@@ -14,6 +14,9 @@ local Style = require(UI:WaitForChild("Theme")).ScoreTape
 local ScoreFeedView = {}
 ScoreFeedView.__index = ScoreFeedView
 
+local MapConfig = require(game:GetService("ReplicatedStorage").Shared.Config.RoadMap)
+local GarageConfig = require(game:GetService("ReplicatedStorage").Shared.Config.GarageMenu)
+
 local C = {
 	Width = 220,
 	LineHeight = 20,
@@ -101,6 +104,22 @@ function ScoreFeedView:_layout()
 	self.lineGap = math.round(C.Gap * scale)
 	local width = math.min(C.Width * scale, meter.width + 40 * scale, math.max(1, screen.X - 8))
 	self.screenSize = screen
+	self.panelLeft = meter.x - meter.scoreWidth - meter.gap + offset.X
+	self.panelRight = meter.x + meter.width + offset.X
+	if meter.compact then
+		local mapTop = if (screen.X - MapConfig.CentreColumn) / 2 - MapConfig.CentreGap < MapConfig.Margin + MapConfig.PhoneSize
+			then MapConfig.ScoreBottom else MapConfig.Margin
+		local garageTop = screen.Y - GarageConfig.HudButtonAbove - GarageConfig.HudButtonSize.Y
+		-- ScreenGui inset coordinates, including the status under the run button
+		-- and the adjacent Garage / Get Out buttons at the bottom right.
+		self.reserved = {
+			Rect.new(screen.X / 2 - 150, 8, screen.X / 2 + 150, 74),
+			Rect.new(MapConfig.Margin, mapTop, MapConfig.Margin + MapConfig.PhoneSize, mapTop + MapConfig.PhoneSize),
+			Rect.new(screen.X - 160, 176, screen.X - 16, 224),
+			Rect.new(screen.X - GarageConfig.HudButtonMargin - GarageConfig.HudButtonSize.X, garageTop,
+				screen.X - 28, garageTop + GarageConfig.HudButtonSize.Y),
+		}
+	end
 	local shortPortrait = screen.Y > screen.X and screen.Y < 640
 	local resultWidth = width
 	if shortPortrait then
@@ -189,6 +208,9 @@ function ScoreFeedView:_fit(line)
 	local rowWidth = if single then math.max(mark + nameWidth + gap + pointsWidth, self.rankWidth - 8) else width
 	local left = if held and single then math.floor((width - mark - nameWidth - gap - pointsWidth) / 2)
 		else math.floor((width - rowWidth) / 2)
+	line.defaultLeft = line.left
+	line.inkLeft = left
+	line.inkWidth = if held and single then mark + nameWidth + gap + pointsWidth else rowWidth
 	local nameLeft = left + mark
 	line.name.TextWrapped = not single
 	line.name.Position = UDim2.fromOffset(nameLeft, 0)
@@ -331,7 +353,7 @@ function ScoreFeedView:push(entry)
 				end
 				local oldHeight = other.height
 				self:_fit(other)
-				if other.height ~= oldHeight then
+				if self.phone or other.height ~= oldHeight then
 					self:_place(true)
 				end
 				return
@@ -346,6 +368,60 @@ function ScoreFeedView:push(entry)
 	table.insert(self.lines, 1, line)
 	self:_trim()
 	self:_place(false)
+end
+
+-- Choose the closest horizontal slot in a row. When the map and fixed controls
+-- leave too little width, skip directly to the nearest edge in the stack direction.
+function ScoreFeedView:_phoneRow(line, y, direction)
+	local width = line.inkWidth
+	local preferred = self.anchorX + line.defaultLeft + line.inkLeft
+	local right = self.screenSize.X - width - 2
+	if right < 2 then return nil end
+	for _ = 1, #self.reserved + 1 do
+		if y < 1 or y + line.height > self.screenSize.Y - 1 then return nil end
+		local best, distance
+		local nextEdge = if direction < 0 then -math.huge else math.huge
+		local function tryX(x)
+			if x < 2 or x > right then return end
+			for _, box in self.reserved do
+				if y < box.Max.Y + 1 and y + line.height > box.Min.Y - 1
+					and x < box.Max.X + 1 and x + width > box.Min.X - 1 then return end
+			end
+			local delta = math.abs(x - preferred)
+			if distance == nil or delta < distance then best, distance = x, delta end
+		end
+		tryX(math.clamp(preferred, 2, right))
+		if best == nil then
+			for _, box in self.reserved do
+				if y < box.Max.Y + 1 and y + line.height > box.Min.Y - 1 then
+					tryX(box.Min.X - width - 1)
+					tryX(box.Max.X + 1)
+					nextEdge = if direction < 0 then math.max(nextEdge, box.Min.Y - line.height - 1)
+						else math.min(nextEdge, box.Max.Y + 1)
+				end
+			end
+		end
+		if best then return best - self.anchorX - line.inkLeft, y end
+		y = nextEdge
+	end
+	return nil
+end
+
+function ScoreFeedView:_phoneStack(top, gap)
+	if top < 1 or top + self.rankHeight > self.screenSize.Y - 1 then return false end
+	for _, box in self.reserved do
+		if top < box.Max.Y + 1 and top + self.rankHeight > box.Min.Y - 1
+			and self.panelLeft < box.Max.X + 1 and self.panelRight > box.Min.X - 1 then return false end
+	end
+	local upper, lower = top - self.rankGap, top + self.rankHeight + self.rankGap
+	for _, line in self.lines do
+		local above = line.zone == "above"
+		local x, y = self:_phoneRow(line, if above then upper - line.height else lower, if above then -1 else 1)
+		if x == nil then return false end
+		line.phoneX, line.phoneY = x, y - top
+		if above then upper = y - gap else lower = y + line.height + gap end
+	end
+	return true
 end
 
 -- Coordinates are relative to the top of the rank, so a second event arriving
@@ -365,7 +441,7 @@ function ScoreFeedView:_place(snap: boolean)
 			below += line.height + self.lineGap
 			line.zone = "below"
 		end
-		if snap or line.y == nil then line.y = line.targetY end
+		line.left = line.defaultLeft
 	end
 	self.origin = above - self.lineGap
 	self.contentHeight = below + self.origin
@@ -384,6 +460,32 @@ function ScoreFeedView:_place(snap: boolean)
 			local minimum = math.max(158, 76 + self.origin)
 			top = math.clamp(top, minimum, math.max(minimum, screen.Y - below - 2))
 		end
+	end
+	if self.phone and screen.X >= 240 and screen.Y >= 240 then
+		-- Preserve the anchor whenever the rows fit there. Only a crowded phone
+		-- needs another vertical position or tighter whitespace between text rows.
+		local placed = self:_phoneStack(top, self.lineGap)
+		if not placed then
+			for _, gap in {self.lineGap, 1 - (self.lineHeight - self.textSize)} do
+				for shift = 4, screen.Y, 4 do
+					if self:_phoneStack(top + shift, gap) then top += shift; placed = true; break end
+					if self:_phoneStack(top - shift, gap) then top -= shift; placed = true; break end
+				end
+				if placed then break end
+			end
+		end
+		if placed then
+			local high, low = 0, self.rankHeight
+			for _, line in self.lines do
+				line.left, line.targetY = line.phoneX, line.phoneY
+				high = math.min(high, line.targetY)
+				low = math.max(low, line.targetY + line.height)
+			end
+			self.origin, self.contentHeight = -high, low - high
+		end
+	end
+	for _, line in self.lines do
+		if snap or line.y == nil then line.y = line.targetY end
 	end
 	if self.onLayoutShift then self.onLayoutShift(top - self.top) end
 	self.root.Position = UDim2.fromOffset(self.anchorX, top - self.origin)
@@ -446,7 +548,7 @@ function ScoreFeedView:step(dt: number)
 			local k = math.clamp((t - line.bankAt) / C.BankTime, 0, 1)
 			local fall = math.clamp((k - 0.43) / 0.57, 0, 1) ^ 2
 			local pull = -6 * math.sin(math.min(k / 0.43, 1) * math.pi / 2)
-			x += (self.rankCenter - self.width / 2) * fall
+			x += (self.rankCenter - self.width / 2 - line.left) * fall
 			y += pull + (self.rankHeight / 2 - line.height / 2 - y - pull) * fall
 			alpha *= 1 - 0.8 * fall
 		end
