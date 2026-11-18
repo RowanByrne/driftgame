@@ -42,10 +42,12 @@ function Tape.layout(size)
 	local y = math.round(h * .525 - height * .5)
 	if portrait then
 		x = math.max(scoreWidth + gap + 8, math.floor((w + scoreWidth + gap - width) * .5))
-		y = math.max(y, math.min(321, h * .55))
+		-- A full live stack must clear the map's bottom edge (286 px on portrait phones).
+		y = math.max(y, math.min(415 * preference, h * .68))
 	elseif compact then
 		-- Keep the upper live row clear of the 140 px road map on short phones.
-		x = math.max(x, 166)
+		x = math.max(x, 180)
+		y = math.max(y, math.min(195 * preference, h * .68))
 	end
 	x = math.max(0, math.min(x, w - width - 8))
 	return {

@@ -96,6 +96,8 @@ function ScoreHudView:_resetEffects()
 	table.clear(self.debits)
 	self.waiting = 0
 	self.pulse = nil
+	self.reservedThisSnapshot = 0
+	self.score.Position = UDim2.fromOffset(0, math.floor(self.layout.height * .39))
 	self.rank.echo.Visible = false
 	for _, spark in self.sparks do spark.Visible = false end
 	self.rank.root.Position = UDim2.fromOffset(self.layout.scoreWidth + self.layout.gap, 0)
@@ -122,6 +124,7 @@ function ScoreHudView:setData(data)
 		self.shown = nil
 	end
 	self.mode, self.data = mode, data
+	self.reservedThisSnapshot = 0
 	if mode == "run" then
 		local rung = data.multiplier or 1
 		local style = Tape.tier(rung)
@@ -149,10 +152,11 @@ function ScoreHudView:bankStart(points, id, latestScore)
 	if self.mode ~= "run" then return end
 	self.bankStarts += 1
 	if self:_reduced() then return end
-	local room = math.max(0, (latestScore or 0) - (self.data.score or 0) - self.waiting)
+	local room = math.max(0, (latestScore or 0) - (self.data.score or 0) - self.reservedThisSnapshot)
 	local debit = math.min(points, room)
 	self.debits[id] = debit
 	self.waiting += debit
+	self.reservedThisSnapshot += debit
 end
 
 function ScoreHudView:bankCancel(id)

@@ -280,9 +280,10 @@ function ScoreFeedView:push(entry)
 				if self:_reduced() then self:_impact(line) end
 			end
 		end
+		local oldHeight = line.height
 		self:_fit(line)
 		self:_trim()
-		self:_place(false)
+		self:_place(line.height ~= oldHeight)
 		return
 	end
 
@@ -307,7 +308,11 @@ function ScoreFeedView:push(entry)
 				if id ~= nil then
 					self.byId[id] = other
 				end
+				local oldHeight = other.height
 				self:_fit(other)
+				if other.height ~= oldHeight then
+					self:_place(true)
+				end
 				return
 			end
 		end
