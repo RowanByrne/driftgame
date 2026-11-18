@@ -1,37 +1,21 @@
 # Split Feed score sounds
 
-**Status** — Pinball bonus audition, November 18, 2026. The user passed on Bit Counter, Chip Sprint and Vector Rush and asked for a retro pinball feel with the musical drive of 1990s eurobeat in the score cues.
+**Selected for lane review.** The user chose Redline Bonus on November 18, 2026. Tuned metal targets, detuned synth brass, octave bass and a short bank chord give the score its pinball and eurobeat sound.
 
-## Pinball bonus auditions
+| Score display | Sound |
+|---|---|
+| One-off line appears | Short metal target hit |
+| Held line opens | Score reel and brass opening |
+| Held points climb | The next brass-and-bass hit in the original eight-step phrase |
+| Named rank rises | Short rising phrase, extended from SIDEWAYS upward |
+| Held line moves into the rank | A windup resolves onto a bank chord |
+| Bank reaches the total | A final chime answers the bank chord |
+| Named rank falls | A descending musical figure |
 
-| Audition | During a hold | When it banks |
-|---|---|---|
-| Bonus Bells | A score-wheel clack and a tuned metal target on each increment | A bright pair of chimes over a short synth-brass cadence |
-| Redline Bonus | Metal targets strike a syncopated synth-brass figure with an answering octave bass | A bank chord, octave leap and final resolving chime |
+The count follows increases in each live line's rounded point total. Overlapping events share one musical phrase, advancing at most one note per eighth-note beat at 160 BPM under continuous growth. A pause in scoring pauses the phrase. The next increase resumes it. When all holds finish, the next hold starts at the first note. Repeated values, losses, summaries and fixtures stay quiet. A cancelled hold cuts off its current note. Reduced Motion plays one immediate bank impact.
 
-Both clips use the same 160 BPM review sequence. Score growth advances a twelve-hit count with a pause. Each hit is individually playable so the count can follow actual earnings and stop when the event stops. The phrases are original compositions for Drift.
-
-While a held line is live, growth in its displayed points can sound a short progress pulse. A pause in earning points pauses the sound. Concurrent holds share a cadence limit. A settlement stops the count immediately, and a lost hold ends quietly. Score UI volume and mute cover the pulses. The approved 1.3× display and the score calculation stay as they are.
-
-## Previous lane mix
-
-| What the driver sees | What they hear | Audition |
-|---|---|---|
-| A one-off score line appears | A single clipped digital shutter tick | Cassette Relay |
-| The named rank rises | A short shutter burst at a low tier, the full ratchet from SIDEWAYS upward | Cassette Relay |
-| A held event starts | A short electronic sweep as the line opens | Cassette Relay |
-| A grind banks | The tape motor spools up and a sharp electronic switch lands at the rank | Tape Deck and Cassette Relay |
-| The points reach the run total | A small high tick from the shutter tail | Cassette Relay |
-| The named rank falls | A descending filtered sweep | Cassette Relay |
-
-After hearing the first lane mix, the user asked for "no plop ploop sounds - the techno y stuff was what i liked". The second mix uses the previously auditioned mechanical and electronic textures. Each bank follows its own transfer into the rank and across to the total.
-
-## Implementation
-
-1. Play the original Tape Deck recording for the motor. Use the original Cassette Relay shutter, sweep and switch by their Creator Store IDs. The source manifest records each slice. All eight cues follow the live score display.
-2. Drive local 2D playback from accepted feed events, named-rank changes and the existing bank animation. Track each bank through windup, impact and arrival. Limit rapid repeat ticks and give the impact priority. Opening a run initializes the rank quietly. A lost hold, a repeated snapshot or a restarted run must never sound like a payout. Reduced Motion gives an immediate bank one impact.
-3. Give Score UI its own slider in Sound settings. Match the existing default mix at 30% and mute the cues at zero. Tune the default below the engine and tyres during a sustained drift.
+Playback is local to the driver's Score UI sound group. The Settings slider defaults to 30%, and zero mutes the group. The score engine owns the points. The UI and audio follow its live feed, and an individual bank's receipt follows the displayed transfer.
 
 ## Lane review
 
-Exercise both rank gains, a rank drop, a held grind, a lost grind, repeated events and two overlapping banks. Compare cue counts with their visible events and check run totals. Try Reduced Motion, mute and an immediate restart while a bank is in flight. The driver makes the final mix decision by ear in the lane.
+Build a sustained event, pause earnings, let it grow again, then bank. Compare two overlapping holds, a lost hold, a run restart and Reduced Motion. Try Score UI at 0% and 30%. The original selected master and the exact cue regions are in the sound manifest and `Config.Fx.ScoreUI`.

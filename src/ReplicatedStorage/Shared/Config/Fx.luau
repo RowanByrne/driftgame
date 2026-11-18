@@ -21,26 +21,33 @@
 -- read. The modules convert once.
 
 return {
-	-- Local Split Feed one-shots. Region bounds are source seconds from the approved auditions.
+	-- Redline Bonus: the approved master with silent seek guards between its regions.
 	ScoreUI = {
+		SoundId = "rbxassetid://136427165925710",
 		Volume = 0.24,
+		Voices = 10,
 		TickInterval = 0.14,
-		HighRank = 4, -- SIDEWAYS, where the HUD first draws the rank echo
-		Sources = {
-			Tape = {Id = "rbxassetid://108094209509984", Gain = 1, Voices = 3},
-			Shutter = {Id = "rbxassetid://10066921516", Gain = 1.9345988, Voices = 4},
-			Sweep = {Id = "rbxassetid://10066914500", Gain = 1.9345988, Voices = 3},
-			Switch = {Id = "rbxassetid://10066926605", Gain = 1.9345988, Voices = 3},
-		},
+		CountInterval = 60 / (160 * 2), -- eighth note at 160 BPM, shared across live lines
+		HighRank = 4,
 		Cues = {
-			event = {Source = "Shutter", Region = NumberRange.new(0.145, 0.175), Speed = 1, Gain = 1},
-			hold_open = {Source = "Sweep", Region = NumberRange.new(0.025, 0.141), Speed = 1, Gain = 1.3},
-			score_receipt = {Source = "Shutter", Region = NumberRange.new(0.195, 0.235), Speed = 1.17, Gain = 0.85},
-			rankLow = {Source = "Shutter", Region = NumberRange.new(0, 0.12), Speed = 0.98, Gain = 0.7},
-			rankHigh = {Source = "Shutter", Region = NumberRange.new(0, 0.28), Speed = 1.12, Gain = 0.83},
-			rankDrop = {Source = "Sweep", Region = NumberRange.new(0.112, 0.32), Speed = 0.9, Gain = 1.3},
-			windup = {Source = "Tape", Region = NumberRange.new(2.66, 3.045), Speed = 1, Gain = 1},
-			bankImpact = {Source = "Switch", Region = NumberRange.new(0.137, 0.315), Speed = 0.94, Gain = 3.15},
+			event = NumberRange.new(0.07, 0.25),
+			hold_open = NumberRange.new(0.34, 0.62),
+			windup = NumberRange.new(2.814, 3.209),
+			bankImpact = NumberRange.new(3.299, 3.869),
+			score_receipt = NumberRange.new(3.959, 4.349),
+			rankLow = NumberRange.new(4.439, 4.839),
+			rankHigh = NumberRange.new(4.929, 5.459),
+			rankDrop = NumberRange.new(5.549, 5.949),
+		},
+		CountPhrase = {
+			NumberRange.new(0.71, 0.883),
+			NumberRange.new(0.973, 1.146),
+			NumberRange.new(1.236, 1.409),
+			NumberRange.new(1.499, 1.672),
+			NumberRange.new(1.762, 1.935),
+			NumberRange.new(2.025, 2.198),
+			NumberRange.new(2.288, 2.461),
+			NumberRange.new(2.551, 2.724),
 		},
 	},
 	-- ------------------------------------------------------------------ tyre marks

@@ -1,5 +1,7 @@
 # Split Feed score sounds
 
+## Earlier lane mixes
+
 On November 18, 2026 the user selected "elements of tape deck and cassette relay are really good here, use both" (T-309) and approved the eight-cue mix and slider (T-311). The hybrid audition SHA-256 is `2c1107589e12878462b481e2a0218b25455b6d8db4e681ae508a84b62f18978d`.
 
 | Source | Owner and rights | Asset ID | SHA-256 |
@@ -48,3 +50,28 @@ Original Drift compositions and procedural sound design. The two sets use a synt
 |---|---|---|---|
 | Bonus Bells | Vintage bonus reel: a solenoid advances a wheel, tuned metal chimes alternate with each score increment, and a short synth-brass cadence answers the final target. | `61adb96ba1ababe343e4fda7c6c6819c84eb5e3b479da2fbcae029437efe6429` | `d7b0413dd888e23db54fde339872b149693119300a52f44e556d0b99bcbb26b4` |
 | Redline Bonus | Fast original eurobeat score phrase: each bonus step strikes a metal target, opens a detuned synth-brass stab and answers on octave bass. The bank resolves into a chord and an answering lead. | `58b3a8df495c5b089183b73b3d2282421b97eb5cea044432d5ffc81bd96f2f69` | `ca819c6bd7d4866ada052b38e654ddecff4fe2354c513d8fd68c9315e8585bab` |
+
+## Selected production master — Redline Bonus
+
+The user selected **Redline Bonus** on T-312 on November 18, 2026. Bonus Bells was not selected. The approved 24-bit stereo 48 kHz master, `redline-bonus-sheet.wav`, was copied unchanged. It contains sixteen original regions. Its SHA-256 is `ca819c6bd7d4866ada052b38e654ddecff4fe2354c513d8fd68c9315e8585bab`. Roblox Audio `136427165925710` is the private upload "Drift Redline Bonus" under Byrned_FPS (user `3383554889`). The published-universe grant awaits Drift's universe ID.
+
+The audition's relative gains are baked into the recording. At the default 30% Score UI slider, all voices use a gain of 0.24 at normal speed.
+
+| Cue | Source seconds |
+|---|---|
+| event | 0.07 to 0.25 |
+| hold_open | 0.34 to 0.62 |
+| count1 | 0.71 to 0.883 |
+| count2 | 0.973 to 1.146 |
+| count3 | 1.236 to 1.409 |
+| count4 | 1.499 to 1.672 |
+| count5 | 1.762 to 1.935 |
+| count6 | 2.025 to 2.198 |
+| count7 | 2.288 to 2.461 |
+| count8 | 2.551 to 2.724 |
+| windup | 2.814 to 3.209 |
+| bankImpact | 3.299 to 3.869 |
+| score_receipt | 3.959 to 4.349 |
+| rankLow | 4.439 to 4.839 |
+| rankHigh | 4.929 to 5.459 |
+| rankDrop | 5.549 to 5.949 |

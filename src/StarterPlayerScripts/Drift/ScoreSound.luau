@@ -1,6 +1,5 @@
 --!nonstrict
--- Local score presentation only. Each source stays resident, so a late load can never
--- play an old event during the next bank or run.
+-- Local score presentation. All voices share the approved Redline Bonus sheet.
 local ContentProvider = game:GetService("ContentProvider")
 local ReplicatedFirst = game:GetService("ReplicatedFirst")
 local SoundService = game:GetService("SoundService")
@@ -13,75 +12,104 @@ ScoreSound.__index = ScoreSound
 
 function ScoreSound.new()
 	local self = setmetatable({
-		voices = {}, seen = {}, banks = setmetatable({}, {__mode = "k"}),
-		played = {}, nextTick = 0, quiet = QuietPlay.isQuiet(),
+		voices = {}, seen = {}, points = {}, banks = setmetatable({}, {__mode = "k"}),
+		played = {}, nextTick = 0, nextCount = 0, countStep = 1, quiet = QuietPlay.isQuiet(),
 	}, ScoreSound)
-	local preload = {}
-	for name, source in Config.Sources do
-		local pool = {}
-		for i = 1, source.Voices do
-			local sound = Instance.new("Sound")
-			sound.Name = "ScoreUI_" .. name .. i
-			sound.SoundId = source.Id
-			sound.PlaybackRegionsEnabled = true
-			SoundLevels.apply(sound, "ScoreUI")
-			sound.Parent = SoundService
-			table.insert(pool, {sound = sound, started = 0})
-		end
-		self.voices[name] = pool
-		table.insert(preload, pool[1].sound)
+	for i = 1, Config.Voices do
+		local sound = Instance.new("Sound")
+		sound.Name = "ScoreUI_Redline" .. i
+		sound.SoundId = Config.SoundId
+		sound.PlaybackRegionsEnabled = true
+		SoundLevels.apply(sound, "ScoreUI")
+		sound.Parent = SoundService
+		table.insert(self.voices, {sound = sound, started = 0})
 	end
-	task.spawn(function() pcall(function() ContentProvider:PreloadAsync(preload) end) end)
+	task.spawn(function()
+		pcall(function() ContentProvider:PreloadAsync({self.voices[1].sound}) end)
+	end)
 	return self
 end
 
--- If all voices are busy, replace the oldest non-impact in this source's pool.
-function ScoreSound:_play(name, bank)
-	local cue = Config.Cues[name]
-	local pool = self.voices[cue.Source]
-	local chosen = nil
-	for _, voice in pool do
+function ScoreSound:_stop(cue, owner)
+	for _, voice in self.voices do
+		if voice.cue == cue and (owner == nil or owner == voice.owner) then
+			voice.sound:Stop()
+			voice.cue, voice.owner = nil, nil
+		end
+	end
+end
+
+function ScoreSound:_play(name, owner, region)
+	if SoundLevels.get("ScoreUI") == 0 then return false end
+	local now = os.clock()
+	if name == "event" and now < self.nextTick then return false end
+	if name == "bankImpact" then
+		self:_stop("event")
+		self:_stop("accumulate")
+		self.nextTick = now + Config.TickInterval
+		self.nextCount = math.max(self.nextCount, now + Config.CountInterval)
+	end
+	local chosen
+	local incidental = name == "event" or name == "accumulate"
+	for _, voice in self.voices do
 		if not voice.sound.IsLoaded then continue end
 		if not voice.sound.IsPlaying then chosen = voice; break end
-		if voice.cue ~= "bankImpact" and (not chosen or voice.started < chosen.started) then
+		if not incidental and voice.cue ~= "bankImpact" and (not chosen or voice.started < chosen.started) then
 			chosen = voice
 		end
 	end
-	if not chosen or SoundLevels.get("ScoreUI") == 0 then return end
-	local now = os.clock()
-	if name == "event" then
-		if now < self.nextTick then return end
-		self.nextTick = now + Config.TickInterval
-	elseif name == "bankImpact" then
-		for _, tick in self.voices[Config.Cues.event.Source] do
-			if tick.cue == "event" then tick.sound:Stop() end
-		end
-		self.nextTick = now + Config.TickInterval
-	end
+	if not chosen then return false end
+	if name == "event" then self.nextTick = now + Config.TickInterval end
 	local sound = chosen.sound
+	region = region or Config.Cues[name]
 	sound:Stop()
-	chosen.started, chosen.cue, chosen.bank = now, name, bank
-	sound.PlaybackRegion = cue.Region
-	sound.PlaybackSpeed = cue.Speed
-	sound.Volume = if self.quiet then 0 else Config.Volume * Config.Sources[cue.Source].Gain * cue.Gain
-	sound.TimePosition = cue.Region.Min
+	chosen.started, chosen.cue, chosen.owner = now, name, owner
+	sound.PlaybackRegion = region
+	sound.Volume = if self.quiet then 0 else Config.Volume
+	sound.TimePosition = region.Min
 	sound:Play()
 	self.played[name] = (self.played[name] or 0) + 1
+	return true
 end
 
--- Called after the live engine's entry has reached the feed. Keep its identity after
--- the visible row fades, so a repeated terminal snapshot cannot turn into a new tick.
+-- All growing lines advance one musical phrase. A note is triggered only by a
+-- new visible point total. Missed beats during a stall never queue a catch-up.
+function ScoreSound:_count(id, now)
+	if now < self.nextCount then return end
+	if not self:_play("accumulate", id, Config.CountPhrase[self.countStep]) then return end
+	self.countStep = self.countStep % #Config.CountPhrase + 1
+	-- Feed updates arrive on simulation frames. Carry the beat through small
+	-- delays; after a pause, start a fresh beat at the new increase.
+	local beat = Config.CountInterval
+	self.nextCount = if now - self.nextCount <= beat / 4 then self.nextCount + beat else now + beat
+end
+
 function ScoreSound:entry(entry, audible)
 	local id = entry.id
 	if id == nil or entry.notice then return end
 	local previous = self.seen[id]
 	if previous and previous ~= "live" then return end
 	self.seen[id] = entry.state
-	if previous or not audible then return end
 	if entry.state == "live" then
-		self:_play("hold_open")
-	elseif entry.state == "banked" and entry.points > 0 then
-		self:_play("event")
+		local points = math.round(entry.points or 0)
+		local last = self.points[id]
+		local now = os.clock()
+		if last == nil and next(self.points) == nil then
+			self.countStep = 1
+			self.nextCount = math.max(self.nextCount, now + Config.CountInterval)
+		end
+		self.points[id] = points
+		if audible then
+			if not previous then self:_play("hold_open", id)
+			elseif last ~= nil and points > last then self:_count(id, now) end
+		end
+	else
+		self.points[id] = nil
+		self:_stop("accumulate", id)
+		self:_stop("hold_open", id)
+		if audible and not previous and entry.state == "banked" and entry.points > 0 then
+			self:_play("event")
+		end
 	end
 end
 
@@ -95,19 +123,17 @@ function ScoreSound:rank(rung)
 end
 
 function ScoreSound:bankStart(line, reduced)
-	if self.seen[line.ids[1]] ~= "live" then return end
+	local id = line.ids[1]
+	if self.seen[id] ~= "live" then return end
+	self:_stop("accumulate", id)
+	self:_stop("hold_open", id)
 	self.banks[line] = "winding"
 	if not reduced then self:_play("windup", line) end
 end
 
 function ScoreSound:cancel(line)
 	self.banks[line] = nil
-	for _, voice in self.voices[Config.Cues.windup.Source] do
-		if voice.bank == line and voice.cue == "windup" then
-			voice.sound:Stop()
-			voice.bank = nil
-		end
-	end
+	self:_stop("windup", line)
 end
 
 function ScoreSound:impact(line, reduced)
@@ -124,14 +150,13 @@ function ScoreSound:arrive(line)
 end
 
 function ScoreSound:reset(newRun)
-	self.rung, self.nextTick = nil, 0
+	self.rung, self.nextTick, self.nextCount, self.countStep = nil, 0, 0, 1
 	table.clear(self.banks)
+	table.clear(self.points)
 	if newRun then table.clear(self.seen) end
-	for _, pool in self.voices do
-		for _, voice in pool do
-			voice.sound:Stop()
-			voice.bank = nil
-		end
+	for _, voice in self.voices do
+		voice.sound:Stop()
+		voice.cue, voice.owner = nil, nil
 	end
 end
 
