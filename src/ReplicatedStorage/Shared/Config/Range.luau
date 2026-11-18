@@ -126,19 +126,19 @@ return {
 	ContourLook = 800, -- studs of country beyond the bend
 	ContourExit = 560, -- studs of clear road beyond the bend
 	ContourSample = 40, -- studs between height readings
-	ContourGrade = 5, -- degrees over a sustained climb or descent
+	ContourGrade = 4.5, -- preferred degrees over a sustained climb or descent
 	ContourPitchRise = 32, -- studs that a short pitch can gain above the sustained approach
 	ContourSetback = 100, -- room for the apex to turn before it must head across the face again
 	ContourTrigger = 14, -- predicted earthwork cost that merits another route
 	ContourGain = 4, -- minimum improvement to change a chosen bend
 	ContourTurns = { 22, 48, 80, 115, 155 }, -- degrees, either way from the incoming road
 	ContourRadii = { 85, 180, 360 }, -- studs
-	CorridorForward = 160, -- studs advanced into the range between surveyed layers
-	CorridorAcross = 200, -- studs between alternate crossings of a layer
-	CorridorColumns = 30, -- up to 4,800 studs of hillside in a survey
-	CorridorHalfWidth = 20, -- 4,000 studs to either side
-	CorridorReach = 5, -- a single traverse can go 1,000 studs across
+	CorridorForward = 130, -- studs advanced into the range between surveyed layers
+	CorridorAcross = 180, -- studs between alternate crossings of a layer
+	CorridorColumns = 93, -- up to 12,090 studs of hillside in a survey
+	CorridorHalfWidth = 28, -- 5,040 studs to either side
+	CorridorReach = 6, -- a single traverse can go 1,080 studs across
 	CorridorBendCost = 110, -- extra driving distance assigned to a radian of turn
-	CorridorPitchCost = 27, -- distance cost per stud of rise/fall above the approach grade
+	CorridorPitchCost = 220, -- distance cost per stud of rise/fall above the approach grade
 	StraightenMaxOff = 20, -- studs off h: a bend straightening the road before a hairpin goes no further (T-242)
 }

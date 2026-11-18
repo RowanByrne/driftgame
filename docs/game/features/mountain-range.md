@@ -26,6 +26,12 @@ The steering samples and the mountain's branching channels come from the approve
 4. The scenery looks as it does today; biomes come later.
 5. Height stays within a band. The road never reaches Roblox's fall-kill height however long the run.
 
+### Routing around a steep face (T-324)
+
+Past the recorded drive, the server surveys each proposed bend and its exit against the natural ground. It checks for fill, cuts across both shoulders, and sustained climbing or descending. A short pitch can reach 14°. Over a sustained approach the survey favors 4.5°, with a 32-stud allowance for a short rise above that line.
+
+When it forecasts difficult ground, the generator compares traverses across the coming face. The survey reaches up to 12,090 studs toward the next pass and 5,040 studs to either side. It favors gentler paths and leaves room to round each bend. The generator then fits actual bends, checking old road and at least 560 studs of clear exit before placing a new traverse. Each section follows the ground with the original vertical-curve rate. Clients replay the server's sections with the ordinary road and hillside meshes.
+
 ## Left out
 
 - **Biomes:** which biome a spot gets, and how each looks. Decided later, during live generation. The sketch below is kept only as a starting idea.

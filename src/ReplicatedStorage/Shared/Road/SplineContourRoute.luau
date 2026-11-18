@@ -43,7 +43,10 @@ function Route.new(f: Ground.Field, x: number, z: number, yaw: number, target: {
 	for i = 1, cols do
 		local row: { [number]: Cell } = {}
 		layers[i] = row
-		for a, cell in layers[i - 1] do
+		local prevRow = layers[i - 1]
+		for a = -half, half do
+			local cell = prevRow[a]
+			if not cell then continue end
 			for shift = -C.CorridorReach, C.CorridorReach do
 				local b = a + shift
 				if math.abs(b) > half then continue end
@@ -69,7 +72,9 @@ function Route.new(f: Ground.Field, x: number, z: number, yaw: number, target: {
 	end
 	local best, last = math.huge, 0
 	local endT = t0 + cols * dt
-	for j, cell in layers[cols] do
+	for j = -half, half do
+		local cell = layers[cols][j]
+		if not cell then continue end
 		local dist = math.sqrt((tt - endT) ^ 2 + (tv - v0 - j * dv) ^ 2)
 		local cost = cell.cost + dist
 		if cost < best then last, best = j, cost end
@@ -89,17 +94,27 @@ end
 -- Closest point on the corridor and a waypoint a little farther along it.
 function Route.ahead(route: Route, t: number, v: number, look: number): (number, number, number)
 	local pts = route.points
-	local best, at = math.huge, 0
-	for i = 2, #pts do
+	local best, at, nearest = math.huge, 0, 2
+	local start = math.clamp(2 + math.floor((t - pts[1].t) / (pts[2].t - pts[1].t)), 2, #pts)
+	local function test(i: number)
 		local a, b = pts[i - 1], pts[i]
 		local dt, dv = b.t - a.t, b.v - a.v
 		local u = math.clamp(((t - a.t) * dt + (v - a.v) * dv) / (dt * dt + dv * dv), 0, 1)
 		local miss = (a.t + u * dt - t) ^ 2 + (a.v + u * dv - v) ^ 2
-		if miss < best then
-			best, at = miss, a.s + (b.s - a.s) * u
+		if miss < best or (miss == best and i < nearest) then
+			best, at, nearest = miss, a.s + (b.s - a.s) * u, i
 		end
 	end
-	for i = 2, #pts do
+	test(start)
+	for i = start - 1, 2, -1 do
+		if t > pts[i].t and (t - pts[i].t) ^ 2 > best then break end
+		test(i)
+	end
+	for i = start + 1, #pts do
+		if pts[i - 1].t > t and (pts[i - 1].t - t) ^ 2 > best then break end
+		test(i)
+	end
+	for i = nearest, #pts do
 		local a, b = pts[i - 1], pts[i]
 		if at + look <= b.s then
 			local u = (at + look - a.s) / (b.s - a.s)
