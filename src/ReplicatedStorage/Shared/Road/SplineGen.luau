@@ -116,6 +116,8 @@ export type Gen = typeof(setmetatable(
 		spline: Spline.Spline,
 		rng: Random,
 		seed: number,
+		excessClimb: number, -- rise and fall already used above the sustained approach grade
+		excessDescent: number,
 		sections: { Spline.Section },
 		recent: { string },
 		lastDir: number,
@@ -207,6 +209,8 @@ function SplineGen.new(seed: number, origin: Spline.Origin?, clearOverride: numb
 		spline = spline,
 		rng = Random.new(seed),
 		seed = seed,
+		excessClimb = 0,
+		excessDescent = 0,
 		sections = {},
 		recent = {},
 		lastDir = 0,
@@ -688,6 +692,16 @@ function SplineGen.replay(sections: { Spline.Section }, origin: Spline.Origin?, 
 end
 
 function SplineGen._commit(self: Gen, sec: Spline.Section)
+	local prevU, grade = 0, self.spline:gradeAt(self.spline.length)
+	local cruise = math.tan(math.rad(Config.Range.ContourGrade))
+	for i = 1, #sec.g, 2 do
+		local u, nextGrade = sec.g[i], sec.g[i + 1]
+		local ds = u - prevU
+		local rise = 0.5 * (grade + nextGrade) * ds
+		self.excessClimb = math.clamp(self.excessClimb + rise - cruise * ds, 0, Config.Range.ContourPitchRise)
+		self.excessDescent = math.clamp(self.excessDescent - rise - cruise * ds, 0, Config.Range.ContourPitchRise)
+		prevU, grade = u, nextGrade
+	end
 	self.spline:append(sec)
 	table.insert(self.sections, sec)
 	local st = self.stats
@@ -1161,6 +1175,13 @@ local function rampRise(u: number, ga: number, gb: number, rate: number): number
 	return ga * L + 0.5 * a * L * L + gb * (u - L)
 end
 
+-- A steep pitch spends height above the sustained grade. Keep enough height in
+-- reserve to round back to that grade at the road's existing vertical-curve rate.
+local function pitchLimit(used: number, span: number, cruise: number, peak: number): number
+	local remaining = math.max(0, Config.Range.ContourPitchRise - used)
+	return math.min(peak, cruise + math.min(remaining / span, math.sqrt(2 * Config.Spline.MaxGradeRate * remaining)))
+end
+
 -- A ground run's grade for a section whose curvature knots are `knots`, and the furthest
 -- its centre line then is from h (studs). Chosen a piece at a time, `FollowSegment` studs
 -- each: the grade whose road best fits h over that piece (least squares), and on
@@ -1197,6 +1218,8 @@ function SplineGen._followGrade(self: Gen, knots: { number }, g0: number, y0: nu
 	local seg = G.FollowSegment
 	local out: { number } = {}
 	local yA, gA, a = y0, g0, 0
+	local climb, descent = self.excessClimb, self.excessDescent
+	local cruise = math.tan(math.rad(Config.Range.ContourGrade))
 	local worst, worstFill, worstCut = 0, 0, 0
 	while a < len - 1e-6 do
 		local b = math.min(a + seg, len)
@@ -1221,6 +1244,11 @@ function SplineGen._followGrade(self: Gen, knots: { number }, g0: number, y0: nu
 		local gAhead = if i1 and iB and us[i1] > uB then (hs[i1] - hB) / (us[i1] - uB) else gA
 		gAhead = math.clamp(gAhead, -gMax, gMax)
 		local span = b - a
+		local lo, hi = -gMax, gMax
+		if not gradeLimit then
+			lo = -pitchLimit(descent, span, cruise, gMax)
+			hi = pitchLimit(climb, span, cruise, gMax)
+		end
 		local function cost(gt: number): number
 			local gB = gA + sign(gt - gA) * math.min(math.abs(gt - gA), rate * span)
 			local yB = yA + rampRise(span, gA, gB, rate)
@@ -1247,7 +1275,7 @@ function SplineGen._followGrade(self: Gen, knots: { number }, g0: number, y0: nu
 		local best, bestCost = gA, math.huge
 		local n = 32
 		for i = 0, n do
-			local gt = -gMax + 2 * gMax * i / n
+			local gt = math.clamp(-gMax + 2 * gMax * i / n, lo, hi)
 			local c = cost(gt)
 			if c < bestCost then
 				best, bestCost = gt, c
@@ -1256,7 +1284,7 @@ function SplineGen._followGrade(self: Gen, knots: { number }, g0: number, y0: nu
 		local d = 2 * gMax / n
 		local centre = best
 		for i = -8, 8 do
-			local gt = math.clamp(centre + d * i / 8, -gMax, gMax)
+			local gt = math.clamp(centre + d * i / 8, lo, hi)
 			local c = cost(gt)
 			if c < bestCost then
 				best, bestCost = gt, c
@@ -1282,7 +1310,10 @@ function SplineGen._followGrade(self: Gen, knots: { number }, g0: number, y0: nu
 				worstCut = math.max(worstCut, -e)
 			end
 		end
-		yA += rampRise(span, gA, gB, rate)
+		local rise = rampRise(span, gA, gB, rate)
+		yA += rise
+		climb = math.max(0, climb + rise - cruise * span)
+		descent = math.max(0, descent - rise - cruise * span)
 		gA, a = gB, b
 	end
 	-- and how far off h the road ends: above it (+) or below it (-) (T-242)
@@ -1506,10 +1537,10 @@ function SplineGen._exitClear(self: Gen, knots: { number }, kt: number): boolean
 	local _, _, yaw, k0 = self.spline:tip()
 	local heading = yawAfter(yaw, k0, exit)
 	local range = self.ground.range
-	if -math.sin(heading) * range.ux - math.cos(heading) * range.uz < -0.035 then
+	if -math.sin(heading) * range.ux - math.cos(heading) * range.uz < -math.sin(math.rad(Config.Range.LegOnward)) then
 		return false
 	end
-	exit[#exit - 1] = exit[#exit - 3] + Config.Range.ContourLook
+	exit[#exit - 1] = exit[#exit - 3] + Config.Range.ContourExit
 	return self:_clear(exit, true)
 end
 
@@ -1528,15 +1559,17 @@ local function contourCost(self: Gen, knots: { number }): number
 	path[#path - 1] = path[#path - 3] + R.ContourLook
 	local previous = Ground.h(f, x, z)
 	local climb, descent, worst, sum, n = 0, 0, 0, 0, 0
-	local history = math.min(self.spline.length, R.ContourHistory)
-	local gained = y - self.spline:heightAt(self.spline.length - history)
-	climb = math.max(0, gained - history * cruise)
-	descent = math.max(0, -gained - history * cruise)
+	local usedClimb, usedDescent = self.excessClimb, self.excessDescent
 	walk(x, z, yaw, k0, path, step, step, function(u, px, pz)
 		local terrain = Ground.h(f, px, pz)
-		local want = math.clamp(2 * (terrain - y) / step - grade, -peakGrade, peakGrade)
+		local lo = -pitchLimit(usedDescent, step, cruise, peakGrade)
+		local hi = pitchLimit(usedClimb, step, cruise, peakGrade)
+		local want = math.clamp(2 * (terrain - y) / step - grade, lo, hi)
 		local nextGrade = grade + math.clamp(want - grade, -C.MaxGradeRate * step, C.MaxGradeRate * step)
-		y += 0.5 * (grade + nextGrade) * step
+		local roadRise = 0.5 * (grade + nextGrade) * step
+		usedClimb = math.max(0, usedClimb + roadRise - cruise * step)
+		usedDescent = math.max(0, usedDescent - roadRise - cruise * step)
+		y += roadRise
 		grade = nextGrade
 		local rise = terrain - previous
 		previous = terrain

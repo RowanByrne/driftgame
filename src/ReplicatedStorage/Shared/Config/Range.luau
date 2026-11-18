@@ -123,10 +123,11 @@ return {
 	FollowBackCost = 250, -- studs (100 left the road heading back 500 studs, twice in 24 runs)
 	-- Screen the selected path and its exit before committing it. When the ground keeps
 	-- rising or falling faster than a traverse should, try both flanks of the obstruction.
-	ContourLook = 560, -- studs of country beyond the bend
+	ContourLook = 800, -- studs of country beyond the bend
+	ContourExit = 560, -- studs of clear road beyond the bend
 	ContourSample = 40, -- studs between height readings
 	ContourGrade = 5, -- degrees over a sustained climb or descent
-	ContourHistory = 500, -- studs of altitude gain approaching the proposed bend
+	ContourPitchRise = 32, -- studs that a short pitch can gain above the sustained approach
 	ContourSetback = 100, -- room for the apex to turn before it must head across the face again
 	ContourTrigger = 14, -- predicted earthwork cost that merits another route
 	ContourGain = 4, -- minimum improvement to change a chosen bend
