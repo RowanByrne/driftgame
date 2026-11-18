@@ -1,6 +1,6 @@
 # Split Feed score sounds
 
-**Selected for lane review.** The user chose Redline Bonus on November 18, 2026. Tuned metal targets, detuned synth brass, octave bass and a short bank chord give the score its pinball and eurobeat sound.
+The user approved Redline Bonus in lane 1 on November 18, 2026 (T-312). Tuned metal targets, detuned synth brass, octave bass and a short bank chord give the score its pinball and eurobeat sound.
 
 | Score display | Sound |
 |---|---|

@@ -9,7 +9,6 @@ Every task in progress and the files it owns, so parallel sessions and workers n
 
 | Branch | Lane | Files owned | Since |
 |---|---|---|---|
-| `agent/split-feed-sounds` | Borrow to test | `src/ReplicatedStorage/Shared/Config/Fx.luau`, `src/StarterPlayerScripts/Controllers/ScoreController.luau`, `src/StarterPlayerScripts/Drift/ScoreSound.luau` (new), `src/StarterPlayerScripts/Drift/SoundLevels.luau`, `src/StarterPlayerScripts/Settings/SettingsView.luau`, `assets/audio/sfx-score-tape/*` (new), `docs/game/AUDIO.md`, `docs/game/SETTINGS.md`, `docs/game/features/split-feed-audio.md` | 2026-11-18, T-312 |
 
 ## Notes between sessions
 
