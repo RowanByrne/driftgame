@@ -64,7 +64,36 @@ local flames = {
 local emberOrigins = {.25,.43,.71,.84}
 local emberPaths = {Vector2.new(8,-15),Vector2.new(15,-22),Vector2.new(10,-12),Vector2.new(18,-15)}
 
+-- Prefetch the next rank without retaining a second HUD or blocking scoring.
+local warmed = {}
+local function warmRank(rung)
+	local rank = Registry[rung]
+	if not rank or warmed[rung] then return end
+	warmed[rung] = true
+	task.spawn(function()
+		local images = {}
+		for _, key in {"letters","face","signal","body","detail","print","keyline","flameBody","flameCore"} do
+			local asset = rank[key]
+			if asset then
+				local image = Instance.new("ImageLabel")
+				image.Image = asset.uri
+				table.insert(images, image)
+			end
+		end
+		local succeeded = true
+		local ok = pcall(function()
+			ContentProvider:PreloadAsync(images, function(_, status)
+				if status ~= Enum.AssetFetchStatus.Success then succeeded = false end
+			end)
+		end)
+		for _, image in images do image:Destroy() end
+		if not ok or not succeeded then warmed[rung] = nil end
+	end)
+end
+
 function Art.new(parent)
+	warmRank(1)
+	warmRank(2)
 	return setmetatable({slot = frame(parent, "WordSlot", 2), age = 0, entry = false}, Art)
 end
 
@@ -253,8 +282,13 @@ function Art:_paint(dt, reduced)
 	self.scene.Position = UDim2.fromOffset(self.width/2+dx*force,self.slotHeight/2+dy*force)
 	-- Keep fractional pixels in the scale components so short faces and tall
 	-- effects share the same scale on compact screens.
-	self.scene.Size = UDim2.fromScale(self.width/self.slotWidth*(1+(sx-1)*s.force),
-		self.height/self.slotHeight*(1+(sy-1)*s.force))
+	self.scene.Size = UDim2.fromScale(self.width/self.slotWidth*(1+(sx-1)*force),
+		self.height/self.slotHeight*(1+(sy-1)*force))
+	self.scene.Rotation = lerpKeys(entryTilt,t)*force
+	-- A real gain spends its charge. Light the whole face independently of the reveal.
+	local flash = if self.promoted then math.max(0,1-self.age/duration)^1.4 else 0
+	self.base.ImageColor3 = s.base:Lerp(s.accent:Lerp(white,.65), flash)
+	self.lit.ImageColor3 = s.accent:Lerp(white,.75*flash)
 	local phase = if s.cycle then (self.age % s.cycle)/s.cycle else 0
 	if self.flames then
 		self:_paintFire(reduced)
@@ -286,8 +320,10 @@ function Art:_paint(dt, reduced)
 	self.signal.Position = UDim2.fromOffset(displacement,0)
 	self.echo.Visible = rung >= 4 and signalTime < 1
 	if self.echo.Visible then
-		self.echo.ImageTransparency = 1 - .65*s.force*(1-signalTime)^1.5
-		self.echo.Position = UDim2.fromOffset(-4+16*signalTime,2-6*signalTime)
+		local echoX, echoY = lerpKeys(echoPose,signalTime)
+		self.echo.ImageTransparency = 1-lerpKeys(echoOpacity,signalTime)*force
+		self.echo.Position = UDim2.fromOffset(echoX,echoY)
+		self.echo.Size = UDim2.fromScale(1+.06*math.max(0,(signalTime-.42)/.58),1)
 	end
 end
 

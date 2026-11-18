@@ -101,6 +101,15 @@ function Tape.newRank(parent)
 		local front = rule("Ink" .. i, self.paint, Style.ink)
 		table.insert(self.segments, {back, front})
 	end
+	self.sparks = {}
+	for i, direction in {Vector2.new(-1,-.38), Vector2.new(1,-.32), Vector2.new(.8,.38), Vector2.new(-.75,.5), Vector2.new(.25,-.8)} do
+		local spark = rule("GainSpark" .. i, self.root, Style.ink)
+		spark.AnchorPoint = Vector2.new(.5,.5)
+		spark.Rotation = math.deg(math.atan2(direction.Y,direction.X))
+		spark.ZIndex = 5
+		spark.Visible = false
+		table.insert(self.sparks, {part = spark, direction = direction})
+	end
 	return self
 end
 

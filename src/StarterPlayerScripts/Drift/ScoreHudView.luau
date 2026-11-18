@@ -192,14 +192,17 @@ end
 
 function ScoreHudView:step(dt)
 	if self.mode ~= "run" then return end
-	if self.gui.Enabled then self.rank.art:step(dt, self:_reduced()) end
-	if self:_reduced() then
+	local reduced = self:_reduced()
+	local gainKick = if self.gui.Enabled then self.rank:step(dt, reduced) else Vector2.zero
+	if reduced then
+		self.rank.root.Position = UDim2.fromOffset(self.layout.scoreWidth+self.layout.gap,0)
 		if self.pulse or #self.transfers > 0 or self.waiting > 0 then self:_resetEffects(); self:_drawTotal() end
 		return
 	end
 	local l = self.layout
 	local lead = l.scoreWidth + l.gap
 	local center = Vector2.new(lead + l.width * .43, l.height * .5)
+	local offset = gainKick
 	local pulse = self.pulse
 	if pulse then
 		pulse.age += dt
