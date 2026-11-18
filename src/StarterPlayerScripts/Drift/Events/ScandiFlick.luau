@@ -10,14 +10,22 @@
 -- Paired with the lenient perfect hairpin (`Drift/Events/BendDrift`), whose checks it reuses.
 --
 --   STARTS when, inside a TRUE hairpin's ENTRY ZONE (`Road/Hairpins.around`: bends turning
---   120 degrees within 250 studs; from `zone` up to `entry`), the car has held a 4-wheel
---   drift turned OUT of the hairpin (the slip a bend the other way would want) for `MinHold`.
---   Only the time inside the zone counts. One attempt per hairpin; a put-back makes every
---   one a fresh try. The handle opens here, so the feed shows the attempt live.
---   THE FLICK: once the wrong-way 4-wheel drift is let go, a drift turned INTO the hairpin
---   on 2+ wheels must follow within `Window` seconds, and before the apex. Going back to the
---   wrong-way 4-wheel drift inside the window is still holding it: the window starts again
---   when it is let go again. The time between, as measured, is the attempt's `flick`.
+--   120 degrees within 250 studs; from `zone` up to `entry`), the car has held a drift
+--   turned OUT of the hairpin (the slip a bend the other way would want) past `OutDegrees`
+--   on 2+ wheels for `MinHold`. Only the time inside the zone counts. One attempt per
+--   hairpin; a put-back makes every one a fresh try. The handle opens here, so the feed
+--   shows the attempt live.
+--   WHY NOT FOUR WHEELS TO START (T-302 send-back, measured): the user's words were "drift 4
+--   wheels one way", and that was the start, but nobody could make one register by hand.
+--   On the real car at a key's 0.75 of the finger, a wrong-way press under 0.5 s never gets
+--   the fronts past their 30-degree gate (0.3 s peaks at 20 degrees, 0.4 s at 26-28), and
+--   0.5 s gives 0.10-0.24 s of four wheels, against a 0.2 s hold inside a 60-stud zone
+--   (about a second at speed). So four wheels the wrong way is now part of the four-wheel
+--   BONUS, and the start asks for the drift a quick feint does make.
+--   THE FLICK: once the wrong-way drift is let go (under `OutDegrees`), a drift turned INTO
+--   the hairpin on 2+ wheels must follow within `Window` seconds, and before the apex. Going
+--   back to the wrong-way drift inside the window is still holding it: the window starts
+--   again when it is let go again. The time between, as measured, is the attempt's `flick`.
 --   HOLDS from the flick as a valid drift, the perfect hairpin's: the model's drift, on the
 --   ground, above the slide speed, on 2+ wheels sliding, either way round; a lapse up to
 --   `Grace` forgiven. From the entry on, the tarmac between the white edge lines: more than
@@ -29,9 +37,11 @@
 --   (`MaxSeconds`), "road changed".
 --
 -- THE BONUSES, each adding to its points, and naming the line when it completes:
---   four wheels   all four sliding from the flick to the exit: they must first all slide
---                 by the later of the entry and `FourWithin` after the flick (the fronts need
---                 30 degrees to slide; the flick lands at 5), then a lapse over `Grace` loses it
+--   four wheels   all four sliding the wrong way at some moment before the flick (in the
+--                 zone, or carried into it), AND all four from the flick to the exit: they
+--                 must first all slide by the later of the entry and `FourWithin` after the
+--                 flick (the fronts need 30 degrees; the flick lands at 5), then a lapse over
+--                 `Grace` loses it
 --   lane          your own lane from the entry to the exit, as lane drift's: the double
 --                 yellow's side the car's centre is on at the entry, out to the white edge
 --                 line; more than `MaxWheelsOut` wheels out at once loses it
@@ -76,7 +86,8 @@ function ScandiFlick.new(sink: any, rig: any)
 		marking = { false, false, false, false },
 		ds = { 0, 0, 0, 0 },
 		sliding = 0,
-		hold = 0, -- s the wrong-way 4-wheel drift has held inside the zone (not live)
+		hold = 0, -- s the wrong-way drift has held inside the zone (not live)
+		outFour = false, -- all four slid the wrong way during this hold or attempt
 		holdEntry = nil :: number?, -- which hairpin `hold` is for
 		tried = {} :: { [number]: boolean }, -- hairpins (by entry) already attempted
 		-- the live attempt
@@ -127,6 +138,7 @@ function ScandiFlick._end(self: any, completed: boolean, reason: string)
 		flick = self.flick,
 		flickAt = self.flickAt,
 		four = self.four,
+		outFour = self.outFour,
 		lane = self.lane,
 		label = self.info and self.info.label,
 		seconds = self.elapsed,
@@ -198,7 +210,9 @@ function ScandiFlick.Update(self: any, dt: number, state: any)
 	local want = self.live or h
 	local dir = if want then want.dir else 0
 	local drifting = state.drifting and not state.airborne and BendDrift.speed(state) >= Config.Fx.Gates.MinMarkSpeed
-	local wrong4 = drifting and n == 4 and dir ~= 0 and state.slip * dir > 0 -- turned out of the hairpin
+	-- turned out of the hairpin: past `OutDegrees` on 2+ wheels; and on all four
+	local wrong = drifting and n >= 2 and dir ~= 0 and state.slip * dir > math.rad(T.OutDegrees)
+	local wrong4 = wrong and n == 4
 	local right2 = drifting and n >= 2 and dir ~= 0 and state.slip * dir < 0 -- turned into it
 
 	if self.live then
@@ -248,9 +262,15 @@ function ScandiFlick.Update(self: any, dt: number, state: any)
 				self.afterFlick = 0
 				self.badDrift = 0
 				self.fourOn, self.bad4 = false, 0
-			elseif wrong4 then
+				if not self.outFour then
+					self.four = false -- never on four the wrong way: no four-wheel bonus
+				end
+			elseif wrong then
 				self.phase = "out"
 				self.since = 0
+				if wrong4 then
+					self.outFour = true
+				end
 			else
 				self.phase = "switch"
 				self.since += dt
@@ -306,16 +326,21 @@ function ScandiFlick.Update(self: any, dt: number, state: any)
 
 	-- not live: holding the wrong way inside a hairpin's entry zone?
 	local inZone = h ~= nil and not h.open and not jumped and s >= h.zone and s < h.entry and not self.tried[h.entry]
-	if not (inZone and wrong4 and not state.fell) then
+	if not (inZone and wrong and not state.fell) then
 		self.hold = 0
+		self.outFour = false
 		return
 	end
 	local hz = h :: Hairpins.Hairpin
 	if self.holdEntry ~= hz.entry then
 		self.hold = 0
+		self.outFour = false
 		self.holdEntry = hz.entry
 	end
 	self.hold += dt
+	if wrong4 then
+		self.outFour = true
+	end
 	if self.hold < T.MinHold - 1e-9 then
 		return
 	end
@@ -344,8 +369,24 @@ function ScandiFlick.Update(self: any, dt: number, state: any)
 	self.handle = self.sink.start(ScandiFlick.Kind, self.info)
 end
 
+-- Studio help for finding one (asked only here, never per step): the next true hairpin
+-- ahead within `lookAhead` studs (default 5000) of the car, and how far to its zone.
+function ScandiFlick.nextHairpin(self: any, lookAhead: number?): any
+	local spline, s = self.spline, self.s
+	if not spline or not s then
+		return nil
+	end
+	for _, h in Hairpins.find(spline, s, s + (lookAhead or 5000)) do
+		if h.entry > s then
+			return { entry = h.entry, zone = h.zone, dir = h.dir, open = h.open, toZone = h.zone - s, turn = h.hairpinTurn }
+		end
+	end
+	return nil
+end
+
 function ScandiFlick.DebugState(self: any): any
 	return {
+		next = self:nextHairpin(),
 		s = self.s,
 		d = self.d,
 		hairpin = BendDrift.info(self.hairpin),
@@ -360,6 +401,7 @@ function ScandiFlick.DebugState(self: any): any
 		badDrift = self.badDrift,
 		four = self.four,
 		fourOn = self.fourOn,
+		outFour = self.outFour,
 		lane = self.lane,
 		side = self.side,
 		out = self.out,

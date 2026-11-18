@@ -235,6 +235,7 @@ local function pilot(Sim, SplineWorld, spline, h, o)
 	local lastS = startS
 	local outFrom = h.entry - o.outAt
 	local flicked = false
+	local keyT = 0
 	local st = { vFlick = nil, outMax = 0, inMin = math.huge, dMax = 0, lapse = nil, holdMax = 0, held = nil }
 	local ctlBad = 0
 	local prevHeading = nil
@@ -258,7 +259,7 @@ local function pilot(Sim, SplineWorld, spline, h, o)
 		local kappa = 2 * math.sin(signedAngle(heading.X, heading.Z, dx / len, dz / len)) / len
 		local bmag = slipFor(speed * speed * math.abs(kappa))
 		local bStar = -math.sign(kappa) * bmag
-		if not flicked and (sf.phase == "out" or cs >= h.apex or (o.control and cs >= outFrom)) then
+		if not o.keys and not flicked and (sf.phase == "out" or cs >= h.apex or (o.control and cs >= outFrom)) then
 			flicked = true
 			st.vFlick = speed
 			st.flickS = cs - h.entry
@@ -280,6 +281,27 @@ local function pilot(Sim, SplineWorld, spline, h, o)
 		local held = (not flicked and cs >= outFrom) or (flicked and cs <= h.exit)
 		local r = (if held then omega else speed * kappa) + 8 * (s.slip - bStar)
 		input.steer = math.clamp(r / (D.MaxSteeringSpeed * D.SteeringSensitivity), -1, 1)
+		-- `keys`: a hand on the keyboard (a key is `KeySensitivity` of the finger). From
+		-- `outFrom` the wrong-way key is held `keys` seconds, then the other key until the slip
+		-- is 15 degrees into the bend; the autopilot then holds the drift, at a key's reach
+		if o.keys then
+			local key = D.KeySensitivity
+			if not flicked and cs >= outFrom then
+				keyT += 1 / 60
+				if keyT <= o.keys then
+					input.steer = -h.dir * key
+				else
+					input.steer = h.dir * key
+					if -s.slip * h.dir > math.rad(15) then
+						flicked = true
+						st.vFlick = speed
+						st.flickS = cs - h.entry
+					end
+				end
+			else
+				input.steer = math.clamp(input.steer, -key, key)
+			end
+		end
 		Sim.advance(runner, 1 / 60, input, world)
 		sf:Update(1 / 60, runner.state)
 		st.holdMax = math.max(st.holdMax, sf.hold)
@@ -487,33 +509,43 @@ local function runAll(opts)
 				`0.5 s: {tostring(e5 and e5.info.label)}; 0.1 s: {tostring(e1 and e1.info.label)}`
 			)
 
-			-- the window: a 0.6 s pause at zero inside the swing is in time, 0.95 s is not
+			-- the window: a 0.6 s pause at zero inside the swing is in time, 1.0 s is not
 			local sinkA, detA = go({ pause = 0.6, outTo = h.zone + 25 })
-			local sinkB, detB = go({ pause = 0.95, outTo = h.zone + 25 })
+			local sinkB, detB = go({ pause = 1.0, outTo = h.zone + 25 })
 			local eA, eB = one(sinkA), one(sinkB)
 			check(
 				`{tag}: a flick inside the {Tn.Window} s window completes, a slower one voids`,
 				eA and eA.finished == true and eB and eB.finished == false and detB.last.reason == "flick too slow",
-				`0.6 s pause: {tostring(eA and eA.finished)}, flick {fmt(detA.last and detA.last.flick, 3)} s; 0.95 s pause: {tostring(eB and eB.finished)} ({tostring(detB.last and detB.last.reason)})`
+				`0.6 s pause: {tostring(eA and eA.finished)}, flick {fmt(detA.last and detA.last.flick, 3)} s; 1.0 s pause: {tostring(eB and eB.finished)} ({tostring(detB.last and detB.last.reason)})`
 			)
 
 			-- the first drift the hairpin's own way, or not a 4-wheel one: nothing starts
 			local sinkW, detW = go({ wrong = -45 }) -- "out" of -45 is 45 INTO the bend
-			local sinkT, detT = go({ wrong = 22 }) -- 22 out: the rears slide, the fronts don't
+			local sinkT, detT = go({ wrong = Tn.OutDegrees - 3 }) -- out, but under the start's angle
 			check(
-				`{tag}: a first drift the hairpin's way, or on 2 wheels, starts nothing`,
+				`{tag}: a first drift the hairpin's way, or under {Tn.OutDegrees} deg out, starts nothing`,
 				#sinkW.started == 0 and #sinkT.started == 0 and detW.stats.started == 0 and detT.stats.started == 0,
-				`into the bend first: {#sinkW.started} started; 22 deg out (2 wheels): {#sinkT.started} started`
+				`into the bend first: {#sinkW.started} started; {Tn.OutDegrees - 3} deg out: {#sinkT.started} started`
+			)
+
+			-- a quick feint on two wheels (22 deg out: the rears slide, the fronts don't) starts
+			-- it and completes; four wheels in all the way, but never four out: no +4W
+			local sink22, det22 = go({ wrong = 22 })
+			local e22 = one(sink22)
+			check(
+				`{tag}: a two-wheel feint out starts it; without four out, no four-wheel bonus`,
+				e22 and e22.finished == true and e22.info.label == L.lane and det22.last.outFour == false and det22.last.four == false,
+				`22 deg out: {#sink22.started} started, finished {tostring(e22 and e22.finished)}, named {tostring(e22 and e22.info.label)}`
 			)
 
 			-- outside the entry zone: the wrong-way drift all before it, or all after the entry
 			local sinkE = go({ outFrom = h.zone - 50, outTo = h.zone - 10 })
 			local sinkL = go({ outFrom = h.entry + 2, outTo = h.entry + 30 })
-			local sinkM = go({ outFrom = h.zone + 10, outTo = h.zone + 14 }) -- held under MinHold
+			local sinkM = go({ outFrom = h.zone + 10, outTo = h.zone + 11, wrong = 20 }) -- held under MinHold
 			check(
 				`{tag}: the wrong-way drift outside the zone, or under {Tn.MinHold} s in it, starts nothing`,
 				#sinkE.started == 0 and #sinkL.started == 0 and #sinkM.started == 0,
-				`before the zone: {#sinkE.started}; after the entry: {#sinkL.started}; 4 studs (0.07 s) in the zone: {#sinkM.started}`
+				`before the zone: {#sinkE.started}; after the entry: {#sinkL.started}; 0.07 s past {Tn.OutDegrees} deg in the zone: {#sinkM.started}`
 			)
 
 			-- the flick left until past the apex: void
@@ -659,7 +691,7 @@ local function runAll(opts)
 			end
 			local n1, f1, l1, p1 = feedRide()
 			local n2, _, l2, p2 = feedRide({ into = 20 })
-			local nv, _, lv = feedRide({ pause = 0.95, outTo = h.zone + 25 })
+			local nv, _, lv = feedRide({ pause = 1.0, outTo = h.zone + 25 })
 			local liveWord = Config.ScoreEvents.Kinds.scandiFlick.Words[1].text
 			check(
 				`{tag}: one feed line, {liveWord} live, renamed for its bonuses as it banks, LOST once on a void`,
@@ -774,6 +806,38 @@ local function runAll(opts)
 		end
 		table.sort(flicks)
 		local fl = if #flicks > 0 then `flick {fmt(flicks[1], 2)} to {fmt(flicks[#flicks], 2)} s` else "no flicks"
+		-- A HAND: key-strength feints of 0.25, 0.35 and 0.5 s at every hairpin, both lanes. The
+		-- start must take them (T-302 send-back: nobody could start one by hand).
+		local keyRows, keyStarts, keyTries, keyDone = {}, 0, 0, 0
+		for _, h in closed do
+			if h.exit >= DRIVE_LENGTH then
+				continue
+			end
+			local row = {}
+			for _, T in { 0.25, 0.35, 0.5 } do
+				for _, lane in { 12, -12 } do
+					local sinkK, sfK = pilot(Sim, SplineWorld, spline, h, { lane = lane, k = 1.0, outAt = 55, wrong = 40, minIn = 15, maxIn = 48, keys = T })
+					keyTries += 1
+					local e = sinkK.started[1]
+					if e then
+						keyStarts += 1
+					end
+					if e and e.finished then
+						keyDone += 1
+					end
+					table.insert(row, `{T}s/{lane}: {if e then (if e.finished then (sfK.last.label or "ok") else sfK.last.reason) else "not started"}`)
+				end
+				task.wait()
+			end
+			table.insert(keyRows, `{fmt(h.entry, 0)}: ` .. table.concat(row, ", "))
+		end
+		table.insert(log, "key-strength feints (seconds held / lane to the inside: result):\n  " .. table.concat(keyRows, "\n  "))
+		check(
+			"a hand's quick feint on the keys starts the flick",
+			keyStarts > 0 and keyStarts >= keyTries / 2,
+			`{keyStarts} of {keyTries} started, {keyDone} completed (0.75 of the finger, the wrong-way key held 0.25, 0.35 or 0.5 s from 55 studs before the entry)`
+		)
+
 		-- Counted, not required: on the true hairpins (T-299's 120 degrees within 250 studs)
 		-- this autopilot completes none, and holds a 4-wheel drift from entry to exit without a
 		-- flick only rarely (the control). The check asks for what the flick itself needs: the

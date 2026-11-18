@@ -322,16 +322,19 @@ return {
 			JumpStuds = 80, -- studs
 			MaxSeconds = 20, -- an attempt still going after this is void
 		},
-		-- `Drift/Events/ScandiFlick` (T-300, the user's rule after driving it): on a true
-		-- hairpin, a 4-wheel drift turned OUT of it held `MinHold` inside its entry zone starts
-		-- it; a drift INTO it on 2+ wheels must follow within `Window` of letting the first go
-		-- (and before the apex); then a valid drift on 2+ wheels, either way round, to the exit,
-		-- between the white edge lines from the entry (`MaxWheelsOut` over is forgiven), as the
-		-- perfect hairpin. Bonuses, each adding to its points and naming the line: all four
-		-- wheels from the flick to the exit (first all four by the later of the entry and
-		-- `FourWithin` after the flick), and your own lane from the entry to the exit.
+		-- `Drift/Events/ScandiFlick` (T-300, T-302): on a true hairpin, a drift turned OUT of
+		-- it past `OutDegrees` on 2+ wheels held `MinHold` inside its entry zone starts it (four
+		-- wheels there was too much for a hand: see the module); a drift INTO it on 2+ wheels
+		-- must follow within `Window` of letting the first go (and before the apex); then a
+		-- valid drift on 2+ wheels, either way round, to the exit, between the white edge lines
+		-- from the entry (`MaxWheelsOut` over is forgiven), as the perfect hairpin. Bonuses,
+		-- each adding to its points and naming the line: four wheels (all four the wrong way
+		-- at some moment before the flick, and all four from the flick to the exit, first all
+		-- four by the later of the entry and `FourWithin` after it), and your own lane from the
+		-- entry to the exit.
 		ScandiFlick = {
-			MinHold = 0.2, -- seconds of the wrong-way 4-wheel drift inside the zone
+			OutDegrees = 15, -- degrees of slip out of the hairpin that count as the wrong way
+			MinHold = 0.1, -- seconds of the wrong-way drift inside the zone
 			Window = 1.0, -- seconds from letting it go to the right-way drift on 2+ wheels
 			Grace = 0.2, -- seconds, for the drift and for the fourth wheel
 			FourWithin = 1.0, -- seconds after the flick for all four to slide (if past the entry)
