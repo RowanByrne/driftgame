@@ -416,7 +416,7 @@ local function runAll(opts)
 			check(
 				`{tag}: two wheels after the flick completes, named for the lane only`,
 				e and e.finished == true and e.info.label == L.lane and det.last.four == false and det.last.lane == true
-					and math.abs(hi - (Tn.SizeBase + Tn.BonusLane)) < 1e-9,
+					and math.abs(lo - (Tn.SizeBase + Tn.BonusLane)) < 1e-9 and hi <= 1, -- the four-wheel share until it is out of reach
 				`finished {tostring(e and e.finished)}, named {tostring(e and e.info.label)}, sizes {fmt(lo, 2)}..{fmt(hi, 2)}`
 			)
 
