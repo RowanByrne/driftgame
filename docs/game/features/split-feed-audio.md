@@ -1,8 +1,18 @@
 # Split Feed score sounds
 
-**Status** — Lane build for T-312. On November 18, 2026 the user picked Tape Deck and Cassette Relay on T-309 and approved their combined mix and Score UI slider on T-311.
+**Status** — Third audition, November 18, 2026. After trying the electronic shutter mix, the user asked for "more arcade-y ness, and sounds for the accumulation of sustained events too". The three samples on T-312 play the same opening, nine progress pulses, a pause in accumulation, bank, receipt and rank changes.
 
-## How it sounds
+## Arcade sound selection
+
+| Audition | What distinguishes it |
+|---|---|
+| Bit Counter | Crunchy twin ticks from a clocked noise register, with a fast ratchet at the bank |
+| Chip Sprint | Bright pulse-wave arpeggios, a two-note count and a chord at the bank |
+| Vector Rush | Metallic FM chirps during the count and a rising laser sweep into the bank |
+
+While a held line is live, growth in its displayed points can sound a short progress pulse. A pause in earning points pauses the sound. Concurrent holds share a cadence limit. A settlement stops the count immediately, and a lost hold ends quietly. Score UI volume and mute cover the pulses. The approved 1.3× display and the score calculation stay as they are.
+
+## Previous lane mix
 
 | What the driver sees | What they hear | Audition |
 |---|---|---|

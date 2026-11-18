@@ -27,3 +27,13 @@ The Store sounds use Cassette Relay's common audition gain of 1.9345988. The Tap
 Shutter uses Camera, Sweep uses Back, and Switch uses Delete.
 
 The experience-specific grant remains pending identification of the published Drift universe. The project currently uses local Studio places. [Roblox audio permissions and usage](https://create.roblox.com/docs/audio/assets)
+
+## Arcade count auditions, November 18, 2026
+
+Three original candidate sheets, synthesized from oscillators and clocked noise for Drift. Each 6.55-second audition uses the same score events, nine pulses of visible point growth, a pause in earning, and a bank. Each sheet and its exact brief, regions, timeline, speeds and hashes are kept in the project's art folder under `generated/sfx-score-tape/arcade-count`.
+
+| Candidate | Design brief | Audition SHA-256 | Master SHA-256 |
+|---|---|---|---|
+| Bit Counter | Crunchy, gated noise from a clocked arcade counter. A short twin ratchet marks each new point pulse. | `2d798cf3ff99c4a0c27c3496669a40870135c5c7ca21d6283c513d0ce1c06769` | `cc628721aaf2c24c35775cb7021e78fd506be2928346176632224e67b9b19202` |
+| Chip Sprint | Bright square-wave arpeggios. Progress plays a short two-note chip figure and banking resolves into a chord. | `527d484b18060241696258bb26d93288b7b9f15e44b4dbf1815d26e7546a8c24` | `eaa46eaaac987a1bf0948e62d41160d0343786de1e837996c507bf6d7574998f` |
+| Vector Rush | Metallic FM sidebands, stereo laser sweeps and a swept bank accent. Keep the counting figure brief and incisive. | `0a3c58118c72112482ed70db942d5e5858942e840effd528c519df135683786a` | `870717fe697ea07a89038db319daaab7d8f6be145fe225778445f4a6a8be30e5` |
