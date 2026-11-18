@@ -130,26 +130,11 @@ All in `Config.Score.Events`, one table per event, plus the shared ones: `Repeat
 
 ## UI
 
-One new screen, **the score feed** (`Drift/ScoreFeedView`, `PlayerGui.ScoreFeed`), in `UI-INVENTORY.md`. Programmer art from the UI kit (`UI/Theme`, `UI/Layers`), in the settings page's approved colours (smoked glass, off-white text, warm orange accent). Nothing in it is `Active`: the whole screen is the steering pad.
+The split feed (`PlayerGui.ScoreFeed`) frames the score meter. Held events show their name, live dot and accumulating points above the rank. Landing one pulls the row back and down into the word. The rank reacts and the amount travels left into the run total. Each bank reflects points the engine already awarded.
 
-**Each line** is one event, on a small smoked-glass plate (text over moving gameplay needs a backing, UI.md):
+One-offs appear below the segmented tape. Repeat events of the same kind within 1.5 seconds merge into a single counted line. A loss reads LOST with struck-through points. HAIRPIN AHEAD shows the corner’s direction and awards zero points. Event rows use native text, without background plates. Reduced Motion keeps the event states and settles the payout immediately.
 
-- **Left:** the event's name in caps, Gotham Bold 18 px: `BUMPER GRIND`. A size word replaces or follows it where there is one: `BIG AIR`, `CLOSE CALL`.
-- **Right:** its points, `+1,240`, Gotham Bold 18 px, in the orange accent.
-- **A merged line** adds a count: `NEAR MISS x3`.
-- **A sustained line** has a thin orange underline that pulses while it holds, and its points count up live. When it banks, the line flashes white once and the points glide up into the score panel. A lost one turns red and reads `LOST`, with its points struck through.
-- The **multiplier** the points were earned at is already inside them; the line doesn't repeat it.
-
-**Timing:** a new line slides in at the top of the stack in 160 ms, pushing older ones down. A one-off stays 2.5 s; a banked sustained line 2 s; both fade over 0.4 s. A live sustained line stays as long as it holds. The same one-off within 1.5 s merges into its line (count and points add; its clock restarts). Most `FeedLines` 5 lines (3 on a phone): past that the oldest finished line fades out at once; live lines are never pushed out. With Reduced Motion on, no slide and no flash: lines appear and fade.
-
-**Where:** directly under the score panel, in its centre column (the eye already goes run button → score), from 146 px below the inset, 220 px wide like the panel.
-
-- **Desktop and phone landscape:** that column, 5 and 3 lines.
-- **Phone portrait:** the road map already drops below the column on the left at 146 px, so the feed sits right of the map, right-aligned, 3 lines, narrower (text shrinks no lower than 16 px; long names are short by design).
-- It sits under the score panel's `DisplayOrder` (14), at 13, over the drag pad (5), and goes away with the HUD (menus, P).
-- **Drag mode** lets the user try it elsewhere (top right like an FPS killfeed, or lower centre near the car) before it's fixed.
-
-**Fixtures:** empty; one of each event; a merged line; a live sustained line at 1,234,567; five lines with one lost; the longest name with the largest points.
+See UI-INVENTORY.md for layout, layering, fixtures and measurements. The existing score, event-kind and timing contracts govern the feed.
 
 ## Server and client
 

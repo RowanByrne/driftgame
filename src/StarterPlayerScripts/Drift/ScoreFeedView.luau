@@ -1,118 +1,41 @@
 --!nonstrict
--- ScoreFeedView: the score feed, a killfeed of score events as they trigger and accumulate
--- (docs/game/features/score-events.md "UI", docs/workflow/UI.md). Programmer art, in the
--- settings style's colours (`UI/Theme`: smoked glass, off-white text, the orange accent).
---
--- A VIEW, and only that (UI.md "Each screen is a view"). It reads no remote and no engine:
--- `ScoreController` hands it each feed entry (`push`), and steps it once a frame (`step`);
--- `ScoreFeedView.fixtures` hands it samples for measuring.
---
---   push({ id, kind, label, points, state = "live" | "banked" | "void", rung })
---   push({ id, kind, notice = "hairpinAhead", dir = 1 | -1 })  -- a notice: no points
---   setData({ entries = { entry, ... }, hold = true? })  -- a still picture, for fixtures
---   step(dt)  ;  clear()  ;  describe()
---
--- AN ENTRY'S `points` IS ITS TOTAL SO FAR, not a step's share, with the rung already in it
--- (the line never shows the rung). The same `id` again is the same event growing or ending,
--- and takes its new `label` (the engine rewords a line: a jump's BIG AIR, a bend line's
--- upgrade to the best version banked, T-299).
---
--- NEWEST ON TOP. A new line slides in at the top of the stack and pushes the older ones down,
--- so the line the eye meets first is the latest.
---
--- WHAT A LINE DOES:
---   * A ONE-OFF (its first entry already `banked`): pops in, stays `OneOffHold`, fades. The
---     same kind again within `MergeWindow` merges into it: `NEAR MISS x3`, points added,
---     its clock restarted.
---   * A SUSTAINED or CONDITIONAL one (first entry `live`): its points count up in place and
---     an orange underline pulses while it holds. `banked`: the plate flashes white once and
---     a copy of the points glides up toward the score. `void`: red, `LOST`, points struck
---     through. Either stays `FinishedHold`, then fades. A live line is never pushed out.
---   * A NOTICE (`entry.notice`, T-304: "HAIRPIN AHEAD"): a heads-up, not a score. The same
---     plate with an orange outline, its name, and where the points would be the way it turns
---     (LEFT / RIGHT); no points, no underline, never merged. Stays `NoticeHold`, fades. It
---     counts as a finished line, so it never pushes a live line out.
---   * At most `Lines` lines (`PhoneLines` on a phone): past that the oldest finished line
---     fades out at once.
---   * Reduced Motion (`GuiService.ReducedMotionEnabled`): no slide, no flash, no glide, no
---     pulse; lines appear and fade.
---
--- WHERE IT SITS (`_layout`). Not under the score panel, the spec's first choice: measured
--- there (T-296) it covered the road ahead on phones on their side and at HD 720. So on every
--- screen wider than tall: the top right corner, as a killfeed, 16 px in, as wide as fits up to
--- 220 px beside the run button's column, and above the Settings button. A phone upright (the
--- road map has dropped below the centre column on the left): right of the map, under the
--- Settings button that shares that edge. The map's rule is read from `Config.RoadMap`, the
--- same numbers `Drift/RoadMapView` places itself by.
---
--- IT NEVER TAKES A TOUCH: the whole screen is the steering pad. Nothing here is `Active`, and
--- its `DisplayOrder` (13) is under the score panel's 14, over the drag pad's 5.
---
--- NOT `IgnoreGuiInset`, like `Drift/ScoreHudView`: it hangs off the score panel, so both are
--- measured from the same top.
-
+-- Live score events sit above the rank. One-offs, losses and hairpin notices sit below it.
+-- Feed entries carry cumulative points, including the multiplier. The two bank callbacks
+-- coordinate presentation with the score HUD; neither one awards points.
 local GuiService = game:GetService("GuiService")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TextService = game:GetService("TextService")
 
-local Config = require(ReplicatedStorage.Shared.Config)
-local Theme = require(script.Parent.Parent:WaitForChild("UI"):WaitForChild("Theme"))
+local UI = script.Parent.Parent:WaitForChild("UI")
+local Create = require(UI:WaitForChild("Create"))
+local Layers = require(UI:WaitForChild("Layers"))
+local Tape = require(UI:WaitForChild("ScoreTape"))
+local Style = require(UI:WaitForChild("Theme")).ScoreTape
 
 local ScoreFeedView = {}
 ScoreFeedView.__index = ScoreFeedView
 
--- Every number the feed is drawn with.
 local C = {
-	DisplayOrder = 13, -- under the score panel (14), over the drag pad (5)
-	Width = 220, -- px, the score panel's width
-	Top = 146, -- px below the inset, beside the map: the score panel's bottom (80 + 58) and a gap
-	Margin = 16, -- px from the screen's top and right edges
-	MapGap = 8, -- px kept clear between the map and the feed
-	-- The Settings button on the right edge (`Settings/SettingsView`: 144 x 48, its top 176 px
-	-- below the safe area's top): beside the map the feed starts under it, top right it stops
-	-- above it (and above the Garage button, `Config.GarageMenu`).
-	SettingsTop = 176, -- px below the safe area's top
-	SettingsHeight = 48,
-	-- The testing buttons in the top right corner, the readout's DBG and the tuner's TUNE
-	-- (`Drift/DragControl`, `Drift/TunerUI`: 64 px wide, 16 px in): the feed keeps left of
-	-- them where the screen is wide enough, so on desktop and tablet.
-	TestButtons = 64 + 8,
-	LineHeight = 30, -- px, one row
-	TwoRowHeight = 50, -- px, a name too long to share its row with the points
-	Gap = 4, -- px between lines
-	Pad = 8, -- px inside the plate
-	TextSize = 18, -- px, Gotham Bold, name and points
-	MinTextSize = 16, -- px, UI.md's floor for text a player must read
-	Lines = 5, -- most lines on a big screen
-	PhoneLines = 3, -- and on a phone (short side under `Config.RoadMap.PhoneBelow`)
-
-	SlideTime = 0.16, -- s, a new line sliding in, the others moving down
-	SlideIn = 24, -- px a new line slides in from the right
-	OneOffHold = 2.5, -- s a one-off line stays before fading
-	NoticeHold = 2.0, -- s a notice ("HAIRPIN AHEAD") stays before fading
-	NoticeStroke = 2, -- px, the notice's orange outline
-	FinishedHold = 2.0, -- s a banked or lost sustained line stays
-	Fade = 0.4, -- s
-	MergeWindow = 1.5, -- s: the same one-off kind within this merges into its line
-	Flash = 0.3, -- s, the white flash when a sustained line banks
-	Glide = 0.45, -- s, the banked points gliding up toward the score
-	GlideRise = 30, -- px they rise
-	CountRate = 10, -- 1/s: how fast live points catch up with the engine's total
-	PulseHz = 2, -- the live underline's pulse
-	UnderlineHeight = 2, -- px
-
-	Plate = Theme.Color.Surface,
-	PlateTransparency = 0.3, -- solid enough to read over moving gameplay (UI.md)
-	Ink = Theme.Color.Text,
-	Accent = Theme.Color.Accent,
-	Void = Color3.fromRGB(235, 92, 92),
-	FlashColor = Color3.fromRGB(255, 255, 255),
-	StrokeTransparency = 0.4,
-	CornerRadius = 6, -- px, as the score panel
+	Width = 220,
+	LineHeight = 20,
+	Gap = 2,
+	RankGap = 5,
+	TextSize = 16,
+	Lines = 5,
+	PhoneLines = 3,
+	SlideTime = 0.16,
+	OneOffHold = 2.5,
+	NoticeHold = 2,
+	FinishedHold = 2,
+	Fade = 0.4,
+	MergeWindow = 1.5,
+	BankTime = 0.43,
+	CountRate = 14,
 }
 ScoreFeedView.Config = C
+function ScoreFeedView.format(n: number): string
+	return Tape.format(math.round(n or 0))
+end
 
--- Whole strings with placeholders, never glued in code (UI.md "Localization").
 local TEXT = {
 	Merged = "{name} x{count}",
 	Points = "+{points}",
@@ -126,86 +49,39 @@ local TEXT = {
 	Right = "RIGHT",
 }
 
-local FONT = Enum.Font.GothamBold
-
 local function fill(template: string, values): string
 	return (template:gsub("{(%w+)}", function(k)
 		return tostring(values[k])
 	end))
 end
 
--- 48210.7 -> "48,210". Points are shown whole.
-function ScoreFeedView.format(n: number): string
-	local s = tostring(math.floor(math.max(n or 0, 0) + 0.5))
-	local out = s:reverse():gsub("(%d%d%d)", "%1,"):reverse()
-	return (out:gsub("^,", ""))
-end
-
-local function new(className: string, props, parent: Instance?)
-	local inst = Instance.new(className)
-	for k, v in props do
-		inst[k] = v
-	end
-	if parent then
-		inst.Parent = parent
-	end
-	return inst
-end
-
-local function textWidth(s: string, size: number): number
-	return TextService:GetTextSize(s, size, FONT, Vector2.new(10000, 100)).X
-end
-
-local function label(name: string, parent: Instance): TextLabel
-	local l = new("TextLabel", {
-		Name = name,
-		BackgroundTransparency = 1,
-		TextColor3 = C.Ink,
-		TextSize = C.TextSize,
-		FontFace = Font.fromEnum(FONT),
-		TextStrokeColor3 = Color3.new(0, 0, 0),
-		TextStrokeTransparency = C.StrokeTransparency,
-		TextYAlignment = Enum.TextYAlignment.Center,
-		Active = false,
-		ZIndex = 2,
-	}, parent)
-	return l
-end
-
 function ScoreFeedView.new(parent: Instance)
 	local self = setmetatable({}, ScoreFeedView)
 	self.offsets = {}
-	self.lines = {} -- newest first
-	self.byId = {} -- entry id -> line (merged ids point at the line they merged into)
-	self.t = 0 -- the view's own clock, advanced by `step`
-	self.hold = false -- a still fixture: nothing ages
-	self.reducedMotionOverride = nil
+	self.lines = {}
+	self.byId = {}
+	self.t = 0
+	self.hold = false
 	self.serial = 0
-
-	local gui = new("ScreenGui", {
-		Name = "ScoreFeed",
-		ResetOnSpawn = false,
-		IgnoreGuiInset = false,
-		ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
-		DisplayOrder = C.DisplayOrder,
-		Enabled = true,
+	self:setRung(1)
+	self.gui = Create("ScreenGui", {
+		Name = "ScoreFeed", ResetOnSpawn = false, IgnoreGuiInset = false,
+		ZIndexBehavior = Enum.ZIndexBehavior.Sibling, DisplayOrder = Layers.ScoreFeed,
 	}, parent)
-	self.gui = gui
-
-	local root = new("Frame", {
-		Name = "Feed",
-		BackgroundTransparency = 1,
-		Size = UDim2.fromOffset(C.Width, C.LineHeight),
-		Active = false,
-	}, gui)
-	root:SetAttribute("LayoutItem", "ScoreFeed")
-	self.root = root
-
-	gui:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
+	self.root = Tape.frame("Feed", self.gui)
+	self.root:SetAttribute("LayoutItem", "ScoreFeed")
+	self.gui:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
+		self:_layout()
+	end)
+	self.textPreference = GuiService:GetPropertyChangedSignal("PreferredTextSize"):Connect(function()
 		self:_layout()
 	end)
 	self:_layout()
 	return self
+end
+
+function ScoreFeedView:setRung(rung: number)
+	self.tier = Tape.tier(rung)
 end
 
 function ScoreFeedView:_reduced(): boolean
@@ -215,61 +91,28 @@ function ScoreFeedView:_reduced(): boolean
 	return GuiService.ReducedMotionEnabled
 end
 
--- Place the feed from the measured screen. Two placements, both in this one function
--- (UI.md "Keep each screen's per-layout placement together"):
---   topRight   desktop, tablet, a phone on its side: the top right corner, beside the run
---              button's column, above the Settings button
---   besideMap  a phone upright: right of the road map, under the Settings button
 function ScoreFeedView:_layout()
-	local RM = Config.RoadMap
-	local G = Config.GarageMenu
 	local screen = self.gui.AbsoluteSize
-	local phone = screen.X > 0 and math.min(screen.X, screen.Y) < RM.PhoneBelow
-	local mapSize = if phone then RM.PhoneSize else RM.Size
-	local roomBeside = (screen.X - RM.CentreColumn) * 0.5 - RM.CentreGap
-	local besideMap = screen.X > 0 and RM.Margin + mapSize > roomBeside
-	local o = self.offsets.ScoreFeed or Vector2.zero
-
-	-- The right edge's buttons, in this screen's px: Settings (`Settings/SettingsView`, its
-	-- top 176 px below the safe area's top) and Garage (`Config.GarageMenu`, bottom right).
-	local safe = GuiService:GetInsetArea(Enum.ScreenInsets.CoreUISafeInsets)
-	local full = GuiService:GetInsetArea(Enum.ScreenInsets.None)
-	local myTop = self.gui.AbsolutePosition.Y
-	local settingsTop = safe.Min.Y + C.SettingsTop - myTop
-	local garageTop = full.Max.Y - (G.HudButtonAbove + G.HudButtonSize.Y) - myTop
-
-	local placement, width, top, maxBottom
-	if besideMap then
-		placement = "besideMap"
-		local left = RM.Margin + mapSize + C.MapGap
-		width = math.min(C.Width, screen.X - C.Margin - left)
-		top = math.max(C.Top, settingsTop + C.SettingsHeight + C.MapGap)
-		self.root.AnchorPoint = Vector2.new(1, 0)
-		self.root.Position = UDim2.new(1, -C.Margin + o.X, 0, top + o.Y)
-	else
-		-- Measured (T-296): under the score panel, the spec's first choice, the feed covered
-		-- the road ahead: on a phone on its side the road fills the centre column from the car
-		-- up to the horizon, and at HD 720 the horizon is 203 px down, above the feed's lower
-		-- lines. The top right is sky and scenery on every screen measured, and it is where
-		-- a killfeed sits. It stops above the Settings and Garage buttons.
-		placement = "topRight"
-		-- left of the testing buttons where there is room for it; on a phone there is not
-		local right = C.Margin + (if phone then 0 else C.TestButtons)
-		local left = (screen.X + RM.CentreColumn) * 0.5 + C.MapGap
-		width = math.min(C.Width, screen.X - right - left)
-		top = C.Margin
-		maxBottom = math.min(settingsTop, garageTop) - C.MapGap
-		self.root.AnchorPoint = Vector2.new(1, 0)
-		self.root.Position = UDim2.new(1, -right + o.X, 0, top + o.Y)
-	end
-	local changed = self.width ~= width
-	self.width = width
-	self.phone = phone
-	self.placement = placement
-	self.top = top
-	self.maxHeight = if maxBottom then math.max(maxBottom - top, C.LineHeight) else nil
-	self.maxLines = if phone then C.PhoneLines else C.Lines
-	if changed then
+	local meter = Tape.layout(screen)
+	local offset = self.offsets.ScoreFeed or Vector2.zero
+	local textSize = math.round(C.TextSize * meter.textScale)
+	local width = math.min(C.Width * meter.textScale, meter.width + 40 * meter.textScale, math.max(1, screen.X - 8))
+	self.screenSize = screen
+	local shortPortrait = screen.Y > screen.X and screen.Y < 640
+	local resultWidth = if shortPortrait then math.max(width, screen.X - 32) else width
+	self.phone = meter.compact
+	self.maxLines = if meter.compact then C.PhoneLines else C.Lines
+	self.placement = "split"
+	self.anchorX = math.clamp(meter.x + (meter.width - width) / 2, 0, math.max(0, screen.X - width)) + offset.X
+	self.top = meter.y + offset.Y
+	self.rankHeight = meter.height
+	self.rankWidth = meter.width
+	self.rankCenter = meter.x + meter.width / 2 + offset.X - self.anchorX
+	if width ~= self.width or resultWidth ~= self.resultWidth or textSize ~= self.textSize then
+		self.width = width
+		self.resultWidth = resultWidth
+		self.textSize = textSize
+		self.lineHeight = math.round(C.LineHeight * meter.textScale)
 		for _, line in self.lines do
 			self:_fit(line)
 		end
@@ -277,8 +120,6 @@ function ScoreFeedView:_layout()
 	self:_trim()
 	self:_place(true)
 end
-
--- ---------------------------------------------------------------------------- lines
 
 function ScoreFeedView:_nameText(line): string
 	if line.count > 1 then
@@ -298,127 +139,83 @@ function ScoreFeedView:_pointsText(line, value: number, plain: boolean?): string
 	return fill(TEXT.Points, { points = p })
 end
 
--- Size the line to its text: one row at 18 px, else one row at 16, else two rows (the name
--- above, the points under it on the right). Reflow, never cut off (UI.md).
+-- Reserve width for the target total. A changing last digit never moves the event name.
+-- The readback is Enum.Font.Unknown for a custom weight or style; use the equivalent
+-- condensed or monospaced family for measuring. Leave a little room for the italic edge.
+local function textBounds(text, size, font, fallback, width)
+	local metric = if font == Enum.Font.Unknown then fallback else font
+	return TextService:GetTextSize(text, size, metric, Vector2.new(width or 10000, 10000))
+end
+
 function ScoreFeedView:_fit(line)
-	local nameText = self:_nameText(line)
-	-- measured at the engine's total, which the live count never passes, so the row never
-	-- reflows while it counts
-	local ptsText = self:_pointsText(line, line.points, true)
-	local avail = self.width - C.Pad * 2
-	local size, rows = C.TextSize, 1
-	local function fits(s)
-		return textWidth(nameText, s) + textWidth(ptsText, s) + C.Pad <= avail
+	local name = self:_nameText(line)
+	local points = self:_pointsText(line, line.points, true)
+	local held = line.state == "live" or line.bankPoints ~= nil
+	line.name.FontFace = if held then Style.rankFont else Style.feedFont
+	line.name.TextSize = self.textSize
+	line.pts.TextSize = self.textSize
+	line.name.Text = name
+	local nameWidth = math.ceil(textBounds(name, self.textSize, line.name.Font, Enum.Font.RobotoCondensed).X) + 5
+	local pointsWidth = math.ceil(textBounds(points, self.textSize, line.pts.Font, Enum.Font.RobotoMono).X) + 3
+	local mark = if held then 9 else 0
+	local gap = 6
+	local width = if held then self.width else self.resultWidth
+	line.left = if width > self.width then math.min(0, self.screenSize.X - 8 - self.anchorX - width) else 0
+	local single = mark + nameWidth + gap + pointsWidth <= width
+	local rowH = self.lineHeight
+	local nameRows = 1
+	if not single and nameWidth > width - mark then
+		local wrapped = textBounds(name, self.textSize, line.name.Font, Enum.Font.RobotoCondensed, math.max(1, width - mark - 5))
+		nameRows = math.max(2, math.ceil(wrapped.Y / rowH))
 	end
-	if not fits(C.TextSize) then
-		if fits(C.MinTextSize) then
-			size = C.MinTextSize
-		else
-			rows = 2
-			if textWidth(nameText, C.TextSize) > avail or textWidth(ptsText, C.TextSize) > avail then
-				size = C.MinTextSize
-			end
-		end
-	end
-	line.rows, line.size = rows, size
-	line.height = if rows == 2 then C.TwoRowHeight else C.LineHeight
-	local f = line.frame
-	f.Size = UDim2.fromOffset(self.width, line.height)
-	line.name.TextSize = size
-	line.pts.TextSize = size
-	line.name.Text = nameText
-	local rowH = if rows == 2 then (line.height - 4) / 2 else line.height
-	if rows == 2 then
-		line.name.Position = UDim2.fromOffset(C.Pad, 2)
-		line.name.Size = UDim2.fromOffset(avail, rowH)
-		line.pts.Position = UDim2.fromOffset(C.Pad, 2 + rowH)
-		line.pts.Size = UDim2.fromOffset(avail, rowH)
-	else
-		local ptsW = textWidth(ptsText, size) + 2
-		line.name.Position = UDim2.fromOffset(C.Pad, 0)
-		line.name.Size = UDim2.fromOffset(avail - ptsW - C.Pad, rowH)
-		line.pts.Position = UDim2.fromOffset(C.Pad + avail - ptsW, 0)
-		line.pts.Size = UDim2.fromOffset(ptsW, rowH)
-	end
-	line.underline.Size = UDim2.new(1, -C.Pad * 2, 0, C.UnderlineHeight)
-	line.underline.Position = UDim2.new(0, C.Pad, 1, -C.UnderlineHeight - 2)
-	line.ghost.Size = line.pts.Size
+	line.rows = if single then 1 else nameRows + 1
+	line.height = line.rows * rowH
+	line.frame.Size = UDim2.fromOffset(width, line.height)
+	local rowWidth = if single then math.max(mark + nameWidth + gap + pointsWidth, self.rankWidth - 8) else width
+	local left = if held and single then math.floor((width - mark - nameWidth - gap - pointsWidth) / 2)
+		else math.floor((width - rowWidth) / 2)
+	local nameLeft = left + mark
+	line.name.TextWrapped = not single
+	line.name.Position = UDim2.fromOffset(nameLeft, 0)
+	local pointsLeft = if single then (if held then nameLeft + nameWidth + gap else left + rowWidth - pointsWidth) else 0
+	line.name.Size = UDim2.fromOffset(if single then pointsLeft - nameLeft - gap else width - nameLeft, nameRows * rowH)
+	line.pts.Position = UDim2.fromOffset(pointsLeft, if single then 0 else nameRows * rowH)
+	line.pts.Size = UDim2.fromOffset(if single then pointsWidth else width, rowH)
+	line.marker.Position = UDim2.fromOffset(left, math.floor((rowH - 4) / 2))
+	line.frame:SetAttribute("State", if line.notice then "Notice" else line.state)
 end
 
 function ScoreFeedView:_newLine(entry)
 	self.serial += 1
-	local frame = new("Frame", {
-		Name = `Line{self.serial}`,
-		BackgroundColor3 = C.Plate,
-		BackgroundTransparency = 1,
-		BorderSizePixel = 0,
-		Active = false,
+	local frame = Create("Frame", {
+		Name = `Line{self.serial}`, BackgroundTransparency = 1, Active = false,
 	}, self.root)
-	new("UICorner", { CornerRadius = UDim.new(0, C.CornerRadius) }, frame)
-	local name = label("Name", frame)
-	name.TextXAlignment = Enum.TextXAlignment.Left
-	name.TextTruncate = Enum.TextTruncate.None
-	local pts = label("Points", frame)
+	local name = Tape.text("Name", frame, Style.feedFont, Style.ink, self.textSize)
+	local pts = Tape.text("Points", frame, Style.numberFont, Style.ink, self.textSize)
 	pts.TextXAlignment = Enum.TextXAlignment.Right
-	pts.TextColor3 = C.Accent
 	pts.RichText = true
-	pts.AutoLocalize = false -- a number that changes every frame
-	local underline = new("Frame", {
-		Name = "Underline",
-		BackgroundColor3 = C.Accent,
-		BorderSizePixel = 0,
-		Active = false,
-		ZIndex = 2,
-		Visible = false,
+	pts.AutoLocalize = entry.notice ~= nil
+	-- The directional notice has its own small outline around LEFT/RIGHT. Its row
+	-- stays transparent, like every other event.
+	local stroke = Create("UIStroke", {
+		Name = "Notice", ApplyStrokeMode = Enum.ApplyStrokeMode.Contextual,
+		Color = Style.shadow, Thickness = 2, Enabled = entry.notice ~= nil,
+	}, pts)
+	local marker = Create("Frame", {
+		Name = "LiveMark", Size = UDim2.fromOffset(4, 4), BackgroundColor3 = self.tier.accent,
+		BorderSizePixel = 0, Active = false, Visible = false,
 	}, frame)
-	local ghost = label("Glide", frame)
-	ghost.TextXAlignment = Enum.TextXAlignment.Right
-	ghost.TextColor3 = C.Accent
-	ghost.AutoLocalize = false
-	ghost.ZIndex = 3
-	ghost.Visible = false
-
-	local notice = entry.notice
-	local stroke = new("UIStroke", {
-		Name = "Notice",
-		Color = C.Accent,
-		Thickness = C.NoticeStroke,
-		ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
-		Transparency = 1,
-		Enabled = notice ~= nil,
-	}, frame)
-	if notice then
-		pts.AutoLocalize = true -- a word, not a number
-	end
-	local sustained = entry.state == "live" and not notice
+	Create("UICorner", { CornerRadius = UDim.new(1, 0) }, marker)
+	local sustained = entry.state == "live" and not entry.notice
 	local line = {
-		serial = self.serial,
-		kind = entry.kind,
-		label = if notice then (TEXT.Notices[notice] or tostring(notice)) else tostring(entry.label or entry.kind or "?"),
-		notice = notice,
-		dir = entry.dir,
-		stroke = stroke,
-		count = 1,
-		points = entry.points or 0,
-		shown = if sustained then 0 else (entry.points or 0),
-		state = if notice then "banked" else (entry.state or "banked"),
-		rung = entry.rung,
-		ids = { entry.id },
-		sustained = sustained,
-		born = self.t,
-		touched = self.t,
+		kind = entry.kind, notice = entry.notice, dir = entry.dir,
+		label = if entry.notice then (TEXT.Notices[entry.notice] or tostring(entry.notice)) else tostring(entry.label or entry.kind or "?"),
+		points = entry.points or 0, shown = if sustained then 0 else (entry.points or 0),
+		count = 1, state = if entry.notice then "banked" else (entry.state or "banked"),
+		ids = { entry.id }, rung = entry.rung, sustained = sustained, touched = self.t,
 		endedAt = if sustained then nil else self.t,
-		flashAt = nil,
-		fadeFrom = nil, -- set when pushed out: fades from then
-		x = if self:_reduced() then 0 else C.SlideIn,
-		y = 0,
-		appear = if self:_reduced() then 1 else 0,
-		alpha = 0,
-		frame = frame,
-		name = name,
-		pts = pts,
-		underline = underline,
-		ghost = ghost,
+		appear = if self:_reduced() then 1 else 0, alpha = 0,
+		frame = frame, name = name, pts = pts, marker = marker, stroke = stroke,
 	}
 	self:_fit(line)
 	pts.Text = self:_pointsText(line, line.shown)
@@ -445,30 +242,9 @@ function ScoreFeedView:_trim()
 			break
 		end
 		local line = self.lines[i]
-		if not line.fadeFrom and line.state ~= "live" then
+		if not line.fadeFrom and line.state ~= "live" and line.bankAt == nil then
 			line.fadeFrom = self.t
 			kept -= 1
-		end
-	end
-	-- and past the room it has (top right on a phone: above the Settings and Garage buttons)
-	if self.maxHeight then
-		local function height()
-			local h = 0
-			for _, line in self.lines do
-				if not line.fadeFrom then
-					h += line.height + C.Gap
-				end
-			end
-			return h - C.Gap
-		end
-		for i = #self.lines, 1, -1 do
-			if height() <= self.maxHeight then
-				break
-			end
-			local line = self.lines[i]
-			if not line.fadeFrom and line.state ~= "live" then
-				line.fadeFrom = self.t
-			end
 		end
 	end
 end
@@ -485,6 +261,11 @@ function ScoreFeedView:push(entry)
 	end
 	if line then
 		local was = line.state
+		-- Events are terminal once banked or void. Ignore repeat settlement, including
+		-- updates for an id that has already been merged into a one-off.
+		if was ~= "live" then
+			return
+		end
 		-- its words may change: a jump's "BIG AIR", a bend line upgraded as it banks (T-299)
 		if line.count == 1 and entry.label ~= nil then
 			line.label = tostring(entry.label)
@@ -494,15 +275,20 @@ function ScoreFeedView:push(entry)
 		line.rung = entry.rung or line.rung
 		line.state = entry.state or line.state
 		line.touched = self.t
-		if was == "live" and line.state ~= "live" then
+		if line.state ~= "live" then
 			line.endedAt = self.t
-			if line.state == "banked" then
+			if line.state == "banked" and not self.hold then
+				line.bankPoints = line.points
+				line.bankAt = self.t
 				line.shown = line.points
-				line.flashAt = self.t
+				if self.onBankStart then self.onBankStart(line.bankPoints, line) end
+				if self:_reduced() then self:_impact(line) end
 			end
 		end
+		local oldHeight = line.height
 		self:_fit(line)
 		self:_trim()
+		self:_place(line.height ~= oldHeight)
 		return
 	end
 
@@ -527,7 +313,11 @@ function ScoreFeedView:push(entry)
 				if id ~= nil then
 					self.byId[id] = other
 				end
+				local oldHeight = other.height
 				self:_fit(other)
+				if other.height ~= oldHeight then
+					self:_place(true)
+				end
 				return
 			end
 		end
@@ -542,130 +332,132 @@ function ScoreFeedView:push(entry)
 	self:_place(false)
 end
 
--- Each line's place in the stack, newest on top. `snap` puts them there at once.
+-- Coordinates are relative to the top of the rank, so a second event arriving
+-- never changes the destination of a flying bank. Keep the root around both
+-- groups for Studio's whole-widget layout drag.
 function ScoreFeedView:_place(snap: boolean)
-	local y = 0
+	local above = C.RankGap
+	local below = self.rankHeight + C.RankGap
 	for _, line in self.lines do
-		line.targetY = y
-		if snap or line.appear == 0 then
-			line.y = y
+		if line.state == "live" or line.bankAt then
+			above += line.height
+			line.targetY = -above
+			above += C.Gap
+			line.zone = "above"
+		else
+			line.targetY = below
+			below += line.height + C.Gap
+			line.zone = "below"
 		end
-		y += line.height + C.Gap
+		if snap or line.y == nil then line.y = line.targetY end
 	end
-	self.contentHeight = math.max(y - C.Gap, 0)
-	self.root.Size = UDim2.fromOffset(self.width or C.Width, math.max(self.contentHeight, C.LineHeight))
+	self.origin = above - C.Gap
+	self.contentHeight = below + self.origin
+	local top = self.top
+	local screen = self.screenSize
+	if self.phone and screen.X > 0 then
+		if screen.Y > screen.X then
+			-- Reserve the Settings entry above and Garage below. Long completed rows use
+			-- the space across a short portrait screen so the score can stay below the map.
+			local bottom = screen.Y - 184 - below - 2
+			local minimum = math.max(287, 226 + self.origin)
+			top = math.clamp(top, minimum, math.max(minimum, bottom))
+		else
+			top = math.min(top, screen.Y - below - 2)
+		end
+	end
+	if self.onLayoutShift then self.onLayoutShift(top - self.top) end
+	self.root.Position = UDim2.fromOffset(self.anchorX, top - self.origin)
+	self.root.Size = UDim2.fromOffset(self.width, self.contentHeight)
+end
+
+function ScoreFeedView:_impact(line)
+	local points = line.bankPoints
+	if points == nil then return end
+	line.bankPoints = nil
+	if self.onAbsorb then self.onAbsorb(points, line) end
 end
 
 function ScoreFeedView:_destroyLine(line)
+	if line.bankPoints ~= nil and self.onBankCancel then self.onBankCancel(line.bankPoints, line) end
 	for _, id in line.ids do
-		if id ~= nil and self.byId[id] == line then
-			self.byId[id] = nil
-		end
+		if self.byId[id] == line then self.byId[id] = nil end
 	end
 	line.frame:Destroy()
 end
 
--- Advance the feed by `dt` seconds: counting, sliding, flashing, fading.
 function ScoreFeedView:step(dt: number)
 	dt = math.max(dt or 0, 0)
 	self.t += dt
 	local t = self.t
 	local reduced = self:_reduced()
 	local ease = if reduced then 1 else 1 - math.exp(-dt * 3 / C.SlideTime)
-	local count = 1 - math.exp(-dt * C.CountRate)
+	local count = if reduced then 1 else 1 - math.exp(-dt * C.CountRate)
 
 	local removed = false
 	for i = #self.lines, 1, -1 do
 		local line = self.lines[i]
-		-- how visible: in, then out
-		if reduced then
-			line.appear = 1
-			line.x = 0
-		else
-			line.appear = math.min(1, line.appear + dt / C.SlideTime)
-			line.x += (0 - line.x) * ease
-		end
-		local fade = 1
-		-- pushed out fades even in a still fixture; only the natural aging is held
+		local age = if line.bankAt then t - line.bankAt else nil
+		local finished = age ~= nil and (reduced or age >= C.BankTime)
+		if finished then self:_impact(line) end
 		local from = line.fadeFrom
-		if not self.hold and line.endedAt and line.state ~= "live" then
+		if not self.hold and line.endedAt and age == nil then
 			local natural = line.endedAt + self:_finishedHold(line)
 			from = if from then math.min(from, natural) else natural
 		end
-		if from then
-			fade = if self.hold then 0 else 1 - math.clamp((t - from) / C.Fade, 0, 1)
-		end
-		if fade <= 0 then
+		local fade = if from then (if self.hold then 0 else 1 - math.clamp((t - from) / C.Fade, 0, 1)) else 1
+		if finished or (fade <= 0 and age == nil) then
 			self:_destroyLine(line)
 			table.remove(self.lines, i)
 			removed = true
 			continue
 		end
-		line.alpha = line.appear * fade
+		line.appear = if reduced then 1 else math.min(1, line.appear + dt / C.SlideTime)
 		line.fade = fade
+		line.alpha = line.appear * fade
 	end
-	if removed then
-		self:_place(false)
-	end
+	if removed then self:_place(false) end
 
 	for _, line in self.lines do
-		line.y += ((line.targetY or line.y) - line.y) * ease
-		local a = line.alpha
-		local f = line.frame
-		f.Position = UDim2.fromOffset(line.x, line.y)
-
-		-- the plate: smoked glass, flashing white once on a bank
-		local plate = C.Plate
-		if line.flashAt and not reduced then
-			local k = math.clamp((t - line.flashAt) / C.Flash, 0, 1)
-			plate = C.FlashColor:Lerp(C.Plate, k)
+		line.y += (line.targetY - line.y) * ease
+		local x = line.left + (1 - line.appear) * 7
+		local y = line.y
+		local alpha = line.alpha
+		if line.bankAt then
+			local k = math.clamp((t - line.bankAt) / C.BankTime, 0, 1)
+			local fall = math.clamp((k - 0.43) / 0.57, 0, 1) ^ 2
+			local pull = -6 * math.sin(math.min(k / 0.43, 1) * math.pi / 2)
+			x += (self.rankCenter - self.width / 2) * fall
+			y += pull + (self.rankHeight / 2 - line.height / 2 - y - pull) * fall
+			alpha *= 1 - 0.8 * fall
 		end
-		f.BackgroundColor3 = plate
-		f.BackgroundTransparency = 1 - (1 - C.PlateTransparency) * a
-
-		-- the points: counting up while live
-		if line.state == "live" then
+		line.frame.Position = UDim2.fromOffset(math.round(x), math.round(self.origin + y))
+		local live = line.state == "live"
+		if live then
 			line.shown += (line.points - line.shown) * count
-			if math.abs(line.points - line.shown) < 1 then
-				line.shown = line.points
-			end
+			if math.abs(line.points - line.shown) < 1 then line.shown = line.points end
 		else
 			line.shown = line.points
 		end
-		local void = line.state == "void"
-		line.pts.Text = self:_pointsText(line, line.shown)
-		line.pts.TextColor3 = if void then C.Void else C.Accent
-		line.name.TextColor3 = if void then C.Void else C.Ink
-		for _, l in { line.name, line.pts } do
-			l.TextTransparency = 1 - a
-			l.TextStrokeTransparency = 1 - (1 - C.StrokeTransparency) * a
+		local value = math.round(line.shown)
+		if line.lastShown ~= value or line.lastState ~= line.state then
+			line.lastShown = value
+			line.lastState = line.state
+			line.pts.Text = self:_pointsText(line, value)
 		end
-		if line.notice then
-			line.stroke.Transparency = 1 - a
-		end
-
-		-- the underline: pulsing while it holds
-		local live = line.state == "live"
-		line.underline.Visible = live
+		local accent = self.tier.accent
+		line.name.TextColor3 = if line.state == "void" then Style.lost elseif live or line.bankAt then Style.ink else Style.secondary
+		line.pts.TextColor3 = if line.state == "void" then Style.lost elseif live or line.bankAt or line.notice then accent else Style.secondary
+		line.name.TextTransparency = 1 - alpha
+		line.pts.TextTransparency = 1 - alpha
+		line.name.TextStrokeTransparency = 1 - 0.94 * alpha
+		line.pts.TextStrokeTransparency = 1 - 0.94 * alpha
+		if line.notice then line.stroke.Transparency = 1 - alpha end
+		line.marker.Visible = live
 		if live then
-			local pulse = if reduced then 1 else 0.5 + 0.5 * math.cos((t - line.born) * math.pi * 2 * C.PulseHz)
-			line.underline.BackgroundTransparency = 1 - a * (0.35 + 0.65 * pulse)
-		end
-
-		-- the banked points gliding up toward the score
-		local g = line.ghost
-		if line.flashAt and line.state == "banked" and not reduced and t - line.flashAt < C.Glide then
-			local k = (t - line.flashAt) / C.Glide
-			g.Visible = true
-			g.TextSize = line.pts.TextSize
-			g.Text = ScoreFeedView.format(line.points)
-			g.Text = fill(TEXT.Points, { points = g.Text })
-			local p = line.pts.Position
-			g.Position = UDim2.fromOffset(p.X.Offset, p.Y.Offset - C.GlideRise * k)
-			g.TextTransparency = k
-			g.TextStrokeTransparency = C.StrokeTransparency + (1 - C.StrokeTransparency) * k
-		else
-			g.Visible = false
+			line.marker.BackgroundColor3 = accent
+			local pulse = if reduced then 1 else 0.8 + 0.2 * math.cos(t * math.pi * 3)
+			line.marker.BackgroundTransparency = 1 - pulse * alpha
 		end
 	end
 end
@@ -692,8 +484,6 @@ function ScoreFeedView:setData(data)
 	end
 	for _, line in self.lines do
 		line.appear = 1
-		line.x = 0
-		line.flashAt = nil
 		line.shown = line.points
 	end
 	self:step(0) -- drops the lines pushed out past the most
@@ -740,7 +530,7 @@ function ScoreFeedView:describe()
 			total = line.points,
 			shown = line.shown,
 			rows = line.rows,
-			textSize = line.size,
+			textSize = self.textSize,
 			alpha = line.alpha,
 			fading = line.fadeFrom ~= nil or (line.fade or 1) < 1,
 			rect = rect(line.frame),
@@ -750,7 +540,11 @@ function ScoreFeedView:describe()
 			pointsRect = rect(line.pts),
 			pointsFits = line.pts.TextFits,
 			pointsBounds = line.pts.TextBounds,
-			underline = line.underline.Visible,
+			underline = false,
+			liveMark = line.marker.Visible,
+			zone = line.zone,
+			banking = line.bankPoints ~= nil,
+			backdrop = line.frame.BackgroundTransparency,
 		}
 	end
 	local anyActive = false
@@ -779,6 +573,8 @@ function ScoreFeedView:describe()
 end
 
 function ScoreFeedView:destroy()
+	self.textPreference:Disconnect()
+	self:clear()
 	self.gui:Destroy()
 end
 

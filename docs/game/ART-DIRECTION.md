@@ -40,6 +40,12 @@ Across all six: a guardrailed mountain road on the edge of a big drop, a far lay
 
 ## UI
 
+**Endless-run score HUD (T-307, November 17, 2026).** The user picked Akina Race Tape, Split Feed. [The approved reference](../../assets/reference/akina-split-feed.png) shows the 4.49-second frame of the scoring study. The game draws native text and tape directly over its chase view. The run score sits to the left, the condensed italic rank fills with the segmented meter, and the small multiplier closes the row. A held event counts above the word. One-offs and loss notices sit below it. The event lettering uses dark edge ink for changing scenery, with the scene visible between its glyphs.
+
+The demo used Barlow Condensed and IBM Plex Mono. The Studio component uses Roblox’s bundled Roboto Condensed Bold Italic for rank and held labels, Roboto Condensed Bold for standing captions and Roboto Mono SemiBold for numbers. The compact italic face was rendered and measured in the component showcase. All presentation colours and faces live in `UI/Theme.ScoreTape`. Warmup is silver, Gripped slate, Loose ice blue, Sideways cyan and Linked violet. The subsequent playable ranks introduce lilac, orchid, electric blue and pale mint. A short snap, edge echo and directional streaks build with rank. Reduced Motion keeps the charge and the settled result.
+
+The approved naming sequence is Warmup, Gripped, Loose, Sideways, Linked, Committed, Smoked, Boosted, Locked In, Full Send, Overdrive, Flat Out, Redline, Ghost, Demon and Untougeable. The current gameplay ladder ends at Locked In ×9.
+
 Set in the UI phase's style step (UI.md).
 
 **Settings brief (2026-11-14; no style picked yet):** the user requested clean modern UI, glass panes, fogginess, semi-transparency and tiles, with Assetto Corsa EVO and Assetto Corsa Rally as style references. Draft three directions on the settings page first, then build the user's pick. This is a settings concept brief, not approved UI art or a restyle of every screen (`features/settings-menu.md`).

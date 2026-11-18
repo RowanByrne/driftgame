@@ -10,8 +10,8 @@ climbs a multiplier ladder, and a run ends with a total to beat.
 
 ## How it plays
 
-1. Press **START ENDLESS RUN**. A score panel appears at the top centre, under the run button:
-   the score (0), the multiplier (x1) and a thin bar that fills toward the next rung.
+1. Press **START ENDLESS RUN**. The score appears beside the rank word and its multiplier.
+   It opens at 0, WARMUP ×1, with an empty tape.
 2. **Drift.** While the car is sideways and moving forward, points pour in. They come faster the
    more sideways and the faster you are. Their rate is multiplied by the current rung.
 3. **Hold it.** Drifting fills the bar; a full bar is the next rung, up to **x9**. Driving straight
@@ -33,7 +33,7 @@ climbs a multiplier ladder, and a run ends with a total to beat.
 - **Score anywhere but the endless run.** The track and the playground stay unscored.
 - **Any reward for score.** No currency, unlocks or progression (`PITCH.md`: meta progression is
   undecided).
-- **Final art and sound.** Programmer UI; no score sounds yet.
+- **Score sound.** The score HUD uses the approved race-tape presentation.
 - **Other players' scores.** Each player sees their own.
 
 ## Rules and numbers
@@ -62,14 +62,9 @@ The score is a whole number on screen; the engine keeps it as a float.
 
 ## UI
 
-One new screen, `Drift/ScoreHudView` (`PlayerGui.ScoreHud`), in `UI-INVENTORY.md`. Programmer art (UI.md):
+The Akina Race Tape widget (`PlayerGui.ScoreHud`) places the run total to the left of a named multiplier over the driving view. Both the rank lettering and the segmented tape fill from the score engine’s progress. Negative grace shows empty. The rank updates on gains and losses. Settled held events animate into the rank and then the running total. The widget takes no input.
 
-- **Top centre, under the run button:** the score in large digits, `x3` beside it, and a bar
-  under both for the rung's progress. Hidden outside a run.
-- **Run summary:** `RUN SCORE 48,210` and `BEST 61,004` in place of the live score, for
-  `SummarySeconds` after END RUN. A run that beats the session's best says `NEW BEST`, in gold.
-- Not `Active`, so it never takes a press from the steering pad, and below the run button's
-  `DisplayOrder` 15.
+At END RUN, `RUN SCORE` and the session `BEST` or `NEW BEST` replace the widget for `SummarySeconds`. The supported layouts and Studio fixtures are in UI-INVENTORY.md.
 
 ## Server and client
 
