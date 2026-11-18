@@ -159,6 +159,10 @@ local Spline = {
 		-- steepest is 1.5 times it). Steeper than the runoff's own 0.25, or a bend is too
 		-- short to fit one; the car's wall leans with it, so it grinds rather than snags
 		CarvedRate = 0.4,
+		-- WHICH SIDE (T-308): only where the ground beside the road RISES at least this much,
+		-- read as the K-rails read the drop (`KRailProbe` studs past the carved edge), all
+		-- along the carve. Never where it falls, never on a rail's side
+		CarvedRise = 8, -- studs
 		-- THE EDGES ARE THE DRAWN GROUND (T-258, T-261, features/car-edges.md): no rock face,
 		-- hedge or cliff is chosen per side any more. Only a road with NO mountain (a test's
 		-- hand-made road, the collision tests' yardstick) is walled at its runoff's outer edge,

@@ -552,7 +552,7 @@ function SplineGen._uphillOver(up: { number }, side: number, a: number, b: numbe
 end
 
 -- A CARVED APEX (T-182): the road cut into the cliff. On some sharp bends whose inside is
--- the rock face and whose outside is the drop, the inside runoff narrows to `CarvedGap` at
+-- the rising ground (T-308: as read off the mountain), the inside runoff narrows to `CarvedGap` at
 -- the apex -- the middle of the bend's held arc -- so the rock rises right at the tarmac's
 -- edge, then widens again. Only that side's runoff knots change, eased (smoothstep) in and
 -- out no faster than `CarvedRate` a stud, so the wall leans in gently enough to grind along.
@@ -619,9 +619,14 @@ function SplineGen._carve(self: Gen, sec: Spline.Section)
 	end
 	local b = math.min(math.max((holdFrom + holdTo - hold) * 0.5, lo), hi)
 	local c = b + hold
-	-- the mountain all along the inside (so the drop is on the outside through the apex)
-	if not SplineGen._uphillOver(sec.up :: { number }, inside, 0, len) then
-		return
+	-- never where a K-rail stands on the inside (T-308: a rail stands only where the ground
+	-- falls, so this is a guard, not a choice)
+	if sec.kr then
+		for j = 1, #sec.kr, 3 do
+			if sec.kr[j + 2] == inside and sec.kr[j] < c + eOut and sec.kr[j + 1] > b - eIn then
+				return
+			end
+		end
 	end
 	local knots = {}
 	local function knot(s: number, w: number)
@@ -641,6 +646,20 @@ function SplineGen._carve(self: Gen, sec: Spline.Section)
 		sec.rl = knots
 	else
 		sec.rr = knots
+	end
+	-- THE GROUND RISES on the inside, all along the carve, read from the carved edge
+	-- (T-308): the bend is cut into the hill, never into a side that falls away. Until T-308
+	-- the side the fall line calls the mountain's (`up`) was taken for it, and that is the
+	-- falling side about half the time. Read off the ground as the rails are
+	-- (`_sideDrops`), so the draws above are the same and no other choice moves.
+	local startRun = { [-1] = self.spline:runoffRaw(self.spline.length, -1), [1] = self.spline:runoffRaw(self.spline.length, 1) }
+	if not SplineGen._risesOver(self:_sideDrops(sec, startRun), inside, b - eIn, c + eOut) then
+		if inside < 0 then
+			sec.rl = old
+		else
+			sec.rr = old
+		end
+		return
 	end
 	self.stats.carved += 1
 end
@@ -921,6 +940,22 @@ function SplineGen._fallsOver(drops: Drops, side: number, a: number, b: number):
 	for i, u in drops.u do
 		if u > a - step and u < b + step and drops.drop[side][i] < need then
 			return false
+		end
+	end
+	return true
+end
+
+-- Does the ground RISE at least `CarvedRise` on `side` all along [a, b] of the section, the
+-- points either side of each end included (T-308)? A side the bend encloses (no reading) does not.
+function SplineGen._risesOver(drops: Drops, side: number, a: number, b: number): boolean
+	local step = Config.Spline.Terrain.KRailSample + 1e-6
+	local need = -Config.Spline.Terrain.CarvedRise
+	for i, u in drops.u do
+		if u > a - step and u < b + step then
+			local d = drops.drop[side][i]
+			if d == -math.huge or d > need then
+				return false
+			end
 		end
 	end
 	return true

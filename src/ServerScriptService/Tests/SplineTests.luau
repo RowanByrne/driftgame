@@ -443,8 +443,9 @@ function parts.terrain(check)
 				insideN += 1
 			end
 		end
-		-- CARVED APEXES (T-182): wherever the inside grass is down to `CarvedGap`, the mountain
-		-- is that side, the drop the other, and the road is bending toward the mountain
+		-- CARVED APEXES (T-182): wherever the inside grass is down to `CarvedGap`, the ground
+		-- rises that side (T-308: read off the mountain, `SplineGen.dropBeside`, not the side
+		-- the fall line calls the mountain's), and the road is bending toward it
 		carves += gen.stats.carved
 		carveLen += sp.length
 		for u = 0, sp.length, 2 do
@@ -453,7 +454,8 @@ function parts.terrain(check)
 				if w < T.RunoffMin - 0.01 then
 					carveWorstGap = math.max(carveWorstGap, if w <= T.CarvedGap + 1e-6 then sp:runoffAt(u, side) else 0)
 					local k = sp:curvatureAt(u)
-					if w <= T.CarvedGap + 1e-6 and (sp:uphillAt(u) ~= side or (k > 0) ~= (side < 0) or k == 0) then
+					local rise = if w <= T.CarvedGap + 1e-6 then -SplineGen.dropBeside(sp, u, side) else 0
+					if w <= T.CarvedGap + 1e-6 and (rise == math.huge or rise < T.CarvedRise - 2 or (k > 0) ~= (side < 0) or k == 0) then
 						carveBad += 1
 					end
 				end
@@ -522,7 +524,7 @@ function parts.terrain(check)
 	check(
 		"some sharp bends carve the rock to the tarmac's edge at the apex, eased in and out",
 		carves > 0 and carveBad == 0 and carveWorstGap <= T.CarvedGap + 1e-6 and worstCarveRate <= T.CarvedRate + 1e-9,
-		`{carves} carved apexes ({fmt(carves / carveLen * 10000, 2)} per 10 000 studs); mountain to tarmac at the apex at most {fmt(carveWorstGap, 2)} studs; {carveBad} points carved without the mountain inside the bend; steepest easing {fmt(worstCarveRate, 3)} stud per stud (limit {T.CarvedRate})`
+		`{carves} carved apexes ({fmt(carves / carveLen * 10000, 2)} per 10 000 studs); mountain to tarmac at the apex at most {fmt(carveWorstGap, 2)} studs; {carveBad} points carved without the ground rising inside the bend; steepest easing {fmt(worstCarveRate, 3)} stud per stud (limit {T.CarvedRate})`
 	)
 	check("the mountain on one side, the drop on the other", sameSides == 0 and noSide == 0, `{sameSides} sections and {noSide} points with no uphill side. Sections' first sides: {table.concat(mixList, ", ")}`)
 	check("the mountain is on the uphill side of the road", wrongSide == 0 and sideChecked > 0, `{wrongSide} of {sideChecked} points away from the fall line have it on the wrong side`)
