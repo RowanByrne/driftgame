@@ -70,6 +70,8 @@ function Art:layout(w, h)
 	if self.style then
 		self.width = math.min(w, h * self.face.width / self.face.height)
 		self.height = self.width * self.face.height / self.face.width
+		self:_charge()
+		self.lastFrame = nil
 		self:_paint(0, self.reduced)
 	end
 end
@@ -229,6 +231,7 @@ end
 function Art:_paint(dt, reduced)
 	self.age += dt
 	self.reduced = reduced
+	if reduced then self.entry = false end
 	local s, rung = self.style, self.rung
 	local hit = self.entry and not reduced and rung ~= 10
 	local duration = .16+.18*s.force+math.max(0,rung-9)*.009
@@ -236,11 +239,14 @@ function Art:_paint(dt, reduced)
 	local dx, dy = lerpKeys(entryShift,t)
 	local sx, sy = lerpKeys(entryScale,t)
 	self.scene.Position = UDim2.fromOffset(self.width/2+dx*s.force,self.slotHeight/2+dy*s.force)
-	self.scene.Size = UDim2.fromOffset(self.width*(1+(sx-1)*s.force),self.height*(1+(sy-1)*s.force))
+	-- Keep fractional pixels in the scale components so short faces and tall
+	-- effects share the same scale on compact screens.
+	self.scene.Size = UDim2.fromScale(self.width/self.slotWidth*(1+(sx-1)*s.force),
+		self.height/self.slotHeight*(1+(sy-1)*s.force))
 	local phase = if s.cycle then (self.age % s.cycle)/s.cycle else 0
-	self:_charge()
 	if self.flames then
 		self:_paintFire(reduced)
+		self.lastFrame = 0
 	else
 		local entryLeft = if hit then math.max(0,1-self.age/(.23+(rung-1)*.015))^3 else 0
 		self:_paintSheets(reduced,phase,entryLeft)

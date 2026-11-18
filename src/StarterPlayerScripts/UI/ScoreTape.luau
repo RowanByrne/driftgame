@@ -122,7 +122,9 @@ function Rank:layout(layout)
 			part.Size = UDim2.fromOffset(n, barHeight)
 		end
 	end
-	local rankWidth = w - math.round(37 * layout.textScale)
+	self.doubleDigit = (self.rung or 1) >= 10
+	local multiplierWidth = if self.doubleDigit then 37 else 29
+	local rankWidth = w - math.round(multiplierWidth * layout.textScale)
 	self.art:layout(rankWidth, h - barHeight - 2)
 	self.mult.Size = UDim2.fromOffset(w - rankWidth, h - 6)
 	self.mult.Position = UDim2.fromOffset(rankWidth, 3)
@@ -133,7 +135,9 @@ end
 function Rank:draw(rung, progress, entering)
 	local style = Tape.tier(rung)
 	if rung ~= self.rung then
+		local widthChanged = self.doubleDigit ~= (rung >= 10)
 		self.rung = rung
+		if widthChanged then self:layout(self.layoutData) end
 		self.art:setRank(rung, entering == true)
 		self.mult.Text = "×" .. tostring(rung)
 		self.mult.TextColor3 = style.accent
