@@ -9,6 +9,7 @@ Every task in progress and the files it owns, so parallel sessions and workers n
 
 | Branch | Lane | Files owned | Since |
 |---|---|---|---|
+| `agent/akina-score-ranks` | Borrow to test | `assets/score-ranks/*` (new), `src/StarterPlayerScripts/UI/ScoreTape.luau`, `src/StarterPlayerScripts/UI/ScoreRank*.luau` (new rank art registry and renderer), `src/StarterPlayerScripts/Drift/ScoreHudView*.luau`, `src/StarterPlayerScripts/Controllers/ScoreController.luau` (rank previews only), `docs/game/features/score-rank-art.md` (new), `docs/game/features/endless-score.md`, `docs/game/UI-INVENTORY.md` | 2026-11-18, T-319 |
 
 ## Notes between sessions
 
