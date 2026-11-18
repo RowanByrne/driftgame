@@ -9,8 +9,6 @@ Every task in progress and the files it owns, so parallel sessions and workers n
 
 | Branch | Lane | Files owned | Since |
 |---|---|---|---|
-| `agent/score-flick` (T-300) | borrowed | `src/StarterPlayerScripts/Drift/Events/ScandiFlick.luau` (new), `src/ServerScriptService/Tests/ScandiFlickTests.luau` (new) | 2026-11-17 |
-| `agent/hairpin-hint` (T-304) | borrowed | `src/StarterPlayerScripts/Drift/HairpinHint.luau` (new), `Drift/ScoreFeedView.luau`, `Drift/ScoreFeedView.fixtures.luau`, `Controllers/ScoreController.luau`, `Controllers/DriftController.luau` (one start line only), `src/ServerScriptService/Tests/HairpinHintTests.luau` (new), `docs/game/UI-INVENTORY.md` | 2026-11-17 |
 
 ## Notes between sessions
 
