@@ -9,7 +9,7 @@ Every task in progress and the files it owns, so parallel sessions and workers n
 
 | Branch | Lane | Files owned | Since |
 |---|---|---|---|
-| `agent/akina-split-feed` (T-307) | Lent on test | `src/StarterPlayerScripts/Drift/Score{Hud,Feed}View.luau` and their `.fixtures.luau`, `src/StarterPlayerScripts/Controllers/ScoreController.luau`, `src/StarterPlayerScripts/UI/Theme.luau`, `src/StarterPlayerScripts/UI/Layers.luau` (ScoreHud and ScoreFeed entries only), `src/StarterPlayerScripts/UI/ScoreTape.luau` (new), score HUD sections of `docs/game/{ART-DIRECTION,UI-INVENTORY}.md` and `docs/game/features/{endless-score,score-events}.md`, `assets/reference/akina-split-feed.png` (new) | 2026-11-17 |
+| `agent/score-tape-audio` (T-309) | Lent on test | `assets/audio/sfx-score-tape/*` (new), `docs/game/AUDIO.md` (score sounds), `src/ReplicatedStorage/Shared/Config/Fx.luau` (score cue registry), `src/StarterPlayerScripts/Drift/ScoreSound.luau` (new), `Drift/SoundLevels.luau`, `Drift/ScoreFeedView.luau`, `Controllers/ScoreController.luau`, `Settings/SettingsView.luau` under `src/StarterPlayerScripts/`, score audio rows of `docs/game/{CONTRACTS,SETTINGS}.md` | 2026-11-17 |
 
 ## Notes between sessions
 
