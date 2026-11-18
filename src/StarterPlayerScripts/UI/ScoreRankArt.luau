@@ -1,5 +1,6 @@
 --!nonstrict
 -- All geometry is in the registered word canvas. Keep the transparent margins.
+local ContentProvider = game:GetService("ContentProvider")
 local Registry = require(script.Parent.ScoreRankRegistry)
 local Create = require(script.Parent.Create)
 local Art = {}
@@ -32,11 +33,12 @@ local function slice(image, x, y, width, height, first, last)
 	image.Size = UDim2.fromScale((right - left) / width, 1)
 end
 
-local function lerpKeys(keys, at)
+local function lerpKeys(keys, at, stepped)
 	for i = 2, #keys do
 		local b, a = keys[i], keys[i - 1]
 		if at <= b[1] then
 			local p = math.clamp((at - a[1]) / (b[1] - a[1]), 0, 1)
+			if stepped then p = math.floor(p * 2) / 2 end
 			return a[2] + (b[2] - a[2]) * p, a[3] + (b[3] - a[3]) * p
 		end
 	end
@@ -49,6 +51,9 @@ local scrape = {{0,-.008,-1.4},{.08,-.008,-1.4},{.17,.008,2.6},{.23,.004,1.1},
 local signalHit = {{0,0,0},{.1,.96,-1},{.26,.1,-1},{.43,.9,1},{.6,.16,1},{.77,.58,-.33},{1,0,0}}
 local entryShift = {{0,4,3},{.18,-4,-2},{.32,3,0},{.49,-1,1},{1,0,0}}
 local entryScale = {{0,.91,1.16},{.18,1.06,.92},{.32,1,1},{1,1,1}}
+local entryTilt = {{0,-3.5,0},{.18,2,0},{.32,-1,0},{.49,0,0},{1,0,0}}
+local echoPose = {{0,-4,2},{.42,6,-1},{1,12,-4}}
+local echoOpacity = {{0,.65,0},{.42,.28,0},{1,0,0}}
 local rearBurst = {{0,.72,.8},{.26,1.18,1},{1,1,1}}
 local crownBurst = {{0,.36,.92},{.22,1.32,1.04},{.54,.93,.99},{1,.78,1}}
 -- Left edge, baseline, width, vertical stretch, rotation, seconds/cel, starting cel, opacity.
@@ -116,6 +121,12 @@ function Art:setRank(rung, entry, reduced)
 	self.style = Registry[rung]
 	local s = self.style
 	self.rung, self.age, self.entry, self.lastFrame = rung, 0, entry, nil
+	self.promoted = entry == "gain" and not reduced
+	self.waitForFace = if self.promoted then 0 else nil
+	self.duration = .16 + .18*s.force + math.max(0,rung-9)*.009
+	-- A subpixel kick at ×2 disappears at driving scale.
+	self.impactForce = if self.promoted then .62 + .38*s.force else s.force
+	warmRank(rung + 1)
 	self.scene = frame(self.slot, "RegisteredArt", 1)
 	self.scene.AnchorPoint = center
 	self.scene:SetAttribute("RankName", s.name)
@@ -232,14 +243,14 @@ end
 function Art:_paint(dt, reduced)
 	self.age += dt
 	self.reduced = reduced
-	if reduced then self.entry = false end
+	if reduced then self.entry, self.promoted, self.waitForFace = false, false, nil end
 	local s, rung = self.style, self.rung
 	local hit = self.entry and not reduced and rung ~= 10
-	local duration = .16+.18*s.force+math.max(0,rung-9)*.009
+	local duration, force = self.duration, self.impactForce
 	local t = if hit then math.min(1,self.age/duration) else 1
 	local dx, dy = lerpKeys(entryShift,t)
 	local sx, sy = lerpKeys(entryScale,t)
-	self.scene.Position = UDim2.fromOffset(self.width/2+dx*s.force,self.slotHeight/2+dy*s.force)
+	self.scene.Position = UDim2.fromOffset(self.width/2+dx*force,self.slotHeight/2+dy*force)
 	-- Keep fractional pixels in the scale components so short faces and tall
 	-- effects share the same scale on compact screens.
 	self.scene.Size = UDim2.fromScale(self.width/self.slotWidth*(1+(sx-1)*s.force),
@@ -254,7 +265,7 @@ function Art:_paint(dt, reduced)
 	end
 	local angle, xShift, yShift = 0,0,0
 	local signalTime = if hit then math.min(1,self.age/(duration+.11)) else 1
-	local alpha, displacement = lerpKeys(signalHit,signalTime)
+	local alpha, displacement = lerpKeys(signalHit,signalTime,true)
 	displacement *= 1+(rung-1)*.65
 	if rung == 10 and not reduced then
 		local x, rotation = lerpKeys(scrape,phase)
@@ -281,6 +292,13 @@ function Art:_paint(dt, reduced)
 end
 
 function Art:step(dt, reduced)
+	if self.waitForFace ~= nil and not reduced then
+		self.waitForFace += dt
+		-- Keep the entry's first pose until a renderable word exists. A failed
+		-- fetch must never pin the rest of the HUD or block newer snapshots.
+		if self.base.IsLoaded or self.waitForFace >= 1 then self.waitForFace = nil end
+		dt = 0
+	end
 	if self.style and (not reduced or not self.reduced or self.lastFrame == nil) then
 		self:_paint(dt, reduced)
 	end
