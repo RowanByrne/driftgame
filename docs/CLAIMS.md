@@ -9,7 +9,6 @@ Every task in progress and the files it owns, so parallel sessions and workers n
 
 | Branch | Lane | Files owned | Since |
 |---|---|---|---|
-| `agent/score-tape-audio` (T-309) | Lent on test | `assets/audio/sfx-score-tape/*` (new), `docs/game/AUDIO.md` (score sounds), `src/ReplicatedStorage/Shared/Config/Fx.luau` (score cue registry), `src/StarterPlayerScripts/Drift/ScoreSound.luau` (new), `Drift/SoundLevels.luau`, `Drift/ScoreFeedView.luau`, `Controllers/ScoreController.luau`, `Settings/SettingsView.luau` under `src/StarterPlayerScripts/`, score audio rows of `docs/game/{CONTRACTS,SETTINGS}.md` | 2026-11-17 |
 
 ## Notes between sessions
 
