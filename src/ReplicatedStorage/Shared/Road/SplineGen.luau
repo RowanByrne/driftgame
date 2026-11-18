@@ -139,6 +139,13 @@ export type Gen = typeof(setmetatable(
 		inBand: boolean, -- heading within `AlongFallLine` of the fall line: the side holds
 		crossAt: number, -- s: where the heading last crossed the fall line, inside the band (T-189)
 		runoff: { [number]: number }, -- the last runoff width chosen, by side
+		-- K-rails carrying on into the next section (T-306), by side, as plain numbers so a
+		-- turn's preview (`_fitTurn`, a shallow copy) never shares them: studs of run-out
+		-- still owed, and the way a railed bend still turns at the section's end (0 none)
+		krOutL: number,
+		krOutR: number,
+		krBendL: number,
+		krBendR: number,
 		clearance: number,
 		separation: number,
 		stats: Stats,
@@ -224,6 +231,10 @@ function SplineGen.new(seed: number, origin: Spline.Origin?, clearOverride: numb
 		inBand = false,
 		crossAt = 0,
 		runoff = { [-1] = Config.Spline.Terrain.StartRunoff, [1] = Config.Spline.Terrain.StartRunoff },
+		krOutL = 0,
+		krOutR = 0,
+		krBendL = 0,
+		krBendR = 0,
 		clearance = clear,
 		separation = sep,
 		stats = {
@@ -431,47 +442,45 @@ function SplineGen._terrain(self: Gen, sec: Spline.Section)
 		return SplineGen._uphillOver(up, -side, a, b)
 	end
 
-	-- K-RAILS: on the outside of a bend above the drop (the downhill side) about half the
-	-- time, the body of the bend; now and then a stretch anywhere else
-	local runMin, runMax = T.KRailRun[1], T.KRailRun[2]
-	local kr: { number } = {}
-	if bend then
-		local kEnd = bendCurvature(sec.k)
-		local outside = if kEnd > 0 then 1 else -1 -- a left turn's outside is the right
-		if len >= runMin and r:NextNumber() < T.KRailBendChance then
-			local run = math.clamp(len * 0.8, runMin, math.min(runMax, len))
-			local a = (len - run) * 0.5
-			if downhillOver(outside, a, a + run) then
-				kr = { a, a + run, outside }
-			end
+	-- K-RAILS (T-306): placed from the drop beside the road (`_railPieces`), never at random,
+	-- and only ever where the ground falls away. Until T-306 they were drawn from this stream
+	-- (half the bends whose outside the fall line called downhill, and the odd stretch
+	-- anywhere); those draws are still made and thrown away, so everything else this stream
+	-- chooses (a grove's widths) is the road it was.
+	if len >= 60 then
+		if bend then
+			r:NextNumber()
+		elseif r:NextNumber() < 0.08 then
+			r:NextNumber()
+			r:NextNumber()
+			r:NextNumber()
 		end
-	elseif len >= runMin and r:NextNumber() < T.KRailOtherChance then
-		local side = if r:NextNumber() < 0.5 then -1 else 1
-		local run = between({ runMin, math.min(runMax, len) })
-		local a = (len - run) * r:NextNumber()
-		kr = { a, a + run, side }
 	end
-	-- a K-rail on a grove's side would keep the car off the very grass the grove widened:
-	-- drawn as usual (the stream stays the same), then dropped
-	if #kr > 0 and grove[kr[3]] then
-		kr = {}
-	end
+	local drops = self:_sideDrops(sec, startRun)
+	local pieces = self:_railPieces(sec, drops, grove)
 
 	-- TIGHT CLIFF EDGES (T-181): now and then, on a side with a cliff the whole way along,
 	-- the runoff closes in to a few studs of gravel with a crash barrier on the tarmac's
 	-- edge and the lip just past it. Its width eases in and out at `TightRate` on the
 	-- runoff's own smoothstep knots, so nothing steps; the rail and the gravel reach
-	-- `TightLead` past the narrow part into the easing. A K-rail already chosen on that side
-	-- gives way to this one. A GROVE IS CHOSEN FIRST (T-183) and wins: a side with a grove
+	-- `TightLead` past the narrow part into the easing. Its rail joins any K-rail already
+	-- placed on that side. A GROVE IS CHOSEN FIRST (T-183) and wins: a side with a grove
 	-- never gets a tight edge (nor a K-rail).
+	-- WHICH SIDE (T-306): one where the ground really falls away (`KRailFallDrop`) all along
+	-- the stretch, as for any rail; the side the fall line calls downhill the whole section
+	-- is tried first (until T-306 the only one tried, and it is the rising one about half
+	-- the time), then the other.
 	-- ITS OWN STREAM, always the same four draws a section, so a tight edge (or a grove
 	-- blocking one) changes nothing else the road chooses: with `TightChance = 0` the road is
 	-- exactly the one before T-181.
 	if tag ~= "Start" then
 		local x = self.xrng
 		local roll, uWidth, uCore, uAt = x:NextNumber(), x:NextNumber(), x:NextNumber(), x:NextNumber()
-		local side = if downhillOver(1, 0, len) and not grove[1] then 1 elseif downhillOver(-1, 0, len) and not grove[-1] then -1 else 0
-		if side ~= 0 and roll < T.TightChance then
+		local first = if downhillOver(1, 0, len) then 1 elseif downhillOver(-1, 0, len) then -1 else 1
+		for _, side in { first, -first } do
+			if roll >= T.TightChance or grove[side] or sec.gl then
+				continue
+			end
 			local w0, w1 = startRun[side], self.runoff[side]
 			local wt = T.TightRunoff[1] + (T.TightRunoff[2] - T.TightRunoff[1]) * uWidth
 			local rampIn = math.max(T.TightRamp, math.abs(w0 - wt) / T.TightRate)
@@ -481,24 +490,37 @@ function SplineGen._terrain(self: Gen, sec: Spline.Section)
 				local core = math.min(T.TightRun[1] + (T.TightRun[2] - T.TightRun[1]) * uCore, room)
 				local a = rampIn + 1 + (room - core) * uAt
 				local b = a + core
+				local ga = a - math.min(T.TightLead, rampIn * 0.5)
+				local gb = b + math.min(T.TightLead, rampOut * 0.5)
 				-- b + rampOut is at most len - 1, so the last knot is always its own
 				local knots = { a - rampIn, w0, a, wt, b, wt, b + rampOut, w1, len, w1 }
+				local was = if side < 0 then sec.rl else sec.rr
 				if side < 0 then
 					sec.rl = knots
 				else
 					sec.rr = knots
 				end
-				local ga = a - math.min(T.TightLead, rampIn * 0.5)
-				local gb = b + math.min(T.TightLead, rampOut * 0.5)
-				if #kr > 0 and kr[3] == side then
-					kr = {}
+				-- (falling from the grass's edge as it is, and from the lip once it closes in)
+				if not (SplineGen._fallsOver(drops, side, ga, gb) and SplineGen._fallsOver(self:_sideDrops(sec, startRun), side, ga, gb)) then
+					if side < 0 then
+						sec.rl = was
+					else
+						sec.rr = was
+					end
+				else
+					pieces[side] = SplineGen._joinPiece(pieces[side], ga, gb)
+					sec.gl = { ga, gb, side }
+					self.stats.tight += 1
 				end
-				table.insert(kr, ga)
-				table.insert(kr, gb)
-				table.insert(kr, side)
-				sec.gl = { ga, gb, side }
-				self.stats.tight += 1
 			end
+		end
+	end
+	local kr: { number } = {}
+	for _, side in { -1, 1 } do
+		for _, p in pieces[side] do
+			table.insert(kr, p[1])
+			table.insert(kr, p[2])
+			table.insert(kr, side)
 		end
 	end
 	if #kr > 0 then
@@ -577,6 +599,11 @@ function SplineGen._carve(self: Gen, sec: Spline.Section)
 				return
 			end
 		end
+	end
+	-- nor on a tight edge's side (T-306: its side is the one the ground falls on, which the
+	-- fall line can call the rock's)
+	if sec.gl and sec.gl[3] == inside then
+		return
 	end
 	local prev = self.spline:runoffRaw(self.spline.length, inside)
 	local eIn = math.max(T.CarvedEase, (prev - gap) / rate)
@@ -781,6 +808,253 @@ function SplineGen._slopeRunoff(self: Gen, sec: Spline.Section): { { number } }
 		table.insert(out, { len, self.runoff[1] })
 	elseif out[#out][1] < len then
 		out[#out][1] = len
+	end
+	return out
+end
+
+--------------------------------------------------------------------------------
+-- K-rails from the ground (T-306, features/mountain-road.md "Where the K-rails stand")
+--------------------------------------------------------------------------------
+
+-- The drop beside a section, read every `KRailSample` studs or so from its start to its end:
+-- `u` the points, `k` the curvature there, `drop[side]` how far the mountain is below the
+-- grass's outer edge `KRailProbe` studs past it (on the inside of a bend scaled from nearer,
+-- `KRailInsideReach`; -huge where the bend encloses that side). Negative: the ground rises.
+export type Drops = { u: { number }, k: { number }, drop: { [number]: { number } } }
+
+-- A knotted value `u` studs into a section, from `v0` as it starts: straight between its
+-- knots (the curvature's own way; the runoff and the bank are eased, near enough for this).
+local function knotAlong(v0: number, knots: { number }, u: number): number
+	local s, v = 0, v0
+	for j = 1, #knots, 2 do
+		local s1, v1 = knots[j], knots[j + 1]
+		if u <= s1 then
+			local L = s1 - s
+			return if L > 0 then v + (v1 - v) * (u - s) / L else v1
+		end
+		s, v = s1, v1
+	end
+	return v
+end
+
+-- `startRun`: each side's runoff as the section starts (its knots carry on from it).
+function SplineGen._sideDrops(self: Gen, sec: Spline.Section, startRun: { [number]: number }): Drops
+	local T = Config.Spline.Terrain
+	local half = Config.Road.Width * 0.5
+	local f = self.ground
+	local len = sec.len
+	local n = math.max(1, math.ceil(len / T.KRailSample - 1e-9))
+	local x0, z0, yaw0, k0, g0, b0, y0 = self.spline:tip()
+	local us, xs, zs = { 0 }, { x0 }, { z0 }
+	walk(x0, z0, yaw0, k0, sec.k, len / n, len / n, function(u, x, z)
+		if #us <= n then
+			table.insert(us, u)
+			table.insert(xs, x)
+			table.insert(zs, z)
+		end
+		return true
+	end)
+	if #us > 1 then
+		us[#us] = len
+	end
+	local ks: { number } = {}
+	local drop: { [number]: { number } } = { [-1] = {}, [1] = {} }
+	for i, u in us do
+		local k = knotAlong(k0, sec.k, u)
+		ks[i] = k
+		local yaw = yawAlong(yaw0, k0, sec.k, u)
+		local y = yawAlong(y0, g0, sec.g, u) -- (the height is the grade's integral, as the yaw is the curvature's)
+		local tb = math.tan(knotAlong(b0, sec.b, u))
+		local rx, rz = math.cos(yaw), -math.sin(yaw)
+		for _, side in { -1, 1 } do
+			local w = knotAlong(startRun[side], (if side < 0 then sec.rl else sec.rr) :: { number }, u)
+			local inside = k ~= 0 and (k > 0) == (side < 0)
+			if inside then
+				w = math.min(w, math.max(T.InsideShare / math.abs(k) - half, 0)) -- as `Spline.runoffAt`
+			end
+			-- the grass's outer edge, as `Spline.terrainY` has it
+			local edgeY = y + side * tb * (half + w * 0.5) - T.RoadLip
+			local D = T.KRailProbe
+			if inside then
+				D = math.min(D, T.KRailInsideReach / math.abs(k) - half - w)
+			end
+			if D < T.KRailProbeMin then
+				drop[side][i] = -math.huge
+			else
+				local dist = side * (half + w + D)
+				drop[side][i] = (edgeY - Ground.h(f, xs[i] + dist * rx, zs[i] + dist * rz)) * T.KRailProbe / D
+			end
+		end
+	end
+	return { u = us, k = ks, drop = drop }
+end
+
+-- The same drop read off a LAID road with a mountain, at `s` on `side`, and the grass's edge
+-- height and the point it is read at (nil where the bend encloses that side): for the tests.
+-- Within a few studs of `_sideDrops` (which reads the eased runoff and bank as straight lines).
+function SplineGen.dropBeside(sp: Spline.Spline, s: number, side: number): (number, number?, number?, number?)
+	local T = Config.Spline.Terrain
+	local half = Config.Road.Width * 0.5
+	local k = sp:curvatureAt(s)
+	local w = sp:runoffAt(s, side)
+	local inside = k ~= 0 and (k > 0) == (side < 0)
+	local edgeY = sp:terrainY(s, side * (half + w))
+	local D = T.KRailProbe
+	if inside then
+		D = math.min(D, T.KRailInsideReach / math.abs(k) - half - w)
+	end
+	if D < T.KRailProbeMin or not sp.mountain then
+		return -math.huge, nil, nil, nil
+	end
+	local x, z = sp:planAt(s)
+	local yaw = sp:yawAt(s)
+	local dist = side * (half + w + D)
+	local px, pz = x + dist * math.cos(yaw), z - dist * math.sin(yaw)
+	return (edgeY - Ground.h(sp.mountain, px, pz)) * T.KRailProbe / D, edgeY, px, pz
+end
+
+-- Does the ground fall away (`KRailFallDrop`) on `side` all along [a, b] of the section,
+-- the points either side of each end included?
+function SplineGen._fallsOver(drops: Drops, side: number, a: number, b: number): boolean
+	local step = Config.Spline.Terrain.KRailSample + 1e-6
+	local need = Config.Spline.Terrain.KRailFallDrop
+	for i, u in drops.u do
+		if u > a - step and u < b + step and drops.drop[side][i] < need then
+			return false
+		end
+	end
+	return true
+end
+
+-- Pieces {a, b} in order, with [a, b] joined in (and any it overlaps).
+function SplineGen._joinPiece(list: { { number } }, a: number, b: number): { { number } }
+	local out = {}
+	local placed = false
+	for _, p in list do
+		if p[2] < a - 1e-6 then
+			table.insert(out, p)
+		elseif p[1] > b + 1e-6 then
+			if not placed then
+				table.insert(out, { a, b })
+				placed = true
+			end
+			table.insert(out, p)
+		else
+			a, b = math.min(a, p[1]), math.max(b, p[2])
+		end
+	end
+	if not placed then
+		table.insert(out, { a, b })
+	end
+	return out
+end
+
+-- WHERE THE K-RAILS STAND (T-306). The user, 2026-11-17: "only on the downhill sides ...
+-- longer sections protecting cliffs on corners. hairpins with big drops should have them
+-- too." Each side on its own, from the drop beside it (`_sideDrops`); no random draw:
+--   * a rail only ever stands where the ground falls away (`KRailFallDrop`): the downhill
+--     side, never against a rising bank;
+--   * A CORNER (tighter than `KRailCornerRadius`, one way) whose outside drops
+--     `KRailCornerDrop` anywhere along it is railed the whole way round, from `KRailLeadIn`
+--     before it to `KRailRunOut` after;
+--   * A TIGHT BEND (tighter than `KRailHairpinRadius`: every hairpin) is railed the same way
+--     on EITHER side that drops `KRailHairpinDrop` (a turnaround turns through the drop, so
+--     its inside can be the drop);
+--   * anywhere else, a cliff (`KRailCliffDrop`) is railed, with the same lead-in and run-out.
+-- What runs past the section's end carries on into the next one (`krOut*`, and a railed
+-- bend still turning there, `krBend*`), and joins on: `Spline.append` makes it one run.
+-- Pieces shorter than `KRailMinRun` are dropped unless they carry a rail on across an end.
+-- Never on a grove's side (the grass it widened is runoff the car may use) or the start.
+-- Returns each side's pieces, {a, b} in order, and leaves the carry for the next section.
+function SplineGen._railPieces(self: Gen, sec: Spline.Section, drops: Drops, grove: { [number]: number }): { [number]: { { number } } }
+	local T = Config.Spline.Terrain
+	local us, ks = drops.u, drops.k
+	local n = #us
+	local len = sec.len
+	local kCorner, kTight = 1 / T.KRailCornerRadius, 1 / T.KRailHairpinRadius
+	local sp = self.spline
+	local out: { [number]: { { number } } } = { [-1] = {}, [1] = {} }
+	for _, side in { -1, 1 } do
+		local drop = drops.drop[side]
+		local runs = if side < 0 then sp.railL else sp.railR
+		-- a rail that reaches this section's start, carried on
+		local railedIn = #runs.b > 0 and runs.b[#runs.b] >= sp.length - 1e-6
+		local carryIn = if railedIn then (if side < 0 then self.krOutL else self.krOutR) else 0
+		local bendIn = if railedIn then (if side < 0 then self.krBendL else self.krBendR) else 0
+		local windows: { { number } } = {}
+		if carryIn > 0 then
+			table.insert(windows, { 0, carryIn })
+		end
+		local bendOut = 0
+		local i = 1
+		while i <= n do
+			local k = ks[i]
+			if math.abs(k) >= kCorner then
+				local dir = if k > 0 then 1 else -1 -- a left turn (k > 0): its outside is the right
+				local j, most, tight = i, drop[i], math.abs(k) >= kTight
+				while j < n and math.abs(ks[j + 1]) >= kCorner and (ks[j + 1] > 0) == (dir > 0) do
+					j += 1
+					most = math.max(most, drop[j])
+					tight = tight or math.abs(ks[j]) >= kTight
+				end
+				local carried = i == 1 and bendIn == dir
+				if carried or (side == dir and most >= T.KRailCornerDrop) or (tight and most >= T.KRailHairpinDrop) then
+					table.insert(windows, { us[i] - T.KRailLeadIn, us[j] + T.KRailRunOut })
+					if j == n then
+						bendOut = dir
+					end
+				end
+				i = j + 1
+			else
+				i += 1
+			end
+		end
+		for m = 1, n do
+			if drop[m] >= T.KRailCliffDrop then
+				table.insert(windows, { us[m] - T.KRailLeadIn, us[m] + T.KRailRunOut })
+			end
+		end
+		local reach = 0
+		for _, w in windows do
+			reach = math.max(reach, w[2])
+		end
+		local function wanted(u: number): boolean
+			for _, w in windows do
+				if u >= w[1] - 1e-6 and u <= w[2] + 1e-6 then
+					return true
+				end
+			end
+			return false
+		end
+		-- the pieces: wanted, and on ground that falls away the whole length
+		local allowed = sec.tag ~= "Start" and not grove[side]
+		local pieces: { { number } } = {}
+		local from: number? = nil
+		for m = 1, n do
+			local on = allowed and drop[m] >= T.KRailFallDrop and wanted(us[m])
+			if on and not from then
+				from = m
+			end
+			if from and (not on or m == n) then
+				local to = if on then m else m - 1
+				local a, b = us[from], us[to]
+				local carriesIn = from == 1 and railedIn
+				local carriesOut = to == n and reach > len + 1e-6
+				if b > a + 1e-6 and (b - a >= T.KRailMinRun or carriesIn or carriesOut) then
+					table.insert(pieces, { a, b })
+				end
+				from = nil
+			end
+		end
+		local last = pieces[#pieces]
+		local reachesEnd = last ~= nil and last[2] >= len - 1e-6
+		local carryOut = if reachesEnd then math.max(reach - len, 0) else 0
+		if side < 0 then
+			self.krOutL, self.krBendL = carryOut, if reachesEnd then bendOut else 0
+		else
+			self.krOutR, self.krBendR = carryOut, if reachesEnd then bendOut else 0
+		end
+		out[side] = pieces
 	end
 	return out
 end

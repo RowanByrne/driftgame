@@ -400,7 +400,12 @@ local function appendRuns(sp: Spline, s0: number, runs: { number }?)
 		local list = if runs[j + 2] < 0 then sp.railL else sp.railR
 		local a, b = s0 + runs[j], s0 + runs[j + 1]
 		local n = #list.a
-		list.a[n + 1], list.b[n + 1] = a, b
+		if n > 0 and a <= list.b[n] + 1e-6 then
+			-- a rail carried on from the section before (T-306): one run, so one pair of end panels
+			list.b[n] = b
+		else
+			list.a[n + 1], list.b[n + 1] = a, b
+		end
 	end
 end
 

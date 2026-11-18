@@ -34,8 +34,9 @@ the drop. Running wide is no longer stopped by a wall; it costs you grip, then t
      and the run puts you back on the road as it does today.
 4. **K-rails**, drawn as **metal crash barriers** (a rounded W-beam steel guardrail held off square
    posts on spacer blocks, bolted at its splices, a yellow-and-black striped hazard panel at
-   each end of a run), stand at the tarmac's edge in places, mostly on the outside of bends
-   above a cliff. They stop you like a wall, before the grass. They were first drawn as concrete
+   each end of a run), stand at the tarmac's edge where the ground falls away beside the road:
+   round corners above a steep drop, through hairpins with a big drop, and along cliffs
+   ("Where the K-rails stand", T-306). They stop you like a wall, before the grass. They were first drawn as concrete
    jersey barriers; on 2026-11-12 the user said "the K rails you made are not what I meant, my
    bad. These concrete barriers arn't what i was looking for - i meant the metal crash
    barriers", so T-149 redrew them. Only the look changed: where they go and how they stop the
@@ -91,7 +92,7 @@ does), so nothing steps.
 | Raised road (T-184) | The grass sits `RoadLip` 1 stud below the tarmac's edge, down a gravel bevel `RoadLipWidth` 3 studs across (18°) | See "The raised road" below |
 | Hedge (gone, T-261) | 6 studs high, 4 thick | |
 | Cliff (gone, T-261) | The ground ends; the face drops 80 studs into haze near a turnaround, up to 200 mid-leg | Past the lip, nothing to stand on |
-| K-rail (metal crash barrier) | 3 studs high, 2 thick, at the tarmac's edge | Runs of 60 to 300 studs. To the car a wall that size; drawn as a 1.2-stud rounded W-beam, top at 3 studs, face on the tarmac's edge; square posts every 7 studs on spacer blocks behind it, inside the wall; a striped hazard panel at each end |
+| K-rail (metal crash barrier) | 3 studs high, 2 thick, at the tarmac's edge | Runs of 40 studs and up, as long as the corner or cliff (T-306; 60 to 300 before). To the car a wall that size; drawn as a 1.2-stud rounded W-beam, top at 3 studs, face on the tarmac's edge; square posts every 7 studs on spacer blocks behind it, inside the wall; a striped hazard panel at each end |
 
 ### Where each edge goes
 
@@ -99,8 +100,10 @@ A mountain road has the mountain on one side and the drop on the other, so the g
 **which side is uphill** and keeps it for a long stretch:
 
 - **Uphill side:** always rock face (T-189). **Since T-261 only the side is kept** (`Spline:uphillAt`,
-  the section's `up` spans): nothing is chosen at the edge, and K-rails, tight edges and carved
-  apexes are still placed by it, so they did not move.
+  the section's `up` spans): nothing is chosen at the edge, and tight edges and carved
+  apexes are still placed by it, so they did not move. K-rails were too, until T-306 measured
+  that the side it calls downhill is the rising one about half the time; they are placed by the
+  ground itself now.
 - **Downhill side:** always cliff drop (T-189); the drawn ground since T-261.
 - **No hedges as a road edge** (the user, 2026-11-13, T-189: "ditch the hedge concept as a road
   barrier. hedges going forward will just be decoration and we will bring them back later").
@@ -113,14 +116,73 @@ A mountain road has the mountain on one side and the drop on the other, so the g
   starts on the other, and the drop the same, so the mountain carries on through the turn with no
   gap. (Before T-189: a stretch of hedge both sides through the turn, then 400 studs of hedge on
   the uphill side, T-168.)
-- **K-rails:** on the outside of a bend whose outside is a cliff, about half the time, and the
-  odd stretch elsewhere.
+- **K-rails:** where the ground falls away beside the road, round steep corners, through
+  hairpins with a big drop and along cliffs ("Where the K-rails stand" below, T-306). Until
+  T-306: on the outside of a bend the fall line called downhill, about half the time, and the
+  odd stretch elsewhere, at random.
 - **Tight cliff edges:** in a section with a cliff the whole way along one side, 30% of the
-  time, if the section is long enough for the easing in, 80 studs narrow and the easing out.
-  A K-rail chosen on that side gives way to the tight edge's own. The section carries it as
+  time, if the section is long enough for the easing in, 80 studs narrow and the easing out,
+  and (T-306) only where the ground really falls away all along it, as for any rail.
+  Its rail joins a K-rail already placed on that side. The section carries it as
   its runoff knots, a K-rail run and a gravel run (`gl`). **A grove wins:** groves are chosen first (T-183), and a side with a grove never gets a tight edge.
 - **Seeded and replayed,** like the curve: the server chooses, the edges go to the clients with
   each section (`RoadSpline`), and the clients replay them. A client never chooses.
+
+### Where the K-rails stand
+
+T-306. The user, 2026-11-17: *"fix guardrail placement. it's all wrong. 1st: only on the
+downhill sides. 2nd: longer sections protecting cliffs on corners. hairpins with big drops
+should have them too."*
+
+- **Why it was wrong:** rails went on the side the fall line calls downhill (`up` spans), on
+  half the bends at random and the odd stretch anywhere. Measured over three seeds of 30 000
+  studs (31337, 101, 2024), that side is the rising one about half the time: only 50%, 42% and
+  22% of the rail length stood where the ground actually falls away. Steep corners (outside
+  dropping 20 studs or more) were railed 21%, 10% and 8% of the way round on average, no true
+  hairpin with a big drop was railed through, and runs were 60 to 300 studs (median about 120).
+- **The drop beside the road** is read off the mountain itself (`Road/Ground.h`) every 4 studs
+  along a section as it is laid (`SplineGen._sideDrops`): how far the ground is below the
+  grass's outer edge `KRailProbe` (40) studs past it. On the inside of a bend the reading is
+  taken no further than `KRailInsideReach` (0.8) of the way to the bend's centre and scaled up
+  to the same slope; nearer than `KRailProbeMin` (10) studs the bend encloses that side and it
+  has no drop. Negative: the ground rises.
+- **The rules,** each side on its own, no random draw (`SplineGen._railPieces`):
+  1. **Only the downhill side.** A rail stands only where the ground falls at least
+     `KRailFallDrop` (8 studs within those 40). Never against a rising bank or rock cut.
+  2. **Corners above a drop, the whole way round.** A corner is road tighter than
+     `KRailCornerRadius` (340, medium bends and tighter) turning one way. If its outside drops
+     `KRailCornerDrop` (20 studs, an average slope of about 27 degrees) anywhere along it, the
+     rail runs from `KRailLeadIn` (40) studs before it to `KRailRunOut` (60) after it.
+  3. **Hairpins with a big drop.** A tight bend (tighter than `KRailHairpinRadius`, 130, the
+     double yellow's, so every hairpin) is railed the same way on either side that drops
+     `KRailHairpinDrop` (15 studs, about 21 degrees): a turnaround turns through the drop, so
+     its inside can be the drop.
+  4. **Cliffs anywhere else:** a drop of `KRailCliffDrop` (40 studs, 45 degrees) is railed with
+     the same lead-in and run-out.
+  5. Pieces under `KRailMinRun` (40) studs are dropped; never on a grove's side or the start.
+- **Across sections:** the run-out (and a railed bend still turning at a section's end) carries
+  on into the next section, and `Spline.append` joins a run that starts where the last one on
+  its side ended, so a long rail is one run with one pair of hazard panels. A lead-in can't
+  reach back into a section already laid: a corner that starts at a section's start (most do)
+  has its own easing in as its lead-in.
+- **Unchanged:** the random stream's draws (still made and thrown away, so grove widths are
+  the road they were), the curve, the rail's shape and physics, `kRailAt` / `kRailsIn`.
+- **Tight cliff edges** need the ground to fall the whole stretch too: the side the fall line
+  calls downhill is tried first, then the other, so fewer are laid (4, 4 and 6 on the three
+  seeds, from 11, 11 and 10). A carved apex never takes a tight edge's side.
+- **Measured after (`SplineGenTests`, the same three seeds, 30 000 studs each):**
+  - **Only downhill:** 7 307 of 7 307 rail points (100%) have the drawn ground (cut, fill and
+    every other road included) below the grass's edge 40 studs out, at least 2.7 studs below.
+  - **Steep corners** (outside dropping 20 studs or more): railed 98.6% of the way round on
+    average, 82 of 85 over 90% (before: 21%, 10% and 8%, none over 95%).
+  - **True hairpins** (`Road/Hairpins`): every side with a big drop railed through the bend,
+    34 of 34 sides on 32 hairpins (before: none).
+  - **Runs:** 35, 31 and 41 runs; median 258, 213 and 202 studs, longest 1 179 (before: 42, 34
+    and 28 runs, median about 120, longest 300). **More rail in all:** 39%, 22% and 36% of the
+    road's length has one on a side (before 19%, 15% and 12%), all of it above a fall. The
+    numbers above are the knobs if it reads as too much.
+  - The same rails from the same seed and in a client's replay; none on a grove's side; no
+    random draw moved, so the curve, runoff and groves are as they were.
 
 ### Carved apexes
 

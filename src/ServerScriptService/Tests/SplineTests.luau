@@ -411,14 +411,18 @@ function parts.terrain(check)
 				local kEnd = sec.k[#sec.k]
 				local outside = if kEnd > 0 then 1 else -1
 				local outsideDown = outside == -up0
-				if bend and outsideDown and sec.len >= T.KRailRun[1] then
+				if bend and outsideDown then
 					bendsOverCliff += 1
 				end
 				if sec.kr then
 					for j = 1, #sec.kr, 3 do
 						rails += 1
+						-- (T-306: placed by the ground, not by the side read off the fall line, and as
+						-- long as the corner needs; a piece carrying a rail across a section's end may
+						-- be short. SplineGenTests checks where they stand)
 						local len = sec.kr[j + 1] - sec.kr[j]
-						if len < T.KRailRun[1] - 1e-6 or len > T.KRailRun[2] + 1e-6 then
+						local carries = sec.kr[j] < 1e-6 or sec.kr[j + 1] > sec.len - 1e-6
+						if len <= 0 or (len < T.KRailMinRun - 1e-6 and not carries) then
 							badRails += 1
 						end
 						if bend and sec.kr[j + 2] == outside and outsideDown then
@@ -531,9 +535,9 @@ function parts.terrain(check)
 	)
 	check("the mountain changes sides only along the fall line", swapOutOfBand == 0, `{swapOutOfBand} changes outside the band along the fall line`)
 	check(
-		"K-rails 60 to 300 studs, on most bends above the drop",
-		badRails == 0 and rails > 0 and railsOnBendCliff >= bendsOverCliff * 0.3,
-		`{rails} runs, {badRails} the wrong length; {railsOnBendCliff} of {bendsOverCliff} bends with the drop outside have one (about half wanted)`
+		"K-rails at least KRailMinRun studs (or carried across a section's end)",
+		badRails == 0 and rails > 0,
+		`{rails} pieces, {badRails} the wrong length; {railsOnBendCliff} of {bendsOverCliff} bends the fall line calls downhill outside have one (T-306: placed by the ground now)`
 	)
 	check("the inside of a bend keeps its grass short of the bend's centre", insideWorst <= T.InsideShare + 1e-6, `furthest the inside edge reaches: {fmt(insideWorst * 100, 1)}% of the way to the centre (limit {T.InsideShare * 100}%), {insideN} points on bends`)
 
@@ -799,7 +803,9 @@ function parts.tight(check)
 					samples += 1
 					local w = sp:runoffAt(u, side)
 					narrowest = math.min(narrowest, w)
-					if sp:uphillAt(u) ~= -side then
+					-- (T-306: the side the ground falls away on, read off the mountain, not the
+					-- side the fall line calls downhill, which is the rising one about half the time)
+					if SplineGen.dropBeside(sp, u, side) < T.KRailFallDrop - 2 then
 						notCliff += 1
 					end
 					if not sp:kRailAt(u, side) then
@@ -823,7 +829,7 @@ function parts.tight(check)
 	)
 	check("tight cliff edges ease in and out", rate <= T.TightRate + 1e-9, `steepest change {fmt(rate, 3)} stud per stud between knots (limit {T.TightRate})`)
 	check(
-		"tight edges: on the downhill side, a rail on the tarmac's edge all the way",
+		"tight edges: where the ground falls away, a rail on the tarmac's edge all the way",
 		notCliff == 0 and unrailed == 0 and wrongKind == 0 and samples > 0,
 		`{samples} points: {notCliff} not on the downhill side, {unrailed} without a rail, {wrongKind} not gravel then the ground`
 	)
