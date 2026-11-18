@@ -150,7 +150,7 @@ local Spline = {
 		-- A CARVED APEX (T-182): on some sharp bends whose inside is the rock face and whose
 		-- outside is the cliff, the inside grass narrows to almost nothing at the apex, so the
 		-- rock rises right at the tarmac's edge, as if the road were cut into the cliff
-		CarvedChance = 1, -- of the bends that could have one (about 1.1 per 10 000 studs, measured)
+		CarvedChance = 1, -- of the bends that could have one (about 1.7 per 10 000 studs, measured T-308)
 		CarvedMaxRadius = 220, -- studs: hairpins, tight bends and the tightest medium ones
 		CarvedGap = 1, -- studs of grass left between the tarmac and the rock at the apex
 		CarvedHold = { 20, 50 }, -- studs the rock stays that close, round the apex
