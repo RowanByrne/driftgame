@@ -23,6 +23,10 @@
 -- THE FEED IS `Drift/ScoreFeedView` (features/score-events.md "UI"): each entry the score
 -- events engine fires on `ScoreEvents.feed` goes straight to it. The engine is required only
 -- if it is there, so the feed shows nothing in a build without it.
+--
+-- THE HAIRPIN HINT (T-304) is `Drift/HairpinHint`, stepped here with the score during a run
+-- on the road `DriftController` drives (`DriftController.spline`): when it says a true
+-- hairpin is coming, a "HAIRPIN AHEAD" notice goes into the feed (no points).
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -35,6 +39,7 @@ local DriftFolder = script.Parent.Parent:WaitForChild("Drift")
 local Score = require(DriftFolder.Score)
 local ScoreHudView = require(DriftFolder.ScoreHudView)
 local ScoreFeedView = require(DriftFolder.ScoreFeedView)
+local HairpinHint = require(DriftFolder.HairpinHint)
 
 local DriftController = require(script.Parent.DriftController)
 
@@ -53,6 +58,13 @@ function ScoreController:Init()
 	self.lastRun = nil
 	self.endedAt = nil
 	self.answers = 0
+	-- the road the car is on, asked each step (a new road, a new run)
+	self.hint = HairpinHint.new({
+		spline = function()
+			return DriftController.spline
+		end,
+	})
+	self.hints = 0 -- hints shown this session
 end
 
 function ScoreController:Start()
@@ -61,6 +73,10 @@ function ScoreController:Start()
 			self.score:Step(dt, state)
 			self.steps += 1
 			self.runSeconds += dt
+			local hint = self.hint:Update(dt, state)
+			if hint then
+				self:_showHint(hint)
+			end
 		end
 	end)
 
@@ -115,12 +131,29 @@ function ScoreController:_listenToEvents()
 	end)
 end
 
+-- A "HAIRPIN AHEAD" notice in the feed (not while a feed fixture plays).
+function ScoreController:_showHint(hint)
+	self.hints += 1
+	if self.feedFixture or not self.feedView then
+		return
+	end
+	self.feedView:push({
+		id = `hint:{self.hints}`,
+		kind = "hairpinAhead",
+		notice = "hairpinAhead",
+		dir = hint.dir,
+		state = "banked",
+		points = 0,
+	})
+end
+
 function ScoreController:_setInRun(inRun: boolean)
 	if inRun == self.inRun then
 		return
 	end
 	if inRun then
 		self.score:Reset()
+		self.hint:Reset()
 		if not self.feedFixture then
 			self.feedView:clear()
 		end
@@ -273,6 +306,13 @@ function ScoreController:DebugState()
 	r.lastRun = self.lastRun
 	r.view = self:View().mode
 	return r
+end
+
+-- The hairpin hint: where the car is along the road, its counts, the last hint given.
+function ScoreController:DebugHint()
+	local d = self.hint:DebugState()
+	d.shown = self.hints
+	return d
 end
 
 return ScoreController

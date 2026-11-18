@@ -32,6 +32,11 @@ local function ramp(out: { Entry }, id: number, kind: string, label: string, tot
 	end
 end
 
+-- A notice (T-304): "HAIRPIN AHEAD", turning `dir` (1 left, -1 right). No points.
+local function hint(id: string, dir: number): Entry
+	return { id = id, kind = "hairpinAhead", notice = "hairpinAhead", dir = dir, state = "banked", points = 0 }
+end
+
 local function at(t: number, entry: Entry): Entry
 	entry.at = t
 	return entry
@@ -100,6 +105,14 @@ for i, k in kinds do
 end
 sorted(longRun)
 
+-- A drift counting up live; "HAIRPIN AHEAD" comes in over it, holds 2 s and fades while the
+-- drift's line carries on; then the bend's line starts.
+local hairpinHint = {}
+ramp(hairpinHint, 1, "wheelLift", "WHEEL LIFT", 90, 0, 4, "banked")
+table.insert(hairpinHint, at(0.5, hint("hint:demo", -1)))
+ramp(hairpinHint, 2, "perfectHairpin", "PERFECT HAIRPIN", 400, 3.0, 5.5, "banked")
+sorted(hairpinHint)
+
 -- ------------------------------------------------------------------------------ stills
 
 return {
@@ -161,7 +174,31 @@ return {
 		},
 	},
 
+	-- The hint (T-304): one each way, over a scored line, banked and live.
+	hairpinAhead = {
+		hold = true,
+		entries = {
+			e(1, "jump", "BIG AIR", 420, "banked", 2),
+			e(2, "bumperGrind", "BUMPER GRIND", 312, "live", 3),
+			hint("hint:left", 1),
+		},
+	},
+	hairpinAheadRight = { hold = true, entries = { hint("hint:right", -1) } },
+	-- A full feed of live lines (5, or 3 on a phone) and a hint: no live line is pushed out.
+	hintOverLive = {
+		hold = true,
+		entries = {
+			e(1, "bumperGrind", "BUMPER GRIND", 640, "live", 2),
+			e(2, "wheelLift", "WHEEL LIFT", 80, "live", 2),
+			e(3, "hangGrind", "HANG GRIND", 900, "live", 2),
+			e(4, "jump", "JUMP", 220, "live", 2),
+			e(5, "perfectHairpin", "PERFECT HAIRPIN", 300, "live", 2),
+			hint("hint:full", 1),
+		},
+	},
+
 	-- In time.
+	hairpinHint = { script = hairpinHint },
 	nearMissPop = { script = nearMissPop },
 	grindLive = { script = grindLive },
 	hairpinBanked = { script = hairpinBanked },
