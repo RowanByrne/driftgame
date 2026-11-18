@@ -9,6 +9,7 @@ Every task in progress and the files it owns, so parallel sessions and workers n
 
 | Branch | Lane | Files owned | Since |
 |---|---|---|---|
+| `agent/steep-contour-road` | Borrow to test | `src/ReplicatedStorage/Shared/Road/SplineGen.luau` (native continuation), `Road/SplineContour*.luau` (new if needed), `Shared/Config/Range.luau`, `Shared/Config/Spline.luau`, `docs/game/features/mountain-range.md`, focused road tests | 2026-11-18, T-324, builds on T-323 |
 | `agent/seed7-mountain-drive` | Borrow to test | `src/ReplicatedStorage/Shared/Road/Seed7*.luau` (new), `Road/Range.luau`, `Road/Ground.luau`, `Road/SplineGen.luau`, `Road/SplineSequence.luau` under Shared, `Shared/Config/Road.luau`, `src/ServerScriptService/Services/RoadService.luau`, `docs/game/features/mountain-range.md`, `src/ServerScriptService/Tests/Seed7*.luau` (new, if needed) | 2026-11-18, T-323 |
 | `agent/closer-chase-zoom` | Borrow to test | `src/ReplicatedStorage/Shared/Config/Camera.luau`, `src/StarterPlayerScripts/Controllers/CarCameraController.luau` (near framing only if needed), `docs/game/features/drift-camera.md` | 2026-11-18, T-321 |
 
