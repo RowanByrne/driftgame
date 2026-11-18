@@ -46,6 +46,7 @@ local SplineTurnFit = require(script.Parent.SplineTurnFit)
 local Ground = require(script.Parent.Ground)
 local Range = require(script.Parent.Range)
 local Seed7Drive = require(script.Parent.Seed7Drive)
+local ContourRoute = require(script.Parent.SplineContourRoute)
 
 local SplineGen = {}
 SplineGen.__index = SplineGen
@@ -118,6 +119,7 @@ export type Gen = typeof(setmetatable(
 		seed: number,
 		excessClimb: number, -- rise and fall already used above the sustained approach grade
 		excessDescent: number,
+		corridor: ContourRoute.Route?,
 		sections: { Spline.Section },
 		recent: { string },
 		lastDir: number,
@@ -1218,8 +1220,6 @@ function SplineGen._followGrade(self: Gen, knots: { number }, g0: number, y0: nu
 	local seg = G.FollowSegment
 	local out: { number } = {}
 	local yA, gA, a = y0, g0, 0
-	local climb, descent = self.excessClimb, self.excessDescent
-	local cruise = math.tan(math.rad(Config.Range.ContourGrade))
 	local worst, worstFill, worstCut = 0, 0, 0
 	while a < len - 1e-6 do
 		local b = math.min(a + seg, len)
@@ -1244,11 +1244,6 @@ function SplineGen._followGrade(self: Gen, knots: { number }, g0: number, y0: nu
 		local gAhead = if i1 and iB and us[i1] > uB then (hs[i1] - hB) / (us[i1] - uB) else gA
 		gAhead = math.clamp(gAhead, -gMax, gMax)
 		local span = b - a
-		local lo, hi = -gMax, gMax
-		if not gradeLimit then
-			lo = -pitchLimit(descent, span, cruise, gMax)
-			hi = pitchLimit(climb, span, cruise, gMax)
-		end
 		local function cost(gt: number): number
 			local gB = gA + sign(gt - gA) * math.min(math.abs(gt - gA), rate * span)
 			local yB = yA + rampRise(span, gA, gB, rate)
@@ -1275,7 +1270,7 @@ function SplineGen._followGrade(self: Gen, knots: { number }, g0: number, y0: nu
 		local best, bestCost = gA, math.huge
 		local n = 32
 		for i = 0, n do
-			local gt = math.clamp(-gMax + 2 * gMax * i / n, lo, hi)
+			local gt = -gMax + 2 * gMax * i / n
 			local c = cost(gt)
 			if c < bestCost then
 				best, bestCost = gt, c
@@ -1284,7 +1279,7 @@ function SplineGen._followGrade(self: Gen, knots: { number }, g0: number, y0: nu
 		local d = 2 * gMax / n
 		local centre = best
 		for i = -8, 8 do
-			local gt = math.clamp(centre + d * i / 8, lo, hi)
+			local gt = math.clamp(centre + d * i / 8, -gMax, gMax)
 			local c = cost(gt)
 			if c < bestCost then
 				best, bestCost = gt, c
@@ -1310,10 +1305,7 @@ function SplineGen._followGrade(self: Gen, knots: { number }, g0: number, y0: nu
 				worstCut = math.max(worstCut, -e)
 			end
 		end
-		local rise = rampRise(span, gA, gB, rate)
-		yA += rise
-		climb = math.max(0, climb + rise - cruise * span)
-		descent = math.max(0, descent - rise - cruise * span)
+		yA += rampRise(span, gA, gB, rate)
 		gA, a = gB, b
 	end
 	-- and how far off h the road ends: above it (+) or below it (-) (T-242)
@@ -1360,6 +1352,15 @@ function SplineGen._slopeAim(self: Gen, slope: Slope, stretch: boolean?): (numbe
 	-- toward the pass itself; "down" below means that way on, and a leg's grade is a climb when
 	-- it is up
 	local tgt = self:_target()
+	local corridor = self.corridor
+	if stretch and corridor and corridor.ridge == tgt.k then
+		local t, v = Range.frame(r, x, z)
+		if t < corridor.endT - 400 then
+			local at, av = ContourRoute.ahead(corridor, t, v, 430)
+			local wx, wz = Range.world(r, at, av)
+			return math.atan2(x - wx, z - wz), math.rad(40), math.rad(40), 0
+		end
+	end
 	local sc = if Ground.where(f, x, z).ridge == tgt.k then -1 else 1
 	local wx, wz = tgt.x - x, tgt.z - z
 	local wl = math.max(math.sqrt(wx * wx + wz * wz), 1e-6)
@@ -1547,7 +1548,7 @@ end
 -- Survey a bend and its exit while there is still room to turn. Simulate a vertical
 -- curve on the natural ground. A short steep patch fits within the pitch allowance;
 -- a long ascent at that pitch still incurs a cost, as does a cut on BOTH shoulders.
-local function contourCost(self: Gen, knots: { number }): number
+local function contourCost(self: Gen, knots: { number }): (number, number, number)
 	local C, R = Config.Spline, Config.Range
 	local f = self.ground
 	local x, z, yaw, k0, grade, _, y = self.spline:tip()
@@ -1560,7 +1561,9 @@ local function contourCost(self: Gen, knots: { number }): number
 	local previous = Ground.h(f, x, z)
 	local climb, descent, worst, sum, n = 0, 0, 0, 0, 0
 	local usedClimb, usedDescent = self.excessClimb, self.excessDescent
+	local endX, endZ = x, z
 	walk(x, z, yaw, k0, path, step, step, function(u, px, pz)
+		if u <= knots[#knots - 1] + step * 0.5 then endX, endZ = px, pz end
 		local terrain = Ground.h(f, px, pz)
 		local lo = -pitchLimit(usedDescent, step, cruise, peakGrade)
 		local hi = pitchLimit(usedClimb, step, cruise, peakGrade)
@@ -1588,29 +1591,47 @@ local function contourCost(self: Gen, knots: { number }): number
 		n += 1
 		return true
 	end)
-	return worst + 0.3 * sum / math.max(1, n)
+	return worst + 0.3 * sum / math.max(1, n), endX, endZ
 end
 
 -- Compare actual drivable curves at the current tip. Each has to clear the old road
 -- with room for its escape, including the far leg of a switchback.
 function SplineGen._contour(self: Gen, original: Spline.Section): Spline.Section
 	local C, R = Config.Spline, Config.Range
-	local originalCost = contourCost(self, original.k)
-	if originalCost <= R.ContourTrigger then
-		return original
-	end
-	local _, _, yaw, k0, g0, b0, y0 = self.spline:tip()
+	local originalCost, originalX, originalZ = contourCost(self, original.k)
+	local x, z, yaw, k0, g0, b0, y0 = self.spline:tip()
 	local range = self.ground.range
-	local function headingCost(knots: { number }): number
+	local t, v = Range.frame(range, x, z)
+	local target = self:_target()
+	local corridor = self.corridor
+	if corridor and (corridor.ridge ~= target.k or t >= corridor.endT - 400) then
+		corridor = nil
+		self.corridor = nil
+	end
+	if not corridor and originalCost > 2 * R.ContourTrigger then
+		corridor = ContourRoute.new(self.ground, x, z, yaw, target)
+		self.corridor = corridor
+	end
+	local function headingCost(knots: { number }, endX: number, endZ: number): number
 		local endYaw = yawAfter(yaw, k0, knots)
 		local onward = -math.sin(endYaw) * range.ux - math.cos(endYaw) * range.uz
+		if corridor then
+			local et, ev = Range.frame(range, endX, endZ)
+			local at, av, miss = ContourRoute.ahead(corridor, et, ev, 350)
+			local wx, wz = Range.world(range, at, av)
+			local aim = math.atan2(endX - wx, endZ - wz)
+			return 0.48 * miss + 0.55 * math.deg(math.abs(wrap(endYaw - aim)))
+		end
 		return 50 * math.max(0, -onward) + 0.09 * math.deg(math.abs(wrap(endYaw - self.aim)))
 	end
-	local bestScore = originalCost + headingCost(original.k) - R.ContourGain
+	local bestScore = originalCost + headingCost(original.k, originalX, originalZ)
+	if bestScore <= R.ContourTrigger then return original end
+	bestScore -= R.ContourGain
 	local best: { number }?, bestK, bestRadius = nil, 0, nil
 	local function try(knots: { number }?, kt: number, radius: number?)
 		if not knots then return end
-		local score = contourCost(self, knots) + headingCost(knots)
+		local cost, endX, endZ = contourCost(self, knots)
+		local score = cost + headingCost(knots, endX, endZ)
 		if score < bestScore and self:_exitClear(knots, kt) then
 			best, bestK, bestRadius, bestScore = knots, kt, radius, score
 		end
@@ -2029,6 +2050,8 @@ function SplineGen._turn(self: Gen, item: Item): (Spline.Section | string)?
 					local sec={len=emittedLen,k=emitted,g=g,b=bank,tag=item.tag}
 					-- Avoid committing a turnaround whose run-out already heads into rock.
 					if contourCost(self, emitted) > Config.Range.ContourTrigger * 3 then
+						self.stats.hillChecked += 1
+						self.stats.hillRejected += 1
 						continue
 					end
 					if not fit then return sec end

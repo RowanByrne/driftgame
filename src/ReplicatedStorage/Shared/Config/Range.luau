@@ -133,5 +133,12 @@ return {
 	ContourGain = 4, -- minimum improvement to change a chosen bend
 	ContourTurns = { 22, 48, 80, 115, 155 }, -- degrees, either way from the incoming road
 	ContourRadii = { 85, 180, 360 }, -- studs
+	CorridorForward = 160, -- studs advanced into the range between surveyed layers
+	CorridorAcross = 200, -- studs between alternate crossings of a layer
+	CorridorColumns = 30, -- up to 4,800 studs of hillside in a survey
+	CorridorHalfWidth = 20, -- 4,000 studs to either side
+	CorridorReach = 5, -- a single traverse can go 1,000 studs across
+	CorridorBendCost = 110, -- extra driving distance assigned to a radian of turn
+	CorridorPitchCost = 27, -- distance cost per stud of rise/fall above the approach grade
 	StraightenMaxOff = 20, -- studs off h: a bend straightening the road before a hairpin goes no further (T-242)
 }
