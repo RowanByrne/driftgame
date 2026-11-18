@@ -1448,7 +1448,7 @@ end
 
 -- Is this run of road clear of everything laid, and of itself? `knots` is the candidate
 -- followed by its escape, relative to the road's current end.
-function SplineGen._clear(self: Gen, knots: { number }): boolean
+function SplineGen._clear(self: Gen, knots: { number }, limitSetback: boolean?): boolean
 	local sp = self.spline
 	local x0, z0, yaw0, k0 = sp:tip()
 	local s0 = sp.length
@@ -1459,8 +1459,15 @@ function SplineGen._clear(self: Gen, knots: { number }): boolean
 	-- `CheckStep` of s), so a section's points here are the ones it will be filed with
 	local cs = Config.Spline.CheckStep
 	local first = cs * (math.floor(s0 / cs + 1e-9) + 1) - s0
+	local high = 0
+	local range = self.ground.range
 	return walk(x0, z0, yaw0, k0, knots, cs, first, function(u, x, z)
 		local s = s0 + u
+		if limitSetback then
+			local on = (x - x0) * range.ux + (z - z0) * range.uz
+			high = math.max(high, on)
+			if high - on > Config.Range.ContourSetback then return false end
+		end
 		if sp:crowded(x, z, s, clear, sep) then
 			return false
 		end
@@ -1492,6 +1499,20 @@ local function withEscape(knots: { number }, kt: number): { number }
 	return out
 end
 
+-- Check the same exit the terrain survey sees. A turn may briefly wind back around
+-- its apex. Its exit must lead onto fresh hillside, away from earlier switchbacks.
+function SplineGen._exitClear(self: Gen, knots: { number }, kt: number): boolean
+	local exit = withEscape(knots, kt)
+	local _, _, yaw, k0 = self.spline:tip()
+	local heading = yawAfter(yaw, k0, exit)
+	local range = self.ground.range
+	if -math.sin(heading) * range.ux - math.cos(heading) * range.uz < -0.035 then
+		return false
+	end
+	exit[#exit - 1] = exit[#exit - 3] + Config.Range.ContourLook
+	return self:_clear(exit, true)
+end
+
 -- Survey a bend and its exit while there is still room to turn. Simulate a vertical
 -- curve on the natural ground. A short steep patch fits within the pitch allowance;
 -- a long ascent at that pitch still incurs a cost, as does a cut on BOTH shoulders.
@@ -1501,12 +1522,16 @@ local function contourCost(self: Gen, knots: { number }): number
 	local x, z, yaw, k0, grade, _, y = self.spline:tip()
 	local step = R.ContourSample
 	local peakGrade = math.tan(math.rad(C.MaxGrade))
-	local cruise = math.tan(math.rad(C.CruiseGrade))
+	local cruise = math.tan(math.rad(R.ContourGrade))
 	local shoulder = Config.Road.Width * 0.5 + 12
 	local path = withEscape(knots, knots[#knots])
 	path[#path - 1] = path[#path - 3] + R.ContourLook
 	local previous = Ground.h(f, x, z)
 	local climb, descent, worst, sum, n = 0, 0, 0, 0, 0
+	local history = math.min(self.spline.length, R.ContourHistory)
+	local gained = y - self.spline:heightAt(self.spline.length - history)
+	climb = math.max(0, gained - history * cruise)
+	descent = math.max(0, -gained - history * cruise)
 	walk(x, z, yaw, k0, path, step, step, function(u, px, pz)
 		local terrain = Ground.h(f, px, pz)
 		local want = math.clamp(2 * (terrain - y) / step - grade, -peakGrade, peakGrade)
@@ -1521,7 +1546,7 @@ local function contourCost(self: Gen, knots: { number }): number
 		local dx, dz = shoulder * math.cos(heading), -shoulder * math.sin(heading)
 		local both = math.min(Ground.h(f, px - dx, pz - dz), Ground.h(f, px + dx, pz + dz)) - y
 		local excavation = math.max(math.abs(terrain - y), both - 12)
-		local cost = excavation + 0.6 * math.max(0, math.max(climb, descent) - 16)
+		local cost = excavation + 0.8 * math.max(0, math.max(climb, descent) - 16)
 		-- A bend farther ahead can still steer away. Give its warning enough weight
 		-- to turn before the approach, while protecting the road being laid now.
 		local weight = 1 - 0.45 * math.clamp((u - knots[#knots - 1]) / R.ContourLook, 0, 1)
@@ -1553,7 +1578,7 @@ function SplineGen._contour(self: Gen, original: Spline.Section): Spline.Section
 	local function try(knots: { number }?, kt: number, radius: number?)
 		if not knots then return end
 		local score = contourCost(self, knots) + headingCost(knots)
-		if score < bestScore and self:_clear(withEscape(knots, kt)) then
+		if score < bestScore and self:_exitClear(knots, kt) then
 			best, bestK, bestRadius, bestScore = knots, kt, radius, score
 		end
 	end
@@ -1631,7 +1656,7 @@ function SplineGen._candidate(self: Gen): (Spline.Section?, string?, number?, nu
 	if math.abs(off) > (if sign(off) == self.upSign then self.limitUp else limit) + 1e-6 then
 		return nil, "heading"
 	end
-	if not self:_clear(withEscape(knots, kt)) then
+	if not self:_exitClear(knots, kt) then
 		return nil, "crowded"
 	end
 	local T = transition(k0, kt)
@@ -1756,7 +1781,7 @@ function SplineGen._rescue(self: Gen): Spline.Section?
 			for _, radius in R.RescueRadii do
 				local kt = dir / math.max(radius, C.MinRadius)
 				local knots = curvatureKnots(k0, kt, dir * math.rad(deg), nil)
-				if knots and self:_clear(withEscape(knots, kt)) then
+				if knots and self:_exitClear(knots, kt) then
 					local yaw = yawAfter(yaw0, k0, knots) + 0.5 * kt * transition(kt, 0)
 					local on = -math.sin(yaw) * r.ux - math.cos(yaw) * r.uz
 					local score = on - deg / 360
@@ -1833,7 +1858,7 @@ function SplineGen._follow(self: Gen, nearest: Spline.Section?, nearOff: number?
 		ext[#ext - 1] = ext[#ext - 3] + R.FollowLook
 		local gx, worst, _, _, e = self:_followGrade(ext, g0, y0)
 		cost += math.abs(e) + 0.5 * worst
-		if cost >= bestScore or not self:_clear(withEscape(knots, kt)) then
+		if cost >= bestScore or not self:_exitClear(knots, kt) then
 			return
 		end
 		-- (the grade's knots up to `len`, the last one cut there)
@@ -1949,7 +1974,7 @@ function SplineGen._turn(self: Gen, item: Item): (Spline.Section | string)?
 			if math.abs(wrap(yawEnd-to))<math.rad(3) then
 				local emitted = if fit then withEscape(knots,kt) else knots
 				local emittedLen = emitted[#emitted-1]
-				if self:_clear(withEscape(emitted,if fit then 0 else kt)) then
+				if self:_exitClear(emitted,if fit then 0 else kt) then
 					local T=transition(k0,kt)
 					local flat=self.rng:NextNumber()<C.UnbankedChance
 					local bank=pickBank(kt,radius,b0,math.min(T,len),len,flat)
@@ -2197,7 +2222,7 @@ function SplineGen.step(self: Gen): Spline.Section?
 		-- itself in (T-238): any bend that gets it clear is taken first, and the way to the
 		-- pass planned again from there
 		local rescue: Spline.Section? = nil
-		if not self:_clear(withEscape(knots, 0)) then
+		if not self:_exitClear(knots, 0) then
 			rescue = self:_rescue()
 		end
 		if rescue then
