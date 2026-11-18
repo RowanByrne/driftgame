@@ -219,7 +219,8 @@ wheel"*.
 
 - **The mouse wheel moves the camera nearer or farther** along its current offset from the car:
   distance and height scale together, so the framing keeps its shape, and the camera still looks at
-  the same point ahead of the car down to 0.6×. Below that distance, the aim moves smoothly back toward the car until it is centered at 0.4×.
+  the same point ahead of the car down to 0.6×. Below that distance the aim moves smoothly
+  back toward the car, reaching its center at 0.4×.
 - **Smooth:** each notch moves a target by `PlayerZoomStep` (×1.12, multiplied, so a notch is the same
   size of step at any distance), and the camera eases to it at `PlayerZoomRate` (10/s, about 0.3 s to
   arrive). A burst of notches eases to the sum; nothing jumps.
@@ -235,6 +236,11 @@ wheel"*.
   except over a scrolling list, which keeps its scroll. Out of the car and in the garage the wheel
   is passed through to whatever else wants it.
 - **Mouse wheel only.** Touch pinch and gamepad zoom are left out for now.
+
+T-321 measured the current car at 0.4× on the endless road. Parked, its visible parts
+occupied 25–97% of screen height. At 43 studs/s they occupied 29–90%, and in a 28° slide
+at 58 studs/s they occupied 31–89%. The road center 42 studs ahead stayed above the car
+in all three views. At 0.3× the rear bumper fell below the screen with the old aim.
 
 ## Hills
 
@@ -389,6 +395,7 @@ and the shake's four), and proved the same way that zeroing them gives that buil
 | `ShakePosition` | **(0.07, 0.07, 0) studs** | The position kick, in the camera's own axes. About a pixel; the Z is zero because a dolly along the look axis is a 0.2% scale change and nothing else |
 | `ShakeRestoreRate` | **14 /s** | How fast a kick settles back to zero: to half of itself before the next one arrives |
 | `PlayerZoomMin`, `PlayerZoomMax` | **0.4×, 1.8×** | The wheel's zoom limits, as multiples of the distance (`T-152`). 1 is the default and today's camera |
+| `PlayerZoomFullLookAhead` | **0.6×** | Below this distance the rendered aim moves back toward the car (T-321) |
 | `PlayerZoomStep` | **×1.12** | One wheel notch |
 | `PlayerZoomRate` | **10 /s** | How fast the camera eases to the zoom a notch asked for |
 | `HillLookFollow` | **1** | Share of the road's climb the look point's height is carried with (`T-156`). 0 is the old lag |

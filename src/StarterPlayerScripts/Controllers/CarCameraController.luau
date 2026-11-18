@@ -394,8 +394,8 @@ end
 --
 -- The player's own wheel, and the same design as the pan: a multiplier on the RENDERED
 -- camera's offset from the car, stored where no target reads it. Distance and height scale
--- together, so the framing keeps its shape; the look point is untouched, so the car stays
--- where it was on screen. Zoom 1 skips it entirely: the approved camera, bit for bit.
+-- together. Inside the former near stop the look point moves back toward the car.
+-- Zoom 1 skips both adjustments.
 
 -- Move the zoom's target by `notches` of the wheel: + is nearer (wheel forward), - is
 -- farther. Multiplied, so a notch is the same size of step at any distance.
