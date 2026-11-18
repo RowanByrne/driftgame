@@ -130,7 +130,7 @@ All in `Config.Score.Events`, one table per event, plus the shared ones: `Repeat
 
 ## UI
 
-The split feed (`PlayerGui.ScoreFeed`) frames the score meter. Held events show their name, live dot and accumulating points above the rank. Landing one pulls the row back and down into the word. The rank reacts and the amount travels left into the run total. Each bank reflects points the engine already awarded.
+The split feed (`PlayerGui.ScoreFeed`) frames the score meter. Event lettering, live dots and row spacing share the 1.3× enlargement of the score HUD. Held events show their name, live dot and accumulating points above the rank. Landing one pulls the row back and down into the word. The rank reacts and the amount travels left into the run total. Each bank reflects points the engine already awarded.
 
 One-offs appear below the segmented tape. Repeat events of the same kind within 1.5 seconds merge into a single counted line. A loss reads LOST with struck-through points. HAIRPIN AHEAD shows the corner’s direction and awards zero points. Event rows use native text, without background plates. Reduced Motion keeps the event states and settles the payout immediately.
 

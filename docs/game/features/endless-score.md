@@ -62,7 +62,7 @@ The score is a whole number on screen; the engine keeps it as a float.
 
 ## UI
 
-The Akina Race Tape widget (`PlayerGui.ScoreHud`) places the run total to the left of a named multiplier over the driving view. Both the rank lettering and the segmented tape fill from the score engine’s progress. Negative grace shows empty. The rank updates on gains and losses. Settled held events animate into the rank and then the running total. The widget takes no input.
+The Akina Race Tape widget (`PlayerGui.ScoreHud`) places the run total to the left of a named multiplier over the driving view. The score, rank, meter and end-of-run summary use the 1.3× presentation size selected for T-310. Both the rank lettering and the segmented tape fill from the score engine’s progress. Negative grace shows empty. The rank updates on gains and losses. Settled held events animate into the rank and then the running total. The widget takes no input.
 
 At END RUN, `RUN SCORE` and the session `BEST` or `NEW BEST` replace the widget for `SummarySeconds`. The supported layouts and Studio fixtures are in UI-INVENTORY.md.
 
