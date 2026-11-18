@@ -98,6 +98,21 @@ The live event’s dot, italic name and growing points sit above the rule. Compl
 
 `ScoreHudView.fixtures` includes the five introductory ranks, grace, maximum and summaries. `ScoreFeedView.fixtures.splitFeed` pairs with the HUD’s `splitFeed` sample to reproduce the approved still. The shared component was measured independently in Studio before the screen integration. The compact Roboto Condensed Bold Italic face fit all seven sampled labels including COMMITTED (99 of 122 px) and LOCKED IN (84 of 122 px). At 55% charge the tape measured 83.05 of 151 px and the same fraction of each word was lit.
 
+**Lane verification, T-307.** At actual simulator resolution, 21 HUD and feed fixture pairs passed at each of the six sizes below. Score and feed coverage stayed under the 15% phone target even on stress fixtures. All essential text measured at least 16 effective px at the default text preference. The explicit auxiliary RUN SCORE caption is 14 px. The checker found no clipped text, input blockers, overlapping fixed controls or off-screen rows. UI scale was 1. Insets are from the device safe area; widget coordinates are relative to the GUI inset below the Roblox top bar.
+
+| Simulator and input | Full viewport | Safe insets | Split Feed panel (x, y, width × height) | Peak score + feed coverage |
+|---|---|---|---|---|
+| HD 720, keyboard and mouse | 1280 × 720 | 0 | 215, 326, 305 × 43 | 1.8% |
+| HD 1080, keyboard and mouse | 1920 × 1080 | 0 | 430, 515, 305 × 43 | 0.8% |
+| iPad 6th gen, touch | 1024 × 768 | 0 | 135, 351, 293 × 43 | 2.2% |
+| iPhone 7 landscape, touch | 667 × 375 | 0 | 83, 195, 248 × 36 | 6.6% |
+| iPhone 13 Pro landscape, touch | 844 × 390 | 47 px at left and right | 83, 195, 248 × 36 | 4.7% |
+| iPhone 13 Pro portrait, touch | 390 × 844 | 47 px top, 34 px bottom | 83, 352, 248 × 36 | 4.7% |
+
+A fixed-size Studio harness exercised the same 21 pairs at 640 × 360, 360 × 640 and 2560 × 1080, plus 640 × 302 and 360 × 582 usable areas. These sizes had no matching simulator preset. Each passed text-fit, geometry and reserved-control checks. Short portrait uses the space across the screen for long results and adjusts the meter and feed together between the map and Garage.
+
+The lane exercised real scoring through run start, driving, END RUN and the next run. A live engine Bumper Grind and Hang Grind overlapped in flight while the run total settled once per award. A void event showed LOST with no transfer, and Reduced Motion settled a bank immediately. Ten fixture reopenings preserved one HUD and one feed; P and Settings hid both and restored them. Physical devices, non-default Roblox text preferences and performance on low-end hardware remain unverified.
+
 ### Road-ahead map
 
 A see-through square, top left of the safe area, 16 px in (`IgnoreGuiInset` false, `CoreUISafeInsets`), so it is always below Roblox's top bar and its buttons. `DisplayOrder = 12`, under the score (14) and the run button (15), over the drag pad (5). Its size is chosen from the measured screen: 220 px when the short side is 500 px or more, 140 px below that. When the screen is too narrow for it to sit beside the top centre's column (220 px wide: the run button, its line and the score), it drops below that column, to 146 px.
