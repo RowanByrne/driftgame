@@ -90,6 +90,7 @@ function ScoreController:Start()
 	self.playerGui = playerGui
 	self.view = ScoreHudView.new(playerGui)
 	self.feedView = ScoreFeedView.new(playerGui)
+	self.feedView.onLayoutShift = function(shift) self.view:setFeedShift(shift) end
 	self.feedView.onBankStart = function(points, id)
 		local total = if self.fixture or self.feedFixture then 0 else self.score.score
 		self.view:bankStart(points, id, total)

@@ -97,6 +97,9 @@ function ScoreFeedView:_layout()
 	local offset = self.offsets.ScoreFeed or Vector2.zero
 	local textSize = math.round(C.TextSize * meter.textScale)
 	local width = math.min(C.Width * meter.textScale, meter.width + 40 * meter.textScale, math.max(1, screen.X - 8))
+	self.screenSize = screen
+	local shortPortrait = screen.Y > screen.X and screen.Y < 640
+	local resultWidth = if shortPortrait then math.max(width, screen.X - 32) else width
 	self.phone = meter.compact
 	self.maxLines = if meter.compact then C.PhoneLines else C.Lines
 	self.placement = "split"
@@ -105,8 +108,9 @@ function ScoreFeedView:_layout()
 	self.rankHeight = meter.height
 	self.rankWidth = meter.width
 	self.rankCenter = meter.x + meter.width / 2 + offset.X - self.anchorX
-	if width ~= self.width or textSize ~= self.textSize then
+	if width ~= self.width or resultWidth ~= self.resultWidth or textSize ~= self.textSize then
 		self.width = width
+		self.resultWidth = resultWidth
 		self.textSize = textSize
 		self.lineHeight = math.round(C.LineHeight * meter.textScale)
 		for _, line in self.lines do
@@ -155,7 +159,8 @@ function ScoreFeedView:_fit(line)
 	local pointsWidth = math.ceil(textBounds(points, self.textSize, line.pts.Font, Enum.Font.RobotoMono).X) + 3
 	local mark = if held then 9 else 0
 	local gap = 6
-	local width = self.width
+	local width = if held then self.width else self.resultWidth
+	line.left = if width > self.width then math.min(0, self.screenSize.X - 8 - self.anchorX - width) else 0
 	local single = mark + nameWidth + gap + pointsWidth <= width
 	local rowH = self.lineHeight
 	local nameRows = 1
@@ -348,7 +353,21 @@ function ScoreFeedView:_place(snap: boolean)
 	end
 	self.origin = above - C.Gap
 	self.contentHeight = below + self.origin
-	self.root.Position = UDim2.fromOffset(self.anchorX, self.top - self.origin)
+	local top = self.top
+	local screen = self.screenSize
+	if self.phone and screen.X > 0 then
+		if screen.Y > screen.X then
+			-- Reserve the Settings entry above and Garage below. Long completed rows use
+			-- the space across a short portrait screen so the score can stay below the map.
+			local bottom = screen.Y - 184 - below - 2
+			local minimum = math.max(287, 226 + self.origin)
+			top = math.clamp(top, minimum, math.max(minimum, bottom))
+		else
+			top = math.min(top, screen.Y - below - 2)
+		end
+	end
+	if self.onLayoutShift then self.onLayoutShift(top - self.top) end
+	self.root.Position = UDim2.fromOffset(self.anchorX, top - self.origin)
 	self.root.Size = UDim2.fromOffset(self.width, self.contentHeight)
 end
 
@@ -401,7 +420,7 @@ function ScoreFeedView:step(dt: number)
 
 	for _, line in self.lines do
 		line.y += (line.targetY - line.y) * ease
-		local x = (1 - line.appear) * 7
+		local x = line.left + (1 - line.appear) * 7
 		local y = line.y
 		local alpha = line.alpha
 		if line.bankAt then

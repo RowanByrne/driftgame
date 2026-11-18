@@ -68,7 +68,7 @@ function ScoreHudView:_layout()
 	local o = self.offsets.ScorePanel or Vector2.zero
 	local lead = l.scoreWidth + l.gap
 	local width = lead + l.width
-	self.panel.Position = UDim2.fromOffset(l.x - lead + o.X, l.y + o.Y)
+	self.panel.Position = UDim2.fromOffset(l.x - lead + o.X, l.y + o.Y + (self.feedShift or 0))
 	self.panel.Size = UDim2.fromOffset(width, l.height)
 	self.rank.root.Position = UDim2.fromOffset(lead, 0)
 	self.rank:layout(l)
@@ -244,6 +244,14 @@ function ScoreHudView:hide() self.gui.Enabled = false end
 function ScoreHudView:setLayoutOffset(name, offset)
 	self.offsets[name] = offset
 	self:_layout()
+end
+
+function ScoreHudView:setFeedShift(shift)
+	if self.feedShift == shift then return end
+	self.feedShift = shift
+	local l = self.layout
+	local o = self.offsets.ScorePanel or Vector2.zero
+	self.panel.Position = UDim2.fromOffset(l.x - l.scoreWidth - l.gap + o.X, l.y + o.Y + shift)
 end
 
 function ScoreHudView:describe()
