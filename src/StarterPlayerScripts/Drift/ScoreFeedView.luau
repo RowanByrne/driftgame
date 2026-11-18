@@ -192,7 +192,7 @@ function ScoreFeedView:_fit(line)
 	local mark = if held then self.markerSpace else 0
 	local gap = self.columnGap
 	local width = if held then self.width else self.resultWidth
-	line.left = if width > self.width then
+	line.defaultLeft = if width > self.width then
 		math.clamp((self.width - width) / 2, 8 - self.anchorX, self.screenSize.X - 8 - self.anchorX - width)
 		else 0
 	local single = mark + nameWidth + gap + pointsWidth <= width
@@ -208,7 +208,6 @@ function ScoreFeedView:_fit(line)
 	local rowWidth = if single then math.max(mark + nameWidth + gap + pointsWidth, self.rankWidth - 8) else width
 	local left = if held and single then math.floor((width - mark - nameWidth - gap - pointsWidth) / 2)
 		else math.floor((width - rowWidth) / 2)
-	line.defaultLeft = line.left
 	line.inkLeft = left
 	line.inkWidth = if held and single then mark + nameWidth + gap + pointsWidth else rowWidth
 	local nameLeft = left + mark
@@ -323,10 +322,12 @@ function ScoreFeedView:push(entry)
 				if self:_reduced() then self:_impact(line) end
 			end
 		end
-		local oldHeight = line.height
+		local oldHeight, oldWidth = line.height, line.inkWidth
 		self:_fit(line)
 		self:_trim()
-		self:_place(line.height ~= oldHeight)
+		if was ~= line.state or line.height ~= oldHeight or (self.phone and line.inkWidth ~= oldWidth) then
+			self:_place(line.height ~= oldHeight)
+		end
 		return
 	end
 
@@ -351,9 +352,9 @@ function ScoreFeedView:push(entry)
 				if id ~= nil then
 					self.byId[id] = other
 				end
-				local oldHeight = other.height
+				local oldHeight, oldWidth = other.height, other.inkWidth
 				self:_fit(other)
-				if self.phone or other.height ~= oldHeight then
+				if other.height ~= oldHeight or (self.phone and other.inkWidth ~= oldWidth) then
 					self:_place(true)
 				end
 				return
@@ -467,6 +468,14 @@ function ScoreFeedView:_place(snap: boolean)
 		local placed = self:_phoneStack(top, self.lineGap)
 		if not placed then
 			for _, gap in {self.lineGap, 1 - (self.lineHeight - self.textSize)} do
+				-- A narrow slot can be only a pixel or two tall at Largest.
+				for _, box in self.reserved do
+					for _, edge in {box.Max.Y + 1, box.Min.Y - self.rankHeight - 1} do
+						if self:_phoneStack(edge, gap) then top = edge; placed = true; break end
+					end
+					if placed then break end
+				end
+				if placed then break end
 				for shift = 4, screen.Y, 4 do
 					if self:_phoneStack(top + shift, gap) then top += shift; placed = true; break end
 					if self:_phoneStack(top - shift, gap) then top -= shift; placed = true; break end
