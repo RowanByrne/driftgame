@@ -1,26 +1,21 @@
 # Split Feed score sounds
 
-**Status** — T-311 awaits approval for a lane build. On November 18, 2026 the user picked elements from both the Tape Deck and Cassette Relay auditions on T-309. The assignment below is the proposed mix.
+**Selected for lane review.** The user chose Redline Bonus on November 18, 2026. Tuned metal targets, detuned synth brass, octave bass and a short bank chord give the score its pinball and eurobeat sound.
 
-## How it sounds
+| Score display | Sound |
+|---|---|
+| One-off line appears | Short metal target hit |
+| Held line opens | Score reel and brass opening |
+| Held points climb | The next brass-and-bass hit in the original eight-step phrase |
+| Named rank rises | Short rising phrase, extended from SIDEWAYS upward |
+| Held line moves into the rank | A windup resolves onto a bank chord |
+| Bank reaches the total | A final chime answers the bank chord |
+| Named rank falls | A descending musical figure |
 
-| What the driver sees | What they hear | Audition |
-|---|---|---|
-| A one-off score line appears | One dry click | Cassette Relay |
-| The named rank rises | Two rising notes at a low tier, three brighter notes at a high tier | Tape Deck |
-| A held event starts | A short mechanical latch. The points can then count up quietly. | Cassette Relay |
-| A grind banks | The tape motor winds up as the line moves, then a spring-loaded thump lands as it hits the rank. | Tape Deck |
-| The points reach the run total | One small receipt click | Cassette Relay |
-| The named rank falls | Two falling notes | Tape Deck |
+The count follows increases in each live line's rounded point total. Overlapping events share one musical phrase, advancing at most one note per eighth-note beat at 160 BPM under continuous growth. A pause in scoring pauses the phrase. The next increase resumes it. When all holds finish, the next hold starts at the first note. Repeated values, losses, summaries and fixtures stay quiet. A cancelled hold cuts off its current note. Reduced Motion plays one immediate bank impact.
 
-The audition runs for 6.15 seconds. It uses the existing eight cues at their original times. The lane build will take its timing from the score display so the driver hears each cue when they see the event.
-
-## Implementation
-
-1. Use the original Tape Deck sheet for the two rank gains, rank drop, windup and impact. Use the Cassette Relay recipes for the event tick, opening latch and receipt. The candidate masters, source hashes, slice bounds, speeds and levels are in the project's art folder under `generated/sfx-score-tape`. Only the original Drift master needs an upload. Play the two Creator Store sources by their existing IDs, `10066942189` and `10066968815`.
-2. Drive local 2D playback from accepted feed events, named-rank changes and the existing bank animation. Track each bank through windup, impact and arrival. Limit rapid repeat ticks and give the impact priority. Opening a run initializes the rank quietly. A lost hold, a repeated snapshot or a restarted run must never sound like a payout. Reduced Motion gives an immediate bank one impact.
-3. Give Score UI its own slider in Sound settings. Match the existing default mix at 30% and mute the cues at zero. Tune the default below the engine and tyres during a sustained drift.
+Playback is local to the driver's Score UI sound group. The Settings slider defaults to 30%, and zero mutes the group. The score engine owns the points. The UI and audio follow its live feed, and an individual bank's receipt follows the displayed transfer.
 
 ## Lane review
 
-Exercise both rank gains, a rank drop, a held grind, a lost grind, repeated events and two overlapping banks. Compare cue counts with their visible events and check run totals. Try Reduced Motion, mute and an immediate restart while a bank is in flight. The driver makes the final mix decision by ear in the lane.
+Build a sustained event, pause earnings, let it grow again, then bank. Compare two overlapping holds, a lost hold, a run restart and Reduced Motion. Try Score UI at 0% and 30%. The original selected master and the exact cue regions are in the sound manifest and `Config.Fx.ScoreUI`.

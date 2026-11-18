@@ -39,6 +39,7 @@ local SOUND_ROWS = {
 	{ key = "OffRoad", label = "Off-road drift", note = "Sliding on grass, dirt and gravel." },
 	{ key = "Suspension", label = "Suspension", note = "Bumps, kerbs and landing from a jump." },
 	{ key = "Engine", label = "Engine" },
+	{ key = "ScoreUI", label = "Score UI" },
 }
 local SOUND_STEP = 10
 
