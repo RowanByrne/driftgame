@@ -150,7 +150,7 @@ local Spline = {
 		-- A CARVED APEX (T-182): on some sharp bends whose inside is the rock face and whose
 		-- outside is the cliff, the inside grass narrows to almost nothing at the apex, so the
 		-- rock rises right at the tarmac's edge, as if the road were cut into the cliff
-		CarvedChance = 1, -- of the bends that could have one (about 1.1 per 10 000 studs, measured)
+		CarvedChance = 1, -- of the bends that could have one (about 1.7 per 10 000 studs, measured T-308)
 		CarvedMaxRadius = 220, -- studs: hairpins, tight bends and the tightest medium ones
 		CarvedGap = 1, -- studs of grass left between the tarmac and the rock at the apex
 		CarvedHold = { 20, 50 }, -- studs the rock stays that close, round the apex
@@ -159,6 +159,10 @@ local Spline = {
 		-- steepest is 1.5 times it). Steeper than the runoff's own 0.25, or a bend is too
 		-- short to fit one; the car's wall leans with it, so it grinds rather than snags
 		CarvedRate = 0.4,
+		-- WHICH SIDE (T-308): only where the ground beside the road RISES at least this much,
+		-- read as the K-rails read the drop (`KRailProbe` studs past the carved edge), all
+		-- along the carve. Never where it falls, never on a rail's side
+		CarvedRise = 8, -- studs
 		-- THE EDGES ARE THE DRAWN GROUND (T-258, T-261, features/car-edges.md): no rock face,
 		-- hedge or cliff is chosen per side any more. Only a road with NO mountain (a test's
 		-- hand-made road, the collision tests' yardstick) is walled at its runoff's outer edge,

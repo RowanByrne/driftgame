@@ -100,10 +100,10 @@ A mountain road has the mountain on one side and the drop on the other, so the g
 **which side is uphill** and keeps it for a long stretch:
 
 - **Uphill side:** always rock face (T-189). **Since T-261 only the side is kept** (`Spline:uphillAt`,
-  the section's `up` spans): nothing is chosen at the edge, and tight edges and carved
-  apexes are still placed by it, so they did not move. K-rails were too, until T-306 measured
-  that the side it calls downhill is the rising one about half the time; they are placed by the
-  ground itself now.
+  the section's `up` spans): nothing is chosen at the edge. K-rails, tight edges and carved
+  apexes were placed by it until T-306 measured that the side it calls downhill is the rising
+  one about half the time; they are placed by the ground itself now (K-rails and tight edges
+  T-306, carved apexes T-308). The tight edge still tries the side it calls downhill first.
 - **Downhill side:** always cliff drop (T-189); the drawn ground since T-261.
 - **No hedges as a road edge** (the user, 2026-11-13, T-189: "ditch the hedge concept as a road
   barrier. hedges going forward will just be decoration and we will bring them back later").
@@ -191,22 +191,31 @@ road, like at an apex of a sharp turn on, which would be paired with a clifside,
 the road was carved into a cliff."*
 
 - **Where:** a bend of radius 220 studs or less (hairpins, tight bends, the tightest medium ones)
-  whose inside is the rock face all along and whose outside is the cliff at the apex. Every such
-  bend that has room for the easing gets one (`CarvedChance` 1). Turnaround hairpins never do:
-  they turn through the downhill side, so their inside is the drop.
+  whose inside is RISING ground all along the carve. Every such bend that has room for the
+  easing gets one (`CarvedChance` 1). A turnaround hairpin usually turns through the drop, so
+  its inside falls and it gets none.
+- **Which side, from the ground (T-308):** the user queued it after T-306 found the side the
+  fall line calls the mountain's is the falling one about half the time. The inside must rise
+  at least `CarvedRise` (8) studs, read as the K-rails read the drop (`SplineGen.dropBeside`,
+  40 studs past the carved edge), at every point from the start of the easing in to the end of
+  the easing out; never on a side that falls away, and never where a K-rail stands on that side.
+  Before (`up` spans), over seeds 31337, 101 and 2024, 30 000 studs each: 4 apexes, 1 of them
+  on ground that falls (5 studs at its worst). After: 15 apexes (3, 1 and 11), all 15 on rising
+  ground (at least 14 studs up), none on a railed side. The curve, runoff, groves and rails are
+  the same to the bit (the same random draws; road points and rail runs compared seed by seed).
 - **What:** the inside runoff narrows to `CarvedGap` (1 stud) at the apex, the middle of the
   bend's held arc, holds there 20 to 50 studs, then widens again, all inside the section. The
   apex moves later in the bend (toward the exit) when the easing needs the room.
 - **Eased:** smoothstep knots, no faster than `CarvedRate` (0.4 studs per stud on average, so
   the wall leans in at 31 degrees at the steepest; the runoff's own rule is 0.25, which fits a
   carve in too few bends to notice). The car's wall carries that lean, so it grinds.
-- **Only the runoff knots change** (`rl`/`rr`, no new section data), only on the rock side,
+- **Only the runoff knots change** (`rl`/`rr`, no new section data), only on the rising side,
   chosen by the server from a random stream of their own, and the section still ends at the
   width it was given, so with `CarvedChance` 0 the rest of the road is identical (measured: no
-  other field differs over 890 sections). Never on a grove's side (T-183); a tight cliff edge
-  (T-181) is on the other side, and the two share a bend now and then (3 of 22). No new parts
+  other field differs over 890 sections). Never on a grove's side (T-183) nor a tight cliff
+  edge's (T-181, which needs the ground to fall); the two can share a bend, one each side. No new parts
   or triangles.
-- **Measured (DR-Lane4):** about 1.1 carved apexes per 10 000 studs since the merge with groves
+- **Measured (DR-Lane4), before T-308:** about 1.1 carved apexes per 10 000 studs since the merge with groves
   and tight edges (10 seeds of 20 000 studs; 1.7 to 1.9 before, when a carve could also lower
   the width its section ended at); rock to tarmac at the apex 1.00 stud. A scripted drive held the inside line through
   each of seed 31337's 5 apexes at 40 and 70 studs/s, with the car's centre 1 and 3 studs off the

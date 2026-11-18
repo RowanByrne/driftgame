@@ -14,6 +14,7 @@
 --    round wherever the ground falls.
 -- 3. HAIRPINS (`Road/Hairpins`, 120 degrees within 250 studs) with a big drop either side
 --    (`KRailHairpinDrop`): railed through the bend on that side wherever the ground falls.
+-- 5. CARVED APEXES (T-308): only where the ground rises beside the bend, never on a railed side.
 -- 4. Runs: none shorter than `KRailMinRun`, a rail carried across a section's end is one run,
 --    none on a grove's side; the same rails from the same seed, and in a client's replay.
 --
@@ -78,6 +79,10 @@ local function measure(seed: number, length: number, log: { string })
 		shortRuns = 0,
 		abutting = 0,
 		onGrove = 0,
+		apexes = 0,
+		apexRising = 0,
+		apexRailed = 0,
+		apexWorst = -math.huge, -- the most the ground falls (negative: the least it rises) at any apex point
 	}
 	-- 1. every rail point: on falling ground, drawn and by the generator's measure
 	local railed = { [-1] = {}, [1] = {} }
@@ -176,6 +181,33 @@ local function measure(seed: number, length: number, log: { string })
 			end
 		end
 	end
+	-- 5. CARVED APEXES (T-182, T-308): every stretch where a side's runoff is down to
+	-- `CarvedGap`, the ground rising beside it all along, and no rail on that side
+	for _, side in { -1, 1 } do
+		local inA, a = false, 0
+		for u = 0, sp.length, 2 do
+			local carved = sp:runoffRaw(u, side) <= T.CarvedGap + 1e-6
+			if carved and not inA then
+				inA, a = true, u
+			elseif not carved and inA then
+				inA = false
+				r.apexes += 1
+				local worst, rail = -math.huge, false
+				for v = a, u - 2, 2 do
+					local d = dropAt(sp, f, v, side)
+					worst = math.max(worst, if d == -math.huge then math.huge else d)
+					rail = rail or sp:kRailAt(v, side) ~= nil
+				end
+				r.apexWorst = math.max(r.apexWorst, worst)
+				if worst <= -(T.CarvedRise - MARGIN) then
+					r.apexRising += 1
+				end
+				if rail then
+					r.apexRailed += 1
+				end
+			end
+		end
+	end
 	-- 4. the runs
 	for _, side in { -1, 1 } do
 		local runs = sp:kRailsIn(0, sp.length, side)
@@ -222,7 +254,7 @@ local function measure(seed: number, length: number, log: { string })
 		`seed {seed}: {math.floor(sp.length)} studs, {#runs} runs, {math.floor(r.railLen)} studs of rail ({fmt(r.railLen / sp.length * 100, 1)}% of the road's length), runs {fmt(runs[1] or 0, 0)} / {fmt(runs[(#runs + 1) // 2] or 0, 0)} / {fmt(r.railLen / math.max(#runs, 1), 0)} / {fmt(runs[#runs] or 0, 0)} studs (shortest, median, mean, longest); `
 			.. `on falling drawn ground {r.drawnFalls} of {r.railPoints} points (least {fmt(r.drawnWorst, 1)} studs below the edge); `
 			.. `steep corners {r.cornerCovered} of {r.corners} railed 90%+ (mean {fmt(r.cornerCovSum / math.max(r.corners, 1) * 100, 0)}%); `
-			.. `hairpins {r.hairpins}, big-drop sides railed {r.hairpinRailed} of {r.hairpinSides}{if #r.hairpinMissed > 0 then " (missed " .. table.concat(r.hairpinMissed, ", ") .. ")" else ""}; tight edges {gen.stats.tight}`
+			.. `hairpins {r.hairpins}, big-drop sides railed {r.hairpinRailed} of {r.hairpinSides}{if #r.hairpinMissed > 0 then " (missed " .. table.concat(r.hairpinMissed, ", ") .. ")" else ""}; tight edges {gen.stats.tight}; carved apexes {r.apexes}, on rising ground {r.apexRising}, on a railed side {r.apexRailed}`
 	)
 	return r
 end
@@ -271,6 +303,16 @@ function SplineGenTests.run(opts: { seeds: { number }?, length: number? }?)
 	local short, abut, grove, differ = sum("shortRuns"), sum("abutting"), sum("onGrove"), sum("differ")
 	check("no run shorter than KRailMinRun, none abutting another", short == 0 and abut == 0, `{short} short, {abut} abutting`)
 	check("no K-rail on a grove's side", grove == 0, `{grove} rail points on a grove`)
+	local apexes, apexRising, apexRailed = sum("apexes"), sum("apexRising"), sum("apexRailed")
+	local apexWorst = -math.huge
+	for _, r in all do
+		apexWorst = math.max(apexWorst, r.apexWorst)
+	end
+	check(
+		"carved apexes only where the ground rises, never on a railed side",
+		apexes > 0 and apexRising == apexes and apexRailed == 0,
+		`{apexes} apexes: {apexRising} with the ground rising {Config.Spline.Terrain.CarvedRise}+ studs all along (least rise {fmt(-apexWorst, 1)}), {apexRailed} on a railed side`
+	)
 	check("the same rails from the same seed and in a client's replay", differ == 0, `{differ} points differ`)
 	local passed = true
 	for _, c in checks do
