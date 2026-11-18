@@ -29,11 +29,12 @@ function Tape.format(n)
 	return (grouped:gsub("^,", ""))
 end
 
-function Tape.layout(size)
+function Tape.layout(size, preferredTextSize)
 	local w, h = size.X, size.Y
 	local compact = math.min(w, h) < 500
 	local portrait = h > w
-	local preference = ({Large = 1.12, Larger = 1.22, Largest = 1.32})[GuiService.PreferredTextSize.Name] or 1
+	local textSetting = preferredTextSize or GuiService.PreferredTextSize
+	local preference = ({Large = 1.12, Larger = 1.22, Largest = 1.32})[textSetting.Name] or 1
 	local scale = displayScale * preference
 	local baseWidth = if compact then 151 else math.clamp(w * .152, 166, 178)
 	local baseScore = if compact then 90 else 116
