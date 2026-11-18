@@ -1,14 +1,15 @@
 # Split Feed score sounds
 
-**Status** — Third audition, November 18, 2026. After trying the electronic shutter mix, the user asked for "more arcade-y ness, and sounds for the accumulation of sustained events too". The three samples on T-312 play the same opening, nine progress pulses, a pause in accumulation, bank, receipt and rank changes.
+**Status** — Pinball bonus audition, November 18, 2026. The user passed on Bit Counter, Chip Sprint and Vector Rush and asked for a retro pinball feel with the musical drive of 1990s eurobeat in the score cues.
 
-## Arcade sound selection
+## Pinball bonus auditions
 
-| Audition | What distinguishes it |
-|---|---|
-| Bit Counter | Crunchy twin ticks from a clocked noise register, with a fast ratchet at the bank |
-| Chip Sprint | Bright pulse-wave arpeggios, a two-note count and a chord at the bank |
-| Vector Rush | Metallic FM chirps during the count and a rising laser sweep into the bank |
+| Audition | During a hold | When it banks |
+|---|---|---|
+| Bonus Bells | A score-wheel clack and a tuned metal target on each increment | A bright pair of chimes over a short synth-brass cadence |
+| Redline Bonus | Metal targets strike a syncopated synth-brass figure with an answering octave bass | A bank chord, octave leap and final resolving chime |
+
+Both clips use the same 160 BPM review sequence. Score growth advances a twelve-hit count with a pause. Each hit is individually playable so the count can follow actual earnings and stop when the event stops. The phrases are original compositions for Drift.
 
 While a held line is live, growth in its displayed points can sound a short progress pulse. A pause in earning points pauses the sound. Concurrent holds share a cadence limit. A settlement stops the count immediately, and a lost hold ends quietly. Score UI volume and mute cover the pulses. The approved 1.3× display and the score calculation stay as they are.
 
