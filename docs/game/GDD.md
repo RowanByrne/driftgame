@@ -37,6 +37,7 @@ Drift is a car game about clean drifts. The player slides a low-poly car through
 | Settings menu | Smoked-glass settings with steering mode, sensitivity and interface guidance. **Built and approved; feature closed** (`T-201`) | `features/settings-menu.md` |
 | Road biomes | Linked steep-cliff, smaller-cliff and field stretches, with gentler terrain most of the time and matching ground, bends and rails. **Built, then rolled back on 2026-11-15; not in the game** (`T-203`, `DECISIONS.md`) | `features/road-biomes.md` |
 | Ground-first mountain trial | One mountain the road is cut into, built two ways (our own mesh, Roblox Terrain) on the same stretch for the user to drive and pick. **Specced; awaiting plan approval** | `features/ground-trial.md` |
+| Split Feed score sounds | Tape Deck rank tones and bank sounds with Cassette Relay clicks for individual events. **Proposed for lane review.** | [Split Feed score sounds](features/split-feed-audio.md) |
 
 ## Progression
 
