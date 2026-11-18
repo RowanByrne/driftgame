@@ -53,7 +53,9 @@ function ScoreSound:_play(name, bank)
 		if now < self.nextTick then return end
 		self.nextTick = now + Config.TickInterval
 	elseif name == "bankImpact" then
-		self.voices.Hover[1].sound:Stop()
+		for _, tick in self.voices[Config.Cues.event.Source] do
+			if tick.cue == "event" then tick.sound:Stop() end
+		end
 		self.nextTick = now + Config.TickInterval
 	end
 	local sound = chosen.sound
@@ -100,7 +102,7 @@ end
 
 function ScoreSound:cancel(line)
 	self.banks[line] = nil
-	for _, voice in self.voices.Tape do
+	for _, voice in self.voices[Config.Cues.windup.Source] do
 		if voice.bank == line and voice.cue == "windup" then
 			voice.sound:Stop()
 			voice.bank = nil

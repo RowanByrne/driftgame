@@ -5,20 +5,25 @@ On November 18, 2026 the user selected "elements of tape deck and cassette relay
 | Source | Owner and rights | Asset ID | SHA-256 |
 |---|---|---|---|
 | `tape-deck-cues.wav`, original 48 kHz stereo 24-bit PCM | Authored for Drift with seeded filtered noise, damped resonators and oscillators. No recordings, third-party material or credit requirement. Uploaded unchanged as private Audio "Drift Score Tape Deck" on 2026-11-18 under Byrned_FPS (3383554889). Roblox moderation approved. | 108094209509984 | `13addb3a6351a6f5ac5c4dcb0b77e756ad5c1c4f7dcbd76c4e6e1b1c340fcf80` |
-| RBLX UI Hover 03 (SFX) | Roblox, creator 1. Free Creator Store audio for use on Roblox, played by ID. | 10066942189 | `7e6ee5b3ab780003e7622322ddb8692c0255bd1790c37a7c9abf05543c88e63e` |
-| RBLX UI Select 02 (SFX) | Roblox, creator 1. Free Creator Store audio for use on Roblox, played by ID. | 10066968815 | `9df31797533aff16e1122d1ea68170937c8bec7c585c93fb05b14dc661fd8fe1` |
+| RBLX UI Camera (SFX) | Roblox, creator 1. Free Creator Store audio for use on Roblox, played by ID. | 10066921516 | `f1dceeac4bf1170d1d5d57a7c4837805655ee36e54a96904c0a399379dbcba36` |
+| RBLX UI Back (SFX) | Roblox, creator 1. Same license. | 10066914500 | `6a2089070e64e754d444bc71a01f99ea6a0b9f345960349a651d51177a177b2d` |
+| RBLX UI Delete (SFX) | Roblox, creator 1. Same license. | 10066926605 | `b21556bd5641d1f8931e6093a5087fdd6492434ed5f2bc37ea318f3bc954d1d0` |
 
-The two Store sounds use the Cassette Relay audition's common gain of 1.9345988. Tape Deck's common audition gain is baked into the master. The game applies a score mix gain of 0.24 before the player's Score UI slider.
+After the first lane audition the user asked for "no plop ploop sounds - the techno y stuff was what i liked". In the new lane mix, the digital shutter, sweep and switch come from the Cassette Relay audition and the tape motor comes from Tape Deck. The first mix's Hover 03 and Select 02 cues, damped sine notes and spring thump were removed.
+
+The Store sounds use Cassette Relay's common audition gain of 1.9345988. The Tape Deck motor has its audition gain baked in. The score mix gain is 0.24 at the default 30% slider position.
 
 | Cue | Source | Region in seconds | Speed | Cue gain |
 |---|---|---|---:|---:|
-| Event | Hover | 0-0.055 | 0.90 | 0.75 |
-| Hold opens | Select | 0-0.16 | 0.85 | 1.05 |
-| Score receipt | Select | 0-0.15 | 1.17 | 1 |
-| Low rank gain | Tape Deck | 0.71-1.01 | 1 | 1 |
-| High rank gain | Tape Deck | 1.36-1.66 | 1 | 1 |
-| Bank windup | Tape Deck | 2.66-3.045 | 1 | 1 |
-| Bank impact | Tape Deck | 3.31-3.57 | 1 | 1 |
-| Rank drop | Tape Deck | 4.61-4.87 | 1 | 1 |
+| event | Shutter | 0.145 to 0.175 | 1 | 1 |
+| hold_open | Sweep | 0.025 to 0.141 | 1 | 1.3 |
+| score_receipt | Shutter | 0.195 to 0.235 | 1.17 | 0.85 |
+| rankLow | Shutter | 0 to 0.12 | 0.98 | 0.7 |
+| rankHigh | Shutter | 0 to 0.28 | 1.12 | 0.83 |
+| rankDrop | Sweep | 0.112 to 0.32 | 0.9 | 1.3 |
+| windup | Tape | 2.66 to 3.045 | 1 | 1 |
+| bankImpact | Switch | 0.137 to 0.315 | 0.94 | 3.15 |
+
+Shutter uses Camera, Sweep uses Back, and Switch uses Delete.
 
 The experience-specific grant remains pending identification of the published Drift universe. The project currently uses local Studio places. [Roblox audio permissions and usage](https://create.roblox.com/docs/audio/assets)
