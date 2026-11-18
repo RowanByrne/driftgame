@@ -529,6 +529,13 @@ function Engine._show(self: any, h: any, now: boolean)
 	else
 		entry.state = "void"
 		entry.points = lost
+		for _, m in g.members do
+			if m.entry.speed then
+				entry.speed = m.entry.speed
+				entry.speedFactor = m.entry.speedFactor
+				break
+			end
+		end
 	end
 	self:_emit(entry)
 end
