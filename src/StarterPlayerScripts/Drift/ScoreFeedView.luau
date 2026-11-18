@@ -8,6 +8,7 @@
 -- `ScoreFeedView.fixtures` hands it samples for measuring.
 --
 --   push({ id, kind, label, points, state = "live" | "banked" | "void", rung })
+--   push({ id, kind, notice = "hairpinAhead", dir = 1 | -1 })  -- a notice: no points
 --   setData({ entries = { entry, ... }, hold = true? })  -- a still picture, for fixtures
 --   step(dt)  ;  clear()  ;  describe()
 --
@@ -27,6 +28,10 @@
 --     an orange underline pulses while it holds. `banked`: the plate flashes white once and
 --     a copy of the points glides up toward the score. `void`: red, `LOST`, points struck
 --     through. Either stays `FinishedHold`, then fades. A live line is never pushed out.
+--   * A NOTICE (`entry.notice`, T-304: "HAIRPIN AHEAD"): a heads-up, not a score. The same
+--     plate with an orange outline, its name, and where the points would be the way it turns
+--     (LEFT / RIGHT); no points, no underline, never merged. Stays `NoticeHold`, fades. It
+--     counts as a finished line, so it never pushes a live line out.
 --   * At most `Lines` lines (`PhoneLines` on a phone): past that the oldest finished line
 --     fades out at once.
 --   * Reduced Motion (`GuiService.ReducedMotionEnabled`): no slide, no flash, no glide, no
@@ -84,6 +89,8 @@ local C = {
 	SlideTime = 0.16, -- s, a new line sliding in, the others moving down
 	SlideIn = 24, -- px a new line slides in from the right
 	OneOffHold = 2.5, -- s a one-off line stays before fading
+	NoticeHold = 2.0, -- s a notice ("HAIRPIN AHEAD") stays before fading
+	NoticeStroke = 2, -- px, the notice's orange outline
 	FinishedHold = 2.0, -- s a banked or lost sustained line stays
 	Fade = 0.4, -- s
 	MergeWindow = 1.5, -- s: the same one-off kind within this merges into its line
@@ -111,6 +118,12 @@ local TEXT = {
 	Points = "+{points}",
 	Lost = "LOST <s>+{points}</s>",
 	LostPlain = "LOST +{points}", -- the same, measured without its tags
+	-- notices: whole words, each its own string
+	Notices = {
+		hairpinAhead = "HAIRPIN AHEAD",
+	},
+	Left = "LEFT",
+	Right = "RIGHT",
 }
 
 local FONT = Enum.Font.GothamBold
@@ -275,6 +288,9 @@ function ScoreFeedView:_nameText(line): string
 end
 
 function ScoreFeedView:_pointsText(line, value: number, plain: boolean?): string
+	if line.notice then
+		return if line.dir == nil then "" elseif line.dir > 0 then TEXT.Left else TEXT.Right
+	end
 	local p = ScoreFeedView.format(value)
 	if line.state == "void" then
 		return fill(if plain then TEXT.LostPlain else TEXT.Lost, { points = p })
@@ -362,15 +378,30 @@ function ScoreFeedView:_newLine(entry)
 	ghost.ZIndex = 3
 	ghost.Visible = false
 
-	local sustained = entry.state == "live"
+	local notice = entry.notice
+	local stroke = new("UIStroke", {
+		Name = "Notice",
+		Color = C.Accent,
+		Thickness = C.NoticeStroke,
+		ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+		Transparency = 1,
+		Enabled = notice ~= nil,
+	}, frame)
+	if notice then
+		pts.AutoLocalize = true -- a word, not a number
+	end
+	local sustained = entry.state == "live" and not notice
 	local line = {
 		serial = self.serial,
 		kind = entry.kind,
-		label = tostring(entry.label or entry.kind or "?"),
+		label = if notice then (TEXT.Notices[notice] or tostring(notice)) else tostring(entry.label or entry.kind or "?"),
+		notice = notice,
+		dir = entry.dir,
+		stroke = stroke,
 		count = 1,
 		points = entry.points or 0,
 		shown = if sustained then 0 else (entry.points or 0),
-		state = entry.state or "banked",
+		state = if notice then "banked" else (entry.state or "banked"),
 		rung = entry.rung,
 		ids = { entry.id },
 		sustained = sustained,
@@ -395,6 +426,9 @@ function ScoreFeedView:_newLine(entry)
 end
 
 function ScoreFeedView:_finishedHold(line): number
+	if line.notice then
+		return C.NoticeHold
+	end
 	return if line.sustained then C.FinishedHold else C.OneOffHold
 end
 
@@ -446,6 +480,9 @@ function ScoreFeedView:push(entry)
 	end
 	local id = entry.id
 	local line = id ~= nil and self.byId[id] or nil
+	if line and line.notice then
+		return -- a notice is shown once, as it came
+	end
 	if line then
 		local was = line.state
 		-- its words may change: a jump's "BIG AIR", a bend line upgraded as it banks (T-299)
@@ -470,10 +507,12 @@ function ScoreFeedView:push(entry)
 	end
 
 	-- A one-off of a kind already on screen as a one-off, recently: merge into its line.
-	if entry.state ~= "live" then
+	-- A notice never merges.
+	if entry.state ~= "live" and not entry.notice then
 		for _, other in self.lines do
 			if
 				not other.sustained
+				and not other.notice
 				and not other.fadeFrom
 				and other.kind == entry.kind
 				and other.state == entry.state
@@ -601,6 +640,9 @@ function ScoreFeedView:step(dt: number)
 			l.TextTransparency = 1 - a
 			l.TextStrokeTransparency = 1 - (1 - C.StrokeTransparency) * a
 		end
+		if line.notice then
+			line.stroke.Transparency = 1 - a
+		end
 
 		-- the underline: pulsing while it holds
 		local live = line.state == "live"
@@ -687,6 +729,9 @@ function ScoreFeedView:describe()
 	for i, line in self.lines do
 		lines[i] = {
 			kind = line.kind,
+			notice = line.notice,
+			dir = line.dir,
+			outline = line.stroke.Enabled,
 			state = line.state,
 			count = line.count,
 			sustained = line.sustained,
