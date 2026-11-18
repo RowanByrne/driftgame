@@ -95,8 +95,11 @@ function ScoreFeedView:_layout()
 	local screen = self.gui.AbsoluteSize
 	local meter = Tape.layout(screen)
 	local offset = self.offsets.ScoreFeed or Vector2.zero
-	local textSize = math.round(C.TextSize * meter.textScale)
-	local width = math.min(C.Width * meter.textScale, meter.width + 40 * meter.textScale, math.max(1, screen.X - 8))
+	local scale = meter.feedScale
+	local textSize = math.round(C.TextSize * scale)
+	self.rankGap = math.round(C.RankGap * scale)
+	self.lineGap = math.round(C.Gap * scale)
+	local width = math.min(C.Width * scale, meter.width + 40 * scale, math.max(1, screen.X - 8))
 	self.screenSize = screen
 	local shortPortrait = screen.Y > screen.X and screen.Y < 640
 	local resultWidth = if shortPortrait then math.max(width, screen.X - 32) else width
@@ -112,7 +115,10 @@ function ScoreFeedView:_layout()
 		self.width = width
 		self.resultWidth = resultWidth
 		self.textSize = textSize
-		self.lineHeight = math.round(C.LineHeight * meter.textScale)
+		self.lineHeight = math.round(C.LineHeight * scale)
+		self.markerSize = math.round(4 * scale)
+		self.markerSpace = math.round(9 * scale)
+		self.columnGap = math.round(6 * scale)
 		for _, line in self.lines do
 			self:_fit(line)
 		end
@@ -157,8 +163,8 @@ function ScoreFeedView:_fit(line)
 	line.name.Text = name
 	local nameWidth = math.ceil(textBounds(name, self.textSize, line.name.Font, Enum.Font.RobotoCondensed).X) + 5
 	local pointsWidth = math.ceil(textBounds(points, self.textSize, line.pts.Font, Enum.Font.RobotoMono).X) + 3
-	local mark = if held then 9 else 0
-	local gap = 6
+	local mark = if held then self.markerSpace else 0
+	local gap = self.columnGap
 	local width = if held then self.width else self.resultWidth
 	line.left = if width > self.width then math.min(0, self.screenSize.X - 8 - self.anchorX - width) else 0
 	local single = mark + nameWidth + gap + pointsWidth <= width
@@ -181,7 +187,8 @@ function ScoreFeedView:_fit(line)
 	line.name.Size = UDim2.fromOffset(if single then pointsLeft - nameLeft - gap else width - nameLeft, nameRows * rowH)
 	line.pts.Position = UDim2.fromOffset(pointsLeft, if single then 0 else nameRows * rowH)
 	line.pts.Size = UDim2.fromOffset(if single then pointsWidth else width, rowH)
-	line.marker.Position = UDim2.fromOffset(left, math.floor((rowH - 4) / 2))
+	line.marker.Size = UDim2.fromOffset(self.markerSize, self.markerSize)
+	line.marker.Position = UDim2.fromOffset(left, math.floor((rowH - self.markerSize) / 2))
 	line.frame:SetAttribute("State", if line.notice then "Notice" else line.state)
 end
 
@@ -336,22 +343,22 @@ end
 -- never changes the destination of a flying bank. Keep the root around both
 -- groups for Studio's whole-widget layout drag.
 function ScoreFeedView:_place(snap: boolean)
-	local above = C.RankGap
-	local below = self.rankHeight + C.RankGap
+	local above = self.rankGap
+	local below = self.rankHeight + self.rankGap
 	for _, line in self.lines do
 		if line.state == "live" or line.bankAt then
 			above += line.height
 			line.targetY = -above
-			above += C.Gap
+			above += self.lineGap
 			line.zone = "above"
 		else
 			line.targetY = below
-			below += line.height + C.Gap
+			below += line.height + self.lineGap
 			line.zone = "below"
 		end
 		if snap or line.y == nil then line.y = line.targetY end
 	end
-	self.origin = above - C.Gap
+	self.origin = above - self.lineGap
 	self.contentHeight = below + self.origin
 	local top = self.top
 	local screen = self.screenSize

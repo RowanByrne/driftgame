@@ -79,6 +79,8 @@ function ScoreHudView:_layout()
 	self.score.TextSize = l.numberSize
 	self.divider.Position = UDim2.fromOffset(l.scoreWidth, 3)
 	self.divider.Size = UDim2.fromOffset(1, l.height - 6)
+	self.runLine.TextSize = math.round(20 * l.textScale)
+	self.bestLine.TextSize = math.round(17 * l.textScale)
 	self.runLine.Size = UDim2.fromOffset(width, math.ceil(l.height * .55))
 	self.bestLine.Position = UDim2.fromOffset(0, math.ceil(l.height * .55))
 	self.bestLine.Size = UDim2.fromOffset(width, math.ceil(l.height * .5))
@@ -172,10 +174,10 @@ function ScoreHudView:absorb(points, id)
 	local deferred = self:bankCancel(id)
 	if self:_reduced() then return end
 	self.pulse = {age = 0, strength = .52 + Tape.tier(self.rung).force * .48, bank = true}
-	local label = Tape.text("BankTransfer", self.panel, Style.numberFont, Tape.tier(self.rung).accent, 16, 6)
+	local label = Tape.text("BankTransfer", self.panel, Style.numberFont, Tape.tier(self.rung).accent, math.round(16 * self.layout.textScale), 6)
 	label.AnchorPoint = Vector2.new(.5,.5)
 	label.TextXAlignment = Enum.TextXAlignment.Center
-	label.Size = UDim2.fromOffset(self.layout.scoreWidth + 16, 22)
+	label.Size = UDim2.fromOffset(self.layout.scoreWidth + math.round(16 * self.layout.textScale), math.round(22 * self.layout.textScale))
 	label.Text = "+" .. Tape.format(points)
 	table.insert(self.transfers, {id = id, age = 0, deferred = deferred, remaining = deferred, label = label})
 end
