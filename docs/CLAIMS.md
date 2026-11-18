@@ -9,6 +9,7 @@ Every task in progress and the files it owns, so parallel sessions and workers n
 
 | Branch | Lane | Files owned | Since |
 |---|---|---|---|
+| `agent/guardrails` (T-306) | borrowed | `src/ReplicatedStorage/Shared/Road/SplineGen.luau` (the K-rail placement only), `Shared/Config/Spline.luau` (the `KRail*` numbers only), `src/ServerScriptService/Tests/SplineGenTests.luau`, `docs/game/features/mountain-road.md` | 2026-11-17 |
 
 ## Notes between sessions
 
