@@ -39,6 +39,7 @@ local DriftFolder = script.Parent.Parent:WaitForChild("Drift")
 local Score = require(DriftFolder.Score)
 local ScoreHudView = require(DriftFolder.ScoreHudView)
 local ScoreFeedView = require(DriftFolder.ScoreFeedView)
+local ScoreSound = require(DriftFolder.ScoreSound)
 local HairpinHint = require(DriftFolder.HairpinHint)
 
 local DriftController = require(script.Parent.DriftController)
@@ -90,17 +91,29 @@ function ScoreController:Start()
 	self.playerGui = playerGui
 	self.view = ScoreHudView.new(playerGui)
 	self.feedView = ScoreFeedView.new(playerGui)
+	self.sound = ScoreSound.new()
 	self.feedView.onLayoutShift = function(shift) self.view:setFeedShift(shift) end
 	self.feedView.onBankStart = function(points, id)
 		local total = if self.fixture or self.feedFixture then 0 else self.score.score
 		self.view:bankStart(points, id, total)
+		if points > 0 and self:_soundLive() then self.sound:bankStart(id, self.view:_reduced()) end
 	end
-	self.feedView.onAbsorb = function(points, id) self.view:absorb(points, id) end
-	self.feedView.onBankCancel = function(_, id) self.view:bankCancel(id) end
+	self.feedView.onAbsorb = function(points, id)
+		self.view:absorb(points, id)
+		if self:_soundLive() then self.sound:impact(id, self.view:_reduced()) else self.sound:cancel(id) end
+	end
+	self.feedView.onBankCancel = function(_, id)
+		self.view:bankCancel(id)
+		self.sound:cancel(id)
+	end
+	self.view.onBankArrival = function(id)
+		if self:_soundLive() then self.sound:arrive(id) else self.sound:cancel(id) end
+	end
 	self.feedEntries = 0 -- entries heard from the engine this session
 	RunService.RenderStepped:Connect(function(dt)
 		local snapshot = self.fixture or self:Snapshot()
 		self.view:setData(snapshot)
+		self.sound:rank(if self:_soundLive() then snapshot.multiplier else nil)
 		self.feedView:setRung(snapshot.multiplier or 1)
 		self.feedView:step(dt)
 		self.view:step(dt)
@@ -135,10 +148,17 @@ function ScoreController:_listenToEvents()
 	self.feedSource = "ScoreEvents"
 	feed:Connect(function(entry)
 		self.feedEntries += 1
-		if not self.feedFixture then
-			self.feedView:push(entry)
-		end
+		self:_pushEntry(entry)
 	end)
+end
+
+function ScoreController:_soundLive()
+	return self.inRun and not self.fixture and not self.feedFixture and self.view.gui.Enabled and self.feedView.gui.Enabled
+end
+
+function ScoreController:_pushEntry(entry)
+	if not self.feedFixture then self.feedView:push(entry) end
+	if self.inRun then self.sound:entry(entry, self:_soundLive()) end
 end
 
 -- A "HAIRPIN AHEAD" notice in the feed (not while a feed fixture plays).
@@ -161,6 +181,7 @@ function ScoreController:_setInRun(inRun: boolean)
 	if inRun == self.inRun then
 		return
 	end
+	self.sound:reset(inRun)
 	if inRun then
 		self.score:Reset()
 		self.hint:Reset()
@@ -226,6 +247,7 @@ function ScoreController:DebugFixture(name: string?)
 	if not RunService:IsStudio() then
 		return nil
 	end
+	self.sound:reset(false)
 	if name == nil then
 		self.fixture = nil
 		return self:DebugView()
@@ -255,6 +277,7 @@ function ScoreController:DebugFeedFixture(name: string?)
 	if not RunService:IsStudio() then
 		return nil
 	end
+	self.sound:reset(false)
 	self.feedToken = (self.feedToken or 0) + 1
 	local token = self.feedToken
 	self.feedView:clear()
@@ -314,6 +337,7 @@ function ScoreController:DebugState()
 	r.steps = self.steps
 	r.runSeconds = self.runSeconds
 	r.answers = self.answers
+	r.soundCues = self.sound and table.clone(self.sound.played) or {}
 	r.lastRun = self.lastRun
 	r.view = self:View().mode
 	return r

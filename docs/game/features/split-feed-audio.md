@@ -1,6 +1,6 @@
 # Split Feed score sounds
 
-**Status** — T-311 awaits approval for a lane build. On November 18, 2026 the user picked elements from both the Tape Deck and Cassette Relay auditions on T-309. The assignment below is the proposed mix.
+**Status** — Lane build for T-312. On November 18, 2026 the user picked Tape Deck and Cassette Relay on T-309 and approved their combined mix and Score UI slider on T-311.
 
 ## How it sounds
 
@@ -13,7 +13,7 @@
 | The points reach the run total | One small receipt click | Cassette Relay |
 | The named rank falls | Two falling notes | Tape Deck |
 
-The audition runs for 6.15 seconds. It uses the existing eight cues at their original times. The lane build will take its timing from the score display so the driver hears each cue when they see the event.
+The audition runs for 6.15 seconds. It uses the existing eight cues at their original times. Playback follows the score display. SIDEWAYS and above use the brighter rank gain. Each bank has its own transfer, with the receipt at the first frame the points reach the total.
 
 ## Implementation
 

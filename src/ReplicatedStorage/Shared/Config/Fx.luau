@@ -21,6 +21,27 @@
 -- read. The modules convert once.
 
 return {
+	-- Local Split Feed one-shots. Region bounds are source seconds from the approved auditions.
+	ScoreUI = {
+		Volume = 0.24,
+		TickInterval = 0.14,
+		HighRank = 4, -- SIDEWAYS, where the HUD first draws the rank echo
+		Sources = {
+			Tape = {Id = "rbxassetid://108094209509984", Gain = 1, Voices = 5},
+			Hover = {Id = "rbxassetid://10066942189", Gain = 1.9345988, Voices = 1},
+			Select = {Id = "rbxassetid://10066968815", Gain = 1.9345988, Voices = 3},
+		},
+		Cues = {
+			event = {Source = "Hover", Region = NumberRange.new(0, .055), Speed = .90, Gain = .75},
+			hold_open = {Source = "Select", Region = NumberRange.new(0, .16), Speed = .85, Gain = 1.05},
+			score_receipt = {Source = "Select", Region = NumberRange.new(0, .15), Speed = 1.17, Gain = 1},
+			rankLow = {Source = "Tape", Region = NumberRange.new(.71, 1.01), Speed = 1, Gain = 1},
+			rankHigh = {Source = "Tape", Region = NumberRange.new(1.36, 1.66), Speed = 1, Gain = 1},
+			rankDrop = {Source = "Tape", Region = NumberRange.new(4.61, 4.87), Speed = 1, Gain = 1},
+			windup = {Source = "Tape", Region = NumberRange.new(2.66, 3.045), Speed = 1, Gain = 1},
+			bankImpact = {Source = "Tape", Region = NumberRange.new(3.31, 3.57), Speed = 1, Gain = 1},
+		},
+	},
 	-- ------------------------------------------------------------------ tyre marks
 	-- The rubber a sliding wheel leaves on the tarmac, and its scuff on the road's gravel: since
 	-- T-269 a see-through mesh RIBBON on the road's own surface, one strip a wheel

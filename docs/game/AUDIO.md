@@ -35,7 +35,7 @@ the game, so approving that plan set the direction.
 
 ### UI sounds
 
-> Clicks, opening and closing, buying, errors: one family that sounds like it belongs together.
+Split Feed uses the Cassette Relay clicks for score events, opening a hold and receiving points. Tape Deck supplies the rank notes, windup and bank impact. The bank follows the line into the rank and across to the total.
 
 ### Ambience
 
@@ -70,6 +70,7 @@ the default 30% is 1x, 15% half, 0% silent and 100% about 3.33x, and a slider ne
 | Off-road drift | Every other skid clip: the dirt slide, played on grass, dirt and gravel; and the stones kicked up into the car off the road (`Drift/PebbleSound`, T-292) |
 | Suspension | The clunks, catches and landing slam (`Drift/SuspensionSound`) |
 | Engine | Every engine loop, layered or the single clip (`Drift/EngineSound`) |
+| Score UI | The eight Split Feed cues (`Drift/ScoreSound`) |
 
 **Headroom at 100%** (measured in `DR-Lane2`, T-256). Roblox caps a `Sound`'s and a `SoundGroup`'s
 `Volume` at 10 each, not their product, so nothing is capped by the slider; the loudest each sound
@@ -100,6 +101,7 @@ were not picked are in `..\art\generated\sfx-car\`, outside git.
 
 | Sound | Plays when | Registry name | Asset id | Source and license | Status |
 |---|---|---|---|---|---|
+| Split Feed score | Rank changes, one-offs, hold openings and the three stages of a bank | `Config.Fx.ScoreUI` | `108094209509984`, `10066942189`, `10066968815` | Original Drift Tape Deck recording and two Roblox Creator Store sounds. See `assets/audio/sfx-score-tape/MANIFEST.md` for ownership, license and approved slices | Lane build, T-312 |
 | Engine loop | Always, while a car exists. Pitched 0.7x to 2.2x across five faked gears by road speed (`features/car-fx.md`) | `engine` | `5015124019` | Creator Store, "Car idle" by 6ifqi. Free in any experience, nothing uploaded. Measured loading in `DR-Lane2`: 4.638 s | In game (`Drift/EngineSound`, T-064) |
 | Engine, layered | Always, while a car exists: twelve slices of one file on two ladders, on and off throttle: on each, the two loops either side of the fake engine's rpm crossfaded, and the load crossfades the ladders (`features/engine-sound.md`). Without the id, the single "Car idle" clip above follows the same rpm | `engine` (`Config.Fx.Engine.Sheets.Synth`, named by `Sheet`) | `rbxassetid://132857262391195` (user Byrned_FPS, 2026-11-12) | **Ours**: synthesized in code (`assets/audio/sfx-engine/`), no license, no credit. Picked and approved by the user 2026-11-11 | Approved; uploaded. **Replaced by the recorded set 2026-11-13**, and one config line away (`Sheet = "Synth"`) |
 | Engine, recorded (set B) | Always, while a car exists: eight slices of one file on two ladders, five loops on throttle and three off, recorded inside the car low down and outside it from about 6,300 rpm up (`features/engine-sound.md` "Next") | `engine` (`Config.Fx.Engine.Sheets.Recorded`, named by `Sheet`) | `rbxassetid://126307015260351` (user Byrned_FPS, 2026-11-13) | **A sound mod's recordings, reused on the user's word that its author permits it**; no link or written message in the record (`assets/audio/sfx-engine/MANIFEST.md`). Picked by ear by the user 2026-11-13 | Picked; uploaded, in use (T-170). Moderation was reviewing it on upload |

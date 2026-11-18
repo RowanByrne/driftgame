@@ -22,13 +22,14 @@ local SoundLevels = {}
 SoundLevels.Changed = Signal.new() -- (category, level)
 
 -- The categories, in the order the settings tab shows them, with their labels.
-SoundLevels.Categories = { "Music", "TireSqueal", "OffRoad", "Suspension", "Engine" }
+SoundLevels.Categories = { "Music", "TireSqueal", "OffRoad", "Suspension", "Engine", "ScoreUI" }
 SoundLevels.Labels = {
 	Music = "Music",
 	TireSqueal = "Tire squeal",
 	OffRoad = "Off-road drift",
 	Suspension = "Suspension",
 	Engine = "Engine",
+	ScoreUI = "Score UI",
 }
 SoundLevels.Default = 30
 SoundLevels.Reference = 30 -- the level that plays the mix as `Config.Fx` sets it
