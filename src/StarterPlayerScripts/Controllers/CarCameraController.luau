@@ -422,6 +422,13 @@ local function applyZoom(rig, carPos: Vector3)
 		return
 	end
 	rig.position = carPos + (rig.position - carPos) * rig.zoom
+	-- A fixed point ahead of the hood crops the bumper at close range, especially
+	-- when looking across the car in a slide. Only shorten the rendered look offset.
+	if rig.zoom < Cam.PlayerZoomFullLookAhead then
+		local span = Cam.PlayerZoomFullLookAhead - Cam.PlayerZoomMin
+		local ahead = (rig.zoom - Cam.PlayerZoomMin) / span
+		rig.lookPoint = carPos:Lerp(rig.lookPoint, ahead)
+	end
 end
 
 -- ---------------------------------------------------------------- the hill pitch (T-156)

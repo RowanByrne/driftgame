@@ -219,11 +219,11 @@ wheel"*.
 
 - **The mouse wheel moves the camera nearer or farther** along its current offset from the car:
   distance and height scale together, so the framing keeps its shape, and the camera still looks at
-  the same point ahead of the car.
+  the same point ahead of the car down to 0.6×. Below that distance, the aim moves smoothly back toward the car until it is centered at 0.4×.
 - **Smooth:** each notch moves a target by `PlayerZoomStep` (×1.12, multiplied, so a notch is the same
   size of step at any distance), and the camera eases to it at `PlayerZoomRate` (10/s, about 0.3 s to
   arrive). A burst of notches eases to the sum; nothing jumps.
-- **Limits:** `PlayerZoomMin` 0.30× (13.8 studs) to `PlayerZoomMax` 1.8× (82.8 studs) of the 46-stud
+- **Limits:** `PlayerZoomMin` 0.4× (18.4 studs) to `PlayerZoomMax` 1.8× (82.8 studs) of the 46-stud
   distance. **The default is 1×, exactly the approved camera:** at 1 the zoom code does not run.
 - **Kept for the session,** across respawns and runs, not saved.
 - **It is not the predecessor's drift zoom.** It never moves on its own. Like the pan it scales the
@@ -388,7 +388,7 @@ and the shake's four), and proved the same way that zeroing them gives that buil
 | `ShakeRotation` | **(0.15, 0.15, 0.10)°** | The rotation kick at top speed. Nothing below `ShakeSpeedStart`, then linear from there to the top. 3.3 px of picture in the worst frame at the top, 0.65 in the average one |
 | `ShakePosition` | **(0.07, 0.07, 0) studs** | The position kick, in the camera's own axes. About a pixel; the Z is zero because a dolly along the look axis is a 0.2% scale change and nothing else |
 | `ShakeRestoreRate` | **14 /s** | How fast a kick settles back to zero: to half of itself before the next one arrives |
-| `PlayerZoomMin`, `PlayerZoomMax` | **0.30×, 1.8×** | The wheel's zoom limits, as multiples of the distance (`T-152`). 1 is the default and today's camera |
+| `PlayerZoomMin`, `PlayerZoomMax` | **0.4×, 1.8×** | The wheel's zoom limits, as multiples of the distance (`T-152`). 1 is the default and today's camera |
 | `PlayerZoomStep` | **×1.12** | One wheel notch |
 | `PlayerZoomRate` | **10 /s** | How fast the camera eases to the zoom a notch asked for |
 | `HillLookFollow` | **1** | Share of the road's climb the look point's height is carried with (`T-156`). 0 is the old lag |
