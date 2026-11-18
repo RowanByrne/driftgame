@@ -120,13 +120,18 @@ local function speedFactor(kind: string, speed: number): number
 	if w <= 0 then
 		return 1
 	end
+	-- a kind done slower by its nature has its own speeds (`Speed.Curves`)
+	local own = S.Curves and S.Curves[kind]
+	local slow = own and own.Slow or S.Slow
+	local ref = own and own.Reference or S.Reference
+	local fast = own and own.Fast or S.Fast
 	local f
-	if speed <= S.Slow then
+	if speed <= slow then
 		f = S.Floor
-	elseif speed < S.Reference then
-		f = S.Floor + (1 - S.Floor) * (speed - S.Slow) / (S.Reference - S.Slow)
-	elseif speed < S.Fast then
-		f = 1 + (S.Cap - 1) * (speed - S.Reference) / (S.Fast - S.Reference)
+	elseif speed < ref then
+		f = S.Floor + (1 - S.Floor) * (speed - slow) / (ref - slow)
+	elseif speed < fast then
+		f = 1 + (S.Cap - 1) * (speed - ref) / (fast - ref)
 	else
 		f = S.Cap
 	end

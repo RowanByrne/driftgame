@@ -39,11 +39,13 @@ local function near(a: number, b: number, eps: number?): boolean
 	return math.abs(a - b) <= (eps or 1e-6) * math.max(1, math.abs(b))
 end
 
--- An engine fed to a fresh score, silent.
-local function engine()
+-- An engine fed to a fresh score, silent. The speed factor (T-303) is off unless `bySpeed`,
+-- so the other rules' checks keep the formulas they check; its own checks switch it on.
+local function engine(bySpeed: boolean?)
 	local score = Score.new()
 	local e = ScoreEvents.new()
 	e.print = false
+	e.bySpeed = bySpeed == true
 	e:bind(function()
 		return score
 	end)
@@ -149,12 +151,13 @@ end
 
 -- The real car from a rolling start, the engine and detectors stepped as DriftController
 -- steps them, the score after. `withEvents = false` steps the score alone.
-local function drive(world, steer: number, seconds: number, fps: number, withEvents: boolean)
+local function drive(world, steer: number, seconds: number, fps: number, withEvents: boolean, bySpeed: boolean?)
 	local runner = Sim.newRunner(CFrame.new(0, Config.Drift.RideHeight, 0))
 	runner.state.velocity = Vector3.new(0, 0, -100)
 	local score = Score.new()
 	local e = ScoreEvents.new()
 	e.print = false
+	e.bySpeed = bySpeed ~= false
 	e:bind(function()
 		return score
 	end)
@@ -470,6 +473,7 @@ function Tests.run()
 		local score = Score.new()
 		local e = ScoreEvents.new()
 		e.print = false
+		e.bySpeed = false
 		e:bind(function()
 			return if inRun then score else nil
 		end)
@@ -631,10 +635,11 @@ function Tests.run()
 			near(a, b, 1e-9) and near(d, b, 1e-9),
 			string.format("%.6f / %.6f / %.6f", a, b, d)
 		)
+		local plain = drive(world, 0, 4, 60, true, false):Get().eventPoints
 		check(
-			"and the same points as before the hop-farming fix (T-295: 70.184074)",
-			near(b, 70.184074, 1e-7),
-			string.format("%.6f", b)
+			"with the speed factor off, the same points as T-295 (70.184074); on, its share of the speed",
+			near(plain, 70.184074, 1e-7) and b ~= plain,
+			string.format("off %.6f, on %.6f (x%.3f)", plain, b, b / plain)
 		)
 	end
 
@@ -718,6 +723,119 @@ function Tests.run()
 			"lifts in a row while driving slowly still count (none taken for the same spot)",
 			lc and lc.started >= 20 and lc.spent == 0 and ls.eventPoints > 0,
 			lc and string.format("%d lifts, %d same spot, %.1f points", lc.started, lc.spent, ls.eventPoints) or "none"
+		)
+	end
+
+	-- ------------------------------------------------------------ speed (T-303)
+	do
+		local S = E.Speed
+		local f = ScoreEvents.speedFactor
+		local kind = "laneDrift" -- a kind with the whole of the factor
+		local curve = {
+			f(kind, 0), f(kind, S.Slow), f(kind, (S.Slow + S.Reference) / 2), f(kind, S.Reference),
+			f(kind, (S.Reference + S.Fast) / 2), f(kind, S.Fast), f(kind, S.Fast * 3),
+		}
+		local rising = true
+		for i = 2, #curve do
+			rising = rising and curve[i] >= curve[i - 1]
+		end
+		check(
+			"the speed curve: Floor at Slow and under, 1 at Reference, Cap at Fast and over, never falling",
+			curve[1] == S.Floor and curve[2] == S.Floor and curve[4] == 1 and curve[6] == S.Cap and curve[7] == S.Cap
+				and near(curve[3], (S.Floor + 1) / 2) and near(curve[5], (1 + S.Cap) / 2) and rising,
+			string.format("%.2f %.2f %.2f %.2f %.2f %.2f %.2f", table.unpack(curve))
+		)
+		local w = S.Weights
+		check(
+			"each kind's share: per-stud kinds none, jump and near miss half, the bend kinds all, reverse entry on its own speeds",
+			f("wheelLift", S.Slow) == 1 and f("bumperGrind", S.Fast) == 1 and f("hangGrind", 0) == 1
+				and near(f("jump", S.Fast), 1 + w.jump * (S.Cap - 1)) and near(f("nearMiss", S.Slow), 1 + w.nearMiss * (S.Floor - 1))
+				and f("perfectLaneDrift", S.Fast) == S.Cap and f("reverseEntry", S.Curves.reverseEntry.Slow) == S.Floor
+				and f("reverseEntry", S.Curves.reverseEntry.Reference) == 1,
+			string.format("jump at Fast %.2f, near miss at Slow %.2f, reverse entry at %d: %.2f", f("jump", S.Fast), f("nearMiss", S.Slow),
+				S.Curves.reverseEntry.Reference, f("reverseEntry", S.Curves.reverseEntry.Reference))
+		)
+
+		-- The same manoeuvre at three speeds: a lane drift held 2 s and completed, and a graze.
+		local function bend(speed: number, on: boolean)
+			local e, score = engine(on)
+			local state = car(speed, 0, 30)
+			e:step(STEP, state)
+			local h = e:start(kind)
+			run(e, score, state, 2, function()
+				h:update(1, STEP)
+			end)
+			h:finish(true)
+			return score:Get().eventPoints, h.entry
+		end
+		local slow, _ = bend(S.Slow + 5, true)
+		local ref, refEntry = bend(S.Reference, true)
+		local fast, fastEntry = bend(S.Fast - 5, true)
+		local refOff = bend(S.Reference, false)
+		check(
+			"the same lane drift at three speeds: slower is worth less, the reference the same as without speed, faster more",
+			slow < ref and ref < fast and near(ref, refOff, 1e-6) and near(refEntry.speedFactor, 1, 1e-6),
+			string.format("%.1f / %.1f / %.1f (without speed %.1f); factors %.2f / %.2f / %.2f", slow, ref, fast, refOff,
+				f(kind, S.Slow + 5), refEntry.speedFactor, fastEntry.speedFactor)
+		)
+		local function graze(speed: number)
+			local e, score = engine(true)
+			e:step(STEP, car(speed, 0))
+			local entry = e:oneOff("nearMiss", 1)
+			return score:Get().eventPoints, entry
+		end
+		local g1, g2, g3 = graze(55), graze(S.Reference), graze(S.Fast + 20)
+		local _, ge = graze(S.Fast + 20)
+		check(
+			"a near miss at three speeds: its share of the factor, at the moment",
+			g1 < g2 and g2 < g3 and near(g2, K.nearMiss.Base) and near(g3, K.nearMiss.Base * (1 + w.nearMiss * (S.Cap - 1)))
+				and ge.speed == S.Fast + 20 and near(ge.speedFactor, 1 + w.nearMiss * (S.Cap - 1)),
+			string.format("%.1f / %.1f / %.1f", g1, g2, g3)
+		)
+
+		-- A per-stud kind already pays for speed by the stud: no factor on top.
+		local function lift(speed: number)
+			local e, score = engine(true)
+			local state = car(speed, 0)
+			e:step(STEP, state)
+			local h = e:start("wheelLift")
+			run(e, score, state, 1, function()
+				h:update(1, STEP)
+			end)
+			h:finish(true)
+			return score:Get().eventPoints
+		end
+		local l1, l2 = lift(S.Slow + 5), lift(S.Fast - 5)
+		check(
+			"a wheel lift is paid by the stud only: twice the speed, twice the points, no factor",
+			near(l1, K.wheelLift.Rate * (S.Slow + 5), 1e-4) and near(l2, K.wheelLift.Rate * (S.Fast - 5), 1e-4),
+			string.format("%.2f at %d, %.2f at %d", l1, S.Slow + 5, l2, S.Fast - 5)
+		)
+
+		-- Half the hold crawled, half fast: the finish takes the time-weighted mean factor.
+		local e, score = engine(true)
+		local state = car(S.Slow, 0, 30)
+		e:step(STEP, state)
+		local h = e:start(kind)
+		run(e, score, state, 1, function()
+			h:update(1, STEP)
+		end)
+		local fastState = car(S.Fast, state.position.X, 30)
+		run(e, score, fastState, 1, function()
+			h:update(1, STEP)
+		end)
+		h:finish(true)
+		local want = (S.Floor + S.Cap) / 2
+		check(
+			"half the bend slow and half fast: the finish is worth the mean factor over the hold",
+			near(h.entry.speedFactor, want, 1e-3),
+			string.format("mean factor %.4f (want %.4f), mean speed %.1f", h.entry.speedFactor, want, h.entry.speed)
+		)
+		local logged = e.log[#e.log]
+		check(
+			"the debug log shows each event's speed and factor",
+			logged and logged.speed and logged.speedFactor and near(logged.speedFactor, want, 1e-3),
+			logged and string.format("%s %.1f studs/s x%.3f", logged.label, logged.speed, logged.speedFactor) or "nothing logged"
 		)
 	end
 
