@@ -9,8 +9,8 @@ Every task in progress and the files it owns, so parallel sessions and workers n
 
 | Branch | Lane | Files owned | Since |
 |---|---|---|---|
-| `agent/score-ui-scale` | Borrow to test | `src/StarterPlayerScripts/UI/ScoreTape.luau`, `src/StarterPlayerScripts/Drift/ScoreFeedView.luau`, `docs/game/UI-INVENTORY.md`, score UI sections in `docs/game/features/endless-score.md` and `docs/game/features/score-events.md` | 2026-11-18, T-310, 1.3x |
-| `agent/split-feed-sounds` | Borrow to test | `src/ReplicatedStorage/Shared/Config/Fx.luau`, `src/StarterPlayerScripts/Controllers/ScoreController.luau`, `src/StarterPlayerScripts/Drift/ScoreHudView.luau`, `ScoreSound.luau` (new, same folder), `SoundLevels.luau` (same folder), `src/StarterPlayerScripts/Settings/SettingsView.luau`, `assets/audio/sfx-score-tape/*` (new), `docs/game/AUDIO.md`, `docs/game/SETTINGS.md`, `docs/game/features/split-feed-audio.md` | 2026-11-18, T-312 |
+| `agent/score-ui-scale` | Borrow to test | `src/StarterPlayerScripts/UI/ScoreTape.luau`, `src/StarterPlayerScripts/Drift/ScoreFeedView.luau`, `src/StarterPlayerScripts/Drift/ScoreHudView.luau`, `docs/game/UI-INVENTORY.md`, score UI sections in `docs/game/features/endless-score.md` and `docs/game/features/score-events.md` | 2026-11-18, T-310, 1.3x |
+| `agent/split-feed-sounds` | Borrow to test | `src/ReplicatedStorage/Shared/Config/Fx.luau`, `src/StarterPlayerScripts/Controllers/ScoreController.luau`, `src/StarterPlayerScripts/Drift/ScoreSound.luau` (new), `src/StarterPlayerScripts/Drift/SoundLevels.luau`, `src/StarterPlayerScripts/Settings/SettingsView.luau`, `assets/audio/sfx-score-tape/*` (new), `docs/game/AUDIO.md`, `docs/game/SETTINGS.md`, `docs/game/features/split-feed-audio.md` | 2026-11-18, T-312 |
 
 ## Notes between sessions
 
