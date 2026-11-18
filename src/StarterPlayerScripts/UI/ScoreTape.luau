@@ -5,6 +5,7 @@ local Create = require(script.Parent.Create)
 local Style = require(script.Parent.Theme).ScoreTape
 
 local Tape = {}
+local displayScale = 1.3
 local names = {
 	"WARMUP", "GRIPPED", "LOOSE", "SIDEWAYS", "LINKED", "COMMITTED", "SMOKED", "BOOSTED",
 	"LOCKED IN", "FULL SEND", "OVERDRIVE", "FLAT OUT", "REDLINE", "GHOST", "DEMON", "UNTOUGEABLE",
@@ -33,28 +34,36 @@ function Tape.layout(size)
 	local compact = math.min(w, h) < 500
 	local portrait = h > w
 	local preference = ({Large = 1.12, Larger = 1.22, Largest = 1.32})[GuiService.PreferredTextSize.Name] or 1
-	local width = math.round((if compact then 151 else math.clamp(w * .152, 166, 178)) * preference)
-	local height = math.round((if compact then 36 else 43) * preference)
-	local scoreWidth = math.round((if compact then 90 else 116) * preference)
-	local gap = if compact then 7 else 11
+	local scale = displayScale * preference
+	local baseWidth = if compact then 151 else math.clamp(w * .152, 166, 178)
+	local baseScore = if compact then 90 else 116
+	local baseGap = if compact then 7 else 11
+	-- Keep the total and rank side by side inside the safe width. Event
+	-- lettering can use the full preference even when the two-column row cannot.
+	local rowScale = math.min(scale, math.max(1, (w - 18) / (baseWidth + baseScore + baseGap)))
+	local width = math.round(baseWidth * rowScale)
+	local height = math.round((if compact then 36 else 43) * rowScale)
+	local scoreWidth = math.round(baseScore * rowScale)
+	local gap = math.round(baseGap * rowScale)
+	local mapClearance = 160 + math.ceil(20 * scale)
 	-- The concept anchors the rank, independently of the number of score digits.
 	local x = math.max(scoreWidth + gap + 8, math.round(w * .3365 - width * .5))
 	local y = math.round(h * .525 - height * .5)
 	if portrait then
-		-- Feed rows extend 20 px left of the tape. Keep them beside the map, with the
+		-- Feed rows extend left of the tape. Keep them beside the map, with the
 		-- score below it. That leaves the space above Garage for long completed rows.
-		x = math.max(180, scoreWidth + gap + 8, math.floor((w + scoreWidth + gap - width) * .5))
+		x = math.max(mapClearance, scoreWidth + gap + 8, math.floor((w + scoreWidth + gap - width) * .5))
 		y = math.max(y, math.min(348 * preference, h * .60))
 	elseif compact then
 		-- Keep the upper live row clear of the 140 px road map on short phones.
-		x = math.max(x, 180)
+		x = math.max(x, mapClearance)
 		y = math.max(y, math.min(195 * preference, h * .68))
 	end
 	x = math.max(0, math.min(x, w - width - 8))
 	return {
 		x = x, y = y, width = width, height = height, scoreWidth = scoreWidth, gap = gap, compact = compact,
-		rankSize = math.round((if compact then 22 else 26) * preference),
-		numberSize = math.round((if compact then 16 else 19) * preference), textScale = preference,
+		rankSize = math.round((if compact then 22 else 26) * rowScale),
+		numberSize = math.round((if compact then 16 else 19) * rowScale), textScale = rowScale, feedScale = scale,
 	}
 end
 
@@ -114,21 +123,23 @@ function Rank:layout(layout)
 	self.layoutData = layout
 	self.root.Size = UDim2.fromOffset(w, h)
 	self.rule.Size = UDim2.new(1, 0, 0, 1)
-	self.bar.Position = UDim2.fromOffset(0, h - 4)
-	self.bar.Size = UDim2.fromOffset(w, 4)
-	self.paint.Size = UDim2.fromOffset(w, 4)
+	local barHeight = math.round(4 * layout.textScale)
+	local segmentGap = math.round(2 * layout.textScale)
+	self.bar.Position = UDim2.fromOffset(0, h - barHeight)
+	self.bar.Size = UDim2.fromOffset(w, barHeight)
+	self.paint.Size = UDim2.fromOffset(w, barHeight)
 	for i, pair in self.segments do
 		local x = math.floor((i - 1) * w / segments)
-		local n = math.floor(i * w / segments) - x - 2
+		local n = math.floor(i * w / segments) - x - segmentGap
 		for _, part in pair do
 			part.Position = UDim2.fromOffset(x, 0)
-			part.Size = UDim2.fromOffset(n, 4)
+			part.Size = UDim2.fromOffset(n, barHeight)
 		end
 	end
 	local rankWidth = w - math.round(29 * layout.textScale)
 	for _, part in {self.base, self.lit, self.echo} do
 		part.TextSize = layout.rankSize
-		part.Size = UDim2.fromOffset(rankWidth, h - 5)
+		part.Size = UDim2.fromOffset(rankWidth, h - barHeight - 1)
 	end
 	self.base.Position = UDim2.fromOffset(0, 1)
 	self.clip.Position = self.base.Position
@@ -161,7 +172,7 @@ function Rank:draw(rung, progress)
 	if p ~= self.progress or width ~= self.inkWidth then
 		self.progress, self.inkWidth = p, width
 		self.fill.Size = UDim2.fromScale(p, 1)
-		self.clip.Size = UDim2.fromOffset(math.round(width * p), self.layoutData.height - 4)
+		self.clip.Size = UDim2.fromOffset(math.round(width * p), self.base.Size.Y.Offset)
 	end
 end
 
