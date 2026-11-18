@@ -492,14 +492,22 @@ function SplineGen._terrain(self: Gen, sec: Spline.Section)
 				local b = a + core
 				local ga = a - math.min(T.TightLead, rampIn * 0.5)
 				local gb = b + math.min(T.TightLead, rampOut * 0.5)
-				if SplineGen._fallsOver(drops, side, ga, gb) then
-					-- b + rampOut is at most len - 1, so the last knot is always its own
-					local knots = { a - rampIn, w0, a, wt, b, wt, b + rampOut, w1, len, w1 }
+				-- b + rampOut is at most len - 1, so the last knot is always its own
+				local knots = { a - rampIn, w0, a, wt, b, wt, b + rampOut, w1, len, w1 }
+				local was = if side < 0 then sec.rl else sec.rr
+				if side < 0 then
+					sec.rl = knots
+				else
+					sec.rr = knots
+				end
+				-- (falling from the grass's edge as it is, and from the lip once it closes in)
+				if not (SplineGen._fallsOver(drops, side, ga, gb) and SplineGen._fallsOver(self:_sideDrops(sec, startRun), side, ga, gb)) then
 					if side < 0 then
-						sec.rl = knots
+						sec.rl = was
 					else
-						sec.rr = knots
+						sec.rr = was
 					end
+				else
 					pieces[side] = SplineGen._joinPiece(pieces[side], ga, gb)
 					sec.gl = { ga, gb, side }
 					self.stats.tight += 1
