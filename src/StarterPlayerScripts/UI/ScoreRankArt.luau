@@ -15,7 +15,16 @@ local function frame(parent, name, z)
 		Size = full, Active = false, ZIndex = z}, parent)
 end
 
-local function layer(parent, name, z, asset, color, opacity)
+local function layer(parent, name, z, asset, color, opacity, prepared)
+	if prepared then
+		prepared.Name = name
+		prepared.ZIndex = z
+		prepared.Size = full
+		prepared.ImageColor3 = color
+		prepared.ImageTransparency = 1-(opacity or 1)
+		prepared.Parent = parent
+		return prepared
+	end
 	return Create("ImageLabel", {Name = name, BackgroundTransparency = 1, BorderSizePixel = 0,
 		Active = false, Size = full, ZIndex = z, Image = asset.uri, ImageColor3 = color,
 		ImageTransparency = 1 - (opacity or 1), ScaleType = Enum.ScaleType.Fit}, parent)
@@ -94,7 +103,7 @@ end
 function Art.new(parent)
 	warmRank(1)
 	warmRank(2)
-	return setmetatable({slot = frame(parent, "WordSlot", 2), age = 0, entry = false}, Art)
+	return setmetatable({slot = frame(parent, "WordSlot", 2), age = 0, entry = false, upcoming = {}}, Art)
 end
 
 function Art:layout(w, h)
@@ -144,6 +153,29 @@ function Art:_buildFire()
 	end
 end
 
+-- A fetched image can still need a render frame to become IsLoaded. Prime actual
+-- face/signal ImageLabels at zero height, then move those same instances into the
+-- word. This draws no pixels and holds at most two upcoming ranks.
+function Art:_prepareNext(rung)
+	for index, pair in self.upcoming do
+		if index <= rung or index > rung+2 then
+			pair.face:Destroy()
+			pair.signal:Destroy()
+			self.upcoming[index] = nil
+		end
+	end
+	for index = rung+1, math.min(rung+2,#Registry) do
+		if not self.upcoming[index] then
+			local s = Registry[index]
+			warmRank(index)
+			local face = layer(self.slot,"UpcomingFace",1,s.face or s.letters,s.base)
+			local signal = layer(self.slot,"UpcomingSignal",1,s.signal,s.tail)
+			face.Size, signal.Size = UDim2.fromOffset(1,0), UDim2.fromOffset(1,0)
+			self.upcoming[index] = {face = face, signal = signal}
+		end
+	end
+end
+
 function Art:setRank(rung, entry, reduced)
 	self.reduced = reduced
 	if self.scene then self.scene:Destroy() end
@@ -155,7 +187,9 @@ function Art:setRank(rung, entry, reduced)
 	self.duration = .16 + .18*s.force + math.max(0,rung-9)*.009
 	-- A subpixel kick at ×2 disappears at driving scale.
 	self.impactForce = if self.promoted then .62 + .38*s.force else s.force
-	warmRank(rung + 1)
+	local prepared = self.upcoming[rung]
+	self.upcoming[rung] = nil
+	self:_prepareNext(rung)
 	self.scene = frame(self.slot, "RegisteredArt", 1)
 	self.scene.AnchorPoint = center
 	self.scene:SetAttribute("RankName", s.name)
@@ -180,7 +214,7 @@ function Art:setRank(rung, entry, reduced)
 	self.echo = layer(self.word,"Echo",2,self.face,s.accent,0)
 	local rim = layer(self.word,"CoolRim",3,self.face,Color3.fromHex("CDDCEC"),.48)
 	rim.Position = UDim2.fromOffset(0,.65)
-	self.base = layer(self.word,"Unfilled",4,self.face,s.base)
+	self.base = layer(self.word,"Unfilled",4,self.face,s.base,nil,prepared and prepared.face)
 	self.lit = layer(self.word,"Charged",5,self.face,s.accent)
 	self.front = layer(self.word,"Frontier",6,self.face,white)
 	if s.print then
@@ -188,7 +222,7 @@ function Art:setRank(rung, entry, reduced)
 		self:_sheet(printGroup,"Print",s.print,s.printInk,s.printOpacity)
 	end
 	self.signalGroup = frame(self.scene,"SignalPose",6)
-	self.signal = layer(self.signalGroup,"Signal",1,s.signal,s.tail,0)
+	self.signal = layer(self.signalGroup,"Signal",1,s.signal,s.tail,0,prepared and prepared.signal)
 	self:layout(self.slotWidth, self.slotHeight)
 end
 
