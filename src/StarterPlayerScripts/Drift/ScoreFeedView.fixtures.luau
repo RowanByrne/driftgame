@@ -54,7 +54,7 @@ end
 -- A one-off near miss pops in, holds 2.5 s, fades.
 local nearMissPop = { at(0, e(1, "nearMiss", "CLOSE CALL", 75, "banked")) }
 
--- A bumper grind held 3 s counting up live, then banked: flash, glide, fade.
+-- A bumper grind held 3 s, then pulled back and slammed into the rank.
 local grindLive = {}
 ramp(grindLive, 1, "bumperGrind", "BUMPER GRIND", 640, 0, 3, "banked")
 
@@ -119,6 +119,16 @@ return {
 	-- Nothing yet.
 	empty = { entries = {}, hold = true },
 
+	-- The approved split: a grind still counting above, two completed events below.
+	splitFeed = {
+		hold = true,
+		entries = {
+			e(1, "nearMiss", "NEAR MISS", 180, "banked", 3),
+			e(2, "perfectHairpin", "PERFECT HAIRPIN", 620, "banked", 4),
+			e(3, "bumperGrind", "BUMPER GRIND", 1240, "live", 4),
+		},
+	},
+
 	-- One of each kind, banked: two pictures, as no screen holds all eight at once.
 	kindsA = {
 		hold = true,
@@ -149,7 +159,7 @@ return {
 		},
 	},
 
-	-- A live sustained line at a huge total, underline on.
+	-- A live sustained line at a huge total, live marker on.
 	liveBig = { hold = true, entries = { e(1, "hangGrind", "HANG GRIND", 1234567, "live", 9) } },
 
 	-- Five lines, one lost.

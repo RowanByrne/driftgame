@@ -90,10 +90,19 @@ function ScoreController:Start()
 	self.playerGui = playerGui
 	self.view = ScoreHudView.new(playerGui)
 	self.feedView = ScoreFeedView.new(playerGui)
+	self.feedView.onBankStart = function(points, id)
+		local total = if self.fixture or self.feedFixture then 0 else self.score.score
+		self.view:bankStart(points, id, total)
+	end
+	self.feedView.onAbsorb = function(points, id) self.view:absorb(points, id) end
+	self.feedView.onBankCancel = function(_, id) self.view:bankCancel(id) end
 	self.feedEntries = 0 -- entries heard from the engine this session
 	RunService.RenderStepped:Connect(function(dt)
-		self.view:setData(self.fixture or self:Snapshot())
+		local snapshot = self.fixture or self:Snapshot()
+		self.view:setData(snapshot)
+		self.feedView:setRung(snapshot.multiplier or 1)
 		self.feedView:step(dt)
+		self.view:step(dt)
 	end)
 	self:_listenToEvents()
 
@@ -276,6 +285,7 @@ function ScoreController:DebugFeedMotion(reduced: boolean?)
 		return nil
 	end
 	self.feedView:setReducedMotion(reduced)
+	self.view:setReducedMotion(reduced)
 	return self:DebugFeed()
 end
 

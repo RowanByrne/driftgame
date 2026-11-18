@@ -8,6 +8,9 @@ return {
 	runStart = { mode = "run", score = 0, multiplier = 1, progress = 0, maxMultiplier = 9 },
 	-- Mid-drift, a few rungs up, the bar half full.
 	runMid = { mode = "run", score = 4821.7, multiplier = 4, progress = 0.55, maxMultiplier = 9 },
+	gripped = { mode = "run", score = 120, multiplier = 2, progress = 0.28, maxMultiplier = 9 },
+	linked = { mode = "run", score = 4101, multiplier = 5, progress = 0.73, maxMultiplier = 9 },
+	splitFeed = { mode = "run", score = 1699, multiplier = 4, progress = 0.39, maxMultiplier = 9 },
 	-- In the grace below empty: drawn as an empty bar.
 	runGrace = { mode = "run", score = 12040, multiplier = 3, progress = -0.18, maxMultiplier = 9 },
 	-- The top rung, a huge score: the widest the digits get.
