@@ -41,9 +41,10 @@ function Tape.layout(size)
 	local x = math.max(scoreWidth + gap + 8, math.round(w * .3365 - width * .5))
 	local y = math.round(h * .525 - height * .5)
 	if portrait then
-		x = math.max(scoreWidth + gap + 8, math.floor((w + scoreWidth + gap - width) * .5))
-		-- A full live stack must clear the map's bottom edge (286 px on portrait phones).
-		y = math.max(y, math.min(415 * preference, h * .68))
+		-- Feed rows extend 20 px left of the tape. Keep them beside the map, with the
+		-- score below it. That leaves the space above Garage for long completed rows.
+		x = math.max(180, scoreWidth + gap + 8, math.floor((w + scoreWidth + gap - width) * .5))
+		y = math.max(y, math.min(348 * preference, h * .60))
 	elseif compact then
 		-- Keep the upper live row clear of the 140 px road map on short phones.
 		x = math.max(x, 180)
