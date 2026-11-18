@@ -803,7 +803,9 @@ function parts.tight(check)
 					samples += 1
 					local w = sp:runoffAt(u, side)
 					narrowest = math.min(narrowest, w)
-					if sp:uphillAt(u) ~= -side then
+					-- (T-306: the side the ground falls away on, read off the mountain, not the
+					-- side the fall line calls downhill, which is the rising one about half the time)
+					if SplineGen.dropBeside(sp, u, side) < T.KRailFallDrop - 2 then
 						notCliff += 1
 					end
 					if not sp:kRailAt(u, side) then
@@ -827,7 +829,7 @@ function parts.tight(check)
 	)
 	check("tight cliff edges ease in and out", rate <= T.TightRate + 1e-9, `steepest change {fmt(rate, 3)} stud per stud between knots (limit {T.TightRate})`)
 	check(
-		"tight edges: on the downhill side, a rail on the tarmac's edge all the way",
+		"tight edges: where the ground falls away, a rail on the tarmac's edge all the way",
 		notCliff == 0 and unrailed == 0 and wrongKind == 0 and samples > 0,
 		`{samples} points: {notCliff} not on the downhill side, {unrailed} without a rail, {wrongKind} not gravel then the ground`
 	)

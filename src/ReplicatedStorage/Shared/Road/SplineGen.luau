@@ -465,16 +465,22 @@ function SplineGen._terrain(self: Gen, sec: Spline.Section)
 	-- runoff's own smoothstep knots, so nothing steps; the rail and the gravel reach
 	-- `TightLead` past the narrow part into the easing. Its rail joins any K-rail already
 	-- placed on that side. A GROVE IS CHOSEN FIRST (T-183) and wins: a side with a grove
-	-- never gets a tight edge (nor a K-rail). And since T-306 only where the ground really
-	-- falls away the whole stretch (`KRailFallDrop`), as for any rail.
+	-- never gets a tight edge (nor a K-rail).
+	-- WHICH SIDE (T-306): one where the ground really falls away (`KRailFallDrop`) all along
+	-- the stretch, as for any rail; the side the fall line calls downhill the whole section
+	-- is tried first (until T-306 the only one tried, and it is the rising one about half
+	-- the time), then the other.
 	-- ITS OWN STREAM, always the same four draws a section, so a tight edge (or a grove
 	-- blocking one) changes nothing else the road chooses: with `TightChance = 0` the road is
 	-- exactly the one before T-181.
 	if tag ~= "Start" then
 		local x = self.xrng
 		local roll, uWidth, uCore, uAt = x:NextNumber(), x:NextNumber(), x:NextNumber(), x:NextNumber()
-		local side = if downhillOver(1, 0, len) and not grove[1] then 1 elseif downhillOver(-1, 0, len) and not grove[-1] then -1 else 0
-		if side ~= 0 and roll < T.TightChance then
+		local first = if downhillOver(1, 0, len) then 1 elseif downhillOver(-1, 0, len) then -1 else 1
+		for _, side in { first, -first } do
+			if roll >= T.TightChance or grove[side] or sec.gl then
+				continue
+			end
 			local w0, w1 = startRun[side], self.runoff[side]
 			local wt = T.TightRunoff[1] + (T.TightRunoff[2] - T.TightRunoff[1]) * uWidth
 			local rampIn = math.max(T.TightRamp, math.abs(w0 - wt) / T.TightRate)
@@ -585,6 +591,11 @@ function SplineGen._carve(self: Gen, sec: Spline.Section)
 				return
 			end
 		end
+	end
+	-- nor on a tight edge's side (T-306: its side is the one the ground falls on, which the
+	-- fall line can call the rock's)
+	if sec.gl and sec.gl[3] == inside then
+		return
 	end
 	local prev = self.spline:runoffRaw(self.spline.length, inside)
 	local eIn = math.max(T.CarvedEase, (prev - gap) / rate)
@@ -868,6 +879,30 @@ function SplineGen._sideDrops(self: Gen, sec: Spline.Section, startRun: { [numbe
 		end
 	end
 	return { u = us, k = ks, drop = drop }
+end
+
+-- The same drop read off a LAID road with a mountain, at `s` on `side`, and the grass's edge
+-- height and the point it is read at (nil where the bend encloses that side): for the tests.
+-- Within a few studs of `_sideDrops` (which reads the eased runoff and bank as straight lines).
+function SplineGen.dropBeside(sp: Spline.Spline, s: number, side: number): (number, number?, number?, number?)
+	local T = Config.Spline.Terrain
+	local half = Config.Road.Width * 0.5
+	local k = sp:curvatureAt(s)
+	local w = sp:runoffAt(s, side)
+	local inside = k ~= 0 and (k > 0) == (side < 0)
+	local edgeY = sp:terrainY(s, side * (half + w))
+	local D = T.KRailProbe
+	if inside then
+		D = math.min(D, T.KRailInsideReach / math.abs(k) - half - w)
+	end
+	if D < T.KRailProbeMin or not sp.mountain then
+		return -math.huge, nil, nil, nil
+	end
+	local x, z = sp:planAt(s)
+	local yaw = sp:yawAt(s)
+	local dist = side * (half + w + D)
+	local px, pz = x + dist * math.cos(yaw), z - dist * math.sin(yaw)
+	return (edgeY - Ground.h(sp.mountain, px, pz)) * T.KRailProbe / D, edgeY, px, pz
 end
 
 -- Does the ground fall away (`KRailFallDrop`) on `side` all along [a, b] of the section,
