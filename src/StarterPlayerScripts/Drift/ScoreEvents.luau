@@ -42,6 +42,14 @@
 --                and does not drain (`Score:Hold`); banked on finish(true) (`Score:Bank`)
 --   conditional  the same, banking only on finish(true), plus its `Static` and `Kick` then
 --
+-- SPEED (T-303, the user: "speed at which manoeuvres are done should affect the score you get
+-- from them"): every kind's points are times a speed factor (`speedFactor`, `Config.ScoreEvents
+-- .Speed`), from the ground the car really covers. A one-off takes the factor of the speed at
+-- its moment. A held or conditional event takes each step's own factor on what that step
+-- collects, and its finish (`Static`) the time-weighted mean of those factors over the hold:
+-- a bend crawled through for most of it and rushed at the end is worth what most of it was.
+-- The bar's fill and kick are not scaled: speed changes the points, not the ladder.
+--
 -- ANTI-FARMING, all here so no detector has to: repeats of a kind within its window are
 -- worth less and less; the same spot again scores nothing; nothing counts going backwards,
 -- too slow or pinned on a wall; and a points-a-second ceiling over all of them together.
@@ -66,6 +74,8 @@ export type Entry = {
 	points: number, -- whole points earned, rung included; float
 	state: string, -- "live" | "banked" | "void"
 	rung: number, -- the rung the latest points were earned at
+	speed: number?, -- the car's real speed: at the moment (one-off), mean over the hold (T-303)
+	speedFactor: number?, -- what that speed made it worth: the one-off's, the hold's mean
 }
 
 export type Sink = {
@@ -93,6 +103,36 @@ local function scaleOf(k: any, size: number): number
 	local floor = k.SizeFloor or 0
 	return floor + (1 - floor) * math.clamp(size, 0, 1)
 end
+
+-- THE SPEED FACTOR (T-303, `Config.ScoreEvents.Speed`): what a manoeuvre is worth for the
+-- speed it was done at. 1 at `Reference`; down a straight line to `Floor` at `Slow` and under;
+-- up a straight line to `Cap` at `Fast` and over. A kind's weight (`Speed.Weights`, default
+-- `Speed.Weight`) takes that share of it: 0 is no speed factor at all.
+local function speedFactor(kind: string, speed: number): number
+	local S = cfg().Speed
+	if not S or S.Enabled == false then
+		return 1
+	end
+	local w = S.Weights and S.Weights[kind]
+	if w == nil then
+		w = S.Weight or 1
+	end
+	if w <= 0 then
+		return 1
+	end
+	local f
+	if speed <= S.Slow then
+		f = S.Floor
+	elseif speed < S.Reference then
+		f = S.Floor + (1 - S.Floor) * (speed - S.Slow) / (S.Reference - S.Slow)
+	elseif speed < S.Fast then
+		f = 1 + (S.Cap - 1) * (speed - S.Reference) / (S.Fast - S.Reference)
+	else
+		f = S.Cap
+	end
+	return 1 + w * (f - 1)
+end
+ScoreEvents.speedFactor = speedFactor
 
 local function labelOf(k: any, info: any, peakSize: number, seconds: number): string
 	if info and type(info.label) == "string" then
@@ -133,8 +173,33 @@ function ScoreEvents.new(): any
 		print = RunService:IsStudio() and C.PrintInStudio == true,
 		cut = 0, -- points (x1) the ceiling refused this engine's life
 		allowed = 0, -- points (x1) it let through
+		-- The speed factor on (T-303). Tests of the other rules switch it off on their own
+		-- engine, so their numbers stay the formulas they check.
+		bySpeed = true,
 	}, Engine)
 	return self
+end
+
+function Engine._speedFactor(self: any, kind: string, speed: number): number
+	if not self.bySpeed then
+		return 1
+	end
+	return speedFactor(kind, speed)
+end
+
+-- The speeds each kind is really done at (T-303's measurement): each finished event's mean
+-- real speed, the last `SpeedSamples` of them.
+function Engine._noteSpeed(self: any, kind: string, speed: number)
+	local c = self:_count(kind)
+	local list = c.speeds
+	if not list then
+		list = {}
+		c.speeds = list
+	end
+	table.insert(list, math.floor(speed * 10 + 0.5) / 10)
+	if #list > (cfg().Speed and cfg().Speed.Samples or 50) then
+		table.remove(list, 1)
+	end
 end
 
 -- The score to feed while a run is on: `provider()` returns it, or nil when there is none.
@@ -168,7 +233,10 @@ function Engine._emit(self: any, entry: Entry)
 			table.remove(self.log, 1)
 		end
 		if self.print then
-			print(`[ScoreEvents] {entry.label} +{math.floor(entry.points)} x{entry.rung} {entry.state}`)
+			local sp = entry.speed
+			local sf = entry.speedFactor
+			local by = if sp and sf then string.format(" (%d studs/s, speed x%.2f)", math.floor(sp + 0.5), sf) else ""
+			print(`[ScoreEvents] {entry.label} +{math.floor(entry.points)} x{entry.rung} {entry.state}{by}`)
 		end
 	end
 	self.feed:Fire(copy)
@@ -301,7 +369,8 @@ function Engine.oneOff(self: any, kind: string, size: number, info: { [string]: 
 		return nil
 	end
 	local c = self:_count(kind)
-	if not self:_moving(k) then
+	local moving, speed = self:_moving(k)
+	if not moving then
 		c.gated += 1
 		return nil
 	end
@@ -311,7 +380,10 @@ function Engine.oneOff(self: any, kind: string, size: number, info: { [string]: 
 		return nil
 	end
 	local scale = scaleOf(k, size)
-	local base = self:_allow((k.Base or 0) * scale * factor)
+	-- a one-off is worth the speed the car really had at the moment (T-303)
+	local bySpeed = self:_speedFactor(kind, speed)
+	self:_noteSpeed(kind, speed)
+	local base = self:_allow((k.Base or 0) * scale * factor * bySpeed)
 	if base <= 0 then
 		c.empty += 1 -- the ceiling took all of it: no line
 		return nil
@@ -320,6 +392,8 @@ function Engine.oneOff(self: any, kind: string, size: number, info: { [string]: 
 	local entry = self:_newEntry(kind, labelOf(k, info, math.clamp(size, 0, 1), 0), score.multiplier)
 	entry.points = points
 	entry.state = "banked"
+	entry.speed = speed
+	entry.speedFactor = bySpeed
 	c.started += 1
 	c.banked += 1
 	c.points += points
@@ -365,6 +439,10 @@ function Engine.start(self: any, kind: string, info: { [string]: any }?): any
 		-- must see it is on.
 		shown = k.Mode ~= "sustained",
 		from = self.lastPos, -- where this line started, for a `MaxSeconds` restart
+		-- the real speed and its factor over the hold, time-weighted (T-303)
+		speedTime = 0,
+		speedSum = 0,
+		speedFactorSum = 0,
 	}, Handle)
 	self.live[h] = true
 	self:_count(kind).started += 1
@@ -441,6 +519,8 @@ function Engine._show(self: any, h: any, now: boolean)
 		entry.kind = best.kind
 		entry.label = best.entry.label
 		entry.points = banked
+		entry.speed = best.entry.speed
+		entry.speedFactor = best.entry.speedFactor
 	else
 		entry.state = "void"
 		entry.points = lost
@@ -610,11 +690,19 @@ function Handle.update(self: any, size: number, dt: number)
 		self.dirty = true
 	end
 
+	-- The speed factor, step by step (T-303): what collects this step is worth this step's real
+	-- speed, and the hold's time-weighted mean factor sizes a conditional's finish.
 	local ok, speed = engine:_moving(k)
+	local bySpeed = engine:_speedFactor(self.kind, speed)
+	self.speedTime += dt
+	self.speedFactorSum += bySpeed * dt
+	self.speedSum += speed * dt
+	entry.speed = self.speedSum / self.speedTime
+	entry.speedFactor = self.speedFactorSum / self.speedTime
 	if ok then
 		local units = if k.Per == "stud" then speed * dt else dt
 		local rate = (k.Rate or 0) * (1 + (k.Ramp or 0) * self.seconds)
-		local base = engine:_allow(rate * units * scale * self.factor)
+		local base = engine:_allow(rate * units * scale * self.factor * bySpeed)
 		if base > 0 then
 			entry.points += base * score.multiplier
 			entry.rung = score.multiplier
@@ -633,6 +721,8 @@ function Handle.update(self: any, size: number, dt: number)
 	-- unbounded points unseen.
 	if k.MaxSeconds and k.Mode == "sustained" and self.seconds >= k.MaxSeconds then
 		self:_bank(score)
+		engine:_noteSpeed(self.kind, self.speedSum / self.speedTime)
+		self.speedTime, self.speedSum, self.speedFactorSum = 0, 0, 0
 		self.entry = engine:_newEntry(self.kind, labelOf(k, self.info, 0, 0), score.multiplier)
 		self.seconds = 0
 		self.peak = 0
@@ -683,6 +773,9 @@ function Handle.finish(self: any, completed: boolean)
 	local engine = self.engine
 	engine.live[self] = nil
 	local entry: Entry = self.entry
+	if self.speedTime > 0 then
+		engine:_noteSpeed(self.kind, self.speedSum / self.speedTime)
+	end
 	local score = engine:_score()
 	if completed and score then
 		local k = self.k
@@ -691,7 +784,12 @@ function Handle.finish(self: any, completed: boolean)
 			-- and kick, scaled by the mean size held, through `Award` (times the rung now).
 			score:Bank(entry.points)
 			local mean = if self.totalSeconds > 0 then self.scaleSeconds / self.totalSeconds else scaleOf(k, self.peak)
-			local base = engine:_allow((k.Static or 0) * mean * self.factor)
+			-- the finish is worth the hold's mean speed factor (T-303); never held: the speed now
+			local bySpeed = if self.speedTime > 0
+				then self.speedFactorSum / self.speedTime
+				else engine:_speedFactor(self.kind, select(2, engine:_moving(k)))
+			entry.speedFactor = bySpeed
+			local base = engine:_allow((k.Static or 0) * mean * self.factor * bySpeed)
 			entry.points += score:Award(base, (k.Kick or 0) * mean)
 			entry.rung = score.multiplier
 			entry.state = "banked"

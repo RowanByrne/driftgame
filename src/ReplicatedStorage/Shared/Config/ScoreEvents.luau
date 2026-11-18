@@ -65,6 +65,36 @@ return {
 	-- Entries the debug log keeps.
 	LogSize = 40,
 
+	-- ------------------------------------------------------------------- speed (T-303)
+	-- What a manoeuvre is worth for the speed it is done at (the user: "it's easier in slower
+	-- cars to hit accurate 4 wheel lane drifts"). From the ground the car really covers:
+	--   factor = Floor at Slow and under, rising in a straight line to 1 at Reference,
+	--            then to Cap at Fast and over
+	-- A one-off takes the factor of its moment; a held or conditional event each step's own,
+	-- and its finish the mean over the hold (`Drift/ScoreEvents` header).
+	Speed = {
+		Enabled = true,
+		Reference = 60, -- studs/s: worth exactly what it was before
+		Slow = 30, -- studs/s
+		Floor = 0.6,
+		Fast = 100, -- studs/s
+		Cap = 1.4,
+		-- Each kind's share of the factor: 1 the whole of it, 0 none. A kind not named here
+		-- takes `Weight`.
+		Weight = 1,
+		Weights = {
+			-- paid a stud at a time already, so already worth more the faster they are done
+			wheelLift = 0,
+			bumperGrind = 0,
+			hangGrind = 0,
+			-- half: the jump's height already grows with speed, and a near miss needs 50
+			-- studs/s to count at all
+			jump = 0.5,
+			nearMiss = 0.5,
+		},
+		Samples = 50, -- speeds kept per kind for the debug log
+	},
+
 	-- -------------------------------------------------------------------- the kinds
 	-- `Difficulty` is the user's word for each (T-293); nothing reads it but people.
 	Kinds = {
