@@ -2160,6 +2160,53 @@ function SplineGen._tight(self: Gen, item: Item, needed: number): Spline.Section
 		return refuse("gentle")
 	end
 	local sec = TightHairpin.build(k0, g0, b0, item.dir :: number, short, if item.climb then T.Grade else -T.Grade, self.clearance)
+	-- THE RUN ON FOLLOWS THE MOUNTAIN: the grade is the shape's own only while the legs are side
+	-- by side (the island is the bank between their heights); past that, as every section's
+	-- grade does, it eases toward the hillside `FollowLook` studs ahead, at `MaxGradeRate`,
+	-- never past `MaxGrade`
+	do
+		local SC = Config.Spline
+		local sOut = sec.th[4]
+		local gt = sec.g[#sec.g]
+		local fixed: { number } = {}
+		for j = 1, #sec.g, 2 do
+			if sec.g[j] < sOut - 1e-6 then
+				table.insert(fixed, sec.g[j])
+				table.insert(fixed, sec.g[j + 1])
+			end
+		end
+		table.insert(fixed, sOut)
+		table.insert(fixed, gt)
+		local pts: { { number } } = {}
+		walk(x0, z0, yaw0, k0, sec.k, 8, 8, function(u, x, z)
+			table.insert(pts, { u, Ground.h(self.ground, x, z) })
+			return true
+		end)
+		local function hAt(u: number): number
+			local i = math.clamp(math.floor(u / 8), 1, #pts)
+			return pts[i][2]
+		end
+		-- the height at sOut, along the fixed knots
+		local y, s, g = y0, 0, g0
+		for j = 1, #fixed, 2 do
+			y += (g + fixed[j + 1]) * 0.5 * (fixed[j] - s)
+			s, g = fixed[j], fixed[j + 1]
+		end
+		local step, look = 16, T.FollowLook
+		local lim = math.tan(math.rad(SC.MaxGrade))
+		local u = sOut
+		while u < sec.len - 1e-6 do
+			local du = math.min(step, sec.len - u)
+			local want = math.clamp((hAt(math.min(u + look, sec.len)) - y) / look, -lim, lim)
+			local gn = g + math.clamp(want - g, -SC.MaxGradeRate * du, SC.MaxGradeRate * du)
+			y += (g + gn) * 0.5 * du
+			u += du
+			g = gn
+			table.insert(fixed, u)
+			table.insert(fixed, g)
+		end
+		sec.g = fixed
+	end
 	-- the mountain: how far the shape leaves the road off h, a hug's way (fill counts in full,
 	-- cut scaled to `TurnMaxCut`)
 	local G = Config.Spline.Ground
@@ -2199,9 +2246,14 @@ function SplineGen._tight(self: Gen, item: Item, needed: number): Spline.Section
 	table.insert(knots, sec.len + Config.Spline.EscapeLength)
 	table.insert(knots, 0)
 	local own: { number } = {}
+	-- (the leg in's own road behind the shape, `LegBack` studs of it, is the road the leg out
+	-- runs beside on purpose: it need only keep clear of the tarmac, `LegGap` between edges;
+	-- the escape past the shape keeps the full clearance from everything)
+	local near = Config.Road.Width + T.LegGap
 	local ok = walk(x0, z0, yaw0, k0, knots, cs, first, function(u, x, z)
 		local s = s0 + u
-		local hit = sp:crowded(x, z, s, clear, sep)
+		local hit = sp:crowded(x, z, s, clear, if u <= sec.len then math.max(sep, s - (s0 - T.LegBack)) else sep)
+			or (u <= sec.len and sp:crowded(x, z, s, near, sep))
 		if hit then
 			table.insert(self.stats.tightNotes, `crowded at {math.floor(u)} of {math.floor(sec.len)} by road {math.floor(s0 - hit)} back`)
 			return false

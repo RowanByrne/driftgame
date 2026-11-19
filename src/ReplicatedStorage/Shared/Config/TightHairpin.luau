@@ -22,9 +22,14 @@ return {
 	-- road. Anywhere else the ordinary hairpin is laid.
 	First = { 1000, 3000 }, -- studs
 	Every = { 4000, 6000 }, -- studs
-	MinFaceSlope = 12, -- degrees
+	MinFaceSlope = 8, -- degrees
 	ShortOfHalf = { 10, 60 }, -- degrees
 	MaxOff = 35, -- studs (`Range.TraverseTurnMaxOff`)
+	-- The road the shape starts from is the leg in, and the leg out runs beside it on purpose:
+	-- the last `LegBack` studs of it need only be `LegGap` clear of the leg out's tarmac, not
+	-- the road's whole clearance. Everything older, and the escape past the shape, keep it.
+	LegBack = 400, -- studs
+	LegGap = 10, -- studs between the two tarmac edges
 
 	-- THE LEGS. Straight and side by side for this long either side of the turn, then the leg
 	-- out bends away from the leg in by the turn's extra (what the next leg's heading asks
@@ -33,11 +38,14 @@ return {
 	DivergeDegrees = { 25, 60 },
 	DivergeRadius = 150, -- studs
 
-	-- THE GRADE through the whole shape, falling on a descent. Gentle on purpose: the two legs'
+	-- THE GRADE through the side by side run, falling on a descent (rising on a climb). Gentle on purpose: the two legs'
 	-- heights part by this grade times the road between them, and the island is the bank
 	-- between them. At 0.06, 30 studs of island and 120 studs of side by side: 22 studs, 36
 	-- degrees at its steepest.
 	Grade = 0.06,
+	-- Past the side by side run the grade follows the mountain as any section's does, aiming at
+	-- the hillside this far ahead.
+	FollowLook = 96, -- studs
 
 	-- THE ISLAND: the ground between the legs is a bank from the upper leg's inner edge down
 	-- to the lower one's, not the mountain. No runoff on that side of either leg. As the legs
