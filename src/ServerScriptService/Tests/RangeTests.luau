@@ -22,14 +22,15 @@ local KILL = -500 -- Roblox's fall-kill height
 
 -- THE ROAD ON THE RANGE (T-242): the checks run on `ROAD_SEEDS`, each laid to `ROAD_LENGTH`.
 -- DOUBLING BACK: the road falls back more than `BACK` studs along the way on (the range's t)
--- behind the furthest it has reached, climbing back up more than `BACK_RISE` studs on the
--- way. A switchback is not one: its legs climb the face one above the other, each further on
--- than the one before, and a hairpin's loop reaches back less than its width (2 x 80 studs).
--- Nor is a descent's leg that runs back toward the mountain, round a gorge's head or under
--- the leg above, losing height as it goes (T-326, the user: "a hairpin can briefly send the
--- car back toward the mountain, even if that means losing some forward progress"): T-242's
--- road doubled back climbing into the face it had come down. A TRENCH: the centre line more than `TRENCH` studs
--- below h, deeper than a hairpin is fitted into the face (`Spline.Ground.TurnMaxCut`, 45)
+-- behind the furthest it has reached, and climbs more than `BACK_RISE` studs above the height
+-- it had there. A switchback is not one: its legs climb the face one above the other, each
+-- further on than the one before, and a hairpin's loop reaches back less than its width
+-- (2 x 80 studs). Nor is a descent's leg that runs back toward the mountain, round a gorge's
+-- head or under the leg above, losing height as it goes (T-326, the user: "a hairpin can
+-- briefly send the car back toward the mountain, even if that means losing some forward
+-- progress"): T-242's road doubled back climbing into the face it had come down.
+-- A TRENCH: the centre line more than `TRENCH` studs below h, deeper than a hairpin is fitted
+-- into the face (`Spline.Ground.TurnMaxCut`, 45)
 -- with room for a spur the road cuts through; the one the user drove down went 150 to 290
 -- studs deep for a kilometre and more. Before T-242, on these seeds: 2.3% of the road over
 -- `TRENCH` deep, a stretch of 1 300 studs, 290 at the deepest; after it, 0.6%, 510 and 140.
@@ -38,7 +39,7 @@ local ROAD_SEEDS = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16 }
 local ROAD_LENGTH = 50000 -- studs (25 000 until T-245)
 local RECORDED_SEED7_END = 36555 -- last steering sample of the approved Studio review
 local BACK = 300 -- studs
-local BACK_RISE = 40 -- studs regained while falling back (T-326)
+local BACK_RISE = 40 -- studs above its height at the furthest point, while falling back (T-326)
 -- (T-245) how often it may, over the 16 roads: the road falls back about twice in 5 million
 -- studs, the same before and after the range doubled (96 roads of 50 000 studs each: 874 and
 -- 342 studs before, 313 and 336 after), so once in these 800 000 is the rate, not a fault.
@@ -308,7 +309,7 @@ function Tests.road(_, opts)
 		local offs = {}
 		local lastK, crossings, cross = nil, 0, {}
 		local cutWorst, deep, run, runFrom, backs, tMax, falling = 0, 0, 0, nil, {}, -math.huge, false
-		local low = math.huge -- (T-326) the lowest the road has been since its furthest point
+		local yFar = 0 -- (T-326) the road's height at the furthest point
 		for s = 0, sp.length, 16 do
 			local x, z = sp:planAt(s)
 			local y = sp:heightAt(s)
@@ -339,11 +340,9 @@ function Tests.road(_, opts)
 				local t = Range.frame(f.range, x, z)
 				if s >= nativeStart and s - 16 < nativeStart then tMax, falling = -math.huge, false end
 				if t > tMax then
-					tMax, falling, low = t, false, y
+					tMax, falling, yFar = t, false, y
 				else
-					-- (how far it has climbed back up since the lowest point behind the furthest)
-					low = math.min(low, y)
-					if tMax - t > BACK and y - low > BACK_RISE then
+					if tMax - t > BACK and y - yFar > BACK_RISE then
 						if not falling then
 							table.insert(backs, { s, 0 })
 							falling = true
