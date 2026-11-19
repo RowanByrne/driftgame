@@ -31,6 +31,7 @@ assert(RunService:IsStudio(), "HairpinTests only runs in Studio")
 
 local Config = require(ReplicatedStorage.Shared.Config)
 local SplineGen = require(ReplicatedStorage.Shared.Road.SplineGen)
+local RoadDressing = require(ReplicatedStorage.Shared.Road.RoadDressing) -- the barriers, as the game's road has them (T-327)
 local Hairpins = require(ReplicatedStorage.Shared.Road.Hairpins)
 local RoadTexture = require(ReplicatedStorage.Shared.Road.RoadTexture)
 
@@ -256,6 +257,7 @@ local function runAll(opts)
 
 	local T = Hairpins.Tuning
 	local gen = SplineGen.new(SEED)
+	RoadDressing.attach(gen)
 	gen:extendTo(LENGTH)
 	local spline = gen.spline
 	local all = Hairpins.bends(spline, 0, spline.length)
@@ -279,6 +281,7 @@ local function runAll(opts)
 		local more = {}
 		for _, seed in MORE_SEEDS do
 			local g = SplineGen.new(seed)
+			RoadDressing.attach(g)
 			g:extendTo(LENGTH)
 			local nb, np = 0, 0
 			for _, h in Hairpins.bends(g.spline, 0, g.spline.length) do
@@ -381,6 +384,7 @@ local function runAll(opts)
 
 		-- and as the road grows: a road laid only to 6000 studs agrees where it is closed
 		local g2 = SplineGen.new(SEED)
+		RoadDressing.attach(g2)
 		g2:extendTo(6000)
 		local grewBad, compared = 0, 0
 		local byEntry = {}

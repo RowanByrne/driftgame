@@ -23,6 +23,7 @@ assert(RunService:IsStudio(), "HairpinHintTests only runs in Studio")
 
 local Config = require(ReplicatedStorage.Shared.Config)
 local SplineGen = require(ReplicatedStorage.Shared.Road.SplineGen)
+local RoadDressing = require(ReplicatedStorage.Shared.Road.RoadDressing) -- the barriers, as the game's road has them (T-327)
 local Hairpins = require(ReplicatedStorage.Shared.Road.Hairpins)
 
 local DriftFolder = StarterPlayer.StarterPlayerScripts:WaitForChild("Drift")
@@ -95,6 +96,7 @@ local function runAll()
 	local T = HairpinHint.Tuning
 
 	local gen = SplineGen.new(SEED)
+	RoadDressing.attach(gen)
 	gen:extendTo(LENGTH)
 	local spline = gen.spline
 	local pins, plain = {}, {}
@@ -171,6 +173,7 @@ local function runAll()
 	-- the road laid only a little ahead, as live: still each hairpin, before its zone
 	for _, ahead in { 900, 600 } do
 		local g2 = SplineGen.new(SEED)
+		RoadDressing.attach(g2)
 		g2:extendTo(ahead + 200)
 		local hints, hinter = ride(g2, {
 			speed = 60,

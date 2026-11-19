@@ -16,6 +16,7 @@ assert(RunService:IsStudio(), "SplineTests is Studio only")
 local Config = require(ReplicatedStorage.Shared.Config)
 local Spline = require(ReplicatedStorage.Shared.Road.Spline)
 local SplineGen = require(ReplicatedStorage.Shared.Road.SplineGen)
+local RoadDressing = require(ReplicatedStorage.Shared.Road.RoadDressing)
 
 local Tests = {}
 
@@ -30,6 +31,7 @@ end
 
 local function road(seed: number, length: number)
 	local gen = SplineGen.new(seed)
+	RoadDressing.attach(gen) -- its barriers, as the game's road has them (T-327)
 	gen:extendTo(length)
 	task.wait() -- long preview suites hand Studio a frame between roads
 	return gen
@@ -422,7 +424,7 @@ function parts.terrain(check)
 						-- be short. SplineGenTests checks where they stand)
 						local len = sec.kr[j + 1] - sec.kr[j]
 						local carries = sec.kr[j] < 1e-6 or sec.kr[j + 1] > sec.len - 1e-6
-						if len <= 0 or (len < T.KRailMinRun - 1e-6 and not carries) then
+						if len <= 0 or (len < Config.Dressing.Barrier.MinRun - 1e-6 and not carries) then
 							badRails += 1
 						end
 						if bend and sec.kr[j + 2] == outside and outsideDown then
@@ -537,7 +539,7 @@ function parts.terrain(check)
 	)
 	check("the mountain changes sides only along the fall line", swapOutOfBand == 0, `{swapOutOfBand} changes outside the band along the fall line`)
 	check(
-		"K-rails at least KRailMinRun studs (or carried across a section's end)",
+		"K-rails at least MinRun studs (or carried across a section's end)",
 		badRails == 0 and rails > 0,
 		`{rails} pieces, {badRails} the wrong length; {railsOnBendCliff} of {bendsOverCliff} bends the fall line calls downhill outside have one (T-306: placed by the ground now)`
 	)
@@ -807,7 +809,7 @@ function parts.tight(check)
 					narrowest = math.min(narrowest, w)
 					-- (T-306: the side the ground falls away on, read off the mountain, not the
 					-- side the fall line calls downhill, which is the rising one about half the time)
-					if SplineGen.dropBeside(sp, u, side) < T.KRailFallDrop - 2 then
+					if SplineGen.dropBeside(sp, u, side) < T.TightFallDrop - 2 then
 						notCliff += 1
 					end
 					if not sp:kRailAt(u, side) then

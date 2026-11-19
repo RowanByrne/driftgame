@@ -161,7 +161,7 @@ local Spline = {
 		-- short to fit one; the car's wall leans with it, so it grinds rather than snags
 		CarvedRate = 0.4,
 		-- WHICH SIDE (T-308): only where the ground beside the road RISES at least this much,
-		-- read as the K-rails read the drop (`KRailProbe` studs past the carved edge), all
+		-- read as the drop beside the road (`DropProbe` studs past the carved edge), all
 		-- along the carve. Never where it falls, never on a rail's side
 		CarvedRise = 8, -- studs
 		-- THE EDGES ARE THE DRAWN GROUND (T-258, T-261, features/car-edges.md): no rock face,
@@ -178,32 +178,24 @@ local Spline = {
 		-- since T-306 (below: the side read off the fall line was the rising one about half the time).
 		-- K-RAILS: drawn as METAL CRASH BARRIERS (T-149): a W-beam steel guardrail held off
 		-- square posts on spacer blocks, a striped hazard panel at each end of a run; the
-		-- `KRail` names stay, since the generator and the car's collision read them. To the
+		-- `KRail` names stay, since the drawing and the car's collision read them. To the
 		-- car it is a wall `KRailThickness` thick and `KRailHeight` high, inner face exactly on
 		-- the tarmac's edge; the drawn beam's face is on that edge and its top at
 		-- `KRailHeight`, its spacers and posts inside the wall.
 		KRailHeight = 3, -- studs: the car's wall, and the drawn beam's top
 		KRailThickness = 2, -- studs: the car's wall (the drawn barrier is thinner)
-		-- WHERE THEY STAND (T-306). The user, 2026-11-17: "only on the downhill sides ...
-		-- longer sections protecting cliffs on corners. hairpins with big drops should have
-		-- them too." Placed from the ground itself, never at random: the DROP beside the road
-		-- is how far the mountain (`Road/Ground.h`) is below the grass's outer edge
-		-- `KRailProbe` studs past it (on the inside of a bend no further than `KRailInsideReach`
-		-- of the way to its centre, the drop scaled up to the same slope; nearer than
-		-- `KRailProbeMin` the bend encloses that side and it has no drop).
-		KRailProbe = 40, -- studs past the runoff's outer edge
-		KRailProbeMin = 10, -- studs
-		KRailInsideReach = 0.8, -- of a bend's radius
-		KRailFallDrop = 8, -- studs: a rail only ever stands where the ground falls this much (the downhill side)
-		KRailCornerRadius = 340, -- studs: a CORNER is road tighter than this (medium bends and tighter)
-		KRailCornerDrop = 20, -- studs: a corner whose outside drops this much is railed the whole way round
-		KRailHairpinRadius = 130, -- studs: a TIGHT BEND, the double yellow's (every hairpin is one)
-		KRailHairpinDrop = 15, -- studs: either side of a tight bend dropping this much is railed through it
-		KRailCliffDrop = 40, -- studs: anywhere else, a drop this big is railed
-		KRailLeadIn = 40, -- studs of rail before a corner, a tight bend or a cliff
-		KRailRunOut = 60, -- studs after it (on into the next section)
-		KRailMinRun = 40, -- studs: no shorter piece of rail (except one carrying on across a section's end)
-		KRailSample = 4, -- studs between the points the drop is read at
+		-- WHERE THEY STAND is the dressing's to choose (`Config.Dressing.Barrier`, T-327): only how
+		-- they look and how tall they are to the car is here.
+		-- THE DROP BESIDE THE ROAD, as the planner reads it for a tight cliff edge and a carved
+		-- apex (T-306, T-308): how far the mountain (`Road/Ground.h`) is below the grass's outer
+		-- edge `DropProbe` studs past it (on the inside of a bend no further than
+		-- `DropInsideReach` of the way to its centre, the drop scaled up to the same slope; nearer
+		-- than `DropProbeMin` the bend encloses that side and it has no drop). The dressing reads
+		-- the same drop with settings of its own, so changing one never moves the other.
+		DropProbe = 40, -- studs past the runoff's outer edge
+		DropProbeMin = 10, -- studs
+		DropInsideReach = 0.8, -- of a bend's radius
+		DropSample = 4, -- studs between the points the drop is read at
 		-- The drawing only (`Road/SplineMesh`): the beam's W profile is two rounded ridges
 		-- with a groove between, `KRailBeam` tall in all, its top at `KRailHeight`.
 		KRailBeam = 1.2, -- studs, the beam's height
@@ -227,6 +219,7 @@ local Spline = {
 		TightRate = 0.4, -- studs of width per stud the runoff closes in and opens out
 		TightRamp = 20, -- studs, the shortest closing in or opening out
 		TightLead = 12, -- studs the rail and the gravel reach past each end of the narrow part
+		TightFallDrop = 8, -- studs: the ground falls at least this much all along a tight edge (T-306)
 		-- Programmer colours (the look is set with the next feature)
 		GrassColour = Color3.fromRGB(86, 140, 62),
 		GravelColour = Color3.fromRGB(146, 138, 124), -- a tight cliff edge's strip (T-181)

@@ -13,6 +13,7 @@ assert(RunService:IsStudio(), "GroveTests is Studio only")
 local Config = require(ReplicatedStorage.Shared.Config)
 local Spline = require(ReplicatedStorage.Shared.Road.Spline)
 local SplineGen = require(ReplicatedStorage.Shared.Road.SplineGen)
+local RoadDressing = require(ReplicatedStorage.Shared.Road.RoadDressing) -- the barriers, as the game's road has them (T-327)
 local SplineGrove = require(ReplicatedStorage.Shared.Road.SplineGrove)
 
 local Tests = {}
@@ -48,6 +49,7 @@ local function run(check)
 	local gens = {}
 	for _, seed in SEEDS do
 		local gen = SplineGen.new(seed)
+		RoadDressing.attach(gen)
 		gen:extendTo(LENGTH)
 		gens[seed] = gen
 		local sp = gen.spline
@@ -177,6 +179,7 @@ local function run(check)
 		T.GroveChance = 0
 		local ok, plain = pcall(function()
 			local g = SplineGen.new(SEEDS[2])
+			RoadDressing.attach(g)
 			g:extendTo(LENGTH)
 			return g
 		end)

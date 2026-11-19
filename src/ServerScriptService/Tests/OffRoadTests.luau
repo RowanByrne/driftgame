@@ -20,6 +20,7 @@ assert(RunService:IsStudio(), "OffRoadTests is Studio only")
 local Config = require(ReplicatedStorage.Shared.Config)
 local Ground = require(ReplicatedStorage.Shared.Road.Ground)
 local SplineGen = require(ReplicatedStorage.Shared.Road.SplineGen)
+local RoadDressing = require(ReplicatedStorage.Shared.Road.RoadDressing) -- the barriers, as the game's road has them (T-327)
 
 local DriftFolder = StarterPlayer.StarterPlayerScripts:WaitForChild("Drift")
 
@@ -48,6 +49,7 @@ function Tests.run(...)
 	local tanWall = math.tan(math.rad(O.WallAngle))
 
 	local gen = SplineGen.new(SEED)
+	RoadDressing.attach(gen)
 	gen:extendTo(LENGTH)
 	local spline = gen.spline
 	local field = spline.mountain
@@ -104,9 +106,20 @@ function Tests.run(...)
 		end
 		s += 24
 	end
+	-- A cut with a FOOT: the ground is still within `WallStep` of the edge where it first gets
+	-- steeper than the wall. A rounded toe the car can climb partway (T-326's cuts have them)
+	-- leaves it standing on the toe, which is right, but is not the stop this asks about.
+	local function hasFoot(p): boolean
+		for e = 1, OUT do
+			if p.ys[e] - p.ys[e - 1] > tanWall then
+				return p.ys[e - 1] - p.ys[0] < O.WallStep
+			end
+		end
+		return false
+	end
 	local cut, fill, gentle
 	for _, p in survey do
-		if not cut and p.steepest > tanWall * 1.3 and p.rise > 6 and p.steepAt < 20 then
+		if not cut and p.steepest > tanWall * 1.3 and p.rise > 6 and p.steepAt < 20 and hasFoot(p) then
 			cut = p
 		elseif not fill and p.steepest > tanWall * 1.3 and p.rise < -6 and p.steepAt < 20 then
 			fill = p
