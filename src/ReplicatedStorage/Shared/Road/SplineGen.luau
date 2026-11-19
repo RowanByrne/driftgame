@@ -2210,8 +2210,7 @@ function SplineGen._tight(self: Gen, item: Item, needed: number): Spline.Section
 		end
 		sec.g = fixed
 	end
-	-- the mountain: how far the shape leaves the road off h, a hug's way (fill counts in full,
-	-- cut scaled to `TurnMaxCut`)
+	-- the mountain: how far the shape leaves the road off h, either way
 	local G = Config.Spline.Ground
 	local gk = sec.g
 	local function yAt(u: number): number
@@ -2230,7 +2229,7 @@ function SplineGen._tight(self: Gen, item: Item, needed: number): Spline.Section
 	local worst, worstU = 0, 0
 	walk(x0, z0, yaw0, k0, sec.k, 8, 8, function(u, x, z)
 		local d = yAt(u) - Ground.h(self.ground, x, z)
-		local off = if d > 0 then d else -d * G.TurnMaxOff / G.TurnMaxCut
+		local off = math.abs(d)
 		if off > worst then
 			worst, worstU = off, u
 		end

@@ -102,7 +102,11 @@ function RoadDressing.dress(self: Dresser, sec: Spline.Section)
 		local kept = {}
 		for _, p in pieces[island] do
 			if p[2] > free + 1e-6 then
-				table.insert(kept, { math.max(p[1], free), p[2] })
+				local a, b = math.max(p[1], free), p[2]
+				-- (a stub left short by the cut is dropped, unless it carries on past the end)
+				if b - a >= B.MinRun or b >= sec.len - 1e-6 then
+					table.insert(kept, { a, b })
+				end
 			end
 		end
 		pieces[island] = kept

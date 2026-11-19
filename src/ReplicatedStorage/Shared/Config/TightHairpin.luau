@@ -24,7 +24,8 @@ return {
 	Every = { 4000, 6000 }, -- studs
 	MinFaceSlope = 8, -- degrees
 	ShortOfHalf = { 10, 60 }, -- degrees
-	MaxOff = 20, -- studs (`Spline.Ground.TurnMaxOff`, as any turnaround)
+	-- (a cut counts in full too: a tight hairpin is laid where the face takes it, not in a trench)
+	MaxOff = 20, -- studs (`Spline.Ground.TurnMaxOff`)
 	-- Climbs too, or descents only.
 	OnClimbs = true,
 	-- The legs' tarmac edges are never nearer each other than this (the tests' bar; the shape
@@ -35,7 +36,9 @@ return {
 	-- out bends away from the leg in by the turn's extra (what the next leg's heading asks
 	-- beyond a half turn), within these, and runs on until it is clear of the leg in.
 	Parallel = 120, -- studs
-	DivergeDegrees = { 25, 60 },
+	-- (no more than 35: the island's bank is taken across the legs square to the leg in, and a
+	-- leg out leaving at more than that would be nearer the leg in than the bank's width says)
+	DivergeDegrees = { 20, 35 },
 	DivergeRadius = 150, -- studs
 	-- The lead (`Road/TightHairpin.build`) keeps older road this much further from the leg out
 	-- than the island's hand-back needs, for a road that was still bending into the shape.
@@ -56,7 +59,9 @@ return {
 	-- under `IslandFull` apart, wholly the mountain from `IslandGone` (by then each leg's own
 	-- cut or fill, `Spline.Ground.BlendMax` at most, has room to reach it before the other's).
 	IslandRunoff = 0, -- studs of grass on the island's side
-	IslandFull = 120, -- studs between the legs' edges
-	IslandGone = 150,
+	-- (two legs this near and this far apart in height would otherwise meet in a step: each
+	-- leg's own cut or fill reaches the other's)
+	IslandFull = 150, -- studs between the legs' edges
+	IslandGone = 200,
 	IslandMaxSlope = 45, -- degrees: a bank, never a wall (the tests' bar)
 }
