@@ -38,6 +38,7 @@ local Hairpins = require(ReplicatedStorage.Shared.Road.Hairpins)
 local SEEDS = { 31337, 101, 2024 }
 local LENGTH = 30000
 local STEP = 4 -- studs between the points read
+local HAIRPIN_SEED = 2024 -- a road with many hairpins (19 in 30 000 studs), for the run-out check
 local MARGIN = 2 -- studs: a drop this near a threshold is the generator's call (its knots are read straight)
 -- (a point counts as railed with a rail within one `STEP` of it: the rail's ends are read on the
 -- generator's own points, `Sample` apart)
@@ -374,9 +375,9 @@ function SplineGenTests.run(opts: { seeds: { number }?, length: number? }?)
 		local saved = { B.CliffDrop, B.CornerDrop }
 		B.CliffDrop, B.CornerDrop = math.huge, math.huge
 		local ok, gen = pcall(function()
-			local g = SplineGen.new(seeds[1])
+			local g = SplineGen.new(HAIRPIN_SEED)
 			RoadDressing.attach(g)
-			g:extendTo(math.min(length, 20000))
+			g:extendTo(math.min(length, 30000))
 			return g
 		end)
 		B.CliffDrop, B.CornerDrop = saved[1], saved[2]
@@ -384,7 +385,7 @@ function SplineGenTests.run(opts: { seeds: { number }?, length: number? }?)
 		if ok then
 			local sp = gen.spline
 			local kCorner = 1 / B.CornerRadius
-			local kTight = 1 / B.HairpinRadius
+			local kTight = 0.95 / B.HairpinRadius -- (the dressing reads curvature off the knots, straight between them)
 			for _, h in Hairpins.find(sp, 0, sp.length) do
 				if not h.open then
 					-- where it straightens, and whether another tight bend starts soon after
@@ -393,7 +394,7 @@ function SplineGenTests.run(opts: { seeds: { number }?, length: number? }?)
 						straight += 1
 					end
 					local nextTight = false
-					for u = straight, math.min(straight + B.LeadIn + B.HairpinRunOut + B.Sample, sp.length), 2 do
+					for u = straight, math.min(straight + B.LeadIn + B.HairpinRunOut + 30, sp.length), 2 do
 						if math.abs(sp:curvatureAt(u)) >= kTight then
 							nextTight = true
 						end
@@ -416,7 +417,7 @@ function SplineGenTests.run(opts: { seeds: { number }?, length: number? }?)
 		check(
 			"a hairpin's rail ends HairpinRunOut after the bend straightens",
 			ok and sides > 0 and over == 0,
-			if ok then `{sides} railed hairpin sides (seed {seeds[1]}, corner and cliff rules off): at most {fmt(worst, 1)} studs past where the bend straightens (allowed {B.HairpinRunOut + B.Sample + 1}){if #detail > 0 then "; over: " .. table.concat(detail, ", ") else ""}` else tostring(gen)
+			if ok then `{sides} railed hairpin sides (seed {HAIRPIN_SEED}, corner and cliff rules off): at most {fmt(worst, 1)} studs past where the bend straightens (allowed {B.HairpinRunOut + B.Sample + 1}){if #detail > 0 then "; over: " .. table.concat(detail, ", ") else ""}` else tostring(gen)
 		)
 	end
 	local passed = true
