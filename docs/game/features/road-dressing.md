@@ -1,6 +1,6 @@
 # Feature: Road dressing
 
-**Status:** specced, waiting on T-326. **Owner task:** none yet.
+**Status:** step 1 built (T-328), step 2 next. **Owner task:** T-327.
 
 ## Goal
 
@@ -48,6 +48,12 @@ None.
 ## Art and sound
 
 None: the barriers keep their model.
+
+## What step 1 measured (T-328)
+
+- **The road is identical:** seeds 7, 1234 and 98765, 30 000 studs each, 548 sections, every road field the same. A permanent check (`SplineGenTests`) lays each seed with no dressing and finds the same road, unrailed.
+- **Barriers: 539 of 548 sections the same.** The 9 that differ are all at tight cliff edges: the dressing reads the drop from the gravel's real lip, where the old code read it from the grass edge before the gravel narrowed it, so a few barriers there end sooner (one leaves a 16-stud gap). The user accepted this (DECISIONS.md, 2026-11-19).
+- **How it is wired:** `SplineGen` calls an optional `dress` hook on each accepted section, after it is final and before it is laid; `SplineSequence` attaches `RoadDressing`, and tests that need barriers attach it themselves. Turn previews are never dressed. The carve's old guard against a rail on its inside went with it (a rail needs falling ground, a carve rising ground; `SplineGenTests` checks no carve sits on a railed side). The planner reads the drop for its own choices with `Config.Spline.Terrain.Drop*` and `TightFallDrop`, the dressing with `Config.Dressing.Barrier`.
 
 ## Testing
 
