@@ -166,6 +166,9 @@ local function drive(sp, entry: number, exit: number, dir: number, v0: number, w
 		s = runner.state
 		speed = math.sqrt(s.velocity.X ^ 2 + s.velocity.Z ^ 2)
 		local slipDeg = math.abs(math.deg(s.slip))
+		if way.trace and runner.totalSteps % 12 == 0 then
+			table.insert(way.trace, `s {fmt(cs - entry, 0)} d {fmt(cd or 0, 1)} v {fmt(speed, 0)} slip {fmt(math.deg(s.slip), 0)} want {fmt(math.deg(bStar), 0)} steer {fmt(input.steer, 2)}{if scrubbing then " SCRUB" else ""}{if s.wallHit then " WALL" else ""}`)
+		end
 
 		if cs >= entry - 250 then
 			tStart = tStart or s.time
