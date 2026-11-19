@@ -10,7 +10,7 @@
 -- 2. THE ISLAND: its narrowest gap between the legs' edges and its steepest slope.
 -- 3. ITS EDGES: the ground every 2 studs along both inner edges, just off the tarmac, meets
 --    the tarmac's edge; just on the tarmac it is under it (no ground through the road).
--- 4. NO CLIFF: a 1-stud grid over the island and round it, each step between neighbours.
+-- 4. NO CLIFF: a grid over the island and where it hands back, each step between neighbours.
 -- 5. REPLAY: the section sent as JSON and laid again keeps the island.
 -- 6. THE CAR round it: the real drift model on the road's maths (`Drift/SplineWorld`),
 --    TightTurnTests' driver, 58 ways from 60 and 90 studs/s.
@@ -141,7 +141,10 @@ local function run(check, log, opts)
 				-- (only the ground: on the tarmac the road draws itself)
 				local s, dd = sp:project(x, z, 80)
 				local onRoad = s and dd and math.abs(dd) < half
-				local v = if onRoad then nil else y
+				-- (only where the island has a say: the cuts and fills beside the road are the
+				-- mountain's, walls on steep ground by design, and GroundTests' to judge)
+				local _, w = TightHairpin.islandAt(isl, x, z)
+				local v = if onRoad or w <= 0 then nil else y
 				table.insert(row, v)
 				if v and prev then
 					local j = math.abs(v - prev) / step
