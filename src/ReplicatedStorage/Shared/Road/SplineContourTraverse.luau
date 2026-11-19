@@ -99,6 +99,7 @@ local function survey(f: Ground.Field, x0: number, z0: number, y0: number, yaw: 
 	cost[j0], angle[j0], Y[j0] = 0, startAngle, y0
 	local refund = C.TraverseRefund
 	local parents: { { number } } = {}
+	local frees: { { boolean } } = {}
 	local costs: { { number } } = {}
 	local heights: { { number } } = {}
 	local best, bestI, bestJ = math.huge, 0, 0
@@ -137,6 +138,7 @@ local function survey(f: Ground.Field, x0: number, z0: number, y0: number, yaw: 
 			local tb = tAt(i, b)
 			free[b] = tb >= top and not blocked(Range.world(r, tb, v))
 		end
+		frees[i] = free
 		for b = 1, width do
 			if not free[b] then
 				continue
@@ -214,8 +216,18 @@ local function survey(f: Ground.Field, x0: number, z0: number, y0: number, yaw: 
 				-- grade would start that leg on a steep pitch
 				local radius = math.clamp(C.TraverseRadiusSlope / math.max(sl, 1e-3), C.SteepHairpinRadius[1], C.TraverseRadiusMax)
 				local jo = math.min(width, j + math.ceil(2 * radius / dt))
-				local m = math.min(i, C.TraverseExitLayers)
-				local exitFall = (H[i][jo] - H[i - m][jo]) / (m * dv)
+				local m = math.min(i - 1, C.TraverseExitLayers)
+				local clearWay = true
+				for back = i, i - m, -1 do
+					if not frees[back][jo] then
+						clearWay = false
+						break
+					end
+				end
+				if not clearWay then
+					continue
+				end
+				local exitFall = (H[i][jo] - H[i - m][jo]) / (math.max(m, 1) * dv)
 				site += steep * m * dv * math.max(0, math.abs(exitFall) - gStar)
 				local score = c - refund * L[j] + site
 				if score < best then
