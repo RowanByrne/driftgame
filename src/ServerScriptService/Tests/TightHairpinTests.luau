@@ -110,7 +110,7 @@ local function run(check, log, opts)
 			local cx, cz = sp:planAt(s)
 			local yaw = sp:yawAt(s)
 			local rx, rz = math.cos(yaw), -math.sin(yaw)
-			local edgeY = sp:heightAt(s) - under
+			local edgeY = sp:surface(s, d).Y - under
 			-- just off the tarmac, on the island
 			local ox, oz = cx + rx * (d - dir * 0.3), cz + rz * (d - dir * 0.3)
 			local y = Ground.at(ctx, ox, oz)
@@ -223,7 +223,7 @@ local function run(check, log, opts)
 					local yaw = sp:yawAt(s)
 					local rx, rz = math.cos(yaw), -math.sin(yaw)
 					local y = Ground.at(ctx, cx + rx * (d - e.dir * 0.3), cz + rz * (d - e.dir * 0.3))
-					worstEdge = math.max(worstEdge, math.abs(y - (sp:heightAt(s) - under)))
+					worstEdge = math.max(worstEdge, math.abs(y - (sp:surface(s, d).Y - under)))
 				end
 				table.insert(at, `{fmt(e.sA, 0)} ({if e.dir > 0 then "L" else "R"}, {fmt(sp:heightAt(e.sA) - sp:heightAt(e.sB), 1)}/{fmt(sp:heightAt(e.sIn) - sp:heightAt(e.sOut), 1)} high, {fmt(steep, 0)} deg, {fmt(narrow, 0)} wide)`)
 				task.wait()
