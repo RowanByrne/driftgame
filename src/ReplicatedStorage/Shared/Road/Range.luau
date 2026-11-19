@@ -133,7 +133,10 @@ end
 function Range.floor(r: Range, k: number, v: number): number
 	local R = Config.Range
 	local rd = ridge(r, k)
-	return rd.base + R.FloorVary * 2 * math.noise(v / R.FloorEvery + rd.flo, 0.29, 0.43)
+	-- Preserve the spawn datum; elsewhere the floor moves down in world space.
+	local cut = R.ValleyIncision
+	if k == -1 then cut *= smooth(math.clamp(math.abs(v) / 2400, 0, 1)) end
+	return rd.base + R.FloorVary * 2 * math.noise(v / R.FloorEvery + rd.flo, 0.29, 0.43) - cut
 end
 
 function Range.new(seed: number, ox: number, oz: number, ux: number, uz: number): Range

@@ -6,10 +6,76 @@
 local Config = require(game.ReplicatedStorage.Shared.Config)
 local Ground = require(script.Parent.Ground)
 local Range = require(script.Parent.Range)
+local Gorge = require(script.Parent.SplineContourGorge)
 
 local Route = {}
 type Point = { t: number, v: number, s: number }
 export type Route = { points: { Point }, ridge: number, endT: number }
+
+-- Lay out a broad bend across a long, straight approach while both flanks
+-- are still available. The hill chooses the side and how far the road swings.
+local function hillsideBends(f: Ground.Field, pts: { Point })
+	local C = Config.Range
+	local i = 1
+	while i < #pts do
+		local j = i + 1
+		while j < #pts and pts[j].s - pts[i].s < C.TraverseSpan do j += 1 end
+		local a, b = pts[i], pts[j]
+		local span = b.s - a.s
+		if span < C.TraverseSpan * 0.68 then break end
+		local dt, dv = b.t - a.t, b.v - a.v
+		local chord = math.sqrt(dt * dt + dv * dv)
+		if dt < 0.55 * chord or span > 1.10 * chord then
+			i += 1
+			continue
+		end
+		local function offsetScore(offset: number): number
+			local prevX, prevZ = Range.world(f.range, a.t, a.v)
+			local prevH = Ground.h(f, prevX, prevZ)
+			local sum, worst, count = 0, 0, 0
+			for k = i + 1, j do
+				local p = pts[k]
+				local wave = math.sin(math.pi * (p.s - a.s) / span)
+				local x, z = Range.world(f.range, p.t, p.v + offset * wave * wave)
+				local h = Ground.h(f, x, z)
+				local dx, dz = x - prevX, z - prevZ
+				local len = math.sqrt(dx * dx + dz * dz)
+				local pitch = math.abs(h - prevH) / len
+				local banks = Gorge.along(f, x, z, dx / len, dz / len, h)
+				local penalty = 480 * math.max(0, pitch - 0.13) + 1800 * math.max(0, pitch - 0.24) + 3 * banks
+				sum += penalty
+				worst = math.max(worst, penalty)
+				count += 1
+				prevX, prevZ, prevH = x, z, h
+			end
+			-- A low-cost, wide alternative makes room for a pair of flowing bends.
+			local throw = math.abs(offset) * dt / chord
+			return worst + 0.8 * sum / count + 125 * math.max(0, 1 - throw / 620) ^ 2
+		end
+		local best, chosen = offsetScore(0), 0
+		for _, offset in C.TraverseOffsets do
+			for side = -1, 1, 2 do
+				local score = offsetScore(side * offset)
+				if score < best then best, chosen = score, side * offset end
+			end
+		end
+		if chosen ~= 0 then
+			for k = i + 1, j - 1 do
+				local p = pts[k]
+				local wave = math.sin(math.pi * (p.s - a.s) / span)
+				p.v += chosen * wave * wave
+			end
+		end
+		i = j
+	end
+end
+
+local function distances(points: { Point })
+	for i = 2, #points do
+		local a, b = points[i - 1], points[i]
+		b.s = a.s + math.sqrt((b.t - a.t) ^ 2 + (b.v - a.v) ^ 2)
+	end
+end
 
 function Route.new(f: Ground.Field, x: number, z: number, yaw: number, target: { x: number, z: number, k: number }): Route
 	local r, C = f.range, Config.Range
@@ -39,6 +105,26 @@ function Route.new(f: Ground.Field, x: number, z: number, yaw: number, target: {
 	for j = 1, quarterWidth do
 		columns[j] = Ground.column(f, v0 + dv * (j - (mid - 1) * 4 - 1) / 4)
 	end
+	-- Coarse elevations are shared by the bank probes of neighbouring cells.
+	local low, high = -3, width + 4
+	local coarseColumns, coarseRows = {}, {}
+	for j = low, high do
+		coarseColumns[j] = columns[(j - 1) * 4 + 1] or Ground.column(f, v0 + dv * (j - mid))
+	end
+	local function coarse(i: number): { [number]: number }
+		local row = coarseRows[i]
+		if row then return row end
+		row = {}
+		local t = t0 + dt * i
+		for j = low, high do row[j] = coarseColumns[j](t) end
+		coarseRows[i] = row
+		return row
+	end
+	local across, onward = {}, {}
+	for shift = -reach, reach do
+		local a = math.abs(dv * shift) / lengths[shift]
+		across[shift], onward[shift] = a * a, 1 - a * a
+	end
 	local previousCosts = table.create(width, math.huge)
 	local previousDirections = table.create(width, 0)
 	local previousHeights = table.create(width, 0)
@@ -56,8 +142,13 @@ function Route.new(f: Ground.Field, x: number, z: number, yaw: number, target: {
 		local quarter = dt / 4
 		local endT = t0 + dt * i
 		local interior = { table.create(quarterWidth), table.create(quarterWidth), table.create(quarterWidth) }
+		local row, nearL, nearR, farL, farR = coarse(i), coarse(i - 2), coarse(i + 2), coarse(i - 4), coarse(i + 4)
 		for b = math.max(1, mid - i * reach), math.min(width, mid + i * reach) do
-			local endH = columns[(b - 1) * 4 + 1](endT)
+			local endH = row[b]
+			local lateral = Gorge.pressure(math.min(row[b-2], row[b+2]) - endH, math.min(row[b-4], row[b+4]) - endH)
+			local forward = Gorge.pressure(math.min(nearL[b], nearR[b]) - endH, math.min(farL[b], farR[b]) - endH)
+			local alongT = C.GorgeCost * math.max(0, lateral - forward)
+			local alongV = C.GorgeCost * math.max(0, forward - lateral)
 			heights[b] = endH
 			local best, parent, heading = math.huge, 0, 0
 			for _, shift: number in offsets do
@@ -65,6 +156,7 @@ function Route.new(f: Ground.Field, x: number, z: number, yaw: number, target: {
 				if a < 1 or a > width then continue end
 				local len, dir = lengths[shift], directions[shift]
 				local cost = previousCosts[a] + len + bendCost * math.abs(dir - previousDirections[a])
+				cost += len * (alongT * onward[shift] + alongV * across[shift])
 				if cost > best or cost == math.huge then continue end
 				local h = previousHeights[a]
 				local slope = math.abs(endH - h) / len
@@ -111,10 +203,9 @@ function Route.new(f: Ground.Field, x: number, z: number, yaw: number, target: {
 		last = layers[i][last]
 	end
 	points[1] = { t = t0, v = v0, s = 0 }
-	for i = 2, #points do
-		local a, b = points[i - 1], points[i]
-		b.s = a.s + math.sqrt((b.t - a.t) ^ 2 + (b.v - a.v) ^ 2)
-	end
+	distances(points)
+	hillsideBends(f, points)
+	distances(points)
 	return { points = points, ridge = target.k, endT = endT }
 end
 

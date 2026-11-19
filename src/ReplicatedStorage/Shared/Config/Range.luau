@@ -49,8 +49,9 @@ return {
 	ValleyBase = { -20, 360 }, -- studs from the start valley's floor (twice T-238's, and `LIFT`)
 	FloorVary = 120, -- studs either way along a valley...
 	FloorEvery = 12000, -- ...over studs across
-	Floor = { 0, 0.12 }, -- of each face, flat at the floor
-	Profile = { 1.0, 1.4 }, -- a face's exponent: higher, steeper near the crest and wider at the floor
+	Floor = { 0, 0.065 }, -- fraction of each face occupied by the level valley floor
+	ValleyIncision = 165, -- studs cut from the valley datum relative to the adjoining crests
+	Profile = { 1.0, 1.12 }, -- near-linear lower faces leave a narrower plain
 	CrestRound = 80, -- studs: the crest rounded over about this much
 
 	-- (the road's size, not the range's: kept as T-238 tuned them when T-245 doubled the range.
@@ -140,5 +141,8 @@ return {
 	CorridorReach = 6, -- a single traverse can go 1,080 studs across
 	CorridorBendCost = 110, -- extra driving distance assigned to a radian of turn
 	CorridorPitchCost = 220, -- distance cost per stud of rise/fall above the approach grade
+	GorgeCost = 0.64, -- added travel per stud of paired-bank relief when heading up a channel
+	TraverseSpan = 2050, -- length of hillside checked for a broad bend
+	TraverseOffsets = { 350, 550, 760 }, -- alternative traverses beside the current corridor
 	StraightenMaxOff = 20, -- studs off h: a bend straightening the road before a hairpin goes no further (T-242)
 }

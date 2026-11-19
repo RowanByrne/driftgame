@@ -47,6 +47,7 @@ local Ground = require(script.Parent.Ground)
 local Range = require(script.Parent.Range)
 local Seed7Drive = require(script.Parent.Seed7Drive)
 local ContourRoute = require(script.Parent.SplineContourRoute)
+local Gorge = require(script.Parent.SplineContourGorge)
 
 local SplineGen = {}
 SplineGen.__index = SplineGen
@@ -1633,7 +1634,15 @@ function SplineGen._contour(self: Gen, original: Spline.Section): Spline.Section
 		corridor = nil
 		self.corridor = nil
 	end
-	if not corridor and originalCost > 2 * R.ContourTrigger then
+	local gorge = 0
+	if not corridor then
+		local fx, fz = -math.sin(yaw), -math.cos(yaw)
+		for _, ahead in { 350, 850, 1350 } do
+			local px, pz = x + fx * ahead, z + fz * ahead
+			gorge = math.max(gorge, Gorge.along(self.ground, px, pz, fx, fz, Ground.h(self.ground, px, pz)))
+		end
+	end
+	if not corridor and (gorge > 3 or originalCost > 2 * R.ContourTrigger) then
 		corridor = ContourRoute.new(self.ground, x, z, yaw, target)
 		self.corridor = corridor
 	end
@@ -2213,7 +2222,7 @@ function SplineGen.step(self: Gen): Spline.Section?
 		local _, _, _, _, grade, bank, height = self.spline:tip()
 		local recorded = Seed7Drive.section(self.spline.length, bank)
 		if recorded then
-			recorded.g = (self:_followGrade(recorded.k, grade, height, nil, Config.Spline.CruiseGrade))
+			recorded.g = (self:_followGrade(recorded.k, grade, height))
 			lay(self, recorded, t0)
 			return recorded
 		end

@@ -247,7 +247,7 @@ function Ground.where(f: Field, x: number, z: number): Where
 	local r = f.range
 	local R = Config.Range
 	local sh = Range.shape(r, x, z)
-	local lo = R.ValleyBase[1] - R.FloorVary
+	local lo = R.ValleyBase[1] - R.FloorVary - R.ValleyIncision
 	local hi = R.Peak[2]
 	local kind = "face"
 	if sh.crest <= R.PassReach and sh.saddle >= R.PassShare then
