@@ -86,6 +86,7 @@ export type Stats = {
 	tightHairpins: number, -- tight hairpins laid in place of a descent's hairpin (T-333)
 	tightRefused: number, -- ...and ones tried that did not fit (gentle face, off h, crowded)
 	tightWhy: { [string]: number }, -- why, by reason
+	tightTurns: { number }, -- degrees each turnaround tried asked for (a half turn is 180)
 }
 
 -- One step of the plan: a STRETCH of random sections kept within `limit` of `aim` for
@@ -114,6 +115,7 @@ export type Item = {
 	refused: number?, -- times this turn was refused
 	nextDirV: number?, -- a turnaround after a traverse (T-326): which way across the next leg runs
 	traverse: boolean?, -- ...and it ends a descent's surveyed leg
+	climb: boolean?, -- a turnaround on a climb (T-333: a tight hairpin there climbs)
 }
 
 -- What a heading on the mountain is (T-226, T-238): "leg" across the face toward the pass
@@ -294,6 +296,7 @@ function SplineGen.new(seed: number, origin: Spline.Origin?, clearOverride: numb
 			tightHairpins = 0,
 			tightRefused = 0,
 			tightWhy = {},
+			tightTurns = {},
 		},
 	}, SplineGen)
 	if ground.range.basins then
@@ -1873,6 +1876,7 @@ function SplineGen._planRange(self: Gen)
 	local radius = if steep then R.SteepHairpinRadius else M.HairpinRadius
 	local nextLeg: Slope = { kind = "leg", side = -side, gd = between(G.LegGrade) }
 	turn("turnaround", sc * side, radius, "Hairpin", nextLeg)
+	plan[#plan].climb = climbing
 	self.legSide = -side
 end
 
@@ -2116,8 +2120,8 @@ function SplineGen._fitTurn(self: Gen, sec: Spline.Section, item: Item)
 	return SplineTurnFit.measure(preview.spline,self.spline.length,preview.spline.length)
 end
 
--- A TIGHT HAIRPIN (T-333, features/tight-hairpins.md) in place of a descent's hairpin, now
--- and then: the fixed shape `Road/TightHairpin` lays from the tip, its two legs side by side
+-- A TIGHT HAIRPIN (T-333, features/tight-hairpins.md) in place of a turnaround, now and then
+-- (a descent's hairpin, or a climb's, which then climbs): the fixed shape `Road/TightHairpin` lays from the tip, its two legs side by side
 -- with the island between them. Only where the face is steep enough to want one, far enough
 -- from the last, near enough a half turn for its legs to run side by side, within
 -- `MaxOff` of h, and clear of old road (its own legs are side by side on purpose: the shape
@@ -2138,6 +2142,7 @@ function SplineGen._tight(self: Gen, item: Item, needed: number): Spline.Section
 	end
 	-- (the next leg's heading: a half turn, or short of one by its tilt down the face)
 	local short = math.pi - needed
+	table.insert(self.stats.tightTurns, math.floor(math.deg(needed) + 0.5))
 	local function refuse(why: string): nil
 		self.stats.tightRefused += 1
 		self.stats.tightWhy[why] = (self.stats.tightWhy[why] or 0) + 1
@@ -2150,7 +2155,7 @@ function SplineGen._tight(self: Gen, item: Item, needed: number): Spline.Section
 	if Ground.where(self.ground, x0, z0).slope < T.MinFaceSlope then
 		return refuse("gentle")
 	end
-	local sec = TightHairpin.build(k0, g0, b0, item.dir :: number, short, -T.Grade, self.clearance)
+	local sec = TightHairpin.build(k0, g0, b0, item.dir :: number, short, if item.climb then T.Grade else -T.Grade, self.clearance)
 	-- the mountain: how far the shape leaves the road off h, a hug's way (fill counts in full,
 	-- cut scaled to `TurnMaxCut`)
 	local G = Config.Spline.Ground
@@ -2225,8 +2230,8 @@ function SplineGen._turn(self: Gen, item: Item): (Spline.Section | string)?
 	local needed = (dir * (to-yaw0)) % (2*math.pi)
 	if needed>2*math.pi-math.rad(20) then needed-=2*math.pi end
 	if needed<math.rad(3) then return "done" end
-	-- now and then a descent's hairpin is a tight one (T-333)
-	if item.traverse and item.what == "turnaround" then
+	-- now and then a turnaround is a tight hairpin (T-333)
+	if item.what == "turnaround" then
 		local tight = self:_tight(item, needed)
 		if tight then
 			return tight
