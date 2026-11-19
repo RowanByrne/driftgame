@@ -69,9 +69,16 @@ The user, 2026-11-19, on the first pass: "The planner can use a steeper grade no
 
 A gorge crossing, marked in `seed7-gorge-crossing-marked.png`: after the first hairpin (39,300 studs) the road turns back toward the mountain, meets a gorge about 300 studs below its head where it is 73 studs deep, crosses it square at 40,930 with 24 studs of fill and 33 of cut (10 degrees at the steepest), and runs on across the far face.
 
-On seven more seeds (1, 3, 4, 8, 10, 11 and 19, 60,000 studs each): none stalled, deepest cut 67, highest fill 31, a section 1.4 to 2.0 ms on average and 38 at worst. In `RangeTests`, a fall back along the way on counts as doubling back only when the road climbs more than 40 studs back up while it is behind (T-242's road climbed back into the face); a descent's leg running back toward the mountain loses height.
+On nine more seeds (1, 2, 3, 4, 5, 8, 10, 11 and 19, 60,000 studs each): none stalled, deepest cut 66, highest fill 74, a section 1.4 to 2.8 ms on average and 37 at worst. A road that starts on a valley floor keeps the old legs there until its first descent, and a face where no leg scores as drivable (`TraverseHopeless`) hands back to them too. In `RangeTests`, a fall back along the way on counts as doubling back only when the road climbs more than 40 studs back up while it is behind (T-242's road climbed back into the face); a descent's leg running back toward the mountain loses height.
 
 In the Studio seed 7 drive, `tp me road 36800` in the F2 console starts the car 350 studs before the crest of the second ridge, at the top of the descent.
+
+**Studio drive (DR-Lane1):** the descent from 36,800 to 50,100 studs, in 19 stretches of 700 from rest with the car steered toward the road ahead: 1,147 of 1,150 readings on tarmac (the three off it inside the second hairpin, where the steering cut the apex at 25 studs/s), every one grounded, none airborne, no road mesh fallbacks. The gorge crossing was driven at 126 down to 85 studs/s on tarmac. Driven continuously at full speed (the car has no throttle input and the handbrake only stops it after a run), the steering ran wide at three bends.
+
+**Known:**
+
+- **Climbs keep the first pass's planner.** Surveying climbs as legs too (tried) dug a 198-stud trench on seed 8 and a 166-stud causeway on seed 10; climbs need their own onward rule first. Seed 7's third climb now starts where the new descent ends, and on that approach the first pass's planner climbs 600 studs in 4,150 (it was 5,775) with a fill of 83 at one turnaround it could not lay: `SplineContourTests` fails those two checks (8 of 10).
+- A leg's hairpin can still be refused at its site (crowded or far off h); the road then runs on and the next leg is surveyed from where it gets to.
 
 ## Left out
 
