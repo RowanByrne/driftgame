@@ -118,7 +118,7 @@ export type Item = {
 -- has gone over to the other way along its level line.
 -- "traverse" (T-326): along the surveyed descent leg (`leg`); "return": the way back across
 -- after the hairpin that ends it, `dirV` across the range, falling `gd` a stud.
-export type Slope = { kind: string, side: number, gd: number?, swapped: boolean?, dirV: number?, climb: boolean? }
+export type Slope = { kind: string, side: number, gd: number?, swapped: boolean?, dirV: number? }
 
 export type Gen = typeof(setmetatable(
 	{} :: {
@@ -1429,21 +1429,18 @@ function SplineGen._slopeAim(self: Gen, slope: Slope, stretch: boolean?): (numbe
 		-- back across the face after a descent's hairpin (T-326): along the crest the face
 		-- falls from, `dirV` across the range (the frame its legs are surveyed in), turned
 		-- down the fall line enough to fall `gd` a stud
-		-- (a climb's face falls from the crest ahead, and its legs turn up it: both on along
-		-- the range)
 		local d = slope.dirV or 1
 		local tgt = self:_target()
 		local t, v = Range.frame(r, x, z)
 		local e = R.TraverseFrameSpan * 0.5
-		local k = if slope.climb then tgt.k else tgt.k - 1
-		local lean = (Range.ridgeT(r, k, v + e) - Range.ridgeT(r, k, v - e)) / (2 * e)
+		local lean = (Range.ridgeT(r, tgt.k - 1, v + e) - Range.ridgeT(r, tgt.k - 1, v - e)) / (2 * e)
 		local n = math.sqrt(1 + lean * lean)
 		local ct, cv = d * lean / n, d / n
 		local dt, dv = 1 / n, -lean / n
 		-- how steeply the face falls down that line, over the range's own shape
 		local h0 = Ground.base(f, Range.world(r, t - dt * e, v - dv * e))
 		local h1 = Ground.base(f, Range.world(r, t + dt * e, v + dv * e))
-		local S = math.max(math.abs(h0 - h1) / (2 * e), 1e-6)
+		local S = math.max((h0 - h1) / (2 * e), 1e-6)
 		local tilt = math.asin(math.clamp((slope.gd or 0) / S, 0, math.sin(math.rad(60))))
 		local ht, hv = ct * math.cos(tilt) + dt * math.sin(tilt), cv * math.cos(tilt) + dv * math.sin(tilt)
 		local hx, hz = ht * r.ux + hv * r.uz, ht * r.uz - hv * r.ux
@@ -1954,9 +1951,9 @@ function SplineGen._planRange(self: Gen)
 		local _, dv = Range.frame(r, x - math.sin(yaw), z - math.cos(yaw))
 		return dv - v
 	end
-	-- A LEG SURVEYED ACROSS THE FACE (T-326), coming down or climbing, ending in a hairpin
-	-- where the hillside offers one; after that hairpin, the next leg the other way
-	do
+	-- COMING DOWN (T-326): a leg surveyed across the face, ending in a hairpin where the
+	-- hillside offers one; after that hairpin, the next leg the other way
+	if not climbing then
 		local _, _, yaw = self.spline:tip()
 		local dirV = self.nextDirV
 		self.nextDirV = nil
@@ -1966,13 +1963,13 @@ function SplineGen._planRange(self: Gen)
 		local function blocked(px: number, pz: number): boolean
 			return sp:crowded(px, pz, s0, clear, R.TraverseFromTip) ~= nil
 		end
-		local leg = Traverse.plan(f, x, z, y, yaw, dirV, tgt, climbing, blocked)
+		local leg = Traverse.plan(f, x, z, y, yaw, dirV, tgt, blocked)
 		if leg then
 			self.leg = leg
 			local legSide = if across(1) * leg.dirV > 0 then 1 else -1
 			stretch(leg.length * 1.5, "traverse", { kind = "traverse", side = legSide })
 			if leg.hairpin then
-				local nextLeg: Slope = { kind = "return", side = -legSide, gd = math.tan(math.rad(R.TraverseGrade)), dirV = -leg.dirV, climb = climbing }
+				local nextLeg: Slope = { kind = "return", side = -legSide, gd = math.tan(math.rad(R.TraverseGrade)), dirV = -leg.dirV }
 				turn("turnaround", legSide, leg.radius, "Hairpin", nextLeg)
 				plan[#plan].nextDirV = -leg.dirV
 				plan[#plan].traverse = true
@@ -2343,9 +2340,8 @@ function SplineGen._planned(self: Gen, item: Item): Spline.Section?
 	if item.slope then
 		item.to = (self:_slopeAim(item.slope))
 		if item.traverse then
-			-- a leg's hairpin turns on along the range, however near half a turn it is (T-326):
-			-- through the downhill side coming down (through the uphill side it met the leg
-			-- above), and the uphill side climbing, as every climb's turnaround does
+			-- a descent's hairpin turns through the downhill side, the way on down the range,
+			-- however near half a turn it is (T-326): through the uphill side it met the leg above
 			local r = self.ground.range
 			local bestDown = -math.huge
 			for _, d in { 1, -1 } do
@@ -2489,7 +2485,7 @@ function SplineGen.step(self: Gen): Spline.Section?
 		-- whose crest runs aslant, the way back across runs back along the range)
 		local x, z = self.spline:tip()
 		local t, v = Range.frame(r, x, z)
-		local k = if item.slope and item.slope.climb then self:_target().k else self:_target().k - 1
+		local k = self:_target().k - 1
 		local e = Config.Range.TraverseFrameSpan * 0.5
 		local lean = (Range.ridgeT(r, k, v + e) - Range.ridgeT(r, k, v - e)) / (2 * e)
 		local n = math.sqrt(1 + lean * lean)
