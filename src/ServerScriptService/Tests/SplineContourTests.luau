@@ -8,6 +8,23 @@ local Range = require(road.Range)
 
 local Tests = {}
 
+local function columnError(): number
+	local field = Ground.field(19, { x = -320, y = 72, z = 147, yaw = 0.9 }, 0.73)
+	local r, err = field.range, 0
+	for _, v in { -4200, -320, 0, 2280 } do
+		local column = Ground.column(field, v)
+		for _, k in { -1, 2, 4, 0 } do
+			local ridge = Range.ridgeT(r, k, v) - r.shift
+			for _, offset in { -2000, -0.001, 0, 0.001, 2800 } do
+				local t = ridge + offset
+				local x, z = Range.world(r, t, v)
+				err = math.max(err, math.abs(column(t) - Ground.h(field, x, z)))
+			end
+		end
+	end
+	return err
+end
+
 function Tests.run()
 	local g = Gen.new(7)
 	local sp = g.spline
@@ -49,6 +66,7 @@ function Tests.run()
 	local ox, oz = other.spline:tip()
 	local climb = if first and last then last - first else 0
 	local checks = {
+		{ name = "Survey columns match the world height across rotated ridge boundaries", ok = columnError() < 1e-6 },
 		{ name = "The native road crosses two more ridges", ok = reached >= 4 and not g.stats.stalled },
 		{ name = "Cuts and fills stay below 60 studs", ok = cut < 60 and fill < 60 },
 		{ name = "The third climb runs clear of prolonged walls on both shoulders", ok = walls < 200 },

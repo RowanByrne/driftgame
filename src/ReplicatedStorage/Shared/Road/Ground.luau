@@ -211,6 +211,18 @@ function Ground.h(f: Field, x: number, z: number): number
 	return f.oy + y - f.baseZero + reliefAt(f, x, z, reliefShare(up))
 end
 
+-- The same natural ground along a fixed cross-range coordinate. Corridor surveys
+-- visit each line hundreds of times and can reuse its ridge and valley profile.
+function Ground.column(f: Field, v: number): (number) -> number
+	local r = f.range
+	local profile = Range.column(r, v)
+	return function(t: number): number
+		local x, z = Range.world(r, t, v)
+		local y, up = profile(t)
+		return f.oy + y - f.baseZero + reliefAt(f, x, z, reliefShare(up))
+	end
+end
+
 --------------------------------------------------------------------------------
 -- Where you are on the range (T-233)
 --------------------------------------------------------------------------------

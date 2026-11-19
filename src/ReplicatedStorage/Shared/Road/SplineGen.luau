@@ -791,7 +791,7 @@ end
 -- the spline itself, and a step always ends exactly on an emit, so the points emitted are
 -- exactly the points the road's own grid will hold once it is laid (T-140: a check that
 -- sampled 4 studs off them passed a hairpin it later failed, and the road boxed itself in).
-local function walk(x: number, z: number, yaw0: number, k0: number, knots: { number }, every: number, first: number, emit: (number, number, number) -> boolean?): boolean
+local function walk(x: number, z: number, yaw0: number, k0: number, knots: { number }, every: number, first: number, emit: (number, number, number) -> boolean?, survey: boolean?): boolean
 	local step = Config.Spline.SampleStep
 	local j = 1
 	local sA, kA, yawA = 0, k0, yaw0
@@ -813,11 +813,25 @@ local function walk(x: number, z: number, yaw0: number, k0: number, knots: { num
 			sA, kA = knots[j], knots[j + 1]
 			j += 2
 		end
-		local s1 = math.min(s + step, knots[j], total, nextEmit)
-		local y0, ym, y1 = yawAt(s), yawAt((s + s1) * 0.5), yawAt(s1)
-		local h = (s1 - s) / 6
-		x += h * (-math.sin(y0) - 4 * math.sin(ym) - math.sin(y1))
-		z += h * (-math.cos(y0) - 4 * math.cos(ym) - math.cos(y1))
+		local s1 = math.min(knots[j], total, nextEmit)
+		if survey and kA == knots[j + 1] then
+			-- Survey points are farther apart. Integrate a straight/circular arc directly.
+			local y0 = yawAt(s)
+			if math.abs(kA) < 1e-10 then
+				x -= (s1 - s) * math.sin(y0)
+				z -= (s1 - s) * math.cos(y0)
+			else
+				local y1 = yawAt(s1)
+				x += (math.cos(y1) - math.cos(y0)) / kA
+				z += (math.sin(y0) - math.sin(y1)) / kA
+			end
+		else
+			s1 = math.min(s + step, s1)
+			local y0, ym, y1 = yawAt(s), yawAt((s + s1) * 0.5), yawAt(s1)
+			local h = (s1 - s) / 6
+			x += h * (-math.sin(y0) - 4 * math.sin(ym) - math.sin(y1))
+			z += h * (-math.cos(y0) - 4 * math.cos(ym) - math.cos(y1))
+		end
 		s = s1
 		if s >= nextEmit - 1e-9 then
 			if emit(s, x, z) == false then
@@ -1548,7 +1562,7 @@ end
 -- Survey a bend and its exit while there is still room to turn. Simulate a vertical
 -- curve on the natural ground. A short steep patch fits within the pitch allowance;
 -- a long ascent at that pitch still incurs a cost, as does a cut on BOTH shoulders.
-local function contourCost(self: Gen, knots: { number }): (number, number, number)
+local function contourCost(self: Gen, knots: { number }, best: number?, bearing: (({ number }, number, number) -> number)?): (number, number, number)
 	local C, R = Config.Spline, Config.Range
 	local f = self.ground
 	local x, z, yaw, k0, grade, _, y = self.spline:tip()
@@ -1558,12 +1572,24 @@ local function contourCost(self: Gen, knots: { number }): (number, number, numbe
 	local shoulder = Config.Road.Width * 0.5 + 12
 	local path = withEscape(knots, knots[#knots])
 	path[#path - 1] = path[#path - 3] + R.ContourLook
-	local previous = Ground.h(f, x, z)
-	local climb, descent, worst, sum, n = 0, 0, 0, 0, 0
-	local usedClimb, usedDescent = self.excessClimb, self.excessDescent
+	local positions = table.create(2 * math.floor(path[#path - 1] / step))
 	local endX, endZ = x, z
 	walk(x, z, yaw, k0, path, step, step, function(u, px, pz)
 		if u <= knots[#knots - 1] + step * 0.5 then endX, endZ = px, pz end
+		table.insert(positions, px)
+		table.insert(positions, pz)
+		return true
+	end, true)
+	local direction = if bearing then bearing(knots, endX, endZ) else 0
+	local limit = (best or math.huge) - direction
+	if limit <= 0 then return math.huge, endX, endZ end
+	local previous = Ground.h(f, x, z)
+	local climb, descent, worst, sum = 0, 0, 0, 0
+	local usedClimb, usedDescent = self.excessClimb, self.excessDescent
+	local n = math.max(1, #positions / 2)
+	for i = 1, #positions, 2 do
+		local u = (i + 1) * 0.5 * step
+		local px, pz = positions[i], positions[i + 1]
 		local terrain = Ground.h(f, px, pz)
 		local lo = -pitchLimit(usedDescent, step, cruise, peakGrade)
 		local hi = pitchLimit(usedClimb, step, cruise, peakGrade)
@@ -1588,10 +1614,9 @@ local function contourCost(self: Gen, knots: { number }): (number, number, numbe
 		local weight = 1 - 0.45 * math.clamp((u - knots[#knots - 1]) / R.ContourLook, 0, 1)
 		worst = math.max(worst, weight * cost)
 		sum += weight * cost
-		n += 1
-		return true
-	end)
-	return worst + 0.3 * sum / math.max(1, n), endX, endZ
+		if worst + 0.3 * sum / n >= limit then return math.huge, endX, endZ end
+	end
+	return direction + worst + 0.3 * sum / n, endX, endZ
 end
 
 -- Compare actual drivable curves at the current tip. Each has to clear the old road
@@ -1630,8 +1655,7 @@ function SplineGen._contour(self: Gen, original: Spline.Section): Spline.Section
 	local best: { number }?, bestK, bestRadius = nil, 0, nil
 	local function try(knots: { number }?, kt: number, radius: number?)
 		if not knots then return end
-		local cost, endX, endZ = contourCost(self, knots)
-		local score = cost + headingCost(knots, endX, endZ)
+		local score = contourCost(self, knots, bestScore, headingCost)
 		if score < bestScore and self:_exitClear(knots, kt) then
 			best, bestK, bestRadius, bestScore = knots, kt, radius, score
 		end

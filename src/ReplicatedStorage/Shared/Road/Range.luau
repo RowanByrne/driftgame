@@ -176,22 +176,26 @@ local function locate(r: Range, tt: number, v: number): (number, number, number)
 	return k, t0, t1
 end
 
--- The range at a point in its frame (`t` before `shift`).
-function Range.at(r: Range, t: number, v: number): (number, number, number, number, number, number, number)
+type Column = { floor: number, left: number, leftSaddle: number, right: number, rightSaddle: number }
+
+local function face(r: Range, tt: number, v: number, k: number, t0: number, t1: number, col: Column?): (number, number, number, number, number, number, number)
 	local R = Config.Range
-	local tt = t + r.shift
-	local k, t0, t1 = locate(r, tt, v)
 	local rd = ridge(r, k)
 	local gap = t1 - t0
 	local a = tt - t0
-	local F = Range.floor(r, k, v)
+	local F = if col then col.floor else Range.floor(r, k, v)
 	local kc, d, L, q, fl
 	if a <= rd.p * gap then
 		kc, d, L, q, fl = k, a, rd.p * gap, rd.qa, rd.fa
 	else
 		kc, d, L, q, fl = k + 1, t1 - tt, (1 - rd.p) * gap, rd.qb, rd.fb
 	end
-	local C, s = Range.crest(r, kc, v)
+	local C, s
+	if col then
+		if kc == k then C, s = col.left, col.leftSaddle else C, s = col.right, col.rightSaddle end
+	else
+		C, s = Range.crest(r, kc, v)
+	end
 	local c = R.CrestRound
 	local dr = math.sqrt(d * d + c * c) - c
 	local x = math.clamp(dr / math.max(L * (1 - fl), 1), 0, 1)
@@ -202,6 +206,31 @@ function Range.at(r: Range, t: number, v: number): (number, number, number, numb
 		return y, incisedUp, d, kc, s, F, C
 	end
 	return F + (C - F) * up, up, d, kc, s, F, C
+end
+
+-- The range at a point in its frame (`t` before `shift`).
+function Range.at(r: Range, t: number, v: number): (number, number, number, number, number, number, number)
+	local tt = t + r.shift
+	local k, t0, t1 = locate(r, tt, v)
+	return face(r, tt, v, k, t0, t1, nil)
+end
+
+-- Along one line of a terrain survey, ridge positions, crest and floor heights
+-- stay the same until the line enters the next valley. Evaluate the same profile.
+function Range.column(r: Range, v: number): (number) -> (number, number)
+	local k, t0, t1 = 0, math.huge, -math.huge
+	local col: Column = { floor = 0, left = 0, leftSaddle = 0, right = 0, rightSaddle = 0 }
+	return function(t: number): (number, number)
+		local tt = t + r.shift
+		if tt < t0 or tt >= t1 then
+			k, t0, t1 = locate(r, tt, v)
+			col.floor = Range.floor(r, k, v)
+			col.left, col.leftSaddle = Range.crest(r, k, v)
+			col.right, col.rightSaddle = Range.crest(r, k + 1, v)
+		end
+		local y, up = face(r, tt, v, k, t0, t1, col)
+		return y, up
+	end
 end
 
 -- The same, from x and z, as a table (for what wants every part of it).

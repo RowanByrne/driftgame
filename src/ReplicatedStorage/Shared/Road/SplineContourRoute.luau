@@ -21,13 +21,18 @@ function Route.new(f: Ground.Field, x: number, z: number, yaw: number, target: {
 	local grade = math.tan(math.rad(C.ContourGrade))
 	local peak = math.tan(math.rad(Config.Spline.MaxGrade))
 	local heights: { [number]: { [number]: number } } = {}
+	local columns: { [number]: (number) -> number } = {}
 	local function height(i: number, j: number): number
 		local row = heights[i]
 		if not row then row = {}; heights[i] = row end
 		local h = row[j]
 		if h == nil then
-			local wx, wz = Range.world(r, t0 + dt * i / 4, v0 + dv * j / 4)
-			h = Ground.h(f, wx, wz)
+			local column = columns[j]
+			if not column then
+				column = Ground.column(f, v0 + dv * j / 4)
+				columns[j] = column
+			end
+			h = column(t0 + dt * i / 4)
 			row[j] = h
 		end
 		return h
@@ -56,12 +61,19 @@ function Route.new(f: Ground.Field, x: number, z: number, yaw: number, target: {
 				local old = row[b]
 				if old and cost >= old.cost then continue end
 				local h = height((i - 1) * 4, a * 4)
+				if old then
+					-- Even a constant pitch between the endpoints must pay this much.
+					local slope = math.abs(height(i * 4, b * 4) - h) / len
+					local floorCost = len * (C.CorridorPitchCost * math.max(0, slope - grade) + 400 * math.max(0, slope - peak) ^ 2)
+					if cost + floorCost > old.cost + 1e-8 then continue end
+				end
 				for q = 1, 4 do
 					local nextH = height((i - 1) * 4 + q, a * 4 + q * shift)
 					local slope = math.abs(nextH - h) * 4 / len
 					local excess = math.max(0, slope - grade)
 					local rock = math.max(0, slope - peak)
 					cost += (len / 4) * (C.CorridorPitchCost * excess + 400 * rock * rock)
+					if old and cost >= old.cost then break end
 					h = nextH
 				end
 				if not old or cost < old.cost then
