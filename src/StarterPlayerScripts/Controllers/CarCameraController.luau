@@ -302,6 +302,7 @@ function CarCameraController._seed(rig, view: View)
 	rig.lastTarget = rig.restTarget
 	rig.lastCarPos = view.position
 	rig.fov = Cam.CamFovBase + Cam.CamFovPerSpeed * view.speed
+	rig.speedFov = rig.fov
 	rig.aim = math.rad(Cam.CamAimUp or 0) -- the framing (T-291), eased down by its guard from here
 	rig.accumulator = 0
 	rig.prevTarget = rig.target
@@ -394,7 +395,7 @@ end
 --
 -- The player's own wheel, and the same design as the pan: a multiplier on the RENDERED
 -- camera's offset from the car, stored where no target reads it. Distance and height scale
--- together down to the dolly start. Inside it, the chase eye lowers with the horizon held.
+-- together down to the dolly start. Inside it, the chase eye rises with the horizon held.
 -- Zoom 1 skips both adjustments.
 
 -- Move the zoom's target by `notches` of the wheel: + is nearer (wheel forward), - is
@@ -427,11 +428,11 @@ local function applyZoom(rig, carPos: Vector3)
 		-- Scale both endpoints about the car to keep the direction at the dolly start.
 		local scale = rig.zoom / Cam.PlayerZoomDollyStart
 		rig.lookPoint = carPos:Lerp(rig.lookPoint, scale)
-		-- Lower the close chase eye for bumper clearance. Translate the look point
+		-- Lift the close eye above the roof to uncover the driving line. Move the look point
 		-- equally, so this changes framing without tilting the horizon.
-		local heightScale = 1 - (1 - scale) * Cam.PlayerZoomLowering
-		local lower = Vector3.new(offset.X, offset.Y * heightScale, offset.Z).Unit * offset.Magnitude
-		local shift = lower - offset
+		local heightScale = 1 + (1 - scale) * Cam.PlayerZoomLift
+		local raised = Vector3.new(offset.X, offset.Y * heightScale, offset.Z).Unit * offset.Magnitude
+		local shift = raised - offset
 		rig.position += shift
 		rig.lookPoint += shift
 	end
@@ -757,7 +758,15 @@ function CarCameraController._advance(rig, view: View, dt: number, pan): CFrame
 
 	-- The FOV has no feedback in it, so it is eased once a frame.
 	local wantFov = Cam.CamFovBase + Cam.CamFovPerSpeed * view.speed
-	rig.fov += (wantFov - rig.fov) * ease(dt, Cam.CamFovRate)
+	rig.speedFov += (wantFov - rig.speedFov) * ease(dt, Cam.CamFovRate)
+	rig.fov = rig.speedFov
+	if rig.zoom < 1 then
+		-- Open the lens before the last wheel stops. The framing guard can then
+		-- aim over the roof without changing the angle as the car draws closer.
+		local travel = math.clamp((1 - rig.zoom) / (1 - Cam.PlayerZoomDollyStart), 0, 1)
+		local maxFov = Cam.CamFovBase + Cam.CamFovPerSpeed * Config.Drift.TopSpeed
+		rig.fov += math.max(0, maxFov - rig.speedFov) * Cam.PlayerZoomFovBlend * travel
+	end
 
 	-- The style, LAST and on the rendered camera only (T-072): the roll leans the horizon
 	-- with the slide and the shake buzzes at speed. Neither is written anywhere a target

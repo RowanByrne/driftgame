@@ -218,8 +218,9 @@ The user (`T-152`): *"allow me to smoothly zoom in and out with the camera"*, th
 wheel"*.
 
 - **The mouse wheel moves the camera nearer or farther** along its current offset from the car:
-  distance and height scale together down to 0.6×. Closer than that, the camera moves lower behind
+  distance and height scale together down to 0.6×. Closer than that, the camera rises slightly behind
   the car while keeping the chase angle it would have at 0.6× for the current hill, slide and speed.
+  The lens opens between 1× and 0.6× so the roof sits lower in the frame and more road shows above it.
 - **Smooth:** each notch moves a target by `PlayerZoomStep` (×1.12, multiplied, so a notch is the same
   size of step at any distance), and the camera eases to it at `PlayerZoomRate` (10/s, about 0.3 s to
   arrive). A burst of notches eases to the sum; nothing jumps.
@@ -390,7 +391,8 @@ and the shake's four), and proved the same way that zeroing them gives that buil
 | `ShakeRestoreRate` | **14 /s** | How fast a kick settles back to zero: to half of itself before the next one arrives |
 | `PlayerZoomMin`, `PlayerZoomMax` | **0.4×, 1.8×** | The wheel's zoom limits, as multiples of the distance (`T-152`). 1 is the default and today's camera |
 | `PlayerZoomDollyStart` | **0.6×** | Below this distance the camera moves closer with the same viewing angle (T-321) |
-| `PlayerZoomLowering` | **0.65** | How much the eye lowers through the close range to keep the rear in frame while seeing over its roof |
+| `PlayerZoomLift` | **0.2** | Additional eye height through the close range, at the same distance from the car |
+| `PlayerZoomFovBlend` | **0.75** | Share of the remaining speed-based FOV range added by 0.6× zoom |
 | `PlayerZoomStep` | **×1.12** | One wheel notch |
 | `PlayerZoomRate` | **10 /s** | How fast the camera eases to the zoom a notch asked for |
 | `HillLookFollow` | **1** | Share of the road's climb the look point's height is carried with (`T-156`). 0 is the old lag |
