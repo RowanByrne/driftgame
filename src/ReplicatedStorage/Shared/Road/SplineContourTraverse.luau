@@ -132,11 +132,21 @@ local function survey(f: Ground.Field, x0: number, z0: number, y0: number, yaw: 
 		local parent = table.create(width, 0)
 		-- old road: no leg runs where the road already is; nor over the crest, onto the face
 		-- behind (a leg may turn up toward a gorge's head, back toward the mountain, no further)
-		local free = table.create(width)
+		-- (old road is read every other place, over the places the leg can reach by now: the
+		-- clearance asked for is wider than two places)
+		local free = table.create(width, false)
 		local top = math.max(crest(v) + C.TraverseCrestMargin, t0 - C.TraverseBackOn)
-		for b = 1, width do
+		local lo, hi = math.max(1, j0 - i * maxShift - 1), math.min(width, j0 + i * maxShift + 1)
+		local lastPair, lastFree = -1, false
+		for b = lo, hi do
 			local tb = tAt(i, b)
-			free[b] = tb >= top and not blocked(Range.world(r, tb, v))
+			if tb >= top then
+				local pair = b // 2
+				if pair ~= lastPair then
+					lastPair, lastFree = pair, not blocked(Range.world(r, tAt(i, pair * 2), v))
+				end
+				free[b] = lastFree
+			end
 		end
 		frees[i] = free
 		for b = 1, width do
