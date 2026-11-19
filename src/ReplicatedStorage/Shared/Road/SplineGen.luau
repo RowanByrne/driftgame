@@ -2468,7 +2468,9 @@ function SplineGen.step(self: Gen): Spline.Section?
 		sec = self:_planned(item)
 		planned = sec ~= nil
 		item = self.plan[1]
-		if not item then
+		-- (after a planned turn is laid, the way on is planned from where it ends, next step:
+		-- a descent's next leg is surveyed from the hairpin's exit, T-326)
+		if not item and not planned then
 			self:_planRange()
 			item = self.plan[1]
 		end
