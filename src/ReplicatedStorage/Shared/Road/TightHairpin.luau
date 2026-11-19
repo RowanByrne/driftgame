@@ -7,6 +7,7 @@
 -- THE SHAPE, one section, from the road's tip:
 --
 --   ease straight      if the road is still bending, back to straight at the road's own rate
+--   lead               straight, so no older road lies beside the leg out (`build`)
 --   leg in             `Parallel` studs straight: the upper leg's side by side run
 --   the turn           ease to 1 / `Radius` over `Ease`, hold, ease out over `Ease`: exactly a
 --                      half turn, so the leg out comes back parallel to the leg in
@@ -115,41 +116,15 @@ end
 
 -- The shape, from the road's tip: its curvature `k0`, grade `g0` and bank `b0` there.
 -- `dir` 1 turns left, -1 right; `extra` (radians) is how far short of a half turn the next
--- leg's heading is; `grade` the signed grade to hold; `clear` how far apart the leg out must get from
--- the leg in's line before the shape ends. Returns the section.
+-- leg's heading is; `grade` the signed grade to hold; `clear` the road's clearance. Returns the
+-- section.
+--
+-- THE LEAD: the leg in starts with a straight of its own, as long as it takes for no road
+-- before the shape to lie beside the leg out until the leg out is `clear` of the leg in's line.
+-- So the shape's legs are close only to each other: every road laid before it, and everything
+-- on that road (its groves' trees), keeps the road's whole clearance from it.
 function TightHairpin.build(k0: number, g0: number, b0: number, dir: number, extra: number, grade: number, clear: number): any
 	local C, S = Config.TightHairpin, Config.Spline
-	local k: { number } = {}
-	local u = 0
-	local T0 = transition(k0, 0)
-	if T0 > 0 then
-		u = T0
-		table.insert(k, u)
-		table.insert(k, 0)
-	end
-	local sIn = u
-	u += C.Parallel
-	table.insert(k, u)
-	table.insert(k, 0)
-	local sA = u
-	local kt = dir / C.Radius
-	local E = C.Ease
-	local H = math.pi * C.Radius - E -- the two easings turn E / R between them
-	u += E
-	table.insert(k, u)
-	table.insert(k, kt)
-	u += H
-	table.insert(k, u)
-	table.insert(k, kt)
-	u += E
-	table.insert(k, u)
-	table.insert(k, 0)
-	local sB = u
-	u += C.Parallel
-	table.insert(k, u)
-	table.insert(k, 0)
-	local sOut = u
-	-- away from the leg in: back the other way round
 	local lo, hi = math.rad(C.DivergeDegrees[1]), math.rad(C.DivergeDegrees[2])
 	local theta = math.clamp(extra, lo, hi)
 	local kd = 1 / C.DivergeRadius
@@ -160,39 +135,91 @@ function TightHairpin.build(k0: number, g0: number, b0: number, dir: number, ext
 		Hd = 0
 		kp = theta / Td
 	end
-	u += Td
-	table.insert(k, u)
-	table.insert(k, -dir * kp)
-	if Hd > 0 then
-		u += Hd
-		table.insert(k, u)
-		table.insert(k, -dir * kp)
-	end
-	u += Td
-	table.insert(k, u)
-	table.insert(k, 0)
-	-- run on until clear of the leg in's line (traced: the shape is its own, so is its check)
-	local xs, zs = trace(k0, k)
-	local ia, ib = math.floor(sIn) + 1, math.floor(sA) + 1
-	local ax, az = xs[ia], zs[ia]
-	local lx, lz = xs[ib] - ax, zs[ib] - az
-	local ll = math.max(math.sqrt(lx * lx + lz * lz), 1e-9)
-	lx, lz = lx / ll, lz / ll
-	local n = #xs
-	local ex, ez = xs[n], zs[n]
-	local px, pz = xs[n - 1], zs[n - 1]
-	local fx, fz = ex - px, ez - pz
-	local fl = math.max(math.sqrt(fx * fx + fz * fz), 1e-9)
-	fx, fz = fx / fl, fz / fl
-	local across = math.abs((ex - ax) * lz - (ez - az) * lx)
-	local opening = math.abs(fx * lz - fz * lx) -- how fast the leg out leaves the line a stud
 	-- (and far enough for the island to hand back to the mountain inside the shape)
 	local need = math.max(clear, Config.Road.Width + C.IslandGone + 10)
-	local run = math.max((need - across) / math.max(opening, 0.05), 0) + 20
-	u += run
-	table.insert(k, u)
-	table.insert(k, 0)
-	local len = u
+	local function knotsFor(lead: number)
+		local k: { number } = {}
+		local u = 0
+		local T0 = transition(k0, 0)
+		if T0 > 0 then
+			u = T0
+			table.insert(k, u)
+			table.insert(k, 0)
+		end
+		u += lead
+		local sIn = u
+		u += C.Parallel
+		table.insert(k, u)
+		table.insert(k, 0)
+		local sA = u
+		local kt = dir / C.Radius
+		local E = C.Ease
+		local H = math.pi * C.Radius - E -- the two easings turn E / R between them
+		u += E
+		table.insert(k, u)
+		table.insert(k, kt)
+		u += H
+		table.insert(k, u)
+		table.insert(k, kt)
+		u += E
+		table.insert(k, u)
+		table.insert(k, 0)
+		local sB = u
+		u += C.Parallel
+		table.insert(k, u)
+		table.insert(k, 0)
+		local sOut = u
+		-- away from the leg in: back the other way round
+		u += Td
+		table.insert(k, u)
+		table.insert(k, -dir * kp)
+		if Hd > 0 then
+			u += Hd
+			table.insert(k, u)
+			table.insert(k, -dir * kp)
+		end
+		u += Td
+		table.insert(k, u)
+		table.insert(k, 0)
+		-- run on until clear of the leg in's line (traced: the shape is its own, so is its check)
+		local xs, zs = trace(k0, k)
+		local ia, ib = math.floor(sIn) + 1, math.floor(sA) + 1
+		local ax, az = xs[ia], zs[ia]
+		local lx, lz = xs[ib] - ax, zs[ib] - az
+		local ll = math.max(math.sqrt(lx * lx + lz * lz), 1e-9)
+		lx, lz = lx / ll, lz / ll
+		local n = #xs
+		local ex, ez = xs[n], zs[n]
+		local px, pz = xs[n - 1], zs[n - 1]
+		local fx, fz = ex - px, ez - pz
+		local fl = math.max(math.sqrt(fx * fx + fz * fz), 1e-9)
+		fx, fz = fx / fl, fz / fl
+		local across = math.abs((ex - ax) * lz - (ez - az) * lx)
+		local opening = math.abs(fx * lz - fz * lx) -- how fast the leg out leaves the line a stud
+		local run = math.max((need - across) / math.max(opening, 0.05), 0) + 20
+		u += run
+		table.insert(k, u)
+		table.insert(k, 0)
+		-- how far back past the side by side run the leg out still lies within `clear` of the
+		-- leg in's line: the lead that keeps the road before the shape out of its way
+		local back = 0
+		for i = math.floor(sOut) + 1, n + math.floor(run) do
+			local qx, qz
+			if i <= n then
+				qx, qz = xs[i], zs[i]
+			else
+				qx, qz = ex + fx * (i - n), ez + fz * (i - n)
+			end
+			local rx, rz = qx - ax, qz - az
+			if math.abs(rx * lz - rz * lx) < clear then
+				back = math.max(back, -(rx * lx + rz * lz))
+			end
+		end
+		return k, sIn, sA, sB, sOut, u, back
+	end
+	local _, _, _, _, _, _, back = knotsFor(0)
+	local lead = if back > 0 then back + 2 * S.CheckStep else 0
+	local k, sIn, sA, sB, sOut, len = knotsFor(lead)
 	return {
 		len = len,
 		k = k,

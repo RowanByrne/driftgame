@@ -25,11 +25,11 @@ return {
 	MinFaceSlope = 8, -- degrees
 	ShortOfHalf = { 10, 60 }, -- degrees
 	MaxOff = 35, -- studs (`Range.TraverseTurnMaxOff`)
-	-- The road the shape starts from is the leg in, and the leg out runs beside it on purpose:
-	-- the last `LegBack` studs of it need only be `LegGap` clear of the leg out's tarmac, not
-	-- the road's whole clearance. Everything older, and the escape past the shape, keep it.
-	LegBack = 400, -- studs
-	LegGap = 10, -- studs between the two tarmac edges
+	-- Climbs too, or descents only.
+	OnClimbs = true,
+	-- The legs' tarmac edges are never nearer each other than this (the tests' bar; the shape
+	-- keeps about 31).
+	LegGap = 10, -- studs
 
 	-- THE LEGS. Straight and side by side for this long either side of the turn, then the leg
 	-- out bends away from the leg in by the turn's extra (what the next leg's heading asks

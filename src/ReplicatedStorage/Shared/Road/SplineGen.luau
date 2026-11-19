@@ -2153,13 +2153,8 @@ function SplineGen._tight(self: Gen, item: Item, needed: number): Spline.Section
 	if short < -math.rad(T.ShortOfHalf[1]) or short > math.rad(T.ShortOfHalf[2]) then
 		return refuse("turn")
 	end
-	-- (the leg in's own road, which the leg out runs beside: no grove on the island's side, or
-	-- its trees would stand on the leg out)
-	local groves = sp:groves(-(item.dir :: number))
-	for i = #groves.b, 1, -1 do
-		if groves.b[i] >= s0 - T.LegBack then
-			return refuse("grove")
-		end
+	if item.climb and not T.OnClimbs then
+		return refuse("climb")
 	end
 	local x0, z0, yaw0, k0, g0, b0, y0 = sp:tip()
 	local face = Ground.where(self.ground, x0, z0).slope
@@ -2254,14 +2249,11 @@ function SplineGen._tight(self: Gen, item: Item, needed: number): Spline.Section
 	table.insert(knots, sec.len + Config.Spline.EscapeLength)
 	table.insert(knots, 0)
 	local own: { number } = {}
-	-- (the leg in's own road behind the shape, `LegBack` studs of it, is the road the leg out
-	-- runs beside on purpose: it need only keep clear of the tarmac, `LegGap` between edges;
-	-- the escape past the shape keeps the full clearance from everything)
-	local near = Config.Road.Width + T.LegGap
+	-- (the shape's legs are close only to each other, by its lead: old road keeps the whole
+	-- clearance from all of it, and the escape past it from everything)
 	local ok = walk(x0, z0, yaw0, k0, knots, cs, first, function(u, x, z)
 		local s = s0 + u
-		local hit = sp:crowded(x, z, s, clear, if u <= sec.len then math.max(sep, s - (s0 - T.LegBack)) else sep)
-			or (u <= sec.len and sp:crowded(x, z, s, near, sep))
+		local hit = sp:crowded(x, z, s, clear, sep)
 		if hit then
 			table.insert(self.stats.tightNotes, `crowded at {math.floor(u)} of {math.floor(sec.len)} by road {math.floor(s0 - hit)} back`)
 			return false

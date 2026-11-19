@@ -42,7 +42,7 @@ local parts = {}
 -- A TIGHT HAIRPIN (T-333, `Road/TightHairpin`) breaks three of the road's rules on purpose,
 -- and is held to its own in TightHairpinTests: its half turn is tighter than `MinRadius` and
 -- eases in faster than `MaxCurvatureRate` (`sA` to `sB`), and its legs run side by side
--- (from `LegBack` before its leg in to the shape's end), only `LegGap` clear of each other's
+-- (over its own section), only `LegGap` clear of each other's
 -- tarmac. Everything else on every road is held to these rules as before.
 local function inTightTurn(sp, s: number): boolean
 	for _, e in sp.tight do
@@ -54,7 +54,7 @@ local function inTightTurn(sp, s: number): boolean
 end
 local function inTightLegs(sp, s: number): boolean
 	for _, e in sp.tight do
-		if s >= e.sIn - Config.TightHairpin.LegBack and s <= e.sEnd then
+		if s >= e.sStart and s <= e.sEnd then
 			return true
 		end
 	end
