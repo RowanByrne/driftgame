@@ -205,6 +205,14 @@ local function survey(f: Ground.Field, x0: number, z0: number, y0: number, yaw: 
 				-- the leg ends where the ground stops paying, not where the length mounts)
 				local sl = math.abs(h1[j + 2] - h1[j - 2]) / (4 * dt)
 				local site = C.TraverseHairpin + C.TraverseSiteCost * math.max(0, sl - 0.15)
+				-- and the way back from it: the next leg sets off a hairpin's width down the
+				-- face, back across; ground there that falls away faster than the sustained
+				-- grade would start that leg on a steep pitch
+				local radius = math.clamp(C.TraverseRadiusSlope / math.max(sl, 1e-3), C.SteepHairpinRadius[1], C.TraverseRadiusMax)
+				local jo = math.min(width, j + math.ceil(2 * radius / dt))
+				local m = math.min(i, C.TraverseExitLayers)
+				local exitFall = (H[i][jo] - H[i - m][jo]) / (m * dv)
+				site += steep * m * dv * math.max(0, math.abs(exitFall) - gStar)
 				local score = c - refund * L[j] + site
 				if score < best then
 					best, bestI, bestJ, siteSlope = score, i, j, sl
@@ -231,6 +239,7 @@ local function survey(f: Ground.Field, x0: number, z0: number, y0: number, yaw: 
 	local _, up = Range.at(r, last.t, last.v)
 	local radius = math.clamp(C.TraverseRadiusSlope / math.max(siteSlope, 1e-3), C.SteepHairpinRadius[1], C.TraverseRadiusMax)
 	return {
+
 		points = points,
 		dirV = dirV,
 		endT = last.t,
