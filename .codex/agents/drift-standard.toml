@@ -1,0 +1,5 @@
+name = "drift_standard"
+description = "Standard worker for specified Drift features, content and UI."
+model = "gpt-6.2-astra"
+model_reasoning_effort = "high"
+developer_instructions = "Follow docs/workflow/WORKER.md in the task checkout assigned by the conductor."
