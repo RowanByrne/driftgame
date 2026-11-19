@@ -93,6 +93,18 @@ function RoadDressing.dress(self: Dresser, sec: Spline.Section)
 		end
 	end
 	local pieces = self:_barrierPieces(sec, drops, grove)
+	-- A TIGHT HAIRPIN (T-333, `Road/TightHairpin`): no rail on its island's side, the inside of
+	-- both legs, the whole shape long (features/tight-hairpins.md "Barriers": the island is
+	-- ground between two roads, not a drop). Its outside is railed as any hairpin's.
+	if sec.th then
+		local island = -sec.th[5]
+		pieces[island] = {}
+		if island < 0 then
+			self.outL, self.bendL, self.tightL = 0, 0, false
+		else
+			self.outR, self.bendR, self.tightR = 0, 0, false
+		end
+	end
 	-- A TIGHT CLIFF EDGE (T-181) is the planner's: its gravel is road. Its rail is ours, over
 	-- the whole of the gravel, joining any barrier already on that side.
 	if sec.gl then

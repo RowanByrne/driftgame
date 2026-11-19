@@ -187,6 +187,7 @@ local function run(check, log, opts)
 	-- 7. on the road
 	if opts.seeds ~= false then
 		local total, lines, gaps, worstSteep, minNarrow, worstEdge, worstMs, sumMs, secs = 0, {}, {}, 0, math.huge, 0, 0, 0, 0
+		local islandRails, outsideRailed = 0, 0
 		for _, seed in opts.seedList or SEEDS do
 			local gen = SplineGen.new(seed)
 			gen:extendTo(opts.length or LENGTH)
@@ -209,6 +210,11 @@ local function run(check, log, opts)
 				prev = e.sOut
 				local isl = TightHairpin.island(sp, e)
 				local steep, narrow = TightHairpin.measure(isl)
+				-- the rails: none on the island's side; the turn's outside as any hairpin's
+				islandRails += #sp:kRailsIn(e.sIn + 1, e.sOut, -e.dir) // 2
+				if #sp:kRailsIn(e.sA, e.sB, e.dir) > 0 then
+					outsideRailed += 1
+				end
 				worstSteep, minNarrow = math.max(worstSteep, steep), math.min(minNarrow, narrow)
 				local ctx = Ground.context(gen.ground, sp, isl.minX - 20, isl.minZ - 20, isl.maxX + 20, isl.maxZ + 20)
 				local d = -e.dir * half
@@ -236,6 +242,7 @@ local function run(check, log, opts)
 		check("never within 1 500 studs of another", minGap >= 1500, if #gaps > 0 then `closest {fmt(minGap, 0)} studs apart` else "none two on one road")
 		check("every island on the road is a bank at least 10 across", total == 0 or (worstSteep <= C.IslandMaxSlope and minNarrow >= 10), `steepest {fmt(worstSteep, 1)} degrees, narrowest {fmt(minNarrow, 1)} studs`)
 		check("every island meets both legs' inner edges", worstEdge < 0.6, `worst {fmt(worstEdge, 2)} studs off`)
+		check("no rail on an island's side", islandRails == 0, `{islandRails} rail runs on islands; {outsideRailed} of {total} turns railed on their outside`)
 		check("the planner's time per section stays near today's", worstMs < 60, `mean {fmt(sumMs / math.max(secs, 1), 2)} ms, worst {fmt(worstMs, 1)} ms`)
 	end
 
