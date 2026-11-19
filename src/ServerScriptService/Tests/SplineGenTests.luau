@@ -167,6 +167,16 @@ local function measure(seed: number, length: number, log: { string })
 		if not h.open then
 			r.hairpins += 1
 			for _, side in { -1, 1 } do
+				-- (a tight hairpin's island side takes no rail by design, T-333: TightHairpinTests)
+				local island = false
+				for _, e in sp.tight do
+					if side == -e.dir and h.entry <= e.sOut and h.exit >= e.sIn then
+						island = true
+					end
+				end
+				if island then
+					continue
+				end
 				local most, falling, covered = -math.huge, 0, 0
 				for s = h.entry, h.exit, STEP do
 					local d = dropAt(sp, f, s, side)

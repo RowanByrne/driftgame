@@ -39,6 +39,28 @@ end
 
 local parts = {}
 
+-- A TIGHT HAIRPIN (T-333, `Road/TightHairpin`) breaks three of the road's rules on purpose,
+-- and is held to its own in TightHairpinTests: its half turn is tighter than `MinRadius` and
+-- eases in faster than `MaxCurvatureRate` (`sA` to `sB`), and its legs run side by side
+-- (from `LegBack` before its leg in to the shape's end), only `LegGap` clear of each other's
+-- tarmac. Everything else on every road is held to these rules as before.
+local function inTightTurn(sp, s: number): boolean
+	for _, e in sp.tight do
+		if s >= e.sA - 1e-6 and s <= e.sB + 1e-6 then
+			return true
+		end
+	end
+	return false
+end
+local function inTightLegs(sp, s: number): boolean
+	for _, e in sp.tight do
+		if s >= e.sIn - Config.TightHairpin.LegBack and s <= e.sEnd then
+			return true
+		end
+	end
+	return false
+end
+
 -- 1. Every limit, read off the knots themselves (exact) and sampled along the surface.
 function parts.limits(check)
 	local C = Config.Spline
@@ -57,8 +79,11 @@ function parts.limits(check)
 		for _, pair in { { sp.curv, "k", "kRate" }, { sp.grade, "g", "gRate" }, { sp.bank, "b", "bRate" } } do
 			local t, vName, rName = pair[1], pair[2], pair[3]
 			for i = 1, #t.s do
-				worst[vName] = math.max(worst[vName], math.abs(t.v[i]))
-				if i > 1 then
+				local exempt = vName == "k" and (inTightTurn(sp, t.s[i]) or (i > 1 and inTightTurn(sp, t.s[i - 1])))
+				if not exempt then
+					worst[vName] = math.max(worst[vName], math.abs(t.v[i]))
+				end
+				if i > 1 and not exempt then
 					-- an eased track (the bank) is steepest mid-ramp, at 1.5 times the average
 					local rate = math.abs(t.v[i] - t.v[i - 1]) / (t.s[i] - t.s[i - 1]) * (if t.ease then 1.5 else 1)
 					worst[rName] = math.max(worst[rName], rate)
@@ -74,7 +99,9 @@ function parts.limits(check)
 			-- one stud of road is one stud of plan: no jumps, no stalls
 			local dist = math.sqrt((x - px) ^ 2 + (z - pz) ^ 2)
 			worst.stepErr = math.max(worst.stepErr, math.abs(dist - 1))
-			worst.yawRate = math.max(worst.yawRate, math.abs(yaw - pyaw))
+			if not inTightTurn(sp, s) then
+				worst.yawRate = math.max(worst.yawRate, math.abs(yaw - pyaw))
+			end
 			px, pz, pyaw = x, z, yaw
 			if s % 5 == 0 then
 				for _, d in { -W / 2, 0, W / 2 } do
@@ -106,17 +133,19 @@ end
 function parts.crossing(check)
 	local clear, sep = SplineGen.limits()
 	local worstDist, worstAt = math.huge, ""
+	local legsDist, legsAt, legsPairs = math.huge, "", 0
 	local pairsChecked = 0
 	for _, seed in SEEDS do
 		local gen = road(seed, LIMIT_LENGTH)
 		local sp = gen.spline
-		local xs, zs, ss = {}, {}, {}
+		local xs, zs, ss, legs = {}, {}, {}, {}
 		local s = 0
 		while s <= sp.length do
 			local x, z = sp:planAt(s)
 			table.insert(xs, x)
 			table.insert(zs, z)
 			table.insert(ss, s)
+			table.insert(legs, inTightLegs(sp, s))
 			s += 4
 		end
 		local n = #ss
@@ -127,7 +156,13 @@ function parts.crossing(check)
 					local dx, dz = xs[j] - xi, zs[j] - zi
 					local d2 = dx * dx + dz * dz
 					pairsChecked += 1
-					if d2 < worstDist * worstDist then
+					if legs[i] and legs[j] then
+						legsPairs += 1
+						if d2 < legsDist * legsDist then
+							legsDist = math.sqrt(d2)
+							legsAt = `seed {seed}, s {math.floor(si)} and {math.floor(ss[j])}`
+						end
+					elseif d2 < worstDist * worstDist then
 						worstDist = math.sqrt(d2)
 						worstAt = `seed {seed}, s {math.floor(si)} and {math.floor(ss[j])}`
 					end
@@ -142,6 +177,11 @@ function parts.crossing(check)
 		"the road never comes near itself",
 		worstDist >= clear - tol,
 		`closest approach of non-neighbouring road {fmt(worstDist, 1)} studs ({worstAt}); clearance {fmt(clear, 0)}, {pairsChecked} pairs checked every 4 studs`
+	)
+	check(
+		"a tight hairpin's legs keep clear of each other's tarmac",
+		legsDist >= Config.Road.Width + Config.TightHairpin.LegGap - tol,
+		if legsPairs > 0 then `closest {fmt(legsDist, 1)} studs ({legsAt}), {legsPairs} pairs; at least {Config.Road.Width + Config.TightHairpin.LegGap}` else "no tight hairpin on these roads"
 	)
 end
 
@@ -438,7 +478,7 @@ function parts.terrain(check)
 		-- the inside of every bend keeps its grass short of the bend's centre
 		for u = 0, sp.length, 3 do
 			local k = sp:curvatureAt(u)
-			if math.abs(k) > 1 / 400 then
+			if math.abs(k) > 1 / 400 and not inTightTurn(sp, u) then
 				local inside = if k > 0 then -1 else 1
 				local reach = (half + sp:runoffAt(u, inside)) * math.abs(k)
 				insideWorst = math.max(insideWorst, reach)

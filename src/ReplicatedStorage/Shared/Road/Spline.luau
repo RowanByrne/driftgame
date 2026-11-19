@@ -131,7 +131,7 @@ export type Spline = typeof(setmetatable(
 		-- by a client's replay; nil on a bare test curve
 		mountain: any?,
 		-- the tight hairpins laid (T-333), in the road's own s: `TightHairpin.Entry`s
-		tight: { { sIn: number, sA: number, sB: number, sOut: number, dir: number } },
+		tight: { { sIn: number, sA: number, sB: number, sOut: number, dir: number, sEnd: number } },
 	},
 	Spline
 ))
@@ -531,7 +531,7 @@ function Spline.append(self: Spline, sec: Section)
 	appendGroves(self, s0, sec.len, sec.gv)
 	local th = sec.th
 	if th then
-		table.insert(self.tight, { sIn = s0 + th[1], sA = s0 + th[2], sB = s0 + th[3], sOut = s0 + th[4], dir = th[5] })
+		table.insert(self.tight, { sIn = s0 + th[1], sA = s0 + th[2], sB = s0 + th[3], sOut = s0 + th[4], dir = th[5], sEnd = s1 })
 	end
 	self.length = s1
 	self.sections += 1

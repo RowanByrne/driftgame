@@ -197,7 +197,8 @@ function TightHairpin.build(k0: number, g0: number, b0: number, dir: number, ext
 		len = len,
 		k = k,
 		g = ramp(g0, grade, S.MaxGradeRate, len),
-		b = ramp(b0, 0, math.rad(S.MaxBankRate), len),
+		-- (the bank track eases between knots: its steepest is 1.5 times a straight ramp's)
+		b = ramp(b0, 0, math.rad(S.MaxBankRate) / 1.5, len),
 		tag = "TightHairpin",
 		th = { sIn, sA, sB, sOut, dir },
 	}
