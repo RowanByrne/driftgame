@@ -146,4 +146,39 @@ return {
 	TraverseSpan = 1600, -- length of hillside checked for a broad bend
 	TraverseOffsets = { 350, 550, 760 }, -- alternative traverses beside the current corridor
 	StraightenMaxOff = 20, -- studs off h: a bend straightening the road before a hairpin goes no further (T-242)
+	-- A DESCENT IN LEGS ACROSS THE FACE (T-326, `Road/SplineContourTraverse`). Each leg is
+	-- surveyed across the range one layer every `TraverseLayer` studs, `TraverseCell` studs
+	-- between the places it may be on a layer, at most `TraverseShift` of them down or up the
+	-- face a layer (67 degrees off straight across), no further than `TraverseBack` back up
+	-- toward the mountain or `TraverseAhead` down it, and `TraverseMin` to `TraverseMax` long.
+	-- A stud of height lost up to `TraverseGrade` earns `TraverseReward` times the length it
+	-- took; a stud lost faster costs `TraverseSteep`; a stud regained costs what it would earn.
+	-- Earthwork past `TraverseEarthTol` costs `TraverseEarth` a stud of depth, and steeply past
+	-- `TraverseDeep`. The leg goes no further than `TraverseBand` past the next pass across.
+	-- Its end is the hairpin, `TraverseHairpin` plus `TraverseSiteCost` per unit of slope over
+	-- 0.15 there; the hairpin's radius is `TraverseRadiusSlope` over that slope (studs), within
+	-- `SteepHairpinRadius[1]` and `TraverseRadiusMax`. The road follows the leg, aiming
+	-- `TraverseLook` studs along it and straying no more than `TraverseLimit` degrees.
+	TraverseGrade = 5, -- degrees: the sustained descent
+	TraverseLayer = 100, -- studs
+	TraverseCell = 60, -- studs
+	TraverseShift = 4,
+	TraverseBack = 240, -- studs
+	TraverseAhead = 3000, -- studs
+	TraverseMin = 900, -- studs
+	TraverseMax = 7000, -- studs
+	TraverseReward = 1.25,
+	TraverseSteep = 25, -- studs of length per stud of height lost past the sustained grade
+	TraverseEarthTol = 12, -- studs
+	TraverseEarth = 6, -- studs of length per stud of depth
+	TraverseDeep = 30, -- studs
+	TraverseBendCost = 110, -- studs of length a radian of turn
+	TraverseBand = 3000, -- studs
+	TraverseHairpin = 500, -- studs of length
+	TraverseSiteCost = 2000,
+	TraverseRadiusSlope = 30,
+	TraverseRadiusMax = 220, -- studs
+	TraverseLook = 300, -- studs
+	TraverseLimit = 30, -- degrees
+	TraverseFollowCost = 0.6, -- studs a degree off the leg, when no section follows h
 }

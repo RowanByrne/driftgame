@@ -49,6 +49,7 @@ local Range = require(script.Parent.Range)
 local Seed7Drive = require(script.Parent.Seed7Drive)
 local ContourRoute = require(script.Parent.SplineContourRoute)
 local Gorge = require(script.Parent.SplineContourGorge)
+local Traverse = require(script.Parent.SplineContourTraverse)
 
 local SplineGen = {}
 SplineGen.__index = SplineGen
@@ -106,12 +107,14 @@ export type Item = {
 	untilV: number?,
 	untilDir: number?,
 	refused: number?, -- times this turn was refused
+	nextDirV: number?, -- a turnaround after a traverse (T-326): which way across the next leg runs
 }
 
 -- What a heading on the mountain is (T-226, T-238): "leg" across the face toward the pass
 -- ahead, tilted enough to descend (or climb) `gd` a stud; "pass" straight for the pass.
 -- `side` is which way across the face (the fall line's sides). `swapped` (T-242): the leg
 -- has gone over to the other way along its level line.
+-- "traverse" (T-326): along the surveyed descent leg (`leg`).
 export type Slope = { kind: string, side: number, gd: number?, swapped: boolean? }
 
 export type Gen = typeof(setmetatable(
@@ -122,6 +125,12 @@ export type Gen = typeof(setmetatable(
 		excessClimb: number, -- rise and fall already used above the sustained approach grade
 		excessDescent: number,
 		corridor: ContourRoute.Route?,
+		-- THE DESCENT (T-326): the leg across the face the road is following, which way the
+		-- next leg runs after the hairpin that ends it, and the way the road must make headway
+		-- while it follows one (across the range, not on along it)
+		leg: Traverse.Leg?,
+		nextDirV: number?,
+		headway: { number }?,
 		sections: { Spline.Section },
 		recent: { string },
 		lastDir: number,
@@ -1367,6 +1376,15 @@ function SplineGen._slopeAim(self: Gen, slope: Slope, stretch: boolean?): (numbe
 	-- that crosses a valley floor turns from coming down to climbing there), and on flat ground
 	-- toward the pass itself; "down" below means that way on, and a leg's grade is a climb when
 	-- it is up
+	-- along a descent's surveyed leg (T-326): a point `TraverseLook` studs on along it
+	local leg = self.leg
+	if slope.kind == "traverse" and leg then
+		local t, v = Range.frame(r, x, z)
+		local at, av = Traverse.ahead(leg, t, v, R.TraverseLook)
+		local wx, wz = Range.world(r, at, av)
+		local lim = math.rad(R.TraverseLimit)
+		return math.atan2(x - wx, z - wz), lim, lim, 0
+	end
 	local tgt = self:_target()
 	local corridor = self.corridor
 	if stretch and corridor and corridor.ridge == tgt.k then
@@ -1554,7 +1572,13 @@ function SplineGen._exitClear(self: Gen, knots: { number }, kt: number): boolean
 	local _, _, yaw, k0 = self.spline:tip()
 	local heading = yawAfter(yaw, k0, exit)
 	local range = self.ground.range
-	if -math.sin(heading) * range.ux - math.cos(heading) * range.uz < -math.sin(math.rad(Config.Range.LegOnward)) then
+	-- (along a descent's leg, T-326, headway is across the range: the leg may turn up toward a
+	-- gorge's head, back toward the mountain, to cross where it is shallow)
+	local wx, wz = range.ux, range.uz
+	if self.headway then
+		wx, wz = self.headway[1], self.headway[2]
+	end
+	if -math.sin(heading) * wx - math.cos(heading) * wz < -math.sin(math.rad(Config.Range.LegOnward)) then
 		return false
 	end
 	exit[#exit - 1] = exit[#exit - 3] + Config.Range.ContourExit
@@ -1644,21 +1668,33 @@ function SplineGen._contour(self: Gen, original: Spline.Section): Spline.Section
 		corridor = nil
 		self.corridor = nil
 	end
+	-- (along a descent's leg, T-326, the leg is the route: no corridor)
+	local leg = if self.headway then self.leg else nil
+	if leg then
+		corridor = nil
+	end
 	local gorge = 0
-	if not corridor then
+	if not corridor and not leg then
 		local fx, fz = -math.sin(yaw), -math.cos(yaw)
 		for _, ahead in { 350, 850, 1350 } do
 			local px, pz = x + fx * ahead, z + fz * ahead
 			gorge = math.max(gorge, Gorge.along(self.ground, px, pz, fx, fz, Ground.h(self.ground, px, pz)))
 		end
 	end
-	if not corridor and (gorge > 3 or originalCost > 2 * R.ContourTrigger) then
+	if not corridor and not leg and (gorge > 3 or originalCost > 2 * R.ContourTrigger) then
 		corridor = ContourRoute.new(self.ground, x, z, yaw, target)
 		self.corridor = corridor
 	end
 	local function headingCost(knots: { number }, endX: number, endZ: number): number
 		local endYaw = yawAfter(yaw, k0, knots)
 		local onward = -math.sin(endYaw) * range.ux - math.cos(endYaw) * range.uz
+		if leg then
+			local et, ev = Range.frame(range, endX, endZ)
+			local at, av, miss = Traverse.ahead(leg, et, ev, R.TraverseLook)
+			local wx, wz = Range.world(range, at, av)
+			local aim = math.atan2(endX - wx, endZ - wz)
+			return 0.48 * miss + 0.55 * math.deg(math.abs(wrap(endYaw - aim)))
+		end
 		if corridor then
 			local et, ev = Range.frame(range, endX, endZ)
 			local at, av, miss = ContourRoute.ahead(corridor, et, ev, 350)
@@ -1845,6 +1881,29 @@ function SplineGen._planRange(self: Gen)
 		local _, dv = Range.frame(r, x - math.sin(yaw), z - math.cos(yaw))
 		return dv - v
 	end
+	-- COMING DOWN (T-326): a leg surveyed across the face, ending in a hairpin where the
+	-- hillside offers one; after that hairpin, the next leg the other way
+	if not climbing then
+		local _, _, yaw = self.spline:tip()
+		local dirV = self.nextDirV
+		self.nextDirV = nil
+		local leg = Traverse.plan(f, x, z, y, yaw, dirV, tgt)
+		if leg then
+			self.leg = leg
+			local legSide = if across(1) * leg.dirV > 0 then 1 else -1
+			stretch(leg.length * 1.5, "traverse", { kind = "traverse", side = legSide }, leg.endV)
+			plan[#plan].untilDir = leg.dirV
+			if leg.hairpin then
+				local nextLeg: Slope = { kind = "leg", side = -legSide, gd = math.tan(math.rad(R.TraverseGrade)) }
+				turn("turnaround", legSide, leg.radius, "Hairpin", nextLeg)
+				plan[#plan].nextDirV = -leg.dirV
+				self.legSide = -legSide
+			else
+				self.legSide = legSide
+			end
+			return
+		end
+	end
 	local side = self.legSide
 	local half = R.PassBand * 0.5
 	if math.abs(pv - v) > half then
@@ -1920,10 +1979,15 @@ function SplineGen._follow(self: Gen, nearest: Spline.Section?, nearOff: number?
 	local f = self.ground :: Ground.Field
 	local r = f.range :: Range.Range
 	local _, _, yaw0, k0, g0, b0, y0 = self.spline:tip()
+	-- (along a descent's leg, T-326: headway is across the range, and every degree off the
+	-- leg counts, so the road keeps to the leg rather than running down a spur's crest)
+	local hw = self.headway
+	local wx, wz = if hw then hw[1] else r.ux, if hw then hw[2] else r.uz
 	local function headingCost(yaw: number): number
-		local on = -math.sin(yaw) * r.ux - math.cos(yaw) * r.uz
-		local past = math.deg(math.abs(wrap(yaw - self.aim)) - self.limit)
-		return R.FollowAimCost * math.max(0, past) + R.FollowBackCost * math.max(0, -on)
+		local on = -math.sin(yaw) * wx - math.cos(yaw) * wz
+		local off = math.deg(math.abs(wrap(yaw - self.aim)))
+		local past = off - math.deg(self.limit)
+		return R.FollowAimCost * math.max(0, past) + R.FollowBackCost * math.max(0, -on) + (if hw then R.TraverseFollowCost * off else 0)
 	end
 	-- how far off h the road is `FollowLook` on past a section with these knots (ending on
 	-- curvature `kt`), and the furthest it strays on the way
@@ -2174,6 +2238,7 @@ function SplineGen._planned(self: Gen, item: Item): Spline.Section?
 			table.remove(self.plan, 1)
 			if item.what == "turnaround" then
 				st.turnarounds += 1
+				self.nextDirV = item.nextDirV
 			end
 			if typeof(sec) == "table" then
 				local s0 = self.spline.length
@@ -2252,6 +2317,8 @@ function SplineGen.step(self: Gen): Spline.Section?
 		self:_planRange()
 	end
 	local item = self.plan[1]
+	-- (a planned turn makes headway on along the range, as every turn did before T-326)
+	self.headway = nil
 	if item.turn then
 		sec = self:_planned(item)
 		planned = sec ~= nil
@@ -2272,7 +2339,13 @@ function SplineGen.step(self: Gen): Spline.Section?
 			self.lastSlope = sl
 			local aim, down, up, upSign = self:_slopeAim(sl, true)
 			self.aim = aim
-			if sl.kind == "leg" then
+			local leg = self.leg
+			if sl.kind == "traverse" and leg then
+				-- headway along a descent's leg is across the range (T-326)
+				local r = self.ground.range
+				self.headway = { leg.dirV * r.uz, -leg.dirV * r.ux }
+			end
+			if sl.kind == "leg" or sl.kind == "traverse" then
 				self.limit, self.limitUp, self.upSign = down, up, upSign
 			else
 				self.limitUp, self.upSign = self.limit, 0
@@ -2336,7 +2409,7 @@ function SplineGen.step(self: Gen): Spline.Section?
 			-- a detour that has run into old road ends here, and the turn back onto the leg
 			-- comes next (a sideways climb toward the leg above can otherwise box itself in)
 			local head = self.plan[1]
-			if head and not head.turn and head.what ~= "leg" then
+			if head and not head.turn and head.what ~= "leg" and head.what ~= "traverse" then
 				head.left = 0
 			end
 			if not self:_clear(withEscape(knots, 0)) then
