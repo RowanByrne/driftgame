@@ -142,3 +142,4 @@ The user's decisions about this game, so they aren't reopened later. Before prop
 - 2026-11-18: The user approved the 18.4-stud close chase view with a steady horizon and softer field-of-view widening so the driving line stays visible over the car (T-321).
 - 2026-11-18: Use GPT-6.2 Astra for the Rocco conductor at extra high and for light, standard and heavy workers at medium, high and extra high respectively.
 - 2026-11-19: Either Claude Code or Codex may conduct Drift and run its workers, with the models above (2026-11-15 Opus 5.5, 2026-11-18 GPT-6.2 Astra). The user: "it can be either - rocco and projects are supposed to be agnostic."
+- 2026-11-19: Tight hairpins turn on a 40-stud centre-line radius (today's tightest is 70). Measured: every car gets round 35 to 70 by sliding, about 34 studs/s at the apex at 40. The user picked 40 after test hairpins of 35, 40, 50 and 70 went into the playground (T-330, `features/tight-hairpins.md`).

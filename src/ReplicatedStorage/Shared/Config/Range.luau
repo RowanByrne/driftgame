@@ -49,8 +49,9 @@ return {
 	ValleyBase = { -20, 360 }, -- studs from the start valley's floor (twice T-238's, and `LIFT`)
 	FloorVary = 120, -- studs either way along a valley...
 	FloorEvery = 12000, -- ...over studs across
-	Floor = { 0, 0.12 }, -- of each face, flat at the floor
-	Profile = { 1.0, 1.4 }, -- a face's exponent: higher, steeper near the crest and wider at the floor
+	Floor = { 0, 0.065 }, -- fraction of each face occupied by the level valley floor
+	ValleyIncision = 165, -- studs cut from the valley datum relative to the adjoining crests
+	Profile = { 1.0, 1.12 }, -- near-linear lower faces leave a narrower plain
 	CrestRound = 80, -- studs: the crest rounded over about this much
 
 	-- (the road's size, not the range's: kept as T-238 tuned them when T-245 doubled the range.
@@ -121,5 +122,93 @@ return {
 	FollowLook = 100, -- studs
 	FollowAimCost = 0.5, -- studs a degree
 	FollowBackCost = 250, -- studs (100 left the road heading back 500 studs, twice in 24 runs)
+	-- Screen the selected path and its exit before committing it. When the ground keeps
+	-- rising or falling faster than a traverse should, try both flanks of the obstruction.
+	ContourLook = 840, -- studs of country beyond the bend
+	ContourExit = 560, -- studs of clear road beyond the bend
+	ContourSample = 40, -- studs between height readings
+	ContourGrade = 3.7, -- preferred degrees over a sustained climb or descent
+	ContourPitchRise = 32, -- studs that a short pitch can gain above the sustained approach
+	ContourSetback = 100, -- room for the apex to turn before it must head across the face again
+	ContourTrigger = 11, -- predicted earthwork cost that merits another route
+	ContourGain = 4, -- minimum improvement to change a chosen bend
+	ContourTurns = { 22, 48, 80, 115, 155 }, -- degrees, either way from the incoming road
+	ContourRadii = { 85, 180, 360 }, -- studs
+	CorridorForward = 130, -- studs advanced into the range between surveyed layers
+	CorridorAcross = 180, -- studs between alternate crossings of a layer
+	CorridorColumns = 93, -- up to 12,090 studs of hillside in a survey
+	CorridorHalfWidth = 28, -- 5,040 studs to either side
+	CorridorReach = 6, -- a single traverse can go 1,080 studs across
+	CorridorBendCost = 110, -- extra driving distance assigned to a radian of turn
+	CorridorPitchCost = 220, -- distance cost per stud of rise/fall above the approach grade
+	GorgeCost = 8, -- added travel per stud of paired-bank relief when heading up a channel
+	GorgeLocalCost = 7, -- local steering cost for aiming into sustained paired banks
+	TraverseSpan = 1600, -- length of hillside checked for a broad bend
+	TraverseOffsets = { 350, 550, 760 }, -- alternative traverses beside the current corridor
 	StraightenMaxOff = 20, -- studs off h: a bend straightening the road before a hairpin goes no further (T-242)
+	-- A DESCENT IN LEGS ACROSS THE FACE (T-326, `Road/SplineContourTraverse`). Each leg is
+	-- surveyed across the range one layer every `TraverseLayer` studs, `TraverseCell` studs
+	-- between the places it may be on a layer, at most `TraverseShift` of them down or up the
+	-- face a layer (67 degrees off straight across), no further than `TraverseBack` back up
+	-- toward the mountain or `TraverseAhead` down it, and `TraverseMin` to `TraverseMax` long.
+	-- A stud of height lost up to `TraverseGrade` earns `TraverseReward` times the length it
+	-- took; a stud lost faster costs `TraverseSteep`; a stud regained costs what it would earn.
+	-- Earthwork past `TraverseEarthTol` costs `TraverseEarth` a stud of depth, and steeply past
+	-- `TraverseDeep`. The leg goes no further than `TraverseBand` past the next pass across.
+	-- Its end is the hairpin, `TraverseHairpin` plus `TraverseSiteCost` per unit of slope over
+	-- 0.15 there; the hairpin's radius is `TraverseRadiusSlope` over that slope (studs), within
+	-- `SteepHairpinRadius[1]` and `TraverseRadiusMax`. The road follows the leg, aiming
+	-- `TraverseLook` studs along it and straying no more than `TraverseLimit` degrees.
+	TraverseGrade = 5, -- degrees: the sustained descent
+	TraverseFrameSpan = 600, -- studs across: the crest's run a hairpin's way back is aimed along
+	TraverseClear = 60, -- studs past the road's clearance: no leg (or hairpin) nearer old road...
+	TraverseFromTip = 400, -- ...bar the road this far back from where the leg starts
+	TraverseHairpinRoom = 250, -- studs down the fall line from a hairpin site that must be clear
+	TraverseApproach = 6, -- layers before a hairpin that never climb back up the face
+	TraverseExit = 200, -- studs of straight road clear past a hairpin's escape (`ContourExit` elsewhere)
+	TraverseExitLayers = 4, -- layers of the next leg's start a hairpin site is judged on
+	TraverseArrive = 120, -- studs short of a leg's end: the hairpin is first tried (and again either side of it)
+	TraverseHairpinFall = 0.15, -- grade round a hairpin's half circle a site is judged on (8.5 degrees)
+	TraverseLayer = 100, -- studs
+	TraverseCell = 60, -- studs
+	TraverseShift = 4,
+	TraverseBack = 1200, -- studs: back up the face, round a gorge's head
+	TraverseCrestMargin = 80, -- studs below the crest: no leg nearer it...
+	TraverseBackOn = 1600, -- ...nor further back along the range than this behind where it starts
+	TraverseStartTurn = 100, -- degrees: a leg this far off the road's heading would have to turn round first
+	TraverseHopeless = 20000, -- a leg's score past which no drivable leg was found (seed 7's worst: 8 013)
+	TraverseAhead = 3000, -- studs
+	TraverseMin = 900, -- studs
+	TraverseMax = 7000, -- studs
+	TraverseReward = 1, -- (so a stud at the sustained grade costs nothing)
+	TraverseRefund = 0.9, -- of the leg's length, refunded when choosing where it ends
+	TraverseSteep = 45, -- studs of length per stud of height lost past the sustained grade
+	TraverseEarthTol = 12, -- studs
+	TraverseEarth = 6, -- studs of length per stud of depth
+	TraverseDeep = 30, -- studs
+	TraverseBendCost = 110, -- studs of length a radian of turn
+	TraverseBand = 3000, -- studs
+	TraverseHairpin = 500, -- studs of length
+	TraverseSiteCost = 6000,
+	TraverseRadiusSlope = 18,
+	TraverseRadiusMax = 110, -- studs (so with its spread, 126 at most: tighter than `Spline.Terrain.KRailHairpinRadius`, railed as a hairpin)
+	TraverseTurnMaxOff = 35, -- studs off h (fill, or cut scaled as `Spline.Ground.TurnMaxOff` is): a hairpin past this is tried again further on
+	TraverseGiveUp = 3, -- times a hairpin may be refused before the next leg is surveyed from there
+	TraverseLook = 300, -- studs
+	TraverseLimit = 30, -- degrees
+	TraverseFollowCost = 0.6, -- studs a degree off the leg, when no section follows h
+	-- A steep pitch along a leg: grade past `PitchSustain` spends up to `PitchBudget` studs of
+	-- height, paid back at `PitchRecover` of the shortfall when the grade eases under it (so
+	-- 14 degrees lasts about 190 studs and 10 degrees about 470 before the grade must ease)
+	PitchSustain = 6.5, -- degrees
+	PitchBudget = 25, -- studs
+	PitchRecover = 1,
+	PitchSoft = 2, -- past the allowance: a stud of height gained too steeply counts as a stud off h
+	-- The road along a leg (`SplineGen._track`): each curvature eased into and held for each
+	-- of `TrackHolds` studs, judged on how far off the leg it ends, `TrackHeadingCost` a degree
+	-- its heading misses a point `TraverseLook` on, and `TrackCurveCost` per 1/1000 of curvature
+	TrackHolds = { 60, 140 }, -- studs
+	TrackRadii = { 2000, 1000, 600, 400, 280, 200, 140, 100 }, -- studs
+	TrackHeadingCost = 1.5,
+	TrackCurveCost = 4,
 }

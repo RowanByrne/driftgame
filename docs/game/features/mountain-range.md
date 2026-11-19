@@ -10,11 +10,75 @@ The user, 2026-11-15 (C-dd9f36): "we basically create a realistic shaped mountai
 
 ## How it plays
 
+### Seed 7 Studio drive (T-323)
+
+The review build's **Start Endless Run** button starts the approved seed 7 route. The first climb has a close pair of switchbacks at 7,512 and 7,924 studs. After the first ridge at 11,873, the road descends to the valley, then climbs through a wider pair at 29,632 and 30,555. It crosses the second ridge at 36,499.
+
+For a shorter drive, use the Studio console (F2) and enter `tp me road 7000` for the first pair or `tp me road 28800` for the second. The ordinary range planner continues from the recorded steering's final sample at 36,555 studs.
+
+The steering samples and the mountain's branching channels come from the approved preview. The game refits each section's elevation against the revised valley floor, using the same 14° pitch limit as the native road. It fits the bank, gravel and guardrails as it streams. The server and clients build the same terrain from the seed. Explicit alternate seeds and live runs use the usual procedural range.
+
+### The endless range
+
 1. A run starts low on a range. The road climbs a face in switchbacks that hug it (DECISIONS.md, 2026-11-15, hairpins hug the steep face).
 2. It reaches a pass, a saddle between two peaks. It crests, and the next valley opens below.
 3. It descends the far side, sometimes runs along a ridge with drops on both sides or along a valley floor beside a river line, then climbs to the next pass.
 4. The scenery looks as it does today; biomes come later.
 5. Height stays within a band. The road never reaches Roblox's fall-kill height however long the run.
+
+### Routing around a steep face (T-324)
+
+Past the recorded drive, the server surveys each proposed bend and its exit against the natural ground. It checks for fill, cuts across both shoulders, and sustained climbing or descending. A short pitch can reach 14°. Over a sustained approach the survey favors 3.7°, with a 32-stud allowance for a short rise above that line.
+
+When it forecasts difficult ground, the generator compares traverses across the coming face. The survey reaches up to 12,090 studs toward the next pass and 5,040 studs to either side. It favors gentler paths and leaves room to round each bend. The generator then fits actual bends, checking old road and at least 560 studs of clear exit before placing a new traverse. Each section follows the ground with the original vertical-curve rate. Clients replay the server's sections with the ordinary road and hillside meshes.
+
+### Gorge approaches and valley floors (T-326)
+
+Valley floors sit up to 165 studs lower at the same ridge heights. The level portion and the low shoulder occupy less of each face. The incision blends back to the spawn datum in the starting valley, and tapers at the lowest elevations to keep clearance above the fall-kill height. Across 108 matched ridge-to-ridge transects, the median width of the lowest tenth fell from 2,322 to 1,684 studs.
+
+On approaching a valley, the server surveys the next face afresh. It measures both natural banks at two scales, identifies the channel axis and leaves enough room on the outside for the width of a bend. A sideways crossing can stay open along the road. Before committing each section, the generator also checks for opposing banks repeatedly along the actual bend and its exit. Across a long, straight hillside it compares broad bends on both flanks, using the grade and wall heights to choose their side and width.
+
+In the Studio seed 7 drive, `tp me road 50800` in the F2 console starts the car on a gentle downslope before the uphill switchbacks on the third ridge approach.
+
+### Descents in legs across the face (T-326, second pass)
+
+The user, 2026-11-19, on the first pass: "The planner can use a steeper grade now, and it sometimes spends that allowance on one long run straight down the mountain. ... I want the car to spend most of the descent traveling across the mountainside, with elevation changing gradually." Reference: `art/reference/mountain-study-seed-7/next-pass-gorge-traverses/` (outside git), with the before and after study images beside it.
+
+**Why the first pass ran straight down:** descents used the climb's corridor survey, which scored each stretch by the raw slope of the ground under it. Crossing a spur or a gully counted as a steep pitch, so the cheapest corridor ran down the face along the channels, and the road aimed at it. The grade fit then held 14 degrees for as long as the ground fell.
+
+**Now** (`Road/SplineContourTraverse`, `SplineGen._planRange`, `_track`; numbers under "A descent in legs" in `Config.Range`):
+
+- **A leg at a time.** Coming down, the server surveys the next leg across the face: a layer every 100 studs across the range, and on each, places every 60 studs at a steady depth below the crest the face falls from, since the face's contours lie along that crest as it wanders. A stud of height lost up to 5 degrees pays for its length; faster loss and regained height cost; cut and fill past 12 studs cost by depth. The leg runs until the ground stops paying: the band 3,000 studs either side of the next pass, a gorge too deep to cross, rising ground or the valley floor.
+- **Hairpins where the hillside offers them.** A leg ends at a hairpin site judged on its slope, on the fall across the hairpin's width and on the first 400 studs of the next leg, clear of old road. The hillside's slope sets the radius, 70 to 110 studs. The hairpin turns through the downhill side, and the next leg runs back the other way from its exit.
+- **Gorges crossed sideways.** A leg may turn up the face, back toward the mountain, by up to 1,200 studs to cross a gorge near its head where the banks are close in height, then carry on across the far face.
+- **The road keeps to the leg.** Sections along a leg are fitted to it (eased bends of 100 to 2,000 studs, judged on how far off the leg they end and their heading 300 studs on), not drawn at random around a heading.
+- **Short steep pitches.** Along a leg, grade past 6.5 degrees spends a 25-stud allowance of height (about 190 studs at 14 degrees), repaid as the grade eases. Past it, the fit trades steepness against leaving the ground, so it never digs a trench to save a degree.
+- Climbs keep the first pass's planner (below, "Known").
+
+**Measured, seed 7, the descent from the second ridge (crest to valley floor), before (build 2149a45) and after:**
+
+| | Before | After |
+|---|---|---|
+| Road for the descent | 7,720 studs for 1,025 down (7.6 degrees mean) | 13,580 studs for 1,051 down (4.4 degrees) |
+| Longest steep pitch (over 8 degrees) | 2,180 studs at 13.8 degrees | 480 studs at 13.1 |
+| Longest run aimed downhill (within 30 degrees of the fall line, line held over 400 studs) | 820 studs, 18 degrees off it, at -14 degrees | 610 studs, 26 degrees off it, at -4.5 degrees (the run-out onto the valley floor) |
+| Share across the face (60 degrees or more off the fall line) | 50% | 72% |
+| Share aimed downhill | 28% | 10% |
+| Deepest cut, highest fill | 28, 55 | 41, 45 |
+| Hairpins | none | 4 |
+
+A gorge crossing, marked in `seed7-gorge-crossing-marked.png`: after the first hairpin (39,300 studs) the road turns back toward the mountain, meets a gorge about 300 studs below its head where it is 73 studs deep, crosses it square at 40,930 with 24 studs of fill and 33 of cut (10 degrees at the steepest), and runs on across the far face.
+
+On nine more seeds (1, 2, 3, 4, 5, 8, 10, 11 and 19, 60,000 studs each): none stalled, deepest cut 66, highest fill 74, a section 1.4 to 2.8 ms on average and 37 at worst. A road that starts on a valley floor keeps the old legs there until its first descent, and a face where no leg scores as drivable (`TraverseHopeless`) hands back to them too. In `RangeTests`, a fall back along the way on counts as doubling back only when the road climbs more than 40 studs back up while it is behind (T-242's road climbed back into the face); a descent's leg running back toward the mountain loses height.
+
+In the Studio seed 7 drive, `tp me road 36800` in the F2 console starts the car 350 studs before the crest of the second ridge, at the top of the descent.
+
+**Studio drive (DR-Lane1):** the descent from 36,800 to 50,100 studs, in 19 stretches of 700 from rest with the car steered toward the road ahead: 1,147 of 1,150 readings on tarmac (the three off it inside the second hairpin, where the steering cut the apex at 25 studs/s), every one grounded, none airborne, no road mesh fallbacks. The gorge crossing was driven at 126 down to 85 studs/s on tarmac. Driven continuously at full speed (the car has no throttle input and the handbrake only stops it after a run), the steering ran wide at three bends.
+
+**Known:**
+
+- **Climbs keep the first pass's planner.** Surveying climbs as legs too (tried) dug a 198-stud trench on seed 8 and a 166-stud causeway on seed 10; climbs need their own onward rule first. Seed 7's third climb now starts where the new descent ends, and on that approach the first pass's planner climbs 600 studs in 4,150 (it was 5,775) with a fill of 83 at one turnaround it could not lay: `SplineContourTests` fails those two checks (8 of 10).
+- A leg's hairpin can still be refused at its site (crowded or far off h); the road then runs on and the next leg is surveyed from where it gets to.
 
 ## Left out
 

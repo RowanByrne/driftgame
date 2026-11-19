@@ -9,7 +9,7 @@ Every task in progress and the files it owns, so parallel sessions and workers n
 
 | Branch | Lane | Files owned | Since |
 |---|---|---|---|
-| `agent/gorge-approaches` | Borrow to test | `src/ReplicatedStorage/Shared/Config/Range.luau`, `Shared/Config/Spline.luau`, `Shared/Config/Road.luau`, `Shared/Road/Range.luau`, `Shared/Road/Ground.luau`, `Shared/Road/Seed7*.luau`, `Shared/Road/SplineGen.luau`, `Shared/Road/SplineContour*.luau`, `src/ServerScriptService/Services/RoadService.luau`, road and terrain tests in `src/ServerScriptService/Tests/` (`Ground*`, `Range*`, `Spline*`, `Seed7*`), `docs/game/features/mountain-range.md` | 2026-11-19, T-326 attempt 2 (gorge traverses) |
+| `feature/road-dressing-layer` | Borrow to test | `src/ReplicatedStorage/Shared/Road/SplineGen.luau`, `Shared/Road/SplineSequence.luau`, `Shared/Config/Spline.luau`, `Shared/Road/RoadDressing.luau` (new), the dressing config (new, in `Shared/Config/`), tests in `src/ServerScriptService/Tests/` (`Spline*`, `Grind*`, `Hairpin*`, `Grove*`, and new dressing tests), `docs/game/features/road-dressing.md` | 2026-11-19, T-328 (barriers into a dressing layer) |
 
 ## Notes between sessions
 

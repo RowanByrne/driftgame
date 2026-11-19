@@ -22,8 +22,10 @@
 -- start is on it, square across from where the road begins.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
 
 local Config = require(ReplicatedStorage.Shared.Config)
+local Seed7Relief = require(script.Parent.Seed7Relief)
 
 local Range = {}
 
@@ -50,7 +52,9 @@ export type Range = {
 	ux: number, -- the way on, a unit vector in plan
 	uz: number,
 	shift: number, -- added to `t`, so the start is on valley -1's floor
+	floorDatum: number, -- the natural floor at the run's origin
 	ridges: { [number]: Ridge },
+	basins: Seed7Relief.Cache?, -- the branching stream beds in the Studio seed 7 study
 }
 
 -- What `shape` says of a point: its height, how far up its face it is (0 on the valley
@@ -122,21 +126,32 @@ function Range.crest(r: Range, k: number, v: number): (number, number)
 	-- no lower than `SaddleMin`, eased into it over `SaddleEase` (a hard floor left flat crests)
 	local tall = rd.peak * (1 + R.PeakVary[1] * 2 * math.noise(v / R.PeakVary[2] + rd.wob * 0.7, 0.83, 0.17))
 	local a, b, e = tall - rd.depth * deep * s, R.SaddleMin, R.SaddleEase
-	return 0.5 * (a + b + math.sqrt((a - b) * (a - b) + e * e)), s
+	local y = 0.5 * (a + b + math.sqrt((a - b) * (a - b) + e * e))
+	return if r.basins then Seed7Relief.crest(y) else y, s
 end
 
 -- Valley k's floor (between ridge k and ridge k + 1) at `v` across.
 function Range.floor(r: Range, k: number, v: number): number
 	local R = Config.Range
 	local rd = ridge(r, k)
-	return rd.base + R.FloorVary * 2 * math.noise(v / R.FloorEvery + rd.flo, 0.29, 0.43)
+	-- Preserve the spawn datum; elsewhere the floor moves down in world space.
+	local cut = R.ValleyIncision
+	if k == -1 then cut *= smooth(math.clamp(math.abs(v) / 2400, 0, 1)) end
+	local floor = rd.base + R.FloorVary * 2 * math.noise(v / R.FloorEvery + rd.flo, 0.29, 0.43) - cut
+	local low = r.floorDatum - 215
+	-- Ease only the very lowest beds towards the playable altitude band.
+	return if floor >= low then floor else low - 35 * (1 - math.exp((floor - low) / 35))
 end
 
 function Range.new(seed: number, ox: number, oz: number, ux: number, uz: number): Range
-	local r: Range = { seed = seed, ox = ox, oz = oz, ux = ux, uz = uz, shift = 0, ridges = {} }
+	local r: Range = { seed = seed, ox = ox, oz = oz, ux = ux, uz = uz, shift = 0, floorDatum = 0, ridges = {} }
+	if seed == 7 and RunService:IsStudio() and Config.Road.StudioSeed7Drive then
+		r.basins = {}
+	end
 	-- the start square across from valley -1's floor
 	local a, b = Range.ridgeT(r, -1, 0), Range.ridgeT(r, 0, 0)
 	r.shift = a + ridge(r, -1).p * (b - a)
+	r.floorDatum = Range.floor(r, -1, 0)
 	return r
 end
 
@@ -169,27 +184,61 @@ local function locate(r: Range, tt: number, v: number): (number, number, number)
 	return k, t0, t1
 end
 
--- The range at a point in its frame (`t` before `shift`).
-function Range.at(r: Range, t: number, v: number): (number, number, number, number, number, number, number)
+type Column = { floor: number, left: number, leftSaddle: number, right: number, rightSaddle: number }
+
+local function face(r: Range, tt: number, v: number, k: number, t0: number, t1: number, col: Column?): (number, number, number, number, number, number, number)
 	local R = Config.Range
-	local tt = t + r.shift
-	local k, t0, t1 = locate(r, tt, v)
 	local rd = ridge(r, k)
 	local gap = t1 - t0
 	local a = tt - t0
-	local F = Range.floor(r, k, v)
+	local F = if col then col.floor else Range.floor(r, k, v)
 	local kc, d, L, q, fl
 	if a <= rd.p * gap then
 		kc, d, L, q, fl = k, a, rd.p * gap, rd.qa, rd.fa
 	else
 		kc, d, L, q, fl = k + 1, t1 - tt, (1 - rd.p) * gap, rd.qb, rd.fb
 	end
-	local C, s = Range.crest(r, kc, v)
+	local C, s
+	if col then
+		if kc == k then C, s = col.left, col.leftSaddle else C, s = col.right, col.rightSaddle end
+	else
+		C, s = Range.crest(r, kc, v)
+	end
 	local c = R.CrestRound
 	local dr = math.sqrt(d * d + c * c) - c
 	local x = math.clamp(dr / math.max(L * (1 - fl), 1), 0, 1)
 	local up = (1 - x) ^ q
+	if r.basins and up > 0 then
+		local side = if kc == k then 1 else -1
+		local y, incisedUp = Seed7Relief.face(r.basins, r.seed, kc, side, v, d, up, s, F, C)
+		return y, incisedUp, d, kc, s, F, C
+	end
 	return F + (C - F) * up, up, d, kc, s, F, C
+end
+
+-- The range at a point in its frame (`t` before `shift`).
+function Range.at(r: Range, t: number, v: number): (number, number, number, number, number, number, number)
+	local tt = t + r.shift
+	local k, t0, t1 = locate(r, tt, v)
+	return face(r, tt, v, k, t0, t1, nil)
+end
+
+-- Along one line of a terrain survey, ridge positions, crest and floor heights
+-- stay the same until the line enters the next valley. Evaluate the same profile.
+function Range.column(r: Range, v: number): (number) -> (number, number)
+	local k, t0, t1 = 0, math.huge, -math.huge
+	local col: Column = { floor = 0, left = 0, leftSaddle = 0, right = 0, rightSaddle = 0 }
+	return function(t: number): (number, number)
+		local tt = t + r.shift
+		if tt < t0 or tt >= t1 then
+			k, t0, t1 = locate(r, tt, v)
+			col.floor = Range.floor(r, k, v)
+			col.left, col.leftSaddle = Range.crest(r, k, v)
+			col.right, col.rightSaddle = Range.crest(r, k + 1, v)
+		end
+		local y, up = face(r, tt, v, k, t0, t1, col)
+		return y, up
+	end
 end
 
 -- The same, from x and z, as a table (for what wants every part of it).
