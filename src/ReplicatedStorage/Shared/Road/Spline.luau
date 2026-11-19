@@ -74,9 +74,10 @@ export type Section = {
 	kr: { number }?, -- K-rail runs {ds0, ds1, side, ...}, side -1 left, 1 right
 	gl: { number }?, -- gravel runoff runs {ds0, ds1, side, ...}, as `kr` (T-181)
 	gv: { number }?, -- groves {side, seed, ...}: trees on that side's runoff, the whole section (T-183)
-	-- a tight hairpin (T-333, `Road/TightHairpin`): {sIn, sA, sB, sOut, dir} along the
+	-- a tight hairpin (T-333, `Road/TightHairpin`): {sIn, sA, sB, sOut, dir, sFree} along the
 	-- section, where its legs' side by side run starts, the turn starts and ends, and the
-	-- run ends; `dir` 1 turns left, -1 right. The island between the legs is shaped from it
+	-- run ends; `dir` 1 turns left, -1 right; past `sFree` the island is no longer between the
+	-- legs. The island between the legs is shaped from it
 	th: { number }?,
 }
 
@@ -131,7 +132,7 @@ export type Spline = typeof(setmetatable(
 		-- by a client's replay; nil on a bare test curve
 		mountain: any?,
 		-- the tight hairpins laid (T-333), in the road's own s: `TightHairpin.Entry`s
-		tight: { { sIn: number, sA: number, sB: number, sOut: number, dir: number, sStart: number, sEnd: number } },
+		tight: { { sIn: number, sA: number, sB: number, sOut: number, dir: number, sFree: number, sStart: number, sEnd: number } },
 	},
 	Spline
 ))
@@ -446,7 +447,7 @@ local function checkTerrain(self: Spline, sec: Section)
 	local len = sec.len
 	local th = sec.th
 	if th then
-		assert(#th == 5 and 0 <= th[1] and th[1] < th[2] and th[2] < th[3] and th[3] < th[4] and th[4] <= len + 1e-6 and (th[5] == 1 or th[5] == -1), "Spline: a tight hairpin is {sIn, sA, sB, sOut, dir}, in order, inside the section")
+		assert(#th == 6 and 0 <= th[1] and th[1] < th[2] and th[2] < th[3] and th[3] < th[4] and th[4] <= th[6] and th[6] <= len + 1e-6 and (th[5] == 1 or th[5] == -1), "Spline: a tight hairpin is {sIn, sA, sB, sOut, dir, sFree}, in order, inside the section")
 	end
 	for _, knots in { sec.rl, sec.rr } do
 		if knots then
@@ -531,7 +532,7 @@ function Spline.append(self: Spline, sec: Section)
 	appendGroves(self, s0, sec.len, sec.gv)
 	local th = sec.th
 	if th then
-		table.insert(self.tight, { sIn = s0 + th[1], sA = s0 + th[2], sB = s0 + th[3], sOut = s0 + th[4], dir = th[5], sStart = s0, sEnd = s1 })
+		table.insert(self.tight, { sIn = s0 + th[1], sA = s0 + th[2], sB = s0 + th[3], sOut = s0 + th[4], dir = th[5], sFree = s0 + th[6], sStart = s0, sEnd = s1 })
 	end
 	self.length = s1
 	self.sections += 1

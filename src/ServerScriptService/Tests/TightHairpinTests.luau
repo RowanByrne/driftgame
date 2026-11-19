@@ -150,8 +150,11 @@ local function run(check, log, opts)
 				local onRoad = s and dd and math.abs(dd) < half
 				-- (only where the island has a say: the cuts and fills beside the road are the
 				-- mountain's, walls on steep ground by design, and GroundTests' to judge)
+				-- (wholly the island only: this road is laid by hand, not fitted to the mountain,
+				-- so where the island hands back the mountain can be anywhere; on the planner's
+				-- roads, below, the hand-back is judged too)
 				local _, w = TightHairpin.islandAt(isl, x, z)
-				local v = if onRoad or w <= 0 then nil else y
+				local v = if onRoad or w < 1 then nil else y
 				table.insert(row, v)
 				if v and prev then
 					local j = math.abs(v - prev) / step
@@ -189,6 +192,8 @@ local function run(check, log, opts)
 	if opts.seeds ~= false then
 		local total, lines, gaps, worstSteep, minNarrow, worstEdge, worstMs, sumMs, secs = 0, {}, {}, 0, math.huge, 0, 0, 0, 0
 		local islandRails, outsideRailed = 0, 0
+		local worstStep, stepAt = 0, ""
+		local stepBar = math.tan(math.rad(math.max(C.IslandMaxSlope, Config.Spline.Ground.SlopeSteep) + 15))
 		for _, seed in opts.seedList or SEEDS do
 			local gen = SplineGen.new(seed)
 			gen:extendTo(opts.length or LENGTH)
@@ -212,7 +217,40 @@ local function run(check, log, opts)
 				local isl = TightHairpin.island(sp, e)
 				local steep, narrow = TightHairpin.measure(isl)
 				-- the rails: none on the island's side; the turn's outside as any hairpin's
-				islandRails += #sp:kRailsIn(e.sIn + 1, e.sOut, -e.dir) // 2
+				islandRails += #sp:kRailsIn(e.sIn + 1, e.sFree - 1, -e.dir) // 2
+				-- no cliff where the island has a say, its hand-back included: a 2-stud grid
+				do
+					local gctx = Ground.context(gen.ground, sp, isl.minX, isl.minZ, isl.maxX, isl.maxZ)
+					local prevRow = nil
+					for gz = isl.minZ, isl.maxZ, 2 do
+						local row, prev = {}, nil
+						local i = 0
+						for gx = isl.minX, isl.maxX, 2 do
+							i += 1
+							local _, w = TightHairpin.islandAt(isl, gx, gz)
+							local v = nil
+							if w > 0 then
+								local ps, pd = sp:project(gx, gz, 80)
+								if not (ps and pd and math.abs(pd) < half) then
+									v = Ground.at(gctx, gx, gz)
+								end
+							end
+							row[i] = v
+							if v and prev and math.abs(v - prev) / 2 > worstStep then
+								worstStep, stepAt = math.abs(v - prev) / 2, ` at ({fmt(gx, 0)}, {fmt(gz, 0)}) seed {seed}`
+							end
+							local u = prevRow and prevRow[i]
+							if v and u and math.abs(v - u) / 2 > worstStep then
+								worstStep, stepAt = math.abs(v - u) / 2, ` at ({fmt(gx, 0)}, {fmt(gz, 0)}) seed {seed}`
+							end
+							prev = v
+						end
+						prevRow = row
+						if gz % 40 < 2 then
+							task.wait()
+						end
+					end
+				end
 				if #sp:kRailsIn(e.sA, e.sB, e.dir) > 0 then
 					outsideRailed += 1
 				end
@@ -243,6 +281,7 @@ local function run(check, log, opts)
 		check("never within 1 500 studs of another", minGap >= 1500, if #gaps > 0 then `closest {fmt(minGap, 0)} studs apart` else "none two on one road")
 		check("every island on the road is a bank at least 10 across", total == 0 or (worstSteep <= C.IslandMaxSlope and minNarrow >= 10), `steepest {fmt(worstSteep, 1)} degrees, narrowest {fmt(minNarrow, 1)} studs`)
 		check("every island meets both legs' inner edges", worstEdge < 0.6, `worst {fmt(worstEdge, 2)} studs off`)
+		check("no cliff in the ground round any island, or where it hands back", worstStep <= stepBar, `steepest step {fmt(worstStep, 2)} studs a stud{stepAt} (bar {fmt(stepBar, 2)})`)
 		check("no rail on an island's side", islandRails == 0, `{islandRails} rail runs on islands; {outsideRailed} of {total} turns railed on their outside`)
 		check("the planner's time per section stays near today's", worstMs < 60, `mean {fmt(sumMs / math.max(secs, 1), 2)} ms, worst {fmt(worstMs, 1)} ms`)
 	end

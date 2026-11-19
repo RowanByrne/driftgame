@@ -411,7 +411,18 @@ function SplineGenTests.run(opts: { seeds: { number }?, length: number? }?)
 					end
 					for _, side in { -1, 1 } do
 						local _, b = sp:kRailAt(h.exit, side)
-						if b and not nextTight and b < sp.length - 1 then
+						-- (a tight cliff edge's gravel just past the bend carries its own rail, the
+						-- planner's (T-181): that is not the hairpin's run-out)
+						local gravel = false
+						if b then
+							for u = straight, b, 2 do
+								if sp:gravelAt(u, side) then
+									gravel = true
+									break
+								end
+							end
+						end
+						if b and not nextTight and not gravel and b < sp.length - 1 then
 							sides += 1
 							local past = b - straight
 							worst = math.max(worst, past)

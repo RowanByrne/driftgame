@@ -24,7 +24,7 @@ return {
 	Every = { 4000, 6000 }, -- studs
 	MinFaceSlope = 8, -- degrees
 	ShortOfHalf = { 10, 60 }, -- degrees
-	MaxOff = 35, -- studs (`Range.TraverseTurnMaxOff`)
+	MaxOff = 20, -- studs (`Spline.Ground.TurnMaxOff`, as any turnaround)
 	-- Climbs too, or descents only.
 	OnClimbs = true,
 	-- The legs' tarmac edges are never nearer each other than this (the tests' bar; the shape
