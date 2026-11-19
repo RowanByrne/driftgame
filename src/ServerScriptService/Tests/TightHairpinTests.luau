@@ -14,6 +14,9 @@
 -- 5. REPLAY: the section sent as JSON and laid again keeps the island.
 -- 6. THE CAR round it: the real drift model on the road's maths (`Drift/SplineWorld`),
 --    TightTurnTests' driver, 58 ways from 60 and 90 studs/s.
+-- 7. ON THE ROAD: the planner (`SplineGen`) over several seeds: every tight hairpin it lays,
+--    how far apart they come, each island's narrowest and steepest, the legs' heights apart,
+--    the ground at both inner edges, and the planner's time per section.
 --
 -- `run()` returns `{ passed, checks, log }`.
 
@@ -29,6 +32,10 @@ local Config = require(ReplicatedStorage.Shared.Config)
 local Spline = require(ReplicatedStorage.Shared.Road.Spline)
 local Ground = require(ReplicatedStorage.Shared.Road.Ground)
 local TightHairpin = require(ReplicatedStorage.Shared.Road.TightHairpin)
+local SplineGen = require(ReplicatedStorage.Shared.Road.SplineGen)
+
+local SEEDS = { 7, 101, 2024, 8080, 777, 31337 }
+local LENGTH = 30000
 
 local Tests = {}
 
@@ -175,6 +182,61 @@ local function run(check, log, opts)
 		end
 		local f = again.tight[1]
 		check(`{way}: a client laying the section again has the same island`, f ~= nil and math.abs(f.sA - e.sA) < 1e-6 and math.abs(f.sOut - e.sOut) < 1e-6 and f.dir == e.dir, if f then `sA {fmt(f.sA, 2)} vs {fmt(e.sA, 2)}` else "none")
+	end
+
+	-- 7. on the road
+	if opts.seeds ~= false then
+		local total, lines, gaps, worstSteep, minNarrow, worstEdge, worstMs, sumMs, secs = 0, {}, {}, 0, math.huge, 0, 0, 0, 0
+		for _, seed in opts.seedList or SEEDS do
+			local gen = SplineGen.new(seed)
+			gen:extendTo(opts.length or LENGTH)
+			local sp = gen.spline
+			local st = gen.stats
+			worstMs = math.max(worstMs, st.worstMs)
+			sumMs += st.totalMs
+			secs += st.sections
+			local why = {}
+			for k, n in st.tightWhy do
+				table.insert(why, `{n} {k}`)
+			end
+			local at = {}
+			local prev = nil
+			for _, e in sp.tight do
+				total += 1
+				if prev then
+					table.insert(gaps, e.sIn - prev)
+				end
+				prev = e.sOut
+				local isl = TightHairpin.island(sp, e)
+				local steep, narrow = TightHairpin.measure(isl)
+				worstSteep, minNarrow = math.max(worstSteep, steep), math.min(minNarrow, narrow)
+				local ctx = Ground.context(gen.ground, sp, isl.minX - 20, isl.minZ - 20, isl.maxX + 20, isl.maxZ + 20)
+				local d = -e.dir * half
+				for s = e.sIn, e.sOut, 4 do
+					local cx, cz = sp:planAt(s)
+					local yaw = sp:yawAt(s)
+					local rx, rz = math.cos(yaw), -math.sin(yaw)
+					local y = Ground.at(ctx, cx + rx * (d - e.dir * 0.3), cz + rz * (d - e.dir * 0.3))
+					worstEdge = math.max(worstEdge, math.abs(y - (sp:heightAt(s) - under)))
+				end
+				table.insert(at, `{fmt(e.sA, 0)} ({if e.dir > 0 then "L" else "R"}, {fmt(sp:heightAt(e.sA) - sp:heightAt(e.sB), 1)}/{fmt(sp:heightAt(e.sIn) - sp:heightAt(e.sOut), 1)} high, {fmt(steep, 0)} deg, {fmt(narrow, 0)} wide)`)
+				task.wait()
+			end
+			table.insert(lines, `seed {seed}: {#sp.tight} tight at {table.concat(at, ", ")}; {st.turnarounds} turnarounds; refused {st.tightRefused} ({table.concat(why, ", ")}); {if st.stalled then "STALLED" else "ran"} to {fmt(sp.length, 0)}`)
+			task.wait()
+		end
+		for _, l in lines do
+			table.insert(log, l)
+		end
+		local minGap = math.huge
+		for _, g in gaps do
+			minGap = math.min(minGap, g)
+		end
+		check("the planner lays tight hairpins", total > 0, `{total} over {#(opts.seedList or SEEDS)} seeds of {opts.length or LENGTH} studs`)
+		check("never within 1 500 studs of another", minGap >= 1500, if #gaps > 0 then `closest {fmt(minGap, 0)} studs apart` else "none two on one road")
+		check("every island on the road is a bank at least 10 across", total == 0 or (worstSteep <= C.IslandMaxSlope and minNarrow >= 10), `steepest {fmt(worstSteep, 1)} degrees, narrowest {fmt(minNarrow, 1)} studs`)
+		check("every island meets both legs' inner edges", worstEdge < 0.6, `worst {fmt(worstEdge, 2)} studs off`)
+		check("the planner's time per section stays near today's", worstMs < 60, `mean {fmt(sumMs / math.max(secs, 1), 2)} ms, worst {fmt(worstMs, 1)} ms`)
 	end
 
 	-- 6. the car

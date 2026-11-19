@@ -13,6 +13,19 @@ return {
 	-- close. The car was measured round this on the test pad (12) and the playground's (2).
 	Ease = 24, -- studs
 
+	-- WHERE. In place of the hairpin that ends a descent's leg (`Range` traverse), now and then:
+	-- the first not before `First` studs into the road, then one every `Every` studs at most
+	-- often (so never within 1 500 of another), on a face at least `MinFaceSlope` steep, where
+	-- the next leg's heading is within `ShortOfHalf` (degrees under, over) a half turn, the
+	-- shape leaves the road no more than `MaxOff` off the mountain (fill in full, a cut scaled
+	-- as a turnaround's is: `Spline.Ground.TurnMaxOff` / `TurnMaxCut`), and it is clear of old
+	-- road. Anywhere else the ordinary hairpin is laid.
+	First = { 1000, 3000 }, -- studs
+	Every = { 4000, 6000 }, -- studs
+	MinFaceSlope = 12, -- degrees
+	ShortOfHalf = { 10, 60 }, -- degrees
+	MaxOff = 35, -- studs (`Range.TraverseTurnMaxOff`)
+
 	-- THE LEGS. Straight and side by side for this long either side of the turn, then the leg
 	-- out bends away from the leg in by the turn's extra (what the next leg's heading asks
 	-- beyond a half turn), within these, and runs on until it is clear of the leg in.
