@@ -239,6 +239,10 @@ local function survey(f: Ground.Field, x0: number, z0: number, y0: number, yaw: 
 				end
 				local exitFall = (H[i][jo] - H[i - m][jo]) / (math.max(m, 1) * dv)
 				site += steep * m * dv * math.max(0, math.abs(exitFall) - gStar)
+				-- and the hairpin itself: the ground falls across its width, the road round its
+				-- half circle at no more than a comfortable pitch; what it cannot fall is fill
+				local footFill = (H[i][j] - H[i][jo]) - C.TraverseHairpinFall * math.pi * radius
+				site += 3 * earth * math.max(0, footFill - tol)
 				local score = c - refund * L[j] + site
 				if score < best then
 					best, bestI, bestJ, siteSlope = score, i, j, sl
