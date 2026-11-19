@@ -193,8 +193,9 @@ local function drive(sp, entry: number, exit: number, dir: number, v0: number, w
 			phase = "bend"
 		end
 		if phase == "bend" and cs <= exit then
-			local need = if math.sign(kappa) == dir then bmag else 0
-			bStar = -dir * math.clamp(need, 0, math.rad(way.maxB))
+			-- either way: a slide that has pointed the car at the inside is caught by
+			-- counter-steering, as a player would
+			bStar = -math.sign(kappa) * math.clamp(bmag, 0, math.rad(way.maxB))
 		end
 		local rate = speed * kappa + 8 * (s.slip - bStar)
 		input.steer = math.clamp(rate / (D.MaxSteeringSpeed * D.SteeringSensitivity), -1, 1)
