@@ -20,6 +20,7 @@ assert(RunService:IsStudio(), "OffRoadTests is Studio only")
 local Config = require(ReplicatedStorage.Shared.Config)
 local Ground = require(ReplicatedStorage.Shared.Road.Ground)
 local SplineGen = require(ReplicatedStorage.Shared.Road.SplineGen)
+local RoadDressing = require(ReplicatedStorage.Shared.Road.RoadDressing) -- the barriers, as the game's road has them (T-327)
 
 local DriftFolder = StarterPlayer.StarterPlayerScripts:WaitForChild("Drift")
 
@@ -48,6 +49,7 @@ function Tests.run(...)
 	local tanWall = math.tan(math.rad(O.WallAngle))
 
 	local gen = SplineGen.new(SEED)
+	RoadDressing.attach(gen)
 	gen:extendTo(LENGTH)
 	local spline = gen.spline
 	local field = spline.mountain

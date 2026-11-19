@@ -27,6 +27,7 @@ assert(RunService:IsStudio(), "ScandiFlickTests only runs in Studio")
 
 local Config = require(ReplicatedStorage.Shared.Config)
 local SplineGen = require(ReplicatedStorage.Shared.Road.SplineGen)
+local RoadDressing = require(ReplicatedStorage.Shared.Road.RoadDressing) -- the barriers, as the game's road has them (T-327)
 local Hairpins = require(ReplicatedStorage.Shared.Road.Hairpins)
 
 local DriftFolder = StarterPlayer.StarterPlayerScripts:WaitForChild("Drift")
@@ -356,6 +357,7 @@ local function runAll(opts)
 
 	local T = ScandiFlick.Tuning
 	local gen = SplineGen.new(SEED)
+	RoadDressing.attach(gen)
 	gen:extendTo(LENGTH)
 	local spline = gen.spline
 	local closed = {}
@@ -861,6 +863,7 @@ end
 -- wrong, minIn). Returns the result, the stats and a line every 0.1 s.
 function ScandiFlickTests.drive(entry: number, o)
 	local gen = SplineGen.new(SEED)
+	RoadDressing.attach(gen)
 	gen:extendTo(LENGTH)
 	local spline = gen.spline
 	local best = nil
