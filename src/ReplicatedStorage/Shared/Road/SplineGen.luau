@@ -1424,24 +1424,24 @@ function SplineGen._slopeAim(self: Gen, slope: Slope, stretch: boolean?): (numbe
 		return math.atan2(x - wx, z - wz), lim, lim, 0
 	end
 	if slope.kind == "return" then
-		-- back across the face after a descent's hairpin (T-326): across the range `dirV`,
-		-- turned down the face's fall line enough to fall `gd` a stud
-		local e = R.AimSpan * 0.5
-		local bx = (Ground.base(f, x + e, z) - Ground.base(f, x - e, z)) / R.AimSpan
-		local bz = (Ground.base(f, x, z + e) - Ground.base(f, x, z - e)) / R.AimSpan
-		local S = math.sqrt(bx * bx + bz * bz)
-		local dx, dz = r.ux, r.uz
-		if S > 1e-6 then
-			dx, dz = -bx / S, -bz / S
-		end
+		-- back across the face after a descent's hairpin (T-326): along the crest the face
+		-- falls from, `dirV` across the range (the frame its legs are surveyed in), turned
+		-- down the fall line enough to fall `gd` a stud
 		local d = slope.dirV or 1
-		local wx, wz = d * r.uz, -d * r.ux
-		local along = wx * dx + wz * dz
-		local cx, cz = wx - along * dx, wz - along * dz
-		local cl = math.max(math.sqrt(cx * cx + cz * cz), 1e-9)
-		cx, cz = cx / cl, cz / cl
-		local tilt = math.asin(math.clamp((slope.gd or 0) / math.max(S, 1e-6), 0, math.sin(math.rad(60))))
-		local hx, hz = cx * math.cos(tilt) + dx * math.sin(tilt), cz * math.cos(tilt) + dz * math.sin(tilt)
+		local tgt = self:_target()
+		local t, v = Range.frame(r, x, z)
+		local e = R.TraverseFrameSpan * 0.5
+		local lean = (Range.ridgeT(r, tgt.k - 1, v + e) - Range.ridgeT(r, tgt.k - 1, v - e)) / (2 * e)
+		local n = math.sqrt(1 + lean * lean)
+		local ct, cv = d * lean / n, d / n
+		local dt, dv = 1 / n, -lean / n
+		-- how steeply the face falls down that line, over the range's own shape
+		local h0 = Ground.base(f, Range.world(r, t - dt * e, v - dv * e))
+		local h1 = Ground.base(f, Range.world(r, t + dt * e, v + dv * e))
+		local S = math.max((h0 - h1) / (2 * e), 1e-6)
+		local tilt = math.asin(math.clamp((slope.gd or 0) / S, 0, math.sin(math.rad(60))))
+		local ht, hv = ct * math.cos(tilt) + dt * math.sin(tilt), cv * math.cos(tilt) + dv * math.sin(tilt)
+		local hx, hz = ht * r.ux + hv * r.uz, ht * r.uz - hv * r.ux
 		return math.atan2(-hx, -hz), math.rad(R.TraverseLimit), math.rad(R.TraverseLimit), 0
 	end
 	local tgt = self:_target()
