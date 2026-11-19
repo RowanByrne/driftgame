@@ -16,7 +16,7 @@ The review build's **Start Endless Run** button starts the approved seed 7 route
 
 For a shorter drive, use the Studio console (F2) and enter `tp me road 7000` for the first pair or `tp me road 28800` for the second. The ordinary range planner continues from the recorded steering's final sample at 36,555 studs.
 
-The steering samples and the mountain's branching channels come from the approved preview. The game fits the road grade, bank, gravel and guardrails as it streams each section. The server and clients build the same terrain from the seed. Explicit alternate seeds and live runs use the usual procedural range.
+The steering samples and the mountain's branching channels come from the approved preview. The game refits each section's elevation against the revised valley floor, using the same 14° pitch limit as the native road. It fits the bank, gravel and guardrails as it streams. The server and clients build the same terrain from the seed. Explicit alternate seeds and live runs use the usual procedural range.
 
 ### The endless range
 
@@ -28,9 +28,17 @@ The steering samples and the mountain's branching channels come from the approve
 
 ### Routing around a steep face (T-324)
 
-Past the recorded drive, the server surveys each proposed bend and its exit against the natural ground. It checks for fill, cuts across both shoulders, and sustained climbing or descending. A short pitch can reach 14°. Over a sustained approach the survey favors 4.5°, with a 32-stud allowance for a short rise above that line.
+Past the recorded drive, the server surveys each proposed bend and its exit against the natural ground. It checks for fill, cuts across both shoulders, and sustained climbing or descending. A short pitch can reach 14°. Over a sustained approach the survey favors 3.7°, with a 32-stud allowance for a short rise above that line.
 
 When it forecasts difficult ground, the generator compares traverses across the coming face. The survey reaches up to 12,090 studs toward the next pass and 5,040 studs to either side. It favors gentler paths and leaves room to round each bend. The generator then fits actual bends, checking old road and at least 560 studs of clear exit before placing a new traverse. Each section follows the ground with the original vertical-curve rate. Clients replay the server's sections with the ordinary road and hillside meshes.
+
+### Gorge approaches and valley floors (T-326)
+
+Valley floors sit up to 165 studs lower at the same ridge heights. The level portion and the low shoulder occupy less of each face. The incision blends back to the spawn datum in the starting valley, and tapers at the lowest elevations to keep clearance above the fall-kill height. Across 108 matched ridge-to-ridge transects, the median width of the lowest tenth fell from 2,322 to 1,684 studs.
+
+On approaching a valley, the server surveys the next face afresh. It measures both natural banks at two scales, identifies the channel axis and leaves enough room on the outside for the width of a bend. A sideways crossing can stay open along the road. Before committing each section, the generator also checks for opposing banks repeatedly along the actual bend and its exit. Across a long, straight hillside it compares broad bends on both flanks, using the grade and wall heights to choose their side and width.
+
+In the Studio seed 7 drive, `tp me road 50800` in the F2 console starts the car on a gentle downslope before the uphill switchbacks on the third ridge approach.
 
 ## Left out
 
