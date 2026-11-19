@@ -2320,7 +2320,19 @@ function SplineGen._planned(self: Gen, item: Item): Spline.Section?
 	-- stretch before it kept
 	if item.slope then
 		item.to = (self:_slopeAim(item.slope))
-		if item.autoDir then
+		if item.traverse then
+			-- a descent's hairpin turns through the downhill side, the way on down the range,
+			-- however near half a turn it is (T-326): through the uphill side it met the leg above
+			local r = self.ground.range
+			local bestDown = -math.huge
+			for _, d in { 1, -1 } do
+				local mid = yaw0 + d * ((d * ((item.to :: number) - yaw0)) % (2 * math.pi)) * 0.5
+				local down = -math.sin(mid) * r.ux - math.cos(mid) * r.uz
+				if down > bestDown then
+					bestDown, item.dir = down, d
+				end
+			end
+		elseif item.autoDir then
 			local d = sign(wrap((item.to :: number) - yaw0))
 			if d ~= 0 then
 				item.dir = d
