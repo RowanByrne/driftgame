@@ -114,7 +114,7 @@ function Route.new(f: Ground.Field, x: number, z: number, yaw: number, target: {
 	local function coarse(i: number): { [number]: number }
 		local row = coarseRows[i]
 		if row then return row end
-		row = {}
+		row = table.create(width + 6)
 		local t = t0 + dt * i
 		for j = low, high do row[j] = coarseColumns[j](t) end
 		coarseRows[i] = row
@@ -143,7 +143,7 @@ function Route.new(f: Ground.Field, x: number, z: number, yaw: number, target: {
 		local endT = t0 + dt * i
 		local interior = { table.create(quarterWidth), table.create(quarterWidth), table.create(quarterWidth) }
 		local row, nearL, nearR, farL, farR = coarse(i), coarse(i - 2), coarse(i + 2), coarse(i - 4), coarse(i + 4)
-		local bankT, bankV = {}, {}
+		local bankT, bankV = table.create(width + 2), table.create(width + 2)
 		for j = -1, width + 2 do
 			local acrossBanks = Gorge.pressure(math.min(row[j-2], row[j+2]) - row[j], math.min(row[j-4], row[j+4]) - row[j])
 			local forwardBanks = Gorge.pressure(math.min(nearL[j], nearR[j]) - row[j], math.min(farL[j], farR[j]) - row[j])
@@ -163,7 +163,9 @@ function Route.new(f: Ground.Field, x: number, z: number, yaw: number, target: {
 				if a < 1 or a > width then continue end
 				local len, dir = lengths[shift], directions[shift]
 				local cost = previousCosts[a] + len + bendCost * math.abs(dir - previousDirections[a])
-				cost += len * (alongT * onward[shift] + alongV * across[shift])
+				if alongT > 0 or alongV > 0 then
+					cost += len * (alongT * onward[shift] + alongV * across[shift])
+				end
 				if cost > best or cost == math.huge then continue end
 				local h = previousHeights[a]
 				local slope = math.abs(endH - h) / len

@@ -173,6 +173,13 @@ local function reliefShare(q: number): number
 	return R.ReliefFloor + (1 - R.ReliefFloor) * m * m * (3 - 2 * m)
 end
 
+local function octaveHeight(o: Octave, n: number): number
+	n = math.clamp(n, -0.5, 0.5)
+	if o.kind == "ridge" then return o.amp * (1 - 4 * math.abs(n)) end
+	if o.kind == "gully" then return o.amp * (4 * math.abs(n) - 1) end
+	return o.amp * 2 * n
+end
+
 -- The ridges and gullies: noise in the fall line's own frame, stretched along it so they
 -- run down the range's faces, which fall along it; `share` of them.
 local function reliefAt(f: Field, x: number, z: number, share: number): number
@@ -182,17 +189,9 @@ local function reliefAt(f: Field, x: number, z: number, share: number): number
 	local y = 0
 	-- (each octave within its height either way: a ridge octave's trough went three times as
 	-- deep as its crest stood, holes 300 studs deep on the lower faces)
-	local cap = 0.5
 	for _, o in f.oct do
 		local n = math.noise(u / (o.size * f.stretch) + o.a, v / o.size + o.b, o.c)
-		n = math.clamp(n, -cap, cap)
-		if o.kind == "ridge" then
-			y += o.amp * (1 - 4 * math.abs(n))
-		elseif o.kind == "gully" then
-			y += o.amp * (4 * math.abs(n) - 1)
-		else
-			y += o.amp * 2 * n
-		end
+		y += octaveHeight(o, n)
 	end
 	return y * share - f.zero
 end
@@ -216,10 +215,19 @@ end
 function Ground.column(f: Field, v: number): (number) -> number
 	local r = f.range
 	local profile = Range.column(r, v)
+	-- The range frame faces downhill, opposite both axes of the relief frame.
+	-- Its cross-slope noise coordinate is constant along this column.
+	local scales, across = {}, {}
+	for i, o in f.oct do
+		scales[i], across[i] = o.size * f.stretch, -v / o.size + o.b
+	end
 	return function(t: number): number
-		local x, z = Range.world(r, t, v)
 		local y, up = profile(t)
-		return f.oy + y - f.baseZero + reliefAt(f, x, z, reliefShare(up))
+		local relief = 0
+		for i, o in f.oct do
+			relief += octaveHeight(o, math.noise(-t / scales[i] + o.a, across[i], o.c))
+		end
+		return f.oy + y - f.baseZero + (relief * reliefShare(up) - f.zero)
 	end
 end
 

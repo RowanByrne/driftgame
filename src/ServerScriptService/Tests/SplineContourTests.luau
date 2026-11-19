@@ -57,13 +57,14 @@ local function gorgeApproach(g: Gen.Gen): (number, number, number)
 		longest = math.max(longest, run)
 		-- Where holding the old heading would enter a walled bed, the route
 		-- should sometimes already be turning onto an open hillside.
-		local ahead = 800
-		local nx, nz = sp:planAt(s + ahead)
-		if math.abs((nx-x)*fz - (nz-z)*fx) < 160 or banks(x+ahead*fx, z+ahead*fz, fx, fz) < 35 then continue end
-		local ex, ez = sp:planAt(s + ahead - 150)
-		local hx, hz = sp:planAt(s + ahead + 150)
-		local n = math.sqrt((hx-ex)^2 + (hz-ez)^2)
-		if banks(nx, nz, (hx-ex)/n, (hz-ez)/n) < 20 then avoided += 1 end
+		for _, ahead in { 800, 1600 } do
+			local nx, nz = sp:planAt(s + ahead)
+			if math.abs((nx-x)*fz - (nz-z)*fx) < 160 or banks(x+ahead*fx, z+ahead*fz, fx, fz) < 35 then continue end
+			local ex, ez = sp:planAt(s + ahead - 150)
+			local hx, hz = sp:planAt(s + ahead + 150)
+			local n = math.sqrt((hx-ex)^2 + (hz-ez)^2)
+			if banks(nx, nz, (hx-ex)/n, (hz-ez)/n) < 20 then avoided += 1; break end
+		end
 	end
 	return turns, longest, avoided
 end

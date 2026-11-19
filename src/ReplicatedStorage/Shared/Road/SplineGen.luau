@@ -1,4 +1,5 @@
 --!strict
+--!native
 -- SplineGen: chooses the spline road, one section at a time, from a seed
 -- (features/spline-road.md, T-132). Pure maths: no instances.
 --

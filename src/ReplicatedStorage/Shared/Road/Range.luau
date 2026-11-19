@@ -52,6 +52,7 @@ export type Range = {
 	ux: number, -- the way on, a unit vector in plan
 	uz: number,
 	shift: number, -- added to `t`, so the start is on valley -1's floor
+	floorDatum: number, -- the natural floor at the run's origin
 	ridges: { [number]: Ridge },
 	basins: Seed7Relief.Cache?, -- the branching stream beds in the Studio seed 7 study
 }
@@ -136,17 +137,21 @@ function Range.floor(r: Range, k: number, v: number): number
 	-- Preserve the spawn datum; elsewhere the floor moves down in world space.
 	local cut = R.ValleyIncision
 	if k == -1 then cut *= smooth(math.clamp(math.abs(v) / 2400, 0, 1)) end
-	return rd.base + R.FloorVary * 2 * math.noise(v / R.FloorEvery + rd.flo, 0.29, 0.43) - cut
+	local floor = rd.base + R.FloorVary * 2 * math.noise(v / R.FloorEvery + rd.flo, 0.29, 0.43) - cut
+	local low = r.floorDatum - 215
+	-- Ease only the very lowest beds towards the playable altitude band.
+	return if floor >= low then floor else low - 35 * (1 - math.exp((floor - low) / 35))
 end
 
 function Range.new(seed: number, ox: number, oz: number, ux: number, uz: number): Range
-	local r: Range = { seed = seed, ox = ox, oz = oz, ux = ux, uz = uz, shift = 0, ridges = {} }
+	local r: Range = { seed = seed, ox = ox, oz = oz, ux = ux, uz = uz, shift = 0, floorDatum = 0, ridges = {} }
 	if seed == 7 and RunService:IsStudio() and Config.Road.StudioSeed7Drive then
 		r.basins = {}
 	end
 	-- the start square across from valley -1's floor
 	local a, b = Range.ridgeT(r, -1, 0), Range.ridgeT(r, 0, 0)
 	r.shift = a + ridge(r, -1).p * (b - a)
+	r.floorDatum = Range.floor(r, -1, 0)
 	return r
 end
 

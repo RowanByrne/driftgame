@@ -190,9 +190,9 @@ local function run(check, opts)
 				end
 			end
 		end
-		-- The first fitted turnaround on this route now clears the uphill face at 12.4k.
+		-- Extend the turn fixture to the fitted uphill turnaround on the narrower valley.
 		if seed == 31337 then
-			gen:extendTo(12500)
+			gen:extendTo(31000)
 			local fit = gen.turnFits[1]
 			local measured = if fit then TurnFit.measure(sp, fit.s0, fit.s1) else nil
 			check("the fitted turnaround's cut and fill match the hillside",
