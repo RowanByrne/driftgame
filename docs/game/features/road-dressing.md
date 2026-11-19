@@ -1,0 +1,60 @@
+# Feature: Road dressing
+
+**Status:** specced, waiting on T-326. **Owner task:** none yet.
+
+## Goal
+
+What stands beside the road (crash barriers now, trees, signs, posts and the like later) is chosen by its own layer, one that **dresses** a road that's already laid. The road planner and the terrain decide only where the road goes and what the car drives on. Changing a barrier, or adding a new kind of roadside thing, then never touches the planner, never changes the road it lays, and can be built while planner work runs in parallel.
+
+The user, 2026-11-19, asking for the hairpin barrier fix to wait for T-326: *"we should separate this code out from the road planner and terrain code. it should be procedural generation in it's own layer that 'dresses' the road with stuff."*
+
+## How it plays
+
+The same as today on the first step: the barriers stand where they stand now, look the same and stop the car the same. The player sees no change until step 2 shortens the barriers after hairpins.
+
+1. **Move the barriers into the dressing layer** (no visible change). The road for any seed is identical before and after, and so is every barrier: the same runs, in the same places, to the stud.
+2. **Shorten the barriers after hairpins.** On a hairpin, the barrier stops soon after the corner ends rather than running on into the next turn (the user's drawing on C-647207, 2026-11-19: the rail should end at the red line, where the bend straightens, not carry on to the X).
+
+## Left out
+
+- **Moving the trees.** Groves already place their trees in their own module (`Road/SplineGrove.luau`), outside the planner. Only the choice of a grove sits in the planner, because it widens that side's runoff, which the car drives on. Folding the trees into the dressing layer is a later step, offered once this one is approved.
+- **Painted lines** (edge lines, the double yellow on tight stretches) stay with the road surface: they're painted on the tarmac, not stood beside it.
+- **New kinds of dressing** (signs, chevrons, lamp posts, cones). This makes them easy to add; it doesn't add any.
+
+## Rules and numbers
+
+**What stays in the road and terrain layer** (the planner, `Road/SplineGen.luau`): the centreline, the runoff widths and edges each side, the gravel of a tight cliff edge, and a grove's choice and its widened runoff. These shape what the car drives on, and the planner's look-ahead (`_fitTurn`) still needs them.
+
+**What moves to the dressing layer** (new, `Road/RoadDressing.luau` or similar): where the crash barriers stand, all of "Where the K-rails stand" (`features/mountain-road.md`), and the rail of a tight cliff edge. It runs once a section is laid and the ground beside it is known, reads the section and the ground, and writes the barrier runs.
+
+- **Seeded, and never changes the road.** It has its own random stream. Nothing the dressing does can change a road draw, so a dressing change leaves every seed's road the same.
+- **The server still chooses, the clients replay.** The barrier runs still go to the clients with each section, as they do now, so no remote changes. Whether the clients could later dress the road themselves is left for a later step.
+- **Not in the planner's look-ahead.** `_fitTurn` stops dressing its previews, which takes work out of every turn the planner tries.
+- **Its settings get their own config,** split out of `Config/Spline.luau` "Terrain" (the `KRail*` values).
+- **Barrier run-out after a hairpin (step 2):** today every railed corner runs `KRailRunOut` = 60 studs past its end. Hairpins get their own, shorter run-out, about 15 studs (proposed), so the rail ends near where the bend straightens; other corners and cliffs keep 60. The number gets tuned with the user in a lane.
+
+## Server and client
+
+Unchanged: the server lays the road and now dresses it too; clients draw what they're sent.
+
+## Contracts
+
+None changed: the section still carries its barrier runs in the same form.
+
+## Platform risks
+
+None.
+
+## Art and sound
+
+None: the barriers keep their model.
+
+## Testing
+
+- **Step 1 is a move, so it's proved by sameness:** for at least three seeds over 30 000 studs, every section's road (centreline, runoff, edges, gravel) and every barrier run are identical before and after (a test compares them). The existing rail, grove, grind and off-road tests all pass.
+- The planner's time per section, before and after (it should drop a little, with no dressing in its previews).
+- **Step 2:** on hairpins over several seeds, the rail length past each hairpin's end before and after, and a lane drive through a hairpin with a drop.
+
+## Open questions
+
+- Step 2's run-out length: 15 studs is a starting point (proposed), tuned with the user in a lane.
