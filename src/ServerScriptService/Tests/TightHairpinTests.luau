@@ -84,7 +84,7 @@ local function run(check, log, opts)
 		local ll = math.sqrt(lx * lx + lz * lz)
 		local ex, ez = sp:planAt(s0 + sec.len)
 		local across = math.abs((ex - ax) * lz / ll - (ez - az) * lx / ll)
-		check(`{way}: the leg out ends clear of the leg in`, across >= CLEAR - 1, `{fmt(across, 0)} studs from its line (clearance {CLEAR})`)
+		check(`{way}: the leg out ends clear of the leg in`, across >= math.max(CLEAR, Config.Road.Width + C.IslandGone) - 1, `{fmt(across, 0)} studs from its line (clearance {CLEAR})`)
 
 		-- 2. the island
 		local isl = TightHairpin.island(sp, e)
@@ -120,13 +120,23 @@ local function run(check, log, opts)
 		check(`{way}: the island meets the tarmac's edge`, worstEdge < 0.6, `worst {fmt(worstEdge, 2)} studs off the edge, {fmt(edgeAt)} studs from the turn ({n} points)`)
 		check(`{way}: no ground through the tarmac beside the island`, worstThrough < 0.05, `highest {fmt(worstThrough, 3)} studs above the road's underside`)
 
-		-- 4. no cliff: neighbours on a 1-stud grid over the island and round it
-		local step, worstJump, jumpAt = 1, 0, ""
+		-- 4. no cliff: neighbours on a grid over the island, its hand-back and round it
+		local bx0, bx1, bz0, bz1 = math.huge, -math.huge, math.huge, -math.huge
+		for _, side in { { isl.ly, isl.lx }, { isl.ry, isl.rx } } do
+			for i, ly in side[1] do
+				if ly <= isl.yFull + 220 then
+					local wx = isl.ox + side[2][i] * isl.xx + ly * isl.yx
+					local wz = isl.oz + side[2][i] * isl.xz + ly * isl.yz
+					bx0, bx1, bz0, bz1 = math.min(bx0, wx), math.max(bx1, wx), math.min(bz0, wz), math.max(bz1, wz)
+				end
+			end
+		end
+		local step, worstJump, jumpAt = 1.5, 0, ""
 		local prevRow = nil
-		for z = isl.minZ - 10, isl.maxZ + 10, step do
+		for z = bz0 - 20, bz1 + 20, step do
 			local row = {}
 			local prev = nil
-			for x = isl.minX - 10, isl.maxX + 10, step do
+			for x = bx0 - 20, bx1 + 20, step do
 				local y = Ground.at(ctx, x, z)
 				-- (only the ground: on the tarmac the road draws itself)
 				local s, dd = sp:project(x, z, 80)
@@ -134,7 +144,7 @@ local function run(check, log, opts)
 				local v = if onRoad then nil else y
 				table.insert(row, v)
 				if v and prev then
-					local j = math.abs(v - prev)
+					local j = math.abs(v - prev) / step
 					if j > worstJump then
 						worstJump, jumpAt = j, `({fmt(x, 0)}, {fmt(z, 0)})`
 					end
@@ -144,8 +154,8 @@ local function run(check, log, opts)
 			if prevRow then
 				for i, v in row do
 					local u = prevRow[i]
-					if v and u and math.abs(v - u) > worstJump then
-						worstJump = math.abs(v - u)
+					if v and u and math.abs(v - u) / step > worstJump then
+						worstJump = math.abs(v - u) / step
 					end
 				end
 			end

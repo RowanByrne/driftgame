@@ -11,9 +11,12 @@
 --   the turn           ease to 1 / `Radius` over `Ease`, hold, ease out over `Ease`: exactly a
 --                      half turn, so the leg out comes back parallel to the leg in
 --   leg out            `Parallel` studs straight, beside the leg in
---   diverge            a bend of `DivergeRadius` away from the leg in, by the extra turn the
---                      next leg's heading asks beyond a half turn (within `DivergeDegrees`)
---   run on             straight until the leg out is `clear` from the leg in's line
+--   diverge            a bend of `DivergeRadius` back the other way, away from the leg in, by
+--                      how far short of a half turn the next leg's heading is (within
+--                      `DivergeDegrees`): a hairpin through the downhill side ends short of
+--                      a half turn by twice the legs' tilt down the face
+--   run on             straight until the leg out is `clear` from the leg in's line, and the
+--                      island has handed back to the mountain
 --
 -- with the grade eased to `Grade` (signed by the caller: falling on a descent) and the bank
 -- to flat, and both held. Section tag "TightHairpin"; its `th` field says where the island
@@ -24,7 +27,7 @@
 -- from the leg in's inner edge to the leg out's, at each distance from the tip, down a rung
 -- square to the legs. Round the tip the rungs shorten to nothing at the apex, so the bank is
 -- continuous there; past the side by side run it hands back to the mountain over
--- `IslandFade`. Nothing between the legs is read off the mountain: that is what "pre-planned"
+-- `IslandGone` apart. Nothing between the legs is read off the mountain: that is what "pre-planned"
 -- means here, and why the two legs' edges meet the island cleanly.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -47,8 +50,8 @@ export type Island = {
 	xz: number,
 	yx: number, -- along, from the tip toward the open end
 	yz: number,
-	yFull: number, -- the side by side run ends here...
-	yEnd: number, -- ...and the bank has handed back by here
+	yFull: number, -- the side by side run ends here
+	yEnd: number, -- the edges are sampled this far
 	ly: { number }, -- the leg in's inner edge: local y (rising), x, ground height
 	lx: { number },
 	lh: { number },
@@ -111,8 +114,8 @@ local function trace(k0: number, knots: { number }): ({ number }, { number })
 end
 
 -- The shape, from the road's tip: its curvature `k0`, grade `g0` and bank `b0` there.
--- `dir` 1 turns left, -1 right; `extra` (radians) is the turn the next leg asks beyond a
--- half one; `grade` the signed grade to hold; `clear` how far apart the leg out must get from
+-- `dir` 1 turns left, -1 right; `extra` (radians) is how far short of a half turn the next
+-- leg's heading is; `grade` the signed grade to hold; `clear` how far apart the leg out must get from
 -- the leg in's line before the shape ends. Returns the section.
 function TightHairpin.build(k0: number, g0: number, b0: number, dir: number, extra: number, grade: number, clear: number): any
 	local C, S = Config.TightHairpin, Config.Spline
@@ -146,7 +149,7 @@ function TightHairpin.build(k0: number, g0: number, b0: number, dir: number, ext
 	table.insert(k, u)
 	table.insert(k, 0)
 	local sOut = u
-	-- away from the leg in: the same way round as the turn
+	-- away from the leg in: back the other way round
 	local lo, hi = math.rad(C.DivergeDegrees[1]), math.rad(C.DivergeDegrees[2])
 	local theta = math.clamp(extra, lo, hi)
 	local kd = 1 / C.DivergeRadius
@@ -159,11 +162,11 @@ function TightHairpin.build(k0: number, g0: number, b0: number, dir: number, ext
 	end
 	u += Td
 	table.insert(k, u)
-	table.insert(k, dir * kp)
+	table.insert(k, -dir * kp)
 	if Hd > 0 then
 		u += Hd
 		table.insert(k, u)
-		table.insert(k, dir * kp)
+		table.insert(k, -dir * kp)
 	end
 	u += Td
 	table.insert(k, u)
@@ -183,7 +186,9 @@ function TightHairpin.build(k0: number, g0: number, b0: number, dir: number, ext
 	fx, fz = fx / fl, fz / fl
 	local across = math.abs((ex - ax) * lz - (ez - az) * lx)
 	local opening = math.abs(fx * lz - fz * lx) -- how fast the leg out leaves the line a stud
-	local run = math.max((clear - across) / math.max(opening, 0.05), 0) + 20
+	-- (and far enough for the island to hand back to the mountain inside the shape)
+	local need = math.max(clear, Config.Road.Width + C.IslandGone + 10)
+	local run = math.max((need - across) / math.max(opening, 0.05), 0) + 20
 	u += run
 	table.insert(k, u)
 	table.insert(k, 0)
@@ -203,6 +208,9 @@ end
 --------------------------------------------------------------------------------
 
 local SAMPLE = 2 -- studs along each leg's inner edge
+-- How far past each end of the side by side run the edges are sampled: the leg out is clear
+-- of the leg in by then (`build` runs it on that far), and the island has handed back.
+local REACH = 500 -- studs
 
 -- The island's frame and its two inner edges, sampled once (the road under it never changes).
 -- `spline` is the laid road (`Road/Spline`).
@@ -220,7 +228,6 @@ function TightHairpin.island(spline: any, e: Entry): Island
 	local yx, yz = math.sin(yaw), math.cos(yaw) -- back along the leg in: away from the tip
 	local d = -e.dir * (half + C.IslandRunoff) -- the inside of the turn, both legs
 	local apex = (e.sA + e.sB) * 0.5
-	local fade = C.IslandFade
 	local isl: any = {
 		entry = e,
 		ox = ox,
@@ -260,14 +267,14 @@ function TightHairpin.island(spline: any, e: Entry): Island
 		return true
 	end
 	local s = apex
-	while s >= e.sIn - fade and s >= 0 do
+	while s >= e.sIn - REACH and s >= 0 do
 		if not edge(s, isl.ly, isl.lx, isl.lh) and s < e.sA then
 			break
 		end
 		s -= SAMPLE
 	end
 	s = apex
-	while s <= e.sOut + fade and s <= spline.length do
+	while s <= e.sOut + REACH and s <= spline.length do
 		if not edge(s, isl.ry, isl.rx, isl.rh) and s > e.sB then
 			break
 		end
@@ -280,9 +287,6 @@ function TightHairpin.island(spline: any, e: Entry): Island
 	end
 	isl.yFull = math.min(yOf(e.sIn), yOf(e.sOut))
 	isl.yEnd = math.min(isl.ly[#isl.ly] or 0, isl.ry[#isl.ry] or 0)
-	if isl.yEnd <= isl.yFull then
-		isl.yEnd = isl.yFull + 1
-	end
 	return isl :: Island
 end
 
@@ -329,9 +333,12 @@ function TightHairpin.islandAt(isl: Island, x: number, z: number): (number?, num
 	end
 	local t = if b - a > 1e-6 then (lx - xl) / (xr - xl) else 0.5
 	local h = hl + (hr - hl) * t
-	local w = 1
-	if ly > isl.yFull then
-		w = 1 - smooth(math.clamp((ly - isl.yFull) / (isl.yEnd - isl.yFull), 0, 1))
+	-- the bank wholly while the legs are close, handing back to the mountain as they part:
+	-- by `IslandGone` apart each leg's own cut or fill has room to reach h before the other's
+	local C = Config.TightHairpin
+	local w = 1 - smooth(math.clamp((b - a - C.IslandFull) / (C.IslandGone - C.IslandFull), 0, 1))
+	if w <= 0 then
+		return nil, 0
 	end
 	return h, w
 end

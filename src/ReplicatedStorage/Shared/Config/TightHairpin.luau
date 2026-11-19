@@ -27,9 +27,12 @@ return {
 	Grade = 0.06,
 
 	-- THE ISLAND: the ground between the legs is a bank from the upper leg's inner edge down
-	-- to the lower one's, not the mountain. No runoff on that side of either leg; past the
-	-- side by side run the bank hands back to the mountain over `IslandFade` studs.
+	-- to the lower one's, not the mountain. No runoff on that side of either leg. As the legs
+	-- part, the bank hands back to the mountain: wholly the bank while the legs' edges are
+	-- under `IslandFull` apart, wholly the mountain from `IslandGone` (by then each leg's own
+	-- cut or fill, `Spline.Ground.BlendMax` at most, has room to reach it before the other's).
 	IslandRunoff = 0, -- studs of grass on the island's side
-	IslandFade = 60, -- studs
+	IslandFull = 120, -- studs between the legs' edges
+	IslandGone = 150,
 	IslandMaxSlope = 45, -- degrees: a bank, never a wall (the tests' bar)
 }
