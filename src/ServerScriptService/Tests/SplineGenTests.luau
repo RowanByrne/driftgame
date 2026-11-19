@@ -20,6 +20,7 @@
 --    none on a grove's side; the same rails from the same seed, and in a client's replay.
 -- 6. THE DRESSING NEVER CHANGES THE ROAD (T-327): laid with no dressing, every section is the
 --    same, field for field, and carries no rail.
+-- 7. AFTER A HAIRPIN (T-334): its rail ends `HairpinRunOut` after the bend straightens.
 --
 -- `run()` returns `{ passed, checks, log }`.
 
@@ -365,6 +366,59 @@ function SplineGenTests.run(opts: { seeds: { number }?, length: number? }?)
 		bareSections > 0 and roadDiffer == 0 and bareRails == 0,
 		`{roadDiffer} of {bareSections} sections differ; {bareRails} railed with no dressing`
 	)
+	-- 7. AFTER A HAIRPIN (T-334): with only the tight-bend rule standing rails (no corner and no
+	-- cliff rule), a hairpin's rail ends within `HairpinRunOut` of where the bend straightens
+	-- (the road no tighter than `CornerRadius`), unless the next tight bend's lead-in reaches it
+	do
+		local B = Config.Dressing.Barrier
+		local saved = { B.CliffDrop, B.CornerDrop }
+		B.CliffDrop, B.CornerDrop = math.huge, math.huge
+		local ok, gen = pcall(function()
+			local g = SplineGen.new(seeds[1])
+			RoadDressing.attach(g)
+			g:extendTo(math.min(length, 20000))
+			return g
+		end)
+		B.CliffDrop, B.CornerDrop = saved[1], saved[2]
+		local sides, worst, over, detail = 0, -math.huge, 0, {}
+		if ok then
+			local sp = gen.spline
+			local kCorner = 1 / B.CornerRadius
+			local kTight = 1 / B.HairpinRadius
+			for _, h in Hairpins.find(sp, 0, sp.length) do
+				if not h.open then
+					-- where it straightens, and whether another tight bend starts soon after
+					local straight = h.exit
+					while straight < sp.length and math.abs(sp:curvatureAt(straight)) >= kCorner and (sp:curvatureAt(straight) > 0) == (h.dir > 0) do
+						straight += 1
+					end
+					local nextTight = false
+					for u = straight, math.min(straight + B.LeadIn + B.HairpinRunOut + B.Sample, sp.length), 2 do
+						if math.abs(sp:curvatureAt(u)) >= kTight then
+							nextTight = true
+						end
+					end
+					for _, side in { -1, 1 } do
+						local _, b = sp:kRailAt(h.exit, side)
+						if b and not nextTight and b < sp.length - 1 then
+							sides += 1
+							local past = b - straight
+							worst = math.max(worst, past)
+							if past > B.HairpinRunOut + B.Sample + 1 then
+								over += 1
+								table.insert(detail, `{math.floor(h.exit)}{if side < 0 then "L" else "R"} {fmt(past, 0)}`)
+							end
+						end
+					end
+				end
+			end
+		end
+		check(
+			"a hairpin's rail ends HairpinRunOut after the bend straightens",
+			ok and sides > 0 and over == 0,
+			if ok then `{sides} railed hairpin sides (seed {seeds[1]}, corner and cliff rules off): at most {fmt(worst, 1)} studs past where the bend straightens (allowed {B.HairpinRunOut + B.Sample + 1}){if #detail > 0 then "; over: " .. table.concat(detail, ", ") else ""}` else tostring(gen)
+		)
+	end
 	local passed = true
 	for _, c in checks do
 		passed = passed and c.ok
