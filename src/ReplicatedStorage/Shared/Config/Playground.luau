@@ -33,5 +33,7 @@ return {
 		SpotMarker = Color3.fromRGB(240, 196, 48),
 		Cone = Color3.fromRGB(226, 94, 32),
 		ConeStripe = Color3.fromRGB(236, 236, 236),
+		Barrier = Color3.fromRGB(232, 232, 228), -- the turnarounds' edges (T-330)
+		Island = Color3.fromRGB(70, 118, 58), -- the planted strip between a turnaround's legs
 	},
 }

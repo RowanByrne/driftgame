@@ -216,6 +216,31 @@ Layout.BodyPad = {
 	},
 }
 
+-- THE TURNAROUNDS (features/tight-hairpins.md step 1, T-330): four 180-degree hairpins side by
+-- side past the ramp, out of the yard, for feeling how tight a tight hairpin can be. Each is a
+-- 50-stud road (the endless road's width) marked out by barriers on the plate: a leg driven in
+-- +Z from its spot, a half circle of centre-line `radius` turning right, and a leg back beside
+-- it. Between the legs stands the island, a low planted strip whose round tip is the inside
+-- of the turn. 35, 40 and 50 are the candidates; 70 is the endless road's tightest today.
+--
+-- `cx` is the turn's centre across the yard; the leg in runs at cx + radius, the leg out at
+-- cx - radius. Everything is a wall to the car (none of it is tagged DriftSurface): it drives
+-- on the plate.
+Layout.Turnarounds = {
+	id = "Turnarounds",
+	roadWidth = 50,
+	z0 = 540, -- where the legs start (the ramp's lip ends at 496)
+	legLength = 300, -- to where the half circle starts
+	barrier = { height = 3, thickness = 2, segment = 6 }, -- segment: studs of arc per block
+	islandHeight = 2,
+	pads = {
+		{ radius = 35, cx = -918 },
+		{ radius = 40, cx = -773 },
+		{ radius = 50, cx = -613 },
+		{ radius = 70, cx = -423 },
+	},
+}
+
 -- Named spots that are simply a place on the plate. The two that sit on a feature
 -- (CircleCentre, RampBase) are declared with the feature instead.
 Layout.Spots = {
@@ -230,6 +255,15 @@ Layout.Spots = {
 	{ name = "BodyPad", x = Layout.BodyPad.x, z = Layout.BodyPad.z - 40, heading = 180 },
 	{ name = "BodyPadKerbs", x = Layout.BodyPad.x + 45, z = Layout.BodyPad.z - 40, heading = 180 },
 }
+-- one on each turnaround's leg in, 40 studs short of it: Turnaround35, Turnaround40, ...
+for _, pad in Layout.Turnarounds.pads do
+	table.insert(Layout.Spots, {
+		name = `Turnaround{pad.radius}`,
+		x = pad.cx + pad.radius,
+		z = Layout.Turnarounds.z0 - 40,
+		heading = 180,
+	})
+end
 
 -- A spot's CFrame sits this far above its surface, and is shown by a flat disc on the
 -- ground: never a pillar, because a marker in the driving line blocks the view.
