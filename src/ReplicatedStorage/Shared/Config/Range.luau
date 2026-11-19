@@ -188,7 +188,7 @@ return {
 	TraverseHairpin = 500, -- studs of length
 	TraverseSiteCost = 6000,
 	TraverseRadiusSlope = 18,
-	TraverseRadiusMax = 140, -- studs
+	TraverseRadiusMax = 110, -- studs (so with its spread, 126 at most: tighter than `Spline.Terrain.KRailHairpinRadius`, railed as a hairpin)
 	TraverseTurnRetries = 1, -- times a hairpin that leaves the road off h is tried again further on
 	TraverseGiveUp = 3, -- times a hairpin may be refused before the next leg is surveyed from there
 	TraverseLook = 300, -- studs
