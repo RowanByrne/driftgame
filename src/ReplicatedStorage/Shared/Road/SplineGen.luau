@@ -1952,8 +1952,9 @@ function SplineGen._planRange(self: Gen)
 		return dv - v
 	end
 	-- COMING DOWN (T-326): a leg surveyed across the face, ending in a hairpin where the
-	-- hillside offers one; after that hairpin, the next leg the other way
-	if not climbing then
+	-- hillside offers one; after that hairpin, the next leg the other way. (On a valley floor
+	-- there is nothing to come down: the legs below head for the pass, as before.)
+	if not climbing and where.kind ~= "valley" then
 		local _, _, yaw = self.spline:tip()
 		local dirV = self.nextDirV
 		self.nextDirV = nil
