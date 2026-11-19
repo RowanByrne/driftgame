@@ -135,6 +135,7 @@ export type Gen = typeof(setmetatable(
 		leg: Traverse.Leg?,
 		nextDirV: number?,
 		headway: { number }?,
+		setback: { number }?, -- ...and the way a descent's hairpin must not fall back along
 		turning: boolean?, -- laying a planned turn (no steep pitch allowance in a hairpin)
 		sections: { Spline.Section },
 		recent: { string },
@@ -1593,6 +1594,8 @@ function SplineGen._clear(self: Gen, knots: { number }, limitSetback: boolean?):
 	local ux, uz = range.ux, range.uz
 	if self.headway and not self.turning then
 		ux, uz = self.headway[1], self.headway[2]
+	elseif self.setback then
+		ux, uz = self.setback[1], self.setback[2]
 	end
 	return walk(x0, z0, yaw0, k0, knots, cs, first, function(u, x, z)
 		local s = s0 + u
@@ -2474,9 +2477,20 @@ function SplineGen.step(self: Gen): Spline.Section?
 	-- hairpin ending a descent's leg, across the range the way the next leg goes)
 	self.headway = nil
 	self.turning = item.turn
+	self.setback = nil
 	if item.turn and item.traverse and item.nextDirV then
 		local r = self.ground.range
 		self.headway = { item.nextDirV * r.uz, -item.nextDirV * r.ux }
+		-- (its setback is measured down the face, square to the crest it falls from: on a face
+		-- whose crest runs aslant, the way back across runs back along the range)
+		local x, z = self.spline:tip()
+		local t, v = Range.frame(r, x, z)
+		local k = self:_target().k - 1
+		local e = Config.Range.TraverseFrameSpan * 0.5
+		local lean = (Range.ridgeT(r, k, v + e) - Range.ridgeT(r, k, v - e)) / (2 * e)
+		local n = math.sqrt(1 + lean * lean)
+		local dt, dv = 1 / n, -lean / n
+		self.setback = { dt * r.ux + dv * r.uz, dt * r.uz - dv * r.ux }
 	end
 	if item.turn then
 		local wasTraverse = item.traverse == true
