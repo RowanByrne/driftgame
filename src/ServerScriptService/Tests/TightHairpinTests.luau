@@ -228,7 +228,7 @@ local function run(check, log, opts)
 				table.insert(at, `{fmt(e.sA, 0)} ({if e.dir > 0 then "L" else "R"}, {fmt(sp:heightAt(e.sA) - sp:heightAt(e.sB), 1)}/{fmt(sp:heightAt(e.sIn) - sp:heightAt(e.sOut), 1)} high, {fmt(steep, 0)} deg, {fmt(narrow, 0)} wide)`)
 				task.wait()
 			end
-			table.insert(lines, `seed {seed}: {#sp.tight} tight at {table.concat(at, ", ")}; {st.turnarounds} turnarounds; refused {st.tightRefused} ({table.concat(why, ", ")}); turns asked {table.concat(st.tightTurns, " ")}; {if st.stalled then "STALLED" else "ran"} to {fmt(sp.length, 0)}`)
+			table.insert(lines, `seed {seed}: {#sp.tight} tight at {table.concat(at, ", ")}; {st.turnarounds} turnarounds; refused {st.tightRefused} ({table.concat(why, ", ")}); turns asked {table.concat(st.tightTurns, " ")}; {table.concat(st.tightNotes, "; ")}; {if st.stalled then "STALLED" else "ran"} to {fmt(sp.length, 0)}`)
 			task.wait()
 		end
 		for _, l in lines do

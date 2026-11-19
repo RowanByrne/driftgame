@@ -87,6 +87,7 @@ export type Stats = {
 	tightRefused: number, -- ...and ones tried that did not fit (gentle face, off h, crowded)
 	tightWhy: { [string]: number }, -- why, by reason
 	tightTurns: { number }, -- degrees each turnaround tried asked for (a half turn is 180)
+	tightNotes: { string }, -- what refused each one that got as far as the mountain
 }
 
 -- One step of the plan: a STRETCH of random sections kept within `limit` of `aim` for
@@ -297,6 +298,7 @@ function SplineGen.new(seed: number, origin: Spline.Origin?, clearOverride: numb
 			tightRefused = 0,
 			tightWhy = {},
 			tightTurns = {},
+			tightNotes = {},
 		},
 	}, SplineGen)
 	if ground.range.basins then
@@ -2152,7 +2154,9 @@ function SplineGen._tight(self: Gen, item: Item, needed: number): Spline.Section
 		return refuse("turn")
 	end
 	local x0, z0, yaw0, k0, g0, b0, y0 = sp:tip()
-	if Ground.where(self.ground, x0, z0).slope < T.MinFaceSlope then
+	local face = Ground.where(self.ground, x0, z0).slope
+	if face < T.MinFaceSlope then
+		table.insert(self.stats.tightNotes, `gentle {math.floor(face)} deg`)
 		return refuse("gentle")
 	end
 	local sec = TightHairpin.build(k0, g0, b0, item.dir :: number, short, if item.climb then T.Grade else -T.Grade, self.clearance)
@@ -2173,13 +2177,17 @@ function SplineGen._tight(self: Gen, item: Item, needed: number): Spline.Section
 		end
 		return y + g * (u - s)
 	end
-	local worst = 0
+	local worst, worstU = 0, 0
 	walk(x0, z0, yaw0, k0, sec.k, 8, 8, function(u, x, z)
 		local d = yAt(u) - Ground.h(self.ground, x, z)
-		worst = math.max(worst, if d > 0 then d else -d * G.TurnMaxOff / G.TurnMaxCut)
+		local off = if d > 0 then d else -d * G.TurnMaxOff / G.TurnMaxCut
+		if off > worst then
+			worst, worstU = off, u
+		end
 		return true
 	end)
 	if worst > T.MaxOff then
+		table.insert(self.stats.tightNotes, `off h {math.floor(worst)} at {math.floor(worstU)} of {math.floor(sec.len)} (turn {math.floor(sec.th[2])}-{math.floor(sec.th[3])})`)
 		return refuse("off h")
 	end
 	-- old road, and the escape past the shape against everything
@@ -2193,7 +2201,9 @@ function SplineGen._tight(self: Gen, item: Item, needed: number): Spline.Section
 	local own: { number } = {}
 	local ok = walk(x0, z0, yaw0, k0, knots, cs, first, function(u, x, z)
 		local s = s0 + u
-		if sp:crowded(x, z, s, clear, sep) then
+		local hit = sp:crowded(x, z, s, clear, sep)
+		if hit then
+			table.insert(self.stats.tightNotes, `crowded at {math.floor(u)} of {math.floor(sec.len)} by road {math.floor(s0 - hit)} back`)
 			return false
 		end
 		if u > sec.len then
