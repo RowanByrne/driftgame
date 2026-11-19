@@ -179,7 +179,7 @@ return {
 	TraverseMax = 7000, -- studs
 	TraverseReward = 1, -- (so a stud at the sustained grade costs nothing)
 	TraverseRefund = 0.9, -- of the leg's length, refunded when choosing where it ends
-	TraverseSteep = 25, -- studs of length per stud of height lost past the sustained grade
+	TraverseSteep = 45, -- studs of length per stud of height lost past the sustained grade
 	TraverseEarthTol = 12, -- studs
 	TraverseEarth = 6, -- studs of length per stud of depth
 	TraverseDeep = 30, -- studs
@@ -200,7 +200,7 @@ return {
 	PitchSustain = 6.5, -- degrees
 	PitchBudget = 25, -- studs
 	PitchRecover = 1,
-	PitchSoft = 1, -- past the allowance: a stud of height gained too steeply counts as a stud off h
+	PitchSoft = 2, -- past the allowance: a stud of height gained too steeply counts as a stud off h
 	-- The road along a leg (`SplineGen._track`): each curvature eased into and held for each
 	-- of `TrackHolds` studs, judged on how far off the leg it ends, `TrackHeadingCost` a degree
 	-- its heading misses a point `TraverseLook` on, and `TrackCurveCost` per 1/1000 of curvature
