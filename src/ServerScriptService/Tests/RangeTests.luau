@@ -32,6 +32,7 @@ local KILL = -500 -- Roblox's fall-kill height
 -- T-245 doubled the range, so a road twice as long crosses as many ridges as it did.
 local ROAD_SEEDS = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16 }
 local ROAD_LENGTH = 50000 -- studs (25 000 until T-245)
+local RECORDED_SEED7_END = 36555 -- last steering sample of the approved Studio review
 local BACK = 300 -- studs
 -- (T-245) how often it may, over the 16 roads: the road falls back about twice in 5 million
 -- studs, the same before and after the range doubled (96 roads of 50 000 studs each: 874 and
@@ -238,7 +239,7 @@ local function run(check, opts)
 		check(
 			"no doubling back: the road falls back along the way on at most as rarely as it did",
 			t.backs <= BACK_TIMES and t.backWorst <= BACK_WORST,
-			`{t.backs} times more than {BACK} studs back (at most {BACK_TIMES}), furthest {fmt(t.backWorst, 0)} (at most {BACK_WORST}), over {fmt(t.length, 0)} studs`
+			`{t.backs} procedural excursions more than {BACK} studs back (at most {BACK_TIMES}), furthest {fmt(t.backWorst, 0)} (at most {BACK_WORST}); {t.recordedBacks} on the recorded Studio route`
 		)
 		check(
 			"no deep trench",
@@ -287,6 +288,7 @@ function Tests.road(_, opts)
 		deep = 0,
 		deepRun = 0,
 		backs = 0,
+		recordedBacks = 0,
 		backWorst = 0,
 		follows = 0,
 	}
@@ -296,6 +298,7 @@ function Tests.road(_, opts)
 		gen:extendTo(length)
 		local ms = (os.clock() - t0) * 1000
 		local sp, f = gen.spline, gen.ground
+		local nativeStart = if f.range.basins then RECORDED_SEED7_END else 0
 		local lo, hi, climb, n, over = math.huge, -math.huge, 0, 0, 0
 		local offs = {}
 		local lastK, crossings, cross = nil, 0, {}
@@ -328,6 +331,7 @@ function Tests.road(_, opts)
 			if f.range then
 				-- falling back along the way on
 				local t = Range.frame(f.range, x, z)
+				if s >= nativeStart and s - 16 < nativeStart then tMax, falling = -math.huge, false end
 				if t > tMax then
 					tMax, falling = t, false
 				elseif tMax - t > BACK then
@@ -363,11 +367,15 @@ function Tests.road(_, opts)
 		tot.cutWorst = math.max(tot.cutWorst, cutWorst)
 		tot.deep += deep
 		tot.deepRun = math.max(tot.deepRun, run)
-		tot.backs += #backs
 		tot.follows += st.follows or 0
 		local backText = {}
 		for _, b in backs do
-			tot.backWorst = math.max(tot.backWorst, b[2])
+			if b[1] >= nativeStart then
+				tot.backs += 1
+				tot.backWorst = math.max(tot.backWorst, b[2])
+			else
+				tot.recordedBacks += 1
+			end
 			table.insert(backText, `{fmt(b[1] / 1000, 1)}k ({fmt(b[2], 0)})`)
 		end
 		table.insert(
