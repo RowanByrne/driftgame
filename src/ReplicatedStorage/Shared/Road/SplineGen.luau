@@ -2153,6 +2153,14 @@ function SplineGen._tight(self: Gen, item: Item, needed: number): Spline.Section
 	if short < -math.rad(T.ShortOfHalf[1]) or short > math.rad(T.ShortOfHalf[2]) then
 		return refuse("turn")
 	end
+	-- (the leg in's own road, which the leg out runs beside: no grove on the island's side, or
+	-- its trees would stand on the leg out)
+	local groves = sp:groves(-(item.dir :: number))
+	for i = #groves.b, 1, -1 do
+		if groves.b[i] >= s0 - T.LegBack then
+			return refuse("grove")
+		end
+	end
 	local x0, z0, yaw0, k0, g0, b0, y0 = sp:tip()
 	local face = Ground.where(self.ground, x0, z0).slope
 	if face < T.MinFaceSlope then

@@ -626,8 +626,8 @@ function Spline.runoffRaw(self: Spline, s: number, side: number): number
 	return (valueAt(t, s))
 end
 
--- How far either side of a tight hairpin's side by side run the island's runoff eases back
--- to the road's own (T-333).
+-- How far into a tight hairpin's side by side run, and past its end, the island's runoff
+-- eases from the road's own (T-333).
 local ISLAND_EASE = 20 -- studs
 
 -- The same, cut on the inside of a bend to `InsideShare` of the way to the bend's centre.
@@ -637,9 +637,10 @@ local ISLAND_EASE = 20 -- studs
 function Spline.runoffAt(self: Spline, s: number, side: number): number
 	local w = self:runoffRaw(s, side)
 	for _, th in self.tight do
-		if side == -th.dir and s > th.sIn - ISLAND_EASE and s < th.sOut + ISLAND_EASE then
+		-- (eased inside the shape's own section, so the road laid before it never changes)
+		if side == -th.dir and s > th.sIn and s < th.sOut + ISLAND_EASE then
 			local keep = Config.TightHairpin.IslandRunoff
-			local t = math.max(th.sIn - s, s - th.sOut, 0) / ISLAND_EASE
+			local t = math.max(th.sIn + ISLAND_EASE - s, s - th.sOut, 0) / ISLAND_EASE
 			if keep < w then
 				w = keep + (w - keep) * t
 			end
