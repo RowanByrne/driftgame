@@ -160,9 +160,7 @@ return {
 	-- `SteepHairpinRadius[1]` and `TraverseRadiusMax`. The road follows the leg, aiming
 	-- `TraverseLook` studs along it and straying no more than `TraverseLimit` degrees.
 	TraverseGrade = 5, -- degrees: the sustained descent
-	TraverseFrameSpan = 600, -- studs: the fall line the survey's frame is set by, over the range's shape...
-	TraverseFrameAhead = 300, -- ...this far on down the range from the leg's start...
-	TraverseFrameOnward = 0.25, -- ...unless it runs less than this much on along the range (then the range's own)
+	TraverseFrameSpan = 600, -- studs across: the crest's run the survey's frame is set by
 	TraverseClear = 60, -- studs past the road's clearance: no leg (or hairpin) nearer old road...
 	TraverseFromTip = 400, -- ...bar the road this far back from where the leg starts
 	TraverseHairpinRoom = 250, -- studs down the fall line from a hairpin site that must be clear

@@ -37,32 +37,25 @@ export type Leg = {
 	ridge: number, -- the ridge the descent heads for (the plan is dropped past it)
 }
 
--- One direction across: the best leg from (x0, z0), or nil. The survey's frame is the
--- hillside's own where the leg starts: layers along its contour (the way across the range
--- `dirV` goes), places on a layer down its fall line. Across the range itself would not do:
--- where a face is twisted by its gorges and the ridge's wander, the contours run aslant.
-local function survey(f: Ground.Field, x0: number, z0: number, y0: number, yaw: number, dirV: number, pv: number, blocked: (number, number) -> boolean): Leg?
+-- One direction across: the best leg from (x0, z0), or nil. The survey's frame is the face's
+-- own where the leg starts: layers along its contour (the way across the range `dirV` goes),
+-- places on a layer down its fall line. The face's contours lie along the crest it falls
+-- from (ridge `k`), which wanders across the range: straight across would run aslant.
+local function survey(f: Ground.Field, x0: number, z0: number, y0: number, yaw: number, dirV: number, pv: number, k: number, blocked: (number, number) -> boolean): Leg?
 	local C = Config.Range
 	local r = f.range
 	local t0, v0 = Range.frame(r, x0, z0)
 	local dv, dt = C.TraverseLayer, C.TraverseCell
-	-- the fall line, over the range's own shape (`TraverseFrameSpan`) a little way on down
-	-- the range (`TraverseFrameAhead`: a descent starts on a crest, which falls both ways), and
-	-- the contour across it; a fall line that runs back up the range is not the descent's
+	-- the crest's run across the range here, over `TraverseFrameSpan`: the contour (in the
+	-- range's frame, t on and v across) and the fall line square to it, in the world
 	local e = C.TraverseFrameSpan * 0.5
-	local sx, sz = x0 + r.ux * C.TraverseFrameAhead, z0 + r.uz * C.TraverseFrameAhead
-	local gx = (Ground.base(f, sx + e, sz) - Ground.base(f, sx - e, sz)) / (2 * e)
-	local gz = (Ground.base(f, sx, sz + e) - Ground.base(f, sx, sz - e)) / (2 * e)
-	local gl = math.sqrt(gx * gx + gz * gz)
-	local dx, dz = r.ux, r.uz
-	if gl > 0.02 and -(gx * r.ux + gz * r.uz) / gl > C.TraverseFrameOnward then
-		dx, dz = -gx / gl, -gz / gl
-	end
-	local cx, cz = -dz, dx
-	if (cx * r.uz - cz * r.ux) * dirV < 0 then
-		cx, cz = dz, -dx
-	end
-	local acrossV = cx * r.uz - cz * r.ux -- studs across the range a stud along a layer step
+	local lean = (Range.ridgeT(r, k, v0 + e) - Range.ridgeT(r, k, v0 - e)) / (2 * e)
+	local n = math.sqrt(1 + lean * lean)
+	local ct, cv = dirV * lean / n, dirV / n
+	local dt0, dv0 = 1 / n, -lean / n
+	local cx, cz = ct * r.ux + cv * r.uz, ct * r.uz - cv * r.ux
+	local dx, dz = dt0 * r.ux + dv0 * r.uz, dt0 * r.uz - dv0 * r.ux
+	local acrossV = cv -- studs across the range a stud along a layer step
 	local back = math.floor(C.TraverseBack / dt)
 	local ahead = math.floor(C.TraverseAhead / dt)
 	local width = back + ahead + 1
@@ -238,11 +231,12 @@ end
 -- The leg from the road's end at (x, z), heading `yaw`, height `y`. `dirV` forces which way
 -- across (after a hairpin, the other way); nil tries both and keeps the better.
 function Traverse.plan(f: Ground.Field, x: number, z: number, y: number, yaw: number, dirV: number?, target: { x: number, z: number, k: number }, blocked: (number, number) -> boolean): Leg?
+	-- (the face the descent is on falls from the ridge behind the one ahead)
 	local r = f.range
 	local _, pv = Range.frame(r, target.x, target.z)
 	local leg: Leg? = nil
 	for _, d in if dirV then { dirV } else { 1, -1 } do
-		local l = survey(f, x, z, y, yaw, d, pv, blocked)
+		local l = survey(f, x, z, y, yaw, d, pv, target.k - 1, blocked)
 		if l and (not leg or l.score < (leg :: Leg).score) then
 			leg = l
 		end
