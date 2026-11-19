@@ -2162,24 +2162,18 @@ function SplineGen._tight(self: Gen, item: Item, needed: number): Spline.Section
 		table.insert(self.stats.tightNotes, `gentle {math.floor(face)} deg`)
 		return refuse("gentle")
 	end
-	local sec = TightHairpin.build(k0, g0, b0, item.dir :: number, short, if item.climb then T.Grade else -T.Grade, self.clearance)
-	-- THE RUN ON FOLLOWS THE MOUNTAIN: the grade is the shape's own only while the legs are side
-	-- by side (the island is the bank between their heights); past that, as every section's
-	-- grade does, it eases toward the hillside `FollowLook` studs ahead, at `MaxGradeRate`,
-	-- never past `MaxGrade`
+	-- (the grade it is built with is replaced below, from the mountain)
+	local sec = TightHairpin.build(k0, g0, b0, item.dir :: number, short, g0, self.clearance)
+	-- THE GRADE FOLLOWS THE MOUNTAIN except where the legs are side by side. There it is held at
+	-- the face's own: the height between where the two legs run beside each other, over the road
+	-- between them, within `Grade` (the island is the bank between their heights, so this keeps
+	-- it a bank). Before that, along the lead, and after it, past the side by side run, it eases
+	-- toward the hillside `FollowLook` studs ahead, as every section's grade does, at
+	-- `MaxGradeRate` and never past `MaxGrade`; it starts easing into the held grade in time
+	-- to be on it where the legs come side by side.
 	do
 		local SC = Config.Spline
-		local sOut = sec.th[4]
-		local gt = sec.g[#sec.g]
-		local fixed: { number } = {}
-		for j = 1, #sec.g, 2 do
-			if sec.g[j] < sOut - 1e-6 then
-				table.insert(fixed, sec.g[j])
-				table.insert(fixed, sec.g[j + 1])
-			end
-		end
-		table.insert(fixed, sOut)
-		table.insert(fixed, gt)
+		local sIn, sOut = sec.th[1], sec.th[4]
 		local pts: { { number } } = {}
 		walk(x0, z0, yaw0, k0, sec.k, 8, 8, function(u, x, z)
 			table.insert(pts, { u, Ground.h(self.ground, x, z) })
@@ -2189,26 +2183,39 @@ function SplineGen._tight(self: Gen, item: Item, needed: number): Spline.Section
 			local i = math.clamp(math.floor(u / 8), 1, #pts)
 			return pts[i][2]
 		end
-		-- the height at sOut, along the fixed knots
-		local y, s, g = y0, 0, g0
-		for j = 1, #fixed, 2 do
-			y += (g + fixed[j + 1]) * 0.5 * (fixed[j] - s)
-			s, g = fixed[j], fixed[j + 1]
-		end
+		local face = (hAt(sOut) - hAt(sIn)) / math.max(sOut - sIn, 1)
+		local gt = math.clamp(face, -T.Grade, T.Grade)
+		local rate = SC.MaxGradeRate
 		local step, look = 16, T.FollowLook
 		local lim = math.tan(math.rad(SC.MaxGrade))
-		local u = sOut
-		while u < sec.len - 1e-6 do
-			local du = math.min(step, sec.len - u)
-			local want = math.clamp((hAt(math.min(u + look, sec.len)) - y) / look, -lim, lim)
-			local gn = g + math.clamp(want - g, -SC.MaxGradeRate * du, SC.MaxGradeRate * du)
+		local knots: { number } = {}
+		local u, y, g = 0, y0, g0
+		local function go(gn: number, du: number)
 			y += (g + gn) * 0.5 * du
 			u += du
 			g = gn
-			table.insert(fixed, u)
-			table.insert(fixed, g)
+			table.insert(knots, u)
+			table.insert(knots, g)
 		end
-		sec.g = fixed
+		local function follow(du: number)
+			local want = math.clamp((hAt(math.min(u + look, sec.len)) - y) / look, -lim, lim)
+			go(g + math.clamp(want - g, -rate * du, rate * du), du)
+		end
+		-- along the lead, until it is time to ease into the held grade
+		while u + step + math.abs(gt - g) / rate < sIn do
+			follow(step)
+		end
+		if sIn - u > 1e-6 then
+			local L = sIn - u
+			-- (as near the held grade as the road can get by the side by side run)
+			gt = g + math.clamp(gt - g, -rate * L, rate * L)
+			go(gt, L)
+		end
+		go(gt, sOut - u)
+		while u < sec.len - 1e-6 do
+			follow(math.min(step, sec.len - u))
+		end
+		sec.g = knots
 	end
 	-- the mountain: how far the shape leaves the road off h, either way
 	local G = Config.Spline.Ground

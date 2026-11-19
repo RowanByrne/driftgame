@@ -44,11 +44,12 @@ return {
 	-- than the island's hand-back needs, for a road that was still bending into the shape.
 	LeadMargin = 20, -- studs
 
-	-- THE GRADE through the side by side run, falling on a descent (rising on a climb). Gentle on purpose: the two legs'
-	-- heights part by this grade times the road between them, and the island is the bank
-	-- between them. At 0.06, 30 studs of island and 120 studs of side by side: 22 studs, 36
-	-- degrees at its steepest.
-	Grade = 0.06,
+	-- THE GRADE through the side by side run: the face's own (the height between where the legs
+	-- run beside each other, over the road between them), never steeper than this. Gentle on
+	-- purpose: the two legs' heights part by this grade times the road between them, and the
+	-- island is the bank between them. At 0.075, 31 studs of island and 120 studs of side by
+	-- side: 29 studs, 43 degrees at its steepest.
+	Grade = 0.075,
 	-- Past the side by side run the grade follows the mountain as any section's does, aiming at
 	-- the hillside this far ahead.
 	FollowLook = 96, -- studs
