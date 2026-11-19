@@ -9,6 +9,7 @@ Every task in progress and the files it owns, so parallel sessions and workers n
 
 | Branch | Lane | Files owned | Since |
 |---|---|---|---|
+| `agent/tilted-score-ranks` | Borrow to test | `src/StarterPlayerScripts/UI/ScoreTape.luau`, `UI/ScoreRankArt.luau`, `UI/ScoreRankRegistry.luau`, `src/StarterPlayerScripts/Drift/ScoreHudView.luau` (and its `.fixtures`), `docs/game/features/score-rank-art.md`, the score HUD's rows in `docs/game/UI-INVENTORY.md` | 2026-11-19, T-331 |
 | `agent/gorge-approaches` | Borrow to test | `src/ReplicatedStorage/Shared/Config/Range.luau`, `Shared/Config/Spline.luau`, `Shared/Config/Road.luau`, `Shared/Road/Range.luau`, `Shared/Road/Ground.luau`, `Shared/Road/Seed7*.luau`, `Shared/Road/SplineGen.luau`, `Shared/Road/SplineContour*.luau`, `src/ServerScriptService/Services/RoadService.luau`, road and terrain tests in `src/ServerScriptService/Tests/` (`Ground*`, `Range*`, `Spline*`, `Seed7*`), `docs/game/features/mountain-range.md` | 2026-11-19, T-326 attempt 2 (gorge traverses) |
 
 ## Notes between sessions
