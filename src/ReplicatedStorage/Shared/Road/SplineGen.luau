@@ -1588,9 +1588,10 @@ function SplineGen._clear(self: Gen, knots: { number }, limitSetback: boolean?):
 	local high = 0
 	local range = self.ground.range
 	-- (along a descent's leg, T-326, the setback is measured across the range, the way the
-	-- leg makes headway: the leg itself may turn up toward a gorge's head)
+	-- leg makes headway: the leg itself may turn up toward a gorge's head. Its hairpin turns
+	-- through the downhill side, on along the range, as every turn did)
 	local ux, uz = range.ux, range.uz
-	if self.headway then
+	if self.headway and not self.turning then
 		ux, uz = self.headway[1], self.headway[2]
 	end
 	return walk(x0, z0, yaw0, k0, knots, cs, first, function(u, x, z)
