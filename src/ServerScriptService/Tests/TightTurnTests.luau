@@ -66,20 +66,24 @@ end
 
 -- The pad: a straight, the turnaround, a straight back. Returns the spline and the arc's
 -- (s) entry and exit, where the curvature starts to rise and finishes falling.
-local function pad(R: number, grade: number, dir: number)
-	local sp = Spline.new({ x = 0, y = 2000, z = 0, yaw = 0 })
+-- `o` (optional) lays the same shape somewhere else: { origin, legIn, legOut, ease }.
+local function pad(R: number, grade: number, dir: number, o: { [string]: any }?)
+	local opt = o or {}
+	local ease = opt.ease or EASE
+	local legIn, legOut = opt.legIn or LEG, opt.legOut or LEG
+	local sp = Spline.new(opt.origin or { x = 0, y = 2000, z = 0, yaw = 0 })
 	local k = dir / R
-	local arc = math.rad(TURN) * R - EASE -- two clothoids turn EASE * k between them
+	local arc = math.rad(TURN) * R - ease -- two clothoids turn ease * k between them
 	local function sec(len: number, kEnd: number)
 		sp:append({ len = len, k = { len, kEnd }, g = { len, grade }, b = { len, 0 } })
 	end
-	sp:append({ len = LEG, k = { LEG, 0 }, g = { 40, grade, LEG, grade }, b = { LEG, 0 } })
+	sp:append({ len = legIn, k = { legIn, 0 }, g = { 40, grade, legIn, grade }, b = { legIn, 0 } })
 	local entry = sp.length
-	sec(EASE, k)
+	sec(ease, k)
 	sec(arc, k)
-	sec(EASE, 0)
+	sec(ease, 0)
 	local exit = sp.length
-	sec(LEG, 0)
+	sec(legOut, 0)
 	return sp, entry, exit
 end
 
@@ -119,7 +123,7 @@ end
 --          studs from the turn
 local function drive(sp, entry: number, exit: number, dir: number, v0: number, way, R: number)
 	local D = Config.Drift
-	local world = SplineWorld.new(sp, nil)
+	local world = way.world or SplineWorld.new(sp, nil) -- `way.world`: the live Workspace, on the playground's pads
 	local startS = entry - 300
 	local d0 = laneAt(way, startS, entry, dir)
 	local cf = sp:frame(startS, D.RideHeight)
