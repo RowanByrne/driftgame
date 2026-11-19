@@ -23,6 +23,7 @@ assert(RunService:IsStudio(), "SplineWorldTests is Studio only")
 local Config = require(ReplicatedStorage.Shared.Config)
 local Spline = require(ReplicatedStorage.Shared.Road.Spline)
 local SplineGen = require(ReplicatedStorage.Shared.Road.SplineGen)
+local RoadDressing = require(ReplicatedStorage.Shared.Road.RoadDressing) -- the barriers, as the game's road has them (T-327)
 local SplineParts = require(ReplicatedStorage.Shared.Road.SplineParts)
 
 local DriftFolder = StarterPlayer.StarterPlayerScripts:WaitForChild("Drift")
@@ -138,6 +139,7 @@ function Tests.run(which: { string }?, ...)
 	local half = R.Width * 0.5
 
 	local gen = SplineGen.new(SEED)
+	RoadDressing.attach(gen)
 	gen:extendTo(LENGTH + 200)
 	-- THE YARDSTICK IS A BARE ROAD: the same curve with its mountainside taken off, so its
 	-- only walls are hedges at the tarmac's edge, exactly where the parts' barriers stand

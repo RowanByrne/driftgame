@@ -13,6 +13,7 @@ assert(RunService:IsStudio(), "SplineMeshTests is Studio only")
 
 local Config = require(ReplicatedStorage.Shared.Config)
 local SplineGen = require(ReplicatedStorage.Shared.Road.SplineGen)
+local RoadDressing = require(ReplicatedStorage.Shared.Road.RoadDressing) -- the barriers, as the game's road has them (T-327)
 local SplineMesh = require(ReplicatedStorage.Shared.Road.SplineMesh)
 local SplineGrove = require(ReplicatedStorage.Shared.Road.SplineGrove)
 
@@ -72,6 +73,7 @@ function Tests.run()
 	-- the surface reaches past the tarmac now, across the grass (T-140)
 	local reach = half + Config.Spline.Terrain.RunoffMax + 5
 	local gen = SplineGen.new(SEED)
+	RoadDressing.attach(gen)
 	gen:extendTo(LENGTH)
 	local spline = gen.spline
 	local folder = Instance.new("Folder")
@@ -745,6 +747,7 @@ function Tests.run()
 					workspace:SetAttribute("__opaque_cap", OpaqueBudget.made())
 				end
 				local g = SplineGen.new(SEED)
+				RoadDressing.attach(g)
 				local sp = g.spline
 				local view = SplineRoadView.new(sp, folder)
 				local r = { builds = 0, missingNear = 0, nearest = math.huge, shortOfEnd = 0, victimOk = nil :: boolean?, fixed = 0 }

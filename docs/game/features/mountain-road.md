@@ -141,25 +141,25 @@ should have them too."*
   dropping 20 studs or more) were railed 21%, 10% and 8% of the way round on average, no true
   hairpin with a big drop was railed through, and runs were 60 to 300 studs (median about 120).
 - **The drop beside the road** is read off the mountain itself (`Road/Ground.h`) every 4 studs
-  along a section as it is laid (`SplineGen._sideDrops`): how far the ground is below the
-  grass's outer edge `KRailProbe` (40) studs past it. On the inside of a bend the reading is
-  taken no further than `KRailInsideReach` (0.8) of the way to the bend's centre and scaled up
-  to the same slope; nearer than `KRailProbeMin` (10) studs the bend encloses that side and it
+  along a section as it is laid (`SplineGen.sideDrops`): how far the ground is below the
+  grass's outer edge `Probe` (40) studs past it. On the inside of a bend the reading is
+  taken no further than `InsideReach` (0.8) of the way to the bend's centre and scaled up
+  to the same slope; nearer than `ProbeMin` (10) studs the bend encloses that side and it
   has no drop. Negative: the ground rises.
-- **The rules,** each side on its own, no random draw (`SplineGen._railPieces`):
+- **The rules,** each side on its own, no random draw. Since T-327 the dressing layer stands them on each finished section (`Road/RoadDressing`, `features/road-dressing.md`), and the names below are `Config.Dressing.Barrier`'s, without the `KRail` prefix:
   1. **Only the downhill side.** A rail stands only where the ground falls at least
-     `KRailFallDrop` (8 studs within those 40). Never against a rising bank or rock cut.
+     `FallDrop` (8 studs within those 40). Never against a rising bank or rock cut.
   2. **Corners above a drop, the whole way round.** A corner is road tighter than
-     `KRailCornerRadius` (340, medium bends and tighter) turning one way. If its outside drops
-     `KRailCornerDrop` (20 studs, an average slope of about 27 degrees) anywhere along it, the
-     rail runs from `KRailLeadIn` (40) studs before it to `KRailRunOut` (60) after it.
-  3. **Hairpins with a big drop.** A tight bend (tighter than `KRailHairpinRadius`, 130, the
+     `CornerRadius` (340, medium bends and tighter) turning one way. If its outside drops
+     `CornerDrop` (20 studs, an average slope of about 27 degrees) anywhere along it, the
+     rail runs from `LeadIn` (40) studs before it to `RunOut` (60) after it.
+  3. **Hairpins with a big drop.** A tight bend (tighter than `HairpinRadius`, 130, the
      double yellow's, so every hairpin) is railed the same way on either side that drops
-     `KRailHairpinDrop` (15 studs, about 21 degrees): a turnaround turns through the drop, so
+     `HairpinDrop` (15 studs, about 21 degrees): a turnaround turns through the drop, so
      its inside can be the drop.
-  4. **Cliffs anywhere else:** a drop of `KRailCliffDrop` (40 studs, 45 degrees) is railed with
+  4. **Cliffs anywhere else:** a drop of `CliffDrop` (40 studs, 45 degrees) is railed with
      the same lead-in and run-out.
-  5. Pieces under `KRailMinRun` (40) studs are dropped; never on a grove's side or the start.
+  5. Pieces under `MinRun` (40) studs are dropped; never on a grove's side or the start.
 - **Across sections:** the run-out (and a railed bend still turning at a section's end) carries
   on into the next section, and `Spline.append` joins a run that starts where the last one on
   its side ended, so a long rail is one run with one pair of hazard panels. A lead-in can't
@@ -196,7 +196,7 @@ the road was carved into a cliff."*
   its inside falls and it gets none.
 - **Which side, from the ground (T-308):** the user queued it after T-306 found the side the
   fall line calls the mountain's is the falling one about half the time. The inside must rise
-  at least `CarvedRise` (8) studs, read as the K-rails read the drop (`SplineGen.dropBeside`,
+  at least `CarvedRise` (8) studs, read as the barriers read the drop, with the planner's own `Drop*` settings (`SplineGen.dropBeside`,
   40 studs past the carved edge), at every point from the start of the easing in to the end of
   the easing out; never on a side that falls away, and never where a K-rail stands on that side.
   Before (`up` spans), over seeds 31337, 101 and 2024, 30 000 studs each: 4 apexes, 1 of them

@@ -30,6 +30,7 @@ assert(RunService:IsStudio(), "GrindEventsTests only runs in Studio")
 local Cars = require(ReplicatedStorage.Shared.Cars)
 local Config = require(ReplicatedStorage.Shared.Config)
 local SplineGen = require(ReplicatedStorage.Shared.Road.SplineGen)
+local RoadDressing = require(ReplicatedStorage.Shared.Road.RoadDressing) -- the barriers, as the game's road has them (T-327)
 
 local DriftFolder = StarterPlayer.StarterPlayerScripts:WaitForChild("Drift")
 
@@ -419,6 +420,7 @@ function Tests.digest(_self, wrap)
 	end
 
 	local gen = SplineGen.new(SEED)
+	RoadDressing.attach(gen)
 	gen:extendTo(8300)
 	local sp = gen.spline
 	local result = { scenarios = {} }
@@ -565,6 +567,7 @@ function Tests.measure(_self, seeds, seconds, how)
 	}
 	for _, seed in seeds do
 		local gen = SplineGen.new(seed)
+		RoadDressing.attach(gen)
 		local length = 140 * seconds + 1000
 		gen:extendTo(length)
 		local sp = gen.spline
@@ -856,6 +859,7 @@ function Tests.run(which, ...)
 
 		------------------------------------------------------------ the model's wall contact
 		local gen = SplineGen.new(SEED)
+		RoadDressing.attach(gen)
 		gen:extendTo(8300)
 		local sp = gen.spline
 
