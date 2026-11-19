@@ -164,6 +164,7 @@ return {
 	TraverseClear = 60, -- studs past the road's clearance: no leg (or hairpin) nearer old road...
 	TraverseFromTip = 400, -- ...bar the road this far back from where the leg starts
 	TraverseHairpinRoom = 250, -- studs down the fall line from a hairpin site that must be clear
+	TraverseApproach = 6, -- layers before a hairpin that never climb back up the face
 	TraverseArrive = 30, -- studs short of a leg's end: the hairpin is next
 	TraverseLayer = 100, -- studs
 	TraverseCell = 60, -- studs

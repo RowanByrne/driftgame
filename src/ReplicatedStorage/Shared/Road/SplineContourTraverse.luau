@@ -176,9 +176,22 @@ local function survey(f: Ground.Field, x0: number, z0: number, y0: number, yaw: 
 				if c == math.huge then
 					continue
 				end
-				-- (a hairpin swings out down the fall line: room for it, clear of old road)
+				-- (a hairpin swings out down the fall line: room for it, clear of old road; and the
+				-- leg comes into it level or falling, or its way back runs into the leg itself)
 				local q = (j - j0) * dt + C.TraverseHairpinRoom
 				if blocked(x0 + cx * along + dx * q, z0 + cz * along + dz * q) then
+					continue
+				end
+				local level, at = true, j
+				for back = i, math.max(1, i - C.TraverseApproach + 1), -1 do
+					local from = parents[back][at]
+					if from > at then
+						level = false
+						break
+					end
+					at = from
+				end
+				if not level then
 					continue
 				end
 				-- a hairpin site: as gentle as the hillside offers here
