@@ -40,7 +40,7 @@ local TightHairpin = {}
 export type Th = { number } -- { sIn, sA, sB, sOut, dir }, along the section
 
 -- One tight hairpin on a laid road, in the road's own `s` (`Spline.append` keeps these).
-export type Entry = { sIn: number, sA: number, sB: number, sOut: number, dir: number }
+export type Entry = { sIn: number, sA: number, sB: number, sOut: number, dir: number, sStart: number, sEnd: number }
 
 -- What `island` makes of an entry: the island's frame and its two inner edges, sampled.
 export type Island = {
@@ -120,7 +120,8 @@ end
 -- section.
 --
 -- THE LEAD: the leg in starts with a straight of its own, as long as it takes for no road
--- before the shape to lie beside the leg out until the leg out is `clear` of the leg in's line.
+-- before the shape to lie beside the leg out until the leg out is clear of the leg in's line
+-- and the island has handed back (`need`, and `LeadMargin`).
 -- So the shape's legs are close only to each other: every road laid before it, and everything
 -- on that road (its groves' trees), keeps the road's whole clearance from it.
 function TightHairpin.build(k0: number, g0: number, b0: number, dir: number, extra: number, grade: number, clear: number): any
@@ -211,7 +212,8 @@ function TightHairpin.build(k0: number, g0: number, b0: number, dir: number, ext
 				qx, qz = ex + fx * (i - n), ez + fz * (i - n)
 			end
 			local rx, rz = qx - ax, qz - az
-			if math.abs(rx * lz - rz * lx) < clear then
+			-- (the island's whole hand-back too, and a margin for a road that was still bending)
+			if math.abs(rx * lz - rz * lx) < need + C.LeadMargin then
 				back = math.max(back, -(rx * lx + rz * lz))
 			end
 		end
@@ -236,9 +238,7 @@ end
 --------------------------------------------------------------------------------
 
 local SAMPLE = 2 -- studs along each leg's inner edge
--- How far past each end of the side by side run the edges are sampled: the leg out is clear
--- of the leg in by then (`build` runs it on that far), and the island has handed back.
-local REACH = 500 -- studs
+
 
 -- The island's frame and its two inner edges, sampled once (the road under it never changes).
 -- `spline` is the laid road (`Road/Spline`).
@@ -294,15 +294,17 @@ function TightHairpin.island(spline: any, e: Entry): Island
 		isl.maxZ = math.max(isl.maxZ, pz)
 		return true
 	end
+	-- (each edge over the shape's whole section: the lead and the run on are as long as the
+	-- island takes to hand back, and the road either side of the shape is the mountain's)
 	local s = apex
-	while s >= e.sIn - REACH and s >= 0 do
+	while s >= e.sStart and s >= 0 do
 		if not edge(s, isl.ly, isl.lx, isl.lh) and s < e.sA then
 			break
 		end
 		s -= SAMPLE
 	end
 	s = apex
-	while s <= e.sOut + REACH and s <= spline.length do
+	while s <= e.sEnd and s <= spline.length do
 		if not edge(s, isl.ry, isl.rx, isl.rh) and s > e.sB then
 			break
 		end

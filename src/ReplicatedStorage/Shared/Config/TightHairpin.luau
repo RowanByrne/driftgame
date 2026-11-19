@@ -37,6 +37,9 @@ return {
 	Parallel = 120, -- studs
 	DivergeDegrees = { 25, 60 },
 	DivergeRadius = 150, -- studs
+	-- The lead (`Road/TightHairpin.build`) keeps older road this much further from the leg out
+	-- than the island's hand-back needs, for a road that was still bending into the shape.
+	LeadMargin = 20, -- studs
 
 	-- THE GRADE through the side by side run, falling on a descent (rising on a climb). Gentle on purpose: the two legs'
 	-- heights part by this grade times the road between them, and the island is the bank

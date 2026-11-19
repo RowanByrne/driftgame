@@ -166,6 +166,7 @@ local function run(check, log, opts)
 					local u = prevRow[i]
 					if v and u and math.abs(v - u) / step > worstJump then
 						worstJump = math.abs(v - u) / step
+						jumpAt = `({fmt(bx0 - 20 + (i - 1) * step, 0)}, {fmt(z, 0)}) across`
 					end
 				end
 			end
