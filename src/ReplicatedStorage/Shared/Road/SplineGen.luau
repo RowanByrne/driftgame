@@ -81,6 +81,7 @@ export type Stats = {
 	offGroundLaid: number, -- ...and sections laid off it all the same, none following it
 	follows: number, -- on the range: sections laid by `_follow`, the bend that best follows h (T-242)
 	traverses: number, -- preemptive turns away from a forecast cut or fill
+	tracked: number, -- sections laid along a descent's leg (T-326)
 }
 
 -- One step of the plan: a STRETCH of random sections kept within `limit` of `aim` for
@@ -282,6 +283,7 @@ function SplineGen.new(seed: number, origin: Spline.Origin?, clearOverride: numb
 			offGroundLaid = 0,
 			follows = 0,
 			traverses = 0,
+			tracked = 0,
 		},
 	}, SplineGen)
 	if ground.range.basins then
@@ -2064,6 +2066,62 @@ function SplineGen._follow(self: Gen, nearest: Spline.Section?, nearOff: number?
 	return best
 end
 
+-- ALONG A DESCENT'S LEG (T-326): the leg was surveyed against the hillside already, so the
+-- road keeps to it. Every curvature of `TrackRadii` either way (and straight), eased into and
+-- held for each of `TrackHolds`, is judged where it ends: how far off the leg, how far its
+-- heading is from a point `TraverseLook` on along the leg, and how sharply it still turns.
+-- The best that is clear of old road with room for its escape is laid; nil when none is.
+function SplineGen._track(self: Gen): Spline.Section?
+	local C, R = Config.Spline, Config.Range
+	local leg = self.leg :: Traverse.Leg
+	local r = self.ground.range
+	local x0, z0, yaw0, k0, g0, b0, y0 = self.spline:tip()
+	local options = {}
+	local function consider(kt: number, hold: number, radius: number?)
+		local knots = curvatureKnots(k0, kt, nil, hold)
+		if not knots then
+			return
+		end
+		local ex, ez = x0, z0
+		walk(x0, z0, yaw0, k0, knots, knots[#knots - 1], knots[#knots - 1], function(_, px, pz)
+			ex, ez = px, pz
+			return true
+		end, true)
+		local ye = yawAfter(yaw0, k0, knots)
+		local et, ev = Range.frame(r, ex, ez)
+		local at, av, miss = Traverse.ahead(leg, et, ev, R.TraverseLook)
+		local wx, wz = Range.world(r, at, av)
+		local err = math.deg(math.abs(wrap(ye - math.atan2(ex - wx, ez - wz))))
+		local score = miss + R.TrackHeadingCost * err + R.TrackCurveCost * math.abs(kt) * 1000
+		table.insert(options, { score = score, knots = knots, kt = kt, radius = radius })
+	end
+	for _, hold in R.TrackHolds do
+		consider(0, hold, nil)
+		for _, radius in R.TrackRadii do
+			consider(1 / radius, hold, radius)
+			consider(-1 / radius, hold, radius)
+		end
+	end
+	table.sort(options, function(a, b)
+		return a.score < b.score
+	end)
+	for _, o in options do
+		if self:_exitClear(o.knots, o.kt) then
+			local kn = o.knots
+			local len = kn[#kn - 1]
+			self.stats.tracked += 1
+			return {
+				k = kn,
+				len = len,
+				g = (self:_followGrade(kn, g0, y0)),
+				b = pickBank(o.kt, o.radius, b0, math.min(transition(k0, o.kt), len), len, false),
+				tag = if not o.radius then "Straight" elseif o.radius < 95 then "Hairpin" elseif o.radius <= 340 then "Medium" else "Sweeper",
+			}
+		end
+	end
+	return nil
+end
+
 -- Detached tables prevent speculative append/terrain choices from touching live state.
 local function copyTables(value: any): any
 	if type(value) ~= "table" then return value end
@@ -2355,7 +2413,13 @@ function SplineGen.step(self: Gen): Spline.Section?
 	-- a candidate that leaves the road more than `FollowMaxOff` off the mountain gives way to
 	-- one that follows it (T-226)
 	local nearest: Spline.Section?, nearestOff, nearEnd = nil, math.huge, nil
-	for _ = 1, if planned then 0 else C.CandidateTries do
+	-- along a descent's leg, the section that keeps to it (T-326)
+	local tracked = false
+	if not planned and self.headway and self.leg then
+		sec = self:_track()
+		tracked = sec ~= nil
+	end
+	for _ = 1, if planned or tracked then 0 else C.CandidateTries do
 		st.tries += 1
 		local cand, why, off, endOff = self:_candidate()
 		if cand and off and off > C.Ground.FollowMaxOff then
@@ -2424,7 +2488,7 @@ function SplineGen.step(self: Gen): Spline.Section?
 			}
 		end
 	end
-	local chosen = if planned then sec :: Spline.Section else self:_contour(sec :: Spline.Section)
+	local chosen = if planned or tracked then sec :: Spline.Section else self:_contour(sec :: Spline.Section)
 	lay(self, chosen, t0)
 	-- a random section counts toward the stretch it was laid in
 	local head = self.plan[1]

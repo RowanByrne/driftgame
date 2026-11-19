@@ -79,7 +79,9 @@ local function survey(f: Ground.Field, t0: number, v0: number, y0: number, yaw: 
 	local cost = table.create(width, math.huge)
 	local angle = table.create(width, 0)
 	local Y = table.create(width, 0)
+	local L = table.create(width, 0)
 	cost[j0], angle[j0], Y[j0] = 0, startAngle, y0
+	local refund = C.TraverseRefund
 	local parents: { { number } } = {}
 	local costs: { { number } } = {}
 	local heights: { { number } } = {}
@@ -102,6 +104,7 @@ local function survey(f: Ground.Field, t0: number, v0: number, y0: number, yaw: 
 		local nextCost = table.create(width, math.huge)
 		local nextAngle = table.create(width, 0)
 		local nextY = table.create(width, 0)
+		local nextL = table.create(width, 0)
 		local parent = table.create(width, 0)
 		for b = 1, width do
 			local yb = smooth[b]
@@ -139,8 +142,9 @@ local function survey(f: Ground.Field, t0: number, v0: number, y0: number, yaw: 
 				end
 			end
 			nextCost[b], nextAngle[b], nextY[b], parent[b] = bestHere, heading, yb, from
+			nextL[b] = if from > 0 then L[from] + lengths[b - from] else 0
 		end
-		cost, angle, Y = nextCost, nextAngle, nextY
+		cost, angle, Y, L = nextCost, nextAngle, nextY, nextL
 		parents[i], costs[i], heights[i] = parent, cost, Y
 		if i >= minLayers then
 			for j = 2, width - 1 do
@@ -149,10 +153,14 @@ local function survey(f: Ground.Field, t0: number, v0: number, y0: number, yaw: 
 					continue
 				end
 				-- a hairpin site: as gentle as the hillside offers here
+				-- (the leg's length is refunded here: within the path it keeps the leg from
+				-- wandering, but a long leg that holds its grade is what a descent wants, so
+				-- the leg ends where the ground stops paying, not where the length mounts)
 				local sl = math.abs(h1[j + 1] - h1[j - 1]) / (2 * dt)
 				local site = C.TraverseHairpin + C.TraverseSiteCost * math.max(0, sl - 0.15)
-				if c + site < best then
-					best, bestI, bestJ, siteSlope = c + site, i, j, sl
+				local score = c - refund * L[j] + site
+				if score < best then
+					best, bestI, bestJ, siteSlope = score, i, j, sl
 				end
 			end
 		end
