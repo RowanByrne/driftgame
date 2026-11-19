@@ -2307,10 +2307,15 @@ function SplineGen._turn(self: Gen, item: Item): (Spline.Section | string)?
 		end
 	end
 	if best and reading then
-		-- (a descent's hairpin, T-326, sits where its leg's survey put it: it is fitted again
-		-- only `TraverseTurnRetries` times before the best clear one is laid)
-		local retries = if item.traverse then Config.Range.TraverseTurnRetries else C.Ground.TurnRetries
-		if not reading.ok and (item.hillRetries or 0)<retries then
+		-- (a descent's hairpin, T-326, sits where its leg's survey put it: past the site the
+		-- road runs onto ground nobody chose, so the best clear one is laid there unless it
+		-- leaves the road more than `TraverseTurnMaxOff` off h; that one is refused)
+		if item.traverse then
+			if not reading.ok and (reading.off or 0) > Config.Range.TraverseTurnMaxOff then
+				item.hillRetries=(item.hillRetries or 0)+1
+				return nil
+			end
+		elseif not reading.ok and (item.hillRetries or 0)<C.Ground.TurnRetries then
 			item.hillRetries=(item.hillRetries or 0)+1
 			return nil
 		end

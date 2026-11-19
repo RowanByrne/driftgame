@@ -166,7 +166,7 @@ return {
 	TraverseHairpinRoom = 250, -- studs down the fall line from a hairpin site that must be clear
 	TraverseApproach = 6, -- layers before a hairpin that never climb back up the face
 	TraverseExitLayers = 4, -- layers of the next leg's start a hairpin site is judged on
-	TraverseArrive = 150, -- studs short of a leg's end: the hairpin is first tried (and again either side of it)
+	TraverseArrive = 30, -- studs short of a leg's end: the hairpin is next
 	TraverseHairpinFall = 0.15, -- grade round a hairpin's half circle a site is judged on (8.5 degrees)
 	TraverseLayer = 100, -- studs
 	TraverseCell = 60, -- studs
@@ -190,7 +190,7 @@ return {
 	TraverseSiteCost = 6000,
 	TraverseRadiusSlope = 18,
 	TraverseRadiusMax = 110, -- studs (so with its spread, 126 at most: tighter than `Spline.Terrain.KRailHairpinRadius`, railed as a hairpin)
-	TraverseTurnRetries = 2, -- times a hairpin that leaves the road off h is tried again further on
+	TraverseTurnMaxOff = 35, -- studs off h (fill, or cut scaled as `Spline.Ground.TurnMaxOff` is): a hairpin past this is tried again further on
 	TraverseGiveUp = 3, -- times a hairpin may be refused before the next leg is surveyed from there
 	TraverseLook = 300, -- studs
 	TraverseLimit = 30, -- degrees
