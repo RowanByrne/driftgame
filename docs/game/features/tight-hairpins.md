@@ -1,6 +1,6 @@
 # Feature: Tight hairpins
 
-**Status:** specced, waiting on T-326. **Owner task:** none yet.
+**Status:** step 1 done (T-330); step 2 waiting on T-326. **Owner task:** none yet.
 
 ## Goal
 
@@ -25,7 +25,7 @@ The user, 2026-11-19 (C-fec3a8), with a photo of a Japanese pass where the legs 
 All starting values are proposed, to tune with the user in a lane.
 
 - **Pre-planned, as a template.** The planner doesn't find a tight hairpin by search: when the ground ahead is steep and falling across the road's path, and the road has room, it lays a fixed shape (leg in, turnaround, leg out), sized to the ground, and the ground between the legs is shaped to fit that shape rather than read off the mountain.
-- **Turnaround radius:** about 40 studs to the centre line (an inside edge radius of about 15), against today's tightest 70 (`Config/Spline.MinRadius`). Step 1 measures what the car can actually get round, and the radius is set from that.
+- **Turnaround radius:** 40 studs to the centre line (an inside edge radius of 15), against today's tightest 70 (`Config/Spline.MinRadius`). Picked by the user on 2026-11-19 from step 1 (below).
 - **The island:** at least about 10 studs of ground between the two road edges at its narrowest, widening away from the tip. The legs run side by side for at least about 120 studs before they part.
 - **Height between the legs:** set by the face's grade, within what a bank between them can take at the steepest slope the ground allows, so the island is a bank, never a wall or an overhang. Where the face is too steep or too gentle for that, no tight hairpin is laid there.
 - **How often:** rare, about one every 4 000 to 6 000 studs on steep faces, and never within about 1 500 studs of another.
@@ -55,5 +55,13 @@ None new.
 
 ## Open questions
 
-- The turnaround radius, from step 1's numbers.
 - How often they come (rare, proposed).
+
+## Step 1: what the car gets round (T-330, 2026-11-19)
+
+`Tests/TightTurnTests` drives the real drift model round 180-degree turnarounds on a 50-stud road, 58 ways each (a grip line, a drift, the tail swung in early from the outside, a feint and flick), arriving at 60, 90 and 120 studs/s, flat and 12 percent downhill.
+
+- **Every radius from 35 to 70 gets round, from every speed,** with the default car. Apex speed about 30 studs/s at 35, 34 at 40, 38 at 50, 46 at 70.
+- **It always takes a slide.** No case, even 70, gets round on a grip line: slip peaks at 90 to 105 degrees, where the grip is a brake. Sliding is the only brake there is, and it curves the car toward the inside, so a slide begun too early pins it on the inside wall before the turn.
+- **Other cars:** the Gripper and the Bruiser get round every case; the Slider missed two (from 120 into a 35 on the flat, and into a 40 downhill).
+- **Test hairpins in the playground** (`drift-playground.md`): 35, 40, 50 and 70, spots `Turnaround35` to `Turnaround70`. The user picked 40 from these numbers.
