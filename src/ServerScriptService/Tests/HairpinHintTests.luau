@@ -208,11 +208,22 @@ local function runAll()
 	end
 
 	-- a put-back: driven back 400 studs just after a hint: nothing for `Quiet`, then the same
-	-- hairpin again on the new pass; and a jump forward to just short of a zone: no hint
+	-- hairpin again on the new pass; and a jump forward to just short of a zone: no hint.
+	-- Only this hairpin's hints are counted: riding on to its exit can rightly reach the next
+	-- one's lead (a switchback's second hairpin starts right after it, T-335)
 	do
 		local h = pins[1]
+		local function mine(list)
+			local out = {}
+			for _, x in list do
+				if x.entry == h.entry then
+					table.insert(out, x)
+				end
+			end
+			return out
+		end
 		local jumped, jumpT = false, nil
-		local hints = ride(gen, {
+		local all = ride(gen, {
 			speed = 60,
 			from = h.zone - T.Lead - 100,
 			until_ = h.exit,
@@ -224,10 +235,12 @@ local function runAll()
 				return nil
 			end,
 		})
+		local hints = mine(all)
+		local others = #all - #hints
 		local first, second = hints[1], hints[2]
 		local quietOk = second ~= nil and second.t - jumpT >= T.Quiet - 1e-6
 		local jf = false
-		local hintsF = ride(gen, {
+		local allF = ride(gen, {
 			speed = 60,
 			from = h.zone - T.Lead - 300,
 			until_ = h.exit,
@@ -239,10 +252,11 @@ local function runAll()
 				return nil
 			end,
 		})
+		local hintsF = mine(allF)
 		check(
 			"a put-back: quiet for a moment, then a fresh pass hints again; landing near the zone, none",
 			first ~= nil and second ~= nil and first.entry == h.entry and second.entry == h.entry and #hints == 2 and quietOk and #hintsF == 0,
-			`back 400: {#hints} hints, the second {second and fmt(second.t - jumpT, 2) or "-"} s after the put-back (quiet {T.Quiet} s); forward to 30 short of the zone: {#hintsF} hints`
+			`back 400: {#hints} hints, the second {second and fmt(second.t - jumpT, 2) or "-"} s after the put-back (quiet {T.Quiet} s); forward to 30 short of the zone: {#hintsF} hints; for the hairpin at {fmt(h.entry, 0)} only ({others + #allF - #hintsF} for the next one, not counted)`
 		)
 	end
 
