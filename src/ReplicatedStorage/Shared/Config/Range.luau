@@ -124,13 +124,13 @@ return {
 	FollowBackCost = 250, -- studs (100 left the road heading back 500 studs, twice in 24 runs)
 	-- Screen the selected path and its exit before committing it. When the ground keeps
 	-- rising or falling faster than a traverse should, try both flanks of the obstruction.
-	ContourLook = 800, -- studs of country beyond the bend
+	ContourLook = 840, -- studs of country beyond the bend
 	ContourExit = 560, -- studs of clear road beyond the bend
 	ContourSample = 40, -- studs between height readings
-	ContourGrade = 4.5, -- preferred degrees over a sustained climb or descent
+	ContourGrade = 3.7, -- preferred degrees over a sustained climb or descent
 	ContourPitchRise = 32, -- studs that a short pitch can gain above the sustained approach
 	ContourSetback = 100, -- room for the apex to turn before it must head across the face again
-	ContourTrigger = 14, -- predicted earthwork cost that merits another route
+	ContourTrigger = 11, -- predicted earthwork cost that merits another route
 	ContourGain = 4, -- minimum improvement to change a chosen bend
 	ContourTurns = { 22, 48, 80, 115, 155 }, -- degrees, either way from the incoming road
 	ContourRadii = { 85, 180, 360 }, -- studs
@@ -141,9 +141,9 @@ return {
 	CorridorReach = 6, -- a single traverse can go 1,080 studs across
 	CorridorBendCost = 110, -- extra driving distance assigned to a radian of turn
 	CorridorPitchCost = 220, -- distance cost per stud of rise/fall above the approach grade
-	GorgeCost = 2.6, -- added travel per stud of paired-bank relief when heading up a channel
-	GorgeLocalCost = 3, -- local steering cost for aiming into sustained paired banks
-	TraverseSpan = 2050, -- length of hillside checked for a broad bend
+	GorgeCost = 8, -- added travel per stud of paired-bank relief when heading up a channel
+	GorgeLocalCost = 7, -- local steering cost for aiming into sustained paired banks
+	TraverseSpan = 1600, -- length of hillside checked for a broad bend
 	TraverseOffsets = { 350, 550, 760 }, -- alternative traverses beside the current corridor
 	StraightenMaxOff = 20, -- studs off h: a bend straightening the road before a hairpin goes no further (T-242)
 }

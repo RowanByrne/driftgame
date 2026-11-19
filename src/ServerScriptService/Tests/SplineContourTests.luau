@@ -25,6 +25,49 @@ local function columnError(): number
 	return err
 end
 
+-- Score the bend the driver sees from 400-stud chords, and probe the uncut
+-- mountain. Short steering oscillations and a single uphill bank do not count.
+local function gorgeApproach(g: Gen.Gen): (number, number, number)
+	local sp, f = g.spline, g.ground
+	local turns, longest, avoided, lastTurn, run = 0, 0, 0, -math.huge, 0
+	local function banks(x: number, z: number, fx: number, fz: number): number
+		local h = Ground.h(f, x, z)
+		local relief = {}
+		for _, d in { 200, 350, 500 } do
+			table.insert(relief, math.min(Ground.h(f, x-d*fz, z+d*fx), Ground.h(f, x+d*fz, z-d*fx)) - h)
+		end
+		table.sort(relief)
+		local along = 0.5 * (Ground.h(f, x-350*fx, z-350*fz) + Ground.h(f, x+350*fx, z+350*fz)) - h
+		return 0.7 * relief[2] + 0.3 * relief[3] - math.max(0, along)
+	end
+	for s = 37000, sp.length - 1000, 50 do
+		local x, z = sp:planAt(s)
+		if Range.ridgeAhead(f.range, x, z) ~= 2 or Range.frame(f.range, x, z) < 25200 then continue end
+		local x0, z0 = sp:planAt(s - 400)
+		local x1, z1 = sp:planAt(s + 400)
+		local dx, dz = x - x0, z - z0
+		local angle = math.abs(math.atan2(dx*(z1-z) - dz*(x1-x), dx*(x1-x) + dz*(z1-z)))
+		if angle >= math.rad(55) and s - lastTurn >= 650 then turns += 1; lastTurn = s end
+		local ax, az = sp:planAt(s - 150)
+		local bx, bz = sp:planAt(s + 150)
+		local lx, lz = bx-ax, bz-az
+		local l = math.sqrt(lx*lx + lz*lz)
+		local fx, fz = lx/l, lz/l
+		if banks(x, z, fx, fz) >= 35 then run += 50 else run = 0 end
+		longest = math.max(longest, run)
+		-- Where holding the old heading would enter a walled bed, the route
+		-- should sometimes already be turning onto an open hillside.
+		local ahead = 800
+		local nx, nz = sp:planAt(s + ahead)
+		if math.abs((nx-x)*fz - (nz-z)*fx) < 160 or banks(x+ahead*fx, z+ahead*fz, fx, fz) < 35 then continue end
+		local ex, ez = sp:planAt(s + ahead - 150)
+		local hx, hz = sp:planAt(s + ahead + 150)
+		local n = math.sqrt((hx-ex)^2 + (hz-ez)^2)
+		if banks(nx, nz, (hx-ex)/n, (hz-ez)/n) < 20 then avoided += 1 end
+	end
+	return turns, longest, avoided
+end
+
 function Tests.run()
 	local g = Gen.new(7)
 	local sp = g.spline
@@ -65,7 +108,11 @@ function Tests.run()
 	end
 	local ox, oz = other.spline:tip()
 	local climb = if first and last then last - first else 0
+	local turns, channelRun, avoided = gorgeApproach(g)
 	local checks = {
+		{ name = "The third uphill face has several full-sized bends", ok = turns >= 5 },
+		{ name = "The route leaves a projected gorge mouth for the hillside", ok = avoided > 0 },
+		{ name = "The uphill approach avoids sustained head-on gorge driving", ok = channelRun < 300 },
 		{ name = "Survey columns match the world height across rotated ridge boundaries", ok = columnError() < 1e-6 },
 		{ name = "The native road crosses two more ridges", ok = reached >= 4 and not g.stats.stalled },
 		{ name = "Cuts and fills stay below 60 studs", ok = cut < 60 and fill < 60 },
@@ -76,7 +123,8 @@ function Tests.run()
 	}
 	local passed = 0
 	for _, c in checks do if c.ok then passed += 1 end end
-	return { passed = passed, total = #checks, checks = checks, climb = climb, peakCut = cut, peakFill = fill, walledStuds = walls, maxGrade = pitch }
+	return { passed = passed, total = #checks, checks = checks, climb = climb, peakCut = cut, peakFill = fill, walledStuds = walls,
+		maxGrade = pitch, broadBends = turns, longestChannel = channelRun, avoidedMouthSamples = avoided }
 end
 
 return Tests
