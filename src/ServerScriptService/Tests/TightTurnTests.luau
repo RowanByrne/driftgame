@@ -10,18 +10,17 @@
 -- THE PAD: a hand-made bare road (`Road/Spline`, no mountain), 50 studs wide and walled at its
 -- edges, as the tests' yardstick road is: 400 studs straight, a 180-degree turnaround of
 -- centre-line radius R (eased in and out over `EASE` studs), then 400 straight back beside the
--- way in. Flat, and again falling at `DESCENT` through the whole thing, as a tight hairpin on a
+-- way in. Flat, and again falling 12 percent through the whole thing, as a tight hairpin on a
 -- steep face would.
 --
 -- THE DRIVER: the real drift model (`Drift/Sim` on `Drift/SplineWorld`, the code path the live
 -- car runs) driven by HairpinTests' slip-holding autopilot. There is no brake and no throttle in
 -- this game: the only way to shed speed is to put the car sideways (past about 70 degrees of
--- slip the grip is nearly all brake). So each drive tries one way of taking the corner:
---
---   scrub      before the turn, swing the tail out to this slip (0: no scrub) from `scrubAt`
---              studs before the turn until the car is down to `vIn`
---   bend       in the turn, hold the slip the line needs, clamped to [0, maxB]: 15 is a grip
---              line, 85 a full drift
+-- slip the grip is nearly all brake). The leg in is held at the case's speed until the driver
+-- starts on the turn; then each drive tries one way of taking it (`ways()`, `drive`): straight
+-- in on a grip line or a drift, the tail swung out into the turn early from the outside lane,
+-- or a feint away from the turn and a flick back into it. In the turn the driver holds the
+-- slip the line needs, either way, up to a limit (15 degrees is a grip line, 85 a full drift).
 --
 -- A drive GETS ROUND when it reaches 80 studs down the exit leg without touching a wall, never
 -- spins (past 135 degrees of slip) or stops (under 3 studs/s), and is driving straight down the
