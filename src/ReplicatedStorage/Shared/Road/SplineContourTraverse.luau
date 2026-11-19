@@ -125,10 +125,13 @@ local function survey(f: Ground.Field, x0: number, z0: number, y0: number, yaw: 
 		local nextY = table.create(width, 0)
 		local nextL = table.create(width, 0)
 		local parent = table.create(width, 0)
-		-- old road: no leg runs where the road already is
+		-- old road: no leg runs where the road already is; nor over the crest, onto the face
+		-- behind (a leg may turn up toward a gorge's head, back toward the mountain, no further)
 		local free = table.create(width)
+		local top = crest(v) + C.TraverseCrestMargin
 		for b = 1, width do
-			free[b] = not blocked(Range.world(r, tAt(i, b), v))
+			local tb = tAt(i, b)
+			free[b] = tb >= top and not blocked(Range.world(r, tb, v))
 		end
 		for b = 1, width do
 			if not free[b] then

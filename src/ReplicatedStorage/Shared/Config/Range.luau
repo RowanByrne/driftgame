@@ -169,7 +169,8 @@ return {
 	TraverseLayer = 100, -- studs
 	TraverseCell = 60, -- studs
 	TraverseShift = 4,
-	TraverseBack = 240, -- studs
+	TraverseBack = 1200, -- studs: back up the face, round a gorge's head
+	TraverseCrestMargin = 80, -- studs below the crest: no leg nearer it
 	TraverseAhead = 3000, -- studs
 	TraverseMin = 900, -- studs
 	TraverseMax = 7000, -- studs
