@@ -109,14 +109,16 @@ export type Item = {
 	untilDir: number?,
 	refused: number?, -- times this turn was refused
 	nextDirV: number?, -- a turnaround after a traverse (T-326): which way across the next leg runs
+	traverse: boolean?, -- ...and it ends a descent's surveyed leg
 }
 
 -- What a heading on the mountain is (T-226, T-238): "leg" across the face toward the pass
 -- ahead, tilted enough to descend (or climb) `gd` a stud; "pass" straight for the pass.
 -- `side` is which way across the face (the fall line's sides). `swapped` (T-242): the leg
 -- has gone over to the other way along its level line.
--- "traverse" (T-326): along the surveyed descent leg (`leg`).
-export type Slope = { kind: string, side: number, gd: number?, swapped: boolean? }
+-- "traverse" (T-326): along the surveyed descent leg (`leg`); "return": the way back across
+-- after the hairpin that ends it, `dirV` across the range, falling `gd` a stud.
+export type Slope = { kind: string, side: number, gd: number?, swapped: boolean?, dirV: number? }
 
 export type Gen = typeof(setmetatable(
 	{} :: {
@@ -1387,6 +1389,27 @@ function SplineGen._slopeAim(self: Gen, slope: Slope, stretch: boolean?): (numbe
 		local lim = math.rad(R.TraverseLimit)
 		return math.atan2(x - wx, z - wz), lim, lim, 0
 	end
+	if slope.kind == "return" then
+		-- back across the face after a descent's hairpin (T-326): across the range `dirV`,
+		-- turned down the face's fall line enough to fall `gd` a stud
+		local e = R.AimSpan * 0.5
+		local bx = (Ground.base(f, x + e, z) - Ground.base(f, x - e, z)) / R.AimSpan
+		local bz = (Ground.base(f, x, z + e) - Ground.base(f, x, z - e)) / R.AimSpan
+		local S = math.sqrt(bx * bx + bz * bz)
+		local dx, dz = r.ux, r.uz
+		if S > 1e-6 then
+			dx, dz = -bx / S, -bz / S
+		end
+		local d = slope.dirV or 1
+		local wx, wz = d * r.uz, -d * r.ux
+		local along = wx * dx + wz * dz
+		local cx, cz = wx - along * dx, wz - along * dz
+		local cl = math.max(math.sqrt(cx * cx + cz * cz), 1e-9)
+		cx, cz = cx / cl, cz / cl
+		local tilt = math.asin(math.clamp((slope.gd or 0) / math.max(S, 1e-6), 0, math.sin(math.rad(60))))
+		local hx, hz = cx * math.cos(tilt) + dx * math.sin(tilt), cz * math.cos(tilt) + dz * math.sin(tilt)
+		return math.atan2(-hx, -hz), math.rad(R.TraverseLimit), math.rad(R.TraverseLimit), 0
+	end
 	local tgt = self:_target()
 	local corridor = self.corridor
 	if stretch and corridor and corridor.ridge == tgt.k then
@@ -1896,9 +1919,10 @@ function SplineGen._planRange(self: Gen)
 			stretch(leg.length * 1.5, "traverse", { kind = "traverse", side = legSide }, leg.endV)
 			plan[#plan].untilDir = leg.dirV
 			if leg.hairpin then
-				local nextLeg: Slope = { kind = "leg", side = -legSide, gd = math.tan(math.rad(R.TraverseGrade)) }
+				local nextLeg: Slope = { kind = "return", side = -legSide, gd = math.tan(math.rad(R.TraverseGrade)), dirV = -leg.dirV }
 				turn("turnaround", legSide, leg.radius, "Hairpin", nextLeg)
 				plan[#plan].nextDirV = -leg.dirV
+				plan[#plan].traverse = true
 				self.legSide = -legSide
 			else
 				self.legSide = legSide
@@ -2214,7 +2238,9 @@ function SplineGen._turn(self: Gen, item: Item): (Spline.Section | string)?
 					end
 					local sec={len=emittedLen,k=emitted,g=g,b=bank,tag=item.tag}
 					-- Avoid committing a turnaround whose run-out already heads into rock.
-					if contourCost(self, emitted) > Config.Range.ContourTrigger * 3 then
+					-- (a hairpin ending a descent's leg, T-326, sits where the leg's survey put it,
+					-- and the next leg is surveyed from its exit)
+					if not item.traverse and contourCost(self, emitted) > Config.Range.ContourTrigger * 3 then
 						self.stats.hillChecked += 1
 						self.stats.hillRejected += 1
 						continue
