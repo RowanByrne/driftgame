@@ -153,8 +153,9 @@ local function drive(sp, entry: number, exit: number, dir: number, v0: number, w
 		cs = cs or lastS
 		cd = cd or 0
 		lastS = cs
-		-- the leg in is driven at `v0`: the car arrives at the speed the case is about
-		if cs < entry - 240 and speed > 1 then
+		-- the leg in is driven at `v0` until the driver starts on the turn: the car arrives at
+		-- the speed the case is about
+		if phase == "approach" and cs < entry - 60 and speed > 1 then
 			s.velocity = Vector3.new(s.velocity.X, 0, s.velocity.Z) * (v0 / speed) + Vector3.new(0, s.velocity.Y, 0)
 			speed = v0
 		end
@@ -163,7 +164,10 @@ local function drive(sp, entry: number, exit: number, dir: number, v0: number, w
 			else Vector3.new(-math.sin(s.yaw), 0, -math.cos(s.yaw))
 		local look = math.clamp(speed * 0.7, 15, 80)
 		local ts = math.min(cs + look, sp.length)
-		local tp = sp:surface(ts, laneAt(way, ts, entry, dir))
+		-- in the turn the driver follows the road from where the car IS, easing toward the
+		-- middle, rather than snapping back to a line the slide has carried it off
+		local aim = if phase == "bend" then math.clamp(cd * 0.6, -14, 14) else laneAt(way, ts, entry, dir)
+		local tp = sp:surface(ts, aim)
 		local dx, dz = tp.X - s.position.X, tp.Z - s.position.Z
 		local len = math.max(math.sqrt(dx * dx + dz * dz), 1e-3)
 		local kappa = 2 * math.sin(signedAngle(heading.X, heading.Z, dx / len, dz / len)) / len
@@ -263,7 +267,7 @@ local function ways()
 	for _, lane in { -10, 0 } do
 		for _, scrub in { 60, 90 } do
 			for _, at in { 120, 200 } do
-				for _, flickD in { 5, 15 } do
+				for _, flickD in { 0, 6 } do
 					table.insert(list, { kind = "feint", lane = lane, scrub = scrub, scrubAt = at, flickD = flickD, g = 35, maxB = 85 })
 				end
 			end
