@@ -2465,12 +2465,12 @@ function SplineGen.step(self: Gen): Spline.Section?
 		self.headway = { item.nextDirV * r.uz, -item.nextDirV * r.ux }
 	end
 	if item.turn then
+		local wasTraverse = item.traverse == true
 		sec = self:_planned(item)
 		planned = sec ~= nil
 		item = self.plan[1]
-		-- (after a planned turn is laid, the way on is planned from where it ends, next step:
-		-- a descent's next leg is surveyed from the hairpin's exit, T-326)
-		if not item and not planned then
+		-- (a descent's next leg is surveyed from its hairpin's exit, next step, T-326)
+		if not item and not (planned and wasTraverse) then
 			self:_planRange()
 			item = self.plan[1]
 		end
