@@ -64,4 +64,4 @@ None new.
 - **Every radius from 35 to 70 gets round, from every speed,** with the default car. Apex speed about 30 studs/s at 35, 34 at 40, 38 at 50, 46 at 70.
 - **It always takes a slide.** No case, even 70, gets round on a grip line: slip peaks at 90 to 105 degrees, where the grip is a brake. Sliding is the only brake there is, and it curves the car toward the inside, so a slide begun too early pins it on the inside wall before the turn.
 - **Other cars:** the Gripper and the Bruiser get round every case; the Slider missed two (from 120 into a 35 on the flat, and into a 40 downhill).
-- **Test hairpins in the playground** (`drift-playground.md`): 35, 40, 50 and 70, spots `Turnaround35` to `Turnaround70`. The user drove them and picked 40.
+- **Test hairpins in the playground** (`drift-playground.md`): 35, 40, 50 and 70, spots `Turnaround35` to `Turnaround70`. The user picked 40 from these numbers.
