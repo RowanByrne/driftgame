@@ -38,24 +38,21 @@ export type Leg = {
 }
 
 -- One direction across: the best leg from (x0, z0), or nil. The survey's frame is the face's
--- own where the leg starts: layers along its contour (the way across the range `dirV` goes),
--- places on a layer down its fall line. The face's contours lie along the crest it falls
--- from (ridge `k`), which wanders across the range: straight across would run aslant.
+-- own: a layer every `TraverseLayer` studs across the range (`dirV`), and on each layer, the
+-- places a whole number of `TraverseCell` studs on down from the leg's start, measured from
+-- the crest the face falls from (ridge `k`). A face's contours lie along that crest, which
+-- wanders across the range, so a leg that holds its place below the crest holds its height:
+-- straight across, or square to the crest where the leg starts, would run aslant of a face
+-- that curves.
 local function survey(f: Ground.Field, x0: number, z0: number, y0: number, yaw: number, dirV: number, pv: number, k: number, blocked: (number, number) -> boolean): Leg?
 	local C = Config.Range
 	local r = f.range
 	local t0, v0 = Range.frame(r, x0, z0)
 	local dv, dt = C.TraverseLayer, C.TraverseCell
-	-- the crest's run across the range here, over `TraverseFrameSpan`: the contour (in the
-	-- range's frame, t on and v across) and the fall line square to it, in the world
-	local e = C.TraverseFrameSpan * 0.5
-	local lean = (Range.ridgeT(r, k, v0 + e) - Range.ridgeT(r, k, v0 - e)) / (2 * e)
-	local n = math.sqrt(1 + lean * lean)
-	local ct, cv = dirV * lean / n, dirV / n
-	local dt0, dv0 = 1 / n, -lean / n
-	local cx, cz = ct * r.ux + cv * r.uz, ct * r.uz - cv * r.ux
-	local dx, dz = dt0 * r.ux + dv0 * r.uz, dt0 * r.uz - dv0 * r.ux
-	local acrossV = cv -- studs across the range a stud along a layer step
+	local function crest(v: number): number
+		return Range.ridgeT(r, k, v) - r.shift
+	end
+	local below = t0 - crest(v0)
 	local back = math.floor(C.TraverseBack / dt)
 	local ahead = math.floor(C.TraverseAhead / dt)
 	local width = back + ahead + 1
@@ -68,28 +65,29 @@ local function survey(f: Ground.Field, x0: number, z0: number, y0: number, yaw: 
 	local steep, tol, earth, deep = C.TraverseSteep, C.TraverseEarthTol, C.TraverseEarth, C.TraverseDeep
 	local bendCost = C.TraverseBendCost
 	local band = C.TraverseBand
-	local lengths, angles = {}, {}
-	for s = -maxShift, maxShift do
-		lengths[s] = math.sqrt(dv * dv + (s * dt) ^ 2)
-		angles[s] = math.atan2(s * dt, dv)
+	-- where each layer's places are on along the range: its crest, plus how far below it
+	local function tAt(i: number, j: number): number
+		return crest(v0 + dirV * i * dv) + below + (j - j0) * dt
 	end
-	-- heights: a line down the fall line at each layer, and halfway to the next
-	local function columnAt(along: number): { number }
+	-- heights: a line on along the range at each layer, and halfway to the next
+	local function columnAt(i: number): { number }
+		local v = v0 + dirV * i * dv
+		local col = Ground.column(f, v)
+		local top = crest(v) + below
 		local out = table.create(width)
-		local px, pz = x0 + cx * along, z0 + cz * along
 		for j = 1, width do
-			local q = (j - j0) * dt
-			out[j] = Ground.h(f, px + dx * q, pz + dz * q)
+			out[j] = col(top + (j - j0) * dt)
 		end
 		return out
 	end
 	local H: { { number } } = {}
 	local M: { { number } } = {}
 	H[0] = columnAt(0)
-	H[1] = columnAt(dv)
-	-- the road's own height at the start, and the heading it has, in the leg's frame
+	H[1] = columnAt(1)
+	-- the road's own height at the start, and the heading it has, in the range's frame
 	local fx, fz = -math.sin(yaw), -math.cos(yaw)
-	local startAngle = math.atan2(fx * dx + fz * dz, fx * cx + fz * cz)
+	local startAngle = math.atan2(fx * r.ux + fz * r.uz, (fx * r.uz - fz * r.ux) * dirV)
+	local lengths: { [number]: number }, angles: { [number]: number } = {}, {}
 	local cost = table.create(width, math.huge)
 	local angle = table.create(width, 0)
 	local Y = table.create(width, 0)
@@ -103,9 +101,16 @@ local function survey(f: Ground.Field, x0: number, z0: number, y0: number, yaw: 
 	local siteSlope = 0
 	local minLayers = math.ceil(C.TraverseMin / dv)
 	for i = 1, layers do
-		local v = v0 + i * dv * acrossV
-		H[i + 1] = columnAt((i + 1) * dv)
-		M[i] = columnAt((i - 0.5) * dv)
+		local v = v0 + dirV * i * dv
+		H[i + 1] = columnAt(i + 1)
+		M[i] = columnAt(i - 0.5)
+		-- each shift's length and heading over this layer, with the crest's own run
+		local lean = crest(v) - crest(v - dirV * dv)
+		for s = -maxShift, maxShift do
+			local run = lean + s * dt
+			lengths[s] = math.sqrt(dv * dv + run * run)
+			angles[s] = math.atan2(run, dv)
+		end
 		local h0, h1, h2, mid = H[i - 1], H[i], H[i + 1], M[i]
 		-- the road over this layer follows the ground eased across the layers either side,
 		-- so it bridges a narrow gully and cuts a narrow spur; what it leaves is earthwork
@@ -121,11 +126,9 @@ local function survey(f: Ground.Field, x0: number, z0: number, y0: number, yaw: 
 		local nextL = table.create(width, 0)
 		local parent = table.create(width, 0)
 		-- old road: no leg runs where the road already is
-		local along = i * dv
 		local free = table.create(width)
 		for b = 1, width do
-			local q = (b - j0) * dt
-			free[b] = not blocked(x0 + cx * along + dx * q, z0 + cz * along + dz * q)
+			free[b] = not blocked(Range.world(r, tAt(i, b), v))
 		end
 		for b = 1, width do
 			if not free[b] then
@@ -178,8 +181,7 @@ local function survey(f: Ground.Field, x0: number, z0: number, y0: number, yaw: 
 				end
 				-- (a hairpin swings out down the fall line: room for it, clear of old road; and the
 				-- leg comes into it level or falling, or its way back runs into the leg itself)
-				local q = (j - j0) * dt + C.TraverseHairpinRoom
-				if blocked(x0 + cx * along + dx * q, z0 + cz * along + dz * q) then
+				if blocked(Range.world(r, tAt(i, j) + C.TraverseHairpinRoom, v)) then
 					continue
 				end
 				local level, at = true, j
@@ -214,9 +216,7 @@ local function survey(f: Ground.Field, x0: number, z0: number, y0: number, yaw: 
 	local points: { Point } = table.create(bestI + 1)
 	local j = bestJ
 	for i = bestI, 1, -1 do
-		local q = (j - j0) * dt
-		local pt, pv2 = Range.frame(r, x0 + cx * i * dv + dx * q, z0 + cz * i * dv + dz * q)
-		points[i + 1] = { t = pt, v = pv2, s = 0, y = heights[i][j] }
+		points[i + 1] = { t = tAt(i, j), v = v0 + dirV * i * dv, s = 0, y = heights[i][j] }
 		j = parents[i][j]
 	end
 	points[1] = { t = t0, v = v0, s = 0, y = y0 }
