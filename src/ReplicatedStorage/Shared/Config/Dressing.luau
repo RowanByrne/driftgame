@@ -25,6 +25,9 @@ return {
 		CliffDrop = 40, -- studs: anywhere else, a drop this big is railed
 		LeadIn = 40, -- studs of rail before a corner, a tight bend or a cliff
 		RunOut = 60, -- studs after it (on into the next section)
+		-- studs after a TIGHT BEND instead (every hairpin, T-334): the user, 2026-11-19, the rail
+		-- should end where the bend straightens, not run on into the next turn
+		HairpinRunOut = 15,
 		MinRun = 40, -- studs: no shorter piece of rail (except one carrying on across a section's end)
 	},
 }

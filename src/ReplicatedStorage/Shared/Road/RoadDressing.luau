@@ -43,11 +43,14 @@ export type Dresser = typeof(setmetatable(
 		-- the barriers are placed from the ground and draw nothing from it
 		rng: Random,
 		-- barriers carrying on into the next section, by side: studs of run-out still owed,
-		-- and the way a railed bend still turns at the section's end (0 none)
+		-- the way a railed bend still turns at the section's end (0 none), and whether that
+		-- bend is a tight one (a hairpin: its run-out is `HairpinRunOut`, T-334)
 		outL: number,
 		outR: number,
 		bendL: number,
 		bendR: number,
+		tightL: boolean,
+		tightR: boolean,
 	},
 	RoadDressing
 ))
@@ -61,6 +64,8 @@ function RoadDressing.attach(gen: Road): Dresser
 		outR = 0,
 		bendL = 0,
 		bendR = 0,
+		tightL = false,
+		tightR = false,
 	}, RoadDressing)
 	gen.dress = function(sec: Spline.Section)
 		self:dress(sec)
@@ -74,6 +79,7 @@ function RoadDressing.dress(self: Dresser, sec: Spline.Section)
 	if sec.tag == "Start" then
 		-- the start is never railed, and nothing carries on from it
 		self.outL, self.outR, self.bendL, self.bendR = 0, 0, 0, 0
+		self.tightL, self.tightR = false, false
 		return
 	end
 	local B = Config.Dressing.Barrier
@@ -140,7 +146,10 @@ end
 --     after;
 --   * A TIGHT BEND (tighter than `HairpinRadius`: every hairpin) is railed the same way on
 --     EITHER side that drops `HairpinDrop` (a turnaround turns through the drop, so its
---     inside can be the drop);
+--     inside can be the drop). Past its end the rail runs on only `HairpinRunOut`, not
+--     `RunOut` (T-334): the user, 2026-11-19, the rail should end where the bend straightens,
+--     not carry on into the next turn. A bend tighter than that anywhere is a tight one all
+--     the way round, across a section's end too;
 --   * anywhere else, a cliff (`CliffDrop`) is railed, with the same lead-in and run-out.
 -- What runs past the section's end carries on into the next one (`out*`, and a railed bend
 -- still turning there, `bend*`), and joins on: `Spline.append` makes it one run. Pieces
@@ -162,11 +171,12 @@ function RoadDressing._barrierPieces(self: Dresser, sec: Spline.Section, drops: 
 		local railedIn = #runs.b > 0 and runs.b[#runs.b] >= sp.length - 1e-6
 		local carryIn = if railedIn then (if side < 0 then self.outL else self.outR) else 0
 		local bendIn = if railedIn then (if side < 0 then self.bendL else self.bendR) else 0
+		local tightIn = railedIn and (if side < 0 then self.tightL else self.tightR)
 		local windows: { { number } } = {}
 		if carryIn > 0 then
 			table.insert(windows, { 0, carryIn })
 		end
-		local bendOut = 0
+		local bendOut, tightOut = 0, false
 		local i = 1
 		while i <= n do
 			local k = ks[i]
@@ -179,10 +189,11 @@ function RoadDressing._barrierPieces(self: Dresser, sec: Spline.Section, drops: 
 					tight = tight or math.abs(ks[j]) >= kTight
 				end
 				local carried = i == 1 and bendIn == dir
+				tight = tight or (carried and tightIn)
 				if carried or (side == dir and most >= B.CornerDrop) or (tight and most >= B.HairpinDrop) then
-					table.insert(windows, { us[i] - B.LeadIn, us[j] + B.RunOut })
+					table.insert(windows, { us[i] - B.LeadIn, us[j] + (if tight then B.HairpinRunOut else B.RunOut) })
 					if j == n then
-						bendOut = dir
+						bendOut, tightOut = dir, tight
 					end
 				end
 				i = j + 1
@@ -231,9 +242,9 @@ function RoadDressing._barrierPieces(self: Dresser, sec: Spline.Section, drops: 
 		local reachesEnd = last ~= nil and last[2] >= len - 1e-6
 		local carryOut = if reachesEnd then math.max(reach - len, 0) else 0
 		if side < 0 then
-			self.outL, self.bendL = carryOut, if reachesEnd then bendOut else 0
+			self.outL, self.bendL, self.tightL = carryOut, if reachesEnd then bendOut else 0, reachesEnd and tightOut
 		else
-			self.outR, self.bendR = carryOut, if reachesEnd then bendOut else 0
+			self.outR, self.bendR, self.tightR = carryOut, if reachesEnd then bendOut else 0, reachesEnd and tightOut
 		end
 		out[side] = pieces
 	end
