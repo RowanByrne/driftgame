@@ -1314,25 +1314,33 @@ function SplineGen._followGrade(self: Gen, knots: { number }, g0: number, y0: nu
 			return sum
 		end
 		-- a coarse sweep, then a finer one round the best
+		-- (past the allowance, a stud of height the steeper grade gains counts as a stud off
+		-- h at every sample: so the grade eases where it can, and still follows a face that
+		-- falls away faster rather than leaving a trench or a causeway)
 		local lim = gMax
 		if budget then
 			local remaining = math.max(0, budget - used)
 			lim = math.min(gMax, sustain + math.min(remaining / span, math.sqrt(2 * rate * remaining)))
 		end
+		local nSamples = if i0 and i1 then i1 - i0 + 1 else 1
+		local function scored(gt: number): number
+			local over = (math.abs(gt) - lim) * span
+			return cost(gt) + (if over > 0 then Config.Range.PitchSoft * nSamples * over * over else 0)
+		end
 		local best, bestCost = gA, math.huge
 		local n = 32
 		for i = 0, n do
-			local gt = -lim + 2 * lim * i / n
-			local c = cost(gt)
+			local gt = -gMax + 2 * gMax * i / n
+			local c = scored(gt)
 			if c < bestCost then
 				best, bestCost = gt, c
 			end
 		end
-		local d = 2 * lim / n
+		local d = 2 * gMax / n
 		local centre = best
 		for i = -8, 8 do
-			local gt = math.clamp(centre + d * i / 8, -lim, lim)
-			local c = cost(gt)
+			local gt = math.clamp(centre + d * i / 8, -gMax, gMax)
+			local c = scored(gt)
 			if c < bestCost then
 				best, bestCost = gt, c
 			end
@@ -1938,12 +1946,17 @@ function SplineGen._planRange(self: Gen)
 		local _, _, yaw = self.spline:tip()
 		local dirV = self.nextDirV
 		self.nextDirV = nil
-		local leg = Traverse.plan(f, x, z, y, yaw, dirV, tgt)
+		-- (old road, bar the last few hundred studs the leg starts from, is out of bounds)
+		local sp, s0 = self.spline, self.spline.length
+		local clear = self.clearance + R.TraverseClear
+		local function blocked(px: number, pz: number): boolean
+			return sp:crowded(px, pz, s0, clear, R.TraverseFromTip) ~= nil
+		end
+		local leg = Traverse.plan(f, x, z, y, yaw, dirV, tgt, blocked)
 		if leg then
 			self.leg = leg
 			local legSide = if across(1) * leg.dirV > 0 then 1 else -1
-			stretch(leg.length * 1.5, "traverse", { kind = "traverse", side = legSide }, leg.endV)
-			plan[#plan].untilDir = leg.dirV
+			stretch(leg.length * 1.5, "traverse", { kind = "traverse", side = legSide })
 			if leg.hairpin then
 				local nextLeg: Slope = { kind = "return", side = -legSide, gd = math.tan(math.rad(R.TraverseGrade)), dirV = -leg.dirV }
 				turn("turnaround", legSide, leg.radius, "Hairpin", nextLeg)
@@ -2555,6 +2568,16 @@ function SplineGen.step(self: Gen): Spline.Section?
 			local x, z = self.spline:tip()
 			local _, v = Range.frame(self.ground.range, x, z)
 			if (v - head.untilV) * (head.untilDir or 1) >= 0 then
+				head.left = 0
+			end
+		end
+		-- a descent's leg ends where the road reaches its end (T-326)
+		local leg = self.leg
+		if head.what == "traverse" and leg then
+			local x, z = self.spline:tip()
+			local t, v = Range.frame(self.ground.range, x, z)
+			local _, _, _, at = Traverse.ahead(leg, t, v, 0)
+			if at >= leg.length - Config.Range.TraverseArrive then
 				head.left = 0
 			end
 		end

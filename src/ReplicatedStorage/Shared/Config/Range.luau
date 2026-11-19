@@ -160,7 +160,13 @@ return {
 	-- `SteepHairpinRadius[1]` and `TraverseRadiusMax`. The road follows the leg, aiming
 	-- `TraverseLook` studs along it and straying no more than `TraverseLimit` degrees.
 	TraverseGrade = 5, -- degrees: the sustained descent
-	TraverseFrameSpan = 600, -- studs: the fall line the survey's frame is set by, over the range's shape
+	TraverseFrameSpan = 600, -- studs: the fall line the survey's frame is set by, over the range's shape...
+	TraverseFrameAhead = 300, -- ...this far on down the range from the leg's start...
+	TraverseFrameOnward = 0.25, -- ...unless it runs less than this much on along the range (then the range's own)
+	TraverseClear = 60, -- studs past the road's clearance: no leg (or hairpin) nearer old road...
+	TraverseFromTip = 400, -- ...bar the road this far back from where the leg starts
+	TraverseHairpinRoom = 250, -- studs down the fall line from a hairpin site that must be clear
+	TraverseArrive = 30, -- studs short of a leg's end: the hairpin is next
 	TraverseLayer = 100, -- studs
 	TraverseCell = 60, -- studs
 	TraverseShift = 4,
@@ -177,8 +183,8 @@ return {
 	TraverseBendCost = 110, -- studs of length a radian of turn
 	TraverseBand = 3000, -- studs
 	TraverseHairpin = 500, -- studs of length
-	TraverseSiteCost = 2000,
-	TraverseRadiusSlope = 30,
+	TraverseSiteCost = 6000,
+	TraverseRadiusSlope = 18,
 	TraverseRadiusMax = 220, -- studs
 	TraverseLook = 300, -- studs
 	TraverseLimit = 30, -- degrees
@@ -189,6 +195,7 @@ return {
 	PitchSustain = 6.5, -- degrees
 	PitchBudget = 25, -- studs
 	PitchRecover = 1,
+	PitchSoft = 1, -- past the allowance: a stud of height gained too steeply counts as a stud off h
 	-- The road along a leg (`SplineGen._track`): each curvature eased into and held for each
 	-- of `TrackHolds` studs, judged on how far off the leg it ends, `TrackHeadingCost` a degree
 	-- its heading misses a point `TraverseLook` on, and `TrackCurveCost` per 1/1000 of curvature

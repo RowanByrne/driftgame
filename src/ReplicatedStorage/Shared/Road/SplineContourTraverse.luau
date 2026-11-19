@@ -41,18 +41,21 @@ export type Leg = {
 -- hillside's own where the leg starts: layers along its contour (the way across the range
 -- `dirV` goes), places on a layer down its fall line. Across the range itself would not do:
 -- where a face is twisted by its gorges and the ridge's wander, the contours run aslant.
-local function survey(f: Ground.Field, x0: number, z0: number, y0: number, yaw: number, dirV: number, pv: number): Leg?
+local function survey(f: Ground.Field, x0: number, z0: number, y0: number, yaw: number, dirV: number, pv: number, blocked: (number, number) -> boolean): Leg?
 	local C = Config.Range
 	local r = f.range
 	local t0, v0 = Range.frame(r, x0, z0)
 	local dv, dt = C.TraverseLayer, C.TraverseCell
-	-- the fall line, over the range's own shape (`TraverseFrameSpan`), and the contour across it
+	-- the fall line, over the range's own shape (`TraverseFrameSpan`) a little way on down
+	-- the range (`TraverseFrameAhead`: a descent starts on a crest, which falls both ways), and
+	-- the contour across it; a fall line that runs back up the range is not the descent's
 	local e = C.TraverseFrameSpan * 0.5
-	local gx = (Ground.base(f, x0 + e, z0) - Ground.base(f, x0 - e, z0)) / (2 * e)
-	local gz = (Ground.base(f, x0, z0 + e) - Ground.base(f, x0, z0 - e)) / (2 * e)
+	local sx, sz = x0 + r.ux * C.TraverseFrameAhead, z0 + r.uz * C.TraverseFrameAhead
+	local gx = (Ground.base(f, sx + e, sz) - Ground.base(f, sx - e, sz)) / (2 * e)
+	local gz = (Ground.base(f, sx, sz + e) - Ground.base(f, sx, sz - e)) / (2 * e)
 	local gl = math.sqrt(gx * gx + gz * gz)
 	local dx, dz = r.ux, r.uz
-	if gl > 0.02 then
+	if gl > 0.02 and -(gx * r.ux + gz * r.uz) / gl > C.TraverseFrameOnward then
 		dx, dz = -gx / gl, -gz / gl
 	end
 	local cx, cz = -dz, dx
@@ -124,7 +127,17 @@ local function survey(f: Ground.Field, x0: number, z0: number, y0: number, yaw: 
 		local nextY = table.create(width, 0)
 		local nextL = table.create(width, 0)
 		local parent = table.create(width, 0)
+		-- old road: no leg runs where the road already is
+		local along = i * dv
+		local free = table.create(width)
 		for b = 1, width do
+			local q = (b - j0) * dt
+			free[b] = not blocked(x0 + cx * along + dx * q, z0 + cz * along + dz * q)
+		end
+		for b = 1, width do
+			if not free[b] then
+				continue
+			end
 			local yb = smooth[b]
 			local nodeEarth = math.abs(h1[b] - yb)
 			local nodeCost = earth * math.max(0, nodeEarth - tol) + 2 * math.max(0, nodeEarth - deep) ^ 2 + 3 * beyond
@@ -165,16 +178,21 @@ local function survey(f: Ground.Field, x0: number, z0: number, y0: number, yaw: 
 		cost, angle, Y, L = nextCost, nextAngle, nextY, nextL
 		parents[i], costs[i], heights[i] = parent, cost, Y
 		if i >= minLayers then
-			for j = 2, width - 1 do
+			for j = 3, width - 2 do
 				local c = cost[j]
 				if c == math.huge then
+					continue
+				end
+				-- (a hairpin swings out down the fall line: room for it, clear of old road)
+				local q = (j - j0) * dt + C.TraverseHairpinRoom
+				if blocked(x0 + cx * along + dx * q, z0 + cz * along + dz * q) then
 					continue
 				end
 				-- a hairpin site: as gentle as the hillside offers here
 				-- (the leg's length is refunded here: within the path it keeps the leg from
 				-- wandering, but a long leg that holds its grade is what a descent wants, so
 				-- the leg ends where the ground stops paying, not where the length mounts)
-				local sl = math.abs(h1[j + 1] - h1[j - 1]) / (2 * dt)
+				local sl = math.abs(h1[j + 2] - h1[j - 2]) / (4 * dt)
 				local site = C.TraverseHairpin + C.TraverseSiteCost * math.max(0, sl - 0.15)
 				local score = c - refund * L[j] + site
 				if score < best then
@@ -219,12 +237,12 @@ end
 
 -- The leg from the road's end at (x, z), heading `yaw`, height `y`. `dirV` forces which way
 -- across (after a hairpin, the other way); nil tries both and keeps the better.
-function Traverse.plan(f: Ground.Field, x: number, z: number, y: number, yaw: number, dirV: number?, target: { x: number, z: number, k: number }): Leg?
+function Traverse.plan(f: Ground.Field, x: number, z: number, y: number, yaw: number, dirV: number?, target: { x: number, z: number, k: number }, blocked: (number, number) -> boolean): Leg?
 	local r = f.range
 	local _, pv = Range.frame(r, target.x, target.z)
 	local leg: Leg? = nil
 	for _, d in if dirV then { dirV } else { 1, -1 } do
-		local l = survey(f, x, z, y, yaw, d, pv)
+		local l = survey(f, x, z, y, yaw, d, pv, blocked)
 		if l and (not leg or l.score < (leg :: Leg).score) then
 			leg = l
 		end
@@ -236,8 +254,9 @@ function Traverse.plan(f: Ground.Field, x: number, z: number, y: number, yaw: nu
 end
 
 -- The nearest point on the leg to (t, v), and a waypoint `look` studs farther along it; past
--- the end, on along the leg's last direction. Also returns how far off the leg (t, v) is.
-function Traverse.ahead(leg: Leg, t: number, v: number, look: number): (number, number, number)
+-- the end, on along the leg's last direction. Also returns how far off the leg (t, v) is, and
+-- how far along it the nearest point is.
+function Traverse.ahead(leg: Leg, t: number, v: number, look: number): (number, number, number, number)
 	local pts = leg.points
 	local best, at = math.huge, 0
 	for i = 2, #pts do
@@ -254,13 +273,13 @@ function Traverse.ahead(leg: Leg, t: number, v: number, look: number): (number, 
 		local a, b = pts[i - 1], pts[i]
 		if want <= b.s then
 			local u = (want - a.s) / math.max(b.s - a.s, 1e-6)
-			return a.t + u * (b.t - a.t), a.v + u * (b.v - a.v), math.sqrt(best)
+			return a.t + u * (b.t - a.t), a.v + u * (b.v - a.v), math.sqrt(best), at
 		end
 	end
 	local a, b = pts[#pts - 1], pts[#pts]
 	local l = math.max(b.s - a.s, 1e-6)
 	local over = want - b.s
-	return b.t + (b.t - a.t) / l * over, b.v + (b.v - a.v) / l * over, math.sqrt(best)
+	return b.t + (b.t - a.t) / l * over, b.v + (b.v - a.v) / l * over, math.sqrt(best), at
 end
 
 return Traverse
