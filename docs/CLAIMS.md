@@ -9,8 +9,8 @@ Every task in progress and the files it owns, so parallel sessions and workers n
 
 | Branch | Lane | Files owned | Since |
 |---|---|---|---|
-| `feature/road-dressing-layer` | Borrow to test | `src/ReplicatedStorage/Shared/Road/SplineGen.luau`, `Shared/Road/SplineSequence.luau`, `Shared/Config/Spline.luau`, `Shared/Road/RoadDressing.luau` (new), the dressing config (new, in `Shared/Config/`), tests in `src/ServerScriptService/Tests/` (`Spline*`, `Grind*`, `Hairpin*`, `Grove*`, and new dressing tests), `docs/game/features/road-dressing.md` | 2026-11-19, T-328 (barriers into a dressing layer) |
-| `feature/tight-hairpins` | Borrow to test | `src/ReplicatedStorage/Shared/Road/Ground.luau`, `Shared/Road/Spline.luau`, `Shared/Road/TightHairpin.luau` (new), `Shared/Config/TightHairpin.luau` (new), `Shared/Config/init.luau` (the new `TightHairpin` line only), `src/ServerScriptService/Tests/TightHairpinTests.luau` (new), `docs/game/features/tight-hairpins.md`. `SplineGen`, `Config/Spline` and `SplineSequence` wait for T-328 | 2026-11-19, T-333 (tight hairpins step 2) |
+| `feature/road-dressing-layer` | Borrow to test | `src/ReplicatedStorage/Shared/Road/SplineGen.luau`, `Shared/Road/SplineSequence.luau`, `Shared/Config/Spline.luau`, `Shared/Road/RoadDressing.luau` (new), the dressing config (new, in `Shared/Config/`), tests in `src/ServerScriptService/Tests/` (`Spline*`, `Grind*`, `Hairpin*`, `Grove*`, `NearMissTests`, `OffRoadTests`, `ScandiFlickTests`, and new dressing tests), `docs/game/features/road-dressing.md` | 2026-11-19, T-328 (barriers into a dressing layer) |
+| `feature/tight-hairpins` | Borrow to test | `src/ReplicatedStorage/Shared/Road/Ground.luau`, `Shared/Road/Spline.luau`, `Shared/Road/TightHairpin.luau` (new), `Shared/Config/TightHairpin.luau` (new), `Shared/Config/init.luau` (the new `TightHairpin` line only), `src/ServerScriptService/Tests/TightHairpinTests.luau` (new), `docs/game/features/tight-hairpins.md`, `src/StarterPlayerScripts/Controllers/SplineRoadController.luau`. `SplineGen`, `Config/Spline` and `SplineSequence` wait for T-328 | 2026-11-19, T-333 (tight hairpins step 2) |
 
 ## Notes between sessions
 
