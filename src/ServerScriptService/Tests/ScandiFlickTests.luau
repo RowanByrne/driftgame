@@ -379,17 +379,38 @@ local function runAll(opts)
 		local Tn = ScandiFlick.Tuning
 		local L = Tn.Labels
 		local edge = Hairpins.edgeLine()
-		-- one hairpin each way: a full entry zone, turning a lot, its apex well past the entry
-		local hL, hR
-		for _, h in closed do
-			local good = h.turn >= 80 and h.entry - h.zone >= Hairpins.Tuning.EntryZone - 1 and h.apex - h.entry >= 40
-			if good and h.dir > 0 and not hL then
-				hL = h
-			elseif good and h.dir < 0 and not hR then
-				hR = h
+		-- one true hairpin each way, found on the road this seed lays (never a fixed spot, so it
+		-- survives the planner changing the road): turning a lot, its apex well past the entry,
+		-- an entry zone long enough to swing out in, and ALONE: no other bend's zone-to-exit
+		-- within the rides below (from 50 studs before its zone to 40 past its exit), or that
+		-- bend's own detector starts too (a switchback's second hairpin, T-335). A full entry
+		-- zone is preferred where one each way has it.
+		local allBends = Hairpins.bends(spline, 0, spline.length)
+		local function alone(h)
+			for _, b in allBends do
+				if b.entry ~= h.entry and b.zone <= h.exit + 40 and b.exit >= h.zone - 50 then
+					return false
+				end
 			end
+			return true
 		end
-		check("a full-zone hairpin each way to ride", hL ~= nil and hR ~= nil, `left at {fmt(hL and hL.entry, 0)}, right at {fmt(hR and hR.entry, 0)}`)
+		local function pick(dir, full)
+			for _, h in closed do
+				local zoneLen = h.entry - h.zone
+				local good = h.dir == dir and h.turn >= 80 and h.apex - h.entry >= 40 and zoneLen >= 40 and alone(h)
+				if good and (not full or zoneLen >= Hairpins.Tuning.EntryZone - 1) then
+					return h
+				end
+			end
+			return nil
+		end
+		local hL = pick(1, true) or pick(1, false)
+		local hR = pick(-1, true) or pick(-1, false)
+		check(
+			"a lone true hairpin each way to ride",
+			hL ~= nil and hR ~= nil,
+			`left at {fmt(hL and hL.entry, 0)} (zone {fmt(hL and hL.entry - hL.zone, 0)} studs), right at {fmt(hR and hR.entry, 0)} (zone {fmt(hR and hR.entry - hR.zone, 0)} studs)`
+		)
 		for _, h in { hL, hR } do
 			if not h then
 				continue
