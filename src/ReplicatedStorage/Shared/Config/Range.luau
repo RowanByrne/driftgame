@@ -171,7 +171,9 @@ return {
 	TraverseCell = 60, -- studs
 	TraverseShift = 4,
 	TraverseBack = 1200, -- studs: back up the face, round a gorge's head
-	TraverseCrestMargin = 80, -- studs below the crest: no leg nearer it
+	TraverseCrestMargin = 80, -- studs below the crest: no leg nearer it...
+	TraverseBackOn = 450, -- ...nor further back along the range than this behind where it starts
+	TraverseStartTurn = 100, -- degrees: a leg this far off the road's heading would have to turn round first
 	TraverseAhead = 3000, -- studs
 	TraverseMin = 900, -- studs
 	TraverseMax = 7000, -- studs

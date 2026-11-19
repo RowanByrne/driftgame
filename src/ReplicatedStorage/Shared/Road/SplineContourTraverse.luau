@@ -87,6 +87,10 @@ local function survey(f: Ground.Field, x0: number, z0: number, y0: number, yaw: 
 	-- the road's own height at the start, and the heading it has, in the range's frame
 	local fx, fz = -math.sin(yaw), -math.cos(yaw)
 	local startAngle = math.atan2(fx * r.ux + fz * r.uz, (fx * r.uz - fz * r.ux) * dirV)
+	-- a leg that would first have to turn round is not this one (the way the road is going)
+	if math.abs(startAngle) > math.rad(C.TraverseStartTurn) then
+		return nil
+	end
 	local lengths: { [number]: number }, angles: { [number]: number } = {}, {}
 	local cost = table.create(width, math.huge)
 	local angle = table.create(width, 0)
@@ -128,7 +132,7 @@ local function survey(f: Ground.Field, x0: number, z0: number, y0: number, yaw: 
 		-- old road: no leg runs where the road already is; nor over the crest, onto the face
 		-- behind (a leg may turn up toward a gorge's head, back toward the mountain, no further)
 		local free = table.create(width)
-		local top = crest(v) + C.TraverseCrestMargin
+		local top = math.max(crest(v) + C.TraverseCrestMargin, t0 - C.TraverseBackOn)
 		for b = 1, width do
 			local tb = tAt(i, b)
 			free[b] = tb >= top and not blocked(Range.world(r, tb, v))
