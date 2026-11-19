@@ -184,7 +184,8 @@ return {
 	TraverseHairpin = 500, -- studs of length
 	TraverseSiteCost = 6000,
 	TraverseRadiusSlope = 18,
-	TraverseRadiusMax = 220, -- studs
+	TraverseRadiusMax = 140, -- studs
+	TraverseTurnRetries = 1, -- times a hairpin that leaves the road off h is tried again further on
 	TraverseLook = 300, -- studs
 	TraverseLimit = 30, -- degrees
 	TraverseFollowCost = 0.6, -- studs a degree off the leg, when no section follows h

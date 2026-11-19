@@ -135,6 +135,7 @@ export type Gen = typeof(setmetatable(
 		leg: Traverse.Leg?,
 		nextDirV: number?,
 		headway: { number }?,
+		turning: boolean?, -- laying a planned turn (no steep pitch allowance in a hairpin)
 		sections: { Spline.Section },
 		recent: { string },
 		lastDir: number,
@@ -1264,7 +1265,7 @@ function SplineGen._followGrade(self: Gen, knots: { number }, g0: number, y0: nu
 	-- along a descent's leg (T-326) a steep pitch lasts only as long as its allowance: the
 	-- grade then eases back toward `PitchSustain` and the leg's survey keeps the road on ground
 	-- that allows it
-	local budget = if self.headway then Config.Range.PitchBudget else nil
+	local budget = if self.headway and not self.turning then Config.Range.PitchBudget else nil
 	local sustain = math.tan(math.rad(Config.Range.PitchSustain))
 	local used = self.pitchUsed
 	local worst, worstFill, worstCut = 0, 0, 0
@@ -2299,7 +2300,10 @@ function SplineGen._turn(self: Gen, item: Item): (Spline.Section | string)?
 		end
 	end
 	if best and reading then
-		if not reading.ok and (item.hillRetries or 0)<C.Ground.TurnRetries then
+		-- (a descent's hairpin, T-326, sits where its leg's survey put it: it is fitted again
+		-- only `TraverseTurnRetries` times before the best clear one is laid)
+		local retries = if item.traverse then Config.Range.TraverseTurnRetries else C.Ground.TurnRetries
+		if not reading.ok and (item.hillRetries or 0)<retries then
 			item.hillRetries=(item.hillRetries or 0)+1
 			return nil
 		end
@@ -2455,6 +2459,7 @@ function SplineGen.step(self: Gen): Spline.Section?
 	-- (a planned turn makes headway on along the range, as every turn did before T-326; the
 	-- hairpin ending a descent's leg, across the range the way the next leg goes)
 	self.headway = nil
+	self.turning = item.turn
 	if item.turn and item.traverse and item.nextDirV then
 		local r = self.ground.range
 		self.headway = { item.nextDirV * r.uz, -item.nextDirV * r.ux }
