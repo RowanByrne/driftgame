@@ -262,6 +262,43 @@ local function buildBodyPad(parent: Instance)
 	end
 end
 
+-- The turnarounds (Layout.Turnarounds, T-330): barriers either side of a 50-stud road round a
+-- half circle, and the planted island between the legs. Walls all, standing on the plate.
+local function buildTurnarounds(parent: Instance)
+	local spec = Layout.Turnarounds
+	local folder = newFolder(spec.id, parent)
+	local b = spec.barrier
+	local sink = 1
+	local half = spec.roadWidth * 0.5
+	for _, pad in spec.pads do
+		local R, cx = pad.radius, pad.cx
+		local z0, zc = spec.z0, spec.z0 + spec.legLength
+		local outer = R + half + b.thickness * 0.5
+		-- the outside: a barrier down each leg and round the half circle
+		for _, side in { 1, -1 } do
+			Build.block(`T{R}_Leg{if side > 0 then "In" else "Out"}`, cx + side * outer, (z0 + zc) * 0.5, b.thickness, zc - z0, b.height, palette.Barrier, folder)
+			partCount += 1
+		end
+		local n = math.max(math.ceil(math.pi * outer / b.segment), 8)
+		local step = math.pi / n
+		local len = 2 * outer * math.sin(step * 0.5) + b.thickness * math.tan(step * 0.5) + 0.05
+		for i = 1, n do
+			local a = (i - 0.5) * step -- 0 at the leg in, pi at the leg out, through +Z
+			local pos = Vector3.new(cx + outer * math.cos(a), (b.height - sink) * 0.5, zc + outer * math.sin(a))
+			local tangent = Vector3.new(-math.sin(a), 0, math.cos(a))
+			Build.part(`T{R}_Arc{i}`, Vector3.new(b.thickness, b.height + sink, len), CFrame.lookAt(pos, pos + tangent), palette.Barrier, folder)
+			partCount += 1
+		end
+		-- the island: a strip between the legs' inner edges, and its round tip
+		local inner = R - half
+		if inner > 0 then
+			Build.block(`T{R}_Island`, cx, (z0 + zc) * 0.5, inner * 2, zc - z0, spec.islandHeight, palette.Island, folder)
+			Build.pillar(`T{R}_IslandTip`, cx, zc, inner, spec.islandHeight, palette.Island, folder)
+			partCount += 2
+		end
+	end
+end
+
 local function buildSpots()
 	local spots: { [string]: CFrame } = {}
 	local lift = Vector3.new(0, Layout.Spot.height, 0)
@@ -579,6 +616,7 @@ function PlaygroundService:Build()
 	buildCircle(root)
 	buildRamp(root)
 	buildBodyPad(root)
+	buildTurnarounds(root)
 	buildSpots()
 	buildSpotMarkers(root)
 	buildSpawnLocation(root)
