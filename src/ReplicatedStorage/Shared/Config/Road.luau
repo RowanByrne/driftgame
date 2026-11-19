@@ -31,6 +31,7 @@ return {
 	-- cannot wander out of its own quarter in any play session.
 	Offset = Vector3.new(0, 0, -20000),
 	StartHeading = 0, -- degrees; 0 faces -Z, the same convention as the playground's Path
+	StudioSeed7Drive = true, -- T-323 lane build: start the approved mountain drive in Studio
 
 	-- ------------------------------------------------------------------- the road itself
 	-- WIDTH IS THE USER'S NUMBER (docs/game/DECISIONS.md, 2026-11-04). The car is 14.83

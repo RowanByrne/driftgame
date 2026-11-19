@@ -12,6 +12,7 @@ assert(RunService:IsStudio(), "GroundTests is Studio only")
 local Config = require(ReplicatedStorage.Shared.Config)
 local SplineGen = require(ReplicatedStorage.Shared.Road.SplineGen)
 local Ground = require(ReplicatedStorage.Shared.Road.Ground)
+local TurnFit = require(ReplicatedStorage.Shared.Road.SplineTurnFit)
 
 local Tests = {}
 
@@ -74,14 +75,6 @@ local function run(check, opts)
 		if not field then
 			continue
 		end
-		totals.genWorst = math.max(totals.genWorst, gen.stats.worstMs)
-		totals.turnFits += #gen.turnFits
-		totals.relaxed += gen.stats.hillRelaxed
-		totals.turnarounds += gen.stats.turnarounds
-		if gen.stats.stalled then
-			totals.stalled += 1
-		end
-
 		-- the road follows the mountain itself (T-226)
 		for s = 0, sp.length, 20 do
 			local x, z = sp:planAt(s)
@@ -197,6 +190,20 @@ local function run(check, opts)
 				end
 			end
 		end
+		-- Extend the turn fixture to the fitted uphill turnaround on the narrower valley.
+		if seed == 31337 then
+			gen:extendTo(31000)
+			local fit = gen.turnFits[1]
+			local measured = if fit then TurnFit.measure(sp, fit.s0, fit.s1) else nil
+			check("the fitted turnaround's cut and fill match the hillside",
+				measured ~= nil and math.abs(fit.cut - measured.cut) < 1e-4 and math.abs(fit.fill - measured.fill) < 1e-4,
+				if fit then `cut {fmt(fit.cut, 2)}, fill {fmt(fit.fill, 2)}` else "no fitted turn")
+		end
+		totals.genWorst = math.max(totals.genWorst, gen.stats.worstMs)
+		totals.turnFits += #gen.turnFits
+		totals.relaxed += gen.stats.hillRelaxed
+		totals.turnarounds += gen.stats.turnarounds
+		if gen.stats.stalled then totals.stalled += 1 end
 	end
 
 	check("the generator lays every seed without stalling", totals.stalled == 0, `{totals.stalled} stalled`)

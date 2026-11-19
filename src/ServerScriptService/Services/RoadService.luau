@@ -515,7 +515,7 @@ end
 -- makes a run reproducible, a ghost possible and a score checkable later.
 function RoadService:Generate(seed: number?): CFrame
 	self:Stop()
-	local chosen = seed or (DateTime.now().UnixTimestampMillis % 2 ^ 31)
+	local chosen = seed or (if RunService:IsStudio() and Config.Road.StudioSeed7Drive then 7 else DateTime.now().UnixTimestampMillis % 2 ^ 31)
 	local o = Config.Road.Offset
 	generator = SplineSequence.new(chosen, {
 		x = o.X,
