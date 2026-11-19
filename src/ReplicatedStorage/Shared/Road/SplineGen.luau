@@ -1587,10 +1587,16 @@ function SplineGen._clear(self: Gen, knots: { number }, limitSetback: boolean?):
 	local first = cs * (math.floor(s0 / cs + 1e-9) + 1) - s0
 	local high = 0
 	local range = self.ground.range
+	-- (along a descent's leg, T-326, the setback is measured across the range, the way the
+	-- leg makes headway: the leg itself may turn up toward a gorge's head)
+	local ux, uz = range.ux, range.uz
+	if self.headway then
+		ux, uz = self.headway[1], self.headway[2]
+	end
 	return walk(x0, z0, yaw0, k0, knots, cs, first, function(u, x, z)
 		local s = s0 + u
 		if limitSetback then
-			local on = (x - x0) * range.ux + (z - z0) * range.uz
+			local on = (x - x0) * ux + (z - z0) * uz
 			high = math.max(high, on)
 			if high - on > Config.Range.ContourSetback then return false end
 		end
