@@ -2399,7 +2399,9 @@ function SplineGen._planned(self: Gen, item: Item): Spline.Section?
 	-- (a turn refused `GiveUp` times is dropped with the rest of the plan, and the way to the
 	-- pass planned again from where the road has got to)
 	item.refused = (item.refused or 0) + 1
-	if item.refused >= Config.Range.GiveUp then
+	-- (a descent's hairpin is given up sooner: past its site the leg's survey has nothing to
+	-- say, and the next leg is surveyed from where the road has got to, T-326)
+	if item.refused >= (if item.traverse then Config.Range.TraverseGiveUp else Config.Range.GiveUp) then
 		table.clear(self.plan)
 		return nil
 	end

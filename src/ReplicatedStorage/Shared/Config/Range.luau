@@ -190,6 +190,7 @@ return {
 	TraverseRadiusSlope = 18,
 	TraverseRadiusMax = 140, -- studs
 	TraverseTurnRetries = 1, -- times a hairpin that leaves the road off h is tried again further on
+	TraverseGiveUp = 3, -- times a hairpin may be refused before the next leg is surveyed from there
 	TraverseLook = 300, -- studs
 	TraverseLimit = 30, -- degrees
 	TraverseFollowCost = 0.6, -- studs a degree off the leg, when no section follows h
