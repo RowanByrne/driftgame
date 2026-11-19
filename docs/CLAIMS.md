@@ -9,7 +9,7 @@ Every task in progress and the files it owns, so parallel sessions and workers n
 
 | Branch | Lane | Files owned | Since |
 |---|---|---|---|
-| `feature/tight-hairpins` | Borrow to test | `src/ReplicatedStorage/Shared/Road/Ground.luau`, `Shared/Road/Spline.luau`, `Shared/Road/TightHairpin.luau` (new), `Shared/Config/TightHairpin.luau` (new), `Shared/Config/init.luau` (the new `TightHairpin` line only), `src/ServerScriptService/Tests/TightHairpinTests.luau` (new), `docs/game/features/tight-hairpins.md`, `src/StarterPlayerScripts/Controllers/SplineRoadController.luau`, `Shared/Road/SplineGen.luau`, `Shared/Road/SplineSequence.luau`, `Shared/Config/Spline.luau`, `Spline*` tests in `src/ServerScriptService/Tests/` | 2026-11-19, T-333 (tight hairpins step 2) |
+| `feature/tight-hairpins` | Borrow to test | `src/ReplicatedStorage/Shared/Road/Ground.luau`, `Shared/Road/Spline.luau`, `Shared/Road/TightHairpin.luau` (new), `Shared/Config/TightHairpin.luau` (new), `Shared/Config/init.luau` (the new `TightHairpin` line only), `src/ServerScriptService/Tests/TightHairpinTests.luau` (new), `docs/game/features/tight-hairpins.md`, `src/StarterPlayerScripts/Controllers/SplineRoadController.luau`, `Shared/Road/SplineGen.luau`, `Shared/Road/SplineSequence.luau`, `Shared/Config/Spline.luau`, `Shared/Road/RoadDressing.luau`, `Shared/Config/Dressing.luau`, `Spline*` tests in `src/ServerScriptService/Tests/` | 2026-11-19, T-333 (tight hairpins step 2) |
 | `agent/fix-road-checks` | Borrow to test | `src/ServerScriptService/Tests/ScandiFlickTests.luau`, `Tests/HairpinHintTests.luau`, `src/ReplicatedStorage/Shared/Config/Range.luau` (the stale comment only) | 2026-11-19, T-335 (checks the new descents broke) |
 
 ## Notes between sessions
