@@ -160,6 +160,7 @@ return {
 	-- `SteepHairpinRadius[1]` and `TraverseRadiusMax`. The road follows the leg, aiming
 	-- `TraverseLook` studs along it and straying no more than `TraverseLimit` degrees.
 	TraverseGrade = 5, -- degrees: the sustained descent
+	TraverseFrameSpan = 600, -- studs: the fall line the survey's frame is set by, over the range's shape
 	TraverseLayer = 100, -- studs
 	TraverseCell = 60, -- studs
 	TraverseShift = 4,
@@ -182,6 +183,12 @@ return {
 	TraverseLook = 300, -- studs
 	TraverseLimit = 30, -- degrees
 	TraverseFollowCost = 0.6, -- studs a degree off the leg, when no section follows h
+	-- A steep pitch along a leg: grade past `PitchSustain` spends up to `PitchBudget` studs of
+	-- height, paid back at `PitchRecover` of the shortfall when the grade eases under it (so
+	-- 14 degrees lasts about 190 studs and 10 degrees about 470 before the grade must ease)
+	PitchSustain = 6.5, -- degrees
+	PitchBudget = 25, -- studs
+	PitchRecover = 1,
 	-- The road along a leg (`SplineGen._track`): each curvature eased into and held for each
 	-- of `TrackHolds` studs, judged on how far off the leg it ends, `TrackHeadingCost` a degree
 	-- its heading misses a point `TraverseLook` on, and `TrackCurveCost` per 1/1000 of curvature

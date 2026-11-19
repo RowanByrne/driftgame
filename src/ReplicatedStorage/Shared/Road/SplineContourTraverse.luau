@@ -37,11 +37,29 @@ export type Leg = {
 	ridge: number, -- the ridge the descent heads for (the plan is dropped past it)
 }
 
--- One direction across: the best leg from (t0, v0), or nil.
-local function survey(f: Ground.Field, t0: number, v0: number, y0: number, yaw: number, dirV: number, pv: number): Leg?
+-- One direction across: the best leg from (x0, z0), or nil. The survey's frame is the
+-- hillside's own where the leg starts: layers along its contour (the way across the range
+-- `dirV` goes), places on a layer down its fall line. Across the range itself would not do:
+-- where a face is twisted by its gorges and the ridge's wander, the contours run aslant.
+local function survey(f: Ground.Field, x0: number, z0: number, y0: number, yaw: number, dirV: number, pv: number): Leg?
 	local C = Config.Range
 	local r = f.range
+	local t0, v0 = Range.frame(r, x0, z0)
 	local dv, dt = C.TraverseLayer, C.TraverseCell
+	-- the fall line, over the range's own shape (`TraverseFrameSpan`), and the contour across it
+	local e = C.TraverseFrameSpan * 0.5
+	local gx = (Ground.base(f, x0 + e, z0) - Ground.base(f, x0 - e, z0)) / (2 * e)
+	local gz = (Ground.base(f, x0, z0 + e) - Ground.base(f, x0, z0 - e)) / (2 * e)
+	local gl = math.sqrt(gx * gx + gz * gz)
+	local dx, dz = r.ux, r.uz
+	if gl > 0.02 then
+		dx, dz = -gx / gl, -gz / gl
+	end
+	local cx, cz = -dz, dx
+	if (cx * r.uz - cz * r.ux) * dirV < 0 then
+		cx, cz = dz, -dx
+	end
+	local acrossV = cx * r.uz - cz * r.ux -- studs across the range a stud along a layer step
 	local back = math.floor(C.TraverseBack / dt)
 	local ahead = math.floor(C.TraverseAhead / dt)
 	local width = back + ahead + 1
@@ -59,23 +77,23 @@ local function survey(f: Ground.Field, t0: number, v0: number, y0: number, yaw: 
 		lengths[s] = math.sqrt(dv * dv + (s * dt) ^ 2)
 		angles[s] = math.atan2(s * dt, dv)
 	end
-	-- heights: the column at each layer, and halfway to the next
-	local function columnAt(v: number): { number }
-		local col = Ground.column(f, v)
+	-- heights: a line down the fall line at each layer, and halfway to the next
+	local function columnAt(along: number): { number }
 		local out = table.create(width)
+		local px, pz = x0 + cx * along, z0 + cz * along
 		for j = 1, width do
-			out[j] = col(t0 + (j - j0) * dt)
+			local q = (j - j0) * dt
+			out[j] = Ground.h(f, px + dx * q, pz + dz * q)
 		end
 		return out
 	end
 	local H: { { number } } = {}
 	local M: { { number } } = {}
-	H[0] = columnAt(v0)
-	H[1] = columnAt(v0 + dirV * dv)
+	H[0] = columnAt(0)
+	H[1] = columnAt(dv)
 	-- the road's own height at the start, and the heading it has, in the leg's frame
 	local fx, fz = -math.sin(yaw), -math.cos(yaw)
-	local ht, hv = fx * r.ux + fz * r.uz, fx * r.uz - fz * r.ux
-	local startAngle = math.atan2(ht, hv * dirV)
+	local startAngle = math.atan2(fx * dx + fz * dz, fx * cx + fz * cz)
 	local cost = table.create(width, math.huge)
 	local angle = table.create(width, 0)
 	local Y = table.create(width, 0)
@@ -89,9 +107,9 @@ local function survey(f: Ground.Field, t0: number, v0: number, y0: number, yaw: 
 	local siteSlope = 0
 	local minLayers = math.ceil(C.TraverseMin / dv)
 	for i = 1, layers do
-		local v = v0 + dirV * i * dv
-		H[i + 1] = columnAt(v + dirV * dv)
-		M[i] = columnAt(v - dirV * dv * 0.5)
+		local v = v0 + i * dv * acrossV
+		H[i + 1] = columnAt((i + 1) * dv)
+		M[i] = columnAt((i - 0.5) * dv)
 		local h0, h1, h2, mid = H[i - 1], H[i], H[i + 1], M[i]
 		-- the road over this layer follows the ground eased across the layers either side,
 		-- so it bridges a narrow gully and cuts a narrow spur; what it leaves is earthwork
@@ -172,7 +190,9 @@ local function survey(f: Ground.Field, t0: number, v0: number, y0: number, yaw: 
 	local points: { Point } = table.create(bestI + 1)
 	local j = bestJ
 	for i = bestI, 1, -1 do
-		points[i + 1] = { t = t0 + (j - j0) * dt, v = v0 + dirV * i * dv, s = 0, y = heights[i][j] }
+		local q = (j - j0) * dt
+		local pt, pv2 = Range.frame(r, x0 + cx * i * dv + dx * q, z0 + cz * i * dv + dz * q)
+		points[i + 1] = { t = pt, v = pv2, s = 0, y = heights[i][j] }
 		j = parents[i][j]
 	end
 	points[1] = { t = t0, v = v0, s = 0, y = y0 }
@@ -201,11 +221,10 @@ end
 -- across (after a hairpin, the other way); nil tries both and keeps the better.
 function Traverse.plan(f: Ground.Field, x: number, z: number, y: number, yaw: number, dirV: number?, target: { x: number, z: number, k: number }): Leg?
 	local r = f.range
-	local t0, v0 = Range.frame(r, x, z)
 	local _, pv = Range.frame(r, target.x, target.z)
 	local leg: Leg? = nil
 	for _, d in if dirV then { dirV } else { 1, -1 } do
-		local l = survey(f, t0, v0, y, yaw, d, pv)
+		local l = survey(f, x, z, y, yaw, d, pv)
 		if l and (not leg or l.score < (leg :: Leg).score) then
 			leg = l
 		end

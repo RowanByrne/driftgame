@@ -127,6 +127,7 @@ export type Gen = typeof(setmetatable(
 		seed: number,
 		excessClimb: number, -- rise and fall already used above the sustained approach grade
 		excessDescent: number,
+		pitchUsed: number, -- the steep pitch's allowance spent (T-326)
 		corridor: ContourRoute.Route?,
 		-- THE DESCENT (T-326): the leg across the face the road is following, which way the
 		-- next leg runs after the hairpin that ends it, and the way the road must make headway
@@ -227,6 +228,7 @@ function SplineGen.new(seed: number, origin: Spline.Origin?, clearOverride: numb
 		seed = seed,
 		excessClimb = 0,
 		excessDescent = 0,
+		pitchUsed = 0,
 		sections = {},
 		recent = {},
 		lastDir = 0,
@@ -708,6 +710,15 @@ function SplineGen.replay(sections: { Spline.Section }, origin: Spline.Origin?, 
 	return spline
 end
 
+-- A STEEP PITCH'S ALLOWANCE (T-326): height gained or lost faster than `PitchSustain`
+-- spends it, `PitchRecover` of the shortfall below that pays it back, `PitchBudget` at most.
+local function pitchSpend(used: number, ga: number, gb: number, ds: number): number
+	local R = Config.Range
+	local sustain = math.tan(math.rad(R.PitchSustain))
+	local over = 0.5 * (math.abs(ga) + math.abs(gb)) - sustain
+	return math.clamp(used + (if over > 0 then over else R.PitchRecover * over) * ds, 0, R.PitchBudget)
+end
+
 function SplineGen._commit(self: Gen, sec: Spline.Section)
 	local prevU, grade = 0, self.spline:gradeAt(self.spline.length)
 	local cruise = math.tan(math.rad(Config.Range.ContourGrade))
@@ -717,6 +728,7 @@ function SplineGen._commit(self: Gen, sec: Spline.Section)
 		local rise = 0.5 * (grade + nextGrade) * ds
 		self.excessClimb = math.clamp(self.excessClimb + rise - cruise * ds, 0, Config.Range.ContourPitchRise)
 		self.excessDescent = math.clamp(self.excessDescent - rise - cruise * ds, 0, Config.Range.ContourPitchRise)
+		self.pitchUsed = pitchSpend(self.pitchUsed, grade, nextGrade, ds)
 		prevU, grade = u, nextGrade
 	end
 	self.spline:append(sec)
@@ -1249,6 +1261,12 @@ function SplineGen._followGrade(self: Gen, knots: { number }, g0: number, y0: nu
 	local seg = G.FollowSegment
 	local out: { number } = {}
 	local yA, gA, a = y0, g0, 0
+	-- along a descent's leg (T-326) a steep pitch lasts only as long as its allowance: the
+	-- grade then eases back toward `PitchSustain` and the leg's survey keeps the road on ground
+	-- that allows it
+	local budget = if self.headway then Config.Range.PitchBudget else nil
+	local sustain = math.tan(math.rad(Config.Range.PitchSustain))
+	local used = self.pitchUsed
 	local worst, worstFill, worstCut = 0, 0, 0
 	while a < len - 1e-6 do
 		local b = math.min(a + seg, len)
@@ -1296,19 +1314,24 @@ function SplineGen._followGrade(self: Gen, knots: { number }, g0: number, y0: nu
 			return sum
 		end
 		-- a coarse sweep, then a finer one round the best
+		local lim = gMax
+		if budget then
+			local remaining = math.max(0, budget - used)
+			lim = math.min(gMax, sustain + math.min(remaining / span, math.sqrt(2 * rate * remaining)))
+		end
 		local best, bestCost = gA, math.huge
 		local n = 32
 		for i = 0, n do
-			local gt = -gMax + 2 * gMax * i / n
+			local gt = -lim + 2 * lim * i / n
 			local c = cost(gt)
 			if c < bestCost then
 				best, bestCost = gt, c
 			end
 		end
-		local d = 2 * gMax / n
+		local d = 2 * lim / n
 		local centre = best
 		for i = -8, 8 do
-			local gt = math.clamp(centre + d * i / 8, -gMax, gMax)
+			local gt = math.clamp(centre + d * i / 8, -lim, lim)
 			local c = cost(gt)
 			if c < bestCost then
 				best, bestCost = gt, c
@@ -1335,6 +1358,9 @@ function SplineGen._followGrade(self: Gen, knots: { number }, g0: number, y0: nu
 			end
 		end
 		yA += rampRise(span, gA, gB, rate)
+		if budget then
+			used = pitchSpend(used, gA, gB, span)
+		end
 		gA, a = gB, b
 	end
 	-- and how far off h the road ends: above it (+) or below it (-) (T-242)
@@ -2401,8 +2427,13 @@ function SplineGen.step(self: Gen): Spline.Section?
 		self:_planRange()
 	end
 	local item = self.plan[1]
-	-- (a planned turn makes headway on along the range, as every turn did before T-326)
+	-- (a planned turn makes headway on along the range, as every turn did before T-326; the
+	-- hairpin ending a descent's leg, across the range the way the next leg goes)
 	self.headway = nil
+	if item.turn and item.traverse and item.nextDirV then
+		local r = self.ground.range
+		self.headway = { item.nextDirV * r.uz, -item.nextDirV * r.ux }
+	end
 	if item.turn then
 		sec = self:_planned(item)
 		planned = sec ~= nil
