@@ -139,3 +139,4 @@ The user's decisions about this game, so they aren't reopened later. Before prop
 - 2026-11-18: The user requires the conductor, feature leads and workers to use project tools for Rocco work and to include the desktop-control restriction in future briefs.
 - 2026-11-18: The user approved Redline Bonus for the score. A pinball and eurobeat phrase advances as sustained events earn points and resolves when the points bank (T-312).
 - 2026-11-18: The user approved the Akina score rank artwork. Gameplay reaches ×9 and the Studio tour shows all 16 ranks (T-319).
+- 2026-11-18: The user approved the 18.4-stud close chase view with a steady horizon and softer field-of-view widening so the driving line stays visible over the car (T-321).

@@ -9,7 +9,6 @@ Every task in progress and the files it owns, so parallel sessions and workers n
 
 | Branch | Lane | Files owned | Since |
 |---|---|---|---|
-| `agent/closer-chase-zoom` | Borrow to test | `src/ReplicatedStorage/Shared/Config/Camera.luau`, `src/StarterPlayerScripts/Controllers/CarCameraController.luau` (near framing only if needed), `docs/game/features/drift-camera.md` | 2026-11-18, T-321 |
 
 ## Notes between sessions
 
