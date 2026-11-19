@@ -287,7 +287,7 @@ local Camera = {
 	PlayerZoomMin = 0.4, -- 18.4 studs from the car at rest with the wheel fully forward (T-321).
 	PlayerZoomDollyStart = 0.6, -- Closer than this, move the camera while preserving this chase angle.
 	PlayerZoomLift = 0.2, -- Lift the close eye over the roof while retaining the chase radius.
-	PlayerZoomFovBlend = 0.75, -- Share of the remaining speed-FOV range used by the close lens.
+	PlayerZoomFovBlend = 0.35, -- Share of the remaining speed-FOV range used by the close lens.
 	PlayerZoomMax = 1.8, -- x at its farthest. OURS (T-152). 82.8 studs, 36 up (T-291; 31 at 22): the car is
 	-- small but the road around it reads
 	PlayerZoomStep = 1.12, -- x per wheel notch, multiplied (so in and out are the same size

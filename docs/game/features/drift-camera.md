@@ -392,7 +392,7 @@ and the shake's four), and proved the same way that zeroing them gives that buil
 | `PlayerZoomMin`, `PlayerZoomMax` | **0.4×, 1.8×** | The wheel's zoom limits, as multiples of the distance (`T-152`). 1 is the default and today's camera |
 | `PlayerZoomDollyStart` | **0.6×** | Below this distance the camera moves closer with the same viewing angle (T-321) |
 | `PlayerZoomLift` | **0.2** | Additional eye height through the close range, at the same distance from the car |
-| `PlayerZoomFovBlend` | **0.75** | Share of the remaining speed-based FOV range added by 0.6× zoom |
+| `PlayerZoomFovBlend` | **0.35** | Share of the remaining speed-based FOV range added by 0.6× zoom |
 | `PlayerZoomStep` | **×1.12** | One wheel notch |
 | `PlayerZoomRate` | **10 /s** | How fast the camera eases to the zoom a notch asked for |
 | `HillLookFollow` | **1** | Share of the road's climb the look point's height is carried with (`T-156`). 0 is the old lag |
