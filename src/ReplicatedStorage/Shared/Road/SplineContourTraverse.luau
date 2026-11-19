@@ -296,6 +296,11 @@ function Traverse.plan(f: Ground.Field, x: number, z: number, y: number, yaw: nu
 			leg = l
 		end
 	end
+	-- (a leg that scores this badly has found no way across the face it can drive: the
+	-- generator's own legs take over from here)
+	if leg and leg.score > Config.Range.TraverseHopeless then
+		return nil
+	end
 	if leg then
 		leg.ridge = target.k
 	end

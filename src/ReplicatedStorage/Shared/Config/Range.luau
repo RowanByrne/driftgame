@@ -176,6 +176,7 @@ return {
 	TraverseCrestMargin = 80, -- studs below the crest: no leg nearer it...
 	TraverseBackOn = 1600, -- ...nor further back along the range than this behind where it starts
 	TraverseStartTurn = 100, -- degrees: a leg this far off the road's heading would have to turn round first
+	TraverseHopeless = 20000, -- a leg's score past which no drivable leg was found (seed 7's worst: 8 013)
 	TraverseAhead = 3000, -- studs
 	TraverseMin = 900, -- studs
 	TraverseMax = 7000, -- studs
