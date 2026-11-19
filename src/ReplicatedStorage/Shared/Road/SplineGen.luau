@@ -1652,7 +1652,9 @@ function SplineGen._exitClear(self: Gen, knots: { number }, kt: number): boolean
 	if -math.sin(heading) * wx - math.cos(heading) * wz < -math.sin(math.rad(Config.Range.LegOnward)) then
 		return false
 	end
-	exit[#exit - 1] = exit[#exit - 3] + Config.Range.ContourExit
+	-- (a descent's hairpin needs less straight road clear past it: the next leg is surveyed
+	-- clear of old road from its exit, T-326)
+	exit[#exit - 1] = exit[#exit - 3] + (if self.turning and self.setback then Config.Range.TraverseExit else Config.Range.ContourExit)
 	return self:_clear(exit, true)
 end
 

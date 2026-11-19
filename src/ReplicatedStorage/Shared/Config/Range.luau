@@ -165,6 +165,7 @@ return {
 	TraverseFromTip = 400, -- ...bar the road this far back from where the leg starts
 	TraverseHairpinRoom = 250, -- studs down the fall line from a hairpin site that must be clear
 	TraverseApproach = 6, -- layers before a hairpin that never climb back up the face
+	TraverseExit = 200, -- studs of straight road clear past a hairpin's escape (`ContourExit` elsewhere)
 	TraverseExitLayers = 4, -- layers of the next leg's start a hairpin site is judged on
 	TraverseArrive = 120, -- studs short of a leg's end: the hairpin is first tried (and again either side of it)
 	TraverseHairpinFall = 0.15, -- grade round a hairpin's half circle a site is judged on (8.5 degrees)
