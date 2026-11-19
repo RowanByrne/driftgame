@@ -23,6 +23,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Config = require(ReplicatedStorage.Shared.Config)
 local Spline = require(script.Parent.Spline)
 local SplineGen = require(script.Parent.SplineGen)
+local RoadDressing = require(script.Parent.RoadDressing)
 
 local SplineSequence = {}
 SplineSequence.__index = SplineSequence
@@ -59,6 +60,7 @@ export type Sequence = typeof(setmetatable(
 
 function SplineSequence.new(seed: number, origin: Spline.Origin?): Sequence
 	local gen = SplineGen.new(seed, origin)
+	RoadDressing.attach(gen) -- the barriers beside it (T-327): the start has none, so attaching after it changes nothing
 	local self = setmetatable({
 		gen = gen,
 		spline = gen.spline,

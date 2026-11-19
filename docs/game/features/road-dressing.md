@@ -1,6 +1,6 @@
 # Feature: Road dressing
 
-**Status:** specced, waiting on T-326. **Owner task:** none yet.
+**Status:** both steps built (T-328, T-334), waiting on the user's lane test. **Owner task:** T-327.
 
 ## Goal
 
@@ -48,6 +48,19 @@ None.
 ## Art and sound
 
 None: the barriers keep their model.
+
+## What step 1 measured (T-328)
+
+- **The road is identical:** seeds 7, 1234 and 98765, 30 000 studs each, 548 sections, every road field the same. A permanent check (`SplineGenTests`) lays each seed with no dressing and finds the same road, unrailed.
+- **Barriers: 539 of 548 sections the same.** The 9 that differ are all at tight cliff edges: the dressing reads the drop from the gravel's real lip, where the old code read it from the grass edge before the gravel narrowed it, so a few barriers there end sooner (one leaves a 16-stud gap). The user accepted this (DECISIONS.md, 2026-11-19).
+- **How it is wired:** `SplineGen` calls an optional `dress` hook on each accepted section, after it is final and before it is laid; `SplineSequence` attaches `RoadDressing`, and tests that need barriers attach it themselves. Turn previews are never dressed. The carve's old guard against a rail on its inside went with it (a rail needs falling ground, a carve rising ground; `SplineGenTests` checks no carve sits on a railed side). The planner reads the drop for its own choices with `Config.Spline.Terrain.Drop*` and `TightFallDrop`, the dressing with `Config.Dressing.Barrier`.
+
+## What step 2 measured (T-334)
+
+- `Config.Dressing.Barrier.HairpinRunOut` = 15 (proposed, to tune with the user). A tight bend's window runs 15 past its end, not 60, and a railed bend's tightness carries across a section's end.
+- Six seeds, 30 000 studs each: rail past a railed hairpin's exit, median 113 -> 105, mean 163 -> 127; total rail 53 589 -> 51 223 studs. Where the run-out alone carried the rail it now ends about 15 past where the bend straightens (seed 2024's hairpin at 9 004: 325 -> 59 past the exit).
+- Where a rail still runs on past a hairpin, another rule carries it: a cliff (40+ drop) just after, the next corner's falling outside, or the next tight bend of an S. Shortening those would change those rules, which is the user's call.
+- `SplineGenTests` check 7: with the corner and cliff rules off, every railed hairpin side on seed 2024 ends within `HairpinRunOut` (+ a sample) of where the bend straightens (at most 11.6 studs).
 
 ## Testing
 

@@ -163,13 +163,9 @@ export type Gen = typeof(setmetatable(
 		inBand: boolean, -- heading within `AlongFallLine` of the fall line: the side holds
 		crossAt: number, -- s: where the heading last crossed the fall line, inside the band (T-189)
 		runoff: { [number]: number }, -- the last runoff width chosen, by side
-		-- K-rails carrying on into the next section (T-306), by side, as plain numbers so a
-		-- turn's preview (`_fitTurn`, a shallow copy) never shares them: studs of run-out
-		-- still owed, and the way a railed bend still turns at the section's end (0 none)
-		krOutL: number,
-		krOutR: number,
-		krBendL: number,
-		krBendR: number,
+		-- THE DRESSING (T-327, `Road/RoadDressing.attach`): called with each section once it is
+		-- final, before it is laid, to stand what goes beside it. Never by a turn's preview.
+		dress: ((Spline.Section) -> ())?,
 		clearance: number,
 		separation: number,
 		stats: Stats,
@@ -258,10 +254,6 @@ function SplineGen.new(seed: number, origin: Spline.Origin?, clearOverride: numb
 		inBand = false,
 		crossAt = 0,
 		runoff = { [-1] = Config.Spline.Terrain.StartRunoff, [1] = Config.Spline.Terrain.StartRunoff },
-		krOutL = 0,
-		krOutR = 0,
-		krBendL = 0,
-		krBendR = 0,
 		clearance = clear,
 		separation = sep,
 		stats = {
@@ -476,8 +468,8 @@ function SplineGen._terrain(self: Gen, sec: Spline.Section)
 		return SplineGen._uphillOver(up, -side, a, b)
 	end
 
-	-- K-RAILS (T-306): placed from the drop beside the road (`_railPieces`), never at random,
-	-- and only ever where the ground falls away. Until T-306 they were drawn from this stream
+	-- CRASH BARRIERS are not chosen here: the dressing layer stands them beside the finished
+	-- section (`Road/RoadDressing`, T-327). Until T-306 they were drawn from this stream
 	-- (half the bends whose outside the fall line called downhill, and the odd stretch
 	-- anywhere); those draws are still made and thrown away, so everything else this stream
 	-- chooses (a grove's widths) is the road it was.
@@ -490,20 +482,17 @@ function SplineGen._terrain(self: Gen, sec: Spline.Section)
 			r:NextNumber()
 		end
 	end
-	local drops = self:_sideDrops(sec, startRun)
-	local pieces = self:_railPieces(sec, drops, grove)
 
 	-- TIGHT CLIFF EDGES (T-181): now and then, on a side with a cliff the whole way along,
-	-- the runoff closes in to a few studs of gravel with a crash barrier on the tarmac's
-	-- edge and the lip just past it. Its width eases in and out at `TightRate` on the
-	-- runoff's own smoothstep knots, so nothing steps; the rail and the gravel reach
-	-- `TightLead` past the narrow part into the easing. Its rail joins any K-rail already
-	-- placed on that side. A GROVE IS CHOSEN FIRST (T-183) and wins: a side with a grove
-	-- never gets a tight edge (nor a K-rail).
-	-- WHICH SIDE (T-306): one where the ground really falls away (`KRailFallDrop`) all along
-	-- the stretch, as for any rail; the side the fall line calls downhill the whole section
-	-- is tried first (until T-306 the only one tried, and it is the rising one about half
-	-- the time), then the other.
+	-- the runoff closes in to a few studs of gravel, the lip just past it. Its width eases in
+	-- and out at `TightRate` on the runoff's own smoothstep knots, so nothing steps; the
+	-- gravel reaches `TightLead` past the narrow part into the easing (`sec.gl`), and the
+	-- dressing stands a crash barrier on the tarmac's edge all along it. A GROVE IS CHOSEN
+	-- FIRST (T-183) and wins: a side with a grove never gets a tight edge.
+	-- WHICH SIDE (T-306): one where the ground really falls away (`TightFallDrop`) all along
+	-- the stretch; the side the fall line calls downhill the whole section is tried first
+	-- (until T-306 the only one tried, and it is the rising one about half the time), then
+	-- the other.
 	-- ITS OWN STREAM, always the same four draws a section, so a tight edge (or a grove
 	-- blocking one) changes nothing else the road chooses: with `TightChance = 0` the road is
 	-- exactly the one before T-181.
@@ -511,10 +500,12 @@ function SplineGen._terrain(self: Gen, sec: Spline.Section)
 		local x = self.xrng
 		local roll, uWidth, uCore, uAt = x:NextNumber(), x:NextNumber(), x:NextNumber(), x:NextNumber()
 		local first = if downhillOver(1, 0, len) then 1 elseif downhillOver(-1, 0, len) then -1 else 1
+		local drops: Drops? = nil -- read once, before either side closes in
 		for _, side in { first, -first } do
 			if roll >= T.TightChance or grove[side] or sec.gl then
 				continue
 			end
+			drops = drops or self:sideDrops(sec, startRun)
 			local w0, w1 = startRun[side], self.runoff[side]
 			local wt = T.TightRunoff[1] + (T.TightRunoff[2] - T.TightRunoff[1]) * uWidth
 			local rampIn = math.max(T.TightRamp, math.abs(w0 - wt) / T.TightRate)
@@ -535,30 +526,18 @@ function SplineGen._terrain(self: Gen, sec: Spline.Section)
 					sec.rr = knots
 				end
 				-- (falling from the grass's edge as it is, and from the lip once it closes in)
-				if not (SplineGen._fallsOver(drops, side, ga, gb) and SplineGen._fallsOver(self:_sideDrops(sec, startRun), side, ga, gb)) then
+				if not (SplineGen._fallsOver(drops :: Drops, side, ga, gb) and SplineGen._fallsOver(self:sideDrops(sec, startRun), side, ga, gb)) then
 					if side < 0 then
 						sec.rl = was
 					else
 						sec.rr = was
 					end
 				else
-					pieces[side] = SplineGen._joinPiece(pieces[side], ga, gb)
 					sec.gl = { ga, gb, side }
 					self.stats.tight += 1
 				end
 			end
 		end
-	end
-	local kr: { number } = {}
-	for _, side in { -1, 1 } do
-		for _, p in pieces[side] do
-			table.insert(kr, p[1])
-			table.insert(kr, p[2])
-			table.insert(kr, side)
-		end
-	end
-	if #kr > 0 then
-		sec.kr = kr
 	end
 	if grove[-1] or grove[1] then
 		local gv = {}
@@ -653,15 +632,8 @@ function SplineGen._carve(self: Gen, sec: Spline.Section)
 	end
 	local b = math.min(math.max((holdFrom + holdTo - hold) * 0.5, lo), hi)
 	local c = b + hold
-	-- never where a K-rail stands on the inside (T-308: a rail stands only where the ground
-	-- falls, so this is a guard, not a choice)
-	if sec.kr then
-		for j = 1, #sec.kr, 3 do
-			if sec.kr[j + 2] == inside and sec.kr[j] < c + eOut and sec.kr[j + 1] > b - eIn then
-				return
-			end
-		end
-	end
+	-- (No rail is read here: the dressing stands barriers only where the ground falls, and
+	-- the carve needs it to rise, below. Until T-327 a rail on the inside was a guard.)
 	local knots = {}
 	local function knot(s: number, w: number)
 		table.insert(knots, s)
@@ -684,10 +656,10 @@ function SplineGen._carve(self: Gen, sec: Spline.Section)
 	-- THE GROUND RISES on the inside, all along the carve, read from the carved edge
 	-- (T-308): the bend is cut into the hill, never into a side that falls away. Until T-308
 	-- the side the fall line calls the mountain's (`up`) was taken for it, and that is the
-	-- falling side about half the time. Read off the ground as the rails are
-	-- (`_sideDrops`), so the draws above are the same and no other choice moves.
+	-- falling side about half the time. Read off the ground (`sideDrops`), so the draws
+	-- above are the same and no other choice moves.
 	local startRun = { [-1] = self.spline:runoffRaw(self.spline.length, -1), [1] = self.spline:runoffRaw(self.spline.length, 1) }
-	if not SplineGen._risesOver(self:_sideDrops(sec, startRun), inside, b - eIn, c + eOut) then
+	if not SplineGen._risesOver(self:sideDrops(sec, startRun), inside, b - eIn, c + eOut) then
 		if inside < 0 then
 			sec.rl = old
 		else
@@ -733,6 +705,11 @@ function SplineGen._commit(self: Gen, sec: Spline.Section)
 		self.excessDescent = math.clamp(self.excessDescent - rise - cruise * ds, 0, Config.Range.ContourPitchRise)
 		self.pitchUsed = pitchSpend(self.pitchUsed, grade, nextGrade, ds)
 		prevU, grade = u, nextGrade
+	end
+	-- dressed (T-327) once it is final, before it is laid, so what stands beside it travels
+	-- in it; the dressing reads the section and the road so far, and writes nothing else
+	if self.dress then
+		self.dress(sec)
 	end
 	self.spline:append(sec)
 	table.insert(self.sections, sec)
@@ -900,14 +877,22 @@ function SplineGen._slopeRunoff(self: Gen, sec: Spline.Section): { { number } }
 end
 
 --------------------------------------------------------------------------------
--- K-rails from the ground (T-306, features/mountain-road.md "Where the K-rails stand")
+-- The drop beside the road: what a tight cliff edge and a carved apex are read by, and
+-- (with its own settings) what the dressing stands its barriers by (T-306, T-327)
 --------------------------------------------------------------------------------
 
--- The drop beside a section, read every `KRailSample` studs or so from its start to its end:
+-- The drop beside a section, read every `Sample` studs or so from its start to its end:
 -- `u` the points, `k` the curvature there, `drop[side]` how far the mountain is below the
--- grass's outer edge `KRailProbe` studs past it (on the inside of a bend scaled from nearer,
--- `KRailInsideReach`; -huge where the bend encloses that side). Negative: the ground rises.
+-- grass's outer edge `Probe` studs past it (on the inside of a bend scaled from nearer,
+-- `InsideReach`; -huge where the bend encloses that side). Negative: the ground rises.
 export type Drops = { u: { number }, k: { number }, drop: { [number]: { number } } }
+-- How it is read: the planner's own (`Config.Spline.Terrain.Drop*`), or the dressing's.
+export type DropReading = { Probe: number, ProbeMin: number, InsideReach: number, Sample: number }
+
+local function plannerReading(): DropReading
+	local T = Config.Spline.Terrain
+	return { Probe = T.DropProbe, ProbeMin = T.DropProbeMin, InsideReach = T.DropInsideReach, Sample = T.DropSample }
+end
 
 -- A knotted value `u` studs into a section, from `v0` as it starts: straight between its
 -- knots (the curvature's own way; the runoff and the bank are eased, near enough for this).
@@ -924,13 +909,16 @@ local function knotAlong(v0: number, knots: { number }, u: number): number
 	return v
 end
 
--- `startRun`: each side's runoff as the section starts (its knots carry on from it).
-function SplineGen._sideDrops(self: Gen, sec: Spline.Section, startRun: { [number]: number }): Drops
+-- The drop beside `sec`, a section about to be laid at the road's tip. `startRun`: each
+-- side's runoff as the section starts (its knots carry on from it). `P`: how to read it
+-- (the planner's own when nil).
+function SplineGen.sideDrops(self: Gen, sec: Spline.Section, startRun: { [number]: number }, P: DropReading?): Drops
 	local T = Config.Spline.Terrain
+	local R = P or plannerReading()
 	local half = Config.Road.Width * 0.5
 	local f = self.ground
 	local len = sec.len
-	local n = math.max(1, math.ceil(len / T.KRailSample - 1e-9))
+	local n = math.max(1, math.ceil(len / R.Sample - 1e-9))
 	local x0, z0, yaw0, k0, g0, b0, y0 = self.spline:tip()
 	local us, xs, zs = { 0 }, { x0 }, { z0 }
 	walk(x0, z0, yaw0, k0, sec.k, len / n, len / n, function(u, x, z)
@@ -961,15 +949,15 @@ function SplineGen._sideDrops(self: Gen, sec: Spline.Section, startRun: { [numbe
 			end
 			-- the grass's outer edge, as `Spline.terrainY` has it
 			local edgeY = y + side * tb * (half + w * 0.5) - T.RoadLip
-			local D = T.KRailProbe
+			local D = R.Probe
 			if inside then
-				D = math.min(D, T.KRailInsideReach / math.abs(k) - half - w)
+				D = math.min(D, R.InsideReach / math.abs(k) - half - w)
 			end
-			if D < T.KRailProbeMin then
+			if D < R.ProbeMin then
 				drop[side][i] = -math.huge
 			else
 				local dist = side * (half + w + D)
-				drop[side][i] = (edgeY - Ground.h(f, xs[i] + dist * rx, zs[i] + dist * rz)) * T.KRailProbe / D
+				drop[side][i] = (edgeY - Ground.h(f, xs[i] + dist * rx, zs[i] + dist * rz)) * R.Probe / D
 			end
 		end
 	end
@@ -978,33 +966,34 @@ end
 
 -- The same drop read off a LAID road with a mountain, at `s` on `side`, and the grass's edge
 -- height and the point it is read at (nil where the bend encloses that side): for the tests.
--- Within a few studs of `_sideDrops` (which reads the eased runoff and bank as straight lines).
-function SplineGen.dropBeside(sp: Spline.Spline, s: number, side: number): (number, number?, number?, number?)
+-- Within a few studs of `sideDrops` (which reads the eased runoff and bank as straight lines).
+function SplineGen.dropBeside(sp: Spline.Spline, s: number, side: number, P: DropReading?): (number, number?, number?, number?)
 	local T = Config.Spline.Terrain
+	local R = P or plannerReading()
 	local half = Config.Road.Width * 0.5
 	local k = sp:curvatureAt(s)
 	local w = sp:runoffAt(s, side)
 	local inside = k ~= 0 and (k > 0) == (side < 0)
 	local edgeY = sp:terrainY(s, side * (half + w))
-	local D = T.KRailProbe
+	local D = R.Probe
 	if inside then
-		D = math.min(D, T.KRailInsideReach / math.abs(k) - half - w)
+		D = math.min(D, R.InsideReach / math.abs(k) - half - w)
 	end
-	if D < T.KRailProbeMin or not sp.mountain then
+	if D < R.ProbeMin or not sp.mountain then
 		return -math.huge, nil, nil, nil
 	end
 	local x, z = sp:planAt(s)
 	local yaw = sp:yawAt(s)
 	local dist = side * (half + w + D)
 	local px, pz = x + dist * math.cos(yaw), z - dist * math.sin(yaw)
-	return (edgeY - Ground.h(sp.mountain, px, pz)) * T.KRailProbe / D, edgeY, px, pz
+	return (edgeY - Ground.h(sp.mountain, px, pz)) * R.Probe / D, edgeY, px, pz
 end
 
--- Does the ground fall away (`KRailFallDrop`) on `side` all along [a, b] of the section,
--- the points either side of each end included?
+-- Does the ground fall away (`TightFallDrop`) on `side` all along [a, b] of the section,
+-- the points either side of each end included? (A tight cliff edge's test.)
 function SplineGen._fallsOver(drops: Drops, side: number, a: number, b: number): boolean
-	local step = Config.Spline.Terrain.KRailSample + 1e-6
-	local need = Config.Spline.Terrain.KRailFallDrop
+	local step = Config.Spline.Terrain.DropSample + 1e-6
+	local need = Config.Spline.Terrain.TightFallDrop
 	for i, u in drops.u do
 		if u > a - step and u < b + step and drops.drop[side][i] < need then
 			return false
@@ -1016,7 +1005,7 @@ end
 -- Does the ground RISE at least `CarvedRise` on `side` all along [a, b] of the section, the
 -- points either side of each end included (T-308)? A side the bend encloses (no reading) does not.
 function SplineGen._risesOver(drops: Drops, side: number, a: number, b: number): boolean
-	local step = Config.Spline.Terrain.KRailSample + 1e-6
+	local step = Config.Spline.Terrain.DropSample + 1e-6
 	local need = -Config.Spline.Terrain.CarvedRise
 	for i, u in drops.u do
 		if u > a - step and u < b + step then
@@ -1027,139 +1016,6 @@ function SplineGen._risesOver(drops: Drops, side: number, a: number, b: number):
 		end
 	end
 	return true
-end
-
--- Pieces {a, b} in order, with [a, b] joined in (and any it overlaps).
-function SplineGen._joinPiece(list: { { number } }, a: number, b: number): { { number } }
-	local out = {}
-	local placed = false
-	for _, p in list do
-		if p[2] < a - 1e-6 then
-			table.insert(out, p)
-		elseif p[1] > b + 1e-6 then
-			if not placed then
-				table.insert(out, { a, b })
-				placed = true
-			end
-			table.insert(out, p)
-		else
-			a, b = math.min(a, p[1]), math.max(b, p[2])
-		end
-	end
-	if not placed then
-		table.insert(out, { a, b })
-	end
-	return out
-end
-
--- WHERE THE K-RAILS STAND (T-306). The user, 2026-11-17: "only on the downhill sides ...
--- longer sections protecting cliffs on corners. hairpins with big drops should have them
--- too." Each side on its own, from the drop beside it (`_sideDrops`); no random draw:
---   * a rail only ever stands where the ground falls away (`KRailFallDrop`): the downhill
---     side, never against a rising bank;
---   * A CORNER (tighter than `KRailCornerRadius`, one way) whose outside drops
---     `KRailCornerDrop` anywhere along it is railed the whole way round, from `KRailLeadIn`
---     before it to `KRailRunOut` after;
---   * A TIGHT BEND (tighter than `KRailHairpinRadius`: every hairpin) is railed the same way
---     on EITHER side that drops `KRailHairpinDrop` (a turnaround turns through the drop, so
---     its inside can be the drop);
---   * anywhere else, a cliff (`KRailCliffDrop`) is railed, with the same lead-in and run-out.
--- What runs past the section's end carries on into the next one (`krOut*`, and a railed
--- bend still turning there, `krBend*`), and joins on: `Spline.append` makes it one run.
--- Pieces shorter than `KRailMinRun` are dropped unless they carry a rail on across an end.
--- Never on a grove's side (the grass it widened is runoff the car may use) or the start.
--- Returns each side's pieces, {a, b} in order, and leaves the carry for the next section.
-function SplineGen._railPieces(self: Gen, sec: Spline.Section, drops: Drops, grove: { [number]: number }): { [number]: { { number } } }
-	local T = Config.Spline.Terrain
-	local us, ks = drops.u, drops.k
-	local n = #us
-	local len = sec.len
-	local kCorner, kTight = 1 / T.KRailCornerRadius, 1 / T.KRailHairpinRadius
-	local sp = self.spline
-	local out: { [number]: { { number } } } = { [-1] = {}, [1] = {} }
-	for _, side in { -1, 1 } do
-		local drop = drops.drop[side]
-		local runs = if side < 0 then sp.railL else sp.railR
-		-- a rail that reaches this section's start, carried on
-		local railedIn = #runs.b > 0 and runs.b[#runs.b] >= sp.length - 1e-6
-		local carryIn = if railedIn then (if side < 0 then self.krOutL else self.krOutR) else 0
-		local bendIn = if railedIn then (if side < 0 then self.krBendL else self.krBendR) else 0
-		local windows: { { number } } = {}
-		if carryIn > 0 then
-			table.insert(windows, { 0, carryIn })
-		end
-		local bendOut = 0
-		local i = 1
-		while i <= n do
-			local k = ks[i]
-			if math.abs(k) >= kCorner then
-				local dir = if k > 0 then 1 else -1 -- a left turn (k > 0): its outside is the right
-				local j, most, tight = i, drop[i], math.abs(k) >= kTight
-				while j < n and math.abs(ks[j + 1]) >= kCorner and (ks[j + 1] > 0) == (dir > 0) do
-					j += 1
-					most = math.max(most, drop[j])
-					tight = tight or math.abs(ks[j]) >= kTight
-				end
-				local carried = i == 1 and bendIn == dir
-				if carried or (side == dir and most >= T.KRailCornerDrop) or (tight and most >= T.KRailHairpinDrop) then
-					table.insert(windows, { us[i] - T.KRailLeadIn, us[j] + T.KRailRunOut })
-					if j == n then
-						bendOut = dir
-					end
-				end
-				i = j + 1
-			else
-				i += 1
-			end
-		end
-		for m = 1, n do
-			if drop[m] >= T.KRailCliffDrop then
-				table.insert(windows, { us[m] - T.KRailLeadIn, us[m] + T.KRailRunOut })
-			end
-		end
-		local reach = 0
-		for _, w in windows do
-			reach = math.max(reach, w[2])
-		end
-		local function wanted(u: number): boolean
-			for _, w in windows do
-				if u >= w[1] - 1e-6 and u <= w[2] + 1e-6 then
-					return true
-				end
-			end
-			return false
-		end
-		-- the pieces: wanted, and on ground that falls away the whole length
-		local allowed = sec.tag ~= "Start" and not grove[side]
-		local pieces: { { number } } = {}
-		local from: number? = nil
-		for m = 1, n do
-			local on = allowed and drop[m] >= T.KRailFallDrop and wanted(us[m])
-			if on and not from then
-				from = m
-			end
-			if from and (not on or m == n) then
-				local to = if on then m else m - 1
-				local a, b = us[from], us[to]
-				local carriesIn = from == 1 and railedIn
-				local carriesOut = to == n and reach > len + 1e-6
-				if b > a + 1e-6 and (b - a >= T.KRailMinRun or carriesIn or carriesOut) then
-					table.insert(pieces, { a, b })
-				end
-				from = nil
-			end
-		end
-		local last = pieces[#pieces]
-		local reachesEnd = last ~= nil and last[2] >= len - 1e-6
-		local carryOut = if reachesEnd then math.max(reach - len, 0) else 0
-		if side < 0 then
-			self.krOutL, self.krBendL = carryOut, if reachesEnd then bendOut else 0
-		else
-			self.krOutR, self.krBendR = carryOut, if reachesEnd then bendOut else 0
-		end
-		out[side] = pieces
-	end
-	return out
 end
 
 --------------------------------------------------------------------------------
@@ -2241,6 +2097,7 @@ function SplineGen._fitTurn(self: Gen, sec: Spline.Section, item: Item)
 	preview.runoff=table.clone(self.runoff)
 	preview.trng=self.trng:Clone(); preview.grng=self.grng:Clone()
 	preview.xrng=self.xrng:Clone(); preview.crng=self.crng:Clone()
+	preview.dress=nil -- the preview is the road only: nothing is dressed (T-327)
 	local proposed=copyTables(sec)
 	preview:_terrain(proposed)
 	preview:_carve(proposed)
