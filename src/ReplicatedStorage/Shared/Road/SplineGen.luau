@@ -1586,6 +1586,7 @@ local function contourCost(self: Gen, knots: { number }, best: number?, bearing:
 	if limit <= 0 then return math.huge, endX, endZ end
 	local previous = Ground.h(f, x, z)
 	local climb, descent, worst, sum = 0, 0, 0, 0
+	local lastBanks, bankCost = 0, 0
 	local usedClimb, usedDescent = self.excessClimb, self.excessDescent
 	local n = math.max(1, #positions / 2)
 	for i = 1, #positions, 2 do
@@ -1606,6 +1607,13 @@ local function contourCost(self: Gen, knots: { number }, best: number?, bearing:
 		climb = math.max(0, climb + rise - step * cruise)
 		descent = math.max(0, descent - rise - step * cruise)
 		local heading = yawAlong(yaw, k0, path, u)
+		if ((i - 1) / 2 + 1) % 5 == 0 then
+			local banks = Gorge.along(f, px, pz, -math.sin(heading), -math.cos(heading), terrain)
+			-- A brief cross-cut can be clear again on its far bank. A curve aimed
+			-- into the bed meets walls on consecutive soundings along its exit.
+			bankCost += R.GorgeLocalCost * (0.25 * banks + math.min(lastBanks, banks)) * (200 / path[#path - 1])
+			lastBanks = banks
+		end
 		local dx, dz = shoulder * math.cos(heading), -shoulder * math.sin(heading)
 		local both = math.min(Ground.h(f, px - dx, pz - dz), Ground.h(f, px + dx, pz + dz)) - y
 		local excavation = math.max(math.abs(terrain - y), both - 12)
@@ -1615,9 +1623,9 @@ local function contourCost(self: Gen, knots: { number }, best: number?, bearing:
 		local weight = 1 - 0.45 * math.clamp((u - knots[#knots - 1]) / R.ContourLook, 0, 1)
 		worst = math.max(worst, weight * cost)
 		sum += weight * cost
-		if worst + 0.3 * sum / n >= limit then return math.huge, endX, endZ end
+		if bankCost + worst + 0.3 * sum / n >= limit then return math.huge, endX, endZ end
 	end
-	return direction + worst + 0.3 * sum / n, endX, endZ
+	return direction + bankCost + worst + 0.3 * sum / n, endX, endZ
 end
 
 -- Compare actual drivable curves at the current tip. Each has to clear the old road
@@ -1630,7 +1638,8 @@ function SplineGen._contour(self: Gen, original: Spline.Section): Spline.Section
 	local t, v = Range.frame(range, x, z)
 	local target = self:_target()
 	local corridor = self.corridor
-	if corridor and (corridor.ridge ~= target.k or t >= corridor.endT - 400) then
+	local _, _, _, face = Range.at(range, t, v)
+	if corridor and (corridor.ridge ~= target.k or t >= corridor.endT - 400 or corridor.fromFace ~= face) then
 		corridor = nil
 		self.corridor = nil
 	end

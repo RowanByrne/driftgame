@@ -10,7 +10,7 @@ local Gorge = require(script.Parent.SplineContourGorge)
 
 local Route = {}
 type Point = { t: number, v: number, s: number }
-export type Route = { points: { Point }, ridge: number, endT: number }
+export type Route = { points: { Point }, ridge: number, endT: number, fromFace: number }
 
 -- Lay out a broad bend across a long, straight approach while both flanks
 -- are still available. The hill chooses the side and how far the road swings.
@@ -106,7 +106,7 @@ function Route.new(f: Ground.Field, x: number, z: number, yaw: number, target: {
 		columns[j] = Ground.column(f, v0 + dv * (j - (mid - 1) * 4 - 1) / 4)
 	end
 	-- Coarse elevations are shared by the bank probes of neighbouring cells.
-	local low, high = -3, width + 4
+	local low, high = -5, width + 6
 	local coarseColumns, coarseRows = {}, {}
 	for j = low, high do
 		coarseColumns[j] = columns[(j - 1) * 4 + 1] or Ground.column(f, v0 + dv * (j - mid))
@@ -143,12 +143,19 @@ function Route.new(f: Ground.Field, x: number, z: number, yaw: number, target: {
 		local endT = t0 + dt * i
 		local interior = { table.create(quarterWidth), table.create(quarterWidth), table.create(quarterWidth) }
 		local row, nearL, nearR, farL, farR = coarse(i), coarse(i - 2), coarse(i + 2), coarse(i - 4), coarse(i + 4)
+		local bankT, bankV = {}, {}
+		for j = -1, width + 2 do
+			local acrossBanks = Gorge.pressure(math.min(row[j-2], row[j+2]) - row[j], math.min(row[j-4], row[j+4]) - row[j])
+			local forwardBanks = Gorge.pressure(math.min(nearL[j], nearR[j]) - row[j], math.min(farL[j], farR[j]) - row[j])
+			bankT[j] = math.max(0, acrossBanks - forwardBanks)
+			bankV[j] = math.max(0, forwardBanks - acrossBanks)
+		end
 		for b = math.max(1, mid - i * reach), math.min(width, mid + i * reach) do
 			local endH = row[b]
-			local lateral = Gorge.pressure(math.min(row[b-2], row[b+2]) - endH, math.min(row[b-4], row[b+4]) - endH)
-			local forward = Gorge.pressure(math.min(nearL[b], nearR[b]) - endH, math.min(farL[b], farR[b]) - endH)
-			local alongT = C.GorgeCost * math.max(0, lateral - forward)
-			local alongV = C.GorgeCost * math.max(0, forward - lateral)
+			-- A strip narrower than a drivable bend cannot hold a hillside road.
+			-- Include adjacent stream beds so a steerable corridor clears the lip.
+			local alongT = C.GorgeCost * math.max(bankT[b], 0.9*bankT[b-1], 0.9*bankT[b+1], 0.55*bankT[b-2], 0.55*bankT[b+2])
+			local alongV = C.GorgeCost * bankV[b]
 			heights[b] = endH
 			local best, parent, heading = math.huge, 0, 0
 			for _, shift: number in offsets do
@@ -206,7 +213,8 @@ function Route.new(f: Ground.Field, x: number, z: number, yaw: number, target: {
 	distances(points)
 	hillsideBends(f, points)
 	distances(points)
-	return { points = points, ridge = target.k, endT = endT }
+	local _, _, _, face = Range.at(r, t0, v0)
+	return { points = points, ridge = target.k, endT = endT, fromFace = face }
 end
 
 -- Closest point on the corridor and a waypoint a little farther along it.

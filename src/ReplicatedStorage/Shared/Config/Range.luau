@@ -141,7 +141,8 @@ return {
 	CorridorReach = 6, -- a single traverse can go 1,080 studs across
 	CorridorBendCost = 110, -- extra driving distance assigned to a radian of turn
 	CorridorPitchCost = 220, -- distance cost per stud of rise/fall above the approach grade
-	GorgeCost = 0.64, -- added travel per stud of paired-bank relief when heading up a channel
+	GorgeCost = 2.6, -- added travel per stud of paired-bank relief when heading up a channel
+	GorgeLocalCost = 3, -- local steering cost for aiming into sustained paired banks
 	TraverseSpan = 2050, -- length of hillside checked for a broad bend
 	TraverseOffsets = { 350, 550, 760 }, -- alternative traverses beside the current corridor
 	StraightenMaxOff = 20, -- studs off h: a bend straightening the road before a hairpin goes no further (T-242)
