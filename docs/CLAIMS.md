@@ -9,10 +9,7 @@ Every task in progress and the files it owns, so parallel sessions and workers n
 
 | Branch | Lane | Files owned | Since |
 |---|---|---|---|
-| `agent/gorge-approaches` | Borrow to test | `Shared/Config/Range.luau`, `Shared/Config/Spline.luau`, `Shared/Road/Range.luau`, `Shared/Road/Ground.luau`, `Shared/Road/Seed7*.luau`, `Shared/Road/SplineGen.luau`, `Shared/Road/SplineContour*.luau`, focused terrain and road tests, `docs/game/features/mountain-range.md` | 2026-11-18, T-326, follow-up on T-324 |
-| `agent/steep-contour-road` | DR-Lane3 | `src/ReplicatedStorage/Shared/Road/SplineGen.luau` (native continuation), `Road/SplineContour*.luau` (new if needed), `Road/Range.luau` and `Road/Ground.luau` (batch height sampling), `Shared/Config/Range.luau`, `Shared/Config/Spline.luau`, `docs/game/features/mountain-range.md`, focused road tests | 2026-11-18, T-324, builds on T-323 |
-| `agent/seed7-mountain-drive` | Borrow to test | `src/ReplicatedStorage/Shared/Road/Seed7*.luau` (new), `Road/Range.luau`, `Road/Ground.luau`, `Road/SplineGen.luau`, `Road/SplineSequence.luau` under Shared, `Shared/Config/Road.luau`, `src/ServerScriptService/Services/RoadService.luau`, `docs/game/features/mountain-range.md`, `src/ServerScriptService/Tests/Seed7*.luau` (new, if needed) | 2026-11-18, T-323 |
-| `agent/closer-chase-zoom` | Borrow to test | `src/ReplicatedStorage/Shared/Config/Camera.luau`, `src/StarterPlayerScripts/Controllers/CarCameraController.luau` (near framing only if needed), `docs/game/features/drift-camera.md` | 2026-11-18, T-321 |
+| `agent/gorge-approaches` | Borrow to test | `src/ReplicatedStorage/Shared/Config/Range.luau`, `Shared/Config/Spline.luau`, `Shared/Config/Road.luau`, `Shared/Road/Range.luau`, `Shared/Road/Ground.luau`, `Shared/Road/Seed7*.luau`, `Shared/Road/SplineGen.luau`, `Shared/Road/SplineContour*.luau`, `src/ServerScriptService/Services/RoadService.luau`, road and terrain tests in `src/ServerScriptService/Tests/` (`Ground*`, `Range*`, `Spline*`, `Seed7*`), `docs/game/features/mountain-range.md` | 2026-11-19, T-326 attempt 2 (gorge traverses) |
 
 ## Notes between sessions
 

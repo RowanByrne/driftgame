@@ -1,0 +1,5 @@
+name = "drift_light"
+description = "Light worker for small, clearly specified Drift fixes."
+model = "gpt-6.2-astra"
+model_reasoning_effort = "medium"
+developer_instructions = "Follow docs/workflow/WORKER.md in the task checkout assigned by the conductor."

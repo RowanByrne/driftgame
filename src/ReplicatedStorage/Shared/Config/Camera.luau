@@ -284,13 +284,14 @@ local Camera = {
 	-- of the stepped targets, so it can never join the feedback loop. A multiplier on the
 	-- distance: 1 IS EXACTLY TODAY'S CAMERA, and someone who never scrolls never leaves it.
 	-- The prefix is `PlayerZoom`, never `CamZoom`, so the predecessor's names stay gone.
-	PlayerZoomMin = 0.6, -- x the distance at its nearest. OURS (T-152). 27.6 studs at 26 deg,
-	-- 12.1 up (T-291; 10.3 at 22): the whole car and some road ahead, well clear of the roof
+	PlayerZoomMin = 0.4, -- 18.4 studs from the car at rest with the wheel fully forward (T-321).
+	PlayerZoomDollyStart = 0.6, -- Closer than this, move the camera while preserving this chase angle.
+	PlayerZoomLift = 0.2, -- Lift the close eye over the roof while retaining the chase radius.
+	PlayerZoomFovBlend = 0.35, -- Share of the remaining speed-FOV range used by the close lens.
 	PlayerZoomMax = 1.8, -- x at its farthest. OURS (T-152). 82.8 studs, 36 up (T-291; 31 at 22): the car is
 	-- small but the road around it reads
 	PlayerZoomStep = 1.12, -- x per wheel notch, multiplied (so in and out are the same size
-	-- of step at any distance). OURS (T-152). Nine notches from nearest
-	-- to today, five from today to farthest
+	-- of step at any distance). OURS (T-152).
 	PlayerZoomRate = 10, -- per second. OURS (T-152). How fast the camera eases to the zoom a
 	-- notch asked for: a 100 ms time constant, about 0.3 s to arrive. A
 	-- notch never jumps the camera; a burst of notches eases to the sum

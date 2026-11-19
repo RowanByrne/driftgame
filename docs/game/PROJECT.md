@@ -38,14 +38,14 @@ Each PC that works on this game, and how many lanes it opens: `lane1` up to that
 | PC (`$env:COMPUTERNAME`) | What it is | Lanes it opens |
 |---|---|---|
 | `MONSOONPC` | 62 GB, 32 threads (AMD Ryzen 9 9950X3D 16-Core Processor) | 6 |
-| `WKEYSTUDIOS1680` | 62 GB, 16 threads (AMD Ryzen 7 9800X3D 8-Core Processor) | 4 |
+| `WKEYSTUDIOS1680` | 62 GB, 16 threads (AMD Ryzen 7 9800X3D 8-Core Processor) | 6 |
 
 ## Game-only rules
 
 - **Use project tools for Rocco work.** The conductor, feature leads and all workers use the Rocco CLI and the Roblox Studio MCP. Never use the Computer Use skill or its desktop-control tools for Rocco work. Include this rule in every worker and feature lead brief.
 - **Game code goes through a worker and through lane review.** The conductor scopes and assigns each game code fix to a worker at the appropriate tier, including small fixes, each in a checkout of its own (`rocco.ps1 work`; LANES.md "Lending a lane"). It may handle plans, claims, docs, and errands. The worker builds the change, tests it in a lane it borrows, and keeps that lane. Then use `set -Status ready -Where lane` with steps for the user to try: Rocco holds a lane on the task's commit for them, and the card says which (or offers Load into a lane when none is free). Merge and update Main only after that approval (CONDUCTOR.md "Checking before main"). A send-back goes to the worker, which borrows a lane again for its next check. This overrides the small-change and merge-before-testing defaults in `CONDUCTOR.md`.
 - **Lanes are lent (2026-11-15).** Nobody works in a lane any more: a task's code is written in its checkout in `work\`, and a lane only ever shows a commit (LANES.md). Never save a lane's place, and build nothing by hand in one. A place that doesn't match the fingerprint `borrow` prints is reported, not worked around. Both of this PC's lanes matched on the day of the switch.
-- Agent choice (2026-11-15): Claude Code on **Opus 5.5** for everything: the conductor, feature agents and all three worker tiers (the user: "opus 5.5 should be everything"). No Fable. This replaces the 2026-11-13 Codex choice made while Claude credits were out. The template's `asset-scout` helper still names Sonnet; it hasn't been used here.
+- **Either agent conducts (2026-11-19).** Drift is agent-neutral: the conductor is whichever agent the user opens, and its workers are that agent's own. **Claude Code:** Opus 5.5 for everything, the conductor and the `roblox-dev-light`, `-standard` and `-heavy` subagents (MODELS.md "Jobs"). **Codex:** GPT-6.2 Astra, the conductor at extra high reasoning; native Codex workers by tier as `drift_light` (medium), `drift_standard` (high) or `drift_heavy` (extra high), whose profiles are in `.codex/agents/`. In a session that accepts explicit spawn settings, pass `gpt-6.2-astra` and the tier's effort (`medium`, `high` or `xhigh`) with a fresh worker context. Either way, give each worker its Rocco card and its checkout.
 
 
 ## Current focus

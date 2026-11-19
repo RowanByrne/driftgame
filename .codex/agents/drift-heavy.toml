@@ -1,0 +1,5 @@
+name = "drift_heavy"
+description = "Heavy worker for Drift core systems, complex gameplay and player data."
+model = "gpt-6.2-astra"
+model_reasoning_effort = "xhigh"
+developer_instructions = "Follow docs/workflow/WORKER.md in the task checkout assigned by the conductor."
