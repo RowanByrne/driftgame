@@ -134,6 +134,7 @@ export type Gen = typeof(setmetatable(
 		-- while it follows one (across the range, not on along it)
 		leg: Traverse.Leg?,
 		nextDirV: number?,
+		descending: boolean?, -- coming down from a crest, in legs, until the climb begins
 		headway: { number }?,
 		setback: { number }?, -- ...and the way a descent's hairpin must not fall back along
 		turning: boolean?, -- laying a planned turn (no steep pitch allowance in a hairpin)
@@ -1952,9 +1953,15 @@ function SplineGen._planRange(self: Gen)
 		return dv - v
 	end
 	-- COMING DOWN (T-326): a leg surveyed across the face, ending in a hairpin where the
-	-- hillside offers one; after that hairpin, the next leg the other way. (On a valley floor
-	-- there is nothing to come down: the legs below head for the pass, as before.)
-	if not climbing and where.kind ~= "valley" then
+	-- hillside offers one; after that hairpin, the next leg the other way, down to the valley
+	-- floor and across it. (A road that starts on a valley floor has come down nothing: its
+	-- legs below head for the pass, as before.)
+	if climbing then
+		self.descending = false
+	elseif where.kind ~= "valley" then
+		self.descending = true
+	end
+	if self.descending then
 		local _, _, yaw = self.spline:tip()
 		local dirV = self.nextDirV
 		self.nextDirV = nil
