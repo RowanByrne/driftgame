@@ -55,11 +55,6 @@ local EASE = 12 -- studs of clothoid either side of the arc
 local LEG = 400 -- studs of straight either side
 local TURN = 180 -- degrees
 
--- the ways to take it
-local SCRUB_SLIP = { 0, 70, 95 } -- degrees
-local SCRUB_AT = { 60, 130, 220 } -- studs before the turn
-local V_IN_G = { 20, 35, 55 } -- vIn = sqrt(g * R): the lateral pull, studs/s^2, the entry is aimed at
-local MAX_B = { 15, 45, 85 } -- degrees
 
 local DONE_PAST = 80 -- studs down the exit leg
 local SPIN_DEG = 135
@@ -104,19 +99,38 @@ local function slipFor(a: number): number
 	return (-c1 + math.sqrt(math.max(c1 * c1 - 4 * c2 * (c0 - a), 0))) / (2 * c2)
 end
 
+-- Where the driver aims across the road at `s`: `lane` studs toward the OUTSIDE of the turn
+-- (negative: the inside) on the way in, easing to the centre line through the turn.
+local function laneAt(way, s: number, entry: number, dir: number): number
+	local lane = way.lane or 0
+	local w = math.clamp((s - (entry - 30)) / 60, 0, 1)
+	return dir * lane * (1 - w)
+end
+
 -- One drive round the pad, one way. Returns what happened.
+--
+-- The ways (`way.kind`):
+--   none   no scrub: a grip line (maxB 15) or a drift from the turn's start
+--   into   tail out INTO the turn from `scrubAt` studs before it, to `scrub` degrees, until
+--          the car is down to sqrt(g R); best from the outside lane, so the slide that turns
+--          the car early has the road's width to cross
+--   feint  the flick: from the inside lane, tail out AWAY from the turn at `scrub` degrees from
+--          `scrubAt` studs before it (the car scrubs and drifts to the outside), then flicked
+--          into the turn once it is `flickD` studs to the outside, down to sqrt(g R), or 20
+--          studs from the turn
 local function drive(sp, entry: number, exit: number, dir: number, v0: number, way, R: number)
 	local D = Config.Drift
 	local world = SplineWorld.new(sp, nil)
 	local startS = entry - 300
+	local d0 = laneAt(way, startS, entry, dir)
 	local cf = sp:frame(startS, D.RideHeight)
-	local pos = sp:surface(startS, 0) + Vector3.new(0, D.RideHeight, 0)
+	local pos = sp:surface(startS, d0) + Vector3.new(0, D.RideHeight, 0)
 	local flat = Vector3.new(cf.LookVector.X, 0, cf.LookVector.Z).Unit
 	local runner = Sim.newRunner(CFrame.lookAt(pos, pos + flat))
 	runner.state.velocity = flat * v0
 	runner.state.time = 10 -- full throttle, as on a run
 	local input = { steer = 0, handbrake = false }
-	local vIn = math.sqrt(way.g * R)
+	local vIn = math.sqrt((way.g or 0) * R)
 	local lastS = startS
 	local r = {
 		ok = false,
@@ -129,36 +143,54 @@ local function drive(sp, entry: number, exit: number, dir: number, v0: number, w
 		maxD = 0,
 		t = nil,
 	}
-	local scrubbing, scrubbed = false, false
+	local phase = "approach" -- approach, scrub, bend
 	local tStart = nil
 	local dt = 1 / 60
 	for _ = 1, 60 * 30 do
 		local s = runner.state
 		local speed = math.sqrt(s.velocity.X ^ 2 + s.velocity.Z ^ 2)
+		local cs, cd = Hairpins.locate(sp, s.position, lastS)
+		cs = cs or lastS
+		cd = cd or 0
+		lastS = cs
+		-- the leg in is driven at `v0`: the car arrives at the speed the case is about
+		if cs < entry - 240 and speed > 1 then
+			s.velocity = Vector3.new(s.velocity.X, 0, s.velocity.Z) * (v0 / speed) + Vector3.new(0, s.velocity.Y, 0)
+			speed = v0
+		end
 		local heading = if speed > 1
 			then Vector3.new(s.velocity.X / speed, 0, s.velocity.Z / speed)
 			else Vector3.new(-math.sin(s.yaw), 0, -math.cos(s.yaw))
-		local cs, cd = Hairpins.locate(sp, s.position, lastS)
-		cs = cs or lastS
-		lastS = cs
 		local look = math.clamp(speed * 0.7, 15, 80)
-		local tp = sp:surface(math.min(cs + look, sp.length), 0)
+		local ts = math.min(cs + look, sp.length)
+		local tp = sp:surface(ts, laneAt(way, ts, entry, dir))
 		local dx, dz = tp.X - s.position.X, tp.Z - s.position.Z
 		local len = math.max(math.sqrt(dx * dx + dz * dz), 1e-3)
 		local kappa = 2 * math.sin(signedAngle(heading.X, heading.Z, dx / len, dz / len)) / len
 		local bmag = slipFor(speed * speed * math.abs(kappa))
 		local bStar = -math.sign(kappa) * math.min(bmag, math.rad(15))
-		-- the scrub: tail out, into the turn, until the car is slow enough
-		if way.scrub > 0 and not scrubbed and cs >= entry - way.scrubAt and cs < entry + 20 then
-			if speed > vIn then
-				scrubbing = true
-				bStar = -dir * math.rad(way.scrub)
-			elseif scrubbing then
-				scrubbing, scrubbed = false, true
+
+		if phase == "approach" and way.kind ~= "none" and cs >= entry - way.scrubAt then
+			phase = "scrub"
+		end
+		if phase == "scrub" then
+			local out = dir * cd -- studs to the outside of the turn
+			local done = speed <= vIn or cs >= entry - (if way.kind == "feint" then 20 else -20)
+			if way.kind == "feint" and out >= way.flickD then
+				done = true
+			end
+			if done then
+				phase = "bend"
+			else
+				bStar = (if way.kind == "feint" then dir else -dir) * math.rad(way.scrub)
 			end
 		end
-		if not scrubbing and cs >= entry - 10 and cs <= exit then
-			bStar = -dir * math.clamp(bmag, 0, math.rad(way.maxB))
+		if phase ~= "scrub" and cs >= entry - 10 and phase == "approach" then
+			phase = "bend"
+		end
+		if phase == "bend" and cs <= exit then
+			local need = if math.sign(kappa) == dir then bmag else 0
+			bStar = -dir * math.clamp(need, 0, math.rad(way.maxB))
 		end
 		local rate = speed * kappa + 8 * (s.slip - bStar)
 		input.steer = math.clamp(rate / (D.MaxSteeringSpeed * D.SteeringSensitivity), -1, 1)
@@ -167,7 +199,7 @@ local function drive(sp, entry: number, exit: number, dir: number, v0: number, w
 		speed = math.sqrt(s.velocity.X ^ 2 + s.velocity.Z ^ 2)
 		local slipDeg = math.abs(math.deg(s.slip))
 		if way.trace and runner.totalSteps % 12 == 0 then
-			table.insert(way.trace, `s {fmt(cs - entry, 0)} d {fmt(cd or 0, 1)} v {fmt(speed, 0)} slip {fmt(math.deg(s.slip), 0)} want {fmt(math.deg(bStar), 0)} steer {fmt(input.steer, 2)}{if scrubbing then " SCRUB" else ""}{if s.wallHit then " WALL" else ""}`)
+			table.insert(way.trace, `s {fmt(cs - entry, 0)} d {fmt(cd, 1)} v {fmt(speed, 0)} slip {fmt(math.deg(s.slip), 0)} want {fmt(math.deg(bStar), 0)} steer {fmt(input.steer, 2)} {phase}{if s.wallHit then " WALL" else ""}`)
 		end
 
 		if cs >= entry - 250 then
@@ -176,7 +208,7 @@ local function drive(sp, entry: number, exit: number, dir: number, v0: number, w
 				r.walls += 1
 			end
 			r.maxSlip = math.max(r.maxSlip, slipDeg)
-			r.maxD = math.max(r.maxD, math.abs(cd or 0))
+			r.maxD = math.max(r.maxD, math.abs(cd))
 		end
 		if cs >= entry then
 			r.entrySpeed = r.entrySpeed or speed
@@ -189,7 +221,7 @@ local function drive(sp, entry: number, exit: number, dir: number, v0: number, w
 			r.why = "spun"
 			return r
 		end
-		if cs >= entry and speed < STOP_SPEED then
+		if cs >= entry - 250 and speed < STOP_SPEED then
 			r.why = "stopped"
 			return r
 		end
@@ -199,7 +231,7 @@ local function drive(sp, entry: number, exit: number, dir: number, v0: number, w
 		end
 		if cs >= exit + DONE_PAST then
 			if slipDeg > SETTLED_DEG then
-				r.why = `still {fmt(slipDeg, 0)} deg sideways`
+				r.why = "still sideways"
 				return r
 			end
 			r.ok = true
@@ -214,11 +246,25 @@ end
 
 local function ways()
 	local list = {}
-	for _, scrub in SCRUB_SLIP do
-		for _, at in (if scrub > 0 then SCRUB_AT else { 0 }) do
-			for _, g in (if scrub > 0 then V_IN_G else { 0 }) do
-				for _, maxB in MAX_B do
-					table.insert(list, { scrub = scrub, scrubAt = at, g = g, maxB = maxB })
+	for _, lane in { 0, 14 } do
+		for _, maxB in { 15, 45, 85 } do
+			table.insert(list, { kind = "none", lane = lane, maxB = maxB })
+		end
+	end
+	for _, scrub in { 70, 95 } do
+		for _, at in { 60, 130, 220 } do
+			for _, g in { 20, 35, 55 } do
+				for _, maxB in { 45, 85 } do
+					table.insert(list, { kind = "into", lane = 14, scrub = scrub, scrubAt = at, g = g, maxB = maxB })
+				end
+			end
+		end
+	end
+	for _, lane in { -10, 0 } do
+		for _, scrub in { 60, 90 } do
+			for _, at in { 120, 200 } do
+				for _, flickD in { 5, 15 } do
+					table.insert(list, { kind = "feint", lane = lane, scrub = scrub, scrubAt = at, flickD = flickD, g = 35, maxB = 85 })
 				end
 			end
 		end
@@ -228,10 +274,13 @@ end
 
 local function wayName(w): string
 	local bend = if w.maxB <= 15 then "grip" else `slip<={w.maxB}`
-	if w.scrub == 0 then
-		return `no scrub, {bend}`
+	local lane = if w.lane > 0 then `from {w.lane} outside` elseif w.lane < 0 then `from {-w.lane} inside` else "from the middle"
+	if w.kind == "none" then
+		return `no scrub {lane}, {bend}`
+	elseif w.kind == "into" then
+		return `tail out {w.scrub}deg into the turn from {w.scrubAt} {lane} to sqrt({w.g}R), {bend}`
 	end
-	return `scrub {w.scrub}deg from {w.scrubAt} to sqrt({w.g}R), {bend}`
+	return `feint {w.scrub}deg away from {w.scrubAt} {lane}, flick at {w.flickD} out, {bend}`
 end
 
 local function measure(opts, log, rows)
@@ -252,7 +301,7 @@ local function measure(opts, log, rows)
 							local res = drive(sp, entry, exit, 1, v0, w, R)
 							if res.ok then
 								okCount += 1
-								if w.scrub == 0 and w.maxB <= 15 then
+								if w.kind == "none" and w.maxB <= 15 then
 									gripOk = true
 								end
 								if not best or res.t < best.res.t then
