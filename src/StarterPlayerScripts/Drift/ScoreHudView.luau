@@ -130,7 +130,7 @@ function ScoreHudView:setData(data)
 	if mode == "run" then
 		local rung = data.multiplier or 1
 		local style = Tape.tier(rung)
-		local entering = self.rung == nil or rung > self.rung
+		local entering = if self.rung == nil then "start" elseif rung > self.rung then "gain" else nil
 		if self.rung ~= rung then
 			if self.rung and rung < self.rung and not self:_reduced() then
 				self.pulse = {age = 0, strength = .20 + style.force * .8, drop = rung < self.rung}
@@ -192,14 +192,17 @@ end
 
 function ScoreHudView:step(dt)
 	if self.mode ~= "run" then return end
-	if self.gui.Enabled then self.rank.art:step(dt, self:_reduced()) end
-	if self:_reduced() then
+	local reduced = self:_reduced()
+	local gainKick = if self.gui.Enabled then self.rank:step(dt, reduced) else Vector2.zero
+	if reduced then
+		self.rank.root.Position = UDim2.fromOffset(self.layout.scoreWidth+self.layout.gap,0)
 		if self.pulse or #self.transfers > 0 or self.waiting > 0 then self:_resetEffects(); self:_drawTotal() end
 		return
 	end
 	local l = self.layout
 	local lead = l.scoreWidth + l.gap
 	local center = Vector2.new(lead + l.width * .43, l.height * .5)
+	local offset = gainKick
 	local pulse = self.pulse
 	if pulse then
 		pulse.age += dt
@@ -207,7 +210,7 @@ function ScoreHudView:step(dt)
 		local amplitude = (1 - t)^2 * pulse.strength
 		local x = math.sin(t * 34) * amplitude * 4
 		local y = math.sin(t * 17) * amplitude * (if pulse.drop then -5 else 6)
-		self.rank.root.Position = UDim2.fromOffset(lead + x, y)
+		offset += Vector2.new(x,y)
 		for i, spark in self.sparks do
 			spark.Visible = self.rung >= 3 and not pulse.drop and i <= math.min(5, self.rung - 1) and t < 1
 			if spark.Visible then
@@ -220,6 +223,7 @@ function ScoreHudView:step(dt)
 		end
 		if t == 1 then self.pulse = nil end
 	end
+	self.rank.root.Position = UDim2.fromOffset(lead+offset.X,offset.Y)
 	for i = #self.transfers, 1, -1 do
 		local e = self.transfers[i]
 		local previousAge = e.age

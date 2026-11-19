@@ -101,6 +101,15 @@ function Tape.newRank(parent)
 		local front = rule("Ink" .. i, self.paint, Style.ink)
 		table.insert(self.segments, {back, front})
 	end
+	self.sparks = {}
+	for i, direction in {Vector2.new(-1,-.38), Vector2.new(1,-.32), Vector2.new(.8,.38), Vector2.new(-.75,.5), Vector2.new(.25,-.8)} do
+		local spark = rule("GainSpark" .. i, self.root, Style.ink)
+		spark.AnchorPoint = Vector2.new(.5,.5)
+		spark.Rotation = math.deg(math.atan2(direction.Y,direction.X))
+		spark.ZIndex = 5
+		spark.Visible = false
+		table.insert(self.sparks, {part = spark, direction = direction})
+	end
 	return self
 end
 
@@ -113,13 +122,13 @@ function Rank:layout(layout)
 	local segmentGap = math.round(2 * layout.textScale)
 	self.bar.Position = UDim2.fromOffset(0, h - barHeight)
 	self.bar.Size = UDim2.fromOffset(w, barHeight)
-	self.paint.Size = UDim2.fromOffset(w, barHeight)
+	self.paint.Size = UDim2.new(0,w,1,0)
 	for i, pair in self.segments do
 		local x = math.floor((i - 1) * w / segments)
 		local n = math.floor(i * w / segments) - x - segmentGap
 		for _, part in pair do
 			part.Position = UDim2.fromOffset(x, 0)
-			part.Size = UDim2.fromOffset(n, barHeight)
+			part.Size = UDim2.new(0,n,1,0)
 		end
 	end
 	self.doubleDigit = (self.rung or 1) >= 10
@@ -138,7 +147,7 @@ function Rank:draw(rung, progress, entering, reduced)
 		local widthChanged = self.doubleDigit ~= (rung >= 10)
 		self.rung = rung
 		if widthChanged then self:layout(self.layoutData) end
-		self.art:setRank(rung, entering == true, reduced)
+		self.art:setRank(rung, entering, reduced)
 		self.mult.Text = "×" .. tostring(rung)
 		self.mult.TextColor3 = style.accent
 		self.rule.BackgroundColor3 = style.accent
@@ -155,6 +164,51 @@ function Rank:draw(rung, progress, entering, reduced)
 		self.fill.Size = UDim2.fromScale(p, 1)
 		self.art:setCharge(p)
 	end
+end
+
+-- The art clock starts on the first renderable word. The meter, multiplier
+-- and particles follow that same beat, including when a cold fetch takes a frame.
+function Rank:step(dt, reduced)
+	local art = self.art
+	art:step(dt, reduced)
+	local active = art.promoted and art.waitForFace == nil and not reduced and art.age < math.max(art.duration, .324)
+	if not active and not self.kicking then return Vector2.zero end
+	self.kicking = active
+	local l, s = self.layoutData, art.style
+	local t = if active then math.min(1,art.age/art.duration) else 1
+	local force = art.impactForce
+	local envelope = (1-t)^2*force
+	local recoil = if t < .37 then 1-t/.37*(1+.25) else -.25*(1-t)/.63
+	local multWidth = math.round((if self.doubleDigit then 37 else 29)*l.textScale)
+	local extra = math.round(12*math.max(0,recoil)*force)
+	self.mult.Size = UDim2.fromOffset(multWidth+extra,l.height-6)
+	self.mult.Position = UDim2.fromOffset(l.width-multWidth-extra,3+math.round(4*recoil*force))
+	self.mult.TextSize = math.round((if l.compact then 17 else 20)*l.textScale*(1+.24*recoil*force))
+	self.mult.TextColor3 = s.accent:Lerp(Style.ink,.85*envelope)
+	local restHeight = math.round(4*l.textScale)
+	local height = math.round(restHeight*(1+.65*envelope))
+	self.bar.Position = UDim2.fromOffset(0,l.height-restHeight-(height-restHeight)/2)
+	self.bar.Size = UDim2.fromOffset(l.width,height)
+	-- Light the unfilled track, too: a promotion often leaves no ink in the bar.
+	for _, pair in self.segments do
+		pair[1].BackgroundColor3 = Style.track:Lerp(s.accent,.85*envelope)
+	end
+	local count = if self.rung >= 9 then 5 else 2
+	for i, spark in self.sparks do
+		local travel = math.min(1,art.age/(.26+.016*(i-1)))
+		local visible = active and i <= count and travel < 1
+		local part = spark.part
+		part.Visible = visible
+		if visible then
+			local distance = 13+(1-(1-travel)^2)*25*force
+			local at = Vector2.new(l.width*.43,l.height*.48)+spark.direction*distance
+			part.Position = UDim2.fromOffset(at.X,at.Y)
+			part.Size = UDim2.fromOffset((10-7*travel)*l.textScale,2)
+			part.BackgroundColor3 = s.accent:Lerp(Style.ink,.7)
+			part.BackgroundTransparency = travel
+		end
+	end
+	return Vector2.new(math.sin(t*25)*5*envelope,math.cos(t*16)*5*envelope)
 end
 
 return Tape

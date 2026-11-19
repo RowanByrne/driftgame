@@ -12,6 +12,8 @@ The art registry records the 16 palettes, matched image pairs, frame periods, st
 
 BOOSTED’s dark matte separates its letters from the teal exhaust. FULL SEND’s scarred face tilts at the D as a spark moves through the word to the F. OVERDRIVE keeps the turbine seated inside the O and charges the blades at the letter boundary. Four paired flames burn behind the UNTOUGEABLE cutout. Reduced Motion holds each signature on its approved still and skips the entry, wall movement and embers.
 
+On a promotion the whole word flashes even when the new meter is empty. The tape kicks, sparks spread from the word, and the multiplier and meter swell and recoil. Signal bands jump in staggered steps, with a displaced echo from SIDEWAYS onward. The next rank’s textures load ahead of time. A repeated snapshot of the current rank updates charge without replaying the entrance. Reduced Motion shows the earned rank and its charge immediately.
+
 ## Studio review
 
 Start an endless run to see the art against the road. Press **]** to play all 16 ranks, 1.45 seconds each. The tour shows an empty, charging and full word for each rank. Press **]** again to return early. Driving and scoring continue during the preview.

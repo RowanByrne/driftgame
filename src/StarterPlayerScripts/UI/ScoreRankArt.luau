@@ -1,5 +1,6 @@
 --!nonstrict
 -- All geometry is in the registered word canvas. Keep the transparent margins.
+local ContentProvider = game:GetService("ContentProvider")
 local Registry = require(script.Parent.ScoreRankRegistry)
 local Create = require(script.Parent.Create)
 local Art = {}
@@ -14,7 +15,16 @@ local function frame(parent, name, z)
 		Size = full, Active = false, ZIndex = z}, parent)
 end
 
-local function layer(parent, name, z, asset, color, opacity)
+local function layer(parent, name, z, asset, color, opacity, prepared)
+	if prepared then
+		prepared.Name = name
+		prepared.ZIndex = z
+		prepared.Size = full
+		prepared.ImageColor3 = color
+		prepared.ImageTransparency = 1-(opacity or 1)
+		prepared.Parent = parent
+		return prepared
+	end
 	return Create("ImageLabel", {Name = name, BackgroundTransparency = 1, BorderSizePixel = 0,
 		Active = false, Size = full, ZIndex = z, Image = asset.uri, ImageColor3 = color,
 		ImageTransparency = 1 - (opacity or 1), ScaleType = Enum.ScaleType.Fit}, parent)
@@ -32,11 +42,12 @@ local function slice(image, x, y, width, height, first, last)
 	image.Size = UDim2.fromScale((right - left) / width, 1)
 end
 
-local function lerpKeys(keys, at)
+local function lerpKeys(keys, at, stepped)
 	for i = 2, #keys do
 		local b, a = keys[i], keys[i - 1]
 		if at <= b[1] then
 			local p = math.clamp((at - a[1]) / (b[1] - a[1]), 0, 1)
+			if stepped then p = math.floor(p * 2) / 2 end
 			return a[2] + (b[2] - a[2]) * p, a[3] + (b[3] - a[3]) * p
 		end
 	end
@@ -49,6 +60,9 @@ local scrape = {{0,-.008,-1.4},{.08,-.008,-1.4},{.17,.008,2.6},{.23,.004,1.1},
 local signalHit = {{0,0,0},{.1,.96,-1},{.26,.1,-1},{.43,.9,1},{.6,.16,1},{.77,.58,-.33},{1,0,0}}
 local entryShift = {{0,4,3},{.18,-4,-2},{.32,3,0},{.49,-1,1},{1,0,0}}
 local entryScale = {{0,.91,1.16},{.18,1.06,.92},{.32,1,1},{1,1,1}}
+local entryTilt = {{0,-3.5,0},{.18,2,0},{.32,-1,0},{.49,0,0},{1,0,0}}
+local echoPose = {{0,-4,2},{.42,6,-1},{1,12,-4}}
+local echoOpacity = {{0,.65,0},{.42,.28,0},{1,0,0}}
 local rearBurst = {{0,.72,.8},{.26,1.18,1},{1,1,1}}
 local crownBurst = {{0,.36,.92},{.22,1.32,1.04},{.54,.93,.99},{1,.78,1}}
 -- Left edge, baseline, width, vertical stretch, rotation, seconds/cel, starting cel, opacity.
@@ -59,8 +73,37 @@ local flames = {
 local emberOrigins = {.25,.43,.71,.84}
 local emberPaths = {Vector2.new(8,-15),Vector2.new(15,-22),Vector2.new(10,-12),Vector2.new(18,-15)}
 
+-- Prefetch the next rank without retaining a second HUD or blocking scoring.
+local warmed = {}
+local function warmRank(rung)
+	local rank = Registry[rung]
+	if not rank or warmed[rung] then return end
+	warmed[rung] = true
+	task.spawn(function()
+		local images = {}
+		for _, key in {"letters","face","signal","body","detail","print","keyline","flameBody","flameCore"} do
+			local asset = rank[key]
+			if asset then
+				local image = Instance.new("ImageLabel")
+				image.Image = asset.uri
+				table.insert(images, image)
+			end
+		end
+		local succeeded = true
+		local ok = pcall(function()
+			ContentProvider:PreloadAsync(images, function(_, status)
+				if status ~= Enum.AssetFetchStatus.Success then succeeded = false end
+			end)
+		end)
+		for _, image in images do image:Destroy() end
+		if not ok or not succeeded then warmed[rung] = nil end
+	end)
+end
+
 function Art.new(parent)
-	return setmetatable({slot = frame(parent, "WordSlot", 2), age = 0, entry = false}, Art)
+	warmRank(1)
+	warmRank(2)
+	return setmetatable({slot = frame(parent, "WordSlot", 2), age = 0, entry = false, upcoming = {}}, Art)
 end
 
 function Art:layout(w, h)
@@ -110,12 +153,43 @@ function Art:_buildFire()
 	end
 end
 
+-- A fetched image can still need a render frame to become IsLoaded. Prime actual
+-- face/signal ImageLabels at zero height, then move those same instances into the
+-- word. This draws no pixels and holds at most two upcoming ranks.
+function Art:_prepareNext(rung)
+	for index, pair in self.upcoming do
+		if index <= rung or index > rung+2 then
+			pair.face:Destroy()
+			pair.signal:Destroy()
+			self.upcoming[index] = nil
+		end
+	end
+	for index = rung+1, math.min(rung+2,#Registry) do
+		if not self.upcoming[index] then
+			local s = Registry[index]
+			warmRank(index)
+			local face = layer(self.slot,"UpcomingFace",1,s.face or s.letters,s.base)
+			local signal = layer(self.slot,"UpcomingSignal",1,s.signal,s.tail)
+			face.Size, signal.Size = UDim2.fromOffset(1,0), UDim2.fromOffset(1,0)
+			self.upcoming[index] = {face = face, signal = signal}
+		end
+	end
+end
+
 function Art:setRank(rung, entry, reduced)
 	self.reduced = reduced
 	if self.scene then self.scene:Destroy() end
 	self.style = Registry[rung]
 	local s = self.style
 	self.rung, self.age, self.entry, self.lastFrame = rung, 0, entry, nil
+	self.promoted = entry == "gain" and not reduced
+	self.waitForFace = if self.promoted then 0 else nil
+	self.duration = .16 + .18*s.force + math.max(0,rung-9)*.009
+	-- A subpixel kick at ×2 disappears at driving scale.
+	self.impactForce = if self.promoted then .62 + .38*s.force else s.force
+	local prepared = self.upcoming[rung]
+	self.upcoming[rung] = nil
+	self:_prepareNext(rung)
 	self.scene = frame(self.slot, "RegisteredArt", 1)
 	self.scene.AnchorPoint = center
 	self.scene:SetAttribute("RankName", s.name)
@@ -140,7 +214,7 @@ function Art:setRank(rung, entry, reduced)
 	self.echo = layer(self.word,"Echo",2,self.face,s.accent,0)
 	local rim = layer(self.word,"CoolRim",3,self.face,Color3.fromHex("CDDCEC"),.48)
 	rim.Position = UDim2.fromOffset(0,.65)
-	self.base = layer(self.word,"Unfilled",4,self.face,s.base)
+	self.base = layer(self.word,"Unfilled",4,self.face,s.base,nil,prepared and prepared.face)
 	self.lit = layer(self.word,"Charged",5,self.face,s.accent)
 	self.front = layer(self.word,"Frontier",6,self.face,white)
 	if s.print then
@@ -148,7 +222,7 @@ function Art:setRank(rung, entry, reduced)
 		self:_sheet(printGroup,"Print",s.print,s.printInk,s.printOpacity)
 	end
 	self.signalGroup = frame(self.scene,"SignalPose",6)
-	self.signal = layer(self.signalGroup,"Signal",1,s.signal,s.tail,0)
+	self.signal = layer(self.signalGroup,"Signal",1,s.signal,s.tail,0,prepared and prepared.signal)
 	self:layout(self.slotWidth, self.slotHeight)
 end
 
@@ -232,18 +306,23 @@ end
 function Art:_paint(dt, reduced)
 	self.age += dt
 	self.reduced = reduced
-	if reduced then self.entry = false end
+	if reduced then self.entry, self.promoted, self.waitForFace = false, false, nil end
 	local s, rung = self.style, self.rung
 	local hit = self.entry and not reduced and rung ~= 10
-	local duration = .16+.18*s.force+math.max(0,rung-9)*.009
+	local duration, force = self.duration, self.impactForce
 	local t = if hit then math.min(1,self.age/duration) else 1
 	local dx, dy = lerpKeys(entryShift,t)
 	local sx, sy = lerpKeys(entryScale,t)
-	self.scene.Position = UDim2.fromOffset(self.width/2+dx*s.force,self.slotHeight/2+dy*s.force)
+	self.scene.Position = UDim2.fromOffset(self.width/2+dx*force,self.slotHeight/2+dy*force)
 	-- Keep fractional pixels in the scale components so short faces and tall
 	-- effects share the same scale on compact screens.
-	self.scene.Size = UDim2.fromScale(self.width/self.slotWidth*(1+(sx-1)*s.force),
-		self.height/self.slotHeight*(1+(sy-1)*s.force))
+	self.scene.Size = UDim2.fromScale(self.width/self.slotWidth*(1+(sx-1)*force),
+		self.height/self.slotHeight*(1+(sy-1)*force))
+	self.scene.Rotation = lerpKeys(entryTilt,t)*force
+	-- A real gain spends its charge. Light the whole face independently of the reveal.
+	local flash = if self.promoted then math.max(0,1-self.age/duration)^1.4 else 0
+	self.base.ImageColor3 = s.base:Lerp(s.accent:Lerp(white,.65), flash)
+	self.lit.ImageColor3 = s.accent:Lerp(white,.75*flash)
 	local phase = if s.cycle then (self.age % s.cycle)/s.cycle else 0
 	if self.flames then
 		self:_paintFire(reduced)
@@ -254,7 +333,7 @@ function Art:_paint(dt, reduced)
 	end
 	local angle, xShift, yShift = 0,0,0
 	local signalTime = if hit then math.min(1,self.age/(duration+.11)) else 1
-	local alpha, displacement = lerpKeys(signalHit,signalTime)
+	local alpha, displacement = lerpKeys(signalHit,signalTime,true)
 	displacement *= 1+(rung-1)*.65
 	if rung == 10 and not reduced then
 		local x, rotation = lerpKeys(scrape,phase)
@@ -275,12 +354,21 @@ function Art:_paint(dt, reduced)
 	self.signal.Position = UDim2.fromOffset(displacement,0)
 	self.echo.Visible = rung >= 4 and signalTime < 1
 	if self.echo.Visible then
-		self.echo.ImageTransparency = 1 - .65*s.force*(1-signalTime)^1.5
-		self.echo.Position = UDim2.fromOffset(-4+16*signalTime,2-6*signalTime)
+		local echoX, echoY = lerpKeys(echoPose,signalTime)
+		self.echo.ImageTransparency = 1-lerpKeys(echoOpacity,signalTime)*force
+		self.echo.Position = UDim2.fromOffset(echoX,echoY)
+		self.echo.Size = UDim2.fromScale(1+.06*math.max(0,(signalTime-.42)/.58),1)
 	end
 end
 
 function Art:step(dt, reduced)
+	if self.waitForFace ~= nil and not reduced then
+		self.waitForFace += dt
+		-- Keep the entry's first pose until a renderable word exists. A failed
+		-- fetch must never pin the rest of the HUD or block newer snapshots.
+		if self.base.IsLoaded or self.waitForFace >= 1 then self.waitForFace = nil end
+		dt = 0
+	end
 	if self.style and (not reduced or not self.reduced or self.lastFrame == nil) then
 		self:_paint(dt, reduced)
 	end
