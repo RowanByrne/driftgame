@@ -79,28 +79,23 @@ local function rule(name, parent, color)
 	return f
 end
 
-local segments = 14
+-- The approved demo (rank-images-v2/preview.html, `.row{rotate:-4deg}`) tilts the
+-- word, its effects and the multiplier together, 4 degrees up to the right, about
+-- the row's centre. Roblox's Rotation is clockwise, so up-right is negative.
+Tape.restTilt = -4
+-- A promotion kicks the row further up, then it recoils past and settles on the tilt.
+local kickTilt = 3
+
 local Rank = {}
 Rank.__index = Rank
 
 function Tape.newRank(parent)
 	local self = setmetatable({}, Rank)
 	self.root = Tape.frame("Rank", parent, 3)
-	self.rule = rule("Hairline", self.root, Style.secondary)
-	self.rule.BackgroundTransparency = 0.55
+	self.root.Rotation = Tape.restTilt
 	self.art = RankArt.new(self.root)
 	self.mult = Tape.text("Multiplier", self.root, Style.feedFont, Style.ink, 20)
 	self.mult.TextXAlignment = Enum.TextXAlignment.Right
-	self.bar = Tape.frame("Bar", self.root)
-	self.fill = Tape.frame("Fill", self.bar, 2)
-	self.fill.ClipsDescendants = true
-	self.paint = Tape.frame("Paint", self.fill)
-	self.segments = {}
-	for i = 1, segments do
-		local back = rule("Track" .. i, self.bar, Style.track)
-		local front = rule("Ink" .. i, self.paint, Style.ink)
-		table.insert(self.segments, {back, front})
-	end
 	self.sparks = {}
 	for i, direction in {Vector2.new(-1,-.38), Vector2.new(1,-.32), Vector2.new(.8,.38), Vector2.new(-.75,.5), Vector2.new(.25,-.8)} do
 		local spark = rule("GainSpark" .. i, self.root, Style.ink)
@@ -117,24 +112,11 @@ function Rank:layout(layout)
 	local w, h = layout.width, layout.height
 	self.layoutData = layout
 	self.root.Size = UDim2.fromOffset(w, h)
-	self.rule.Size = UDim2.new(1, 0, 0, 1)
-	local barHeight = math.round(4 * layout.textScale)
-	local segmentGap = math.round(2 * layout.textScale)
-	self.bar.Position = UDim2.fromOffset(0, h - barHeight)
-	self.bar.Size = UDim2.fromOffset(w, barHeight)
-	self.paint.Size = UDim2.new(0,w,1,0)
-	for i, pair in self.segments do
-		local x = math.floor((i - 1) * w / segments)
-		local n = math.floor(i * w / segments) - x - segmentGap
-		for _, part in pair do
-			part.Position = UDim2.fromOffset(x, 0)
-			part.Size = UDim2.new(0,n,1,0)
-		end
-	end
+	self.root.Rotation = Tape.restTilt
 	self.doubleDigit = (self.rung or 1) >= 10
 	local multiplierWidth = if self.doubleDigit then 37 else 29
 	local rankWidth = w - math.round(multiplierWidth * layout.textScale)
-	self.art:layout(rankWidth, h - barHeight - 2)
+	self.art:layout(rankWidth, h - 2)
 	self.mult.Size = UDim2.fromOffset(w - rankWidth, h - 6)
 	self.mult.Position = UDim2.fromOffset(rankWidth, 3)
 	self.mult.TextSize = math.round((if layout.compact then 17 else 20) * layout.textScale)
@@ -150,24 +132,17 @@ function Rank:draw(rung, progress, entering, reduced)
 		self.art:setRank(rung, entering, reduced)
 		self.mult.Text = "×" .. tostring(rung)
 		self.mult.TextColor3 = style.accent
-		self.rule.BackgroundColor3 = style.accent
-		for i, pair in self.segments do
-			local at = (i - 1) / (segments - 1)
-			pair[2].BackgroundColor3 = if at < .78 then style.tail:Lerp(style.accent, at / .78)
-				else style.accent:Lerp(style.tip, (at - .78) / .22)
-		end
 		self.root:SetAttribute("Rung", rung)
 	end
 	local p = math.clamp(progress, 0, 1)
 	if p ~= self.progress then
 		self.progress = p
-		self.fill.Size = UDim2.fromScale(p, 1)
 		self.art:setCharge(p)
 	end
 end
 
--- The art clock starts on the first renderable word. The meter, multiplier
--- and particles follow that same beat, including when a cold fetch takes a frame.
+-- The art clock starts on the first renderable word. The row's tilt kick, the
+-- multiplier and particles follow that same beat, including when a cold fetch takes a frame.
 function Rank:step(dt, reduced)
 	local art = self.art
 	art:step(dt, reduced)
@@ -185,14 +160,9 @@ function Rank:step(dt, reduced)
 	self.mult.Position = UDim2.fromOffset(l.width-multWidth-extra,3+math.round(4*recoil*force))
 	self.mult.TextSize = math.round((if l.compact then 17 else 20)*l.textScale*(1+.24*recoil*force))
 	self.mult.TextColor3 = s.accent:Lerp(Style.ink,.85*envelope)
-	local restHeight = math.round(4*l.textScale)
-	local height = math.round(restHeight*(1+.65*envelope))
-	self.bar.Position = UDim2.fromOffset(0,l.height-restHeight-(height-restHeight)/2)
-	self.bar.Size = UDim2.fromOffset(l.width,height)
-	-- Light the unfilled track, too: a promotion often leaves no ink in the bar.
-	for _, pair in self.segments do
-		pair[1].BackgroundColor3 = Style.track:Lerp(s.accent,.85*envelope)
-	end
+	-- The old meter's swell now reads on the row itself: it tips up and recoils,
+	-- ending exactly on the rest tilt (recoil is 0 at t = 1).
+	self.root.Rotation = Tape.restTilt-kickTilt*recoil*force
 	local count = if self.rung >= 9 then 5 else 2
 	for i, spark in self.sparks do
 		local travel = math.min(1,art.age/(.26+.016*(i-1)))

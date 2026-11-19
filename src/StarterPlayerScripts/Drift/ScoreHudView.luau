@@ -39,9 +39,6 @@ function ScoreHudView.new(parent)
 	self.caption.TextXAlignment = Enum.TextXAlignment.Right
 	self.caption.Text = "RUN SCORE"
 	self.caption:SetAttribute("TextAux", true)
-	self.divider = Tape.frame("Divider", self.panel)
-	self.divider.BackgroundTransparency = .3
-	self.divider.BackgroundColor3 = Style.secondary
 
 	self.sparks = {}
 	for i, vector in streaks do
@@ -77,8 +74,6 @@ function ScoreHudView:_layout()
 	self.score.Position = UDim2.fromOffset(0, math.floor(l.height * .39))
 	self.score.Size = UDim2.fromOffset(l.scoreWidth - 5, math.ceil(l.height * .61))
 	self.score.TextSize = l.numberSize
-	self.divider.Position = UDim2.fromOffset(l.scoreWidth, 3)
-	self.divider.Size = UDim2.fromOffset(1, l.height - 6)
 	self.runLine.TextSize = math.round(20 * l.textScale)
 	self.bestLine.TextSize = math.round(17 * l.textScale)
 	self.runLine.Size = UDim2.fromOffset(width, math.ceil(l.height * .55))
@@ -118,7 +113,7 @@ function ScoreHudView:setData(data)
 		self.panel:SetAttribute("State", mode)
 		self.gui.Enabled = mode ~= "hidden"
 		local live = mode == "run"
-		for _, item in {self.rank.root, self.score, self.caption, self.divider} do item.Visible = live end
+		for _, item in {self.rank.root, self.score, self.caption} do item.Visible = live end
 		self.runLine.Visible = mode == "summary"
 		self.bestLine.Visible = mode == "summary"
 		self.rank.rung = nil
@@ -137,7 +132,6 @@ function ScoreHudView:setData(data)
 			end
 			self.rung = rung
 			self.score.TextColor3 = style.accent:Lerp(Style.ink, .3)
-			self.divider.BackgroundColor3 = style.accent
 		end
 		self.progress = math.clamp(data.progress or 0, 0, 1)
 		self.rank:draw(rung, self.progress, entering, self:_reduced())
@@ -269,7 +263,8 @@ function ScoreHudView:describe()
 		mode = self.mode, enabled = self.gui.Enabled, displayOrder = self.gui.DisplayOrder, panel = rect(self.panel),
 		score = rect(self.score), scoreText = self.score.Text, multiplier = rect(self.rank.mult), multiplierText = self.rank.mult.Text,
 		rank = rect(self.rank.root), rankText = Tape.tier(self.rung).name, progress = self.progress or 0, accent = Tape.tier(self.rung).accent,
-		bar = rect(self.rank.bar), fill = rect(self.rank.fill), runLine = rect(self.runLine), runText = self.runLine.Text,
+		rankRotation = self.rank.root.Rotation, scoreRotation = self.score.Rotation, restTilt = Tape.restTilt,
+		runLine = rect(self.runLine), runText = self.runLine.Text,
 		bestLine = rect(self.bestLine), bestText = self.bestLine.Text, anyActive = active,
 		bankStarts = self.bankStarts, absorbs = self.absorbs, pendingPoints = self.waiting, transferCount = #self.transfers,
 		reducedMotion = self:_reduced(),
