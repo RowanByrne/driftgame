@@ -359,6 +359,69 @@ function GroundMeshView.Restyle(self: View)
 	end)
 end
 
+-- Studio checks (T-339): switch the look on this device, as the `ground-look` command does.
+function GroundMeshView.DebugRestyle(self: View, look: string?)
+	Workspace:SetAttribute("__ground_look", look)
+	self:Restyle()
+	return { look = GroundLook.current() }
+end
+
+-- Studio checks (T-339): what the shown ground is, for tuning the bands. Its open vertices'
+-- steepness (by 10 degrees) and height above the mountain's zero, the share of them past half
+-- rocky, rock, alpine and snow; and along the road every `step` studs, its height and how
+-- many rock vertices are within 300 studs of it (where to look at the rock).
+function GroundMeshView.DebugLookSurvey(self: View, step: number?)
+	local oy = self.field.oy
+	local byAngle = table.create(10, 0)
+	local n, rocky, rock, alpine, snow = 0, 0, 0, 0, 0
+	local lo, hi = math.huge, -math.huge
+	local rockPts = {}
+	for _, tile in self.tiles do
+		for k = 1, #tile.heights do
+			if tile.cls[k] == OPEN then
+				local nv = tile.normals[k]
+				local alt = tile.heights[k] - oy
+				local w = GroundLook.weights(tile.px[k], tile.pz[k], alt, nv.Y)
+				n += 1
+				local b = math.clamp(math.floor(w.angle / 10) + 1, 1, 10)
+				byAngle[b] += 1
+				lo, hi = math.min(lo, alt), math.max(hi, alt)
+				rocky += if w.rocky > 0.5 then 1 else 0
+				alpine += if w.alpine > 0.5 then 1 else 0
+				snow += if w.snow > 0.5 then 1 else 0
+				if w.rock > 0.5 then
+					rock += 1
+					table.insert(rockPts, { tile.px[k], tile.pz[k] })
+				end
+			end
+		end
+	end
+	local road = {}
+	local sp = self.spline
+	for s = 0, sp.length, step or 250 do
+		local x, z = sp:planAt(s)
+		local near = 0
+		for _, p in rockPts do
+			local dx, dz = p[1] - x, p[2] - z
+			if dx * dx + dz * dz < 90000 then
+				near += 1
+			end
+		end
+		table.insert(road, { s = s, x = math.round(x), z = math.round(z), alt = math.round(sp:heightAt(s) - oy), yaw = math.round(math.deg(sp:yawAt(s))), rockNear = near })
+	end
+	local share = function(c: number): number
+		return if n > 0 then math.round(c / n * 1000) / 10 else 0
+	end
+	return {
+		vertices = n,
+		byAngle = byAngle,
+		alt = { math.round(lo), math.round(hi) },
+		percent = { rocky = share(rocky), rock = share(rock), alpine = share(alpine), snow = share(snow) },
+		car = { math.round(self.carX), math.round(self.carZ) },
+		road = road,
+	}
+end
+
 -- What the look costs (T-339): the look, the tiles shown and held, how many shown tiles carry
 -- a rock mesh, and the rock meshes made, failed, let go and written (and their time).
 function GroundMeshView.DebugLook(self: View)
