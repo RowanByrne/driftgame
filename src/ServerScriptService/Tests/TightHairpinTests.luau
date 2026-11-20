@@ -126,6 +126,36 @@ local function run(check, log, opts)
 		end
 		check(`{way}: the island meets the tarmac's edge`, worstEdge < 0.6, `worst {fmt(worstEdge, 2)} studs off the edge, {fmt(edgeAt)} studs from the turn ({n} points)`)
 		check(`{way}: no ground through the tarmac beside the island`, worstThrough < 0.05, `highest {fmt(worstThrough, 3)} studs above the road's underside`)
+		-- 3b. drawn as ground, not runoff: the client's mesh classes a point by how far past the
+		-- runoff's edge `Ground.at` says it is (its third answer) and puts a point it takes for
+		-- runoff level with the nearer edge. Across the island, from a quarter to three
+		-- quarters of the way, that is the distance to the nearer leg's tarmac (no runoff on
+		-- the island side), never 0
+		do
+			local worstE, eAt, m = math.huge, "", 0
+			for s = e.sIn + 4, e.sA, 8 do
+				local cx, cz = sp:planAt(s)
+				local yaw = sp:yawAt(s)
+				local rx, rz = math.cos(yaw), -math.sin(yaw)
+				local ex, ez = cx + rx * d, cz + rz * d
+				for _, f in { 0.25, 0.5, 0.75 } do
+					-- (toward the other leg, square to this one: the island is about 31 across)
+					local across = 31.2 * f
+					local px, pz = ex - rx * dir * across, ez - rz * dir * across
+					local _, w = TightHairpin.islandAt(isl, px, pz)
+					if w >= 1 then
+						local _, _, past = Ground.at(ctx, px, pz)
+						local want = math.min(across, 31.2 - across)
+						m += 1
+						local ratio = past / want
+						if ratio < worstE then
+							worstE, eAt = ratio, `{fmt(s - e.sA, 0)} from the turn, {fmt(across, 0)} across: {fmt(past, 1)} past the edge for {fmt(want, 1)}`
+						end
+					end
+				end
+			end
+			check(`{way}: the island is drawn as ground, not runoff`, m > 0 and worstE > 0.7, `{m} points; worst {eAt}`)
+		end
 
 		-- 4. no cliff: neighbours on a grid over the island, its hand-back and round it
 		local bx0, bx1, bz0, bz1 = math.huge, -math.huge, math.huge, -math.huge
@@ -143,6 +173,7 @@ local function run(check, log, opts)
 		for z = bz0 - 20, bz1 + 20, step do
 			local row = {}
 			local prev = nil
+			local col = 0
 			for x = bx0 - 20, bx1 + 20, step do
 				local y = Ground.at(ctx, x, z)
 				-- (only the ground: on the tarmac the road draws itself)
@@ -155,7 +186,8 @@ local function run(check, log, opts)
 				-- roads, below, the hand-back is judged too)
 				local _, w = TightHairpin.islandAt(isl, x, z)
 				local v = if onRoad or w < 1 then nil else y
-				table.insert(row, v)
+				col += 1
+				row[col] = v
 				if v and prev then
 					local j = math.abs(v - prev) / step
 					if j > worstJump then

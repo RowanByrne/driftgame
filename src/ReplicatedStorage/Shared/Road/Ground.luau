@@ -532,13 +532,17 @@ end
 function Ground.at(ctx: Context, x: number, z: number): (number, number, number, number)
 	-- ON A TIGHT HAIRPIN'S ISLAND (T-333) the ground is the bank between the two legs' inner
 	-- edges, not the mountain: wholly on the side by side run, handing back past it
+	-- (how far past the runoff's edge, and the edge's height, are still the roads' own: the
+	-- client's ground mesh classes a point by them, and with 0 there it took the whole island
+	-- for runoff and drew it level with the nearer leg's edge, a shelf from each leg with a
+	-- step where they met)
 	for _, isl in ctx.islands do
 		local hi, w = TightHairpin.islandAt(isl, x, z)
 		if hi then
-			if w >= 1 then
-				return hi, 1, 0, hi
-			end
 			local h0, a0, e0, T0 = groundAt(ctx, x, z)
+			if w >= 1 then
+				return hi, 1, e0, T0
+			end
 			return h0 + (hi - h0) * w, math.max(a0, w), e0, T0
 		end
 	end
