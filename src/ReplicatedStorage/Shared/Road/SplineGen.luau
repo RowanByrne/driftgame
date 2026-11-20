@@ -173,6 +173,10 @@ export type Gen = typeof(setmetatable(
 		xrng: Random, -- the tight cliff edges' own stream (T-181), so they never change the rest
 		crng: Random, -- the carved apexes' own stream, so they move no other choice (T-182)
 		hrng: Random, -- the tight hairpins' own stream (T-333), so they move no other choice
+		wrng: Random, -- the descent legs' weave (T-337), its own stream
+		-- the weave of the leg the road is on (T-337): how far either way, over what wave, from
+		-- what phase, and where along the leg it is gone by
+		weave: { amp: number, wave: number, phase: number, upTo: number }?,
 		tightNext: number, -- s: no tight hairpin is laid before here (T-333)
 		tightLast: number, -- s: where the last tight hairpin's shape ended (T-337: `Gap` from it)
 		uphill: number, -- the side the mountain is on: -1 left, 1 right
@@ -265,6 +269,7 @@ function SplineGen.new(seed: number, origin: Spline.Origin?, clearOverride: numb
 		xrng = Random.new((seed * 17 + 2311) % 2 ^ 31),
 		crng = Random.new((seed * 19 + 3089) % 2 ^ 31), -- not the groves' seed: a stream of its own
 		hrng = Random.new((seed * 23 + 4099) % 2 ^ 31),
+		wrng = Random.new((seed * 29 + 5101) % 2 ^ 31),
 		tightNext = 0,
 		tightLast = -math.huge,
 		-- the mountain starts on the side the uphill direction is on (with the fall line square
@@ -1878,6 +1883,16 @@ function SplineGen._planRange(self: Gen)
 			else
 				self.legSide = legSide
 			end
+			-- the leg's weave (T-337), gone short of where its stretch ends
+			do
+				local w = self.wrng
+				local amp = R.TraverseWeave[1] + (R.TraverseWeave[2] - R.TraverseWeave[1]) * w:NextNumber()
+				local wave = R.TraverseWeaveWave[1] + (R.TraverseWeaveWave[2] - R.TraverseWeaveWave[1]) * w:NextNumber()
+				amp = math.min(amp, R.TraverseWeaveLean * wave / (2 * math.pi))
+				local legItem = if leg.hairpin then plan[#plan - 1] else plan[#plan]
+				local arrive = legItem.arrive or R.TraverseArrive
+				self.weave = { amp = amp, wave = wave, phase = w:NextNumber() * 2 * math.pi, upTo = leg.length - arrive - R.TraverseWeaveOut }
+			end
 			return
 		end
 	end
@@ -2042,6 +2057,22 @@ function SplineGen._follow(self: Gen, nearest: Spline.Section?, nearOff: number?
 	return best
 end
 
+-- How far up or down the face (along the range's `t`) the line a leg's road keeps to is
+-- swung at `along` studs of the leg (T-337): its weave, grown in from the leg's start and
+-- gone by `upTo`. 0 with no weave.
+function SplineGen._weaveAt(self: Gen, along: number): number
+	local w = self.weave
+	if not w then
+		return 0
+	end
+	local R = Config.Range
+	local function ease(x: number): number
+		local t = math.clamp(x / R.TraverseWeaveIn, 0, 1)
+		return t * t * (3 - 2 * t)
+	end
+	return w.amp * math.sin(2 * math.pi * along / w.wave + w.phase) * ease(along) * ease(w.upTo - along)
+end
+
 -- ALONG A DESCENT'S LEG (T-326): the leg was surveyed against the hillside already, so the
 -- road keeps to it. Every curvature of `TrackRadii` either way (and straight), eased into and
 -- held for each of `TrackHolds`, is judged where it ends: how far off the leg, how far its
@@ -2065,7 +2096,11 @@ function SplineGen._track(self: Gen): Spline.Section?
 		end, true)
 		local ye = yawAfter(yaw0, k0, knots)
 		local et, ev = Range.frame(r, ex, ez)
-		local at, av, miss = Traverse.ahead(leg, et, ev, R.TraverseLook)
+		-- (the line kept to is the leg's, swung up or down the face by its weave, T-337)
+		local nt, nv, _, along = Traverse.ahead(leg, et, ev, 0)
+		local miss = math.sqrt((et - (nt + self:_weaveAt(along))) ^ 2 + (ev - nv) ^ 2)
+		local at, av = Traverse.ahead(leg, et, ev, R.TraverseLook)
+		at += self:_weaveAt(along + R.TraverseLook)
 		local wx, wz = Range.world(r, at, av)
 		local err = math.deg(math.abs(wrap(ye - math.atan2(ex - wx, ez - wz))))
 		local score = miss + R.TrackHeadingCost * err + R.TrackCurveCost * math.abs(kt) * 1000

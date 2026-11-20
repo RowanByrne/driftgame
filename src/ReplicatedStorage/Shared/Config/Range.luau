@@ -216,4 +216,17 @@ return {
 	TrackRadii = { 2000, 1000, 600, 400, 280, 200, 140, 100 }, -- studs
 	TrackHeadingCost = 1.5,
 	TrackCurveCost = 4,
+	-- THE WEAVE (T-337): the line the road keeps to along a leg swings up and down the face
+	-- either side of the surveyed one, `TraverseWeave` studs (picked a leg) over a whole wave of
+	-- `TraverseWeaveWave` studs, never leaning more than `TraverseWeaveLean` off the leg (rise
+	-- over run), so the leg is a run of S-bends cut into and built out from the hill rather than
+	-- one straight line (the user: "the runs are really straight now, no real turns to enjoy";
+	-- "it's okay to cut in and build out from/of the hill a bit"). It grows in over the first
+	-- `TraverseWeaveIn` studs of a leg and is gone `TraverseWeaveOut` short of where the leg's
+	-- stretch ends, so a hairpin, tight or not, is met from the surveyed line.
+	TraverseWeave = { 50, 90 }, -- studs
+	TraverseWeaveWave = { 800, 1300 }, -- studs
+	TraverseWeaveLean = 0.5,
+	TraverseWeaveIn = 250, -- studs
+	TraverseWeaveOut = 300, -- studs
 }
