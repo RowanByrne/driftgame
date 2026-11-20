@@ -1,6 +1,6 @@
 # Feature: Tight hairpins
 
-**Status:** step 1 done (T-330); step 2 waiting on T-326. **Owner task:** none yet.
+**Status:** step 1 done (T-330); step 2 (T-333) lays them in place of a descent's own switchback; step 3, planning them into the road, next (2026-11-20). **Owner task:** T-329.
 
 ## Goal
 
@@ -28,7 +28,8 @@ All starting values are proposed, to tune with the user in a lane.
 - **Turnaround radius:** 40 studs to the centre line (an inside edge radius of 15), against today's tightest 70 (`Config/Spline.MinRadius`). Picked by the user on 2026-11-19 from step 1 (below).
 - **The island:** at least about 10 studs of ground between the two road edges at its narrowest, widening away from the tip. The legs run side by side for at least about 120 studs before they part.
 - **Height between the legs:** set by the face's grade, within what a bank between them can take at the steepest slope the ground allows, so the island is a bank, never a wall or an overhang. Where the face is too steep or too gentle for that, no tight hairpin is laid there.
-- **How often:** rare, about one every 4 000 to 6 000 studs on steep faces, and never within about 1 500 studs of another.
+- **How often:** rare, about one every 4 000 to 6 000 studs on steep faces, and never within about 1 500 studs of another. Swapped in for the road's own switchbacks (step 2) that gave only 1 in about 180 000 studs on descents, so the user chose to plan them into the road (step 3, DECISIONS.md 2026-11-20).
+- **Descents only, for now:** on seed 7 a climb's tight hairpin sent the rest of that climb into trenches walled on both shoulders (`Config/TightHairpin.OnClimbs`).
 - **Barriers:** the outside of the turnaround and the downhill edge of the lower leg take rails as any hairpin with a drop does. The island side takes none, as on the photo's inside.
 
 ## Server and client
@@ -37,7 +38,7 @@ As for the rest of the road: the server lays it, the clients replay it from the 
 
 ## Contracts
 
-The section may carry a new kind of bend (a tight hairpin template) and the island's shape. Recorded in `CONTRACTS.md` with the code if the section format changes.
+A section tagged `"TightHairpin"` carries `th`, six numbers saying where the island is (`CONTRACTS.md`, `RoadSpline`). Every device makes the island from it.
 
 ## Platform risks
 
@@ -55,7 +56,7 @@ None new.
 
 ## Open questions
 
-- How often they come (rare, proposed).
+- How step 3 plans them in: where on a descent, and how the road's route bends to make room.
 
 ## Step 1: what the car gets round (T-330, 2026-11-19)
 
