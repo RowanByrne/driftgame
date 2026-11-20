@@ -2118,6 +2118,12 @@ function SplineGen._track(self: Gen): Spline.Section?
 		-- (and how far off the hillside the section leaves the road, past `TrackOffTol`)
 		local g, off = self:_followGrade(knots, g0, y0)
 		score += R.TrackOffCost * math.max(0, off - R.TrackOffTol)
+		-- (and never far past the weave's own swing from the surveyed line: lagging a bend, the
+		-- road overshot the next one, measured 90 studs off the leg the wrong way, in a cut)
+		if self.weave then
+			local stray = math.abs(et - nt) - (swing * self.weave.amp + R.TrackStrayTol)
+			score += R.TrackStrayCost * math.max(0, stray)
+		end
 		table.insert(options, { score = score, knots = knots, kt = kt, radius = radius, g = g })
 	end
 	for _, hold in R.TrackHolds do

@@ -233,6 +233,10 @@ return {
 	TraverseWeaveOff = 25, -- studs
 	TrackOffTol = 15, -- studs
 	TrackOffCost = 2,
+	-- (nor further from the surveyed line than its swing and `TrackStrayTol`: `TrackStrayCost`
+	-- a stud past it)
+	TrackStrayTol = 15, -- studs
+	TrackStrayCost = 6,
 	TraverseWeaveIn = 250, -- studs
 	TraverseWeaveOut = 300, -- studs
 }
