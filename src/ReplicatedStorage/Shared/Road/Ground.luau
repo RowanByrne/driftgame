@@ -35,6 +35,7 @@ local RunService = game:GetService("RunService")
 local Config = require(ReplicatedStorage.Shared.Config)
 local Spline = require(script.Parent.Spline)
 local Range = require(script.Parent.Range)
+local TightHairpin = require(script.Parent.TightHairpin)
 
 local Ground = {}
 
@@ -101,6 +102,8 @@ export type Context = {
 	cell: number,
 	grid: { [number]: { Station } },
 	count: number,
+	-- the tight hairpins' islands that reach the box (T-333): shaped, not read off h
+	islands: { TightHairpin.Island },
 }
 
 -- Who draws the runoff (T-251): `Config.Spline.Ground.RunoffBy`, "road" or "ground". In Studio
@@ -462,11 +465,30 @@ local function key(cx: number, cz: number): number
 	return (cx + 1048576) * 2097152 + (cz + 1048576)
 end
 
+-- A tight hairpin's island (T-333), made the first time it is asked for and kept with the
+-- road: the road under it never changes once laid.
+local islandsKept: { [any]: TightHairpin.Island } = setmetatable({}, { __mode = "k" }) :: any
+local function islandOf(spline: Spline.Spline, e: any): TightHairpin.Island
+	local isl = islandsKept[e]
+	if not isl then
+		isl = TightHairpin.island(spline, e)
+		islandsKept[e] = isl
+	end
+	return isl
+end
+
 -- Gather the stations that can reach the box (x0, z0)..(x1, z1), filed in a grid of their
 -- own so a point looks only at the few round it.
 function Ground.context(field: Field, spline: Spline.Spline, x0: number, z0: number, x1: number, z1: number): Context
 	local reach = Ground.reach()
-	local ctx: Context = { field = field, spline = spline, cell = CELL, grid = {}, count = 0 }
+	local ctx: Context = { field = field, spline = spline, cell = CELL, grid = {}, count = 0, islands = {} }
+	-- THE ISLANDS (T-333): each tight hairpin's island, made once per road and kept
+	for _, e in spline.tight do
+		local isl = islandOf(spline, e)
+		if isl.maxX >= x0 and isl.minX <= x1 and isl.maxZ >= z0 and isl.minZ <= z1 then
+			table.insert(ctx.islands, isl)
+		end
+	end
 	local hc = spline.cell
 	local first = spline.firstSample * spline.step
 	local seen: { [number]: boolean } = {}
@@ -497,6 +519,8 @@ end
 
 local FADE = 12 -- studs
 
+local groundAt: (Context, number, number) -> (number, number, number, number)
+
 local function smooth(t: number): number
 	return t * t * (3 - 2 * t)
 end
@@ -506,6 +530,26 @@ end
 -- how far the point is past the nearest runoff's edge (0 on the road, huge with none near),
 -- and the height the road would have the ground at there (the edge's, less `Under`).
 function Ground.at(ctx: Context, x: number, z: number): (number, number, number, number)
+	-- ON A TIGHT HAIRPIN'S ISLAND (T-333) the ground is the bank between the two legs' inner
+	-- edges, not the mountain: wholly on the side by side run, handing back past it
+	-- (how far past the runoff's edge, and the edge's height, are still the roads' own: the
+	-- client's ground mesh classes a point by them, and with 0 there it took the whole island
+	-- for runoff and drew it level with the nearer leg's edge, a shelf from each leg with a
+	-- step where they met)
+	for _, isl in ctx.islands do
+		local hi, w = TightHairpin.islandAt(isl, x, z)
+		if hi then
+			local h0, a0, e0, T0 = groundAt(ctx, x, z)
+			if w >= 1 then
+				return hi, 1, e0, T0
+			end
+			return h0 + (hi - h0) * w, math.max(a0, w), e0, T0
+		end
+	end
+	return groundAt(ctx, x, z)
+end
+
+groundAt = function(ctx: Context, x: number, z: number): (number, number, number, number)
 	local G = Config.Spline.Ground
 	local field = ctx.field
 	local hp = Ground.h(field, x, z)

@@ -367,5 +367,6 @@ end
 
 TightTurnTests.pad = pad
 TightTurnTests.drive = drive
+TightTurnTests.ways = ways
 
 return TightTurnTests

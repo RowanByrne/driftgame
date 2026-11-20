@@ -69,6 +69,9 @@ local function validSection(sec: any): boolean
 	if sec.gv ~= nil and not numbers(sec.gv, 2) then
 		return false
 	end
+	if sec.th ~= nil and not (numbers(sec.th, 8) and #sec.th == 8) then -- a tight hairpin (T-333)
+		return false
+	end
 	return true
 end
 

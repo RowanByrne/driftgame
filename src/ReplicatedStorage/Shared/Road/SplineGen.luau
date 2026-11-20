@@ -50,6 +50,7 @@ local Seed7Drive = require(script.Parent.Seed7Drive)
 local ContourRoute = require(script.Parent.SplineContourRoute)
 local Gorge = require(script.Parent.SplineContourGorge)
 local Traverse = require(script.Parent.SplineContourTraverse)
+local TightHairpin = require(script.Parent.TightHairpin)
 
 local SplineGen = {}
 SplineGen.__index = SplineGen
@@ -82,6 +83,11 @@ export type Stats = {
 	follows: number, -- on the range: sections laid by `_follow`, the bend that best follows h (T-242)
 	traverses: number, -- preemptive turns away from a forecast cut or fill
 	tracked: number, -- sections laid along a descent's leg (T-326)
+	tightHairpins: number, -- tight hairpins laid in place of a descent's hairpin (T-333)
+	tightRefused: number, -- ...and ones tried that did not fit (gentle face, off h, crowded)
+	tightWhy: { [string]: number }, -- why, by reason
+	tightTurns: { number }, -- degrees each turnaround tried asked for (a half turn is 180)
+	tightNotes: { string }, -- what refused each one that got as far as the mountain
 }
 
 -- One step of the plan: a STRETCH of random sections kept within `limit` of `aim` for
@@ -110,6 +116,7 @@ export type Item = {
 	refused: number?, -- times this turn was refused
 	nextDirV: number?, -- a turnaround after a traverse (T-326): which way across the next leg runs
 	traverse: boolean?, -- ...and it ends a descent's surveyed leg
+	climb: boolean?, -- a turnaround on a climb (T-333: a tight hairpin there climbs)
 }
 
 -- What a heading on the mountain is (T-226, T-238): "leg" across the face toward the pass
@@ -159,6 +166,8 @@ export type Gen = typeof(setmetatable(
 		grng: Random, -- the groves' own stream (T-183), so they never change the rest
 		xrng: Random, -- the tight cliff edges' own stream (T-181), so they never change the rest
 		crng: Random, -- the carved apexes' own stream, so they move no other choice (T-182)
+		hrng: Random, -- the tight hairpins' own stream (T-333), so they move no other choice
+		tightNext: number, -- s: no tight hairpin is laid before here (T-333)
 		uphill: number, -- the side the mountain is on: -1 left, 1 right
 		inBand: boolean, -- heading within `AlongFallLine` of the fall line: the side holds
 		crossAt: number, -- s: where the heading last crossed the fall line, inside the band (T-189)
@@ -248,6 +257,8 @@ function SplineGen.new(seed: number, origin: Spline.Origin?, clearOverride: numb
 		grng = Random.new((seed * 11 + 2027) % 2 ^ 31),
 		xrng = Random.new((seed * 17 + 2311) % 2 ^ 31),
 		crng = Random.new((seed * 19 + 3089) % 2 ^ 31), -- not the groves' seed: a stream of its own
+		hrng = Random.new((seed * 23 + 4099) % 2 ^ 31),
+		tightNext = 0,
 		-- the mountain starts on the side the uphill direction is on (with the fall line square
 		-- to the start heading, it is never inside the band)
 		uphill = if math.sin(spline.origin.yaw - fall) > 0 then 1 else -1,
@@ -283,6 +294,11 @@ function SplineGen.new(seed: number, origin: Spline.Origin?, clearOverride: numb
 			follows = 0,
 			traverses = 0,
 			tracked = 0,
+			tightHairpins = 0,
+			tightRefused = 0,
+			tightWhy = {},
+			tightTurns = {},
+			tightNotes = {},
 		},
 	}, SplineGen)
 	if ground.range.basins then
@@ -502,7 +518,9 @@ function SplineGen._terrain(self: Gen, sec: Spline.Section)
 		local first = if downhillOver(1, 0, len) then 1 elseif downhillOver(-1, 0, len) then -1 else 1
 		local drops: Drops? = nil -- read once, before either side closes in
 		for _, side in { first, -first } do
-			if roll >= T.TightChance or grove[side] or sec.gl then
+			-- (never on a tight hairpin's island side, T-333: that side is the island's bank, with
+			-- no runoff at all, not a cliff)
+			if roll >= T.TightChance or grove[side] or sec.gl or (sec.th and side == -sec.th[5]) then
 				continue
 			end
 			drops = drops or self:sideDrops(sec, startRun)
@@ -1862,6 +1880,7 @@ function SplineGen._planRange(self: Gen)
 	local radius = if steep then R.SteepHairpinRadius else M.HairpinRadius
 	local nextLeg: Slope = { kind = "leg", side = -side, gd = between(G.LegGrade) }
 	turn("turnaround", sc * side, radius, "Hairpin", nextLeg)
+	plan[#plan].climb = climbing
 	self.legSide = -side
 end
 
@@ -2105,6 +2124,170 @@ function SplineGen._fitTurn(self: Gen, sec: Spline.Section, item: Item)
 	return SplineTurnFit.measure(preview.spline,self.spline.length,preview.spline.length)
 end
 
+-- A TIGHT HAIRPIN (T-333, features/tight-hairpins.md) in place of a turnaround, now and then
+-- (a descent's hairpin, or a climb's, which then climbs): the fixed shape `Road/TightHairpin` lays from the tip, its two legs side by side
+-- with the island between them. Only where the face is steep enough to want one, far enough
+-- from the last, near enough a half turn for its legs to run side by side, within
+-- `MaxOff` of h, and clear of old road (its own legs are side by side on purpose: the shape
+-- is checked against old road only, and its escape against everything). nil otherwise, and
+-- the ordinary hairpin is laid as before.
+function SplineGen._tight(self: Gen, item: Item, needed: number): Spline.Section?
+	local T = Config.TightHairpin
+	local sp = self.spline
+	local s0 = sp.length
+	local function between(range: { number }): number
+		return range[1] + (range[2] - range[1]) * self.hrng:NextNumber()
+	end
+	if self.tightNext <= 0 then
+		self.tightNext = between(T.First)
+	end
+	if s0 < self.tightNext then
+		return nil
+	end
+	-- (the next leg's heading: a half turn, or short of one by its tilt down the face)
+	local short = math.pi - needed
+	table.insert(self.stats.tightTurns, math.floor(math.deg(needed) + 0.5))
+	local function refuse(why: string): nil
+		self.stats.tightRefused += 1
+		self.stats.tightWhy[why] = (self.stats.tightWhy[why] or 0) + 1
+		return nil
+	end
+	if short < -math.rad(T.ShortOfHalf[1]) or short > math.rad(T.ShortOfHalf[2]) then
+		return refuse("turn")
+	end
+	if item.climb and not T.OnClimbs then
+		return refuse("climb")
+	end
+	local x0, z0, yaw0, k0, g0, b0, y0 = sp:tip()
+	local face = Ground.where(self.ground, x0, z0).slope
+	if face < T.MinFaceSlope then
+		table.insert(self.stats.tightNotes, `gentle {math.floor(face)} deg`)
+		return refuse("gentle")
+	end
+	-- (the grade it is built with is replaced below, from the mountain)
+	local sec = TightHairpin.build(k0, g0, b0, item.dir :: number, short, g0, self.clearance)
+	-- THE GRADE FOLLOWS THE MOUNTAIN except where the legs are side by side. There it is held at
+	-- the face's own: the height between where the two legs run beside each other, over the road
+	-- between them, within `Grade` (the island is the bank between their heights, so this keeps
+	-- it a bank). Before that, along the lead, and after it, past the side by side run, it eases
+	-- toward the hillside `FollowLook` studs ahead, as every section's grade does, at
+	-- `MaxGradeRate` and never past `MaxGrade`; it starts easing into the held grade in time
+	-- to be on it where the legs come side by side.
+	do
+		local SC = Config.Spline
+		local sIn, sOut = sec.th[1], sec.th[4]
+		local pts: { { number } } = {}
+		walk(x0, z0, yaw0, k0, sec.k, 8, 8, function(u, x, z)
+			table.insert(pts, { u, Ground.h(self.ground, x, z) })
+			return true
+		end)
+		local function hAt(u: number): number
+			local i = math.clamp(math.floor(u / 8), 1, #pts)
+			return pts[i][2]
+		end
+		local face = (hAt(sOut) - hAt(sIn)) / math.max(sOut - sIn, 1)
+		local gt = math.clamp(face, -T.Grade, T.Grade)
+		local rate = SC.MaxGradeRate
+		local step, look = 16, T.FollowLook
+		local lim = math.tan(math.rad(SC.MaxGrade))
+		local knots: { number } = {}
+		local u, y, g = 0, y0, g0
+		local function go(gn: number, du: number)
+			y += (g + gn) * 0.5 * du
+			u += du
+			g = gn
+			table.insert(knots, u)
+			table.insert(knots, g)
+		end
+		local function follow(du: number)
+			local want = math.clamp((hAt(math.min(u + look, sec.len)) - y) / look, -lim, lim)
+			go(g + math.clamp(want - g, -rate * du, rate * du), du)
+		end
+		-- along the lead, until it is time to ease into the held grade
+		while u + step + math.abs(gt - g) / rate < sIn do
+			follow(step)
+		end
+		if sIn - u > 1e-6 then
+			local L = sIn - u
+			-- (as near the held grade as the road can get by the side by side run)
+			gt = g + math.clamp(gt - g, -rate * L, rate * L)
+			go(gt, L)
+		end
+		go(gt, sOut - u)
+		while u < sec.len - 1e-6 do
+			follow(math.min(step, sec.len - u))
+		end
+		sec.g = knots
+	end
+	-- the mountain: how far the shape leaves the road off h, either way
+	local G = Config.Spline.Ground
+	local gk = sec.g
+	local function yAt(u: number): number
+		local y, s, g = y0, 0, g0
+		for j = 1, #gk, 2 do
+			local s1, g1 = gk[j], gk[j + 1]
+			if u <= s1 then
+				local gu = g + (g1 - g) * (u - s) / math.max(s1 - s, 1e-9)
+				return y + (g + gu) * 0.5 * (u - s)
+			end
+			y += (g + g1) * 0.5 * (s1 - s)
+			s, g = s1, g1
+		end
+		return y + g * (u - s)
+	end
+	local worst, worstU = 0, 0
+	walk(x0, z0, yaw0, k0, sec.k, 8, 8, function(u, x, z)
+		local d = yAt(u) - Ground.h(self.ground, x, z)
+		local off = math.abs(d)
+		if off > worst then
+			worst, worstU = off, u
+		end
+		return true
+	end)
+	if worst > T.MaxOff then
+		table.insert(self.stats.tightNotes, `off h {math.floor(worst)} at {math.floor(worstU)} of {math.floor(sec.len)} (turn {math.floor(sec.th[2])}-{math.floor(sec.th[3])})`)
+		return refuse("off h")
+	end
+	-- old road, and the escape past the shape against everything
+	local clear, sep = self.clearance, self.separation
+	local c2 = clear * clear
+	local cs = Config.Spline.CheckStep
+	local first = cs * (math.floor(s0 / cs + 1e-9) + 1) - s0
+	local knots = table.clone(sec.k)
+	table.insert(knots, sec.len + Config.Spline.EscapeLength)
+	table.insert(knots, 0)
+	local own: { number } = {}
+	-- (the shape's legs are close only to each other, by its lead: old road keeps the whole
+	-- clearance from all of it, and the escape past it from everything)
+	local ok = walk(x0, z0, yaw0, k0, knots, cs, first, function(u, x, z)
+		local s = s0 + u
+		local hit = sp:crowded(x, z, s, clear, sep)
+		if hit then
+			table.insert(self.stats.tightNotes, `crowded at {math.floor(u)} of {math.floor(sec.len)} by road {math.floor(s0 - hit)} back`)
+			return false
+		end
+		if u > sec.len then
+			for j = 1, #own, 3 do
+				if s - own[j] > sep then
+					local dx, dz = own[j + 1] - x, own[j + 2] - z
+					if dx * dx + dz * dz < c2 then
+						return false
+					end
+				end
+			end
+		end
+		local n = #own
+		own[n + 1], own[n + 2], own[n + 3] = s, x, z
+		return true
+	end)
+	if not ok then
+		return refuse("crowded")
+	end
+	self.stats.tightHairpins += 1
+	self.tightNext = s0 + sec.len + between(T.Every)
+	return sec
+end
+
 -- A planned turn lands on its heading and keeps the crossing/escape safety checks.
 -- Sharp turns sample the final candidate hillside. Try the clear radii, choose the best
 -- fit, or run on and try again at a new location. Location retries are bounded: when no
@@ -2117,6 +2300,13 @@ function SplineGen._turn(self: Gen, item: Item): (Spline.Section | string)?
 	local needed = (dir * (to-yaw0)) % (2*math.pi)
 	if needed>2*math.pi-math.rad(20) then needed-=2*math.pi end
 	if needed<math.rad(3) then return "done" end
+	-- now and then a turnaround is a tight hairpin (T-333)
+	if item.what == "turnaround" then
+		local tight = self:_tight(item, needed)
+		if tight then
+			return tight
+		end
+	end
 	local range=item.radius :: {number}
 	local fit = M.TurnChecks and needed>=math.rad(M.TurnCheckAngle)
 	local totalTries = if fit then M.TurnFitTries else M.TurnTries

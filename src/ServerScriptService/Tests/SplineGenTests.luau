@@ -167,6 +167,16 @@ local function measure(seed: number, length: number, log: { string })
 		if not h.open then
 			r.hairpins += 1
 			for _, side in { -1, 1 } do
+				-- (a tight hairpin's island side takes no rail by design, T-333: TightHairpinTests)
+				local island = false
+				for _, e in sp.tight do
+					if side == -e.dir and h.entry <= e.sOut and h.exit >= e.sIn then
+						island = true
+					end
+				end
+				if island then
+					continue
+				end
 				local most, falling, covered = -math.huge, 0, 0
 				for s = h.entry, h.exit, STEP do
 					local d = dropAt(sp, f, s, side)
@@ -401,7 +411,18 @@ function SplineGenTests.run(opts: { seeds: { number }?, length: number? }?)
 					end
 					for _, side in { -1, 1 } do
 						local _, b = sp:kRailAt(h.exit, side)
-						if b and not nextTight and b < sp.length - 1 then
+						-- (a tight cliff edge's gravel just past the bend carries its own rail, the
+						-- planner's (T-181): that is not the hairpin's run-out)
+						local gravel = false
+						if b then
+							for u = straight, b, 2 do
+								if sp:gravelAt(u, side) then
+									gravel = true
+									break
+								end
+							end
+						end
+						if b and not nextTight and not gravel and b < sp.length - 1 then
 							sides += 1
 							local past = b - straight
 							worst = math.max(worst, past)
