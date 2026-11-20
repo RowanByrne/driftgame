@@ -174,9 +174,9 @@ export type Gen = typeof(setmetatable(
 		crng: Random, -- the carved apexes' own stream, so they move no other choice (T-182)
 		hrng: Random, -- the tight hairpins' own stream (T-333), so they move no other choice
 		wrng: Random, -- the descent legs' weave (T-337), its own stream
-		-- the weave of the leg the road is on (T-337): how far either way, over what wave, from
-		-- what phase, and where along the leg it is gone by
-		weave: { amp: number, wave: number, phase: number, upTo: number }?,
+		-- the weave of the leg the road is on (T-337): how far either side of the leg, which side
+		-- it leans to now, and where along the leg it is gone by
+		weave: { amp: number, side: number, upTo: number }?,
 		tightNext: number, -- s: no tight hairpin is laid before here (T-333)
 		tightLast: number, -- s: where the last tight hairpin's shape ended (T-337: `Gap` from it)
 		uphill: number, -- the side the mountain is on: -1 left, 1 right
@@ -1887,11 +1887,9 @@ function SplineGen._planRange(self: Gen)
 			do
 				local w = self.wrng
 				local amp = R.TraverseWeave[1] + (R.TraverseWeave[2] - R.TraverseWeave[1]) * w:NextNumber()
-				local wave = R.TraverseWeaveWave[1] + (R.TraverseWeaveWave[2] - R.TraverseWeaveWave[1]) * w:NextNumber()
-				amp = math.min(amp, R.TraverseWeaveLean * wave / (2 * math.pi))
 				local legItem = if leg.hairpin then plan[#plan - 1] else plan[#plan]
 				local arrive = legItem.arrive or R.TraverseArrive
-				self.weave = { amp = amp, wave = wave, phase = w:NextNumber() * 2 * math.pi, upTo = leg.length - arrive - R.TraverseWeaveOut }
+				self.weave = { amp = amp, side = if w:NextNumber() < 0.5 then -1 else 1, upTo = leg.length - arrive - R.TraverseWeaveOut }
 			end
 			return
 		end
@@ -2057,9 +2055,8 @@ function SplineGen._follow(self: Gen, nearest: Spline.Section?, nearOff: number?
 	return best
 end
 
--- How far up or down the face (along the range's `t`) the line a leg's road keeps to is
--- swung at `along` studs of the leg (T-337): its weave, grown in from the leg's start and
--- gone by `upTo`. 0 with no weave.
+-- How much of its weave a leg's road has at `along` studs of the leg (T-337): grown in from
+-- the leg's start and gone by `upTo`, 0 to 1. 0 with no weave.
 function SplineGen._weaveAt(self: Gen, along: number): number
 	local w = self.weave
 	if not w then
@@ -2070,7 +2067,7 @@ function SplineGen._weaveAt(self: Gen, along: number): number
 		local t = math.clamp(x / R.TraverseWeaveIn, 0, 1)
 		return t * t * (3 - 2 * t)
 	end
-	return w.amp * math.sin(2 * math.pi * along / w.wave + w.phase) * ease(along) * ease(w.upTo - along)
+	return ease(along) * ease(w.upTo - along)
 end
 
 -- ALONG A DESCENT'S LEG (T-326): the leg was surveyed against the hillside already, so the
@@ -2084,13 +2081,39 @@ function SplineGen._track(self: Gen): Spline.Section?
 	local r = self.ground.range
 	local x0, z0, yaw0, k0, g0, b0, y0 = self.spline:tip()
 	local options = {}
-	-- (the weave swings the road up and down the face, so off the hillside by about the face's
-	-- fall over the swing: on steep ground it swings no further than `TraverseWeaveOff` would
-	-- take it, T-337)
-	local swing = 1
+	-- THE WEAVE (T-337): the road holds a heading `TraverseWeaveLean` off the leg, toward one
+	-- side of the face, until it is the weave's width off the leg that way, then turns to lean
+	-- the other way: S-bends either side of the surveyed line. The width is held in on steep
+	-- ground, where the swing would leave the road further than `TraverseWeaveOff` off the
+	-- hillside (the face's fall over it), and both lean and width grow in and fade out along
+	-- the leg. Not weaving, the road keeps to the leg as before.
+	local target: number? = nil -- the heading the road leans to, while it weaves
+	local width = 0
 	if self.weave then
-		local fall = math.tan(math.rad(Ground.where(self.ground, x0, z0).slope))
-		swing = math.min(1, R.TraverseWeaveOff / math.max(self.weave.amp * fall, 1e-6))
+		local w = self.weave
+		local tt, tv = Range.frame(r, x0, z0)
+		local nt, nv, _, along = Traverse.ahead(leg, tt, tv, 0)
+		local fade = self:_weaveAt(along)
+		if fade > 0 then
+			local fall = math.tan(math.rad(Ground.where(self.ground, x0, z0).slope))
+			width = w.amp * fade * math.min(1, R.TraverseWeaveOff / math.max(w.amp * fall, 1e-6))
+			if (tt - nt) * w.side > width then
+				w.side = -w.side
+			end
+			-- (the leg's own way on here, in the range's frame, and square to it toward +t)
+			local at, av = Traverse.ahead(leg, tt, tv, 60)
+			local lt, lv = at - nt, av - nv
+			local ll = math.max(math.sqrt(lt * lt + lv * lv), 1e-6)
+			lt, lv = lt / ll, lv / ll
+			local pt, pv = lv, -lt
+			if pt < 0 then
+				pt, pv = -pt, -pv
+			end
+			local a = math.rad(R.TraverseWeaveLean) * fade
+			local dt, dv = math.cos(a) * lt + math.sin(a) * w.side * pt, math.cos(a) * lv + math.sin(a) * w.side * pv
+			local wx, wz = Range.world(r, tt + dt * 100, tv + dv * 100)
+			target = math.atan2(x0 - wx, z0 - wz)
+		end
 	end
 	local function consider(kt: number, hold: number, radius: number?)
 		local knots = curvatureKnots(k0, kt, nil, hold)
@@ -2104,26 +2127,22 @@ function SplineGen._track(self: Gen): Spline.Section?
 		end, true)
 		local ye = yawAfter(yaw0, k0, knots)
 		local et, ev = Range.frame(r, ex, ez)
-		-- (the line kept to is the leg's, swung up or down the face by its weave, T-337)
-		-- (aimed a quarter of its wave on while it weaves, not `TraverseLook`, which would cut
-		-- across its bends)
-		local look = if self.weave then math.min(R.TraverseLook, self.weave.wave * 0.25) else R.TraverseLook
-		local nt, nv, _, along = Traverse.ahead(leg, et, ev, 0)
-		local miss = math.sqrt((et - (nt + swing * self:_weaveAt(along))) ^ 2 + (ev - nv) ^ 2)
-		local at, av = Traverse.ahead(leg, et, ev, look)
-		at += swing * self:_weaveAt(along + look)
-		local wx, wz = Range.world(r, at, av)
-		local err = math.deg(math.abs(wrap(ye - math.atan2(ex - wx, ez - wz))))
-		local score = miss + R.TrackHeadingCost * err + R.TrackCurveCost * math.abs(kt) * 1000
-		-- (and how far off the hillside the section leaves the road, past `TrackOffTol`)
+		local score
+		if target then
+			-- (weaving: how near the lean it ends, and never far past the weave's width off the leg)
+			local nt = Traverse.ahead(leg, et, ev, 0)
+			local err = math.deg(math.abs(wrap(ye - target)))
+			score = R.TrackHeadingCost * err + R.TrackCurveCost * math.abs(kt) * 1000
+			score += R.TrackStrayCost * math.max(0, math.abs(et - nt) - (width + R.TrackStrayTol))
+		else
+			local at, av, miss = Traverse.ahead(leg, et, ev, R.TraverseLook)
+			local wx, wz = Range.world(r, at, av)
+			local err = math.deg(math.abs(wrap(ye - math.atan2(ex - wx, ez - wz))))
+			score = miss + R.TrackHeadingCost * err + R.TrackCurveCost * math.abs(kt) * 1000
+		end
+		-- (and how far off the hillside the section leaves the road, past `TrackOffTol`, T-337)
 		local g, off = self:_followGrade(knots, g0, y0)
 		score += R.TrackOffCost * math.max(0, off - R.TrackOffTol)
-		-- (and never far past the weave's own swing from the surveyed line: lagging a bend, the
-		-- road overshot the next one, measured 90 studs off the leg the wrong way, in a cut)
-		if self.weave then
-			local stray = math.abs(et - nt) - (swing * self.weave.amp + R.TrackStrayTol)
-			score += R.TrackStrayCost * math.max(0, stray)
-		end
 		table.insert(options, { score = score, knots = knots, kt = kt, radius = radius, g = g })
 	end
 	for _, hold in R.TrackHolds do
