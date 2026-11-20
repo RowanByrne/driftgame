@@ -39,6 +39,7 @@ Each PC that works on this game, and how many lanes it opens: `lane1` up to that
 |---|---|---|
 | `MONSOONPC` | 62 GB, 32 threads (AMD Ryzen 9 9950X3D 16-Core Processor) | 6 |
 | `WKEYSTUDIOS1680` | 62 GB, 16 threads (AMD Ryzen 7 9800X3D 8-Core Processor) | 6 |
+| `ROWANWKEY` | 31 GB, 24 threads (Intel(R) Core(TM) Ultra 9 275HX) | 4 |
 
 ## Game-only rules
 
