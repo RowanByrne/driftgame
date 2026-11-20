@@ -58,6 +58,7 @@ Every command is open to whoever can use the console (above); there are no level
 | Time | `time-speed <times>` (`timespeed`) | Runs your cycle 0.1 to 100 times as fast | Your client |
 | World | `counts` | Parts, mesh parts, models and instances, on your client and the server (and the server's biggest folders) | Both |
 | World | `stats` | Your fps, worst frame, memory, ping, bandwidth; the server's heartbeat, physics, memory, uptime | Both |
+| World | `ground-look [look]` (`look`) | Switches the mountain's ground look on your screen and redraws it round you: `old`, `blend`, `detail`, `rock` (T-339, `ground-look.md`); with nothing, says which is on | Your client |
 | Admin | `whoami [player]` | Whether the server lets a player in, and why | Server |
 
 **Cmdr's own commands kept:** `help`, its utilities (`alias`, `bind`, `run`, `history`, `echo`, `var`, `math`, `clear`...) and its debug group (`version`, `uptime`, `position`, `get-player-place-instance`). **Left out:** its admin group (`kick`, `ban`, `kill`, `teleport`, `respawn`...: they act on characters and Roblox's ban API, and this game's driver sits in a car), `fetch` (the server calling any URL), and `blink` and `thru` (they move the character off its seat).
