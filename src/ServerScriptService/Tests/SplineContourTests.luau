@@ -76,7 +76,9 @@ function Tests.run()
 	local cut, fill, walls, pitch = 0, 0, 0, 0
 	local reached = 0
 	local s = 36575 -- first 25-stud sample after the handoff
-	while reached < 4 and sp.length < 100000 and not g.stats.stalled do
+	-- (115 000 since T-337: descents traverse the face in more, shorter legs, by design, so the
+	-- road is longer to each ridge; this seed's reaches the fourth at about 103 700)
+	while reached < 4 and sp.length < 115000 and not g.stats.stalled do
 		g:extendTo(sp.length + 1000)
 		while s <= sp.length do
 			local x, z = sp:planAt(s)
