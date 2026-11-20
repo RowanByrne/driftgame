@@ -78,7 +78,7 @@ function GroundLook.colour(x: number, y: number, z: number, alt: number, ny: num
 	local w = GroundLook.weights(x, z, alt, ny)
 	local blotch = math.clamp(0.5 + 1.6 * math.noise(x / L.BlotchStuds, z / L.BlotchStuds, 3.37), 0, 1)
 	local lush = L.Lush[1]:Lerp(L.Lush[2], blotch)
-	local alpine = L.Alpine[1]:Lerp(L.Alpine[2], blotch)
+	local alpine = L.AlpineGrass[1]:Lerp(L.AlpineGrass[2], blotch)
 	local c = mix(lush, alpine, w.alpine)
 	c = mix(c, L.RockyGrass, w.rocky)
 	if w.rock > 0 then
@@ -87,7 +87,7 @@ function GroundLook.colour(x: number, y: number, z: number, alt: number, ny: num
 		c = mix(c, scale(mix(L.RockLow, L.RockHigh, high), strata), w.rock)
 	end
 	if w.snow > 0 then
-		c = mix(c, L.Snow, w.snow)
+		c = mix(c, L.SnowColour, w.snow)
 	end
 	return c, w
 end

@@ -44,22 +44,21 @@ return {
 	-- old look's own grass); rock is two greys by height with faint strata (`Strata` either
 	-- way, over bands `StrataStuds` tall, wandered by noise)
 	Lush = { Color3.fromRGB(86, 132, 62), Color3.fromRGB(70, 116, 54) },
-	Alpine = { Color3.fromRGB(122, 128, 74), Color3.fromRGB(100, 108, 66) },
+	AlpineGrass = { Color3.fromRGB(122, 128, 74), Color3.fromRGB(100, 108, 66) },
 	RockyGrass = Color3.fromRGB(108, 108, 82),
 	RockLow = Color3.fromRGB(116, 110, 102),
 	RockHigh = Color3.fromRGB(132, 130, 128),
 	Strata = 0.07,
 	StrataStuds = 9,
-	Snow = Color3.fromRGB(232, 238, 246),
+	SnowColour = Color3.fromRGB(232, 238, 246),
 	BlotchStuds = 70,
 
 	-- THE DETAIL TEXTURE ("detail", `Road/DetailTexture`): grey noise made in code, `Size`
-	-- pixels each way, tiling every `TileStuds`; its average is `Mean`, and the vertex colours
+	-- pixels each way, tiling every `Spline.Ground.UVStuds` (48 studs, the ground's UVs); its average is `Mean`, and the vertex colours
 	-- are divided by it, so the ground keeps its brightness. `Contrast` is how far a pixel
 	-- strays from the average (of 1), across `Octaves` of noise, the coarsest `Cells` across
 	Detail = {
 		Size = 256,
-		TileStuds = 32,
 		Mean = 0.8,
 		Contrast = 0.2,
 		Octaves = 4,
