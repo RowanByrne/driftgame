@@ -9,6 +9,7 @@ Every task in progress and the files it owns, so parallel sessions and workers n
 
 | Branch | Lane | Files owned | Since |
 |---|---|---|---|
+| `feature/tight-hairpins` | Borrow to test | `src/ReplicatedStorage/Shared/Road/SplineContourTraverse.luau`, `Shared/Road/SplineGen.luau`, `Shared/Road/TightHairpin.luau`, `Shared/Config/Range.luau`, `Shared/Config/TightHairpin.luau`, `Shared/Config/Spline.luau`, `src/ServerScriptService/Tests/TightHairpinTests.luau`, `Tests/SplineContourTests.luau`, `Tests/SplineGenTests.luau`, `Tests/SplineTests.luau` | 2026-11-20, T-337 (tight hairpins into descents) |
 ## Notes between sessions
 
 > A short note for another session or PC that can't be said in a commit, such as "lane 3 has unpushed work, ask before refreshing it". Date it, say who it's for, and remove it once it's been seen.
