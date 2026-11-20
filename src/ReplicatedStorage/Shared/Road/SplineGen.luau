@@ -2097,10 +2097,13 @@ function SplineGen._track(self: Gen): Spline.Section?
 		local ye = yawAfter(yaw0, k0, knots)
 		local et, ev = Range.frame(r, ex, ez)
 		-- (the line kept to is the leg's, swung up or down the face by its weave, T-337)
+		-- (aimed a quarter of its wave on while it weaves, not `TraverseLook`, which would cut
+		-- across its bends)
+		local look = if self.weave then math.min(R.TraverseLook, self.weave.wave * 0.25) else R.TraverseLook
 		local nt, nv, _, along = Traverse.ahead(leg, et, ev, 0)
 		local miss = math.sqrt((et - (nt + self:_weaveAt(along))) ^ 2 + (ev - nv) ^ 2)
-		local at, av = Traverse.ahead(leg, et, ev, R.TraverseLook)
-		at += self:_weaveAt(along + R.TraverseLook)
+		local at, av = Traverse.ahead(leg, et, ev, look)
+		at += self:_weaveAt(along + look)
 		local wx, wz = Range.world(r, at, av)
 		local err = math.deg(math.abs(wrap(ye - math.atan2(ex - wx, ez - wz))))
 		local score = miss + R.TrackHeadingCost * err + R.TrackCurveCost * math.abs(kt) * 1000

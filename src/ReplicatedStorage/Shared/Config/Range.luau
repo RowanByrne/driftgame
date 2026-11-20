@@ -224,9 +224,9 @@ return {
 	-- "it's okay to cut in and build out from/of the hill a bit"). It grows in over the first
 	-- `TraverseWeaveIn` studs of a leg and is gone `TraverseWeaveOut` short of where the leg's
 	-- stretch ends, so a hairpin, tight or not, is met from the surveyed line.
-	TraverseWeave = { 50, 90 }, -- studs
-	TraverseWeaveWave = { 800, 1300 }, -- studs
-	TraverseWeaveLean = 0.5,
+	TraverseWeave = { 50, 80 }, -- studs
+	TraverseWeaveWave = { 500, 800 }, -- studs
+	TraverseWeaveLean = 0.7,
 	TraverseWeaveIn = 250, -- studs
 	TraverseWeaveOut = 300, -- studs
 }
