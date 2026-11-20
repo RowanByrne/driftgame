@@ -23,9 +23,9 @@ return {
 	-- moved up to `Jitter` degrees either way by noise over `JitterStuds`, so the bands never
 	-- run in lines. Up high the ground is rockier: every edge comes down `AlpineLower` degrees
 	-- by the time the ground is alpine
-	Rocky = { 22, 34 },
-	Rock = { 36, 50 },
-	Jitter = 7, -- degrees
+	Rocky = { 16, 26 },
+	Rock = { 27, 38 },
+	Jitter = 6, -- degrees
 	JitterStuds = 110,
 	AlpineLower = 6, -- degrees
 
@@ -34,11 +34,11 @@ return {
 	-- snow from `Snow[1]`, all snow by `Snow[2]`. Each edge moved up to `HeightJitter` studs
 	-- either way by noise over `HeightJitterStuds`. Snow does not lie on a face steeper than
 	-- `SnowSteep[1]` (and none past `SnowSteep[2]`): the rock shows through
-	Alpine = { 320, 620 }, -- studs
+	Alpine = { 420, 780 }, -- studs
 	Snow = { 900, 1100 }, -- studs
 	HeightJitter = 140, -- studs
 	HeightJitterStuds = 420,
-	SnowSteep = { 30, 46 }, -- degrees
+	SnowSteep = { 26, 38 }, -- degrees
 
 	-- THE COLOURS. Grass is two shades blotched by noise, as the old look has it (lush is the
 	-- old look's own grass); rock is two greys by height with faint strata (`Strata` either
