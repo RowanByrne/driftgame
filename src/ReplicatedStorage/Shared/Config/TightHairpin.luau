@@ -32,8 +32,8 @@ return {
 	-- the shape short of the leg's end by its lead and side by side run, so the turn lands
 	-- where the survey put the hairpin; refused there, it carries on to lay the ordinary one.
 	-- (on a descent the shape may leave the road `Range.TraverseTurnMaxOff` off h, as the
-	-- ordinary hairpin there may, not `MaxOff`: over six seeds that is 8 tight hairpins in
-	-- 270 000 studs where `MaxOff` let 3 by, every island still 43 degrees at most)
+	-- ordinary hairpin there may, not `MaxOff`: over six seeds of 60 000 studs, 13 tight
+	-- hairpins, every island still 43 degrees at most)
 	DescentFace = 10, -- degrees
 	Gap = 1500, -- studs
 	-- (a cut counts in full too: a tight hairpin is laid where the face takes it, not in a trench)

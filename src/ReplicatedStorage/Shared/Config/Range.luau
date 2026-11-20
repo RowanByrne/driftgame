@@ -180,8 +180,11 @@ return {
 	TraverseAhead = 3000, -- studs
 	TraverseMin = 900, -- studs
 	-- (7000 until T-337: legs of 5 000 to 7 500 studs held the top of the face for a whole
-	-- leg, and a face came down in one or two; the user: "can we make it do more traverses")
-	TraverseMax = 2500, -- studs
+	-- leg, and a face came down in one or two; the user: "can we make it do more traverses".
+	-- Over six seeds of 60 000 studs, 3500 turns back 52 times where 7000 did 44, with less
+	-- road walled in (400 studs to 450) and no deeper cut or fill; 2500 turned 57 times but
+	-- crossed one gully on 94 studs of fill)
+	TraverseMax = 3500, -- studs
 	TraverseReward = 1, -- (so a stud at the sustained grade costs nothing)
 	TraverseRefund = 0.9, -- of the leg's length, refunded when choosing where it ends
 	TraverseSteep = 45, -- studs of length per stud of height lost past the sustained grade
