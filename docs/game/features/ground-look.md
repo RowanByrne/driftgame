@@ -53,7 +53,7 @@ At the climb's rockiest stretch (road 14 000 to 14 750 studs along, 600 to 700 s
 | detail | 2.6 ms | none | 16.7 ms | one 256 px texture (none of the mesh budget once made opaque) |
 | rock | 6.8 to 8.3 ms | 34 of 251 to 63 of 211 | 16.7 ms | one extra mesh per rock tile: 34 to 63 of the client's ~640 mesh units, and 13 to 27% more triangles |
 
-The rock look's extra meshes come out of the same budget the ground's tiles and the road share (`ground-trial.md` "The mesh budget"); on Ultra the ground alone holds up to about 375 units, so a cliffier stretch could run the client out, and phones have less. The survey of the drawn ground (`DebugLookSurvey`) on the climb: about 30% rocky grass, 3 to 4% rock, 1 to 15% snow near the pass.
+The rock look's extra meshes come out of the same budget the ground's tiles and the road share (`ground-trial.md` "The mesh budget"); on Ultra the ground alone holds up to about 375 units, so a cliffier stretch could run the client out, and phones have less. The survey of the drawn ground (`DebugLookSurvey`) on the climb, before the rocky band was narrowed to 19 to 30 degrees: about 33% rocky grass, 3 to 4% rock, under 2% snow near the pass (the road tops out about 950 studs up, so the snow is mostly on the ground above it).
 
 ## Server and client
 
