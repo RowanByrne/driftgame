@@ -26,8 +26,10 @@ return {
 	ShortOfHalf = { 10, 60 }, -- degrees
 	-- (a cut counts in full too: a tight hairpin is laid where the face takes it, not in a trench)
 	MaxOff = 20, -- studs (`Spline.Ground.TurnMaxOff`)
-	-- Climbs too, or descents only.
-	OnClimbs = true,
+	-- Climbs too, or descents only. Descents (2026-11-20): on seed 7 a climb's tight hairpin sent
+	-- the rest of that climb into trenches (walled on both shoulders) and kept it off the fourth
+	-- ridge, where the ordinary switchback does neither.
+	OnClimbs = false,
 	-- The legs' tarmac edges are never nearer each other than this (the tests' bar; the shape
 	-- keeps about 31).
 	LegGap = 10, -- studs

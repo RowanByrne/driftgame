@@ -218,10 +218,22 @@ local function run(check, log, opts)
 				local steep, narrow = TightHairpin.measure(isl)
 				-- the rails: none on the island's side; the turn's outside as any hairpin's
 				islandRails += #sp:kRailsIn(e.sIn + 1, e.sFree - 1, -e.dir) // 2
-				-- no cliff where the island has a say, its hand-back included: a 2-stud grid
+				-- no cliff where the island has a say, its hand-back included: a 2-stud grid. A step
+				-- counts only where the island makes it, steeper than the same step in the ground
+				-- the road would have without the island (the legs' own cuts and fills are any
+				-- road's, and steep where the mountain is: a cut past an island's faded edge is not
+				-- the island's)
 				do
 					local gctx = Ground.context(gen.ground, sp, isl.minX, isl.minZ, isl.maxX, isl.maxZ)
+					local bare = Ground.context(gen.ground, sp, isl.minX, isl.minZ, isl.maxX, isl.maxZ)
+					bare.islands = {}
 					local prevRow = nil
+					local function step(v, u, gx, gz)
+						local s1 = math.abs(v[1] - u[1]) / 2
+						if s1 > worstStep and s1 > math.abs(v[2] - u[2]) / 2 + 0.1 then
+							worstStep, stepAt = s1, ` at ({fmt(gx, 0)}, {fmt(gz, 0)}) seed {seed}`
+						end
+					end
 					for gz = isl.minZ, isl.maxZ, 2 do
 						local row, prev = {}, nil
 						local i = 0
@@ -232,16 +244,16 @@ local function run(check, log, opts)
 							if w > 0 then
 								local ps, pd = sp:project(gx, gz, 80)
 								if not (ps and pd and math.abs(pd) < half) then
-									v = Ground.at(gctx, gx, gz)
+									v = { (Ground.at(gctx, gx, gz)), (Ground.at(bare, gx, gz)) }
 								end
 							end
 							row[i] = v
-							if v and prev and math.abs(v - prev) / 2 > worstStep then
-								worstStep, stepAt = math.abs(v - prev) / 2, ` at ({fmt(gx, 0)}, {fmt(gz, 0)}) seed {seed}`
+							if v and prev then
+								step(v, prev, gx, gz)
 							end
 							local u = prevRow and prevRow[i]
-							if v and u and math.abs(v - u) / 2 > worstStep then
-								worstStep, stepAt = math.abs(v - u) / 2, ` at ({fmt(gx, 0)}, {fmt(gz, 0)}) seed {seed}`
+							if v and u then
+								step(v, u, gx, gz)
 							end
 							prev = v
 						end
@@ -281,7 +293,7 @@ local function run(check, log, opts)
 		check("never within 1 500 studs of another", minGap >= 1500, if #gaps > 0 then `closest {fmt(minGap, 0)} studs apart` else "none two on one road")
 		check("every island on the road is a bank at least 10 across", total == 0 or (worstSteep <= C.IslandMaxSlope and minNarrow >= 10), `steepest {fmt(worstSteep, 1)} degrees, narrowest {fmt(minNarrow, 1)} studs`)
 		check("every island meets both legs' inner edges", worstEdge < 0.6, `worst {fmt(worstEdge, 2)} studs off`)
-		check("no cliff in the ground round any island, or where it hands back", worstStep <= stepBar, `steepest step {fmt(worstStep, 2)} studs a stud{stepAt} (bar {fmt(stepBar, 2)})`)
+		check("no cliff the island makes, round it or where it hands back", worstStep <= stepBar, `steepest step {fmt(worstStep, 2)} studs a stud{stepAt} (bar {fmt(stepBar, 2)})`)
 		check("no rail on an island's side", islandRails == 0, `{islandRails} rail runs on islands; {outsideRailed} of {total} turns railed on their outside`)
 		check("the planner's time per section stays near today's", worstMs < 60, `mean {fmt(sumMs / math.max(secs, 1), 2)} ms, worst {fmt(worstMs, 1)} ms`)
 	end
