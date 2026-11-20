@@ -518,7 +518,9 @@ function SplineGen._terrain(self: Gen, sec: Spline.Section)
 		local first = if downhillOver(1, 0, len) then 1 elseif downhillOver(-1, 0, len) then -1 else 1
 		local drops: Drops? = nil -- read once, before either side closes in
 		for _, side in { first, -first } do
-			if roll >= T.TightChance or grove[side] or sec.gl then
+			-- (never on a tight hairpin's island side, T-333: that side is the island's bank, with
+			-- no runoff at all, not a cliff)
+			if roll >= T.TightChance or grove[side] or sec.gl or (sec.th and side == -sec.th[5]) then
 				continue
 			end
 			drops = drops or self:sideDrops(sec, startRun)
