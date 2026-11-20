@@ -50,7 +50,7 @@ end
 -- DRAWN AS GROUND, NOT RUNOFF: the client's mesh classes a point by how far past the runoff's
 -- edge `Ground.at` says it is (its third answer), and draws a point it takes for runoff level
 -- with the nearer edge (a shelf: until T-333's send-back the island was drawn so, a shelf
--- from each leg meeting the bank in steps). Everywhere the island has a say, more than 3 studs
+-- from each leg meeting the bank in steps). Everywhere the island has a say (over 2%), more than 3 studs
 -- off the tarmac, that is the distance to the nearer leg's tarmac (no runoff on that side).
 -- Returns the worst share of it, where, and how many points.
 local function drawnAsGround(sp, isl, ctx): (number, string, number)
@@ -59,7 +59,9 @@ local function drawnAsGround(sp, isl, ctx): (number, string, number)
 	for gz = isl.minZ, isl.maxZ, 3 do
 		for gx = isl.minX, isl.maxX, 3 do
 			local _, w = TightHairpin.islandAt(isl, gx, gz)
-			if w > 0 then
+			-- (where it has a say worth seeing: the runoff eases back in just past where the
+			-- island fades out, and a share under 2% of a bank moves no ground)
+			if w > 0.02 then
 				local s, dd = sp:project(gx, gz, 120)
 				local off = if s and dd then math.abs(dd) - half else nil
 				if off and off > 3 then
