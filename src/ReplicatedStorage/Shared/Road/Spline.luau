@@ -74,10 +74,11 @@ export type Section = {
 	kr: { number }?, -- K-rail runs {ds0, ds1, side, ...}, side -1 left, 1 right
 	gl: { number }?, -- gravel runoff runs {ds0, ds1, side, ...}, as `kr` (T-181)
 	gv: { number }?, -- groves {side, seed, ...}: trees on that side's runoff, the whole section (T-183)
-	-- a tight hairpin (T-333, `Road/TightHairpin`): {sIn, sA, sB, sOut, dir, sFree} along the
-	-- section, where its legs' side by side run starts, the turn starts and ends, and the
-	-- run ends; `dir` 1 turns left, -1 right; past `sFree` the island is no longer between the
-	-- legs. The island between the legs is shaped from it
+	-- a tight hairpin (T-333, `Road/TightHairpin`): {sIn, sA, sB, sOut, dir, sFree, sBack, sGone}
+	-- along the section, where its legs' side by side run starts, the turn starts and ends, and
+	-- the run ends; `dir` 1 turns left, -1 right; past `sFree` the island is no longer between
+	-- the legs; from `sBack` to `sGone` it has a say in the ground (no runoff on that side).
+	-- The island between the legs is shaped from it
 	th: { number }?,
 }
 
@@ -132,7 +133,7 @@ export type Spline = typeof(setmetatable(
 		-- by a client's replay; nil on a bare test curve
 		mountain: any?,
 		-- the tight hairpins laid (T-333), in the road's own s: `TightHairpin.Entry`s
-		tight: { { sIn: number, sA: number, sB: number, sOut: number, dir: number, sFree: number, sStart: number, sEnd: number } },
+		tight: { { sIn: number, sA: number, sB: number, sOut: number, dir: number, sFree: number, sBack: number, sGone: number, sStart: number, sEnd: number } },
 	},
 	Spline
 ))
@@ -447,7 +448,7 @@ local function checkTerrain(self: Spline, sec: Section)
 	local len = sec.len
 	local th = sec.th
 	if th then
-		assert(#th == 6 and 0 <= th[1] and th[1] < th[2] and th[2] < th[3] and th[3] < th[4] and th[4] <= th[6] and th[6] <= len + 1e-6 and (th[5] == 1 or th[5] == -1), "Spline: a tight hairpin is {sIn, sA, sB, sOut, dir, sFree}, in order, inside the section")
+		assert(#th == 8 and 0 <= th[7] and th[7] <= th[1] and th[1] < th[2] and th[2] < th[3] and th[3] < th[4] and th[4] <= th[6] and th[6] <= th[8] and th[8] <= len + 1e-6 and (th[5] == 1 or th[5] == -1), "Spline: a tight hairpin is {sIn, sA, sB, sOut, dir, sFree, sBack, sGone}, in order (sBack first, sGone last), inside the section")
 	end
 	for _, knots in { sec.rl, sec.rr } do
 		if knots then
@@ -532,7 +533,7 @@ function Spline.append(self: Spline, sec: Section)
 	appendGroves(self, s0, sec.len, sec.gv)
 	local th = sec.th
 	if th then
-		table.insert(self.tight, { sIn = s0 + th[1], sA = s0 + th[2], sB = s0 + th[3], sOut = s0 + th[4], dir = th[5], sFree = s0 + th[6], sStart = s0, sEnd = s1 })
+		table.insert(self.tight, { sIn = s0 + th[1], sA = s0 + th[2], sB = s0 + th[3], sOut = s0 + th[4], dir = th[5], sFree = s0 + th[6], sBack = s0 + th[7], sGone = s0 + th[8], sStart = s0, sEnd = s1 })
 	end
 	self.length = s1
 	self.sections += 1
@@ -627,21 +628,23 @@ function Spline.runoffRaw(self: Spline, s: number, side: number): number
 	return (valueAt(t, s))
 end
 
--- How far into a tight hairpin's side by side run, and past its end, the island's runoff
--- eases from the road's own (T-333).
+-- How far either side of where a tight hairpin's island has a say the island's runoff eases
+-- from the road's own (T-333).
 local ISLAND_EASE = 20 -- studs
 
 -- The same, cut on the inside of a bend to `InsideShare` of the way to the bend's centre.
--- k > 0 turns left, so its inside is the left (-1). On a tight hairpin's island side, from
--- the leg in's side by side run to the leg out's, it is the island's (T-333): the island is
--- shaped between the two legs' edges, not grass.
+-- k > 0 turns left, so its inside is the left (-1). On a tight hairpin's island side, wherever
+-- the island has a say in the ground (`sBack` on the leg in to `sGone` on the leg out), it is
+-- the island's (T-333): the island is shaped between the two legs' edges, not grass. (A
+-- runoff there is drawn level with its edge, and met the sloping bank in a step.)
 function Spline.runoffAt(self: Spline, s: number, side: number): number
 	local w = self:runoffRaw(s, side)
 	for _, th in self.tight do
 		-- (eased inside the shape's own section, so the road laid before it never changes)
-		if side == -th.dir and s > th.sIn and s < th.sOut + ISLAND_EASE then
+		local a, b = math.max(th.sBack - ISLAND_EASE, th.sStart), math.min(th.sGone + ISLAND_EASE, th.sEnd)
+		if side == -th.dir and s > a and s < b then
 			local keep = Config.TightHairpin.IslandRunoff
-			local t = math.max(th.sIn + ISLAND_EASE - s, s - th.sOut, 0) / ISLAND_EASE
+			local t = math.clamp(math.max(th.sBack - s, s - th.sGone, 0) / ISLAND_EASE, 0, 1)
 			if keep < w then
 				w = keep + (w - keep) * t
 			end

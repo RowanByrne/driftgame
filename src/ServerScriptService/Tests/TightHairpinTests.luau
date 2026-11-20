@@ -47,6 +47,37 @@ local function fmt(x: number, p: number?): string
 	return string.format("%." .. tostring(p or 1) .. "f", x)
 end
 
+-- DRAWN AS GROUND, NOT RUNOFF: the client's mesh classes a point by how far past the runoff's
+-- edge `Ground.at` says it is (its third answer), and draws a point it takes for runoff level
+-- with the nearer edge (a shelf: until T-333's send-back the island was drawn so, a shelf
+-- from each leg meeting the bank in steps). Everywhere the island has a say, more than 3 studs
+-- off the tarmac, that is the distance to the nearer leg's tarmac (no runoff on that side).
+-- Returns the worst share of it, where, and how many points.
+local function drawnAsGround(sp, isl, ctx): (number, string, number)
+	local half = Config.Road.Width * 0.5
+	local worst, at, m = math.huge, "", 0
+	for gz = isl.minZ, isl.maxZ, 3 do
+		for gx = isl.minX, isl.maxX, 3 do
+			local _, w = TightHairpin.islandAt(isl, gx, gz)
+			if w > 0 then
+				local s, dd = sp:project(gx, gz, 120)
+				local off = if s and dd then math.abs(dd) - half else nil
+				if off and off > 3 then
+					local _, _, past = Ground.at(ctx, gx, gz)
+					m += 1
+					if past / off < worst then
+						worst, at = past / off, `({fmt(gx, 0)}, {fmt(gz, 0)}): {fmt(past, 1)} past the edge for {fmt(off, 1)} off the tarmac (island {fmt(w, 2)})`
+					end
+				end
+			end
+		end
+		if gz % 60 < 3 then
+			task.wait()
+		end
+	end
+	return worst, at, m
+end
+
 -- A road: 300 studs falling at GRADE, the tight hairpin turning `dir`, 300 more.
 local function road(dir: number)
 	local origin = { x = 0, y = 500, z = 0, yaw = 0 }
@@ -126,35 +157,16 @@ local function run(check, log, opts)
 		end
 		check(`{way}: the island meets the tarmac's edge`, worstEdge < 0.6, `worst {fmt(worstEdge, 2)} studs off the edge, {fmt(edgeAt)} studs from the turn ({n} points)`)
 		check(`{way}: no ground through the tarmac beside the island`, worstThrough < 0.05, `highest {fmt(worstThrough, 3)} studs above the road's underside`)
-		-- 3b. drawn as ground, not runoff: the client's mesh classes a point by how far past the
-		-- runoff's edge `Ground.at` says it is (its third answer) and puts a point it takes for
-		-- runoff level with the nearer edge. Across the island, from a quarter to three
-		-- quarters of the way, that is the distance to the nearer leg's tarmac (no runoff on
-		-- the island side), never 0
+		-- 3b. drawn as ground, not runoff (see `drawnAsGround`), and no runoff on the island's
+		-- side wherever the island has a say
 		do
-			local worstE, eAt, m = math.huge, "", 0
-			for s = e.sIn + 4, e.sA, 8 do
-				local cx, cz = sp:planAt(s)
-				local yaw = sp:yawAt(s)
-				local rx, rz = math.cos(yaw), -math.sin(yaw)
-				local ex, ez = cx + rx * d, cz + rz * d
-				for _, f in { 0.25, 0.5, 0.75 } do
-					-- (toward the other leg, square to this one: the island is about 31 across)
-					local across = 31.2 * f
-					local px, pz = ex - rx * dir * across, ez - rz * dir * across
-					local _, w = TightHairpin.islandAt(isl, px, pz)
-					if w >= 1 then
-						local _, _, past = Ground.at(ctx, px, pz)
-						local want = math.min(across, 31.2 - across)
-						m += 1
-						local ratio = past / want
-						if ratio < worstE then
-							worstE, eAt = ratio, `{fmt(s - e.sA, 0)} from the turn, {fmt(across, 0)} across: {fmt(past, 1)} past the edge for {fmt(want, 1)}`
-						end
-					end
-				end
-			end
+			local worstE, eAt, m = drawnAsGround(sp, isl, ctx)
 			check(`{way}: the island is drawn as ground, not runoff`, m > 0 and worstE > 0.7, `{m} points; worst {eAt}`)
+			local worstW = 0
+			for s = e.sBack, e.sGone, 4 do
+				worstW = math.max(worstW, sp:runoffAt(s, -dir))
+			end
+			check(`{way}: no runoff on the island's side`, worstW <= C.IslandRunoff + 1e-6, `widest {fmt(worstW, 2)} studs from {fmt(e.sBack - e.sA, 0)} to {fmt(e.sGone - e.sA, 0)} past the turn`)
 		end
 
 		-- 4. no cliff: neighbours on a grid over the island, its hand-back and round it
@@ -225,6 +237,7 @@ local function run(check, log, opts)
 		local total, lines, gaps, worstSteep, minNarrow, worstEdge, worstMs, sumMs, secs = 0, {}, {}, 0, math.huge, 0, 0, 0, 0
 		local islandRails, outsideRailed = 0, 0
 		local worstStep, stepAt = 0, ""
+		local worstDrawn, drawnAt, worstRunoff = math.huge, "", 0
 		local stepBar = math.tan(math.rad(math.max(C.IslandMaxSlope, Config.Spline.Ground.SlopeSteep) + 15))
 		for _, seed in opts.seedList or SEEDS do
 			local gen = SplineGen.new(seed)
@@ -249,7 +262,7 @@ local function run(check, log, opts)
 				local isl = TightHairpin.island(sp, e)
 				local steep, narrow = TightHairpin.measure(isl)
 				-- the rails: none on the island's side; the turn's outside as any hairpin's
-				islandRails += #sp:kRailsIn(e.sIn + 1, e.sFree - 1, -e.dir) // 2
+				islandRails += #sp:kRailsIn(e.sBack + 1, e.sFree - 1, -e.dir) // 2
 				-- no cliff where the island has a say, its hand-back included: a 2-stud grid. A step
 				-- counts only where the island makes it, steeper than the same step in the ground
 				-- the road would have without the island (the legs' own cuts and fills are any
@@ -300,6 +313,15 @@ local function run(check, log, opts)
 				end
 				worstSteep, minNarrow = math.max(worstSteep, steep), math.min(minNarrow, narrow)
 				local ctx = Ground.context(gen.ground, sp, isl.minX - 20, isl.minZ - 20, isl.maxX + 20, isl.maxZ + 20)
+				do
+					local r, a, m = drawnAsGround(sp, isl, ctx)
+					if m > 0 and r < worstDrawn then
+						worstDrawn, drawnAt = r, `{a} seed {seed}`
+					end
+					for s = e.sBack, e.sGone, 4 do
+						worstRunoff = math.max(worstRunoff, sp:runoffAt(s, -e.dir))
+					end
+				end
 				local d = -e.dir * half
 				for s = e.sIn, e.sOut, 4 do
 					local cx, cz = sp:planAt(s)
@@ -326,6 +348,7 @@ local function run(check, log, opts)
 		check("every island on the road is a bank at least 10 across", total == 0 or (worstSteep <= C.IslandMaxSlope and minNarrow >= 10), `steepest {fmt(worstSteep, 1)} degrees, narrowest {fmt(minNarrow, 1)} studs`)
 		check("every island meets both legs' inner edges", worstEdge < 0.6, `worst {fmt(worstEdge, 2)} studs off`)
 		check("no cliff the island makes, round it or where it hands back", worstStep <= stepBar, `steepest step {fmt(worstStep, 2)} studs a stud{stepAt} (bar {fmt(stepBar, 2)})`)
+		check("every island is drawn as ground, with no runoff on its side", total == 0 or (worstDrawn > 0.7 and worstRunoff <= C.IslandRunoff + 1e-6), `worst {fmt(worstDrawn, 2)} of the way past the edge at {drawnAt}; widest runoff {fmt(worstRunoff, 2)}`)
 		check("no rail on an island's side", islandRails == 0, `{islandRails} rail runs on islands; {outsideRailed} of {total} turns railed on their outside`)
 		check("the planner's time per section stays near today's", worstMs < 60, `mean {fmt(sumMs / math.max(secs, 1), 2)} ms, worst {fmt(worstMs, 1)} ms`)
 	end

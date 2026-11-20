@@ -94,16 +94,23 @@ function RoadDressing.dress(self: Dresser, sec: Spline.Section)
 	end
 	local pieces = self:_barrierPieces(sec, drops, grove)
 	-- A TIGHT HAIRPIN (T-333, `Road/TightHairpin`): no rail on its island's side, the inside of
-	-- both legs, while the island is between them (to `sFree`; features/tight-hairpins.md
-	-- "Barriers": the island is ground between two roads, not a drop). Its outside is railed as
-	-- any hairpin's, and past `sFree` the island's side is railed as any road's.
+	-- both legs, while the island is between them (`sBack` on the leg in to `sFree` on the leg
+	-- out; features/tight-hairpins.md "Barriers": the island is ground between two roads, not a
+	-- drop). Its outside is railed as any hairpin's, and either side of that the island's side
+	-- is railed as any road's.
 	if sec.th then
-		local island, free = -sec.th[5], sec.th[6]
+		local island, back, free = -sec.th[5], sec.th[7], sec.th[6]
 		local kept = {}
 		for _, p in pieces[island] do
+			-- (a stub left short by the cut is dropped, unless it carries on past either end)
+			if p[1] < back - 1e-6 then
+				local a, b = p[1], math.min(p[2], back)
+				if b - a >= B.MinRun or a <= 1e-6 then
+					table.insert(kept, { a, b })
+				end
+			end
 			if p[2] > free + 1e-6 then
 				local a, b = math.max(p[1], free), p[2]
-				-- (a stub left short by the cut is dropped, unless it carries on past the end)
 				if b - a >= B.MinRun or b >= sec.len - 1e-6 then
 					table.insert(kept, { a, b })
 				end

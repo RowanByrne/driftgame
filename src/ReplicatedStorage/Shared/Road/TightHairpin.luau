@@ -21,9 +21,11 @@
 --
 -- with the grade eased to `Grade` (signed by the caller: falling on a descent) and the bank
 -- to flat, and both held. Section tag "TightHairpin"; its `th` field says where the island
--- is: { sIn, sA, sB, sOut, dir, sFree } along the section (the leg in's side by side run
--- starts, the turn starts, the turn ends, the leg out's run ends; `dir` 1 turns left, -1
--- right; past `sFree` the legs are far enough apart that the island is no longer between them).
+-- is: { sIn, sA, sB, sOut, dir, sFree, sBack, sGone } along the section (the leg in's side by
+-- side run starts, the turn starts, the turn ends, the leg out's run ends; `dir` 1 turns left,
+-- -1 right; past `sFree` the legs are far enough apart that the island is no longer between
+-- them, and it starts handing back; from `sBack` on the leg in to `sGone` on the leg out the
+-- island has a say in the ground, so that side has no runoff).
 --
 -- THE ISLAND (`island`, `islandAt`): the ground between the legs is a BANK, straight across
 -- from the leg in's inner edge to the leg out's, at each distance from the tip, down a rung
@@ -38,10 +40,10 @@ local Config = require(ReplicatedStorage.Shared.Config)
 
 local TightHairpin = {}
 
-export type Th = { number } -- { sIn, sA, sB, sOut, dir, sFree }, along the section
+export type Th = { number } -- { sIn, sA, sB, sOut, dir, sFree, sBack, sGone }, along the section
 
 -- One tight hairpin on a laid road, in the road's own `s` (`Spline.append` keeps these).
-export type Entry = { sIn: number, sA: number, sB: number, sOut: number, dir: number, sFree: number, sStart: number, sEnd: number }
+export type Entry = { sIn: number, sA: number, sB: number, sOut: number, dir: number, sFree: number, sBack: number, sGone: number, sStart: number, sEnd: number }
 
 -- What `island` makes of an entry: the island's frame and its two inner edges, sampled.
 export type Island = {
@@ -205,8 +207,8 @@ function TightHairpin.build(k0: number, g0: number, b0: number, dir: number, ext
 		-- how far back past the side by side run the leg out still lies within `clear` of the
 		-- leg in's line: the lead that keeps the road before the shape out of its way; and where
 		-- the island is no longer between the legs (`IslandFull` between their edges)
-		local back = 0
-		local free = u
+		local back, backGone = 0, 0
+		local free, gone = u, u
 		for i = math.floor(sOut) + 1, n + math.floor(run) do
 			local qx, qz
 			if i <= n then
@@ -223,12 +225,20 @@ function TightHairpin.build(k0: number, g0: number, b0: number, dir: number, ext
 			if lat >= Config.Road.Width + C.IslandFull and i - 1 < free then
 				free = i - 1
 			end
+			-- (and where the island has no say at all, `IslandGone` between the edges: on the
+			-- leg out, and back along the leg in, the rung it shares with it)
+			if lat < Config.Road.Width + C.IslandGone then
+				backGone = math.max(backGone, -(rx * lx + rz * lz))
+			elseif i - 1 < gone then
+				gone = i - 1
+			end
 		end
-		return k, sIn, sA, sB, sOut, u, back, math.max(math.min(free, u), sOut)
+		free = math.max(math.min(free, u), sOut)
+		return k, sIn, sA, sB, sOut, u, back, free, math.max(sIn - backGone, 0), math.max(math.min(gone, u), free)
 	end
 	local _, _, _, _, _, _, back = knotsFor(0)
 	local lead = if back > 0 then back + 2 * S.CheckStep else 0
-	local k, sIn, sA, sB, sOut, len, _, sFree = knotsFor(lead)
+	local k, sIn, sA, sB, sOut, len, _, sFree, sBack, sGone = knotsFor(lead)
 	return {
 		len = len,
 		k = k,
@@ -236,7 +246,7 @@ function TightHairpin.build(k0: number, g0: number, b0: number, dir: number, ext
 		-- (the bank track eases between knots: its steepest is 1.5 times a straight ramp's)
 		b = ramp(b0, 0, math.rad(S.MaxBankRate) / 1.5, len),
 		tag = "TightHairpin",
-		th = { sIn, sA, sB, sOut, dir, sFree },
+		th = { sIn, sA, sB, sOut, dir, sFree, sBack, sGone },
 	}
 end
 
