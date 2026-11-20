@@ -233,6 +233,7 @@ return {
 	TraverseWeaveOff = 25, -- studs
 	TrackOffTol = 15, -- studs
 	TrackOffCost = 2,
+	TrackOffCheck = 8, -- of the best options are judged on it (its grade costs as much as the rest)
 	-- (nor further from the surveyed line than its swing and `TrackStrayTol`: `TrackStrayCost`
 	-- a stud past it)
 	TrackStrayTol = 15, -- studs

@@ -2115,16 +2115,13 @@ function SplineGen._track(self: Gen): Spline.Section?
 		local wx, wz = Range.world(r, at, av)
 		local err = math.deg(math.abs(wrap(ye - math.atan2(ex - wx, ez - wz))))
 		local score = miss + R.TrackHeadingCost * err + R.TrackCurveCost * math.abs(kt) * 1000
-		-- (and how far off the hillside the section leaves the road, past `TrackOffTol`)
-		local g, off = self:_followGrade(knots, g0, y0)
-		score += R.TrackOffCost * math.max(0, off - R.TrackOffTol)
 		-- (and never far past the weave's own swing from the surveyed line: lagging a bend, the
 		-- road overshot the next one, measured 90 studs off the leg the wrong way, in a cut)
 		if self.weave then
 			local stray = math.abs(et - nt) - (swing * self.weave.amp + R.TrackStrayTol)
 			score += R.TrackStrayCost * math.max(0, stray)
 		end
-		table.insert(options, { score = score, knots = knots, kt = kt, radius = radius, g = g })
+		table.insert(options, { score = score, knots = knots, kt = kt, radius = radius, g = nil :: { number }? })
 	end
 	for _, hold in R.TrackHolds do
 		consider(0, hold, nil)
@@ -2132,6 +2129,17 @@ function SplineGen._track(self: Gen): Spline.Section?
 			consider(1 / radius, hold, radius)
 			consider(-1 / radius, hold, radius)
 		end
+	end
+	table.sort(options, function(a, b)
+		return a.score < b.score
+	end)
+	-- (and the best few, how far off the hillside each leaves the road, past `TrackOffTol`:
+	-- the grade is worked out only for these, as it costs as much again as the rest)
+	for i = 1, math.min(R.TrackOffCheck, #options) do
+		local o = options[i]
+		local g, off = self:_followGrade(o.knots, g0, y0)
+		o.g = g
+		o.score += R.TrackOffCost * math.max(0, off - R.TrackOffTol)
 	end
 	table.sort(options, function(a, b)
 		return a.score < b.score
@@ -2144,7 +2152,7 @@ function SplineGen._track(self: Gen): Spline.Section?
 			return {
 				k = kn,
 				len = len,
-				g = o.g,
+				g = o.g or (self:_followGrade(kn, g0, y0)),
 				b = pickBank(o.kt, o.radius, b0, math.min(transition(k0, o.kt), len), len, false),
 				tag = if not o.radius then "Straight" elseif o.radius < 95 then "Hairpin" elseif o.radius <= 340 then "Medium" else "Sweeper",
 			}
