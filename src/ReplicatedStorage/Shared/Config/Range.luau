@@ -224,9 +224,15 @@ return {
 	-- "it's okay to cut in and build out from/of the hill a bit"). It grows in over the first
 	-- `TraverseWeaveIn` studs of a leg and is gone `TraverseWeaveOut` short of where the leg's
 	-- stretch ends, so a hairpin, tight or not, is met from the surveyed line.
-	TraverseWeave = { 50, 80 }, -- studs
-	TraverseWeaveWave = { 500, 800 }, -- studs
-	TraverseWeaveLean = 0.7,
+	TraverseWeave = { 70, 110 }, -- studs
+	TraverseWeaveWave = { 450, 700 }, -- studs
+	TraverseWeaveLean = 0.9,
+	-- (on steep ground it swings no further than the face would fall this far over the swing,
+	-- and every section along a leg is judged on how far off the hillside it leaves the road
+	-- too: `TrackOffCost` a stud past `TrackOffTol`)
+	TraverseWeaveOff = 25, -- studs
+	TrackOffTol = 15, -- studs
+	TrackOffCost = 2,
 	TraverseWeaveIn = 250, -- studs
 	TraverseWeaveOut = 300, -- studs
 }

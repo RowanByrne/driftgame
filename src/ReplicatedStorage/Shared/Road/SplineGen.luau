@@ -2084,6 +2084,14 @@ function SplineGen._track(self: Gen): Spline.Section?
 	local r = self.ground.range
 	local x0, z0, yaw0, k0, g0, b0, y0 = self.spline:tip()
 	local options = {}
+	-- (the weave swings the road up and down the face, so off the hillside by about the face's
+	-- fall over the swing: on steep ground it swings no further than `TraverseWeaveOff` would
+	-- take it, T-337)
+	local swing = 1
+	if self.weave then
+		local fall = math.tan(math.rad(Ground.where(self.ground, x0, z0).slope))
+		swing = math.min(1, R.TraverseWeaveOff / math.max(self.weave.amp * fall, 1e-6))
+	end
 	local function consider(kt: number, hold: number, radius: number?)
 		local knots = curvatureKnots(k0, kt, nil, hold)
 		if not knots then
@@ -2101,13 +2109,16 @@ function SplineGen._track(self: Gen): Spline.Section?
 		-- across its bends)
 		local look = if self.weave then math.min(R.TraverseLook, self.weave.wave * 0.25) else R.TraverseLook
 		local nt, nv, _, along = Traverse.ahead(leg, et, ev, 0)
-		local miss = math.sqrt((et - (nt + self:_weaveAt(along))) ^ 2 + (ev - nv) ^ 2)
+		local miss = math.sqrt((et - (nt + swing * self:_weaveAt(along))) ^ 2 + (ev - nv) ^ 2)
 		local at, av = Traverse.ahead(leg, et, ev, look)
-		at += self:_weaveAt(along + look)
+		at += swing * self:_weaveAt(along + look)
 		local wx, wz = Range.world(r, at, av)
 		local err = math.deg(math.abs(wrap(ye - math.atan2(ex - wx, ez - wz))))
 		local score = miss + R.TrackHeadingCost * err + R.TrackCurveCost * math.abs(kt) * 1000
-		table.insert(options, { score = score, knots = knots, kt = kt, radius = radius })
+		-- (and how far off the hillside the section leaves the road, past `TrackOffTol`)
+		local g, off = self:_followGrade(knots, g0, y0)
+		score += R.TrackOffCost * math.max(0, off - R.TrackOffTol)
+		table.insert(options, { score = score, knots = knots, kt = kt, radius = radius, g = g })
 	end
 	for _, hold in R.TrackHolds do
 		consider(0, hold, nil)
@@ -2127,7 +2138,7 @@ function SplineGen._track(self: Gen): Spline.Section?
 			return {
 				k = kn,
 				len = len,
-				g = (self:_followGrade(kn, g0, y0)),
+				g = o.g,
 				b = pickBank(o.kt, o.radius, b0, math.min(transition(k0, o.kt), len), len, false),
 				tag = if not o.radius then "Straight" elseif o.radius < 95 then "Hairpin" elseif o.radius <= 340 then "Medium" else "Sweeper",
 			}
