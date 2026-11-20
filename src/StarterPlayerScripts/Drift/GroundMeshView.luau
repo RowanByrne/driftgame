@@ -378,7 +378,7 @@ function GroundMeshView.DebugLookSurvey(self: View, step: number?)
 	local rockPts = {}
 	for _, tile in self.tiles do
 		for k = 1, #tile.heights do
-			if tile.cls[k] == OPEN then
+			if tile.cls[k] == 2 then -- (OPEN, defined further down)
 				local nv = tile.normals[k]
 				local alt = tile.heights[k] - oy
 				local w = GroundLook.weights(tile.px[k], tile.pz[k], alt, nv.Y)
