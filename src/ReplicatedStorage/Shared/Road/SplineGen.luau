@@ -117,6 +117,12 @@ export type Item = {
 	nextDirV: number?, -- a turnaround after a traverse (T-326): which way across the next leg runs
 	traverse: boolean?, -- ...and it ends a descent's surveyed leg
 	climb: boolean?, -- a turnaround on a climb (T-333: a tight hairpin there climbs)
+	-- T-337: a descent's hairpin planned as a tight one (on steeper ground), the leg's own
+	-- heading kept to run on by if it is refused, and the leg's stretch ending this far short
+	-- of its end (else `Range.TraverseArrive`)
+	tightWanted: boolean?,
+	legSlope: Slope?,
+	arrive: number?,
 }
 
 -- What a heading on the mountain is (T-226, T-238): "leg" across the face toward the pass
@@ -168,6 +174,7 @@ export type Gen = typeof(setmetatable(
 		crng: Random, -- the carved apexes' own stream, so they move no other choice (T-182)
 		hrng: Random, -- the tight hairpins' own stream (T-333), so they move no other choice
 		tightNext: number, -- s: no tight hairpin is laid before here (T-333)
+		tightLast: number, -- s: where the last tight hairpin's shape ended (T-337: `Gap` from it)
 		uphill: number, -- the side the mountain is on: -1 left, 1 right
 		inBand: boolean, -- heading within `AlongFallLine` of the fall line: the side holds
 		crossAt: number, -- s: where the heading last crossed the fall line, inside the band (T-189)
@@ -259,6 +266,7 @@ function SplineGen.new(seed: number, origin: Spline.Origin?, clearOverride: numb
 		crng = Random.new((seed * 19 + 3089) % 2 ^ 31), -- not the groves' seed: a stream of its own
 		hrng = Random.new((seed * 23 + 4099) % 2 ^ 31),
 		tightNext = 0,
+		tightLast = -math.huge,
 		-- the mountain starts on the side the uphill direction is on (with the fall line square
 		-- to the start heading, it is never inside the band)
 		uphill = if math.sin(spline.origin.yaw - fall) > 0 then 1 else -1,
@@ -1851,12 +1859,21 @@ function SplineGen._planRange(self: Gen)
 		if leg then
 			self.leg = leg
 			local legSide = if across(1) * leg.dirV > 0 then 1 else -1
-			stretch(leg.length * 1.5, "traverse", { kind = "traverse", side = legSide })
+			local legSlope: Slope = { kind = "traverse", side = legSide }
+			stretch(leg.length * 1.5, "traverse", legSlope)
 			if leg.hairpin then
 				local nextLeg: Slope = { kind = "return", side = -legSide, gd = math.tan(math.rad(R.TraverseGrade)), dirV = -leg.dirV }
 				turn("turnaround", legSide, leg.radius, "Hairpin", nextLeg)
 				plan[#plan].nextDirV = -leg.dirV
 				plan[#plan].traverse = true
+				-- ON STEEPER GROUND, A TIGHT ONE (T-337): the leg is left its lead and side by side
+				-- run short of its end, so the shape's turn lands where the survey put the hairpin
+				local TH = Config.TightHairpin
+				if leg.siteSlope >= math.tan(math.rad(TH.DescentFace)) and s0 + leg.length - self.tightLast >= TH.Gap then
+					plan[#plan].tightWanted = true
+					plan[#plan].legSlope = legSlope
+					plan[#plan - 1].arrive = R.TraverseArrive + self:_tightReach()
+				end
 				self.legSide = -legSide
 			else
 				self.legSide = legSide
@@ -2131,6 +2148,18 @@ end
 -- `MaxOff` of h, and clear of old road (its own legs are side by side on purpose: the shape
 -- is checked against old road only, and its escape against everything). nil otherwise, and
 -- the ordinary hairpin is laid as before.
+-- How far a tight hairpin's turn starts past where its shape does (its lead and side by side
+-- run, from a straight road), worked out once.
+local tightReach: { [number]: number } = {}
+function SplineGen._tightReach(self: Gen): number
+	local r = tightReach[self.clearance]
+	if not r then
+		r = TightHairpin.build(0, 0, 0, 1, math.rad(30), 0, self.clearance).th[2] :: number
+		tightReach[self.clearance] = r
+	end
+	return r
+end
+
 function SplineGen._tight(self: Gen, item: Item, needed: number): Spline.Section?
 	local T = Config.TightHairpin
 	local sp = self.spline
@@ -2138,11 +2167,19 @@ function SplineGen._tight(self: Gen, item: Item, needed: number): Spline.Section
 	local function between(range: { number }): number
 		return range[1] + (range[2] - range[1]) * self.hrng:NextNumber()
 	end
-	if self.tightNext <= 0 then
-		self.tightNext = between(T.First)
-	end
-	if s0 < self.tightNext then
-		return nil
+	-- (a descent's leg planned to end in one, T-337, is held only to `Gap` from the last; the
+	-- rest come now and then)
+	if item.tightWanted then
+		if s0 - self.tightLast < T.Gap then
+			return nil
+		end
+	else
+		if self.tightNext <= 0 then
+			self.tightNext = between(T.First)
+		end
+		if s0 < self.tightNext then
+			return nil
+		end
 	end
 	-- (the next leg's heading: a half turn, or short of one by its tilt down the face)
 	local short = math.pi - needed
@@ -2285,6 +2322,7 @@ function SplineGen._tight(self: Gen, item: Item, needed: number): Spline.Section
 	end
 	self.stats.tightHairpins += 1
 	self.tightNext = s0 + sec.len + between(T.Every)
+	self.tightLast = s0 + sec.len
 	return sec
 end
 
@@ -2300,11 +2338,17 @@ function SplineGen._turn(self: Gen, item: Item): (Spline.Section | string)?
 	local needed = (dir * (to-yaw0)) % (2*math.pi)
 	if needed>2*math.pi-math.rad(20) then needed-=2*math.pi end
 	if needed<math.rad(3) then return "done" end
-	-- now and then a turnaround is a tight hairpin (T-333)
+	-- now and then a turnaround is a tight hairpin (T-333). One a descent's leg was planned to
+	-- end in (T-337) is tried where its turn lands at the leg's end, its lead and side by side
+	-- run short of it; refused there, the road runs on to the leg's end for the ordinary one
 	if item.what == "turnaround" then
 		local tight = self:_tight(item, needed)
 		if tight then
 			return tight
+		end
+		if item.tightWanted then
+			item.tightWanted = false
+			return "later"
 		end
 	end
 	local range=item.radius :: {number}
@@ -2445,6 +2489,12 @@ function SplineGen._planned(self: Gen, item: Item): Spline.Section?
 	end
 	do
 		local sec = self:_turn(item)
+		if sec == "later" then
+			-- (a descent's tight hairpin refused short of the leg's end, T-337: on along the leg to
+			-- its end, where the ordinary hairpin is laid as before)
+			table.insert(self.plan, 1, { turn = false, what = "traverse", aim = self.aim, limit = self.limit, left = math.huge, slope = item.legSlope })
+			return nil
+		end
 		if sec == "done" or typeof(sec) == "table" then
 			table.remove(self.plan, 1)
 			if item.what == "turnaround" then
@@ -2681,7 +2731,7 @@ function SplineGen.step(self: Gen): Spline.Section?
 			local x, z = self.spline:tip()
 			local t, v = Range.frame(self.ground.range, x, z)
 			local _, _, _, at = Traverse.ahead(leg, t, v, 0)
-			if at >= leg.length - Config.Range.TraverseArrive then
+			if at >= leg.length - (head.arrive or Config.Range.TraverseArrive) then
 				head.left = 0
 			end
 		end

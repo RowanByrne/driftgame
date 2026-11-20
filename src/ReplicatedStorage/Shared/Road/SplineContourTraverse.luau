@@ -35,6 +35,7 @@ export type Leg = {
 	radius: { number }, -- the hairpin's radius range, from the hillside at its site
 	score: number,
 	ridge: number, -- the ridge the descent heads for (the plan is dropped past it)
+	siteSlope: number, -- the hillside's fall across the hairpin site, rise over run (T-337: a tight hairpin on steeper ground)
 }
 
 -- One direction across: the best leg from (x0, z0), or nil. The survey's frame is the face's
@@ -278,6 +279,7 @@ local function survey(f: Ground.Field, x0: number, z0: number, y0: number, yaw: 
 		drop = y0 - last.y,
 		hairpin = up > Config.Range.ValleyShare,
 		radius = { radius, radius * 1.15 },
+		siteSlope = siteSlope,
 		score = best,
 		ridge = 0,
 	}

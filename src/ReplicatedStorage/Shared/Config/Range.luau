@@ -179,7 +179,9 @@ return {
 	TraverseHopeless = 20000, -- a leg's score past which no drivable leg was found (seed 7's worst: 8 013)
 	TraverseAhead = 3000, -- studs
 	TraverseMin = 900, -- studs
-	TraverseMax = 7000, -- studs
+	-- (7000 until T-337: legs of 5 000 to 7 500 studs held the top of the face for a whole
+	-- leg, and a face came down in one or two; the user: "can we make it do more traverses")
+	TraverseMax = 2500, -- studs
 	TraverseReward = 1, -- (so a stud at the sustained grade costs nothing)
 	TraverseRefund = 0.9, -- of the leg's length, refunded when choosing where it ends
 	TraverseSteep = 45, -- studs of length per stud of height lost past the sustained grade
