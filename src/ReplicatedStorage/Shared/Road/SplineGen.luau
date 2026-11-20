@@ -2140,9 +2140,12 @@ function SplineGen._track(self: Gen): Spline.Section?
 			local err = math.deg(math.abs(wrap(ye - math.atan2(ex - wx, ez - wz))))
 			score = miss + R.TrackHeadingCost * err + R.TrackCurveCost * math.abs(kt) * 1000
 		end
-		-- (and how far off the hillside the section leaves the road, past `TrackOffTol`, T-337)
+		-- (and, weaving, how far off the hillside the section leaves the road, past `TrackOffTol`,
+		-- T-337: not otherwise, where it outweighed the leg and the road wandered off it)
 		local g, off = self:_followGrade(knots, g0, y0)
-		score += R.TrackOffCost * math.max(0, off - R.TrackOffTol)
+		if target then
+			score += R.TrackOffCost * math.max(0, off - R.TrackOffTol)
+		end
 		table.insert(options, { score = score, knots = knots, kt = kt, radius = radius, g = g })
 	end
 	for _, hold in R.TrackHolds do
