@@ -23,7 +23,7 @@ return {
 	-- moved up to `Jitter` degrees either way by noise over `JitterStuds`, so the bands never
 	-- run in lines. Up high the ground is rockier: every edge comes down `AlpineLower` degrees
 	-- by the time the ground is alpine
-	Rocky = { 16, 26 },
+	Rocky = { 19, 30 },
 	Rock = { 27, 38 },
 	Jitter = 6, -- degrees
 	JitterStuds = 110,
@@ -44,8 +44,8 @@ return {
 	-- old look's own grass); rock is two greys by height with faint strata (`Strata` either
 	-- way, over bands `StrataStuds` tall, wandered by noise)
 	Lush = { Color3.fromRGB(86, 132, 62), Color3.fromRGB(70, 116, 54) },
-	AlpineGrass = { Color3.fromRGB(122, 128, 74), Color3.fromRGB(100, 108, 66) },
-	RockyGrass = Color3.fromRGB(108, 108, 82),
+	AlpineGrass = { Color3.fromRGB(108, 134, 70), Color3.fromRGB(92, 118, 62) },
+	RockyGrass = Color3.fromRGB(114, 118, 90),
 	RockLow = Color3.fromRGB(116, 110, 102),
 	RockHigh = Color3.fromRGB(132, 130, 128),
 	Strata = 0.07,
