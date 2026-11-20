@@ -2281,7 +2281,9 @@ function SplineGen._tight(self: Gen, item: Item, needed: number): Spline.Section
 		end
 		return true
 	end)
-	if worst > T.MaxOff then
+	-- (a descent's, as far as its ordinary hairpin may be, T-337: on steeper ground the face
+	-- falls further between the legs than the road can round the turn)
+	if worst > (if item.traverse then Config.Range.TraverseTurnMaxOff else T.MaxOff) then
 		table.insert(self.stats.tightNotes, `off h {math.floor(worst)} at {math.floor(worstU)} of {math.floor(sec.len)} (turn {math.floor(sec.th[2])}-{math.floor(sec.th[3])})`)
 		return refuse("off h")
 	end

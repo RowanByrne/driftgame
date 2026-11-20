@@ -31,10 +31,13 @@ return {
 	-- other tight hairpin within `Gap` (`First` and `Every` are for the rest). The road starts
 	-- the shape short of the leg's end by its lead and side by side run, so the turn lands
 	-- where the survey put the hairpin; refused there, it carries on to lay the ordinary one.
-	DescentFace = 12, -- degrees
+	-- (on a descent the shape may leave the road `Range.TraverseTurnMaxOff` off h, as the
+	-- ordinary hairpin there may, not `MaxOff`: over six seeds that is 8 tight hairpins in
+	-- 270 000 studs where `MaxOff` let 3 by, every island still 43 degrees at most)
+	DescentFace = 10, -- degrees
 	Gap = 1500, -- studs
 	-- (a cut counts in full too: a tight hairpin is laid where the face takes it, not in a trench)
-	MaxOff = 20, -- studs (`Spline.Ground.TurnMaxOff`)
+	MaxOff = 20, -- studs (`Spline.Ground.TurnMaxOff`; a descent's: `Range.TraverseTurnMaxOff`)
 	-- Climbs too, or descents only. Descents (2026-11-20): on seed 7 a climb's tight hairpin sent
 	-- the rest of that climb into trenches (walled on both shoulders) and kept it off the fourth
 	-- ridge, where the ordinary switchback does neither.
