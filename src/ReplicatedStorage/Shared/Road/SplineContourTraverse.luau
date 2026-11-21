@@ -237,7 +237,9 @@ local function survey(f: Ground.Field, x0: number, z0: number, y0: number, yaw: 
 					continue
 				end
 				local level, at = true, j
-				for back = i, math.max(1, i - C.TraverseApproach + 1), -1 do
+				-- (a climb's over `ClimbApproach` layers, T-332: toward a peak, where the crest rises
+				-- along the face, a leg holding its grade drops below the crest, and levels out late)
+				for back = i, math.max(1, i - (if climb then C.ClimbApproach else C.TraverseApproach) + 1), -1 do
 					local from = parents[back][at]
 					if from > at then
 						level = false

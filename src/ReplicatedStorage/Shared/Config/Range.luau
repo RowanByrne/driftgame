@@ -260,6 +260,7 @@ return {
 	ClimbDirectGrade = 0.1, -- rise over run (6 degrees): from `DirectReach`, straight for the pass at up to this (`DirectGrade` for the old legs)
 	ClimbMinGain = 60, -- studs
 	ClimbMinGrade = 2, -- degrees
+	ClimbApproach = 6, -- layers before a climb's hairpin that never drop back down the face (`TraverseApproach` on a descent)
 	-- (a climb's leg weaves as a descent's does, but swings no further than the face would rise
 	-- this far over the swing, `TraverseWeaveOff` on a descent; 0: it does not weave)
 	ClimbWeaveOff = 0, -- studs
