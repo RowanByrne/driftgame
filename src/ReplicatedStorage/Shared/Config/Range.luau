@@ -313,4 +313,10 @@ return {
 	-- descent; and its site's cut across the hairpin costs `ClimbSiteCut` times a descent's)
 	ClimbTurnMaxOff = 35,
 	ClimbSiteCut = 1,
+	-- (and the road heads straight for the pass only where the ground along the line to it is no
+	-- more than `ClimbDirectCut` above a road climbing evenly to it, nor `ClimbDirectFill` below;
+	-- math.huge for no check)
+	ClimbDirectCut = math.huge, -- studs
+	ClimbDirectFill = math.huge, -- studs
+	ClimbTrackOffCost = 2, -- along a climb's leg, a stud off the hillside past `TrackOffTol` (`TrackOffCost`)
 }

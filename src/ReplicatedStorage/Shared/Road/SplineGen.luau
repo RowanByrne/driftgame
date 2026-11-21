@@ -1795,6 +1795,11 @@ function SplineGen._target(self: Gen): { x: number, z: number, y: number, k: num
 	return tgt :: any
 end
 
+-- Whether the road can head straight for the pass from (x, z), height `y` (T-344, `Traverse.passClear`)
+function SplineGen._passClear(self: Gen, x: number, z: number, y: number, tgt: { x: number, z: number, y: number, k: number }): boolean
+	return Traverse.passClear(self.ground :: Ground.Field, x, z, y, tgt)
+end
+
 -- Plan the way to the pass ahead, a stretch and a turn at a time:
 --   * CLIMBING (the road is on the face of the ridge the pass is on): if the pass is near
 --     enough to climb to straight, at `DirectGrade` or less, head for it ("pass"); otherwise
@@ -1837,7 +1842,7 @@ function SplineGen._planRange(self: Gen)
 	-- `ClimbDirectGrade`: they end under the pass, short of where the old legs would)
 	local dist = math.sqrt((pt - t) ^ 2 + (pv - v) ^ 2)
 	local direct = if R.ClimbLegs then R.ClimbDirectGrade else R.DirectGrade
-	if climbing and dist <= R.DirectReach and tgt.y - y <= dist * direct then
+	if climbing and dist <= R.DirectReach and tgt.y - y <= dist * direct and self:_passClear(x, z, y, tgt) then
 		stretch(dist + R.PassOver, "pass", { kind = "pass", side = self.legSide })
 		return
 	end
@@ -2208,7 +2213,7 @@ function SplineGen._track(self: Gen): Spline.Section?
 		local o = options[i]
 		local g, off = self:_followGrade(o.knots, g0, y0)
 		o.g = g
-		o.score += R.TrackOffCost * math.max(0, off - R.TrackOffTol)
+		o.score += (if leg.climb then R.ClimbTrackOffCost else R.TrackOffCost) * math.max(0, off - R.TrackOffTol)
 	end
 	table.sort(options, function(a, b)
 		return a.score < b.score
@@ -2913,7 +2918,7 @@ function SplineGen.step(self: Gen): Spline.Section?
 				local _, _, _, _, _, _, y = self.spline:tip()
 				local pt, pv = Range.frame(self.ground.range, tgt.x, tgt.z)
 				local dist = math.sqrt((pt - t) ^ 2 + (pv - v) ^ 2)
-				if dist <= R.DirectReach and tgt.y - y <= dist * R.ClimbDirectGrade then
+				if dist <= R.DirectReach and tgt.y - y <= dist * R.ClimbDirectGrade and self:_passClear(x, z, y, tgt) then
 					table.clear(self.plan)
 					self.leg = nil
 					return chosen

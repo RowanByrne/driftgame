@@ -425,7 +425,8 @@ function Traverse.plan(f: Ground.Field, x: number, z: number, y: number, yaw: nu
 			local et, ev, ey = c.exitT :: number, c.exitV :: number, c.exitY :: number
 			local nextScore
 			local dist = math.sqrt((pt - et) ^ 2 + (pv - ev) ^ 2)
-			if dist <= C.DirectReach and target.y - ey <= dist * C.ClimbDirectGrade then
+			local ex, ez = Range.world(r, et, ev)
+			if dist <= C.DirectReach and target.y - ey <= dist * C.ClimbDirectGrade and Traverse.passClear(f, ex, ez, ey, target) then
 				nextScore = 0
 			else
 				-- (the next leg keeps clear of this one, bar its last stretch into the hairpin, as
@@ -448,7 +449,6 @@ function Traverse.plan(f: Ground.Field, x: number, z: number, y: number, yaw: nu
 					end
 					return false
 				end
-				local ex, ez = Range.world(r, et, ev)
 				local n = survey(f, ex, ez, ey, backYaw, -d, pv, k, near, true, target.y)
 				nextScore = if n then math.min(n.score, C.ClimbLookNone) else C.ClimbLookNone
 			end
@@ -468,6 +468,28 @@ function Traverse.plan(f: Ground.Field, x: number, z: number, y: number, yaw: nu
 		leg.ridge = target.k
 	end
 	return leg
+end
+
+-- Whether the road at (x, z), height `y`, can head straight for the pass (T-344): the ground
+-- along the straight line to it is never more than `ClimbDirectCut` above a road climbing
+-- evenly to it, nor `ClimbDirectFill` below. Headed straight for a pass past a spur, the road
+-- cut 140 studs into it on seed 7.
+function Traverse.passClear(f: Ground.Field, x: number, z: number, y: number, target: { x: number, z: number, y: number }): boolean
+	local C = Config.Range
+	if C.ClimbDirectCut == math.huge and C.ClimbDirectFill == math.huge then
+		return true
+	end
+	local dx, dz = target.x - x, target.z - z
+	local n = math.max(1, math.ceil(math.sqrt(dx * dx + dz * dz) / C.ContourSample))
+	for i = 1, n - 1 do
+		local u = i / n
+		local h = Ground.h(f, x + dx * u, z + dz * u)
+		local ry = y + (target.y - y) * u
+		if h - ry > C.ClimbDirectCut or ry - h > C.ClimbDirectFill then
+			return false
+		end
+	end
+	return true
 end
 
 -- The nearest point on the leg to (t, v), and a waypoint `look` studs farther along it; past
