@@ -219,6 +219,9 @@ return {
 	-- (and, on a descent's leg once the road held straight would be `TrackProjectGate` off it
 	-- `TrackProject` studs on, where each is headed: carried on straight that far, how far off the
 	-- leg, `TrackProjectCost` a stud past its weave's swing; 0 for none, T-341)
+	-- (off: at 0.5 to 2 it kept descents to their legs, no falls back in `RangeTests` and seed
+	-- 101's 214-stud fill gone, but every climb after a descent laid differently starts somewhere
+	-- else, and over six seeds the climbs walled in 375 to 2 450 studs where they wall in 100)
 	TrackProject = 300, -- studs
 	TrackProjectGate = 120, -- studs
 	TrackProjectCost = 0,
