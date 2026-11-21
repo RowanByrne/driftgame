@@ -1869,7 +1869,7 @@ function SplineGen._planRange(self: Gen)
 		local function blocked(px: number, pz: number): boolean
 			return sp:crowded(px, pz, s0, clear, R.TraverseFromTip) ~= nil
 		end
-		local leg = Traverse.plan(f, x, z, y, yaw, dirV, tgt, blocked, climbing)
+		local leg = Traverse.plan(f, x, z, y, yaw, dirV, tgt, blocked, climbing, clear)
 		if leg then
 			self.leg = leg
 			local legSide = if across(1) * leg.dirV > 0 then 1 else -1
@@ -1923,7 +1923,7 @@ function SplineGen._planRange(self: Gen)
 			-- (and after a hairpin whose next leg cannot climb, `ClimbTurnAgain`: a second hairpin
 			-- straight on, a stack up a headwall)
 			if (dirV == nil or R.ClimbTurnAgain) and s0 - (self.turnFirstAt or -math.huge) >= R.ClimbTurnFirstGap then
-				local back = Traverse.plan(f, x, z, y, wrap(yaw + math.pi), nil, tgt, blocked, true)
+				local back = Traverse.plan(f, x, z, y, wrap(yaw + math.pi), nil, tgt, blocked, true, clear)
 				if back then
 					self.turnFirstAt = s0
 					local steep = where.slope >= Config.Spline.Ground.SlopeSteep
@@ -2677,7 +2677,9 @@ function SplineGen._planned(self: Gen, item: Item): Spline.Section?
 	item.refused = (item.refused or 0) + 1
 	-- (a descent's hairpin is given up sooner: past its site the leg's survey has nothing to
 	-- say, and the next leg is surveyed from where the road has got to, T-326)
-	if item.refused >= (if item.traverse then Config.Range.TraverseGiveUp else Config.Range.GiveUp) then
+	-- (a climb's, `ClimbGiveUp`, T-344: refused, the road ran on past the leg's end into the face)
+	local giveUp = if item.traverse and item.climb then Config.Range.ClimbGiveUp elseif item.traverse then Config.Range.TraverseGiveUp else Config.Range.GiveUp
+	if item.refused >= giveUp then
 		table.clear(self.plan)
 		return nil
 	end
@@ -2734,6 +2736,13 @@ function SplineGen.step(self: Gen): Spline.Section?
 	if self.target then
 		local x, z = self.spline:tip()
 		if Range.ridgeAhead(self.ground.range, x, z) ~= self.target.k then
+			table.clear(self.plan)
+		-- THE CLIMB SURVEYED FRESH (T-344): a road still on a descent's plan (its leg run on past
+		-- the valley floor, or the old legs a descent fell back to) that reaches the face of the
+		-- ridge ahead drops it there, and the climb's legs are surveyed from where it has got to.
+		-- (a descent's old leg of 7 500 studs climbed a whole face on seed 2, walling in 400)
+		elseif self.descending and Config.Range.ClimbFresh and #self.plan > 0 and not self.plan[1].turn
+			and Ground.where(self.ground, x, z).ridge == self.target.k then
 			table.clear(self.plan)
 		end
 	end

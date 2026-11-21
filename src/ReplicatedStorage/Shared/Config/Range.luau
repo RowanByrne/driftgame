@@ -293,4 +293,19 @@ return {
 	-- (run its whole length, up to `LegMax`, the old leg is where climbs dug their trenches: 850
 	-- studs walled in with it, 400 at 600)
 	ClimbRetry = 600, -- studs
+	-- CLIMBS FROM ANY START (T-344): a road still on a descent's plan when it reaches the face of
+	-- the ridge ahead drops that plan there and surveys the climb's legs from where it is
+	ClimbFresh = true,
+	ClimbHopeless = 20000, -- a climb leg's score past which no drivable leg was found (`TraverseHopeless`)
+	ClimbGiveUp = 3, -- times a climb leg's hairpin may be refused before the next leg is surveyed (`TraverseGiveUp`)
+	ClimbReturnGrade = 0, -- rise over run: past the pass across, a leg's ceiling lower by this a stud...
+	ClimbReturnFree = 0, -- ...past this many studs (0 grade: none)
+	-- A CLIMB LOOKS A LEG AHEAD (T-344, `Traverse.plan`): its best `ClimbLook` ends (0: none, the
+	-- best alone), on layers `ClimbLookSpread` apart, each judged with `ClimbLookWeight` times the
+	-- score of the leg its hairpin sets off on (no more than `ClimbLookNone`, which is also what no
+	-- leg at all costs; none, if the pass is in reach from its exit)
+	ClimbLook = 0,
+	ClimbLookSpread = 3, -- layers
+	ClimbLookWeight = 1,
+	ClimbLookNone = 15000,
 }

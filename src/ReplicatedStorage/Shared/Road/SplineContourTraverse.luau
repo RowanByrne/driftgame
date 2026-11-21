@@ -45,7 +45,15 @@ export type Leg = {
 	ridge: number, -- the ridge the descent heads for (the plan is dropped past it)
 	siteSlope: number, -- the hillside's fall across the hairpin site, rise over run (T-337: a tight hairpin on steeper ground)
 	climb: boolean, -- a climb's leg (T-332), up the face of the ridge ahead
+	-- (a candidate of a climb looking a leg ahead, T-344: where its hairpin lets the road out)
+	exitT: number?,
+	exitV: number?,
+	exitY: number?,
 	crest: number, -- the ridge whose crest the leg's frame is from: the one behind on a descent, ahead on a climb
+	-- (a candidate of a climb looking a leg ahead, T-344: where its hairpin lets the road out)
+	exitT: number?,
+	exitV: number?,
+	exitY: number?,
 }
 
 -- One direction across: the best leg from (x0, z0), or nil. The survey's frame is the face's
@@ -58,7 +66,7 @@ export type Leg = {
 -- (`climb`, T-332: up the face of ridge `k`, the one ahead, rather than down from ridge `k`, the
 -- one behind. Either way the places run on along the range, `t`, the way on: down a descent's
 -- face and up a climb's)
-local function survey(f: Ground.Field, x0: number, z0: number, y0: number, yaw: number, dirV: number, pv: number, k: number, blocked: (number, number) -> boolean, climb: boolean, passY: number): Leg?
+local function survey(f: Ground.Field, x0: number, z0: number, y0: number, yaw: number, dirV: number, pv: number, k: number, blocked: (number, number) -> boolean, climb: boolean, passY: number, keep: number?): (Leg?, { Leg }?)
 	local C = Config.Range
 	local r = f.range
 	local t0, v0 = Range.frame(r, x0, z0)
@@ -129,6 +137,7 @@ local function survey(f: Ground.Field, x0: number, z0: number, y0: number, yaw: 
 	local costs: { { number } } = {}
 	local heights: { { number } } = {}
 	local best, bestI, bestJ = math.huge, 0, 0
+	local layerBest: { [number]: { number } } = {}
 	local siteSlope = 0
 	local minLayers = math.ceil((if climb then C.ClimbMin else C.TraverseMin) / dv)
 	for i = 1, layers do
@@ -166,7 +175,11 @@ local function survey(f: Ground.Field, x0: number, z0: number, y0: number, yaw: 
 		local free = table.create(width, false)
 		local top = if climb then t0 - C.TraverseBackOn else math.max(crest(v) + C.TraverseCrestMargin, t0 - C.TraverseBackOn)
 		local ceiling = if climb then crest(v) - C.ClimbCrestMargin else math.huge
-		local cap = if climb then passY - C.ClimbPassBelow else math.huge
+		-- (and past the pass across, the way the leg runs, lower by `ClimbReturnGrade` a stud past
+		-- `ClimbReturnFree`, T-344: a leg that climbed to near the pass's height far across from it
+		-- left the next nowhere to climb but a peak's flank)
+		local away = if climb then math.max(0, dirV * (v - pv) - C.ClimbReturnFree) else 0
+		local cap = if climb then passY - C.ClimbPassBelow - C.ClimbReturnGrade * away else math.huge
 		local lo, hi = math.max(1, j0 - i * maxShift - 1), math.min(width, j0 + i * maxShift + 1)
 		local lastPair, lastFree = -1, false
 		for b = lo, hi do
@@ -289,6 +302,13 @@ local function survey(f: Ground.Field, x0: number, z0: number, y0: number, yaw: 
 				if score < best then
 					best, bestI, bestJ, siteSlope = score, i, j, sl
 				end
+				-- (the best end on each layer, for a climb that looks a leg ahead, T-344)
+				if keep then
+					local lb = layerBest[i]
+					if not lb or score < lb[1] then
+						layerBest[i] = { score, j, sl, jo }
+					end
+				end
 			end
 		end
 	end
@@ -296,58 +316,151 @@ local function survey(f: Ground.Field, x0: number, z0: number, y0: number, yaw: 
 		return nil
 	end
 	-- the path, back from the site
-	local points: { Point } = table.create(bestI + 1)
-	local j = bestJ
-	for i = bestI, 1, -1 do
-		points[i + 1] = { t = tAt(i, j), v = v0 + dirV * i * dv, s = 0, y = heights[i][j] }
-		j = parents[i][j]
+	local function build(endI: number, endJ: number, sl: number, score: number): Leg
+		local points: { Point } = table.create(endI + 1)
+		local j = endJ
+		for i = endI, 1, -1 do
+			points[i + 1] = { t = tAt(i, j), v = v0 + dirV * i * dv, s = 0, y = heights[i][j] }
+			j = parents[i][j]
+		end
+		points[1] = { t = t0, v = v0, s = 0, y = y0 }
+		for i = 2, #points do
+			local a, b = points[i - 1], points[i]
+			b.s = a.s + math.sqrt((b.t - a.t) ^ 2 + (b.v - a.v) ^ 2)
+		end
+		local last = points[#points]
+		local _, up = Range.at(r, last.t, last.v)
+		local radius = math.clamp(C.TraverseRadiusSlope / math.max(sl, 1e-3), C.SteepHairpinRadius[1], C.TraverseRadiusMax)
+		return {
+			points = points,
+			dirV = dirV,
+			endT = last.t,
+			endV = last.v,
+			length = last.s,
+			drop = y0 - last.y,
+			-- (a climb's leg always ends in one, T-332: on the valley floor too, so a leg that set off
+			-- away from the pass comes back toward it)
+			hairpin = climb or up > Config.Range.ValleyShare,
+			radius = { radius, radius * 1.15 },
+			siteSlope = sl,
+			score = score,
+			ridge = 0,
+			climb = climb,
+			crest = k,
+		}
 	end
-	points[1] = { t = t0, v = v0, s = 0, y = y0 }
-	for i = 2, #points do
-		local a, b = points[i - 1], points[i]
-		b.s = a.s + math.sqrt((b.t - a.t) ^ 2 + (b.v - a.v) ^ 2)
+	local leg = build(bestI, bestJ, siteSlope, best)
+	-- (a climb looking a leg ahead, T-344: the best end on each of the layers, every
+	-- `ClimbLookSpread` apart at least, the `keep` best of them; each with where its hairpin's
+	-- exit is, a hairpin's width up the face)
+	local others: { Leg }? = nil
+	if keep then
+		local order = {}
+		for i, lb in layerBest do
+			table.insert(order, { i = i, score = lb[1], j = lb[2], sl = lb[3], jo = lb[4] })
+		end
+		table.sort(order, function(a, b)
+			return a.score < b.score
+		end)
+		local list: { Leg } = {}
+		local taken: { number } = {}
+		for _, o in order do
+			if #list >= keep then
+				break
+			end
+			local near = false
+			for _, ti in taken do
+				if math.abs(ti - o.i) < C.ClimbLookSpread then
+					near = true
+					break
+				end
+			end
+			if not near then
+				table.insert(taken, o.i)
+				local l = build(o.i, o.j, o.sl, o.score)
+				local et = tAt(o.i, o.jo)
+				l.exitT, l.exitV, l.exitY = et, v0 + dirV * o.i * dv, H[o.i][o.jo]
+				table.insert(list, l)
+			end
+		end
+		others = list
 	end
-	local last = points[#points]
-	local _, up = Range.at(r, last.t, last.v)
-	local radius = math.clamp(C.TraverseRadiusSlope / math.max(siteSlope, 1e-3), C.SteepHairpinRadius[1], C.TraverseRadiusMax)
-	return {
-
-		points = points,
-		dirV = dirV,
-		endT = last.t,
-		endV = last.v,
-		length = last.s,
-		drop = y0 - last.y,
-		-- (a climb's leg always ends in one, T-332: on the valley floor too, so a leg that set off
-		-- away from the pass comes back toward it)
-		hairpin = climb or up > Config.Range.ValleyShare,
-		radius = { radius, radius * 1.15 },
-		siteSlope = siteSlope,
-		score = best,
-		ridge = 0,
-		climb = climb,
-		crest = k,
-	}
+	return leg, others
 end
 
 -- The leg from the road's end at (x, z), heading `yaw`, height `y`. `dirV` forces which way
 -- across (after a hairpin, the other way); nil tries both and keeps the better. `climb`
 -- (T-332): a leg up the face of the ridge ahead, toward its pass.
-function Traverse.plan(f: Ground.Field, x: number, z: number, y: number, yaw: number, dirV: number?, target: { x: number, z: number, y: number, k: number }, blocked: (number, number) -> boolean, climb: boolean?): Leg?
+-- A CLIMB LOOKS A LEG AHEAD (T-344, `Range.ClimbLook`): each of its best few ends is judged with
+-- the leg its hairpin would set off on, back across (or the pass, if that is in reach from it),
+-- so a leg does not end where the next can only climb a peak's flank or find no way at all.
+-- `clear` is how near old road a leg may run (the next leg keeps that far off this one too).
+function Traverse.plan(f: Ground.Field, x: number, z: number, y: number, yaw: number, dirV: number?, target: { x: number, z: number, y: number, k: number }, blocked: (number, number) -> boolean, climb: boolean?, clear: number?): Leg?
 	-- (the face the descent is on falls from the ridge behind the one ahead; a climb's, from
 	-- the one ahead)
+	local C = Config.Range
 	local r = f.range
-	local _, pv = Range.frame(r, target.x, target.z)
+	local pt, pv = Range.frame(r, target.x, target.z)
+	local k = if climb then target.k else target.k - 1
+	local look = climb == true and C.ClimbLook > 0 and clear ~= nil
 	local leg: Leg? = nil
+	local bestTotal = math.huge
 	for _, d in if dirV then { dirV } else { 1, -1 } do
-		local l = survey(f, x, z, y, yaw, d, pv, if climb then target.k else target.k - 1, blocked, climb == true, target.y)
-		if l and (not leg or l.score < (leg :: Leg).score) then
-			leg = l
+		local l, cands = survey(f, x, z, y, yaw, d, pv, k, blocked, climb == true, target.y, if look then C.ClimbLook else nil)
+		if not l then
+			continue
+		end
+		if not look or not cands then
+			if l.score < bestTotal then
+				leg, bestTotal = l, l.score
+			end
+			continue
+		end
+		-- the way back across, in the world: the heading a hairpin's exit sets off on
+		local ax, az = Range.world(r, 0, 0)
+		local bx, bz = Range.world(r, 0, -d)
+		local backYaw = math.atan2(-(bx - ax), -(bz - az))
+		for _, c in cands do
+			local et, ev, ey = c.exitT :: number, c.exitV :: number, c.exitY :: number
+			local nextScore
+			local dist = math.sqrt((pt - et) ^ 2 + (pv - ev) ^ 2)
+			if dist <= C.DirectReach and target.y - ey <= dist * C.ClimbDirectGrade then
+				nextScore = 0
+			else
+				-- (the next leg keeps clear of this one, bar its last stretch into the hairpin, as
+				-- the road's own clearance does of the road behind its tip)
+				local pts = c.points
+				local upTo = c.length - C.TraverseFromTip
+				local cl2 = (clear :: number) ^ 2
+				local function near(px: number, pz: number): boolean
+					if blocked(px, pz) then
+						return true
+					end
+					local qt, qv = Range.frame(r, px, pz)
+					for _, p in pts do
+						if p.s > upTo then
+							break
+						end
+						if (p.t - qt) ^ 2 + (p.v - qv) ^ 2 < cl2 then
+							return true
+						end
+					end
+					return false
+				end
+				local ex, ez = Range.world(r, et, ev)
+				local n = survey(f, ex, ez, ey, backYaw, -d, pv, k, near, true, target.y)
+				nextScore = if n then math.min(n.score, C.ClimbLookNone) else C.ClimbLookNone
+			end
+			local total = c.score + C.ClimbLookWeight * nextScore
+			if total < bestTotal then
+				leg, bestTotal = c, total
+			end
 		end
 	end
 	-- (a leg that scores this badly has found no way across the face it can drive: the
 	-- generator's own legs take over from here)
-	if leg and leg.score > Config.Range.TraverseHopeless then
+	-- (a climb's own bar, T-344: `ClimbHopeless`)
+	if leg and leg.score > (if climb then C.ClimbHopeless else C.TraverseHopeless) then
 		return nil
 	end
 	if leg then
