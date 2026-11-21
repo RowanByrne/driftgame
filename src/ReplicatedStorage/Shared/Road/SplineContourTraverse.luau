@@ -87,14 +87,59 @@ local function survey(f: Ground.Field, x0: number, z0: number, y0: number, yaw: 
 	local bendCost = C.TraverseBendCost
 	local band = C.TraverseBand
 	-- where each layer's places are on along the range: its crest, plus how far below it
+	-- (a climb's, T-332, from the range's own contour through the start instead: toward a peak
+	-- the crest rises along the face, so a steady depth below it climbs as steeply as the
+	-- crest does, and a leg holding its grade drops below it all the way. Each layer's contour
+	-- is found within `ClimbFrameDrift` of the last's, a half layer at a time)
+	local origin: (number) -> number
+	if climb and C.ClimbContourFrame then
+		local b0 = Ground.base(f, x0, z0)
+		local anchors: { [number]: number } = { [0] = t0 }
+		local function anchor(i: number): number
+			local got = anchors[i]
+			if got then
+				return got
+			end
+			local before = anchor(i - 0.5)
+			local v, vb = v0 + dirV * i * dv, v0 + dirV * (i - 0.5) * dv
+			local guess = before + crest(v) - crest(vb)
+			local lo, hi = guess - C.ClimbFrameDrift, guess + C.ClimbFrameDrift
+			local function base(t: number): number
+				return Ground.base(f, Range.world(r, t, v))
+			end
+			local t
+			if base(lo) >= b0 then
+				t = lo
+			elseif base(hi) <= b0 then
+				t = hi
+			else
+				for _ = 1, 10 do
+					local m = 0.5 * (lo + hi)
+					if base(m) < b0 then
+						lo = m
+					else
+						hi = m
+					end
+				end
+				t = 0.5 * (lo + hi)
+			end
+			anchors[i] = t
+			return t
+		end
+		origin = anchor
+	else
+		origin = function(i: number): number
+			return crest(v0 + dirV * i * dv) + below
+		end
+	end
 	local function tAt(i: number, j: number): number
-		return crest(v0 + dirV * i * dv) + below + (j - j0) * dt
+		return origin(i) + (j - j0) * dt
 	end
 	-- heights: a line on along the range at each layer, and halfway to the next
 	local function columnAt(i: number): { number }
 		local v = v0 + dirV * i * dv
 		local col = Ground.column(f, v)
-		local top = crest(v) + below
+		local top = origin(i)
 		local out = table.create(width)
 		for j = 1, width do
 			out[j] = col(top + (j - j0) * dt)
@@ -131,7 +176,7 @@ local function survey(f: Ground.Field, x0: number, z0: number, y0: number, yaw: 
 		H[i + 1] = columnAt(i + 1)
 		M[i] = columnAt(i - 0.5)
 		-- each shift's length and heading over this layer, with the crest's own run
-		local lean = crest(v) - crest(v - dirV * dv)
+		local lean = origin(i) - origin(i - 1)
 		for s = -maxShift, maxShift do
 			local run = lean + s * dt
 			lengths[s] = math.sqrt(dv * dv + run * run)

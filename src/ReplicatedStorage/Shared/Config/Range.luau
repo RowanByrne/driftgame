@@ -262,6 +262,10 @@ return {
 	ClimbMinGrade = 2, -- degrees
 	ClimbApproach = 6, -- layers before a climb's hairpin that never drop back down the face (`TraverseApproach` on a descent)
 	ClimbMin = 900, -- studs: the shortest climb leg (`TraverseMin` on a descent)
+	-- (a climb's survey frame follows the range's own contour through the leg's start, not a
+	-- steady depth below the crest; the contour moves no more than this a half layer)
+	ClimbContourFrame = true,
+	ClimbFrameDrift = 120, -- studs
 	-- (a climb's leg weaves as a descent's does, but swings no further than the face would rise
 	-- this far over the swing, `TraverseWeaveOff` on a descent; 0: it does not weave)
 	ClimbWeaveOff = 0, -- studs
