@@ -251,7 +251,10 @@ return {
 	ClimbLegs = true,
 	ClimbGrade = 5, -- degrees: the sustained climb
 	ClimbLoss = 3,
-	ClimbBack = 240, -- studs (a descent's `TraverseBack` turns up toward a gorge's head; a climb's is the way on)
+	-- (240 held a leg toward a peak, whose face rises along the crest, on a 10-degree climb the
+	-- road could not follow: over 15 seeds of 60 000 studs, 3 225 studs of climbs walled in at
+	-- 240, 1 150 at 600, 1 625 at 1 200)
+	ClimbBack = 600, -- studs, of depth below the crest
 	ClimbCrestMargin = 150, -- studs below the crest
 	ClimbPassBelow = 40, -- studs: no leg runs on ground higher than this under the pass
 	ClimbDirectGrade = 0.1, -- rise over run (6 degrees): from `DirectReach`, straight for the pass at up to this (`DirectGrade` for the old legs)
@@ -260,4 +263,7 @@ return {
 	-- (a climb's leg weaves as a descent's does, but swings no further than the face would rise
 	-- this far over the swing, `TraverseWeaveOff` on a descent; 0: it does not weave)
 	ClimbWeaveOff = 0, -- studs
+	-- (heading away from where a climb's leg can go, the road turns round first, then surveys the
+	-- leg from that hairpin's exit; once in this many studs at most)
+	ClimbTurnFirstGap = 1500, -- studs
 }
