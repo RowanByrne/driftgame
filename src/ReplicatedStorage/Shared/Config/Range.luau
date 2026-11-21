@@ -270,6 +270,7 @@ return {
 	-- (240 held a leg toward a peak, where the crest rises along the face, on a 10-degree climb
 	-- the road could not follow: 3 225 studs walled in at 240, 1 150 at 600, 1 625 at 1 200)
 	ClimbBack = 600, -- studs, of depth below the crest
+	ClimbBackOn = 1600, -- studs: nor further back along the range than this behind where it starts (`TraverseBackOn`)
 	-- (400: a leg toward a peak may end before the crest rising along the face takes it steep;
 	-- 850 studs walled in at 400, 950 at 900, `TraverseMin`)
 	ClimbMin = 400, -- studs: the shortest climb leg

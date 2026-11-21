@@ -164,7 +164,7 @@ local function survey(f: Ground.Field, x0: number, z0: number, y0: number, yaw: 
 		-- `ClimbPassBelow` under the pass, T-332: height above the pass is lost again before the
 		-- road crosses it, and up there a leg is climbing the flank of a peak)
 		local free = table.create(width, false)
-		local top = if climb then t0 - C.TraverseBackOn else math.max(crest(v) + C.TraverseCrestMargin, t0 - C.TraverseBackOn)
+		local top = if climb then t0 - C.ClimbBackOn else math.max(crest(v) + C.TraverseCrestMargin, t0 - C.TraverseBackOn)
 		local ceiling = if climb then crest(v) - C.ClimbCrestMargin else math.huge
 		local cap = if climb then passY - C.ClimbPassBelow else math.huge
 		local lo, hi = math.max(1, j0 - i * maxShift - 1), math.min(width, j0 + i * maxShift + 1)
