@@ -42,7 +42,8 @@ return {
 		PeriodStuds = 32,
 		Mean = 0.8,
 		From = 0.5,
-		Image = nil :: string?,
+		-- the painterly sheet, picked by the user (assets/ground-textures/MANIFEST.md)
+		Image = "rbxassetid://76745644013222" :: string?,
 	},
 
 	-- STEEPNESS, in degrees from flat (a vertex's normal). Grass up to `Rocky[1]`, rocky grass
