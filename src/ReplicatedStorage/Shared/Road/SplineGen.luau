@@ -1920,7 +1920,9 @@ function SplineGen._planRange(self: Gen)
 			-- the old legs' turnaround, or coming off the valley floor), the road turns round
 			-- first, through the uphill side, and the leg is surveyed from that hairpin's exit
 			-- (no more than once in `ClimbTurnFirstGap`, so it never circles)
-			if dirV == nil and s0 - (self.turnFirstAt or -math.huge) >= R.ClimbTurnFirstGap then
+			-- (and after a hairpin whose next leg cannot climb, `ClimbTurnAgain`: a second hairpin
+			-- straight on, a stack up a headwall)
+			if (dirV == nil or R.ClimbTurnAgain) and s0 - (self.turnFirstAt or -math.huge) >= R.ClimbTurnFirstGap then
 				local back = Traverse.plan(f, x, z, y, wrap(yaw + math.pi), nil, tgt, blocked, true)
 				if back then
 					self.turnFirstAt = s0

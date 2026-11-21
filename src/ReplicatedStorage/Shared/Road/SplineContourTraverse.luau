@@ -78,6 +78,7 @@ local function survey(f: Ground.Field, x0: number, z0: number, y0: number, yaw: 
 	local gStar = math.tan(math.rad(if climb then C.ClimbGrade else C.TraverseGrade))
 	local loss = if climb then C.ClimbLoss else 1
 	local minGrade = math.tan(math.rad(C.ClimbMinGrade))
+	local maxGrade = math.tan(math.rad(C.ClimbMaxGrade))
 	-- (a climb's leg toward the pass, with less than twice `ClimbMinGain` left to climb under it,
 	-- need gain only half what is left)
 	local lastLeg = if climb and dirV * (pv - v0) > 0 then math.max(0, passY - C.ClimbPassBelow - y0) * 0.5 else math.huge
@@ -279,6 +280,11 @@ local function survey(f: Ground.Field, x0: number, z0: number, y0: number, yaw: 
 				-- `ClimbMinGain`, and `ClimbMinGrade` on average along its length
 				-- (bar the last leg, toward the pass, which may run on level under it)
 				if climb and Y[j] - y0 < math.min(math.max(C.ClimbMinGain, minGrade * L[j]), lastLeg) then
+					continue
+				end
+				-- (nor where it has climbed faster on average than `ClimbMaxGrade`, the road's own
+				-- sustained climb: past it the road falls behind the ground and cuts in)
+				if climb and Y[j] - y0 > maxGrade * L[j] then
 					continue
 				end
 				local level, at = true, j

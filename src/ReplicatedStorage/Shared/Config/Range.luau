@@ -260,6 +260,8 @@ return {
 	ClimbDirectGrade = 0.1, -- rise over run (6 degrees): from `DirectReach`, straight for the pass at up to this (`DirectGrade` for the old legs)
 	ClimbMinGain = 60, -- studs
 	ClimbMinGrade = 2, -- degrees
+	ClimbMaxGrade = 6.5, -- degrees: nor where it has climbed faster than this on average (`PitchSustain`, the road's sustained climb)
+	ClimbTurnAgain = true, -- after a hairpin whose next leg finds no end, a second hairpin straight on (once in `ClimbTurnFirstGap`)
 	ClimbApproach = 6, -- layers before a climb's hairpin that never drop back down the face (`TraverseApproach` on a descent)
 	ClimbApproachSlack = 0, -- places a climb's approach may drop in all
 	ClimbExitLayers = 4, -- layers of the next leg's start a climb's hairpin site is judged on (`TraverseExitLayers` on a descent)
