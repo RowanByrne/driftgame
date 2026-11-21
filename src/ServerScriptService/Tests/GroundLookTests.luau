@@ -99,7 +99,7 @@ local function run(check)
 	local s = GroundLook.colour(100, 1600, 100, 1600, 1)
 	check("snow is near white", s.R > 0.85 and s.G > 0.85 and s.B > 0.85, `{fmt(s.R * 255, 0)}, {fmt(s.G * 255, 0)}, {fmt(s.B * 255, 0)}`)
 	local d = GroundLook.forTexture("detail", c)
-	check("the detail look lifts its colours by the texture's average", math.abs(d.G - math.min(1, c.G / L.Detail.Mean)) < 1e-6, `{fmt(c.G, 3)} to {fmt(d.G, 3)}`)
+	check("under a texture, the colour keeps the grass material's brightness", math.abs(d.G * L.Detail.Mean - c.G * Config.Spline.Grass.Shade) < 1e-6, `{fmt(c.G, 3)} to {fmt(d.G, 3)}`)
 
 	-- COST
 	local t0 = os.clock()

@@ -112,14 +112,18 @@ function GroundLook.rockWeight(x: number, z: number, alt: number, ny: number): n
 	return GroundLook.weights(x, z, alt, ny).rock
 end
 
--- The vertex colour a look draws `c` at: "detail" divides it by the detail texture's average,
--- so the texture does not darken the ground.
+-- The vertex colour a look draws `c` at, under a texture ("detail", "sheet"): a part with a
+-- texture loses its material's own map, which darkened the ground to about
+-- `Spline.Grass.Shade` (measured, T-187: drawn without it the ground came out twice as
+-- bright; T-340 saw it washed out), so the colour is scaled by Shade over the texture's
+-- average and the ground keeps the brightness the grass material gave it.
 function GroundLook.forTexture(look: string, c: Color3): Color3
+	local shade = Config.Spline.Grass.Shade
 	if look == "detail" then
-		return scale(c, 1 / Config.GroundLook.Detail.Mean)
+		return scale(c, shade / Config.GroundLook.Detail.Mean)
 	end
 	if look == "sheet" then
-		return scale(c, 1 / Config.GroundLook.Sheet.Mean)
+		return scale(c, shade / Config.GroundLook.Sheet.Mean)
 	end
 	return c
 end
