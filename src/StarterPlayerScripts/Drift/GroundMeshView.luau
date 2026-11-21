@@ -240,6 +240,14 @@ local function stylePart(part: MeshPart)
 	if part.TextureContent ~= want then
 		part.TextureContent = want
 	end
+	-- (T-340: under a texture the Grass material drew the ground pale, with the sky showing
+	-- through in patches, measured in DR-Lane2; the road's textured grass is Asphalt, which
+	-- shows the texture tinted by the vertex colours, so a textured tile is too)
+	local textured = (lookNow == "detail" and detailContent ~= nil) or (lookNow == "sheet" and sheetContent ~= nil)
+	local material = if textured then Config.Road.RoadMaterial else Enum.Material.Grass
+	if part.Material ~= material then
+		part.Material = material
+	end
 end
 
 local function scaleColour(c: Color3, k: number): Color3
