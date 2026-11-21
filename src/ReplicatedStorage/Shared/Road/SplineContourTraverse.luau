@@ -284,11 +284,16 @@ local function survey(f: Ground.Field, x0: number, z0: number, y0: number, yaw: 
 				local level, at = true, j
 				-- (a climb's over `ClimbApproach` layers, T-332: toward a peak, where the crest rises
 				-- along the face, a leg holding its grade drops below the crest, and levels out late)
+				-- (and may drop `ClimbApproachSlack` places in all over them, less than the hairpin's width)
+				local slack = if climb then C.ClimbApproachSlack else 0
 				for back = i, math.max(1, i - (if climb then C.ClimbApproach else C.TraverseApproach) + 1), -1 do
 					local from = parents[back][at]
 					if from > at then
-						level = false
-						break
+						slack -= from - at
+						if slack < 0 then
+							level = false
+							break
+						end
 					end
 					at = from
 				end

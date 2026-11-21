@@ -261,10 +261,13 @@ return {
 	ClimbMinGain = 60, -- studs
 	ClimbMinGrade = 2, -- degrees
 	ClimbApproach = 6, -- layers before a climb's hairpin that never drop back down the face (`TraverseApproach` on a descent)
-	ClimbMin = 900, -- studs: the shortest climb leg (`TraverseMin` on a descent)
+	ClimbApproachSlack = 0, -- places a climb's approach may drop in all
+	-- (400: a leg toward a peak may end early, before the crest rising along the face has taken it
+	-- steep; over 15 seeds of 60 000 studs, 850 studs of climbs walled in at 400, 950 at 900)
+	ClimbMin = 400, -- studs: the shortest climb leg (`TraverseMin` on a descent)
 	-- (a climb's survey frame follows the range's own contour through the leg's start, not a
 	-- steady depth below the crest; the contour moves no more than this a half layer)
-	ClimbContourFrame = true,
+	ClimbContourFrame = false,
 	ClimbFrameDrift = 120, -- studs
 	-- (a climb's leg weaves as a descent's does, but swings no further than the face would rise
 	-- this far over the swing, `TraverseWeaveOff` on a descent; 0: it does not weave)
