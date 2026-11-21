@@ -256,4 +256,7 @@ return {
 	ClimbPassBelow = 40, -- studs: no leg runs on ground higher than this under the pass
 	ClimbMinGain = 60, -- studs
 	ClimbMinGrade = 2, -- degrees
+	-- (a climb's leg weaves as a descent's does, but swings no further than the face would rise
+	-- this far over the swing, `TraverseWeaveOff` on a descent; 0: it does not weave)
+	ClimbWeaveOff = 0, -- studs
 }

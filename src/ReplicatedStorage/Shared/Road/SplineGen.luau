@@ -1900,6 +1900,11 @@ function SplineGen._planRange(self: Gen)
 				local legItem = if leg.hairpin then plan[#plan - 1] else plan[#plan]
 				local arrive = legItem.arrive or R.TraverseArrive
 				self.weave = { amp = amp, wave = wave, phase = w:NextNumber() * 2 * math.pi, upTo = leg.length - arrive - R.TraverseWeaveOut }
+				-- (a climb's weaves only as far as `ClimbWeaveOff` allows, T-332: swung up and down
+				-- the face it climbs, the road climbs faster than it can on every swing up)
+				if climbing and R.ClimbWeaveOff <= 0 then
+					self.weave = nil
+				end
 			end
 			return
 		end
@@ -2102,7 +2107,8 @@ function SplineGen._track(self: Gen): Spline.Section?
 	local swing = 1
 	if self.weave then
 		local fall = math.tan(math.rad(Ground.where(self.ground, x0, z0).slope))
-		swing = math.min(1, R.TraverseWeaveOff / math.max(self.weave.amp * fall, 1e-6))
+		local allow = if leg.climb then R.ClimbWeaveOff else R.TraverseWeaveOff
+		swing = math.min(1, allow / math.max(self.weave.amp * fall, 1e-6))
 	end
 	local function consider(kt: number, hold: number, radius: number?)
 		local knots = curvatureKnots(k0, kt, nil, hold)
