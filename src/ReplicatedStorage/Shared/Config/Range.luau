@@ -278,4 +278,7 @@ return {
 	-- (heading away from where a climb's leg can go, the road turns round first, then surveys the
 	-- leg from that hairpin's exit; once in this many studs at most)
 	ClimbTurnFirstGap = 1500, -- studs
+	-- (where no climb leg is found, the old leg runs this far, with no turnaround, and the climb's
+	-- legs are surveyed again; 0: the whole old leg and its turnaround)
+	ClimbRetry = 600, -- studs
 }

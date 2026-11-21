@@ -1950,6 +1950,13 @@ function SplineGen._planRange(self: Gen)
 	local gd = between(G.LegGrade)
 	stretch(len, "leg", { kind = "leg", side = side, gd = gd }, untilV)
 	plan[#plan].untilDir = dirV
+	-- (a climb where no leg across the face was found, T-332: the old leg runs only `ClimbRetry`
+	-- studs, with no turnaround, and the climb's legs are surveyed again from there; run its whole
+	-- length, up to `LegMax`, the old leg is where climbs dug their trenches)
+	if climbing and R.ClimbLegs and R.ClimbRetry > 0 then
+		plan[#plan].left = math.min(len, R.ClimbRetry)
+		return
+	end
 	-- the turnaround, onto the next leg the other way: up through the uphill side on a climb
 	local steep = where.slope >= Config.Spline.Ground.SlopeSteep
 	local radius = if steep then R.SteepHairpinRadius else M.HairpinRadius
