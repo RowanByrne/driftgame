@@ -245,8 +245,17 @@ function parts.health(check)
 		for k, n in st.kinds do
 			kinds[k] = (kinds[k] or 0) + n
 		end
+		-- (each ordinary section's tightest held curvature, T-332: a fitted turnaround and a
+		-- climb's or descent's hairpin end straight, so the curvature a section ends on no longer
+		-- says how tight its bend was; the tight hairpin's 40 is its own, tested in TightHairpinTests)
 		for _, sec in gen.sections do
-			local k = math.abs(sec.k[#sec.k])
+			if sec.tag == "TightHairpin" then
+				continue
+			end
+			local k = 0
+			for j = 2, #sec.k, 2 do
+				k = math.max(k, math.abs(sec.k[j]))
+			end
 			if k > 0 then
 				minR = math.min(minR, 1 / k)
 				maxR = math.max(maxR, 1 / k)

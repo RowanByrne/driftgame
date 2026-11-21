@@ -112,8 +112,19 @@ function Tests.run()
 	local ox, oz = other.spline:tip()
 	local climb = if first and last then last - first else 0
 	local turns, channelRun, avoided = gorgeApproach(g)
+	-- (T-332: the third climb crosses its face in legs, joined by hairpins, where before it bent
+	-- about at random: its broad bends are its hairpins now, and are counted as those)
+	local hairpins = 0
+	for _, tr in g.turns do
+		if tr[3] == "turnaround" and tr[1] >= 37000 then
+			local x, z = sp:planAt(tr[1])
+			if Range.ridgeAhead(g.ground.range, x, z) == 2 and Range.frame(g.ground.range, x, z) >= 25200 then
+				hairpins += 1
+			end
+		end
+	end
 	local checks = {
-		{ name = "The third uphill face has several full-sized bends", ok = turns >= 5 },
+		{ name = "The third uphill face crosses in legs, with at least 3 hairpins", ok = hairpins >= 3 },
 		{ name = "The route leaves a projected gorge mouth for the hillside", ok = avoided > 0 },
 		{ name = "The uphill approach avoids sustained head-on gorge driving", ok = channelRun < 300 },
 		{ name = "Survey columns match the world height across rotated ridge boundaries", ok = columnError() < 1e-6 },
@@ -127,7 +138,7 @@ function Tests.run()
 	local passed = 0
 	for _, c in checks do if c.ok then passed += 1 end end
 	return { passed = passed, total = #checks, checks = checks, climb = climb, peakCut = cut, peakFill = fill, walledStuds = walls,
-		maxGrade = pitch, broadBends = turns, longestChannel = channelRun, avoidedMouthSamples = avoided }
+		maxGrade = pitch, broadBends = turns, hairpins = hairpins, longestChannel = channelRun, avoidedMouthSamples = avoided }
 end
 
 return Tests
