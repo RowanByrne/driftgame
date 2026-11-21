@@ -240,4 +240,19 @@ return {
 	TrackStrayCost = 6,
 	TraverseWeaveIn = 250, -- studs
 	TraverseWeaveOut = 300, -- studs
+	-- A CLIMB IN LEGS ACROSS THE FACE (T-332, `Road/SplineContourTraverse`): a climb's legs are
+	-- surveyed as a descent's are (every `Traverse...` number above), mirrored up the face of the
+	-- ridge ahead: a stud of height gained up to `ClimbGrade` earns, and a stud lost costs
+	-- `ClimbLoss` times what it would earn. FORWARD PROGRESS FIRST: a leg drops no more than
+	-- `ClimbBack` back down the face, comes no nearer the crest than `ClimbCrestMargin` (the road
+	-- heads straight for the pass from in reach of it, `DirectReach`), and ends only where it has
+	-- gained `ClimbMinGain` and `ClimbMinGrade` on average along its length; where no leg does,
+	-- the old legs below (`LegMin` ...) climb the face instead
+	ClimbLegs = true,
+	ClimbGrade = 5, -- degrees: the sustained climb
+	ClimbLoss = 3,
+	ClimbBack = 240, -- studs (a descent's `TraverseBack` turns up toward a gorge's head; a climb's is the way on)
+	ClimbCrestMargin = 150, -- studs below the crest
+	ClimbMinGain = 60, -- studs
+	ClimbMinGrade = 2, -- degrees
 }

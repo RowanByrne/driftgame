@@ -130,8 +130,9 @@ export type Item = {
 -- `side` is which way across the face (the fall line's sides). `swapped` (T-242): the leg
 -- has gone over to the other way along its level line.
 -- "traverse" (T-326): along the surveyed descent leg (`leg`); "return": the way back across
--- after the hairpin that ends it, `dirV` across the range, falling `gd` a stud.
-export type Slope = { kind: string, side: number, gd: number?, swapped: boolean?, dirV: number? }
+-- after the hairpin that ends it, `dirV` across the range, falling `gd` a stud (`climb`, T-332:
+-- a climb's, rising `gd` a stud up the face of the ridge ahead).
+export type Slope = { kind: string, side: number, gd: number?, swapped: boolean?, dirV: number?, climb: boolean? }
 
 export type Gen = typeof(setmetatable(
 	{} :: {
@@ -1317,18 +1318,20 @@ function SplineGen._slopeAim(self: Gen, slope: Slope, stretch: boolean?): (numbe
 		-- back across the face after a descent's hairpin (T-326): along the crest the face
 		-- falls from, `dirV` across the range (the frame its legs are surveyed in), turned
 		-- down the fall line enough to fall `gd` a stud
+		-- (a climb's, T-332: along the crest ahead, the one its face rises to, turned up it)
 		local d = slope.dirV or 1
 		local tgt = self:_target()
 		local t, v = Range.frame(r, x, z)
 		local e = R.TraverseFrameSpan * 0.5
-		local lean = (Range.ridgeT(r, tgt.k - 1, v + e) - Range.ridgeT(r, tgt.k - 1, v - e)) / (2 * e)
+		local ck = if slope.climb then tgt.k else tgt.k - 1
+		local lean = (Range.ridgeT(r, ck, v + e) - Range.ridgeT(r, ck, v - e)) / (2 * e)
 		local n = math.sqrt(1 + lean * lean)
 		local ct, cv = d * lean / n, d / n
 		local dt, dv = 1 / n, -lean / n
-		-- how steeply the face falls down that line, over the range's own shape
+		-- how steeply the face falls down that line, over the range's own shape (rises up it)
 		local h0 = Ground.base(f, Range.world(r, t - dt * e, v - dv * e))
 		local h1 = Ground.base(f, Range.world(r, t + dt * e, v + dv * e))
-		local S = math.max((h0 - h1) / (2 * e), 1e-6)
+		local S = math.max((if slope.climb then h1 - h0 else h0 - h1) / (2 * e), 1e-6)
 		local tilt = math.asin(math.clamp((slope.gd or 0) / S, 0, math.sin(math.rad(60))))
 		local ht, hv = ct * math.cos(tilt) + dt * math.sin(tilt), cv * math.cos(tilt) + dv * math.sin(tilt)
 		local hx, hz = ht * r.ux + hv * r.uz, ht * r.uz - hv * r.ux
@@ -1850,7 +1853,9 @@ function SplineGen._planRange(self: Gen)
 	elseif where.kind ~= "valley" then
 		self.descending = true
 	end
-	if self.descending then
+	-- CLIMBING IN LEGS (T-332): a climb's legs are surveyed across the face as a descent's are,
+	-- up toward the pass, each ending in a hairpin through the uphill side (`Range.Climb...`)
+	if self.descending or (climbing and R.ClimbLegs) then
 		local _, _, yaw = self.spline:tip()
 		local dirV = self.nextDirV
 		self.nextDirV = nil
@@ -1860,21 +1865,24 @@ function SplineGen._planRange(self: Gen)
 		local function blocked(px: number, pz: number): boolean
 			return sp:crowded(px, pz, s0, clear, R.TraverseFromTip) ~= nil
 		end
-		local leg = Traverse.plan(f, x, z, y, yaw, dirV, tgt, blocked)
+		local leg = Traverse.plan(f, x, z, y, yaw, dirV, tgt, blocked, climbing)
 		if leg then
 			self.leg = leg
 			local legSide = if across(1) * leg.dirV > 0 then 1 else -1
 			local legSlope: Slope = { kind = "traverse", side = legSide }
 			stretch(leg.length * 1.5, "traverse", legSlope)
 			if leg.hairpin then
-				local nextLeg: Slope = { kind = "return", side = -legSide, gd = math.tan(math.rad(R.TraverseGrade)), dirV = -leg.dirV }
+				local grade = if climbing then R.ClimbGrade else R.TraverseGrade
+				local nextLeg: Slope = { kind = "return", side = -legSide, gd = math.tan(math.rad(grade)), dirV = -leg.dirV, climb = climbing }
 				turn("turnaround", legSide, leg.radius, "Hairpin", nextLeg)
 				plan[#plan].nextDirV = -leg.dirV
 				plan[#plan].traverse = true
+				plan[#plan].climb = climbing
 				-- ON STEEPER GROUND, A TIGHT ONE (T-337): the leg is left its lead and side by side
 				-- run short of its end, so the shape's turn lands where the survey put the hairpin
+				-- (on a climb only if `TightHairpin.OnClimbs`, T-332)
 				local TH = Config.TightHairpin
-				if leg.siteSlope >= math.tan(math.rad(TH.DescentFace)) and s0 + leg.length - self.tightLast >= TH.Gap then
+				if (not climbing or TH.OnClimbs) and leg.siteSlope >= math.tan(math.rad(TH.DescentFace)) and s0 + leg.length - self.tightLast >= TH.Gap then
 					plan[#plan].tightWanted = true
 					plan[#plan].legSlope = legSlope
 					plan[#plan - 1].arrive = R.TraverseArrive + self:_tightReach()
@@ -1894,6 +1902,10 @@ function SplineGen._planRange(self: Gen)
 				self.weave = { amp = amp, wave = wave, phase = w:NextNumber() * 2 * math.pi, upTo = leg.length - arrive - R.TraverseWeaveOut }
 			end
 			return
+		end
+		-- (no climbing leg found: the old legs take this stretch, and nothing of the last leg is kept)
+		if climbing then
+			self.leg = nil
 		end
 	end
 	local side = self.legSide
@@ -2684,7 +2696,8 @@ function SplineGen.step(self: Gen): Spline.Section?
 		-- whose crest runs aslant, the way back across runs back along the range)
 		local x, z = self.spline:tip()
 		local t, v = Range.frame(r, x, z)
-		local k = self:_target().k - 1
+		-- (the crest the leg's face is from: behind on a descent, ahead on a climb, T-332)
+		local k = if self.leg then self.leg.crest else self:_target().k - 1
 		local e = Config.Range.TraverseFrameSpan * 0.5
 		local lean = (Range.ridgeT(r, k, v + e) - Range.ridgeT(r, k, v - e)) / (2 * e)
 		local n = math.sqrt(1 + lean * lean)
@@ -2825,6 +2838,20 @@ function SplineGen.step(self: Gen): Spline.Section?
 			local _, _, _, at = Traverse.ahead(leg, t, v, 0)
 			if at >= leg.length - (head.arrive or Config.Range.TraverseArrive) then
 				head.left = 0
+			end
+			-- (a climb's leg, T-332, ends where the pass comes in reach, as the old legs did: the
+			-- road heads straight for it from there, `_planRange`)
+			if leg.climb then
+				local R = Config.Range
+				local tgt = self:_target()
+				local _, _, _, _, _, _, y = self.spline:tip()
+				local pt, pv = Range.frame(self.ground.range, tgt.x, tgt.z)
+				local dist = math.sqrt((pt - t) ^ 2 + (pv - v) ^ 2)
+				if dist <= R.DirectReach and tgt.y - y <= dist * R.DirectGrade then
+					table.clear(self.plan)
+					self.leg = nil
+					return chosen
+				end
 			end
 		end
 		if (head.left :: number) <= 0 then
