@@ -308,4 +308,9 @@ return {
 	ClimbLookSpread = 3, -- layers
 	ClimbLookWeight = 1,
 	ClimbLookNone = 15000,
+	-- (a climb's hairpin turns through the uphill side, into the hill: it is refused past this
+	-- many studs off h, cut scaled as `Spline.Ground.TurnMaxOff` is, `TraverseTurnMaxOff` on a
+	-- descent; and its site's cut across the hairpin costs `ClimbSiteCut` times a descent's)
+	ClimbTurnMaxOff = 35,
+	ClimbSiteCut = 1,
 }

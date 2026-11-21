@@ -297,7 +297,8 @@ local function survey(f: Ground.Field, x0: number, z0: number, y0: number, yaw: 
 				-- half circle at no more than a comfortable pitch; what it cannot fall is fill
 				-- (on a climb the ground rises across it, and what the road cannot climb is cut)
 				local footFill = sgn * (H[i][j] - H[i][jo]) - C.TraverseHairpinFall * math.pi * radius
-				site += 3 * earth * math.max(0, footFill - tol)
+				-- (a climb's by `ClimbSiteCut`, T-344: a climb's hairpins were most of what walls it in)
+				site += (if climb then C.ClimbSiteCut else 1) * 3 * earth * math.max(0, footFill - tol)
 				local score = c - refund * L[j] + site
 				if score < best then
 					best, bestI, bestJ, siteSlope = score, i, j, sl

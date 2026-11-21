@@ -2576,7 +2576,7 @@ function SplineGen._turn(self: Gen, item: Item): (Spline.Section | string)?
 		-- road runs onto ground nobody chose, so the best clear one is laid there unless it
 		-- leaves the road more than `TraverseTurnMaxOff` off h; that one is refused)
 		if item.traverse then
-			if not reading.ok and (reading.off or 0) > Config.Range.TraverseTurnMaxOff then
+			if not reading.ok and (reading.off or 0) > (if item.climb then Config.Range.ClimbTurnMaxOff else Config.Range.TraverseTurnMaxOff) then
 				item.hillRetries=(item.hillRetries or 0)+1
 				return nil
 			end
