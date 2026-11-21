@@ -219,12 +219,16 @@ return {
 	-- (and, on a descent's leg once the road held straight would be `TrackProjectGate` off it
 	-- `TrackProject` studs on, where each is headed: carried on straight that far, how far off the
 	-- leg, `TrackProjectCost` a stud past its weave's swing; 0 for none, T-341)
-	-- (off: at 0.5 to 2 it kept descents to their legs, no falls back in `RangeTests` and seed
-	-- 101's 214-stud fill gone, but every climb after a descent laid differently starts somewhere
-	-- else, and over six seeds the climbs walled in 375 to 2 450 studs where they wall in 100)
+	-- (off until T-343: at 0.5 to 2 it kept descents to their legs, no falls back in `RangeTests`
+	-- and seed 101's 214-stud fill gone, but every climb after a descent laid differently starts
+	-- somewhere else, and over six seeds the climbs walled in 375 to 2 450 studs where they wall in
+	-- 100. On since the climbs cope with any start, T-344 below: at 1, gate 90, over 15 seeds the
+	-- climbs and descents wall in 700 studs as they did with it off, no fall back counts, and the
+	-- descents' worst fill is 85 where it was 214; gate 120 walled climbs in 600, 2 at 120 left
+	-- descents walled 2 175 and a cut of 179)
 	TrackProject = 300, -- studs
-	TrackProjectGate = 120, -- studs
-	TrackProjectCost = 0,
+	TrackProjectGate = 90, -- studs
+	TrackProjectCost = 1,
 	-- THE WEAVE (T-337): the line the road keeps to along a leg swings up and down the face
 	-- either side of the surveyed one, `TraverseWeave` studs (picked a leg) over a whole wave of
 	-- `TraverseWeaveWave` studs, never leaning more than `TraverseWeaveLean` off the leg (rise
@@ -308,8 +312,8 @@ return {
 	ClimbLookSpread = 3, -- layers
 	ClimbLookWeight = 1,
 	ClimbLookNone = 15000,
-	ClimbLookLayers = 35, -- layers of the next leg surveyed (`TraverseMax` / `TraverseLayer`: all of it)
-	ClimbLookAhead = 3000, -- studs on along the range the next leg may run (`TraverseAhead`)
+	ClimbLookLayers = 20, -- layers of the next leg surveyed (35, all of it, took the median road's slowest section to 25 ms)
+	ClimbLookAhead = 1500, -- studs on along the range the next leg may run (`TraverseAhead`)
 	ClimbLookFloor = -5000, -- the best a next leg can score (a 5 000-stud leg at the sustained grade): an end that could not win with it is not looked past
 	-- (a climb's hairpin turns through the uphill side, into the hill: it is refused past this
 	-- many studs off h, cut scaled as `Spline.Ground.TurnMaxOff` is, `TraverseTurnMaxOff` on a
