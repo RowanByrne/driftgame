@@ -125,7 +125,7 @@ local function survey(f: Ground.Field, x0: number, z0: number, y0: number, yaw: 
 	local heights: { { number } } = {}
 	local best, bestI, bestJ = math.huge, 0, 0
 	local siteSlope = 0
-	local minLayers = math.ceil(C.TraverseMin / dv)
+	local minLayers = math.ceil((if climb then C.ClimbMin else C.TraverseMin) / dv)
 	for i = 1, layers do
 		local v = v0 + dirV * i * dv
 		H[i + 1] = columnAt(i + 1)
