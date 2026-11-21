@@ -1795,6 +1795,11 @@ function SplineGen._target(self: Gen): { x: number, z: number, y: number, k: num
 	return tgt :: any
 end
 
+-- Whether the road can head straight for the pass from (x, z), height `y` (T-344, `Traverse.passClear`)
+function SplineGen._passClear(self: Gen, x: number, z: number, y: number, tgt: { x: number, z: number, y: number, k: number }): boolean
+	return Traverse.passClear(self.ground :: Ground.Field, x, z, y, tgt)
+end
+
 -- Plan the way to the pass ahead, a stretch and a turn at a time:
 --   * CLIMBING (the road is on the face of the ridge the pass is on): if the pass is near
 --     enough to climb to straight, at `DirectGrade` or less, head for it ("pass"); otherwise
@@ -1837,7 +1842,7 @@ function SplineGen._planRange(self: Gen)
 	-- `ClimbDirectGrade`: they end under the pass, short of where the old legs would)
 	local dist = math.sqrt((pt - t) ^ 2 + (pv - v) ^ 2)
 	local direct = if R.ClimbLegs then R.ClimbDirectGrade else R.DirectGrade
-	if climbing and dist <= R.DirectReach and tgt.y - y <= dist * direct then
+	if climbing and dist <= R.DirectReach and tgt.y - y <= dist * direct and self:_passClear(x, z, y, tgt) then
 		stretch(dist + R.PassOver, "pass", { kind = "pass", side = self.legSide })
 		return
 	end
@@ -1869,7 +1874,7 @@ function SplineGen._planRange(self: Gen)
 		local function blocked(px: number, pz: number): boolean
 			return sp:crowded(px, pz, s0, clear, R.TraverseFromTip) ~= nil
 		end
-		local leg = Traverse.plan(f, x, z, y, yaw, dirV, tgt, blocked, climbing)
+		local leg = Traverse.plan(f, x, z, y, yaw, dirV, tgt, blocked, climbing, clear)
 		if leg then
 			self.leg = leg
 			local legSide = if across(1) * leg.dirV > 0 then 1 else -1
@@ -1923,7 +1928,7 @@ function SplineGen._planRange(self: Gen)
 			-- (and after a hairpin whose next leg cannot climb, `ClimbTurnAgain`: a second hairpin
 			-- straight on, a stack up a headwall)
 			if (dirV == nil or R.ClimbTurnAgain) and s0 - (self.turnFirstAt or -math.huge) >= R.ClimbTurnFirstGap then
-				local back = Traverse.plan(f, x, z, y, wrap(yaw + math.pi), nil, tgt, blocked, true)
+				local back = Traverse.plan(f, x, z, y, wrap(yaw + math.pi), nil, tgt, blocked, true, clear)
 				if back then
 					self.turnFirstAt = s0
 					local steep = where.slope >= Config.Spline.Ground.SlopeSteep
@@ -2208,7 +2213,7 @@ function SplineGen._track(self: Gen): Spline.Section?
 		local o = options[i]
 		local g, off = self:_followGrade(o.knots, g0, y0)
 		o.g = g
-		o.score += R.TrackOffCost * math.max(0, off - R.TrackOffTol)
+		o.score += (if leg.climb then R.ClimbTrackOffCost else R.TrackOffCost) * math.max(0, off - R.TrackOffTol)
 	end
 	table.sort(options, function(a, b)
 		return a.score < b.score
@@ -2576,7 +2581,7 @@ function SplineGen._turn(self: Gen, item: Item): (Spline.Section | string)?
 		-- road runs onto ground nobody chose, so the best clear one is laid there unless it
 		-- leaves the road more than `TraverseTurnMaxOff` off h; that one is refused)
 		if item.traverse then
-			if not reading.ok and (reading.off or 0) > Config.Range.TraverseTurnMaxOff then
+			if not reading.ok and (reading.off or 0) > (if item.climb then Config.Range.ClimbTurnMaxOff else Config.Range.TraverseTurnMaxOff) then
 				item.hillRetries=(item.hillRetries or 0)+1
 				return nil
 			end
@@ -2677,7 +2682,9 @@ function SplineGen._planned(self: Gen, item: Item): Spline.Section?
 	item.refused = (item.refused or 0) + 1
 	-- (a descent's hairpin is given up sooner: past its site the leg's survey has nothing to
 	-- say, and the next leg is surveyed from where the road has got to, T-326)
-	if item.refused >= (if item.traverse then Config.Range.TraverseGiveUp else Config.Range.GiveUp) then
+	-- (a climb's, `ClimbGiveUp`, T-344: refused, the road ran on past the leg's end into the face)
+	local giveUp = if item.traverse and item.climb then Config.Range.ClimbGiveUp elseif item.traverse then Config.Range.TraverseGiveUp else Config.Range.GiveUp
+	if item.refused >= giveUp then
 		table.clear(self.plan)
 		return nil
 	end
@@ -2734,6 +2741,13 @@ function SplineGen.step(self: Gen): Spline.Section?
 	if self.target then
 		local x, z = self.spline:tip()
 		if Range.ridgeAhead(self.ground.range, x, z) ~= self.target.k then
+			table.clear(self.plan)
+		-- THE CLIMB SURVEYED FRESH (T-344): a road still on a descent's plan (its leg run on past
+		-- the valley floor, or the old legs a descent fell back to) that reaches the face of the
+		-- ridge ahead drops it there, and the climb's legs are surveyed from where it has got to.
+		-- (a descent's old leg of 7 500 studs climbed a whole face on seed 2, walling in 400)
+		elseif self.descending and Config.Range.ClimbFresh and #self.plan > 0 and not self.plan[1].turn
+			and Ground.where(self.ground, x, z).ridge == self.target.k then
 			table.clear(self.plan)
 		end
 	end
@@ -2904,7 +2918,7 @@ function SplineGen.step(self: Gen): Spline.Section?
 				local _, _, _, _, _, _, y = self.spline:tip()
 				local pt, pv = Range.frame(self.ground.range, tgt.x, tgt.z)
 				local dist = math.sqrt((pt - t) ^ 2 + (pv - v) ^ 2)
-				if dist <= R.DirectReach and tgt.y - y <= dist * R.ClimbDirectGrade then
+				if dist <= R.DirectReach and tgt.y - y <= dist * R.ClimbDirectGrade and self:_passClear(x, z, y, tgt) then
 					table.clear(self.plan)
 					self.leg = nil
 					return chosen

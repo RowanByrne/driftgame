@@ -170,6 +170,45 @@ Seed 7's third climb (55,100 to 67,000 studs): 3 hairpins where it had 1, 78% of
 
 So the climb stays as it is: every change that takes it past 5,000 studs walls in more road, on this climb or on the others.
 
+### Climbs from any start, and descents held to their legs (T-343)
+
+Holding descents to their legs (T-341's `TrackProjectCost`) moves where every climb after them starts, and the climbs walled themselves in 2 to 25 times as much: a climb's plan was right only for the start it happened to have. So the climb planner was made to cope with any start (T-344), judged not on one road but on many: six ways of moving the descents (`TrackProjectCost` 0 to 2, gate 60 to 120), each over the six seeds and the nine more (60,000 studs, seed 7 to 100,000). Those 90 roads walled in 9,775 studs of climbs before: 400 on today's road, 875 to 3,000 for each way the descents moved. Then the descents were held to their legs (T-345: `TrackProjectCost` 1, gate 90). The user picked trying the two together: on its own, with descents as they were, the new climb planner walls in more on seed 7 than the old (525 studs over the six seeds, against 100).
+
+- **The climb is planned fresh where it starts** (`Range.ClimbFresh`): a road still on a descent's plan (its leg run on past the valley floor, or the old legs a descent fell back to) drops it on reaching the face of the ridge ahead, and the climb's legs are surveyed from there. On seed 2 a descent's old leg had climbed a whole face, 7,500 studs, walling in 400.
+- **A climb looks a leg ahead** (`ClimbLook` 3): the best ends on three layers at least 300 studs apart are each judged with the leg its hairpin would set off on, back across (or none, if the pass is in reach from its exit), so a leg no longer ends where the next can find no way, or only a peak's flank. The next leg is surveyed 2,000 studs across and 1,500 on along the range (`ClimbLookLayers`, `ClimbLookAhead`): surveyed in full it took the median road's slowest section to 25 ms, past `SplineTests`' bar of 20 (17.5 now; 14.5 with no look ahead).
+- **A refused hairpin is given up at once** (`ClimbGiveUp` 1, 3 before): refused, the road ran on past the leg's end into the face before the next leg was surveyed.
+- **A climb's hairpin is refused past 20 studs off h** (`ClimbTurnMaxOff`, 35 as a descent's): it turns through the uphill side, into the hill, and the deep ones were half of what was left.
+
+Climbs walled in over the 90 roads: 6,025 with these, against 9,775. On the nine more seeds they fall in every one of the six ways the descents move (2,825 to 1,125 in all); on the six, 6,950 to 4,900, nearly all of what is left on seed 7.
+
+**Measured, as built** (15 seeds, 60,000 studs, seed 7 to 100,000; before is main at 63be96e0):
+
+| | Before | After |
+|---|---|---|
+| Studs walled in on both shoulders, climbs (six seeds + nine) | 100 + 300 | 400 + 225 |
+| ...descents | 275 + 25 | 75 + 0 |
+| ...all the road | 700 | 700 |
+| Descents' highest fill (six; nine) | 214; 80 | 59; 85 |
+| `RangeTests` falls back that count (16 x 50,000) | 3 | 0 (18 of 18 pass) |
+| Seed 7's third climb: 600 gained in | 4,525 | 6,800 |
+| Seed 7's third climb: walled (`SplineContourTests`), hairpins | 0, 3 | 275, 2 |
+
+`SplineContourTests` passes 7 of 10 (8 on main): the 600-stud gain now passes, and the fill of 99 on the descent before it is gone (72), but the third climb walls in 275 (the bar is 200) and has 2 hairpins (it asks 3): on its steep face two hairpins are refused, and the road runs three legs on across it, 2,600 studs past the pass, before it turns back up at 14 degrees. Every other road test passes (`SplineTests` 53, `SplineGenTests` 10, `TightHairpinTests` 35, `GroundTests` 19).
+
+Tried and left off (on the six ways the descents move unless said):
+
+| Tried | Climbs walled, 90 roads | Against |
+|---|---|---|
+| No fresh plan at the climb's face (with the look ahead) | 13,550 | 8,225 (the look ahead alone) |
+| Looking 6 ends ahead; the next leg weighed half | 11,775; 11,975 | 8,225 (4 ends) |
+| The best ends at least 2 layers apart | 4,775 on three of the six | 1,675 |
+| A leg's ceiling past the pass lower by 0.05 a stud past 1,000 (`ClimbReturnGrade`) | 9,975 | 8,225 |
+| A hairpin site's cut costing 3 times (`ClimbSiteCut`) | 8,400 | 6,900 (refused past 35) |
+| Hairpins refused past 15, 27 or 35 off h; given up after 2 or 3 | 2,125 on three of the six; 6,900; 6,900; seed 7's third climb 625 to 875 | 1,675; 6,025; 6,025; 275 |
+| Heading for the pass only where the line to it is no more than 40 (or 25) under ground (`ClimbDirectCut`) | 7,425 (25: two roads boxed in) | 6,025 |
+| A climb leg's off-the-hillside cost 6 (`ClimbTrackOffCost`, 2) | 14,125 | 6,025 |
+| A leg ending only where its hairpin site is under 0.4, 0.5 or 0.6 rise over run (`ClimbSiteMax`) | seed 7's third climb walled 125 with 3 hairpins at 0.4 or 0.5, but its fourth cut 165; over three of the six, 4,525, 3,575, 3,100 | 275, 2 hairpins; 1,675 |
+
 ## Left out
 
 - **Biomes:** which biome a spot gets, and how each looks. Decided later, during live generation. The sketch below is kept only as a starting idea.
