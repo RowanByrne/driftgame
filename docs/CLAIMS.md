@@ -9,7 +9,6 @@ Every task in progress and the files it owns, so parallel sessions and workers n
 
 | Branch | Lane | Files owned | Since |
 |---|---|---|---|
-| `feature/descents-hold-their-legs-climbs-start-an` | Borrow to test | `src/ReplicatedStorage/Shared/Road/SplineGen.luau`, `Shared/Road/SplineContourTraverse.luau`, `Shared/Config/Range.luau`, `docs/game/features/mountain-range.md` | 2026-11-21, T-343 (descents hold their legs, climbs start anywhere) |
 | `feature/ground-look-by-steepness-and-height` | Borrow to test | `src/StarterPlayerScripts/Drift/GroundMeshView.luau`, `src/ReplicatedStorage/Shared/Road/GroundLook.luau`, `Shared/Road/DetailTexture.luau`, `Shared/Road/GroundSheet.luau` (new), `Shared/Config/GroundLook.luau`, `src/ServerScriptService/AdminConsole/Commands/World/groundLook.luau`, `src/ServerScriptService/Tests/GroundLookTests.luau`, `docs/game/features/ground-look.md`, `assets/ground-textures/*` (new) | 2026-11-20, T-340 (ground look texture sheet) |
 ## Notes between sessions
 
