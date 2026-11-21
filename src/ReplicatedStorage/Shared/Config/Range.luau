@@ -216,9 +216,11 @@ return {
 	TrackRadii = { 2000, 1000, 600, 400, 280, 200, 140, 100 }, -- studs
 	TrackHeadingCost = 1.5,
 	TrackCurveCost = 4,
-	-- (and where each is headed, T-341: carried on straight to `TrackProject` studs, how far off
-	-- the leg, `TrackProjectCost` a stud past its weave's swing; 0 for none)
+	-- (and, on a descent's leg once the road held straight would be `TrackProjectGate` off it
+	-- `TrackProject` studs on, where each is headed: carried on straight that far, how far off the
+	-- leg, `TrackProjectCost` a stud past its weave's swing; 0 for none, T-341)
 	TrackProject = 300, -- studs
+	TrackProjectGate = 120, -- studs
 	TrackProjectCost = 0,
 	-- THE WEAVE (T-337): the line the road keeps to along a leg swings up and down the face
 	-- either side of the surveyed one, `TraverseWeave` studs (picked a leg) over a whole wave of
