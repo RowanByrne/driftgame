@@ -2266,6 +2266,33 @@ function SplineGen._tight(self: Gen, item: Item, needed: number): Spline.Section
 	end
 	-- (the grade it is built with is replaced below, from the mountain)
 	local sec = TightHairpin.build(k0, g0, b0, item.dir :: number, short, g0, self.clearance)
+	-- NEVER ON THE FLAT (T-337, the user: "they look weird when it's flat. it should only happen
+	-- on steeper sections"): the mountain has to fall at least `MinFall` across the legs where
+	-- their side by side run starts, so the island is a bank. (A steep face at the tip is not
+	-- enough: one at 25 degrees there had its legs along the fall line, the ground between them
+	-- falling 3 degrees.)
+	do
+		local pin, pout = sec.th[1], sec.th[4]
+		local ax, az, bx, bz
+		walk(x0, z0, yaw0, k0, sec.k, 4, 4, function(u, x, z)
+			if not ax and u >= pin then
+				ax, az = x, z
+			end
+			if u >= pout then
+				bx, bz = x, z
+				return false
+			end
+			return true
+		end)
+		if ax and bx then
+			local across = math.max(math.sqrt((ax - bx) ^ 2 + (az - bz) ^ 2), 1)
+			local fall = math.deg(math.atan(math.abs(Ground.h(self.ground, ax, az) - Ground.h(self.ground, bx, bz)) / across))
+			if fall < T.MinFall then
+				table.insert(self.stats.tightNotes, `flat: falls {math.floor(fall)} deg across the legs`)
+				return refuse("flat")
+			end
+		end
+	end
 	-- THE GRADE FOLLOWS THE MOUNTAIN except where the legs are side by side. There it is held at
 	-- the face's own: the height between where the two legs run beside each other, over the road
 	-- between them, within `Grade` (the island is the bank between their heights, so this keeps

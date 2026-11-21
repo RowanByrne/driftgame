@@ -240,6 +240,7 @@ local function run(check, log, opts)
 		local islandRails, outsideRailed = 0, 0
 		local worstStep, stepAt = 0, ""
 		local worstDrawn, drawnAt, worstRunoff = math.huge, "", 0
+		local leastFall, fallAt = math.huge, ""
 		local stepBar = math.tan(math.rad(math.max(C.IslandMaxSlope, Config.Spline.Ground.SlopeSteep) + 15))
 		for _, seed in opts.seedList or SEEDS do
 			local gen = SplineGen.new(seed)
@@ -315,6 +316,16 @@ local function run(check, log, opts)
 				end
 				worstSteep, minNarrow = math.max(worstSteep, steep), math.min(minNarrow, narrow)
 				local ctx = Ground.context(gen.ground, sp, isl.minX - 20, isl.minZ - 20, isl.maxX + 20, isl.maxZ + 20)
+				-- never on the flat: the mountain falls `MinFall` across the legs (T-337)
+				do
+					local ax, az = sp:planAt(e.sIn)
+					local bx, bz = sp:planAt(e.sOut)
+					local across = math.max(math.sqrt((ax - bx) ^ 2 + (az - bz) ^ 2), 1)
+					local fall = math.deg(math.atan(math.abs(Ground.h(gen.ground, ax, az) - Ground.h(gen.ground, bx, bz)) / across))
+					if fall < leastFall then
+						leastFall, fallAt = fall, `seed {seed} at {fmt(e.sA, 0)}`
+					end
+				end
 				do
 					local r, a, m = drawnAsGround(sp, isl, ctx)
 					if m > 0 and r < worstDrawn then
@@ -350,6 +361,7 @@ local function run(check, log, opts)
 		check("every island on the road is a bank at least 10 across", total == 0 or (worstSteep <= C.IslandMaxSlope and minNarrow >= 10), `steepest {fmt(worstSteep, 1)} degrees, narrowest {fmt(minNarrow, 1)} studs`)
 		check("every island meets both legs' inner edges", worstEdge < 0.6, `worst {fmt(worstEdge, 2)} studs off`)
 		check("no cliff the island makes, round it or where it hands back", worstStep <= stepBar, `steepest step {fmt(worstStep, 2)} studs a stud{stepAt} (bar {fmt(stepBar, 2)})`)
+		check("never on the flat", total == 0 or leastFall >= C.MinFall - 0.5, `the mountain falls at least {fmt(leastFall, 1)} degrees across the legs ({fallAt}; bar {C.MinFall})`)
 		check("every island is drawn as ground, with no runoff on its side", total == 0 or (worstDrawn > 0.7 and worstRunoff <= C.IslandRunoff + 1e-6), `worst {fmt(worstDrawn, 2)} of the way past the edge at {drawnAt}; widest runoff {fmt(worstRunoff, 2)}`)
 		check("no rail on an island's side", islandRails == 0, `{islandRails} rail runs on islands; {outsideRailed} of {total} turns railed on their outside`)
 		check("the planner's time per section stays near today's", worstMs < 60, `mean {fmt(sumMs / math.max(secs, 1), 2)} ms, worst {fmt(worstMs, 1)} ms`)

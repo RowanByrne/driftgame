@@ -23,6 +23,11 @@ return {
 	First = { 1000, 3000 }, -- studs
 	Every = { 4000, 6000 }, -- studs
 	MinFaceSlope = 8, -- degrees
+	-- NEVER ON THE FLAT (T-337, the user 2026-11-20: "they look weird when it's flat"): the
+	-- mountain falls at least this much across the legs, from the leg in to the leg out where
+	-- their side by side run starts. Of six seeds' 14 tight hairpins, the 9 kept fall 14 to 22
+	-- degrees there; the 5 left out 3 to 12.
+	MinFall = 14, -- degrees
 	-- (up to 90 short since T-337: the leg out leaves by at most `DivergeDegrees`, and the road
 	-- after the shape turns the rest onto the next leg)
 	ShortOfHalf = { 10, 90 }, -- degrees
