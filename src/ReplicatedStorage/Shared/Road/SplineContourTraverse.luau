@@ -58,7 +58,7 @@ export type Leg = {
 -- (`climb`, T-332: up the face of ridge `k`, the one ahead, rather than down from ridge `k`, the
 -- one behind. Either way the places run on along the range, `t`, the way on: down a descent's
 -- face and up a climb's)
-local function survey(f: Ground.Field, x0: number, z0: number, y0: number, yaw: number, dirV: number, pv: number, k: number, blocked: (number, number) -> boolean, climb: boolean): Leg?
+local function survey(f: Ground.Field, x0: number, z0: number, y0: number, yaw: number, dirV: number, pv: number, k: number, blocked: (number, number) -> boolean, climb: boolean, passY: number): Leg?
 	local C = Config.Range
 	local r = f.range
 	local t0, v0 = Range.frame(r, x0, z0)
@@ -152,15 +152,18 @@ local function survey(f: Ground.Field, x0: number, z0: number, y0: number, yaw: 
 		-- behind (a leg may turn up toward a gorge's head, back toward the mountain, no further)
 		-- (old road is read every other place, over the places the leg can reach by now: the
 		-- clearance asked for is wider than two places)
-		-- (a climb's leg: nor nearer the crest ahead than `ClimbCrestMargin`, T-332)
+		-- (a climb's leg: nor nearer the crest ahead than `ClimbCrestMargin`, nor higher than
+		-- `ClimbPassBelow` under the pass, T-332: height above the pass is lost again before the
+		-- road crosses it, and up there a leg is climbing the flank of a peak)
 		local free = table.create(width, false)
 		local top = if climb then t0 - C.TraverseBackOn else math.max(crest(v) + C.TraverseCrestMargin, t0 - C.TraverseBackOn)
 		local ceiling = if climb then crest(v) - C.ClimbCrestMargin else math.huge
+		local cap = if climb then passY - C.ClimbPassBelow else math.huge
 		local lo, hi = math.max(1, j0 - i * maxShift - 1), math.min(width, j0 + i * maxShift + 1)
 		local lastPair, lastFree = -1, false
 		for b = lo, hi do
 			local tb = tAt(i, b)
-			if tb >= top and tb <= ceiling then
+			if tb >= top and tb <= ceiling and h1[b] <= cap then
 				local pair = b // 2
 				if pair ~= lastPair then
 					lastPair, lastFree = pair, not blocked(Range.world(r, tAt(i, pair * 2), v))
@@ -316,14 +319,14 @@ end
 -- The leg from the road's end at (x, z), heading `yaw`, height `y`. `dirV` forces which way
 -- across (after a hairpin, the other way); nil tries both and keeps the better. `climb`
 -- (T-332): a leg up the face of the ridge ahead, toward its pass.
-function Traverse.plan(f: Ground.Field, x: number, z: number, y: number, yaw: number, dirV: number?, target: { x: number, z: number, k: number }, blocked: (number, number) -> boolean, climb: boolean?): Leg?
+function Traverse.plan(f: Ground.Field, x: number, z: number, y: number, yaw: number, dirV: number?, target: { x: number, z: number, y: number, k: number }, blocked: (number, number) -> boolean, climb: boolean?): Leg?
 	-- (the face the descent is on falls from the ridge behind the one ahead; a climb's, from
 	-- the one ahead)
 	local r = f.range
 	local _, pv = Range.frame(r, target.x, target.z)
 	local leg: Leg? = nil
 	for _, d in if dirV then { dirV } else { 1, -1 } do
-		local l = survey(f, x, z, y, yaw, d, pv, if climb then target.k else target.k - 1, blocked, climb == true)
+		local l = survey(f, x, z, y, yaw, d, pv, if climb then target.k else target.k - 1, blocked, climb == true, target.y)
 		if l and (not leg or l.score < (leg :: Leg).score) then
 			leg = l
 		end

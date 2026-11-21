@@ -253,6 +253,7 @@ return {
 	ClimbLoss = 3,
 	ClimbBack = 240, -- studs (a descent's `TraverseBack` turns up toward a gorge's head; a climb's is the way on)
 	ClimbCrestMargin = 150, -- studs below the crest
+	ClimbPassBelow = 40, -- studs: no leg runs on ground higher than this under the pass
 	ClimbMinGain = 60, -- studs
 	ClimbMinGrade = 2, -- degrees
 }
