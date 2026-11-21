@@ -179,7 +179,12 @@ return {
 	TraverseHopeless = 20000, -- a leg's score past which no drivable leg was found (seed 7's worst: 8 013)
 	TraverseAhead = 3000, -- studs
 	TraverseMin = 900, -- studs
-	TraverseMax = 7000, -- studs
+	-- (7000 until T-337: legs of 5 000 to 7 500 studs held the top of the face for a whole
+	-- leg, and a face came down in one or two; the user: "can we make it do more traverses".
+	-- Over six seeds of 60 000 studs, 3500 turns back 52 times where 7000 did 44, with less
+	-- road walled in (400 studs to 450) and no deeper cut or fill; 2500 turned 57 times but
+	-- crossed one gully on 94 studs of fill)
+	TraverseMax = 3500, -- studs
 	TraverseReward = 1, -- (so a stud at the sustained grade costs nothing)
 	TraverseRefund = 0.9, -- of the leg's length, refunded when choosing where it ends
 	TraverseSteep = 45, -- studs of length per stud of height lost past the sustained grade
@@ -211,4 +216,28 @@ return {
 	TrackRadii = { 2000, 1000, 600, 400, 280, 200, 140, 100 }, -- studs
 	TrackHeadingCost = 1.5,
 	TrackCurveCost = 4,
+	-- THE WEAVE (T-337): the line the road keeps to along a leg swings up and down the face
+	-- either side of the surveyed one, `TraverseWeave` studs (picked a leg) over a whole wave of
+	-- `TraverseWeaveWave` studs, never leaning more than `TraverseWeaveLean` off the leg (rise
+	-- over run), so the leg is a run of S-bends cut into and built out from the hill rather than
+	-- one straight line (the user: "the runs are really straight now, no real turns to enjoy";
+	-- "it's okay to cut in and build out from/of the hill a bit"). It grows in over the first
+	-- `TraverseWeaveIn` studs of a leg and is gone `TraverseWeaveOut` short of where the leg's
+	-- stretch ends, so a hairpin, tight or not, is met from the surveyed line.
+	TraverseWeave = { 70, 110 }, -- studs
+	TraverseWeaveWave = { 450, 700 }, -- studs
+	TraverseWeaveLean = 0.9,
+	-- (on steep ground it swings no further than the face would fall this far over the swing,
+	-- and every section along a leg is judged on how far off the hillside it leaves the road
+	-- too: `TrackOffCost` a stud past `TrackOffTol`)
+	TraverseWeaveOff = 25, -- studs
+	TrackOffTol = 15, -- studs
+	TrackOffCost = 2,
+	TrackOffCheck = 8, -- of the best options are judged on it (its grade costs as much as the rest)
+	-- (nor further from the surveyed line than its swing and `TrackStrayTol`: `TrackStrayCost`
+	-- a stud past it)
+	TrackStrayTol = 15, -- studs
+	TrackStrayCost = 6,
+	TraverseWeaveIn = 250, -- studs
+	TraverseWeaveOut = 300, -- studs
 }

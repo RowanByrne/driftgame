@@ -1,6 +1,6 @@
 # Feature: Tight hairpins
 
-**Status:** step 1 done (T-330); step 2 (T-333) lays them in place of a descent's own switchback; step 3, planning them into the road, next (2026-11-20). **Owner task:** T-329.
+**Status:** step 1 done (T-330); step 2 (T-333) done: the shape and its island; step 3 (T-337): descents traverse in shorter legs, and a leg ending on steeper ground ends in a tight hairpin (2026-11-20). **Owner task:** T-329.
 
 ## Goal
 
@@ -29,6 +29,8 @@ All starting values are proposed, to tune with the user in a lane.
 - **The island:** at least about 10 studs of ground between the two road edges at its narrowest, widening away from the tip. The legs run side by side for at least about 120 studs before they part.
 - **Height between the legs:** set by the face's grade, within what a bank between them can take at the steepest slope the ground allows, so the island is a bank, never a wall or an overhang. Where the face is too steep or too gentle for that, no tight hairpin is laid there.
 - **How often:** rare, about one every 4 000 to 6 000 studs on steep faces, and never within about 1 500 studs of another. Swapped in for the road's own switchbacks (step 2) that gave only 1 in about 180 000 studs on descents, so the user chose to plan them into the road (step 3, DECISIONS.md 2026-11-20).
+- **Planned into descents (step 3, T-337):** a descent crosses the face in legs up to 3 500 studs across (7 000 before), so a face comes down in more zigzags. Where a leg's hairpin site is on a hillside of 10 degrees or more, the road starts the shape its lead and side by side run short of the leg's end, so the turn lands where the survey put the hairpin; it may sit up to 35 studs off the hillside, as the ordinary descent hairpin may (`Range.TraverseTurnMaxOff`). Refused there, the road runs on and lays the ordinary hairpin. Over six seeds of 60 000 studs: 13 tight hairpins, every island 43 degrees at most.
+- **Descent legs weave (step 3, after the user's send-back):** along each leg the road swings up and down the face either side of the surveyed line in S-bends, cutting into and building out from the hill (`Range.TraverseWeave`), gone before each hairpin. Over six seeds: 48% of the legs bend tighter than 500 studs (29% without), 24% tighter than 250 (12%).
 - **Descents only, for now:** on seed 7 a climb's tight hairpin sent the rest of that climb into trenches walled on both shoulders (`Config/TightHairpin.OnClimbs`).
 - **Barriers:** the outside of the turnaround and the downhill edge of the lower leg take rails as any hairpin with a drop does. The island side takes none, as on the photo's inside.
 

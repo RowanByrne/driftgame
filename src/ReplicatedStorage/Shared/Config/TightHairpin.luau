@@ -13,7 +13,7 @@ return {
 	-- close. The car was measured round this on the test pad (12) and the playground's (2).
 	Ease = 24, -- studs
 
-	-- WHERE. In place of the hairpin that ends a descent's leg (`Range` traverse), now and then:
+	-- WHERE. In place of a turnaround, now and then:
 	-- the first not before `First` studs into the road, then one every `Every` studs at most
 	-- often (so never within 1 500 of another), on a face at least `MinFaceSlope` steep, where
 	-- the next leg's heading is within `ShortOfHalf` (degrees under, over) a half turn, the
@@ -23,9 +23,26 @@ return {
 	First = { 1000, 3000 }, -- studs
 	Every = { 4000, 6000 }, -- studs
 	MinFaceSlope = 8, -- degrees
-	ShortOfHalf = { 10, 60 }, -- degrees
+	-- NEVER ON THE FLAT (T-337, the user 2026-11-20: "they look weird when it's flat"): the
+	-- mountain falls at least this much across the legs, from the leg in to the leg out where
+	-- their side by side run starts. Of six seeds' 14 tight hairpins, the 9 kept fall 14 to 22
+	-- degrees there; the 5 left out 3 to 12.
+	MinFall = 14, -- degrees
+	-- (up to 90 short since T-337: the leg out leaves by at most `DivergeDegrees`, and the road
+	-- after the shape turns the rest onto the next leg)
+	ShortOfHalf = { 10, 90 }, -- degrees
+	-- ON A DESCENT (T-337, DECISIONS.md 2026-11-20) the leg across the face is planned to end in
+	-- one: wherever its hairpin site is on a hillside at least `DescentFace` steep, with no
+	-- other tight hairpin within `Gap` (`First` and `Every` are for the rest). The road starts
+	-- the shape short of the leg's end by its lead and side by side run, so the turn lands
+	-- where the survey put the hairpin; refused there, it carries on to lay the ordinary one.
+	-- (on a descent the shape may leave the road `Range.TraverseTurnMaxOff` off h, as the
+	-- ordinary hairpin there may, not `MaxOff`: over six seeds of 60 000 studs, 13 tight
+	-- hairpins, every island still 43 degrees at most)
+	DescentFace = 10, -- degrees
+	Gap = 1500, -- studs
 	-- (a cut counts in full too: a tight hairpin is laid where the face takes it, not in a trench)
-	MaxOff = 20, -- studs (`Spline.Ground.TurnMaxOff`)
+	MaxOff = 20, -- studs (`Spline.Ground.TurnMaxOff`; a descent's: `Range.TraverseTurnMaxOff`)
 	-- Climbs too, or descents only. Descents (2026-11-20): on seed 7 a climb's tight hairpin sent
 	-- the rest of that climb into trenches (walled on both shoulders) and kept it off the fourth
 	-- ridge, where the ordinary switchback does neither.

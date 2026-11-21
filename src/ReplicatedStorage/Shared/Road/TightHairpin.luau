@@ -226,8 +226,10 @@ function TightHairpin.build(k0: number, g0: number, b0: number, dir: number, ext
 				free = i - 1
 			end
 			-- (and where the island has no say at all, `IslandGone` between the edges: on the
-			-- leg out, and back along the leg in, the rung it shares with it)
-			if lat < Config.Road.Width + C.IslandGone then
+			-- leg out, and back along the leg in, the rung it shares with it; 10 studs more, as
+			-- the island measures the gap along its rungs, square to the leg in, and the leg
+			-- out leaves aslant: one rung measured 4 studs under `IslandGone` here)
+			if lat < Config.Road.Width + C.IslandGone + 10 then
 				backGone = math.max(backGone, -(rx * lx + rz * lz))
 			elseif i - 1 < gone then
 				gone = i - 1
