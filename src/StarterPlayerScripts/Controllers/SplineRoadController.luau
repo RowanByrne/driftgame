@@ -21,7 +21,9 @@
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
+local Config = require(ReplicatedStorage.Shared.Config)
 local Net = require(ReplicatedStorage.Shared.Net)
+local Ground = require(ReplicatedStorage.Shared.Road.Ground)
 local SplineGen = require(ReplicatedStorage.Shared.Road.SplineGen)
 
 local DriftController = require(script.Parent.DriftController)
@@ -30,7 +32,19 @@ local SplineRoadController = {}
 
 local spline: any = nil
 local closing: number? = nil
-local stats = { starts = 0, sections = 0, outOfOrder = 0, stops = 0, closings = 0, bad = 0 }
+local stats = { starts = 0, sections = 0, outOfOrder = 0, stops = 0, closings = 0, bad = 0, trimmedTo = 0 }
+
+-- Studs of road kept behind the closing barrier (T-346): the longest "Road behind" a player
+-- may pick, the chunk the drawn road may run past it, and a margin for the ground beside it
+-- (the road's reach into the ground, twice over, and a corridor tile).
+local function keepBehind(): number
+	local M = Config.Spline.Mesh
+	local most = 0
+	for _, step in M.Behind do
+		most = math.max(most, step.Studs)
+	end
+	return most + M.ChunkLength + 2 * Ground.reach() + 256
+end
 
 local function numbers(list: any, group: number): boolean
 	if type(list) ~= "table" or #list < group or #list % group ~= 0 then
@@ -139,6 +153,13 @@ function SplineRoadController:_on(message: any)
 			stats.closings += 1
 			closing = message.s
 			DriftController:SetSplineClosing(message.s)
+			-- LET THE ROAD FAR BEHIND THE BARRIER GO (T-346), as the server does its own: the
+			-- curve's samples, and with them what `Road/Ground` keeps of each station there.
+			-- Kept for good, they grew this client's script memory by about 0.33 MB a km.
+			-- No car gets behind the barrier, so nothing here is drawn or asked for further back
+			-- than the longest "Road behind" past it, a chunk more, and a ground tile's reach.
+			spline:trim(message.s - keepBehind())
+			stats.trimmedTo = spline.firstSample * spline.step
 		end
 	elseif kind == "stop" then
 		stats.stops += 1

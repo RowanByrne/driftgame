@@ -302,7 +302,8 @@ end
 -- once the road's samples behind are let go (`Spline.trim`) nothing asks for a station there
 -- again (`Ground.context` takes none short of the first sample), so those are let go too
 -- (`forgetBehind`, T-346: kept for good, they grew the client's script memory by about
--- 0.2 MB a kilometre of an endless run, a station every `CheckStep` studs).
+-- 0.33 MB a kilometre of an endless run, a station every `CheckStep` studs; the client's road is
+-- let go behind its closing barrier by `SplineRoadController`).
 local kept: { [Spline.Spline]: { [number]: Station } } = setmetatable({}, { __mode = "k" }) :: any
 local keptFrom: { [Spline.Spline]: number } = setmetatable({}, { __mode = "k" }) :: any
 local KEEP_SHORT = 300 -- studs
