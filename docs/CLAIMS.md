@@ -9,6 +9,7 @@ Every task in progress and the files it owns, so parallel sessions and workers n
 
 | Branch | Lane | Files owned | Since |
 |---|---|---|---|
+| `agent/climbs-in-legs` | Borrow to test | `src/ReplicatedStorage/Shared/Road/SplineContourTraverse.luau`, `Shared/Road/SplineContour*.luau`, `Shared/Road/SplineGen.luau`, `Shared/Road/SplineSequence.luau`, `Shared/Road/TightHairpin.luau`, `Shared/Config/Range.luau`, `Shared/Config/Spline.luau`, `Shared/Config/TightHairpin.luau`, `src/ServerScriptService/Tests/SplineContourTests.luau`, `Tests/SplineGenTests.luau`, `Tests/SplineTests.luau`, `Tests/TightHairpinTests.luau`, `docs/game/features/mountain-road.md` | 2026-11-20, T-332 (climbs in legs) |
 | `feature/ground-look-by-steepness-and-height` | Borrow to test | `src/StarterPlayerScripts/Drift/GroundMeshView.luau`, `src/ReplicatedStorage/Shared/Road/GroundLook.luau`, `Shared/Road/DetailTexture.luau`, `Shared/Road/GroundSheet.luau` (new), `Shared/Config/GroundLook.luau`, `src/ServerScriptService/AdminConsole/Commands/World/groundLook.luau`, `src/ServerScriptService/Tests/GroundLookTests.luau`, `docs/game/features/ground-look.md`, `assets/ground-textures/*` (new) | 2026-11-20, T-340 (ground look texture sheet) |
 ## Notes between sessions
 
