@@ -131,6 +131,47 @@ local function run(check)
 	local mean = sum / (size * size)
 	check("the detail texture averages its mean", math.abs(mean - L.Detail.Mean) < 0.04, fmt(mean, 3))
 	check("the detail texture tiles: no step at its edge", edge / ne < 2 * inner / ni + 1e-3, `edge {fmt(edge / ne, 4)}, inside {fmt(inner / ni, 4)}`)
+
+	-- THE TEXTURE SHEET (T-340)
+	local GroundSheet = require(ReplicatedStorage.Shared.Road.GroundSheet)
+	check("snow over rock over rocky grass over grass", GroundLook.sheetCell(0.6, 0.9, 0.9) == 4 and GroundLook.sheetCell(0.2, 0.6, 0.9) == 3 and GroundLook.sheetCell(0, 0.2, 0.6) == 2 and GroundLook.sheetCell(0, 0, 0.2) == 1, "")
+	local t = 48
+	local tiles, means, seams = {}, {}, {}
+	for i, kind in L.Sheet.Order do
+		local p = GroundSheet.placeholder(kind, t)
+		tiles[i] = p
+		local s, e, inn = 0, 0, 0
+		for y = 0, t - 1 do
+			for x = 0, t - 1 do
+				s += p[y * t + x + 1]
+				local r = p[y * t + (x + 1) % t + 1]
+				if x == t - 1 then
+					e += math.abs(p[y * t + x + 1] - r)
+				else
+					inn += math.abs(p[y * t + x + 1] - r)
+				end
+			end
+		end
+		table.insert(means, `{kind} {fmt(s / (t * t), 2)}`)
+		local ratio = (e / t) / (inn / (t * (t - 1)))
+		table.insert(seams, `{kind} {fmt(ratio, 2)}`)
+		check(`the {kind} placeholder averages near the sheet's mean`, math.abs(s / (t * t) - L.Sheet.Mean) < 0.12, fmt(s / (t * t), 3))
+		check(`the {kind} placeholder tiles`, ratio < 2.5, `edge step {fmt(ratio, 2)} times the inside's`)
+	end
+	local size = 96
+	local laid = GroundSheet.lay(tiles, t, size, L.Sheet.Repeats)
+	local same = 0
+	for y = 0, size - 1 do
+		for x = 0, size - 1 do
+			local row, col = y // (size // 2), x // (size // 2)
+			local ty = math.floor(((y % (size // 2)) / (size // 2) * L.Sheet.Repeats) % 1 * t)
+			local tx = math.floor(((x % (size // 2)) / (size // 2) * L.Sheet.Repeats) % 1 * t)
+			if laid[y * size + x + 1] == tiles[row * 2 + col + 1][ty * t + tx + 1] then
+				same += 1
+			end
+		end
+	end
+	check("the sheet lays each texture in its square", same == size * size, `{same} of {size * size}`)
 end
 
 function Tests.run()

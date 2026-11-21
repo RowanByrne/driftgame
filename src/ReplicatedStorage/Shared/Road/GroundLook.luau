@@ -92,6 +92,21 @@ function GroundLook.colour(x: number, y: number, z: number, alt: number, ny: num
 	return c, w
 end
 
+-- THE SHEET'S SQUARE a face takes (T-340, the "sheet" look), from its corners' mean weights:
+-- 1 grass, 2 rocky grass, 3 rock, 4 snow (`Config.GroundLook.Sheet.Order`). Snow over rock over
+-- rocky grass, each from `Sheet.From` of it.
+function GroundLook.sheetCell(snow: number, rock: number, rocky: number): number
+	local from = Config.GroundLook.Sheet.From
+	if snow >= from then
+		return 4
+	elseif rock >= from then
+		return 3
+	elseif rocky >= from then
+		return 2
+	end
+	return 1
+end
+
 -- How much of a point is rock, 0 to 1, for the rock mesh ("rock"): its rock weight.
 function GroundLook.rockWeight(x: number, z: number, alt: number, ny: number): number
 	return GroundLook.weights(x, z, alt, ny).rock
@@ -102,6 +117,9 @@ end
 function GroundLook.forTexture(look: string, c: Color3): Color3
 	if look == "detail" then
 		return scale(c, 1 / Config.GroundLook.Detail.Mean)
+	end
+	if look == "sheet" then
+		return scale(c, 1 / Config.GroundLook.Sheet.Mean)
 	end
 	return c
 end

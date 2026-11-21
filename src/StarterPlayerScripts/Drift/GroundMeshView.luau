@@ -63,6 +63,7 @@ local Ground = require(ReplicatedStorage.Shared.Road.Ground)
 local GrassTexture = require(ReplicatedStorage.Shared.Road.GrassTexture)
 local GroundLook = require(ReplicatedStorage.Shared.Road.GroundLook)
 local DetailTexture = require(ReplicatedStorage.Shared.Road.DetailTexture)
+local GroundSheet = require(ReplicatedStorage.Shared.Road.GroundSheet)
 local RoadTexture = require(ReplicatedStorage.Shared.Road.RoadTexture)
 local SplineMesh = require(ReplicatedStorage.Shared.Road.SplineMesh)
 local OpaqueBudget = require(ReplicatedStorage.Shared.Road.OpaqueBudget)
@@ -88,7 +89,7 @@ type Tile = {
 	v: { number },
 	nrm: { number },
 	col: { number },
-	uv: { number },
+	fuv: { { number } }, -- by face slot (as `faces`): its own three UV ids, in its corners' order (T-340)
 	leaf: Leaf?,
 	heights: { number }, -- what is drawn, world y, by grid index
 	px: { number }, -- and where, world x and z (a vertex can be moved off its grid point)
@@ -223,12 +224,19 @@ setRunoffBy()
 -- made, and again by `Restyle` (the `ground-look` command), one view at a time as above.
 -- `detailContent`: the "detail" look's texture, once made (`Road/DetailTexture`)
 local lookNow = "old"
+local oyNow = 0 -- the mountain's zero (its field's `oy`), for `writeFaceUVs`
 local detailContent: Content? = nil
+local sheetContent: Content? = nil -- the "sheet" look's texture sheet (T-340, `Road/GroundSheet`)
 local rockStats = { made = 0, fails = 0, writes = 0, writeMs = 0, dropped = 0 }
 
 -- A tile's part dressed for the look: the detail texture on it, or none.
 local function stylePart(part: MeshPart)
-	local want = if lookNow == "detail" and detailContent then detailContent else Content.none
+	local want = Content.none
+	if lookNow == "detail" and detailContent then
+		want = detailContent
+	elseif lookNow == "sheet" and sheetContent then
+		want = sheetContent
+	end
 	if part.TextureContent ~= want then
 		part.TextureContent = want
 	end
@@ -333,7 +341,8 @@ function GroundMeshView.new(spline: any, parent: Instance?): View
 		return self:Yield(units)
 	end)
 	lookNow = GroundLook.current()
-	if lookNow == "detail" and not detailContent then
+	oyNow = self.field.oy
+	if (lookNow == "detail" and not detailContent) or (lookNow == "sheet" and not sheetContent) then
 		self:Restyle() -- (drawn again once its texture is made)
 	end
 	return self
@@ -347,6 +356,9 @@ function GroundMeshView.Restyle(self: View)
 	task.spawn(function()
 		if look == "detail" and not detailContent then
 			detailContent = DetailTexture.content()
+		end
+		if look == "sheet" and not sheetContent then
+			sheetContent = GroundSheet.content()
 		end
 		if self.dead then
 			return
@@ -446,6 +458,7 @@ function GroundMeshView.DebugLook(self: View)
 		rockHeld = held,
 		rock = table.clone(rockStats),
 		detail = DetailTexture.DebugState(),
+		sheet = GroundSheet.DebugState(),
 		workMs = self.totalWorkMs,
 		built = self.tilesBuilt,
 	}
@@ -745,21 +758,21 @@ local function makeMaster(): Master?
 			ids[i * n + j + 1] = template:AddVertex(masterPosition(C, sp, i, j))
 		end
 	end
-	local nrm, col, uv = table.create(n * n), table.create(n * n), table.create(n * n)
+	local nrm, col = table.create(n * n), table.create(n * n)
 	for k = 1, n * n do
 		nrm[k] = template:AddNormal(Vector3.yAxis)
 		col[k] = template:AddColor(Color3.new(1, 1, 1), 1)
-		uv[k] = template:AddUV(Vector2.zero)
 	end
 	for i = 0, C - 1 do
 		for j = 0, C - 1 do
 			local a, b, c, d = i * n + j + 1, (i + 1) * n + j + 1, i * n + j + 2, (i + 1) * n + j + 2
-			-- two triangles a cell, wound to face up, split along b-c
+			-- two triangles a cell, wound to face up, split along b-c; each face with UVs of
+			-- its own (T-340), so a face can take its own square of the texture sheet
 			for _, t in { { a, c, b }, { b, c, d } } do
 				local f = template:AddTriangle(ids[t[1]], ids[t[2]], ids[t[3]])
 				template:SetFaceNormals(f, { nrm[t[1]], nrm[t[2]], nrm[t[3]] })
 				template:SetFaceColors(f, { col[t[1]], col[t[2]], col[t[3]] })
-				template:SetFaceUVs(f, { uv[t[1]], uv[t[2]], uv[t[3]] })
+				template:SetFaceUVs(f, { template:AddUV(Vector2.zero), template:AddUV(Vector2.zero), template:AddUV(Vector2.zero) })
 			end
 		end
 	end
@@ -791,7 +804,7 @@ type IdMap = {
 	v: { number },
 	nrm: { number },
 	col: { number },
-	uv: { number },
+	fuv: { { number } },
 	faces: { number },
 	count: number,
 	f1: number,
@@ -822,7 +835,8 @@ local function idMapOf(copy: EditableMesh): IdMap
 		end
 	end
 	idMaps += 1
-	local v, cn, cc, cu = table.create(n * n), table.create(n * n), table.create(n * n), table.create(n * n)
+	local v, cn, cc = table.create(n * n), table.create(n * n), table.create(n * n)
+	local fuv = table.create(2 * C * C)
 	local faces = table.create(2 * C * C)
 	for _, f in all do
 		local vs = copy:GetFaceVertices(f)
@@ -835,7 +849,7 @@ local function idMapOf(copy: EditableMesh): IdMap
 			local p = copy:GetPosition(vs[q])
 			local i, j = math.round(p.X / sp + C / 2), math.round(p.Z / sp + C / 2)
 			local k = i * n + j + 1
-			v[k], cn[k], cc[k], cu[k] = vs[q], ns[q], cs[q], us[q]
+			v[k], cn[k], cc[k] = vs[q], ns[q], cs[q]
 			mi, mj = math.min(mi, i), math.min(mj, j)
 			ks[q] = { i, j }
 		end
@@ -845,9 +859,11 @@ local function idMapOf(copy: EditableMesh): IdMap
 			end
 		end
 		-- a cell's first face holds its corner a, its second does not
-		faces[2 * (mi * C + mj) + (if hasA then 1 else 2)] = f
+		local slot = 2 * (mi * C + mj) + (if hasA then 1 else 2)
+		faces[slot] = f
+		fuv[slot] = us -- (its own three UVs, T-340)
 	end
-	m = { v = v, nrm = cn, col = cc, uv = cu, faces = faces, count = #all, f1 = all[1], fN = all[#all] }
+	m = { v = v, nrm = cn, col = cc, fuv = fuv, faces = faces, count = #all, f1 = all[1], fN = all[#all] }
 	idMapCache = m
 	return m
 end
@@ -889,7 +905,7 @@ local function blankTile(): Tile
 		v = {},
 		nrm = {},
 		col = {},
-		uv = {},
+		fuv = {},
 		leaf = nil,
 		heights = table.create(n * n, 0),
 		px = table.create(n * n, 0),
@@ -927,23 +943,83 @@ local function makeTile(master: Master): Tile?
 	end
 	local tile = blankTile()
 	tile.em, tile.part = copy, mp
-	tile.v, tile.nrm, tile.col, tile.uv, tile.faces = m.v, m.nrm, m.col, m.uv, m.faces
+	tile.v, tile.nrm, tile.col, tile.fuv, tile.faces = m.v, m.nrm, m.col, m.fuv, m.faces
 	return tile
 end
 
--- Write a tile's ground into `copy` (fresh from the master: every cell split b-c), each vertex
--- relative to `origin`.
-local function writeTile(copy: EditableMesh, m: IdMap, origin: Vector3, px: { number }, pz: { number }, heights: { number }, normals: { Vector3 }, colours: { Color3 }, flip: { boolean })
+-- THE FACES' UVS (T-340). Every face has three UVs of its own (the master's), so each can take
+-- its own square of the texture sheet:
+-- * the "sheet" look (`Road/GroundSheet`): the face's square by its corners' steepness and
+--   height (`GroundLook.sheetCell`: grass, rocky grass, rock, snow), and within the square
+--   world studs over `Sheet.PeriodStuds` (the tile's spacing on coarser tiles), shifted by
+--   whole repeats so the face sits in the square's middle repeat: a square holds `Repeats`
+--   each way, a repeat of margin round the face against the image blurring into the next
+--   square far off. A face is never wider than a repeat, so it never runs off its square.
+-- * any other look: world studs over `Ground.UVStuds`, as every vertex had before.
+-- `cls`: each vertex's class (nil: all open ground); `oy`: the mountain's zero.
+local function writeFaceUVs(em: EditableMesh, fuv: { { number } }, px: { number }, pz: { number }, heights: { number }, normals: { Vector3 }, cls: { number }?, flip: { boolean }, s: number, oy: number)
 	local C = cells()
 	local n = C + 1
-	local uvStuds = Config.Spline.Ground.UVStuds
+	if lookNow ~= "sheet" then
+		local uvStuds = Config.Spline.Ground.UVStuds
+		for i = 0, C - 1 do
+			for j = 0, C - 1 do
+				local c = i * C + j + 1
+				local t1, t2 = cellTriangles(n, i, j, flip[c])
+				for q, t in { t1, t2 } do
+					local ids = fuv[2 * (c - 1) + q]
+					for r = 1, 3 do
+						em:SetUV(ids[r], Vector2.new(px[t[r]] / uvStuds, pz[t[r]] / uvStuds))
+					end
+				end
+			end
+		end
+		return
+	end
+	local S = Config.GroundLook.Sheet
+	local P = math.max(S.PeriodStuds, s)
+	local reps = S.Repeats
+	local half = (reps - 2) * 0.5 -- repeats of margin before the face's first
+	-- each vertex's weights, once
+	local wSnow, wRock, wRocky = table.create(n * n, 0), table.create(n * n, 0), table.create(n * n, 0)
+	for k = 1, n * n do
+		if not cls or cls[k] == OPEN then
+			local w = GroundLook.weights(px[k], pz[k], heights[k] - oy, normals[k].Y)
+			wSnow[k], wRock[k], wRocky[k] = w.snow, w.rock, w.rocky
+		end
+	end
+	for i = 0, C - 1 do
+		for j = 0, C - 1 do
+			local c = i * C + j + 1
+			local t1, t2 = cellTriangles(n, i, j, flip[c])
+			for q, t in { t1, t2 } do
+				local a, b, d = t[1], t[2], t[3]
+				local cell = GroundLook.sheetCell((wSnow[a] + wSnow[b] + wSnow[d]) / 3, (wRock[a] + wRock[b] + wRock[d]) / 3, (wRocky[a] + wRocky[b] + wRocky[d]) / 3)
+				local u0, v0 = ((cell - 1) % 2) * 0.5, ((cell - 1) // 2) * 0.5
+				local bx = math.floor(math.min(px[a], px[b], px[d]) / P)
+				local bz = math.floor(math.min(pz[a], pz[b], pz[d]) / P)
+				local ids = fuv[2 * (c - 1) + q]
+				for r = 1, 3 do
+					local lx = math.clamp(px[t[r]] / P - bx + half, 0, reps)
+					local lz = math.clamp(pz[t[r]] / P - bz + half, 0, reps)
+					em:SetUV(ids[r], Vector2.new(u0 + lx / reps * 0.5, v0 + lz / reps * 0.5))
+				end
+			end
+		end
+	end
+end
+
+-- Write a tile's ground into `copy` (fresh from the master: every cell split b-c), each vertex
+-- relative to `origin`; `s` its spacing.
+local function writeTile(copy: EditableMesh, m: IdMap, origin: Vector3, px: { number }, pz: { number }, heights: { number }, normals: { Vector3 }, colours: { Color3 }, flip: { boolean }, s: number)
+	local C = cells()
+	local n = C + 1
 	local ox, oy, oz = origin.X, origin.Y, origin.Z
 	for k = 1, n * n do
 		local x, z = px[k], pz[k]
 		copy:SetPosition(m.v[k], Vector3.new(x - ox, heights[k] - oy, z - oz))
 		copy:SetNormal(m.nrm[k], normals[k])
 		copy:SetColor(m.col[k], colours[k])
-		copy:SetUV(m.uv[k], Vector2.new(x / uvStuds, z / uvStuds))
 	end
 	for i = 0, C - 1 do
 		for j = 0, C - 1 do
@@ -955,11 +1031,11 @@ local function writeTile(copy: EditableMesh, m: IdMap, origin: Vector3, px: { nu
 					copy:SetFaceVertices(f, { m.v[t[1]], m.v[t[2]], m.v[t[3]] })
 					copy:SetFaceNormals(f, { m.nrm[t[1]], m.nrm[t[2]], m.nrm[t[3]] })
 					copy:SetFaceColors(f, { m.col[t[1]], m.col[t[2]], m.col[t[3]] })
-					copy:SetFaceUVs(f, { m.uv[t[1]], m.uv[t[2]], m.uv[t[3]] })
 				end
 			end
 		end
 	end
+	writeFaceUVs(copy, m.fuv, px, pz, heights, normals, nil, flip, s, oyNow)
 end
 
 -- A TILE'S MESH AS OPAQUE CONTENT (T-276): `leaf`'s ground as these tables have it, written
@@ -991,7 +1067,7 @@ local function render(master: Master, leaf: Leaf, cy: number, px: { number }, pz
 			lo, hi = lo:Min(p), hi:Max(p)
 		end
 		local origin = (lo + hi) * 0.5
-		writeTile(copy, m, origin, px, pz, heights, normals, colours, flip)
+		writeTile(copy, m, origin, px, pz, heights, normals, colours, flip, leaf.s)
 		local made, content = toOpaque(copy)
 		if made and content then
 			copy:Destroy()
@@ -1027,7 +1103,7 @@ local function render(master: Master, leaf: Leaf, cy: number, px: { number }, pz
 		stats.partFails += 1
 		return nil, nil, nil
 	end
-	writeTile(copy, m, centre, px, pz, heights, normals, colours, flip)
+	writeTile(copy, m, centre, px, pz, heights, normals, colours, flip, leaf.s)
 	part.CFrame = CFrame.new(centre)
 	stats.kept += 1
 	return part, copy, centre, m
@@ -1389,13 +1465,13 @@ local function setSplit(tile: Tile, i: number, j: number, flip: boolean)
 		return -- an opaque tile: written whole when its mesh is made (`render`)
 	end
 	local t1, t2 = cellTriangles(C + 1, i, j, flip)
-	local v, nrm, col, uv = tile.v, tile.nrm, tile.col, tile.uv
+	local v, nrm, col = tile.v, tile.nrm, tile.col
 	for q, t in { t1, t2 } do
 		local f = tile.faces[2 * (c - 1) + q]
 		em:SetFaceVertices(f, { v[t[1]], v[t[2]], v[t[3]] })
 		em:SetFaceNormals(f, { nrm[t[1]], nrm[t[2]], nrm[t[3]] })
 		em:SetFaceColors(f, { col[t[1]], col[t[2]], col[t[3]] })
-		em:SetFaceUVs(f, { uv[t[1]], uv[t[2]], uv[t[3]] })
+		-- (its UVs are its own, written whole with the rest of the tile's, `writeFaceUVs`)
 	end
 end
 
@@ -1613,7 +1689,6 @@ function GroundMeshView._fill(self: View, tile: Tile, leaf: Leaf, map: { [number
 	-- colours by slope
 	local cx, cz = x0 + leaf.side * 0.5, z0 + leaf.side * 0.5
 	local cy = Ground.base(self.field, cx, cz)
-	local uvStuds = G.UVStuds
 	local em = tile.em
 	local heights = tile.heights
 	local lats: { [number]: { any } } = {}
@@ -1649,7 +1724,6 @@ function GroundMeshView._fill(self: View, tile: Tile, leaf: Leaf, map: { [number
 				em:SetPosition(tile.v[k], Vector3.new(p[1] - cx, p[3] - cy, p[2] - cz))
 				em:SetNormal(tile.nrm[k], nv)
 				em:SetColor(tile.col[k], colour)
-				em:SetUV(tile.uv[k], Vector2.new(p[1] / uvStuds, p[2] / uvStuds))
 			end
 		end
 		self:_slice()
@@ -1658,6 +1732,9 @@ function GroundMeshView._fill(self: View, tile: Tile, leaf: Leaf, map: { [number
 		for j = 0, C - 1 do
 			setSplit(tile, i, j, flips[i * C + j + 1])
 		end
+	end
+	if em then
+		writeFaceUVs(em, tile.fuv, tile.px, tile.pz, heights, tile.normals, tile.cls, tile.flip, s, self.field.oy) -- (T-340)
 	end
 	if em and tile.part then
 		tile.part.CFrame = CFrame.new(cx, cy, cz)
@@ -2266,7 +2343,7 @@ function GroundMeshView._do(self: View, op: Op): boolean
 			if job.held then
 				-- (opaque content refused: it keeps its copy, written in place from now on)
 				local m = job.map :: IdMap
-				tile.v, tile.nrm, tile.col, tile.uv, tile.faces = m.v, m.nrm, m.col, m.uv, m.faces
+				tile.v, tile.nrm, tile.col, tile.fuv, tile.faces = m.v, m.nrm, m.col, m.fuv, m.faces
 			end
 		end
 		self.tiles[leaf.key] = tile
@@ -2285,7 +2362,6 @@ function GroundMeshView._do(self: View, op: Op): boolean
 		t.stale = false
 		table.insert(self.free, t)
 	end
-	local uvStuds = Config.Spline.Ground.UVStuds
 	for _, p in pending do
 		local tile, changes, splits, job = p[1] :: Tile, p[2] :: { { any } }, p[3] :: { { any } }, p[4] :: Job?
 		local em = tile.em
@@ -2295,7 +2371,6 @@ function GroundMeshView._do(self: View, op: Op): boolean
 			tile.heights[k], tile.px[k], tile.pz[k], tile.cls[k] = y, x, z, cls
 			if em then
 				em:SetPosition(tile.v[k], Vector3.new(x - o.X, y - o.Y, z - o.Z))
-				em:SetUV(tile.uv[k], Vector2.new(x / uvStuds, z / uvStuds))
 			end
 			if nv and colour then
 				tile.normals[k], tile.colours[k], tile.borrowed[k] = nv, colour, ch[8] == true
@@ -2308,6 +2383,9 @@ function GroundMeshView._do(self: View, op: Op): boolean
 		end
 		for _, sp in splits do
 			setSplit(tile, sp[1], sp[2], sp[3])
+		end
+		if em and tile.leaf and (#changes > 0 or #splits > 0) then
+			writeFaceUVs(em, tile.fuv, tile.px, tile.pz, tile.heights, tile.normals, tile.cls, tile.flip, tile.leaf.s, self.field.oy) -- (T-340)
 		end
 		if tile.hasRock and (#changes > 0 or #splits > 0) then
 			writeRock(tile, self.field.oy) -- (T-339: its edges follow the tile's)
@@ -2322,7 +2400,7 @@ function GroundMeshView._do(self: View, op: Op): boolean
 			if job.held then
 				tile.em = job.held
 				local m = job.map :: IdMap
-				tile.v, tile.nrm, tile.col, tile.uv, tile.faces = m.v, m.nrm, m.col, m.uv, m.faces
+				tile.v, tile.nrm, tile.col, tile.fuv, tile.faces = m.v, m.nrm, m.col, m.fuv, m.faces
 			end
 			if old then
 				old:Destroy()

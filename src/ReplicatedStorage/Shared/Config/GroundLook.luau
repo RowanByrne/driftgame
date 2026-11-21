@@ -13,10 +13,32 @@
 --            as the grass runoff has one), so grass and rock have grain up close
 --   "rock"   "blend", with the steep faces in Roblox's own Rock material: a second mesh over
 --            each tile that has rock in it. Best up close; costs a second mesh per such tile
+--   "sheet"  (T-340, the user's pick of direction) "blend" over a texture SHEET: one image
+--            holding grass, rocky grass, rock and snow textures, each triangle of ground
+--            taking its square by steepness and height (`Road/GroundSheet`)
 
 return {
 	Look = "old",
-	Looks = { "old", "blend", "detail", "rock" },
+	Looks = { "old", "blend", "detail", "rock", "sheet" },
+
+	-- THE TEXTURE SHEET ("sheet", `Road/GroundSheet`). `Size` pixels each way, in 2 x 2
+	-- squares, in `Order` (top left, top right, bottom left, bottom right). Each square holds
+	-- its texture `Repeats` times each way, one repeat covering `PeriodStuds` of ground (the
+	-- tile's spacing on tiles coarser than that); a face uses the middle of its square, the
+	-- outer half repeat a margin so the image's far-off blur never reaches the next square.
+	-- Its average is `Mean`, and the vertex colours are divided by it. A face takes a square
+	-- from `From` of its weight (snow over rock over rocky grass over grass).
+	-- `Image`: the picked sheet once uploaded (its four squares, each one tile, are repeated
+	-- into the game's sheet here); nil draws placeholder textures made in code
+	Sheet = {
+		Size = 1024,
+		Order = { "grass", "rocky", "rock", "snow" },
+		Repeats = 3,
+		PeriodStuds = 32,
+		Mean = 0.8,
+		From = 0.5,
+		Image = nil :: string?,
+	},
 
 	-- STEEPNESS, in degrees from flat (a vertex's normal). Grass up to `Rocky[1]`, rocky grass
 	-- by `Rocky[2]`; rock from `Rock[1]`, all rock by `Rock[2]` (eased between). Each edge is

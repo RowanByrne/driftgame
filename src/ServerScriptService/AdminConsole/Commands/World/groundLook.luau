@@ -10,13 +10,13 @@ end
 return {
 	Name = "ground-look",
 	Aliases = { "look" },
-	Description = "Switches how the mountain's ground looks, on your screen, redrawing it round you: old, blend, detail or rock. No argument says which is on and what it costs.",
+	Description = "Switches how the mountain's ground looks, on your screen, redrawing it round you: old, blend, detail, rock or sheet. No argument says which is on and what it costs.",
 	Group = "World",
 	Args = {
 		{
 			Type = "string",
 			Name = "look",
-			Description = "old (today's), blend (colours by steepness and height), detail (blend with a detail texture), rock (blend with Roblox rock on steep faces).",
+			Description = "old (today's), blend (colours by steepness and height), detail (blend with a detail texture), rock (blend with Roblox rock on steep faces), sheet (blend over the grass, rocky grass, rock and snow texture sheet).",
 			Optional = true,
 		},
 	},
