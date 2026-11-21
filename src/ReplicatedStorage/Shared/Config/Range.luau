@@ -262,6 +262,7 @@ return {
 	ClimbMinGrade = 2, -- degrees
 	ClimbApproach = 6, -- layers before a climb's hairpin that never drop back down the face (`TraverseApproach` on a descent)
 	ClimbApproachSlack = 0, -- places a climb's approach may drop in all
+	ClimbExitLayers = 4, -- layers of the next leg's start a climb's hairpin site is judged on (`TraverseExitLayers` on a descent)
 	-- (400: a leg toward a peak may end early, before the crest rising along the face has taken it
 	-- steep; over 15 seeds of 60 000 studs, 850 studs of climbs walled in at 400, 950 at 900)
 	ClimbMin = 400, -- studs: the shortest climb leg (`TraverseMin` on a descent)

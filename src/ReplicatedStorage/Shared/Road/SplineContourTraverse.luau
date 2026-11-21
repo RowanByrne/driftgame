@@ -311,7 +311,8 @@ local function survey(f: Ground.Field, x0: number, z0: number, y0: number, yaw: 
 				-- grade would start that leg on a steep pitch
 				local radius = math.clamp(C.TraverseRadiusSlope / math.max(sl, 1e-3), C.SteepHairpinRadius[1], C.TraverseRadiusMax)
 				local jo = math.min(width, j + math.ceil(2 * radius / dt))
-				local m = math.min(i - 1, C.TraverseExitLayers)
+				-- (a climb's over `ClimbExitLayers`, T-332: the way back may run toward a peak)
+				local m = math.min(i - 1, if climb then C.ClimbExitLayers else C.TraverseExitLayers)
 				local clearWay = true
 				for back = i, i - m, -1 do
 					if not frees[back][jo] then
