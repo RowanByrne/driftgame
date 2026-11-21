@@ -423,6 +423,11 @@ function Traverse.plan(f: Ground.Field, x: number, z: number, y: number, yaw: nu
 		local bx, bz = Range.world(r, 0, -d)
 		local backYaw = math.atan2(-(bx - ax), -(bz - az))
 		for _, c in cands do
+			-- (best first: one that could not win even with the best next leg there is, `ClimbLookFloor`,
+			-- nor could any after it)
+			if c.score + C.ClimbLookWeight * C.ClimbLookFloor >= bestTotal then
+				break
+			end
 			local et, ev, ey = c.exitT :: number, c.exitV :: number, c.exitY :: number
 			local nextScore
 			local dist = math.sqrt((pt - et) ^ 2 + (pv - ev) ^ 2)
@@ -436,9 +441,6 @@ function Traverse.plan(f: Ground.Field, x: number, z: number, y: number, yaw: nu
 				local upTo = c.length - C.TraverseFromTip
 				local cl2 = (clear :: number) ^ 2
 				local function near(px: number, pz: number): boolean
-					if blocked(px, pz) then
-						return true
-					end
 					local qt, qv = Range.frame(r, px, pz)
 					for _, p in pts do
 						if p.s > upTo then
@@ -448,7 +450,7 @@ function Traverse.plan(f: Ground.Field, x: number, z: number, y: number, yaw: nu
 							return true
 						end
 					end
-					return false
+					return blocked(px, pz)
 				end
 				local n = survey(f, ex, ez, ey, backYaw, -d, pv, k, near, true, target.y, nil, C.ClimbLookLayers)
 				nextScore = if n then math.min(n.score, C.ClimbLookNone) else C.ClimbLookNone
