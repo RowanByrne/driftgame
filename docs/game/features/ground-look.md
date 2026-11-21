@@ -1,6 +1,6 @@
 # Feature: Ground look by steepness and height
 
-**Status:** step 1 built (T-339): three looks to try side by side, waiting on the user's pick. **Owner task:** `T-338` (`feature/ground-look-by-steepness-and-height`).
+**Status:** step 1 (T-339, three trial looks) approved and merged; none of the three was liked. Step 2 (T-340): the texture sheet over the colour blend, with the painterly sheet the user picked, being wired in. **Owner task:** `T-338` (`feature/ground-look-by-steepness-and-height`).
 
 ## Goal
 
@@ -18,13 +18,15 @@ Step 1 (T-339) is a trial. In a playtest, during a run, the admin console (F2) c
 - `ground-look rock`: blend, with the steep faces in Roblox's own Rock material, as a second mesh over each tile that has rock in it.
 - `ground-look` alone says which look is on and how many tiles carry a rock mesh.
 
-Step 2 puts the picked look on every mountain, as the default, and tunes the bands. Any new rock or snow pictures go to the user to pick first.
+**The texture sheet (T-340, the user's direction, `DECISIONS.md` 2026-11-20).** `ground-look sheet`: blend, over one image holding four textures, grass, rocky grass, rock and snow; each triangle of ground takes its square by its corners' steepness and height, and the blended colours tint it. The switch from one texture to the next follows the triangles (8 studs near the car, larger far off), softened by the colour blend. The textures are the painterly sheet the user picked from four (`assets/ground-textures/MANIFEST.md`); until it is uploaded, placeholder textures made in code.
+
+Then: the sheet as the default look on every mountain, and the bands tuned.
 
 ## Left out
 
 - What the car drives on: purely visual. The car still treats ground steeper than about 45 degrees as a wall (`car-edges.md`), whatever colour it is.
 - Roblox Terrain: the user passed on it on 2026-11-15 (`DECISIONS.md`).
-- New uploaded art: the detail texture is noise made in code.
+- New uploaded art for the trial looks: the detail texture is noise made in code. The sheet's art is the one upload.
 - The road's own mesh and its runoff colours are unchanged, except that "detail" puts its grain on the ground-drawn runoff too.
 
 ## Rules and numbers
@@ -66,3 +68,13 @@ Client only: each client works out its own ground's look (`Drift/GroundMeshView`
 ## Testing
 
 `Tests/GroundLookTests` (pure maths, `require(...).run()` in a playtest's server): the switch, bands that never step back, snow off steep faces, band edges that wander, colours, cost (under 1 microsecond a vertex), the detail texture's mean and tiling.
+
+## The texture sheet (T-340)
+
+- **One image, four squares** (`Road/GroundSheet`, `Config.GroundLook.Sheet`): 1 024 px, 2 x 2 squares in the order grass, rocky grass, rock, snow; each holds its texture 3 times each way, one repeat per 32 studs of ground (the tile's spacing on coarser tiles). A face uses its square's middle; the half repeat round it keeps the image's far-off blur from reaching the next square. The uploaded sheet's quadrants (one tile each) are repeated into this at run time; the master's pixels are never changed.
+- **Each face has UVs of its own** (`Drift/GroundMeshView` `writeFaceUVs`): the ground's master mesh gives each triangle three UVs instead of sharing one per vertex, so neighbouring faces can sit in different squares. Every look writes them; the others as world studs over `Ground.UVStuds`, as before.
+- **A face's square:** snow from 0.5 of its corners' mean snow weight, else rock from 0.5 rock, else rocky grass from 0.5, else grass (`GroundLook.sheetCell`).
+- **Two things measured in DR-Lane2 that shaped it:**
+  - Under a texture the Grass material drew the ground pale with sky-blue patches, so a textured tile takes the road's material (Asphalt), as the road's textured grass does; and a part with a texture loses its material's darkening, so the colours are scaled by `Spline.Grass.Shade` over the texture's average.
+  - Made opaque content, the texture drew right near the car but garbled further off; kept as an EditableImage it draws clean at every distance. So it holds about 32 of the client's ~640 tiles of mesh memory (`Config.GroundLook.OpaqueTextures = false`).
+- **Cost** at the climb's rockiest stretch: frame time unchanged (16.7 ms average, 18.3 worst, against 18.4 for the old look); the sheet is made in about 0.1 s once a session.
