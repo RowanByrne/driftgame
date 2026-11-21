@@ -236,19 +236,10 @@ local function survey(f: Ground.Field, x0: number, z0: number, y0: number, yaw: 
 				if climb and Y[j] - y0 < math.min(math.max(C.ClimbMinGain, minGrade * L[j]), lastLeg) then
 					continue
 				end
-				-- (a climb's leg comes into it holding or gaining height, T-332: toward a peak, where
-				-- the crest rises along the face, a leg holding its grade drops below the crest all
-				-- the way, and its way back drops with it)
 				local level, at = true, j
 				for back = i, math.max(1, i - C.TraverseApproach + 1), -1 do
 					local from = parents[back][at]
-					if climb then
-						local before = if back > 1 then heights[back - 1][from] else y0
-						if heights[back][at] < before - C.ClimbApproachDrop then
-							level = false
-							break
-						end
-					elseif from > at then
+					if from > at then
 						level = false
 						break
 					end
