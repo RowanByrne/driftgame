@@ -29,6 +29,12 @@ local KILL = -500 -- Roblox's fall-kill height
 -- head or under the leg above, losing height as it goes (T-326, the user: "a hairpin can
 -- briefly send the car back toward the mountain, even if that means losing some forward
 -- progress"): T-242's road doubled back climbing into the face it had come down.
+-- ON A CLIMB (T-341; the road on the face of the ridge ahead, as `SplineGen._planRange` reads
+-- it), the mirror: it counts only when the road also loses more than `BACK_RISE` below the
+-- height it had at the furthest point. A climb's leg crosses the face in legs since T-332, and
+-- one heading for a peak falls back along the range while it climbs (the crest rises along the
+-- face, so the face's contours run back down it): 12 of the 15 falls back T-332 left were those,
+-- every one higher than where it fell back from. A climb that doubles back loses height.
 -- A TRENCH: the centre line more than `TRENCH` studs below h, deeper than a hairpin is fitted
 -- into the face (`Spline.Ground.TurnMaxCut`, 45)
 -- with room for a spur the road cuts through; the one the user drove down went 150 to 290
@@ -39,7 +45,7 @@ local ROAD_SEEDS = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16 }
 local ROAD_LENGTH = 50000 -- studs (25 000 until T-245)
 local RECORDED_SEED7_END = 36555 -- last steering sample of the approved Studio review
 local BACK = 300 -- studs
-local BACK_RISE = 40 -- studs above its height at the furthest point, while falling back (T-326)
+local BACK_RISE = 40 -- studs above its height at the furthest point, while falling back (T-326; below it on a climb, T-341)
 -- (T-245) how often it may, over the 16 roads: the road falls back about twice in 5 million
 -- studs, the same before and after the range doubled (96 roads of 50 000 studs each: 874 and
 -- 342 studs before, 313 and 336 after), so once in these 800 000 is the rate, not a fault.
@@ -342,7 +348,13 @@ function Tests.road(_, opts)
 				if t > tMax then
 					tMax, falling, yFar = t, false, y
 				else
-					if tMax - t > BACK and y - yFar > BACK_RISE then
+					-- (on a climb, back down below that height, T-341)
+					local back = tMax - t > BACK
+					if back then
+						local climbing = Ground.where(f, x, z).ridge == Range.ridgeAhead(f.range, x, z)
+						back = if climbing then yFar - y > BACK_RISE else y - yFar > BACK_RISE
+					end
+					if back then
 						if not falling then
 							table.insert(backs, { s, 0 })
 							falling = true
