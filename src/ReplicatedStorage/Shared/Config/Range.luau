@@ -316,6 +316,7 @@ return {
 	-- descent; and its site's cut across the hairpin costs `ClimbSiteCut` times a descent's)
 	ClimbTurnMaxOff = 20,
 	ClimbSiteCut = 1,
+	ClimbSiteMax = math.huge, -- rise over run across a climb hairpin's site: no leg ends on ground steeper (math.huge: any)
 	-- (and the road heads straight for the pass only where the ground along the line to it is no
 	-- more than `ClimbDirectCut` above a road climbing evenly to it, nor `ClimbDirectFill` below;
 	-- math.huge for no check)

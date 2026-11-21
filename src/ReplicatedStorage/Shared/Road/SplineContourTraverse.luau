@@ -275,6 +275,11 @@ local function survey(f: Ground.Field, x0: number, z0: number, y0: number, yaw: 
 				-- wandering, but a long leg that holds its grade is what a descent wants, so
 				-- the leg ends where the ground stops paying, not where the length mounts)
 				local sl = math.abs(h1[j + 2] - h1[j - 2]) / (4 * dt)
+				-- (a climb's hairpin turns into the hill: on ground steeper than `ClimbSiteMax` it digs
+				-- in past what is laid, is refused, and the road runs on across the face, T-344)
+				if climb and sl > C.ClimbSiteMax then
+					continue
+				end
 				local site = C.TraverseHairpin + C.TraverseSiteCost * math.max(0, sl - 0.15)
 				-- and the way back from it: the next leg sets off a hairpin's width down the
 				-- face, back across; ground there that falls away faster than the sustained
