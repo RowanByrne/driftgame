@@ -61,6 +61,8 @@ local Workspace = game:GetService("Workspace")
 local Config = require(ReplicatedStorage.Shared.Config)
 local Ground = require(ReplicatedStorage.Shared.Road.Ground)
 local GrassTexture = require(ReplicatedStorage.Shared.Road.GrassTexture)
+local GroundLook = require(ReplicatedStorage.Shared.Road.GroundLook)
+local DetailTexture = require(ReplicatedStorage.Shared.Road.DetailTexture)
 local RoadTexture = require(ReplicatedStorage.Shared.Road.RoadTexture)
 local SplineMesh = require(ReplicatedStorage.Shared.Road.SplineMesh)
 local OpaqueBudget = require(ReplicatedStorage.Shared.Road.OpaqueBudget)
@@ -101,6 +103,13 @@ type Tile = {
 	flip: { boolean },
 	cy: number, -- the part's height (vertices are written relative to it)
 	stale: boolean,
+	-- THE ROCK MESH (T-339, the "rock" ground look): a second copy of the master over a tile
+	-- with rock in it, in the Rock material (`writeRock`); only on a tile that keeps its own
+	-- mesh. Let go when the tile is next drawn without rock
+	rockEm: EditableMesh?,
+	rockPart: MeshPart?,
+	rockMap: any, -- its ids (`IdMap`)
+	hasRock: boolean,
 }
 
 type Op = {
@@ -210,6 +219,37 @@ local function setRunoffBy()
 end
 setRunoffBy()
 
+-- THE GROUND'S LOOK (T-339, `Road/GroundLook`, `Config.GroundLook`): read when a view is
+-- made, and again by `Restyle` (the `ground-look` command), one view at a time as above.
+-- `detailContent`: the "detail" look's texture, once made (`Road/DetailTexture`)
+local lookNow = "old"
+local detailContent: Content? = nil
+local rockStats = { made = 0, fails = 0, writes = 0, writeMs = 0, dropped = 0 }
+
+-- A tile's part dressed for the look: the detail texture on it, or none.
+local function stylePart(part: MeshPart)
+	local want = if lookNow == "detail" and detailContent then detailContent else Content.none
+	if part.TextureContent ~= want then
+		part.TextureContent = want
+	end
+end
+
+local function scaleColour(c: Color3, k: number): Color3
+	return Color3.new(math.min(1, c.R * k), math.min(1, c.G * k), math.min(1, c.B * k))
+end
+
+-- Let a tile's rock mesh go.
+local function dropRock(t: Tile)
+	if t.rockPart then
+		t.rockPart:Destroy()
+	end
+	if t.rockEm then
+		t.rockEm:Destroy()
+		rockStats.dropped += 1
+	end
+	t.rockPart, t.rockEm, t.rockMap, t.hasRock = nil, nil, nil, false
+end
+
 function GroundMeshView.new(spline: any, parent: Instance?): View
 	setRunoffBy()
 	local folder = Instance.new("Folder")
@@ -292,7 +332,123 @@ function GroundMeshView.new(spline: any, parent: Instance?): View
 	self.unGive = MeshBudget.giver("ground", 1, function(units: number)
 		return self:Yield(units)
 	end)
+	lookNow = GroundLook.current()
+	if lookNow == "detail" and not detailContent then
+		self:Restyle() -- (drawn again once its texture is made)
+	end
 	return self
+end
+
+-- THE LOOK CHANGED (T-339, the `ground-look` command): read it again and redraw every tile in
+-- it, as any redraw is done (stale tiles, nearest first, `Spare` at a time), over a second or
+-- two. The "detail" texture is made first, the first time it is wanted.
+function GroundMeshView.Restyle(self: View)
+	local look = GroundLook.current()
+	task.spawn(function()
+		if look == "detail" and not detailContent then
+			detailContent = DetailTexture.content()
+		end
+		if self.dead then
+			return
+		end
+		lookNow = look
+		for _, tile in self.tiles do
+			tile.stale = true
+		end
+		self.dirty = true
+	end)
+end
+
+-- Studio checks (T-339): switch the look on this device, as the `ground-look` command does.
+function GroundMeshView.DebugRestyle(self: View, look: string?)
+	Workspace:SetAttribute("__ground_look", look)
+	self:Restyle()
+	return { look = GroundLook.current() }
+end
+
+-- Studio checks (T-339): what the shown ground is, for tuning the bands. Its open vertices'
+-- steepness (by 10 degrees) and height above the mountain's zero, the share of them past half
+-- rocky, rock, alpine and snow; and along the road every `step` studs, its height and how
+-- many rock vertices are within 300 studs of it (where to look at the rock).
+function GroundMeshView.DebugLookSurvey(self: View, step: number?)
+	local oy = self.field.oy
+	local byAngle = table.create(10, 0)
+	local n, rocky, rock, alpine, snow = 0, 0, 0, 0, 0
+	local lo, hi = math.huge, -math.huge
+	local rockPts = {}
+	for _, tile in self.tiles do
+		for k = 1, #tile.heights do
+			if tile.cls[k] == 2 then -- (OPEN, defined further down)
+				local nv = tile.normals[k]
+				local alt = tile.heights[k] - oy
+				local w = GroundLook.weights(tile.px[k], tile.pz[k], alt, nv.Y)
+				n += 1
+				local b = math.clamp(math.floor(w.angle / 10) + 1, 1, 10)
+				byAngle[b] += 1
+				lo, hi = math.min(lo, alt), math.max(hi, alt)
+				rocky += if w.rocky > 0.5 then 1 else 0
+				alpine += if w.alpine > 0.5 then 1 else 0
+				snow += if w.snow > 0.5 then 1 else 0
+				if w.rock > 0.5 then
+					rock += 1
+					table.insert(rockPts, { tile.px[k], tile.pz[k] })
+				end
+			end
+		end
+	end
+	local road = {}
+	local sp = self.spline
+	for s = 0, sp.length, step or 250 do
+		local x, z = sp:planAt(s)
+		local near = 0
+		for _, p in rockPts do
+			local dx, dz = p[1] - x, p[2] - z
+			if dx * dx + dz * dz < 90000 then
+				near += 1
+			end
+		end
+		table.insert(road, { s = s, x = math.round(x), z = math.round(z), alt = math.round(sp:heightAt(s) - oy), yaw = math.round(math.deg(sp:yawAt(s))), rockNear = near })
+	end
+	local share = function(c: number): number
+		return if n > 0 then math.round(c / n * 1000) / 10 else 0
+	end
+	return {
+		vertices = n,
+		byAngle = byAngle,
+		alt = { math.round(lo), math.round(hi) },
+		percent = { rocky = share(rocky), rock = share(rock), alpine = share(alpine), snow = share(snow) },
+		car = { math.round(self.carX), math.round(self.carZ) },
+		road = road,
+	}
+end
+
+-- What the look costs (T-339): the look, the tiles shown and held, how many shown tiles carry
+-- a rock mesh, and the rock meshes made, failed, let go and written (and their time).
+function GroundMeshView.DebugLook(self: View)
+	local shown, rock = 0, 0
+	for _, tile in self.tiles do
+		shown += 1
+		if tile.hasRock and tile.rockPart and tile.rockPart.Parent then
+			rock += 1
+		end
+	end
+	local held = 0
+	for _, t in self.pool do
+		if t.rockEm then
+			held += 1
+		end
+	end
+	return {
+		look = lookNow,
+		tiles = shown,
+		pool = #self.pool,
+		rockShown = rock,
+		rockHeld = held,
+		rock = table.clone(rockStats),
+		detail = DetailTexture.DebugState(),
+		workMs = self.totalWorkMs,
+		built = self.tilesBuilt,
+	}
 end
 
 -- Give way to the road (T-273): let go of up to `units` tiles. The hidden ones go at once;
@@ -746,6 +902,10 @@ local function blankTile(): Tile
 		flip = table.create(C * C, false),
 		cy = 0,
 		stale = false,
+		rockEm = nil,
+		rockPart = nil,
+		rockMap = nil,
+		hasRock = false,
 	}
 end
 
@@ -1250,7 +1410,10 @@ local function shadeFrom(spline: any, ctx: Ground.Context, p: { number }, x: num
 	local nv = across:Cross(along)
 	nv = if nv.Magnitude > 1e-9 then nv.Unit else Vector3.yAxis
 	local colour
-	if nv.Y < math.cos(math.rad(G.RockAngle)) then
+	if lookNow ~= "old" then
+		-- by steepness and height (T-339, `Road/GroundLook`)
+		colour = GroundLook.colour(x, p[3], z, p[3] - spline.mountain.oy, nv.Y)
+	elseif nv.Y < math.cos(math.rad(G.RockAngle)) then
 		colour = G.GroundRockColour
 	else
 		local blotch = math.clamp(0.5 + 1.6 * math.noise(x / 70, z / 70, 3.37), 0, 1)
@@ -1275,7 +1438,57 @@ local function shadeFrom(spline: any, ctx: Ground.Context, p: { number }, x: num
 			nv = spline:terrainNormal(rs, rd)
 		end
 	end
-	return nv, colour
+	return nv, GroundLook.forTexture(lookNow, colour)
+end
+
+-- THE ROCK MESH (T-339, the "rock" look): every vertex of the tile again, out along its
+-- normal where it is rock and in where it is not (`Config.GroundLook.RockMesh`), so the Rock
+-- material shows through the grass on the steep faces; its faces split as the tile's are.
+-- Written whole each time the tile is drawn or its edges change.
+local function writeRock(tile: Tile, oy: number)
+	local em, m = tile.rockEm, tile.rockMap
+	if not em or not m then
+		return
+	end
+	local t0 = os.clock()
+	local R = Config.GroundLook.RockMesh
+	local C = cells()
+	local n = C + 1
+	local o = tile.origin
+	for k = 1, n * n do
+		local nv = tile.normals[k]
+		local x, z, y = tile.px[k], tile.pz[k], tile.heights[k]
+		local w = if tile.cls[k] == OPEN then GroundLook.rockWeight(x, z, y - oy, nv.Y) else 0
+		local off = -R.Sink + (R.Lift + R.Sink) * w
+		em:SetPosition(m.v[k], Vector3.new(x - o.X, y - o.Y, z - o.Z) + nv * off)
+		em:SetNormal(m.nrm[k], nv)
+		em:SetColor(m.col[k], scaleColour(tile.colours[k], R.Tint))
+	end
+	for i = 0, C - 1 do
+		for j = 0, C - 1 do
+			local c = i * C + j + 1
+			local t1, t2 = cellTriangles(n, i, j, tile.flip[c])
+			for q, t in { t1, t2 } do
+				local f = m.faces[2 * (c - 1) + q]
+				em:SetFaceVertices(f, { m.v[t[1]], m.v[t[2]], m.v[t[3]] })
+				em:SetFaceNormals(f, { m.nrm[t[1]], m.nrm[t[2]], m.nrm[t[3]] })
+				em:SetFaceColors(f, { m.col[t[1]], m.col[t[2]], m.col[t[3]] })
+			end
+		end
+	end
+	rockStats.writes += 1
+	rockStats.writeMs += (os.clock() - t0) * 1000
+end
+
+-- Whether any of a tile's vertices is rock enough for the rock mesh to show.
+local function tileHasRock(tile: Tile, oy: number): boolean
+	local from = Config.GroundLook.RockMesh.From
+	for k = 1, #tile.heights do
+		if tile.cls[k] == OPEN and GroundLook.rockWeight(tile.px[k], tile.pz[k], tile.heights[k] - oy, tile.normals[k].Y) >= from then
+			return true
+		end
+	end
+	return false
 end
 
 -- A grid point of a spacing's lattice, shaded the way a tile of that spacing shades it when
@@ -1450,6 +1663,38 @@ function GroundMeshView._fill(self: View, tile: Tile, leaf: Leaf, map: { [number
 		tile.part.CFrame = CFrame.new(cx, cy, cz)
 		tile.origin = Vector3.new(cx, cy, cz)
 	end
+	-- the rock mesh (T-339, "rock" only, a tile that keeps its own mesh): made if this tile
+	-- has rock and has none yet, let go if it has none
+	local oy = self.field.oy
+	if lookNow == "rock" and em and tile.part and tileHasRock(tile, oy) then
+		if not tile.rockEm and self.master then
+			local ok, made = pcall(function()
+				return AssetService:CreateEditableMeshAsync(masterSource(self.master :: Master), { FixedSize = true })
+			end)
+			local part = if ok and made then partFrom(Content.fromObject(made :: EditableMesh)) else nil
+			if ok and made and part then
+				part.Name = "GroundRock"
+				part.Material = Config.GroundLook.RockMesh.Material
+				tile.rockEm, tile.rockPart, tile.rockMap = made :: EditableMesh, part, idMapOf(made :: EditableMesh)
+				rockStats.made += 1
+			else
+				if ok and made then
+					(made :: EditableMesh):Destroy()
+				end
+				rockStats.fails += 1
+			end
+			if self.dead then
+				return false
+			end
+		end
+		if tile.rockEm and tile.rockPart then
+			tile.hasRock = true
+			tile.rockPart.CFrame = tile.part.CFrame
+			writeRock(tile, oy)
+		end
+	elseif tile.rockEm then
+		dropRock(tile)
+	end
 	-- (an opaque tile's mesh is made from these tables next, `_render`)
 	tile.leaf = leaf
 	tile.cy = cy
@@ -1573,6 +1818,7 @@ function GroundMeshView._take(self: View, over: boolean?): Tile?
 			end
 			t.em:Destroy()
 			t.em, t.part = nil, nil
+			dropRock(t)
 		end
 		return t
 	end
@@ -1600,6 +1846,9 @@ end
 -- Let a tile's drawing go: an opaque tile's part (made again when it is next filled); one that
 -- keeps its own mesh only leaves the world, ready to be written again, as before T-276.
 local function stow(t: Tile)
+	if t.rockPart then
+		t.rockPart.Parent = nil
+	end
 	if t.em then
 		if t.part then
 			t.part.Parent = nil
@@ -1626,6 +1875,7 @@ function GroundMeshView._trim(self: View)
 		if t.em then
 			t.em:Destroy()
 		end
+		dropRock(t)
 	end
 end
 
@@ -2020,7 +2270,11 @@ function GroundMeshView._do(self: View, op: Op): boolean
 			end
 		end
 		self.tiles[leaf.key] = tile
+		stylePart(tile.part :: MeshPart)
 		;(tile.part :: MeshPart).Parent = self.folder
+		if tile.hasRock and tile.rockPart then
+			tile.rockPart.Parent = self.folder
+		end
 		if self.spline.length ~= length then
 			tile.stale = true -- road arrived while it was built
 		end
@@ -2055,10 +2309,14 @@ function GroundMeshView._do(self: View, op: Op): boolean
 		for _, sp in splits do
 			setSplit(tile, sp[1], sp[2], sp[3])
 		end
+		if tile.hasRock and (#changes > 0 or #splits > 0) then
+			writeRock(tile, self.field.oy) -- (T-339: its edges follow the tile's)
+		end
 		if job then
 			-- its new mesh in, its old one out, in this frame
 			local old = tile.part
 			local part = job.part :: MeshPart
+			stylePart(part)
 			part.Parent = self.folder
 			tile.part, tile.origin = part, job.origin :: Vector3
 			if job.held then
@@ -2185,6 +2443,7 @@ function GroundMeshView.Destroy(self: View)
 		if tile.em then
 			tile.em:Destroy()
 		end
+		dropRock(tile)
 	end
 	self.pool, self.free, self.tiles, self.shown = {}, {}, {}, {}
 	if self.master then
