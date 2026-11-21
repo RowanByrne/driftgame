@@ -2172,6 +2172,18 @@ function SplineGen._track(self: Gen): Spline.Section?
 			local stray = math.abs(et - nt) - (swing * self.weave.amp + R.TrackStrayTol)
 			score += R.TrackStrayCost * math.max(0, stray)
 		end
+		-- (and where it is headed, T-341: carried on straight to `TrackProject` studs from the
+		-- section's start, how far off the leg past its weave. Judged on its end alone, a short
+		-- straight leaving the leg beat every bend back to it, which first carries the road on
+		-- further; off a hairpin heading down the fall line, the road ran 400 to 670 studs off
+		-- its leg, on 214 studs of fill across a gorge on seed 101)
+		if R.TrackProjectCost > 0 then
+			local on = math.max(0, R.TrackProject - knots[#knots - 1])
+			local pt, pv = Range.frame(r, ex - math.sin(ye) * on, ez - math.cos(ye) * on)
+			local _, _, pmiss = Traverse.ahead(leg, pt, pv, 0)
+			local allow = if self.weave then swing * self.weave.amp else 0
+			score += R.TrackProjectCost * math.max(0, pmiss - allow)
+		end
 		table.insert(options, { score = score, knots = knots, kt = kt, radius = radius, g = nil :: { number }? })
 	end
 	for _, hold in R.TrackHolds do
