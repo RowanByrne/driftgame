@@ -78,7 +78,6 @@ local function survey(f: Ground.Field, x0: number, z0: number, y0: number, yaw: 
 	local gStar = math.tan(math.rad(if climb then C.ClimbGrade else C.TraverseGrade))
 	local loss = if climb then C.ClimbLoss else 1
 	local minGrade = math.tan(math.rad(C.ClimbMinGrade))
-	local maxGrade = math.tan(math.rad(C.ClimbMaxGrade))
 	-- (a climb's leg toward the pass, with less than twice `ClimbMinGain` left to climb under it,
 	-- need gain only half what is left)
 	local lastLeg = if climb and dirV * (pv - v0) > 0 then math.max(0, passY - C.ClimbPassBelow - y0) * 0.5 else math.huge
@@ -88,50 +87,10 @@ local function survey(f: Ground.Field, x0: number, z0: number, y0: number, yaw: 
 	local bendCost = C.TraverseBendCost
 	local band = C.TraverseBand
 	-- where each layer's places are on along the range: its crest, plus how far below it
-	-- (a climb's, T-332, from the range's own contour through the start instead: toward a peak
-	-- the crest rises along the face, so a steady depth below it climbs as steeply as the
-	-- crest does, and a leg holding its grade drops below it all the way. Each layer's contour
-	-- is found within `ClimbFrameDrift` of the last's, a half layer at a time)
-	local origin: (number) -> number
-	if climb and C.ClimbContourFrame then
-		local b0 = Ground.base(f, x0, z0)
-		local anchors: { [number]: number } = { [0] = t0 }
-		local function anchor(i: number): number
-			local got = anchors[i]
-			if got then
-				return got
-			end
-			local before = anchor(i - 0.5)
-			local v, vb = v0 + dirV * i * dv, v0 + dirV * (i - 0.5) * dv
-			local guess = before + crest(v) - crest(vb)
-			local lo, hi = guess - C.ClimbFrameDrift, guess + C.ClimbFrameDrift
-			local function base(t: number): number
-				return Ground.base(f, Range.world(r, t, v))
-			end
-			local t
-			if base(lo) >= b0 then
-				t = lo
-			elseif base(hi) <= b0 then
-				t = hi
-			else
-				for _ = 1, 10 do
-					local m = 0.5 * (lo + hi)
-					if base(m) < b0 then
-						lo = m
-					else
-						hi = m
-					end
-				end
-				t = 0.5 * (lo + hi)
-			end
-			anchors[i] = t
-			return t
-		end
-		origin = anchor
-	else
-		origin = function(i: number): number
-			return crest(v0 + dirV * i * dv) + below
-		end
+	-- (a climb's too, T-332: a frame that followed the range's own contour through the start
+	-- instead walled in 4 425 studs of climbs over 15 seeds of 60 000 studs, against 850)
+	local function origin(i: number): number
+		return crest(v0 + dirV * i * dv) + below
 	end
 	local function tAt(i: number, j: number): number
 		return origin(i) + (j - j0) * dt
@@ -282,24 +241,15 @@ local function survey(f: Ground.Field, x0: number, z0: number, y0: number, yaw: 
 				if climb and Y[j] - y0 < math.min(math.max(C.ClimbMinGain, minGrade * L[j]), lastLeg) then
 					continue
 				end
-				-- (nor where it has climbed faster on average than `ClimbMaxGrade`, the road's own
-				-- sustained climb: past it the road falls behind the ground and cuts in)
-				if climb and Y[j] - y0 > maxGrade * L[j] then
-					continue
-				end
 				local level, at = true, j
-				-- (a climb's over `ClimbApproach` layers, T-332: toward a peak, where the crest rises
-				-- along the face, a leg holding its grade drops below the crest, and levels out late)
-				-- (and may drop `ClimbApproachSlack` places in all over them, less than the hairpin's width)
-				local slack = if climb then C.ClimbApproachSlack else 0
-				for back = i, math.max(1, i - (if climb then C.ClimbApproach else C.TraverseApproach) + 1), -1 do
+				-- (a climb's comes in never dropping back down the face either: one allowed to, so a leg
+				-- toward a peak could end before the crest rising along the face took it steep, walled in
+				-- 1 275 to 1 400 studs of seed 7's third climb, where this rule walls in none)
+				for back = i, math.max(1, i - C.TraverseApproach + 1), -1 do
 					local from = parents[back][at]
 					if from > at then
-						slack -= from - at
-						if slack < 0 then
-							level = false
-							break
-						end
+						level = false
+						break
 					end
 					at = from
 				end
@@ -317,8 +267,7 @@ local function survey(f: Ground.Field, x0: number, z0: number, y0: number, yaw: 
 				-- grade would start that leg on a steep pitch
 				local radius = math.clamp(C.TraverseRadiusSlope / math.max(sl, 1e-3), C.SteepHairpinRadius[1], C.TraverseRadiusMax)
 				local jo = math.min(width, j + math.ceil(2 * radius / dt))
-				-- (a climb's over `ClimbExitLayers`, T-332: the way back may run toward a peak)
-				local m = math.min(i - 1, if climb then C.ClimbExitLayers else C.TraverseExitLayers)
+				local m = math.min(i - 1, C.TraverseExitLayers)
 				local clearWay = true
 				for back = i, i - m, -1 do
 					if not frees[back][jo] then

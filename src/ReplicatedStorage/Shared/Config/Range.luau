@@ -242,43 +242,46 @@ return {
 	TraverseWeaveOut = 300, -- studs
 	-- A CLIMB IN LEGS ACROSS THE FACE (T-332, `Road/SplineContourTraverse`): a climb's legs are
 	-- surveyed as a descent's are (every `Traverse...` number above), mirrored up the face of the
-	-- ridge ahead: a stud of height gained up to `ClimbGrade` earns, and a stud lost costs
-	-- `ClimbLoss` times what it would earn. FORWARD PROGRESS FIRST: a leg drops no more than
-	-- `ClimbBack` back down the face, comes no nearer the crest than `ClimbCrestMargin` (the road
-	-- heads straight for the pass from in reach of it, `DirectReach`), and ends only where it has
-	-- gained `ClimbMinGain` and `ClimbMinGrade` on average along its length; where no leg does,
-	-- the old legs below (`LegMin` ...) climb the face instead
+	-- ridge ahead, the one the pass is on: a stud of height gained up to `ClimbGrade` earns, and a
+	-- stud lost costs `ClimbLoss` times what it would earn. Each leg ends in a hairpin through the
+	-- uphill side, on the valley floor too.
+	-- FORWARD PROGRESS FIRST, before any leg is scored: a leg
+	--   * ends only where it has gained `ClimbMinGain`, and `ClimbMinGrade` on average along its
+	--     length (the last leg toward the pass, with less than twice that left under it, half
+	--     what is left);
+	--   * runs on no ground higher than `ClimbPassBelow` under the pass, and no nearer the crest
+	--     than `ClimbCrestMargin`: height above the pass is lost again before it is crossed, and
+	--     up there a leg is climbing the flank of a peak;
+	--   * drops no more than `ClimbBack` down the face below where it started, and comes into its
+	--     hairpin never dropping down it (`TraverseApproach`);
+	--   * hands over to the pass once it is in reach: within `DirectReach`, at `ClimbDirectGrade`
+	--     or less, the road heads straight for it.
+	-- A road heading away from where a leg can go turns round first (`ClimbTurnFirstGap`), and
+	-- where no leg is found the old legs below (`LegMin` ...) run `ClimbRetry` studs before the
+	-- legs are surveyed again. Measured over 15 seeds of 60 000 studs (seed 7 to 100 000): 400
+	-- studs of climbs walled in on both shoulders, where the old legs alone wall in 2 425.
 	ClimbLegs = true,
 	ClimbGrade = 5, -- degrees: the sustained climb
 	ClimbLoss = 3,
-	-- (240 held a leg toward a peak, whose face rises along the crest, on a 10-degree climb the
-	-- road could not follow: over 15 seeds of 60 000 studs, 3 225 studs of climbs walled in at
-	-- 240, 1 150 at 600, 1 625 at 1 200)
-	ClimbBack = 600, -- studs, of depth below the crest
-	ClimbCrestMargin = 150, -- studs below the crest
-	ClimbPassBelow = 40, -- studs: no leg runs on ground higher than this under the pass
-	ClimbDirectGrade = 0.1, -- rise over run (6 degrees): from `DirectReach`, straight for the pass at up to this (`DirectGrade` for the old legs)
 	ClimbMinGain = 60, -- studs
 	ClimbMinGrade = 2, -- degrees
-	ClimbMaxGrade = 6.5, -- degrees: nor where it has climbed faster than this on average (`PitchSustain`, the road's sustained climb)
-	ClimbTurnAgain = true, -- after a hairpin whose next leg finds no end, a second hairpin straight on (once in `ClimbTurnFirstGap`)
-	ClimbApproach = 6, -- layers before a climb's hairpin that never drop back down the face (`TraverseApproach` on a descent)
-	ClimbApproachSlack = 0, -- places a climb's approach may drop in all
-	ClimbExitLayers = 4, -- layers of the next leg's start a climb's hairpin site is judged on (`TraverseExitLayers` on a descent)
-	-- (400: a leg toward a peak may end early, before the crest rising along the face has taken it
-	-- steep; over 15 seeds of 60 000 studs, 850 studs of climbs walled in at 400, 950 at 900)
-	ClimbMin = 400, -- studs: the shortest climb leg (`TraverseMin` on a descent)
-	-- (a climb's survey frame follows the range's own contour through the leg's start, not a
-	-- steady depth below the crest; the contour moves no more than this a half layer)
-	ClimbContourFrame = false,
-	ClimbFrameDrift = 120, -- studs
-	-- (a climb's leg weaves as a descent's does, but swings no further than the face would rise
-	-- this far over the swing, `TraverseWeaveOff` on a descent; 0: it does not weave)
+	ClimbPassBelow = 40, -- studs
+	ClimbCrestMargin = 150, -- studs below the crest
+	-- (240 held a leg toward a peak, where the crest rises along the face, on a 10-degree climb
+	-- the road could not follow: 3 225 studs walled in at 240, 1 150 at 600, 1 625 at 1 200)
+	ClimbBack = 600, -- studs, of depth below the crest
+	-- (400: a leg toward a peak may end before the crest rising along the face takes it steep;
+	-- 850 studs walled in at 400, 950 at 900, `TraverseMin`)
+	ClimbMin = 400, -- studs: the shortest climb leg
+	ClimbDirectGrade = 0.1, -- rise over run, 6 degrees (`DirectGrade`, 3, for the old legs: a climb's legs end under the pass)
+	-- (the descent's weave swung up and down a face the road climbs takes the grade past what it
+	-- can climb on every swing up: 950 studs of the first try's climbs walled in with it, 150
+	-- without, on seed 7; a weave held to this many studs of the face's rise over the swing, 0
+	-- for none)
 	ClimbWeaveOff = 0, -- studs
-	-- (heading away from where a climb's leg can go, the road turns round first, then surveys the
-	-- leg from that hairpin's exit; once in this many studs at most)
-	ClimbTurnFirstGap = 1500, -- studs
-	-- (where no climb leg is found, the old leg runs this far, with no turnaround, and the climb's
-	-- legs are surveyed again; 0: the whole old leg and its turnaround)
+	ClimbTurnFirstGap = 1500, -- studs: no more than once in this many, so the road never circles
+	ClimbTurnAgain = true, -- and after a hairpin whose next leg finds no end, round again straight on
+	-- (run its whole length, up to `LegMax`, the old leg is where climbs dug their trenches: 850
+	-- studs walled in with it, 400 at 600)
 	ClimbRetry = 600, -- studs
 }
