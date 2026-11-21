@@ -66,7 +66,7 @@ export type Leg = {
 -- (`climb`, T-332: up the face of ridge `k`, the one ahead, rather than down from ridge `k`, the
 -- one behind. Either way the places run on along the range, `t`, the way on: down a descent's
 -- face and up a climb's)
-local function survey(f: Ground.Field, x0: number, z0: number, y0: number, yaw: number, dirV: number, pv: number, k: number, blocked: (number, number) -> boolean, climb: boolean, passY: number, keep: number?): (Leg?, { Leg }?)
+local function survey(f: Ground.Field, x0: number, z0: number, y0: number, yaw: number, dirV: number, pv: number, k: number, blocked: (number, number) -> boolean, climb: boolean, passY: number, keep: number?, maxLayers: number?): (Leg?, { Leg }?)
 	local C = Config.Range
 	local r = f.range
 	local t0, v0 = Range.frame(r, x0, z0)
@@ -81,7 +81,8 @@ local function survey(f: Ground.Field, x0: number, z0: number, y0: number, yaw: 
 	local ahead = math.floor(C.TraverseAhead / dt)
 	local width = back + ahead + 1
 	local j0 = back + 1
-	local layers = math.floor(C.TraverseMax / dv)
+	-- (a look a leg ahead surveys the next leg only `ClimbLookLayers` far, T-344)
+	local layers = math.min(math.floor(C.TraverseMax / dv), maxLayers or math.huge)
 	local maxShift = C.TraverseShift
 	local gStar = math.tan(math.rad(if climb then C.ClimbGrade else C.TraverseGrade))
 	local loss = if climb then C.ClimbLoss else 1
@@ -449,7 +450,7 @@ function Traverse.plan(f: Ground.Field, x: number, z: number, y: number, yaw: nu
 					end
 					return false
 				end
-				local n = survey(f, ex, ez, ey, backYaw, -d, pv, k, near, true, target.y)
+				local n = survey(f, ex, ez, ey, backYaw, -d, pv, k, near, true, target.y, nil, C.ClimbLookLayers)
 				nextScore = if n then math.min(n.score, C.ClimbLookNone) else C.ClimbLookNone
 			end
 			local total = c.score + C.ClimbLookWeight * nextScore

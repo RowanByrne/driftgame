@@ -297,21 +297,22 @@ return {
 	-- the ridge ahead drops that plan there and surveys the climb's legs from where it is
 	ClimbFresh = true,
 	ClimbHopeless = 20000, -- a climb leg's score past which no drivable leg was found (`TraverseHopeless`)
-	ClimbGiveUp = 3, -- times a climb leg's hairpin may be refused before the next leg is surveyed (`TraverseGiveUp`)
+	ClimbGiveUp = 1, -- times a climb leg's hairpin may be refused before the next leg is surveyed (`TraverseGiveUp`)
 	ClimbReturnGrade = 0, -- rise over run: past the pass across, a leg's ceiling lower by this a stud...
 	ClimbReturnFree = 0, -- ...past this many studs (0 grade: none)
 	-- A CLIMB LOOKS A LEG AHEAD (T-344, `Traverse.plan`): its best `ClimbLook` ends (0: none, the
 	-- best alone), on layers `ClimbLookSpread` apart, each judged with `ClimbLookWeight` times the
 	-- score of the leg its hairpin sets off on (no more than `ClimbLookNone`, which is also what no
 	-- leg at all costs; none, if the pass is in reach from its exit)
-	ClimbLook = 0,
+	ClimbLook = 3,
 	ClimbLookSpread = 3, -- layers
 	ClimbLookWeight = 1,
 	ClimbLookNone = 15000,
+	ClimbLookLayers = 35, -- layers of the next leg surveyed (`TraverseMax` / `TraverseLayer`: all of it)
 	-- (a climb's hairpin turns through the uphill side, into the hill: it is refused past this
 	-- many studs off h, cut scaled as `Spline.Ground.TurnMaxOff` is, `TraverseTurnMaxOff` on a
 	-- descent; and its site's cut across the hairpin costs `ClimbSiteCut` times a descent's)
-	ClimbTurnMaxOff = 35,
+	ClimbTurnMaxOff = 20,
 	ClimbSiteCut = 1,
 	-- (and the road heads straight for the pass only where the ground along the line to it is no
 	-- more than `ClimbDirectCut` above a road climbing evenly to it, nor `ClimbDirectFill` below;
