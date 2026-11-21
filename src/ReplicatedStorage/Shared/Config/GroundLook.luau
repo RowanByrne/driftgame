@@ -21,6 +21,11 @@ return {
 	Look = "old",
 	Looks = { "old", "blend", "detail", "rock", "sheet" },
 
+	-- false: the sheet and the detail texture stay EditableImages (a 1 024 sheet holds about 32
+	-- of the client's ~640 tiles of mesh memory). true makes them opaque content, which holds
+	-- none, but the ground drew opaque textures garbled away from the car (T-340, DR-Lane2)
+	OpaqueTextures = false,
+
 	-- THE TEXTURE SHEET ("sheet", `Road/GroundSheet`). `Size` pixels each way, in 2 x 2
 	-- squares, in `Order` (top left, top right, bottom left, bottom right). Each square holds
 	-- its texture `Repeats` times each way, one repeat covering `PeriodStuds` of ground (the

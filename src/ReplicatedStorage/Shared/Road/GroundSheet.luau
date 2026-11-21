@@ -12,9 +12,8 @@
 -- code: grey value noise shaped as blades, stones, cracked planes and soft drifts.
 --
 -- Made once a session as an EditableImage (1 024 x 1 024 holds about 32 of the client's ~640
--- tiles of mesh memory while it is made), then made opaque content and let go
--- (`Road/OpaqueBudget`), so it holds none. Where opaque content is refused, the EditableImage
--- itself. nil when this device will not make it: the ground is then drawn as "blend".
+-- tiles of mesh memory), and kept as one: as opaque content it drew garbled away from the car
+-- (`Config.GroundLook.OpaqueTextures`, below). nil when this device will not make it: the ground is then drawn as "blend".
 
 local AssetService = game:GetService("AssetService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -217,12 +216,19 @@ function GroundSheet.content(): Content?
 		return nil
 	end
 	local img = made :: EditableImage
-	local okO, opaque = OpaqueBudget.make("sheet", Content.fromObject(img))
-	if okO and opaque then
-		img:Destroy()
-		content = opaque
-		state = "opaque"
-		return content
+	-- KEPT AS AN EDITABLEIMAGE, not made opaque content (T-340, measured in DR-Lane2): as opaque
+	-- content the ground drew it right near the car but garbled further off (pale faces and
+	-- sky-blue patches, whole faces at a time, as a texture's smaller copies would be); kept as
+	-- the image it drew clean at every distance. It holds its share of the mesh memory for good
+	-- (`Drift/MeshBudget`)
+	if Config.GroundLook.OpaqueTextures then
+		local okO, opaque = OpaqueBudget.make("sheet", Content.fromObject(img))
+		if okO and opaque then
+			img:Destroy()
+			content = opaque
+			state = "opaque"
+			return content
+		end
 	end
 	image = img
 	state = "image"

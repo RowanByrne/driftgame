@@ -7,8 +7,7 @@
 --
 -- It tiles exactly: lattice noise whose lattice wraps at the image's edge, four octaves.
 -- Made once a session as an EditableImage (a 256 x 256 one holds about 2 of the client's
--- ~640 tiles of mesh memory), then made opaque content and let go (`Road/OpaqueBudget`), so it
--- holds none. Where opaque content is refused, the EditableImage itself. nil when this device
+-- ~640 tiles of mesh memory), and kept as one (`Config.GroundLook.OpaqueTextures`). nil when this device
 -- will not make it: the ground is then drawn as "blend".
 
 local AssetService = game:GetService("AssetService")
@@ -107,12 +106,19 @@ function DetailTexture.content(): Content?
 		return nil
 	end
 	local img = made :: EditableImage
-	local okO, opaque = OpaqueBudget.make("detail", Content.fromObject(img))
-	if okO and opaque then
-		img:Destroy()
-		content = opaque
-		state = "opaque"
-		return content
+	-- KEPT AS AN EDITABLEIMAGE, not made opaque content (T-340, measured in DR-Lane2): as opaque
+	-- content the ground drew it right near the car but garbled further off (pale faces and
+	-- sky-blue patches, whole faces at a time, as a texture's smaller copies would be); kept as
+	-- the image it drew clean at every distance. It holds its share of the mesh memory for good
+	-- (`Drift/MeshBudget`)
+	if Config.GroundLook.OpaqueTextures then
+		local okO, opaque = OpaqueBudget.make("detail", Content.fromObject(img))
+		if okO and opaque then
+			img:Destroy()
+			content = opaque
+			state = "opaque"
+			return content
+		end
 	end
 	image = img
 	state = "image"
