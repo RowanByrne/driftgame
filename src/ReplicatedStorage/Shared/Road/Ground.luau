@@ -298,9 +298,15 @@ function Ground.reach(): number
 end
 
 -- What a station is by itself is kept: only stations well short of the road's end, where
--- nothing laid later can change the runoff there.
+-- nothing laid later can change the runoff there. And only while the road under it is kept:
+-- once the road's samples behind are let go (`Spline.trim`) nothing asks for a station there
+-- again (`Ground.context` takes none short of the first sample), so those are let go too
+-- (`forgetBehind`, T-346: kept for good, they grew the client's script memory by about
+-- 0.2 MB a kilometre of an endless run, a station every `CheckStep` studs).
 local kept: { [Spline.Spline]: { [number]: Station } } = setmetatable({}, { __mode = "k" }) :: any
+local keptFrom: { [Spline.Spline]: number } = setmetatable({}, { __mode = "k" }) :: any
 local KEEP_SHORT = 300 -- studs
+local FORGET_EVERY = 256 -- studs of road let go before the stations behind are swept
 
 local function lipWidth(w: number): number
 	local T = Config.Spline.Terrain
@@ -459,6 +465,25 @@ local function station(spline: Spline.Spline, s: number, x: number, z: number, f
 	return st
 end
 
+-- Let go of the stations kept behind `first`, the start of what is kept of the road: every
+-- `FORGET_EVERY` studs it moves on, one pass over what is kept (a few hundred stations).
+local function forgetBehind(spline: Spline.Spline, first: number)
+	local from = keptFrom[spline] or 0
+	if first < from + FORGET_EVERY then
+		return
+	end
+	keptFrom[spline] = first
+	local mine = kept[spline]
+	if not mine then
+		return
+	end
+	for s in mine do
+		if s < first then
+			mine[s] = nil
+		end
+	end
+end
+
 local CELL = 64 -- studs: a point looks at the 25 cells round it (at 32, 81)
 
 local function key(cx: number, cz: number): number
@@ -491,6 +516,7 @@ function Ground.context(field: Field, spline: Spline.Spline, x0: number, z0: num
 	end
 	local hc = spline.cell
 	local first = spline.firstSample * spline.step
+	forgetBehind(spline, first)
 	local seen: { [number]: boolean } = {}
 	for cx = math.floor((x0 - reach) / hc), math.floor((x1 + reach) / hc) do
 		for cz = math.floor((z0 - reach) / hc), math.floor((z1 + reach) / hc) do
