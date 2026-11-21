@@ -1,6 +1,6 @@
 # Ground textures (T-340)
 
-The mountain ground's texture sheet (DECISIONS.md, 2026-11-20: the ground look goes on as a texture sheet over the colour blend). One opaque PNG, a 2x2 sheet: top-left grass, top-right rocky grass, bottom-left rock, bottom-right snow. Each triangle of the ground mesh picks one square by steepness and height, and the texture is multiplied by the per-vertex colours, so the squares must be near-neutral grey, averaging about 75 to 85% brightness, and each must tile with itself. Candidates live in `..\art\generated\ground-textures\` (outside git). Nothing here is picked or uploaded yet.
+The mountain ground's texture sheet (DECISIONS.md, 2026-11-20: the ground look goes on as a texture sheet over the colour blend). One opaque PNG, a 2x2 sheet: top-left grass, top-right rocky grass, bottom-left rock, bottom-right snow. Each triangle of the ground mesh picks one square by steepness and height, and the texture is multiplied by the per-vertex colours, so the squares must be near-neutral grey, averaging about 75 to 85% brightness, and each must tile with itself. Candidates live in `..\art\generated\ground-textures\` (outside git). The user picked painterly-01 (below), and it's uploaded (Upload, below).
 
 Image tool: `tools\imagegen.ps1` (Codex built-in image generation), run on `ROWANWKEY` on 2026-11-20 with the Codex app's CLI `codex-cli 0.162.0-alpha.17.2`. That's older than the `0.167.0-alpha.4.1` recorded on another PC on 2026-11-14 (`assets/settings-menu/MANIFEST.md`), so this PC's Codex is probably behind. The tool's model version isn't reported, and it wasn't checked against OpenAI's newest image release this round. References are from `assets/reference/environment-mood/`, used for mood and brushwork only. Every candidate came back 1254 x 1254, opaque.
 
@@ -14,6 +14,14 @@ Measured with a throwaway script (`..\scratch\ground-textures-seamcheck.ps1`). E
 - **Bright:** mean luminance, as a % of white.
 - **Chroma:** mean (max - min) of RGB, out of 255. 0 is pure grey.
 - **Wrap previews:** each quadrant rolled by half, so its seams cross its middle. They're in `..\scratch\ground-textures-wrap-<name>.png`.
+
+## Upload
+
+| File | Asset id | Uploaded by | Decoded | Used in |
+|---|---|---|---|---|
+| `painterly-01.png` | `rbxassetid://76745644013222` | Open Cloud Assets API with this PC's `ROBLOX_API_KEY` (key "Laptop Rocco", user 3383554889, the same account Studio shows), as user 3383554889, 2026-11-20; moderation Approved | **not measured yet:** Studio on `ROWANWKEY` had lost its sign-in (`User is not authenticated`), so no uploaded image would load as an EditableImage, the game's own grass texture included. Measure it with `tools\ui\DecodeRects.luau` when Studio is signed in again; `Road/GroundSheet` reads the quadrants at whatever size it decodes to | `Config.GroundLook.Sheet.Image`, read by `Road/GroundSheet` |
+
+Studio's `upload_image` was refused first, for the same lost sign-in.
 
 ## Candidates
 
