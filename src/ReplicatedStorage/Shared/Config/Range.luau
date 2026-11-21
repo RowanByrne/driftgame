@@ -254,6 +254,7 @@ return {
 	ClimbBack = 240, -- studs (a descent's `TraverseBack` turns up toward a gorge's head; a climb's is the way on)
 	ClimbCrestMargin = 150, -- studs below the crest
 	ClimbPassBelow = 40, -- studs: no leg runs on ground higher than this under the pass
+	ClimbDirectGrade = 0.1, -- rise over run (6 degrees): from `DirectReach`, straight for the pass at up to this (`DirectGrade` for the old legs)
 	ClimbMinGain = 60, -- studs
 	ClimbMinGrade = 2, -- degrees
 	-- (a climb's leg weaves as a descent's does, but swings no further than the face would rise

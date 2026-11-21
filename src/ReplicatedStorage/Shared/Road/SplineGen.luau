@@ -1831,9 +1831,11 @@ function SplineGen._planRange(self: Gen)
 	local function turn(what: string, dir: number, radius: { number }, tag: string, sl: Slope)
 		table.insert(plan, { turn = true, what = what, to = self.aim, dir = dir, radius = radius, tag = tag, window = self.aim, slope = sl, autoDir = true })
 	end
-	-- straight for the pass, when it is in reach
+	-- straight for the pass, when it is in reach (from a climb's legs, T-332, at up to
+	-- `ClimbDirectGrade`: they end under the pass, short of where the old legs would)
 	local dist = math.sqrt((pt - t) ^ 2 + (pv - v) ^ 2)
-	if climbing and dist <= R.DirectReach and tgt.y - y <= dist * R.DirectGrade then
+	local direct = if R.ClimbLegs then R.ClimbDirectGrade else R.DirectGrade
+	if climbing and dist <= R.DirectReach and tgt.y - y <= dist * direct then
 		stretch(dist + R.PassOver, "pass", { kind = "pass", side = self.legSide })
 		return
 	end
@@ -2853,7 +2855,7 @@ function SplineGen.step(self: Gen): Spline.Section?
 				local _, _, _, _, _, _, y = self.spline:tip()
 				local pt, pv = Range.frame(self.ground.range, tgt.x, tgt.z)
 				local dist = math.sqrt((pt - t) ^ 2 + (pv - v) ^ 2)
-				if dist <= R.DirectReach and tgt.y - y <= dist * R.DirectGrade then
+				if dist <= R.DirectReach and tgt.y - y <= dist * R.ClimbDirectGrade then
 					table.clear(self.plan)
 					self.leg = nil
 					return chosen
