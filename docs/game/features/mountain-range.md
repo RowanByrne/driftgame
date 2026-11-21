@@ -53,7 +53,7 @@ The user, 2026-11-19, on the first pass: "The planner can use a steeper grade no
 - **Gorges crossed sideways.** A leg may turn up the face, back toward the mountain, by up to 1,200 studs to cross a gorge near its head where the banks are close in height, then carry on across the far face.
 - **The road keeps to the leg.** Sections along a leg are fitted to it (eased bends of 100 to 2,000 studs, judged on how far off the leg they end and their heading 300 studs on), not drawn at random around a heading.
 - **Short steep pitches.** Along a leg, grade past 6.5 degrees spends a 25-stud allowance of height (about 190 studs at 14 degrees), repaid as the grade eases. Past it, the fit trades steepness against leaving the ground, so it never digs a trench to save a degree.
-- Climbs keep the first pass's planner (below, "Known").
+- Climbs: in legs too since T-332 (below, "Climbs in legs across the face").
 
 **Measured, seed 7, the descent from the second ridge (crest to valley floor), before (build 2149a45) and after:**
 
@@ -77,8 +77,55 @@ In the Studio seed 7 drive, `tp me road 36800` in the F2 console starts the car 
 
 **Known:**
 
-- **Climbs keep the first pass's planner.** Surveying climbs as legs too (tried) dug a 198-stud trench on seed 8 and a 166-stud causeway on seed 10; climbs need their own onward rule first. Seed 7's third climb now starts where the new descent ends, and on that approach the first pass's planner climbs 600 studs in 4,150 (it was 5,775) with a fill of 83 at one turnaround it could not lay: `SplineContourTests` fails those two checks (8 of 10).
+- **Climbs kept the first pass's planner until T-332** (next section). Surveying climbs as legs the way descents are (tried) dug a 198-stud trench on seed 8 and a 166-stud causeway on seed 10: climbs needed their own onward rule first.
 - A leg's hairpin can still be refused at its site (crowded or far off h); the road then runs on and the next leg is surveyed from where it gets to.
+
+### Climbs in legs across the face (T-332)
+
+Climbs now cross the face in long legs too, joined by hairpins through the uphill side, the way T-326 and T-337 made descents (`Road/SplineContourTraverse`, `SplineGen._planRange`; numbers under "A climb in legs" in `Config.Range`).
+
+- **The same survey, mirrored.** A climb's leg is surveyed up the face of the ridge ahead, the one the pass is on, a layer every 100 studs across: a stud of height gained up to 5 degrees pays for its length, faster gain costs, and height lost costs three times what it would have earned. The road keeps to the leg as on a descent.
+- **Forward progress first, before any leg is scored.** A leg:
+  - ends only where it has gained at least 60 studs, and 2 degrees on average along its length (the last leg toward the pass, with little left to climb, half of what is left);
+  - runs on no ground higher than 40 studs under the pass, nor nearer the crest than 150: height above the pass is lost again before the road crosses it, and up there a leg is climbing the flank of a peak;
+  - drops no more than 600 studs down the face below where it started, and comes into its hairpin never dropping down it;
+  - hands over to the pass once it is in reach: within 1,800 studs, at 6 degrees or less, the road heads straight for it.
+- **Turned the wrong way.** A road heading away from where a leg can go (off the valley floor, or after a hairpin whose next leg finds no end) turns round first and surveys the leg from that hairpin's exit, no more than once in 1,500 studs.
+- **Where no leg is found**, the old legs run 600 studs, no turnaround, and the climb's legs are surveyed again. Run to their full length (up to 12,000 studs) they were where climbs dug their trenches.
+- **No weave on climbs.** The descent's S-bends swung up and down a face the road climbs take the grade past what the road can climb on every swing up: on seed 7, 950 studs of climbs walled in with it, 150 without (`Range.ClimbWeaveOff`).
+- **No tight hairpins on climbs yet.** Tried with the steep-ground rule (`TightHairpin.OnClimbs`): over 15 seeds, 5,475 studs of climbs walled in, against 400 without. They stay on descents.
+
+**Why each rule is there** (15 seeds of 60,000 studs, seed 7 to 100,000; studs of climbs walled in on both shoulders, against 2,425 for the old legs):
+
+| Tried | Walled in |
+|---|---|
+| The descent's survey as it is, mirrored | on the six seeds below, 1,425 where the old legs wall in 450: seed 7's third climb had a leg toward a peak at 10 degrees, 950 walled |
+| A leg may drop 240 studs below where it started; 600; 1,200 | 3,225; 1,150; 1,625 |
+| Legs from 900 studs; from 400 | 950; 850 |
+| A leg may come into its hairpin dropping down the face | 2,925 to 4,975 |
+| Legs surveyed along the range's own contour, not a steady depth below the crest | 4,425 |
+| A leg's average climb capped at 6.5 degrees | 2,150 |
+| Where no leg is found, the old leg in full; 600 studs of it | 850; **400** |
+
+**Measured, the six seeds T-337 used** (7, 101, 2024, 8080, 777 and 31337, 60,000 studs each, seed 7 to 100,000; before is main at 5836b746, after this build):
+
+| | Before | After |
+|---|---|---|
+| Climbs (gaining 300 or more) | 12 | 13 |
+| Hairpins on climbs | 19 | 40 |
+| Studs walled in on both shoulders, all climbs | 450 | 100 |
+| Deepest cut on a climb | 62 | 41 |
+| Highest fill on a climb | 32 | 48 |
+| Longest stretch over 8 degrees on a climb | 1,550 | 650 |
+
+Seed 7's third climb (55,100 to 67,000 studs): 3 hairpins where it had 1, 78% of it across the face (46%), nothing walled in (175), deepest cut 36 (62), highest fill 48, longest pitch over 8 degrees 625 studs (1,550). Over all 15 seeds: climbs walled in 400 studs (2,425), no climb over 60 studs off h (14 readings before), 106 hairpins on climbs (42), deepest cut 58 (65), longest pitch over 8 degrees 925 studs (1,550), none stalled, a section 1.7 to 2.6 ms on average.
+
+**Known:**
+
+- **Seed 7's third climb is still too steep for `SplineContourTests`:** it gains 600 studs in 4,525 (the bar is 5,000; 4,550 before). One leg, heading for a peak where the crest rises along the face, climbs 8 degrees for 2,400 studs: a leg holding its grade there drops below the crest all the way and cannot level out into a hairpin; every rule tried that lets it end sooner or caps its grade walled the climb in further up (table above).
+- **`SplineContourTests`' "cuts and fills under 60"** fails as on main: the fill of 98 at 42,950 is on the descent before the third climb, the same as main's.
+- **`RangeTests`' doubling-back check** (not in this task's files) counts 15 falls back where it allows 1: 12 are climb legs heading across the face toward a peak, falling back along the range while they climb. The check counts a descent's fall back only when the road also climbs back up; its mirror for a climb (only when the road also loses height) would leave these out (not tried here).
+- **A descent laid after a re-routed climb** meets new ground: seed 101's descent from its second ridge now has a fill of 214 at 40,425 (the worst fill over the six seeds was 158 before). The descents' own survey (T-326, T-337) is unchanged.
 
 ## Left out
 
