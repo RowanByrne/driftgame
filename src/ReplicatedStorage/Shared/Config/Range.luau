@@ -309,6 +309,7 @@ return {
 	ClimbLookWeight = 1,
 	ClimbLookNone = 15000,
 	ClimbLookLayers = 35, -- layers of the next leg surveyed (`TraverseMax` / `TraverseLayer`: all of it)
+	ClimbLookAhead = 3000, -- studs on along the range the next leg may run (`TraverseAhead`)
 	ClimbLookFloor = -5000, -- the best a next leg can score (a 5 000-stud leg at the sustained grade): an end that could not win with it is not looked past
 	-- (a climb's hairpin turns through the uphill side, into the hill: it is refused past this
 	-- many studs off h, cut scaled as `Spline.Ground.TurnMaxOff` is, `TraverseTurnMaxOff` on a
