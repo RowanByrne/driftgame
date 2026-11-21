@@ -9,6 +9,7 @@ Every task in progress and the files it owns, so parallel sessions and workers n
 
 | Branch | Lane | Files owned | Since |
 |---|---|---|---|
+| `feature/ground-look-by-steepness-and-height` | Borrow to test | `src/StarterPlayerScripts/Drift/GroundMeshView.luau`, `src/ReplicatedStorage/Shared/Road/GroundLook.luau`, `Shared/Road/DetailTexture.luau`, `Shared/Road/GroundSheet.luau` (new), `Shared/Config/GroundLook.luau`, `src/ServerScriptService/AdminConsole/Commands/World/groundLook.luau`, `src/ServerScriptService/Tests/GroundLookTests.luau`, `docs/game/features/ground-look.md`, `assets/ground-textures/*` (new) | 2026-11-20, T-340 (ground look texture sheet) |
 | `feature/tight-hairpins` | Borrow to test | `src/ReplicatedStorage/Shared/Road/SplineContourTraverse.luau`, `Shared/Road/SplineGen.luau`, `Shared/Road/TightHairpin.luau`, `Shared/Config/Range.luau`, `Shared/Config/TightHairpin.luau`, `Shared/Config/Spline.luau`, `src/ServerScriptService/Tests/TightHairpinTests.luau`, `Tests/SplineContourTests.luau`, `Tests/SplineGenTests.luau`, `Tests/SplineTests.luau` | 2026-11-20, T-337 (tight hairpins into descents) |
 ## Notes between sessions
 
